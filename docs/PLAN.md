@@ -183,9 +183,11 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 已补：**网格 + 吸附**、**未保存关闭拦截**、**最近文件**（shared_preferences）、
 **连接器 glue**（连接两形状、移动自动重路由、`<Connects>` 往返）。
 
+已补：多文件 Tab、多选（Shift 点选 + 框选）、对齐/分布工具。
+
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 老格式经 libvisio 导入；模具/形状库面板；图层 UI；对齐分布
+- `.vsd` 老格式经 libvisio 导入；模具/形状库面板；图层 UI
 - 连接器高级路由（L 形/避让）；公式重算引擎；PDF 导出；LibreOffice `soffice` 交叉验证
 
 ---
@@ -252,3 +254,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   + 活动标签，转发子通知）；`main.dart` 重构为顶部文件标签栏（脏标记+关闭、Cmd+W）、动作路由到
   活动文档、空态示例快捷打开、多文件拖放各开一个标签、Cmd+N/O/W 快捷键。`flutter analyze` 零问题、
   `flutter test` 通过、macOS 构建成功。
+- 2026-07-10 — **多选 + 对齐/分布**：Shift 点选切换、空白拖拽框选（Space+拖拽平移）；控制器
+  `setSelection` 与 `alignLeft/CenterH/Right/Top/Middle/Bottom` + `distributeHorizontally/Vertically`
+  （含旋转形状 AABB、对齐后重路由连接器）；属性面板 Align 区（选中≥2 显示，≥3 显示分布）。
+  macOS 构建成功。

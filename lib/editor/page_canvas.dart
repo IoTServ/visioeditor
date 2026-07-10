@@ -42,7 +42,15 @@ class PageCanvas extends StatefulWidget {
   State<PageCanvas> createState() => _PageCanvasState();
 }
 
-enum _DragMode { none, moveShapes, panCanvas, createShape, resize, rotate }
+enum _DragMode {
+  none,
+  moveShapes,
+  panCanvas,
+  createShape,
+  resize,
+  rotate,
+  marquee,
+}
 
 /// The eight resize handles around a selection box.
 enum _Handle { tl, tr, br, bl, t, r, b, l }
@@ -63,6 +71,10 @@ class _PageCanvasState extends State<PageCanvas> {
   // Creation preview, in content-px space.
   Offset? _previewStart;
   Offset? _previewEnd;
+
+  // Marquee selection rectangle, in content-px space.
+  Offset? _marqueeStart;
+  Offset? _marqueeEnd;
 
   EditorController get _c => widget.controller;
 
@@ -242,9 +254,14 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     final hit = _hitTest(d.localPosition);
+    final shift = HardwareKeyboard.instance.isShiftPressed;
     if (hit != null) {
-      _c.selectOnly(hit);
-    } else {
+      if (shift) {
+        _c.toggleSelection(hit);
+      } else {
+        _c.selectOnly(hit);
+      }
+    } else if (!shift) {
       _c.clearSelection();
     }
   }
@@ -296,8 +313,15 @@ class _PageCanvasState extends State<PageCanvas> {
       if (!_c.isSelected(hit)) _c.selectOnly(hit);
       _mode = _DragMode.moveShapes;
       _c.beginTransaction();
-    } else {
+    } else if (HardwareKeyboard.instance.logicalKeysPressed
+        .contains(LogicalKeyboardKey.space)) {
       _mode = _DragMode.panCanvas;
+    } else {
+      _mode = _DragMode.marquee;
+      setState(() {
+        _marqueeStart = _viewportToContent(d.localPosition);
+        _marqueeEnd = _marqueeStart;
+      });
     }
   }
 
@@ -317,6 +341,8 @@ class _PageCanvasState extends State<PageCanvas> {
         setState(() => _previewEnd = _viewportToContent(pos));
       case _DragMode.resize:
         _applyResize(pos);
+      case _DragMode.marquee:
+        setState(() => _marqueeEnd = _viewportToContent(pos));
       case _DragMode.rotate:
         final id = _resizeShapeId;
         final s = id == null ? null : _c.currentPage?.findShapeById(id);
@@ -411,11 +437,44 @@ class _PageCanvasState extends State<PageCanvas> {
           _previewStart = null;
           _previewEnd = null;
         });
+      case _DragMode.marquee:
+        _commitMarquee();
+        setState(() {
+          _marqueeStart = null;
+          _marqueeEnd = null;
+        });
       case _DragMode.panCanvas:
       case _DragMode.none:
         break;
     }
     _mode = _DragMode.none;
+  }
+
+  void _commitMarquee() {
+    final page = _page;
+    final s = _marqueeStart;
+    final e = _marqueeEnd;
+    if (page == null || s == null || e == null) return;
+    final a = _contentToPageInches(s);
+    final b = _contentToPageInches(e);
+    final l = math.min(a.dx, b.dx);
+    final r = math.max(a.dx, b.dx);
+    final bottom = math.min(a.dy, b.dy);
+    final top = math.max(a.dy, b.dy);
+    // Ignore accidental micro-drags (treat as a click that cleared already).
+    if ((r - l) < 0.02 && (top - bottom) < 0.02) return;
+    final bounds = buildShapeBounds(page);
+    final topLevel = <int>{for (final sh in page.shapes) sh.id};
+    final ids = <int>[
+      for (final entry in bounds.entries)
+        if (topLevel.contains(entry.key) &&
+            entry.value.left <= r &&
+            entry.value.right >= l &&
+            entry.value.top <= top &&
+            entry.value.bottom >= bottom)
+          entry.key,
+    ];
+    _c.setSelection(ids);
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -499,6 +558,9 @@ class _PageCanvasState extends State<PageCanvas> {
               rotateKnob = anchors.$2;
             }
             final previewTool = _mode == _DragMode.createShape ? _c.tool : null;
+            final marquee = (_marqueeStart != null && _marqueeEnd != null)
+                ? Rect.fromPoints(_marqueeStart!, _marqueeEnd!)
+                : null;
             return Focus(
               autofocus: true,
               onKeyEvent: _onKey,
@@ -568,6 +630,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       previewStart: _previewStart,
                                       previewEnd: _previewEnd,
                                       previewTool: previewTool,
+                                      marquee: marquee,
                                     ),
                                   ),
                                 ),
@@ -611,6 +674,7 @@ class _SelectionPainter extends CustomPainter {
     this.previewStart,
     this.previewEnd,
     this.previewTool,
+    this.marquee,
   });
 
   final List<Rect> rects;
@@ -623,6 +687,7 @@ class _SelectionPainter extends CustomPainter {
   final Offset? previewStart;
   final Offset? previewEnd;
   final EditorTool? previewTool;
+  final Rect? marquee;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -662,6 +727,13 @@ class _SelectionPainter extends CustomPainter {
         ..drawCircle(knob, handleSize * 0.7, Paint()..color = Colors.white)
         ..drawCircle(knob, handleSize * 0.7, outline);
     }
+    final m = marquee;
+    if (m != null) {
+      final rect = _normalise(m);
+      canvas
+        ..drawRect(rect, Paint()..color = color.withValues(alpha: 0.12))
+        ..drawRect(rect, outline);
+    }
     _paintPreview(canvas, outline);
   }
 
@@ -700,7 +772,8 @@ class _SelectionPainter extends CustomPainter {
       old.handleSize != handleSize ||
       old.previewStart != previewStart ||
       old.previewEnd != previewEnd ||
-      old.previewTool != previewTool;
+      old.previewTool != previewTool ||
+      old.marquee != marquee;
 }
 
 /// Light grid drawn behind the page content (content-px space).

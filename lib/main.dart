@@ -746,6 +746,32 @@ class _PropertyPanel extends StatelessWidget {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 16),
+          if (count >= 2) ...[
+            _section(context, 'Align'),
+            Wrap(
+              children: [
+                _iconBtn(Icons.align_horizontal_left, 'Align left',
+                    controller.alignLeft),
+                _iconBtn(Icons.align_horizontal_center, 'Center horizontally',
+                    controller.alignCenterH),
+                _iconBtn(Icons.align_horizontal_right, 'Align right',
+                    controller.alignRight),
+                _iconBtn(Icons.align_vertical_top, 'Align top',
+                    controller.alignTop),
+                _iconBtn(Icons.align_vertical_center, 'Center vertically',
+                    controller.alignMiddle),
+                _iconBtn(Icons.align_vertical_bottom, 'Align bottom',
+                    controller.alignBottom),
+                if (count >= 3) ...[
+                  _iconBtn(Icons.horizontal_distribute, 'Distribute horizontally',
+                      controller.distributeHorizontally),
+                  _iconBtn(Icons.vertical_distribute, 'Distribute vertically',
+                      controller.distributeVertically),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           _section(context, 'Fill'),
           _swatchRow(
             onColor: (v) => controller.setFillColor(VsdxColor(v)),
@@ -782,6 +808,13 @@ class _PropertyPanel extends StatelessWidget {
   Widget _section(BuildContext context, String label) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+      );
+
+  Widget _iconBtn(IconData icon, String tip, VoidCallback onTap) => IconButton(
+        onPressed: onTap,
+        icon: Icon(icon),
+        tooltip: tip,
+        visualDensity: VisualDensity.compact,
       );
 
   Widget _swatchRow({

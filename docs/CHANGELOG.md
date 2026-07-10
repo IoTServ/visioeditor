@@ -34,6 +34,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Recent files** (persisted) and an **unsaved-changes guard** on close.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
   bar with dirty markers + close); drag-drop multiple files opens a tab each.
+- **Multi-select**: Shift-click to toggle, rubber-band marquee to box-select
+  (hold Space to pan); **align** (left/center/right/top/middle/bottom) and
+  **distribute** (horizontal/vertical) from the inspector.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc.

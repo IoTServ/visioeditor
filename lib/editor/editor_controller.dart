@@ -113,6 +113,13 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSelection(Iterable<int> ids) {
+    _selection
+      ..clear()
+      ..addAll(ids);
+    notifyListeners();
+  }
+
   // --- Undo / redo -----------------------------------------------------------
 
   bool get canUndo => _undo.isNotEmpty;
@@ -401,6 +408,116 @@ class EditorController extends ChangeNotifier {
       ..addAll(newIds);
     applyEdit(doc.replacePage(_currentPageIndex, next));
   }
+
+  // --- Align / distribute ----------------------------------------------------
+
+  /// Axis-aligned bounding box of [s] in page inches as (left, bottom, right,
+  /// top), accounting for rotation.
+  static (double, double, double, double) _bounds(VsdxShape s) {
+    if (s.angleRad == 0) {
+      return (
+        s.pinX - s.width / 2,
+        s.pinY - s.height / 2,
+        s.pinX + s.width / 2,
+        s.pinY + s.height / 2,
+      );
+    }
+    final c = math.cos(s.angleRad);
+    final sn = math.sin(s.angleRad);
+    final hw = s.width / 2;
+    final hh = s.height / 2;
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity;
+    for (final ox in <double>[-hw, hw]) {
+      for (final oy in <double>[-hh, hh]) {
+        final x = s.pinX + ox * c - oy * sn;
+        final y = s.pinY + ox * sn + oy * c;
+        minX = math.min(minX, x);
+        maxX = math.max(maxX, x);
+        minY = math.min(minY, y);
+        maxY = math.max(maxY, y);
+      }
+    }
+    return (minX, minY, maxX, maxY);
+  }
+
+  void _align(Map<int, (double, double)> Function(List<VsdxShape>) compute) {
+    final page = currentPage;
+    if (page == null) return;
+    final shapes = <VsdxShape>[
+      for (final id in _selection)
+        if (page.findShapeById(id) != null) page.findShapeById(id)!,
+    ];
+    if (shapes.length < 2) return;
+    final deltas = compute(shapes);
+    if (deltas.isEmpty) return;
+    updateCurrentPage((p) {
+      var next = p;
+      deltas.forEach((id, d) {
+        next = next.updateShapeById(
+          id,
+          (s) => s.copyWith(pinX: s.pinX + d.$1, pinY: s.pinY + d.$2),
+        );
+      });
+      return next.rerouteConnectors();
+    });
+  }
+
+  void alignLeft() => _align((shapes) {
+        final target = shapes.map((s) => _bounds(s).$1).reduce(math.min);
+        return {for (final s in shapes) s.id: (target - _bounds(s).$1, 0.0)};
+      });
+
+  void alignRight() => _align((shapes) {
+        final target = shapes.map((s) => _bounds(s).$3).reduce(math.max);
+        return {for (final s in shapes) s.id: (target - _bounds(s).$3, 0.0)};
+      });
+
+  void alignCenterH() => _align((shapes) {
+        final l = shapes.map((s) => _bounds(s).$1).reduce(math.min);
+        final r = shapes.map((s) => _bounds(s).$3).reduce(math.max);
+        final target = (l + r) / 2;
+        return {for (final s in shapes) s.id: (target - s.pinX, 0.0)};
+      });
+
+  void alignTop() => _align((shapes) {
+        final target = shapes.map((s) => _bounds(s).$4).reduce(math.max);
+        return {for (final s in shapes) s.id: (0.0, target - _bounds(s).$4)};
+      });
+
+  void alignBottom() => _align((shapes) {
+        final target = shapes.map((s) => _bounds(s).$2).reduce(math.min);
+        return {for (final s in shapes) s.id: (0.0, target - _bounds(s).$2)};
+      });
+
+  void alignMiddle() => _align((shapes) {
+        final b = shapes.map((s) => _bounds(s).$2).reduce(math.min);
+        final t = shapes.map((s) => _bounds(s).$4).reduce(math.max);
+        final target = (b + t) / 2;
+        return {for (final s in shapes) s.id: (0.0, target - s.pinY)};
+      });
+
+  void distributeHorizontally() => _align((shapes) {
+        if (shapes.length < 3) return const {};
+        final sorted = [...shapes]..sort((a, b) => a.pinX.compareTo(b.pinX));
+        final first = sorted.first.pinX;
+        final step = (sorted.last.pinX - first) / (sorted.length - 1);
+        return {
+          for (var i = 0; i < sorted.length; i++)
+            sorted[i].id: (first + i * step - sorted[i].pinX, 0.0),
+        };
+      });
+
+  void distributeVertically() => _align((shapes) {
+        if (shapes.length < 3) return const {};
+        final sorted = [...shapes]..sort((a, b) => a.pinY.compareTo(b.pinY));
+        final first = sorted.first.pinY;
+        final step = (sorted.last.pinY - first) / (sorted.length - 1);
+        return {
+          for (var i = 0; i < sorted.length; i++)
+            sorted[i].id: (0.0, first + i * step - sorted[i].pinY),
+        };
+      });
 
   void _updateSelectedShapes(VsdxShape Function(VsdxShape) update) {
     if (_selection.isEmpty) return;
