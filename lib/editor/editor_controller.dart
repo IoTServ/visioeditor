@@ -551,6 +551,28 @@ class EditorController extends ChangeNotifier {
         };
       });
 
+  void bringSelectionToFront() {
+    if (_selection.isEmpty) return;
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in _selection) {
+        next = next.bringToFront(id);
+      }
+      return next;
+    });
+  }
+
+  void sendSelectionToBack() {
+    if (_selection.isEmpty) return;
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in _selection) {
+        next = next.sendToBack(id);
+      }
+      return next;
+    });
+  }
+
   void _updateSelectedShapes(VsdxShape Function(VsdxShape) update) {
     if (_selection.isEmpty) return;
     updateCurrentPage((page) {

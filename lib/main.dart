@@ -894,6 +894,15 @@ class _PropertyPanel extends StatelessWidget {
             '$count shape${count == 1 ? '' : 's'} selected',
             style: Theme.of(context).textTheme.titleSmall,
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _iconBtn(Icons.flip_to_front, 'Bring to front',
+                  controller.bringSelectionToFront),
+              _iconBtn(Icons.flip_to_back, 'Send to back',
+                  controller.sendSelectionToBack),
+            ],
+          ),
           const SizedBox(height: 16),
           if (count >= 2) ...[
             _section(context, 'Align'),

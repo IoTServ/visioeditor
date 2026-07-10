@@ -239,6 +239,26 @@ class VsdxPage {
     ];
   }
 
+  /// Move a top-level shape to the front (drawn last). No-op for nested shapes.
+  VsdxPage bringToFront(int id) {
+    if (!shapes.any((s) => s.id == id)) return this;
+    return copyWith(shapes: <VsdxShape>[
+      for (final s in shapes)
+        if (s.id != id) s,
+      shapes.firstWhere((s) => s.id == id),
+    ]);
+  }
+
+  /// Move a top-level shape to the back (drawn first).
+  VsdxPage sendToBack(int id) {
+    if (!shapes.any((s) => s.id == id)) return this;
+    return copyWith(shapes: <VsdxShape>[
+      shapes.firstWhere((s) => s.id == id),
+      for (final s in shapes)
+        if (s.id != id) s,
+    ]);
+  }
+
   /// The smallest shape id greater than every id currently used on the page
   /// (including nested group children) — used when creating new shapes.
   int nextFreeShapeId() {

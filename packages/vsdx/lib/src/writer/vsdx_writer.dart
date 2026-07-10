@@ -318,13 +318,61 @@ class VsdxWriter {
       }
     }
 
-    // 4) Reconcile <Connects> (glue) when it changed vs the baseline.
+    // 4) Reorder <Shape> elements to match the model's z-order (top level).
+    if (shapesEl != null && _reorderShapes(shapesEl, edited.shapes)) {
+      changed = true;
+    }
+
+    // 5) Reconcile <Connects> (glue) when it changed vs the baseline.
     if (!_connectsEqual(baseline.connects, edited.connects)) {
       _writeConnects(root, edited.connects);
       changed = true;
     }
 
     return changed;
+  }
+
+  /// Reorder the direct `<Shape>` children of [shapesEl] to match [order]
+  /// (top-level model z-order). Returns whether the order actually changed.
+  bool _reorderShapes(XmlElement shapesEl, List<VsdxShape> order) {
+    final byId = <int, XmlElement>{};
+    final shapeEls = <XmlElement>[];
+    for (final el in shapesEl.childElements) {
+      if (el.name.local != 'Shape') continue;
+      shapeEls.add(el);
+      final id = int.tryParse(el.getAttribute('ID') ?? '');
+      if (id != null) byId[id] = el;
+    }
+    if (shapeEls.length < 2) return false;
+
+    final desired = <XmlElement>[];
+    final used = <int>{};
+    for (final s in order) {
+      final el = byId[s.id];
+      if (el != null && used.add(s.id)) desired.add(el);
+    }
+    // Keep any shape elements not mentioned in `order` in their prior slots.
+    for (final el in shapeEls) {
+      if (!desired.contains(el)) desired.add(el);
+    }
+    // No change? (same identity order)
+    var same = true;
+    for (var i = 0; i < shapeEls.length; i++) {
+      if (!identical(shapeEls[i], desired[i])) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return false;
+
+    // Rebuild children: non-Shape nodes stay where they are relative to the
+    // shape block by simply re-appending shapes in the new order after
+    // removing the old ones.
+    for (final el in shapeEls) {
+      shapesEl.children.remove(el);
+    }
+    shapesEl.children.addAll(desired);
+    return true;
   }
 
   bool _connectsEqual(List<VsdxConnect> a, List<VsdxConnect> b) {

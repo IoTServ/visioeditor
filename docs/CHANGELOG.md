@@ -42,8 +42,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
   bar with dirty markers + close); drag-drop multiple files opens a tab each.
 - **Multi-select**: Shift-click to toggle, rubber-band marquee to box-select
-  (hold Space to pan); **align** (left/center/right/top/middle/bottom) and
-  **distribute** (horizontal/vertical) from the inspector.
+  (hold Space to pan); **align** (left/center/right/top/middle/bottom),
+  **distribute** (horizontal/vertical) and **z-order** (bring to front / send
+  to back) from the inspector.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc, and arrow keys to
@@ -67,8 +68,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - Engine: 26 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; writer round-trip incl. create / delete /
   fill / rotate / connects / layer visibility / resized geometry / text
-  formatting / polygon stencil; blank-document emit; geometry-scaling resize;
-  SVG).
+  formatting / polygon stencil / z-order; blank-document emit;
+  geometry-scaling resize; SVG).
 - App: `flutter analyze` clean; widget smoke test; `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

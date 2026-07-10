@@ -194,6 +194,25 @@ void main() {
     expect(xs.reduce((a, b) => a > b ? a : b), closeTo(3, 1e-3));
   });
 
+  test('z-order (send to back) round-trips', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: a, pinX: 2, pinY: 2, width: 1, height: 1));
+    final b = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: b, pinX: 3, pinY: 3, width: 1, height: 1));
+    final bytes1 = writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
+    final r1 = parser.parse(bytes1);
+    expect(r1.pages.first.shapes.map((s) => s.id).toList(), [a, b]);
+
+    final edited = r1.replacePage(0, r1.pages.first.sendToBack(b));
+    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a]);
+  });
+
   test('a polygon stencil shape round-trips', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
