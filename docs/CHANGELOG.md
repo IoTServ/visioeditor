@@ -44,7 +44,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   **distribute** (horizontal/vertical) from the inspector.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
-- **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc.
+- **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc, and arrow keys to
+  nudge the selection (by the grid step).
 
 ### Fixed
 - The writer now regenerates a shape's `<Section N="Geometry">` when its

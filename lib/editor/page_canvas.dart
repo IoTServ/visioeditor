@@ -492,6 +492,21 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.clearSelection();
       }
       return KeyEventResult.handled;
+    } else if (_c.hasSelection) {
+      final step = _c.snapToGrid ? _c.gridInches : 0.1;
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _c.moveSelectionBy(-step, 0);
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.arrowRight) {
+        _c.moveSelectionBy(step, 0);
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.arrowUp) {
+        _c.moveSelectionBy(0, step);
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.arrowDown) {
+        _c.moveSelectionBy(0, -step);
+        return KeyEventResult.handled;
+      }
     }
     return KeyEventResult.ignored;
   }
