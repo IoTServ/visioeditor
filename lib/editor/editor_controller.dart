@@ -355,6 +355,22 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Add a shape produced by [build] at the current page's centre, select it.
+  void addShapeFromBuilder(
+    VsdxShape Function(int id, double cx, double cy) build,
+  ) {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final id = page.nextFreeShapeId();
+    final shape = build(id, page.widthInches / 2, page.heightInches / 2);
+    _selection
+      ..clear()
+      ..add(id);
+    _tool = EditorTool.select;
+    applyEdit(doc.replacePage(_currentPageIndex, page.addShape(shape)));
+  }
+
   /// Delete all selected shapes as a single undo step.
   void deleteSelection() {
     final doc = _document;

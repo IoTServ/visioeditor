@@ -8,6 +8,7 @@ import 'package:vsdx/vsdx.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
 import 'editor/page_canvas.dart';
+import 'editor/stencils.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
@@ -62,6 +63,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   final RecentFiles _recentFiles = RecentFiles();
   List<String> _recents = const <String>[];
   bool _dragging = false;
+  bool _showStencils = false;
 
   EditorController? get _c => _workspace.active;
 
@@ -392,6 +394,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 tooltip: 'Redo',
               ),
               IconButton(
+                onPressed: () => setState(() => _showStencils = !_showStencils),
+                icon: const Icon(Icons.category_outlined),
+                isSelected: _showStencils,
+                tooltip: 'Shapes palette',
+              ),
+              IconButton(
                 onPressed: c.toggleGrid,
                 icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
                 tooltip: 'Toggle grid',
@@ -550,6 +558,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
       children: [
         _ToolStrip(controller: c),
         const VerticalDivider(width: 1),
+        if (_showStencils) ...[
+          _StencilPanel(controller: c),
+          const VerticalDivider(width: 1),
+        ],
         Expanded(
           child: PageCanvas(controller: c, onRequestTextEdit: _editText),
         ),
@@ -783,6 +795,69 @@ class _ToolStrip extends StatelessWidget {
             tool(EditorTool.ellipse, Icons.circle_outlined, 'Ellipse'),
             tool(EditorTool.line, Icons.horizontal_rule, 'Line'),
             tool(EditorTool.connector, Icons.timeline, 'Connector (glue)'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Left-hand shapes palette; clicking a stencil drops it on the current page.
+class _StencilPanel extends StatelessWidget {
+  const _StencilPanel({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 168,
+      child: ColoredBox(
+        color: scheme.surface,
+        child: ListView(
+          padding: const EdgeInsets.all(8),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
+              child: Text('Shapes',
+                  style: Theme.of(context).textTheme.labelLarge),
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in kStencils)
+                  Tooltip(
+                    message: s.name,
+                    child: InkWell(
+                      onTap: () => controller.addShapeFromBuilder(s.build),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: 64,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: scheme.outlineVariant),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(s.icon, size: 24),
+                            const SizedBox(height: 4),
+                            Text(
+                              s.name,
+                              style: const TextStyle(fontSize: 9),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

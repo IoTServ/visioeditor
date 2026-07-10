@@ -194,6 +194,31 @@ void main() {
     expect(xs.reduce((a, b) => a > b ? a : b), closeTo(3, 1e-3));
   });
 
+  test('a polygon stencil shape round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final diamond = VsdxShapeFactory.polygon(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 2,
+      unit: const [
+        Offset2D(0.5, 1),
+        Offset2D(1, 0.5),
+        Offset2D(0.5, 0),
+        Offset2D(0, 0.5),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(diamond));
+    final reopened = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final s = reopened.pages.first.findShapeById(id);
+    expect(s, isNotNull);
+    expect(s!.geometries, isNotEmpty);
+    expect(s.geometries.first.commands.length, greaterThanOrEqualTo(5));
+  });
+
   test('text formatting round-trips (Character/Paragraph created)', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

@@ -22,6 +22,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   copy / paste (Cmd+C / Cmd+V).
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview.
+- **Shapes palette**: a stencil panel of flowchart shapes (process, terminator,
+  decision, data, triangle, hexagon, pentagon, arrow) — click to drop one.
 - **Connectors with glue**: connect two shapes; endpoints stay attached and
   auto-reroute (orthogonal elbow path) when a shape moves / resizes / rotates;
   `<Connects>` round-trip.
@@ -54,7 +56,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 
 ### Deferred (post-v0.1)
 - Obstacle-avoiding connector routing; per-run (selection-range) rich-text
-  editing; vector (non-raster) PDF; stencil library.
+  editing; vector (non-raster) PDF; custom / imported stencils.
 - Other platforms (Windows / Linux / Android / iOS) and legacy `.vsd` import
   (via libvisio); `.vsdx` OS file association, app icon and packaging/signing.
 - LibreOffice / Visio interop is currently covered by our own open→save→reopen
@@ -62,10 +64,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 25 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 26 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; writer round-trip incl. create / delete /
   fill / rotate / connects / layer visibility / resized geometry / text
-  formatting; blank-document emit; geometry-scaling resize; SVG).
+  formatting / polygon stencil; blank-document emit; geometry-scaling resize;
+  SVG).
 - App: `flutter analyze` clean; widget smoke test; `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

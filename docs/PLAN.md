@@ -186,11 +186,12 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 已补：多文件 Tab、多选（Shift 点选 + 框选）、对齐/分布、PDF 导出、**图层面板**（显隐切换，
 写回 pages.xml 的 PageSheet，保真持久化）。
 
-已补：文本格式化（字号/加粗/斜体/颜色/对齐，作用于整形状文本，写回 Character/Paragraph 节，保真往返）。
+已补：文本格式化、方向键微调、**模具/形状库面板**（流程图常见形状：矩形/椭圆/菱形/平行四边形/
+三角形/六边形/五边形/箭头，点击落到页面中心，多边形/椭圆几何往返安全）。
 
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 老格式经 libvisio 导入；模具/形状库面板
+- `.vsd` 老格式经 libvisio 导入
 - 连接器避让路由；富文本"逐 run 选区"编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
 ---
@@ -274,3 +275,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   setTextColor/setTextAlign`（作用于选中形状全部 run，空 run 时从 text 合成）；Writer 写回
   `Character`(Size/Style/Color) 与 `Paragraph`(HorzAlign)，缺节则创建；属性面板 Text 区（字号下拉、
   B/I、色板、对齐）。引擎单测 25/25（+文本格式化往返），macOS 构建成功。
+- 2026-07-10 — **方向键微调**：选中后方向键按网格步长移动（一次一步撤销，重路由连接器）。
+- 2026-07-10 — **模具/形状库面板**：`VsdxShapeFactory.polygon`（单位多边形）；`lib/editor/stencils.dart`
+  内置 8 个流程图形状；控制器 `addShapeFromBuilder`（落到页面中心并选中）；AppBar 形状面板开关 +
+  左侧 `_StencilPanel`。引擎单测 26/26（+多边形往返），macOS 构建成功。

@@ -87,6 +87,39 @@ abstract final class VsdxShapeFactory {
     );
   }
 
+  /// Closed polygon from [unit] points (each 0..1 in shape-local space,
+  /// origin bottom-left / Y-up), scaled to [width] x [height].
+  static VsdxShape polygon({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    required List<Offset2D> unit,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final commands = <VsdxPathCommand>[
+      MoveTo(unit.first.x * w, unit.first.y * h),
+      for (final p in unit.skip(1)) LineTo(p.x * w, p.y * h),
+      LineTo(unit.first.x * w, unit.first.y * h),
+    ];
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[VsdxGeometry(commands: commands)],
+      fill: fill,
+      line: line,
+    );
+  }
+
   /// Straight 1-D line from page point ([ax],[ay]) to ([bx],[by]) (inches).
   static VsdxShape line({
     required int id,
