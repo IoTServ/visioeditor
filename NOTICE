@@ -30,6 +30,14 @@ intl ................. BSD-3-Clause
 url_launcher ......... BSD-3-Clause
 
 ------------------------------------------------------------------------
+Bundled sample drawings (distributed) + test fixtures
+------------------------------------------------------------------------
+The .vsdx files under assets/examples/ and packages/vsdx/test/fixtures/ are
+copied verbatim from the `vsdx` project by Dave Howard (BSD-3-Clause):
+    https://github.com/dave-howard/vsdx  (tests/)
+Used as sample/opening files and read/round-trip parsing fixtures.
+
+------------------------------------------------------------------------
 Reference material (NOT distributed; kept under third_party/, git-ignored)
 ------------------------------------------------------------------------
 libvisio (MPL-2.0 / LGPL) - read-only format reference; algorithms are

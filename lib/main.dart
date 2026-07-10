@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
 import 'editor/editor_controller.dart';
+import 'editor/editor_workspace.dart';
 import 'editor/page_canvas.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
@@ -47,18 +48,40 @@ class EditorHomePage extends StatefulWidget {
 }
 
 class _EditorHomePageState extends State<EditorHomePage> {
-  final EditorController _controller = EditorController();
+  static const List<String> _examples = <String>[
+    'test1.vsdx',
+    'test3_house.vsdx',
+    'test4_connectors.vsdx',
+    'test10_nested_shapes.vsdx',
+    'test11_rotate.vsdx',
+    'test12_colors.vsdx',
+  ];
+
+  final EditorWorkspace _workspace = EditorWorkspace();
   final RecentFiles _recentFiles = RecentFiles();
   List<String> _recents = const <String>[];
   bool _dragging = false;
 
+  EditorController? get _c => _workspace.active;
+
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onChanged);
+    _workspace.addListener(_onChanged);
     _recentFiles.load().then((r) {
       if (mounted) setState(() => _recents = r);
     });
+  }
+
+  @override
+  void dispose() {
+    _workspace.removeListener(_onChanged);
+    _workspace.dispose();
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _addRecent(String? path) async {
@@ -67,77 +90,62 @@ class _EditorHomePageState extends State<EditorHomePage> {
     if (mounted) setState(() => _recents = r);
   }
 
+  /// Open bytes in a NEW tab; drops the tab and reports if parsing failed.
+  Future<void> _openBytes(
+    Uint8List bytes, {
+    String? path,
+    String? name,
+  }) async {
+    final c = await _workspace.openBytes(bytes, path: path, name: name);
+    if (c.error != null) {
+      _snack('Could not open file: ${c.error}');
+      final i = _workspace.indexOf(c);
+      if (i >= 0) _workspace.closeAt(i);
+      return;
+    }
+    if (path != null) await _addRecent(path);
+  }
+
+  Future<void> _open() async {
+    final picked = await pickVisioFile();
+    if (picked == null) return;
+    await _openBytes(picked.bytes, path: picked.path, name: picked.name);
+  }
+
   Future<void> _openPath(String path) async {
-    if (!await _confirmDiscard()) return;
     try {
       final picked = await readDroppedFile(path);
-      await _controller.openBytes(
-        picked.bytes,
-        path: picked.path,
-        name: picked.name,
-      );
-      _reportErrorIfAny();
-      if (!_controller.hasDocument) return;
-      await _addRecent(path);
+      await _openBytes(picked.bytes, path: picked.path, name: picked.name);
     } catch (e) {
       _snack('Could not open $path');
     }
   }
 
-  @override
-  void dispose() {
-    _controller.removeListener(_onChanged);
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onChanged() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _open() async {
-    if (!await _confirmDiscard()) return;
-    final picked = await pickVisioFile();
-    if (picked == null) return;
-    await _controller.openBytes(
-      picked.bytes,
-      path: picked.path,
-      name: picked.name,
-    );
-    _reportErrorIfAny();
-    if (_controller.hasDocument) await _addRecent(picked.path);
+  Future<void> _openExample(String assetName) async {
+    try {
+      final data = await rootBundle.load('assets/examples/$assetName');
+      await _openBytes(data.buffer.asUint8List(), name: assetName);
+    } catch (e) {
+      _snack('Could not open example $assetName');
+    }
   }
 
   Future<void> _onDrop(DropDoneDetails details) async {
     setState(() => _dragging = false);
-    if (details.files.isEmpty) return;
-    final path = details.files.first.path;
-    if (!hasVisioExtension(path)) {
-      _snack('Unsupported file. Drop a .vsdx / .vsdm / .vstx file.');
-      return;
+    for (final f in details.files) {
+      if (!hasVisioExtension(f.path)) continue;
+      final picked = await readDroppedFile(f.path);
+      await _openBytes(picked.bytes, path: picked.path, name: picked.name);
     }
-    final picked = await readDroppedFile(path);
-    await _controller.openBytes(
-      picked.bytes,
-      path: picked.path,
-      name: picked.name,
-    );
-    _reportErrorIfAny();
-    if (_controller.hasDocument) await _addRecent(picked.path);
   }
 
-  void _reportErrorIfAny() {
-    final err = _controller.error;
-    if (err != null) _snack('Could not open file: $err');
-  }
-
-  Future<bool> _confirmDiscard() async {
-    if (!_controller.isDirty) return true;
+  Future<bool> _confirmDiscard(EditorController c) async {
+    if (!c.isDirty) return true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Discard unsaved changes?'),
-        content: const Text('The current drawing has unsaved changes.'),
+        content: Text('“${c.fileName ?? 'Untitled'}” has unsaved changes.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -153,17 +161,18 @@ class _EditorHomePageState extends State<EditorHomePage> {
     return ok ?? false;
   }
 
-  Future<void> _newDoc() async {
-    if (await _confirmDiscard()) _controller.newDocument();
-  }
+  void _newDoc() => _workspace.newDocument();
 
-  Future<void> _close() async {
-    if (await _confirmDiscard()) _controller.closeDocument();
+  Future<void> _closeTab(int index) async {
+    if (index < 0 || index >= _workspace.docs.length) return;
+    if (await _confirmDiscard(_workspace.docs[index])) {
+      _workspace.closeAt(index);
+    }
   }
 
   Future<void> _save() async {
-    final c = _controller;
-    if (!c.hasDocument) return;
+    final c = _c;
+    if (c == null || !c.hasDocument) return;
     var path = c.filePath;
     path ??= await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
     if (path == null) return;
@@ -179,8 +188,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   Future<void> _saveAs() async {
-    final c = _controller;
-    if (!c.hasDocument) return;
+    final c = _c;
+    if (c == null || !c.hasDocument) return;
     final path =
         await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
     if (path == null) return;
@@ -196,11 +205,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   Future<void> _exportSvg() async {
-    final doc = _controller.document;
-    if (doc == null) return;
+    final c = _c;
+    final doc = c?.document;
+    if (c == null || doc == null) return;
     final path = await pickExportLocation(
       ext: 'svg',
-      suggestedName: '${baseName(_controller.fileName)}.svg',
+      suggestedName: '${baseName(c.fileName)}.svg',
     );
     if (path == null) return;
     try {
@@ -213,12 +223,13 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   Future<void> _exportPng() async {
-    final doc = _controller.document;
-    final page = _controller.currentPage;
-    if (doc == null || page == null) return;
+    final c = _c;
+    final doc = c?.document;
+    final page = c?.currentPage;
+    if (c == null || doc == null || page == null) return;
     final path = await pickExportLocation(
       ext: 'png',
-      suggestedName: '${baseName(_controller.fileName)}.png',
+      suggestedName: '${baseName(c.fileName)}.png',
     );
     if (path == null) return;
     try {
@@ -235,177 +246,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
-  void _snack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _controller;
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
-          if (c.hasDocument) _save();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
-          if (c.canUndo) c.undo();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
-            () {
-          if (c.canRedo) c.redo();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
-          if (c.hasSelection) c.duplicateSelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
-          if (c.hasSelection) c.copySelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
-          if (c.hasClipboard) c.paste();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): _newDoc,
-      },
-      child: Scaffold(
-      appBar: AppBar(
-        title: Text(
-          '${c.isDirty ? '• ' : ''}${c.fileName ?? 'Editor for Visio Diagrams'}',
-        ),
-        actions: [
-          if (c.hasDocument) ...[
-            IconButton(
-              onPressed: c.canUndo ? c.undo : null,
-              icon: const Icon(Icons.undo),
-              tooltip: 'Undo',
-            ),
-            IconButton(
-              onPressed: c.canRedo ? c.redo : null,
-              icon: const Icon(Icons.redo),
-              tooltip: 'Redo',
-            ),
-            IconButton(
-              onPressed: c.toggleGrid,
-              icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
-              tooltip: 'Toggle grid',
-            ),
-            IconButton(
-              onPressed: _save,
-              icon: const Icon(Icons.save_outlined),
-              tooltip: 'Save',
-            ),
-          ],
-          IconButton(
-            onPressed: _newDoc,
-            icon: const Icon(Icons.note_add_outlined),
-            tooltip: 'New drawing',
-          ),
-          IconButton(
-            onPressed: _open,
-            icon: const Icon(Icons.folder_open_outlined),
-            tooltip: 'Open a Visio drawing',
-          ),
-          if (_recents.isNotEmpty)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.history),
-              tooltip: 'Recent files',
-              onSelected: _openPath,
-              itemBuilder: (context) => [
-                for (final p in _recents)
-                  PopupMenuItem<String>(
-                    value: p,
-                    child: Text(
-                      p.split(RegExp(r'[/\\]')).last,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-              ],
-            ),
-          if (c.hasDocument)
-            PopupMenuButton<String>(
-              tooltip: 'More',
-              onSelected: (value) {
-                switch (value) {
-                  case 'saveAs':
-                    _saveAs();
-                  case 'exportSvg':
-                    _exportSvg();
-                  case 'exportPng':
-                    _exportPng();
-                  case 'snap':
-                    c.toggleSnap();
-                  case 'close':
-                    _close();
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem<String>(
-                  value: 'saveAs',
-                  child: Text('Save As…'),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'exportSvg',
-                  child: Text('Export as SVG…'),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'exportPng',
-                  child: Text('Export as PNG…'),
-                ),
-                CheckedPopupMenuItem<String>(
-                  value: 'snap',
-                  checked: c.snapToGrid,
-                  child: const Text('Snap to grid'),
-                ),
-                const PopupMenuItem<String>(
-                  value: 'close',
-                  child: Text('Close drawing'),
-                ),
-              ],
-            ),
-        ],
-      ),
-      body: DropTarget(
-        onDragEntered: (_) => setState(() => _dragging = true),
-        onDragExited: (_) => setState(() => _dragging = false),
-        onDragDone: _onDrop,
-        child: Stack(
-          children: [
-            Positioned.fill(child: _buildBody(c)),
-            if (_dragging) Positioned.fill(child: _dropOverlay(context)),
-          ],
-        ),
-      ),
-      bottomNavigationBar: c.pageCount > 1 ? _pageTabs(c) : null,
-      ),
-    );
-  }
-
-  Widget _buildBody(EditorController c) {
-    if (c.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (!c.hasDocument || c.currentPage == null) {
-      return _EmptyState(onOpen: _open, onNew: _newDoc);
-    }
-    return Row(
-      children: [
-        _ToolStrip(controller: c),
-        const VerticalDivider(width: 1),
-        Expanded(
-          child: PageCanvas(controller: c, onRequestTextEdit: _editText),
-        ),
-        if (c.hasSelection) ...[
-          const VerticalDivider(width: 1),
-          _PropertyPanel(controller: c),
-        ],
-      ],
-    );
-  }
-
   Future<void> _editText(int shapeId) async {
-    final shape = _controller.currentPage?.findShapeById(shapeId);
-    if (shape == null) return;
+    final c = _c;
+    final shape = c?.currentPage?.findShapeById(shapeId);
+    if (c == null || shape == null) return;
     final textController = TextEditingController(text: shape.text ?? '');
     final result = await showDialog<String>(
       context: context,
@@ -429,8 +273,218 @@ class _EditorHomePageState extends State<EditorHomePage> {
         ],
       ),
     );
-    if (result != null) _controller.setShapeText(shapeId, result);
+    if (result != null) c.setShapeText(shapeId, result);
     textController.dispose();
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _c;
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): _newDoc,
+        const SingleActivator(LogicalKeyboardKey.keyO, meta: true): _open,
+        const SingleActivator(LogicalKeyboardKey.keyW, meta: true): () {
+          if (_workspace.hasDocs) _closeTab(_workspace.activeIndex);
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
+          if (c != null && c.hasDocument) _save();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+          if (c != null && c.canUndo) c.undo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+            () {
+          if (c != null && c.canRedo) c.redo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
+          if (c != null && c.hasSelection) c.duplicateSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
+          if (c != null && c.hasSelection) c.copySelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
+          if (c != null && c.hasClipboard) c.paste();
+        },
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Editor for Visio Diagrams'),
+          actions: [
+            if (c != null) ...[
+              IconButton(
+                onPressed: c.canUndo ? c.undo : null,
+                icon: const Icon(Icons.undo),
+                tooltip: 'Undo',
+              ),
+              IconButton(
+                onPressed: c.canRedo ? c.redo : null,
+                icon: const Icon(Icons.redo),
+                tooltip: 'Redo',
+              ),
+              IconButton(
+                onPressed: c.toggleGrid,
+                icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
+                tooltip: 'Toggle grid',
+              ),
+              IconButton(
+                onPressed: _save,
+                icon: const Icon(Icons.save_outlined),
+                tooltip: 'Save (Cmd+S)',
+              ),
+            ],
+            IconButton(
+              onPressed: _newDoc,
+              icon: const Icon(Icons.note_add_outlined),
+              tooltip: 'New drawing (Cmd+N)',
+            ),
+            IconButton(
+              onPressed: _open,
+              icon: const Icon(Icons.folder_open_outlined),
+              tooltip: 'Open a Visio drawing (Cmd+O)',
+            ),
+            if (_recents.isNotEmpty)
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.history),
+                tooltip: 'Recent files',
+                onSelected: _openPath,
+                itemBuilder: (context) => [
+                  for (final p in _recents)
+                    PopupMenuItem<String>(
+                      value: p,
+                      child: Text(
+                        p.split(RegExp(r'[/\\]')).last,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+            if (c != null)
+              PopupMenuButton<String>(
+                tooltip: 'More',
+                onSelected: (value) {
+                  switch (value) {
+                    case 'saveAs':
+                      _saveAs();
+                    case 'exportSvg':
+                      _exportSvg();
+                    case 'exportPng':
+                      _exportPng();
+                    case 'snap':
+                      c.toggleSnap();
+                    case 'close':
+                      _closeTab(_workspace.activeIndex);
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem<String>(
+                    value: 'saveAs',
+                    child: Text('Save As…'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'exportSvg',
+                    child: Text('Export as SVG…'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'exportPng',
+                    child: Text('Export as PNG…'),
+                  ),
+                  CheckedPopupMenuItem<String>(
+                    value: 'snap',
+                    checked: c.snapToGrid,
+                    child: const Text('Snap to grid'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'close',
+                    child: Text('Close tab (Cmd+W)'),
+                  ),
+                ],
+              ),
+          ],
+          bottom: _workspace.hasDocs ? _tabBar() : null,
+        ),
+        body: DropTarget(
+          onDragEntered: (_) => setState(() => _dragging = true),
+          onDragExited: (_) => setState(() => _dragging = false),
+          onDragDone: _onDrop,
+          child: Stack(
+            children: [
+              Positioned.fill(child: _buildBody(c)),
+              if (_dragging) Positioned.fill(child: _dropOverlay(context)),
+            ],
+          ),
+        ),
+        bottomNavigationBar:
+            (c != null && c.pageCount > 1) ? _pageTabs(c) : null,
+      ),
+    );
+  }
+
+  PreferredSizeWidget _tabBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(40),
+      child: Container(
+        height: 40,
+        alignment: Alignment.centerLeft,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: _workspace.docs.length,
+          itemBuilder: (context, i) {
+            final doc = _workspace.docs[i];
+            return _DocTab(
+              label: doc.fileName ?? 'Untitled',
+              dirty: doc.isDirty,
+              active: i == _workspace.activeIndex,
+              onTap: () => _workspace.setActive(i),
+              onClose: () => _closeTab(i),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(EditorController? c) {
+    if (c == null) {
+      return _EmptyState(
+        onOpen: _open,
+        onNew: _newDoc,
+        examples: _examples,
+        onOpenExample: _openExample,
+      );
+    }
+    if (c.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (!c.hasDocument || c.currentPage == null) {
+      return _EmptyState(
+        onOpen: _open,
+        onNew: _newDoc,
+        examples: _examples,
+        onOpenExample: _openExample,
+      );
+    }
+    return Row(
+      children: [
+        _ToolStrip(controller: c),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: PageCanvas(controller: c, onRequestTextEdit: _editText),
+        ),
+        if (c.hasSelection) ...[
+          const VerticalDivider(width: 1),
+          _PropertyPanel(controller: c),
+        ],
+      ],
+    );
   }
 
   Widget _dropOverlay(BuildContext context) {
@@ -479,11 +533,80 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 }
 
+/// A single open-file tab in the top tab bar.
+class _DocTab extends StatelessWidget {
+  const _DocTab({
+    required this.label,
+    required this.dirty,
+    required this.active,
+    required this.onTap,
+    required this.onClose,
+  });
+
+  final String label;
+  final bool dirty;
+  final bool active;
+  final VoidCallback onTap;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      child: Material(
+        color: active ? scheme.surface : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 12, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (dirty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Icon(Icons.circle, size: 8, color: scheme.primary),
+                  ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onClose,
+                  icon: const Icon(Icons.close, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Close tab',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onOpen, required this.onNew});
+  const _EmptyState({
+    required this.onOpen,
+    required this.onNew,
+    required this.examples,
+    required this.onOpenExample,
+  });
 
   final VoidCallback onOpen;
   final VoidCallback onNew;
+  final List<String> examples;
+  final void Function(String assetName) onOpenExample;
 
   @override
   Widget build(BuildContext context) {
@@ -500,7 +623,8 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Create a new drawing, or drag & drop / open a .vsdx file.',
+            'Create a new drawing, or drag & drop / open .vsdx files '
+            '(each opens in its own tab).',
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
@@ -519,6 +643,26 @@ class _EmptyState extends StatelessWidget {
                 label: const Text('Open Visio drawing'),
               ),
             ],
+          ),
+          const SizedBox(height: 28),
+          Text('Or try a sample:',
+              style: TextStyle(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 10),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final e in examples)
+                  ActionChip(
+                    avatar: const Icon(Icons.description_outlined, size: 18),
+                    label: Text(e.replaceAll('.vsdx', '')),
+                    onPressed: () => onOpenExample(e),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

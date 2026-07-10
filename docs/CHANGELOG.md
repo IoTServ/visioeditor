@@ -31,9 +31,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Export**: to SVG (pure-model `VsdxToSvgSerializer`) and PNG (rasterised via
   the on-screen painter).
 - **Grid & snapping**: toggleable 0.25 in grid; create / resize snap to it.
-- **Recent files** (persisted) and an **unsaved-changes guard** on
-  new / open / close.
-- **Keyboard**: Cmd+N/S/Z/Shift+Z/D/C/V, Delete, Esc.
+- **Recent files** (persisted) and an **unsaved-changes guard** on close.
+- **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
+  bar with dirty markers + close); drag-drop multiple files opens a tab each.
+- **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
+  empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
+- **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc.
 
 ### Deferred (post-v0.1)
 - Advanced connector routing (elbow / avoidance); rich-text run editing.

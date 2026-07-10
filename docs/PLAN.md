@@ -245,3 +245,10 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 - 2026-07-10 — **连接器 glue**：连接器工具（拖两形状间）、端点吸附到形状中心、`<Connect>` 行；
   `VsdxShape.reshapeAsLine` + `VsdxPage.rerouteConnectors`（移动/缩放/旋转后自动重路由）；
   Writer 同步 `<Connects>`。引擎单测 21/21（+重路由 +Connects 往返），macOS 构建成功。
+- 2026-07-10 — **首次提交基线**（`168660a`）。随后：将参考 `vsdx`(BSD) 的 20 个示例复制到
+  `packages/vsdx/test/fixtures/`（README 注明来源/许可），并把 6 个作为可打开的内置资源放到
+  `assets/examples/`（pubspec 登记）。
+- 2026-07-10 — **多文件 Tab（工作区）**：新增 `lib/editor/editor_workspace.dart`（多 `EditorController`
+  + 活动标签，转发子通知）；`main.dart` 重构为顶部文件标签栏（脏标记+关闭、Cmd+W）、动作路由到
+  活动文档、空态示例快捷打开、多文件拖放各开一个标签、Cmd+N/O/W 快捷键。`flutter analyze` 零问题、
+  `flutter test` 通过、macOS 构建成功。
