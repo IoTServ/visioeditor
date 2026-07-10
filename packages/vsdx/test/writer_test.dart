@@ -206,6 +206,57 @@ void main() {
     expect(reopened.pages.first.name, 'Renamed Page');
   });
 
+  test('adding a page round-trips (new part + rels + content-type)', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final before = doc.pages.length;
+    final newPage = VsdxPage(
+      id: doc.nextPageId(),
+      name: 'Added',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: [
+        VsdxShapeFactory.rectangle(
+            id: 1, pinX: 3, pinY: 3, width: 2, height: 1),
+      ],
+    );
+    final edited = doc.insertPage(doc.pages.length, newPage);
+    final reopened =
+        parser.parse(writer.write(originalBytes: bytes, edited: edited));
+    expect(reopened.pages.length, before + 1);
+    final added = reopened.pages.firstWhere((p) => p.name == 'Added');
+    expect(added.shapes, isNotEmpty);
+    // original page 0 survives intact
+    expect(reopened.pages.first.name, doc.pages.first.name);
+  });
+
+  test('deleting a page round-trips', () {
+    // Build a 2-page doc first (blank + added), then delete one.
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final twoPage = doc.insertPage(
+      doc.pages.length,
+      VsdxPage(
+        id: doc.nextPageId(),
+        name: 'Temp',
+        widthInches: 8.5,
+        heightInches: 11,
+        shapes: const [],
+      ),
+    );
+    final bytes2 = writer.write(originalBytes: bytes, edited: twoPage);
+    final r2 = parser.parse(bytes2);
+    expect(r2.pages.length, doc.pages.length + 1);
+
+    // Now delete the 'Temp' page.
+    final tempIndex = r2.pages.indexWhere((p) => p.name == 'Temp');
+    final afterDelete = r2.removePageAt(tempIndex);
+    final r3 =
+        parser.parse(writer.write(originalBytes: bytes2, edited: afterDelete));
+    expect(r3.pages.length, doc.pages.length);
+    expect(r3.pages.any((p) => p.name == 'Temp'), isFalse);
+  });
+
   test('z-order (send to back) round-trips', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);

@@ -96,6 +96,29 @@ class VsdxDocument {
     return copyWith(pages: newPages);
   }
 
+  /// Smallest page id greater than every existing page id.
+  int nextPageId() {
+    var maxId = -1;
+    for (final p in pages) {
+      if (p.id > maxId) maxId = p.id;
+    }
+    return maxId + 1;
+  }
+
+  /// Insert [page] at [index] (clamped).
+  VsdxDocument insertPage(int index, VsdxPage page) {
+    final newPages = List<VsdxPage>.of(pages)
+      ..insert(index.clamp(0, pages.length), page);
+    return copyWith(pages: newPages);
+  }
+
+  /// Remove the page at [index]. Out-of-range indices return `this`.
+  VsdxDocument removePageAt(int index) {
+    if (index < 0 || index >= pages.length) return this;
+    final newPages = List<VsdxPage>.of(pages)..removeAt(index);
+    return copyWith(pages: newPages);
+  }
+
   @override
   String toString() =>
       'VsdxDocument(title: $title, pages: ${pages.length}, '

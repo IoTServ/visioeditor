@@ -538,7 +538,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
           ),
         ),
         bottomNavigationBar:
-            (c != null && c.pageCount > 1) ? _pageTabs(c) : null,
+            (c != null && c.hasDocument) ? _pageTabs(c) : null,
       ),
     );
   }
@@ -632,25 +632,48 @@ class _EditorHomePageState extends State<EditorHomePage> {
       elevation: 8,
       child: SizedBox(
         height: 46,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          itemCount: c.pageCount,
-          itemBuilder: (context, i) {
-            final page = c.document!.pages[i];
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
-              child: GestureDetector(
-                onDoubleTap: () => _renamePage(i),
-                child: ChoiceChip(
-                  label: Text(page.name),
-                  selected: i == c.currentPageIndex,
-                  onSelected: (_) => c.selectPage(i),
-                  tooltip: 'Double-click to rename',
-                ),
+        child: Row(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                itemCount: c.pageCount,
+                itemBuilder: (context, i) {
+                  final page = c.document!.pages[i];
+                  return Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
+                    child: GestureDetector(
+                      onDoubleTap: () => _renamePage(i),
+                      child: ChoiceChip(
+                        label: Text(page.name),
+                        selected: i == c.currentPageIndex,
+                        onSelected: (_) => c.selectPage(i),
+                        tooltip: 'Double-click to rename',
+                      ),
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+            IconButton(
+              onPressed: c.addPage,
+              icon: const Icon(Icons.add),
+              tooltip: 'Add page',
+            ),
+            IconButton(
+              onPressed: c.duplicateCurrentPage,
+              icon: const Icon(Icons.copy_all_outlined),
+              tooltip: 'Duplicate page',
+            ),
+            IconButton(
+              onPressed: c.pageCount > 1 ? c.deleteCurrentPage : null,
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete page',
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
       ),
     );

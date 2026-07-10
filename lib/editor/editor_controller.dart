@@ -67,6 +67,60 @@ class EditorController extends ChangeNotifier {
     applyEdit(doc.replacePage(index, doc.pages[index].copyWith(name: trimmed)));
   }
 
+  /// Add a new blank page after the current one and switch to it.
+  void addPage() {
+    final doc = _document;
+    if (doc == null) return;
+    final base = currentPage;
+    final page = VsdxPage(
+      id: doc.nextPageId(),
+      name: _uniquePageName(doc, 'Page-${doc.pages.length + 1}'),
+      widthInches: base?.widthInches ?? 8.5,
+      heightInches: base?.heightInches ?? 11.0,
+      shapes: const <VsdxShape>[],
+    );
+    final at = _currentPageIndex + 1;
+    _selection.clear();
+    _currentPageIndex = at;
+    applyEdit(doc.insertPage(at, page));
+  }
+
+  /// Duplicate the current page (new id, copied shapes) after it, and switch.
+  void duplicateCurrentPage() {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final copy = page.copyWith(
+      id: doc.nextPageId(),
+      name: _uniquePageName(doc, '${page.name} copy'),
+    );
+    final at = _currentPageIndex + 1;
+    _selection.clear();
+    _currentPageIndex = at;
+    applyEdit(doc.insertPage(at, copy));
+  }
+
+  /// Delete the current page (keeps at least one page).
+  void deleteCurrentPage() {
+    final doc = _document;
+    if (doc == null || doc.pages.length <= 1) return;
+    final i = _currentPageIndex;
+    _selection.clear();
+    final next = doc.removePageAt(i);
+    _currentPageIndex = i.clamp(0, next.pages.length - 1);
+    applyEdit(next);
+  }
+
+  static String _uniquePageName(VsdxDocument doc, String base) {
+    final names = <String>{for (final p in doc.pages) p.name};
+    if (!names.contains(base)) return base;
+    var n = 2;
+    while (names.contains('$base $n')) {
+      n++;
+    }
+    return '$base $n';
+  }
+
   // --- Tool ------------------------------------------------------------------
 
   EditorTool get tool => _tool;

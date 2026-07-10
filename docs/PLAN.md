@@ -189,9 +189,11 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 已补：文本格式化、方向键微调、**模具/形状库面板**（流程图常见形状：矩形/椭圆/菱形/平行四边形/
 三角形/六边形/五边形/箭头，点击落到页面中心，多边形/椭圆几何往返安全）。
 
+已补：多页管理（新增/复制/删除/重命名，Writer 按页 ID 匹配 + 增删 pageN.xml/rels/[Content_Types] 部件，往返）。
+
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 老格式经 libvisio 导入；多页**新增/删除**（Writer 按页 ID 重构 + OPC 部件增删）
+- `.vsd` 老格式经 libvisio 导入
 - 连接器避让路由；富文本"逐 run 选区"编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
 ---
@@ -286,5 +288,8 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   交点，`_edgePoint`），而非中心；连接线不再插入形状，观感更接近 Visio。引擎单测 27/27，macOS 构建成功。
 - 2026-07-10 — **页重命名**：控制器 `renamePageAt`；Writer `_patchPageNames` 写回 `<Page NameU/Name>`；
   页标签双击弹出重命名对话框。引擎单测 28/28（+页重命名往返），macOS 构建成功。
-  （页**新增/删除**需将 Writer 由按索引改为按页 ID 匹配 + 增删 pageN.xml/rels/Content_Types 部件，
-  工程量大，列为后续。）
+- 2026-07-10 — **多页管理（新增/复制/删除）**：Writer 重构为**按页 ID 匹配**（不再按索引），支持
+  删除页（移除 `<Page>`/relationship/`<Override>`/pageN.xml 部件）、新增页（生成新部件 + 关系 +
+  内容类型 + `<Page>`）、按编辑顺序重排 `<Page>`；`_rezip` 支持新增/删除部件。模型 `nextPageId/
+  insertPage/removePageAt`；控制器 `addPage/duplicateCurrentPage/deleteCurrentPage`；页栏常显 + 新增/
+  复制/删除按钮。引擎单测 30/30（+新增页往返 +删除页往返），`flutter analyze` 零问题、macOS 构建成功。

@@ -11,7 +11,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -49,67 +48,326 @@ class VsdxWriter {
     final baseline = const DocumentParser().parse(originalBytes);
     final pkg = VsdxPackage.open(originalBytes);
     final resolver = RelationshipResolver(pkg);
+    final patched = <String, Uint8List>{}; // archive name (no slash) -> bytes
+    final removed = <String>{};
 
     final docPart = pkg.resolveDocumentPartName();
     final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
     final pagesXml = pagesPart == null ? null : pkg.readPartXml(pagesPart);
-    final pagePartByIndex = (pagesPart != null && pagesXml != null)
-        ? _resolvePagePartsFrom(pagesXml, pagesPart, resolver)
-        : const <int, String>{};
+    if (pagesPart == null || pagesXml == null) {
+      return _rezip(originalBytes, patched, removed);
+    }
 
-    final patched = <String, Uint8List>{}; // archive name (no slash) -> bytes
-    final pages = edited.pages.length;
-    for (var i = 0; i < pages && i < baseline.pages.length; i++) {
-      final partName = pagePartByIndex[i];
-      if (partName == null) continue;
-      final xml = pkg.readPartXml(partName);
+    final pagePartByIndex = _resolvePagePartsFrom(pagesXml, pagesPart, resolver);
+    final partByBaselineId = <int, String>{};
+    for (var i = 0; i < baseline.pages.length; i++) {
+      final part = pagePartByIndex[i];
+      if (part != null) partByBaselineId[baseline.pages[i].id] = part;
+    }
+    final baselineById = <int, VsdxPage>{
+      for (final p in baseline.pages) p.id: p,
+    };
+    final editedIds = <int>{for (final p in edited.pages) p.id};
+
+    // 1) Patch the content parts of pages kept from the baseline (by ID).
+    for (final ep in edited.pages) {
+      final bp = baselineById[ep.id];
+      final part = partByBaselineId[ep.id];
+      if (bp == null || part == null) continue;
+      final xml = pkg.readPartXml(part);
       if (xml == null) continue;
-      if (_patchPage(xml, baseline.pages[i], edited.pages[i])) {
-        patched[_noSlash(partName)] = Uint8List.fromList(
-          utf8.encode(xml.toXmlString()),
-        );
+      if (_patchPage(xml, bp, ep)) {
+        patched[_noSlash(part)] =
+            Uint8List.fromList(utf8.encode(xml.toXmlString()));
       }
     }
 
-    // Layer visibility and page names both live in pages.xml (PageSheet /
-    // <Page NameU>). Evaluate both (no short-circuit) before serialising once.
-    if (pagesPart != null && pagesXml != null) {
-      final layersChanged = _patchLayers(pagesXml, baseline, edited);
-      final namesChanged = _patchPageNames(pagesXml, baseline, edited);
-      if (layersChanged || namesChanged) {
-        patched[_noSlash(pagesPart)] =
-            Uint8List.fromList(utf8.encode(pagesXml.toXmlString()));
+    // 2) pages.xml (+rels, +[Content_Types]) surgery: rename/layers, remove,
+    //    add, reorder.
+    final pagesRelsPart = _relsPartFor(pagesPart);
+    final pagesRelsXml = pkg.readPartXml(pagesRelsPart);
+    final ctXml = pkg.readPartXml('/[Content_Types].xml');
+    final root = pagesXml.rootElement;
+    var pagesDirty = false, relsDirty = false, ctDirty = false;
+
+    final pageElById = <int, XmlElement>{};
+    for (final el in root.childElements) {
+      if (el.name.local != 'Page') continue;
+      final id = int.tryParse(el.getAttribute('ID') ?? '');
+      if (id != null) pageElById[id] = el;
+    }
+
+    // 2a) Kept pages: name + layer flags.
+    for (final ep in edited.pages) {
+      final bp = baselineById[ep.id];
+      final el = pageElById[ep.id];
+      if (bp == null || el == null) continue;
+      if (bp.name != ep.name) {
+        el.setAttribute('NameU', ep.name);
+        if (el.getAttribute('Name') != null) el.setAttribute('Name', ep.name);
+        pagesDirty = true;
+      }
+      if (_patchLayerRows(el, bp, ep)) pagesDirty = true;
+    }
+
+    // 2b) Removed pages.
+    for (final bp in baseline.pages) {
+      if (editedIds.contains(bp.id)) continue;
+      final el = pageElById[bp.id];
+      if (el != null) {
+        final rId = _relIdOf(el);
+        el.parent?.children.remove(el);
+        pagesDirty = true;
+        if (rId != null &&
+            pagesRelsXml != null &&
+            _removeRelationship(pagesRelsXml, rId)) {
+          relsDirty = true;
+        }
+      }
+      final part = partByBaselineId[bp.id];
+      if (part != null) {
+        removed
+          ..add(_noSlash(part))
+          ..add(_noSlash(_relsPartFor(part)));
+        if (ctXml != null && _removeOverride(ctXml, part)) ctDirty = true;
       }
     }
 
-    return _rezip(originalBytes, patched);
+    // 2c) Added pages (new part + <Page> + relationship + content-type).
+    var nextNum = _maxPageNumber(pagePartByIndex.values) + 1;
+    var nextRId = pagesRelsXml == null ? 1 : _maxRelId(pagesRelsXml) + 1;
+    for (final ep in edited.pages) {
+      if (baselineById.containsKey(ep.id)) continue;
+      final fileName = 'page$nextNum.xml';
+      final partName = 'visio/pages/$fileName';
+      nextNum++;
+      final rId = 'rId$nextRId';
+      nextRId++;
+      root.children.add(_buildPageIndexElement(ep, rId));
+      pagesDirty = true;
+      if (pagesRelsXml != null) {
+        _addPageRelationship(pagesRelsXml, rId, fileName);
+        relsDirty = true;
+      }
+      if (ctXml != null) {
+        _addPageOverride(ctXml, '/$partName');
+        ctDirty = true;
+      }
+      patched[partName] =
+          Uint8List.fromList(utf8.encode(_buildPageContentsXml(ep)));
+    }
+
+    // 2d) Reorder <Page> elements to the edited page order.
+    if (_reorderPages(root, edited.pages)) pagesDirty = true;
+
+    if (pagesDirty) {
+      patched[_noSlash(pagesPart)] =
+          Uint8List.fromList(utf8.encode(pagesXml.toXmlString()));
+    }
+    if (relsDirty && pagesRelsXml != null) {
+      patched[_noSlash(pagesRelsPart)] =
+          Uint8List.fromList(utf8.encode(pagesRelsXml.toXmlString()));
+    }
+    if (ctDirty && ctXml != null) {
+      patched['[Content_Types].xml'] =
+          Uint8List.fromList(utf8.encode(ctXml.toXmlString()));
+    }
+
+    return _rezip(originalBytes, patched, removed);
   }
 
-  /// Patch `<Page NameU>` (and `Name`) when a page was renamed. Matches by
-  /// index (rename does not change page count/order).
-  bool _patchPageNames(
-    XmlDocument pagesXml,
-    VsdxDocument baseline,
-    VsdxDocument edited,
-  ) {
-    var changed = false;
-    final pageEls = pagesXml.rootElement.childElements
-        .where((el) => el.name.local == 'Page')
-        .toList(growable: false);
-    final n = math.min(
-      pageEls.length,
-      math.min(baseline.pages.length, edited.pages.length),
-    );
-    for (var i = 0; i < n; i++) {
-      if (baseline.pages[i].name == edited.pages[i].name) continue;
-      final el = pageEls[i];
-      el.setAttribute('NameU', edited.pages[i].name);
-      if (el.getAttribute('Name') != null) {
-        el.setAttribute('Name', edited.pages[i].name);
+  // --- pages.xml helpers -----------------------------------------------------
+
+  bool _patchLayerRows(XmlElement pageEl, VsdxPage bp, VsdxPage ep) {
+    if (_layersEqual(bp.layers, ep.layers)) return false;
+    final pageSheet = _firstChild(pageEl, 'PageSheet');
+    if (pageSheet == null) return false;
+    XmlElement? section;
+    for (final s in pageSheet.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Layer') {
+        section = s;
+        break;
       }
-      changed = true;
+    }
+    if (section == null) return false;
+    final rows = <int, XmlElement>{};
+    for (final row in section.childElements) {
+      if (row.name.local != 'Row') continue;
+      final ix =
+          int.tryParse(row.getAttribute('IX') ?? row.getAttribute('N') ?? '');
+      if (ix != null) rows[ix] = row;
+    }
+    var changed = false;
+    for (final layer in ep.layers) {
+      final base = _findLayer(bp.layers, layer.id);
+      final row = rows[layer.id];
+      if (base == null || row == null) continue;
+      if (layer.visible != base.visible) {
+        _writeValue(_ensureCell(row, 'Visible'), layer.visible ? '1' : '0');
+        changed = true;
+      }
+      if (layer.locked != base.locked) {
+        _writeValue(_ensureCell(row, 'Lock'), layer.locked ? '1' : '0');
+        changed = true;
+      }
+      if (layer.print != base.print) {
+        _writeValue(_ensureCell(row, 'Print'), layer.print ? '1' : '0');
+        changed = true;
+      }
     }
     return changed;
+  }
+
+  static String _relsPartFor(String partName) {
+    final noSlash = _noSlash(partName);
+    final idx = noSlash.lastIndexOf('/');
+    final dir = idx < 0 ? '' : noSlash.substring(0, idx);
+    final base = idx < 0 ? noSlash : noSlash.substring(idx + 1);
+    return '/${dir.isEmpty ? '' : '$dir/'}_rels/$base.rels';
+  }
+
+  static String? _relIdOf(XmlElement pageEl) {
+    final rel = _firstChild(pageEl, 'Rel');
+    if (rel == null) return null;
+    return rel.getAttribute('r:id') ??
+        rel.getAttribute('id') ??
+        rel.getAttribute('Id');
+  }
+
+  static bool _removeRelationship(XmlDocument relsXml, String rId) {
+    for (final el in relsXml.rootElement.childElements) {
+      if (el.name.local == 'Relationship' && el.getAttribute('Id') == rId) {
+        el.parent?.children.remove(el);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _removeOverride(XmlDocument ctXml, String partName) {
+    final target = partName.startsWith('/') ? partName : '/$partName';
+    for (final el in ctXml.rootElement.childElements) {
+      if (el.name.local == 'Override' &&
+          el.getAttribute('PartName') == target) {
+        el.parent?.children.remove(el);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static int _maxPageNumber(Iterable<String> partNames) {
+    var max = 0;
+    final re = RegExp(r'page(\d+)\.xml$');
+    for (final p in partNames) {
+      final m = re.firstMatch(p);
+      if (m != null) {
+        final n = int.tryParse(m.group(1)!);
+        if (n != null && n > max) max = n;
+      }
+    }
+    return max;
+  }
+
+  static int _maxRelId(XmlDocument relsXml) {
+    var max = 0;
+    final re = RegExp(r'(\d+)$');
+    for (final el in relsXml.rootElement.childElements) {
+      if (el.name.local != 'Relationship') continue;
+      final m = re.firstMatch(el.getAttribute('Id') ?? '');
+      if (m != null) {
+        final n = int.tryParse(m.group(1)!);
+        if (n != null && n > max) max = n;
+      }
+    }
+    return max;
+  }
+
+  void _addPageRelationship(XmlDocument relsXml, String rId, String targetFile) {
+    relsXml.rootElement.children.add(XmlElement(XmlName('Relationship'), [
+      XmlAttribute(XmlName('Id'), rId),
+      XmlAttribute(XmlName('Type'),
+          'http://schemas.microsoft.com/visio/2010/relationships/page'),
+      XmlAttribute(XmlName('Target'), targetFile),
+    ]));
+  }
+
+  void _addPageOverride(XmlDocument ctXml, String partName) {
+    ctXml.rootElement.children.add(XmlElement(XmlName('Override'), [
+      XmlAttribute(XmlName('PartName'), partName),
+      XmlAttribute(
+          XmlName('ContentType'), 'application/vnd.ms-visio.page+xml'),
+    ]));
+  }
+
+  XmlElement _buildPageIndexElement(VsdxPage ep, String rId) {
+    final pageSheet = XmlElement(XmlName('PageSheet'), const [], <XmlNode>[
+      _cell('PageWidth', _fmt(ep.widthInches <= 0 ? 8.5 : ep.widthInches)),
+      _cell('PageHeight', _fmt(ep.heightInches <= 0 ? 11.0 : ep.heightInches)),
+    ]);
+    final rel = XmlElement(
+      XmlName('Rel'),
+      <XmlAttribute>[XmlAttribute(XmlName('id', 'r'), rId)],
+    );
+    return XmlElement(
+      XmlName('Page'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('ID'), ep.id.toString()),
+        XmlAttribute(XmlName('NameU'), ep.name),
+        XmlAttribute(XmlName('Name'), ep.name),
+      ],
+      <XmlNode>[pageSheet, rel],
+    );
+  }
+
+  String _buildPageContentsXml(VsdxPage ep) {
+    final shapes = XmlElement(XmlName('Shapes'), const [], <XmlNode>[
+      for (final s in ep.shapes) _buildShapeElement(s),
+    ]);
+    final root = XmlElement(
+      XmlName('PageContents'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('xmlns'), _mainNs),
+        XmlAttribute(XmlName('r', 'xmlns'), _officeRelNs),
+      ],
+      <XmlNode>[shapes],
+    );
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '${root.toXmlString()}';
+  }
+
+  bool _reorderPages(XmlElement root, List<VsdxPage> order) {
+    final byId = <int, XmlElement>{};
+    final pageEls = <XmlElement>[];
+    for (final el in root.childElements) {
+      if (el.name.local != 'Page') continue;
+      pageEls.add(el);
+      final id = int.tryParse(el.getAttribute('ID') ?? '');
+      if (id != null) byId[id] = el;
+    }
+    if (pageEls.length < 2) return false;
+    final desired = <XmlElement>[];
+    final used = <int>{};
+    for (final p in order) {
+      final el = byId[p.id];
+      if (el != null && used.add(p.id)) desired.add(el);
+    }
+    for (final el in pageEls) {
+      if (!desired.contains(el)) desired.add(el);
+    }
+    var same = true;
+    for (var i = 0; i < pageEls.length; i++) {
+      if (!identical(pageEls[i], desired[i])) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return false;
+    for (final el in pageEls) {
+      root.children.remove(el);
+    }
+    root.children.addAll(desired);
+    return true;
   }
 
   // --- Emit-from-scratch (new blank document) --------------------------------
@@ -211,63 +469,6 @@ class VsdxWriter {
       if (target != null) out[i] = target;
     }
     return out;
-  }
-
-  /// Patch layer Visible / Lock / Print cells on each page's PageSheet when
-  /// they changed vs the baseline. Returns whether anything was written.
-  bool _patchLayers(
-    XmlDocument pagesXml,
-    VsdxDocument baseline,
-    VsdxDocument edited,
-  ) {
-    var changed = false;
-    final pageEls = pagesXml.rootElement.childElements
-        .where((el) => el.name.local == 'Page')
-        .toList(growable: false);
-    final n = math.min(
-      pageEls.length,
-      math.min(baseline.pages.length, edited.pages.length),
-    );
-    for (var i = 0; i < n; i++) {
-      final baseLayers = baseline.pages[i].layers;
-      final editLayers = edited.pages[i].layers;
-      if (_layersEqual(baseLayers, editLayers)) continue;
-      final pageSheet = _firstChild(pageEls[i], 'PageSheet');
-      if (pageSheet == null) continue;
-      XmlElement? section;
-      for (final s in pageSheet.childElements) {
-        if (s.name.local == 'Section' && s.getAttribute('N') == 'Layer') {
-          section = s;
-          break;
-        }
-      }
-      if (section == null) continue;
-      final rows = <int, XmlElement>{};
-      for (final row in section.childElements) {
-        if (row.name.local != 'Row') continue;
-        final ix = int.tryParse(
-            row.getAttribute('IX') ?? row.getAttribute('N') ?? '');
-        if (ix != null) rows[ix] = row;
-      }
-      for (final layer in editLayers) {
-        final base = _findLayer(baseLayers, layer.id);
-        final row = rows[layer.id];
-        if (base == null || row == null) continue;
-        if (layer.visible != base.visible) {
-          _writeValue(_ensureCell(row, 'Visible'), layer.visible ? '1' : '0');
-          changed = true;
-        }
-        if (layer.locked != base.locked) {
-          _writeValue(_ensureCell(row, 'Lock'), layer.locked ? '1' : '0');
-          changed = true;
-        }
-        if (layer.print != base.print) {
-          _writeValue(_ensureCell(row, 'Print'), layer.print ? '1' : '0');
-          changed = true;
-        }
-      }
-    }
-    return changed;
   }
 
   static bool _layersEqual(List<VsdxLayer> a, List<VsdxLayer> b) {
@@ -853,14 +1054,27 @@ class VsdxWriter {
 
   // --- Re-zip ----------------------------------------------------------------
 
-  Uint8List _rezip(Uint8List originalBytes, Map<String, Uint8List> patched) {
+  Uint8List _rezip(
+    Uint8List originalBytes,
+    Map<String, Uint8List> patched, [
+    Set<String> removed = const <String>{},
+  ]) {
     final archive = ZipDecoder().decodeBytes(originalBytes);
     final out = Archive();
+    final seen = <String>{};
     for (final f in archive.files) {
       if (!f.isFile) continue;
+      if (removed.contains(f.name)) continue;
       final bytes = patched[f.name] ?? _fileBytes(f);
       out.addFile(ArchiveFile(f.name, bytes.length, bytes));
+      seen.add(f.name);
     }
+    // Brand-new parts (e.g. added pages) not present in the original archive.
+    patched.forEach((name, bytes) {
+      if (!seen.contains(name) && !removed.contains(name)) {
+        out.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+    });
     final encoded = ZipEncoder().encode(out);
     if (encoded == null) {
       throw StateError('Failed to encode the .vsdx archive');
