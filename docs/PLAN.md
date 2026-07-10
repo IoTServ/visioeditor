@@ -6,6 +6,8 @@
 > [`VSDX_WRITE.md`](./VSDX_WRITE.md) ·
 > [`REUSE_MAP.md`](./REUSE_MAP.md) ·
 > [`VSDX_FORMAT.md`](./VSDX_FORMAT.md) ·
+> [`CHANGELOG.md`](./CHANGELOG.md) ·
+> [`RELEASE_NOTES.md`](./RELEASE_NOTES.md) ·
 > [`references/`](./references/)
 
 状态标记：`TODO` 未开始 · `DOING` 进行中 · `DONE` 完成 · `LATER` v0.1 之后
@@ -130,7 +132,9 @@
 Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLine.copyWith`。
 
 - [x] 形状工具：矩形/椭圆（MoveTo/LineTo、Ellipse 行）、直线（1D，Begin/End + 局部几何）；工具条 + 拖拽创建 + 虚线预览 + 单击默认尺寸
-- [x] 就地文本编辑：双击形状 → 对话框 → `setShapeText` → Writer 写回 `<Text>`（首版纯文本）
+- [x] 就地文本编辑：双击形状 → **画布上叠加编辑器**（随形状框定位/缩放；Enter 换行、
+  Cmd/Ctrl+Enter 或点击别处提交、Esc 取消）→ `setShapeText`（同步 richText run，画布即时
+  WYSIWYG）→ Writer 写回 `<Text>`
 - [x] 样式面板：填充/线条色板 + 无填充/无线 + 线宽（pt）→ `FillForegnd`/`FillPattern`/`LineColor`/`LineWeight`/`LinePattern`
 - [x] 删除：Delete/Backspace 键 + 面板按钮；Writer 移除 `<Shape>`
 - [x] Writer 新增/删除/样式/文本单测（创建矩形、删除、改色往返，共 14/14）；`flutter analyze` 零问题、macOS 构建成功
@@ -146,13 +150,16 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 - [x] 快捷键：Cmd+S 保存 / Cmd+Z 撤销 / Cmd+Shift+Z 重做 / Cmd+D 复制、Delete 删除、Esc（`CallbackShortcuts`）
 - [x] 复制（duplicate）/ 复制粘贴（Cmd+C/V，应用内剪贴板）：`duplicateSelection` / `copySelection` / `paste`
 - [x] **新建空文档**（emit-from-scratch）：`VsdxWriter.emptyDocument` 生成最小合法包，`newDocument`（Cmd+N / 工具栏 / 空态按钮）
-- [x] 打开 / 另存为 / 保存；缩放控件 + 适应窗口
+- [x] 打开 / 另存为 / 保存；缩放控件 + 适应窗口 + 缩放百分比读数
+- [x] 底部状态栏：页面尺寸 / 当前页 / 未保存标记 / 选中数
 - [x] `CHANGELOG.md` + 根 `NOTICE`（依赖 + 参考 attribution）
-- [ ] 最近文件、未保存关闭拦截、基础网格与吸附 —— 后续
-- [ ] macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联（UTI）—— 后续
-- [ ] v0.1 正式发布说明
+- [x] 最近文件、未保存关闭拦截、基础网格与吸附
+- [x] **应用图标**：品牌流程图图标（蓝色圆角瓷砖 + 白色双节点/连接线/箭头），可复现生成脚本 `tool/gen_app_icon.dart`
+- [x] **`.vsdx` OS 文件关联（UTI）+ 启动即打开**：`Info.plist` 声明 `CFBundleDocumentTypes` + `UTImportedTypeDeclarations`（`com.microsoft.visio.drawing`，扩展 vsdx/vsdm/vstx/vstm/vssx/vssm）；`AppDelegate.application(_:open:)` → `FileOpenBridge`（缓冲+就绪刷新）→ `MethodChannel('visioeditor/files')` → Dart `_openPath`（Finder 双击 / “打开方式” / `open`）。LaunchServices 已确认 claimed UTI 与 Editor 角色
+- [x] **v0.1 正式发布说明**（[`RELEASE_NOTES.md`](./RELEASE_NOTES.md)：亮点 / 运行方式 / 快捷键 / 已知限制 / 验证）
+- [ ] macOS 代码签名 / 公证（notarization）—— 需 Apple 开发者证书，本地环境不具备
 
-验收：从零 `flutter build macos` 可打开/编辑/保存 `.vsdx`（已达成）；OS 集成与打包细节后补。
+验收：从零 `flutter build macos` 可打开/编辑/保存 `.vsdx`（已达成）；应用图标、`.vsdx` 文件关联与启动打开已完成并验证；发布说明已就位；仅剩签名/公证（依赖证书）。
 
 ---
 
@@ -191,8 +198,30 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 
 已补：多页管理（新增/复制/删除/重命名，Writer 按页 ID 匹配 + 增删 pageN.xml/rels/[Content_Types] 部件，往返）。
 
+已补：**macOS 产品集成** —— 应用图标（`tool/gen_app_icon.dart` 可复现）、`.vsdx` OS 文件关联（UTI +
+`CFBundleDocumentTypes`）、Finder 双击 / “打开方式” / `open` 启动即打开（原生 open 事件经
+`MethodChannel` 交给 Dart）。
+
+已补：**对齐 drawio 交互** —— 智能对齐辅助线（拖拽吸附邻近形状边/中心 + 洋红辅助线，纯函数
+`snap_guides.dart` 可单测）、右键上下文菜单、复制/粘贴样式、**分组/取消分组**（往返，Writer
+重建 `<Shape>` 子树）、drawio 快捷键（全选/剪切/置顶置底/分组/复制粘贴样式）与画布键盘缩放。
+
+已补：**格式面板对齐 drawio** —— 线条虚线样式（实线/虚线/点线/点划线）、箭头（起/止）、
+填充/线条不透明度滑块；均往返（`LinePattern`/`BeginArrow`/`EndArrow`/`FillForegndTrans`/
+`LineColorTrans`）。移动拖拽按住 Shift 锁定单轴。
+
+已补：**连接器直线/正交路由**（每条连接器可选直线或正交肘形，`straightRoute` 标记随重路由保持）、
+Alt 拖拽复制。
+
+已补：**连接器可拖拽折点（waypoints）** —— 选中连接器显示折点（实心）与线段中点（空心）手柄：
+拖中点新增折点、拖折点移动、双击折点删除；`VsdxShape.waypoints` + `VsdxPage.connectorRoute/
+setConnectorWaypoints`，路由经折点且随重路由/移动保持（移动连接器时折点同步平移）。
+
+已补：**文本 Format 面板补全 + 阴影** —— 字体族（下拉）、下划线、垂直对齐（上/中/下）、投影开关；
+均往返（`Font`/`Style` 下划线位/`VerticalAlign`/`ShadowPattern`）。
+
 剩余：
-- macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
+- macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
 - 连接器避让路由；富文本"逐 run 选区"编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
@@ -293,3 +322,64 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   内容类型 + `<Page>`）、按编辑顺序重排 `<Page>`；`_rezip` 支持新增/删除部件。模型 `nextPageId/
   insertPage/removePageAt`；控制器 `addPage/duplicateCurrentPage/deleteCurrentPage`；页栏常显 + 新增/
   复制/删除按钮。引擎单测 30/30（+新增页往返 +删除页往返），`flutter analyze` 零问题、macOS 构建成功。
+- 2026-07-10 — **macOS 产品集成（E6 收尾，先整体）**：(1) `.vsdx` 文件关联——`Info.plist` 增
+  `CFBundleDocumentTypes` + `UTImportedTypeDeclarations`（`com.microsoft.visio.drawing`，6 个扩展）；
+  (2) 启动即打开——`AppDelegate.application(_:open:)` + `FileOpenBridge`（同文件定义，免改 pbxproj；
+  冷启动缓冲、Dart `ready` 后刷新）+ `MainFlutterWindow` 建 `MethodChannel('visioeditor/files')`，
+  `main.dart` 监听 `openFiles`→`_openPath`（仅 macOS，`defaultTargetPlatform` 守卫）；
+  (3) **应用图标**——`tool/gen_app_icon.dart`（`image` 包高分辨率渲染 + 平均降采样抗锯齿）替换默认
+  Flutter logo（7 尺寸）。`flutter analyze` 零问题、`flutter test` 通过、`flutter build macos` 成功；
+  `lsregister -dump` 确认 claimed UTI/Editor 角色/6 扩展绑定生效。
+- 2026-07-10 — **编辑器 UX 细节**：浮动缩放控件显示缩放百分比（点击=适应窗口）；底部状态栏
+  （页面尺寸 / 第 N 页共 M 页 / 未保存标记 / 选中数）。`flutter analyze` 零问题、macOS 构建成功。
+- 2026-07-10 — **就地文本编辑 + v0.1 发布说明（先整体后细节）**：(1) **整体**——新增
+  `docs/RELEASE_NOTES.md`（亮点/运行/快捷键/已知限制/验证），补齐 E6 发布说明项；README 文档
+  导航加 RELEASE_NOTES/CHANGELOG；确认当前状态 `flutter build macos` 端到端通过。(2) **细节**——
+  `PageCanvas` 把双击文本编辑从模态对话框改为**画布上叠加编辑器**（按形状框定位/缩放、
+  Enter 换行、Cmd/Ctrl+Enter 或点击别处提交、Esc 取消、失焦即提交），移除 `onRequestTextEdit`
+  与 `main._editText`；`EditorController.setShapeText` 同步 richText run 文本，使渲染（优先
+  richText）即时 WYSIWYG 且无变更时不产生撤销步。App 组件测试新增就地编辑往返用例（含双击/
+  提交/取消）。`flutter analyze` 零问题、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-10 — **对齐 drawio 交互（批次一）**：(1) **智能对齐辅助线**——新增纯函数
+  `lib/editor/snap_guides.dart`（`computeSnap`：移动包围盒的边/中心对齐邻近形状，阈值内吸附并
+  给出洋红辅助线），`PageCanvas` 移动拖拽改走 `_applyMove`（按起始包围盒 + 累计位移计算吸附增量，
+  `_SelectionPainter` 画辅助线）；纯单测 5 例。(2) **右键上下文菜单**——`onSecondaryTapUp` →
+  `showMenu`：剪切/复制/粘贴/复制副本/删除、置顶/置底、复制样式/粘贴样式、编辑文本；空白处
+  粘贴/全选/适应窗口。(3) **复制/粘贴样式**——`EditorController.copyStyle/pasteStyle`（填充/线条/
+  文本 run 样式，单撤销步）。(4) **快捷键对齐**——Cmd+A 全选、Cmd+X 剪切、Cmd+Shift+F/B 置顶置底、
+  Cmd+Alt+C/V 复制/粘贴样式；画布内键盘缩放（Cmd +/- 、Cmd+0=100%、Cmd+Shift+H=适应）。App 测试
+  加右键菜单用例（共组件 3 + snap 单测 5）。`dart analyze` 零问题、`flutter test`（--no-pub）通过、
+  `flutter build macos` 成功。
+- 2026-07-10 — **对齐 drawio 交互（批次二）——分组 / 取消分组**：引擎 `VsdxPage.group/ungroup`
+  （成员转为组局部坐标 / 提升回页面绝对坐标，含旋转/翻转折算）+ Writer 支持“改父”（重建
+  `<Shape>` 子树，按最高变化层插入）+ 往返单测；`EditorController.groupSelection/ungroupSelection`
+  与 `canGroup/canUngroup`；UI 接线——Cmd+G / Cmd+Shift+U、右键菜单 Group/Ungroup、属性面板
+  分组/取消分组按钮。控制器单测（分组往返 / 分组撤销 / 复制粘贴样式）。引擎 31/31、App 组件+单测
+  11/11、`dart analyze` 干净、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次三）——格式面板 + 移动约束**：模型/渲染/解析器本就支持
+  线条虚线（`LinePattern`）、箭头（`BeginArrow`/`EndArrow`）、不透明度（`FillForegndTrans`/
+  `LineColorTrans`），本批补齐 **Writer 补丁**（新增 `_patchRatio` 写 0..1 比值，去 F/E）、
+  **控制器** `setLinePattern/setLineArrows/setFillOpacity/setLineOpacity`（不透明度支持事务=单撤销步）
+  与 `selectedLine/selectedFill`、**属性面板**（虚线下拉 / 起止箭头开关 / 填充·线条不透明度滑块）。
+  画布移动拖拽按住 Shift 锁定主轴（`_applyMove`）。测试：引擎线型往返 1 例（共 32/32）、控制器线型
+  设置 1 例（App 共 12/12）。`dart analyze` 干净、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次四）——连接器直线/正交路由 + Alt 拖拽复制**：模型加
+  `VsdxShape.straightRoute`（默认 false=正交肘形，保持既有默认）；`VsdxPage.rerouteConnectors`
+  依据该标记选直线或肘形，新增 `setConnectorStyle/isConnectorStraight`；`EditorController`
+  `hasConnectorSelected/selectedConnectorStraight/setConnectorStyle`；属性面板“Connector”区
+  （Straight/Orthogonal 选择）。画布 Alt 拖拽=复制后拖动副本。控制器单测（切换直/正交并经重路由保持）。
+  `dart analyze` 干净、引擎 32/32、App 13/13、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次五）——连接器可拖拽折点（waypoints）**：模型加
+  `VsdxShape.waypoints`（页面英寸，默认空）；`VsdxPage.connectorRoute`（begin→waypoints→end 或
+  直线/肘形）+ `setConnectorWaypoints`（重建几何 + 重路由，胶合端点由 reroute 重算）；reroute 优先
+  经折点；`EditorController` `connectorWaypoints/addWaypoint/moveWaypoint/removeWaypoint`（`_translated`
+  同步平移折点）。画布：选中连接器画折点（实心）/中点（空心）手柄，`_tryStartWaypointDrag`（拖中点=
+  新增并促成显式折点、拖折点=移动、双击=删除），新增 `_DragMode.moveWaypoint`。控制器单测（增/移/删
+  折点并经胶合形状移动保持）。`dart analyze` 干净、引擎 32/32、App 14/14、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次六）——文本 Format 面板补全 + 阴影**：模型加
+  `VsdxTextBlock.copyWith`；Writer 补 `Font`（字体族）、`VerticalAlign`（垂直对齐）、`ShadowPattern`
+  （投影开关）补丁，`_richTextEqual` 纳入 fontFamily（下划线位本已写）；`EditorController`
+  `setUnderline/setFontFamily/setTextVerticalAlign/setShadow` 与 `selectedVerticalAlign/selectedHasShadow`；
+  属性面板：Text 区加下划线按钮、字体下拉、垂直对齐三键，另加 Shadow 开关。测试：引擎往返 1 例
+  （字体/下划线/垂直对齐/投影，共 33/33）、控制器 1 例（App 共 15/15）。`dart analyze` 干净、
+  `flutter build macos` 成功。

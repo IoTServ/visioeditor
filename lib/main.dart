@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
@@ -59,6 +61,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
     'test12_colors.vsdx',
   ];
 
+  /// Channel over which macOS hands us documents opened from Finder
+  /// (double-click / "Open With") or the `open` command.
+  static const MethodChannel _fileChannel = MethodChannel('visioeditor/files');
+
   final EditorWorkspace _workspace = EditorWorkspace();
   final RecentFiles _recentFiles = RecentFiles();
   List<String> _recents = const <String>[];
@@ -74,6 +80,25 @@ class _EditorHomePageState extends State<EditorHomePage> {
     _recentFiles.load().then((r) {
       if (mounted) setState(() => _recents = r);
     });
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+      _fileChannel.setMethodCallHandler(_onNativeMethod);
+      // Tell the native side we're listening so it can flush any file that was
+      // opened before the Dart isolate was ready (cold launch from Finder).
+      unawaited(_fileChannel.invokeMethod<void>('ready').catchError((Object _) {}));
+    }
+  }
+
+  /// Handle calls pushed from the native side (currently only `openFiles`).
+  Future<dynamic> _onNativeMethod(MethodCall call) async {
+    if (call.method == 'openFiles') {
+      final args = call.arguments;
+      if (args is List) {
+        for (final p in args) {
+          if (p is String && hasVisioExtension(p)) await _openPath(p);
+        }
+      }
+    }
+    return null;
   }
 
   @override
@@ -344,37 +369,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
-  Future<void> _editText(int shapeId) async {
-    final c = _c;
-    final shape = c?.currentPage?.findShapeById(shapeId);
-    if (c == null || shape == null) return;
-    final textController = TextEditingController(text: shape.text ?? '');
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit shape text'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          maxLines: null,
-          decoration: const InputDecoration(hintText: 'Type text…'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, textController.text),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    if (result != null) c.setShapeText(shapeId, result);
-    textController.dispose();
-  }
-
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -410,6 +404,35 @@ class _EditorHomePageState extends State<EditorHomePage> {
         },
         const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
           if (c != null && c.hasClipboard) c.paste();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyX, meta: true): () {
+          if (c != null && c.hasSelection) c.cut();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyA, meta: true): () {
+          if (c != null && c.hasDocument) c.selectAll();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true):
+            () {
+          if (c != null && c.hasSelection) c.bringSelectionToFront();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true, shift: true):
+            () {
+          if (c != null && c.hasSelection) c.sendSelectionToBack();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyC, meta: true, alt: true):
+            () {
+          if (c != null && c.hasSelection) c.copyStyle();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true, alt: true):
+            () {
+          if (c != null && c.hasStyleClipboard) c.pasteStyle();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
+          if (c != null && c.canGroup) c.groupSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyU, meta: true, shift: true):
+            () {
+          if (c != null && c.canUngroup) c.ungroupSelection();
         },
       },
       child: Scaffold(
@@ -489,6 +512,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       _exportPng();
                     case 'exportPdf':
                       _exportPdf();
+                    case 'selectAll':
+                      c.selectAll();
+                    case 'copyStyle':
+                      c.copyStyle();
+                    case 'pasteStyle':
+                      c.pasteStyle();
                     case 'snap':
                       c.toggleSnap();
                     case 'close':
@@ -496,6 +525,21 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem<String>(
+                    value: 'selectAll',
+                    child: Text('Select All (Cmd+A)'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'copyStyle',
+                    enabled: c.hasSelection,
+                    child: const Text('Copy Style (Cmd+Alt+C)'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'pasteStyle',
+                    enabled: c.hasStyleClipboard && c.hasSelection,
+                    child: const Text('Paste Style (Cmd+Alt+V)'),
+                  ),
+                  const PopupMenuDivider(),
                   const PopupMenuItem<String>(
                     value: 'saveAs',
                     child: Text('Save As…'),
@@ -537,10 +581,56 @@ class _EditorHomePageState extends State<EditorHomePage> {
             ],
           ),
         ),
-        bottomNavigationBar:
-            (c != null && c.hasDocument) ? _pageTabs(c) : null,
+        bottomNavigationBar: (c != null && c.hasDocument)
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [_pageTabs(c), _statusBar(c)],
+              )
+            : null,
       ),
     );
+  }
+
+  Widget _statusBar(EditorController c) {
+    final scheme = Theme.of(context).colorScheme;
+    final page = c.currentPage;
+    final selCount = c.selection.length;
+    final style = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      child: SizedBox(
+        height: 24,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              if (page != null) ...[
+                Icon(Icons.crop_free, size: 13, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text('${_trimNum(page.widthInches)} × '
+                    '${_trimNum(page.heightInches)} in', style: style),
+                const SizedBox(width: 16),
+                Text('Page ${c.currentPageIndex + 1} of ${c.pageCount}',
+                    style: style),
+              ],
+              const Spacer(),
+              if (c.isDirty) ...[
+                Text('Unsaved', style: style),
+                const SizedBox(width: 12),
+              ],
+              Text(selCount == 0 ? 'No selection' : '$selCount selected',
+                  style: style),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Format an inch value without trailing zeros (e.g. 8.5, 11, 8.27).
+  static String _trimNum(double v) {
+    final r = (v * 100).round() / 100;
+    return r == r.roundToDouble() ? r.toInt().toString() : '$r';
   }
 
   PreferredSizeWidget _tabBar() {
@@ -597,7 +687,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
           const VerticalDivider(width: 1),
         ],
         Expanded(
-          child: PageCanvas(controller: c, onRequestTextEdit: _editText),
+          child: PageCanvas(controller: c),
         ),
         if (c.hasSelection) ...[
           const VerticalDivider(width: 1),
@@ -962,6 +1052,20 @@ class _PropertyPanel extends StatelessWidget {
                   controller.bringSelectionToFront),
               _iconBtn(Icons.flip_to_back, 'Send to back',
                   controller.sendSelectionToBack),
+              IconButton(
+                onPressed:
+                    controller.canGroup ? controller.groupSelection : null,
+                icon: const Icon(Icons.group_work_outlined),
+                tooltip: 'Group (Cmd+G)',
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                onPressed:
+                    controller.canUngroup ? controller.ungroupSelection : null,
+                icon: const Icon(Icons.call_split),
+                tooltip: 'Ungroup (Cmd+Shift+U)',
+                visualDensity: VisualDensity.compact,
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -996,6 +1100,13 @@ class _PropertyPanel extends StatelessWidget {
             onColor: (v) => controller.setFillColor(VsdxColor(v)),
             onNone: controller.setNoFill,
           ),
+          _OpacitySlider(
+            label: 'Opacity',
+            opacity: 1 - (controller.selectedFill?.foregroundTransparency ?? 0),
+            onStart: controller.beginTransaction,
+            onChanged: (v) => controller.setFillOpacity(v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
           const SizedBox(height: 16),
           _section(context, 'Line'),
           _swatchRow(
@@ -1011,6 +1122,48 @@ class _PropertyPanel extends StatelessWidget {
                   label: Text('${pt == pt.roundToDouble() ? pt.toInt() : pt}pt'),
                   onPressed: () => controller.setLineWeight(pt / 72.0),
                 ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _dashDropdown(controller),
+          _arrowToggles(controller),
+          _OpacitySlider(
+            label: 'Opacity',
+            opacity: 1 - (controller.selectedLine?.transparency ?? 0),
+            onStart: controller.beginTransaction,
+            onChanged: (v) => controller.setLineOpacity(v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          if (controller.hasConnectorSelected) ...[
+            const SizedBox(height: 16),
+            _section(context, 'Connector'),
+            Row(
+              children: [
+                ChoiceChip(
+                  label: const Text('Straight'),
+                  selected: controller.selectedConnectorStraight,
+                  onSelected: (_) =>
+                      controller.setConnectorStyle(straight: true),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Orthogonal'),
+                  selected: !controller.selectedConnectorStraight,
+                  onSelected: (_) =>
+                      controller.setConnectorStyle(straight: false),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Text('Shadow'),
+              const Spacer(),
+              Switch(
+                value: controller.selectedHasShadow,
+                onChanged: controller.setShadow,
+              ),
             ],
           ),
           if (controller.selectedCharStyle != null) ...[
@@ -1079,8 +1232,17 @@ class _PropertyPanel extends StatelessWidget {
               tooltip: 'Italic',
               visualDensity: VisualDensity.compact,
             ),
+            IconButton(
+              onPressed: () => controller.setUnderline(!cs.underline),
+              isSelected: cs.underline,
+              icon: const Icon(Icons.format_underlined),
+              tooltip: 'Underline',
+              visualDensity: VisualDensity.compact,
+            ),
           ],
         ),
+        const SizedBox(height: 8),
+        _fontDropdown(cs),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -1106,9 +1268,66 @@ class _PropertyPanel extends StatelessWidget {
                 () => controller.setTextAlign(VsdxHorzAlign.justify)),
           ],
         ),
+        Row(
+          children: [
+            _vAlignBtn(Icons.vertical_align_top, 'Align top', VsdxVertAlign.top),
+            _vAlignBtn(Icons.vertical_align_center, 'Align middle',
+                VsdxVertAlign.middle),
+            _vAlignBtn(Icons.vertical_align_bottom, 'Align bottom',
+                VsdxVertAlign.bottom),
+          ],
+        ),
       ],
     );
   }
+
+  static const List<String> _fonts = <String>[
+    'Arial',
+    'Calibri',
+    'Times New Roman',
+    'Courier New',
+    'Georgia',
+    'Verdana',
+    'Comic Sans MS',
+  ];
+
+  Widget _fontDropdown(VsdxCharStyle cs) {
+    final current = cs.fontFamily;
+    final items = <String>{..._fonts, ?current}.toList();
+    return Row(
+      children: [
+        const Icon(Icons.font_download_outlined, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButton<String>(
+            value: current != null && items.contains(current) ? current : null,
+            isExpanded: true,
+            isDense: true,
+            hint: const Text('Default'),
+            items: [
+              for (final f in items)
+                DropdownMenuItem<String>(
+                  value: f,
+                  child: Text(f, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (f) {
+              if (f != null) controller.setFontFamily(f);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconButton _vAlignBtn(IconData icon, String tip, VsdxVertAlign v) =>
+      IconButton(
+        onPressed: () => controller.setTextVerticalAlign(v),
+        isSelected: controller.selectedVerticalAlign == v,
+        icon: Icon(icon),
+        tooltip: tip,
+        visualDensity: VisualDensity.compact,
+      );
 
   Widget _swatchRow({
     required void Function(int argb) onColor,
@@ -1131,6 +1350,108 @@ class _PropertyPanel extends StatelessWidget {
               border: Border.all(color: Colors.grey),
             ),
             child: const Icon(Icons.block, size: 18),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static const Map<int, String> _dashPresets = <int, String>{
+    1: 'Solid',
+    2: 'Dashed',
+    3: 'Dotted',
+    4: 'Dash-dot',
+  };
+
+  Widget _dashDropdown(EditorController controller) {
+    final pattern = controller.selectedLine?.pattern ?? 1;
+    final value = _dashPresets.containsKey(pattern) ? pattern : 1;
+    return Row(
+      children: [
+        const Icon(Icons.line_style, size: 18),
+        const SizedBox(width: 8),
+        DropdownButton<int>(
+          value: value,
+          isDense: true,
+          items: [
+            for (final e in _dashPresets.entries)
+              DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
+          ],
+          onChanged: (p) {
+            if (p != null) controller.setLinePattern(p);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _arrowToggles(EditorController controller) {
+    final line = controller.selectedLine;
+    final hasBegin = (line?.beginArrow ?? 0) != 0;
+    final hasEnd = (line?.endArrow ?? 0) != 0;
+    return Row(
+      children: [
+        const Text('Arrows', style: TextStyle(fontSize: 12)),
+        const Spacer(),
+        IconButton(
+          onPressed: () => controller.setLineArrows(begin: hasBegin ? 0 : 1),
+          isSelected: hasBegin,
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Start arrow',
+          visualDensity: VisualDensity.compact,
+        ),
+        IconButton(
+          onPressed: () => controller.setLineArrows(end: hasEnd ? 0 : 1),
+          isSelected: hasEnd,
+          icon: const Icon(Icons.arrow_forward),
+          tooltip: 'End arrow',
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact opacity slider (0–100%) with transactional live preview so the drag
+/// records a single undo step.
+class _OpacitySlider extends StatelessWidget {
+  const _OpacitySlider({
+    required this.label,
+    required this.opacity,
+    required this.onStart,
+    required this.onChanged,
+    required this.onEnd,
+  });
+
+  final String label;
+  final double opacity;
+  final VoidCallback onStart;
+  final ValueChanged<double> onChanged;
+  final VoidCallback onEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = opacity.clamp(0.0, 1.0);
+    return Row(
+      children: [
+        SizedBox(
+          width: 48,
+          child: Text(label, style: const TextStyle(fontSize: 11)),
+        ),
+        Expanded(
+          child: Slider(
+            value: v,
+            onChangeStart: (_) => onStart(),
+            onChanged: onChanged,
+            onChangeEnd: (_) => onEnd(),
+          ),
+        ),
+        SizedBox(
+          width: 32,
+          child: Text(
+            '${(v * 100).round()}%',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 11),
           ),
         ),
       ],

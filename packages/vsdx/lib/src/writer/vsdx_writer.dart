@@ -498,16 +498,37 @@ class VsdxWriter {
     var shapesEl = _firstChild(root, 'Shapes');
 
     final elements = <int, XmlElement>{};
-    if (shapesEl != null) _indexShapes(shapesEl, elements);
+    final origParent = <int, int?>{}; // id → parent Shape id (null = top level)
+    if (shapesEl != null) _indexShapes(shapesEl, elements, origParent);
+
+    // Parent map of the edited tree (id → parent id / null).
+    final editedParent = <int, int?>{};
+    void mapParents(VsdxShape s, int? parent) {
+      editedParent[s.id] = parent;
+      for (final c in s.children) {
+        mapParents(c, s.id);
+      }
+    }
+
+    for (final s in edited.shapes) {
+      mapParents(s, null);
+    }
+
+    // A shape must be rebuilt (fresh element) when it is new or has changed
+    // parent (grouped / ungrouped). Others are patched in place.
+    bool needsRebuild(int id) =>
+        !origParent.containsKey(id) || origParent[id] != editedParent[id];
 
     var changed = false;
 
-    // 1) Patch existing shapes (matched by id, recursing into groups).
+    // 1) Patch existing, structurally-unchanged shapes (matched by id).
     void patchWalk(VsdxShape s) {
-      final base = baseline.findShapeById(s.id);
-      final el = elements[s.id];
-      if (base != null && el != null && _patchShape(el, base, s)) {
-        changed = true;
+      if (!needsRebuild(s.id)) {
+        final base = baseline.findShapeById(s.id);
+        final el = elements[s.id];
+        if (base != null && el != null && _patchShape(el, base, s)) {
+          changed = true;
+        }
       }
       for (final c in s.children) {
         patchWalk(c);
@@ -518,7 +539,8 @@ class VsdxWriter {
       patchWalk(s);
     }
 
-    // 2) Remove shapes that were deleted from the model.
+    // 2) Remove elements deleted from the model or moved to a new parent
+    //    (they are rebuilt in their new location in step 3).
     final editedIds = <int>{};
     void collect(VsdxShape s) {
       editedIds.add(s.id);
@@ -531,26 +553,36 @@ class VsdxWriter {
       collect(s);
     }
     elements.forEach((id, el) {
-      if (!editedIds.contains(id)) {
+      if (!editedIds.contains(id) || needsRebuild(id)) {
         el.parent?.children.remove(el);
         changed = true;
       }
     });
 
-    // 3) Append newly-created top-level shapes.
-    final added = edited.shapes
-        .where((s) => !elements.containsKey(s.id))
-        .toList(growable: false);
-    if (added.isNotEmpty) {
-      shapesEl ??= _ensureShapesElement(root);
-      for (final s in added) {
-        shapesEl.children.add(_buildShapeElement(s));
+    // 3) Build fresh elements for new / reparented shapes, inserting each at the
+    //    highest changed level (a rebuilt group emits its whole subtree).
+    void insertWalk(VsdxShape s, int? parent) {
+      final parentRebuilt = parent != null && needsRebuild(parent);
+      if (needsRebuild(s.id) && !parentRebuilt) {
+        final container = parent == null
+            ? (shapesEl ??= _ensureShapesElement(root))
+            : _ensureNestedShapes(elements[parent]!);
+        container.children.add(_buildShapeElement(s));
         changed = true;
+        return; // descendants are emitted as part of this subtree
+      }
+      for (final c in s.children) {
+        insertWalk(c, s.id);
       }
     }
 
+    for (final s in edited.shapes) {
+      insertWalk(s, null);
+    }
+
     // 4) Reorder <Shape> elements to match the model's z-order (top level).
-    if (shapesEl != null && _reorderShapes(shapesEl, edited.shapes)) {
+    final topShapes = shapesEl;
+    if (topShapes != null && _reorderShapes(topShapes, edited.shapes)) {
       changed = true;
     }
 
@@ -645,14 +677,31 @@ class VsdxWriter {
     }
   }
 
-  void _indexShapes(XmlElement shapesEl, Map<int, XmlElement> out) {
+  void _indexShapes(
+    XmlElement shapesEl,
+    Map<int, XmlElement> out, [
+    Map<int, int?>? parents,
+    int? parentId,
+  ]) {
     for (final el in shapesEl.childElements) {
       if (el.name.local != 'Shape') continue;
       final id = int.tryParse(el.getAttribute('ID') ?? '');
-      if (id != null) out[id] = el;
+      if (id != null) {
+        out[id] = el;
+        if (parents != null) parents[id] = parentId;
+      }
       final nested = _firstChild(el, 'Shapes');
-      if (nested != null) _indexShapes(nested, out);
+      if (nested != null) _indexShapes(nested, out, parents, id);
     }
+  }
+
+  /// Find or create the nested `<Shapes>` container of a group `<Shape>`.
+  XmlElement _ensureNestedShapes(XmlElement shapeEl) {
+    final existing = _firstChild(shapeEl, 'Shapes');
+    if (existing != null) return existing;
+    final s = XmlElement(XmlName('Shapes'));
+    shapeEl.children.add(s);
+    return s;
   }
 
   bool _patchShape(XmlElement el, VsdxShape base, VsdxShape edited) {
@@ -674,6 +723,18 @@ class VsdxWriter {
     changed |= _patchColor(el, 'LineColor', base.line.color, edited.line.color);
     changed |= _patchLength(el, 'LineWeight', base.line.weightInches, edited.line.weightInches);
     changed |= _patchInt(el, 'LinePattern', base.line.pattern, edited.line.pattern);
+    changed |= _patchInt(el, 'BeginArrow', base.line.beginArrow, edited.line.beginArrow);
+    changed |= _patchInt(el, 'EndArrow', base.line.endArrow, edited.line.endArrow);
+    changed |= _patchRatio(el, 'FillForegndTrans',
+        base.fill.foregroundTransparency, edited.fill.foregroundTransparency);
+    changed |= _patchRatio(
+        el, 'LineColorTrans', base.line.transparency, edited.line.transparency);
+    // Text block vertical alignment + drop shadow toggle.
+    changed |= _patchInt(el, 'VerticalAlign',
+        _vAlignInt(base.richText.textBlock.verticalAlign),
+        _vAlignInt(edited.richText.textBlock.verticalAlign));
+    changed |= _patchInt(el, 'ShadowPattern',
+        base.shadow.enabled ? 1 : 0, edited.shadow.enabled ? 1 : 0);
     // Text (plain-text replacement; rich runs are not preserved on edit).
     changed |= _patchText(el, base.text, edited.text);
     // Geometry (regenerate when it changed and every command is representable,
@@ -704,6 +765,9 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'Style'), styleInt.toString());
       if (target.charStyle.color != null) {
         _writeValue(_ensureCell(row, 'Color'), _hex(target.charStyle.color!));
+      }
+      if (target.charStyle.fontFamily != null) {
+        _writeValue(_ensureCell(row, 'Font'), target.charStyle.fontFamily!);
       }
       changed = true;
     }
@@ -767,6 +831,12 @@ class VsdxWriter {
         VsdxHorzAlign.justify => 3,
       };
 
+  static int _vAlignInt(VsdxVertAlign a) => switch (a) {
+        VsdxVertAlign.top => 0,
+        VsdxVertAlign.middle => 1,
+        VsdxVertAlign.bottom => 2,
+      };
+
   static bool _richTextEqual(VsdxRichText a, VsdxRichText b) {
     if (a.runs.length != b.runs.length) return false;
     for (var i = 0; i < a.runs.length; i++) {
@@ -777,6 +847,7 @@ class VsdxWriter {
           ca.style.bold != cb.style.bold ||
           ca.style.italic != cb.style.italic ||
           ca.underline != cb.underline ||
+          ca.fontFamily != cb.fontFamily ||
           ca.color?.value != cb.color?.value ||
           ra.paraStyle.horizontalAlign != rb.paraStyle.horizontalAlign) {
         return false;
@@ -850,6 +921,13 @@ class VsdxWriter {
   bool _patchInt(XmlElement shape, String cell, int base, int value) {
     if (base == value) return false;
     _writeValue(_ensureCell(shape, cell), value.toString());
+    return true;
+  }
+
+  /// Patch a plain 0..1 ratio cell (e.g. `FillForegndTrans` / `LineColorTrans`).
+  bool _patchRatio(XmlElement shape, String cell, double base, double value) {
+    if ((base - value).abs() <= _epsilon) return false;
+    _writeValue(_ensureCell(shape, cell), _fmt(value));
     return true;
   }
 
@@ -971,13 +1049,19 @@ class VsdxWriter {
     if (s.text != null && s.text!.isNotEmpty) {
       children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
     }
+    final isGroup = s.children.isNotEmpty;
+    if (isGroup) {
+      children.add(XmlElement(XmlName('Shapes'), const <XmlAttribute>[], <XmlNode>[
+        for (final c in s.children) _buildShapeElement(c),
+      ]));
+    }
     return XmlElement(
       XmlName('Shape'),
       <XmlAttribute>[
         XmlAttribute(XmlName('ID'), s.id.toString()),
         XmlAttribute(XmlName('NameU'), s.name),
         XmlAttribute(XmlName('Name'), s.name),
-        XmlAttribute(XmlName('Type'), 'Shape'),
+        XmlAttribute(XmlName('Type'), isGroup ? 'Group' : 'Shape'),
       ],
       children,
     );

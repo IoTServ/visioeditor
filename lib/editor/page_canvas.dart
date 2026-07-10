@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:vsdx/vsdx.dart';
 import '../render/shape_bounds.dart';
 import '../render/vsdx_painter.dart';
 import 'editor_controller.dart';
+import 'snap_guides.dart';
 
 /// Interactive editing canvas for the controller's current page.
 ///
@@ -19,7 +21,6 @@ class PageCanvas extends StatefulWidget {
   const PageCanvas({
     required this.controller,
     super.key,
-    this.onRequestTextEdit,
     this.pxPerInch = 96.0,
     this.minScale = 0.05,
     this.maxScale = 32.0,
@@ -28,9 +29,6 @@ class PageCanvas extends StatefulWidget {
   });
 
   final EditorController controller;
-
-  /// Invoked when the user double-clicks a shape and wants to edit its text.
-  final void Function(int shapeId)? onRequestTextEdit;
 
   final double pxPerInch;
   final double minScale;
@@ -50,6 +48,7 @@ enum _DragMode {
   resize,
   rotate,
   marquee,
+  moveWaypoint,
 }
 
 /// The eight resize handles around a selection box.
@@ -68,6 +67,22 @@ class _PageCanvasState extends State<PageCanvas> {
   _Handle? _activeHandle;
   int? _resizeShapeId;
 
+  // In-place text editing: the shape whose label is being edited (if any),
+  // plus the field's controller / focus node.
+  int? _editingShapeId;
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _textFocus = FocusNode(debugLabel: 'inlineTextEditor');
+
+  // Smart alignment guides (drawio-style) shown while moving a selection.
+  ({double l, double b, double r, double t})? _moveStartBounds; // inches, y-up
+  Offset _moveAccumInches = Offset.zero; // raw accumulated delta from start
+  Offset _moveAppliedInches = Offset.zero; // snapped delta applied so far
+  List<SnapGuide> _guides = const <SnapGuide>[];
+
+  // Connector waypoint drag (drawio bend points).
+  int? _waypointConnId;
+  int? _waypointIndex;
+
   // Creation preview, in content-px space.
   Offset? _previewStart;
   Offset? _previewEnd;
@@ -75,6 +90,29 @@ class _PageCanvasState extends State<PageCanvas> {
   // Marquee selection rectangle, in content-px space.
   Offset? _marqueeStart;
   Offset? _marqueeEnd;
+
+  @override
+  void initState() {
+    super.initState();
+    _textFocus.addListener(_onEditorFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _textFocus
+      ..removeListener(_onEditorFocusChange)
+      ..dispose();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  /// Commit the in-place edit when the field loses focus (e.g. the user clicks
+  /// another window or tabs away).
+  void _onEditorFocusChange() {
+    if (!_textFocus.hasFocus && _editingShapeId != null && mounted) {
+      _commitTextEdit();
+    }
+  }
 
   EditorController get _c => widget.controller;
 
@@ -143,6 +181,20 @@ class _PageCanvasState extends State<PageCanvas> {
     if (v != null) _applyFit(v);
   }
 
+  /// Reset zoom to 100% (1 content-px per device px), centred in the viewport.
+  void _resetZoom() {
+    final v = _viewport;
+    if (v == null) return;
+    final content = _contentSize;
+    setState(() {
+      _scale = 1.0;
+      _offset = Offset(
+        (v.width - content.width) / 2,
+        (v.height - content.height) / 2,
+      );
+    });
+  }
+
   // --- Hit testing -----------------------------------------------------------
 
   int? _hitTest(Offset viewportPos) {
@@ -205,6 +257,15 @@ class _PageCanvasState extends State<PageCanvas> {
         (_page!.heightInches - y) * widget.pxPerInch,
       );
 
+  Offset _pageToScreen(double x, double y) =>
+      _offset + _pageToContent(x, y) * _scale;
+
+  /// The single selected connector (1-D shape), or null.
+  VsdxShape? _selectedConnector() {
+    final s = _singleSelectedShape();
+    return (s != null && s.is1D) ? s : null;
+  }
+
   /// Content-px positions of (rotate-line anchor at the shape's oriented top
   /// centre, rotate-handle knob just beyond it).
   (Offset anchor, Offset knob) _rotateAnchors(VsdxShape s) {
@@ -245,6 +306,10 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onTapUp(TapUpDetails d) {
+    if (_editingShapeId != null) {
+      _commitTextEdit(); // a click outside the editor applies the edit
+      return;
+    }
     if (_c.tool == EditorTool.connector) {
       return; // connectors need a drag between two points
     }
@@ -267,11 +332,239 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onDoubleTap() {
+    // Double-clicking a connector's bend point removes it.
+    final conn = _selectedConnector();
+    if (conn != null && conn.waypoints.isNotEmpty) {
+      final route = VsdxPage.connectorRoute(conn);
+      for (var r = 1; r < route.length - 1; r++) {
+        if ((_pageToScreen(route[r].x, route[r].y) - _doubleTapPos)
+                .distanceSquared <=
+            100) {
+          _c.removeWaypoint(conn.id, r - 1);
+          return;
+        }
+      }
+    }
     final hit = _hitTest(_doubleTapPos);
-    if (hit != null) widget.onRequestTextEdit?.call(hit);
+    if (hit != null) _beginTextEdit(hit);
   }
 
+  // --- Context menu (right-click) --------------------------------------------
+
+  void _onSecondaryTapUp(TapUpDetails d) {
+    if (_editingShapeId != null) _commitTextEdit();
+    final hit = _hitTest(d.localPosition);
+    if (hit != null && !_c.isSelected(hit)) _c.selectOnly(hit);
+    _showContextMenu(d.globalPosition, hit);
+  }
+
+  Future<void> _showContextMenu(Offset globalPos, int? hit) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final items = <PopupMenuEntry<String>>[];
+    if (_c.hasSelection) {
+      items.add(const PopupMenuItem(value: 'cut', child: Text('Cut')));
+      items.add(const PopupMenuItem(value: 'copy', child: Text('Copy')));
+      items.add(
+          const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')));
+      if (_c.hasClipboard) {
+        items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
+      }
+      items.add(const PopupMenuItem(value: 'delete', child: Text('Delete')));
+      items.add(const PopupMenuDivider());
+      items.add(
+          const PopupMenuItem(value: 'front', child: Text('Bring to Front')));
+      items.add(
+          const PopupMenuItem(value: 'back', child: Text('Send to Back')));
+      if (_c.canGroup || _c.canUngroup) {
+        items.add(const PopupMenuDivider());
+        if (_c.canGroup) {
+          items.add(const PopupMenuItem(value: 'group', child: Text('Group')));
+        }
+        if (_c.canUngroup) {
+          items.add(
+              const PopupMenuItem(value: 'ungroup', child: Text('Ungroup')));
+        }
+      }
+      items.add(const PopupMenuDivider());
+      items.add(
+          const PopupMenuItem(value: 'copyStyle', child: Text('Copy Style')));
+      if (_c.hasStyleClipboard) {
+        items.add(const PopupMenuItem(
+            value: 'pasteStyle', child: Text('Paste Style')));
+      }
+      items.add(const PopupMenuDivider());
+      items
+          .add(const PopupMenuItem(value: 'edit', child: Text('Edit Text…')));
+    } else {
+      if (_c.hasClipboard) {
+        items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
+      }
+      items.add(
+          const PopupMenuItem(value: 'selectAll', child: Text('Select All')));
+      items.add(
+          const PopupMenuItem(value: 'fit', child: Text('Fit to Window')));
+    }
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPos & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: items,
+    );
+    if (value == null || !mounted) return;
+    switch (value) {
+      case 'cut':
+        _c.cut();
+      case 'copy':
+        _c.copySelection();
+      case 'duplicate':
+        _c.duplicateSelection();
+      case 'paste':
+        _c.paste();
+      case 'delete':
+        _c.deleteSelection();
+      case 'front':
+        _c.bringSelectionToFront();
+      case 'back':
+        _c.sendSelectionToBack();
+      case 'group':
+        _c.groupSelection();
+      case 'ungroup':
+        _c.ungroupSelection();
+      case 'copyStyle':
+        _c.copyStyle();
+      case 'pasteStyle':
+        _c.pasteStyle();
+      case 'edit':
+        final id = hit ?? (_c.selection.isEmpty ? null : _c.selection.first);
+        if (id != null) _beginTextEdit(id);
+      case 'selectAll':
+        _c.selectAll();
+      case 'fit':
+        fitToScreen();
+    }
+  }
+
+  // --- In-place text editing -------------------------------------------------
+
+  /// Enter inline edit mode for shape [id]: select it, seed the field with its
+  /// current label (all selected) and focus the overlaid editor.
+  void _beginTextEdit(int id) {
+    final s = _page?.findShapeById(id);
+    if (s == null) return;
+    _c.selectOnly(id);
+    final initial =
+        s.richText.runs.isNotEmpty ? s.richText.plainText : (s.text ?? '');
+    _textController.value = TextEditingValue(
+      text: initial,
+      selection: TextSelection(baseOffset: 0, extentOffset: initial.length),
+    );
+    setState(() => _editingShapeId = id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _editingShapeId == id) _textFocus.requestFocus();
+    });
+  }
+
+  /// Apply the edited text to the model and leave edit mode.
+  void _commitTextEdit() {
+    final id = _editingShapeId;
+    if (id == null) return;
+    final text = _textController.text;
+    setState(() => _editingShapeId = null);
+    if (_textFocus.hasFocus) _textFocus.unfocus();
+    _c.setShapeText(id, text);
+  }
+
+  /// Leave edit mode, discarding the edit.
+  void _cancelTextEdit() {
+    if (_editingShapeId == null) return;
+    setState(() => _editingShapeId = null);
+    if (_textFocus.hasFocus) _textFocus.unfocus();
+  }
+
+  /// The overlaid text editor for the shape being edited, positioned over its
+  /// box in screen space (`null` when not editing). Enter inserts a newline;
+  /// Cmd/Ctrl+Enter or clicking away applies; Esc cancels.
+  Widget? _buildInlineEditor(BuildContext context) {
+    final id = _editingShapeId;
+    final s = id == null ? null : _page?.findShapeById(id);
+    if (s == null) return null;
+    final box = _exactContentBox(s); // content-px, axis-aligned
+    final left = _offset.dx + box.left * _scale;
+    final top = _offset.dy + box.top * _scale;
+    final width = math.max(box.width * _scale, 44.0);
+    final height = math.max(box.height * _scale, 26.0);
+    final run = s.richText.runs.isNotEmpty ? s.richText.runs.first : null;
+    final cs = run?.charStyle ?? VsdxCharStyle.defaults;
+    final fontPx = math.max(cs.fontSizeInches * widget.pxPerInch * _scale, 8.0);
+    final align = run?.paraStyle.horizontalAlign ?? VsdxHorzAlign.center;
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.escape): _cancelTextEdit,
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+              _commitTextEdit,
+          const SingleActivator(LogicalKeyboardKey.enter, control: true):
+              _commitTextEdit,
+        },
+        child: Material(
+          type: MaterialType.transparency,
+          child: Container(
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              border: Border.all(color: scheme.primary, width: 1.5),
+              borderRadius: BorderRadius.circular(3),
+              boxShadow: const [
+                BoxShadow(color: Color(0x33000000), blurRadius: 6),
+              ],
+            ),
+            child: TextField(
+              controller: _textController,
+              focusNode: _textFocus,
+              maxLines: null,
+              expands: true,
+              textAlign: _textAlign(align),
+              textAlignVertical: TextAlignVertical.center,
+              cursorColor: scheme.primary,
+              style: TextStyle(
+                fontSize: fontPx,
+                height: 1.15,
+                color: scheme.onSurface,
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static TextAlign _textAlign(VsdxHorzAlign a) => switch (a) {
+        VsdxHorzAlign.left => TextAlign.left,
+        VsdxHorzAlign.center => TextAlign.center,
+        VsdxHorzAlign.right => TextAlign.right,
+        VsdxHorzAlign.justify => TextAlign.justify,
+      };
+
   void _onPanStart(DragStartDetails d) {
+    if (_editingShapeId != null) {
+      _commitTextEdit(); // dragging elsewhere applies the edit first
+      _mode = _DragMode.none;
+      return;
+    }
     _lastPointer = d.localPosition;
     if (_c.tool != EditorTool.select) {
       _mode = _DragMode.createShape;
@@ -308,11 +601,19 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
+    // Connector waypoint handles (drawio bend points) take priority.
+    if (_tryStartWaypointDrag(d.localPosition)) return;
+
     final hit = _hitTest(d.localPosition);
     if (hit != null) {
       if (!_c.isSelected(hit)) _c.selectOnly(hit);
+      // Alt/Option-drag leaves the originals behind and drags a copy (drawio).
+      if (HardwareKeyboard.instance.isAltPressed) _c.duplicateSelection();
       _mode = _DragMode.moveShapes;
       _c.beginTransaction();
+      _moveAccumInches = Offset.zero;
+      _moveAppliedInches = Offset.zero;
+      _moveStartBounds = _selectionUnionInches();
     } else if (HardwareKeyboard.instance.logicalKeysPressed
         .contains(LogicalKeyboardKey.space)) {
       _mode = _DragMode.panCanvas;
@@ -329,12 +630,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final pos = d.localPosition;
     switch (_mode) {
       case _DragMode.moveShapes:
-        final deltaContent = (pos - _lastPointer) / _scale;
-        _c.moveSelectionBy(
-          deltaContent.dx / widget.pxPerInch,
-          -deltaContent.dy / widget.pxPerInch,
-          transient: true,
-        );
+        _applyMove((pos - _lastPointer) / _scale);
       case _DragMode.panCanvas:
         setState(() => _offset += pos - _lastPointer);
       case _DragMode.createShape:
@@ -343,6 +639,18 @@ class _PageCanvasState extends State<PageCanvas> {
         _applyResize(pos);
       case _DragMode.marquee:
         setState(() => _marqueeEnd = _viewportToContent(pos));
+      case _DragMode.moveWaypoint:
+        final id = _waypointConnId;
+        final idx = _waypointIndex;
+        if (id != null && idx != null) {
+          final p = _pageInchesAt(pos);
+          _c.moveWaypoint(
+            id,
+            idx,
+            Offset2D(_c.snap(p.dx), _c.snap(p.dy)),
+            transient: true,
+          );
+        }
       case _DragMode.rotate:
         final id = _resizeShapeId;
         final s = id == null ? null : _c.currentPage?.findShapeById(id);
@@ -406,14 +714,157 @@ class _PageCanvasState extends State<PageCanvas> {
     );
   }
 
+  // --- Smart alignment guides (drawio-style) ---------------------------------
+
+  /// Union AABB of the current selection in page inches (Y-up), or null.
+  ({double l, double b, double r, double t})? _selectionUnionInches() {
+    final page = _page;
+    if (page == null) return null;
+    double? l, b, r, t;
+    for (final id in _c.selection) {
+      final s = page.findShapeById(id);
+      if (s == null) continue;
+      final sl = s.pinX - s.width / 2, sr = s.pinX + s.width / 2;
+      final sb = s.pinY - s.height / 2, st = s.pinY + s.height / 2;
+      l = l == null ? sl : math.min(l, sl);
+      r = r == null ? sr : math.max(r, sr);
+      b = b == null ? sb : math.min(b, sb);
+      t = t == null ? st : math.max(t, st);
+    }
+    if (l == null) return null;
+    return (l: l, b: b!, r: r!, t: t!);
+  }
+
+  /// AABBs (page inches) of the top-level shapes not in the selection.
+  List<SnapBox> _otherShapeBoxes() {
+    final page = _page;
+    if (page == null) return const <SnapBox>[];
+    final sel = _c.selection;
+    return <SnapBox>[
+      for (final s in page.shapes)
+        if (!sel.contains(s.id))
+          SnapBox(
+            s.pinX - s.width / 2,
+            s.pinY - s.height / 2,
+            s.pinX + s.width / 2,
+            s.pinY + s.height / 2,
+          ),
+    ];
+  }
+
+  /// Apply a raw pointer delta (content px) to the moving selection, snapping to
+  /// neighbour edges/centres and updating the visible guide lines.
+  void _applyMove(Offset deltaContentPx) {
+    final ppi = widget.pxPerInch;
+    _moveAccumInches += Offset(deltaContentPx.dx / ppi, -deltaContentPx.dy / ppi);
+
+    // Holding Shift constrains movement to the dominant axis (drawio parity).
+    var eff = _moveAccumInches;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      eff = eff.dx.abs() >= eff.dy.abs()
+          ? Offset(eff.dx, 0)
+          : Offset(0, eff.dy);
+    }
+
+    var snapDx = 0.0, snapDy = 0.0;
+    var guides = const <SnapGuide>[];
+    final start = _moveStartBounds;
+    if (start != null) {
+      final moving = SnapBox(
+        start.l + eff.dx,
+        start.b + eff.dy,
+        start.r + eff.dx,
+        start.t + eff.dy,
+      );
+      final res = computeSnap(
+        moving: moving,
+        others: _otherShapeBoxes(),
+        threshold: 6 / (_scale * ppi),
+      );
+      snapDx = res.dx;
+      snapDy = res.dy;
+      guides = res.guides;
+    }
+    final snapped = eff + Offset(snapDx, snapDy);
+    final inc = snapped - _moveAppliedInches;
+    _moveAppliedInches = snapped;
+    if (inc.dx != 0 || inc.dy != 0) {
+      _c.moveSelectionBy(inc.dx, inc.dy, transient: true);
+    }
+    if (!_sameGuides(guides, _guides)) {
+      setState(() => _guides = guides);
+    }
+  }
+
+  void _clearMoveGuides() {
+    _moveStartBounds = null;
+    if (_guides.isNotEmpty) setState(() => _guides = const <SnapGuide>[]);
+  }
+
+  static bool _sameGuides(List<SnapGuide> a, List<SnapGuide> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// If [localPos] is over a selected connector's bend-point or segment-midpoint
+  /// handle, start a waypoint drag (promoting an auto route to explicit
+  /// waypoints, inserting one at a midpoint). Returns true when a drag started.
+  bool _tryStartWaypointDrag(Offset localPos) {
+    final conn = _selectedConnector();
+    if (conn == null) return false;
+    final route = VsdxPage.connectorRoute(conn);
+    void promote() {
+      if (conn.waypoints.isEmpty && route.length > 2) {
+        _c.setConnectorWaypoints(conn.id, route.sublist(1, route.length - 1),
+            transient: true);
+      }
+    }
+
+    // Existing interior vertices → move that bend point.
+    for (var r = 1; r < route.length - 1; r++) {
+      if ((_pageToScreen(route[r].x, route[r].y) - localPos).distanceSquared <=
+          100) {
+        _c.beginTransaction();
+        promote();
+        _waypointConnId = conn.id;
+        _waypointIndex = r - 1;
+        _mode = _DragMode.moveWaypoint;
+        return true;
+      }
+    }
+    // Segment midpoints → insert a new bend point there and drag it.
+    for (var r = 0; r < route.length - 1; r++) {
+      final mx = (route[r].x + route[r + 1].x) / 2;
+      final my = (route[r].y + route[r + 1].y) / 2;
+      if ((_pageToScreen(mx, my) - localPos).distanceSquared <= 100) {
+        _c.beginTransaction();
+        promote();
+        _c.addWaypoint(conn.id, r, Offset2D(mx, my), transient: true);
+        _waypointConnId = conn.id;
+        _waypointIndex = r;
+        _mode = _DragMode.moveWaypoint;
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _onPanEnd(DragEndDetails d) {
     switch (_mode) {
+      case _DragMode.moveWaypoint:
+        _c.commitTransaction();
+        _waypointConnId = null;
+        _waypointIndex = null;
       case _DragMode.moveShapes:
       case _DragMode.resize:
       case _DragMode.rotate:
         _c.commitTransaction();
         _activeHandle = null;
         _resizeShapeId = null;
+        _clearMoveGuides();
       case _DragMode.createShape:
         final start = _previewStart;
         final end = _previewEnd;
@@ -479,7 +930,29 @@ class _PageCanvasState extends State<PageCanvas> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // While editing text the field owns the keyboard; never mutate shapes.
+    if (_editingShapeId != null) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    // Keyboard zoom (Cmd/Ctrl +/- , Cmd/Ctrl+0 = 100%, Cmd/Ctrl+Shift+H = fit).
+    final zoomMod = HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed;
+    if (zoomMod) {
+      if (key == LogicalKeyboardKey.equal || key == LogicalKeyboardKey.add) {
+        _zoomBy(1.2);
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.minus) {
+        _zoomBy(1 / 1.2);
+        return KeyEventResult.handled;
+      } else if (key == LogicalKeyboardKey.digit0) {
+        _resetZoom();
+        return KeyEventResult.handled;
+      } else if (HardwareKeyboard.instance.isShiftPressed &&
+          key == LogicalKeyboardKey.keyH) {
+        fitToScreen();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored; // let app-level Cmd shortcuts run
+    }
     if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace) {
       if (_c.hasSelection) {
         _c.deleteSelection();
@@ -513,6 +986,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _onPointerSignal(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
+    if (_editingShapeId != null) _commitTextEdit();
     final zoomModifier = HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (zoomModifier) {
@@ -576,6 +1050,30 @@ class _PageCanvasState extends State<PageCanvas> {
             final marquee = (_marqueeStart != null && _marqueeEnd != null)
                 ? Rect.fromPoints(_marqueeStart!, _marqueeEnd!)
                 : null;
+            final inlineEditor = _buildInlineEditor(context);
+            final guideSegments = <(Offset, Offset)>[
+              for (final g in _guides)
+                g.vertical
+                    ? (_pageToContent(g.pos, g.start), _pageToContent(g.pos, g.end))
+                    : (_pageToContent(g.start, g.pos), _pageToContent(g.end, g.pos)),
+            ];
+            final connector = _selectedConnector();
+            var waypointHandles = const <Offset>[];
+            var midpointHandles = const <Offset>[];
+            if (connector != null) {
+              final route = VsdxPage.connectorRoute(connector);
+              waypointHandles = <Offset>[
+                for (var r = 1; r < route.length - 1; r++)
+                  _pageToContent(route[r].x, route[r].y),
+              ];
+              midpointHandles = <Offset>[
+                for (var r = 0; r < route.length - 1; r++)
+                  _pageToContent(
+                    (route[r].x + route[r + 1].x) / 2,
+                    (route[r].y + route[r + 1].y) / 2,
+                  ),
+              ];
+            }
             return Focus(
               autofocus: true,
               onKeyEvent: _onKey,
@@ -584,6 +1082,7 @@ class _PageCanvasState extends State<PageCanvas> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapUp: _onTapUp,
+                onSecondaryTapUp: _onSecondaryTapUp,
                 onDoubleTapDown: (d) => _doubleTapPos = d.localPosition,
                 onDoubleTap: _onDoubleTap,
                 onPanStart: _onPanStart,
@@ -646,6 +1145,9 @@ class _PageCanvasState extends State<PageCanvas> {
                                       previewEnd: _previewEnd,
                                       previewTool: previewTool,
                                       marquee: marquee,
+                                      guides: guideSegments,
+                                      waypointHandles: waypointHandles,
+                                      midpointHandles: midpointHandles,
                                     ),
                                   ),
                                 ),
@@ -654,10 +1156,12 @@ class _PageCanvasState extends State<PageCanvas> {
                           ),
                         ),
                       ),
+                      ?inlineEditor,
                       Positioned(
                         right: 12,
                         bottom: 12,
                         child: _ZoomControls(
+                          zoom: _scale,
                           onZoomIn: () => _zoomBy(1.25),
                           onZoomOut: () => _zoomBy(0.8),
                           onFit: fitToScreen,
@@ -690,6 +1194,9 @@ class _SelectionPainter extends CustomPainter {
     this.previewEnd,
     this.previewTool,
     this.marquee,
+    this.guides = const <(Offset, Offset)>[],
+    this.waypointHandles = const <Offset>[],
+    this.midpointHandles = const <Offset>[],
   });
 
   final List<Rect> rects;
@@ -703,6 +1210,13 @@ class _SelectionPainter extends CustomPainter {
   final Offset? previewEnd;
   final EditorTool? previewTool;
   final Rect? marquee;
+
+  /// Alignment guide lines (content-px), drawn while dragging a selection.
+  final List<(Offset, Offset)> guides;
+
+  /// Connector bend points (filled) and segment midpoints (hollow), content-px.
+  final List<Offset> waypointHandles;
+  final List<Offset> midpointHandles;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -749,6 +1263,31 @@ class _SelectionPainter extends CustomPainter {
         ..drawRect(rect, Paint()..color = color.withValues(alpha: 0.12))
         ..drawRect(rect, outline);
     }
+    if (guides.isNotEmpty) {
+      final guidePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..color = const Color(0xFFFF3B9E); // drawio-style magenta guide
+      for (final (a, b) in guides) {
+        canvas.drawLine(a, b, guidePaint);
+      }
+    }
+    // Connector segment midpoints (hollow) — drag to add a bend point.
+    if (midpointHandles.isNotEmpty) {
+      final fill = Paint()..color = Colors.white;
+      for (final c in midpointHandles) {
+        canvas
+          ..drawCircle(c, handleSize * 0.5, fill)
+          ..drawCircle(c, handleSize * 0.5, outline);
+      }
+    }
+    // Connector bend points (filled) — drag to move, double-click to remove.
+    if (waypointHandles.isNotEmpty) {
+      final fill = Paint()..color = color;
+      for (final c in waypointHandles) {
+        canvas.drawCircle(c, handleSize * 0.7, fill);
+      }
+    }
     _paintPreview(canvas, outline);
   }
 
@@ -788,7 +1327,10 @@ class _SelectionPainter extends CustomPainter {
       old.previewStart != previewStart ||
       old.previewEnd != previewEnd ||
       old.previewTool != previewTool ||
-      old.marquee != marquee;
+      old.marquee != marquee ||
+      !listEquals(old.guides, guides) ||
+      !listEquals(old.waypointHandles, waypointHandles) ||
+      !listEquals(old.midpointHandles, midpointHandles);
 }
 
 /// Light grid drawn behind the page content (content-px space).
@@ -827,11 +1369,13 @@ class _GridPainter extends CustomPainter {
 /// Floating zoom / fit controls overlaid on the canvas.
 class _ZoomControls extends StatelessWidget {
   const _ZoomControls({
+    required this.zoom,
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onFit,
   });
 
+  final double zoom;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onFit;
@@ -850,10 +1394,20 @@ class _ZoomControls extends StatelessWidget {
             icon: const Icon(Icons.remove),
             tooltip: 'Zoom out',
           ),
-          IconButton(
-            onPressed: onFit,
-            icon: const Icon(Icons.fit_screen),
-            tooltip: 'Fit to screen',
+          Tooltip(
+            message: 'Fit to screen',
+            child: InkWell(
+              onTap: onFit,
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 52,
+                child: Text(
+                  '${(zoom * 100).round()}%',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ),
           ),
           IconButton(
             onPressed: onZoomIn,

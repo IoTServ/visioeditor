@@ -212,9 +212,65 @@ class VsdxPage {
       final (bx, by) = endShape != null
           ? _edgePoint(endShape, beginCx, beginCy)
           : (endCx, endCy);
+      final route = connector.waypoints.isNotEmpty
+          ? <Offset2D>[
+              Offset2D(ax, ay),
+              ...connector.waypoints,
+              Offset2D(bx, by),
+            ]
+          : connector.straightRoute
+              ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
+              : _elbowRoute(ax, ay, bx, by);
+      next = next.updateShapeById(cid, (s) => s.reshapeAsPolyline(route));
+    }
+    return next;
+  }
+
+  /// The drawn route of connector [s] in page inches: begin → waypoints → end,
+  /// or the straight / elbow route when it has no explicit waypoints.
+  static List<Offset2D> connectorRoute(VsdxShape s) {
+    final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+    final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+    if (s.waypoints.isNotEmpty) {
+      return <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)];
+    }
+    if (s.straightRoute) return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+    return _elbowRoute(ax, ay, bx, by);
+  }
+
+  /// Set the interior [waypoints] of connector [id] (page inches) and rebuild
+  /// its geometry; glued endpoints are re-derived by [rerouteConnectors].
+  VsdxPage setConnectorWaypoints(int id, List<Offset2D> waypoints) {
+    final s = findShapeById(id);
+    if (s == null || !s.is1D) return this;
+    final route = connectorRoute(s.copyWith(waypoints: waypoints));
+    final next = updateShapeById(
+      id,
+      (sh) => sh.copyWith(waypoints: waypoints).reshapeAsPolyline(route),
+    );
+    return next.rerouteConnectors();
+  }
+
+  /// Whether connector [id] currently prefers a straight route.
+  bool isConnectorStraight(int id) => findShapeById(id)?.straightRoute ?? false;
+
+  /// Set the routing style of the given connectors: `straight` = a single
+  /// direct segment, otherwise an orthogonal elbow. Recomputed from each
+  /// connector's current begin/end and remembered on the shape so later
+  /// re-routes keep the choice.
+  VsdxPage setConnectorStyle(Set<int> ids, {required bool straight}) {
+    var next = this;
+    for (final id in ids) {
+      final s = next.findShapeById(id);
+      if (s == null || !s.is1D) continue;
+      final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+      final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+      final route = straight
+          ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
+          : _elbowRoute(ax, ay, bx, by);
       next = next.updateShapeById(
-        cid,
-        (s) => s.reshapeAsPolyline(_elbowRoute(ax, ay, bx, by)),
+        id,
+        (sh) => sh.copyWith(straightRoute: straight).reshapeAsPolyline(route),
       );
     }
     return next;
@@ -287,6 +343,127 @@ class VsdxPage {
       for (final s in shapes)
         if (s.id != id) s,
     ]);
+  }
+
+  // --- Grouping --------------------------------------------------------------
+
+  /// Group the top-level shapes [ids] into a new (axis-aligned) group shape
+  /// [groupId], which is appended to the front of the z-order. Members keep
+  /// their on-page appearance: their coordinates become local to the group's
+  /// bottom-left corner (Visio's group coordinate convention). Returns `this`
+  /// when fewer than two of [ids] are top-level shapes.
+  VsdxPage group(Set<int> ids, {required int groupId, String name = ''}) {
+    final members = <VsdxShape>[
+      for (final s in shapes)
+        if (ids.contains(s.id)) s,
+    ];
+    if (members.length < 2) return this;
+    double? l, b, r, t;
+    for (final m in members) {
+      final (ml, mb, mr, mt) = _aabb(m);
+      l = l == null ? ml : math.min(l, ml);
+      b = b == null ? mb : math.min(b, mb);
+      r = r == null ? mr : math.max(r, mr);
+      t = t == null ? mt : math.max(t, mt);
+    }
+    final left = l!, bottom = b!;
+    final w = math.max(r! - left, 0.01);
+    final h = math.max(t! - bottom, 0.01);
+    final group = VsdxShape(
+      id: groupId,
+      name: name.isEmpty ? 'Group.$groupId' : name,
+      pinX: left + w / 2,
+      pinY: bottom + h / 2,
+      width: w,
+      height: h,
+      children: <VsdxShape>[
+        for (final m in members) _shiftShape(m, -left, -bottom),
+      ],
+    );
+    return copyWith(shapes: <VsdxShape>[
+      for (final s in shapes)
+        if (!ids.contains(s.id)) s,
+      group,
+    ]);
+  }
+
+  /// Ungroup the top-level group [groupId], promoting its children back to the
+  /// page with page-absolute coordinates. Returns `this` when [groupId] is not
+  /// a top-level shape with children.
+  VsdxPage ungroup(int groupId) {
+    final idx = shapes.indexWhere((s) => s.id == groupId);
+    if (idx < 0 || shapes[idx].children.isEmpty) return this;
+    final g = shapes[idx];
+    final cosA = math.cos(g.angleRad);
+    final sinA = math.sin(g.angleRad);
+    final fx = g.flipX ? -1.0 : 1.0;
+    final fy = g.flipY ? -1.0 : 1.0;
+    (double, double) toPage(double lx, double ly) {
+      final rx = (lx - g.width / 2) * fx;
+      final ry = (ly - g.height / 2) * fy;
+      return (
+        g.pinX + rx * cosA - ry * sinA,
+        g.pinY + rx * sinA + ry * cosA,
+      );
+    }
+
+    return copyWith(shapes: <VsdxShape>[
+      ...shapes.sublist(0, idx),
+      for (final c in g.children) _childToPage(c, toPage, g.angleRad),
+      ...shapes.sublist(idx + 1),
+    ]);
+  }
+
+  /// Rotation-aware page-inch AABB of [s] as (left, bottom, right, top).
+  static (double, double, double, double) _aabb(VsdxShape s) {
+    final hw = s.width / 2, hh = s.height / 2;
+    if (s.angleRad == 0) {
+      return (s.pinX - hw, s.pinY - hh, s.pinX + hw, s.pinY + hh);
+    }
+    final c = math.cos(s.angleRad), sn = math.sin(s.angleRad);
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity;
+    for (final ox in <double>[-hw, hw]) {
+      for (final oy in <double>[-hh, hh]) {
+        final x = s.pinX + ox * c - oy * sn;
+        final y = s.pinY + ox * sn + oy * c;
+        minX = math.min(minX, x);
+        maxX = math.max(maxX, x);
+        minY = math.min(minY, y);
+        maxY = math.max(maxY, y);
+      }
+    }
+    return (minX, minY, maxX, maxY);
+  }
+
+  /// Translate a shape's pin and (for 1-D shapes) its begin/end by (dx, dy).
+  static VsdxShape _shiftShape(VsdxShape s, double dx, double dy) => s.copyWith(
+        pinX: s.pinX + dx,
+        pinY: s.pinY + dy,
+        beginX: s.beginX == null ? null : s.beginX! + dx,
+        beginY: s.beginY == null ? null : s.beginY! + dy,
+        endX: s.endX == null ? null : s.endX! + dx,
+        endY: s.endY == null ? null : s.endY! + dy,
+      );
+
+  /// Convert a group child (local coords) back to page coords via [toPage],
+  /// folding the group's rotation into the child's own angle.
+  static VsdxShape _childToPage(
+    VsdxShape c,
+    (double, double) Function(double, double) toPage,
+    double groupAngle,
+  ) {
+    final (px, py) = toPage(c.pinX, c.pinY);
+    var r = c.copyWith(pinX: px, pinY: py, angleRad: c.angleRad + groupAngle);
+    if (c.beginX != null && c.beginY != null) {
+      final (bx, by) = toPage(c.beginX!, c.beginY!);
+      r = r.copyWith(beginX: bx, beginY: by);
+    }
+    if (c.endX != null && c.endY != null) {
+      final (ex, ey) = toPage(c.endX!, c.endY!);
+      r = r.copyWith(endX: ex, endY: ey);
+    }
+    return r;
   }
 
   /// The smallest shape id greater than every id currently used on the page

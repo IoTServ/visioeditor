@@ -183,6 +183,13 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Select every top-level shape on the current page.
+  void selectAll() {
+    final page = currentPage;
+    if (page == null) return;
+    setSelection(<int>[for (final s in page.shapes) s.id]);
+  }
+
   // --- Layers ----------------------------------------------------------------
 
   bool get hasLayers => currentPage?.layers.isNotEmpty ?? false;
@@ -459,6 +466,14 @@ class EditorController extends ChangeNotifier {
       for (final id in _selection)
         if (page.findShapeById(id) != null) page.findShapeById(id)!,
     ];
+    notifyListeners();
+  }
+
+  /// Cut = copy the selection to the clipboard, then delete it.
+  void cut() {
+    if (_selection.isEmpty) return;
+    copySelection();
+    deleteSelection();
   }
 
   /// Paste clipboard shapes onto the current page (offset, freshly id'd).
@@ -636,7 +651,10 @@ class EditorController extends ChangeNotifier {
     });
   }
 
-  void _updateSelectedShapes(VsdxShape Function(VsdxShape) update) {
+  void _updateSelectedShapes(
+    VsdxShape Function(VsdxShape) update, {
+    bool transient = false,
+  }) {
     if (_selection.isEmpty) return;
     updateCurrentPage((page) {
       var next = page;
@@ -644,8 +662,23 @@ class EditorController extends ChangeNotifier {
         next = next.updateShapeById(id, update);
       }
       return next;
-    });
+    }, transient: transient);
   }
+
+  /// The first selected shape, or null — used by the inspector to reflect the
+  /// current fill / line / text style.
+  VsdxShape? get _firstSelected {
+    final page = currentPage;
+    if (page == null) return null;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null) return s;
+    }
+    return null;
+  }
+
+  VsdxFill? get selectedFill => _firstSelected?.fill;
+  VsdxLine? get selectedLine => _firstSelected?.line;
 
   void setFillColor(VsdxColor color) => _updateSelectedShapes(
         (s) => s.copyWith(
@@ -680,8 +713,252 @@ class EditorController extends ChangeNotifier {
   void setNoLine() =>
       _updateSelectedShapes((s) => s.copyWith(line: s.line.copyWith(pattern: 0)));
 
+  /// Set the line dash pattern (Visio `LinePattern`: 1 = solid, 2 = dashed,
+  /// 3 = dotted, 4 = dash-dot…). Re-enables the line if it was off.
+  void setLinePattern(int pattern) => _updateSelectedShapes(
+        (s) => s.copyWith(line: s.line.copyWith(pattern: pattern)),
+      );
+
+  /// Toggle / set the connector arrowheads (0 = none, 1 = a basic arrow).
+  /// Pass only the end(s) you want to change.
+  void setLineArrows({int? begin, int? end}) => _updateSelectedShapes(
+        (s) =>
+            s.copyWith(line: s.line.copyWith(beginArrow: begin, endArrow: end)),
+      );
+
+  /// Fill opacity in 0..1 (1 = opaque). Stored as `FillForegndTrans = 1-opacity`.
+  void setFillOpacity(double opacity, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(
+            foregroundTransparency: (1 - opacity).clamp(0.0, 1.0),
+          ),
+        ),
+        transient: transient,
+      );
+
+  /// Line opacity in 0..1 (1 = opaque). Stored as `LineColorTrans = 1-opacity`.
+  void setLineOpacity(double opacity, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (s) => s.copyWith(
+          line: s.line.copyWith(transparency: (1 - opacity).clamp(0.0, 1.0)),
+        ),
+        transient: transient,
+      );
+
+  // --- Connector routing style (drawio straight / orthogonal edges) ----------
+
+  /// Whether the selection includes at least one connector (1-D shape).
+  bool get hasConnectorSelected {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.is1D) return true;
+    }
+    return false;
+  }
+
+  /// Whether the first selected connector is drawn as a straight segment.
+  bool get selectedConnectorStraight {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.is1D) return page.isConnectorStraight(id);
+    }
+    return false;
+  }
+
+  /// Route the selected connectors straight or orthogonally.
+  void setConnectorStyle({required bool straight}) {
+    if (_selection.isEmpty) return;
+    updateCurrentPage(
+      (page) => page.setConnectorStyle(_selection.toSet(), straight: straight),
+    );
+  }
+
+  // --- Connector waypoints (drawio bend points) ------------------------------
+
+  List<Offset2D> connectorWaypoints(int id) =>
+      currentPage?.findShapeById(id)?.waypoints ?? const <Offset2D>[];
+
+  void setConnectorWaypoints(
+    int id,
+    List<Offset2D> waypoints, {
+    bool transient = false,
+  }) {
+    updateCurrentPage(
+      (page) => page.setConnectorWaypoints(id, waypoints),
+      transient: transient,
+    );
+  }
+
+  void moveWaypoint(int id, int index, Offset2D p, {bool transient = false}) {
+    final wps = List<Offset2D>.of(connectorWaypoints(id));
+    if (index < 0 || index >= wps.length) return;
+    wps[index] = p;
+    setConnectorWaypoints(id, wps, transient: transient);
+  }
+
+  void addWaypoint(int id, int index, Offset2D p, {bool transient = false}) {
+    final wps = List<Offset2D>.of(connectorWaypoints(id));
+    wps.insert(index.clamp(0, wps.length), p);
+    setConnectorWaypoints(id, wps, transient: transient);
+  }
+
+  void removeWaypoint(int id, int index) {
+    final wps = List<Offset2D>.of(connectorWaypoints(id));
+    if (index < 0 || index >= wps.length) return;
+    wps.removeAt(index);
+    setConnectorWaypoints(id, wps);
+  }
+
+  // --- Copy / paste style (drawio "Copy Style" / "Paste Style") --------------
+
+  ({VsdxFill fill, VsdxLine line, VsdxCharStyle? char, VsdxParaStyle? para})?
+      _styleClipboard;
+  bool get hasStyleClipboard => _styleClipboard != null;
+
+  /// Capture the fill / line / text styling of the first selected shape.
+  void copyStyle() {
+    final page = currentPage;
+    if (page == null) return;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null) {
+        final run = s.richText.runs.isNotEmpty ? s.richText.runs.first : null;
+        _styleClipboard = (
+          fill: s.fill,
+          line: s.line,
+          char: run?.charStyle,
+          para: run?.paraStyle,
+        );
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  /// Apply the copied styling to every selected shape (one undo step).
+  void pasteStyle() {
+    final clip = _styleClipboard;
+    if (clip == null) return;
+    _updateSelectedShapes((s) {
+      var next = s.copyWith(fill: clip.fill, line: clip.line);
+      if (clip.char != null || clip.para != null) {
+        var runs = next.richText.runs;
+        if (runs.isEmpty) {
+          final t = next.text;
+          if (t != null && t.isNotEmpty) {
+            runs = <VsdxTextRun>[VsdxTextRun(text: t)];
+          }
+        }
+        if (runs.isNotEmpty) {
+          next = next.copyWith(
+            richText: next.richText.copyWith(
+              runs: <VsdxTextRun>[
+                for (final r in runs)
+                  r.copyWith(
+                    charStyle: clip.char ?? r.charStyle,
+                    paraStyle: clip.para ?? r.paraStyle,
+                  ),
+              ],
+            ),
+          );
+        }
+      }
+      return next;
+    });
+  }
+
+  // --- Grouping (drawio "Group" / "Ungroup") ---------------------------------
+
+  /// Whether the selection has ≥ 2 top-level shapes that can be grouped.
+  bool get canGroup {
+    final page = currentPage;
+    if (page == null) return false;
+    var n = 0;
+    for (final s in page.shapes) {
+      if (_selection.contains(s.id)) {
+        if (++n >= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether the selection contains a top-level group that can be ungrouped.
+  bool get canUngroup {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final s in page.shapes) {
+      if (_selection.contains(s.id) && s.children.isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  /// Group the selected top-level shapes into a new group and select it.
+  void groupSelection() {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final ids = <int>{
+      for (final s in page.shapes)
+        if (_selection.contains(s.id)) s.id,
+    };
+    if (ids.length < 2) return;
+    final gid = page.nextFreeShapeId();
+    final next = page.group(ids, groupId: gid);
+    if (identical(next, page)) return;
+    _selection
+      ..clear()
+      ..add(gid);
+    applyEdit(doc.replacePage(_currentPageIndex, next));
+  }
+
+  /// Ungroup every selected top-level group, selecting the promoted children.
+  void ungroupSelection() {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final groups = <VsdxShape>[
+      for (final s in page.shapes)
+        if (_selection.contains(s.id) && s.children.isNotEmpty) s,
+    ];
+    if (groups.isEmpty) return;
+    final childIds = <int>{
+      for (final g in groups)
+        for (final c in g.children) c.id,
+    };
+    var next = page;
+    for (final g in groups) {
+      next = next.ungroup(g.id);
+    }
+    if (identical(next, page)) return;
+    _selection
+      ..clear()
+      ..addAll(childIds);
+    applyEdit(doc.replacePage(_currentPageIndex, next));
+  }
+
+  /// Replace a shape's label text. Keeps any (uniform) run styling in sync so
+  /// the canvas — which renders [VsdxRichText] in preference to [VsdxShape.text]
+  /// — reflects the edit immediately, while the writer persists the new content
+  /// via `<Text>`. A no-op when the text is unchanged (no undo step).
   void setShapeText(int id, String text) => updateCurrentPage(
-        (page) => page.updateShapeById(id, (s) => s.copyWith(text: text)),
+        (page) => page.updateShapeById(id, (s) {
+          final runs = s.richText.runs;
+          final current =
+              runs.isNotEmpty ? s.richText.plainText : (s.text ?? '');
+          if (current == text) return s;
+          if (runs.isEmpty) return s.copyWith(text: text);
+          return s.copyWith(
+            text: text,
+            richText: s.richText.copyWith(
+              runs: <VsdxTextRun>[runs.first.copyWith(text: text)],
+            ),
+          );
+        }),
       );
 
   // --- Text formatting (applies to the whole text of selected shapes) --------
@@ -747,6 +1024,48 @@ class EditorController extends ChangeNotifier {
   void setTextAlign(VsdxHorzAlign align) =>
       _updateText(para: (p) => p.copyWith(horizontalAlign: align));
 
+  void setUnderline(bool value) =>
+      _updateText(char: (c) => c.copyWith(underline: value));
+
+  void setFontFamily(String family) =>
+      _updateText(char: (c) => c.copyWith(fontFamily: family));
+
+  /// Vertical text alignment (applies to the shape's text block).
+  void setTextVerticalAlign(VsdxVertAlign align) => _updateSelectedShapes(
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.copyWith(verticalAlign: align),
+          ),
+        ),
+      );
+
+  VsdxVertAlign? get selectedVerticalAlign {
+    final page = currentPage;
+    if (page == null) return null;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null) return s.richText.textBlock.verticalAlign;
+    }
+    return null;
+  }
+
+  /// Toggle a drop shadow on the selected shapes.
+  void setShadow(bool enabled) => _updateSelectedShapes(
+        (s) => s.copyWith(
+          shadow: enabled ? const VsdxShadow() : VsdxShadow.disabled,
+        ),
+      );
+
+  bool get selectedHasShadow {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null) return s.shadow.enabled;
+    }
+    return false;
+  }
+
   /// Rotate a single shape about its pin (radians, Visio CCW convention).
   void rotateShape(int id, double angleRad, {bool transient = false}) {
     updateCurrentPage(
@@ -791,6 +1110,11 @@ class EditorController extends ChangeNotifier {
       beginY: s.beginY == null ? null : s.beginY! + dy,
       endX: s.endX == null ? null : s.endX! + dx,
       endY: s.endY == null ? null : s.endY! + dy,
+      waypoints: s.waypoints.isEmpty
+          ? null
+          : <Offset2D>[
+              for (final w in s.waypoints) Offset2D(w.x + dx, w.y + dy),
+            ],
     );
   }
 

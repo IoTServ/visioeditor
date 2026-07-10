@@ -16,6 +16,8 @@ Cell，其余结构/公式/主题原样透传）。
 ## 文档导航
 
 - [`docs/PLAN.md`](docs/PLAN.md) — 开发规划与状态跟踪（里程碑 E0–E6、任务、验收）
+- [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) — v0.1 发布说明（亮点 / 运行 / 快捷键 / 已知限制）
+- [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — 变更日志（Keep a Changelog）
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 分层架构、数据流、目录结构、决策
 - [`docs/VSDX_WRITE.md`](docs/VSDX_WRITE.md) — 写回器（往返保存）详细设计
 - [`docs/REUSE_MAP.md`](docs/REUSE_MAP.md) — 从查看器 git 历史恢复的代码映射

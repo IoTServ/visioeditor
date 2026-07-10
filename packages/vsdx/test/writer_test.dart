@@ -276,6 +276,55 @@ void main() {
     expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a]);
   });
 
+  test('grouping then ungrouping shapes round-trips', () {
+    // Two existing rectangles.
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: a, pinX: 2, pinY: 2, width: 1, height: 1));
+    final b = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: b, pinX: 5, pinY: 5, width: 1, height: 1));
+    final bytes1 = writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
+    final r1 = parser.parse(bytes1);
+
+    // Group A + B into a new group shape.
+    final p1 = r1.pages.first;
+    final gid = p1.nextFreeShapeId();
+    final grouped = r1.replacePage(0, p1.group({a, b}, groupId: gid));
+    final bytes2 = writer.write(originalBytes: bytes1, edited: grouped);
+    final p2 = parser.parse(bytes2).pages.first;
+
+    // Only the group is top-level; members are nested with local coords.
+    expect(p2.shapes.map((s) => s.id).toList(), [gid]);
+    final g = p2.shapes.first;
+    expect(g.width, closeTo(4, 1e-3));
+    expect(g.height, closeTo(4, 1e-3));
+    expect(g.children.map((c) => c.id), containsAll(<int>[a, b]));
+    final childA = g.children.firstWhere((c) => c.id == a);
+    expect(childA.pinX, closeTo(0.5, 1e-3)); // 2 - (2-1) left edge
+    expect(childA.pinY, closeTo(0.5, 1e-3));
+    expect(p2.findShapeById(a), isNotNull); // recursion still finds it
+
+    // Ungroup → children promoted back to their original page positions.
+    final ungrouped =
+        parser.parse(bytes2).replacePage(0, p2.ungroup(gid));
+    final p3 = parser
+        .parse(writer.write(originalBytes: bytes2, edited: ungrouped))
+        .pages
+        .first;
+    expect(p3.findShapeById(gid), isNull);
+    expect(p3.shapes.map((s) => s.id), containsAll(<int>[a, b]));
+    final ra = p3.findShapeById(a)!;
+    final rb = p3.findShapeById(b)!;
+    expect(ra.pinX, closeTo(2, 1e-3));
+    expect(ra.pinY, closeTo(2, 1e-3));
+    expect(rb.pinX, closeTo(5, 1e-3));
+    expect(rb.pinY, closeTo(5, 1e-3));
+  });
+
   test('a polygon stencil shape round-trips', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -439,5 +488,72 @@ void main() {
     );
     final after = reopened.pages.first.findShapeById(target.id)!;
     expect(after.fill.foreground?.value, 0xFFFF0000);
+  });
+
+  test('line style (dash / arrows / opacity) round-trips', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.copyWith(
+          line: s.line.copyWith(
+            pattern: 3,
+            beginArrow: 1,
+            endArrow: 5,
+            transparency: 0.4,
+          ),
+          fill: s.fill.copyWith(foregroundTransparency: 0.25),
+        ),
+      ),
+    );
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final after = reopened.pages.first.findShapeById(target.id)!;
+    expect(after.line.pattern, 3);
+    expect(after.line.beginArrow, 1);
+    expect(after.line.endArrow, 5);
+    expect(after.line.transparency, closeTo(0.4, 1e-4));
+    expect(after.fill.foregroundTransparency, closeTo(0.25, 1e-4));
+  });
+
+  test('font / underline / vertical align + shadow round-trip', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.copyWith(
+          shadow: const VsdxShadow(),
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle:
+                    VsdxCharStyle(fontFamily: 'Georgia', underline: true),
+              ),
+            ],
+            textBlock: VsdxTextBlock(verticalAlign: VsdxVertAlign.bottom),
+          ),
+        ),
+      ),
+    );
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final after = reopened.pages.first.findShapeById(target.id)!;
+    expect(after.shadow.enabled, isTrue);
+    expect(after.richText.textBlock.verticalAlign, VsdxVertAlign.bottom);
+    expect(after.richText.runs.first.charStyle.fontFamily, 'Georgia');
+    expect(after.richText.runs.first.charStyle.underline, isTrue);
   });
 }

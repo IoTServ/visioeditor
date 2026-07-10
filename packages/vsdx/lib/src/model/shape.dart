@@ -45,6 +45,8 @@ class VsdxShape {
     this.beginY,
     this.endX,
     this.endY,
+    this.straightRoute = false,
+    this.waypoints = const <Offset2D>[],
     this.flipX = false,
     this.flipY = false,
     this.imagePartName,
@@ -107,6 +109,16 @@ class VsdxShape {
   final double? beginY;
   final double? endX;
   final double? endY;
+
+  /// Routing preference for connectors: `true` = a single straight segment,
+  /// `false` (default) = orthogonal elbow. Session-level (not persisted as a
+  /// dedicated cell); the drawn geometry itself is what round-trips.
+  final bool straightRoute;
+
+  /// User-placed interior bend points for a connector, in page inches. When
+  /// non-empty the route runs begin → waypoints → end (overriding straight /
+  /// elbow). Session-level; the drawn geometry is what round-trips.
+  final List<Offset2D> waypoints;
 
   /// `FlipX` / `FlipY` flags from the shape's XForm.
   final bool flipX;
@@ -197,6 +209,8 @@ class VsdxShape {
     double? beginY,
     double? endX,
     double? endY,
+    bool? straightRoute,
+    List<Offset2D>? waypoints,
     bool? flipX,
     bool? flipY,
     String? imagePartName,
@@ -230,6 +244,8 @@ class VsdxShape {
       beginY: beginY ?? this.beginY,
       endX: endX ?? this.endX,
       endY: endY ?? this.endY,
+      straightRoute: straightRoute ?? this.straightRoute,
+      waypoints: waypoints ?? this.waypoints,
       flipX: flipX ?? this.flipX,
       flipY: flipY ?? this.flipY,
       imagePartName: imagePartName ?? this.imagePartName,

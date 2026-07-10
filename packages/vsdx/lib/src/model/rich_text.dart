@@ -255,6 +255,19 @@ class VsdxTextBlock {
   final double marginBottomInches;
 
   static const VsdxTextBlock defaults = VsdxTextBlock();
+
+  VsdxTextBlock copyWith({VsdxVertAlign? verticalAlign}) => VsdxTextBlock(
+        pinXInches: pinXInches,
+        pinYInches: pinYInches,
+        widthInches: widthInches,
+        heightInches: heightInches,
+        angleRad: angleRad,
+        verticalAlign: verticalAlign ?? this.verticalAlign,
+        marginLeftInches: marginLeftInches,
+        marginRightInches: marginRightInches,
+        marginTopInches: marginTopInches,
+        marginBottomInches: marginBottomInches,
+      );
 }
 
 enum VsdxVertAlign { top, middle, bottom }
