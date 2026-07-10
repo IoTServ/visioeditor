@@ -186,10 +186,12 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 已补：多文件 Tab、多选（Shift 点选 + 框选）、对齐/分布、PDF 导出、**图层面板**（显隐切换，
 写回 pages.xml 的 PageSheet，保真持久化）。
 
+已补：文本格式化（字号/加粗/斜体/颜色/对齐，作用于整形状文本，写回 Character/Paragraph 节，保真往返）。
+
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入；模具/形状库面板
-- 连接器避让路由；富文本编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
+- 连接器避让路由；富文本"逐 run 选区"编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
 ---
 
@@ -268,3 +270,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   用正交 elbow 路由；**Writer 新增几何补丁**——现有形状几何变化（缩放/连接器改形）时重写
   `Section N="Geometry"`（可表示的命令），修复重开后几何走样。引擎单测 24/24（+elbow +缩放几何往返），
   macOS 构建成功。
+- 2026-07-10 — **文本格式化**：富文本模型 copyWith；控制器 `setTextSizeInches/setBold/setItalic/
+  setTextColor/setTextAlign`（作用于选中形状全部 run，空 run 时从 text 合成）；Writer 写回
+  `Character`(Size/Style/Color) 与 `Paragraph`(HorzAlign)，缺节则创建；属性面板 Text 区（字号下拉、
+  B/I、色板、对齐）。引擎单测 25/25（+文本格式化往返），macOS 构建成功。

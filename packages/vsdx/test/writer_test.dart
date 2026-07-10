@@ -194,6 +194,52 @@ void main() {
     expect(xs.reduce((a, b) => a > b ? a : b), closeTo(3, 1e-3));
   });
 
+  test('text formatting round-trips (Character/Paragraph created)', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(text: 'Hi');
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    final r1 = parser.parse(bytes1);
+    final s1 = r1.pages.first.findShapeById(id)!;
+
+    final runs = s1.richText.runs.isNotEmpty
+        ? s1.richText.runs
+        : <VsdxTextRun>[VsdxTextRun(text: s1.text ?? 'Hi')];
+    final newRuns = <VsdxTextRun>[
+      for (final r in runs)
+        r.copyWith(
+          charStyle: r.charStyle.copyWith(
+            fontSizeInches: 0.5,
+            style: const VsdxFontStyle(bold: true),
+            color: const VsdxColor(0xFF112233),
+          ),
+          paraStyle: r.paraStyle.copyWith(horizontalAlign: VsdxHorzAlign.center),
+        ),
+    ];
+    final edited = r1.replacePage(
+      0,
+      r1.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(richText: s.richText.copyWith(runs: newRuns)),
+      ),
+    );
+    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    final rt = r2.pages.first.findShapeById(id)!.richText;
+    expect(rt.runs, isNotEmpty);
+    expect(rt.runs.first.charStyle.fontSizeInches, closeTo(0.5, 1e-3));
+    expect(rt.runs.first.charStyle.style.bold, isTrue);
+    expect(rt.runs.first.charStyle.color?.value, 0xFF112233);
+    expect(rt.runs.first.paraStyle.horizontalAlign, VsdxHorzAlign.center);
+  });
+
   test('layer visibility round-trips when a page has layers', () {
     const candidates = <String>[
       'test1.vsdx',

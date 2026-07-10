@@ -868,6 +868,11 @@ class _PropertyPanel extends StatelessWidget {
                 ),
             ],
           ),
+          if (controller.selectedCharStyle != null) ...[
+            const SizedBox(height: 16),
+            _section(context, 'Text'),
+            _textControls(context),
+          ],
           const Divider(height: 32),
           FilledButton.tonalIcon(
             onPressed: controller.deleteSelection,
@@ -890,6 +895,75 @@ class _PropertyPanel extends StatelessWidget {
         tooltip: tip,
         visualDensity: VisualDensity.compact,
       );
+
+  Widget _textControls(BuildContext context) {
+    final cs = controller.selectedCharStyle;
+    if (cs == null) return const SizedBox.shrink();
+    final curPt = (cs.fontSizeInches * 72).round();
+    final sizes = <int>{8, 9, 10, 11, 12, 14, 16, 18, 24, 28, 36, 48, curPt}
+        .toList()
+      ..sort();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            DropdownButton<int>(
+              value: curPt,
+              isDense: true,
+              items: [
+                for (final p in sizes)
+                  DropdownMenuItem<int>(value: p, child: Text('$p pt')),
+              ],
+              onChanged: (p) {
+                if (p != null) controller.setTextSizeInches(p / 72.0);
+              },
+            ),
+            const Spacer(),
+            IconButton(
+              onPressed: () => controller.setBold(!cs.style.bold),
+              isSelected: cs.style.bold,
+              icon: const Icon(Icons.format_bold),
+              tooltip: 'Bold',
+              visualDensity: VisualDensity.compact,
+            ),
+            IconButton(
+              onPressed: () => controller.setItalic(!cs.style.italic),
+              isSelected: cs.style.italic,
+              icon: const Icon(Icons.format_italic),
+              tooltip: 'Italic',
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final argb in _swatches)
+              _SwatchButton(
+                color: Color(argb),
+                onTap: () => controller.setTextColor(VsdxColor(argb)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _iconBtn(Icons.format_align_left, 'Align left',
+                () => controller.setTextAlign(VsdxHorzAlign.left)),
+            _iconBtn(Icons.format_align_center, 'Align center',
+                () => controller.setTextAlign(VsdxHorzAlign.center)),
+            _iconBtn(Icons.format_align_right, 'Align right',
+                () => controller.setTextAlign(VsdxHorzAlign.right)),
+            _iconBtn(Icons.format_align_justify, 'Justify',
+                () => controller.setTextAlign(VsdxHorzAlign.justify)),
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _swatchRow({
     required void Function(int argb) onColor,

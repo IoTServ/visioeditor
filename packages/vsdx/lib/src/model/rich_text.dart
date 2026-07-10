@@ -33,6 +33,17 @@ class VsdxTextRun {
   final VsdxCharStyle charStyle;
   final VsdxParaStyle paraStyle;
 
+  VsdxTextRun copyWith({
+    String? text,
+    VsdxCharStyle? charStyle,
+    VsdxParaStyle? paraStyle,
+  }) =>
+      VsdxTextRun(
+        text: text ?? this.text,
+        charStyle: charStyle ?? this.charStyle,
+        paraStyle: paraStyle ?? this.paraStyle,
+      );
+
   @override
   String toString() =>
       'VsdxTextRun(${text.length} chars, ${charStyle.fontSizeInches}in, '
@@ -80,6 +91,27 @@ class VsdxCharStyle {
   final VsdxTextPosition position;
 
   static const VsdxCharStyle defaults = VsdxCharStyle();
+
+  VsdxCharStyle copyWith({
+    String? fontFamily,
+    double? fontSizeInches,
+    VsdxFontStyle? style,
+    VsdxColor? color,
+    bool? underline,
+    bool? strikethrough,
+  }) =>
+      VsdxCharStyle(
+        fontFamily: fontFamily ?? this.fontFamily,
+        fontSizeInches: fontSizeInches ?? this.fontSizeInches,
+        style: style ?? this.style,
+        color: color ?? this.color,
+        themeColorIndex: themeColorIndex,
+        underline: underline ?? this.underline,
+        strikethrough: strikethrough ?? this.strikethrough,
+        transparency: transparency,
+        letterSpacingInches: letterSpacingInches,
+        position: position,
+      );
 }
 
 /// Style bitmask (Visio `Char.Style`):
@@ -93,6 +125,9 @@ class VsdxFontStyle {
   });
   final bool bold;
   final bool italic;
+
+  VsdxFontStyle copyWith({bool? bold, bool? italic}) =>
+      VsdxFontStyle(bold: bold ?? this.bold, italic: italic ?? this.italic);
 
   static const VsdxFontStyle regular = VsdxFontStyle();
   static const VsdxFontStyle boldStyle = VsdxFontStyle(bold: true);
@@ -136,6 +171,16 @@ class VsdxParaStyle {
   final double lineSpacing;
 
   static const VsdxParaStyle defaults = VsdxParaStyle();
+
+  VsdxParaStyle copyWith({VsdxHorzAlign? horizontalAlign}) => VsdxParaStyle(
+        horizontalAlign: horizontalAlign ?? this.horizontalAlign,
+        indentFirstInches: indentFirstInches,
+        indentLeftInches: indentLeftInches,
+        indentRightInches: indentRightInches,
+        spaceBeforeInches: spaceBeforeInches,
+        spaceAfterInches: spaceAfterInches,
+        lineSpacing: lineSpacing,
+      );
 }
 
 enum VsdxHorzAlign { left, center, right, justify }
@@ -154,6 +199,12 @@ class VsdxRichText {
 
   final List<VsdxTextRun> runs;
   final VsdxTextBlock textBlock;
+
+  VsdxRichText copyWith({List<VsdxTextRun>? runs, VsdxTextBlock? textBlock}) =>
+      VsdxRichText(
+        runs: runs ?? this.runs,
+        textBlock: textBlock ?? this.textBlock,
+      );
 
   /// Whole-string view — useful for fallback rendering and search.
   String get plainText {

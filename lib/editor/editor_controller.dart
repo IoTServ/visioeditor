@@ -583,6 +583,69 @@ class EditorController extends ChangeNotifier {
         (page) => page.updateShapeById(id, (s) => s.copyWith(text: text)),
       );
 
+  // --- Text formatting (applies to the whole text of selected shapes) --------
+
+  VsdxCharStyle? get selectedCharStyle {
+    final page = currentPage;
+    if (page == null) return null;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.richText.runs.isNotEmpty) {
+        return s.richText.runs.first.charStyle;
+      }
+    }
+    return null;
+  }
+
+  VsdxHorzAlign? get selectedAlign {
+    final page = currentPage;
+    if (page == null) return null;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.richText.runs.isNotEmpty) {
+        return s.richText.runs.first.paraStyle.horizontalAlign;
+      }
+    }
+    return null;
+  }
+
+  void _updateText({
+    VsdxCharStyle Function(VsdxCharStyle)? char,
+    VsdxParaStyle Function(VsdxParaStyle)? para,
+  }) {
+    _updateSelectedShapes((s) {
+      var runs = s.richText.runs;
+      if (runs.isEmpty) {
+        final t = s.text;
+        if (t == null || t.isEmpty) return s;
+        runs = <VsdxTextRun>[VsdxTextRun(text: t)];
+      }
+      final newRuns = <VsdxTextRun>[
+        for (final r in runs)
+          r.copyWith(
+            charStyle: char != null ? char(r.charStyle) : null,
+            paraStyle: para != null ? para(r.paraStyle) : null,
+          ),
+      ];
+      return s.copyWith(richText: s.richText.copyWith(runs: newRuns));
+    });
+  }
+
+  void setTextSizeInches(double inches) =>
+      _updateText(char: (c) => c.copyWith(fontSizeInches: inches));
+
+  void setBold(bool value) =>
+      _updateText(char: (c) => c.copyWith(style: c.style.copyWith(bold: value)));
+
+  void setItalic(bool value) => _updateText(
+      char: (c) => c.copyWith(style: c.style.copyWith(italic: value)));
+
+  void setTextColor(VsdxColor color) =>
+      _updateText(char: (c) => c.copyWith(color: color));
+
+  void setTextAlign(VsdxHorzAlign align) =>
+      _updateText(para: (p) => p.copyWith(horizontalAlign: align));
+
   /// Rotate a single shape about its pin (radians, Visio CCW convention).
   void rotateShape(int id, double angleRad, {bool transient = false}) {
     updateCurrentPage(

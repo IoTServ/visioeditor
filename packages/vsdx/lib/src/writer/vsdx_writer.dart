@@ -22,6 +22,7 @@ import '../model/document.dart';
 import '../model/geometry.dart';
 import '../model/layer.dart';
 import '../model/page.dart';
+import '../model/rich_text.dart';
 import '../model/shape.dart';
 import '../parser/document_parser.dart';
 import '../parser/package_reader.dart';
@@ -399,7 +400,110 @@ class VsdxWriter {
     // Geometry (regenerate when it changed and every command is representable,
     // e.g. after resize scaling or connector re-routing).
     changed |= _patchGeometry(el, base, edited);
+    // Text formatting (Character size/color/style + Paragraph alignment).
+    changed |= _patchRichText(el, base, edited);
     return changed;
+  }
+
+  bool _patchRichText(XmlElement el, VsdxShape base, VsdxShape edited) {
+    if (_richTextEqual(base.richText, edited.richText)) return false;
+    final runs = edited.richText.runs;
+    if (runs.isEmpty) return false;
+    final target = runs.first; // our editor formats the whole text uniformly
+    var changed = false;
+
+    final charSection = _ensureSection(el, 'Character');
+    final charRows = _rowsOf(charSection);
+    if (charRows.isEmpty) charRows.add(_addRow(charSection, 0));
+    final styleInt = (target.charStyle.style.bold ? 0x01 : 0) |
+        (target.charStyle.style.italic ? 0x02 : 0) |
+        (target.charStyle.underline ? 0x04 : 0);
+    for (final row in charRows) {
+      final sizeCell = _ensureCell(row, 'Size');
+      final unit = VsdxLengthUnit.tryParse(sizeCell.getAttribute('U'));
+      _writeValue(sizeCell, _fmt(fromInches(target.charStyle.fontSizeInches, unit)));
+      _writeValue(_ensureCell(row, 'Style'), styleInt.toString());
+      if (target.charStyle.color != null) {
+        _writeValue(_ensureCell(row, 'Color'), _hex(target.charStyle.color!));
+      }
+      changed = true;
+    }
+
+    final paraSection = _ensureSection(el, 'Paragraph');
+    final paraRows = _rowsOf(paraSection);
+    if (paraRows.isEmpty) paraRows.add(_addRow(paraSection, 0));
+    for (final row in paraRows) {
+      _writeValue(
+        _ensureCell(row, 'HorzAlign'),
+        _alignToInt(target.paraStyle.horizontalAlign).toString(),
+      );
+      changed = true;
+    }
+    return changed;
+  }
+
+  XmlElement _ensureSection(XmlElement shape, String name) {
+    for (final s in shape.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == name) return s;
+    }
+    final section = XmlElement(
+      XmlName('Section'),
+      <XmlAttribute>[XmlAttribute(XmlName('N'), name)],
+    );
+    _insertBeforeTextOrShapes(shape, section);
+    return section;
+  }
+
+  void _insertBeforeTextOrShapes(XmlElement el, XmlElement node) {
+    var at = el.children.length;
+    for (var i = 0; i < el.children.length; i++) {
+      final n = el.children[i];
+      if (n is XmlElement &&
+          (n.name.local == 'Text' || n.name.local == 'Shapes')) {
+        at = i;
+        break;
+      }
+    }
+    el.children.insert(at, node);
+  }
+
+  List<XmlElement> _rowsOf(XmlElement section) => <XmlElement>[
+        for (final r in section.childElements)
+          if (r.name.local == 'Row') r,
+      ];
+
+  XmlElement _addRow(XmlElement section, int ix) {
+    final row = XmlElement(
+      XmlName('Row'),
+      <XmlAttribute>[XmlAttribute(XmlName('IX'), ix.toString())],
+    );
+    section.children.add(row);
+    return row;
+  }
+
+  static int _alignToInt(VsdxHorzAlign a) => switch (a) {
+        VsdxHorzAlign.left => 0,
+        VsdxHorzAlign.center => 1,
+        VsdxHorzAlign.right => 2,
+        VsdxHorzAlign.justify => 3,
+      };
+
+  static bool _richTextEqual(VsdxRichText a, VsdxRichText b) {
+    if (a.runs.length != b.runs.length) return false;
+    for (var i = 0; i < a.runs.length; i++) {
+      final ra = a.runs[i], rb = b.runs[i];
+      if (ra.text != rb.text) return false;
+      final ca = ra.charStyle, cb = rb.charStyle;
+      if ((ca.fontSizeInches - cb.fontSizeInches).abs() > 1e-9 ||
+          ca.style.bold != cb.style.bold ||
+          ca.style.italic != cb.style.italic ||
+          ca.underline != cb.underline ||
+          ca.color?.value != cb.color?.value ||
+          ra.paraStyle.horizontalAlign != rb.paraStyle.horizontalAlign) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool _patchGeometry(XmlElement el, VsdxShape base, VsdxShape edited) {
