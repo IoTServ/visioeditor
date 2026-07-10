@@ -350,7 +350,7 @@ class EditorController extends ChangeNotifier {
     applyEdit(
       doc.replacePage(
         _currentPageIndex,
-        page.addShape(connector).copyWith(connects: connects),
+        page.addShape(connector).copyWith(connects: connects).rerouteConnectors(),
       ),
     );
   }

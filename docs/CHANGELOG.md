@@ -23,7 +23,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview.
 - **Connectors with glue**: connect two shapes; endpoints stay attached and
-  auto-reroute when a shape moves / resizes / rotates; `<Connects>` round-trip.
+  auto-reroute (orthogonal elbow path) when a shape moves / resizes / rotates;
+  `<Connects>` round-trip.
 - **Style**: fill colour, line colour, line weight, no-fill / no-line
   (property panel).
 - **Text**: double-click a shape to edit its text (plain text).
@@ -43,8 +44,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc.
 
+### Fixed
+- The writer now regenerates a shape's `<Section N="Geometry">` when its
+  geometry changed (resize scaling, connector re-routing), so edits survive a
+  save/reopen instead of rendering with stale local geometry.
+
 ### Deferred (post-v0.1)
-- Advanced connector routing (elbow / avoidance); rich-text run editing;
+- Obstacle-avoiding connector routing; rich-text run editing;
   vector (non-raster) PDF; stencil library.
 - Other platforms (Windows / Linux / Android / iOS) and legacy `.vsd` import
   (via libvisio); `.vsdx` OS file association, app icon and packaging/signing.
@@ -53,10 +59,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 22 unit tests (parse; model edit / immutability / structural sharing;
-  connector re-routing; writer round-trip incl. create / delete / fill /
-  rotate / connects / layer visibility; blank-document emit; geometry-scaling
-  resize; SVG).
+- Engine: 24 unit tests (parse; model edit / immutability / structural sharing;
+  connector re-routing incl. elbow; writer round-trip incl. create / delete /
+  fill / rotate / connects / layer visibility / resized geometry;
+  blank-document emit; geometry-scaling resize; SVG).
 - App: `flutter analyze` clean; widget smoke test; `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

@@ -396,7 +396,65 @@ class VsdxWriter {
     changed |= _patchInt(el, 'LinePattern', base.line.pattern, edited.line.pattern);
     // Text (plain-text replacement; rich runs are not preserved on edit).
     changed |= _patchText(el, base.text, edited.text);
+    // Geometry (regenerate when it changed and every command is representable,
+    // e.g. after resize scaling or connector re-routing).
+    changed |= _patchGeometry(el, base, edited);
     return changed;
+  }
+
+  bool _patchGeometry(XmlElement el, VsdxShape base, VsdxShape edited) {
+    if (_geometriesEqual(base.geometries, edited.geometries)) return false;
+    if (!edited.geometries.every(_canRebuild)) return false;
+    final existing = <XmlElement>[
+      for (final child in el.childElements)
+        if (child.name.local == 'Section' &&
+            child.getAttribute('N') == 'Geometry')
+          child,
+    ];
+    for (final s in existing) {
+      el.children.remove(s);
+    }
+    // Insert before the first Text/Shapes child so the cell/section/text order
+    // stays schema-friendly; otherwise append.
+    var insertAt = el.children.length;
+    for (var i = 0; i < el.children.length; i++) {
+      final node = el.children[i];
+      if (node is XmlElement &&
+          (node.name.local == 'Text' || node.name.local == 'Shapes')) {
+        insertAt = i;
+        break;
+      }
+    }
+    var ix = 0;
+    final sections = <XmlElement>[
+      for (final g in edited.geometries)
+        if (_buildGeometrySection(g, ix++) case final s?) s,
+    ];
+    el.children.insertAll(insertAt, sections);
+    return true;
+  }
+
+  static bool _canRebuild(VsdxGeometry g) => g.commands.every(
+        (c) => c is MoveTo || c is LineTo || c is EllipseCmd,
+      );
+
+  static bool _geometriesEqual(List<VsdxGeometry> a, List<VsdxGeometry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final ga = a[i], gb = b[i];
+      if (ga.noFill != gb.noFill ||
+          ga.noLine != gb.noLine ||
+          ga.noShow != gb.noShow ||
+          ga.commands.length != gb.commands.length) {
+        return false;
+      }
+      for (var j = 0; j < ga.commands.length; j++) {
+        if (ga.commands[j].toString() != gb.commands[j].toString()) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   bool _patchColor(XmlElement shape, String cell, VsdxColor? base, VsdxColor? value) {

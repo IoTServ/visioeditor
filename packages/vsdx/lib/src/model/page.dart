@@ -6,6 +6,7 @@ import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
 import 'connect.dart';
+import 'geometry.dart';
 import 'layer.dart';
 import 'shape.dart';
 
@@ -203,10 +204,39 @@ class VsdxPage {
       }
       next = next.updateShapeById(
         cid,
-        (s) => s.reshapeAsLine(ax: ax, ay: ay, bx: bx, by: by),
+        (s) => s.reshapeAsPolyline(_elbowRoute(ax, ay, bx, by)),
       );
     }
     return next;
+  }
+
+  /// Orthogonal (elbow / Z) route between two page points. Falls back to a
+  /// straight line when the points already share an axis.
+  static List<Offset2D> _elbowRoute(
+    double ax,
+    double ay,
+    double bx,
+    double by,
+  ) {
+    if (ax == bx || ay == by) {
+      return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+    }
+    if ((bx - ax).abs() >= (by - ay).abs()) {
+      final mx = (ax + bx) / 2;
+      return <Offset2D>[
+        Offset2D(ax, ay),
+        Offset2D(mx, ay),
+        Offset2D(mx, by),
+        Offset2D(bx, by),
+      ];
+    }
+    final my = (ay + by) / 2;
+    return <Offset2D>[
+      Offset2D(ax, ay),
+      Offset2D(ax, my),
+      Offset2D(bx, my),
+      Offset2D(bx, by),
+    ];
   }
 
   /// The smallest shape id greater than every id currently used on the page

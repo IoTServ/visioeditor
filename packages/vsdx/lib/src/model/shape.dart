@@ -307,6 +307,39 @@ class VsdxShape {
     );
   }
 
+  /// Re-position this shape as a 1-D polyline through page-space [points]
+  /// (≥2). Recomputes pin / size / begin-end and the local geometry. Used by
+  /// connector re-routing (straight or elbow).
+  VsdxShape reshapeAsPolyline(List<Offset2D> points) {
+    if (points.length < 2) return this;
+    var minX = points.first.x, maxX = points.first.x;
+    var minY = points.first.y, maxY = points.first.y;
+    for (final p in points) {
+      minX = math.min(minX, p.x);
+      maxX = math.max(maxX, p.x);
+      minY = math.min(minY, p.y);
+      maxY = math.max(maxY, p.y);
+    }
+    final commands = <VsdxPathCommand>[
+      MoveTo(points.first.x - minX, points.first.y - minY),
+      for (final p in points.skip(1)) LineTo(p.x - minX, p.y - minY),
+    ];
+    return copyWith(
+      pinX: (minX + maxX) / 2,
+      pinY: (minY + maxY) / 2,
+      width: maxX - minX,
+      height: maxY - minY,
+      is1D: true,
+      beginX: points.first.x,
+      beginY: points.first.y,
+      endX: points.last.x,
+      endY: points.last.y,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: commands, noFill: true),
+      ],
+    );
+  }
+
   @override
   String toString() =>
       'VsdxShape(#$id $name, pin=($pinX,$pinY), size=${width}x$height'

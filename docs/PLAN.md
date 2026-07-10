@@ -189,7 +189,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入；模具/形状库面板
-- 连接器高级路由（L 形/避让）；富文本编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
+- 连接器避让路由；富文本编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
 ---
 
@@ -264,3 +264,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 - 2026-07-10 — **图层面板**：控制器 `toggleLayerVisibility`/`hasLayers`；Writer 扩展为补丁
   `pages.xml` 的 PageSheet `Section N="Layer"` 的 Visible/Lock/Print（保真持久化）；AppBar 图层
   按钮 + 对话框开关。引擎单测 22/22（+图层往返），macOS 构建成功。
+- 2026-07-10 — **连接器 L 形路由 + 几何写回修复**：`VsdxShape.reshapeAsPolyline`；`rerouteConnectors`
+  用正交 elbow 路由；**Writer 新增几何补丁**——现有形状几何变化（缩放/连接器改形）时重写
+  `Section N="Geometry"`（可表示的命令），修复重开后几何走样。引擎单测 24/24（+elbow +缩放几何往返），
+  macOS 构建成功。

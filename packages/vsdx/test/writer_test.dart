@@ -157,6 +157,43 @@ void main() {
         closeTo(0.5, 1e-4));
   });
 
+  test('resized geometry round-trips (existing-shape geometry patch)', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 3,
+        pinY: 3,
+        width: 1,
+        height: 1,
+      )),
+    );
+    // Save + reopen so the rectangle becomes an *existing* shape.
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    final r1 = parser.parse(bytes1);
+
+    // Resize it to 3x1 and round-trip again.
+    final resized = r1.replacePage(
+      0,
+      r1.pages.first.updateShapeById(
+        id,
+        (s) => s.resizeTo(pinX: s.pinX, pinY: s.pinY, width: 3, height: 1),
+      ),
+    );
+    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: resized));
+    final s2 = r2.pages.first.findShapeById(id)!;
+    expect(s2.width, closeTo(3, 1e-4));
+    final xs = s2.geometries
+        .expand((g) => g.commands)
+        .whereType<LineTo>()
+        .map((c) => c.x)
+        .toList();
+    expect(xs.reduce((a, b) => a > b ? a : b), closeTo(3, 1e-3));
+  });
+
   test('layer visibility round-trips when a page has layers', () {
     const candidates = <String>[
       'test1.vsdx',

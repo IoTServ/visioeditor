@@ -104,6 +104,31 @@ void main() {
     expect(connector.endY, closeTo(3, 1e-9));
   });
 
+  test('a glued connector routes as an elbow between offset shapes', () {
+    final r1 = VsdxShapeFactory.rectangle(
+        id: 1, pinX: 1, pinY: 1, width: 1, height: 1);
+    final r2 = VsdxShapeFactory.rectangle(
+        id: 2, pinX: 5, pinY: 4, width: 1, height: 1);
+    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 1, bx: 5, by: 4);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: [r1, r2, conn],
+      connects: const [
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'BeginX', toSheetId: 1, toCell: 'PinX'),
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'EndX', toSheetId: 2, toCell: 'PinX'),
+      ],
+    ).rerouteConnectors();
+
+    // Elbow route => more than a single straight segment (MoveTo + 2+ LineTo).
+    expect(page.findShapeById(3)!.geometries.first.commands.length,
+        greaterThan(2));
+  });
+
   test('document.replacePage swaps a single page immutably', () {
     final doc = parser.parse(_fixture('test1.vsdx'));
     final page0 = doc.pages.first;
