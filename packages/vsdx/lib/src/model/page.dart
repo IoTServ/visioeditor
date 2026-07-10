@@ -2,6 +2,8 @@
 /// `lib/utils/units.dart` for the normalisation policy).
 library;
 
+import 'dart:math' as math;
+
 import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
@@ -187,27 +189,55 @@ class VsdxPage {
     for (final cid in connectorIds) {
       final connector = next.findShapeById(cid);
       if (connector == null) continue;
-      var ax = connector.beginX ?? connector.pinX;
-      var ay = connector.beginY ?? connector.pinY;
-      var bx = connector.endX ?? connector.pinX;
-      var by = connector.endY ?? connector.pinY;
+      VsdxShape? beginShape;
+      VsdxShape? endShape;
       for (final e in index.forConnector(cid)) {
         final target = next.findShapeById(e.toSheetId);
         if (target == null) continue;
         if (e.isBegin) {
-          ax = target.pinX;
-          ay = target.pinY;
+          beginShape = target;
         } else if (e.isEnd) {
-          bx = target.pinX;
-          by = target.pinY;
+          endShape = target;
         }
       }
+      // Reference centres (fall back to the connector's own endpoints).
+      final beginCx = beginShape?.pinX ?? connector.beginX ?? connector.pinX;
+      final beginCy = beginShape?.pinY ?? connector.beginY ?? connector.pinY;
+      final endCx = endShape?.pinX ?? connector.endX ?? connector.pinX;
+      final endCy = endShape?.pinY ?? connector.endY ?? connector.pinY;
+      // Attach on each shape's edge, aimed at the opposite end's centre.
+      final (ax, ay) = beginShape != null
+          ? _edgePoint(beginShape, endCx, endCy)
+          : (beginCx, beginCy);
+      final (bx, by) = endShape != null
+          ? _edgePoint(endShape, beginCx, beginCy)
+          : (endCx, endCy);
       next = next.updateShapeById(
         cid,
         (s) => s.reshapeAsPolyline(_elbowRoute(ax, ay, bx, by)),
       );
     }
     return next;
+  }
+
+  /// Point on [s]'s axis-aligned bounding box boundary along the ray from its
+  /// centre toward ([towardX], [towardY]).
+  static (double, double) _edgePoint(
+    VsdxShape s,
+    double towardX,
+    double towardY,
+  ) {
+    final cx = s.pinX;
+    final cy = s.pinY;
+    final dx = towardX - cx;
+    final dy = towardY - cy;
+    if (dx == 0 && dy == 0) return (cx, cy);
+    final hw = s.width / 2;
+    final hh = s.height / 2;
+    final sx = dx == 0 ? double.infinity : hw / dx.abs();
+    final sy = dy == 0 ? double.infinity : hh / dy.abs();
+    final t = math.min(sx, sy);
+    return (cx + dx * t, cy + dy * t);
   }
 
   /// Orthogonal (elbow / Z) route between two page points. Falls back to a

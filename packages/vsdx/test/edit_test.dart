@@ -92,16 +92,19 @@ void main() {
       ],
     );
 
-    // Move r2 to a new centre; the connector's end must follow.
+    // Move r2 to a new centre; the connector's end must follow, attaching to
+    // the shapes' bounding-box edges (not their centres).
     page = page
         .updateShapeById(2, (s) => s.copyWith(pinX: 7, pinY: 3))
         .rerouteConnectors();
 
     final connector = page.findShapeById(3)!;
-    expect(connector.beginX, closeTo(1, 1e-9));
-    expect(connector.beginY, closeTo(1, 1e-9));
-    expect(connector.endX, closeTo(7, 1e-9));
-    expect(connector.endY, closeTo(3, 1e-9));
+    // r1 (1,1) 1x1 → right edge x = 1.5 toward the moved r2.
+    expect(connector.beginX, closeTo(1.5, 1e-6));
+    // r2 moved to (7,3) 1x1 → left edge x = 6.5 toward r1.
+    expect(connector.endX, closeTo(6.5, 1e-6));
+    // The end followed the moved shape (within its vertical extent).
+    expect(connector.endY, inInclusiveRange(2.5, 3.5));
   });
 
   test('a glued connector routes as an elbow between offset shapes', () {

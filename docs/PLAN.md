@@ -282,3 +282,5 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 - 2026-07-10 — **Z 顺序**：`VsdxPage.bringToFront/sendToBack`；控制器 `bringSelectionToFront/
   sendSelectionToBack`；Writer 按模型顺序重排 `<Shape>` 元素（往返）；属性面板置顶/置底按钮。
   引擎单测 27/27（+Z 顺序往返），macOS 构建成功。
+- 2026-07-10 — **连接器边缘吸附**：`rerouteConnectors` 端点吸到形状包围盒边缘（朝对端方向的射线
+  交点，`_edgePoint`），而非中心；连接线不再插入形状，观感更接近 Visio。引擎单测 27/27，macOS 构建成功。

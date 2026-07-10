@@ -24,9 +24,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   creation preview.
 - **Shapes palette**: a stencil panel of flowchart shapes (process, terminator,
   decision, data, triangle, hexagon, pentagon, arrow) — click to drop one.
-- **Connectors with glue**: connect two shapes; endpoints stay attached and
-  auto-reroute (orthogonal elbow path) when a shape moves / resizes / rotates;
-  `<Connects>` round-trip.
+- **Connectors with glue**: connect two shapes; endpoints attach to the target
+  shapes' edges and auto-reroute (orthogonal elbow path) when a shape moves /
+  resizes / rotates; `<Connects>` round-trip.
 - **Style**: fill colour, line colour, line weight, no-fill / no-line
   (property panel).
 - **Text**: double-click a shape to edit its text (plain text); the inspector
