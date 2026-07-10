@@ -1,0 +1,40 @@
+Editor for Visio Diagrams
+Copyright (c) 2026 the Editor for Visio Diagrams contributors.
+
+This product is licensed under the MIT License (see LICENSE).
+
+------------------------------------------------------------------------
+Recovered / adapted code
+------------------------------------------------------------------------
+Portions of the pure-Dart .vsdx engine (model / parser / formula) and the
+renderer under lib/render/ were recovered and adapted from the sibling
+project `visiovsdxviewer` (MIT License), at commit 0fcaf66^ (the pre-pivot
+pure-Dart stack). See docs/REUSE_MAP.md.
+
+------------------------------------------------------------------------
+Third-party Dart/Flutter dependencies (linked; see pubspec.yaml)
+------------------------------------------------------------------------
+archive .............. MIT
+xml .................. MIT
+path ................. BSD-3-Clause
+vector_math .......... BSD-3-Clause
+meta ................. BSD-3-Clause
+collection ........... BSD-3-Clause
+crypto ............... BSD-3-Clause
+logging .............. BSD-3-Clause
+path_drawing ......... BSD-3-Clause
+file_picker .......... MIT
+desktop_drop ......... BSD-3-Clause
+shared_preferences ... BSD-3-Clause
+intl ................. BSD-3-Clause
+url_launcher ......... BSD-3-Clause
+
+------------------------------------------------------------------------
+Reference material (NOT distributed; kept under third_party/, git-ignored)
+------------------------------------------------------------------------
+libvisio (MPL-2.0 / LGPL) - read-only format reference; algorithms are
+    reimplemented, sources are not copied into this project.
+vsdx / dave-howard (BSD-3-Clause) - .vsdx manipulation reference.
+drawio / jgraph (Apache-2.0) - VSDX import/export reference.
+
+See third_party/README.md for pinned URLs, commit hashes and licenses.

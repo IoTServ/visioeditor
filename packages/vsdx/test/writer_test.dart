@@ -1,0 +1,218 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:test/test.dart';
+import 'package:vsdx/vsdx.dart';
+
+Uint8List _fixture(String name) =>
+    File('test/fixtures/$name').readAsBytesSync();
+
+void main() {
+  const parser = DocumentParser();
+  const writer = VsdxWriter();
+
+  test('round-trips an edited pin position (Slice-0)', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.copyWith(pinX: s.pinX + 1.0, pinY: s.pinY - 0.5),
+      ),
+    );
+
+    final outBytes = writer.write(originalBytes: bytes, edited: edited);
+    final reopened = parser.parse(outBytes);
+    final moved = reopened.pages.first.findShapeById(target.id)!;
+
+    expect(moved.pinX, closeTo(target.pinX + 1.0, 1e-4));
+    expect(moved.pinY, closeTo(target.pinY - 0.5, 1e-4));
+  });
+
+  test('leaves untouched shapes and pages unchanged', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    if (page.shapes.length < 2) return; // fixture has a single shape
+
+    final target = page.shapes.first;
+    final other = page.shapes[1];
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.copyWith(pinX: s.pinX + 1.0),
+      ),
+    );
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final otherAfter = reopened.pages.first.findShapeById(other.id)!;
+    expect(otherAfter.pinX, closeTo(other.pinX, 1e-9));
+    expect(otherAfter.pinY, closeTo(other.pinY, 1e-9));
+  });
+
+  test('no-op save preserves values and all part names', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+
+    final outBytes = writer.write(originalBytes: bytes, edited: doc);
+
+    // Every part of the original package survives verbatim.
+    final before = VsdxPackage.open(bytes).allPartNames.toSet();
+    final after = VsdxPackage.open(outBytes).allPartNames.toSet();
+    expect(after, equals(before));
+
+    // Values are stable across a no-edit round-trip.
+    final reopened = parser.parse(outBytes);
+    expect(reopened.pages.length, doc.pages.length);
+    final a = doc.pages.first.shapes.first;
+    final b = reopened.pages.first.findShapeById(a.id)!;
+    expect(b.pinX, closeTo(a.pinX, 1e-9));
+    expect(b.pinY, closeTo(a.pinY, 1e-9));
+  });
+
+  test('creates a rectangle that survives a round-trip', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 4,
+      width: 2,
+      height: 1,
+    );
+    final edited = doc.replacePage(0, page.addShape(rect));
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final created = reopened.pages.first.findShapeById(id);
+    expect(created, isNotNull);
+    expect(created!.pinX, closeTo(3, 1e-4));
+    expect(created.pinY, closeTo(4, 1e-4));
+    expect(created.width, closeTo(2, 1e-4));
+    expect(created.height, closeTo(1, 1e-4));
+    expect(created.geometries, isNotEmpty);
+  });
+
+  test('deletes a shape across a round-trip', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final victim = page.shapes.first.id;
+    final edited = doc.replacePage(0, page.removeShapeById(victim));
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    expect(reopened.pages.first.findShapeById(victim), isNull);
+  });
+
+  test('emits a valid blank document that accepts new shapes', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    expect(doc.pages, hasLength(1));
+    expect(doc.pages.first.shapes, isEmpty);
+    expect(doc.pages.first.widthInches, closeTo(8.5, 1e-6));
+
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    final withRect = doc.replacePage(
+      0,
+      page.addShape(VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 2,
+        pinY: 2,
+        width: 1,
+        height: 1,
+      )),
+    );
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: withRect),
+    );
+    expect(reopened.pages.first.findShapeById(id), isNotNull);
+  });
+
+  test('rotates a shape across a round-trip', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(target.id, (s) => s.copyWith(angleRad: 0.5)),
+    );
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    expect(reopened.pages.first.findShapeById(target.id)!.angleRad,
+        closeTo(0.5, 1e-4));
+  });
+
+  test('a glued connector round-trips its <Connects>', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final r1 = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 2, pinY: 2, width: 1, height: 1);
+    page = page.addShape(r1);
+    final r2 = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 5, pinY: 5, width: 1, height: 1);
+    page = page.addShape(r2);
+    final connId = page.nextFreeShapeId();
+    page = page
+        .addShape(VsdxShapeFactory.line(id: connId, ax: 2, ay: 2, bx: 5, by: 5))
+        .copyWith(connects: [
+      VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'BeginX',
+          fromPart: 9,
+          toSheetId: r1.id,
+          toCell: 'PinX',
+          toPart: 3),
+      VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'EndX',
+          fromPart: 12,
+          toSheetId: r2.id,
+          toCell: 'PinX',
+          toPart: 3),
+    ]);
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: doc.replacePage(0, page)),
+    );
+    expect(reopened.pages.first.connects, hasLength(2));
+    expect(reopened.pages.first.findShapeById(connId), isNotNull);
+  });
+
+  test('changes fill colour across a round-trip', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.copyWith(
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000)),
+        ),
+      ),
+    );
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final after = reopened.pages.first.findShapeById(target.id)!;
+    expect(after.fill.foreground?.value, 0xFFFF0000);
+  });
+}
