@@ -191,7 +191,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 老格式经 libvisio 导入
+- `.vsd` 老格式经 libvisio 导入；多页**新增/删除**（Writer 按页 ID 重构 + OPC 部件增删）
 - 连接器避让路由；富文本"逐 run 选区"编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
 ---
@@ -284,3 +284,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   引擎单测 27/27（+Z 顺序往返），macOS 构建成功。
 - 2026-07-10 — **连接器边缘吸附**：`rerouteConnectors` 端点吸到形状包围盒边缘（朝对端方向的射线
   交点，`_edgePoint`），而非中心；连接线不再插入形状，观感更接近 Visio。引擎单测 27/27，macOS 构建成功。
+- 2026-07-10 — **页重命名**：控制器 `renamePageAt`；Writer `_patchPageNames` 写回 `<Page NameU/Name>`；
+  页标签双击弹出重命名对话框。引擎单测 28/28（+页重命名往返），macOS 构建成功。
+  （页**新增/删除**需将 Writer 由按索引改为按页 ID 匹配 + 增删 pageN.xml/rels/Content_Types 部件，
+  工程量大，列为后续。）

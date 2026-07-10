@@ -71,15 +71,45 @@ class VsdxWriter {
       }
     }
 
-    // Layer visibility / lock / print lives on the PageSheet inside pages.xml.
-    if (pagesPart != null &&
-        pagesXml != null &&
-        _patchLayers(pagesXml, baseline, edited)) {
-      patched[_noSlash(pagesPart)] =
-          Uint8List.fromList(utf8.encode(pagesXml.toXmlString()));
+    // Layer visibility and page names both live in pages.xml (PageSheet /
+    // <Page NameU>). Evaluate both (no short-circuit) before serialising once.
+    if (pagesPart != null && pagesXml != null) {
+      final layersChanged = _patchLayers(pagesXml, baseline, edited);
+      final namesChanged = _patchPageNames(pagesXml, baseline, edited);
+      if (layersChanged || namesChanged) {
+        patched[_noSlash(pagesPart)] =
+            Uint8List.fromList(utf8.encode(pagesXml.toXmlString()));
+      }
     }
 
     return _rezip(originalBytes, patched);
+  }
+
+  /// Patch `<Page NameU>` (and `Name`) when a page was renamed. Matches by
+  /// index (rename does not change page count/order).
+  bool _patchPageNames(
+    XmlDocument pagesXml,
+    VsdxDocument baseline,
+    VsdxDocument edited,
+  ) {
+    var changed = false;
+    final pageEls = pagesXml.rootElement.childElements
+        .where((el) => el.name.local == 'Page')
+        .toList(growable: false);
+    final n = math.min(
+      pageEls.length,
+      math.min(baseline.pages.length, edited.pages.length),
+    );
+    for (var i = 0; i < n; i++) {
+      if (baseline.pages[i].name == edited.pages[i].name) continue;
+      final el = pageEls[i];
+      el.setAttribute('NameU', edited.pages[i].name);
+      if (el.getAttribute('Name') != null) {
+        el.setAttribute('Name', edited.pages[i].name);
+      }
+      changed = true;
+    }
+    return changed;
   }
 
   // --- Emit-from-scratch (new blank document) --------------------------------

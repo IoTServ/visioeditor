@@ -58,6 +58,15 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Rename the page at [index] (persists as `<Page NameU>` via the writer).
+  void renamePageAt(int index, String name) {
+    final doc = _document;
+    if (doc == null || index < 0 || index >= doc.pages.length) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == doc.pages[index].name) return;
+    applyEdit(doc.replacePage(index, doc.pages[index].copyWith(name: trimmed)));
+  }
+
   // --- Tool ------------------------------------------------------------------
 
   EditorTool get tool => _tool;

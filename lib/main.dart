@@ -249,6 +249,40 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  Future<void> _renamePage(int index) async {
+    final c = _c;
+    final doc = c?.document;
+    if (c == null || doc == null || index < 0 || index >= doc.pages.length) {
+      return;
+    }
+    final textController =
+        TextEditingController(text: doc.pages[index].name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename page'),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Page name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, textController.text),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) c.renamePageAt(index, result);
+    textController.dispose();
+  }
+
   Future<void> _showLayers() async {
     final c = _c;
     if (c == null || !c.hasLayers) return;
@@ -606,10 +640,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
             final page = c.document!.pages[i];
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
-              child: ChoiceChip(
-                label: Text(page.name),
-                selected: i == c.currentPageIndex,
-                onSelected: (_) => c.selectPage(i),
+              child: GestureDetector(
+                onDoubleTap: () => _renamePage(i),
+                child: ChoiceChip(
+                  label: Text(page.name),
+                  selected: i == c.currentPageIndex,
+                  onSelected: (_) => c.selectPage(i),
+                  tooltip: 'Double-click to rename',
+                ),
               ),
             );
           },

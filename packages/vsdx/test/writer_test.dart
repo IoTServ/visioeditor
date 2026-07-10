@@ -194,6 +194,18 @@ void main() {
     expect(xs.reduce((a, b) => a > b ? a : b), closeTo(3, 1e-3));
   });
 
+  test('page rename round-trips', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final renamed = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(name: 'Renamed Page'),
+    );
+    final reopened =
+        parser.parse(writer.write(originalBytes: bytes, edited: renamed));
+    expect(reopened.pages.first.name, 'Renamed Page');
+  });
+
   test('z-order (send to back) round-trips', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);
