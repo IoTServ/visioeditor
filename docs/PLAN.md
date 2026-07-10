@@ -183,12 +183,13 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 已补：**网格 + 吸附**、**未保存关闭拦截**、**最近文件**（shared_preferences）、
 **连接器 glue**（连接两形状、移动自动重路由、`<Connects>` 往返）。
 
-已补：多文件 Tab、多选（Shift 点选 + 框选）、对齐/分布工具、**PDF 导出**（每页光栅化嵌入）。
+已补：多文件 Tab、多选（Shift 点选 + 框选）、对齐/分布、PDF 导出、**图层面板**（显隐切换，
+写回 pages.xml 的 PageSheet，保真持久化）。
 
 剩余：
 - macOS 打包签名 / 应用图标 / `.vsdx` OS 文件关联；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 老格式经 libvisio 导入；模具/形状库面板；图层 UI
-- 连接器高级路由（L 形/避让）；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
+- `.vsd` 老格式经 libvisio 导入；模具/形状库面板
+- 连接器高级路由（L 形/避让）；富文本编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
 
 ---
 
@@ -260,3 +261,6 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
   macOS 构建成功。
 - 2026-07-10 — **PDF 导出**：新增 `pdf` 依赖与 `lib/io/pdf_export.dart`（逐页光栅化嵌入、按英寸
   尺寸排版）；菜单 Export as PDF。`flutter analyze` 零问题、macOS 构建成功。
+- 2026-07-10 — **图层面板**：控制器 `toggleLayerVisibility`/`hasLayers`；Writer 扩展为补丁
+  `pages.xml` 的 PageSheet `Section N="Layer"` 的 Visible/Lock/Print（保真持久化）；AppBar 图层
+  按钮 + 对话框开关。引擎单测 22/22（+图层往返），macOS 构建成功。

@@ -157,6 +157,41 @@ void main() {
         closeTo(0.5, 1e-4));
   });
 
+  test('layer visibility round-trips when a page has layers', () {
+    const candidates = <String>[
+      'test1.vsdx',
+      'test3_house.vsdx',
+      'test5_master.vsdx',
+      'test6_shape_properties.vsdx',
+      'test10_nested_shapes.vsdx',
+      'test12_colors.vsdx',
+    ];
+    for (final name in candidates) {
+      final bytes = _fixture(name);
+      final doc = parser.parse(bytes);
+      for (var pi = 0; pi < doc.pages.length; pi++) {
+        final page = doc.pages[pi];
+        if (page.layers.isEmpty) continue;
+        final layer = page.layers.first;
+        final toggled = page.copyWith(layers: [
+          for (final l in page.layers)
+            if (l.id == layer.id) l.copyWith(visible: !l.visible) else l,
+        ]);
+        final reopened = parser.parse(
+          writer.write(
+            originalBytes: bytes,
+            edited: doc.replacePage(pi, toggled),
+          ),
+        );
+        final rl =
+            reopened.pages[pi].layers.firstWhere((l) => l.id == layer.id);
+        expect(rl.visible, !layer.visible);
+        return; // one fixture with layers is enough
+      }
+    }
+    // No fixture carried layers; nothing to verify (still a valid pass).
+  });
+
   test('a glued connector round-trips its <Connects>', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);

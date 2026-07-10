@@ -247,6 +247,49 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  Future<void> _showLayers() async {
+    final c = _c;
+    if (c == null || !c.hasLayers) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Layers'),
+        content: SizedBox(
+          width: 320,
+          child: ListenableBuilder(
+            listenable: c,
+            builder: (context, _) {
+              final layers = c.currentPage?.layers ?? const [];
+              if (layers.isEmpty) {
+                return const Text('No layers on this page.');
+              }
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final l in layers)
+                      SwitchListTile(
+                        dense: true,
+                        title: Text(l.name),
+                        value: l.visible,
+                        onChanged: (_) => c.toggleLayerVisibility(l.id),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _exportPdf() async {
     final c = _c;
     final doc = c?.document;
@@ -353,6 +396,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
                 tooltip: 'Toggle grid',
               ),
+              if (c.hasLayers)
+                IconButton(
+                  onPressed: _showLayers,
+                  icon: const Icon(Icons.layers_outlined),
+                  tooltip: 'Layers',
+                ),
               IconButton(
                 onPressed: _save,
                 icon: const Icon(Icons.save_outlined),

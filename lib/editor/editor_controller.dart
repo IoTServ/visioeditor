@@ -120,6 +120,22 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Layers ----------------------------------------------------------------
+
+  bool get hasLayers => currentPage?.layers.isNotEmpty ?? false;
+
+  /// Toggle a layer's visibility on the current page (persists via the writer).
+  void toggleLayerVisibility(int layerId) {
+    updateCurrentPage(
+      (page) => page.copyWith(
+        layers: <VsdxLayer>[
+          for (final l in page.layers)
+            if (l.id == layerId) l.copyWith(visible: !l.visible) else l,
+        ],
+      ),
+    );
+  }
+
   // --- Undo / redo -----------------------------------------------------------
 
   bool get canUndo => _undo.isNotEmpty;

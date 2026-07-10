@@ -11,6 +11,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -19,6 +20,7 @@ import 'package:xml/xml.dart';
 import '../model/connect.dart';
 import '../model/document.dart';
 import '../model/geometry.dart';
+import '../model/layer.dart';
 import '../model/page.dart';
 import '../model/shape.dart';
 import '../parser/document_parser.dart';
@@ -47,7 +49,12 @@ class VsdxWriter {
     final pkg = VsdxPackage.open(originalBytes);
     final resolver = RelationshipResolver(pkg);
 
-    final pagePartByIndex = _resolvePageParts(pkg, resolver);
+    final docPart = pkg.resolveDocumentPartName();
+    final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
+    final pagesXml = pagesPart == null ? null : pkg.readPartXml(pagesPart);
+    final pagePartByIndex = (pagesPart != null && pagesXml != null)
+        ? _resolvePagePartsFrom(pagesXml, pagesPart, resolver)
+        : const <int, String>{};
 
     final patched = <String, Uint8List>{}; // archive name (no slash) -> bytes
     final pages = edited.pages.length;
@@ -61,6 +68,14 @@ class VsdxWriter {
           utf8.encode(xml.toXmlString()),
         );
       }
+    }
+
+    // Layer visibility / lock / print lives on the PageSheet inside pages.xml.
+    if (pagesPart != null &&
+        pagesXml != null &&
+        _patchLayers(pagesXml, baseline, edited)) {
+      patched[_noSlash(pagesPart)] =
+          Uint8List.fromList(utf8.encode(pagesXml.toXmlString()));
     }
 
     return _rezip(originalBytes, patched);
@@ -145,16 +160,12 @@ class VsdxWriter {
 
   // --- Page/part resolution --------------------------------------------------
 
-  Map<int, String> _resolvePageParts(
-    VsdxPackage pkg,
+  Map<int, String> _resolvePagePartsFrom(
+    XmlDocument pagesXml,
+    String pagesPart,
     RelationshipResolver resolver,
   ) {
     final out = <int, String>{};
-    final docPart = pkg.resolveDocumentPartName();
-    final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
-    if (pagesPart == null) return out;
-    final pagesXml = pkg.readPartXml(pagesPart);
-    if (pagesXml == null) return out;
     final pageEls = pagesXml.rootElement.childElements
         .where((el) => el.name.local == 'Page')
         .toList(growable: false);
@@ -169,6 +180,83 @@ class VsdxWriter {
       if (target != null) out[i] = target;
     }
     return out;
+  }
+
+  /// Patch layer Visible / Lock / Print cells on each page's PageSheet when
+  /// they changed vs the baseline. Returns whether anything was written.
+  bool _patchLayers(
+    XmlDocument pagesXml,
+    VsdxDocument baseline,
+    VsdxDocument edited,
+  ) {
+    var changed = false;
+    final pageEls = pagesXml.rootElement.childElements
+        .where((el) => el.name.local == 'Page')
+        .toList(growable: false);
+    final n = math.min(
+      pageEls.length,
+      math.min(baseline.pages.length, edited.pages.length),
+    );
+    for (var i = 0; i < n; i++) {
+      final baseLayers = baseline.pages[i].layers;
+      final editLayers = edited.pages[i].layers;
+      if (_layersEqual(baseLayers, editLayers)) continue;
+      final pageSheet = _firstChild(pageEls[i], 'PageSheet');
+      if (pageSheet == null) continue;
+      XmlElement? section;
+      for (final s in pageSheet.childElements) {
+        if (s.name.local == 'Section' && s.getAttribute('N') == 'Layer') {
+          section = s;
+          break;
+        }
+      }
+      if (section == null) continue;
+      final rows = <int, XmlElement>{};
+      for (final row in section.childElements) {
+        if (row.name.local != 'Row') continue;
+        final ix = int.tryParse(
+            row.getAttribute('IX') ?? row.getAttribute('N') ?? '');
+        if (ix != null) rows[ix] = row;
+      }
+      for (final layer in editLayers) {
+        final base = _findLayer(baseLayers, layer.id);
+        final row = rows[layer.id];
+        if (base == null || row == null) continue;
+        if (layer.visible != base.visible) {
+          _writeValue(_ensureCell(row, 'Visible'), layer.visible ? '1' : '0');
+          changed = true;
+        }
+        if (layer.locked != base.locked) {
+          _writeValue(_ensureCell(row, 'Lock'), layer.locked ? '1' : '0');
+          changed = true;
+        }
+        if (layer.print != base.print) {
+          _writeValue(_ensureCell(row, 'Print'), layer.print ? '1' : '0');
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  static bool _layersEqual(List<VsdxLayer> a, List<VsdxLayer> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id ||
+          a[i].visible != b[i].visible ||
+          a[i].locked != b[i].locked ||
+          a[i].print != b[i].print) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static VsdxLayer? _findLayer(List<VsdxLayer> list, int id) {
+    for (final l in list) {
+      if (l.id == id) return l;
+    }
+    return null;
   }
 
   // --- Patching --------------------------------------------------------------

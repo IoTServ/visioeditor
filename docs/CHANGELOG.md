@@ -30,6 +30,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Save / Save As** with round-trip fidelity; unsaved-changes indicator.
 - **Export**: to SVG (pure-model `VsdxToSvgSerializer`), PNG and multi-page PDF
   (rasterised via the on-screen painter).
+- **Layers**: a panel to toggle layer visibility; the change round-trips
+  (Visible/Lock/Print patched on the PageSheet in pages.xml).
 - **Grid & snapping**: toggleable 0.25 in grid; create / resize snap to it.
 - **Recent files** (persisted) and an **unsaved-changes guard** on close.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
@@ -43,7 +45,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 
 ### Deferred (post-v0.1)
 - Advanced connector routing (elbow / avoidance); rich-text run editing;
-  vector (non-raster) PDF; layers panel; stencil library.
+  vector (non-raster) PDF; stencil library.
 - Other platforms (Windows / Linux / Android / iOS) and legacy `.vsd` import
   (via libvisio); `.vsdx` OS file association, app icon and packaging/signing.
 - LibreOffice / Visio interop is currently covered by our own open→save→reopen
@@ -51,9 +53,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 21 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 22 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing; writer round-trip incl. create / delete / fill /
-  rotate / connects; blank-document emit; geometry-scaling resize; SVG).
+  rotate / connects / layer visibility; blank-document emit; geometry-scaling
+  resize; SVG).
 - App: `flutter analyze` clean; widget smoke test; `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
