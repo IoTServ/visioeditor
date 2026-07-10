@@ -10,6 +10,7 @@ import 'editor/editor_workspace.dart';
 import 'editor/page_canvas.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
+import 'io/pdf_export.dart';
 import 'io/recent_files.dart';
 
 void main() {
@@ -246,6 +247,24 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  Future<void> _exportPdf() async {
+    final c = _c;
+    final doc = c?.document;
+    if (c == null || doc == null) return;
+    final path = await pickExportLocation(
+      ext: 'pdf',
+      suggestedName: '${baseName(c.fileName)}.pdf',
+    );
+    if (path == null) return;
+    try {
+      final bytes = await exportDocumentToPdf(doc);
+      await writeBytesToFile(path, bytes);
+      _snack('Exported PDF to $path');
+    } catch (e) {
+      _snack('PDF export failed: $e');
+    }
+  }
+
   Future<void> _editText(int shapeId) async {
     final c = _c;
     final shape = c?.currentPage?.findShapeById(shapeId);
@@ -377,6 +396,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       _exportSvg();
                     case 'exportPng':
                       _exportPng();
+                    case 'exportPdf':
+                      _exportPdf();
                     case 'snap':
                       c.toggleSnap();
                     case 'close':
@@ -395,6 +416,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   const PopupMenuItem<String>(
                     value: 'exportPng',
                     child: Text('Export as PNG…'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'exportPdf',
+                    child: Text('Export as PDF…'),
                   ),
                   CheckedPopupMenuItem<String>(
                     value: 'snap',

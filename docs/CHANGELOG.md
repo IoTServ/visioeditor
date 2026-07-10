@@ -28,8 +28,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (property panel).
 - **Text**: double-click a shape to edit its text (plain text).
 - **Save / Save As** with round-trip fidelity; unsaved-changes indicator.
-- **Export**: to SVG (pure-model `VsdxToSvgSerializer`) and PNG (rasterised via
-  the on-screen painter).
+- **Export**: to SVG (pure-model `VsdxToSvgSerializer`), PNG and multi-page PDF
+  (rasterised via the on-screen painter).
 - **Grid & snapping**: toggleable 0.25 in grid; create / resize snap to it.
 - **Recent files** (persisted) and an **unsaved-changes guard** on close.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
@@ -42,7 +42,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V, Delete, Esc.
 
 ### Deferred (post-v0.1)
-- Advanced connector routing (elbow / avoidance); rich-text run editing.
+- Advanced connector routing (elbow / avoidance); rich-text run editing;
+  vector (non-raster) PDF; layers panel; stencil library.
 - Other platforms (Windows / Linux / Android / iOS) and legacy `.vsd` import
   (via libvisio); `.vsdx` OS file association, app icon and packaging/signing.
 - LibreOffice / Visio interop is currently covered by our own open→save→reopen
