@@ -49,6 +49,7 @@ enum _DragMode {
   rotate,
   marquee,
   moveWaypoint,
+  connect,
 }
 
 /// The eight resize handles around a selection box.
@@ -63,9 +64,15 @@ class _PageCanvasState extends State<PageCanvas> {
 
   _DragMode _mode = _DragMode.none;
   Offset _lastPointer = Offset.zero;
+
+  // Reveal ("scroll into view") — tracks the controller's revealSerial.
+  int _lastRevealSerial = 0;
   Offset _doubleTapPos = Offset.zero;
   _Handle? _activeHandle;
   int? _resizeShapeId;
+  // Shape state captured when a resize begins, so aspect-lock / resize-from-
+  // centre stay stable across the whole drag.
+  VsdxShape? _resizeStartShape;
 
   // In-place text editing: the shape whose label is being edited (if any),
   // plus the field's controller / focus node.
@@ -82,6 +89,18 @@ class _PageCanvasState extends State<PageCanvas> {
   // Connector waypoint drag (drawio bend points).
   int? _waypointConnId;
   int? _waypointIndex;
+
+  // Hover-to-connect (drawio HoverIcons): the top-level shape currently under
+  // the cursor in idle select mode (shows directional connect arrows), the
+  // source shape while dragging out a new connector from one of those arrows,
+  // and the shape currently under the cursor while wiring (highlighted).
+  int? _hoverShapeId;
+  int? _connectSourceId;
+  int? _connectTargetId;
+
+  /// Screen-px gap from a shape's box to its hover-connect arrows.
+  static const double _connectArrowGapPx = 22;
+  static const double _connectArrowHitPx = 15;
 
   // Creation preview, in content-px space.
   Offset? _previewStart;
@@ -179,6 +198,57 @@ class _PageCanvasState extends State<PageCanvas> {
   void fitToScreen() {
     final v = _viewport;
     if (v != null) _applyFit(v);
+  }
+
+  /// Centre (and optionally zoom-to-fit) the given content-px [rect] in the
+  /// viewport. Used by Find (centre only) and Zoom-to-selection (fit).
+  void _revealContent(Rect rect, {required bool fit}) {
+    final v = _viewport;
+    if (v == null) return;
+    final r = Rect.fromLTRB(
+      math.min(rect.left, rect.right),
+      math.min(rect.top, rect.bottom),
+      math.max(rect.left, rect.right),
+      math.max(rect.top, rect.bottom),
+    );
+    var scale = _scale;
+    // Only re-fit when the target has a meaningful extent (skip for points /
+    // thin 1-D shapes so we don't slam to max zoom).
+    if (fit && r.shortestSide > 4) {
+      const margin = 60.0;
+      final sx = (v.width - margin * 2) / r.width;
+      final sy = (v.height - margin * 2) / r.height;
+      scale =
+          (sx < sy ? sx : sy).clamp(widget.minScale, widget.maxScale).toDouble();
+    }
+    setState(() {
+      _scale = scale;
+      _offset = Offset(v.width / 2, v.height / 2) - r.center * scale;
+    });
+  }
+
+  /// Respond to a controller reveal request: centre on the target shape, or
+  /// fit the whole selection when no specific shape was named.
+  void _handleReveal() {
+    final page = _page;
+    if (page == null) return;
+    final bounds = buildShapeBounds(page);
+    final targetId = _c.revealShapeId;
+    Rect? rect;
+    if (targetId != null) {
+      final b = bounds[targetId];
+      if (b != null) rect = _boundsInchesToContent(b);
+    } else {
+      Rect? union;
+      for (final id in _c.selection) {
+        final b = bounds[id];
+        if (b == null) continue;
+        final r = _boundsInchesToContent(b);
+        union = union == null ? r : union.expandToInclude(r);
+      }
+      rect = union;
+    }
+    if (rect != null) _revealContent(rect, fit: targetId == null);
   }
 
   /// Reset zoom to 100% (1 content-px per device px), centred in the viewport.
@@ -305,10 +375,108 @@ class _PageCanvasState extends State<PageCanvas> {
     };
   }
 
+  // --- Hover-to-connect (drawio HoverIcons) ----------------------------------
+
+  /// The top-most *top-level* shape whose bounds contain [viewportPos], or null.
+  int? _topLevelAt(Offset viewportPos) {
+    final page = _page;
+    if (page == null) return null;
+    final pt = _contentToPageInches(_viewportToContent(viewportPos));
+    final bounds = buildShapeBounds(page);
+    int? best;
+    for (final s in page.shapes) {
+      final r = bounds[s.id];
+      if (r != null && r.contains(pt)) best = s.id;
+    }
+    return best;
+  }
+
+  /// Whether hover-connect affordances should be offered right now.
+  bool get _connectAffordanceActive =>
+      _mode == _DragMode.none &&
+      _c.tool == EditorTool.select &&
+      _editingShapeId == null;
+
+  /// Content-px anchor + direction (0=N,1=E,2=S,3=W) of each connect arrow
+  /// around [box] (content-px, Y-down), sitting [gap] content-px outside it.
+  static List<(Offset, int)> _connectArrows(Rect box, double gap) {
+    final b = _normaliseRect(box);
+    return <(Offset, int)>[
+      (Offset(b.center.dx, b.top - gap), 0),
+      (Offset(b.right + gap, b.center.dy), 1),
+      (Offset(b.center.dx, b.bottom + gap), 2),
+      (Offset(b.left - gap, b.center.dy), 3),
+    ];
+  }
+
+  /// Midpoint of the [box] edge a connect arrow with [dir] points out of
+  /// (content-px) — the visual start of the connector preview.
+  static Offset _connectEdge(Rect box, int dir) {
+    final b = _normaliseRect(box);
+    return switch (dir) {
+      0 => b.topCenter,
+      1 => b.centerRight,
+      2 => b.bottomCenter,
+      _ => b.centerLeft,
+    };
+  }
+
+  static Rect _normaliseRect(Rect r) => Rect.fromLTRB(
+        math.min(r.left, r.right),
+        math.min(r.top, r.bottom),
+        math.max(r.left, r.right),
+        math.max(r.top, r.bottom),
+      );
+
+  /// If [viewportPos] is on one of [s]'s connect arrows, return its direction.
+  int? _connectArrowHitDir(VsdxShape s, Offset viewportPos) {
+    final gap = _connectArrowGapPx / _scale;
+    final anchors = _connectArrows(_exactContentBox(s), gap);
+    final hit = _connectArrowHitPx * _connectArrowHitPx;
+    for (final (c, dir) in anchors) {
+      if ((_offset + c * _scale - viewportPos).distanceSquared <= hit) {
+        return dir;
+      }
+    }
+    return null;
+  }
+
+  void _onHover(PointerHoverEvent e) {
+    if (!_connectAffordanceActive) {
+      if (_hoverShapeId != null) setState(() => _hoverShapeId = null);
+      return;
+    }
+    final pos = e.localPosition;
+    var next = _topLevelAt(pos);
+    // Keep the current hover while the pointer is over one of its arrows (which
+    // sit outside the shape, so a plain hit-test there would clear it).
+    if (next == null && _hoverShapeId != null) {
+      final s = _page?.findShapeById(_hoverShapeId!);
+      if (s != null && !s.is1D && _connectArrowHitDir(s, pos) != null) {
+        next = _hoverShapeId;
+      }
+    }
+    // Don't offer arrows on 1-D shapes (connectors).
+    if (next != null) {
+      final s = _page?.findShapeById(next);
+      if (s == null || s.is1D) next = null;
+    }
+    if (next != _hoverShapeId) setState(() => _hoverShapeId = next);
+  }
+
+  void _clearHover() {
+    if (_hoverShapeId != null) setState(() => _hoverShapeId = null);
+  }
+
   void _onTapUp(TapUpDetails d) {
     if (_editingShapeId != null) {
       _commitTextEdit(); // a click outside the editor applies the edit
       return;
+    }
+    // A click on a hover-connect arrow shouldn't clear the selection.
+    if (_connectAffordanceActive && _hoverShapeId != null) {
+      final s = _page?.findShapeById(_hoverShapeId!);
+      if (s != null && _connectArrowHitDir(s, d.localPosition) != null) return;
     }
     if (_c.tool == EditorTool.connector) {
       return; // connectors need a drag between two points
@@ -377,6 +545,10 @@ class _PageCanvasState extends State<PageCanvas> {
           const PopupMenuItem(value: 'front', child: Text('Bring to Front')));
       items.add(
           const PopupMenuItem(value: 'back', child: Text('Send to Back')));
+      items.add(const PopupMenuItem(
+          value: 'forward', child: Text('Bring Forward')));
+      items.add(const PopupMenuItem(
+          value: 'backward', child: Text('Send Backward')));
       if (_c.canGroup || _c.canUngroup) {
         items.add(const PopupMenuDivider());
         if (_c.canGroup) {
@@ -430,6 +602,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.bringSelectionToFront();
       case 'back':
         _c.sendSelectionToBack();
+      case 'forward':
+        _c.bringSelectionForward();
+      case 'backward':
+        _c.sendSelectionBackward();
       case 'group':
         _c.groupSelection();
       case 'ungroup':
@@ -574,6 +750,25 @@ class _PageCanvasState extends State<PageCanvas> {
       });
       return;
     }
+    // Hover-connect: dragging out of one of a hovered shape's arrows starts a
+    // new connector glued to that shape (drawio's HoverIcons).
+    final hover = _hoverShapeId;
+    if (hover != null) {
+      final s = _page?.findShapeById(hover);
+      if (s != null && !s.is1D) {
+        final dir = _connectArrowHitDir(s, d.localPosition);
+        if (dir != null) {
+          _connectSourceId = hover;
+          _connectTargetId = null;
+          _mode = _DragMode.connect;
+          setState(() {
+            _previewStart = _connectEdge(_exactContentBox(s), dir);
+            _previewEnd = _viewportToContent(d.localPosition);
+          });
+          return;
+        }
+      }
+    }
     // Rotate handle takes top priority for a single 2-D selection.
     final rotatable = _rotatableSelection();
     if (rotatable != null) {
@@ -594,6 +789,7 @@ class _PageCanvasState extends State<PageCanvas> {
         if ((entry.value - d.localPosition).distanceSquared <= 144) {
           _activeHandle = entry.key;
           _resizeShapeId = resizable.id;
+          _resizeStartShape = resizable;
           _mode = _DragMode.resize;
           _c.beginTransaction();
           return;
@@ -634,7 +830,19 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.panCanvas:
         setState(() => _offset += pos - _lastPointer);
       case _DragMode.createShape:
-        setState(() => _previewEnd = _viewportToContent(pos));
+        setState(() {
+          _previewEnd = _viewportToContent(pos);
+          // Highlight the shape the connector would glue to on drop.
+          _connectTargetId =
+              _c.tool == EditorTool.connector ? _topLevelAt(pos) : null;
+        });
+      case _DragMode.connect:
+        final src = _connectSourceId;
+        final t = _topLevelAt(pos);
+        setState(() {
+          _previewEnd = _viewportToContent(pos);
+          _connectTargetId = (t == src) ? null : t;
+        });
       case _DragMode.resize:
         _applyResize(pos);
       case _DragMode.marquee:
@@ -668,42 +876,72 @@ class _PageCanvasState extends State<PageCanvas> {
   void _applyResize(Offset pos) {
     final id = _resizeShapeId;
     final handle = _activeHandle;
-    if (id == null || handle == null) return;
-    final s = _c.currentPage?.findShapeById(id);
-    if (s == null) return;
+    final s0 = _resizeStartShape;
+    if (id == null || handle == null || s0 == null) return;
     final p = _pageInchesAt(pos);
     final px = _c.snap(p.dx);
     final py = _c.snap(p.dy);
-    var l = s.pinX - s.width / 2;
-    var r = s.pinX + s.width / 2;
-    var b = s.pinY - s.height / 2;
-    var t = s.pinY + s.height / 2;
-    switch (handle) {
-      case _Handle.tl:
-        l = px;
-        t = py;
-      case _Handle.tr:
-        r = px;
-        t = py;
-      case _Handle.br:
-        r = px;
-        b = py;
-      case _Handle.bl:
-        l = px;
-        b = py;
-      case _Handle.t:
-        t = py;
-      case _Handle.b:
-        b = py;
-      case _Handle.l:
-        l = px;
-      case _Handle.r:
-        r = px;
+    final cx = s0.pinX, cy = s0.pinY;
+    var l = s0.pinX - s0.width / 2;
+    var r = s0.pinX + s0.width / 2;
+    var b = s0.pinY - s0.height / 2;
+    var t = s0.pinY + s0.height / 2;
+
+    final movesL =
+        handle == _Handle.tl || handle == _Handle.bl || handle == _Handle.l;
+    final movesR =
+        handle == _Handle.tr || handle == _Handle.br || handle == _Handle.r;
+    final movesT =
+        handle == _Handle.tl || handle == _Handle.tr || handle == _Handle.t;
+    final movesB =
+        handle == _Handle.bl || handle == _Handle.br || handle == _Handle.b;
+    if (movesL) l = px;
+    if (movesR) r = px;
+    if (movesT) t = py;
+    if (movesB) b = py;
+
+    // Alt / Option resizes symmetrically about the original centre.
+    final centered = HardwareKeyboard.instance.isAltPressed;
+    if (centered) {
+      if (movesL) r = 2 * cx - l;
+      if (movesR) l = 2 * cx - r;
+      if (movesT) b = 2 * cy - t;
+      if (movesB) t = 2 * cy - b;
     }
-    final nl = math.min(l, r);
-    final nr = math.max(l, r);
-    final nb = math.min(b, t);
-    final nt = math.max(b, t);
+
+    var nl = math.min(l, r), nr = math.max(l, r);
+    var nb = math.min(b, t), nt = math.max(b, t);
+    var w = math.max(nr - nl, 0.05);
+    var h = math.max(nt - nb, 0.05);
+
+    // Shift on a corner handle keeps the original aspect ratio.
+    final corner = handle == _Handle.tl ||
+        handle == _Handle.tr ||
+        handle == _Handle.br ||
+        handle == _Handle.bl;
+    if (HardwareKeyboard.instance.isShiftPressed && corner && s0.height > 0) {
+      final aspect = s0.width / s0.height;
+      if (w / h > aspect) {
+        h = w / aspect;
+      } else {
+        w = h * aspect;
+      }
+      if (centered) {
+        nl = cx - w / 2;
+        nr = cx + w / 2;
+        nb = cy - h / 2;
+        nt = cy + h / 2;
+      } else {
+        // Anchor the corner opposite the one being dragged.
+        final fixedX = movesL ? s0.pinX + s0.width / 2 : s0.pinX - s0.width / 2;
+        final fixedY = movesB ? s0.pinY + s0.height / 2 : s0.pinY - s0.height / 2;
+        nl = movesL ? fixedX - w : fixedX;
+        nr = movesL ? fixedX : fixedX + w;
+        nb = movesB ? fixedY - h : fixedY;
+        nt = movesB ? fixedY : fixedY + h;
+      }
+    }
+
     _c.resizeShape(
       id,
       pinX: (nl + nr) / 2,
@@ -784,6 +1022,17 @@ class _PageCanvasState extends State<PageCanvas> {
       snapDx = res.dx;
       snapDy = res.dy;
       guides = res.guides;
+      // Fall back to grid snapping on any axis a neighbour didn't already
+      // align (drawio snaps to the grid while dragging).
+      if (_c.snapToGrid) {
+        final g = _c.gridInches;
+        if (snapDx == 0) {
+          snapDx = (moving.l / g).roundToDouble() * g - moving.l;
+        }
+        if (snapDy == 0) {
+          snapDy = (moving.b / g).roundToDouble() * g - moving.b;
+        }
+      }
     }
     final snapped = eff + Offset(snapDx, snapDy);
     final inc = snapped - _moveAppliedInches;
@@ -864,6 +1113,7 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.commitTransaction();
         _activeHandle = null;
         _resizeShapeId = null;
+        _resizeStartShape = null;
         _clearMoveGuides();
       case _DragMode.createShape:
         final start = _previewStart;
@@ -887,6 +1137,24 @@ class _PageCanvasState extends State<PageCanvas> {
         setState(() {
           _previewStart = null;
           _previewEnd = null;
+          _connectTargetId = null;
+        });
+      case _DragMode.connect:
+        final start = _previewStart;
+        final end = _previewEnd;
+        final src = _connectSourceId;
+        if (start != null && end != null && src != null) {
+          final a = _contentToPageInches(start);
+          final b = _contentToPageInches(end);
+          final target = _connectTargetId == src ? null : _connectTargetId;
+          _c.createConnector(a.dx, a.dy, b.dx, b.dy,
+              beginTarget: src, endTarget: target);
+        }
+        setState(() {
+          _previewStart = null;
+          _previewEnd = null;
+          _connectSourceId = null;
+          _connectTargetId = null;
         });
       case _DragMode.marquee:
         _commitMarquee();
@@ -899,6 +1167,40 @@ class _PageCanvasState extends State<PageCanvas> {
         break;
     }
     _mode = _DragMode.none;
+  }
+
+  /// Abort whatever drag is in progress and revert transient model changes
+  /// (Escape). Further pan updates are ignored because the mode is reset.
+  void _cancelActiveDrag() {
+    switch (_mode) {
+      case _DragMode.moveShapes:
+      case _DragMode.resize:
+      case _DragMode.rotate:
+      case _DragMode.moveWaypoint:
+        _c.cancelTransaction();
+      case _DragMode.none:
+      case _DragMode.panCanvas:
+      case _DragMode.createShape:
+      case _DragMode.marquee:
+      case _DragMode.connect:
+        break;
+    }
+    setState(() {
+      _mode = _DragMode.none;
+      _previewStart = null;
+      _previewEnd = null;
+      _marqueeStart = null;
+      _marqueeEnd = null;
+      _connectSourceId = null;
+      _connectTargetId = null;
+      _activeHandle = null;
+      _resizeShapeId = null;
+      _resizeStartShape = null;
+      _waypointConnId = null;
+      _waypointIndex = null;
+      _guides = const <SnapGuide>[];
+      _moveStartBounds = null;
+    });
   }
 
   void _commitMarquee() {
@@ -959,6 +1261,11 @@ class _PageCanvasState extends State<PageCanvas> {
         return KeyEventResult.handled;
       }
     } else if (key == LogicalKeyboardKey.escape) {
+      // Cancel an in-progress drag first (revert to the pre-drag state).
+      if (_mode != _DragMode.none) {
+        _cancelActiveDrag();
+        return KeyEventResult.handled;
+      }
       if (_c.tool != EditorTool.select) {
         _c.setTool(EditorTool.select);
       } else {
@@ -1029,6 +1336,12 @@ class _PageCanvasState extends State<PageCanvas> {
                 if (mounted) _applyFit(viewport);
               });
             }
+            if (_c.revealSerial != _lastRevealSerial) {
+              _lastRevealSerial = _c.revealSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _handleReveal();
+              });
+            }
             final selectionRects = <Rect>[
               for (final id in _c.selection)
                 if (bounds[id] != null) _boundsInchesToContent(bounds[id]!),
@@ -1046,9 +1359,23 @@ class _PageCanvasState extends State<PageCanvas> {
               rotateAnchor = anchors.$1;
               rotateKnob = anchors.$2;
             }
-            final previewTool = _mode == _DragMode.createShape ? _c.tool : null;
+            final previewTool = _mode == _DragMode.createShape
+                ? _c.tool
+                : (_mode == _DragMode.connect ? EditorTool.connector : null);
             final marquee = (_marqueeStart != null && _marqueeEnd != null)
                 ? Rect.fromPoints(_marqueeStart!, _marqueeEnd!)
+                : null;
+            // Hover-connect arrows (idle select mode) and the glue-target
+            // highlight shown while wiring a connector.
+            Rect? hoverBox;
+            if (_connectAffordanceActive && _hoverShapeId != null) {
+              final s = page.findShapeById(_hoverShapeId!);
+              if (s != null && !s.is1D) hoverBox = _exactContentBox(s);
+            }
+            final targetId = _connectTargetId;
+            final Rect? connectTargetRect = (targetId != null &&
+                    bounds[targetId] != null)
+                ? _boundsInchesToContent(bounds[targetId]!)
                 : null;
             final inlineEditor = _buildInlineEditor(context);
             final guideSegments = <(Offset, Offset)>[
@@ -1079,6 +1406,13 @@ class _PageCanvasState extends State<PageCanvas> {
               onKeyEvent: _onKey,
               child: Listener(
               onPointerSignal: _onPointerSignal,
+              child: MouseRegion(
+              onHover: _onHover,
+              onExit: (_) => _clearHover(),
+              cursor: (_c.tool == EditorTool.connector ||
+                      _mode == _DragMode.connect)
+                  ? SystemMouseCursors.precise
+                  : MouseCursor.defer,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapUp: _onTapUp,
@@ -1148,6 +1482,10 @@ class _PageCanvasState extends State<PageCanvas> {
                                       guides: guideSegments,
                                       waypointHandles: waypointHandles,
                                       midpointHandles: midpointHandles,
+                                      hoverBox: hoverBox,
+                                      hoverArrowGap:
+                                          _connectArrowGapPx / _scale,
+                                      connectTargetRect: connectTargetRect,
                                     ),
                                   ),
                                 ),
@@ -1171,6 +1509,7 @@ class _PageCanvasState extends State<PageCanvas> {
                   ),
                 ),
               ),
+            ),
             ),
             );
           },
@@ -1197,6 +1536,9 @@ class _SelectionPainter extends CustomPainter {
     this.guides = const <(Offset, Offset)>[],
     this.waypointHandles = const <Offset>[],
     this.midpointHandles = const <Offset>[],
+    this.hoverBox,
+    this.hoverArrowGap = 0,
+    this.connectTargetRect,
   });
 
   final List<Rect> rects;
@@ -1209,6 +1551,12 @@ class _SelectionPainter extends CustomPainter {
   final Offset? previewStart;
   final Offset? previewEnd;
   final EditorTool? previewTool;
+
+  /// Hover-connect arrow ring around the hovered shape (content-px) and the
+  /// gap from its box; plus the glue-target highlight while wiring.
+  final Rect? hoverBox;
+  final double hoverArrowGap;
+  final Rect? connectTargetRect;
   final Rect? marquee;
 
   /// Alignment guide lines (content-px), drawn while dragging a selection.
@@ -1288,7 +1636,62 @@ class _SelectionPainter extends CustomPainter {
         canvas.drawCircle(c, handleSize * 0.7, fill);
       }
     }
+    _paintConnectTarget(canvas);
+    _paintHoverArrows(canvas);
     _paintPreview(canvas, outline);
+  }
+
+  /// Highlight the shape a connector would glue to on drop.
+  void _paintConnectTarget(Canvas canvas) {
+    final r = connectTargetRect;
+    if (r == null) return;
+    final rect = _normalise(r);
+    canvas
+      ..drawRect(rect, Paint()..color = color.withValues(alpha: 0.12))
+      ..drawRect(
+        rect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth * 1.6
+          ..color = color,
+      );
+  }
+
+  /// Directional connect arrows around the hovered shape (drawio HoverIcons).
+  void _paintHoverArrows(Canvas canvas) {
+    final box = hoverBox;
+    if (box == null) return;
+    final r = handleSize * 1.3;
+    final disc = Paint()..color = color;
+    final glyph = Paint()..color = Colors.white;
+    for (final (c, dir) in _PageCanvasState._connectArrows(box, hoverArrowGap)) {
+      canvas.drawCircle(c, r, disc);
+      // A small white triangle pointing outward.
+      final t = r * 0.55;
+      final path = switch (dir) {
+        0 => (Path()
+          ..moveTo(c.dx, c.dy - t)
+          ..lineTo(c.dx - t, c.dy + t * 0.6)
+          ..lineTo(c.dx + t, c.dy + t * 0.6)
+          ..close()),
+        1 => (Path()
+          ..moveTo(c.dx + t, c.dy)
+          ..lineTo(c.dx - t * 0.6, c.dy - t)
+          ..lineTo(c.dx - t * 0.6, c.dy + t)
+          ..close()),
+        2 => (Path()
+          ..moveTo(c.dx, c.dy + t)
+          ..lineTo(c.dx - t, c.dy - t * 0.6)
+          ..lineTo(c.dx + t, c.dy - t * 0.6)
+          ..close()),
+        _ => (Path()
+          ..moveTo(c.dx - t, c.dy)
+          ..lineTo(c.dx + t * 0.6, c.dy - t)
+          ..lineTo(c.dx + t * 0.6, c.dy + t)
+          ..close()),
+      };
+      canvas.drawPath(path, glyph);
+    }
   }
 
   static Rect _normalise(Rect r) => Rect.fromLTRB(
@@ -1328,6 +1731,9 @@ class _SelectionPainter extends CustomPainter {
       old.previewEnd != previewEnd ||
       old.previewTool != previewTool ||
       old.marquee != marquee ||
+      old.hoverBox != hoverBox ||
+      old.hoverArrowGap != hoverArrowGap ||
+      old.connectTargetRect != connectTargetRect ||
       !listEquals(old.guides, guides) ||
       !listEquals(old.waypointHandles, waypointHandles) ||
       !listEquals(old.midpointHandles, midpointHandles);

@@ -24,39 +24,50 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
     await tester.pumpAndSettle();
 
+    // The inline editor lives inside the canvas; scope finders to it so the
+    // Arrange panel's numeric fields (also TextFields) don't interfere.
+    final inlineEditor = find.descendant(
+      of: find.byType(PageCanvas),
+      matching: find.byType(TextField),
+    );
+    Finder inlineWithText(String t) => find.descendant(
+          of: find.byType(PageCanvas),
+          matching: find.widgetWithText(TextField, t),
+        );
+
     // Draw a rectangle by picking the tool and clicking the canvas centre.
     await tester.tap(find.byIcon(Icons.crop_square));
     await tester.pumpAndSettle();
     await _tapCanvasAt(tester, _canvasCentre(tester));
 
     // No inline editor until we ask for one.
-    expect(find.byType(TextField), findsNothing);
+    expect(inlineEditor, findsNothing);
 
     // Double-click the shape → inline editor appears.
     await _doubleTapAt(tester, _canvasCentre(tester));
-    expect(find.byType(TextField), findsOneWidget);
+    expect(inlineEditor, findsOneWidget);
 
     // Type a label; clicking away on the empty canvas applies it.
-    await tester.enterText(find.byType(TextField), 'Hello');
+    await tester.enterText(inlineEditor, 'Hello');
     await tester.pump();
     await _tapCanvasAt(
         tester, tester.getTopLeft(find.byType(PageCanvas)) + const Offset(6, 6));
-    expect(find.byType(TextField), findsNothing);
+    expect(inlineEditor, findsNothing);
 
     // Re-open: the editor is seeded from the model, proving the text was
     // written back through setShapeText.
     await _doubleTapAt(tester, _canvasCentre(tester));
-    expect(find.widgetWithText(TextField, 'Hello'), findsOneWidget);
+    expect(inlineWithText('Hello'), findsOneWidget);
 
     // Escape cancels without applying the change.
-    await tester.enterText(find.byType(TextField), 'Discarded');
+    await tester.enterText(inlineEditor, 'Discarded');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byType(TextField), findsNothing);
+    expect(inlineEditor, findsNothing);
 
     await _doubleTapAt(tester, _canvasCentre(tester));
-    expect(find.widgetWithText(TextField, 'Hello'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'Discarded'), findsNothing);
+    expect(inlineWithText('Hello'), findsOneWidget);
+    expect(inlineWithText('Discarded'), findsNothing);
   });
 
   testWidgets('right-click opens a context menu with edit actions',

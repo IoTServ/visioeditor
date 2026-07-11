@@ -32,6 +32,18 @@ class EditorController extends ChangeNotifier {
   VsdxDocument? _txnBase;
   bool _dirty = false;
 
+  // Reveal ("scroll into view") requests: the canvas watches [revealSerial]
+  // and, when it changes, centres on [revealShapeId] (or the selection when
+  // that is null). Used by Find and "Zoom to selection".
+  int _revealSerial = 0;
+  int? _revealShapeId;
+
+  // Find state (drawio Ctrl+F): the query, the matching shape ids on the
+  // current page, and the index of the currently-highlighted match.
+  String _findQuery = '';
+  List<int> _findMatches = const <int>[];
+  int _findIndex = -1;
+
   VsdxDocument? get document => _document;
   Uint8List? get originalBytes => _originalBytes;
   String? get filePath => _filePath;
@@ -55,6 +67,7 @@ class EditorController extends ChangeNotifier {
     if (index < 0 || index >= pageCount || index == _currentPageIndex) return;
     _currentPageIndex = index;
     _selection.clear();
+    _clearFindState();
     notifyListeners();
   }
 
@@ -244,6 +257,17 @@ class EditorController extends ChangeNotifier {
       _dirty = true;
     }
     notifyListeners();
+  }
+
+  /// Abort the current gesture, reverting the live document to the snapshot
+  /// taken at [beginTransaction] (no history entry). Used by Escape-to-cancel.
+  void cancelTransaction() {
+    final base = _txnBase;
+    _txnBase = null;
+    if (base != null && !identical(base, _document)) {
+      _document = base;
+      notifyListeners();
+    }
   }
 
   void undo() {
@@ -651,6 +675,125 @@ class EditorController extends ChangeNotifier {
     });
   }
 
+  /// Move the selection one step forward in z-order (drawio "Bring Forward").
+  void bringSelectionForward() {
+    if (_selection.isEmpty) return;
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in _selection) {
+        next = next.bringForward(id);
+      }
+      return next;
+    });
+  }
+
+  /// Move the selection one step backward in z-order (drawio "Send Backward").
+  void sendSelectionBackward() {
+    if (_selection.isEmpty) return;
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in _selection) {
+        next = next.sendBackward(id);
+      }
+      return next;
+    });
+  }
+
+  // --- Arrange (numeric geometry, flip, rotate) ------------------------------
+
+  /// The single selected shape, or `null` when zero / many are selected.
+  VsdxShape? get singleSelected {
+    if (_selection.length != 1) return null;
+    return currentPage?.findShapeById(_selection.first);
+  }
+
+  /// Position / size / rotation of the single selection for the Arrange panel.
+  /// `x`/`y` are the top-left of the axis-aligned box in inches measured from
+  /// the page's top-left (Y-down, matching the on-screen canvas); `angleDeg`
+  /// is the rotation in degrees (Visio CCW convention).
+  ({double x, double y, double w, double h, double angleDeg})? get selectedGeometry {
+    final s = singleSelected;
+    final page = currentPage;
+    if (s == null || page == null) return null;
+    return (
+      x: s.pinX - s.width / 2,
+      y: page.heightInches - (s.pinY + s.height / 2),
+      w: s.width,
+      h: s.height,
+      angleDeg: s.angleRad * 180 / math.pi,
+    );
+  }
+
+  /// Move the single selection so its left edge sits at [x] inches.
+  void setSelectedX(double x) {
+    final s = singleSelected;
+    if (s == null) return;
+    _moveSingle(s, x + s.width / 2, s.pinY);
+  }
+
+  /// Move the single selection so its top edge sits at [y] inches from the
+  /// page top (Y-down).
+  void setSelectedY(double y) {
+    final s = singleSelected;
+    final page = currentPage;
+    if (s == null || page == null) return;
+    _moveSingle(s, s.pinX, page.heightInches - y - s.height / 2);
+  }
+
+  void _moveSingle(VsdxShape s, double pinX, double pinY) {
+    updateCurrentPage(
+      (page) => page
+          .updateShapeById(s.id, (sh) => _translated(sh, pinX - sh.pinX, pinY - sh.pinY))
+          .rerouteConnectors(),
+    );
+  }
+
+  /// Resize the single selection to [w] inches wide, keeping its left edge.
+  void setSelectedWidth(double w) {
+    final s = singleSelected;
+    if (s == null || w <= 0) return;
+    final left = s.pinX - s.width / 2;
+    resizeShape(s.id, pinX: left + w / 2, pinY: s.pinY, width: w, height: s.height);
+  }
+
+  /// Resize the single selection to [h] inches tall, keeping its top edge.
+  void setSelectedHeight(double h) {
+    final s = singleSelected;
+    if (s == null || h <= 0) return;
+    final top = s.pinY + s.height / 2;
+    resizeShape(s.id, pinX: s.pinX, pinY: top - h / 2, width: s.width, height: h);
+  }
+
+  /// Set the single selection's rotation from a value in degrees.
+  void setSelectedAngleDegrees(double deg) {
+    final s = singleSelected;
+    if (s == null) return;
+    rotateShape(s.id, deg * math.pi / 180);
+  }
+
+  /// Rotate every selected shape 90° about its own pin (drawio Ctrl+R). Pass
+  /// `clockwise: false` to turn the other way.
+  void rotateSelection90({bool clockwise = true}) {
+    if (_selection.isEmpty) return;
+    // Visio angles are CCW-positive, so a clockwise turn subtracts 90°.
+    final delta = (clockwise ? -1 : 1) * math.pi / 2;
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in _selection) {
+        next = next.updateShapeById(id, (s) => s.copyWith(angleRad: s.angleRad + delta));
+      }
+      return next.rerouteConnectors();
+    });
+  }
+
+  /// Mirror the selected shapes horizontally (`FlipX`).
+  void flipHorizontal() =>
+      _updateSelectedShapes((s) => s.copyWith(flipX: !s.flipX));
+
+  /// Mirror the selected shapes vertically (`FlipY`).
+  void flipVertical() =>
+      _updateSelectedShapes((s) => s.copyWith(flipY: !s.flipY));
+
   void _updateSelectedShapes(
     VsdxShape Function(VsdxShape) update, {
     bool transient = false,
@@ -725,6 +868,13 @@ class EditorController extends ChangeNotifier {
         (s) =>
             s.copyWith(line: s.line.copyWith(beginArrow: begin, endArrow: end)),
       );
+
+  /// Set the start arrowhead type (`BeginArrow` id; 0 = none). See
+  /// `lib/render/arrow_library.dart` for the id → shape mapping.
+  void setBeginArrow(int id) => setLineArrows(begin: id);
+
+  /// Set the end arrowhead type (`EndArrow` id; 0 = none).
+  void setEndArrow(int id) => setLineArrows(end: id);
 
   /// Fill opacity in 0..1 (1 = opaque). Stored as `FillForegndTrans = 1-opacity`.
   void setFillOpacity(double opacity, {bool transient = false}) =>
@@ -1118,6 +1268,98 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  // --- Reveal / find (drawio Ctrl+F, "Zoom to selection") --------------------
+
+  /// Monotonic counter the canvas watches to know a reveal was requested.
+  int get revealSerial => _revealSerial;
+
+  /// Target of the pending reveal: a shape id, or `null` to reveal the whole
+  /// current selection.
+  int? get revealShapeId => _revealShapeId;
+
+  /// Ask the canvas to scroll/centre so shape [id] is in view.
+  void revealShape(int id) {
+    _revealShapeId = id;
+    _revealSerial++;
+    notifyListeners();
+  }
+
+  /// Ask the canvas to zoom to the current selection.
+  void revealSelection() {
+    if (_selection.isEmpty) return;
+    _revealShapeId = null;
+    _revealSerial++;
+    notifyListeners();
+  }
+
+  String get findQuery => _findQuery;
+  int get findMatchCount => _findMatches.length;
+
+  /// 1-based index of the current match (0 when there are none).
+  int get findCurrentOrdinal => _findIndex < 0 ? 0 : _findIndex + 1;
+
+  /// Recompute the matches for [query] on the current page (matching shape text
+  /// or name, case-insensitively) and jump to the first hit.
+  void updateFind(String query) {
+    _findQuery = query;
+    final page = currentPage;
+    final q = query.trim().toLowerCase();
+    if (page == null || q.isEmpty) {
+      _findMatches = const <int>[];
+      _findIndex = -1;
+      notifyListeners();
+      return;
+    }
+    final matches = <int>[];
+    void walk(VsdxShape s) {
+      final text =
+          s.richText.runs.isNotEmpty ? s.richText.plainText : (s.text ?? '');
+      if (text.toLowerCase().contains(q) || s.name.toLowerCase().contains(q)) {
+        matches.add(s.id);
+      }
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final s in page.shapes) {
+      walk(s);
+    }
+    _findMatches = matches;
+    _findIndex = matches.isEmpty ? -1 : 0;
+    if (_findIndex >= 0) {
+      _selectAndReveal(matches[_findIndex]);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  /// Advance to the next match (wrapping), selecting and revealing it.
+  void findNext() {
+    if (_findMatches.isEmpty) return;
+    _findIndex = (_findIndex + 1) % _findMatches.length;
+    _selectAndReveal(_findMatches[_findIndex]);
+  }
+
+  /// Go to the previous match (wrapping), selecting and revealing it.
+  void findPrevious() {
+    if (_findMatches.isEmpty) return;
+    _findIndex = (_findIndex - 1 + _findMatches.length) % _findMatches.length;
+    _selectAndReveal(_findMatches[_findIndex]);
+  }
+
+  void clearFind() {
+    _clearFindState();
+    notifyListeners();
+  }
+
+  void _selectAndReveal(int id) {
+    _selection
+      ..clear()
+      ..add(id);
+    revealShape(id); // notifies
+  }
+
   // --- Save / export ---------------------------------------------------------
 
   /// Serialise the current document back to `.vsdx` bytes (round-trip writer).
@@ -1214,6 +1456,13 @@ class EditorController extends ChangeNotifier {
     _redo.clear();
     _txnBase = null;
     _dirty = false;
+    _clearFindState();
+  }
+
+  void _clearFindState() {
+    _findQuery = '';
+    _findMatches = const <int>[];
+    _findIndex = -1;
   }
 
   static String? _basename(String? path) {

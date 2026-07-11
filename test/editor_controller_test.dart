@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:vsdx/vsdx.dart';
@@ -61,6 +63,24 @@ void main() {
     expect(s.line.endArrow, 1);
     expect(s.line.transparency, closeTo(0.5, 1e-9));
     expect(s.fill.foregroundTransparency, closeTo(0.75, 1e-9));
+  });
+
+  test('begin/end arrowhead type setters update the model', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 1, 4, 1);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    c.setBeginArrow(10); // diamond
+    c.setEndArrow(4); // filled triangle
+    final s = c.currentPage!.findShapeById(id)!;
+    expect(s.line.beginArrow, 10);
+    expect(s.line.endArrow, 4);
+
+    c.setEndArrow(0); // none
+    expect(c.currentPage!.findShapeById(id)!.line.endArrow, 0);
   });
 
   test('connector routing style toggles and survives reroute', () {
@@ -149,6 +169,110 @@ void main() {
     expect(s.shadow.enabled, isTrue);
     expect(c.selectedHasShadow, isTrue);
     expect(c.selectedVerticalAlign, VsdxVertAlign.bottom);
+  });
+
+  test('arrange: flip, rotate 90° and numeric geometry', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2); // 2in x 1in at left=1, top(Y-up)=2
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    // Flip toggles the mirror flags.
+    c.flipHorizontal();
+    expect(c.currentPage!.findShapeById(id)!.flipX, isTrue);
+    c.flipVertical();
+    expect(c.currentPage!.findShapeById(id)!.flipY, isTrue);
+
+    // Rotate 90° clockwise subtracts a quarter turn (Visio CCW convention).
+    c.rotateSelection90();
+    expect(c.currentPage!.findShapeById(id)!.angleRad, closeTo(-math.pi / 2, 1e-9));
+    c.rotateSelection90(clockwise: false);
+    expect(c.currentPage!.findShapeById(id)!.angleRad, closeTo(0, 1e-9));
+
+    // Numeric width keeps the left edge fixed.
+    final before = c.currentPage!.findShapeById(id)!;
+    final left = before.pinX - before.width / 2;
+    c.setSelectedWidth(4);
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.width, closeTo(4, 1e-9));
+    expect(after.pinX - after.width / 2, closeTo(left, 1e-9));
+
+    // X sets the left edge directly.
+    c.setSelectedX(0);
+    final moved = c.currentPage!.findShapeById(id)!;
+    expect(moved.pinX - moved.width / 2, closeTo(0, 1e-9));
+  });
+
+  test('one-step z-order moves the selection forward and backward', () {
+    final c = newDocWithTwoRects();
+    final ids = <int>[for (final s in c.currentPage!.shapes) s.id];
+    // Initial order: [first, second].
+    c.setSelection(<int>{ids.first});
+    c.bringSelectionForward();
+    expect(c.currentPage!.shapes.map((s) => s.id).toList(), [ids.last, ids.first]);
+    c.sendSelectionBackward();
+    expect(c.currentPage!.shapes.map((s) => s.id).toList(), [ids.first, ids.last]);
+  });
+
+  test('cancelTransaction reverts a transient drag without history', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    final x0 = c.currentPage!.findShapeById(id)!.pinX;
+
+    c.beginTransaction();
+    c.moveSelectionBy(2, 0, transient: true);
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(x0 + 2, 1e-9));
+
+    c.cancelTransaction();
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(x0, 1e-9));
+
+    // The cancelled drag left no undo step: the next undo removes the shape.
+    c.undo();
+    expect(c.currentPage!.shapes, isEmpty);
+  });
+
+  test('find matches shapes by text, selects and cycles', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c.setShapeText(a, 'Alpha');
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(4, 4, 5, 5);
+    final b = c.currentPage!.shapes.last.id;
+    c.setShapeText(b, 'Beta');
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(6, 6, 7, 7);
+    final d = c.currentPage!.shapes.last.id;
+    c.setShapeText(d, 'Alphabet');
+
+    c.updateFind('alph');
+    expect(c.findMatchCount, 2); // Alpha + Alphabet
+    expect(c.findCurrentOrdinal, 1);
+    expect(c.selection, <int>{a}); // first match selected
+
+    final serial = c.revealSerial;
+    c.findNext();
+    expect(c.findCurrentOrdinal, 2);
+    expect(c.selection, <int>{d});
+    expect(c.revealSerial, greaterThan(serial)); // asked the canvas to reveal
+
+    c.findNext(); // wraps back to the first
+    expect(c.findCurrentOrdinal, 1);
+    expect(c.selection, <int>{a});
+
+    c.clearFind();
+    expect(c.findMatchCount, 0);
+    expect(c.findQuery, isEmpty);
   });
 
   test('copy/paste style transfers fill between shapes', () {

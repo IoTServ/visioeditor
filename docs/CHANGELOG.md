@@ -17,9 +17,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   multi-page tabs, pan / zoom canvas rendering through the recovered painter.
 - **New drawing**: create a blank `.vsdx` from scratch (`emptyDocument`
   emit-from-scratch), Cmd+N / toolbar / empty-state button.
-- **Editing**: select, move, resize (8 handles; geometry scales with the box),
+- **Editing**: select, move, resize (8 handles; geometry scales with the box;
+  **Shift** locks the aspect ratio, **Alt** resizes from the centre),
   **rotate** (top handle), delete, snapshot-based undo / redo, duplicate,
   copy / paste (Cmd+C / Cmd+V), and **Alt-drag to duplicate** on the canvas.
+  Dragging snaps to the grid (and to neighbours); **Esc cancels an in-progress
+  drag**, reverting it.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview.
 - **Shapes palette**: a stencil panel of flowchart shapes (process, terminator,
@@ -30,11 +33,27 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   orthogonal** (inspector) and reshaped with draggable **waypoints** (bend
   points: drag a segment midpoint to add one, drag it to move, double-click to
   remove); the routing choice and waypoints are kept across re-routes.
+- **Hover-to-connect** (drawio HoverIcons): hovering a shape in select mode
+  shows directional connect arrows around it; drag one out to wire a new
+  connector — dropping on another shape glues both ends, dropping on empty
+  canvas leaves a loose end. The shape the connector would glue to is
+  highlighted while wiring (also with the connector tool).
 - **Style**: fill colour, line colour, line weight, no-fill / no-line, plus a
   drawio-style Format panel — **line dash** (solid / dashed / dotted / dash-dot),
-  **arrowheads** (start / end), **fill / line opacity** sliders, and a **drop
-  shadow** toggle. All round-trip (`LinePattern` / `BeginArrow` / `EndArrow` /
-  `FillForegndTrans` / `LineColorTrans` / `ShadowPattern`).
+  **arrowhead types** (selectable start / end heads with previews: filled, open,
+  thin, stealth, diamond, circle …), **fill / line opacity** sliders, and a
+  **drop shadow** toggle. All round-trip (`LinePattern` / `BeginArrow` /
+  `EndArrow` / `FillForegndTrans` / `LineColorTrans` / `ShadowPattern`).
+- **Arrange panel** (drawio-style): numeric **position / size** (X / Y / W / H,
+  in inches, top-left anchored) and **rotation** (degrees) for a single
+  selection; **flip horizontal / vertical**; **rotate 90°** either way
+  (Cmd+R / Cmd+Shift+R); and one-step **bring forward / send backward** in
+  addition to to-front / to-back. All round-trip (`PinX/PinY/Width/Height/Angle`,
+  `FlipX/FlipY`, `<Shape>` reorder).
+- **Find** (drawio Cmd+F): a floating search bar that filters shapes on the
+  current page by text/name, shows a match counter, and cycles matches
+  (Enter / Shift+Enter or the arrows), selecting and scrolling each into view.
+  **Zoom to selection** fits the current selection to the window.
 - **Text**: double-click a shape to edit its label **in place on the canvas**
   — an editor overlays the shape (positioned and scaled to its box); Enter
   inserts a newline, Cmd/Ctrl+Enter or clicking away applies, Esc cancels. The
@@ -55,9 +74,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   bar with dirty markers + close); drag-drop multiple files opens a tab each.
 - **Multi-select**: Shift-click to toggle, rubber-band marquee to box-select
   (hold Space to pan); **align** (left/center/right/top/middle/bottom),
-  **distribute** (horizontal/vertical) and **z-order** (bring to front / send
-  to back) from the inspector. Hold **Shift while dragging** to constrain the
-  move to one axis.
+  **distribute** (horizontal/vertical) and **z-order** (to front / back and one
+  step forward / backward) from the inspector. Hold **Shift while dragging** to
+  constrain the move to one axis.
 - **Smart alignment guides** (drawio-style): dragging a shape snaps its edges
   and centre to nearby shapes and draws magenta guide lines to what it lined
   up with.
@@ -74,8 +93,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),
   Cmd+G / Cmd+Shift+U (group / ungroup), Cmd+Alt+C/V (copy/paste style),
-  Delete, Esc, arrow keys to nudge the selection, and canvas zoom
-  (Cmd +/- , Cmd+0 = 100%, Cmd+Shift+H = fit).
+  Cmd+R / Cmd+Shift+R (rotate 90°), Cmd+F (find), Delete, Esc, arrow keys to
+  nudge the selection, and canvas zoom (Cmd +/- , Cmd+0 = 100%,
+  Cmd+Shift+H = fit).
 - **macOS document integration**: the app declares the Visio drawing file
   types (`.vsdx` / `.vsdm` / `.vstx` / `.vstm` / `.vssx` / `.vssm`) so Finder
   offers "Open With → Editor for Visio Diagrams"; double-click, "Open With" and
@@ -104,16 +124,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 33 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 35 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; writer round-trip incl. create / delete /
-  fill / rotate / connects / layer visibility / resized geometry / text
-  formatting / polygon stencil / z-order / page rename / page add / page
-  delete / group reparent / line style (dash·arrows·opacity) / font·underline·
-  vertical-align·shadow; blank-document emit; geometry-scaling resize; SVG).
+  fill / rotate / **flip** / connects / layer visibility / resized geometry /
+  text formatting / polygon stencil / z-order (to-back and **one-step
+  forward**) / page rename / page add / page delete / group reparent / line
+  style (dash·arrows·opacity) / font·underline·vertical-align·shadow;
+  blank-document emit; geometry-scaling resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
-  connector waypoints, text·shadow, copy/paste style); widget tests (empty-state
-  smoke test, in-place text-edit round-trip, right-click context menu);
-  `flutter build macos` OK.
+  connector waypoints, text·shadow, copy/paste style, arrange
+  flip·rotate·numeric geometry, one-step z-order, find, arrowhead types,
+  **cancel-transaction drag revert**); widget tests (empty-state smoke test,
+  in-place text-edit round-trip, right-click context menu); `flutter build
+  macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

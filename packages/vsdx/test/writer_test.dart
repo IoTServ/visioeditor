@@ -276,6 +276,50 @@ void main() {
     expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a]);
   });
 
+  test('flip flags round-trip', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.copyWith(flipX: true, flipY: true),
+      ),
+    );
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final after = reopened.pages.first.findShapeById(target.id)!;
+    expect(after.flipX, isTrue);
+    expect(after.flipY, isTrue);
+  });
+
+  test('one-step z-order (bring forward) round-trips', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: a, pinX: 2, pinY: 2, width: 1, height: 1));
+    final b = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: b, pinX: 3, pinY: 3, width: 1, height: 1));
+    final c = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: c, pinX: 4, pinY: 4, width: 1, height: 1));
+    final bytes1 =
+        writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
+    final r1 = parser.parse(bytes1);
+    expect(r1.pages.first.shapes.map((s) => s.id).toList(), [a, b, c]);
+
+    // Bring the backmost shape one step forward: [a,b,c] -> [b,a,c].
+    final edited = r1.replacePage(0, r1.pages.first.bringForward(a));
+    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a, c]);
+  });
+
   test('grouping then ungrouping shapes round-trips', () {
     // Two existing rectangles.
     final blank = writer.emptyDocument();

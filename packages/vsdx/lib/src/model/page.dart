@@ -345,6 +345,30 @@ class VsdxPage {
     ]);
   }
 
+  /// Move a top-level shape one step forward (later in draw order). No-op when
+  /// it is already frontmost or is not a top-level shape.
+  VsdxPage bringForward(int id) {
+    final i = shapes.indexWhere((s) => s.id == id);
+    if (i < 0 || i >= shapes.length - 1) return this;
+    final next = <VsdxShape>[...shapes];
+    final tmp = next[i];
+    next[i] = next[i + 1];
+    next[i + 1] = tmp;
+    return copyWith(shapes: next);
+  }
+
+  /// Move a top-level shape one step backward (earlier in draw order). No-op
+  /// when it is already backmost or is not a top-level shape.
+  VsdxPage sendBackward(int id) {
+    final i = shapes.indexWhere((s) => s.id == id);
+    if (i <= 0) return this;
+    final next = <VsdxShape>[...shapes];
+    final tmp = next[i];
+    next[i] = next[i - 1];
+    next[i - 1] = tmp;
+    return copyWith(shapes: next);
+  }
+
   // --- Grouping --------------------------------------------------------------
 
   /// Group the top-level shapes [ids] into a new (axis-aligned) group shape

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,7 @@ import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
 import 'editor/page_canvas.dart';
 import 'editor/stencils.dart';
+import 'render/arrow_library.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
@@ -70,8 +72,19 @@ class _EditorHomePageState extends State<EditorHomePage> {
   List<String> _recents = const <String>[];
   bool _dragging = false;
   bool _showStencils = false;
+  bool _showFind = false;
 
   EditorController? get _c => _workspace.active;
+
+  void _openFind() {
+    if (_c == null || !_c!.hasDocument) return;
+    setState(() => _showFind = true);
+  }
+
+  void _closeFind() {
+    setState(() => _showFind = false);
+    _c?.clearFind();
+  }
 
   @override
   void initState() {
@@ -434,6 +447,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
             () {
           if (c != null && c.canUngroup) c.ungroupSelection();
         },
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () {
+          if (c != null && c.hasSelection) c.rotateSelection90();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true, shift: true):
+            () {
+          if (c != null && c.hasSelection) {
+            c.rotateSelection90(clockwise: false);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
       },
       child: Scaffold(
         appBar: AppBar(
@@ -514,6 +537,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       _exportPdf();
                     case 'selectAll':
                       c.selectAll();
+                    case 'find':
+                      _openFind();
+                    case 'zoomSel':
+                      c.revealSelection();
                     case 'copyStyle':
                       c.copyStyle();
                     case 'pasteStyle':
@@ -528,6 +555,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   const PopupMenuItem<String>(
                     value: 'selectAll',
                     child: Text('Select All (Cmd+A)'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'find',
+                    child: Text('Find… (Cmd+F)'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'zoomSel',
+                    enabled: c.hasSelection,
+                    child: const Text('Zoom to Selection'),
                   ),
                   PopupMenuItem<String>(
                     value: 'copyStyle',
@@ -577,6 +613,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
           child: Stack(
             children: [
               Positioned.fill(child: _buildBody(c)),
+              if (_showFind && c != null && c.hasDocument)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: _FindBar(controller: c, onClose: _closeFind),
+                ),
               if (_dragging) Positioned.fill(child: _dropOverlay(context)),
             ],
           ),
@@ -1046,12 +1088,16 @@ class _PropertyPanel extends StatelessWidget {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
             children: [
               _iconBtn(Icons.flip_to_front, 'Bring to front',
                   controller.bringSelectionToFront),
               _iconBtn(Icons.flip_to_back, 'Send to back',
                   controller.sendSelectionToBack),
+              _iconBtn(Icons.arrow_upward, 'Bring forward',
+                  controller.bringSelectionForward),
+              _iconBtn(Icons.arrow_downward, 'Send backward',
+                  controller.sendSelectionBackward),
               IconButton(
                 onPressed:
                     controller.canGroup ? controller.groupSelection : null,
@@ -1068,6 +1114,23 @@ class _PropertyPanel extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          _section(context, 'Arrange'),
+          Wrap(
+            children: [
+              _iconBtn(Icons.flip, 'Flip horizontal', controller.flipHorizontal),
+              Transform.rotate(
+                angle: math.pi / 2,
+                child: _iconBtn(
+                    Icons.flip, 'Flip vertical', controller.flipVertical),
+              ),
+              _iconBtn(Icons.rotate_left, 'Rotate 90° left',
+                  () => controller.rotateSelection90(clockwise: false)),
+              _iconBtn(Icons.rotate_right, 'Rotate 90° right (Cmd+R)',
+                  () => controller.rotateSelection90()),
+            ],
+          ),
+          _arrangeFields(controller),
           const SizedBox(height: 16),
           if (count >= 2) ...[
             _section(context, 'Align'),
@@ -1126,7 +1189,8 @@ class _PropertyPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _dashDropdown(controller),
-          _arrowToggles(controller),
+          const SizedBox(height: 8),
+          _arrowPickers(controller),
           _OpacitySlider(
             label: 'Opacity',
             opacity: 1 - (controller.selectedLine?.transparency ?? 0),
@@ -1186,6 +1250,72 @@ class _PropertyPanel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(label, style: Theme.of(context).textTheme.labelLarge),
       );
+
+  /// Numeric position / size / angle fields for a single selection (drawio's
+  /// Arrange tab). Hidden when zero or many shapes are selected.
+  Widget _arrangeFields(EditorController controller) {
+    final g = controller.selectedGeometry;
+    if (g == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _NumField(
+                  label: 'X',
+                  value: g.x,
+                  onSubmit: controller.setSelectedX,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _NumField(
+                  label: 'Y',
+                  value: g.y,
+                  onSubmit: controller.setSelectedY,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _NumField(
+                  label: 'W',
+                  value: g.w,
+                  onSubmit: controller.setSelectedWidth,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _NumField(
+                  label: 'H',
+                  value: g.h,
+                  onSubmit: controller.setSelectedHeight,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _NumField(
+                  label: '∠°',
+                  value: g.angleDeg,
+                  onSubmit: controller.setSelectedAngleDegrees,
+                ),
+              ),
+              const Spacer(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _iconBtn(IconData icon, String tip, VoidCallback onTap) => IconButton(
         onPressed: onTap,
@@ -1385,31 +1515,150 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
-  Widget _arrowToggles(EditorController controller) {
+  /// Curated arrowhead types (Visio `BeginArrow`/`EndArrow` ids → labels),
+  /// mirroring drawio's start/end arrow menus.
+  static const Map<int, String> _arrowTypes = <int, String>{
+    0: 'None',
+    4: 'Filled',
+    1: 'Open',
+    3: 'Thin',
+    7: 'Stealth',
+    10: 'Diamond',
+    11: 'Open diamond',
+    14: 'Circle',
+  };
+
+  Widget _arrowPickers(EditorController controller) {
     final line = controller.selectedLine;
-    final hasBegin = (line?.beginArrow ?? 0) != 0;
-    final hasEnd = (line?.endArrow ?? 0) != 0;
-    return Row(
+    final begin = line?.beginArrow ?? 0;
+    final end = line?.endArrow ?? 0;
+    return Column(
       children: [
-        const Text('Arrows', style: TextStyle(fontSize: 12)),
-        const Spacer(),
-        IconButton(
-          onPressed: () => controller.setLineArrows(begin: hasBegin ? 0 : 1),
-          isSelected: hasBegin,
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Start arrow',
-          visualDensity: VisualDensity.compact,
+        Row(
+          children: [
+            const SizedBox(
+                width: 40,
+                child: Text('Start', style: TextStyle(fontSize: 12))),
+            Expanded(
+              child: _arrowDropdown(
+                  begin, controller.setBeginArrow, flip: true),
+            ),
+          ],
         ),
-        IconButton(
-          onPressed: () => controller.setLineArrows(end: hasEnd ? 0 : 1),
-          isSelected: hasEnd,
-          icon: const Icon(Icons.arrow_forward),
-          tooltip: 'End arrow',
-          visualDensity: VisualDensity.compact,
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const SizedBox(
+                width: 40,
+                child: Text('End', style: TextStyle(fontSize: 12))),
+            Expanded(
+              child:
+                  _arrowDropdown(end, controller.setEndArrow, flip: false),
+            ),
+          ],
         ),
       ],
     );
   }
+
+  Widget _arrowDropdown(
+    int value,
+    ValueChanged<int> onChanged, {
+    required bool flip,
+  }) {
+    final ids = <int>{..._arrowTypes.keys, value}.toList()..sort();
+    String label(int id) => _arrowTypes[id] ?? 'Arrow #$id';
+    return DropdownButton<int>(
+      value: value,
+      isExpanded: true,
+      isDense: true,
+      items: [
+        for (final id in ids)
+          DropdownMenuItem<int>(
+            value: id,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 38,
+                  height: 14,
+                  child: id == 0
+                      ? const SizedBox.shrink()
+                      : _ArrowPreview(arrowId: id, flip: flip),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(label(id),
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+}
+
+/// Small preview of an arrowhead ([arrowId]) drawn at the end of a stub line.
+/// When [flip] is set the head points left (used for the start arrow).
+class _ArrowPreview extends StatelessWidget {
+  const _ArrowPreview({required this.arrowId, this.flip = false});
+
+  final int arrowId;
+  final bool flip;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(38, 14),
+      painter: _ArrowPreviewPainter(
+        arrowId,
+        Theme.of(context).colorScheme.onSurface,
+        flip,
+      ),
+    );
+  }
+}
+
+class _ArrowPreviewPainter extends CustomPainter {
+  _ArrowPreviewPainter(this.id, this.color, this.flip);
+
+  final int id;
+  final Color color;
+  final bool flip;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height / 2;
+    final line = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(Offset(2, y), Offset(size.width - 2, y), line);
+    if (id == 0) return;
+    final d = arrowDescriptor(id);
+    if (d == null) return;
+    const s = 9.0;
+    final tipX = flip ? 2.0 : size.width - 2;
+    canvas
+      ..save()
+      ..translate(tipX, y)
+      ..scale(flip ? -s : s, s);
+    final p = Paint()
+      ..color = color
+      ..style = d.filled ? PaintingStyle.fill : PaintingStyle.stroke
+      ..strokeWidth = 1.2 / s;
+    canvas
+      ..drawPath(d.path, p)
+      ..restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ArrowPreviewPainter old) =>
+      old.id != id || old.color != color || old.flip != flip;
 }
 
 /// Compact opacity slider (0–100%) with transactional live preview so the drag
@@ -1455,6 +1704,208 @@ class _OpacitySlider extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A compact numeric text field for the Arrange panel. Reflects an external
+/// [value] while idle, and commits the parsed number on Enter or focus loss.
+class _NumField extends StatefulWidget {
+  const _NumField({
+    required this.label,
+    required this.value,
+    required this.onSubmit,
+  });
+
+  final String label;
+  final double value;
+  final ValueChanged<double> onSubmit;
+
+  @override
+  State<_NumField> createState() => _NumFieldState();
+}
+
+class _NumFieldState extends State<_NumField> {
+  late final TextEditingController _c =
+      TextEditingController(text: _fmt(widget.value));
+  late final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _NumField old) {
+    super.didUpdateWidget(old);
+    // Refresh from the model unless the user is actively editing this field.
+    if (!_focus.hasFocus && widget.value != old.value) {
+      _c.text = _fmt(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final v = double.tryParse(_c.text.trim());
+    if (v != null && v != widget.value) {
+      widget.onSubmit(v);
+    } else {
+      _c.text = _fmt(widget.value);
+    }
+  }
+
+  static String _fmt(double v) {
+    final r = (v * 100).roundToDouble() / 100;
+    return r == r.roundToDouble() ? r.toInt().toString() : '$r';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _c,
+      focusNode: _focus,
+      keyboardType: const TextInputType.numberWithOptions(
+          signed: true, decimal: true),
+      textAlign: TextAlign.right,
+      style: const TextStyle(fontSize: 13),
+      decoration: InputDecoration(
+        isDense: true,
+        prefixText: '${widget.label} ',
+        prefixStyle: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        border: const OutlineInputBorder(),
+      ),
+      onSubmitted: (_) => _commit(),
+    );
+  }
+}
+
+/// Floating Find bar (drawio Cmd+F). Filters shapes by text/name on the
+/// current page, shows a match counter, and cycles matches with the arrows or
+/// Enter / Shift+Enter. Escape closes it.
+class _FindBar extends StatefulWidget {
+  const _FindBar({required this.controller, required this.onClose});
+
+  final EditorController controller;
+  final VoidCallback onClose;
+
+  @override
+  State<_FindBar> createState() => _FindBarState();
+}
+
+class _FindBarState extends State<_FindBar> {
+  final TextEditingController _text = TextEditingController();
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _text.text = widget.controller.findQuery;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(8),
+      color: scheme.surface,
+      child: ListenableBuilder(
+        listenable: widget.controller,
+        builder: (context, _) {
+          final count = widget.controller.findMatchCount;
+          final ord = widget.controller.findCurrentOrdinal;
+          final label = count == 0
+              ? (widget.controller.findQuery.trim().isEmpty ? '' : 'No results')
+              : '$ord / $count';
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.search, size: 18),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 180,
+                  child: CallbackShortcuts(
+                    bindings: <ShortcutActivator, VoidCallback>{
+                      const SingleActivator(LogicalKeyboardKey.escape):
+                          widget.onClose,
+                    },
+                    child: TextField(
+                      controller: _text,
+                      focusNode: _focus,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'Find shapes…',
+                        border: InputBorder.none,
+                      ),
+                      onChanged: widget.controller.updateFind,
+                      onSubmitted: (_) {
+                        if (HardwareKeyboard.instance.isShiftPressed) {
+                          widget.controller.findPrevious();
+                        } else {
+                          widget.controller.findNext();
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 56,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style:
+                        TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+                IconButton(
+                  onPressed: count == 0 ? null : widget.controller.findPrevious,
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                  tooltip: 'Previous (Shift+Enter)',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: count == 0 ? null : widget.controller.findNext,
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  tooltip: 'Next (Enter)',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: widget.onClose,
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Close (Esc)',
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

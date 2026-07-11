@@ -220,6 +220,22 @@ setConnectorWaypoints`，路由经折点且随重路由/移动保持（移动连
 已补：**文本 Format 面板补全 + 阴影** —— 字体族（下拉）、下划线、垂直对齐（上/中/下）、投影开关；
 均往返（`Font`/`Style` 下划线位/`VerticalAlign`/`ShadowPattern`）。
 
+已补：**Arrange 面板对齐 drawio** —— 数值位置/尺寸（X/Y/W/H）与旋转角输入、水平/垂直翻转、
+旋转 90°（Cmd+R/Cmd+Shift+R）、单步 Bring Forward/Send Backward（补足既有置顶/置底）；均往返
+（`PinX/PinY/Width/Height/Angle`、`FlipX/FlipY`、`<Shape>` 重排）。
+
+已补：**查找（Cmd+F）** —— 浮动查找条按当前页形状文本/名匹配，计数并循环（Enter/Shift+Enter），
+选中并居中命中形状；**缩放到选区**（reveal 机制：控制器请求、画布 `_handleReveal` 居中/适配）。
+
+已补：**箭头类型选择器** —— 起/止箭头改为类型下拉（无/实心/开口/细/隐形/菱形/圆等，带预览），
+往返 `BeginArrow`/`EndArrow`。
+
+已补：**悬停连线（drawio HoverIcons）** —— 选择工具下悬停形状显示四向连接箭头，从箭头拖出即新建连接器
+（落到形状则两端胶合、落到空白则终点为落点），拖动中高亮目标形状；连接器工具拖动同样高亮落点目标。
+
+已补：**画布拖拽细化** —— 移动时网格吸附（无邻居对齐轴回退到网格）、缩放 Shift 锁长宽比 / Alt 从中心缩放、
+Esc 取消进行中的拖拽（回退到手势前状态、不记历史）。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -383,3 +399,38 @@ setConnectorWaypoints`，路由经折点且随重路由/移动保持（移动连
   属性面板：Text 区加下划线按钮、字体下拉、垂直对齐三键，另加 Shadow 开关。测试：引擎往返 1 例
   （字体/下划线/垂直对齐/投影，共 33/33）、控制器 1 例（App 共 15/15）。`dart analyze` 干净、
   `flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次七）——Arrange 面板（数值几何 + 翻转 + 旋转 90° + 单步 Z 序）**：
+  模型 `VsdxPage.bringForward/sendBackward`（单步交换 Z 序，往返用既有 `_reorderShapes`）；
+  `EditorController` `bringSelectionForward/sendSelectionBackward`、`singleSelected/selectedGeometry`
+  （X/Y/W/H 以左上角+Y-down 呈现）、`setSelectedX/Y/Width/Height`（W/H 走 `resizeTo` 保左/上边）、
+  `setSelectedAngleDegrees`、`rotateSelection90({clockwise})`（Visio CCW，Cmd+R/Cmd+Shift+R）、
+  `flipHorizontal/flipVertical`（切 `flipX/flipY`，Writer 本已补 FlipX/FlipY，画笔已渲染）。UI：属性面板
+  新增 Arrange 区（翻转/旋转按钮 + `_NumField` 数值字段，随模型同步、失焦/回车提交），顶部动作行加单步
+  前/后移，动作行改 `Wrap` 防溢出；右键菜单加 Bring Forward/Send Backward。测试：控制器 2 例（翻转/旋转90/
+  数值几何、单步 Z 序）、引擎 2 例（翻转往返、单步 Z 序往返，共 35/35）；widget 测试改用限定于 PageCanvas
+  的内联编辑器 finder（避开 Arrange 数值框）。`dart analyze` 干净、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次八）——查找（Cmd+F）+ 定位/缩放到选区**：`EditorController`
+  查找态（`updateFind/findNext/findPrevious/clearFind`、`findMatchCount/findCurrentOrdinal`，按当前页
+  形状文本/名匹配，选中并定位每个命中）与 reveal 机制（`revealSerial/revealShapeId`、`revealShape/
+  revealSelection`，切页/重置时清查找态）；`PageCanvas` 监听 `revealSerial`，`_handleReveal`+`_revealContent`
+  居中命中形状、或缩放适配整选区（`buildShapeBounds`→content-px）。UI：浮动 `_FindBar`（搜索框+计数+上一/
+  下一+关闭，Enter/Shift+Enter 循环、Esc 关闭），Cmd+F 打开，More 菜单加 Find/Zoom to Selection。测试：
+  控制器 1 例（匹配/选中/循环/清除，App 共 18/18）。`dart analyze` 干净、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 交互（批次九）——箭头类型选择器**：`EditorController` `setBeginArrow/setEndArrow`
+  （委托 `setLineArrows`）；属性面板把起/止箭头开关换成**类型下拉**（无/实心/开口/细/隐形/菱形/圆等，
+  含 `_ArrowPreview` 小预览，用 `arrow_library` 的 `arrowDescriptor` 绘制；未知 id 动态并入列表）。往返走
+  既有 `BeginArrow/EndArrow` 整数补丁。测试：控制器 1 例（起/止箭头类型设置，App 共 19/19）。`dart analyze`
+  干净、`flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 画布（批次十）——悬停连线（HoverIcons）+ 连接目标高亮**：`PageCanvas` 加
+  `MouseRegion` 悬停跟踪（`_onHover/_topLevelAt`），选择工具下把光标停在形状上时在其包围盒四周画方向连接
+  箭头（`_connectArrows`，画布内 content-px 绘制、随缩放定尺寸），从箭头拖出即以该形状为起点新建连接器
+  （新 `_DragMode.connect`，落到另一形状则两端胶合、落到空白则终点为落点），拖动中高亮光标下的目标形状；
+  连接器工具拖动时同样高亮落点目标。渲染在 `_SelectionPainter` 加 `hoverBox/hoverArrowGap/connectTargetRect`。
+  底层复用既有 `createConnector(beginTarget,endTarget)` 胶合与 `<Connects>` 往返。`dart analyze` 干净、
+  `flutter build macos` 成功。
+- 2026-07-11 — **对齐 drawio 画布（批次十一）——拖拽细化**：移动拖拽在无邻居对齐轴上**吸附到网格**
+  （`_applyMove` 增网格回退，尊重 `snapToGrid`）；缩放手柄 **Shift 锁定长宽比**（角手柄，按拖动角的对角
+  锚定或按中心）、**Alt 从中心缩放**（`_applyResize` 以拖拽起始快照 `_resizeStartShape` 计算，保持全程稳定）；
+  **Esc 取消进行中的拖拽**（`EditorController.cancelTransaction` 回退到手势前快照、不记历史；画布
+  `_cancelActiveDrag` 复位所有拖拽态）。测试：控制器 1 例（cancelTransaction 回退且不产生撤销步，App 共
+  20/20）。`dart analyze` 干净、引擎 35/35、`flutter build macos` 成功。
