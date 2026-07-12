@@ -238,6 +238,39 @@ class VsdxPage {
     return _elbowRoute(ax, ay, bx, by);
   }
 
+  /// The point half-way along connector [s]'s drawn route (by arc length), in
+  /// page inches. This is where a connector's text label sits (drawio-style
+  /// edge labels), and where the in-place editor anchors. Falls back to the
+  /// shape's pin for degenerate / zero-length routes.
+  static Offset2D connectorMidpoint(VsdxShape s) {
+    final route = connectorRoute(s);
+    if (route.isEmpty) return Offset2D(s.pinX, s.pinY);
+    if (route.length == 1) return route.first;
+    var total = 0.0;
+    for (var i = 0; i < route.length - 1; i++) {
+      total += _segLength(route[i], route[i + 1]);
+    }
+    if (total <= 0) return route.first;
+    var remaining = total / 2;
+    for (var i = 0; i < route.length - 1; i++) {
+      final len = _segLength(route[i], route[i + 1]);
+      if (len >= remaining) {
+        final t = len == 0 ? 0.0 : remaining / len;
+        return Offset2D(
+          route[i].x + (route[i + 1].x - route[i].x) * t,
+          route[i].y + (route[i + 1].y - route[i].y) * t,
+        );
+      }
+      remaining -= len;
+    }
+    return route.last;
+  }
+
+  static double _segLength(Offset2D a, Offset2D b) {
+    final dx = a.x - b.x, dy = a.y - b.y;
+    return math.sqrt(dx * dx + dy * dy);
+  }
+
   /// Set the interior [waypoints] of connector [id] (page inches) and rebuild
   /// its geometry; glued endpoints are re-derived by [rerouteConnectors].
   VsdxPage setConnectorWaypoints(int id, List<Offset2D> waypoints) {

@@ -117,6 +117,46 @@ abstract final class VsdxShapeFactory {
     );
   }
 
+  /// Borderless, fill-less text box (drawio's "Text"): a rectangle-bounded
+  /// shape that draws only its label. [text] may be empty (the editor fills it
+  /// in). Fill / line default to *none* (pattern 0) — but the underlying
+  /// geometry is a plain rectangle, so a user can still give the box a
+  /// background or border later from the inspector.
+  static VsdxShape textBox({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    String text = '',
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      text: text.isEmpty ? null : text,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(w, 0),
+            LineTo(w, h),
+            LineTo(0, h),
+            const LineTo(0, 0),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    );
+  }
+
   /// Ellipse inscribed in the [width] x [height] box centred at the pin.
   static VsdxShape ellipse({
     required int id,

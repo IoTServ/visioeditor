@@ -988,6 +988,7 @@ class _ToolStrip extends StatelessWidget {
             tool(EditorTool.ellipse, Icons.circle_outlined, 'Ellipse'),
             tool(EditorTool.line, Icons.horizontal_rule, 'Line'),
             tool(EditorTool.connector, Icons.timeline, 'Connector (glue)'),
+            tool(EditorTool.text, Icons.text_fields, 'Text'),
           ],
         ),
       ),

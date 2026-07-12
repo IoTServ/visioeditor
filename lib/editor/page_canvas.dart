@@ -77,6 +77,9 @@ class _PageCanvasState extends State<PageCanvas> {
   // In-place text editing: the shape whose label is being edited (if any),
   // plus the field's controller / focus node.
   int? _editingShapeId;
+  // Id of a text box just created by the Text tool (drawio): if it is
+  // committed / cancelled while still empty it is removed again.
+  int? _newTextBoxId;
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocus = FocusNode(debugLabel: 'inlineTextEditor');
 
@@ -482,8 +485,10 @@ class _PageCanvasState extends State<PageCanvas> {
       return; // connectors need a drag between two points
     }
     if (_c.tool != EditorTool.select) {
+      final wasText = _c.tool == EditorTool.text;
       final p = _pageInchesAt(d.localPosition);
       _c.createShapeByDrag(p.dx, p.dy, p.dx, p.dy); // click ⇒ default size
+      if (wasText) _startEditingNewTextBox();
       return;
     }
     final hit = _hitTest(d.localPosition);
@@ -631,6 +636,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _beginTextEdit(int id) {
     final s = _page?.findShapeById(id);
     if (s == null) return;
+    _newTextBoxId = null; // editing an existing shape, not a fresh text box
     _c.selectOnly(id);
     final initial =
         s.richText.runs.isNotEmpty ? s.richText.plainText : (s.text ?? '');
@@ -644,21 +650,42 @@ class _PageCanvasState extends State<PageCanvas> {
     });
   }
 
+  /// Begin editing the shape the Text tool just created, remembering it so an
+  /// empty commit / cancel removes it again (drawio behaviour).
+  void _startEditingNewTextBox() {
+    if (_c.selection.isEmpty) return;
+    final id = _c.selection.first;
+    _beginTextEdit(id);
+    _newTextBoxId = id;
+  }
+
   /// Apply the edited text to the model and leave edit mode.
   void _commitTextEdit() {
     final id = _editingShapeId;
     if (id == null) return;
     final text = _textController.text;
+    final wasNewBox = id == _newTextBoxId;
+    _newTextBoxId = null;
     setState(() => _editingShapeId = null);
     if (_textFocus.hasFocus) _textFocus.unfocus();
-    _c.setShapeText(id, text);
+    // An untyped Text-tool box is discarded rather than left invisible.
+    if (wasNewBox && text.trim().isEmpty) {
+      _c.deleteShapeById(id);
+    } else {
+      _c.setShapeText(id, text);
+    }
   }
 
-  /// Leave edit mode, discarding the edit.
+  /// Leave edit mode, discarding the edit. A freshly-created (uncommitted)
+  /// text box is removed entirely.
   void _cancelTextEdit() {
-    if (_editingShapeId == null) return;
+    final id = _editingShapeId;
+    if (id == null) return;
+    final wasNewBox = id == _newTextBoxId;
+    _newTextBoxId = null;
     setState(() => _editingShapeId = null);
     if (_textFocus.hasFocus) _textFocus.unfocus();
+    if (wasNewBox) _c.deleteShapeById(id);
   }
 
   /// The overlaid text editor for the shape being edited, positioned over its
@@ -668,16 +695,28 @@ class _PageCanvasState extends State<PageCanvas> {
     final id = _editingShapeId;
     final s = id == null ? null : _page?.findShapeById(id);
     if (s == null) return null;
-    final box = _exactContentBox(s); // content-px, axis-aligned
-    final left = _offset.dx + box.left * _scale;
-    final top = _offset.dy + box.top * _scale;
-    final width = math.max(box.width * _scale, 44.0);
-    final height = math.max(box.height * _scale, 26.0);
     final run = s.richText.runs.isNotEmpty ? s.richText.runs.first : null;
     final cs = run?.charStyle ?? VsdxCharStyle.defaults;
     final fontPx = math.max(cs.fontSizeInches * widget.pxPerInch * _scale, 8.0);
     final align = run?.paraStyle.horizontalAlign ?? VsdxHorzAlign.center;
     final scheme = Theme.of(context).colorScheme;
+
+    final double left, top, width, height;
+    if (s.is1D) {
+      // Edge label: a compact editor centred on the connector's route midpoint.
+      final mid = VsdxPage.connectorMidpoint(s);
+      final screen = _pageToScreen(mid.x, mid.y);
+      width = 140.0;
+      height = math.max(fontPx + 14, 30.0);
+      left = screen.dx - width / 2;
+      top = screen.dy - height / 2;
+    } else {
+      final box = _exactContentBox(s); // content-px, axis-aligned
+      left = _offset.dx + box.left * _scale;
+      top = _offset.dy + box.top * _scale;
+      width = math.max(box.width * _scale, 44.0);
+      height = math.max(box.height * _scale, 26.0);
+    }
     return Positioned(
       left: left,
       top: top,
@@ -1131,7 +1170,9 @@ class _PageCanvasState extends State<PageCanvas> {
               endTarget: _hitTest(_offset + end * _scale),
             );
           } else {
+            final wasText = _c.tool == EditorTool.text;
             _c.createShapeByDrag(a.dx, a.dy, b.dx, b.dy);
+            if (wasText) _startEditingNewTextBox();
           }
         }
         setState(() {
@@ -1409,10 +1450,12 @@ class _PageCanvasState extends State<PageCanvas> {
               child: MouseRegion(
               onHover: _onHover,
               onExit: (_) => _clearHover(),
-              cursor: (_c.tool == EditorTool.connector ||
-                      _mode == _DragMode.connect)
-                  ? SystemMouseCursors.precise
-                  : MouseCursor.defer,
+              cursor: _c.tool == EditorTool.text
+                  ? SystemMouseCursors.text
+                  : (_c.tool == EditorTool.connector ||
+                          _mode == _DragMode.connect)
+                      ? SystemMouseCursors.precise
+                      : MouseCursor.defer,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapUp: _onTapUp,
@@ -1713,6 +1756,7 @@ class _SelectionPainter extends CustomPainter {
       case EditorTool.ellipse:
         canvas.drawOval(Rect.fromPoints(a, b), outline);
       case EditorTool.rectangle:
+      case EditorTool.text:
       case EditorTool.select:
         canvas.drawRect(Rect.fromPoints(a, b), outline);
     }

@@ -33,9 +33,6 @@ final List<Stencil> kStencils = <Stencil>[
   Stencil('Rounded', Icons.rounded_corner,
       (id, cx, cy) => VsdxShapeFactory.roundedRectangle(
           id: id, pinX: cx, pinY: cy, width: _w, height: _h)),
-  Stencil('Rounded', Icons.rounded_corner,
-      (id, cx, cy) => VsdxShapeFactory.roundedRectangle(
-          id: id, pinX: cx, pinY: cy, width: _w, height: _h)),
   Stencil('Start / End', Icons.circle_outlined,
       (id, cx, cy) => VsdxShapeFactory.ellipse(
           id: id, pinX: cx, pinY: cy, width: _w, height: _h)),

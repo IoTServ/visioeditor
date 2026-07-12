@@ -26,6 +26,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview. New shapes **inherit the last-used fill / line style**
   (drawio's `currentVertexStyle`).
+- **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
+  drops straight into in-place editing; an untyped box is discarded on commit
+  or cancel. It can still be given a background or border afterwards.
 - **Rounded rectangles**: a "Rounded" stencil plus a **corner-radius slider**
   in the inspector that rounds (or squares) any rectangle; corners are stored
   as `EllipticalArcTo` arcs and round-trip through the writer.
@@ -34,10 +37,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   drop one.
 - **Connectors with glue**: connect two shapes; endpoints attach to the target
   shapes' edges and auto-reroute when a shape moves / resizes / rotates;
-  `<Connects>` round-trip. Each connector can be routed **straight or
+  `<Connects>` round-trip. New connectors carry a **default end arrowhead**
+  (they point at their target). Each connector can be routed **straight or
   orthogonal** (inspector) and reshaped with draggable **waypoints** (bend
   points: drag a segment midpoint to add one, drag it to move, double-click to
   remove); the routing choice and waypoints are kept across re-routes.
+- **Edge labels**: double-click a connector to label it; the text is drawn
+  centred on the route's midpoint (drawio-style) with a page-coloured backing
+  for legibility, and the in-place editor opens right there.
 - **Hover-to-connect** (drawio HoverIcons): hovering a shape in select mode
   shows directional connect arrows around it; drag one out to wire a new
   connector — dropping on another shape glues both ends, dropping on empty
@@ -118,6 +125,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - The writer now regenerates a shape's `<Section N="Geometry">` when its
   geometry changed (resize scaling, connector re-routing), so edits survive a
   save/reopen instead of rendering with stale local geometry.
+- The canvas no longer paints a shape's internal placeholder name (`Sheet.N`)
+  or a connector's name as a label — only real text content shows.
+- Removed a duplicate "Rounded" entry from the shapes palette.
 
 ### Deferred (post-v0.1)
 - Obstacle-avoiding connector routing; per-run (selection-range) rich-text
@@ -129,20 +139,21 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 36 unit tests (parse; model edit / immutability / structural sharing;
-  connector re-routing incl. elbow; writer round-trip incl. create / delete /
-  fill / rotate / flip / connects / layer visibility / resized geometry /
-  text formatting / polygon stencil / **rounded-rect elliptical arcs** /
-  z-order (to-back and one-step forward) / page rename / page add / page
-  delete / group reparent / line style (dash·arrows·opacity) /
-  font·underline·vertical-align·shadow; blank-document emit; geometry-scaling
-  resize; SVG).
+- Engine: 38 unit tests (parse; model edit / immutability / structural sharing;
+  connector re-routing incl. elbow; **connector arc-length midpoint**; writer
+  round-trip incl. create / delete / fill / rotate / flip / connects / layer
+  visibility / resized geometry / text formatting / polygon stencil /
+  **rounded-rect elliptical arcs** / **borderless text box** / z-order (to-back
+  and one-step forward) / page rename / page add / page delete / group reparent /
+  line style (dash·arrows·opacity) / font·underline·vertical-align·shadow;
+  blank-document emit; geometry-scaling resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
   connector waypoints, text·shadow, copy/paste style, arrange
   flip·rotate·numeric geometry, one-step z-order, find, arrowhead types,
-  cancel-transaction drag revert, **default-style inheritance**, **corner
-  radius**); widget tests (empty-state smoke test, in-place text-edit
-  round-trip, right-click context menu); `flutter build macos` OK.
+  cancel-transaction drag revert, default-style inheritance, corner radius,
+  **text tool**, **default connector arrowhead**, **deleteShapeById**);
+  widget tests (empty-state smoke test, in-place text-edit round-trip,
+  right-click context menu); `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

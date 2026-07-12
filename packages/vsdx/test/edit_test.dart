@@ -132,6 +132,23 @@ void main() {
         greaterThan(2));
   });
 
+  test('connectorMidpoint returns the arc-length midpoint of the route', () {
+    // Straight horizontal connector: the midpoint is the geometric centre.
+    final straight = VsdxShapeFactory.line(id: 1, ax: 1, ay: 2, bx: 5, by: 2)
+        .copyWith(straightRoute: true);
+    final m = VsdxPage.connectorMidpoint(straight);
+    expect(m.x, closeTo(3, 1e-9));
+    expect(m.y, closeTo(2, 1e-9));
+
+    // Route with a waypoint: (0,0) → (0,4) → (4,0). Segment lengths 4 and
+    // 4√2; the arc-length midpoint lands part-way down the second segment.
+    final bent = VsdxShapeFactory.line(id: 2, ax: 0, ay: 0, bx: 4, by: 0)
+        .copyWith(waypoints: const <Offset2D>[Offset2D(0, 4)]);
+    final m2 = VsdxPage.connectorMidpoint(bent);
+    expect(m2.x, closeTo(0.585786, 1e-4));
+    expect(m2.y, closeTo(3.414214, 1e-4));
+  });
+
   test('document.replacePage swaps a single page immutably', () {
     final doc = parser.parse(_fixture('test1.vsdx'));
     final page0 = doc.pages.first;

@@ -242,6 +242,12 @@ Esc 取消进行中的拖拽（回退到手势前状态、不记历史）。
 已补：**圆角矩形** —— `EllipticalArcTo` 四角圆弧（Writer 新增弧线序列化，往返安全），属性面板 Corner radius
 滑块可给任意矩形加/去圆角，形状面板含 Rounded 模具。
 
+已补：**文本工具 + 边标签 + 连接器默认箭头（drawio）** —— 独立**文本工具**（`EditorTool.text` +
+`VsdxShapeFactory.textBox`：无填充/无描边的矩形盒，创建后即进入画布内联编辑；未输入即提交/取消则自动删除，
+drawio 行为）；**连接器边标签**——连接器文字绘制于**路由弧长中点**（`VsdxPage.connectorMidpoint` 单一真源，
+画笔与内联编辑器共用）并加页色底衬，双击连接器即可标注；**新连接器默认末端箭头**（指向目标，描边继承记忆样式）；
+画笔不再把内部占位名 `Sheet.N`（及 1-D 形状名）当作标签渲染。修复形状面板重复的 Rounded 模具。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -452,3 +458,13 @@ Esc 取消进行中的拖拽（回退到手势前状态、不记历史）。
   `setCornerRadius`（重生几何，0=方角）；属性面板加 **Corner radius 滑块**（单选矩形时显示，事务=单撤销步），
   形状面板加 **Rounded 模具**。测试：引擎 1 例（圆角矩形 4 弧往返，共 36/36）、控制器 1 例（加圆角/复位方角，
   App 共 22/22）。`dart analyze` 干净、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十四）——文本工具 + 边标签 + 连接器默认箭头**：引擎
+  `VsdxShapeFactory.textBox`（无填充/无描边、仅绘制文字的矩形盒，保留几何以便后续可加背景/边框）+
+  `VsdxPage.connectorMidpoint`（路由弧长中点，边标签定位单一真源）；`EditorController` 新增
+  `EditorTool.text`（`createShapeByDrag` 文本分支，不继承记忆样式）、`createConnector` 默认末端箭头
+  （`endArrow:4`，描边取记忆样式）、`deleteShapeById`/`isBlankTextBox`（空文本盒清理）；`PageCanvas`
+  文本工具点击/拖拽创建后即内联编辑（`_startEditingNewTextBox`），空提交/取消自动删除，内联编辑器对连接器
+  定位到路由中点，文本光标；`VsdxPainter` 连接器文字绘制于路由中点 + 页色底衬，且不再把 `Sheet.N`/1-D
+  形状名当标签渲染。UI 加文本工具按钮、去除重复 Rounded 模具。测试：引擎 `connectorMidpoint` +
+  文本盒往返（共 38/38），控制器文本工具/连接器箭头/`deleteShapeById`（App 共 25/25）。
+  `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。

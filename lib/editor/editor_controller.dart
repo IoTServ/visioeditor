@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vsdx/vsdx.dart';
 
 /// Editing tools the canvas can be in.
-enum EditorTool { select, rectangle, ellipse, line, connector }
+enum EditorTool { select, rectangle, ellipse, line, connector, text }
 
 /// Central editor state: the parsed [VsdxDocument], current page, selection,
 /// and an undo/redo history built on immutable document snapshots.
@@ -350,6 +350,37 @@ class EditorController extends ChangeNotifier {
     ey = snap(ey);
     final id = page.nextFreeShapeId();
 
+    // A borderless text box (drawio's Text tool) — no inherited fill / line,
+    // enters edit mode on the canvas immediately after creation.
+    if (_tool == EditorTool.text) {
+      var left = math.min(sx, ex);
+      var bottom = math.min(sy, ey);
+      var w = (math.max(sx, ex) - left).abs();
+      var h = (math.max(sy, ey) - bottom).abs();
+      if (w < 0.1 && h < 0.1) {
+        w = 1.5;
+        h = 0.5;
+        left = sx - w / 2;
+        bottom = sy - h / 2;
+      } else {
+        w = math.max(w, 0.05);
+        h = math.max(h, 0.05);
+      }
+      final box = VsdxShapeFactory.textBox(
+        id: id,
+        pinX: left + w / 2,
+        pinY: bottom + h / 2,
+        width: w,
+        height: h,
+      );
+      _selection
+        ..clear()
+        ..add(id);
+      _tool = EditorTool.select;
+      applyEdit(doc.replacePage(_currentPageIndex, page.addShape(box)));
+      return;
+    }
+
     final VsdxShape base;
     if (_tool == EditorTool.line) {
       var bx = ex;
@@ -421,8 +452,18 @@ class EditorController extends ChangeNotifier {
         sby = t.pinY;
       }
     }
-    final connector =
-        VsdxShapeFactory.line(id: id, ax: sax, ay: say, bx: sbx, by: sby);
+    // Connectors carry a filled end arrowhead by default (drawio edges point
+    // at their target); the stroke follows the last-used line style.
+    final baseLine = (_memoLine ?? const VsdxLine(color: VsdxColor.black))
+        .copyWith(endArrow: 4);
+    final connector = VsdxShapeFactory.line(
+      id: id,
+      ax: sax,
+      ay: say,
+      bx: sbx,
+      by: sby,
+      line: baseLine,
+    );
     final connects = <VsdxConnect>[
       ...page.connects,
       if (beginTarget != null)
@@ -485,6 +526,29 @@ class EditorController extends ChangeNotifier {
     if (identical(next, page)) return;
     _selection.clear();
     applyEdit(doc.replacePage(_currentPageIndex, next));
+  }
+
+  /// Delete a single shape by [id] (recursing into groups) as one undo step.
+  void deleteShapeById(int id) {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final next = page.removeShapeById(id);
+    if (identical(next, page)) return;
+    _selection.remove(id);
+    applyEdit(doc.replacePage(_currentPageIndex, next));
+  }
+
+  /// Whether [id] is an empty, borderless text box (no text, no fill, no line,
+  /// no children) — the drawio "abandoned Text tool" case the canvas removes
+  /// when the user commits or cancels without typing anything.
+  bool isBlankTextBox(int id) {
+    final s = currentPage?.findShapeById(id);
+    if (s == null || s.is1D || s.children.isNotEmpty) return false;
+    final hasText = s.richText.runs.isNotEmpty
+        ? s.richText.plainText.trim().isNotEmpty
+        : (s.text?.trim().isNotEmpty ?? false);
+    return !hasText && s.fill.pattern == 0 && s.line.pattern == 0;
   }
 
   List<VsdxShape> _clipboard = const <VsdxShape>[];

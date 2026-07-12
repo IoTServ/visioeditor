@@ -790,18 +790,38 @@ class VsdxPainter extends CustomPainter {
     );
   }
 
+  /// Auto-generated shape names (`Sheet.5`) are internal ids, never content —
+  /// unlike Visio's viewer heritage we don't paint them as a label fallback.
+  static final RegExp _autoName = RegExp(r'^Sheet\.\d+$');
+
   void _paintRichText(Canvas canvas, VsdxShape shape, Rect bounds) {
     final rich = shape.richText;
     final hasRich = !rich.isEmpty;
+    // Fall back to the shape's own name only for 2-D shapes with a meaningful
+    // (non-auto) name — connectors and `Sheet.N` placeholders stay blank.
+    String? nameFallback;
+    if (!shape.is1D && shape.name.isNotEmpty && !_autoName.hasMatch(shape.name)) {
+      nameFallback = shape.name;
+    }
     final label =
-        hasRich ? null : (shape.text?.isNotEmpty == true ? shape.text! : shape.name);
+        hasRich ? null : (shape.text?.isNotEmpty == true ? shape.text! : nameFallback);
     if (!hasRich && (label == null || label.isEmpty)) return;
+
+    // Connectors (1-D) show their label as an edge label centred on the drawn
+    // route's midpoint, not the bounding-box centre (drawio-style).
+    final isEdgeLabel = shape.is1D;
 
     final block = rich.textBlock;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
-    final tpx = block.pinXInches ?? shape.width / 2;
-    final tpy = block.pinYInches ?? shape.height / 2;
+    var tpx = block.pinXInches ?? shape.width / 2;
+    var tpy = block.pinYInches ?? shape.height / 2;
+    if (isEdgeLabel && block.pinXInches == null && block.pinYInches == null) {
+      final mid = VsdxPage.connectorMidpoint(shape);
+      final local = _pageToLocal(shape, Offset(mid.x, mid.y));
+      tpx = local.dx;
+      tpy = local.dy;
+    }
 
     canvas.save();
     canvas.translate(tpx, tpy);
@@ -814,7 +834,7 @@ class VsdxPainter extends CustomPainter {
         spans.add(_runToSpan(run));
       }
     } else {
-      final fs = math.min(th, tw) * 0.18;
+      final fs = isEdgeLabel ? 0.14 : math.min(th, tw) * 0.18;
       spans.add(TextSpan(
         text: label,
         style: TextStyle(
@@ -831,30 +851,58 @@ class VsdxPainter extends CustomPainter {
 
     // Lay out within the block's content area (inside the margins). The
     // canvas origin is already the text-block centre, so dx/dy are relative
-    // to that anchor.
-    final innerWidth = math.max(
-      0.0,
-      tw - block.marginLeftInches - block.marginRightInches,
-    );
+    // to that anchor. Edge labels aren't clipped to a box, so they lay out at
+    // their natural width and centre on the route midpoint.
+    final innerWidth = isEdgeLabel
+        ? double.infinity
+        : math.max(0.0, tw - block.marginLeftInches - block.marginRightInches);
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: innerWidth);
 
-    final dx = switch (align) {
-      TextAlign.center => -tp.width / 2,
-      TextAlign.right => tw / 2 - tp.width - block.marginRightInches,
-      // left / justify / start / end
-      _ => -tw / 2 + block.marginLeftInches,
-    };
-    final dy = switch (block.verticalAlign) {
-      VsdxVertAlign.top => -th / 2 + block.marginTopInches,
-      VsdxVertAlign.bottom => th / 2 - tp.height - block.marginBottomInches,
-      VsdxVertAlign.middle => -tp.height / 2,
-    };
+    final dx = isEdgeLabel
+        ? -tp.width / 2
+        : switch (align) {
+            TextAlign.center => -tp.width / 2,
+            TextAlign.right => tw / 2 - tp.width - block.marginRightInches,
+            // left / justify / start / end
+            _ => -tw / 2 + block.marginLeftInches,
+          };
+    final dy = isEdgeLabel
+        ? -tp.height / 2
+        : switch (block.verticalAlign) {
+            VsdxVertAlign.top => -th / 2 + block.marginTopInches,
+            VsdxVertAlign.bottom =>
+              th / 2 - tp.height - block.marginBottomInches,
+            VsdxVertAlign.middle => -tp.height / 2,
+          };
+
+    // Edge labels sit on top of the connector line, so back them with the
+    // page colour for legibility (drawio does the same).
+    if (isEdgeLabel && tp.width > 0) {
+      const pad = 0.03;
+      final halo = Rect.fromLTWH(
+        dx - pad,
+        dy - pad,
+        tp.width + pad * 2,
+        tp.height + pad * 2,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(halo, const Radius.circular(0.02)),
+        Paint()..color = _edgeLabelBackground(),
+      );
+    }
     tp.paint(canvas, Offset(dx, dy));
     canvas.restore();
+  }
+
+  /// Opaque backing colour for an edge label — the page background when set,
+  /// otherwise white.
+  Color _edgeLabelBackground() {
+    final bg = page?.backgroundColor;
+    return bg == null ? const Color(0xFFFFFFFF) : Color(bg.value);
   }
 
   TextSpan _runToSpan(VsdxTextRun run) {

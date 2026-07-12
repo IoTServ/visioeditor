@@ -103,6 +103,35 @@ void main() {
     expect(created.geometries, isNotEmpty);
   });
 
+  test('creates a borderless text box that survives a round-trip', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    final box = VsdxShapeFactory.textBox(
+      id: id,
+      pinX: 3,
+      pinY: 4,
+      width: 2,
+      height: 0.5,
+      text: 'Label',
+    );
+    final edited = doc.replacePage(0, page.addShape(box));
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final created = reopened.pages.first.findShapeById(id);
+    expect(created, isNotNull);
+    // No fill, no border — only the label is drawn.
+    expect(created!.fill.pattern, 0);
+    expect(created.line.pattern, 0);
+    final text = created.richText.runs.isNotEmpty
+        ? created.richText.plainText
+        : (created.text ?? '');
+    expect(text, 'Label');
+  });
+
   test('deletes a shape across a round-trip', () {
     final bytes = _fixture('test1.vsdx');
     final doc = parser.parse(bytes);

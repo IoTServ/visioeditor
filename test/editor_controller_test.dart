@@ -338,6 +338,49 @@ void main() {
     expect(c.findQuery, isEmpty);
   });
 
+  test('text tool creates a borderless, selected text box', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.text)
+      ..createShapeByDrag(2, 2, 2, 2); // click ⇒ default-sized text box
+    final s = c.currentPage!.shapes.single;
+    expect(c.selection, <int>{s.id});
+    expect(c.tool, EditorTool.select); // reverts after creating
+    expect(s.fill.pattern, 0); // no fill
+    expect(s.line.pattern, 0); // no border
+    // An untyped box is "blank" (the canvas removes it on empty commit).
+    expect(c.isBlankTextBox(s.id), isTrue);
+
+    c.setShapeText(s.id, 'Hello');
+    expect(c.isBlankTextBox(s.id), isFalse);
+  });
+
+  test('new connectors carry a default end arrowhead', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(6, 6, 7, 7);
+    final b = c.currentPage!.shapes.last.id;
+
+    c.createConnector(1.5, 1.5, 6.5, 6.5, beginTarget: a, endTarget: b);
+    final conn = c.currentPage!.findShapeById(c.selection.single)!;
+    expect(conn.is1D, isTrue);
+    expect(conn.line.endArrow, isNot(0)); // points at its target
+    expect(conn.line.beginArrow, 0);
+  });
+
+  test('deleteShapeById removes a single shape', () {
+    final c = newDocWithTwoRects();
+    final ids = <int>[for (final s in c.currentPage!.shapes) s.id];
+    c.deleteShapeById(ids.first);
+    expect(c.currentPage!.shapes.map((s) => s.id).toList(), <int>[ids.last]);
+    expect(c.selection.contains(ids.first), isFalse);
+  });
+
   test('copy/paste style transfers fill between shapes', () {
     final c = newDocWithTwoRects();
     final ids = <int>[for (final s in c.currentPage!.shapes) s.id];
