@@ -24,9 +24,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Dragging snaps to the grid (and to neighbours); **Esc cancels an in-progress
   drag**, reverting it.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
-  creation preview.
-- **Shapes palette**: a stencil panel of flowchart shapes (process, terminator,
-  decision, data, triangle, hexagon, pentagon, arrow) — click to drop one.
+  creation preview. New shapes **inherit the last-used fill / line style**
+  (drawio's `currentVertexStyle`).
+- **Rounded rectangles**: a "Rounded" stencil plus a **corner-radius slider**
+  in the inspector that rounds (or squares) any rectangle; corners are stored
+  as `EllipticalArcTo` arcs and round-trip through the writer.
+- **Shapes palette**: a stencil panel of flowchart shapes (process, rounded,
+  terminator, decision, data, triangle, hexagon, pentagon, arrow) — click to
+  drop one.
 - **Connectors with glue**: connect two shapes; endpoints attach to the target
   shapes' edges and auto-reroute when a shape moves / resizes / rotates;
   `<Connects>` round-trip. Each connector can be routed **straight or
@@ -124,19 +129,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 35 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 36 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; writer round-trip incl. create / delete /
-  fill / rotate / **flip** / connects / layer visibility / resized geometry /
-  text formatting / polygon stencil / z-order (to-back and **one-step
-  forward**) / page rename / page add / page delete / group reparent / line
-  style (dash·arrows·opacity) / font·underline·vertical-align·shadow;
-  blank-document emit; geometry-scaling resize; SVG).
+  fill / rotate / flip / connects / layer visibility / resized geometry /
+  text formatting / polygon stencil / **rounded-rect elliptical arcs** /
+  z-order (to-back and one-step forward) / page rename / page add / page
+  delete / group reparent / line style (dash·arrows·opacity) /
+  font·underline·vertical-align·shadow; blank-document emit; geometry-scaling
+  resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
   connector waypoints, text·shadow, copy/paste style, arrange
   flip·rotate·numeric geometry, one-step z-order, find, arrowhead types,
-  **cancel-transaction drag revert**); widget tests (empty-state smoke test,
-  in-place text-edit round-trip, right-click context menu); `flutter build
-  macos` OK.
+  cancel-transaction drag revert, **default-style inheritance**, **corner
+  radius**); widget tests (empty-state smoke test, in-place text-edit
+  round-trip, right-click context menu); `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

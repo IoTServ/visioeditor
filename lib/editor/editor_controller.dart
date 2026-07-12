@@ -44,6 +44,11 @@ class EditorController extends ChangeNotifier {
   List<int> _findMatches = const <int>[];
   int _findIndex = -1;
 
+  // Style memory (drawio currentVertexStyle): the fill / line last applied to a
+  // shape, inherited by newly-created shapes. Reset per document.
+  VsdxFill? _memoFill;
+  VsdxLine? _memoLine;
+
   VsdxDocument? get document => _document;
   Uint8List? get originalBytes => _originalBytes;
   String? get filePath => _filePath;
@@ -345,7 +350,7 @@ class EditorController extends ChangeNotifier {
     ey = snap(ey);
     final id = page.nextFreeShapeId();
 
-    final VsdxShape shape;
+    final VsdxShape base;
     if (_tool == EditorTool.line) {
       var bx = ex;
       var by = ey;
@@ -353,7 +358,7 @@ class EditorController extends ChangeNotifier {
         bx = sx + 1.5;
         by = sy;
       }
-      shape = VsdxShapeFactory.line(id: id, ax: sx, ay: sy, bx: bx, by: by);
+      base = VsdxShapeFactory.line(id: id, ax: sx, ay: sy, bx: bx, by: by);
     } else {
       var left = math.min(sx, ex);
       var bottom = math.min(sy, ey);
@@ -370,13 +375,15 @@ class EditorController extends ChangeNotifier {
       }
       final pinX = left + w / 2;
       final pinY = bottom + h / 2;
-      shape = _tool == EditorTool.rectangle
+      base = _tool == EditorTool.rectangle
           ? VsdxShapeFactory.rectangle(
               id: id, pinX: pinX, pinY: pinY, width: w, height: h)
           : VsdxShapeFactory.ellipse(
               id: id, pinX: pinX, pinY: pinY, width: w, height: h);
     }
 
+    final shape =
+        _withMemoStyle(base, includeFill: _tool != EditorTool.line);
     _selection
       ..clear()
       ..add(id);
@@ -457,7 +464,8 @@ class EditorController extends ChangeNotifier {
     final page = currentPage;
     if (doc == null || page == null) return;
     final id = page.nextFreeShapeId();
-    final shape = build(id, page.widthInches / 2, page.heightInches / 2);
+    final built = build(id, page.widthInches / 2, page.heightInches / 2);
+    final shape = _withMemoStyle(built, includeFill: !built.is1D);
     _selection
       ..clear()
       ..add(id);
@@ -794,9 +802,67 @@ class EditorController extends ChangeNotifier {
   void flipVertical() =>
       _updateSelectedShapes((s) => s.copyWith(flipY: !s.flipY));
 
+  // --- Rounded corners (drawio "Rounded" + arc size) -------------------------
+
+  /// Whether [s] is a plain or rounded rectangle (axis-aligned edges, only
+  /// straight segments + corner arcs) — the shapes corner-rounding applies to.
+  static bool _isRectangleLike(VsdxShape s) {
+    if (s.is1D || s.geometries.length != 1) return false;
+    final g = s.geometries.first;
+    if (g.noShow || g.commands.isEmpty) return false;
+    double? px, py;
+    for (final c in g.commands) {
+      switch (c) {
+        case MoveTo(:final x, :final y):
+          px = x;
+          py = y;
+        case LineTo(:final x, :final y):
+          if (px != null && py != null) {
+            if ((x - px).abs() > 1e-6 && (y - py).abs() > 1e-6) return false;
+          }
+          px = x;
+          py = y;
+        case EllipticalArcTo(:final x, :final y):
+          px = x;
+          py = y;
+        default:
+          return false;
+      }
+    }
+    return true;
+  }
+
+  /// Current corner radius (inches) of the single selection when it is a
+  /// rectangle, or `null` when corner-rounding doesn't apply.
+  double? get selectedCornerRadius {
+    final s = singleSelected;
+    if (s == null || !_isRectangleLike(s)) return null;
+    final g = s.geometries.first;
+    if (!g.commands.any((c) => c is EllipticalArcTo)) return 0;
+    final first = g.commands.first;
+    return first is MoveTo ? first.x : 0;
+  }
+
+  /// Round the single (rectangular) selection's corners to [radiusInches]
+  /// (0 = square), regenerating its geometry. Round-trips as `EllipticalArcTo`.
+  void setCornerRadius(double radiusInches, {bool transient = false}) {
+    final s = singleSelected;
+    if (s == null || !_isRectangleLike(s)) return;
+    final geom =
+        VsdxShapeFactory.roundedRectGeometry(s.width, s.height, radiusInches);
+    updateCurrentPage(
+      (page) => page.updateShapeById(
+        s.id,
+        (sh) => sh.copyWith(geometries: <VsdxGeometry>[geom]),
+      ),
+      transient: transient,
+    );
+  }
+
   void _updateSelectedShapes(
     VsdxShape Function(VsdxShape) update, {
     bool transient = false,
+    bool rememberStyle = false,
   }) {
     if (_selection.isEmpty) return;
     updateCurrentPage((page) {
@@ -806,6 +872,25 @@ class EditorController extends ChangeNotifier {
       }
       return next;
     }, transient: transient);
+    if (rememberStyle) _rememberStyle();
+  }
+
+  /// Remember the first selection's fill / line so new shapes inherit it
+  /// (drawio's `currentVertexStyle`).
+  void _rememberStyle() {
+    final s = _firstSelected;
+    if (s == null) return;
+    _memoFill = s.fill;
+    _memoLine = s.line;
+  }
+
+  /// Apply the remembered style to a freshly-created shape. Lines/connectors
+  /// take only the stroke (never a fill).
+  VsdxShape _withMemoStyle(VsdxShape s, {required bool includeFill}) {
+    var r = s;
+    if (includeFill && _memoFill != null) r = r.copyWith(fill: _memoFill);
+    if (_memoLine != null) r = r.copyWith(line: _memoLine);
+    return r;
   }
 
   /// The first selected shape, or null — used by the inspector to reflect the
@@ -830,10 +915,13 @@ class EditorController extends ChangeNotifier {
             pattern: s.fill.pattern == 0 ? 1 : s.fill.pattern,
           ),
         ),
+        rememberStyle: true,
       );
 
-  void setNoFill() =>
-      _updateSelectedShapes((s) => s.copyWith(fill: s.fill.copyWith(pattern: 0)));
+  void setNoFill() => _updateSelectedShapes(
+        (s) => s.copyWith(fill: s.fill.copyWith(pattern: 0)),
+        rememberStyle: true,
+      );
 
   void setLineColor(VsdxColor color) => _updateSelectedShapes(
         (s) => s.copyWith(
@@ -842,6 +930,7 @@ class EditorController extends ChangeNotifier {
             pattern: s.line.pattern == 0 ? 1 : s.line.pattern,
           ),
         ),
+        rememberStyle: true,
       );
 
   void setLineWeight(double inches) => _updateSelectedShapes(
@@ -851,15 +940,19 @@ class EditorController extends ChangeNotifier {
             pattern: s.line.pattern == 0 ? 1 : s.line.pattern,
           ),
         ),
+        rememberStyle: true,
       );
 
-  void setNoLine() =>
-      _updateSelectedShapes((s) => s.copyWith(line: s.line.copyWith(pattern: 0)));
+  void setNoLine() => _updateSelectedShapes(
+        (s) => s.copyWith(line: s.line.copyWith(pattern: 0)),
+        rememberStyle: true,
+      );
 
   /// Set the line dash pattern (Visio `LinePattern`: 1 = solid, 2 = dashed,
   /// 3 = dotted, 4 = dash-dot…). Re-enables the line if it was off.
   void setLinePattern(int pattern) => _updateSelectedShapes(
         (s) => s.copyWith(line: s.line.copyWith(pattern: pattern)),
+        rememberStyle: true,
       );
 
   /// Toggle / set the connector arrowheads (0 = none, 1 = a basic arrow).
@@ -867,6 +960,7 @@ class EditorController extends ChangeNotifier {
   void setLineArrows({int? begin, int? end}) => _updateSelectedShapes(
         (s) =>
             s.copyWith(line: s.line.copyWith(beginArrow: begin, endArrow: end)),
+        rememberStyle: true,
       );
 
   /// Set the start arrowhead type (`BeginArrow` id; 0 = none). See
@@ -885,6 +979,7 @@ class EditorController extends ChangeNotifier {
           ),
         ),
         transient: transient,
+        rememberStyle: true,
       );
 
   /// Line opacity in 0..1 (1 = opaque). Stored as `LineColorTrans = 1-opacity`.
@@ -894,6 +989,7 @@ class EditorController extends ChangeNotifier {
           line: s.line.copyWith(transparency: (1 - opacity).clamp(0.0, 1.0)),
         ),
         transient: transient,
+        rememberStyle: true,
       );
 
   // --- Connector routing style (drawio straight / orthogonal edges) ----------
@@ -1019,7 +1115,7 @@ class EditorController extends ChangeNotifier {
         }
       }
       return next;
-    });
+    }, rememberStyle: true);
   }
 
   // --- Grouping (drawio "Group" / "Ungroup") ---------------------------------
@@ -1457,6 +1553,8 @@ class EditorController extends ChangeNotifier {
     _txnBase = null;
     _dirty = false;
     _clearFindState();
+    _memoFill = null;
+    _memoLine = null;
   }
 
   void _clearFindState() {

@@ -236,6 +236,12 @@ setConnectorWaypoints`，路由经折点且随重路由/移动保持（移动连
 已补：**画布拖拽细化** —— 移动时网格吸附（无邻居对齐轴回退到网格）、缩放 Shift 锁长宽比 / Alt 从中心缩放、
 Esc 取消进行中的拖拽（回退到手势前状态、不记历史）。
 
+已补：**默认样式继承（drawio currentVertexStyle）** —— 记忆最近应用的填充/线条，新建形状自动继承
+（线/连接器仅取描边），记忆随文档重置。
+
+已补：**圆角矩形** —— `EllipticalArcTo` 四角圆弧（Writer 新增弧线序列化，往返安全），属性面板 Corner radius
+滑块可给任意矩形加/去圆角，形状面板含 Rounded 模具。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -434,3 +440,15 @@ Esc 取消进行中的拖拽（回退到手势前状态、不记历史）。
   **Esc 取消进行中的拖拽**（`EditorController.cancelTransaction` 回退到手势前快照、不记历史；画布
   `_cancelActiveDrag` 复位所有拖拽态）。测试：控制器 1 例（cancelTransaction 回退且不产生撤销步，App 共
   20/20）。`dart analyze` 干净、引擎 35/35、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十二）——默认样式继承（currentVertexStyle）**：`EditorController`
+  记忆最近应用的填充/线条（`_memoFill/_memoLine`，样式 setter 与 pasteStyle 经 `_updateSelectedShapes(...,
+  rememberStyle: true)` 更新），新建形状（`createShapeByDrag`/`addShapeFromBuilder`）经 `_withMemoStyle`
+  继承之（线/连接器仅取描边、不加填充）；记忆随文档重置（`_resetHistory`）。测试：控制器 1 例（新矩形继承
+  填充+线条、新线仅继承描边，App 共 21/21）。`dart analyze` 干净、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十三）——圆角矩形（弧线往返）**：`VsdxShapeFactory.roundedRectGeometry/
+  roundedRectangle`（四角 `EllipticalArcTo` 四分圆，控制点取 45° 弧中点）；**Writer 支持 `EllipticalArcTo`**
+  （`_buildRow` 写 X/Y/A/B/C/D、`_canRebuild` 放行），解析器本已读 `EllipticalArcTo`、渲染以二次贝塞尔近似，
+  故往返安全；`EditorController` `_isRectangleLike`（仅直线段+角弧、轴对齐，排除菱形/三角）、`selectedCornerRadius`、
+  `setCornerRadius`（重生几何，0=方角）；属性面板加 **Corner radius 滑块**（单选矩形时显示，事务=单撤销步），
+  形状面板加 **Rounded 模具**。测试：引擎 1 例（圆角矩形 4 弧往返，共 36/36）、控制器 1 例（加圆角/复位方角，
+  App 共 22/22）。`dart analyze` 干净、`flutter build macos` 成功。

@@ -216,6 +216,69 @@ void main() {
     expect(c.currentPage!.shapes.map((s) => s.id).toList(), [ids.first, ids.last]);
   });
 
+  test('new shapes inherit the last-used fill / line style', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 3);
+    final first = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{first});
+    c.setFillColor(const VsdxColor(0xFF00FF00));
+    c.setLineColor(const VsdxColor(0xFF0000FF));
+
+    // A brand-new rectangle picks up the remembered fill + line.
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 5, 6, 6);
+    final second = c.currentPage!.shapes.last;
+    expect(second.id, isNot(first));
+    expect(second.fill.foreground?.value, 0xFF00FF00);
+    expect(second.line.color?.value, 0xFF0000FF);
+
+    // A new line inherits the stroke but never gains a fill.
+    c
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 6, 4, 6);
+    final line = c.currentPage!.shapes.last;
+    expect(line.line.color?.value, 0xFF0000FF);
+    expect(line.fill.pattern, 0);
+  });
+
+  test('corner radius rounds a rectangle and toggles back to square', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 4, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    expect(c.selectedCornerRadius, 0); // plain rectangle
+
+    c.setCornerRadius(0.3);
+    expect(c.selectedCornerRadius, closeTo(0.3, 1e-9));
+    expect(
+      c.currentPage!
+          .findShapeById(id)!
+          .geometries
+          .first
+          .commands
+          .whereType<EllipticalArcTo>()
+          .length,
+      4,
+    );
+
+    c.setCornerRadius(0); // back to square
+    expect(c.selectedCornerRadius, 0);
+    expect(
+      c.currentPage!
+          .findShapeById(id)!
+          .geometries
+          .first
+          .commands
+          .whereType<EllipticalArcTo>(),
+      isEmpty,
+    );
+  });
+
   test('cancelTransaction reverts a transient drag without history', () {
     final c = EditorController()..newDocument();
     c

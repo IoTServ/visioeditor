@@ -889,7 +889,8 @@ class VsdxWriter {
   }
 
   static bool _canRebuild(VsdxGeometry g) => g.commands.every(
-        (c) => c is MoveTo || c is LineTo || c is EllipseCmd,
+        (c) =>
+            c is MoveTo || c is LineTo || c is EllipseCmd || c is EllipticalArcTo,
       );
 
   static bool _geometriesEqual(List<VsdxGeometry> a, List<VsdxGeometry> b) {
@@ -1106,6 +1107,22 @@ class VsdxWriter {
         ):
         return _row('Ellipse', ix,
             {'X': cx, 'Y': cy, 'A': aX, 'B': aY, 'C': bX, 'D': bY});
+      case EllipticalArcTo(
+          :final x,
+          :final y,
+          :final controlX,
+          :final controlY,
+          :final angle,
+          :final eccentricity,
+        ):
+        return _row('EllipticalArcTo', ix, {
+          'X': x,
+          'Y': y,
+          'A': controlX,
+          'B': controlY,
+          'C': angle,
+          'D': eccentricity,
+        });
       default:
         return null;
     }

@@ -1170,6 +1170,7 @@ class _PropertyPanel extends StatelessWidget {
             onChanged: (v) => controller.setFillOpacity(v, transient: true),
             onEnd: controller.commitTransaction,
           ),
+          _roundedControl(context, controller),
           const SizedBox(height: 16),
           _section(context, 'Line'),
           _swatchRow(
@@ -1250,6 +1251,47 @@ class _PropertyPanel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(label, style: Theme.of(context).textTheme.labelLarge),
       );
+
+  /// Corner-radius slider for a single rectangular selection (drawio's
+  /// "Rounded" + arc size). Hidden for non-rectangular / multi selections.
+  Widget _roundedControl(BuildContext context, EditorController controller) {
+    final radius = controller.selectedCornerRadius;
+    final s = controller.singleSelected;
+    if (radius == null || s == null) return const SizedBox.shrink();
+    final maxR = math.min(s.width, s.height) / 2;
+    if (maxR <= 0) return const SizedBox.shrink();
+    final v = radius.clamp(0.0, maxR);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const SizedBox(
+                width: 48,
+                child: Text('Corners', style: TextStyle(fontSize: 11))),
+            Expanded(
+              child: Slider(
+                value: v,
+                max: maxR,
+                onChangeStart: (_) => controller.beginTransaction(),
+                onChanged: (x) => controller.setCornerRadius(x, transient: true),
+                onChangeEnd: (_) => controller.commitTransaction(),
+              ),
+            ),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '${(v * 100).round() / 100}"',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
   /// Numeric position / size / angle fields for a single selection (drawio's
   /// Arrange tab). Hidden when zero or many shapes are selected.

@@ -55,6 +55,68 @@ abstract final class VsdxShapeFactory {
     );
   }
 
+  /// Geometry for a rounded rectangle [w] x [h] (shape-local inches, origin
+  /// bottom-left) with corner radius [radius] (clamped to `min(w,h)/2`). A zero
+  /// radius yields a plain rectangle. Corners are quarter-circle
+  /// [EllipticalArcTo]s (control point = the 45° arc midpoint).
+  static VsdxGeometry roundedRectGeometry(double w, double h, double radius) {
+    final r = radius.clamp(0.0, math.min(w, h) / 2);
+    if (r <= 1e-6) {
+      return VsdxGeometry(
+        commands: <VsdxPathCommand>[
+          const MoveTo(0, 0),
+          LineTo(w, 0),
+          LineTo(w, h),
+          LineTo(0, h),
+          const LineTo(0, 0),
+        ],
+      );
+    }
+    final s = r * math.sqrt2 / 2; // arc-midpoint offset from the corner centre
+    return VsdxGeometry(
+      commands: <VsdxPathCommand>[
+        MoveTo(r, 0),
+        LineTo(w - r, 0),
+        EllipticalArcTo(x: w, y: r, controlX: w - r + s, controlY: r - s),
+        LineTo(w, h - r),
+        EllipticalArcTo(x: w - r, y: h, controlX: w - r + s, controlY: h - r + s),
+        LineTo(r, h),
+        EllipticalArcTo(x: 0, y: h - r, controlX: r - s, controlY: h - r + s),
+        LineTo(0, r),
+        EllipticalArcTo(x: r, y: 0, controlX: r - s, controlY: r - s),
+      ],
+    );
+  }
+
+  /// Rounded rectangle [width] x [height] centred at the pin, corner [radius]
+  /// inches (defaults to ~15% of the shorter side).
+  static VsdxShape roundedRectangle({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    double? radius,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = radius ?? (math.min(w, h) * 0.15);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[roundedRectGeometry(w, h, r)],
+      fill: fill,
+      line: line,
+    );
+  }
+
   /// Ellipse inscribed in the [width] x [height] box centred at the pin.
   static VsdxShape ellipse({
     required int id,

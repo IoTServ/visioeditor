@@ -369,6 +369,34 @@ void main() {
     expect(rb.pinY, closeTo(5, 1e-3));
   });
 
+  test('rounded rectangle (elliptical arcs) round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rr = VsdxShapeFactory.roundedRectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 3,
+      height: 2,
+      radius: 0.5,
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rr));
+    final reopened =
+        parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final s = reopened.pages.first.findShapeById(id)!;
+    final cmds = s.geometries.first.commands;
+    expect(cmds.first, isA<MoveTo>());
+    expect((cmds.first as MoveTo).x, closeTo(0.5, 1e-4)); // MoveTo(r, 0)
+    final arcs = cmds.whereType<EllipticalArcTo>().toList();
+    expect(arcs.length, 4);
+    // One corner arc ends at (width, r) = (3, 0.5).
+    expect(
+      arcs.any((a) => (a.x - 3).abs() < 1e-3 && (a.y - 0.5).abs() < 1e-3),
+      isTrue,
+    );
+  });
+
   test('a polygon stencil shape round-trips', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
