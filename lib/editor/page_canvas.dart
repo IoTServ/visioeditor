@@ -8,6 +8,7 @@ import 'package:vsdx/vsdx.dart';
 
 import '../render/shape_bounds.dart';
 import '../render/vsdx_painter.dart';
+import 'canvas_camera.dart';
 import 'edit_data_dialog.dart';
 import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
@@ -23,6 +24,7 @@ class PageCanvas extends StatefulWidget {
   const PageCanvas({
     required this.controller,
     super.key,
+    this.camera,
     this.pxPerInch = 96.0,
     this.minScale = 0.05,
     this.maxScale = 32.0,
@@ -31,6 +33,10 @@ class PageCanvas extends StatefulWidget {
   });
 
   final EditorController controller;
+
+  /// Optional camera the canvas publishes its view transform to, so a peer
+  /// widget (the Outline minimap) can show the current viewport and navigate.
+  final CanvasCamera? camera;
 
   final double pxPerInch;
   final double minScale;
@@ -237,6 +243,13 @@ class _PageCanvasState extends State<PageCanvas> {
   void _handleReveal() {
     final page = _page;
     if (page == null) return;
+    // Outline navigation: centre on an arbitrary page point.
+    final point = _c.revealPoint;
+    if (point != null) {
+      final c = _pageToContent(point.x, point.y);
+      _revealContent(Rect.fromCenter(center: c, width: 0, height: 0), fit: false);
+      return;
+    }
     final bounds = buildShapeBounds(page);
     final targetId = _c.revealShapeId;
     Rect? rect;
@@ -1395,6 +1408,19 @@ class _PageCanvasState extends State<PageCanvas> {
               _lastRevealSerial = _c.revealSerial;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) _handleReveal();
+              });
+            }
+            // Publish the current view transform to the Outline minimap.
+            if (widget.camera != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  widget.camera!.publish(
+                    scale: _scale,
+                    offset: _offset,
+                    viewport: viewport,
+                    content: content,
+                  );
+                }
               });
             }
             final selectionRects = <Rect>[

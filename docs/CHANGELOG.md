@@ -69,6 +69,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   current page by text/name, shows a match counter, and cycles matches
   (Enter / Shift+Enter or the arrows), selecting and scrolling each into view.
   **Zoom to selection** fits the current selection to the window.
+- **Outline panel** (drawio's third panel, alongside Shapes and Format): a
+  bottom-right thumbnail of the whole page with a rectangle marking the part
+  currently on screen; click or drag inside it to re-centre the canvas there.
+  Toggle it from the toolbar.
 - **Text**: double-click a shape to edit its label **in place on the canvas**
   — an editor overlays the shape (positioned and scaled to its box); Enter
   inserts a newline, Cmd/Ctrl+Enter or clicking away applies, Esc cancels. The
@@ -177,8 +181,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   find, arrowhead types, cancel-transaction drag revert, default-style
   inheritance, corner radius, **text tool**, **default connector arrowhead**,
   **deleteShapeById**, **page setup size·orientation·background**,
-  **shape data**, **hyperlink set·clear·undo**); widget tests (empty-state
-  smoke test, in-place text-edit round-trip, right-click context menu);
-  `flutter build macos` OK.
+  **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**) and the
+  **Outline camera** (`visibleContentRect` mapping, change-only notify); widget
+  tests (empty-state smoke test, in-place text-edit round-trip, right-click
+  context menu); `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

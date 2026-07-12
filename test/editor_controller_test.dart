@@ -175,6 +175,28 @@ void main() {
     expect(c.selectedLink?.address, 'https://example.com');
   });
 
+  test('revealPagePoint centres on a point without changing selection', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final id = c.currentPage!.shapes.last.id;
+    c.setSelection(<int>{id});
+    final serial0 = c.revealSerial;
+
+    c.revealPagePoint(3.5, 4.25);
+    expect(c.revealPoint, isNotNull);
+    expect(c.revealPoint!.x, closeTo(3.5, 1e-9));
+    expect(c.revealPoint!.y, closeTo(4.25, 1e-9));
+    expect(c.revealShapeId, isNull);
+    expect(c.revealSerial, serial0 + 1);
+    expect(c.selection, <int>{id}); // selection untouched
+
+    // A shape/selection reveal clears the pending point.
+    c.revealShape(id);
+    expect(c.revealPoint, isNull);
+  });
+
   test('connector waypoints: add / move / remove and survive reroute', () {
     final c = EditorController()..newDocument();
     c

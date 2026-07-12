@@ -41,6 +41,7 @@ class EditorController extends ChangeNotifier {
   // that is null). Used by Find and "Zoom to selection".
   int _revealSerial = 0;
   int? _revealShapeId;
+  Offset2D? _revealPoint; // page-inch point to centre on (Outline navigation)
 
   // Find state (drawio Ctrl+F): the query, the matching shape ids on the
   // current page, and the index of the currently-highlighted match.
@@ -1570,9 +1571,14 @@ class EditorController extends ChangeNotifier {
   /// current selection.
   int? get revealShapeId => _revealShapeId;
 
+  /// A page-inch point to centre on for the pending reveal (Outline
+  /// navigation), or `null` when the reveal targets a shape / the selection.
+  Offset2D? get revealPoint => _revealPoint;
+
   /// Ask the canvas to scroll/centre so shape [id] is in view.
   void revealShape(int id) {
     _revealShapeId = id;
+    _revealPoint = null;
     _revealSerial++;
     notifyListeners();
   }
@@ -1581,6 +1587,17 @@ class EditorController extends ChangeNotifier {
   void revealSelection() {
     if (_selection.isEmpty) return;
     _revealShapeId = null;
+    _revealPoint = null;
+    _revealSerial++;
+    notifyListeners();
+  }
+
+  /// Ask the canvas to centre on an arbitrary page-inch point ([xInches],
+  /// [yInches]) — used by the Outline minimap to navigate without changing the
+  /// selection.
+  void revealPagePoint(double xInches, double yInches) {
+    _revealShapeId = null;
+    _revealPoint = Offset2D(xInches, yInches);
     _revealSerial++;
     notifyListeners();
   }

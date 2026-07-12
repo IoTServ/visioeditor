@@ -8,10 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
+import 'editor/canvas_camera.dart';
 import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
+import 'editor/outline_panel.dart';
 import 'editor/page_canvas.dart';
 import 'editor/stencils.dart';
 import 'render/arrow_library.dart';
@@ -75,6 +77,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _dragging = false;
   bool _showStencils = false;
   bool _showFind = false;
+  bool _showOutline = false;
+  final CanvasCamera _camera = CanvasCamera();
 
   EditorController? get _c => _workspace.active;
 
@@ -136,6 +140,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   void dispose() {
     _workspace.removeListener(_onChanged);
     _workspace.dispose();
+    _camera.dispose();
     super.dispose();
   }
 
@@ -504,6 +509,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 tooltip: 'Shapes palette',
               ),
               IconButton(
+                onPressed: () => setState(() => _showOutline = !_showOutline),
+                icon: const Icon(Icons.map_outlined),
+                isSelected: _showOutline,
+                tooltip: 'Outline',
+              ),
+              IconButton(
                 onPressed: c.toggleGrid,
                 icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
                 tooltip: 'Toggle grid',
@@ -767,7 +778,23 @@ class _EditorHomePageState extends State<EditorHomePage> {
           const VerticalDivider(width: 1),
         ],
         Expanded(
-          child: PageCanvas(controller: c),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: PageCanvas(controller: c, camera: _camera),
+              ),
+              if (_showOutline)
+                Positioned(
+                  right: 16,
+                  bottom: 64,
+                  child: OutlinePanel(
+                    controller: c,
+                    camera: _camera,
+                    onClose: () => setState(() => _showOutline = false),
+                  ),
+                ),
+            ],
+          ),
         ),
         const VerticalDivider(width: 1),
         // drawio always keeps the Format panel docked: a shape inspector when

@@ -278,6 +278,14 @@ Curved）：`VsdxShape.curved`（会话级标记，同 `straightRoute`）；`Vsd
 页内锚点，否则外部地址；可选 Label；Apply/Remove/Cancel），入口＝**Cmd+K**、右键菜单 "Edit Link…"、⋯ More 菜单、
 属性面板新增 **Link 区**（读出当前链接 + 按钮）。
 
+已补：**Outline 缩略图导航面板（drawio 第三面板）** —— 补齐 drawio 三大面板（此前已有 Shapes 模具面板、Format
+属性面板，独缺 Outline）。右下角常驻缩略图显示整页 + 当前视口矩形，点击/拖拽即把主画布重新居中到该处。实现：
+轻量 `lib/editor/canvas_camera.dart`（`CanvasCamera` ChangeNotifier，PageCanvas **单向发布** scale/offset/viewport/content，
+变化才通知；`visibleContentRect` 由变换反推可见 content-px 矩形）；PageCanvas 加可选 `camera` 参数并在 build 后发布，
+`_handleReveal` 支持**任意页点定位**；控制器 `revealPagePoint(x,y)`（复用既有 reveal 机制、不改选择，`revealShape/
+revealSelection` 会清除待定点）；`lib/editor/outline_panel.dart` 复用 `VsdxPainter` 画缩略图 + 视口框；`main.dart`
+拥有 `CanvasCamera`、AppBar 加 Outline 开关、把画布包进 `Stack` 叠加面板。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -537,3 +545,12 @@ Curved）：`VsdxShape.curved`（会话级标记，同 `straightRoute`）；`Vsd
   入口＝Cmd+K、右键菜单、⋯ More 菜单、属性面板 **Link 区**（读出当前链接 + 按钮）。测试：引擎 1 例（超链接
   创建/改址/移除往返，共 44/44）、控制器 1 例（设/清/撤销，App 共 29）。`dart analyze` 干净（app + 引擎）、
   `flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十九）——Outline 缩略图导航面板**：补齐 drawio 三大面板（Shapes + Format +
+  **Outline**）。新增 `lib/editor/canvas_camera.dart`（`CanvasCamera` ChangeNotifier：PageCanvas 单向发布
+  scale/offset/viewport/content，变化才通知；`visibleContentRect` 反推可见 content-px 矩形）；PageCanvas 加可选
+  `camera` 参数、build 后发布变换、`_handleReveal` 支持任意页点定位；控制器 `revealPagePoint(x,y)`（`Offset2D`
+  存点，复用 reveal 机制、不改选择，`revealShape/revealSelection` 清除待定点）；新增 `lib/editor/outline_panel.dart`
+  （复用 `VsdxPainter` 画整页缩略图 + 视口框，点击/拖拽 → `revealPagePoint`）；`main.dart` 拥有 `CanvasCamera`、
+  AppBar 加 Outline 开关（`Icons.map_outlined`）、画布包进 `Stack` 右下角叠加 `OutlinePanel`。测试：`CanvasCamera`
+  3 例（视口矩形映射、变化才通知、未布局为空）+ 控制器 1 例（`revealPagePoint` 居中不改选择、被 shape reveal 清除，
+  App 共 33）。`flutter analyze` 干净、`flutter test` 通过、`flutter build macos` 成功。纯 UI 特性（无引擎往返改动）。
