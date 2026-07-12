@@ -254,6 +254,13 @@ drawio 行为）；**连接器边标签**——连接器文字绘制于**路由�
 pageBackgroundColor`，**Writer 补丁 PageSheet 的 `PageWidth`/`PageHeight`/`PageColor`**（新建 Cell 插到首个
 Section 之前保持元素顺序，尊重原 Cell 单位）——完整往返。
 
+已补：**Edit Data（drawio Cmd+M 形状数据）** —— 编辑单选形状的 Shape Data（Visio `<Section N="Property">`）：
+独立 `lib/editor/edit_data_dialog.dart` 对话框（名/值行、增/删、Apply＝单撤销步），Cmd+M / 右键菜单 / More 菜单 /
+属性面板 **Data 区**（读出当前属性 + "Edit Data…" 按钮）四处入口；控制器 `setShapeProperties`（去空名/去重）+
+`selectedProperties`/`singleSelectedId`；**Writer 往返** —— `_patchUserProperties` 就地补丁现有行（按 `N` 名匹配、
+保留未建模的 Cell，仅改 `Value`/`Label`/`Prompt`/`Format`/`Type`）、新增/删除行、清空则移除整节，新建形状经
+`_buildPropertySection` 发射；`VsdxUserProperty` 加 `copyWith`/`==`/`hashCode`。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -484,3 +491,11 @@ Section 之前保持元素顺序，尊重原 Cell 单位）——完整往返。
   纸张尺寸下拉 + Portrait/Landscape 分段 + W/H 数值字段）；`_SwatchButton` 加选中高亮。测试：引擎 1 例（页面尺寸+
   背景色往返，共 39/39）、控制器 1 例（尺寸/方向/背景 + 撤销，App 共 26/26）。`dart analyze` 干净（app + 引擎）、
   `flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十六）——Edit Data（形状数据 / Cmd+M）**：模型 `VsdxUserProperty` 加
+  `copyWith`/`==`/`hashCode`；`EditorController` `setShapeProperties`（去空名+去重，单撤销步）、`selectedProperties`、
+  `singleSelectedId`；**Writer** `_patchUserProperties`（`<Section N="Property">` 就地补丁：按 `N` 名匹配现有行、
+  保留未建模 Cell、仅改 Value/Label/Prompt/Format/Type，新增/删除行、清空移除整节）+ `_buildPropertySection`
+  （新建形状发射）+ `_maxRowIx`/`_userPropsEqual`。UI：新增 `lib/editor/edit_data_dialog.dart`（名/值行 + 增删 +
+  Apply），入口＝Cmd+M、右键菜单 "Edit Data…"、More 菜单、属性面板新增 **Data 区**（属性读出 + 按钮）。测试：
+  引擎 1 例（形状数据创建/改值/新增/删除往返，共 40/40）、控制器 1 例（设值/去重/撤销，App 共 27/27）。
+  `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。

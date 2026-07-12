@@ -623,6 +623,62 @@ void main() {
     expect(after.fill.foregroundTransparency, closeTo(0.25, 1e-4));
   });
 
+  test('shape data (custom properties) round-trips: create, edit, add, remove',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(userProperties: const <VsdxUserProperty>[
+      VsdxUserProperty(name: 'Cost', label: 'Unit cost', value: '42', type: 2),
+      VsdxUserProperty(name: 'Owner', value: 'Alice'),
+    ]);
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+
+    // 1) New shape emits its Property section.
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    final s1 = parser.parse(bytes1).pages.first.findShapeById(id)!;
+    expect(s1.userProperties, hasLength(2));
+    final cost1 = s1.userProperties.firstWhere((p) => p.name == 'Cost');
+    expect(cost1.value, '42');
+    expect(cost1.label, 'Unit cost');
+    expect(cost1.type, 2);
+
+    // 2) Edit an existing value, add a new property, drop another — patched
+    //    in place on the now-existing shape.
+    final r1 = parser.parse(bytes1);
+    final edited = r1.replacePage(
+      0,
+      r1.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(userProperties: <VsdxUserProperty>[
+          s.userProperties
+              .firstWhere((p) => p.name == 'Cost')
+              .copyWith(value: '99'),
+          const VsdxUserProperty(name: 'Status', value: 'Active'),
+        ]),
+      ),
+    );
+    final s2 = parser
+        .parse(writer.write(originalBytes: bytes1, edited: edited))
+        .pages
+        .first
+        .findShapeById(id)!;
+    final names = s2.userProperties.map((p) => p.name).toSet();
+    expect(names, <String>{'Cost', 'Status'}); // Owner removed
+    expect(s2.userProperties.firstWhere((p) => p.name == 'Cost').value, '99');
+    expect(
+        s2.userProperties.firstWhere((p) => p.name == 'Status').value, 'Active');
+    // The edited "Cost" row kept its label from the original.
+    expect(
+        s2.userProperties.firstWhere((p) => p.name == 'Cost').label, 'Unit cost');
+  });
+
   test('page size and background colour round-trip', () {
     final bytes = _fixture('test1.vsdx');
     final doc = parser.parse(bytes);

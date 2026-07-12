@@ -381,6 +381,30 @@ void main() {
     expect(c.selection.contains(ids.first), isFalse);
   });
 
+  test('shape data: set / edit / dedupe, exposed and undoable', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    expect(c.singleSelectedId, id);
+    expect(c.selectedProperties, isEmpty);
+
+    c.setShapeProperties(id, const <VsdxUserProperty>[
+      VsdxUserProperty(name: 'Cost', value: '10'),
+      VsdxUserProperty(name: 'Owner', value: 'Bob'),
+      VsdxUserProperty(name: '', value: 'ignored'), // blank name dropped
+      VsdxUserProperty(name: 'Cost', value: 'dup'), // duplicate dropped
+    ]);
+    expect(c.selectedProperties.map((p) => p.name).toList(), ['Cost', 'Owner']);
+    expect(c.selectedProperties.first.value, '10');
+
+    // Editing is a single undo step back to no data.
+    c.undo();
+    expect(c.selectedProperties, isEmpty);
+  });
+
   test('page setup: size, orientation and background are undoable', () {
     final c = EditorController()..newDocument();
     expect(c.pageSize!.width, closeTo(8.5, 1e-6));

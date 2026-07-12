@@ -1233,6 +1233,34 @@ class EditorController extends ChangeNotifier {
     }, rememberStyle: true);
   }
 
+  // --- Shape data (drawio "Edit Data", Cmd+M) --------------------------------
+
+  /// The id of the single selected shape, or `null` when zero / many are
+  /// selected. Used to scope shape-data editing to one shape.
+  int? get singleSelectedId => _selection.length == 1 ? _selection.first : null;
+
+  /// The custom properties (`<Section N="Property">`, Visio "Shape Data") of
+  /// the single selection, or an empty list.
+  List<VsdxUserProperty> get selectedProperties =>
+      singleSelected?.userProperties ?? const <VsdxUserProperty>[];
+
+  /// Replace a shape's Shape Data with [props] (one undo step). Empty [props]
+  /// clears the `<Section N="Property">` on save. Names should be unique;
+  /// duplicates are dropped keeping the first occurrence.
+  void setShapeProperties(int shapeId, List<VsdxUserProperty> props) {
+    final seen = <String>{};
+    final unique = <VsdxUserProperty>[
+      for (final p in props)
+        if (p.name.trim().isNotEmpty && seen.add(p.name)) p,
+    ];
+    updateCurrentPage(
+      (page) => page.updateShapeById(
+        shapeId,
+        (s) => s.copyWith(userProperties: unique),
+      ),
+    );
+  }
+
   // --- Grouping (drawio "Group" / "Ungroup") ---------------------------------
 
   /// Whether the selection has ≥ 2 top-level shapes that can be grouped.

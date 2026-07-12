@@ -23,6 +23,7 @@ import '../model/layer.dart';
 import '../model/page.dart';
 import '../model/rich_text.dart';
 import '../model/shape.dart';
+import '../model/user_property.dart';
 import '../parser/document_parser.dart';
 import '../parser/package_reader.dart';
 import '../parser/relationships.dart';
@@ -806,7 +807,84 @@ class VsdxWriter {
     changed |= _patchGeometry(el, base, edited);
     // Text formatting (Character size/color/style + Paragraph alignment).
     changed |= _patchRichText(el, base, edited);
+    // Shape data (drawio "Edit Data" → <Section N="Property">).
+    changed |= _patchUserProperties(el, base, edited);
     return changed;
+  }
+
+  /// Patch the shape's `<Section N="Property">` (Visio "Shape Data") to match
+  /// the edited model: existing rows (matched by their `N` name) keep every
+  /// unmodelled cell and only get their `Value`/`Label`/`Prompt`/`Format`/`Type`
+  /// rewritten; new properties append fresh rows; dropped ones are removed. An
+  /// empty edited set removes the section entirely.
+  bool _patchUserProperties(XmlElement el, VsdxShape base, VsdxShape edited) {
+    if (_userPropsEqual(base.userProperties, edited.userProperties)) {
+      return false;
+    }
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Property') {
+        section = s;
+        break;
+      }
+    }
+    if (edited.userProperties.isEmpty) {
+      if (section == null) return false;
+      section.parent?.children.remove(section);
+      return true;
+    }
+    section ??= _ensureSection(el, 'Property');
+
+    final rowByName = <String, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final n =
+          row.getAttribute('N') ?? 'Row${row.getAttribute('IX') ?? ''}';
+      rowByName[n] = row;
+    }
+    final editedNames = <String>{for (final p in edited.userProperties) p.name};
+    for (final entry in rowByName.entries) {
+      if (!editedNames.contains(entry.key)) {
+        entry.value.parent?.children.remove(entry.value);
+      }
+    }
+    var nextIx = _maxRowIx(section) + 1;
+    for (final p in edited.userProperties) {
+      var row = rowByName[p.name];
+      if (row == null) {
+        row = XmlElement(XmlName('Row'), <XmlAttribute>[
+          XmlAttribute(XmlName('N'), p.name),
+          XmlAttribute(XmlName('IX'), (nextIx++).toString()),
+        ]);
+        section.children.add(row);
+      }
+      _writeValue(_ensureCell(row, 'Value'), p.value ?? '');
+      if (p.label != null) _writeValue(_ensureCell(row, 'Label'), p.label!);
+      if (p.prompt != null) _writeValue(_ensureCell(row, 'Prompt'), p.prompt!);
+      if (p.format != null) _writeValue(_ensureCell(row, 'Format'), p.format!);
+      _writeValue(_ensureCell(row, 'Type'), p.type.toString());
+    }
+    return true;
+  }
+
+  static int _maxRowIx(XmlElement section) {
+    var max = 0;
+    for (final row in section.childElements) {
+      if (row.name.local != 'Row') continue;
+      final ix = int.tryParse(row.getAttribute('IX') ?? '');
+      if (ix != null && ix > max) max = ix;
+    }
+    return max;
+  }
+
+  static bool _userPropsEqual(
+    List<VsdxUserProperty> a,
+    List<VsdxUserProperty> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   bool _patchRichText(XmlElement el, VsdxShape base, VsdxShape edited) {
@@ -1111,6 +1189,9 @@ class VsdxWriter {
       final section = _buildGeometrySection(g, ix++);
       if (section != null) children.add(section);
     }
+    if (s.userProperties.isNotEmpty) {
+      children.add(_buildPropertySection(s.userProperties));
+    }
     if (s.text != null && s.text!.isNotEmpty) {
       children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
     }
@@ -1129,6 +1210,33 @@ class VsdxWriter {
         XmlAttribute(XmlName('Type'), isGroup ? 'Group' : 'Shape'),
       ],
       children,
+    );
+  }
+
+  /// Build a fresh `<Section N="Property">` for a brand-new shape's Shape Data.
+  XmlElement _buildPropertySection(List<VsdxUserProperty> props) {
+    var ix = 1;
+    final rows = <XmlNode>[
+      for (final p in props)
+        XmlElement(
+          XmlName('Row'),
+          <XmlAttribute>[
+            XmlAttribute(XmlName('N'), p.name),
+            XmlAttribute(XmlName('IX'), (ix++).toString()),
+          ],
+          <XmlNode>[
+            if (p.label != null) _cell('Label', p.label!),
+            _cell('Value', p.value ?? ''),
+            if (p.prompt != null) _cell('Prompt', p.prompt!),
+            if (p.format != null) _cell('Format', p.format!),
+            _cell('Type', p.type.toString()),
+          ],
+        ),
+    ];
+    return XmlElement(
+      XmlName('Section'),
+      <XmlAttribute>[XmlAttribute(XmlName('N'), 'Property')],
+      rows,
     );
   }
 

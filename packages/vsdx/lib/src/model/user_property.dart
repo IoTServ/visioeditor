@@ -69,6 +69,39 @@ class VsdxUserProperty {
   String get displayLabel => label?.trim().isNotEmpty == true ? label! : name;
   String get displayValue => value ?? '';
 
+  /// Functional update. As with [VsdxShape.copyWith], omitted nullable fields
+  /// keep their current value (they can't be reset to `null` via `copyWith`).
+  VsdxUserProperty copyWith({
+    String? name,
+    String? label,
+    String? value,
+    String? prompt,
+    String? format,
+    int? type,
+  }) {
+    return VsdxUserProperty(
+      name: name ?? this.name,
+      label: label ?? this.label,
+      value: value ?? this.value,
+      prompt: prompt ?? this.prompt,
+      format: format ?? this.format,
+      type: type ?? this.type,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxUserProperty &&
+      other.name == name &&
+      other.label == label &&
+      other.value == value &&
+      other.prompt == prompt &&
+      other.format == format &&
+      other.type == type;
+
+  @override
+  int get hashCode => Object.hash(name, label, value, prompt, format, type);
+
   @override
   String toString() =>
       'VsdxUserProperty($name${label == null ? '' : '/$label'}'

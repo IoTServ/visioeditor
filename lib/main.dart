@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
+import 'editor/edit_data_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
 import 'editor/page_canvas.dart';
@@ -84,6 +85,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
   void _closeFind() {
     setState(() => _showFind = false);
     _c?.clearFind();
+  }
+
+  /// Open drawio's "Edit Data" (Cmd+M) for the single selected shape.
+  Future<void> _editData() async {
+    final c = _c;
+    final id = c?.singleSelectedId;
+    if (c == null || id == null) return;
+    await showEditDataDialog(context, c, id);
   }
 
   @override
@@ -457,6 +466,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyM, meta: true): () {
+          if (c != null && c.singleSelectedId != null) _editData();
+        },
       },
       child: Scaffold(
         appBar: AppBar(
@@ -539,6 +551,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       c.selectAll();
                     case 'find':
                       _openFind();
+                    case 'editData':
+                      _editData();
                     case 'zoomSel':
                       c.revealSelection();
                     case 'copyStyle':
@@ -559,6 +573,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   const PopupMenuItem<String>(
                     value: 'find',
                     child: Text('Find… (Cmd+F)'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'editData',
+                    enabled: c.singleSelectedId != null,
+                    child: const Text('Edit Data… (Cmd+M)'),
                   ),
                   PopupMenuItem<String>(
                     value: 'zoomSel',
@@ -1240,6 +1259,10 @@ class _PropertyPanel extends StatelessWidget {
             _section(context, 'Text'),
             _textControls(context),
           ],
+          if (controller.singleSelectedId != null) ...[
+            const SizedBox(height: 16),
+            _dataSection(context),
+          ],
           const Divider(height: 32),
           FilledButton.tonalIcon(
             onPressed: controller.deleteSelection,
@@ -1255,6 +1278,61 @@ class _PropertyPanel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(label, style: Theme.of(context).textTheme.labelLarge),
       );
+
+  /// Shape Data (drawio "Edit Data"): a compact read-out of the single
+  /// selection's custom properties plus a button to open the editor (Cmd+M).
+  Widget _dataSection(BuildContext context) {
+    final id = controller.singleSelectedId;
+    if (id == null) return const SizedBox.shrink();
+    final props = controller.selectedProperties;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _section(context, 'Data'),
+        if (props.isEmpty)
+          Text(
+            'No shape data',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          )
+        else
+          for (final p in props)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      p.displayLabel,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      p.displayValue,
+                      style:
+                          TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => showEditDataDialog(context, controller, id),
+          icon: const Icon(Icons.data_object, size: 18),
+          label: const Text('Edit Data…'),
+        ),
+      ],
+    );
+  }
 
   /// Corner-radius slider for a single rectangular selection (drawio's
   /// "Rounded" + arc size). Hidden for non-rectangular / multi selections.
