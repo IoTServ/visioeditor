@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
 import 'editor/edit_data_dialog.dart';
+import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
 import 'editor/page_canvas.dart';
@@ -93,6 +94,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final id = c?.singleSelectedId;
     if (c == null || id == null) return;
     await showEditDataDialog(context, c, id);
+  }
+
+  /// Open drawio's "Edit Link" (Cmd+K) for the single selected shape.
+  Future<void> _editLink() async {
+    final c = _c;
+    final id = c?.singleSelectedId;
+    if (c == null || id == null) return;
+    await showEditLinkDialog(context, c, id);
   }
 
   @override
@@ -469,6 +478,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
         const SingleActivator(LogicalKeyboardKey.keyM, meta: true): () {
           if (c != null && c.singleSelectedId != null) _editData();
         },
+        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
+          if (c != null && c.singleSelectedId != null) _editLink();
+        },
       },
       child: Scaffold(
         appBar: AppBar(
@@ -553,6 +565,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       _openFind();
                     case 'editData':
                       _editData();
+                    case 'editLink':
+                      _editLink();
                     case 'zoomSel':
                       c.revealSelection();
                     case 'copyStyle':
@@ -578,6 +592,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     value: 'editData',
                     enabled: c.singleSelectedId != null,
                     child: const Text('Edit Data… (Cmd+M)'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'editLink',
+                    enabled: c.singleSelectedId != null,
+                    child: const Text('Edit Link… (Cmd+K)'),
                   ),
                   PopupMenuItem<String>(
                     value: 'zoomSel',
@@ -1260,6 +1279,8 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.singleSelectedId != null) ...[
             const SizedBox(height: 16),
             _dataSection(context),
+            const SizedBox(height: 16),
+            _linkSection(context),
           ],
           const Divider(height: 32),
           FilledButton.tonalIcon(
@@ -1327,6 +1348,41 @@ class _PropertyPanel extends StatelessWidget {
           onPressed: () => showEditDataDialog(context, controller, id),
           icon: const Icon(Icons.data_object, size: 18),
           label: const Text('Edit Data…'),
+        ),
+      ],
+    );
+  }
+
+  /// Hyperlink (drawio "Edit Link"): show the single selection's current link
+  /// (if any) plus a button to open the editor (Cmd+K).
+  Widget _linkSection(BuildContext context) {
+    final id = controller.singleSelectedId;
+    if (id == null) return const SizedBox.shrink();
+    final link = controller.selectedLink;
+    final target = link?.effectiveTarget;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _section(context, 'Link'),
+        if (target == null || target.isEmpty)
+          Text(
+            'No link',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          )
+        else
+          Text(
+            (link!.description?.isNotEmpty ?? false)
+                ? '${link.description}  →  $target'
+                : target,
+            style: TextStyle(fontSize: 12, color: scheme.primary),
+            overflow: TextOverflow.ellipsis,
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => showEditLinkDialog(context, controller, id),
+          icon: const Icon(Icons.link, size: 18),
+          label: const Text('Edit Link…'),
         ),
       ],
     );

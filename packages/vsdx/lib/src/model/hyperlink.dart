@@ -72,6 +72,47 @@ class VsdxHyperlink {
     return (s == null || s.isEmpty) ? null : s;
   }
 
+  VsdxHyperlink copyWith({
+    int? id,
+    String? description,
+    String? address,
+    String? subAddress,
+    String? frame,
+    bool? newWindow,
+    bool? isDefault,
+  }) =>
+      VsdxHyperlink(
+        id: id ?? this.id,
+        description: description ?? this.description,
+        address: address ?? this.address,
+        subAddress: subAddress ?? this.subAddress,
+        frame: frame ?? this.frame,
+        newWindow: newWindow ?? this.newWindow,
+        isDefault: isDefault ?? this.isDefault,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxHyperlink &&
+      other.id == id &&
+      other.description == description &&
+      other.address == address &&
+      other.subAddress == subAddress &&
+      other.frame == frame &&
+      other.newWindow == newWindow &&
+      other.isDefault == isDefault;
+
+  @override
+  int get hashCode => Object.hash(
+        id,
+        description,
+        address,
+        subAddress,
+        frame,
+        newWindow,
+        isDefault,
+      );
+
   @override
   String toString() =>
       'VsdxHyperlink(#$id, desc=$description, addr=$address, sub=$subAddress)';

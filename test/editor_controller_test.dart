@@ -149,6 +149,32 @@ void main() {
     expect(c.selectedConnectorStraight, isTrue);
   });
 
+  test('setShapeHyperlinks sets, clears, and undoes a shape link', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.last.id;
+    c.setSelection(<int>{id});
+    expect(c.selectedLink, isNull);
+
+    c.setShapeHyperlinks(id, const <VsdxHyperlink>[
+      VsdxHyperlink(id: 0, address: 'https://example.com', isDefault: true),
+    ]);
+    expect(c.selectedHyperlinks, hasLength(1));
+    expect(c.selectedLink?.address, 'https://example.com');
+
+    // Clear it.
+    c.setShapeHyperlinks(id, const <VsdxHyperlink>[]);
+    c.setSelection(<int>{id});
+    expect(c.selectedLink, isNull);
+
+    // Undo restores the link (re-select to read it back).
+    c.undo();
+    c.setSelection(<int>{id});
+    expect(c.selectedLink?.address, 'https://example.com');
+  });
+
   test('connector waypoints: add / move / remove and survive reroute', () {
     final c = EditorController()..newDocument();
     c

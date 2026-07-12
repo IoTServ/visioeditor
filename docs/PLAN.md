@@ -270,6 +270,14 @@ Curved）：`VsdxShape.curved`（会话级标记，同 `straightRoute`）；`Vsd
 `setConnectorRouteStyle`（保留 `setConnectorStyle(straight:)`/`selectedConnectorStraight` 兼容），属性面板连接器区
 改**三选一** ChoiceChip。
 
+已补：**超链接（drawio Edit Link / Cmd+K）** —— 编辑单选形状的超链接（Visio `<Section N="Hyperlink">`），解析器早已能读，
+本批补齐编辑与**完整往返写回**。模型 `VsdxHyperlink` 加 `copyWith`/`==`/`hashCode`；**Writer** `_patchHyperlinks`
+（按行 `IX` 就地补丁 Address/SubAddress/Description/Frame/NewWindow/Default，保留未建模 Cell，新增/删除行，清空移除整节）
++ `_buildHyperlinkSection`（新形状发射）+ `_hyperlinksEqual`（并补 `hyperlink.dart` 导入）；控制器 `selectedHyperlinks`/
+`selectedLink`/`setShapeHyperlinks`（单撤销步）；新增对话框 `lib/editor/edit_link_dialog.dart`（Link 字段：`#` 前缀视为
+页内锚点，否则外部地址；可选 Label；Apply/Remove/Cancel），入口＝**Cmd+K**、右键菜单 "Edit Link…"、⋯ More 菜单、
+属性面板新增 **Link 区**（读出当前链接 + 按钮）。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -520,3 +528,12 @@ Curved）：`VsdxShape.curved`（会话级标记，同 `straightRoute`）；`Vsd
   （`curveThrough` 采样穿过控制点/端点精确/点数、曲线连接器烘焙折线且经重路由保持）+ Writer 1 例（曲线连接器
   几何真实 `.vsdx` 往返，共 43/43）、控制器 1 例（三态切换 + 曲线密度 + 重路由保持，App 共 28）。
   `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十八）——超链接（Edit Link / Cmd+K）**：编辑形状超链接（Visio
+  `<Section N="Hyperlink">`），解析器早已能读，本批补齐编辑与完整往返。模型 `VsdxHyperlink` 加
+  `copyWith`/`==`/`hashCode`；**Writer** `_patchHyperlinks`（按行 `IX` 就地补丁标准 Cell、保留未建模 Cell、增删行、
+  清空移除整节）+ `_buildHyperlinkSection`（新形状发射）+ `_hyperlinksEqual`，并补齐缺失的 `../model/hyperlink.dart`
+  导入（修复引擎编译错误）；控制器 `selectedHyperlinks`/`selectedLink`/`setShapeHyperlinks`（单撤销步）；新增
+  `lib/editor/edit_link_dialog.dart`（Link 字段——`#` 前缀＝页内锚点、否则外部地址、可选 Label、Apply/Remove/Cancel），
+  入口＝Cmd+K、右键菜单、⋯ More 菜单、属性面板 **Link 区**（读出当前链接 + 按钮）。测试：引擎 1 例（超链接
+  创建/改址/移除往返，共 44/44）、控制器 1 例（设/清/撤销，App 共 29）。`dart analyze` 干净（app + 引擎）、
+  `flutter test` 通过、`flutter build macos` 成功。

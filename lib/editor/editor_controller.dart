@@ -1293,6 +1293,28 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  // --- Hyperlinks (drawio "Edit Link" / Cmd+K) -------------------------------
+
+  /// The single selection's hyperlink rows (`<Section N="Hyperlink">`), or an
+  /// empty list.
+  List<VsdxHyperlink> get selectedHyperlinks =>
+      singleSelected?.hyperlinks ?? const <VsdxHyperlink>[];
+
+  /// The primary hyperlink of the single selection (the one invoked on click),
+  /// or `null` when there's no single selection / no link.
+  VsdxHyperlink? get selectedLink => singleSelected?.primaryHyperlink;
+
+  /// Replace a shape's hyperlinks with [links] (one undo step). An empty list
+  /// clears the `<Section N="Hyperlink">` on save.
+  void setShapeHyperlinks(int shapeId, List<VsdxHyperlink> links) {
+    updateCurrentPage(
+      (page) => page.updateShapeById(
+        shapeId,
+        (s) => s.copyWith(hyperlinks: links),
+      ),
+    );
+  }
+
   // --- Grouping (drawio "Group" / "Ungroup") ---------------------------------
 
   /// Whether the selection has ≥ 2 top-level shapes that can be grouped.

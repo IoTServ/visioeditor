@@ -9,6 +9,7 @@ import 'package:vsdx/vsdx.dart';
 import '../render/shape_bounds.dart';
 import '../render/vsdx_painter.dart';
 import 'edit_data_dialog.dart';
+import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
 import 'snap_guides.dart';
 
@@ -578,6 +579,8 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_c.singleSelectedId != null) {
         items.add(const PopupMenuItem(
             value: 'editData', child: Text('Edit Data…')));
+        items.add(const PopupMenuItem(
+            value: 'editLink', child: Text('Edit Link…')));
       }
     } else {
       if (_c.hasClipboard) {
@@ -630,6 +633,9 @@ class _PageCanvasState extends State<PageCanvas> {
       case 'editData':
         final id = _c.singleSelectedId;
         if (id != null) await showEditDataDialog(context, _c, id);
+      case 'editLink':
+        final id = _c.singleSelectedId;
+        if (id != null) await showEditLinkDialog(context, _c, id);
       case 'selectAll':
         _c.selectAll();
       case 'fit':

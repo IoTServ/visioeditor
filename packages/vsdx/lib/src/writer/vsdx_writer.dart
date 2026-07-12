@@ -19,6 +19,7 @@ import 'package:xml/xml.dart';
 import '../model/connect.dart';
 import '../model/document.dart';
 import '../model/geometry.dart';
+import '../model/hyperlink.dart';
 import '../model/layer.dart';
 import '../model/page.dart';
 import '../model/rich_text.dart';
@@ -809,6 +810,8 @@ class VsdxWriter {
     changed |= _patchRichText(el, base, edited);
     // Shape data (drawio "Edit Data" → <Section N="Property">).
     changed |= _patchUserProperties(el, base, edited);
+    // Hyperlinks (drawio "Edit Link" → <Section N="Hyperlink">).
+    changed |= _patchHyperlinks(el, base, edited);
     return changed;
   }
 
@@ -880,6 +883,63 @@ class VsdxWriter {
     List<VsdxUserProperty> a,
     List<VsdxUserProperty> b,
   ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Patch the shape's `<Section N="Hyperlink">` (drawio "Edit Link") to match
+  /// the edited model: existing rows (matched by their `IX`) keep any unmodelled
+  /// cell and only get the standard cells rewritten; new links append fresh
+  /// rows; dropped ones are removed. An empty edited set removes the section.
+  bool _patchHyperlinks(XmlElement el, VsdxShape base, VsdxShape edited) {
+    if (_hyperlinksEqual(base.hyperlinks, edited.hyperlinks)) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Hyperlink') {
+        section = s;
+        break;
+      }
+    }
+    if (edited.hyperlinks.isEmpty) {
+      if (section == null) return false;
+      section.parent?.children.remove(section);
+      return true;
+    }
+    section ??= _ensureSection(el, 'Hyperlink');
+
+    final rowByIx = <int, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final ix = int.tryParse(row.getAttribute('IX') ?? '');
+      if (ix != null) rowByIx[ix] = row;
+    }
+    final editedIds = <int>{for (final h in edited.hyperlinks) h.id};
+    for (final entry in rowByIx.entries) {
+      if (!editedIds.contains(entry.key)) {
+        entry.value.parent?.children.remove(entry.value);
+      }
+    }
+    for (final h in edited.hyperlinks) {
+      var row = rowByIx[h.id];
+      if (row == null) {
+        row = XmlElement(XmlName('Row'), <XmlAttribute>[
+          XmlAttribute(XmlName('IX'), h.id.toString()),
+        ]);
+        section.children.add(row);
+      }
+      _writeValue(_ensureCell(row, 'Address'), h.address ?? '');
+      _writeValue(_ensureCell(row, 'SubAddress'), h.subAddress ?? '');
+      _writeValue(_ensureCell(row, 'Description'), h.description ?? '');
+      if (h.frame != null) _writeValue(_ensureCell(row, 'Frame'), h.frame!);
+      _writeValue(_ensureCell(row, 'NewWindow'), h.newWindow ? '1' : '0');
+      _writeValue(_ensureCell(row, 'Default'), h.isDefault ? '1' : '0');
+    }
+    return true;
+  }
+
+  static bool _hyperlinksEqual(List<VsdxHyperlink> a, List<VsdxHyperlink> b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
       if (a[i] != b[i]) return false;
@@ -1192,6 +1252,9 @@ class VsdxWriter {
     if (s.userProperties.isNotEmpty) {
       children.add(_buildPropertySection(s.userProperties));
     }
+    if (s.hyperlinks.isNotEmpty) {
+      children.add(_buildHyperlinkSection(s.hyperlinks));
+    }
     if (s.text != null && s.text!.isNotEmpty) {
       children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
     }
@@ -1236,6 +1299,30 @@ class VsdxWriter {
     return XmlElement(
       XmlName('Section'),
       <XmlAttribute>[XmlAttribute(XmlName('N'), 'Property')],
+      rows,
+    );
+  }
+
+  /// Build a fresh `<Section N="Hyperlink">` for a brand-new shape's links.
+  XmlElement _buildHyperlinkSection(List<VsdxHyperlink> links) {
+    final rows = <XmlNode>[
+      for (final h in links)
+        XmlElement(
+          XmlName('Row'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), h.id.toString())],
+          <XmlNode>[
+            _cell('Address', h.address ?? ''),
+            _cell('SubAddress', h.subAddress ?? ''),
+            if (h.description != null) _cell('Description', h.description!),
+            if (h.frame != null) _cell('Frame', h.frame!),
+            _cell('NewWindow', h.newWindow ? '1' : '0'),
+            _cell('Default', h.isDefault ? '1' : '0'),
+          ],
+        ),
+    ];
+    return XmlElement(
+      XmlName('Section'),
+      <XmlAttribute>[XmlAttribute(XmlName('N'), 'Hyperlink')],
       rows,
     );
   }

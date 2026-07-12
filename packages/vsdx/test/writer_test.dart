@@ -770,4 +770,63 @@ void main() {
     expect(after.richText.runs.first.charStyle.fontFamily, 'Georgia');
     expect(after.richText.runs.first.charStyle.underline, isTrue);
   });
+
+  test('a hyperlink round-trips: create, edit, remove', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(hyperlinks: const <VsdxHyperlink>[
+      VsdxHyperlink(
+        id: 0,
+        address: 'https://example.com',
+        description: 'Example',
+        isDefault: true,
+      ),
+    ]);
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+
+    // 1) A new shape emits its Hyperlink section.
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    final s1 = parser.parse(bytes1).pages.first.findShapeById(id)!;
+    expect(s1.hyperlinks, hasLength(1));
+    expect(s1.primaryHyperlink?.address, 'https://example.com');
+    expect(s1.primaryHyperlink?.description, 'Example');
+
+    // 2) Edit the address in place on the now-existing shape.
+    final r1 = parser.parse(bytes1);
+    final edited = r1.replacePage(
+      0,
+      r1.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(hyperlinks: <VsdxHyperlink>[
+          s.hyperlinks.first.copyWith(address: 'https://microsoft.com'),
+        ]),
+      ),
+    );
+    final bytes2 = writer.write(originalBytes: bytes1, edited: edited);
+    final s2 = parser.parse(bytes2).pages.first.findShapeById(id)!;
+    expect(s2.primaryHyperlink?.address, 'https://microsoft.com');
+
+    // 3) Remove the link → the whole section is dropped.
+    final r2 = parser.parse(bytes2);
+    final cleared = r2.replacePage(
+      0,
+      r2.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(hyperlinks: const <VsdxHyperlink>[]),
+      ),
+    );
+    final s3 = parser
+        .parse(writer.write(originalBytes: bytes2, edited: cleared))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(s3.hyperlinks, isEmpty);
+  });
 }

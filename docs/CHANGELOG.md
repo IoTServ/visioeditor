@@ -94,6 +94,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (reachable from Cmd+M, the right-click menu, the ⋯ menu, or a **Data** section
   in the inspector). Properties round-trip: existing rows are patched in place
   (keeping any cells we don't model), new ones appended, removed ones dropped.
+- **Edit Link** (drawio Cmd+K): set or clear a shape's **hyperlink** (Visio
+  `<Section N="Hyperlink">`) via a dialog (reachable from Cmd+K, the right-click
+  menu, the ⋯ menu, or a **Link** section in the inspector). A value starting
+  with `#` is stored as an in-document anchor (e.g. `#Page-2`), everything else
+  as an external address; an optional label is kept too. Links round-trip:
+  existing rows are patched in place (keeping unmodelled cells), added / removed
+  as needed, and the section is dropped when the link is cleared.
 - **Recent files** (persisted) and an **unsaved-changes guard** on close.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
   bar with dirty markers + close); drag-drop multiple files opens a tab each.
@@ -152,16 +159,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 43 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 44 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; **connector arc-length midpoint**;
   **curved-connector spline sampling + geometry round-trip**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
   visibility / resized geometry / text formatting / polygon stencil /
   **rounded-rect elliptical arcs** / **borderless text box** / z-order (to-back
   and one-step forward) / page rename / page add / page delete / **page size +
-  background colour** / **shape data (custom properties)** / group reparent /
-  line style (dash·arrows·opacity) / font·underline·vertical-align·shadow;
-  blank-document emit; geometry-scaling resize; SVG).
+  background colour** / **shape data (custom properties)** / **hyperlink
+  (create·edit·remove)** / group reparent / line style (dash·arrows·opacity) /
+  font·underline·vertical-align·shadow; blank-document emit; geometry-scaling
+  resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
   **connector three-way style incl. curved**, connector waypoints, text·shadow,
@@ -169,7 +177,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   find, arrowhead types, cancel-transaction drag revert, default-style
   inheritance, corner radius, **text tool**, **default connector arrowhead**,
   **deleteShapeById**, **page setup size·orientation·background**,
-  **shape data**); widget tests (empty-state smoke test, in-place text-edit
-  round-trip, right-click context menu); `flutter build macos` OK.
+  **shape data**, **hyperlink set·clear·undo**); widget tests (empty-state
+  smoke test, in-place text-edit round-trip, right-click context menu);
+  `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
