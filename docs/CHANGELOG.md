@@ -38,10 +38,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Connectors with glue**: connect two shapes; endpoints attach to the target
   shapes' edges and auto-reroute when a shape moves / resizes / rotates;
   `<Connects>` round-trip. New connectors carry a **default end arrowhead**
-  (they point at their target). Each connector can be routed **straight or
-  orthogonal** (inspector) and reshaped with draggable **waypoints** (bend
-  points: drag a segment midpoint to add one, drag it to move, double-click to
-  remove); the routing choice and waypoints are kept across re-routes.
+  (they point at their target). Each connector can be routed **straight,
+  orthogonal, or curved** (inspector; drawio's Curved edges smooth the route
+  through a Catmull-Rom spline that is baked into the geometry, so the curve
+  round-trips as ordinary `MoveTo`/`LineTo` rows) and reshaped with draggable
+  **waypoints** (bend points: drag a segment midpoint to add one, drag it to
+  move, double-click to remove); the routing choice and waypoints are kept
+  across re-routes.
 - **Edge labels**: double-click a connector to label it; the text is drawn
   centred on the route's midpoint (drawio-style) with a page-coloured backing
   for legibility, and the in-place editor opens right there.
@@ -149,8 +152,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 40 unit tests (parse; model edit / immutability / structural sharing;
-  connector re-routing incl. elbow; **connector arc-length midpoint**; writer
+- Engine: 43 unit tests (parse; model edit / immutability / structural sharing;
+  connector re-routing incl. elbow; **connector arc-length midpoint**;
+  **curved-connector spline sampling + geometry round-trip**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
   visibility / resized geometry / text formatting / polygon stencil /
   **rounded-rect elliptical arcs** / **borderless text box** / z-order (to-back
@@ -160,12 +164,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   blank-document emit; geometry-scaling resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
-  connector waypoints, text·shadow, copy/paste style, arrange
-  flip·rotate·numeric geometry, one-step z-order, find, arrowhead types,
-  cancel-transaction drag revert, default-style inheritance, corner radius,
-  **text tool**, **default connector arrowhead**, **deleteShapeById**,
-  **page setup size·orientation·background**, **shape data**); widget tests
-  (empty-state smoke test, in-place text-edit round-trip, right-click context
-  menu); `flutter build macos` OK.
+  **connector three-way style incl. curved**, connector waypoints, text·shadow,
+  copy/paste style, arrange flip·rotate·numeric geometry, one-step z-order,
+  find, arrowhead types, cancel-transaction drag revert, default-style
+  inheritance, corner radius, **text tool**, **default connector arrowhead**,
+  **deleteShapeById**, **page setup size·orientation·background**,
+  **shape data**); widget tests (empty-state smoke test, in-place text-edit
+  round-trip, right-click context menu); `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

@@ -569,6 +569,42 @@ void main() {
     expect(reopened.pages.first.findShapeById(connId), isNotNull);
   });
 
+  test('a curved connector bakes its spline into round-tripping geometry', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final aId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: aId, pinX: 2, pinY: 2, width: 1, height: 1));
+    final bId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: bId, pinX: 6, pinY: 5, width: 1, height: 1));
+    final connId = page.nextFreeShapeId();
+    page = page
+        .addShape(VsdxShapeFactory.line(id: connId, ax: 2, ay: 2, bx: 6, by: 5))
+        .copyWith(connects: [
+      VsdxConnect(
+          fromSheetId: connId, fromCell: 'BeginX', toSheetId: aId, toCell: 'PinX'),
+      VsdxConnect(
+          fromSheetId: connId, fromCell: 'EndX', toSheetId: bId, toCell: 'PinX'),
+    ]).rerouteConnectors();
+    // Make the connector curved, then bake it in.
+    page = page.setConnectorStyle({connId}, straight: false, curved: true);
+    final before = page.findShapeById(connId)!.geometries.first.commands.length;
+    expect(before, greaterThan(4)); // dense sampled spline
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: doc.replacePage(0, page)),
+    );
+    final rc = reopened.pages.first.findShapeById(connId)!;
+    // The dense smooth polyline survives verbatim as MoveTo/LineTo geometry.
+    expect(rc.geometries.first.commands.length, before);
+    expect(
+      rc.geometries.first.commands.every((c) => c is MoveTo || c is LineTo),
+      isTrue,
+    );
+  });
+
   test('changes fill colour across a round-trip', () {
     final bytes = _fixture('test9_rect_and_line.vsdx');
     final doc = parser.parse(bytes);

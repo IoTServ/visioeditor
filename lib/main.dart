@@ -1225,21 +1225,19 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.hasConnectorSelected) ...[
             const SizedBox(height: 16),
             _section(context, 'Connector'),
-            Row(
+            Wrap(
+              spacing: 8,
               children: [
-                ChoiceChip(
-                  label: const Text('Straight'),
-                  selected: controller.selectedConnectorStraight,
-                  onSelected: (_) =>
-                      controller.setConnectorStyle(straight: true),
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Orthogonal'),
-                  selected: !controller.selectedConnectorStraight,
-                  onSelected: (_) =>
-                      controller.setConnectorStyle(straight: false),
-                ),
+                for (final s in ConnectorRouteStyle.values)
+                  ChoiceChip(
+                    label: Text(switch (s) {
+                      ConnectorRouteStyle.straight => 'Straight',
+                      ConnectorRouteStyle.orthogonal => 'Orthogonal',
+                      ConnectorRouteStyle.curved => 'Curved',
+                    }),
+                    selected: controller.selectedConnectorRouteStyle == s,
+                    onSelected: (_) => controller.setConnectorRouteStyle(s),
+                  ),
               ],
             ),
           ],

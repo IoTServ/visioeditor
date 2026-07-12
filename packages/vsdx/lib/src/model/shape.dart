@@ -46,6 +46,7 @@ class VsdxShape {
     this.endX,
     this.endY,
     this.straightRoute = false,
+    this.curved = false,
     this.waypoints = const <Offset2D>[],
     this.flipX = false,
     this.flipY = false,
@@ -114,6 +115,13 @@ class VsdxShape {
   /// `false` (default) = orthogonal elbow. Session-level (not persisted as a
   /// dedicated cell); the drawn geometry itself is what round-trips.
   final bool straightRoute;
+
+  /// When `true`, this connector is drawn as a smooth (drawio "curved") spline
+  /// through its route control points instead of a polyline. The smooth curve
+  /// is baked into the geometry as a densely-sampled `LineTo` polyline, so it
+  /// round-trips as ordinary geometry; this flag is session-level and only
+  /// steers how [VsdxPage.rerouteConnectors] rebuilds that geometry.
+  final bool curved;
 
   /// User-placed interior bend points for a connector, in page inches. When
   /// non-empty the route runs begin → waypoints → end (overriding straight /
@@ -210,6 +218,7 @@ class VsdxShape {
     double? endX,
     double? endY,
     bool? straightRoute,
+    bool? curved,
     List<Offset2D>? waypoints,
     bool? flipX,
     bool? flipY,
@@ -245,6 +254,7 @@ class VsdxShape {
       endX: endX ?? this.endX,
       endY: endY ?? this.endY,
       straightRoute: straightRoute ?? this.straightRoute,
+      curved: curved ?? this.curved,
       waypoints: waypoints ?? this.waypoints,
       flipX: flipX ?? this.flipX,
       flipY: flipY ?? this.flipY,

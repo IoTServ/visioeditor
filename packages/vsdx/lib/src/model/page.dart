@@ -212,7 +212,7 @@ class VsdxPage {
       final (bx, by) = endShape != null
           ? _edgePoint(endShape, beginCx, beginCy)
           : (endCx, endCy);
-      final route = connector.waypoints.isNotEmpty
+      final control = connector.waypoints.isNotEmpty
           ? <Offset2D>[
               Offset2D(ax, ay),
               ...connector.waypoints,
@@ -221,7 +221,8 @@ class VsdxPage {
           : connector.straightRoute
               ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
               : _elbowRoute(ax, ay, bx, by);
-      next = next.updateShapeById(cid, (s) => s.reshapeAsPolyline(route));
+      final geometry = connector.curved ? curveThrough(control) : control;
+      next = next.updateShapeById(cid, (s) => s.reshapeAsPolyline(geometry));
     }
     return next;
   }
@@ -276,10 +277,11 @@ class VsdxPage {
   VsdxPage setConnectorWaypoints(int id, List<Offset2D> waypoints) {
     final s = findShapeById(id);
     if (s == null || !s.is1D) return this;
-    final route = connectorRoute(s.copyWith(waypoints: waypoints));
+    final control = connectorRoute(s.copyWith(waypoints: waypoints));
+    final geometry = s.curved ? curveThrough(control) : control;
     final next = updateShapeById(
       id,
-      (sh) => sh.copyWith(waypoints: waypoints).reshapeAsPolyline(route),
+      (sh) => sh.copyWith(waypoints: waypoints).reshapeAsPolyline(geometry),
     );
     return next.rerouteConnectors();
   }
@@ -287,23 +289,37 @@ class VsdxPage {
   /// Whether connector [id] currently prefers a straight route.
   bool isConnectorStraight(int id) => findShapeById(id)?.straightRoute ?? false;
 
-  /// Set the routing style of the given connectors: `straight` = a single
-  /// direct segment, otherwise an orthogonal elbow. Recomputed from each
-  /// connector's current begin/end and remembered on the shape so later
-  /// re-routes keep the choice.
-  VsdxPage setConnectorStyle(Set<int> ids, {required bool straight}) {
+  /// Whether connector [id] is drawn as a smooth (curved) spline.
+  bool isConnectorCurved(int id) => findShapeById(id)?.curved ?? false;
+
+  /// Set the routing style of the given connectors:
+  ///   * `straight` = a single direct segment,
+  ///   * otherwise an orthogonal elbow,
+  ///   * `curved` = a smooth spline through the same control points.
+  /// Recomputed from each connector's current begin/end (respecting explicit
+  /// waypoints) and remembered on the shape so later re-routes keep the choice.
+  VsdxPage setConnectorStyle(
+    Set<int> ids, {
+    required bool straight,
+    bool curved = false,
+  }) {
     var next = this;
     for (final id in ids) {
       final s = next.findShapeById(id);
       if (s == null || !s.is1D) continue;
       final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
       final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
-      final route = straight
-          ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
-          : _elbowRoute(ax, ay, bx, by);
+      final control = s.waypoints.isNotEmpty
+          ? <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)]
+          : straight
+              ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
+              : _elbowRoute(ax, ay, bx, by);
+      final geometry = curved ? curveThrough(control) : control;
       next = next.updateShapeById(
         id,
-        (sh) => sh.copyWith(straightRoute: straight).reshapeAsPolyline(route),
+        (sh) => sh
+            .copyWith(straightRoute: straight, curved: curved)
+            .reshapeAsPolyline(geometry),
       );
     }
     return next;
@@ -356,6 +372,54 @@ class VsdxPage {
       Offset2D(bx, my),
       Offset2D(bx, by),
     ];
+  }
+
+  /// Sample a smooth Catmull-Rom spline that passes through every point in
+  /// [control] (page inches), returning a dense polyline that begins and ends
+  /// exactly on `control.first` / `control.last`. Fewer than three points can't
+  /// bend, so they are returned unchanged.
+  ///
+  /// drawio-style *curved* connectors bake this sampled polyline straight into
+  /// their geometry, so the smooth look round-trips as ordinary `MoveTo`/
+  /// `LineTo` rows with no dedicated spline cell.
+  static List<Offset2D> curveThrough(
+    List<Offset2D> control, {
+    int segmentsPerSpan = 12,
+  }) {
+    if (control.length < 3 || segmentsPerSpan < 1) return control;
+    final pts = <Offset2D>[control.first];
+    for (var i = 0; i < control.length - 1; i++) {
+      final p0 = control[i == 0 ? 0 : i - 1];
+      final p1 = control[i];
+      final p2 = control[i + 1];
+      final p3 = control[i + 2 < control.length ? i + 2 : control.length - 1];
+      for (var s = 1; s <= segmentsPerSpan; s++) {
+        pts.add(_catmullRom(p0, p1, p2, p3, s / segmentsPerSpan));
+      }
+    }
+    return pts;
+  }
+
+  /// Centripetal-ish uniform Catmull-Rom interpolation of the middle span
+  /// (`p1`→`p2`) at parameter [t] ∈ [0, 1].
+  static Offset2D _catmullRom(
+    Offset2D p0,
+    Offset2D p1,
+    Offset2D p2,
+    Offset2D p3,
+    double t,
+  ) {
+    final t2 = t * t;
+    final t3 = t2 * t;
+    double axis(double a0, double a1, double a2, double a3) => 0.5 *
+        ((2 * a1) +
+            (-a0 + a2) * t +
+            (2 * a0 - 5 * a1 + 4 * a2 - a3) * t2 +
+            (-a0 + 3 * a1 - 3 * a2 + a3) * t3);
+    return Offset2D(
+      axis(p0.x, p1.x, p2.x, p3.x),
+      axis(p0.y, p1.y, p2.y, p3.y),
+    );
   }
 
   /// Move a top-level shape to the front (drawn last). No-op for nested shapes.

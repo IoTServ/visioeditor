@@ -112,6 +112,43 @@ void main() {
     expect(c.selectedConnectorStraight, isFalse);
   });
 
+  test('connector three-way style: straight / orthogonal / curved', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(6, 5, 7, 6);
+    final b = c.currentPage!.shapes.last.id;
+
+    c.createConnector(1.5, 1.5, 6.5, 5.5, beginTarget: a, endTarget: b);
+    final conn = c.selection.single;
+    expect(c.selectedConnectorRouteStyle, ConnectorRouteStyle.orthogonal);
+    final orthoCount =
+        c.currentPage!.findShapeById(conn)!.geometries.first.commands.length;
+
+    // Curved → geometry becomes a dense smooth polyline.
+    c.setConnectorRouteStyle(ConnectorRouteStyle.curved);
+    expect(c.selectedConnectorRouteStyle, ConnectorRouteStyle.curved);
+    expect(
+      c.currentPage!.findShapeById(conn)!.geometries.first.commands.length,
+      greaterThan(orthoCount),
+    );
+
+    // Moving a glued shape re-routes but keeps the curved preference.
+    c.setSelection(<int>{a});
+    c.moveSelectionBy(0.5, 0);
+    c.setSelection(<int>{conn});
+    expect(c.selectedConnectorRouteStyle, ConnectorRouteStyle.curved);
+
+    // Back to straight.
+    c.setConnectorRouteStyle(ConnectorRouteStyle.straight);
+    expect(c.selectedConnectorRouteStyle, ConnectorRouteStyle.straight);
+    expect(c.selectedConnectorStraight, isTrue);
+  });
+
   test('connector waypoints: add / move / remove and survive reroute', () {
     final c = EditorController()..newDocument();
     c

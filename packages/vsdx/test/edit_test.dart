@@ -132,6 +132,74 @@ void main() {
         greaterThan(2));
   });
 
+  test('curveThrough samples a smooth spline that hits its control points', () {
+    const control = <Offset2D>[
+      Offset2D(0, 0),
+      Offset2D(2, 3),
+      Offset2D(5, 1),
+    ];
+    final curve = VsdxPage.curveThrough(control, segmentsPerSpan: 8);
+    // Endpoints stay exact and the sampled polyline is far denser.
+    expect(curve.first, const Offset2D(0, 0));
+    expect(curve.last, const Offset2D(5, 1));
+    expect(curve.length, 1 + (control.length - 1) * 8);
+    // The interior control point lies on the sampled curve (segment boundary).
+    expect(
+      curve.any((p) => (p.x - 2).abs() < 1e-9 && (p.y - 3).abs() < 1e-9),
+      isTrue,
+    );
+    // Fewer than three points can't bend — returned unchanged.
+    expect(
+      VsdxPage.curveThrough(const <Offset2D>[Offset2D(0, 0), Offset2D(1, 1)]),
+      hasLength(2),
+    );
+  });
+
+  test('a curved connector bakes a smooth polyline that survives reroute', () {
+    final r1 = VsdxShapeFactory.rectangle(
+        id: 1, pinX: 1, pinY: 1, width: 1, height: 1);
+    final r2 = VsdxShapeFactory.rectangle(
+        id: 2, pinX: 5, pinY: 4, width: 1, height: 1);
+    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 1, bx: 5, by: 4);
+    var page = VsdxPage(
+      id: 0,
+      name: 'P1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: [r1, r2, conn],
+      connects: const [
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'BeginX', toSheetId: 1, toCell: 'PinX'),
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'EndX', toSheetId: 2, toCell: 'PinX'),
+      ],
+    ).rerouteConnectors();
+
+    final elbowCount = page.findShapeById(3)!.geometries.first.commands.length;
+
+    // Switch to curved: geometry becomes a dense smooth polyline.
+    page = page.setConnectorStyle({3}, straight: false, curved: true);
+    final curved = page.findShapeById(3)!;
+    expect(curved.curved, isTrue);
+    expect(curved.straightRoute, isFalse);
+    expect(page.isConnectorCurved(3), isTrue);
+    expect(curved.geometries.first.commands.length, greaterThan(elbowCount));
+    // Purely MoveTo/LineTo — so it round-trips as ordinary geometry.
+    expect(
+      curved.geometries.first.commands
+          .every((c) => c is MoveTo || c is LineTo),
+      isTrue,
+    );
+
+    // Moving a glued shape re-routes but keeps the curved preference + density.
+    page = page
+        .updateShapeById(1, (s) => s.copyWith(pinX: 2, pinY: 2))
+        .rerouteConnectors();
+    final rerouted = page.findShapeById(3)!;
+    expect(rerouted.curved, isTrue);
+    expect(rerouted.geometries.first.commands.length, greaterThan(elbowCount));
+  });
+
   test('connectorMidpoint returns the arc-length midpoint of the route', () {
     // Straight horizontal connector: the midpoint is the geometric centre.
     final straight = VsdxShapeFactory.line(id: 1, ax: 1, ay: 2, bx: 5, by: 2)

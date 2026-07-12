@@ -261,6 +261,15 @@ Section 之前保持元素顺序，尊重原 Cell 单位）——完整往返。
 保留未建模的 Cell，仅改 `Value`/`Label`/`Prompt`/`Format`/`Type`）、新增/删除行、清空则移除整节，新建形状经
 `_buildPropertySection` 发射；`VsdxUserProperty` 加 `copyWith`/`==`/`hashCode`。
 
+已补：**曲线连接器（drawio Curved edges）** —— 连接器路由样式从二态扩为**三态**（Straight / Orthogonal /
+Curved）：`VsdxShape.curved`（会话级标记，同 `straightRoute`）；`VsdxPage.curveThrough`（Catmull-Rom 样条穿过
+路由控制点，采样为密集折线，端点精确落在 begin/end）+ `_catmullRom`；`rerouteConnectors`/`setConnectorWaypoints`/
+`setConnectorStyle`（加 `curved` 形参 + 尊重 waypoints）在 curved 时把控制点折线**烘焙为平滑折线几何**——因此
+**渲染层与 Writer 零改动**（仍是 `MoveTo`/`LineTo`），且曲线**视觉往返一致**（几何本身即曲线采样点）；
+`isConnectorCurved`。控制器加 `ConnectorRouteStyle{straight,orthogonal,curved}` 枚举、`selectedConnectorRouteStyle`/
+`setConnectorRouteStyle`（保留 `setConnectorStyle(straight:)`/`selectedConnectorStraight` 兼容），属性面板连接器区
+改**三选一** ChoiceChip。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -498,4 +507,16 @@ Section 之前保持元素顺序，尊重原 Cell 单位）——完整往返。
   （新建形状发射）+ `_maxRowIx`/`_userPropsEqual`。UI：新增 `lib/editor/edit_data_dialog.dart`（名/值行 + 增删 +
   Apply），入口＝Cmd+M、右键菜单 "Edit Data…"、More 菜单、属性面板新增 **Data 区**（属性读出 + 按钮）。测试：
   引擎 1 例（形状数据创建/改值/新增/删除往返，共 40/40）、控制器 1 例（设值/去重/撤销，App 共 27/27）。
+  `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十七）——曲线连接器（Curved edges）**：连接器路由样式扩为三态
+  （Straight/Orthogonal/Curved）。模型 `VsdxShape.curved`（会话级，同 `straightRoute`）+ copyWith；
+  `VsdxPage.curveThrough`（Catmull-Rom 样条穿过路由控制点，`segmentsPerSpan` 采样密度，端点精确、<3 点原样返回）
+  + `_catmullRom`；`rerouteConnectors`/`setConnectorWaypoints`/`setConnectorStyle`（`setConnectorStyle` 加 `curved`
+  形参并尊重 waypoints）在 curved 时把控制点折线**烘焙为平滑折线几何**——`MoveTo`/`LineTo` 采样点，故
+  **渲染层（path_builder/vsdx_painter）与 Writer 零改动**，曲线**视觉往返一致**（几何即曲线采样点，`_canRebuild`
+  已放行）；`isConnectorCurved`。控制器 `ConnectorRouteStyle{straight,orthogonal,curved}` 枚举 +
+  `selectedConnectorRouteStyle`/`setConnectorRouteStyle`（保留旧二态 `setConnectorStyle(straight:)`/
+  `selectedConnectorStraight` 兼容）；`main.dart` 属性面板连接器区改**三选一** ChoiceChip。测试：引擎 2 例
+  （`curveThrough` 采样穿过控制点/端点精确/点数、曲线连接器烘焙折线且经重路由保持）+ Writer 1 例（曲线连接器
+  几何真实 `.vsdx` 往返，共 43/43）、控制器 1 例（三态切换 + 曲线密度 + 重路由保持，App 共 28）。
   `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。

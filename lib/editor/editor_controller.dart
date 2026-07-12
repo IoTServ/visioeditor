@@ -6,6 +6,10 @@ import 'package:vsdx/vsdx.dart';
 /// Editing tools the canvas can be in.
 enum EditorTool { select, rectangle, ellipse, line, connector, text }
 
+/// Connector routing style — mirrors drawio's Straight / Orthogonal / Curved
+/// edge styles. [curved] smooths the orthogonal control points into a spline.
+enum ConnectorRouteStyle { straight, orthogonal, curved }
+
 /// Central editor state: the parsed [VsdxDocument], current page, selection,
 /// and an undo/redo history built on immutable document snapshots.
 ///
@@ -1131,11 +1135,39 @@ class EditorController extends ChangeNotifier {
     return false;
   }
 
-  /// Route the selected connectors straight or orthogonally.
-  void setConnectorStyle({required bool straight}) {
+  /// The routing style of the first selected connector (drawio Straight /
+  /// Orthogonal / Curved). Falls back to [ConnectorRouteStyle.orthogonal].
+  ConnectorRouteStyle get selectedConnectorRouteStyle {
+    final page = currentPage;
+    if (page == null) return ConnectorRouteStyle.orthogonal;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.is1D) {
+        if (s.curved) return ConnectorRouteStyle.curved;
+        return s.straightRoute
+            ? ConnectorRouteStyle.straight
+            : ConnectorRouteStyle.orthogonal;
+      }
+    }
+    return ConnectorRouteStyle.orthogonal;
+  }
+
+  /// Route the selected connectors straight or orthogonally (binary form kept
+  /// for callers that don't need the curved option).
+  void setConnectorStyle({required bool straight}) =>
+      setConnectorRouteStyle(straight
+          ? ConnectorRouteStyle.straight
+          : ConnectorRouteStyle.orthogonal);
+
+  /// Apply a three-way routing [style] to the selected connectors.
+  void setConnectorRouteStyle(ConnectorRouteStyle style) {
     if (_selection.isEmpty) return;
     updateCurrentPage(
-      (page) => page.setConnectorStyle(_selection.toSet(), straight: straight),
+      (page) => page.setConnectorStyle(
+        _selection.toSet(),
+        straight: style == ConnectorRouteStyle.straight,
+        curved: style == ConnectorRouteStyle.curved,
+      ),
     );
   }
 
