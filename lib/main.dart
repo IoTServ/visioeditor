@@ -731,10 +731,13 @@ class _EditorHomePageState extends State<EditorHomePage> {
         Expanded(
           child: PageCanvas(controller: c),
         ),
-        if (c.hasSelection) ...[
-          const VerticalDivider(width: 1),
-          _PropertyPanel(controller: c),
-        ],
+        const VerticalDivider(width: 1),
+        // drawio always keeps the Format panel docked: a shape inspector when
+        // something is selected, otherwise the page/"Diagram" settings.
+        if (c.hasSelection)
+          _PropertyPanel(controller: c)
+        else
+          _PageFormatPanel(controller: c),
       ],
     );
   }
@@ -1645,6 +1648,174 @@ class _PropertyPanel extends StatelessWidget {
   }
 }
 
+/// A named paper size (portrait width × height, inches).
+class _Paper {
+  const _Paper(this.name, this.width, this.height);
+  final String name;
+  final double width;
+  final double height;
+}
+
+/// Right-hand Format panel shown when nothing is selected — drawio's "Diagram"
+/// tab: grid / snap toggles, page background colour, and paper size (preset +
+/// orientation + custom width/height). All changes round-trip via the writer.
+class _PageFormatPanel extends StatelessWidget {
+  const _PageFormatPanel({required this.controller});
+
+  final EditorController controller;
+
+  static const List<int> _backgrounds = <int>[
+    0xFFFFFFFF,
+    0xFFF5F5F5,
+    0xFFFFF9C4,
+    0xFFE3F2FD,
+    0xFFE8F5E9,
+    0xFFFCE4EC,
+    0xFF37474F,
+    0xFF000000,
+  ];
+
+  /// Common paper sizes as portrait (width, height) in inches.
+  static const List<_Paper> _papers = <_Paper>[
+    _Paper('Letter', 8.5, 11),
+    _Paper('Legal', 8.5, 14),
+    _Paper('Tabloid', 11, 17),
+    _Paper('A3', 11.69, 16.54),
+    _Paper('A4', 8.27, 11.69),
+    _Paper('A5', 5.83, 8.27),
+    _Paper('A6', 4.13, 5.83),
+    _Paper('B4', 9.84, 13.9),
+    _Paper('B5', 6.93, 9.84),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final size = controller.pageSize;
+    if (size == null) return const SizedBox(width: 232);
+    final w = size.width;
+    final h = size.height;
+    final landscape = controller.pageIsLandscape;
+    final matched = _matchPaper(w, h);
+    final bg = controller.pageBackgroundColor;
+
+    return SizedBox(
+      width: 232,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Diagram', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 16),
+          Text('View', style: theme.textTheme.labelLarge),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Grid'),
+            value: controller.showGrid,
+            onChanged: (_) => controller.toggleGrid(),
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Snap to grid'),
+            value: controller.snapToGrid,
+            onChanged: (_) => controller.toggleSnap(),
+          ),
+          const SizedBox(height: 16),
+          Text('Background', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final argb in _backgrounds)
+                _SwatchButton(
+                  color: Color(argb),
+                  selected: bg?.value == argb,
+                  onTap: () => controller.setBackgroundColor(VsdxColor(argb)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text('Paper Size', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          DropdownButton<_Paper>(
+            value: matched,
+            isExpanded: true,
+            isDense: true,
+            hint: const Text('Custom'),
+            items: [
+              for (final p in _papers)
+                DropdownMenuItem<_Paper>(
+                  value: p,
+                  child: Text(
+                    '${p.name}   ${_dim(p.width)} × ${_dim(p.height)} in',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (p) {
+              if (p == null) return;
+              controller.setPageSize(
+                landscape ? p.height : p.width,
+                landscape ? p.width : p.height,
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment<bool>(value: false, label: Text('Portrait')),
+              ButtonSegment<bool>(value: true, label: Text('Landscape')),
+            ],
+            selected: <bool>{landscape},
+            onSelectionChanged: (s) => controller.setPageLandscape(s.first),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _NumField(
+                  label: 'W',
+                  value: w,
+                  onSubmit: (v) => controller.setPageSize(v, h),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _NumField(
+                  label: 'H',
+                  value: h,
+                  onSubmit: (v) => controller.setPageSize(w, v),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The preset matching (w, h) in either orientation, or `null` for a custom
+  /// size.
+  _Paper? _matchPaper(double w, double h) {
+    final lo = math.min(w, h);
+    final hi = math.max(w, h);
+    for (final p in _papers) {
+      if ((p.width - lo).abs() < 0.05 && (p.height - hi).abs() < 0.05) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  static String _dim(double v) {
+    final r = (v * 100).round() / 100;
+    return r == r.roundToDouble() ? r.toInt().toString() : '$r';
+  }
+}
+
 /// Small preview of an arrowhead ([arrowId]) drawn at the end of a stub line.
 /// When [flip] is set the head points left (used for the start arrow).
 class _ArrowPreview extends StatelessWidget {
@@ -1954,13 +2125,19 @@ class _FindBarState extends State<_FindBar> {
 }
 
 class _SwatchButton extends StatelessWidget {
-  const _SwatchButton({required this.color, required this.onTap});
+  const _SwatchButton({
+    required this.color,
+    required this.onTap,
+    this.selected = false,
+  });
 
   final Color color;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
@@ -1970,7 +2147,10 @@ class _SwatchButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: Colors.grey.shade500),
+          border: Border.all(
+            color: selected ? scheme.primary : Colors.grey.shade500,
+            width: selected ? 2 : 1,
+          ),
         ),
       ),
     );

@@ -623,6 +623,27 @@ void main() {
     expect(after.fill.foregroundTransparency, closeTo(0.25, 1e-4));
   });
 
+  test('page size and background colour round-trip', () {
+    final bytes = _fixture('test1.vsdx');
+    final doc = parser.parse(bytes);
+    final edited = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: 17,
+        heightInches: 11,
+        backgroundColor: const VsdxColor(0xFFF2F2F2),
+      ),
+    );
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: edited),
+    );
+    final p = reopened.pages.first;
+    expect(p.widthInches, closeTo(17, 1e-3));
+    expect(p.heightInches, closeTo(11, 1e-3));
+    expect(p.backgroundColor?.value, 0xFFF2F2F2);
+  });
+
   test('font / underline / vertical align + shadow round-trip', () {
     final bytes = _fixture('test9_rect_and_line.vsdx');
     final doc = parser.parse(bytes);

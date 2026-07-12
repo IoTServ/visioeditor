@@ -108,6 +108,7 @@ class VsdxWriter {
         pagesDirty = true;
       }
       if (_patchLayerRows(el, bp, ep)) pagesDirty = true;
+      if (_patchPageProperties(el, bp, ep)) pagesDirty = true;
     }
 
     // 2b) Removed pages.
@@ -218,6 +219,67 @@ class VsdxWriter {
     return changed;
   }
 
+  /// Patch the page-level `<PageSheet>` cells the editor can change: page size
+  /// (`PageWidth` / `PageHeight`, drawio Paper Size) and background colour
+  /// (`PageColor`, drawio Background). Returns whether anything changed.
+  bool _patchPageProperties(XmlElement pageEl, VsdxPage bp, VsdxPage ep) {
+    final needWidth = (bp.widthInches - ep.widthInches).abs() > _epsilon;
+    final needHeight = (bp.heightInches - ep.heightInches).abs() > _epsilon;
+    final needColor = bp.backgroundColor?.value != ep.backgroundColor?.value;
+    if (!needWidth && !needHeight && !needColor) return false;
+    final sheet = _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
+    var changed = false;
+    if (needWidth) {
+      final cell = _ensurePageSheetCell(sheet, 'PageWidth');
+      final unit = VsdxLengthUnit.tryParse(cell.getAttribute('U'));
+      _writeValue(cell, _fmt(fromInches(ep.widthInches, unit)));
+      changed = true;
+    }
+    if (needHeight) {
+      final cell = _ensurePageSheetCell(sheet, 'PageHeight');
+      final unit = VsdxLengthUnit.tryParse(cell.getAttribute('U'));
+      _writeValue(cell, _fmt(fromInches(ep.heightInches, unit)));
+      changed = true;
+    }
+    if (needColor && ep.backgroundColor != null) {
+      _writeValue(
+          _ensurePageSheetCell(sheet, 'PageColor'), _hex(ep.backgroundColor!));
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// Find or create a `<Page>`'s `<PageSheet>` (which must precede `<Rel>`).
+  XmlElement _ensurePageSheet(XmlElement pageEl) {
+    final existing = _firstChild(pageEl, 'PageSheet');
+    if (existing != null) return existing;
+    final sheet = XmlElement(XmlName('PageSheet'));
+    pageEl.children.insert(0, sheet);
+    return sheet;
+  }
+
+  /// Like [_ensureCell], but for a `<PageSheet>`: new cells are inserted before
+  /// the first `<Section>` so the Cell-before-Section element order stays valid.
+  XmlElement _ensurePageSheetCell(XmlElement pageSheet, String name) {
+    for (final el in pageSheet.childElements) {
+      if (el.name.local == 'Cell' && el.getAttribute('N') == name) return el;
+    }
+    final cell = XmlElement(XmlName('Cell'), <XmlAttribute>[
+      XmlAttribute(XmlName('N'), name),
+      XmlAttribute(XmlName('V'), '0'),
+    ]);
+    var at = pageSheet.children.length;
+    for (var i = 0; i < pageSheet.children.length; i++) {
+      final n = pageSheet.children[i];
+      if (n is XmlElement && n.name.local == 'Section') {
+        at = i;
+        break;
+      }
+    }
+    pageSheet.children.insert(at, cell);
+    return cell;
+  }
+
   static String _relsPartFor(String partName) {
     final noSlash = _noSlash(partName);
     final idx = noSlash.lastIndexOf('/');
@@ -304,6 +366,8 @@ class VsdxWriter {
     final pageSheet = XmlElement(XmlName('PageSheet'), const [], <XmlNode>[
       _cell('PageWidth', _fmt(ep.widthInches <= 0 ? 8.5 : ep.widthInches)),
       _cell('PageHeight', _fmt(ep.heightInches <= 0 ? 11.0 : ep.heightInches)),
+      if (ep.backgroundColor != null)
+        _cell('PageColor', _hex(ep.backgroundColor!)),
     ]);
     final rel = XmlElement(
       XmlName('Rel'),

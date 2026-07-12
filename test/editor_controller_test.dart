@@ -381,6 +381,36 @@ void main() {
     expect(c.selection.contains(ids.first), isFalse);
   });
 
+  test('page setup: size, orientation and background are undoable', () {
+    final c = EditorController()..newDocument();
+    expect(c.pageSize!.width, closeTo(8.5, 1e-6));
+    expect(c.pageBackgroundColor, isNull);
+
+    c.setPageSize(11, 17);
+    expect(c.pageSize!.width, closeTo(11, 1e-9));
+    expect(c.pageSize!.height, closeTo(17, 1e-9));
+    expect(c.pageIsLandscape, isFalse);
+
+    // Landscape swaps width/height, preserving the paper size.
+    c.setPageLandscape(true);
+    expect(c.pageSize!.width, closeTo(17, 1e-9));
+    expect(c.pageSize!.height, closeTo(11, 1e-9));
+    expect(c.pageIsLandscape, isTrue);
+    // Re-applying the same orientation is a no-op.
+    c.setPageLandscape(true);
+    expect(c.pageSize!.width, closeTo(17, 1e-9));
+
+    c.setBackgroundColor(const VsdxColor(0xFFEEEEEE));
+    expect(c.pageBackgroundColor?.value, 0xFFEEEEEE);
+
+    // Each discrete change is a single undo step.
+    c.undo(); // background
+    expect(c.pageBackgroundColor, isNull);
+    c.undo(); // orientation swap
+    expect(c.pageSize!.width, closeTo(11, 1e-9));
+    expect(c.pageSize!.height, closeTo(17, 1e-9));
+  });
+
   test('copy/paste style transfers fill between shapes', () {
     final c = newDocWithTwoRects();
     final ids = <int>[for (final s in c.currentPage!.shapes) s.id];

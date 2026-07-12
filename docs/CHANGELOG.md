@@ -81,6 +81,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Layers**: a panel to toggle layer visibility; the change round-trips
   (Visible/Lock/Print patched on the PageSheet in pages.xml).
 - **Grid & snapping**: toggleable 0.25 in grid; create / resize snap to it.
+- **Page format panel** (drawio "Diagram" tab): when nothing is selected the
+  right Format panel shows page settings — grid / snap toggles, a **background
+  colour** palette, and **paper size** (Letter / Legal / Tabloid / A3–A6 /
+  B4–B5 presets, Portrait / Landscape, or a custom width / height). Page size
+  and background round-trip (PageSheet `PageWidth` / `PageHeight` / `PageColor`).
 - **Recent files** (persisted) and an **unsaved-changes guard** on close.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
   bar with dirty markers + close); drag-drop multiple files opens a tab each.
@@ -139,21 +144,23 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 38 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 39 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; **connector arc-length midpoint**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
   visibility / resized geometry / text formatting / polygon stencil /
   **rounded-rect elliptical arcs** / **borderless text box** / z-order (to-back
-  and one-step forward) / page rename / page add / page delete / group reparent /
-  line style (dash·arrows·opacity) / font·underline·vertical-align·shadow;
-  blank-document emit; geometry-scaling resize; SVG).
+  and one-step forward) / page rename / page add / page delete / **page size +
+  background colour** / group reparent / line style (dash·arrows·opacity) /
+  font·underline·vertical-align·shadow; blank-document emit; geometry-scaling
+  resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
   connector waypoints, text·shadow, copy/paste style, arrange
   flip·rotate·numeric geometry, one-step z-order, find, arrowhead types,
   cancel-transaction drag revert, default-style inheritance, corner radius,
-  **text tool**, **default connector arrowhead**, **deleteShapeById**);
-  widget tests (empty-state smoke test, in-place text-edit round-trip,
-  right-click context menu); `flutter build macos` OK.
+  **text tool**, **default connector arrowhead**, **deleteShapeById**,
+  **page setup size·orientation·background**); widget tests (empty-state smoke
+  test, in-place text-edit round-trip, right-click context menu);
+  `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

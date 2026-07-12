@@ -248,6 +248,12 @@ drawio 行为）；**连接器边标签**——连接器文字绘制于**路由�
 画笔与内联编辑器共用）并加页色底衬，双击连接器即可标注；**新连接器默认末端箭头**（指向目标，描边继承记忆样式）；
 画笔不再把内部占位名 `Sheet.N`（及 1-D 形状名）当作标签渲染。修复形状面板重复的 Rounded 模具。
 
+已补：**页面格式面板（drawio "Diagram" 标签页）** —— 无选中时右侧常驻页面级设置面板：网格/吸附开关、
+背景色板、**纸张尺寸预设**（Letter/Legal/Tabloid/A3–A6/B4–B5）+ 横/纵向切换（保持纸张尺寸交换宽高）+
+自定义宽高数值字段；控制器 `setPageSize/setPageLandscape/setBackgroundColor` 与 `pageSize/pageIsLandscape/
+pageBackgroundColor`，**Writer 补丁 PageSheet 的 `PageWidth`/`PageHeight`/`PageColor`**（新建 Cell 插到首个
+Section 之前保持元素顺序，尊重原 Cell 单位）——完整往返。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -468,3 +474,13 @@ drawio 行为）；**连接器边标签**——连接器文字绘制于**路由�
   形状名当标签渲染。UI 加文本工具按钮、去除重复 Rounded 模具。测试：引擎 `connectorMidpoint` +
   文本盒往返（共 38/38），控制器文本工具/连接器箭头/`deleteShapeById`（App 共 25/25）。
   `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-12 — **对齐 drawio（批次十五）——页面格式面板（"Diagram" 标签页）**：`EditorController`
+  `setPageSize`（钳制 1..400in，改 `PageWidth/PageHeight`）、`setPageLandscape`（交换宽高保持纸张尺寸）、
+  `setBackgroundColor`（改 `PageColor`）与 `pageSize/pageIsLandscape/pageBackgroundColor` 读取器（均走
+  `updateCurrentPage`＝单撤销步）；**Writer** 新增 `_patchPageProperties`（差异时补丁 PageSheet 的
+  `PageWidth`/`PageHeight`（尊重原单位）/`PageColor`，`_ensurePageSheet`/`_ensurePageSheetCell` 保证元素顺序），
+  `_buildPageIndexElement` 新增页也带 `PageColor`；解析器本就从 PageSheet 读这三项，故完整往返。**UI** 把右侧
+  Format 面板改为常驻——有选中显示 `_PropertyPanel`，无选中显示新的 `_PageFormatPanel`（网格/吸附开关、背景色板、
+  纸张尺寸下拉 + Portrait/Landscape 分段 + W/H 数值字段）；`_SwatchButton` 加选中高亮。测试：引擎 1 例（页面尺寸+
+  背景色往返，共 39/39）、控制器 1 例（尺寸/方向/背景 + 撤销，App 共 26/26）。`dart analyze` 干净（app + 引擎）、
+  `flutter test` 通过、`flutter build macos` 成功。

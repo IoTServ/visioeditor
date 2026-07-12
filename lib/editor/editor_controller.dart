@@ -139,6 +139,57 @@ class EditorController extends ChangeNotifier {
     return '$base $n';
   }
 
+  // --- Page setup (drawio "Diagram" tab: paper size / orientation / bg) ------
+
+  /// Size of the current page in inches, or `null` when no document is open.
+  ({double width, double height})? get pageSize {
+    final p = currentPage;
+    return p == null ? null : (width: p.widthInches, height: p.heightInches);
+  }
+
+  /// Whether the current page is wider than it is tall (drawio Landscape).
+  bool get pageIsLandscape {
+    final p = currentPage;
+    return p != null && p.widthInches > p.heightInches;
+  }
+
+  /// The current page's background colour, or `null` when it inherits the
+  /// document default (white).
+  VsdxColor? get pageBackgroundColor => currentPage?.backgroundColor;
+
+  /// Resize the current page to [widthInches] × [heightInches] (drawio Paper
+  /// Size). Persists via the PageSheet's `PageWidth` / `PageHeight` cells.
+  void setPageSize(double widthInches, double heightInches) {
+    final w = widthInches.clamp(1.0, 400.0);
+    final h = heightInches.clamp(1.0, 400.0);
+    updateCurrentPage((page) {
+      if ((page.widthInches - w).abs() < _epsilon &&
+          (page.heightInches - h).abs() < _epsilon) {
+        return page;
+      }
+      return page.copyWith(widthInches: w, heightInches: h);
+    });
+  }
+
+  /// Set the current page's orientation, swapping its width/height so the
+  /// paper size is preserved (drawio Portrait / Landscape).
+  void setPageLandscape(bool landscape) {
+    final p = currentPage;
+    if (p == null || (p.widthInches > p.heightInches) == landscape) return;
+    setPageSize(p.heightInches, p.widthInches);
+  }
+
+  /// Set the current page's background fill (drawio Background). Persists via
+  /// the PageSheet's `PageColor` cell.
+  void setBackgroundColor(VsdxColor color) {
+    updateCurrentPage((page) {
+      if (page.backgroundColor?.value == color.value) return page;
+      return page.copyWith(backgroundColor: color);
+    });
+  }
+
+  static const double _epsilon = 1e-9;
+
   // --- Tool ------------------------------------------------------------------
 
   EditorTool get tool => _tool;
