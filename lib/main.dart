@@ -15,6 +15,7 @@ import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
 import 'editor/outline_panel.dart';
 import 'editor/page_canvas.dart';
+import 'editor/ruler.dart';
 import 'editor/stencils.dart';
 import 'render/arrow_library.dart';
 import 'io/document_io.dart';
@@ -78,6 +79,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _showStencils = false;
   bool _showFind = false;
   bool _showOutline = false;
+  bool _showRulers = true;
   final CanvasCamera _camera = CanvasCamera();
 
   EditorController? get _c => _workspace.active;
@@ -515,6 +517,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 tooltip: 'Outline',
               ),
               IconButton(
+                onPressed: () => setState(() => _showRulers = !_showRulers),
+                icon: const Icon(Icons.straighten),
+                isSelected: _showRulers,
+                tooltip: 'Rulers',
+              ),
+              IconButton(
                 onPressed: c.toggleGrid,
                 icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
                 tooltip: 'Toggle grid',
@@ -783,6 +791,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
               Positioned.fill(
                 child: PageCanvas(controller: c, camera: _camera),
               ),
+              if (_showRulers)
+                Positioned.fill(
+                  child: RulerOverlay(controller: c, camera: _camera),
+                ),
               if (_showOutline)
                 Positioned(
                   right: 16,

@@ -73,6 +73,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   bottom-right thumbnail of the whole page with a rectangle marking the part
   currently on screen; click or drag inside it to re-centre the canvas there.
   Toggle it from the toolbar.
+- **Rulers** (drawio-style): inch rulers along the top and left edges that
+  track pan / zoom (nice-number tick spacing that stays readable at any zoom)
+  and highlight the current selection's extent. Toggle them from the toolbar.
 - **Text**: double-click a shape to edit its label **in place on the canvas**
   — an editor overlays the shape (positioned and scaled to its box); Enter
   inserts a newline, Cmd/Ctrl+Enter or clicking away applies, Esc cancels. The
@@ -181,9 +184,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   find, arrowhead types, cancel-transaction drag revert, default-style
   inheritance, corner radius, **text tool**, **default connector arrowhead**,
   **deleteShapeById**, **page setup size·orientation·background**,
-  **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**) and the
-  **Outline camera** (`visibleContentRect` mapping, change-only notify); widget
-  tests (empty-state smoke test, in-place text-edit round-trip, right-click
-  context menu); `flutter build macos` OK.
+  **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**), the
+  **Outline camera** (`visibleContentRect` mapping, change-only notify) and the
+  **ruler tick math** (nice-step selection, origin-aligned ticks); widget tests
+  (empty-state smoke test, in-place text-edit round-trip, right-click context
+  menu); `flutter build macos` OK.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/

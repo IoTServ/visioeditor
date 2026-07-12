@@ -286,6 +286,12 @@ Curved）：`VsdxShape.curved`（会话级标记，同 `straightRoute`）；`Vsd
 revealSelection` 会清除待定点）；`lib/editor/outline_panel.dart` 复用 `VsdxPainter` 画缩略图 + 视口框；`main.dart`
 拥有 `CanvasCamera`、AppBar 加 Outline 开关、把画布包进 `Stack` 叠加面板。
 
+已补：**标尺（drawio Rulers）** —— 画布顶部/左侧英寸标尺，复用 `CanvasCamera` 的变换随平移/缩放实时更新，
+刻度用"nice-number"步长（任意缩放下标签不拥挤），并高亮当前选区的 X/Y 范围。实现：`lib/editor/ruler.dart`
+纯函数 `niceRulerStepInches`（按屏幕每英寸像素选步长）+ `rulerTicksInches`（对齐原点生成刻度，封顶防极端缩放）、
+`RulerOverlay`（`IgnorePointer` 不拦截画布手势，读 camera + 选区 AABB）+ `_RulerPainter`（刻度/标签/次刻度/选区高亮/角）；
+`main.dart` 加 `_showRulers`（默认开）+ AppBar 开关（`Icons.straighten`）+ 画布 `Stack` 叠加（位于 Outline 之下）。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -554,3 +560,10 @@ revealSelection` 会清除待定点）；`lib/editor/outline_panel.dart` 复用 
   AppBar 加 Outline 开关（`Icons.map_outlined`）、画布包进 `Stack` 右下角叠加 `OutlinePanel`。测试：`CanvasCamera`
   3 例（视口矩形映射、变化才通知、未布局为空）+ 控制器 1 例（`revealPagePoint` 居中不改选择、被 shape reveal 清除，
   App 共 33）。`flutter analyze` 干净、`flutter test` 通过、`flutter build macos` 成功。纯 UI 特性（无引擎往返改动）。
+- 2026-07-12 — **对齐 drawio（批次二十）——标尺（Rulers）**：画布顶部/左侧英寸标尺，复用上批 `CanvasCamera`
+  随平移/缩放实时更新，并高亮选区范围。新增 `lib/editor/ruler.dart`：纯函数 `niceRulerStepInches`（按屏幕每英寸
+  像素从"nice"梯度选步长）+ `rulerTicksInches`（对齐原点生成刻度、封顶）、`RulerOverlay`（`IgnorePointer` 不拦截
+  手势，读 camera + `buildShapeBounds` 算选区 content-px AABB）+ `_RulerPainter`（带/刻度/次刻度/标签/选区高亮/角，
+  垂直标签旋转 90°）；`main.dart` 加 `_showRulers`（默认开）、AppBar 开关（`Icons.straighten`）、画布 `Stack` 叠加
+  （置于 Outline 之下）。测试：纯函数 7 例（`niceRulerStepInches` 4 + `rulerTicksInches` 3，App 共 40）。`flutter analyze`
+  干净、`flutter test` 通过、`flutter build macos` 成功。纯 UI 特性（无引擎往返改动）。
