@@ -883,4 +883,82 @@ void main() {
         .findShapeById(id)!;
     expect(s.locked, isTrue);
   });
+
+  test('inserts an image (media part + ForeignData) that round-trips', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part = '/visio/media/image_inserted_test.png';
+    final payload = Uint8List.fromList(
+        <int>[0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1.5,
+      imagePartName: part,
+    );
+    final edited = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+
+    final out = writer.write(originalBytes: bytes, edited: edited);
+    final reopened = parser.parse(out);
+    final s = reopened.pages.first.findShapeById(id)!;
+    expect(s.hasImage, isTrue);
+    expect(s.imagePartName, isNotNull);
+    expect(s.imagePartName, endsWith('media/image_inserted_test.png'));
+    expect(s.width, closeTo(2, 1e-9));
+    expect(s.height, closeTo(1.5, 1e-9));
+    // The embedded media survived, byte-for-byte, and resolves from the shape.
+    final img = reopened.images.findByPart(s.imagePartName!);
+    expect(img, isNotNull);
+    expect(img!.bytes, equals(payload));
+
+    // A second (no-op) save keeps the image: its media part is now baseline.
+    final out2 = writer.write(originalBytes: out, edited: reopened);
+    final reopened2 = parser.parse(out2);
+    final s2 = reopened2.pages.first.findShapeById(id)!;
+    expect(s2.imagePartName, isNotNull);
+    expect(reopened2.images.findByPart(s2.imagePartName!)!.bytes,
+        equals(payload));
+  });
+
+  test('inserts an image into a blank document (creates the page rels part)',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image1.png';
+    final payload = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 42, 7, 7]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 4,
+      pinY: 5,
+      width: 3,
+      height: 2,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final reopened =
+        parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final s = reopened.pages.first.findShapeById(id)!;
+    expect(s.hasImage, isTrue);
+    expect(s.imagePartName, isNotNull);
+    final img = reopened.images.findByPart(s.imagePartName!);
+    expect(img, isNotNull);
+    expect(img!.bytes, equals(payload));
+  });
 }

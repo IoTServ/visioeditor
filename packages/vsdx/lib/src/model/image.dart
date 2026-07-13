@@ -37,6 +37,33 @@ class VsdxImage {
   /// extension on [partName] in that case.
   final String mimeType;
 
+  /// Best-effort MIME type for a file [extension] (with or without the dot).
+  /// Returns an empty string for unknown extensions.
+  static String mimeForExtension(String extension) {
+    switch (extension.toLowerCase().replaceAll('.', '')) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'bmp':
+        return 'image/bmp';
+      case 'webp':
+        return 'image/webp';
+      case 'tif':
+      case 'tiff':
+        return 'image/tiff';
+      case 'emf':
+        return 'image/x-emf';
+      case 'wmf':
+        return 'image/x-wmf';
+      default:
+        return '';
+    }
+  }
+
   /// `true` when Flutter's built-in codec can decode the blob.
   bool get isFlutterDecodable {
     final m = mimeType.toLowerCase();
@@ -83,4 +110,15 @@ class ImageRegistry {
   Iterable<VsdxImage> get all => _byPartName.values;
 
   int get length => _byPartName.length;
+
+  /// Return a copy of this registry with [image] added (replacing any entry
+  /// that shares its part name). The editor calls this when a new picture is
+  /// inserted so the renderer can resolve the bytes before the next save and
+  /// the writer can embed them as a new media part.
+  ImageRegistry withImage(VsdxImage image) => ImageRegistry(
+        Map<String, VsdxImage>.unmodifiable(<String, VsdxImage>{
+          ..._byPartName,
+          image.partName: image,
+        }),
+      );
 }

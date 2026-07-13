@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
+import '../render/image_cache.dart';
 import '../render/shape_bounds.dart';
 import '../render/vsdx_painter.dart';
 import 'canvas_camera.dart';
@@ -121,10 +122,17 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _marqueeStart;
   Offset? _marqueeEnd;
 
+  /// Async decode cache for embedded pictures, keyed by media part name. The
+  /// painter repaints when a decode lands (`super(repaint: imageCache)`).
+  /// Rebuilt whenever a fresh document loads (see [_imageCacheEpoch]).
+  final VsdxImageCache _imageCache = VsdxImageCache();
+  int _imageCacheEpoch = 0;
+
   @override
   void initState() {
     super.initState();
     _textFocus.addListener(_onEditorFocusChange);
+    _imageCacheEpoch = widget.controller.documentEpoch;
   }
 
   @override
@@ -133,6 +141,7 @@ class _PageCanvasState extends State<PageCanvas> {
       ..removeListener(_onEditorFocusChange)
       ..dispose();
     _textController.dispose();
+    _imageCache.dispose();
     super.dispose();
   }
 
@@ -1391,6 +1400,12 @@ class _PageCanvasState extends State<PageCanvas> {
         }
         final content = _contentSize;
         final doc = _c.document!;
+        // Drop decoded pictures when a different document loaded into this
+        // controller, so a reused `imageN` part name can't show a stale image.
+        if (_c.documentEpoch != _imageCacheEpoch) {
+          _imageCache.clear();
+          _imageCacheEpoch = _c.documentEpoch;
+        }
         final bounds = buildShapeBounds(page);
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -1547,6 +1562,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       page: page,
                                       theme: doc.theme,
                                       images: doc.images,
+                                      imageCache: _imageCache,
                                       pxPerInch: widget.pxPerInch,
                                       backgroundColor: _c.showGrid
                                           ? const Color(0x00000000)

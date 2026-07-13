@@ -20,6 +20,7 @@ import '../model/connect.dart';
 import '../model/document.dart';
 import '../model/geometry.dart';
 import '../model/hyperlink.dart';
+import '../model/image.dart';
 import '../model/layer.dart';
 import '../model/page.dart';
 import '../model/rich_text.dart';
@@ -71,6 +72,11 @@ class VsdxWriter {
     };
     final editedIds = <int>{for (final p in edited.pages) p.id};
 
+    // [Content_Types].xml is read up-front: inserting an image needs to
+    // register a media content-type default while patching page content parts.
+    final ctXml = pkg.readPartXml('/[Content_Types].xml');
+    var ctDirty = false;
+
     // 1) Patch the content parts of pages kept from the baseline (by ID).
     for (final ep in edited.pages) {
       final bp = baselineById[ep.id];
@@ -78,7 +84,19 @@ class VsdxWriter {
       if (bp == null || part == null) continue;
       final xml = pkg.readPartXml(part);
       if (xml == null) continue;
-      if (_patchPage(xml, bp, ep)) {
+      // Embed any images newly added to this kept page (media bytes + page
+      // rels + content-type), yielding the {mediaPart -> rId} map the shape
+      // builder needs for the fresh <ForeignData> references.
+      final imageRels = _prepareImageParts(
+        pkg: pkg,
+        edited: edited,
+        rebuiltImageShapes: _newImageShapes(bp, ep),
+        pagePart: part,
+        patched: patched,
+        ctXml: ctXml,
+        markCtDirty: () => ctDirty = true,
+      );
+      if (_patchPage(xml, bp, ep, imageRels: imageRels)) {
         patched[_noSlash(part)] =
             Uint8List.fromList(utf8.encode(xml.toXmlString()));
       }
@@ -88,9 +106,8 @@ class VsdxWriter {
     //    add, reorder.
     final pagesRelsPart = _relsPartFor(pagesPart);
     final pagesRelsXml = pkg.readPartXml(pagesRelsPart);
-    final ctXml = pkg.readPartXml('/[Content_Types].xml');
     final root = pagesXml.rootElement;
-    var pagesDirty = false, relsDirty = false, ctDirty = false;
+    var pagesDirty = false, relsDirty = false;
 
     final pageElById = <int, XmlElement>{};
     for (final el in root.childElements) {
@@ -156,8 +173,19 @@ class VsdxWriter {
         _addPageOverride(ctXml, '/$partName');
         ctDirty = true;
       }
-      patched[partName] =
-          Uint8List.fromList(utf8.encode(_buildPageContentsXml(ep)));
+      // A freshly-added page has no rels part yet; embed its images (creating
+      // the rels part) before serialising the shapes that reference them.
+      final imageRels = _prepareImageParts(
+        pkg: pkg,
+        edited: edited,
+        rebuiltImageShapes: _imageShapes(ep),
+        pagePart: '/$partName',
+        patched: patched,
+        ctXml: ctXml,
+        markCtDirty: () => ctDirty = true,
+      );
+      patched[partName] = Uint8List.fromList(
+          utf8.encode(_buildPageContentsXml(ep, imageRels: imageRels)));
     }
 
     // 2d) Reorder <Page> elements to the edited page order.
@@ -386,9 +414,12 @@ class VsdxWriter {
     );
   }
 
-  String _buildPageContentsXml(VsdxPage ep) {
+  String _buildPageContentsXml(
+    VsdxPage ep, {
+    Map<String, String> imageRels = const <String, String>{},
+  }) {
     final shapes = XmlElement(XmlName('Shapes'), const [], <XmlNode>[
-      for (final s in ep.shapes) _buildShapeElement(s),
+      for (final s in ep.shapes) _buildShapeElement(s, imageRels: imageRels),
     ]);
     final root = XmlElement(
       XmlName('PageContents'),
@@ -400,6 +431,155 @@ class VsdxWriter {
     );
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '${root.toXmlString()}';
+  }
+
+  // --- Image / ForeignData embedding -----------------------------------------
+
+  static const String _imageRelType =
+      'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+
+  /// Every picture shape on [page] (recursing into groups).
+  List<VsdxShape> _imageShapes(VsdxPage page) {
+    final out = <VsdxShape>[];
+    void walk(VsdxShape s) {
+      if (s.hasImage) out.add(s);
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final s in page.shapes) {
+      walk(s);
+    }
+    return out;
+  }
+
+  /// Picture shapes present in [edited] but not in [baseline] (matched by id) —
+  /// i.e. the ones the writer will build fresh and therefore needs to wire a
+  /// `<ForeignData>` relationship for.
+  List<VsdxShape> _newImageShapes(VsdxPage baseline, VsdxPage edited) {
+    final baseIds = <int>{};
+    void collectIds(VsdxShape s) {
+      baseIds.add(s.id);
+      for (final c in s.children) {
+        collectIds(c);
+      }
+    }
+
+    for (final s in baseline.shapes) {
+      collectIds(s);
+    }
+    return [for (final s in _imageShapes(edited)) if (!baseIds.contains(s.id)) s];
+  }
+
+  /// For the picture shapes in [rebuiltImageShapes] (which the writer is about
+  /// to serialise on the page at [pagePart]), make sure each referenced media
+  /// part is embedded (bytes + content-type) and reachable through the page's
+  /// rels part, then return the `{mediaPart -> rId}` map to stamp onto the new
+  /// `<ForeignData>` elements. Mutates [patched] (media bytes + rels part) and
+  /// [ctXml] (a content-type default per media extension).
+  Map<String, String> _prepareImageParts({
+    required VsdxPackage pkg,
+    required VsdxDocument edited,
+    required List<VsdxShape> rebuiltImageShapes,
+    required String pagePart,
+    required Map<String, Uint8List> patched,
+    required XmlDocument? ctXml,
+    required void Function() markCtDirty,
+  }) {
+    if (rebuiltImageShapes.isEmpty) return const <String, String>{};
+
+    final relsPart = _relsPartFor(pagePart);
+    final relsNoSlash = _noSlash(relsPart);
+    // Reuse an already-patched rels doc, else the original, else a fresh one.
+    XmlDocument relsXml;
+    if (patched.containsKey(relsNoSlash)) {
+      relsXml = XmlDocument.parse(utf8.decode(patched[relsNoSlash]!));
+    } else {
+      relsXml = pkg.readPartXml(relsPart) ??
+          XmlDocument.parse(
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            '<Relationships xmlns="$_relNs"/>',
+          );
+    }
+
+    var nextRId = _maxRelId(relsXml) + 1;
+    final relByPart = <String, String>{};
+    for (final s in rebuiltImageShapes) {
+      final part = s.imagePartName;
+      if (part == null || relByPart.containsKey(part)) continue;
+      final rId = 'rId$nextRId';
+      nextRId++;
+      relByPart[part] = rId;
+      relsXml.rootElement.children.add(XmlElement(XmlName('Relationship'), [
+        XmlAttribute(XmlName('Id'), rId),
+        XmlAttribute(XmlName('Type'), _imageRelType),
+        XmlAttribute(XmlName('Target'), _mediaTargetFrom(pagePart, part)),
+      ]));
+
+      // Embed the bytes when this media part is not already in the package.
+      final mediaNoSlash = _noSlash(part);
+      if (!patched.containsKey(mediaNoSlash) &&
+          pkg.readPartBytes(part) == null) {
+        final img = edited.images.findByPart(part);
+        if (img != null) {
+          patched[mediaNoSlash] = Uint8List.fromList(img.bytes);
+          if (ctXml != null &&
+              _ensureMediaContentType(ctXml, part, img.mimeType)) {
+            markCtDirty();
+          }
+        }
+      }
+    }
+
+    patched[relsNoSlash] =
+        Uint8List.fromList(utf8.encode(relsXml.toXmlString()));
+    return relByPart;
+  }
+
+  /// Relationship target from a page part (e.g. `/visio/pages/page1.xml`) to a
+  /// media part (e.g. `/visio/media/image1.png`), expressed relative to the
+  /// page's own folder — Visio stores `../media/imageN.ext`.
+  static String _mediaTargetFrom(String pagePart, String mediaPart) {
+    final media = _noSlash(mediaPart);
+    final page = _noSlash(pagePart);
+    final pageDir = page.contains('/') ? page.substring(0, page.lastIndexOf('/')) : '';
+    // Both live under visio/; the page sits one folder deeper (visio/pages),
+    // so a single `..` hop reaches visio/ then down into media/.
+    if (pageDir == 'visio/pages' && media.startsWith('visio/media/')) {
+      return '../${media.substring('visio/'.length)}';
+    }
+    // Generic fallback: absolute-from-package target.
+    return '/$media';
+  }
+
+  /// Ensure `[Content_Types].xml` can serve [mediaPart]. Adds a `<Default>` for
+  /// the file extension when one is missing. Returns whether it changed.
+  bool _ensureMediaContentType(
+    XmlDocument ctXml,
+    String mediaPart,
+    String mimeType,
+  ) {
+    final dot = mediaPart.lastIndexOf('.');
+    if (dot < 0) return false;
+    final ext = mediaPart.substring(dot + 1).toLowerCase();
+    if (ext.isEmpty) return false;
+    for (final el in ctXml.rootElement.childElements) {
+      if (el.name.local == 'Default' &&
+          (el.getAttribute('Extension') ?? '').toLowerCase() == ext) {
+        return false; // already covered
+      }
+    }
+    final mime = mimeType.isNotEmpty ? mimeType : VsdxImage.mimeForExtension(ext);
+    if (mime.isEmpty) return false;
+    ctXml.rootElement.children.insert(
+      0,
+      XmlElement(XmlName('Default'), [
+        XmlAttribute(XmlName('Extension'), ext),
+        XmlAttribute(XmlName('ContentType'), mime),
+      ]),
+    );
+    return true;
   }
 
   bool _reorderPages(XmlElement root, List<VsdxPage> order) {
@@ -559,7 +739,12 @@ class VsdxWriter {
 
   // --- Patching --------------------------------------------------------------
 
-  bool _patchPage(XmlDocument pageXml, VsdxPage baseline, VsdxPage edited) {
+  bool _patchPage(
+    XmlDocument pageXml,
+    VsdxPage baseline,
+    VsdxPage edited, {
+    Map<String, String> imageRels = const <String, String>{},
+  }) {
     final root = pageXml.rootElement;
     var shapesEl = _firstChild(root, 'Shapes');
 
@@ -633,7 +818,7 @@ class VsdxWriter {
         final container = parent == null
             ? (shapesEl ??= _ensureShapesElement(root))
             : _ensureNestedShapes(elements[parent]!);
-        container.children.add(_buildShapeElement(s));
+        container.children.add(_buildShapeElement(s, imageRels: imageRels));
         changed = true;
         return; // descendants are emitted as part of this subtree
       }
@@ -1246,7 +1431,11 @@ class VsdxWriter {
     return el;
   }
 
-  XmlElement _buildShapeElement(VsdxShape s) {
+  XmlElement _buildShapeElement(
+    VsdxShape s, {
+    Map<String, String> imageRels = const <String, String>{},
+  }) {
+    if (s.hasImage) return _buildPictureElement(s, imageRels);
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX)),
       _cell('PinY', _fmt(s.pinY)),
@@ -1293,7 +1482,7 @@ class VsdxWriter {
     final isGroup = s.children.isNotEmpty;
     if (isGroup) {
       children.add(XmlElement(XmlName('Shapes'), const <XmlAttribute>[], <XmlNode>[
-        for (final c in s.children) _buildShapeElement(c),
+        for (final c in s.children) _buildShapeElement(c, imageRels: imageRels),
       ]));
     }
     return XmlElement(
@@ -1303,6 +1492,52 @@ class VsdxWriter {
         XmlAttribute(XmlName('NameU'), s.name),
         XmlAttribute(XmlName('Name'), s.name),
         XmlAttribute(XmlName('Type'), isGroup ? 'Group' : 'Shape'),
+      ],
+      children,
+    );
+  }
+
+  /// Build a Visio `Type="Foreign"` picture shape: XForm cells plus the
+  /// `<ForeignData>` element pointing (via [imageRels]) at the embedded media
+  /// relationship. Round-trips back through [PageParser._resolveForeignDataPart].
+  XmlElement _buildPictureElement(VsdxShape s, Map<String, String> imageRels) {
+    final rId = imageRels[s.imagePartName];
+    final children = <XmlNode>[
+      _cell('PinX', _fmt(s.pinX)),
+      _cell('PinY', _fmt(s.pinY)),
+      _cell('Width', _fmt(s.width)),
+      _cell('Height', _fmt(s.height)),
+      _cell('LocPinX', _fmt(s.width / 2)),
+      _cell('LocPinY', _fmt(s.height / 2)),
+      _cell('Angle', _fmt(s.angleRad)),
+      if (s.flipX) _cell('FlipX', '1'),
+      if (s.flipY) _cell('FlipY', '1'),
+    ];
+    if (s.locked) {
+      for (final name in _lockCells) {
+        children.add(_cell(name, '1'));
+      }
+    }
+    if (s.text != null && s.text!.isNotEmpty) {
+      children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
+    }
+    if (rId != null) {
+      children.add(XmlElement(
+        XmlName('ForeignData'),
+        <XmlAttribute>[XmlAttribute(XmlName('ForeignType'), 'Bitmap')],
+        <XmlNode>[
+          XmlElement(XmlName('Rel'),
+              <XmlAttribute>[XmlAttribute(XmlName('id', 'r'), rId)]),
+        ],
+      ));
+    }
+    return XmlElement(
+      XmlName('Shape'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('ID'), s.id.toString()),
+        XmlAttribute(XmlName('NameU'), s.name),
+        XmlAttribute(XmlName('Name'), s.name),
+        XmlAttribute(XmlName('Type'), 'Foreign'),
       ],
       children,
     );

@@ -37,6 +37,46 @@ Future<PickedDocument?> pickVisioFile() async {
   return PickedDocument(bytes: bytes, path: f.path, name: f.name);
 }
 
+/// Raster-image extensions the editor can embed via "Insert Image".
+const List<String> kImageInsertExtensions = <String>[
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'bmp',
+  'webp',
+];
+
+/// A picked image's bytes plus its (lower-case, dot-less) file extension.
+class PickedImage {
+  const PickedImage({required this.bytes, required this.extension, this.name});
+  final Uint8List bytes;
+  final String extension;
+  final String? name;
+}
+
+/// Show the native open dialog filtered to raster images and return the chosen
+/// file, or `null` if the user cancelled.
+Future<PickedImage?> pickImageFile() async {
+  final result = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: kImageInsertExtensions,
+    withData: true,
+  );
+  if (result == null || result.files.isEmpty) return null;
+  final f = result.files.single;
+  final bytes = f.bytes ??
+      (f.path != null ? await File(f.path!).readAsBytes() : null);
+  if (bytes == null) return null;
+  final ext = (f.extension ?? _extensionOf(f.name)).toLowerCase();
+  return PickedImage(bytes: bytes, extension: ext, name: f.name);
+}
+
+String _extensionOf(String name) {
+  final dot = name.lastIndexOf('.');
+  return dot < 0 ? '' : name.substring(dot + 1);
+}
+
 /// Read a dropped file path into a [PickedDocument].
 Future<PickedDocument> readDroppedFile(String path) async {
   final file = File(path);

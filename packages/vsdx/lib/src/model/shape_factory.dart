@@ -157,6 +157,33 @@ abstract final class VsdxShapeFactory {
     );
   }
 
+  /// Embedded-picture shape (drawio's "Insert > Image"): a borderless,
+  /// fill-less box whose content is the media part [imagePartName]
+  /// (e.g. `/visio/media/image7.png`). Carries no geometry — the renderer
+  /// paints the decoded image to fill the shape's box, and the writer emits it
+  /// as a Visio `Type="Foreign"` shape with a `<ForeignData>` relationship.
+  static VsdxShape picture({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    required String imagePartName,
+    String? name,
+  }) {
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: width.abs(),
+      height: height.abs(),
+      imagePartName: imagePartName,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    );
+  }
+
   /// Ellipse inscribed in the [width] x [height] box centred at the pin.
   static VsdxShape ellipse({
     required int id,

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
@@ -584,5 +585,57 @@ void main() {
         closeTo(lockedBefore.pinX, 1e-9));
     expect(c.currentPage!.findShapeById(ids.last)!.pinX,
         closeTo(freeBefore.pinX + 0.5, 1e-9));
+  });
+
+  test('insertImage adds a picture with embedded bytes; undo removes it', () {
+    final c = EditorController()..newDocument();
+    final bytes = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 9, 8, 7, 6]);
+    expect(c.currentPage!.shapes, isEmpty);
+
+    c.insertImage(bytes, fileExtension: 'png', widthInches: 2, heightInches: 1);
+
+    final shape = c.currentPage!.shapes.single;
+    expect(shape.hasImage, isTrue);
+    expect(c.selection, <int>{shape.id});
+    final part = shape.imagePartName!;
+    expect(part, startsWith('/visio/media/image'));
+    expect(part, endsWith('.png'));
+    // Bytes are embedded on the document so the canvas renders before saving.
+    final img = c.document!.images.findByPart(part);
+    expect(img, isNotNull);
+    expect(img!.bytes, equals(bytes));
+    // Honours the requested aspect ratio (2:1) after fitting to the page.
+    expect(shape.width / shape.height, closeTo(2.0, 1e-6));
+
+    // A single undo step removes the picture again.
+    c.undo();
+    expect(c.currentPage!.shapes, isEmpty);
+  });
+
+  test('insertImage mints a fresh part name after undo (no cache collision)',
+      () {
+    final c = EditorController()..newDocument();
+    c.insertImage(Uint8List.fromList(<int>[1, 2, 3]),
+        fileExtension: 'png', widthInches: 1, heightInches: 1);
+    final first = c.currentPage!.shapes.single.imagePartName;
+    c.undo();
+    c.insertImage(Uint8List.fromList(<int>[4, 5, 6]),
+        fileExtension: 'png', widthInches: 1, heightInches: 1);
+    final second = c.currentPage!.shapes.single.imagePartName;
+    expect(second, isNot(equals(first)));
+  });
+
+  test('inserted image survives an export / reopen round-trip', () {
+    final c = EditorController()..newDocument();
+    final bytes = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    c.insertImage(bytes, fileExtension: 'png', widthInches: 3, heightInches: 2);
+    final id = c.currentPage!.shapes.single.id;
+
+    final reopened = const DocumentParser().parse(c.exportToBytes());
+    final s = reopened.pages.first.findShapeById(id)!;
+    expect(s.hasImage, isTrue);
+    final img = reopened.images.findByPart(s.imagePartName!);
+    expect(img, isNotNull);
+    expect(img!.bytes, equals(bytes));
   });
 }

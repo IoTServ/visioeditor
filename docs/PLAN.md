@@ -298,6 +298,15 @@ revealSelection` 会清除待定点）；`lib/editor/outline_panel.dart` 复用 
 LockRotate/LockDelete/LockTextEdit`，解析以 `LockMoveX` 为代表位读回，含 master 继承）；入口＝Cmd+L、右键菜单、
 ⋯ More 菜单、属性面板 Arrange 区锁按钮（锁定时隐藏翻转/旋转/数值几何控件）。
 
+已补：**插入图片（drawio Insert > Image）** —— 选本地栅格图片（png/jpg/gif/bmp/webp）→ 以其像素尺寸（96dpi）
+定框、缩放适配页面 → 落到页面中心为 **picture 形状**（`VsdxShapeFactory.picture`，无描边/填充，`imagePartName` 指向
+`/visio/media/imageN.ext`），媒体字节挂到 `VsdxDocument.images`（`ImageRegistry.withImage`）使画布**即时渲染**
+（接入 `VsdxImageCache` 解码，此前图片仅显示占位框）。**完整往返写回**：Writer 检测新图片形状 → 嵌入 media 部件
+（字节）+ 在页 rels 增图片关系（缺 rels 部件则新建，支持空文档/新页）+ 在 `[Content_Types]` 补扩展名 Default +
+发射 `<Shape Type="Foreign">` 的 `<ForeignData><Rel r:id/></ForeignData>`（`imageRels` 参数按页透传给
+`_buildShapeElement`，保持 `const VsdxWriter`）；解析器早已能读 ForeignData，故往返一致。控制器 `insertImage`
+以**跨 undo 单调递增**的会话计数分配 `imageN` 部件名（避免重插时命中解码缓存旧图），入口＝工具栏图片按钮 + ⋯ More 菜单。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -584,4 +593,18 @@ LockRotate/LockDelete/LockTextEdit`，解析以 `LockMoveX` 为代表位读回�
   （`0xFFE53935`，对齐 drawio）。UI：Cmd+L 快捷键、右键菜单 Lock/Unlock、⋯ More 菜单项、属性面板 Arrange 区
   `lock`/`lock_open` 切换按钮（locked 时隐藏翻转/旋转/数值几何字段）。测试：引擎 2 例（lock/unlock 往返、新 locked
   形状发射保护 Cell，共 46/46）、控制器 2 例（锁定拒绝移动/旋转/删除 + 撤销、混合选择仍移动未锁成员，App 共 42）。
+  `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-13 — **对齐 drawio（批次二十二）——插入图片（Insert > Image）**：模型 `ImageRegistry.withImage`
+  （不可变追加）+ `VsdxImage.mimeForExtension` + `VsdxShapeFactory.picture`（无描边/填充、仅 `imagePartName` 的
+  XForm 盒）；**Writer** 新增图片嵌入——`write` 前置读 `[Content_Types]`，对每页新图片形状经 `_prepareImageParts`
+  嵌入 media 部件字节（`pkg.readPartBytes==null` 判新）、在页 rels 加 `/image` 关系（`_relsPartFor`，缺部件则建，
+  Target=`../media/imageN.ext`）、补扩展名 `<Default>` 内容类型，返回 `{part→rId}` 经 **`imageRels` 参数**透传
+  `_patchPage`/`_buildPageContentsXml`→`_buildShapeElement`（保持 `const VsdxWriter`、无实例状态）；新增
+  `_buildPictureElement` 发射 `<Shape Type="Foreign">`＋`<ForeignData ForeignType="Bitmap"><Rel r:id/></ForeignData>`
+  （解析器 `_resolveForeignDataPart` 早已能读，往返一致）。**渲染**：`PageCanvas` 接入 `VsdxImageCache`（`super(repaint:)`
+  末端解码即重绘），并按控制器新增的 **`documentEpoch`**（仅 open/new/close 自增）在换文档时清缓存，避免复用 `imageN`
+  串图；此前图片仅占位框，现真实显示。**控制器** `insertImage`（跨 undo 单调递增会话计数分配部件名、按页缩放适配、
+  单撤销步、选中并回选择工具）；`document_io.pickImageFile`（file_picker 过滤栅格图）；`main` 工具栏图片按钮 + ⋯ More
+  菜单 "Insert Image…"，`dart:ui` 解码取像素尺寸。测试：引擎 2 例（现有页插图 media+ForeignData 往返·no-op 保留、
+  空文档插图建页 rels，共 48/48）、控制器 3 例（嵌字节+撤销、重插新部件名、导出重开往返，App 共 45）。
   `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。

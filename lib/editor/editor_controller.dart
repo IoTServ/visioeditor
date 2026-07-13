@@ -54,6 +54,12 @@ class EditorController extends ChangeNotifier {
   VsdxFill? _memoFill;
   VsdxLine? _memoLine;
 
+  // Monotonic counter for minting fresh `/visio/media/imageN.ext` part names on
+  // image insert. Lives outside the document snapshot so it keeps climbing
+  // across undo/redo — that way a re-inserted image never reuses a part name
+  // (and so never collides with a stale entry in the render image cache).
+  int _imageSeq = 0;
+
   VsdxDocument? get document => _document;
   Uint8List? get originalBytes => _originalBytes;
   String? get filePath => _filePath;
@@ -555,6 +561,81 @@ class EditorController extends ChangeNotifier {
         page.addShape(connector).copyWith(connects: connects).rerouteConnectors(),
       ),
     );
+  }
+
+  /// Insert an embedded raster image at the current page's centre as a new
+  /// picture shape (drawio's "Insert > Image"). [bytes] are the file's
+  /// contents, [fileExtension] its extension (png / jpg / gif / …).
+  /// [widthInches]/[heightInches] size the box (defaulting to a square that
+  /// fits the page); the picture is scaled down to stay within the page. The
+  /// media bytes are embedded on the document so the canvas renders them
+  /// immediately and the writer round-trips them as a new `visio/media` part.
+  /// One undo step; selects the new picture and returns to the select tool.
+  void insertImage(
+    Uint8List bytes, {
+    required String fileExtension,
+    double? widthInches,
+    double? heightInches,
+  }) {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null || bytes.isEmpty) return;
+
+    final ext = fileExtension.replaceAll('.', '').trim().toLowerCase();
+    _imageSeq =
+        math.max(_imageSeq, _maxMediaIndex(doc.images.all.map((e) => e.partName))) +
+            1;
+    final partName = '/visio/media/image$_imageSeq.${ext.isEmpty ? 'png' : ext}';
+    final image = VsdxImage(
+      partName: partName,
+      bytes: bytes,
+      mimeType: VsdxImage.mimeForExtension(ext),
+    );
+
+    // Fit the picture within the page (preserve the requested aspect ratio).
+    final maxW = page.widthInches * 0.9;
+    final maxH = page.heightInches * 0.9;
+    var w = (widthInches ?? 2.0);
+    var h = (heightInches ?? 2.0);
+    if (w <= 0) w = 2.0;
+    if (h <= 0) h = 2.0;
+    final scale = math.min(1.0, math.min(maxW / w, maxH / h));
+    w *= scale;
+    h *= scale;
+
+    final id = page.nextFreeShapeId();
+    final shape = VsdxShapeFactory.picture(
+      id: id,
+      pinX: page.widthInches / 2,
+      pinY: page.heightInches / 2,
+      width: w,
+      height: h,
+      imagePartName: partName,
+    );
+    _selection
+      ..clear()
+      ..add(id);
+    _tool = EditorTool.select;
+    applyEdit(
+      doc.copyWith(images: doc.images.withImage(image)).replacePage(
+            _currentPageIndex,
+            page.addShape(shape),
+          ),
+    );
+  }
+
+  /// Largest `N` across `imageN.ext`-style media part names (0 when none).
+  static int _maxMediaIndex(Iterable<String> partNames) {
+    final re = RegExp(r'image(\d+)\.', caseSensitive: false);
+    var maxN = 0;
+    for (final p in partNames) {
+      final m = re.firstMatch(p);
+      if (m != null) {
+        final n = int.tryParse(m.group(1)!);
+        if (n != null && n > maxN) maxN = n;
+      }
+    }
+    return maxN;
   }
 
   /// Add a shape produced by [build] at the current page's centre, select it.
@@ -1803,6 +1884,13 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bumped whenever a *fresh* document is loaded (open / new / close), but
+  /// never on edits. The canvas watches it to drop its per-document image
+  /// decode cache so a reused part name from a different file can't render a
+  /// stale picture.
+  int get documentEpoch => _docEpoch;
+  int _docEpoch = 0;
+
   void _resetHistory() {
     _selection.clear();
     _undo.clear();
@@ -1812,6 +1900,8 @@ class EditorController extends ChangeNotifier {
     _clearFindState();
     _memoFill = null;
     _memoLine = null;
+    _imageSeq = 0;
+    _docEpoch++;
   }
 
   void _clearFindState() {

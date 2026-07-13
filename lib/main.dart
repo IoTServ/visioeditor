@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
@@ -312,6 +313,36 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  /// Insert an embedded raster image (drawio's "Insert > Image"): pick a file,
+  /// size the placement box from the image's pixel dimensions (96 dpi), and
+  /// hand the bytes to the controller, which embeds and round-trips them.
+  Future<void> _insertImage() async {
+    final c = _c;
+    if (c == null || !c.hasDocument) return;
+    final PickedImage? picked = await pickImageFile();
+    if (picked == null) return;
+    double? wIn, hIn;
+    try {
+      final codec = await ui.instantiateImageCodec(picked.bytes);
+      final frame = await codec.getNextFrame();
+      wIn = frame.image.width / 96.0;
+      hIn = frame.image.height / 96.0;
+      frame.image.dispose();
+    } catch (_) {
+      // Undecodable (or exotic) image: fall back to a default square box.
+      wIn = null;
+      hIn = null;
+    }
+    if (!mounted) return;
+    c.insertImage(
+      picked.bytes,
+      fileExtension: picked.extension,
+      widthInches: wIn,
+      heightInches: hIn,
+    );
+    _snack('Inserted ${picked.name ?? 'image'}');
+  }
+
   Future<void> _renamePage(int index) async {
     final c = _c;
     final doc = c?.document;
@@ -537,6 +568,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   tooltip: 'Layers',
                 ),
               IconButton(
+                onPressed: _insertImage,
+                icon: const Icon(Icons.image_outlined),
+                tooltip: 'Insert Image…',
+              ),
+              IconButton(
                 onPressed: _save,
                 icon: const Icon(Icons.save_outlined),
                 tooltip: 'Save (Cmd+S)',
@@ -585,6 +621,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       c.selectAll();
                     case 'find':
                       _openFind();
+                    case 'insertImage':
+                      _insertImage();
                     case 'editData':
                       _editData();
                     case 'editLink':
@@ -611,6 +649,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   const PopupMenuItem<String>(
                     value: 'find',
                     child: Text('Find… (Cmd+F)'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'insertImage',
+                    child: Text('Insert Image…'),
                   ),
                   PopupMenuItem<String>(
                     value: 'editData',

@@ -35,6 +35,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Shapes palette**: a stencil panel of flowchart shapes (process, rounded,
   terminator, decision, data, triangle, hexagon, pentagon, arrow) — click to
   drop one.
+- **Insert Image** (drawio "Insert > Image"): embed a raster image
+  (PNG / JPEG / GIF / BMP / WEBP) as a picture shape — sized from its pixel
+  dimensions and fitted to the page — from the toolbar or the ⋯ menu. The
+  picture renders on the canvas immediately (a decode cache was wired up, so
+  existing embedded images now show for real instead of a placeholder) and
+  round-trips: the writer embeds the media part, adds the page image
+  relationship (creating the page's rels part when needed), registers the
+  content-type, and emits a Visio `Type="Foreign"` shape with `<ForeignData>`.
 - **Connectors with glue**: connect two shapes; endpoints attach to the target
   shapes' edges and auto-reroute when a shape moves / resizes / rotates;
   `<Connects>` round-trip. New connectors carry a **default end arrowhead**
@@ -173,7 +181,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 46 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 48 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; **connector arc-length midpoint**;
   **curved-connector spline sampling + geometry round-trip**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
@@ -183,8 +191,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   background colour** / **shape data (custom properties)** / **hyperlink
   (create·edit·remove)** / group reparent / line style (dash·arrows·opacity) /
   font·underline·vertical-align·shadow / **lock·unlock (protection cells,
-  round-trip + new-shape emit)**; blank-document emit; geometry-scaling
-  resize; SVG).
+  round-trip + new-shape emit)** / **image insert (media part + page rels +
+  ForeignData, on an existing page and a blank document)**; blank-document
+  emit; geometry-scaling resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
   **connector three-way style incl. curved**, connector waypoints, text·shadow,
@@ -194,7 +203,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   **deleteShapeById**, **page setup size·orientation·background**,
   **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**,
   **lock (locked shape resists move·rotate·delete + undo, mixed selection
-  moves its free members)**), the
+  moves its free members)**, **image insert (embeds bytes + undo, fresh part
+  name after undo, export/reopen round-trip)**), the
   **Outline camera** (`visibleContentRect` mapping, change-only notify) and the
   **ruler tick math** (nice-step selection, origin-aligned ticks); widget tests
   (empty-state smoke test, in-place text-edit round-trip, right-click context
