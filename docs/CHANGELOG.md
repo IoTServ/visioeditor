@@ -65,6 +65,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (Cmd+R / Cmd+Shift+R); and one-step **bring forward / send backward** in
   addition to to-front / to-back. All round-trip (`PinX/PinY/Width/Height/Angle`,
   `FlipX/FlipY`, `<Shape>` reorder).
+- **Lock / unlock** (drawio Lock/Unlock, Cmd+L): lock the selection so it can
+  still be selected but not moved, resized, rotated, deleted or text-edited; a
+  locked shape's selection box turns red and its resize / rotation handles are
+  hidden. Reachable from Cmd+L, the right-click menu, the ⋯ menu, or the
+  Arrange section. Round-trips to Visio's protection cells (`LockMoveX` /
+  `LockMoveY` / `LockWidth` / `LockHeight` / `LockAspect` / `LockRotate` /
+  `LockDelete` / `LockTextEdit`; `LockMoveX` is the bit read back on parse).
 - **Find** (drawio Cmd+F): a floating search bar that filters shapes on the
   current page by text/name, shows a match counter, and cycles matches
   (Enter / Shift+Enter or the arrows), selecting and scrolling each into view.
@@ -166,7 +173,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 44 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 46 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; **connector arc-length midpoint**;
   **curved-connector spline sampling + geometry round-trip**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
@@ -175,7 +182,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   and one-step forward) / page rename / page add / page delete / **page size +
   background colour** / **shape data (custom properties)** / **hyperlink
   (create·edit·remove)** / group reparent / line style (dash·arrows·opacity) /
-  font·underline·vertical-align·shadow; blank-document emit; geometry-scaling
+  font·underline·vertical-align·shadow / **lock·unlock (protection cells,
+  round-trip + new-shape emit)**; blank-document emit; geometry-scaling
   resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
@@ -184,7 +192,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   find, arrowhead types, cancel-transaction drag revert, default-style
   inheritance, corner radius, **text tool**, **default connector arrowhead**,
   **deleteShapeById**, **page setup size·orientation·background**,
-  **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**), the
+  **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**,
+  **lock (locked shape resists move·rotate·delete + undo, mixed selection
+  moves its free members)**), the
   **Outline camera** (`visibleContentRect` mapping, change-only notify) and the
   **ruler tick math** (nice-step selection, origin-aligned ticks); widget tests
   (empty-state smoke test, in-place text-edit round-trip, right-click context

@@ -488,6 +488,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
           if (c != null && c.singleSelectedId != null) _editLink();
         },
+        const SingleActivator(LogicalKeyboardKey.keyL, meta: true): () {
+          if (c != null && c.hasSelection) c.toggleLock();
+        },
       },
       child: Scaffold(
         appBar: AppBar(
@@ -586,6 +589,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       _editData();
                     case 'editLink':
                       _editLink();
+                    case 'lock':
+                      c.toggleLock();
                     case 'zoomSel':
                       c.revealSelection();
                     case 'copyStyle':
@@ -616,6 +621,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     value: 'editLink',
                     enabled: c.singleSelectedId != null,
                     child: const Text('Edit Link… (Cmd+K)'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'lock',
+                    enabled: c.hasSelection,
+                    child: Text(
+                        c.selectionLocked ? 'Unlock (Cmd+L)' : 'Lock (Cmd+L)'),
                   ),
                   PopupMenuItem<String>(
                     value: 'zoomSel',
@@ -1198,20 +1209,29 @@ class _PropertyPanel extends StatelessWidget {
           const SizedBox(height: 16),
           _section(context, 'Arrange'),
           Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _iconBtn(Icons.flip, 'Flip horizontal', controller.flipHorizontal),
-              Transform.rotate(
-                angle: math.pi / 2,
-                child: _iconBtn(
-                    Icons.flip, 'Flip vertical', controller.flipVertical),
+              if (!controller.selectionLocked) ...[
+                _iconBtn(Icons.flip, 'Flip horizontal',
+                    controller.flipHorizontal),
+                Transform.rotate(
+                  angle: math.pi / 2,
+                  child: _iconBtn(
+                      Icons.flip, 'Flip vertical', controller.flipVertical),
+                ),
+                _iconBtn(Icons.rotate_left, 'Rotate 90° left',
+                    () => controller.rotateSelection90(clockwise: false)),
+                _iconBtn(Icons.rotate_right, 'Rotate 90° right (Cmd+R)',
+                    () => controller.rotateSelection90()),
+              ],
+              _iconBtn(
+                controller.selectionLocked ? Icons.lock : Icons.lock_open,
+                controller.selectionLocked ? 'Unlock (Cmd+L)' : 'Lock (Cmd+L)',
+                controller.toggleLock,
               ),
-              _iconBtn(Icons.rotate_left, 'Rotate 90° left',
-                  () => controller.rotateSelection90(clockwise: false)),
-              _iconBtn(Icons.rotate_right, 'Rotate 90° right (Cmd+R)',
-                  () => controller.rotateSelection90()),
             ],
           ),
-          _arrangeFields(controller),
+          if (!controller.selectionLocked) _arrangeFields(controller),
           const SizedBox(height: 16),
           if (count >= 2) ...[
             _section(context, 'Align'),

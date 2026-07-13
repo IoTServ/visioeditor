@@ -292,6 +292,12 @@ revealSelection` 会清除待定点）；`lib/editor/outline_panel.dart` 复用 
 `RulerOverlay`（`IgnorePointer` 不拦截画布手势，读 camera + 选区 AABB）+ `_RulerPainter`（刻度/标签/次刻度/选区高亮/角）；
 `main.dart` 加 `_showRulers`（默认开）+ AppBar 开关（`Icons.straighten`）+ 画布 `Stack` 叠加（位于 Outline 之下）。
 
+已补：**锁定/解锁形状（drawio Lock/Unlock，Cmd+L）** —— 选中形状可锁定；锁定后仍可选中，但不可移动/缩放/
+旋转/删除/文本编辑/悬停连线（对齐 drawio locked 语义），选中框显示为**红色**且不显示缩放/旋转手柄。模型
+`VsdxShape.locked`，**往返写回** Visio 保护 Cell（`LockMoveX/LockMoveY/LockWidth/LockHeight/LockAspect/
+LockRotate/LockDelete/LockTextEdit`，解析以 `LockMoveX` 为代表位读回，含 master 继承）；入口＝Cmd+L、右键菜单、
+⋯ More 菜单、属性面板 Arrange 区锁按钮（锁定时隐藏翻转/旋转/数值几何控件）。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -567,3 +573,15 @@ revealSelection` 会清除待定点）；`lib/editor/outline_panel.dart` 复用 
   垂直标签旋转 90°）；`main.dart` 加 `_showRulers`（默认开）、AppBar 开关（`Icons.straighten`）、画布 `Stack` 叠加
   （置于 Outline 之下）。测试：纯函数 7 例（`niceRulerStepInches` 4 + `rulerTicksInches` 3，App 共 40）。`flutter analyze`
   干净、`flutter test` 通过、`flutter build macos` 成功。纯 UI 特性（无引擎往返改动）。
+- 2026-07-12 — **对齐 drawio（批次二十一）——锁定/解锁形状（Lock/Unlock，Cmd+L）**：模型 `VsdxShape.locked`
+  （copyWith，默认 false）；解析器读 `LockMoveX` 代表位（含 master 继承）→ locked；**Writer** `_patchLock`
+  （locked 翻转时批量补丁 `LockMoveX/LockMoveY/LockWidth/LockHeight/LockAspect/LockRotate/LockDelete/
+  LockTextEdit` 为 1/0，仅在标记变化时写）+ `_buildShapeElement` 新形状按需发射这组保护 Cell。控制器
+  `selectionLocked`/`toggleLock`/`setSelectionLocked`，并把**移动/删除/旋转/翻转**改为逐形状跳过 locked
+  （`moveSelectionBy`/`deleteSelection`/`deleteShapeById`/`rotateSelection90`/`flipHorizontal/Vertical`，无变化
+  时返回原页不记历史）。画布：`_resizableSelection`/`_rotatableSelection` 对 locked 返回 null（隐藏缩放/旋转手柄）、
+  `_beginTextEdit` 拒绝 locked、hover-connect（`_onHover`/`_onPanStart`）跳过 locked、选中框在全 locked 时画**红色**
+  （`0xFFE53935`，对齐 drawio）。UI：Cmd+L 快捷键、右键菜单 Lock/Unlock、⋯ More 菜单项、属性面板 Arrange 区
+  `lock`/`lock_open` 切换按钮（locked 时隐藏翻转/旋转/数值几何字段）。测试：引擎 2 例（lock/unlock 往返、新 locked
+  形状发射保护 Cell，共 46/46）、控制器 2 例（锁定拒绝移动/旋转/删除 + 撤销、混合选择仍移动未锁成员，App 共 42）。
+  `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。

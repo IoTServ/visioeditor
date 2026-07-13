@@ -783,6 +783,8 @@ class VsdxWriter {
     changed |= _patchNullableLength(el, 'EndY', base.endY, edited.endY);
     changed |= _patchBool(el, 'FlipX', base.flipX, edited.flipX);
     changed |= _patchBool(el, 'FlipY', base.flipY, edited.flipY);
+    // Protection (drawio "Lock/Unlock").
+    changed |= _patchLock(el, base, edited);
     // Style.
     changed |= _patchColor(el, 'FillForegnd', base.fill.foreground, edited.fill.foreground);
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
@@ -1189,6 +1191,31 @@ class VsdxWriter {
     return true;
   }
 
+  /// Visio protection cells written for a drawio-style locked shape. All are
+  /// set to `1` when locked and back to `0` when unlocked. `LockMoveX` is the
+  /// canonical bit the parser reads to recover the locked state.
+  static const _lockCells = <String>[
+    'LockMoveX',
+    'LockMoveY',
+    'LockWidth',
+    'LockHeight',
+    'LockAspect',
+    'LockRotate',
+    'LockDelete',
+    'LockTextEdit',
+  ];
+
+  /// Patch the shape's protection cells to reflect [edited]'s locked flag.
+  /// Only writes when the flag actually flipped relative to the baseline.
+  bool _patchLock(XmlElement el, VsdxShape base, VsdxShape edited) {
+    if (base.locked == edited.locked) return false;
+    final v = edited.locked ? '1' : '0';
+    for (final name in _lockCells) {
+      _writeValue(_ensureCell(el, name), v);
+    }
+    return true;
+  }
+
   /// Set `V=` and drop any stale `F=`/`E=` so Visio keeps our literal instead
   /// of recomputing over it.
   void _writeValue(XmlElement cell, String value) {
@@ -1244,6 +1271,11 @@ class VsdxWriter {
     children
       ..add(_cell('LineWeight', _fmt(s.line.weightInches)))
       ..add(_cell('LinePattern', s.line.pattern.toString()));
+    if (s.locked) {
+      for (final name in _lockCells) {
+        children.add(_cell(name, '1'));
+      }
+    }
     var ix = 0;
     for (final g in s.geometries) {
       final section = _buildGeometrySection(g, ix++);

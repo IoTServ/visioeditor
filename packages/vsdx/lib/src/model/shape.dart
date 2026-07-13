@@ -50,6 +50,7 @@ class VsdxShape {
     this.waypoints = const <Offset2D>[],
     this.flipX = false,
     this.flipY = false,
+    this.locked = false,
     this.imagePartName,
     this.connects = const <VsdxConnect>[],
     this.hyperlinks = const <VsdxHyperlink>[],
@@ -131,6 +132,13 @@ class VsdxShape {
   /// `FlipX` / `FlipY` flags from the shape's XForm.
   final bool flipX;
   final bool flipY;
+
+  /// drawio-style "locked" flag. When `true` the shape can be selected but not
+  /// moved, resized, rotated, deleted or text-edited (drawio's Lock/Unlock,
+  /// Cmd+L). Round-trips to Visio's protection cells (`LockMoveX`/`LockMoveY`/
+  /// `LockWidth`/`LockHeight`/`LockAspect`/`LockRotate`/`LockDelete`/
+  /// `LockTextEdit`); `LockMoveX` is the canonical bit read back on parse.
+  final bool locked;
 
   /// Absolute part name of the embedded picture this shape displays
   /// (`/visio/media/imageN.png`), or `null` when the shape is not a
@@ -222,6 +230,7 @@ class VsdxShape {
     List<Offset2D>? waypoints,
     bool? flipX,
     bool? flipY,
+    bool? locked,
     String? imagePartName,
     List<VsdxConnect>? connects,
     List<VsdxHyperlink>? hyperlinks,
@@ -258,6 +267,7 @@ class VsdxShape {
       waypoints: waypoints ?? this.waypoints,
       flipX: flipX ?? this.flipX,
       flipY: flipY ?? this.flipY,
+      locked: locked ?? this.locked,
       imagePartName: imagePartName ?? this.imagePartName,
       connects: connects ?? this.connects,
       hyperlinks: hyperlinks ?? this.hyperlinks,

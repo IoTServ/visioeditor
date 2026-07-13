@@ -381,13 +381,17 @@ class EditorController extends ChangeNotifier {
     updateCurrentPage(
       (page) {
         var next = page;
+        var moved = false;
         for (final id in _selection) {
+          final s = page.findShapeById(id);
+          if (s == null || s.locked) continue; // locked shapes don't move
           next = next.updateShapeById(
             id,
             (s) => _translated(s, dxInches, dyInches),
           );
+          moved = true;
         }
-        return next.rerouteConnectors();
+        return moved ? next.rerouteConnectors() : page;
       },
       transient: transient,
     );
@@ -576,11 +580,15 @@ class EditorController extends ChangeNotifier {
     final page = currentPage;
     if (doc == null || page == null || _selection.isEmpty) return;
     var next = page;
+    final removed = <int>[];
     for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.locked) continue; // locked shapes can't be deleted
       next = next.removeShapeById(id);
+      removed.add(id);
     }
     if (identical(next, page)) return;
-    _selection.clear();
+    _selection.removeAll(removed);
     applyEdit(doc.replacePage(_currentPageIndex, next));
   }
 
@@ -589,6 +597,8 @@ class EditorController extends ChangeNotifier {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null) return;
+    final target = page.findShapeById(id);
+    if (target != null && target.locked) return; // locked shapes can't be deleted
     final next = page.removeShapeById(id);
     if (identical(next, page)) return;
     _selection.remove(id);
@@ -605,6 +615,34 @@ class EditorController extends ChangeNotifier {
         ? s.richText.plainText.trim().isNotEmpty
         : (s.text?.trim().isNotEmpty ?? false);
     return !hasText && s.fill.pattern == 0 && s.line.pattern == 0;
+  }
+
+  // --- Lock / unlock (drawio "Lock/Unlock", Cmd+L) ---------------------------
+
+  /// Whether every shape in the selection is locked. Drives the toggle
+  /// direction and the panel / menu state. `false` for an empty selection.
+  bool get selectionLocked {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s == null || !s.locked) return false;
+    }
+    return true;
+  }
+
+  /// drawio "Lock/Unlock": lock the whole selection when any shape is still
+  /// unlocked, otherwise unlock it. One undo step.
+  void toggleLock() => setSelectionLocked(!selectionLocked);
+
+  /// Set the locked flag on every selected shape (one undo step). Locked
+  /// shapes can be selected but not moved, resized, rotated, deleted or
+  /// text-edited.
+  void setSelectionLocked(bool locked) {
+    if (_selection.isEmpty) return;
+    _updateSelectedShapes(
+      (s) => s.locked == locked ? s : s.copyWith(locked: locked),
+    );
   }
 
   List<VsdxShape> _clipboard = const <VsdxShape>[];
@@ -907,20 +945,25 @@ class EditorController extends ChangeNotifier {
     final delta = (clockwise ? -1 : 1) * math.pi / 2;
     updateCurrentPage((page) {
       var next = page;
+      var rotated = false;
       for (final id in _selection) {
-        next = next.updateShapeById(id, (s) => s.copyWith(angleRad: s.angleRad + delta));
+        final s = page.findShapeById(id);
+        if (s == null || s.locked) continue; // locked shapes don't rotate
+        next = next.updateShapeById(
+            id, (s) => s.copyWith(angleRad: s.angleRad + delta));
+        rotated = true;
       }
-      return next.rerouteConnectors();
+      return rotated ? next.rerouteConnectors() : page;
     });
   }
 
-  /// Mirror the selected shapes horizontally (`FlipX`).
+  /// Mirror the selected shapes horizontally (`FlipX`). Locked shapes skip.
   void flipHorizontal() =>
-      _updateSelectedShapes((s) => s.copyWith(flipX: !s.flipX));
+      _updateSelectedShapes((s) => s.locked ? s : s.copyWith(flipX: !s.flipX));
 
-  /// Mirror the selected shapes vertically (`FlipY`).
+  /// Mirror the selected shapes vertically (`FlipY`). Locked shapes skip.
   void flipVertical() =>
-      _updateSelectedShapes((s) => s.copyWith(flipY: !s.flipY));
+      _updateSelectedShapes((s) => s.locked ? s : s.copyWith(flipY: !s.flipY));
 
   // --- Rounded corners (drawio "Rounded" + arc size) -------------------------
 

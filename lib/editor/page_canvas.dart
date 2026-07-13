@@ -328,16 +328,17 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   /// The single selected shape if it is a non-rotated 2-D shape that supports
-  /// box resize.
+  /// box resize. Locked shapes never expose resize handles (drawio parity).
   VsdxShape? _resizableSelection() {
     final s = _singleSelectedShape();
-    return (s == null || s.is1D || s.angleRad != 0) ? null : s;
+    return (s == null || s.is1D || s.angleRad != 0 || s.locked) ? null : s;
   }
 
   /// The single selected shape if it is a 2-D shape that supports rotation.
+  /// Locked shapes never expose the rotation handle (drawio parity).
   VsdxShape? _rotatableSelection() {
     final s = _singleSelectedShape();
-    return (s == null || s.is1D) ? null : s;
+    return (s == null || s.is1D || s.locked) ? null : s;
   }
 
   Offset _pageToContent(double x, double y) => Offset(
@@ -470,14 +471,14 @@ class _PageCanvasState extends State<PageCanvas> {
     // sit outside the shape, so a plain hit-test there would clear it).
     if (next == null && _hoverShapeId != null) {
       final s = _page?.findShapeById(_hoverShapeId!);
-      if (s != null && !s.is1D && _connectArrowHitDir(s, pos) != null) {
+      if (s != null && !s.is1D && !s.locked && _connectArrowHitDir(s, pos) != null) {
         next = _hoverShapeId;
       }
     }
-    // Don't offer arrows on 1-D shapes (connectors).
+    // Don't offer arrows on 1-D shapes (connectors) or locked shapes.
     if (next != null) {
       final s = _page?.findShapeById(next);
-      if (s == null || s.is1D) next = null;
+      if (s == null || s.is1D || s.locked) next = null;
     }
     if (next != _hoverShapeId) setState(() => _hoverShapeId = next);
   }
@@ -560,6 +561,9 @@ class _PageCanvasState extends State<PageCanvas> {
         items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
       }
       items.add(const PopupMenuItem(value: 'delete', child: Text('Delete')));
+      items.add(PopupMenuItem(
+          value: 'lock',
+          child: Text(_c.selectionLocked ? 'Unlock' : 'Lock')));
       items.add(const PopupMenuDivider());
       items.add(
           const PopupMenuItem(value: 'front', child: Text('Bring to Front')));
@@ -624,6 +628,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.paste();
       case 'delete':
         _c.deleteSelection();
+      case 'lock':
+        _c.toggleLock();
       case 'front':
         _c.bringSelectionToFront();
       case 'back':
@@ -662,7 +668,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// current label (all selected) and focus the overlaid editor.
   void _beginTextEdit(int id) {
     final s = _page?.findShapeById(id);
-    if (s == null) return;
+    if (s == null || s.locked) return; // locked shapes can't be text-edited
     _newTextBoxId = null; // editing an existing shape, not a fresh text box
     _c.selectOnly(id);
     final initial =
@@ -821,7 +827,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final hover = _hoverShapeId;
     if (hover != null) {
       final s = _page?.findShapeById(hover);
-      if (s != null && !s.is1D) {
+      if (s != null && !s.is1D && !s.locked) {
         final dir = _connectArrowHitDir(s, d.localPosition);
         if (dir != null) {
           _connectSourceId = hover;
@@ -1555,7 +1561,9 @@ class _PageCanvasState extends State<PageCanvas> {
                                       handleBox: handleBox,
                                       rotateAnchor: rotateAnchor,
                                       rotateKnob: rotateKnob,
-                                      color: Theme.of(context).colorScheme.primary,
+                                      color: _c.selectionLocked
+                                          ? const Color(0xFFE53935) // drawio locked = red
+                                          : Theme.of(context).colorScheme.primary,
                                       strokeWidth: 1.5 / _scale,
                                       handleSize: 7 / _scale,
                                       previewStart: _previewStart,

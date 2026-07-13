@@ -829,4 +829,58 @@ void main() {
         .findShapeById(id)!;
     expect(s3.hyperlinks, isEmpty);
   });
+
+  test('lock/unlock round-trips (drawio Lock/Unlock)', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final target = page.shapes.first;
+    expect(target.locked, isFalse); // fixtures start unlocked
+
+    // 1) Lock the shape → protection cells are written and read back, and
+    //    the geometry is left untouched.
+    final locked = doc.replacePage(
+      0,
+      page.updateShapeById(target.id, (s) => s.copyWith(locked: true)),
+    );
+    final bytes1 = writer.write(originalBytes: bytes, edited: locked);
+    final s1 = parser.parse(bytes1).pages.first.findShapeById(target.id)!;
+    expect(s1.locked, isTrue);
+    expect(s1.pinX, closeTo(target.pinX, 1e-9));
+    expect(s1.width, closeTo(target.width, 1e-9));
+
+    // 2) Unlock it again → the flag clears on reopen.
+    final r1 = parser.parse(bytes1);
+    final unlocked = r1.replacePage(
+      0,
+      r1.pages.first
+          .updateShapeById(target.id, (s) => s.copyWith(locked: false)),
+    );
+    final s2 = parser
+        .parse(writer.write(originalBytes: bytes1, edited: unlocked))
+        .pages
+        .first
+        .findShapeById(target.id)!;
+    expect(s2.locked, isFalse);
+  });
+
+  test('a new locked shape emits protection cells', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(locked: true);
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final s = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(s.locked, isTrue);
+  });
 }

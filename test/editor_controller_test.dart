@@ -534,4 +534,55 @@ void main() {
     final pasted = c.currentPage!.findShapeById(ids.last)!;
     expect(pasted.fill.foreground?.value, const VsdxColor(0xFFFF0000).value);
   });
+
+  test('lock: locked shapes resist move / rotate / delete; toggle undoable', () {
+    final c = newDocWithTwoRects();
+    final first = c.currentPage!.shapes.first.id;
+    c.setSelection(<int>{first});
+    expect(c.selectionLocked, isFalse);
+
+    // Lock the selection (drawio Cmd+L).
+    c.toggleLock();
+    expect(c.selectionLocked, isTrue);
+    expect(c.currentPage!.findShapeById(first)!.locked, isTrue);
+
+    final before = c.currentPage!.findShapeById(first)!;
+    // A locked shape doesn't move…
+    c.moveSelectionBy(1, 1);
+    expect(c.currentPage!.findShapeById(first)!.pinX, closeTo(before.pinX, 1e-9));
+    expect(c.currentPage!.findShapeById(first)!.pinY, closeTo(before.pinY, 1e-9));
+    // …nor rotate…
+    c.rotateSelection90();
+    expect(c.currentPage!.findShapeById(first)!.angleRad,
+        closeTo(before.angleRad, 1e-9));
+    // …nor delete.
+    c.deleteSelection();
+    expect(c.currentPage!.findShapeById(first), isNotNull);
+
+    // Unlocking is a single undo step back to the locked state.
+    c.toggleLock();
+    expect(c.selectionLocked, isFalse);
+    c.undo();
+    expect(c.currentPage!.findShapeById(first)!.locked, isTrue);
+  });
+
+  test('lock: a mixed selection still moves its unlocked members', () {
+    final c = newDocWithTwoRects();
+    final ids = <int>[for (final s in c.currentPage!.shapes) s.id];
+
+    // Lock only the first shape, then select both.
+    c.setSelection(<int>{ids.first});
+    c.toggleLock();
+    c.setSelection(ids.toSet());
+    expect(c.selectionLocked, isFalse); // not every shape is locked
+
+    final lockedBefore = c.currentPage!.findShapeById(ids.first)!;
+    final freeBefore = c.currentPage!.findShapeById(ids.last)!;
+    c.moveSelectionBy(0.5, 0);
+    // The locked shape stays put; the free one shifts.
+    expect(c.currentPage!.findShapeById(ids.first)!.pinX,
+        closeTo(lockedBefore.pinX, 1e-9));
+    expect(c.currentPage!.findShapeById(ids.last)!.pinX,
+        closeTo(freeBefore.pinX + 0.5, 1e-9));
+  });
 }
