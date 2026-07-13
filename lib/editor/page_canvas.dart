@@ -475,6 +475,25 @@ class _PageCanvasState extends State<PageCanvas> {
     return null;
   }
 
+  /// Whether [viewportPos] is within the hover-connect "halo" of [s] — its box
+  /// plus enough margin to cover the connect arrows. Keeping the hover alive
+  /// across this whole zone means the arrows don't vanish in the gap between
+  /// the shape's edge and the arrow hit-circles as the pointer travels out to
+  /// them (drawio keeps the icons visible around the shape).
+  bool _withinConnectAffordance(VsdxShape s, Offset viewportPos) {
+    final box = _normaliseRect(_exactContentBox(s));
+    final screen = Rect.fromLTRB(
+      _offset.dx + box.left * _scale,
+      _offset.dy + box.top * _scale,
+      _offset.dx + box.right * _scale,
+      _offset.dy + box.bottom * _scale,
+    );
+    // Reach a little past the arrow hit-circles (gap + hit) so there's no dead
+    // zone against the shape and a bit of slack beyond the triangles.
+    const margin = _connectArrowGapPx + _connectArrowHitPx + 8;
+    return screen.inflate(margin).contains(viewportPos);
+  }
+
   void _onHover(PointerHoverEvent e) {
     if (!_connectAffordanceActive) {
       if (_hoverShapeId != null) setState(() => _hoverShapeId = null);
@@ -482,11 +501,12 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     final pos = e.localPosition;
     var next = _topLevelAt(pos);
-    // Keep the current hover while the pointer is over one of its arrows (which
-    // sit outside the shape, so a plain hit-test there would clear it).
+    // Keep the current hover while the pointer is anywhere in its arrow halo
+    // (the arrows sit outside the shape, so a plain hit-test there clears it —
+    // and there's a gap between the edge and the arrow hit-circles).
     if (next == null && _hoverShapeId != null) {
       final s = _page?.findShapeById(_hoverShapeId!);
-      if (s != null && !s.is1D && !s.locked && _connectArrowHitDir(s, pos) != null) {
+      if (s != null && !s.is1D && !s.locked && _withinConnectAffordance(s, pos)) {
         next = _hoverShapeId;
       }
     }

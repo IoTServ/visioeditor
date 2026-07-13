@@ -628,3 +628,9 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   "Clear Waypoints"（`canClearWaypoints` 时）。测试：引擎 1 例（端点重连 b→c 保留 begin、分离 end 移除行且端点落到
   落点，共 49/49）、控制器 2 例（重连/分离 + 撤销、清除折点 + 撤销，App 共 47）。`dart analyze` 干净（app + 引擎）、
   `flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-13 — **修复：悬停连线三角箭头过早消失**：`_onHover` 里"停在箭头上保持 hover"原先只用箭头精确命中圈
+  （中心距边缘 22px、半径 15px），形状边缘到命中圈之间有约 7px **死区**——光标一离开形状本体、尚未进入箭头命中圈，
+  `_hoverShapeId` 即被清空，箭头（drawio HoverIcons）随之消失，无法移动到箭头上拖出连线。改为新增 `_withinConnectAffordance`
+  （形状屏幕框外扩 `gap+hit+8` 的**悬停光环**），光标在形状到箭头的整段路径上都保持 hover，消除死区（仅当光标不在任何
+  形状上时用于维持，故不覆盖真实形状 hover；实际连线仍需点/拖到箭头精确命中圈）。纯 UI 交互修复（无引擎/模型改动）。
+  `flutter analyze` 干净、`flutter test` 通过（47）、`flutter build macos` 成功。

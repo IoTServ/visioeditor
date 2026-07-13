@@ -167,6 +167,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it to fit-to-screen).
 
 ### Fixed
+- Hover-connect arrows no longer vanish before the pointer reaches them: the
+  hover is now kept alive across the whole halo around a shape (its box plus
+  the arrow reach), removing the dead zone between the shape's edge and the
+  arrow hit-circles.
 - The writer now regenerates a shape's `<Section N="Geometry">` when its
   geometry changed (resize scaling, connector re-routing), so edits survive a
   save/reopen instead of rendering with stale local geometry.
