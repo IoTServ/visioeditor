@@ -200,6 +200,86 @@ void main() {
     expect(rerouted.geometries.first.commands.length, greaterThan(elbowCount));
   });
 
+  test('roundCorners fillets interior bends but keeps the endpoints exact', () {
+    // An L route with one sharp 90° corner at (4, 0).
+    const control = <Offset2D>[
+      Offset2D(0, 0),
+      Offset2D(4, 0),
+      Offset2D(4, 4),
+    ];
+    final rounded = VsdxPage.roundCorners(control, radius: 1, segmentsPerCorner: 6);
+    // Endpoints stay put; the polyline is denser than the 3-point control.
+    expect(rounded.first, const Offset2D(0, 0));
+    expect(rounded.last, const Offset2D(4, 4));
+    expect(rounded.length, greaterThan(control.length));
+    // The sharp corner vertex itself is gone — the fillet backs off from it.
+    expect(
+      rounded.any((p) => (p.x - 4).abs() < 1e-9 && (p.y - 0).abs() < 1e-9),
+      isFalse,
+    );
+    // Every filleted point stays within the corner's quadrant (0..4, 0..4).
+    for (final p in rounded) {
+      expect(p.x, inInclusiveRange(0 - 1e-9, 4 + 1e-9));
+      expect(p.y, inInclusiveRange(0 - 1e-9, 4 + 1e-9));
+    }
+    // Fewer than three points can't bend — returned unchanged.
+    expect(
+      VsdxPage.roundCorners(const <Offset2D>[Offset2D(0, 0), Offset2D(2, 2)]),
+      hasLength(2),
+    );
+  });
+
+  test('a rounded connector bakes filleted corners that survive reroute', () {
+    final r1 = VsdxShapeFactory.rectangle(
+        id: 1, pinX: 1, pinY: 1, width: 1, height: 1);
+    final r2 = VsdxShapeFactory.rectangle(
+        id: 2, pinX: 5, pinY: 4, width: 1, height: 1);
+    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 1, bx: 5, by: 4);
+    var page = VsdxPage(
+      id: 0,
+      name: 'P1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: [r1, r2, conn],
+      connects: const [
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'BeginX', toSheetId: 1, toCell: 'PinX'),
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'EndX', toSheetId: 2, toCell: 'PinX'),
+      ],
+    ).rerouteConnectors();
+
+    final elbowCount = page.findShapeById(3)!.geometries.first.commands.length;
+    final elbowBegin =
+        (page.findShapeById(3)!.beginX!, page.findShapeById(3)!.beginY!);
+    final elbowEnd =
+        (page.findShapeById(3)!.endX!, page.findShapeById(3)!.endY!);
+
+    // Round the corners: geometry densifies but endpoints stay pinned.
+    page = page.setConnectorRounded({3}, true);
+    final rounded = page.findShapeById(3)!;
+    expect(rounded.rounded, isTrue);
+    expect(page.isConnectorRounded(3), isTrue);
+    expect(rounded.geometries.first.commands.length, greaterThan(elbowCount));
+    // Still ordinary MoveTo/LineTo — so it round-trips as plain geometry.
+    expect(
+      rounded.geometries.first.commands.every((c) => c is MoveTo || c is LineTo),
+      isTrue,
+    );
+    expect(rounded.beginX, closeTo(elbowBegin.$1, 1e-9));
+    expect(rounded.beginY, closeTo(elbowBegin.$2, 1e-9));
+    expect(rounded.endX, closeTo(elbowEnd.$1, 1e-9));
+    expect(rounded.endY, closeTo(elbowEnd.$2, 1e-9));
+
+    // Moving a glued shape re-routes but keeps the rounded preference + density.
+    page = page
+        .updateShapeById(1, (s) => s.copyWith(pinX: 2, pinY: 2))
+        .rerouteConnectors();
+    final rerouted = page.findShapeById(3)!;
+    expect(rerouted.rounded, isTrue);
+    expect(rerouted.geometries.first.commands.length, greaterThan(elbowCount));
+  });
+
   test('connectorMidpoint returns the arc-length midpoint of the route', () {
     // Straight horizontal connector: the midpoint is the geometric centre.
     final straight = VsdxShapeFactory.line(id: 1, ax: 1, ay: 2, bx: 5, by: 2)

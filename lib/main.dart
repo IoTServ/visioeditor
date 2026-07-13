@@ -1381,6 +1381,20 @@ class _PropertyPanel extends StatelessWidget {
                   ),
               ],
             ),
+            Row(
+              children: [
+                const Text('Rounded'),
+                const Spacer(),
+                Switch(
+                  value: controller.selectedConnectorRounded,
+                  // Rounded corners are moot for an already-smooth curved edge.
+                  onChanged: controller.selectedConnectorRouteStyle ==
+                          ConnectorRouteStyle.curved
+                      ? null
+                      : controller.setConnectorRounded,
+                ),
+              ],
+            ),
           ],
           const SizedBox(height: 8),
           Row(

@@ -47,6 +47,7 @@ class VsdxShape {
     this.endY,
     this.straightRoute = false,
     this.curved = false,
+    this.rounded = false,
     this.waypoints = const <Offset2D>[],
     this.flipX = false,
     this.flipY = false,
@@ -124,6 +125,15 @@ class VsdxShape {
   /// round-trips as ordinary geometry; this flag is session-level and only
   /// steers how [VsdxPage.rerouteConnectors] rebuilds that geometry.
   final bool curved;
+
+  /// When `true`, the connector's route corners are **rounded** off with small
+  /// fillets (drawio's "Rounded" edge option) instead of drawn as sharp
+  /// right-angle bends. Applies to the straight-with-waypoints and orthogonal
+  /// elbow routes; ignored when [curved] is set (which is already smooth). Like
+  /// [curved], the fillet is baked into the geometry as an ordinary `LineTo`
+  /// polyline, so it round-trips with no dedicated cell; this flag is
+  /// session-level and only steers how the geometry is rebuilt.
+  final bool rounded;
 
   /// User-placed interior bend points for a connector, in page inches. When
   /// non-empty the route runs begin → waypoints → end (overriding straight /
@@ -235,6 +245,7 @@ class VsdxShape {
     double? endY,
     bool? straightRoute,
     bool? curved,
+    bool? rounded,
     List<Offset2D>? waypoints,
     List<Offset2D>? connectionPoints,
     bool? flipX,
@@ -273,6 +284,7 @@ class VsdxShape {
       endY: endY ?? this.endY,
       straightRoute: straightRoute ?? this.straightRoute,
       curved: curved ?? this.curved,
+      rounded: rounded ?? this.rounded,
       waypoints: waypoints ?? this.waypoints,
       connectionPoints: connectionPoints ?? this.connectionPoints,
       flipX: flipX ?? this.flipX,

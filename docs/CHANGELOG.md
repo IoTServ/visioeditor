@@ -50,7 +50,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (they point at their target). Each connector can be routed **straight,
   orthogonal, or curved** (inspector; drawio's Curved edges smooth the route
   through a Catmull-Rom spline that is baked into the geometry, so the curve
-  round-trips as ordinary `MoveTo`/`LineTo` rows) and reshaped with draggable
+  round-trips as ordinary `MoveTo`/`LineTo` rows), its corners optionally
+  **rounded** (drawio's "Rounded" edge option — an inspector toggle that fillets
+  each right-angle bend with a small quadratic-Bezier arc, baked into the
+  geometry the same way so it round-trips and survives re-routes; moot for a
+  curved edge, which is already smooth), and reshaped with draggable
   **waypoints** (bend points: drag a segment midpoint to add one, drag it to
   move, double-click to remove); the routing choice and waypoints are kept
   across re-routes. A selected connector shows green **endpoint handles**:
@@ -194,9 +198,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 50 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 54 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; **connector arc-length midpoint**;
-  **curved-connector spline sampling + geometry round-trip**; writer
+  **curved-connector spline sampling + geometry round-trip**; **rounded-corner
+  fillet (endpoints exact, corner backed off) + rounded-connector geometry
+  round-trip**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
   visibility / resized geometry / text formatting / polygon stencil /
   **rounded-rect elliptical arcs** / **borderless text box** / z-order (to-back
@@ -213,7 +219,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   **connector three-way style incl. curved**, connector waypoints, text·shadow,
   copy/paste style, arrange flip·rotate·numeric geometry, one-step z-order,
   find, arrowhead types, cancel-transaction drag revert, default-style
-  inheritance, corner radius, **text tool**, **default connector arrowhead**,
+  inheritance, corner radius, **connector rounded corners (toggle + survive
+  reroute + undo)**, **text tool**, **default connector arrowhead**,
   **deleteShapeById**, **page setup size·orientation·background**,
   **shape data**, **hyperlink set·clear·undo**, **revealPagePoint**,
   **lock (locked shape resists move·rotate·delete + undo, mixed selection

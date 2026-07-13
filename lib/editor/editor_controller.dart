@@ -1342,6 +1342,28 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Whether the first selected connector rounds its route corners (drawio's
+  /// "Rounded" edge option).
+  bool get selectedConnectorRounded {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.is1D) return s.rounded;
+    }
+    return false;
+  }
+
+  /// Toggle drawio-style rounded corners on the selected connectors (one undo
+  /// step). Ignored for curved connectors (already smooth) and has no visible
+  /// effect on a two-point straight route.
+  void setConnectorRounded(bool rounded) {
+    if (_selection.isEmpty) return;
+    updateCurrentPage(
+      (page) => page.setConnectorRounded(_selection.toSet(), rounded),
+    );
+  }
+
   // --- Connector waypoints (drawio bend points) ------------------------------
 
   List<Offset2D> connectorWaypoints(int id) =>

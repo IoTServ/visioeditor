@@ -151,6 +151,44 @@ void main() {
     expect(c.selectedConnectorStraight, isTrue);
   });
 
+  test('connector rounded corners toggle, survive reroute, and undo', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(6, 5, 7, 6);
+    final b = c.currentPage!.shapes.last.id;
+
+    c.createConnector(1.5, 1.5, 6.5, 5.5, beginTarget: a, endTarget: b);
+    final conn = c.selection.single;
+    expect(c.selectedConnectorRounded, isFalse);
+    final sharpCount =
+        c.currentPage!.findShapeById(conn)!.geometries.first.commands.length;
+
+    // Round the elbow corners → geometry densifies with fillets.
+    c.setConnectorRounded(true);
+    expect(c.selectedConnectorRounded, isTrue);
+    expect(
+      c.currentPage!.findShapeById(conn)!.geometries.first.commands.length,
+      greaterThan(sharpCount),
+    );
+
+    // Moving a glued shape re-routes but keeps the rounded preference.
+    c.setSelection(<int>{a});
+    c.moveSelectionBy(0.5, 0);
+    c.setSelection(<int>{conn});
+    expect(c.selectedConnectorRounded, isTrue);
+
+    // Toggling rounded off is a single undo step.
+    c.setConnectorRounded(false);
+    expect(c.selectedConnectorRounded, isFalse);
+    c.undo();
+    expect(c.selectedConnectorRounded, isTrue);
+  });
+
   test('setShapeHyperlinks sets, clears, and undoes a shape link', () {
     final c = EditorController()..newDocument();
     c

@@ -330,6 +330,18 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 经 `ClipRect` GlobalKey 把全局落点转画布坐标 → `EditorController.addShapeFromBuilderAt`（落点放置、网格吸附、继承记忆样式、
 选中）。右键空白菜单加 **"Paste Here"** → `pasteAt(cx,cy)`（把剪贴板包围盒中心对齐到光标；`paste` 复用之，无坐标＝原偏移）。
 
+已补：**圆角连接器（drawio "Rounded" 边）** —— 连接器路由拐角可**圆角化**：直角肘形/带折点路由的每个拐角用小段
+二次贝塞尔圆角替代尖角。模型 `VsdxShape.rounded`（会话级标记，同 `curved`/`straightRoute` + copyWith）；引擎
+`VsdxPage.roundCorners`（每个内部拐角沿相邻两段各回退 `radius`＝ min(radius, 较短邻段/2)，以拐点为控制点采样二次
+贝塞尔，端点精确保留、<3 点原样返回）+ `_quadBezier`，并抽出**单一烘焙助手** `_bakeRoute`（curved 优先→rounded→
+原样折线），接入 `rerouteConnectors`/`setConnectorStyle`/`setConnectorWaypoints`/`setConnectorEndpoint` 四处几何
+烘焙点；新增 `setConnectorRounded(ids, bool)`（保留路由样式，从当前 begin/end/waypoints 重算并烘焙）与
+`isConnectorRounded`。与 `curved` 同构——**渲染层与 Writer 零改动**（仍 `MoveTo`/`LineTo`）、圆角**完整往返**、随重路由/
+移动保持；端点/折点手柄仍落在逻辑控制点（`connectorRoute`），curved 时圆角无意义（已平滑）。控制器
+`selectedConnectorRounded`/`setConnectorRounded`（单撤销步）；属性面板 Connector 区在三选一 ChoiceChip 下加
+**Rounded 开关**（curved 时禁用）。测试：引擎 2 例（`roundCorners` 圆角化+端点精确+拐点回退、圆角连接器烘焙折线且
+经重路由保持）+ Writer 1 例（圆角连接器几何真实 `.vsdx` 往返，共 54）、控制器 1 例（圆角开关+重路由保持+撤销，App 共 52）。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -668,3 +680,16 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   （形状屏幕框外扩 `gap+hit+8` 的**悬停光环**），光标在形状到箭头的整段路径上都保持 hover，消除死区（仅当光标不在任何
   形状上时用于维持，故不覆盖真实形状 hover；实际连线仍需点/拖到箭头精确命中圈）。纯 UI 交互修复（无引擎/模型改动）。
   `flutter analyze` 干净、`flutter test` 通过（47）、`flutter build macos` 成功。
+- 2026-07-13 — **对齐 drawio（批次二十六）——圆角连接器（Rounded edges）**：连接器路由拐角可圆角化，补齐 drawio
+  边的"Rounded"选项（此前仅 Straight/Orthogonal/Curved 三态路由，拐角恒为尖角）。模型 `VsdxShape.rounded`（会话级，
+  同 `curved` + copyWith + 文档）；引擎 `VsdxPage.roundCorners(control, radius, segmentsPerCorner)`（每个内部拐角沿
+  相邻两段各回退 `min(radius, 较短邻段/2)`、以拐点为控制点采样二次贝塞尔 `_quadBezier`，端点精确、<3 点原样返回）；
+  抽出单一烘焙助手 `_bakeRoute`（curved→rounded→原样）替换四处 `curved ? curveThrough : control` 烘焙点
+  （`rerouteConnectors`/`setConnectorStyle`（保留形状 `rounded`）/`setConnectorWaypoints`/`setConnectorEndpoint`）；新增
+  `setConnectorRounded(ids, bool)`（保留路由样式、从当前 begin/end/waypoints 重算烘焙）+ `isConnectorRounded`。与
+  `curved` 同构：**渲染层与 Writer 零改动**（仍 `MoveTo`/`LineTo`）、圆角完整往返、随重路由/移动保持；端点/折点手柄仍落逻辑
+  控制点（`connectorRoute`），curved 时圆角无意义。控制器 `selectedConnectorRounded`/`setConnectorRounded`（单撤销步）；
+  `main.dart` 属性面板 Connector 区在三选一下加 **Rounded 开关**（curved 时 `onChanged:null` 禁用）。测试：引擎 2 例
+  （`roundCorners` 端点精确+拐点回退+象限内、圆角连接器烘焙折线且经重路由保持）+ Writer 1 例（圆角连接器几何真实
+  `.vsdx` 往返，引擎共 54）、控制器 1 例（圆角开关 + 重路由保持 + 撤销，App 共 52）。`dart analyze`/`flutter analyze`
+  干净、`dart test`（54）+ `flutter test`（52）通过。

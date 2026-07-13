@@ -237,7 +237,8 @@ class VsdxPage {
           : connector.straightRoute
               ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
               : _elbowRoute(ax, ay, bx, by);
-      final geometry = connector.curved ? curveThrough(control) : control;
+      final geometry = _bakeRoute(control,
+          curved: connector.curved, rounded: connector.rounded);
       next = next.updateShapeById(cid, (s) => s.reshapeAsPolyline(geometry));
     }
     return next;
@@ -294,7 +295,7 @@ class VsdxPage {
     final s = findShapeById(id);
     if (s == null || !s.is1D) return this;
     final control = connectorRoute(s.copyWith(waypoints: waypoints));
-    final geometry = s.curved ? curveThrough(control) : control;
+    final geometry = _bakeRoute(control, curved: s.curved, rounded: s.rounded);
     final next = updateShapeById(
       id,
       (sh) => sh.copyWith(waypoints: waypoints).reshapeAsPolyline(geometry),
@@ -366,7 +367,7 @@ class VsdxPage {
         : s.straightRoute
             ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
             : _elbowRoute(ax, ay, bx, by);
-    final geometry = s.curved ? curveThrough(control) : control;
+    final geometry = _bakeRoute(control, curved: s.curved, rounded: s.rounded);
     final next = base
         .updateShapeById(id, (sh) => sh.reshapeAsPolyline(geometry))
         .copyWith(connects: nextConnects);
@@ -445,6 +446,9 @@ class VsdxPage {
   /// Whether connector [id] is drawn as a smooth (curved) spline.
   bool isConnectorCurved(int id) => findShapeById(id)?.curved ?? false;
 
+  /// Whether connector [id] rounds its route corners (drawio "Rounded").
+  bool isConnectorRounded(int id) => findShapeById(id)?.rounded ?? false;
+
   /// Set the routing style of the given connectors:
   ///   * `straight` = a single direct segment,
   ///   * otherwise an orthogonal elbow,
@@ -467,12 +471,39 @@ class VsdxPage {
           : straight
               ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
               : _elbowRoute(ax, ay, bx, by);
-      final geometry = curved ? curveThrough(control) : control;
+      final geometry = _bakeRoute(control, curved: curved, rounded: s.rounded);
       next = next.updateShapeById(
         id,
         (sh) => sh
             .copyWith(straightRoute: straight, curved: curved)
             .reshapeAsPolyline(geometry),
+      );
+    }
+    return next;
+  }
+
+  /// Toggle drawio-style **rounded corners** on the given connectors, re-baking
+  /// each one's geometry from its current route (straight / elbow / waypoints).
+  /// Rounding is a corner treatment on the sharp polyline, so the choice is
+  /// remembered on the shape and honoured by later re-routes; it has no visible
+  /// effect on a two-point straight route (no corner to round) and is
+  /// superseded by a [VsdxShape.curved] connector (already smooth).
+  VsdxPage setConnectorRounded(Set<int> ids, bool rounded) {
+    var next = this;
+    for (final id in ids) {
+      final s = next.findShapeById(id);
+      if (s == null || !s.is1D) continue;
+      final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+      final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+      final control = s.waypoints.isNotEmpty
+          ? <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)]
+          : s.straightRoute
+              ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
+              : _elbowRoute(ax, ay, bx, by);
+      final geometry = _bakeRoute(control, curved: s.curved, rounded: rounded);
+      next = next.updateShapeById(
+        id,
+        (sh) => sh.copyWith(rounded: rounded).reshapeAsPolyline(geometry),
       );
     }
     return next;
@@ -573,6 +604,80 @@ class VsdxPage {
       axis(p0.x, p1.x, p2.x, p3.x),
       axis(p0.y, p1.y, p2.y, p3.y),
     );
+  }
+
+  /// Round off the interior corners of a route [control] (page inches) with
+  /// small fillets, returning a denser polyline that keeps `control.first` /
+  /// `control.last` exact — drawio's "Rounded" edges. Each bend is replaced by
+  /// a quadratic-Bezier fillet that starts / ends [radius] back along the
+  /// adjacent segments (clamped to half the shorter neighbour so short legs
+  /// never overshoot). Fewer than three points have no corner to round and are
+  /// returned unchanged.
+  ///
+  /// Like [curveThrough], the fillet is plain `LineTo` sampling, so a rounded
+  /// connector round-trips as ordinary `MoveTo`/`LineTo` geometry.
+  static List<Offset2D> roundCorners(
+    List<Offset2D> control, {
+    double radius = 0.12,
+    int segmentsPerCorner = 6,
+  }) {
+    if (control.length < 3 || radius <= 0 || segmentsPerCorner < 1) {
+      return control;
+    }
+    final out = <Offset2D>[control.first];
+    for (var i = 1; i < control.length - 1; i++) {
+      final prev = control[i - 1];
+      final corner = control[i];
+      final next = control[i + 1];
+      final len1 = _segLength(prev, corner);
+      final len2 = _segLength(corner, next);
+      final r = math.min(radius, math.min(len1, len2) / 2);
+      if (r <= 1e-9) {
+        out.add(corner);
+        continue;
+      }
+      // Fillet endpoints: back off r from the corner toward each neighbour.
+      final p1 = Offset2D(
+        corner.x + (prev.x - corner.x) / len1 * r,
+        corner.y + (prev.y - corner.y) / len1 * r,
+      );
+      final p2 = Offset2D(
+        corner.x + (next.x - corner.x) / len2 * r,
+        corner.y + (next.y - corner.y) / len2 * r,
+      );
+      out.add(p1);
+      for (var s = 1; s < segmentsPerCorner; s++) {
+        out.add(_quadBezier(p1, corner, p2, s / segmentsPerCorner));
+      }
+      out.add(p2);
+    }
+    out.add(control.last);
+    return out;
+  }
+
+  /// Quadratic Bezier point at [t] ∈ [0, 1] with endpoints [a] / [c] and
+  /// control point [b] — used to fillet a route corner.
+  static Offset2D _quadBezier(Offset2D a, Offset2D b, Offset2D c, double t) {
+    final u = 1 - t;
+    return Offset2D(
+      u * u * a.x + 2 * u * t * b.x + t * t * c.x,
+      u * u * a.y + 2 * u * t * b.y + t * t * c.y,
+    );
+  }
+
+  /// Bake a connector's control polyline [control] into its drawn geometry,
+  /// honouring its route treatment: a smooth [curved] spline wins, else
+  /// [rounded] corner fillets, else the plain sharp polyline. Single source of
+  /// truth shared by every re-route / restyle path so the drawn geometry stays
+  /// consistent with the chosen style.
+  static List<Offset2D> _bakeRoute(
+    List<Offset2D> control, {
+    required bool curved,
+    required bool rounded,
+  }) {
+    if (curved) return curveThrough(control);
+    if (rounded) return roundCorners(control);
+    return control;
   }
 
   /// Move a top-level shape to the front (drawn last). No-op for nested shapes.
