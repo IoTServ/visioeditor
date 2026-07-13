@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Editor for Visio Diagrams
+GenericName=Visio Diagram Editor
+Comment=Open and edit Microsoft Visio (.vsdx) drawings
+# `visioeditor` must be on PATH (or use an absolute path to the built binary).
+Exec=visioeditor %f
+Icon=visioeditor
+Terminal=false
+Categories=Graphics;Office;VectorGraphics;
+StartupNotify=true
+MimeType=application/vnd.ms-visio.drawing;application/vnd.ms-visio.template;application/vnd.ms-visio.stencil;application/vnd.visio;

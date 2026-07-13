@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -765,5 +766,20 @@ void main() {
     final img = reopened.images.findByPart(s.imagePartName!);
     expect(img, isNotNull);
     expect(img!.bytes, equals(bytes));
+  });
+
+  test('opens the bundled workflow.vsdx example end-to-end', () async {
+    // Exercises the app's real open pipeline (bytes → DocumentParser → model)
+    // against the real-world sample behind the "workflow" chip on the empty
+    // state, so a broken/unparseable example fails here instead of at runtime.
+    final bytes = File('assets/examples/workflow.vsdx').readAsBytesSync();
+    final c = EditorController();
+    await c.openBytes(bytes, name: 'workflow.vsdx');
+
+    expect(c.error, isNull);
+    expect(c.hasDocument, isTrue);
+    expect(c.fileName, 'workflow.vsdx');
+    expect(c.document!.pages, isNotEmpty);
+    expect(c.document!.pages.first.shapes, isNotEmpty);
   });
 }

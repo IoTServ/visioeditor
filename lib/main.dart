@@ -61,6 +61,7 @@ class EditorHomePage extends StatefulWidget {
 
 class _EditorHomePageState extends State<EditorHomePage> {
   static const List<String> _examples = <String>[
+    'workflow.vsdx',
     'test1.vsdx',
     'test3_house.vsdx',
     'test4_connectors.vsdx',

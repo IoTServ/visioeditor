@@ -24,6 +24,36 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Open Visio drawings handed over by another app / file manager
+                 that already knows the MIME type. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:mimeType="application/vnd.ms-visio.drawing"/>
+                <data android:mimeType="application/vnd.ms-visio.drawing.macroEnabled.main+xml"/>
+                <data android:mimeType="application/vnd.ms-visio.template"/>
+                <data android:mimeType="application/vnd.ms-visio.stencil"/>
+                <data android:mimeType="application/vnd.visio"/>
+            </intent-filter>
+            <!-- Fall back to matching by file extension (content/file URIs whose
+                 MIME is generic). pathPattern matching is best-effort on
+                 Android; the source app must still grant read access. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:host="*"/>
+                <data android:mimeType="*/*"/>
+                <data android:pathPattern=".*\\.vsdx"/>
+                <data android:pathPattern=".*\\.vsdm"/>
+                <data android:pathPattern=".*\\.vstx"/>
+                <data android:pathPattern=".*\\.vstm"/>
+                <data android:pathPattern=".*\\.vssx"/>
+                <data android:pathPattern=".*\\.vssm"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

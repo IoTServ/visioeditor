@@ -1,0 +1,33 @@
+Windows Registry Editor Version 5.00
+
+; File association for Editor for Visio Diagrams (per-user, HKCU).
+; BEFORE IMPORTING: replace every C:\\Path\\To\\visioeditor.exe below with the
+; real path to the built executable (e.g. the Release runner or install dir).
+; Double-clicking a .vsdx then launches the app with the file path as argv[1].
+
+[HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawing]
+@="Visio Drawing"
+
+[HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawing\DefaultIcon]
+@="C:\\Path\\To\\visioeditor.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawing\shell\open\command]
+@="\"C:\\Path\\To\\visioeditor.exe\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\.vsdx]
+@="VisioEditor.Drawing"
+
+[HKEY_CURRENT_USER\Software\Classes\.vsdm]
+@="VisioEditor.Drawing"
+
+[HKEY_CURRENT_USER\Software\Classes\.vstx]
+@="VisioEditor.Drawing"
+
+[HKEY_CURRENT_USER\Software\Classes\.vstm]
+@="VisioEditor.Drawing"
+
+[HKEY_CURRENT_USER\Software\Classes\.vssx]
+@="VisioEditor.Drawing"
+
+[HKEY_CURRENT_USER\Software\Classes\.vssm]
+@="VisioEditor.Drawing"

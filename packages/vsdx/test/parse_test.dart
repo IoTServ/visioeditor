@@ -35,4 +35,10 @@ void main() {
     final doc = parser.parse(_fixture('test4_connectors.vsdx'));
     expect(doc.pages, isNotEmpty);
   });
+
+  test('parses the bundled workflow.vsdx sample', () {
+    final doc = parser.parse(_fixture('workflow.vsdx'));
+    expect(doc.pages, isNotEmpty);
+    expect(doc.pages.first.shapes, isNotEmpty);
+  });
 }
