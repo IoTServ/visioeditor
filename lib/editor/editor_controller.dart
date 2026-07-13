@@ -498,6 +498,7 @@ class EditorController extends ChangeNotifier {
     double by, {
     int? beginTarget,
     int? endTarget,
+    int? endConnectionPointIndex,
   }) {
     final doc = _document;
     final page = currentPage;
@@ -555,10 +556,23 @@ class EditorController extends ChangeNotifier {
       ..clear()
       ..add(id);
     _tool = EditorTool.select;
+    var next =
+        page.addShape(connector).copyWith(connects: connects).rerouteConnectors();
+    // Pin the end to a fixed connection point when one was snapped on drop.
+    if (endTarget != null && endConnectionPointIndex != null) {
+      next = next.setConnectorEndpoint(
+        id,
+        begin: false,
+        targetShapeId: endTarget,
+        connectionPointIndex: endConnectionPointIndex,
+        x: sbx,
+        y: sby,
+      );
+    }
     applyEdit(
       doc.replacePage(
         _currentPageIndex,
-        page.addShape(connector).copyWith(connects: connects).rerouteConnectors(),
+        next,
       ),
     );
   }
@@ -1340,6 +1354,7 @@ class EditorController extends ChangeNotifier {
     int connectorId, {
     required bool begin,
     int? targetShapeId,
+    int? connectionPointIndex,
     required double x,
     required double y,
     bool transient = false,
@@ -1349,6 +1364,7 @@ class EditorController extends ChangeNotifier {
         connectorId,
         begin: begin,
         targetShapeId: targetShapeId,
+        connectionPointIndex: connectionPointIndex,
         x: x,
         y: y,
       ),

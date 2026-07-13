@@ -11,6 +11,7 @@ import 'package:xml/xml.dart';
 import '../core/exceptions.dart';
 import '../model/effects.dart';
 import '../model/fill.dart';
+import '../model/geometry.dart';
 import '../model/line.dart';
 import '../model/master.dart';
 import '../model/rich_text.dart';
@@ -203,6 +204,10 @@ class PageParser {
     final layerMembers = LayerParser.parseLayerMembers(shapeEl);
     final imagePartName = _resolveForeignDataPart(shapeEl) ??
         proto?.imagePartName;
+    final ownConnPts = _readConnectionPoints(shapeEl);
+    final connectionPoints = ownConnPts.isEmpty && proto != null
+        ? proto.connectionPoints
+        : ownConnPts;
     final ownHyperlinks = const HyperlinkParser().parse(shapeEl);
     final hyperlinks =
         ownHyperlinks.isEmpty && proto != null ? proto.hyperlinks : ownHyperlinks;
@@ -260,6 +265,7 @@ class PageParser {
       flipY: flipY,
       locked: locked,
       imagePartName: imagePartName,
+      connectionPoints: connectionPoints,
       hyperlinks: hyperlinks,
       userProperties: props,
       userCells: userCells,
@@ -286,6 +292,24 @@ class PageParser {
       }
     }
     return null;
+  }
+
+  /// Read `<Section N="Connection">` rows into shape-local connection points
+  /// (X/Y in inches, in row order). Empty when the shape has no such section.
+  List<Offset2D> _readConnectionPoints(XmlElement shapeEl) {
+    final out = <Offset2D>[];
+    for (final section in shapeEl.childElements) {
+      if (section.name.local != 'Section') continue;
+      if (section.getAttribute('N') != 'Connection') continue;
+      for (final row in section.childElements) {
+        if (row.name.local != 'Row') continue;
+        final x = readLengthInches(row, 'X');
+        final y = readLengthInches(row, 'Y');
+        if (x == null || y == null) continue;
+        out.add(Offset2D(x, y));
+      }
+    }
+    return List.unmodifiable(out);
   }
 
   bool? _readBoolCell(XmlElement parent, String name) {

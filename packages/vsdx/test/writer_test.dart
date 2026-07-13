@@ -1031,4 +1031,60 @@ void main() {
     expect(img, isNotNull);
     expect(img!.bytes, equals(payload));
   });
+
+  test('fixed connection point round-trips (materialise + patch)', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 2, pinY: 5, width: 1, height: 1);
+    page = page.addShape(a);
+    final b = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 6, pinY: 5, width: 2, height: 2);
+    page = page.addShape(b);
+    final connId = page.nextFreeShapeId();
+    final conn =
+        VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
+    page = page.addShape(conn).copyWith(connects: <VsdxConnect>[
+      VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'BeginX',
+          fromPart: 9,
+          toSheetId: a.id,
+          toCell: 'PinX',
+          toPart: 3),
+    ]).rerouteConnectors();
+    doc = doc.replacePage(0, page);
+
+    // First write: b has no connection points yet.
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    final r1 = parser.parse(bytes1);
+    expect(r1.pages.first.findShapeById(b.id)!.connectionPoints, isEmpty);
+
+    // Glue the END to b's top connection point (index 0). This materialises
+    // b's standard point set, and the second write patches a Connection
+    // section onto the (now existing) shape.
+    final edited = r1.replacePage(
+      0,
+      r1.pages.first.setConnectorEndpoint(
+        connId,
+        begin: false,
+        targetShapeId: b.id,
+        connectionPointIndex: 0,
+        x: 6,
+        y: 6,
+      ),
+    );
+    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    final rb = r2.pages.first.findShapeById(b.id)!;
+    expect(rb.connectionPoints.length, 5); // standard set round-tripped
+    final endConnect = r2.pages.first.connects
+        .firstWhere((e) => e.fromSheetId == connId && e.isEnd);
+    expect(endConnect.toSheetId, b.id);
+    expect(endConnect.toPart, 100); // fixed point index 0
+    // b: pin (6,5), 2×2 → top-centre local (1,2) → page (6,6).
+    final conn2 = r2.pages.first.findShapeById(connId)!;
+    expect(conn2.endX, closeTo(6, 1e-6));
+    expect(conn2.endY, closeTo(6, 1e-6));
+  });
 }

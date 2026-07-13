@@ -999,8 +999,71 @@ class VsdxWriter {
     changed |= _patchUserProperties(el, base, edited);
     // Hyperlinks (drawio "Edit Link" → <Section N="Hyperlink">).
     changed |= _patchHyperlinks(el, base, edited);
+    // Fixed connection points (drawio blue points → <Section N="Connection">).
+    changed |= _patchConnectionPoints(el, base, edited);
     return changed;
   }
+
+  /// Patch the shape's `<Section N="Connection">` to match the edited model's
+  /// fixed connection points. Points are only ever added (materialised on glue)
+  /// or left alone in our editor, so this appends a fresh section when the base
+  /// had none, and otherwise rewrites each row's `X`/`Y` in place (preserving
+  /// any unmodelled cells) — never clearing an existing section.
+  bool _patchConnectionPoints(XmlElement el, VsdxShape base, VsdxShape edited) {
+    if (_pointsEqual(base.connectionPoints, edited.connectionPoints)) {
+      return false;
+    }
+    if (edited.connectionPoints.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Connection') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) {
+      _insertBeforeTextOrShapes(
+          el, _buildConnectionSection(edited.connectionPoints));
+      return true;
+    }
+    final rows =
+        section.childElements.where((r) => r.name.local == 'Row').toList();
+    for (var i = 0; i < edited.connectionPoints.length; i++) {
+      final p = edited.connectionPoints[i];
+      if (i < rows.length) {
+        _writeValue(_ensureCell(rows[i], 'X'), _fmt(p.x));
+        _writeValue(_ensureCell(rows[i], 'Y'), _fmt(p.y));
+      } else {
+        section.children.add(_connectionRow(i, p));
+      }
+    }
+    return true;
+  }
+
+  static bool _pointsEqual(List<Offset2D> a, List<Offset2D> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if ((a[i].x - b[i].x).abs() > _epsilon ||
+          (a[i].y - b[i].y).abs() > _epsilon) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  XmlElement _buildConnectionSection(List<Offset2D> points) => XmlElement(
+        XmlName('Section'),
+        <XmlAttribute>[XmlAttribute(XmlName('N'), 'Connection')],
+        <XmlNode>[
+          for (var i = 0; i < points.length; i++) _connectionRow(i, points[i]),
+        ],
+      );
+
+  XmlElement _connectionRow(int ix, Offset2D p) => XmlElement(
+        XmlName('Row'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), ix.toString())],
+        <XmlNode>[_cell('X', _fmt(p.x)), _cell('Y', _fmt(p.y))],
+      );
 
   /// Patch the shape's `<Section N="Property">` (Visio "Shape Data") to match
   /// the edited model: existing rows (matched by their `N` name) keep every
@@ -1475,6 +1538,9 @@ class VsdxWriter {
     }
     if (s.hyperlinks.isNotEmpty) {
       children.add(_buildHyperlinkSection(s.hyperlinks));
+    }
+    if (s.connectionPoints.isNotEmpty) {
+      children.add(_buildConnectionSection(s.connectionPoints));
     }
     if (s.text != null && s.text!.isNotEmpty) {
       children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));

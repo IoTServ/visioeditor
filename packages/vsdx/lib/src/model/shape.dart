@@ -53,6 +53,7 @@ class VsdxShape {
     this.locked = false,
     this.imagePartName,
     this.connects = const <VsdxConnect>[],
+    this.connectionPoints = const <Offset2D>[],
     this.hyperlinks = const <VsdxHyperlink>[],
     this.userProperties = const <VsdxUserProperty>[],
     this.userCells = const <VsdxUserCell>[],
@@ -128,6 +129,13 @@ class VsdxShape {
   /// non-empty the route runs begin → waypoints → end (overriding straight /
   /// elbow). Session-level; the drawn geometry is what round-trips.
   final List<Offset2D> waypoints;
+
+  /// Fixed connection points (drawio's blue connection points), in
+  /// **shape-local inches** (origin bottom-left, Y-up — the same frame as
+  /// geometry). A glued connector end that targets index `k` here is written
+  /// with `ToPart = 100 + k`; [VsdxPage.connectionPointPage] maps a point to
+  /// page coordinates. Round-trips to Visio's `<Section N="Connection">`.
+  final List<Offset2D> connectionPoints;
 
   /// `FlipX` / `FlipY` flags from the shape's XForm.
   final bool flipX;
@@ -228,6 +236,7 @@ class VsdxShape {
     bool? straightRoute,
     bool? curved,
     List<Offset2D>? waypoints,
+    List<Offset2D>? connectionPoints,
     bool? flipX,
     bool? flipY,
     bool? locked,
@@ -265,6 +274,7 @@ class VsdxShape {
       straightRoute: straightRoute ?? this.straightRoute,
       curved: curved ?? this.curved,
       waypoints: waypoints ?? this.waypoints,
+      connectionPoints: connectionPoints ?? this.connectionPoints,
       flipX: flipX ?? this.flipX,
       flipY: flipY ?? this.flipY,
       locked: locked ?? this.locked,

@@ -55,7 +55,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   across re-routes. A selected connector shows green **endpoint handles**:
   drag one onto another shape to reconnect that end (re-glue), or onto empty
   canvas to detach it to a floating point; **Clear Waypoints** (right-click)
-  resets the route.
+  resets the route. While wiring or dragging an endpoint onto a shape its
+  **fixed connection points** show (drawio's blue crosses — edge midpoints and
+  centre); snapping to one pins the end there so it tracks the shape under move
+  / resize / rotate. Points round-trip to Visio's `<Section N="Connection">`
+  (the connect's `ToPart` selects the point).
 - **Edge labels**: double-click a connector to label it; the text is drawn
   centred on the route's midpoint (drawio-style) with a page-coloured backing
   for legibility, and the in-place editor opens right there.
@@ -188,7 +192,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   LibreOffice install.
 
 ### Tested
-- Engine: 49 unit tests (parse; model edit / immutability / structural sharing;
+- Engine: 50 unit tests (parse; model edit / immutability / structural sharing;
   connector re-routing incl. elbow; **connector arc-length midpoint**;
   **curved-connector spline sampling + geometry round-trip**; writer
   round-trip incl. create / delete / fill / rotate / flip / connects / layer
@@ -200,8 +204,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   font·underline·vertical-align·shadow / **lock·unlock (protection cells,
   round-trip + new-shape emit)** / **image insert (media part + page rels +
   ForeignData, on an existing page and a blank document)** / **connector
-  endpoint reconnect + detach**; blank-document emit; geometry-scaling resize;
-  SVG).
+  endpoint reconnect + detach** / **fixed connection point (materialise +
+  patch + routing)**; blank-document emit; geometry-scaling resize; SVG).
 - App: `dart analyze` clean; unit tests for the alignment-snap math (5) and the
   controller (group/ungroup, group undo, line style, connector routing style,
   **connector three-way style incl. curved**, connector waypoints, text·shadow,
@@ -213,7 +217,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   **lock (locked shape resists move·rotate·delete + undo, mixed selection
   moves its free members)**, **image insert (embeds bytes + undo, fresh part
   name after undo, export/reopen round-trip)**, **connector endpoint
-  reconnect / detach + undo, clear-waypoints + undo**), the
+  reconnect / detach + undo, clear-waypoints + undo, fixed connection point
+  (materialise + ToPart)**), the
   **Outline camera** (`visibleContentRect` mapping, change-only notify) and the
   **ruler tick math** (nice-step selection, origin-aligned ticks); widget tests
   (empty-state smoke test, in-place text-edit round-trip, right-click context

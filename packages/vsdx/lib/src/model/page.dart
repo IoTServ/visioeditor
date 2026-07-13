@@ -191,27 +191,43 @@ class VsdxPage {
       if (connector == null) continue;
       VsdxShape? beginShape;
       VsdxShape? endShape;
+      VsdxConnect? beginConnect;
+      VsdxConnect? endConnect;
       for (final e in index.forConnector(cid)) {
         final target = next.findShapeById(e.toSheetId);
         if (target == null) continue;
         if (e.isBegin) {
           beginShape = target;
+          beginConnect = e;
         } else if (e.isEnd) {
           endShape = target;
+          endConnect = e;
         }
       }
-      // Reference centres (fall back to the connector's own endpoints).
-      final beginCx = beginShape?.pinX ?? connector.beginX ?? connector.pinX;
-      final beginCy = beginShape?.pinY ?? connector.beginY ?? connector.pinY;
-      final endCx = endShape?.pinX ?? connector.endX ?? connector.pinX;
-      final endCy = endShape?.pinY ?? connector.endY ?? connector.pinY;
-      // Attach on each shape's edge, aimed at the opposite end's centre.
-      final (ax, ay) = beginShape != null
-          ? _edgePoint(beginShape, endCx, endCy)
-          : (beginCx, beginCy);
-      final (bx, by) = endShape != null
-          ? _edgePoint(endShape, beginCx, beginCy)
-          : (endCx, endCy);
+      // A fixed connection point (drawio blue point) pins the endpoint to a
+      // specific spot on the shape; otherwise we attach on the edge aimed at
+      // the opposite end.
+      final beginFixed = _fixedPoint(beginShape, beginConnect);
+      final endFixed = _fixedPoint(endShape, endConnect);
+      // Reference points used to aim edge attachments at the opposite end.
+      final refBx =
+          beginFixed?.x ?? beginShape?.pinX ?? connector.beginX ?? connector.pinX;
+      final refBy =
+          beginFixed?.y ?? beginShape?.pinY ?? connector.beginY ?? connector.pinY;
+      final refEx =
+          endFixed?.x ?? endShape?.pinX ?? connector.endX ?? connector.pinX;
+      final refEy =
+          endFixed?.y ?? endShape?.pinY ?? connector.endY ?? connector.pinY;
+      final (ax, ay) = beginFixed != null
+          ? (beginFixed.x, beginFixed.y)
+          : beginShape != null
+              ? _edgePoint(beginShape, refEx, refEy)
+              : (refBx, refBy);
+      final (bx, by) = endFixed != null
+          ? (endFixed.x, endFixed.y)
+          : endShape != null
+              ? _edgePoint(endShape, refBx, refBy)
+              : (refEx, refEy);
       final control = connector.waypoints.isNotEmpty
           ? <Offset2D>[
               Offset2D(ax, ay),
@@ -290,23 +306,44 @@ class VsdxPage {
   ///
   /// When [targetShapeId] is non-null the affected end is **glued** to that
   /// shape — its `<Connect>` row is added / replaced and [rerouteConnectors]
-  /// then attaches the endpoint to the shape's edge. When it is `null` the end
-  /// is **detached** (its `<Connect>` row removed) and floats at page point
-  /// ([x],[y]). Returns `this` unchanged if [id] is not a 1-D shape.
+  /// then attaches the endpoint. With [connectionPointIndex] the end is pinned
+  /// to that **fixed connection point** (materialising the standard point set
+  /// on the target when it has none), otherwise it glues to the whole shape
+  /// (edge attach). When [targetShapeId] is `null` the end is **detached** (its
+  /// `<Connect>` row removed) and floats at page point ([x],[y]). Returns
+  /// `this` unchanged if [id] is not a 1-D shape.
   VsdxPage setConnectorEndpoint(
     int id, {
     required bool begin,
     int? targetShapeId,
+    int? connectionPointIndex,
     required double x,
     required double y,
   }) {
     final s = findShapeById(id);
     if (s == null || !s.is1D) return this;
 
+    // Materialise the standard connection points on the target when pinning to
+    // a fixed point and the shape has none yet (so the point round-trips).
+    var base = this;
+    if (targetShapeId != null && connectionPointIndex != null) {
+      final target = base.findShapeById(targetShapeId);
+      if (target != null && target.connectionPoints.isEmpty) {
+        base = base.updateShapeById(
+          targetShapeId,
+          (t) => t.copyWith(
+            connectionPoints:
+                defaultConnectionPoints(t.width, t.height),
+          ),
+        );
+      }
+    }
+
     // Rebuild the connects list: drop this connector's row for the affected
-    // end, then append a fresh whole-shape glue row when reconnecting.
+    // end, then append a fresh glue row (whole-shape or a fixed point).
+    final fixedIdx = targetShapeId != null ? connectionPointIndex : null;
     final nextConnects = <VsdxConnect>[
-      for (final c in connects)
+      for (final c in base.connects)
         if (!(c.fromSheetId == id && (begin ? c.isBegin : c.isEnd))) c,
       if (targetShapeId != null)
         VsdxConnect(
@@ -314,12 +351,12 @@ class VsdxPage {
           fromCell: begin ? 'BeginX' : 'EndX',
           fromPart: begin ? 9 : 12,
           toSheetId: targetShapeId,
-          toCell: 'PinX',
-          toPart: 3,
+          toCell: fixedIdx != null ? 'Connections.X${fixedIdx + 1}' : 'PinX',
+          toPart: fixedIdx != null ? 100 + fixedIdx : 3,
         ),
     ];
 
-    // Seed the moved endpoint; reroute refines glued ends to the shape edge.
+    // Seed the moved endpoint; reroute refines glued ends to the attach point.
     final ax = begin ? x : (s.beginX ?? s.pinX);
     final ay = begin ? y : (s.beginY ?? s.pinY);
     final bx = begin ? (s.endX ?? s.pinX) : x;
@@ -330,7 +367,8 @@ class VsdxPage {
             ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
             : _elbowRoute(ax, ay, bx, by);
     final geometry = s.curved ? curveThrough(control) : control;
-    final next = updateShapeById(id, (sh) => sh.reshapeAsPolyline(geometry))
+    final next = base
+        .updateShapeById(id, (sh) => sh.reshapeAsPolyline(geometry))
         .copyWith(connects: nextConnects);
     return next.rerouteConnectors();
   }
@@ -339,6 +377,67 @@ class VsdxPage {
   /// straight / elbow route (drawio's "Clear Waypoints").
   VsdxPage clearConnectorWaypoints(int id) =>
       setConnectorWaypoints(id, const <Offset2D>[]);
+
+  /// The 0-based fixed connection-point index a [connect] references, or `null`
+  /// for a whole-shape (`ToPart 3`) / edge glue. Visio encodes point `k` as
+  /// `ToPart = 100 + k`.
+  static int? fixedConnectionIndex(VsdxConnect? connect) {
+    final p = connect?.toPart;
+    if (p == null || p < 100) return null;
+    return p - 100;
+  }
+
+  /// Map a shape-local point [local] (inches, origin bottom-left / Y-up) on [s]
+  /// to page inches, honouring its pin, size, rotation and flip.
+  static Offset2D localToPage(VsdxShape s, Offset2D local) {
+    var dx = local.x - s.width / 2;
+    var dy = local.y - s.height / 2;
+    if (s.flipX) dx = -dx;
+    if (s.flipY) dy = -dy;
+    if (s.angleRad != 0) {
+      final cosA = math.cos(s.angleRad), sinA = math.sin(s.angleRad);
+      final rx = dx * cosA - dy * sinA;
+      final ry = dx * sinA + dy * cosA;
+      dx = rx;
+      dy = ry;
+    }
+    return Offset2D(s.pinX + dx, s.pinY + dy);
+  }
+
+  /// Page-inch position of connection point [index] on [s]. [index] is into
+  /// [VsdxShape.connectionPoints] (shape-local inches, origin bottom-left).
+  static Offset2D connectionPointPage(VsdxShape s, int index) =>
+      localToPage(s, s.connectionPoints[index]);
+
+  /// Effective connection points of [s] for display / snapping: its explicit
+  /// points, or the standard default set (drawio) when it has none.
+  static List<Offset2D> effectiveConnectionPoints(VsdxShape s) =>
+      s.connectionPoints.isNotEmpty
+          ? s.connectionPoints
+          : defaultConnectionPoints(s.width, s.height);
+
+  /// Page position of [connect]'s fixed connection point on [shape], or `null`
+  /// when the connect isn't pinned to a valid point.
+  Offset2D? _fixedPoint(VsdxShape? shape, VsdxConnect? connect) {
+    if (shape == null) return null;
+    final idx = fixedConnectionIndex(connect);
+    if (idx == null || idx < 0 || idx >= shape.connectionPoints.length) {
+      return null;
+    }
+    return connectionPointPage(shape, idx);
+  }
+
+  /// Standard default connection points (drawio-style) for a [width]×[height]
+  /// box, shape-local inches (origin bottom-left): top-centre, right-middle,
+  /// bottom-centre, left-middle, centre — indices 0..4.
+  static List<Offset2D> defaultConnectionPoints(double width, double height) =>
+      <Offset2D>[
+        Offset2D(width / 2, height), // 0 top
+        Offset2D(width, height / 2), // 1 right
+        Offset2D(width / 2, 0), // 2 bottom
+        Offset2D(0, height / 2), // 3 left
+        Offset2D(width / 2, height / 2), // 4 centre
+      ];
 
   /// Whether connector [id] currently prefers a straight route.
   bool isConnectorStraight(int id) => findShapeById(id)?.straightRoute ?? false;

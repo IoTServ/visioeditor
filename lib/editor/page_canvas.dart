@@ -116,9 +116,17 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _connectSourceId;
   int? _connectTargetId;
 
+  // Fixed connection point (drawio blue point) the pointer is snapping to on
+  // the current target while wiring / dragging an endpoint (index into the
+  // target's effective connection points), or null for a whole-shape glue.
+  int? _snapConnIndex;
+
   /// Screen-px gap from a shape's box to its hover-connect arrows.
   static const double _connectArrowGapPx = 22;
   static const double _connectArrowHitPx = 15;
+
+  /// Screen-px radius within which an endpoint snaps to a connection point.
+  static const double _connSnapPx = 13;
 
   // Creation preview, in content-px space.
   Offset? _previewStart;
@@ -945,18 +953,28 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.panCanvas:
         setState(() => _offset += pos - _lastPointer);
       case _DragMode.createShape:
+        final connTarget =
+            _c.tool == EditorTool.connector ? _topLevelAt(pos) : null;
+        final connTs =
+            connTarget == null ? null : _page?.findShapeById(connTarget);
         setState(() {
           _previewEnd = _viewportToContent(pos);
-          // Highlight the shape the connector would glue to on drop.
-          _connectTargetId =
-              _c.tool == EditorTool.connector ? _topLevelAt(pos) : null;
+          // Highlight the shape the connector would glue to on drop, snapping
+          // its end to a fixed connection point when the pointer is near one.
+          _connectTargetId = connTarget;
+          _snapConnIndex =
+              (connTs != null && !connTs.is1D) ? _connSnapIndex(connTs, pos) : null;
         });
       case _DragMode.connect:
         final src = _connectSourceId;
         final t = _topLevelAt(pos);
+        final target = (t == src) ? null : t;
+        final ts = target == null ? null : _page?.findShapeById(target);
         setState(() {
           _previewEnd = _viewportToContent(pos);
-          _connectTargetId = (t == src) ? null : t;
+          _connectTargetId = target;
+          _snapConnIndex =
+              (ts != null && !ts.is1D) ? _connSnapIndex(ts, pos) : null;
         });
       case _DragMode.resize:
         _applyResize(pos);
@@ -979,11 +997,17 @@ class _PageCanvasState extends State<PageCanvas> {
         if (id != null) {
           final p = _pageInchesAt(pos);
           final target = _endpointTargetAt(pos, id);
-          setState(() => _connectTargetId = target);
+          final ts = target == null ? null : _page?.findShapeById(target);
+          final snap = ts == null ? null : _connSnapIndex(ts, pos);
+          setState(() {
+            _connectTargetId = target;
+            _snapConnIndex = snap;
+          });
           _c.reconnectEndpoint(
             id,
             begin: _endpointIsBegin,
             targetShapeId: target,
+            connectionPointIndex: snap,
             x: _c.snap(p.dx),
             y: _c.snap(p.dy),
             transient: true,
@@ -1201,6 +1225,23 @@ class _PageCanvasState extends State<PageCanvas> {
     return t;
   }
 
+  /// Index of [s]'s effective connection point nearest [viewportPos] within the
+  /// snap radius (drawio blue point), or null for a whole-shape glue.
+  int? _connSnapIndex(VsdxShape s, Offset viewportPos) {
+    final pts = VsdxPage.effectiveConnectionPoints(s);
+    var best = -1;
+    var bestD = _connSnapPx * _connSnapPx;
+    for (var i = 0; i < pts.length; i++) {
+      final page = VsdxPage.localToPage(s, pts[i]);
+      final d = (_pageToScreen(page.x, page.y) - viewportPos).distanceSquared;
+      if (d <= bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best < 0 ? null : best;
+  }
+
   /// Start dragging a selected connector's begin / end handle (drawio endpoint
   /// editing). Returns whether the drag was started.
   bool _tryStartEndpointDrag(Offset localPos) {
@@ -1271,7 +1312,10 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.moveEndpoint:
         _c.commitTransaction();
         _endpointConnId = null;
-        setState(() => _connectTargetId = null);
+        setState(() {
+          _connectTargetId = null;
+          _snapConnIndex = null;
+        });
       case _DragMode.moveShapes:
       case _DragMode.resize:
       case _DragMode.rotate:
@@ -1287,13 +1331,15 @@ class _PageCanvasState extends State<PageCanvas> {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
           if (_c.tool == EditorTool.connector) {
+            final endTarget = _connectTargetId ?? _hitTest(_offset + end * _scale);
             _c.createConnector(
               a.dx,
               a.dy,
               b.dx,
               b.dy,
               beginTarget: _hitTest(_offset + start * _scale),
-              endTarget: _hitTest(_offset + end * _scale),
+              endTarget: endTarget,
+              endConnectionPointIndex: endTarget != null ? _snapConnIndex : null,
             );
           } else {
             final wasText = _c.tool == EditorTool.text;
@@ -1305,6 +1351,7 @@ class _PageCanvasState extends State<PageCanvas> {
           _previewStart = null;
           _previewEnd = null;
           _connectTargetId = null;
+          _snapConnIndex = null;
         });
       case _DragMode.connect:
         final start = _previewStart;
@@ -1315,13 +1362,16 @@ class _PageCanvasState extends State<PageCanvas> {
           final b = _contentToPageInches(end);
           final target = _connectTargetId == src ? null : _connectTargetId;
           _c.createConnector(a.dx, a.dy, b.dx, b.dy,
-              beginTarget: src, endTarget: target);
+              beginTarget: src,
+              endTarget: target,
+              endConnectionPointIndex: target != null ? _snapConnIndex : null);
         }
         setState(() {
           _previewStart = null;
           _previewEnd = null;
           _connectSourceId = null;
           _connectTargetId = null;
+          _snapConnIndex = null;
         });
       case _DragMode.marquee:
         _commitMarquee();
@@ -1367,6 +1417,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _waypointConnId = null;
       _waypointIndex = null;
       _endpointConnId = null;
+      _snapConnIndex = null;
       _guides = const <SnapGuide>[];
       _moveStartBounds = null;
     });
@@ -1565,6 +1616,28 @@ class _PageCanvasState extends State<PageCanvas> {
                     bounds[targetId] != null)
                 ? _boundsInchesToContent(bounds[targetId]!)
                 : null;
+            // Fixed connection points (drawio blue points) on the shape a
+            // connector is being wired / dragged onto, plus the snapped one.
+            var connectionPointDots = const <Offset>[];
+            Offset? snappedConnectionPoint;
+            if (targetId != null &&
+                (_mode == _DragMode.connect ||
+                    _mode == _DragMode.moveEndpoint ||
+                    (_mode == _DragMode.createShape &&
+                        _c.tool == EditorTool.connector))) {
+              final t = page.findShapeById(targetId);
+              if (t != null && !t.is1D) {
+                final pts = VsdxPage.effectiveConnectionPoints(t);
+                connectionPointDots = <Offset>[
+                  for (final p in pts.map((p) => VsdxPage.localToPage(t, p)))
+                    _pageToContent(p.x, p.y),
+                ];
+                if (_snapConnIndex != null && _snapConnIndex! < pts.length) {
+                  final pg = VsdxPage.localToPage(t, pts[_snapConnIndex!]);
+                  snappedConnectionPoint = _pageToContent(pg.x, pg.y);
+                }
+              }
+            }
             final inlineEditor = _buildInlineEditor(context);
             final guideSegments = <(Offset, Offset)>[
               for (final g in _guides)
@@ -1689,6 +1762,9 @@ class _PageCanvasState extends State<PageCanvas> {
                                       hoverArrowGap:
                                           _connectArrowGapPx / _scale,
                                       connectTargetRect: connectTargetRect,
+                                      connectionPoints: connectionPointDots,
+                                      snappedConnectionPoint:
+                                          snappedConnectionPoint,
                                     ),
                                   ),
                                 ),
@@ -1743,6 +1819,8 @@ class _SelectionPainter extends CustomPainter {
     this.hoverBox,
     this.hoverArrowGap = 0,
     this.connectTargetRect,
+    this.connectionPoints = const <Offset>[],
+    this.snappedConnectionPoint,
   });
 
   final List<Rect> rects;
@@ -1761,6 +1839,12 @@ class _SelectionPainter extends CustomPainter {
   final Rect? hoverBox;
   final double hoverArrowGap;
   final Rect? connectTargetRect;
+
+  /// Fixed connection points (content-px) of the shape being wired onto, and
+  /// the one the endpoint is snapping to (drawio blue points).
+  final List<Offset> connectionPoints;
+  final Offset? snappedConnectionPoint;
+
   final Rect? marquee;
 
   /// Alignment guide lines (content-px), drawn while dragging a selection.
@@ -1858,8 +1942,40 @@ class _SelectionPainter extends CustomPainter {
       }
     }
     _paintConnectTarget(canvas);
+    _paintConnectionPoints(canvas);
     _paintHoverArrows(canvas);
     _paintPreview(canvas, outline);
+  }
+
+  /// Fixed connection points on the shape a connector is being wired onto —
+  /// drawio-style blue crosses, with a filled halo on the snapped one.
+  void _paintConnectionPoints(Canvas canvas) {
+    if (connectionPoints.isEmpty) return;
+    const blue = Color(0xFF1565C0);
+    final arm = handleSize * 0.6;
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth * 1.2
+      ..color = blue;
+    for (final c in connectionPoints) {
+      canvas
+        ..drawLine(Offset(c.dx - arm, c.dy - arm), Offset(c.dx + arm, c.dy + arm),
+            stroke)
+        ..drawLine(Offset(c.dx - arm, c.dy + arm), Offset(c.dx + arm, c.dy - arm),
+            stroke);
+    }
+    final snapped = snappedConnectionPoint;
+    if (snapped != null) {
+      canvas
+        ..drawCircle(snapped, handleSize * 0.9, Paint()..color = blue)
+        ..drawCircle(
+            snapped,
+            handleSize * 0.9,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = strokeWidth
+              ..color = Colors.white);
+    }
   }
 
   /// Highlight the shape a connector would glue to on drop.
@@ -1956,10 +2072,12 @@ class _SelectionPainter extends CustomPainter {
       old.hoverBox != hoverBox ||
       old.hoverArrowGap != hoverArrowGap ||
       old.connectTargetRect != connectTargetRect ||
+      old.snappedConnectionPoint != snappedConnectionPoint ||
       !listEquals(old.guides, guides) ||
       !listEquals(old.waypointHandles, waypointHandles) ||
       !listEquals(old.midpointHandles, midpointHandles) ||
-      !listEquals(old.endpointHandles, endpointHandles);
+      !listEquals(old.endpointHandles, endpointHandles) ||
+      !listEquals(old.connectionPoints, connectionPoints);
 }
 
 /// Light grid drawn behind the page content (content-px space).

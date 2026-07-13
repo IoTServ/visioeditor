@@ -315,6 +315,16 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 画布新增 `_DragMode.moveEndpoint`（优先于折点/命中测试）与 `_SelectionPainter.endpointHandles`，右键菜单
 "Clear Waypoints"。**往返零改动**——完全复用现有 `<Connects>` + `BeginX..EndY` + 几何补丁。
 
+已补：**固定连接点（drawio Fixed connection points）** —— 连接器端点可钉到目标形状的**固定连接点**（drawio 蓝色叉），
+而非仅"整形状边缘吸附"。模型 `VsdxShape.connectionPoints`（形状局部英寸，origin 左下），解析 `<Section N="Connection">`
+的 X/Y 行（含 master 继承）；`VsdxPage.localToPage`/`connectionPointPage`/`effectiveConnectionPoints`/
+`defaultConnectionPoints`（无显式点时的标准 5 点：上/右/下/左/中），`fixedConnectionIndex`（`ToPart≥100 → 点索引`）；
+`rerouteConnectors` 对固定点连接（`ToPart=100+k`）把端点定位到该点的页面坐标（含旋转/翻转），否则边缘吸附；
+`setConnectorEndpoint` 加 `connectionPointIndex`（钉固定点时若目标无点则**物化标准 5 点**、写 `ToCell=Connections.X{k+1}`/
+`ToPart=100+k`）。**Writer** 新建形状发射 Connection 节、`_patchConnectionPoints` 给现有形状补丁（物化时新增节、
+保留未建模 Cell）。控制器 `reconnectEndpoint`/`createConnector` 加固定点参数；画布拖端点/连线时显示目标连接点（蓝叉）、
+就近吸附（`_connSnapIndex`，半径 13px）并高亮，落点即钉固定点。完整往返。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -628,6 +638,17 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   "Clear Waypoints"（`canClearWaypoints` 时）。测试：引擎 1 例（端点重连 b→c 保留 begin、分离 end 移除行且端点落到
   落点，共 49/49）、控制器 2 例（重连/分离 + 撤销、清除折点 + 撤销，App 共 47）。`dart analyze` 干净（app + 引擎）、
   `flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-13 — **对齐 drawio（批次二十四）——固定连接点（Fixed connection points）**：连接器端点可钉到目标形状的
+  固定连接点（drawio 蓝色叉），而非仅整形状边缘吸附。模型 `VsdxShape.connectionPoints`（局部英寸，origin 左下 + copyWith）；
+  **解析器** `_readConnectionPoints` 读 `<Section N="Connection">` X/Y 行（含 master 继承）；`VsdxPage` 加 `localToPage`
+  （局部→页面，含旋转/翻转）、`connectionPointPage`、`effectiveConnectionPoints`、`defaultConnectionPoints`（标准 5 点：
+  上/右/下/左/中）、`fixedConnectionIndex`（`ToPart≥100→索引`）；`rerouteConnectors` 对固定点连接把端点定位到点的页面坐标、
+  否则边缘吸附；`setConnectorEndpoint` 加 `connectionPointIndex`（物化标准点集、写 `ToCell/ToPart`）。**Writer**
+  `_buildShapeElement` 发射 Connection 节 + `_patchConnectionPoints`（现有形状物化时补节、保留未建模 Cell）+ `_pointsEqual`。
+  **控制器** `reconnectEndpoint`/`createConnector` 加固定点参数；**画布** 拖端点/连线时显示目标连接点（蓝叉）、就近吸附
+  （`_connSnapIndex` 半径 13px）+ 高亮，落点即钉固定点（`_SelectionPainter.connectionPoints/snappedConnectionPoint`）。
+  测试：引擎 1 例（固定点物化 + 补节 + 路由往返，共 50/50）、控制器 1 例（钉端点 + 物化 + toPart，App 共 48）。
+  `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
 - 2026-07-13 — **修复：悬停连线三角箭头过早消失**：`_onHover` 里"停在箭头上保持 hover"原先只用箭头精确命中圈
   （中心距边缘 22px、半径 15px），形状边缘到命中圈之间有约 7px **死区**——光标一离开形状本体、尚未进入箭头命中圈，
   `_hoverShapeId` 即被清空，箭头（drawio HoverIcons）随之消失，无法移动到箭头上拖出连线。改为新增 `_withinConnectAffordance`

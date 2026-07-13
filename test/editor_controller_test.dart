@@ -698,6 +698,35 @@ void main() {
     expect(c.currentPage!.findShapeById(connId)!.waypoints, isNotEmpty);
   });
 
+  test('reconnectEndpoint pins an end to a fixed connection point', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(a.pinX, a.pinY, b.pinX, b.pinY,
+        beginTarget: a.id, endTarget: b.id);
+    final connId = c.currentPage!.shapes.last.id;
+
+    // Pin the end to b's top connection point (index 0).
+    c.reconnectEndpoint(connId,
+        begin: false,
+        targetShapeId: b.id,
+        connectionPointIndex: 0,
+        x: b.pinX,
+        y: b.pinY);
+
+    final page = c.currentPage!;
+    final bAfter = page.findShapeById(b.id)!;
+    expect(bAfter.connectionPoints.length, 5); // standard set materialised
+    final endConnect =
+        page.connects.firstWhere((e) => e.fromSheetId == connId && e.isEnd);
+    expect(endConnect.toPart, 100); // fixed point index 0
+    // The end sits exactly on b's top-centre connection point.
+    final conn = page.findShapeById(connId)!;
+    final top = VsdxPage.connectionPointPage(bAfter, 0);
+    expect(conn.endX, closeTo(top.x, 1e-6));
+    expect(conn.endY, closeTo(top.y, 1e-6));
+  });
+
   test('inserted image survives an export / reopen round-trip', () {
     final c = EditorController()..newDocument();
     final bytes = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8, 9]);
