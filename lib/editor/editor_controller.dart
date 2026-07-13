@@ -1332,6 +1332,61 @@ class EditorController extends ChangeNotifier {
     setConnectorWaypoints(id, wps);
   }
 
+  /// Reconnect (or detach) one end of connector [connectorId] — drawio's
+  /// endpoint editing. When [targetShapeId] is non-null the end is glued to
+  /// that shape; otherwise it floats at page point ([x],[y]). Pass
+  /// `transient: true` while dragging and commit once on release.
+  void reconnectEndpoint(
+    int connectorId, {
+    required bool begin,
+    int? targetShapeId,
+    required double x,
+    required double y,
+    bool transient = false,
+  }) {
+    updateCurrentPage(
+      (page) => page.setConnectorEndpoint(
+        connectorId,
+        begin: begin,
+        targetShapeId: targetShapeId,
+        x: x,
+        y: y,
+      ),
+      transient: transient,
+    );
+  }
+
+  /// Whether any selected connector has interior bend points to clear.
+  bool get canClearWaypoints {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && s.is1D && s.waypoints.isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  /// Reset the selected connectors to their plain straight / elbow route
+  /// (drawio "Clear Waypoints"). One undo step; no-op when there's nothing to
+  /// clear.
+  void clearSelectedConnectorWaypoints() {
+    final page = currentPage;
+    if (page == null) return;
+    final targets = <int>[
+      for (final id in _selection)
+        if (page.findShapeById(id)?.waypoints.isNotEmpty ?? false) id,
+    ];
+    if (targets.isEmpty) return;
+    updateCurrentPage((p) {
+      var next = p;
+      for (final id in targets) {
+        next = next.clearConnectorWaypoints(id);
+      }
+      return next;
+    });
+  }
+
   // --- Copy / paste style (drawio "Copy Style" / "Paste Style") --------------
 
   ({VsdxFill fill, VsdxLine line, VsdxCharStyle? char, VsdxParaStyle? para})?

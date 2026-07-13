@@ -58,6 +58,7 @@ enum _DragMode {
   rotate,
   marquee,
   moveWaypoint,
+  moveEndpoint,
   connect,
 }
 
@@ -101,6 +102,11 @@ class _PageCanvasState extends State<PageCanvas> {
   // Connector waypoint drag (drawio bend points).
   int? _waypointConnId;
   int? _waypointIndex;
+
+  // Connector endpoint drag (drawio endpoint editing): the connector whose
+  // begin / end handle is being dragged to reconnect or detach.
+  int? _endpointConnId;
+  bool _endpointIsBegin = false;
 
   // Hover-to-connect (drawio HoverIcons): the top-level shape currently under
   // the cursor in idle select mode (shows directional connect arrows), the
@@ -573,6 +579,10 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(
           value: 'lock',
           child: Text(_c.selectionLocked ? 'Unlock' : 'Lock')));
+      if (_c.canClearWaypoints) {
+        items.add(const PopupMenuItem(
+            value: 'clearWaypoints', child: Text('Clear Waypoints')));
+      }
       items.add(const PopupMenuDivider());
       items.add(
           const PopupMenuItem(value: 'front', child: Text('Bring to Front')));
@@ -639,6 +649,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.deleteSelection();
       case 'lock':
         _c.toggleLock();
+      case 'clearWaypoints':
+        _c.clearSelectedConnectorWaypoints();
       case 'front':
         _c.bringSelectionToFront();
       case 'back':
@@ -878,7 +890,9 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
-    // Connector waypoint handles (drawio bend points) take priority.
+    // Connector endpoint handles (reconnect / detach) then bend points take
+    // priority over hit-testing (they sit on top of the connector).
+    if (_tryStartEndpointDrag(d.localPosition)) return;
     if (_tryStartWaypointDrag(d.localPosition)) return;
 
     final hit = _hitTest(d.localPosition);
@@ -937,6 +951,21 @@ class _PageCanvasState extends State<PageCanvas> {
             id,
             idx,
             Offset2D(_c.snap(p.dx), _c.snap(p.dy)),
+            transient: true,
+          );
+        }
+      case _DragMode.moveEndpoint:
+        final id = _endpointConnId;
+        if (id != null) {
+          final p = _pageInchesAt(pos);
+          final target = _endpointTargetAt(pos, id);
+          setState(() => _connectTargetId = target);
+          _c.reconnectEndpoint(
+            id,
+            begin: _endpointIsBegin,
+            targetShapeId: target,
+            x: _c.snap(p.dx),
+            y: _c.snap(p.dy),
             transient: true,
           );
         }
@@ -1142,6 +1171,37 @@ class _PageCanvasState extends State<PageCanvas> {
   /// If [localPos] is over a selected connector's bend-point or segment-midpoint
   /// handle, start a waypoint drag (promoting an auto route to explicit
   /// waypoints, inserting one at a midpoint). Returns true when a drag started.
+  /// The top-level non-connector shape the endpoint would glue to at [pos],
+  /// excluding the connector [connId] being edited.
+  int? _endpointTargetAt(Offset pos, int connId) {
+    final t = _topLevelAt(pos);
+    if (t == null || t == connId) return null;
+    final s = _page?.findShapeById(t);
+    if (s == null || s.is1D) return null;
+    return t;
+  }
+
+  /// Start dragging a selected connector's begin / end handle (drawio endpoint
+  /// editing). Returns whether the drag was started.
+  bool _tryStartEndpointDrag(Offset localPos) {
+    final conn = _selectedConnector();
+    if (conn == null || conn.locked) return false;
+    final route = VsdxPage.connectorRoute(conn);
+    if (route.length < 2) return false;
+    final ends = <bool>[true, false]; // begin, end
+    for (final begin in ends) {
+      final p = begin ? route.first : route.last;
+      if ((_pageToScreen(p.x, p.y) - localPos).distanceSquared <= 144) {
+        _c.beginTransaction();
+        _endpointConnId = conn.id;
+        _endpointIsBegin = begin;
+        _mode = _DragMode.moveEndpoint;
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool _tryStartWaypointDrag(Offset localPos) {
     final conn = _selectedConnector();
     if (conn == null) return false;
@@ -1188,6 +1248,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.commitTransaction();
         _waypointConnId = null;
         _waypointIndex = null;
+      case _DragMode.moveEndpoint:
+        _c.commitTransaction();
+        _endpointConnId = null;
+        setState(() => _connectTargetId = null);
       case _DragMode.moveShapes:
       case _DragMode.resize:
       case _DragMode.rotate:
@@ -1260,6 +1324,7 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.resize:
       case _DragMode.rotate:
       case _DragMode.moveWaypoint:
+      case _DragMode.moveEndpoint:
         _c.cancelTransaction();
       case _DragMode.none:
       case _DragMode.panCanvas:
@@ -1281,6 +1346,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _resizeStartShape = null;
       _waypointConnId = null;
       _waypointIndex = null;
+      _endpointConnId = null;
       _guides = const <SnapGuide>[];
       _moveStartBounds = null;
     });
@@ -1489,6 +1555,7 @@ class _PageCanvasState extends State<PageCanvas> {
             final connector = _selectedConnector();
             var waypointHandles = const <Offset>[];
             var midpointHandles = const <Offset>[];
+            var endpointHandles = const <Offset>[];
             if (connector != null) {
               final route = VsdxPage.connectorRoute(connector);
               waypointHandles = <Offset>[
@@ -1502,6 +1569,14 @@ class _PageCanvasState extends State<PageCanvas> {
                     (route[r].y + route[r + 1].y) / 2,
                   ),
               ];
+              // Begin / end handles (drawio endpoint editing): drag to
+              // reconnect to another shape or detach to a floating point.
+              if (!connector.locked && route.length >= 2) {
+                endpointHandles = <Offset>[
+                  _pageToContent(route.first.x, route.first.y),
+                  _pageToContent(route.last.x, route.last.y),
+                ];
+              }
             }
             return Focus(
               autofocus: true,
@@ -1589,6 +1664,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       guides: guideSegments,
                                       waypointHandles: waypointHandles,
                                       midpointHandles: midpointHandles,
+                                      endpointHandles: endpointHandles,
                                       hoverBox: hoverBox,
                                       hoverArrowGap:
                                           _connectArrowGapPx / _scale,
@@ -1643,6 +1719,7 @@ class _SelectionPainter extends CustomPainter {
     this.guides = const <(Offset, Offset)>[],
     this.waypointHandles = const <Offset>[],
     this.midpointHandles = const <Offset>[],
+    this.endpointHandles = const <Offset>[],
     this.hoverBox,
     this.hoverArrowGap = 0,
     this.connectTargetRect,
@@ -1672,6 +1749,9 @@ class _SelectionPainter extends CustomPainter {
   /// Connector bend points (filled) and segment midpoints (hollow), content-px.
   final List<Offset> waypointHandles;
   final List<Offset> midpointHandles;
+
+  /// Connector begin / end handles (drawio endpoint editing), content-px.
+  final List<Offset> endpointHandles;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1741,6 +1821,20 @@ class _SelectionPainter extends CustomPainter {
       final fill = Paint()..color = color;
       for (final c in waypointHandles) {
         canvas.drawCircle(c, handleSize * 0.7, fill);
+      }
+    }
+    // Connector begin / end handles (drawio green endpoints) — drag to
+    // reconnect to another shape or detach to a floating point.
+    if (endpointHandles.isNotEmpty) {
+      final fill = Paint()..color = const Color(0xFF12B886);
+      final ring = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..color = Colors.white;
+      for (final c in endpointHandles) {
+        canvas
+          ..drawCircle(c, handleSize * 0.85, fill)
+          ..drawCircle(c, handleSize * 0.85, ring);
       }
     }
     _paintConnectTarget(canvas);
@@ -1844,7 +1938,8 @@ class _SelectionPainter extends CustomPainter {
       old.connectTargetRect != connectTargetRect ||
       !listEquals(old.guides, guides) ||
       !listEquals(old.waypointHandles, waypointHandles) ||
-      !listEquals(old.midpointHandles, midpointHandles);
+      !listEquals(old.midpointHandles, midpointHandles) ||
+      !listEquals(old.endpointHandles, endpointHandles);
 }
 
 /// Light grid drawn behind the page content (content-px space).

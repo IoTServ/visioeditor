@@ -286,6 +286,60 @@ class VsdxPage {
     return next.rerouteConnectors();
   }
 
+  /// Move / reconnect one end of connector [id] (drawio endpoint editing).
+  ///
+  /// When [targetShapeId] is non-null the affected end is **glued** to that
+  /// shape — its `<Connect>` row is added / replaced and [rerouteConnectors]
+  /// then attaches the endpoint to the shape's edge. When it is `null` the end
+  /// is **detached** (its `<Connect>` row removed) and floats at page point
+  /// ([x],[y]). Returns `this` unchanged if [id] is not a 1-D shape.
+  VsdxPage setConnectorEndpoint(
+    int id, {
+    required bool begin,
+    int? targetShapeId,
+    required double x,
+    required double y,
+  }) {
+    final s = findShapeById(id);
+    if (s == null || !s.is1D) return this;
+
+    // Rebuild the connects list: drop this connector's row for the affected
+    // end, then append a fresh whole-shape glue row when reconnecting.
+    final nextConnects = <VsdxConnect>[
+      for (final c in connects)
+        if (!(c.fromSheetId == id && (begin ? c.isBegin : c.isEnd))) c,
+      if (targetShapeId != null)
+        VsdxConnect(
+          fromSheetId: id,
+          fromCell: begin ? 'BeginX' : 'EndX',
+          fromPart: begin ? 9 : 12,
+          toSheetId: targetShapeId,
+          toCell: 'PinX',
+          toPart: 3,
+        ),
+    ];
+
+    // Seed the moved endpoint; reroute refines glued ends to the shape edge.
+    final ax = begin ? x : (s.beginX ?? s.pinX);
+    final ay = begin ? y : (s.beginY ?? s.pinY);
+    final bx = begin ? (s.endX ?? s.pinX) : x;
+    final by = begin ? (s.endY ?? s.pinY) : y;
+    final control = s.waypoints.isNotEmpty
+        ? <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)]
+        : s.straightRoute
+            ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
+            : _elbowRoute(ax, ay, bx, by);
+    final geometry = s.curved ? curveThrough(control) : control;
+    final next = updateShapeById(id, (sh) => sh.reshapeAsPolyline(geometry))
+        .copyWith(connects: nextConnects);
+    return next.rerouteConnectors();
+  }
+
+  /// Remove connector [id]'s interior bend points, resetting it to the plain
+  /// straight / elbow route (drawio's "Clear Waypoints").
+  VsdxPage clearConnectorWaypoints(int id) =>
+      setConnectorWaypoints(id, const <Offset2D>[]);
+
   /// Whether connector [id] currently prefers a straight route.
   bool isConnectorStraight(int id) => findShapeById(id)?.straightRoute ?? false;
 

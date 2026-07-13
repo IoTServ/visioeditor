@@ -307,6 +307,14 @@ LockRotate/LockDelete/LockTextEdit`，解析以 `LockMoveX` 为代表位读回�
 `_buildShapeElement`，保持 `const VsdxWriter`）；解析器早已能读 ForeignData，故往返一致。控制器 `insertImage`
 以**跨 undo 单调递增**的会话计数分配 `imageN` 部件名（避免重插时命中解码缓存旧图），入口＝工具栏图片按钮 + ⋯ More 菜单。
 
+已补：**连接器端点重连/分离（drawio 端点编辑）+ 清除折点** —— 选中连接器时在其起/终点显示**绿色端点手柄**，
+拖动即可：落到另一形状 → 重新胶合到该形状（重建 `<Connect>` 行）、落到空白 → **分离**为浮动端点（移除该端
+`<Connect>` 行、端点定位到落点）；拖动中高亮目标形状，Esc 取消回退。引擎 `VsdxPage.setConnectorEndpoint`（重建
+connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动端用自身 begin/end）与 `clearConnectorWaypoints`；
+控制器 `reconnectEndpoint`（transient 拖拽、提交单撤销步）、`clearSelectedConnectorWaypoints`/`canClearWaypoints`；
+画布新增 `_DragMode.moveEndpoint`（优先于折点/命中测试）与 `_SelectionPainter.endpointHandles`，右键菜单
+"Clear Waypoints"。**往返零改动**——完全复用现有 `<Connects>` + `BeginX..EndY` + 几何补丁。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -608,3 +616,15 @@ LockRotate/LockDelete/LockTextEdit`，解析以 `LockMoveX` 为代表位读回�
   菜单 "Insert Image…"，`dart:ui` 解码取像素尺寸。测试：引擎 2 例（现有页插图 media+ForeignData 往返·no-op 保留、
   空文档插图建页 rels，共 48/48）、控制器 3 例（嵌字节+撤销、重插新部件名、导出重开往返，App 共 45）。
   `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-13 — **对齐 drawio（批次二十三）——连接器端点重连/分离 + 清除折点**：drawio 最核心的边编辑手势。
+  引擎 `VsdxPage.setConnectorEndpoint(id, begin, targetShapeId, x, y)`（重建 connects：删该端旧 `<Connect>` 行、
+  胶合时补整形状行；按 waypoints/straight/elbow 重建几何种子；`rerouteConnectors` 精修胶合端到 `_edgePoint`、浮动端
+  用种子点）+ `clearConnectorWaypoints`（＝`setConnectorWaypoints(id, [])`）；**往返零改动**——复用既有
+  `<Connects>`（`_writeConnects` 整块重写）+ `BeginX/BeginY/EndX/EndY` + 几何补丁。控制器 `reconnectEndpoint`
+  （transient 拖拽 + 提交单撤销步）、`clearSelectedConnectorWaypoints`（仅对有折点的选中连接器、单步、无则空操作）、
+  `canClearWaypoints`。画布：新增 `_DragMode.moveEndpoint`（`_tryStartEndpointDrag` 命中起/终点手柄，优先于折点与
+  命中测试）、拖动时 `_endpointTargetAt`（排除自身/连接器/1-D）设 `_connectTargetId` 高亮、`reconnectEndpoint(transient)`
+  实时更新，`onPanEnd` 提交、Esc 取消；`_SelectionPainter.endpointHandles`（绿色端点，白环）；右键菜单
+  "Clear Waypoints"（`canClearWaypoints` 时）。测试：引擎 1 例（端点重连 b→c 保留 begin、分离 end 移除行且端点落到
+  落点，共 49/49）、控制器 2 例（重连/分离 + 撤销、清除折点 + 撤销，App 共 47）。`dart analyze` 干净（app + 引擎）、
+  `flutter test` 通过、`flutter build macos` 成功。

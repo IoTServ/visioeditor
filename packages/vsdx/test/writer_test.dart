@@ -930,6 +930,76 @@ void main() {
         equals(payload));
   });
 
+  test('connector endpoint reconnect / detach round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 2, pinY: 5, width: 1, height: 1);
+    page = page.addShape(a);
+    final b = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 6, pinY: 5, width: 1, height: 1);
+    page = page.addShape(b);
+    final cRect = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 6, pinY: 8, width: 1, height: 1);
+    page = page.addShape(cRect);
+    final connId = page.nextFreeShapeId();
+    final conn =
+        VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
+    page = page.addShape(conn).copyWith(connects: <VsdxConnect>[
+      VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'BeginX',
+          fromPart: 9,
+          toSheetId: a.id,
+          toCell: 'PinX',
+          toPart: 3),
+      VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'EndX',
+          fromPart: 12,
+          toSheetId: b.id,
+          toCell: 'PinX',
+          toPart: 3),
+    ]).rerouteConnectors();
+    doc = doc.replacePage(0, page);
+
+    // 1) Reconnect the END from b to c.
+    final reconnected = doc.replacePage(
+      0,
+      doc.pages.first
+          .setConnectorEndpoint(connId, begin: false, targetShapeId: cRect.id, x: 6, y: 8),
+    );
+    final bytes1 = writer.write(originalBytes: blank, edited: reconnected);
+    final r1 = parser.parse(bytes1);
+    final ends1 = r1.pages.first.connects
+        .where((e) => e.fromSheetId == connId && e.isEnd)
+        .toList();
+    expect(ends1.length, 1);
+    expect(ends1.single.toSheetId, cRect.id);
+    // The begin end stays glued to a.
+    final begins1 = r1.pages.first.connects
+        .where((e) => e.fromSheetId == connId && e.isBegin)
+        .toList();
+    expect(begins1.single.toSheetId, a.id);
+
+    // 2) Detach the END → its connect row is gone; the begin stays glued.
+    final detached = r1.replacePage(
+      0,
+      r1.pages.first
+          .setConnectorEndpoint(connId, begin: false, targetShapeId: null, x: 7, y: 9),
+    );
+    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: detached));
+    final conns2 =
+        r2.pages.first.connects.where((e) => e.fromSheetId == connId).toList();
+    expect(conns2.where((e) => e.isEnd), isEmpty);
+    expect(conns2.where((e) => e.isBegin).length, 1);
+    // The detached end floats at (approximately) the drop point.
+    final c2 = r2.pages.first.findShapeById(connId)!;
+    expect(c2.endX, closeTo(7, 1e-6));
+    expect(c2.endY, closeTo(9, 1e-6));
+  });
+
   test('inserts an image into a blank document (creates the page rels part)',
       () {
     final blank = writer.emptyDocument();

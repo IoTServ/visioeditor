@@ -625,6 +625,79 @@ void main() {
     expect(second, isNot(equals(first)));
   });
 
+  test('reconnectEndpoint reglues one end, detaches the other; undoable', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    // A third rectangle to reconnect onto.
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(7, 2, 8, 3);
+    final third = c.currentPage!.shapes.last;
+
+    c.createConnector(a.pinX, a.pinY, b.pinX, b.pinY,
+        beginTarget: a.id, endTarget: b.id);
+    final connId = c.currentPage!.shapes.last.id;
+    expect(
+      c.currentPage!.connects
+          .where((e) => e.fromSheetId == connId && e.isEnd)
+          .single
+          .toSheetId,
+      b.id,
+    );
+
+    // Reconnect the end onto the third rectangle.
+    c.reconnectEndpoint(connId,
+        begin: false, targetShapeId: third.id, x: third.pinX, y: third.pinY);
+    expect(
+      c.currentPage!.connects
+          .where((e) => e.fromSheetId == connId && e.isEnd)
+          .single
+          .toSheetId,
+      third.id,
+    );
+
+    // Detach the begin end → its connect row is removed.
+    c.reconnectEndpoint(connId,
+        begin: true, targetShapeId: null, x: 0.5, y: 0.5);
+    expect(
+      c.currentPage!.connects
+          .where((e) => e.fromSheetId == connId && e.isBegin),
+      isEmpty,
+    );
+
+    // Undo restores the begin glue (single step).
+    c.undo();
+    expect(
+      c.currentPage!.connects
+          .where((e) => e.fromSheetId == connId && e.isBegin)
+          .length,
+      1,
+    );
+  });
+
+  test('clearSelectedConnectorWaypoints resets the route (undoable)', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(a.pinX, a.pinY, b.pinX, b.pinY,
+        beginTarget: a.id, endTarget: b.id);
+    final connId = c.currentPage!.shapes.last.id;
+
+    c.setSelection(<int>{connId});
+    c.addWaypoint(connId, 0, const Offset2D(3, 3));
+    expect(c.currentPage!.findShapeById(connId)!.waypoints, isNotEmpty);
+    expect(c.canClearWaypoints, isTrue);
+
+    c.clearSelectedConnectorWaypoints();
+    expect(c.currentPage!.findShapeById(connId)!.waypoints, isEmpty);
+    expect(c.canClearWaypoints, isFalse);
+
+    // Undo restores the bend point.
+    c.undo();
+    expect(c.currentPage!.findShapeById(connId)!.waypoints, isNotEmpty);
+  });
+
   test('inserted image survives an export / reopen round-trip', () {
     final c = EditorController()..newDocument();
     final bytes = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8, 9]);
