@@ -656,11 +656,24 @@ class EditorController extends ChangeNotifier {
   void addShapeFromBuilder(
     VsdxShape Function(int id, double cx, double cy) build,
   ) {
+    final page = currentPage;
+    if (page == null) return;
+    addShapeFromBuilderAt(build, page.widthInches / 2, page.heightInches / 2);
+  }
+
+  /// Add a shape produced by [build] centred at page point ([cx],[cy])
+  /// (snapped to the grid), inheriting the remembered style and selecting it.
+  /// Used by drag-and-drop from the shapes palette (drawio drops at the cursor).
+  void addShapeFromBuilderAt(
+    VsdxShape Function(int id, double cx, double cy) build,
+    double cx,
+    double cy,
+  ) {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null) return;
     final id = page.nextFreeShapeId();
-    final built = build(id, page.widthInches / 2, page.heightInches / 2);
+    final built = build(id, snap(cx), snap(cy));
     final shape = _withMemoStyle(built, includeFill: !built.is1D);
     _selection
       ..clear()
@@ -762,16 +775,35 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Paste clipboard shapes onto the current page (offset, freshly id'd).
-  void paste() {
+  void paste() => pasteAt();
+
+  /// Paste the clipboard. With ([cx],[cy]) the shapes are positioned so their
+  /// bounding-box centre lands on that page point (drawio's "Paste Here");
+  /// otherwise they are offset slightly from the originals. Freshly id'd and
+  /// selected; one undo step.
+  void pasteAt({double? cx, double? cy}) {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null || _clipboard.isEmpty) return;
+    var dx = 0.25, dy = -0.25;
+    if (cx != null && cy != null) {
+      var minX = double.infinity, minY = double.infinity;
+      var maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+      for (final s in _clipboard) {
+        minX = math.min(minX, s.pinX - s.width / 2);
+        minY = math.min(minY, s.pinY - s.height / 2);
+        maxX = math.max(maxX, s.pinX + s.width / 2);
+        maxY = math.max(maxY, s.pinY + s.height / 2);
+      }
+      dx = snap(cx) - (minX + maxX) / 2;
+      dy = snap(cy) - (minY + maxY) / 2;
+    }
     var next = page;
     final newIds = <int>{};
     for (final s in _clipboard) {
       final newId = next.nextFreeShapeId();
       next = next.addShape(
-        s.copyWith(id: newId, pinX: s.pinX + 0.25, pinY: s.pinY - 0.25),
+        s.copyWith(id: newId, pinX: s.pinX + dx, pinY: s.pinY + dy),
       );
       newIds.add(newId);
     }

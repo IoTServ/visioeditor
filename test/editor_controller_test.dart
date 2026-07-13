@@ -727,6 +727,32 @@ void main() {
     expect(conn.endY, closeTo(top.y, 1e-6));
   });
 
+  test('addShapeFromBuilderAt drops a shape centred on the given point', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+          id: id, pinX: cx, pinY: cy, width: 1, height: 1),
+      3,
+      4,
+    );
+    final s = c.currentPage!.shapes.single;
+    expect(s.pinX, closeTo(3, 1e-9));
+    expect(s.pinY, closeTo(4, 1e-9));
+    expect(c.selection, <int>{s.id});
+  });
+
+  test('pasteAt centres the clipboard on the target point', () {
+    final c = newDocWithTwoRects();
+    final first = c.currentPage!.shapes.first;
+    c.setSelection(<int>{first.id});
+    c.copySelection();
+    c.pasteAt(cx: 6, cy: 3);
+    final pasted = c.currentPage!.shapes.last;
+    expect(pasted.pinX, closeTo(6, 1e-9));
+    expect(pasted.pinY, closeTo(3, 1e-9));
+    expect(c.selection, <int>{pasted.id});
+  });
+
   test('inserted image survives an export / reopen round-trip', () {
     final c = EditorController()..newDocument();
     final bytes = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8, 9]);

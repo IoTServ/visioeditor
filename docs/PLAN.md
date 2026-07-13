@@ -325,6 +325,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 保留未建模 Cell）。控制器 `reconnectEndpoint`/`createConnector` 加固定点参数；画布拖端点/连线时显示目标连接点（蓝叉）、
 就近吸附（`_connSnapIndex`，半径 13px）并高亮，落点即钉固定点。完整往返。
 
+已补：**形状库拖放 + 光标处粘贴（drawio 放置交互）** —— 形状库面板每个模具改为 `Draggable<Stencil>`
+（`pointerDragAnchorStrategy`，拖动预览 + 拖动中原位淡化，点击仍落中心），画布用 `DragTarget<Stencil>` 接收，
+经 `ClipRect` GlobalKey 把全局落点转画布坐标 → `EditorController.addShapeFromBuilderAt`（落点放置、网格吸附、继承记忆样式、
+选中）。右键空白菜单加 **"Paste Here"** → `pasteAt(cx,cy)`（把剪贴板包围盒中心对齐到光标；`paste` 复用之，无坐标＝原偏移）。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
@@ -649,6 +654,14 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   （`_connSnapIndex` 半径 13px）+ 高亮，落点即钉固定点（`_SelectionPainter.connectionPoints/snappedConnectionPoint`）。
   测试：引擎 1 例（固定点物化 + 补节 + 路由往返，共 50/50）、控制器 1 例（钉端点 + 物化 + toPart，App 共 48）。
   `dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。
+- 2026-07-13 — **对齐 drawio（批次二十五）——形状库拖放 + 光标处粘贴**：drawio 高频放置交互。控制器
+  `addShapeFromBuilderAt(build, cx, cy)`（落点放置 + 网格吸附 + 记忆样式 + 选中，`addShapeFromBuilder` 复用之落中心）、
+  `pasteAt({cx, cy})`（有坐标则把剪贴板包围盒中心对齐到光标，否则原 +0.25/-0.25 偏移；`paste` 复用之）。UI：形状库面板
+  模具改 `Draggable<Stencil>`（`pointerDragAnchorStrategy` + 拖动预览 + `childWhenDragging` 淡化，点击仍落中心），
+  `PageCanvas` 用 `DragTarget<Stencil>` 包裹返回、`ClipRect` 挂 `_canvasBoxKey`（`globalToLocal` 落点转画布坐标）→
+  `_onStencilDropped`；右键空白菜单加 "Paste Here"（`_onSecondaryTapUp` 传页面坐标）。测试：控制器 2 例（落点放置、
+  pasteAt 居中，App 共 50）。`dart analyze` 干净（app + 引擎）、`flutter test` 通过、`flutter build macos` 成功。纯交互特性
+  （无引擎往返改动）。
 - 2026-07-13 — **修复：悬停连线三角箭头过早消失**：`_onHover` 里"停在箭头上保持 hover"原先只用箭头精确命中圈
   （中心距边缘 22px、半径 15px），形状边缘到命中圈之间有约 7px **死区**——光标一离开形状本体、尚未进入箭头命中圈，
   `_hoverShapeId` 即被清空，箭头（drawio HoverIcons）随之消失，无法移动到箭头上拖出连线。改为新增 `_withinConnectAffordance`

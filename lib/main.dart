@@ -1157,29 +1157,24 @@ class _StencilPanel extends StatelessWidget {
                 for (final s in kStencils)
                   Tooltip(
                     message: s.name,
-                    child: InkWell(
-                      onTap: () => controller.addShapeFromBuilder(s.build),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: 64,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: scheme.outlineVariant),
+                    // Drag a stencil onto the canvas to drop it at the cursor
+                    // (drawio); a plain click still drops it at the centre.
+                    child: Draggable<Stencil>(
+                      data: s,
+                      dragAnchorStrategy: pointerDragAnchorStrategy,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        child: Opacity(
+                          opacity: 0.85,
+                          child: _tile(scheme, s, elevated: true),
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(s.icon, size: 24),
-                            const SizedBox(height: 4),
-                            Text(
-                              s.name,
-                              style: const TextStyle(fontSize: 9),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
+                      ),
+                      childWhenDragging:
+                          Opacity(opacity: 0.4, child: _tile(scheme, s)),
+                      child: InkWell(
+                        onTap: () => controller.addShapeFromBuilder(s.build),
+                        borderRadius: BorderRadius.circular(8),
+                        child: _tile(scheme, s),
                       ),
                     ),
                   ),
@@ -1187,6 +1182,31 @@ class _StencilPanel extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _tile(ColorScheme scheme, Stencil s, {bool elevated = false}) {
+    return Container(
+      width: 64,
+      height: 56,
+      decoration: BoxDecoration(
+        color: elevated ? scheme.surfaceContainerHighest : null,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(s.icon, size: 24),
+          const SizedBox(height: 4),
+          Text(
+            s.name,
+            style: const TextStyle(fontSize: 9),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }

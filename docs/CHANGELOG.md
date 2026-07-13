@@ -34,7 +34,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   as `EllipticalArcTo` arcs and round-trip through the writer.
 - **Shapes palette**: a stencil panel of flowchart shapes (process, rounded,
   terminator, decision, data, triangle, hexagon, pentagon, arrow) — click to
-  drop one.
+  drop one at the centre, or **drag it onto the canvas** to drop it at the
+  cursor (drawio-style).
 - **Insert Image** (drawio "Insert > Image"): embed a raster image
   (PNG / JPEG / GIF / BMP / WEBP) as a picture shape — sized from its pixel
   dimensions and fitted to the page — from the toolbar or the ⋯ menu. The
@@ -143,7 +144,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   up with.
 - **Right-click context menu**: cut / copy / paste / duplicate / delete, bring
   to front / send to back, group / ungroup, copy & paste style, edit text; on
-  empty canvas, paste / select all / fit to window.
+  empty canvas, paste / **paste here** (at the cursor) / select all / fit to
+  window.
 - **Copy / paste style** (drawio "Copy Style" / "Paste Style"): lift the fill,
   line and text formatting off one shape and apply it to others.
 - **Group / ungroup** (drawio "Group" / "Ungroup"): combine the selected
@@ -218,7 +220,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   moves its free members)**, **image insert (embeds bytes + undo, fresh part
   name after undo, export/reopen round-trip)**, **connector endpoint
   reconnect / detach + undo, clear-waypoints + undo, fixed connection point
-  (materialise + ToPart)**), the
+  (materialise + ToPart), stencil drop-at-point, paste-at-cursor**), the
   **Outline camera** (`visibleContentRect` mapping, change-only notify) and the
   **ruler tick math** (nice-step selection, origin-aligned ticks); widget tests
   (empty-state smoke test, in-place text-edit round-trip, right-click context

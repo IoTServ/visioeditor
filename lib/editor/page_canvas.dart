@@ -14,6 +14,7 @@ import 'edit_data_dialog.dart';
 import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
 import 'snap_guides.dart';
+import 'stencils.dart';
 
 /// Interactive editing canvas for the controller's current page.
 ///
@@ -344,6 +345,19 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset _pageInchesAt(Offset viewportPos) =>
       _contentToPageInches(_viewportToContent(viewportPos));
 
+  /// Spans the viewport (see the keyed `ClipRect` in `build`); used to convert
+  /// a stencil drag-drop's global position into canvas-local coordinates.
+  final GlobalKey _canvasBoxKey = GlobalKey();
+
+  /// A stencil dropped from the shapes palette (drawio drag-and-drop): create
+  /// it centred on the drop point.
+  void _onStencilDropped(DragTargetDetails<Stencil> details) {
+    final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final p = _pageInchesAt(box.globalToLocal(details.offset));
+    _c.addShapeFromBuilderAt(details.data.build, p.dx, p.dy);
+  }
+
   VsdxShape? _singleSelectedShape() {
     final page = _page;
     if (page == null || _c.selection.length != 1) return null;
@@ -587,10 +601,11 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_editingShapeId != null) _commitTextEdit();
     final hit = _hitTest(d.localPosition);
     if (hit != null && !_c.isSelected(hit)) _c.selectOnly(hit);
-    _showContextMenu(d.globalPosition, hit);
+    _showContextMenu(d.globalPosition, hit, _pageInchesAt(d.localPosition));
   }
 
-  Future<void> _showContextMenu(Offset globalPos, int? hit) async {
+  Future<void> _showContextMenu(
+      Offset globalPos, int? hit, Offset pagePos) async {
     final overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlay == null) return;
@@ -649,6 +664,8 @@ class _PageCanvasState extends State<PageCanvas> {
     } else {
       if (_c.hasClipboard) {
         items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
+        items.add(const PopupMenuItem(
+            value: 'pasteHere', child: Text('Paste Here')));
       }
       items.add(
           const PopupMenuItem(value: 'selectAll', child: Text('Select All')));
@@ -673,6 +690,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.duplicateSelection();
       case 'paste':
         _c.paste();
+      case 'pasteHere':
+        _c.pasteAt(cx: pagePos.dx, cy: pagePos.dy);
       case 'delete':
         _c.deleteSelection();
       case 'lock':
@@ -1671,7 +1690,9 @@ class _PageCanvasState extends State<PageCanvas> {
                 ];
               }
             }
-            return Focus(
+            return DragTarget<Stencil>(
+              onAcceptWithDetails: _onStencilDropped,
+              builder: (context, candidate, rejected) => Focus(
               autofocus: true,
               onKeyEvent: _onKey,
               child: Listener(
@@ -1695,6 +1716,7 @@ class _PageCanvasState extends State<PageCanvas> {
                 onPanUpdate: _onPanUpdate,
                 onPanEnd: _onPanEnd,
                 child: ClipRect(
+                  key: _canvasBoxKey,
                   child: Stack(
                     children: [
                       Positioned.fill(child: ColoredBox(color: widget.canvasColor)),
@@ -1788,6 +1810,7 @@ class _PageCanvasState extends State<PageCanvas> {
                   ),
                 ),
               ),
+            ),
             ),
             ),
             );
