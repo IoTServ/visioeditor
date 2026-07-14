@@ -342,11 +342,23 @@ class VsdxShape {
           noShow: g.noShow,
         ),
     ];
+    // Keep LocPin at the same *relative* position inside the box so a
+    // centre-pinned shape stays centre-pinned after resize (and an off-centre
+    // LocPin scales with the box). When LocPin was unset (implicit centre),
+    // leave it unset so the writer / renderer keep defaulting to width/2.
+    final newLocPinX = locPinXInches == null
+        ? null
+        : (this.width == 0 ? locPinXInches : locPinXInches! * sx);
+    final newLocPinY = locPinYInches == null
+        ? null
+        : (this.height == 0 ? locPinYInches : locPinYInches! * sy);
     return copyWith(
       pinX: pinX,
       pinY: pinY,
       width: width,
       height: height,
+      locPinXInches: newLocPinX,
+      locPinYInches: newLocPinY,
       geometries: scaled,
     );
   }

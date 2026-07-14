@@ -1314,4 +1314,148 @@ void main() {
       greaterThanOrEqualTo(4),
     );
   });
+
+  // Regression: `_buildShapeElement` used to omit arrows, flips, transparencies,
+  // shadow, LocPin, VerticalAlign and Character/Paragraph sections — so a
+  // freshly-created (or reparented) shape looked very different after save +
+  // reopen. Assert the emit path matches what the parser round-trips.
+  test('newly emitted shapes preserve style / text / LocPin (buildShape parity)',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+
+    final connId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.line(
+      id: connId,
+      ax: 1,
+      ay: 1,
+      bx: 4,
+      by: 2,
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        beginArrow: 1,
+        endArrow: 4,
+        transparency: 0.3,
+        pattern: 2,
+      ),
+    ));
+
+    final labelId = page.nextFreeShapeId();
+    page = page.addShape(
+      VsdxShapeFactory.textBox(
+        id: labelId,
+        pinX: 6,
+        pinY: 4,
+        width: 2,
+        height: 0.6,
+        text: 'Bold Red',
+      ).copyWith(
+        richText: const VsdxRichText(
+          runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: 'Bold Red',
+              charStyle: VsdxCharStyle(
+                fontFamily: 'Arial',
+                fontSizeInches: 0.25,
+                style: VsdxFontStyle.boldStyle,
+                color: VsdxColor(0xFFCC0000),
+                underline: true,
+              ),
+              paraStyle: VsdxParaStyle(horizontalAlign: VsdxHorzAlign.center),
+            ),
+          ],
+          textBlock: VsdxTextBlock(verticalAlign: VsdxVertAlign.bottom),
+        ),
+      ),
+    );
+
+    final styledId = page.nextFreeShapeId();
+    page = page.addShape(
+      VsdxShapeFactory.rectangle(
+        id: styledId,
+        pinX: 3,
+        pinY: 5,
+        width: 2,
+        height: 1,
+        fill: const VsdxFill(
+          foreground: VsdxColor(0xFF3366CC),
+          foregroundTransparency: 0.5,
+        ),
+        line: const VsdxLine(color: VsdxColor.black, transparency: 0.25),
+      ).copyWith(
+        flipX: true,
+        shadow: const VsdxShadow(),
+        // Off-centre LocPin (not the default width/2, height/2).
+        locPinXInches: 0.25,
+        locPinYInches: 0.75,
+      ),
+    );
+
+    doc = doc.replacePage(0, page);
+    final out = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final rp = out.pages.first;
+
+    final conn = rp.findShapeById(connId)!;
+    expect(conn.line.beginArrow, 1);
+    expect(conn.line.endArrow, 4);
+    expect(conn.line.transparency, closeTo(0.3, 1e-4));
+    expect(conn.line.pattern, 2);
+
+    final label = rp.findShapeById(labelId)!;
+    expect(label.richText.textBlock.verticalAlign, VsdxVertAlign.bottom);
+    expect(label.richText.runs, isNotEmpty);
+    final char = label.richText.runs.first.charStyle;
+    expect(char.fontSizeInches, closeTo(0.25, 1e-4));
+    expect(char.style.bold, isTrue);
+    expect(char.underline, isTrue);
+    expect(char.color?.value, 0xFFCC0000);
+    expect(char.fontFamily, 'Arial');
+    expect(label.richText.runs.first.paraStyle.horizontalAlign,
+        VsdxHorzAlign.center);
+    expect(label.richText.plainText, 'Bold Red');
+
+    final styled = rp.findShapeById(styledId)!;
+    expect(styled.flipX, isTrue);
+    expect(styled.shadow.enabled, isTrue);
+    expect(styled.fill.foregroundTransparency, closeTo(0.5, 1e-4));
+    expect(styled.line.transparency, closeTo(0.25, 1e-4));
+    expect(styled.effectiveLocPinX, closeTo(0.25, 1e-4));
+    expect(styled.effectiveLocPinY, closeTo(0.75, 1e-4));
+  });
+
+  test('resize patches LocPin to the new effective centre', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // Explicit centre LocPin so the XML carries LocPinX/Y cells.
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(locPinXInches: 1.0, locPinYInches: 0.5);
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+
+    final r1 = parser.parse(bytes1);
+    final resized = r1.replacePage(
+      0,
+      r1.pages.first.updateShapeById(
+        id,
+        (s) => s.resizeTo(pinX: 3, pinY: 3, width: 4, height: 2),
+      ),
+    );
+    final after = parser
+        .parse(writer.write(originalBytes: bytes1, edited: resized))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(after.width, closeTo(4, 1e-4));
+    expect(after.height, closeTo(2, 1e-4));
+    // LocPin scaled with the box (was centre → still centre).
+    expect(after.effectiveLocPinX, closeTo(2.0, 1e-4));
+    expect(after.effectiveLocPinY, closeTo(1.0, 1e-4));
+  });
 }

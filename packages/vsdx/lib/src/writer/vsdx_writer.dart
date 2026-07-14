@@ -960,6 +960,13 @@ class VsdxWriter {
     changed |= _patchLength(el, 'PinY', base.pinY, edited.pinY);
     changed |= _patchLength(el, 'Width', base.width, edited.width);
     changed |= _patchLength(el, 'Height', base.height, edited.height);
+    // LocPin follows the shape when it is resized (effective centre moves) or
+    // when an off-centre pin is edited explicitly. Compare the *effective*
+    // values so a null LocPin (implicit centre) still updates after resize.
+    changed |= _patchLength(
+        el, 'LocPinX', base.effectiveLocPinX, edited.effectiveLocPinX);
+    changed |= _patchLength(
+        el, 'LocPinY', base.effectiveLocPinY, edited.effectiveLocPinY);
     changed |= _patchAngle(el, 'Angle', base.angleRad, edited.angleRad);
     changed |= _patchNullableLength(el, 'BeginX', base.beginX, edited.beginX);
     changed |= _patchNullableLength(el, 'BeginY', base.beginY, edited.beginY);
@@ -1206,9 +1213,7 @@ class VsdxWriter {
     final charSection = _ensureSection(el, 'Character');
     final charRows = _rowsOf(charSection);
     if (charRows.isEmpty) charRows.add(_addRow(charSection, 0));
-    final styleInt = (target.charStyle.style.bold ? 0x01 : 0) |
-        (target.charStyle.style.italic ? 0x02 : 0) |
-        (target.charStyle.underline ? 0x04 : 0);
+    final styleInt = _charStyleBits(target.charStyle);
     for (final row in charRows) {
       // Font size is a length: `V` in internal inches (Visio shows it via `U`,
       // usually PT), so write the inch value verbatim.
@@ -1220,6 +1225,9 @@ class VsdxWriter {
       }
       if (target.charStyle.fontFamily != null) {
         _writeValue(_ensureCell(row, 'Font'), target.charStyle.fontFamily!);
+      }
+      if (target.charStyle.strikethrough) {
+        _writeValue(_ensureCell(row, 'Strikethru'), '1');
       }
       changed = true;
     }
@@ -1497,13 +1505,25 @@ class VsdxWriter {
     Map<String, String> imageRels = const <String, String>{},
   }) {
     if (s.hasImage) return _buildPictureElement(s, imageRels);
+    // --- XForm ---------------------------------------------------------------
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX)),
       _cell('PinY', _fmt(s.pinY)),
       _cell('Width', _fmt(s.width)),
       _cell('Height', _fmt(s.height)),
-      _cell('Angle', _fmt(s.angleRad)),
     ];
+    // LocPin — only when it isn't the shape centre (the Visio default the
+    // parser assumes when the cells are absent). Off-centre pins arise on
+    // regrouped stencil shapes and must survive the rebuild.
+    if ((s.effectiveLocPinX - s.width / 2).abs() > _epsilon) {
+      children.add(_cell('LocPinX', _fmt(s.effectiveLocPinX)));
+    }
+    if ((s.effectiveLocPinY - s.height / 2).abs() > _epsilon) {
+      children.add(_cell('LocPinY', _fmt(s.effectiveLocPinY)));
+    }
+    children.add(_cell('Angle', _fmt(s.angleRad)));
+    if (s.flipX) children.add(_cell('FlipX', '1'));
+    if (s.flipY) children.add(_cell('FlipY', '1'));
     if (s.is1D) {
       children
         ..add(_cell('BeginX', _fmt(s.beginX ?? 0)))
@@ -1511,20 +1531,51 @@ class VsdxWriter {
         ..add(_cell('EndX', _fmt(s.endX ?? 0)))
         ..add(_cell('EndY', _fmt(s.endY ?? 0)));
     }
+    // --- Fill ----------------------------------------------------------------
     if (s.fill.foreground != null) {
       children.add(_cell('FillForegnd', _hex(s.fill.foreground!)));
     }
     children.add(_cell('FillPattern', s.fill.pattern.toString()));
+    if (s.fill.foregroundTransparency > _epsilon) {
+      children.add(
+          _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)));
+    }
+    // --- Line ----------------------------------------------------------------
     if (s.line.color != null) {
       children.add(_cell('LineColor', _hex(s.line.color!)));
     }
     children
       ..add(_cell('LineWeight', _fmt(s.line.weightInches)))
       ..add(_cell('LinePattern', s.line.pattern.toString()));
+    if (s.line.transparency > _epsilon) {
+      children.add(_cell('LineColorTrans', _fmt(s.line.transparency)));
+    }
+    if (s.line.beginArrow != 0) {
+      children.add(_cell('BeginArrow', s.line.beginArrow.toString()));
+    }
+    if (s.line.endArrow != 0) {
+      children.add(_cell('EndArrow', s.line.endArrow.toString()));
+    }
+    // --- Effects / text block ------------------------------------------------
+    if (s.shadow.enabled) children.add(_cell('ShadowPattern', '1'));
+    final vAlign = s.richText.textBlock.verticalAlign;
+    if (vAlign != VsdxVertAlign.middle) {
+      children.add(_cell('VerticalAlign', _vAlignInt(vAlign).toString()));
+    }
     if (s.locked) {
       for (final name in _lockCells) {
         children.add(_cell(name, '1'));
       }
+    }
+    // --- Sections ------------------------------------------------------------
+    // Character / Paragraph formatting (font size, style, colour, alignment).
+    // The editor formats a shape's whole label uniformly, so the first run's
+    // style describes every row.
+    if (s.richText.runs.isNotEmpty) {
+      final run = s.richText.runs.first;
+      children
+        ..add(_buildCharacterSection(run.charStyle))
+        ..add(_buildParagraphSection(run.paraStyle));
     }
     var ix = 0;
     for (final g in s.geometries) {
@@ -1540,8 +1591,11 @@ class VsdxWriter {
     if (s.connectionPoints.isNotEmpty) {
       children.add(_buildConnectionSection(s.connectionPoints));
     }
-    if (s.text != null && s.text!.isNotEmpty) {
-      children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
+    // --- Text ----------------------------------------------------------------
+    final textContent =
+        s.richText.runs.isNotEmpty ? s.richText.plainText : s.text;
+    if (textContent != null && textContent.isNotEmpty) {
+      children.add(XmlElement(XmlName('Text'), const [], [XmlText(textContent)]));
     }
     final isGroup = s.children.isNotEmpty;
     if (isGroup) {
@@ -1560,6 +1614,52 @@ class VsdxWriter {
       children,
     );
   }
+
+  /// Style bitmask for a `<Cell N="Style">` value: bold=0x01, italic=0x02,
+  /// underline=0x04 (mirrors [RichTextParser] / [_patchRichText]).
+  static int _charStyleBits(VsdxCharStyle c) =>
+      (c.style.bold ? 0x01 : 0) |
+      (c.style.italic ? 0x02 : 0) |
+      (c.underline ? 0x04 : 0);
+
+  /// Build a fresh `<Section N="Character">` (single row) for a new shape's
+  /// label formatting. Round-trips through [RichTextParser].
+  XmlElement _buildCharacterSection(VsdxCharStyle c) {
+    final cells = <XmlNode>[
+      // Font size is a length: `V` is written in internal inches.
+      _cell('Size', _fmt(c.fontSizeInches)),
+      _cell('Style', _charStyleBits(c).toString()),
+    ];
+    if (c.color != null) cells.add(_cell('Color', _hex(c.color!)));
+    if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
+      cells.add(_cell('Font', c.fontFamily!));
+    }
+    if (c.strikethrough) cells.add(_cell('Strikethru', '1'));
+    return XmlElement(
+      XmlName('Section'),
+      <XmlAttribute>[XmlAttribute(XmlName('N'), 'Character')],
+      <XmlNode>[
+        XmlElement(XmlName('Row'),
+            <XmlAttribute>[XmlAttribute(XmlName('IX'), '0')], cells),
+      ],
+    );
+  }
+
+  /// Build a fresh `<Section N="Paragraph">` (single row) for a new shape's
+  /// paragraph alignment.
+  XmlElement _buildParagraphSection(VsdxParaStyle p) => XmlElement(
+        XmlName('Section'),
+        <XmlAttribute>[XmlAttribute(XmlName('N'), 'Paragraph')],
+        <XmlNode>[
+          XmlElement(
+            XmlName('Row'),
+            <XmlAttribute>[XmlAttribute(XmlName('IX'), '0')],
+            <XmlNode>[
+              _cell('HorzAlign', _alignToInt(p.horizontalAlign).toString()),
+            ],
+          ),
+        ],
+      );
 
   /// Build a Visio `Type="Foreign"` picture shape: XForm cells plus the
   /// `<ForeignData>` element pointing (via [imageRels]) at the embedded media
@@ -1662,6 +1762,9 @@ class VsdxWriter {
     final rows = <XmlNode>[];
     if (g.noFill) rows.add(_cell('NoFill', '1'));
     if (g.noLine) rows.add(_cell('NoLine', '1'));
+    // NoShow must survive a geometry rebuild — otherwise a hidden guide
+    // geometry (common in stencils) becomes visible after editing the shape.
+    if (g.noShow) rows.add(_cell('NoShow', '1'));
     var rowIx = 1;
     for (final cmd in g.commands) {
       final row = _buildRow(cmd, rowIx);
