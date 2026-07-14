@@ -75,6 +75,7 @@ class PageParser {
     XmlElement shapesEl, {
     required String partName,
     required int depth,
+    VsdxMaster? inheritedMaster,
   }) {
     if (depth > 64) {
       // Visio caps practical nesting well below this; bail out loudly.
@@ -87,7 +88,12 @@ class PageParser {
     for (final el in shapesEl.childElements) {
       if (el.name.local != 'Shape') continue;
       try {
-        out.add(_readShape(el, partName: partName, depth: depth));
+        out.add(_readShape(
+          el,
+          partName: partName,
+          depth: depth,
+          inheritedMaster: inheritedMaster,
+        ));
       } catch (e, st) {
         // Per ARCHITECTURE §5.7: parse failures on a single shape must not
         // sink the whole page.
@@ -105,6 +111,7 @@ class PageParser {
     XmlElement shapeEl, {
     required String partName,
     required int depth,
+    VsdxMaster? inheritedMaster,
   }) {
     final idStr = shapeEl.getAttribute('ID');
     final id = idStr == null ? -1 : int.tryParse(idStr) ?? -1;
@@ -112,11 +119,25 @@ class PageParser {
         shapeEl.getAttribute('Name') ??
         'Sheet.$id';
 
-    // Resolve the (optional) Master prototype up front; subsequent reads
-    // use its geometry / fill / line / text as inheritance defaults.
+    // Resolve the inheritance prototype up front; subsequent reads use its
+    // geometry / fill / line / text as defaults. `Master="M"` binds a whole
+    // subtree to master M and inherits its top shape; a nested `MasterShape="N"`
+    // (no Master) inherits the master sub-shape N from that same context
+    // (Visio / libvisio resolve instance sub-shapes this way).
     final masterIdStr = shapeEl.getAttribute('Master');
     final masterId = masterIdStr == null ? null : int.tryParse(masterIdStr);
-    final proto = masterId == null ? null : _masters.find(masterId)?.prototype;
+    final master = masterId != null ? _masters.find(masterId) : inheritedMaster;
+    final VsdxShape? proto;
+    if (masterId != null) {
+      proto = master?.prototype;
+    } else {
+      final masterShapeStr = shapeEl.getAttribute('MasterShape');
+      final masterShapeId =
+          masterShapeStr == null ? null : int.tryParse(masterShapeStr);
+      proto = (masterShapeId != null && master != null)
+          ? master.findShape(masterShapeId)
+          : null;
+    }
 
     final pinX = readLengthInches(shapeEl, 'PinX', inheritFrom: proto?.pinX) ??
         proto?.pinX ??
@@ -151,11 +172,17 @@ class PageParser {
     final endX = readLengthInches(shapeEl, 'EndX') ?? proto?.endX;
     final endY = readLengthInches(shapeEl, 'EndY') ?? proto?.endY;
 
-    // Nested <Shapes> ⇒ a group.
+    // Nested <Shapes> ⇒ a group. Children inherit the same master context so
+    // their `MasterShape="N"` references resolve against master [master].
     final childGroup = _firstChildLocal(shapeEl, 'Shapes');
     final children = childGroup == null
         ? const <VsdxShape>[]
-        : _readShapes(childGroup, partName: partName, depth: depth + 1);
+        : _readShapes(
+            childGroup,
+            partName: partName,
+            depth: depth + 1,
+            inheritedMaster: master,
+          );
 
     var geometries = _geometry.parse(shapeEl);
     if (geometries.isEmpty && proto != null) {
@@ -221,9 +248,9 @@ class PageParser {
     final userCells = ownUserCells.isEmpty && proto != null
         ? proto.userCells
         : ownUserCells;
-    final masterName = masterId == null
-        ? proto?.masterName
-        : (_masters.find(masterId)?.name ?? proto?.masterName);
+    final masterName = masterId != null
+        ? (master?.name ?? proto?.masterName)
+        : proto?.masterName;
 
     const kindDetector = ShapeKindDetector();
     final shapeKind = kindDetector.detect(

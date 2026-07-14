@@ -33,6 +33,21 @@ class VsdxMaster {
   /// Master itself and only forwards geometry/fill/line to instances.
   final VsdxShape prototype;
 
+  /// Find the master sub-shape with [shapeId] anywhere in the [prototype]
+  /// tree. Page sub-shapes reference these via `MasterShape="N"` and inherit
+  /// their geometry / text / style from them (Visio, like libvisio, resolves
+  /// each instance sub-shape against the matching master sub-shape).
+  VsdxShape? findShape(int shapeId) => _find(prototype, shapeId);
+
+  static VsdxShape? _find(VsdxShape s, int shapeId) {
+    if (s.id == shapeId) return s;
+    for (final c in s.children) {
+      final hit = _find(c, shapeId);
+      if (hit != null) return hit;
+    }
+    return null;
+  }
+
   @override
   String toString() => 'VsdxMaster(#$id $name)';
 }

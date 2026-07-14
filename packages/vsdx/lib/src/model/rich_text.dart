@@ -57,7 +57,9 @@ enum VsdxTextPosition { normal, superscript, subscript }
 class VsdxCharStyle {
   const VsdxCharStyle({
     this.fontFamily,
-    this.fontSizeInches = 0.16, // 11pt ≈ 0.153in; default 12pt = 0.167in
+    // Visio's default character size is 12pt (matches libvisio); a shape whose
+    // text carries no Size cell inherits this.
+    this.fontSizeInches = 12.0 / 72.0,
     this.style = VsdxFontStyle.regular,
     this.color,
     this.themeColorIndex,

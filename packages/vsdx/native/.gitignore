@@ -1,0 +1,5 @@
+# Built by build.sh; not checked in (contributors build locally, tests skip
+# when absent).
+*.dylib
+*.so
+*.o
