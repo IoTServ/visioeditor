@@ -117,6 +117,10 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _connectSourceId;
   int? _connectTargetId;
 
+  // Fixed connection-point index the new connector's begin end glues to (the
+  // arrow / blue point it was dragged out of), or null for a whole-shape glue.
+  int? _connectSourceConnIndex;
+
   // Fixed connection point (drawio blue point) the pointer is snapping to on
   // the current target while wiring / dragging an endpoint (index into the
   // target's effective connection points), or null for a whole-shape glue.
@@ -899,6 +903,11 @@ class _PageCanvasState extends State<PageCanvas> {
         final dir = _connectArrowHitDir(s, d.localPosition);
         if (dir != null) {
           _connectSourceId = hover;
+          // Glue the begin end to the matching fixed connection point (drawio
+          // glues to the point you drag out of). Arrow direction 0/1/2/3 lines
+          // up with the default point indices top/right/bottom/left; only use
+          // it when the shape carries no custom points (so the index is valid).
+          _connectSourceConnIndex = s.connectionPoints.isEmpty ? dir : null;
           _connectTargetId = null;
           _mode = _DragMode.connect;
           setState(() {
@@ -1383,12 +1392,14 @@ class _PageCanvasState extends State<PageCanvas> {
           _c.createConnector(a.dx, a.dy, b.dx, b.dy,
               beginTarget: src,
               endTarget: target,
+              beginConnectionPointIndex: _connectSourceConnIndex,
               endConnectionPointIndex: target != null ? _snapConnIndex : null);
         }
         setState(() {
           _previewStart = null;
           _previewEnd = null;
           _connectSourceId = null;
+          _connectSourceConnIndex = null;
           _connectTargetId = null;
           _snapConnIndex = null;
         });
@@ -1429,6 +1440,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _marqueeStart = null;
       _marqueeEnd = null;
       _connectSourceId = null;
+      _connectSourceConnIndex = null;
       _connectTargetId = null;
       _activeHandle = null;
       _resizeShapeId = null;
@@ -1639,22 +1651,30 @@ class _PageCanvasState extends State<PageCanvas> {
             // connector is being wired / dragged onto, plus the snapped one.
             var connectionPointDots = const <Offset>[];
             Offset? snappedConnectionPoint;
+            // Show a shape's fixed connection points (drawio blue crosses) both
+            // while wiring / dragging an endpoint onto it *and* while simply
+            // hovering it in idle select mode, so the attach points are always
+            // visible before you start dragging.
+            VsdxShape? cpShape;
             if (targetId != null &&
                 (_mode == _DragMode.connect ||
                     _mode == _DragMode.moveEndpoint ||
                     (_mode == _DragMode.createShape &&
                         _c.tool == EditorTool.connector))) {
-              final t = page.findShapeById(targetId);
-              if (t != null && !t.is1D) {
-                final pts = VsdxPage.effectiveConnectionPoints(t);
-                connectionPointDots = <Offset>[
-                  for (final p in pts.map((p) => VsdxPage.localToPage(t, p)))
-                    _pageToContent(p.x, p.y),
-                ];
-                if (_snapConnIndex != null && _snapConnIndex! < pts.length) {
-                  final pg = VsdxPage.localToPage(t, pts[_snapConnIndex!]);
-                  snappedConnectionPoint = _pageToContent(pg.x, pg.y);
-                }
+              cpShape = page.findShapeById(targetId);
+            } else if (_connectAffordanceActive && _hoverShapeId != null) {
+              cpShape = page.findShapeById(_hoverShapeId!);
+            }
+            if (cpShape != null && !cpShape.is1D && !cpShape.locked) {
+              final t = cpShape;
+              final pts = VsdxPage.effectiveConnectionPoints(t);
+              connectionPointDots = <Offset>[
+                for (final p in pts.map((p) => VsdxPage.localToPage(t, p)))
+                  _pageToContent(p.x, p.y),
+              ];
+              if (_snapConnIndex != null && _snapConnIndex! < pts.length) {
+                final pg = VsdxPage.localToPage(t, pts[_snapConnIndex!]);
+                snappedConnectionPoint = _pageToContent(pg.x, pg.y);
               }
             }
             final inlineEditor = _buildInlineEditor(context);
@@ -1754,6 +1774,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       images: doc.images,
                                       imageCache: _imageCache,
                                       pxPerInch: widget.pxPerInch,
+                                      drawLineJumps: _c.showLineJumps,
                                       backgroundColor: _c.showGrid
                                           ? const Color(0x00000000)
                                           : widget.pageColor,

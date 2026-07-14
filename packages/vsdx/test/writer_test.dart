@@ -451,6 +451,45 @@ void main() {
     expect(s.geometries.first.commands.length, greaterThanOrEqualTo(5));
   });
 
+  test('composite stencil shapes (cube / cylinder / delay) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+
+    final cubeId = page.nextFreeShapeId();
+    final p1 = page.addShape(VsdxShapeFactory.cube(
+        id: cubeId, pinX: 3, pinY: 3, width: 2, height: 2));
+    final cylId = p1.nextFreeShapeId();
+    final p2 = p1.addShape(VsdxShapeFactory.cylinder(
+        id: cylId, pinX: 6, pinY: 3, width: 1.5, height: 2));
+    final delayId = p2.nextFreeShapeId();
+    final p3 = p2.addShape(VsdxShapeFactory.delay(
+        id: delayId, pinX: 3, pinY: 6, width: 2, height: 1));
+    doc = doc.replacePage(0, p3);
+
+    final reopened =
+        parser.parse(writer.write(originalBytes: blank, edited: doc));
+
+    // Cube: two geometries, the second (inner edges) suppresses fill.
+    final rc = reopened.pages.first.findShapeById(cubeId)!;
+    expect(rc.geometries.length, 2);
+    expect(rc.geometries[1].noFill, isTrue);
+
+    // Cylinder: barrel body + cap arc → elliptical arcs survive.
+    final ry = reopened.pages.first.findShapeById(cylId)!;
+    expect(
+      ry.geometries.expand((g) => g.commands).whereType<EllipticalArcTo>(),
+      isNotEmpty,
+    );
+
+    // Delay: the right semicircle arc survives.
+    final rd = reopened.pages.first.findShapeById(delayId)!;
+    expect(
+      rd.geometries.first.commands.whereType<EllipticalArcTo>().length,
+      greaterThanOrEqualTo(1),
+    );
+  });
+
   test('text formatting round-trips (Character/Paragraph created)', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1123,5 +1162,121 @@ void main() {
     final conn2 = r2.pages.first.findShapeById(connId)!;
     expect(conn2.endX, closeTo(6, 1e-6));
     expect(conn2.endY, closeTo(6, 1e-6));
+  });
+
+  test('UML / cloud stencil shapes round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+
+    final classId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.umlClass(
+        id: classId, pinX: 3, pinY: 3, width: 2, height: 1.6));
+    final cloudId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.cloud(
+        id: cloudId, pinX: 6, pinY: 3, width: 2, height: 1.4));
+    final noteId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.note(
+        id: noteId, pinX: 3, pinY: 6, width: 1.5, height: 1.5));
+    doc = doc.replacePage(0, page);
+
+    final reopened =
+        parser.parse(writer.write(originalBytes: blank, edited: doc));
+
+    // Class: rectangle + NoFill divider lines.
+    final rc = reopened.pages.first.findShapeById(classId)!;
+    expect(rc.geometries.length, 2);
+    expect(rc.geometries[1].noFill, isTrue);
+
+    // Cloud: a closed outline of elliptical arcs.
+    final rcl = reopened.pages.first.findShapeById(cloudId)!;
+    expect(
+      rcl.geometries.first.commands.whereType<EllipticalArcTo>().length,
+      greaterThanOrEqualTo(6),
+    );
+
+    // Note: cut-corner outline + NoFill fold lines.
+    final rn = reopened.pages.first.findShapeById(noteId)!;
+    expect(rn.geometries.length, 2);
+    expect(rn.geometries[1].noFill, isTrue);
+  });
+
+  test('connector begin end glues to a fixed connection point', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = VsdxShapeFactory.rectangle(
+        id: page.nextFreeShapeId(), pinX: 2, pinY: 5, width: 2, height: 2);
+    page = page.addShape(a);
+    final connId = page.nextFreeShapeId();
+    page = page.addShape(
+        VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5));
+    // Glue the BEGIN end to a's right connection point (index 1).
+    page = page.setConnectorEndpoint(
+      connId,
+      begin: true,
+      targetShapeId: a.id,
+      connectionPointIndex: 1,
+      x: 2,
+      y: 5,
+    );
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final ra = r.pages.first.findShapeById(a.id)!;
+    expect(ra.connectionPoints.length, 5); // standard set materialised
+    final beginConnect = r.pages.first.connects
+        .firstWhere((e) => e.fromSheetId == connId && e.isBegin);
+    expect(beginConnect.toSheetId, a.id);
+    expect(beginConnect.toPart, 101); // fixed point index 1 → 100 + 1
+    // a: pin (2,5), 2×2 → right-middle local (2,1) → page (3,5).
+    final conn2 = r.pages.first.findShapeById(connId)!;
+    expect(conn2.beginX, closeTo(3, 1e-6));
+    expect(conn2.beginY, closeTo(5, 1e-6));
+  });
+
+  test('flowchart / heart stencil shapes round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+
+    final orId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.orGate(
+        id: orId, pinX: 3, pinY: 3, width: 1, height: 1));
+    final sortId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.sort(
+        id: sortId, pinX: 6, pinY: 3, width: 1.5, height: 1));
+    final displayId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.display(
+        id: displayId, pinX: 3, pinY: 6, width: 1.5, height: 1));
+    final heartId = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.heart(
+        id: heartId, pinX: 6, pinY: 6, width: 1.2, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+
+    // Or: circle (ellipse) + NoFill cross lines.
+    final rOr = r.pages.first.findShapeById(orId)!;
+    expect(rOr.geometries.length, 2);
+    expect(rOr.geometries[1].noFill, isTrue);
+    expect(rOr.geometries.first.commands.whereType<EllipseCmd>(), isNotEmpty);
+
+    // Sort: diamond + NoFill midline.
+    final rSort = r.pages.first.findShapeById(sortId)!;
+    expect(rSort.geometries.length, 2);
+    expect(rSort.geometries[1].noFill, isTrue);
+
+    // Display: a right semicircle (elliptical arc) survives.
+    final rDisp = r.pages.first.findShapeById(displayId)!;
+    expect(rDisp.geometries.first.commands.whereType<EllipticalArcTo>(),
+        isNotEmpty);
+
+    // Heart: four elliptical arcs.
+    final rHeart = r.pages.first.findShapeById(heartId)!;
+    expect(
+      rHeart.geometries.first.commands.whereType<EllipticalArcTo>().length,
+      greaterThanOrEqualTo(4),
+    );
   });
 }

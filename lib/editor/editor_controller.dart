@@ -29,6 +29,7 @@ class EditorController extends ChangeNotifier {
   EditorTool _tool = EditorTool.select;
   bool _showGrid = true;
   bool _snapToGrid = true;
+  bool _showLineJumps = true;
   final double _gridInches = 0.25;
   final Set<int> _selection = <int>{};
   final List<VsdxDocument> _undo = <VsdxDocument>[];
@@ -215,6 +216,7 @@ class EditorController extends ChangeNotifier {
 
   bool get showGrid => _showGrid;
   bool get snapToGrid => _snapToGrid;
+  bool get showLineJumps => _showLineJumps;
   double get gridInches => _gridInches;
 
   void toggleGrid() {
@@ -224,6 +226,12 @@ class EditorController extends ChangeNotifier {
 
   void toggleSnap() {
     _snapToGrid = !_snapToGrid;
+    notifyListeners();
+  }
+
+  /// Toggle drawio-style line jumps (arc connectors over the ones they cross).
+  void toggleLineJumps() {
+    _showLineJumps = !_showLineJumps;
     notifyListeners();
   }
 
@@ -498,6 +506,7 @@ class EditorController extends ChangeNotifier {
     double by, {
     int? beginTarget,
     int? endTarget,
+    int? beginConnectionPointIndex,
     int? endConnectionPointIndex,
   }) {
     final doc = _document;
@@ -558,7 +567,18 @@ class EditorController extends ChangeNotifier {
     _tool = EditorTool.select;
     var next =
         page.addShape(connector).copyWith(connects: connects).rerouteConnectors();
-    // Pin the end to a fixed connection point when one was snapped on drop.
+    // Pin either end to a fixed connection point when one was snapped (drawio
+    // glues to the specific blue point you start from / drop onto).
+    if (beginTarget != null && beginConnectionPointIndex != null) {
+      next = next.setConnectorEndpoint(
+        id,
+        begin: true,
+        targetShapeId: beginTarget,
+        connectionPointIndex: beginConnectionPointIndex,
+        x: sax,
+        y: say,
+      );
+    }
     if (endTarget != null && endConnectionPointIndex != null) {
       next = next.setConnectorEndpoint(
         id,

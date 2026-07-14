@@ -693,3 +693,46 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   （`roundCorners` 端点精确+拐点回退+象限内、圆角连接器烘焙折线且经重路由保持）+ Writer 1 例（圆角连接器几何真实
   `.vsdx` 往返，引擎共 54）、控制器 1 例（圆角开关 + 重路由保持 + 撤销，App 共 52）。`dart analyze`/`flutter analyze`
   干净、`dart test`（54）+ `flutter test`（52）通过。
+- 2026-07-13 — **对齐 drawio（批次二十七）——形状库扩充 + 统一形状入口**：把形状面板从 9 个流程图形状
+  扩到 **~40 个**、按 drawio 分组，并把"更多形状"入口从顶部 AppBar 挪到左侧工具条，统一在左侧。引擎
+  `VsdxShapeFactory` 新增 **cylinder/document/cube/predefinedProcess/internalStorage/delay** 六个复合几何
+  构造器——全部只用白名单命令（`MoveTo`/`LineTo`/`EllipseCmd`/`EllipticalArcTo`），其中 cube/预定义流程/
+  内部存储用**双 geometry**（第二段 `NoFill` 画内部棱线/竖线），cylinder/document/delay 用椭圆弧（控制点＝弧
+  中点），故**渲染与 Writer 零改动、完整往返**（Writer 早已支持多 geometry section + `NoFill`，parser 早已读回）。
+  `stencils.dart` 重写为 `StencilGroup` 分组（**General / Flowchart / Arrows**，矩形/圆角/文本/椭圆/方/圆/菱形/
+  平行四边形/三角/直角三角/五~八边形/梯形/十字/星/圆柱/立方体/文档/卡片/标注/step；流程图 process/decision/
+  terminator/data/预定义流程/内部存储/手动输入/手动操作/准备/delay/off-page；箭头 右/左/上/下/双向）+ flatten
+  `kStencils`。`main.dart`：`_StencilPanel` 改 StatefulWidget（**搜索框** + **可折叠分组** + **真实几何缩略图**——
+  `_StencilThumbPainter` 复用 `buildPath`，把 shape-local（左下原点/Y-up）Y 翻转映射进缩略图框，逐 geometry 尊重
+  `NoFill`/`NoShow`，预览即所得）；`_ToolStrip` 底部加 **"More shapes"** 切换按钮（AppBar 移除 `category_outlined`）。
+  测试：引擎 1 例（cube 双 geometry + 第二段 `noFill`、cylinder/delay 椭圆弧往返,共 55/55）；`dart analyze`（app +
+  引擎）干净、`flutter test`（52）通过、`flutter build macos` 成功。纯新增/UI，无破坏性改动。
+- 2026-07-13 — **对齐 drawio（批次二十八）——图形种类再扩充（Cloud + UML）+ 连接能力（悬停连接点 + begin 固定点）**：
+  两方面推进。**图形**：`VsdxShapeFactory` 新增 **cloud**（沿边界锚点逐段外凸 `EllipticalArcTo` 组成闭合"泡泡"轮廓）、
+  **umlActor**（头 `EllipseCmd` + 身体/手臂/双腿 `NoFill` 线，双 geometry 火柴人）、**umlClass**（矩形 + 两条 `NoFill`
+  分隔线＝标题/属性/方法三格）、**umlPackage**（左上 tab + body 的文件夹单多边形）、**note**（切角矩形 + `NoFill`
+  折角线）——仍全部只用白名单命令（`MoveTo`/`LineTo`/`EllipseCmd`/`EllipticalArcTo`），往返安全；`stencils.dart`
+  General 加 **Cloud**、新增 **UML 组**（Actor / Use Case / Class / Package / Note / Node），形状总数升到 ~50。
+  **连接**：`EditorController.createConnector` 加 `beginConnectionPointIndex`——begin 端经 `setConnectorEndpoint(begin:true,
+  connectionPointIndex:)` 物化/胶合到目标**固定连接点**（对称既有 end，`<Connect> ToPart=100+k`、`fromPart=9`）；
+  `PageCanvas` 两处对齐 drawio：(1) **悬停 select 模式的形状即显示其 `effectiveConnectionPoints`**（drawio 蓝叉，
+  此前仅拖动/连线时显示），(2) 从悬停方向箭头拖出连线时把 **begin 端 glue 到该方向对应的固定连接点**（箭头 dir 0/1/2/3
+  ↔ 默认点 top/right/bottom/left 索引，仅当形状用默认点集时启用、否则回退整形状 glue，避免自定义点越界）；新增
+  `_connectSourceConnIndex` 会话态并在 panEnd/取消时复位。测试：引擎 2 例（UML/cloud 往返＝umlClass 双 geometry+第二段
+  `noFill`、cloud ≥6 段弧、note 双 geometry+`noFill`；连接器 begin 端胶合固定点往返＝物化标准 5 点 + `ToPart=101` +
+  begin 端定位到右中点，共 57/57）；`dart analyze`/`flutter analyze` 干净、`flutter test`（52）通过、`flutter build macos` 成功。
+- 2026-07-14 — **对齐 drawio（批次二十九）——图形种类再扩充 + 连接能力（Line jumps 线跳）**：两方面继续推进。
+  **图形**：`VsdxShapeFactory` 新增 **display**（左尖 + 右半圆弧）、**orGate**（圆 + 全宽十字，双 geometry）、
+  **summingJunction**（圆 + 45°X，双 geometry）、**sort**（菱形 + 中横线，双 geometry）、**heart**（四段椭圆弧心形）——
+  仍全白名单命令、往返安全；`stencils.dart` Flowchart 加 **Display / Merge / Collate / Or / Summing Junction / Sort /
+  Loop Limit**、General 加 **Lightning / Heart**（Merge/Collate/Loop Limit/Lightning 为多边形），形状总数升到 ~60。
+  **连接**：实现 drawio 标志性的 **Line jumps（线跳）**——连接器与另一连接器交叉处画小半圆弧"跳过"而非形成歧义的
+  "+"。新增纯函数 `lib/render/line_jumps.dart`（`segmentIntersection` 仅取严格内部真交叉、`polylineCrossings`、
+  `polylineWithJumps` 沿每段在与下层连接器的交叉参数处插入半圆弧、含重叠/近端点保护）；`VsdxPainter` 加
+  `drawLineJumps`/`lineJumpRadiusInches` 参数——`paint` 前预算所有连接器的**页面折线（z 序）**（`_computeConnectorRoutes`／
+  `_connectorPagePolyline`／`_polylineLocalPoints`／`_localToPageOffset`），`_paintGeometries` 对 1-D stroke 把与**更低 z**
+  连接器的交叉处（经 `_pageToLocal` 转当前连接器局部坐标求交）烘成跳线；**纯渲染层、零碰几何/往返/Writer**。控制器
+  `showLineJumps`/`toggleLineJumps`（默认开），画布传参，`main.dart` ⋯ More 菜单加 **"Line jumps"** 勾选项。测试：引擎
+  1 例（Or/Sort 双 geometry+第二段 `noFill`、Display/Heart 椭圆弧往返，共 58/58）、App 4 例（`line_jumps` 纯函数：真交叉点、
+  拒绝平行/端点相接、交叉计数、跳线弧使轮廓变长，共 56）；`dart analyze`/`flutter analyze` 干净、`flutter test` 通过、
+  `flutter build macos` 成功。

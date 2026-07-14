@@ -32,10 +32,23 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Rounded rectangles**: a "Rounded" stencil plus a **corner-radius slider**
   in the inspector that rounds (or squares) any rectangle; corners are stored
   as `EllipticalArcTo` arcs and round-trip through the writer.
-- **Shapes palette**: a stencil panel of flowchart shapes (process, rounded,
-  terminator, decision, data, triangle, hexagon, pentagon, arrow) — click to
-  drop one at the centre, or **drag it onto the canvas** to drop it at the
-  cursor (drawio-style).
+- **Shapes palette** (drawio's shapes sidebar): a searchable panel with
+  collapsible **General / Flowchart / Arrows / UML** groups covering ~60 stencils
+  (rectangle, rounded, text, ellipse, square, circle, diamond, parallelogram,
+  triangle, right triangle, pentagon, hexagon, octagon, trapezoid, cross, star,
+  cylinder, cube, document, card, callout, step, cloud, **lightning, heart**;
+  process, decision, terminator, data, predefined process, internal storage,
+  manual input, manual operation, preparation, delay, off-page reference,
+  **display, merge, collate, or, summing junction, sort, loop limit**;
+  right/left/up/down/double arrows; UML actor, use case, class, package, note,
+  node).
+  Each tile is a **live geometry thumbnail** (not an icon), so the preview
+  matches what drops on the canvas. Click to drop at the centre, or **drag it
+  onto the canvas** to drop at the cursor. Every stencil is built from
+  polygon / ellipse / rounded-rect / elliptical-arc geometry (incl. multi-path
+  shapes with `NoFill` inner edges) so it round-trips through the writer
+  losslessly. The palette toggle ("More shapes") lives in the **left tool
+  strip**, unifying every shape entry point on the left.
 - **Insert Image** (drawio "Insert > Image"): embed a raster image
   (PNG / JPEG / GIF / BMP / WEBP) as a picture shape — sized from its pixel
   dimensions and fitted to the page — from the toolbar or the ⋯ menu. The
@@ -60,11 +73,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   across re-routes. A selected connector shows green **endpoint handles**:
   drag one onto another shape to reconnect that end (re-glue), or onto empty
   canvas to detach it to a floating point; **Clear Waypoints** (right-click)
-  resets the route. While wiring or dragging an endpoint onto a shape its
-  **fixed connection points** show (drawio's blue crosses — edge midpoints and
-  centre); snapping to one pins the end there so it tracks the shape under move
-  / resize / rotate. Points round-trip to Visio's `<Section N="Connection">`
-  (the connect's `ToPart` selects the point).
+  resets the route. A shape's **fixed connection points** show (drawio's blue
+  crosses — edge midpoints and centre) while wiring or dragging an endpoint onto
+  it **and now simply while hovering it** in select mode, so the attach points
+  are visible before you drag. Snapping to one pins that end there so it tracks
+  the shape under move / resize / rotate; **both ends** glue to a specific point
+  — dragging a connector out of a hover arrow glues its **begin** end to that
+  side's point too (not just the whole shape). Points round-trip to Visio's
+  `<Section N="Connection">` (the connect's `ToPart` selects the point).
 - **Edge labels**: double-click a connector to label it; the text is drawn
   centred on the route's midpoint (drawio-style) with a page-coloured backing
   for legibility, and the in-place editor opens right there.
@@ -73,6 +89,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   connector — dropping on another shape glues both ends, dropping on empty
   canvas leaves a loose end. The shape the connector would glue to is
   highlighted while wiring (also with the connector tool).
+- **Line jumps** (drawio's "Line jumps"): where a connector crosses another it
+  **arcs over** the lower one (a small semicircle at each crossing with a
+  lower-z connector) instead of forming an ambiguous "+" junction. Pure
+  render-only overlay — it never touches the geometry or the round-trip; toggle
+  it from the ⋯ menu (on by default).
 - **Style**: fill colour, line colour, line weight, no-fill / no-line, plus a
   drawio-style Format panel — **line dash** (solid / dashed / dotted / dash-dot),
   **arrowhead types** (selectable start / end heads with previews: filled, open,

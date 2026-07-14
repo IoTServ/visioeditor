@@ -21,6 +21,7 @@ import 'connector_router.dart';
 import 'dash_path.dart';
 import 'font_fallback.dart';
 import 'image_cache.dart';
+import 'line_jumps.dart';
 import 'path_builder.dart';
 import 'pattern_fill.dart';
 import 'shape_bounds.dart' as bounds;
@@ -44,6 +45,8 @@ class VsdxPainter extends CustomPainter {
     this.fontFallback = VsdxFontFallback.defaults,
     this.noPageLoadedMessage = 'No page loaded',
     this.noShapesOnPageMessage = 'No shapes parsed yet',
+    this.drawLineJumps = true,
+    this.lineJumpRadiusInches = 0.07,
   }) : super(repaint: imageCache);
 
   final VsdxPage? page;
@@ -93,6 +96,19 @@ class VsdxPainter extends CustomPainter {
   final VsdxFontFallback fontFallback;
   final String noPageLoadedMessage;
   final String noShapesOnPageMessage;
+
+  /// Line jumps (drawio's "Line jumps"): arc a connector over the lower-z
+  /// connectors it crosses, so overlaps read as hops rather than "+" junctions.
+  final bool drawLineJumps;
+
+  /// Jump arc radius, in page inches.
+  final double lineJumpRadiusInches;
+
+  // Per-paint cache (filled at the top of [paint]): every connector's
+  // page-space polyline in z-order, plus a shape-id → z-index lookup. Used so a
+  // connector can hop over the connectors drawn beneath it.
+  List<List<Offset>> _connRoutesPage = const <List<Offset>>[];
+  Map<int, int> _connZ = const <int, int>{};
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -146,6 +162,13 @@ class VsdxPainter extends CustomPainter {
     // remains cheap when many shapes overlap.
     final viewportInches = Rect.fromLTWH(0, 0, p.widthInches, p.heightInches);
 
+    if (drawLineJumps) {
+      _computeConnectorRoutes(p);
+    } else {
+      _connRoutesPage = const <List<Offset>>[];
+      _connZ = const <int, int>{};
+    }
+
     for (final shape in p.shapes) {
       _paintShape(canvas, shape, visibleLayers, bboxes, viewportInches);
     }
@@ -158,6 +181,58 @@ class VsdxPainter extends CustomPainter {
     final out = bounds.buildShapeBounds(p);
     _bboxCache[p] = out;
     return out;
+  }
+
+  /// Cache every top-level connector's page-space polyline (z-ordered) so a
+  /// connector can hop over the ones drawn beneath it (line jumps).
+  void _computeConnectorRoutes(VsdxPage p) {
+    final routes = <List<Offset>>[];
+    final z = <int, int>{};
+    for (final s in p.shapes) {
+      if (!s.is1D || !s.hasGeometry) continue;
+      final pts = _connectorPagePolyline(s);
+      if (pts.length < 2) continue;
+      z[s.id] = routes.length;
+      routes.add(pts);
+    }
+    _connRoutesPage = routes;
+    _connZ = z;
+  }
+
+  /// The connector [s]'s drawn polyline in page inches (its first pure
+  /// MoveTo/LineTo geometry, mapped through the shape's XForm), or empty.
+  List<Offset> _connectorPagePolyline(VsdxShape s) {
+    for (final g in s.geometries) {
+      if (g.noShow) continue;
+      final local = _polylineLocalPoints(g);
+      if (local.length >= 2) {
+        return <Offset>[for (final pt in local) _localToPageOffset(s, pt)];
+      }
+    }
+    return const <Offset>[];
+  }
+
+  /// Local MoveTo/LineTo vertices of [g], or empty if it holds any other
+  /// command (i.e. it isn't a plain polyline).
+  List<Offset> _polylineLocalPoints(VsdxGeometry g) {
+    final pts = <Offset>[];
+    for (final c in g.commands) {
+      switch (c) {
+        case MoveTo(:final x, :final y):
+          pts.add(Offset(x, y));
+        case LineTo(:final x, :final y):
+          pts.add(Offset(x, y));
+        default:
+          return const <Offset>[];
+      }
+    }
+    return pts;
+  }
+
+  /// Map a shape-local point (origin bottom-left, Y-up) to page inches.
+  Offset _localToPageOffset(VsdxShape s, Offset local) {
+    final p = VsdxPage.localToPage(s, Offset2D(local.dx, local.dy));
+    return Offset(p.x, p.y);
   }
 
   void _paintShape(
@@ -240,11 +315,33 @@ class VsdxPainter extends CustomPainter {
       if (!geom.noLine && shape.line.hasLine) {
         final strokePaint = _resolveStrokePaint(shape);
         if (strokePaint != null) {
-          final strokeP = dashes == null ? path : dashedPath(path, dashes);
+          var strokeSrc = path;
+          if (shape.is1D && drawLineJumps) {
+            final jumped = _lineJumpsPath(shape, geom);
+            if (jumped != null) strokeSrc = jumped;
+          }
+          final strokeP =
+              dashes == null ? strokeSrc : dashedPath(strokeSrc, dashes);
           canvas.drawPath(strokeP, strokePaint);
         }
       }
     }
+  }
+
+  /// Stroke path for connector [shape]'s polyline [geom] with a small arc over
+  /// every crossing with a lower-z connector (line jumps), or `null` when it
+  /// crosses nothing (draw the plain path).
+  Path? _lineJumpsPath(VsdxShape shape, VsdxGeometry geom) {
+    final k = _connZ[shape.id];
+    if (k == null || k == 0) return null; // nothing drawn beneath it
+    final route = _polylineLocalPoints(geom);
+    if (route.length < 2) return null;
+    final unders = <List<Offset>>[
+      for (var i = 0; i < k; i++)
+        <Offset>[for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg)],
+    ];
+    if (polylineCrossings(route, unders).isEmpty) return null;
+    return polylineWithJumps(route, unders, lineJumpRadiusInches);
   }
 
   /// 1-D shape with no explicit Geometry section — route an orthogonal

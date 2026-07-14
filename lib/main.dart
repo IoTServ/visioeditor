@@ -19,6 +19,7 @@ import 'editor/page_canvas.dart';
 import 'editor/ruler.dart';
 import 'editor/stencils.dart';
 import 'render/arrow_library.dart';
+import 'render/path_builder.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
@@ -540,12 +541,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 tooltip: 'Redo',
               ),
               IconButton(
-                onPressed: () => setState(() => _showStencils = !_showStencils),
-                icon: const Icon(Icons.category_outlined),
-                isSelected: _showStencils,
-                tooltip: 'Shapes palette',
-              ),
-              IconButton(
                 onPressed: () => setState(() => _showOutline = !_showOutline),
                 icon: const Icon(Icons.map_outlined),
                 isSelected: _showOutline,
@@ -638,6 +633,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       c.pasteStyle();
                     case 'snap':
                       c.toggleSnap();
+                    case 'lineJumps':
+                      c.toggleLineJumps();
                     case 'close':
                       _closeTab(_workspace.activeIndex);
                   }
@@ -707,6 +704,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     value: 'snap',
                     checked: c.snapToGrid,
                     child: const Text('Snap to grid'),
+                  ),
+                  CheckedPopupMenuItem<String>(
+                    value: 'lineJumps',
+                    checked: c.showLineJumps,
+                    child: const Text('Line jumps'),
                   ),
                   const PopupMenuItem<String>(
                     value: 'close',
@@ -833,7 +835,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
     return Row(
       children: [
-        _ToolStrip(controller: c),
+        _ToolStrip(
+          controller: c,
+          showStencils: _showStencils,
+          onToggleStencils: () =>
+              setState(() => _showStencils = !_showStencils),
+        ),
         const VerticalDivider(width: 1),
         if (_showStencils) ...[
           _StencilPanel(controller: c),
@@ -1085,9 +1092,15 @@ class _EmptyState extends StatelessWidget {
 
 /// Left-hand vertical tool palette.
 class _ToolStrip extends StatelessWidget {
-  const _ToolStrip({required this.controller});
+  const _ToolStrip({
+    required this.controller,
+    required this.showStencils,
+    required this.onToggleStencils,
+  });
 
   final EditorController controller;
+  final bool showStencils;
+  final VoidCallback onToggleStencils;
 
   @override
   Widget build(BuildContext context) {
@@ -1123,6 +1136,24 @@ class _ToolStrip extends StatelessWidget {
             tool(EditorTool.line, Icons.horizontal_rule, 'Line'),
             tool(EditorTool.connector, Icons.timeline, 'Connector (glue)'),
             tool(EditorTool.text, Icons.text_fields, 'Text'),
+            const Spacer(),
+            const Divider(height: 1, indent: 10, endIndent: 10),
+            // Unified shapes entry: the "more shapes" library toggle lives with
+            // the drawing tools (drawio keeps the shapes sidebar on the left).
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+              child: Material(
+                color:
+                    showStencils ? cs.primaryContainer : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                child: IconButton(
+                  onPressed: onToggleStencils,
+                  icon: const Icon(Icons.category_outlined),
+                  tooltip: 'More shapes',
+                  color: showStencils ? cs.onPrimaryContainer : null,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1130,56 +1161,58 @@ class _ToolStrip extends StatelessWidget {
   }
 }
 
-/// Left-hand shapes palette; clicking a stencil drops it on the current page.
-class _StencilPanel extends StatelessWidget {
+/// Left-hand shapes palette (drawio's shapes sidebar): a search box plus
+/// collapsible groups of live-thumbnail stencils. Clicking drops a stencil at
+/// the page centre; dragging drops it at the cursor.
+class _StencilPanel extends StatefulWidget {
   const _StencilPanel({required this.controller});
 
   final EditorController controller;
 
   @override
+  State<_StencilPanel> createState() => _StencilPanelState();
+}
+
+class _StencilPanelState extends State<_StencilPanel> {
+  String _query = '';
+  final Set<String> _collapsed = <String>{};
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final q = _query.trim().toLowerCase();
+    final searching = q.isNotEmpty;
     return SizedBox(
-      width: 168,
+      width: 184,
       child: ColoredBox(
         color: scheme.surface,
-        child: ListView(
-          padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
-              child: Text('Shapes',
-                  style: Theme.of(context).textTheme.labelLarge),
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: TextField(
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: 'Search shapes',
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                style: const TextStyle(fontSize: 13),
+                onChanged: (v) => setState(() => _query = v),
+              ),
             ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final s in kStencils)
-                  Tooltip(
-                    message: s.name,
-                    // Drag a stencil onto the canvas to drop it at the cursor
-                    // (drawio); a plain click still drops it at the centre.
-                    child: Draggable<Stencil>(
-                      data: s,
-                      dragAnchorStrategy: pointerDragAnchorStrategy,
-                      feedback: Material(
-                        color: Colors.transparent,
-                        child: Opacity(
-                          opacity: 0.85,
-                          child: _tile(scheme, s, elevated: true),
-                        ),
-                      ),
-                      childWhenDragging:
-                          Opacity(opacity: 0.4, child: _tile(scheme, s)),
-                      child: InkWell(
-                        onTap: () => controller.addShapeFromBuilder(s.build),
-                        borderRadius: BorderRadius.circular(8),
-                        child: _tile(scheme, s),
-                      ),
-                    ),
-                  ),
-              ],
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                children: [
+                  for (final group in kStencilGroups)
+                    ..._buildGroup(scheme, group, q, searching),
+                ],
+              ),
             ),
           ],
         ),
@@ -1187,30 +1220,161 @@ class _StencilPanel extends StatelessWidget {
     );
   }
 
+  List<Widget> _buildGroup(
+      ColorScheme scheme, StencilGroup group, String q, bool searching) {
+    final matches = searching
+        ? group.stencils
+            .where((s) => s.name.toLowerCase().contains(q))
+            .toList()
+        : group.stencils;
+    if (matches.isEmpty) return const <Widget>[];
+    final collapsed = !searching && _collapsed.contains(group.name);
+    return <Widget>[
+      InkWell(
+        onTap: searching
+            ? null
+            : () => setState(() {
+                  if (!_collapsed.remove(group.name)) {
+                    _collapsed.add(group.name);
+                  }
+                }),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
+          child: Row(
+            children: [
+              Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
+                  size: 16),
+              const SizedBox(width: 2),
+              Text(group.name, style: Theme.of(context).textTheme.labelLarge),
+            ],
+          ),
+        ),
+      ),
+      if (!collapsed)
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final s in matches) _draggableTile(scheme, s),
+          ],
+        ),
+    ];
+  }
+
+  Widget _draggableTile(ColorScheme scheme, Stencil s) {
+    return Tooltip(
+      message: s.name,
+      // Drag a stencil onto the canvas to drop it at the cursor (drawio); a
+      // plain click still drops it at the centre.
+      child: Draggable<Stencil>(
+        data: s,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(opacity: 0.85, child: _tile(scheme, s, elevated: true)),
+        ),
+        childWhenDragging: Opacity(opacity: 0.4, child: _tile(scheme, s)),
+        child: InkWell(
+          onTap: () => widget.controller.addShapeFromBuilder(s.build),
+          borderRadius: BorderRadius.circular(8),
+          child: _tile(scheme, s),
+        ),
+      ),
+    );
+  }
+
   Widget _tile(ColorScheme scheme, Stencil s, {bool elevated = false}) {
     return Container(
-      width: 64,
-      height: 56,
+      width: 72,
+      height: 62,
       decoration: BoxDecoration(
-        color: elevated ? scheme.surfaceContainerHighest : null,
+        color:
+            elevated ? scheme.surfaceContainerHighest : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(s.icon, size: 24),
-          const SizedBox(height: 4),
-          Text(
-            s.name,
-            style: const TextStyle(fontSize: 9),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          SizedBox(
+            width: 52,
+            height: 32,
+            child: CustomPaint(
+              painter: _StencilThumbPainter(
+                s,
+                scheme.primaryContainer,
+                scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Text(
+              s.name,
+              style: const TextStyle(fontSize: 8.5),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Paints a stencil's real geometry into a thumbnail box. Builds the shape once
+/// (pin irrelevant), then maps its shape-local coordinates (origin bottom-left,
+/// Y-up, inches) into the box (origin top-left, Y-down) with a Y-flip so the
+/// preview matches what drops on the canvas.
+class _StencilThumbPainter extends CustomPainter {
+  _StencilThumbPainter(this.stencil, this.fillColor, this.strokeColor);
+
+  final Stencil stencil;
+  final Color fillColor;
+  final Color strokeColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shape = stencil.build(0, 0, 0);
+    final w = shape.width;
+    final h = shape.height;
+    if (w <= 0 || h <= 0 || shape.geometries.isEmpty) return;
+    const pad = 5.0;
+    final s = math.min(
+      (size.width - 2 * pad) / w,
+      (size.height - 2 * pad) / h,
+    );
+    if (s <= 0) return;
+    final dx = (size.width - w * s) / 2;
+    final dy = (size.height - h * s) / 2;
+    canvas.save();
+    canvas.translate(dx, size.height - dy);
+    canvas.scale(s, -s);
+    final fill = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+    final line = Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2 / s
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
+    for (final g in shape.geometries) {
+      if (g.noShow) continue;
+      final path = buildPath(g, widthInches: w, heightInches: h);
+      if (!g.noFill) canvas.drawPath(path, fill);
+      if (!g.noLine) canvas.drawPath(path, line);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _StencilThumbPainter old) =>
+      old.stencil != stencil ||
+      old.fillColor != fillColor ||
+      old.strokeColor != strokeColor;
 }
 
 /// Right-hand inspector for the current selection (fill / line / delete).
