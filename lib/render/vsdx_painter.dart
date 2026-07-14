@@ -945,35 +945,15 @@ class VsdxPainter extends CustomPainter {
     final isEdgeLabel = shape.is1D;
 
     final block = rich.textBlock;
+    final s = pxPerInch;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
-    // Visio pins the text block by its local pin (TxtLocPin), not its centre,
-    // so the block centre — the anchor the dx/dy alignment below is measured
-    // from — is pin - locPin + size/2. locPin defaults to the block centre, so
-    // shapes that omit it keep centring on their pin.
-    final tlx = block.locPinXInches ?? tw / 2;
-    final tly = block.locPinYInches ?? th / 2;
-    var tpx = (block.pinXInches ?? shape.width / 2) - tlx + tw / 2;
-    var tpy = (block.pinYInches ?? shape.height / 2) - tly + th / 2;
-    if (isEdgeLabel && block.pinXInches == null && block.pinYInches == null) {
-      final mid = VsdxPage.connectorMidpoint(shape);
-      final local = _pageToLocal(shape, Offset(mid.x, mid.y));
-      tpx = local.dx;
-      tpy = local.dy;
-    }
 
-    // Text is laid out in PIXEL space, not the canvas's inches-scale. Flutter's
-    // TextPainter is not transform-aware: shaping a 10pt font as ~0.14 logical
-    // px makes the engine quantise glyph advances to ~0, so long labels wrap at
-    // the wrong place (or pile up). So we undo the inches-scale for the block
-    // and lay out at real pixel sizes (fontSize·ppi, maxWidth·ppi), exactly as
-    // the visiovsdxviewer reference does. Geometry is identical; wrapping isn't.
-    final s = pxPerInch;
-    canvas.save();
-    canvas.translate(tpx, tpy);
-    if (block.angleRad != 0) canvas.rotate(block.angleRad);
-    canvas.scale(1 / s, -1 / s); // inches → pixels, and flip Y upright
-
+    // Build the text spans. Font sizes are scaled to pixels because Flutter's
+    // TextPainter is not transform-aware: at the canvas's inches-scale a 10pt
+    // font becomes ~0.14 logical px and the shaper quantises glyph advances to
+    // ~0 (garbled / mis-wrapped text). So we shape in pixel space, like the
+    // visiovsdxviewer reference.
     final spans = <TextSpan>[];
     if (hasRich) {
       for (final run in rich.runs) {
@@ -990,61 +970,88 @@ class VsdxPainter extends CustomPainter {
         ),
       ));
     }
-
     final align = hasRich
         ? _flutterAlign(rich.runs.first.paraStyle.horizontalAlign)
         : TextAlign.center;
 
-    // Lay out within the block's content area (inside the margins), in pixels.
-    // The canvas origin is the text-block centre, so dx/dy are relative to it.
-    // Edge labels aren't clipped to a box, so they lay out at natural width.
+    // Connector edge label with no explicit text pin: centre it on the drawn
+    // route midpoint (no text box).
+    if (isEdgeLabel && block.pinXInches == null && block.pinYInches == null) {
+      final mid = VsdxPage.connectorMidpoint(shape);
+      final local = _pageToLocal(shape, Offset(mid.x, mid.y));
+      canvas.save();
+      canvas.translate(local.dx, local.dy);
+      if (block.angleRad != 0) canvas.rotate(block.angleRad);
+      canvas.scale(1 / s, -1 / s);
+      final tp = TextPainter(
+        text: TextSpan(children: spans),
+        textAlign: align,
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      )..layout();
+      final ox = -tp.width / 2;
+      final oy = -tp.height / 2;
+      if (tp.width > 0) {
+        final pad = 0.03 * s;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+                ox - pad, oy - pad, tp.width + pad * 2, tp.height + pad * 2),
+            Radius.circular(0.02 * s),
+          ),
+          Paint()..color = _edgeLabelBackground(),
+        );
+      }
+      tp.paint(canvas, Offset(ox, oy));
+      canvas.restore();
+      return;
+    }
+
+    // Regular text block. Visio places the block's local pin (TxtLocPin) on its
+    // pin (TxtPin) and rotates the whole block about that pin by TxtAngle, then
+    // flows the text inside the TxtWidth × TxtHeight rectangle. Rotating about
+    // the pin — not the block centre — is what keeps a rotated / vertical label
+    // anchored at its start instead of sliding its tail onto the start point.
+    final pinX = block.pinXInches ?? shape.width / 2;
+    final pinY = block.pinYInches ?? shape.height / 2;
+    final locPinX = block.locPinXInches ?? tw / 2;
+    final locPinY = block.locPinYInches ?? th / 2;
+
+    canvas.save();
+    canvas.translate(pinX, pinY); // to TxtPin (shape-local, Y-up)
+    if (block.angleRad != 0) canvas.rotate(block.angleRad);
+    canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
+    canvas.translate(0, th); // to the block's upper-left corner (Y still up)
+    canvas.scale(1 / s, -1 / s); // → pixel space, Y-down upright text frame
+
     final twPx = tw * s;
     final thPx = th * s;
     final mlPx = block.marginLeftInches * s;
     final mrPx = block.marginRightInches * s;
     final mtPx = block.marginTopInches * s;
     final mbPx = block.marginBottomInches * s;
-    final innerWidthPx =
-        isEdgeLabel ? double.infinity : math.max(0.0, twPx - mlPx - mrPx);
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
       textDirection: TextDirection.ltr,
       maxLines: null,
-    )..layout(maxWidth: innerWidthPx);
+    )..layout(maxWidth: math.max(0.0, twPx - mlPx - mrPx));
 
-    final dx = isEdgeLabel
-        ? -tp.width / 2
-        : switch (align) {
-            TextAlign.center => -tp.width / 2,
-            TextAlign.right => twPx / 2 - tp.width - mrPx,
-            // left / justify / start / end
-            _ => -twPx / 2 + mlPx,
-          };
-    final dy = isEdgeLabel
-        ? -tp.height / 2
-        : switch (block.verticalAlign) {
-            VsdxVertAlign.top => -thPx / 2 + mtPx,
-            VsdxVertAlign.bottom => thPx / 2 - tp.height - mbPx,
-            VsdxVertAlign.middle => -tp.height / 2,
-          };
+    // Offsets measured from the block's upper-left corner (px).
+    final ox = switch (align) {
+      TextAlign.center => (twPx - tp.width) / 2,
+      TextAlign.right => twPx - mrPx - tp.width,
+      _ => mlPx, // left / justify / start
+    };
+    var oy = switch (block.verticalAlign) {
+      VsdxVertAlign.top => mtPx,
+      VsdxVertAlign.bottom => thPx - mbPx - tp.height,
+      VsdxVertAlign.middle => (thPx - tp.height) / 2,
+    };
+    // Text taller than the box grows downward from the top (Visio / drawio).
+    if (block.verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
 
-    // Edge labels sit on top of the connector line, so back them with the
-    // page colour for legibility (drawio does the same).
-    if (isEdgeLabel && tp.width > 0) {
-      final pad = 0.03 * s;
-      final halo = Rect.fromLTWH(
-        dx - pad,
-        dy - pad,
-        tp.width + pad * 2,
-        tp.height + pad * 2,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(halo, Radius.circular(0.02 * s)),
-        Paint()..color = _edgeLabelBackground(),
-      );
-    }
-    tp.paint(canvas, Offset(dx, dy));
+    tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
   }
 
