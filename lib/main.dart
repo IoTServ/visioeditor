@@ -557,6 +557,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
                 tooltip: 'Toggle grid',
               ),
+              IconButton(
+                onPressed: c.requestFitToWindow,
+                icon: const Icon(Icons.fit_screen_outlined),
+                tooltip: 'Fit to window (⇧⌘H)',
+              ),
               if (c.hasLayers)
                 IconButton(
                   onPressed: _showLayers,
@@ -850,7 +855,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
           child: Stack(
             children: [
               Positioned.fill(
-                child: PageCanvas(controller: c, camera: _camera),
+                // Key by controller so each open document gets its own canvas
+                // state (view transform, caches). Without this the shared state
+                // leaks across tabs / new files, so a freshly-created document —
+                // whose first page reuses id 0 — keeps the previous document's
+                // zoom & offset and shows up tiny in a corner instead of fitted.
+                child: PageCanvas(
+                  key: ObjectKey(c),
+                  controller: c,
+                  camera: _camera,
+                ),
               ),
               if (_showRulers)
                 Positioned.fill(

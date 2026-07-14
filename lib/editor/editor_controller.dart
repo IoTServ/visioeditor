@@ -1871,6 +1871,20 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Fit to window (drawio "Fit Page") -------------------------------------
+
+  /// Monotonic counter the canvas watches to know a fit-to-window was
+  /// requested (from the toolbar / zoom controls), so the whole page is scaled
+  /// to fit and re-centred in the viewport.
+  int get fitSerial => _fitSerial;
+  int _fitSerial = 0;
+
+  /// Ask the canvas to zoom so the whole page fits, centred in the viewport.
+  void requestFitToWindow() {
+    _fitSerial++;
+    notifyListeners();
+  }
+
   String get findQuery => _findQuery;
   int get findMatchCount => _findMatches.length;
 

@@ -78,6 +78,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Reveal ("scroll into view") — tracks the controller's revealSerial.
   int _lastRevealSerial = 0;
+  // Fit-to-window requests (toolbar / zoom controls) — tracks fitSerial.
+  int _lastFitSerial = 0;
   Offset _doubleTapPos = Offset.zero;
   _Handle? _activeHandle;
   int? _resizeShapeId;
@@ -1599,6 +1601,12 @@ class _PageCanvasState extends State<PageCanvas> {
                 if (mounted) _handleReveal();
               });
             }
+            if (_c.fitSerial != _lastFitSerial) {
+              _lastFitSerial = _c.fitSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) fitToScreen();
+              });
+            }
             // Publish the current view transform to the Outline minimap.
             if (widget.camera != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2181,12 +2189,18 @@ class _ZoomControls extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
+            onPressed: onFit,
+            icon: const Icon(Icons.fit_screen_outlined),
+            tooltip: 'Fit to window (⇧⌘H)',
+          ),
+          const VerticalDivider(width: 1, indent: 8, endIndent: 8),
+          IconButton(
             onPressed: onZoomOut,
             icon: const Icon(Icons.remove),
             tooltip: 'Zoom out',
           ),
           Tooltip(
-            message: 'Fit to screen',
+            message: 'Fit to window',
             child: InkWell(
               onTap: onFit,
               borderRadius: BorderRadius.circular(6),
