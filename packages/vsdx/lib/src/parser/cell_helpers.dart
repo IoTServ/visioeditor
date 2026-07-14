@@ -8,7 +8,6 @@ library;
 
 import 'package:xml/xml.dart';
 
-import '../utils/units.dart';
 import 'formula.dart';
 
 /// First direct `<Cell N="$name">` child, ignoring deeper sub-shapes.
@@ -21,16 +20,20 @@ XmlElement? findCell(XmlElement parent, String name) {
   return null;
 }
 
-/// Read the literal numeric value of `<Cell N="$name" V="...">` and convert
-/// it to **inches** if a length unit is provided.
+/// Read the literal numeric value of `<Cell N="$name" V="...">` as **inches**.
 ///
-/// Falls back to [fallback] when the cell is missing, the value is
-/// non-numeric, or the formula (`F=`) makes the literal unreliable
-/// (we deliberately *do* still trust `V=` because Visio always pre-computes
-/// it — formulas are needed only for live re-evaluation).
+/// Visio always stores a cell's `V` in its *internal units* — inches for any
+/// length — and the `U` attribute only records the unit Visio uses to *display*
+/// the value (e.g. `V="24" U="FT"` means 24 inches shown as "2 ft", and
+/// `V="0.138889" U="PT"` means 0.138889 in shown as "10 pt"). So we take `V`
+/// verbatim and must **not** rescale it by `U`. This mirrors libvisio, whose
+/// internal unit is likewise inches. (See the Visio XML schema: "The value of a
+/// cell element is always expressed in internal units.")
 ///
-/// When `F="Inh"` and [inheritFrom] is supplied, returns [inheritFrom]
-/// directly (M2-09 formula-level master inheritance).
+/// When `F="Inh"` and [inheritFrom] is supplied, returns [inheritFrom] directly
+/// (formula-level master inheritance). When there is no literal `V`, falls back
+/// to evaluating the `F=` formula, which *does* honour inline units written in
+/// the expression itself (`1.5 in`, `25.4 mm`).
 double? readLengthInches(
   XmlElement parent,
   String name, {
@@ -45,10 +48,7 @@ double? readLengthInches(
   final v = cell.getAttribute('V');
   if (v != null) {
     final n = double.tryParse(v);
-    if (n != null) {
-      final u = VsdxLengthUnit.tryParse(cell.getAttribute('U'));
-      return toInches(n, u);
-    }
+    if (n != null) return n; // V is already in internal units (inches)
   }
   // No literal — fall back to the F= formula. evaluateFormula handles
   // numeric expressions with inline length units (`1.5 in`, `25.4 mm`).
@@ -56,7 +56,9 @@ double? readLengthInches(
   return evaluateFormula(f);
 }
 
-/// Same shape as [readLengthInches] but for angles → **radians**.
+/// Same shape as [readLengthInches] but for angles → **radians**. Visio stores
+/// the `V` of an angle cell in radians (its internal unit); `U="DEG"` is only a
+/// display hint, so `V` is taken verbatim and never rescaled by `U`.
 double? readAngleRadians(
   XmlElement parent,
   String name, {
@@ -71,10 +73,7 @@ double? readAngleRadians(
   final v = cell.getAttribute('V');
   if (v != null) {
     final n = double.tryParse(v);
-    if (n != null) {
-      final u = VsdxAngleUnit.tryParse(cell.getAttribute('U'));
-      return toRadians(n, u);
-    }
+    if (n != null) return n; // V is already in internal units (radians)
   }
   if (f == null) return null;
   return evaluateFormula(f);

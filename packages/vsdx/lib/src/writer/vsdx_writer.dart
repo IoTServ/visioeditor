@@ -30,7 +30,6 @@ import '../parser/document_parser.dart';
 import '../parser/package_reader.dart';
 import '../parser/relationships.dart';
 import '../utils/color.dart';
-import '../utils/units.dart';
 
 class VsdxWriter {
   const VsdxWriter();
@@ -260,15 +259,15 @@ class VsdxWriter {
     final sheet = _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
     var changed = false;
     if (needWidth) {
-      final cell = _ensurePageSheetCell(sheet, 'PageWidth');
-      final unit = VsdxLengthUnit.tryParse(cell.getAttribute('U'));
-      _writeValue(cell, _fmt(fromInches(ep.widthInches, unit)));
+      // `V` is written in Visio's internal units (inches); the existing `U`
+      // display attribute is left untouched. See readLengthInches.
+      _writeValue(
+          _ensurePageSheetCell(sheet, 'PageWidth'), _fmt(ep.widthInches));
       changed = true;
     }
     if (needHeight) {
-      final cell = _ensurePageSheetCell(sheet, 'PageHeight');
-      final unit = VsdxLengthUnit.tryParse(cell.getAttribute('U'));
-      _writeValue(cell, _fmt(fromInches(ep.heightInches, unit)));
+      _writeValue(
+          _ensurePageSheetCell(sheet, 'PageHeight'), _fmt(ep.heightInches));
       changed = true;
     }
     if (needColor && ep.backgroundColor != null) {
@@ -1211,9 +1210,10 @@ class VsdxWriter {
         (target.charStyle.style.italic ? 0x02 : 0) |
         (target.charStyle.underline ? 0x04 : 0);
     for (final row in charRows) {
-      final sizeCell = _ensureCell(row, 'Size');
-      final unit = VsdxLengthUnit.tryParse(sizeCell.getAttribute('U'));
-      _writeValue(sizeCell, _fmt(fromInches(target.charStyle.fontSizeInches, unit)));
+      // Font size is a length: `V` in internal inches (Visio shows it via `U`,
+      // usually PT), so write the inch value verbatim.
+      _writeValue(
+          _ensureCell(row, 'Size'), _fmt(target.charStyle.fontSizeInches));
       _writeValue(_ensureCell(row, 'Style'), styleInt.toString());
       if (target.charStyle.color != null) {
         _writeValue(_ensureCell(row, 'Color'), _hex(target.charStyle.color!));
@@ -1403,11 +1403,13 @@ class VsdxWriter {
     return true;
   }
 
+  // A cell's `V` is always in Visio's internal units — inches for length,
+  // radians for angle — regardless of its `U` display attribute, so these
+  // patchers write the model value verbatim and leave `U` alone. (Mirrors
+  // readLengthInches / readAngleRadians.)
   bool _patchLength(XmlElement shape, String cell, double base, double value) {
     if ((base - value).abs() <= _epsilon) return false;
-    final el = _ensureCell(shape, cell);
-    final unit = VsdxLengthUnit.tryParse(el.getAttribute('U'));
-    _writeValue(el, _fmt(fromInches(value, unit)));
+    _writeValue(_ensureCell(shape, cell), _fmt(value));
     return true;
   }
 
@@ -1419,17 +1421,13 @@ class VsdxWriter {
   ) {
     if (value == null) return false;
     if (base != null && (base - value).abs() <= _epsilon) return false;
-    final el = _ensureCell(shape, cell);
-    final unit = VsdxLengthUnit.tryParse(el.getAttribute('U'));
-    _writeValue(el, _fmt(fromInches(value, unit)));
+    _writeValue(_ensureCell(shape, cell), _fmt(value));
     return true;
   }
 
   bool _patchAngle(XmlElement shape, String cell, double base, double value) {
     if ((base - value).abs() <= _epsilon) return false;
-    final el = _ensureCell(shape, cell);
-    final unit = VsdxAngleUnit.tryParse(el.getAttribute('U'));
-    _writeValue(el, _fmt(fromRadians(value, unit)));
+    _writeValue(_ensureCell(shape, cell), _fmt(value));
     return true;
   }
 

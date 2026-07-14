@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:xml/xml.dart';
 
 Uint8List _fixture(String name) =>
     File('test/fixtures/$name').readAsBytesSync();
@@ -10,6 +11,40 @@ Uint8List _fixture(String name) =>
 void main() {
   const parser = DocumentParser();
   const writer = VsdxWriter();
+
+  // Regression: the writer must serialise a cell's `V` in Visio's internal
+  // units (inches), leaving the `U` *display* attribute alone — mirroring the
+  // parser. workflow.vsdx's `PageWidth` carries `U="MM"`; writing 20 in must
+  // emit `V="20"` (not the millimetre value 508), so Visio / libvisio read it
+  // back correctly.
+  test('writes cell V in internal inches even when U is a non-inch unit', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    expect(page.widthInches, closeTo(11.9583, 0.01)); // fixture sanity
+
+    final edited =
+        doc.replacePage(0, page.copyWith(widthInches: 20, heightInches: 15));
+    final out = writer.write(originalBytes: bytes, edited: edited);
+
+    // Re-parsing preserves the inch dimensions.
+    final reparsed = parser.parse(out).pages.first;
+    expect(reparsed.widthInches, closeTo(20, 1e-3));
+    expect(reparsed.heightInches, closeTo(15, 1e-3));
+
+    // The raw serialized value is the inch number, and the display unit is kept.
+    final pkg = VsdxPackage.open(out);
+    final pagesPart =
+        pkg.allPartNames.firstWhere((p) => p.endsWith('pages/pages.xml'));
+    final pageWidth = pkg
+        .readPartXml(pagesPart)!
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere((e) =>
+            e.name.local == 'Cell' && e.getAttribute('N') == 'PageWidth');
+    expect(double.parse(pageWidth.getAttribute('V')!), closeTo(20, 1e-3));
+    expect(pageWidth.getAttribute('U'), 'MM'); // display unit untouched
+  });
 
   test('round-trips an edited pin position (Slice-0)', () {
     final bytes = _fixture('test9_rect_and_line.vsdx');
