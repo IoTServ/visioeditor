@@ -234,6 +234,17 @@ class VsdxToSvgSerializer {
               '${_n(fx2 * w)} ${_n(fy2 * h)} ${_n(fx * w)} ${_n(fy * h)} ');
           cx = fx * w;
           cy = fy * h;
+        case QuadBezTo(:final x, :final y, :final x1, :final y1):
+          if (!started) m(0, 0);
+          out.write('Q ${_n(x1)} ${_n(y1)} ${_n(x)} ${_n(y)} ');
+          cx = x;
+          cy = y;
+        case RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1):
+          if (!started) m(0, 0);
+          out.write('Q ${_n(fx1 * w)} ${_n(fy1 * h)} '
+              '${_n(fx * w)} ${_n(fy * h)} ');
+          cx = fx * w;
+          cy = fy * h;
         case ArcTo(:final x, :final y, :final bow):
           if (bow == 0) {
             l(x, y);
@@ -260,6 +271,19 @@ class VsdxToSvgSerializer {
           out.write('Q ${_n(bx)} ${_n(by)} ${_n(x)} ${_n(y)} ');
           cx = x;
           cy = y;
+        case RelEllipticalArcTo(
+            :final fx,
+            :final fy,
+            :final fcx,
+            :final fcy,
+          ):
+          final ex = fx * w;
+          final ey = fy * h;
+          final bx = 2 * (fcx * w) - 0.5 * cx - 0.5 * ex;
+          final by = 2 * (fcy * h) - 0.5 * cy - 0.5 * ey;
+          out.write('Q ${_n(bx)} ${_n(by)} ${_n(ex)} ${_n(ey)} ');
+          cx = ex;
+          cy = ey;
         case EllipseCmd(
             :final cx,
             :final cy,

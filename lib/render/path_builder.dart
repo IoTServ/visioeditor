@@ -83,6 +83,18 @@ Path buildPath(
         );
         cursorX = ex;
         cursorY = ey;
+      case QuadBezTo(:final x, :final y, :final x1, :final y1):
+        if (!hasStart) start(0, 0);
+        path.quadraticBezierTo(x1, y1, x, y);
+        cursorX = x;
+        cursorY = y;
+      case RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1):
+        if (!hasStart) start(0, 0);
+        final ex = fx * widthInches;
+        final ey = fy * heightInches;
+        path.quadraticBezierTo(fx1 * widthInches, fy1 * heightInches, ex, ey);
+        cursorX = ex;
+        cursorY = ey;
       case ArcTo(:final x, :final y, :final bow):
         if (!hasStart) start(0, 0);
         _arcByBow(path, cursorX, cursorY, x, y, bow);
@@ -104,6 +116,22 @@ Path buildPath(
         path.quadraticBezierTo(bezX, bezY, x, y);
         cursorX = x;
         cursorY = y;
+      case RelEllipticalArcTo(
+          :final fx,
+          :final fy,
+          :final fcx,
+          :final fcy,
+        ):
+        if (!hasStart) start(0, 0);
+        final ex = fx * widthInches;
+        final ey = fy * heightInches;
+        final cX = fcx * widthInches;
+        final cY = fcy * heightInches;
+        final bezX = 2 * cX - 0.5 * cursorX - 0.5 * ex;
+        final bezY = 2 * cY - 0.5 * cursorY - 0.5 * ey;
+        path.quadraticBezierTo(bezX, bezY, ex, ey);
+        cursorX = ex;
+        cursorY = ey;
       case EllipseCmd(
           :final cx,
           :final cy,

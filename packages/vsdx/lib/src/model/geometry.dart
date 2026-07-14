@@ -104,6 +104,43 @@ class RelCubBezTo extends VsdxPathCommand {
   String toString() => 'RelCubBezTo(c1=($fx1,$fy1) c2=($fx2,$fy2) -> ($fx,$fy))';
 }
 
+/// `QuadBezTo` — quadratic Bézier curve to (`x`,`y`) with a single control
+/// point (`x1`,`y1`), in shape-local inches (`A`/`B` = control, `X`/`Y` = end).
+@immutable
+class QuadBezTo extends VsdxPathCommand {
+  const QuadBezTo({
+    required this.x,
+    required this.y,
+    required this.x1,
+    required this.y1,
+  });
+  final double x;
+  final double y;
+  final double x1;
+  final double y1;
+  @override
+  String toString() => 'QuadBezTo(c=($x1,$y1) -> ($x,$y))';
+}
+
+/// `RelQuadBezTo` — like [QuadBezTo] but every coordinate is a fraction of the
+/// shape's width/height (X/A scale by width, Y/B by height). MS-VSDX
+/// §"RelQuadBezTo Row".
+@immutable
+class RelQuadBezTo extends VsdxPathCommand {
+  const RelQuadBezTo({
+    required this.fx,
+    required this.fy,
+    required this.fx1,
+    required this.fy1,
+  });
+  final double fx;
+  final double fy;
+  final double fx1;
+  final double fy1;
+  @override
+  String toString() => 'RelQuadBezTo(c=($fx1,$fy1) -> ($fx,$fy))';
+}
+
 /// `ArcTo` — end point + `bow` (the perpendicular offset of the arc's apex
 /// from the chord, MS-VSDX §"ArcTo Row").
 @immutable
@@ -149,6 +186,31 @@ class EllipticalArcTo extends VsdxPathCommand {
   @override
   String toString() =>
       'EllipticalArcTo($x,$y ctrl=($controlX,$controlY) '
+      'angle=$angle ecc=$eccentricity)';
+}
+
+/// `RelEllipticalArcTo` — like [EllipticalArcTo] but the end point (`fx`,`fy`)
+/// and the on-arc control point (`fcx`,`fcy`) are fractions of the shape's
+/// width/height. [angle] (radians) and [eccentricity] (ratio) are absolute,
+/// exactly as in the non-relative row. MS-VSDX §"RelEllipticalArcTo Row".
+@immutable
+class RelEllipticalArcTo extends VsdxPathCommand {
+  const RelEllipticalArcTo({
+    required this.fx,
+    required this.fy,
+    required this.fcx,
+    required this.fcy,
+    this.angle = 0,
+    this.eccentricity = 1,
+  });
+  final double fx;
+  final double fy;
+  final double fcx;
+  final double fcy;
+  final double angle;
+  final double eccentricity;
+  @override
+  String toString() => 'RelEllipticalArcTo($fx,$fy ctrl=($fcx,$fcy) '
       'angle=$angle ecc=$eccentricity)';
 }
 
@@ -360,6 +422,12 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         y2: y2 * sy,
       );
     case RelCubBezTo():
+      return c;
+    case QuadBezTo(:final x, :final y, :final x1, :final y1):
+      return QuadBezTo(x: x * sx, y: y * sy, x1: x1 * sx, y1: y1 * sy);
+    case RelQuadBezTo():
+      return c;
+    case RelEllipticalArcTo():
       return c;
     case ArcTo(:final x, :final y, :final bow):
       return ArcTo(x: x * sx, y: y * sy, bow: bow * (sx + sy) / 2);

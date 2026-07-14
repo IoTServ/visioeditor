@@ -75,6 +75,65 @@ void main() {
     });
   });
 
+  group('quadratic Bézier rows (QuadBezTo / RelQuadBezTo)', () {
+    test('absolute QuadBezTo: A/B=control, X/Y=end (inches)', () {
+      final g = parseGeom(
+        '<Row IX="1" T="QuadBezTo">'
+        '<Cell N="X" V="2"/><Cell N="Y" V="0"/>'
+        '<Cell N="A" V="1"/><Cell N="B" V="1.5"/></Row>',
+      );
+      final c = g.commands.single as QuadBezTo;
+      expect(c.x1, 1);
+      expect(c.y1, 1.5);
+      expect(c.x, 2);
+      expect(c.y, 0);
+    });
+
+    test('RelQuadBezTo keeps raw fractions of width/height', () {
+      final g = parseGeom(
+        '<Row IX="1" T="RelQuadBezTo">'
+        '<Cell N="X" V="1"/><Cell N="Y" V="0.5"/>'
+        '<Cell N="A" V="0.75"/><Cell N="B" V="0.25"/></Row>',
+      );
+      final c = g.commands.single as RelQuadBezTo;
+      expect(c.fx, 1);
+      expect(c.fy, 0.5);
+      expect(c.fx1, 0.75);
+      expect(c.fy1, 0.25);
+    });
+  });
+
+  group('relative elliptical arc row (RelEllipticalArcTo)', () {
+    test('X/Y/A/B are fractions, C=angle (rad), D=eccentricity absolute', () {
+      final g = parseGeom(
+        '<Row IX="1" T="RelEllipticalArcTo">'
+        '<Cell N="X" V="1"/><Cell N="Y" V="0.5"/>'
+        '<Cell N="A" V="0.5"/><Cell N="B" V="1"/>'
+        '<Cell N="C" V="0"/><Cell N="D" V="1.5"/></Row>',
+      );
+      final c = g.commands.single as RelEllipticalArcTo;
+      expect(c.fx, 1);
+      expect(c.fy, 0.5);
+      expect(c.fcx, 0.5);
+      expect(c.fcy, 1);
+      expect(c.angle, 0);
+      expect(c.eccentricity, 1.5);
+    });
+
+    test('absolute EllipticalArcTo is still parsed as EllipticalArcTo', () {
+      final g = parseGeom(
+        '<Row IX="1" T="EllipticalArcTo">'
+        '<Cell N="X" V="2" U="IN"/><Cell N="Y" V="0" U="IN"/>'
+        '<Cell N="A" V="1" U="IN"/><Cell N="B" V="0.5" U="IN"/>'
+        '<Cell N="C" V="0"/><Cell N="D" V="1"/></Row>',
+      );
+      final c = g.commands.single as EllipticalArcTo;
+      expect(c.x, 2);
+      expect(c.controlX, 1);
+      expect(c.controlY, 0.5);
+    });
+  });
+
   group('other common geometry rows still map 1:1', () {
     test('MoveTo / LineTo / ArcTo / Ellipse / NURBSTo each yield one command',
         () {

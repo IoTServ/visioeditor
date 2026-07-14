@@ -118,6 +118,22 @@ class GeometryParser {
           fx2: _rawDouble(row, 'C') ?? 0,
           fy2: _rawDouble(row, 'D') ?? 0,
         );
+      case 'QuadBezTo':
+        // Absolute quadratic Bézier: A/B = control point, X/Y = end (inches).
+        return QuadBezTo(
+          x: readLengthInches(row, 'X') ?? 0,
+          y: readLengthInches(row, 'Y') ?? 0,
+          x1: readLengthInches(row, 'A') ?? 0,
+          y1: readLengthInches(row, 'B') ?? 0,
+        );
+      case 'RelQuadBezTo':
+        // Relative quadratic Bézier: X/A are fractions of width, Y/B of height.
+        return RelQuadBezTo(
+          fx: _rawDouble(row, 'X') ?? 0,
+          fy: _rawDouble(row, 'Y') ?? 0,
+          fx1: _rawDouble(row, 'A') ?? 0,
+          fy1: _rawDouble(row, 'B') ?? 0,
+        );
       case 'ArcTo':
       case 'RelArcTo':
         return ArcTo(
@@ -126,12 +142,23 @@ class GeometryParser {
           bow: readLengthInches(row, 'A') ?? 0,
         );
       case 'EllipticalArcTo':
-      case 'RelEllipticalArcTo':
         return EllipticalArcTo(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
           controlX: readLengthInches(row, 'A') ?? 0,
           controlY: readLengthInches(row, 'B') ?? 0,
+          angle: readAngleRadians(row, 'C') ?? 0,
+          eccentricity: _rawDouble(row, 'D') ?? 1,
+        );
+      case 'RelEllipticalArcTo':
+        // X/Y (end) and A/B (on-arc control point) are fractions of the
+        // shape's width/height; C (angle, radians) and D (eccentricity) are
+        // absolute, so read them verbatim.
+        return RelEllipticalArcTo(
+          fx: _rawDouble(row, 'X') ?? 0,
+          fy: _rawDouble(row, 'Y') ?? 0,
+          fcx: _rawDouble(row, 'A') ?? 0,
+          fcy: _rawDouble(row, 'B') ?? 0,
           angle: readAngleRadians(row, 'C') ?? 0,
           eccentricity: _rawDouble(row, 'D') ?? 1,
         );
