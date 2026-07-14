@@ -20,6 +20,83 @@ import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
 
+/// One `<fld IX="n">…</fld>` span inside a [VsdxTextRun]'s [text]
+/// (offsets are UTF-16 code units, Visio / Dart string indexing).
+@immutable
+class VsdxFieldSpan {
+  const VsdxFieldSpan({
+    required this.start,
+    required this.length,
+    required this.ix,
+  });
+
+  final int start;
+  final int length;
+  final int ix;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxFieldSpan &&
+      other.start == start &&
+      other.length == length &&
+      other.ix == ix;
+
+  @override
+  int get hashCode => Object.hash(start, length, ix);
+}
+
+/// One tab stop inside a [VsdxTabSet] (libvisio `PositionN` / `AlignmentN`).
+@immutable
+class VsdxTabStop {
+  const VsdxTabStop({
+    required this.positionInches,
+    this.alignment = 0,
+  });
+
+  final double positionInches;
+
+  /// 0 = left, 1 = center, 2 = right, other = decimal (libvisio).
+  final int alignment;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxTabStop &&
+      other.positionInches == positionInches &&
+      other.alignment == alignment;
+
+  @override
+  int get hashCode => Object.hash(positionInches, alignment);
+}
+
+/// One `<Section N="Tabs"><Row IX="n">` — referenced by `<tp IX="n"/>`.
+@immutable
+class VsdxTabSet {
+  const VsdxTabSet({
+    required this.ix,
+    this.stops = const <VsdxTabStop>[],
+  });
+
+  final int ix;
+  final List<VsdxTabStop> stops;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxTabSet &&
+      other.ix == ix &&
+      _listEq(other.stops, stops);
+
+  @override
+  int get hashCode => Object.hash(ix, Object.hashAll(stops));
+
+  static bool _listEq(List<VsdxTabStop> a, List<VsdxTabStop> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
+
 /// One contiguous run of text with the same character + paragraph style.
 @immutable
 class VsdxTextRun {
@@ -27,21 +104,33 @@ class VsdxTextRun {
     required this.text,
     this.charStyle = VsdxCharStyle.defaults,
     this.paraStyle = VsdxParaStyle.defaults,
+    this.fieldSpans = const <VsdxFieldSpan>[],
+    this.tabIndices = const <int>[],
   });
 
   final String text;
   final VsdxCharStyle charStyle;
   final VsdxParaStyle paraStyle;
 
+  /// Field markers embedded in [text] (display cache kept inline for paint).
+  final List<VsdxFieldSpan> fieldSpans;
+
+  /// Tabs-row IX for each `\t` in [text], in appearance order (libvisio `<tp>`).
+  final List<int> tabIndices;
+
   VsdxTextRun copyWith({
     String? text,
     VsdxCharStyle? charStyle,
     VsdxParaStyle? paraStyle,
+    List<VsdxFieldSpan>? fieldSpans,
+    List<int>? tabIndices,
   }) =>
       VsdxTextRun(
         text: text ?? this.text,
         charStyle: charStyle ?? this.charStyle,
         paraStyle: paraStyle ?? this.paraStyle,
+        fieldSpans: fieldSpans ?? this.fieldSpans,
+        tabIndices: tabIndices ?? this.tabIndices,
       );
 
   @override
@@ -52,6 +141,9 @@ class VsdxTextRun {
 
 /// Visio character style row (`<Section N="Character">`).
 enum VsdxTextPosition { normal, superscript, subscript }
+
+/// Visio `Char.Case` — matches libvisio `allcaps` / `initcaps`.
+enum VsdxTextCase { normal, allCaps, initialCaps }
 
 @immutable
 class VsdxCharStyle {
@@ -65,9 +157,18 @@ class VsdxCharStyle {
     this.themeColorIndex,
     this.underline = false,
     this.strikethrough = false,
+    this.doubleUnderline = false,
+    this.doubleStrikethrough = false,
+    this.overline = false,
     this.transparency = 0.0,
     this.letterSpacingInches = 0.0,
     this.position = VsdxTextPosition.normal,
+    this.textCase = VsdxTextCase.normal,
+    this.fontScale = 1.0,
+    this.asianFont,
+    this.complexScriptFont,
+    this.langId,
+    this.complexScriptSizeInches,
   });
 
   /// e.g. "Calibri", "Arial". When `null` the renderer picks the platform
@@ -86,11 +187,27 @@ class VsdxCharStyle {
 
   final bool underline;
   final bool strikethrough;
+  final bool doubleUnderline;
+  final bool doubleStrikethrough;
+  final bool overline;
   final double transparency;
   final double letterSpacingInches;
 
-  /// `Char.Position`: 0 = normal, 1 = superscript, 2 = subscript.
+  /// `Char.Pos`: 0 = normal, 1 = superscript, 2 = subscript.
   final VsdxTextPosition position;
+
+  /// `Char.Case`: 0 = normal, 1 = all caps, 2 = initial caps.
+  final VsdxTextCase textCase;
+
+  /// `Char.FontScale` — width scale (1.0 = 100%), libvisio `scaleWidth`.
+  final double fontScale;
+
+  /// `AsianFont` / `ComplexScriptFont` / `LangID` / `ComplexScriptSize`
+  /// (Visio locale fonts — preserved for XML round-trip; renderer may ignore).
+  final String? asianFont;
+  final String? complexScriptFont;
+  final String? langId;
+  final double? complexScriptSizeInches;
 
   static const VsdxCharStyle defaults = VsdxCharStyle();
 
@@ -101,35 +218,63 @@ class VsdxCharStyle {
     VsdxColor? color,
     bool? underline,
     bool? strikethrough,
+    bool? doubleUnderline,
+    bool? doubleStrikethrough,
+    bool? overline,
+    double? transparency,
+    double? letterSpacingInches,
+    VsdxTextPosition? position,
+    VsdxTextCase? textCase,
+    double? fontScale,
+    int? themeColorIndex,
+    String? asianFont,
+    String? complexScriptFont,
+    String? langId,
+    double? complexScriptSizeInches,
   }) =>
       VsdxCharStyle(
         fontFamily: fontFamily ?? this.fontFamily,
         fontSizeInches: fontSizeInches ?? this.fontSizeInches,
         style: style ?? this.style,
         color: color ?? this.color,
-        themeColorIndex: themeColorIndex,
+        themeColorIndex: themeColorIndex ?? this.themeColorIndex,
         underline: underline ?? this.underline,
         strikethrough: strikethrough ?? this.strikethrough,
-        transparency: transparency,
-        letterSpacingInches: letterSpacingInches,
-        position: position,
+        doubleUnderline: doubleUnderline ?? this.doubleUnderline,
+        doubleStrikethrough: doubleStrikethrough ?? this.doubleStrikethrough,
+        overline: overline ?? this.overline,
+        transparency: transparency ?? this.transparency,
+        letterSpacingInches: letterSpacingInches ?? this.letterSpacingInches,
+        position: position ?? this.position,
+        textCase: textCase ?? this.textCase,
+        fontScale: fontScale ?? this.fontScale,
+        asianFont: asianFont ?? this.asianFont,
+        complexScriptFont: complexScriptFont ?? this.complexScriptFont,
+        langId: langId ?? this.langId,
+        complexScriptSizeInches:
+            complexScriptSizeInches ?? this.complexScriptSizeInches,
       );
 }
 
 /// Style bitmask (Visio `Char.Style`):
-///   bit 0 = bold, bit 1 = italic, bit 2 = underline, bit 4 = small-caps.
-/// We expose the common ones as an enum-set.
+///   bit 0 = bold, bit 1 = italic, bit 2 = underline, bit 3 = small-caps.
 @immutable
 class VsdxFontStyle {
   const VsdxFontStyle({
     this.bold = false,
     this.italic = false,
+    this.smallCaps = false,
   });
   final bool bold;
   final bool italic;
+  final bool smallCaps;
 
-  VsdxFontStyle copyWith({bool? bold, bool? italic}) =>
-      VsdxFontStyle(bold: bold ?? this.bold, italic: italic ?? this.italic);
+  VsdxFontStyle copyWith({bool? bold, bool? italic, bool? smallCaps}) =>
+      VsdxFontStyle(
+        bold: bold ?? this.bold,
+        italic: italic ?? this.italic,
+        smallCaps: smallCaps ?? this.smallCaps,
+      );
 
   static const VsdxFontStyle regular = VsdxFontStyle();
   static const VsdxFontStyle boldStyle = VsdxFontStyle(bold: true);
@@ -145,8 +290,11 @@ class VsdxFontStyle {
   }
 
   /// Decode Visio's `Style` integer into our model.
-  factory VsdxFontStyle.fromBitmask(int v) =>
-      VsdxFontStyle(bold: (v & 0x01) != 0, italic: (v & 0x02) != 0);
+  factory VsdxFontStyle.fromBitmask(int v) => VsdxFontStyle(
+        bold: (v & 0x01) != 0,
+        italic: (v & 0x02) != 0,
+        smallCaps: (v & 0x08) != 0,
+      );
 }
 
 /// Visio paragraph style (`<Section N="Paragraph">`).
@@ -161,6 +309,13 @@ class VsdxParaStyle {
     this.spaceAfterInches = 0.0,
     this.lineSpacing = 1.0,
     this.lineSpacingAbsoluteInches = 0.0,
+    this.lineSpacingSolid = false,
+    this.bullet = 0,
+    this.bulletStr,
+    this.bulletFont,
+    this.bulletFontSizeInches,
+    this.textPosAfterBulletInches = 0.0,
+    this.flags = 0,
   });
 
   final VsdxHorzAlign horizontalAlign;
@@ -181,17 +336,59 @@ class VsdxParaStyle {
   /// multiple using the run's font size.
   final double lineSpacingAbsoluteInches;
 
+  /// `true` when Visio stored `SpLine=0` ("set solid") — distinct from an
+  /// omitted cell (default single spacing via negative `-1`).
+  final bool lineSpacingSolid;
+
+  /// Visio `Bullet` (0 = none).
+  final int bullet;
+
+  /// `BulletStr` / `BulletFont` / `BulletFontSize` / `TextPosAfterBullet`.
+  final String? bulletStr;
+  final String? bulletFont;
+  final double? bulletFontSizeInches;
+  final double textPosAfterBulletInches;
+
+  /// Visio `Flags` bitmask.
+  final int flags;
+
   static const VsdxParaStyle defaults = VsdxParaStyle();
 
-  VsdxParaStyle copyWith({VsdxHorzAlign? horizontalAlign}) => VsdxParaStyle(
+  VsdxParaStyle copyWith({
+    VsdxHorzAlign? horizontalAlign,
+    double? indentFirstInches,
+    double? indentLeftInches,
+    double? indentRightInches,
+    double? spaceBeforeInches,
+    double? spaceAfterInches,
+    double? lineSpacing,
+    double? lineSpacingAbsoluteInches,
+    bool? lineSpacingSolid,
+    int? bullet,
+    String? bulletStr,
+    String? bulletFont,
+    double? bulletFontSizeInches,
+    double? textPosAfterBulletInches,
+    int? flags,
+  }) =>
+      VsdxParaStyle(
         horizontalAlign: horizontalAlign ?? this.horizontalAlign,
-        indentFirstInches: indentFirstInches,
-        indentLeftInches: indentLeftInches,
-        indentRightInches: indentRightInches,
-        spaceBeforeInches: spaceBeforeInches,
-        spaceAfterInches: spaceAfterInches,
-        lineSpacing: lineSpacing,
-        lineSpacingAbsoluteInches: lineSpacingAbsoluteInches,
+        indentFirstInches: indentFirstInches ?? this.indentFirstInches,
+        indentLeftInches: indentLeftInches ?? this.indentLeftInches,
+        indentRightInches: indentRightInches ?? this.indentRightInches,
+        spaceBeforeInches: spaceBeforeInches ?? this.spaceBeforeInches,
+        spaceAfterInches: spaceAfterInches ?? this.spaceAfterInches,
+        lineSpacing: lineSpacing ?? this.lineSpacing,
+        lineSpacingAbsoluteInches:
+            lineSpacingAbsoluteInches ?? this.lineSpacingAbsoluteInches,
+        lineSpacingSolid: lineSpacingSolid ?? this.lineSpacingSolid,
+        bullet: bullet ?? this.bullet,
+        bulletStr: bulletStr ?? this.bulletStr,
+        bulletFont: bulletFont ?? this.bulletFont,
+        bulletFontSizeInches: bulletFontSizeInches ?? this.bulletFontSizeInches,
+        textPosAfterBulletInches:
+            textPosAfterBulletInches ?? this.textPosAfterBulletInches,
+        flags: flags ?? this.flags,
       );
 }
 
@@ -203,6 +400,7 @@ class VsdxRichText {
   const VsdxRichText({
     required this.runs,
     this.textBlock = VsdxTextBlock.defaults,
+    this.tabSets = const <VsdxTabSet>[],
   });
 
   /// Empty rich-text body — used by shapes without a `<Text>` element.
@@ -212,10 +410,18 @@ class VsdxRichText {
   final List<VsdxTextRun> runs;
   final VsdxTextBlock textBlock;
 
-  VsdxRichText copyWith({List<VsdxTextRun>? runs, VsdxTextBlock? textBlock}) =>
+  /// `<Section N="Tabs">` rows (libvisio tab sets).
+  final List<VsdxTabSet> tabSets;
+
+  VsdxRichText copyWith({
+    List<VsdxTextRun>? runs,
+    VsdxTextBlock? textBlock,
+    List<VsdxTabSet>? tabSets,
+  }) =>
       VsdxRichText(
         runs: runs ?? this.runs,
         textBlock: textBlock ?? this.textBlock,
+        tabSets: tabSets ?? this.tabSets,
       );
 
   /// Whole-string view — useful for fallback rendering and search.
@@ -248,6 +454,10 @@ class VsdxTextBlock {
     this.marginRightInches = 0.04,
     this.marginTopInches = 0.04,
     this.marginBottomInches = 0.04,
+    this.hideText = false,
+    this.backgroundColor,
+    this.textDirection = 0,
+    this.defaultTabStopInches = 0.5,
   });
 
   /// `TxtPinX` / `TxtPinY` — where the text block's local pin sits in
@@ -278,21 +488,59 @@ class VsdxTextBlock {
   final double marginTopInches;
   final double marginBottomInches;
 
+  /// `HideText` — when true, Visio / libvisio suppress drawing the label
+  /// (text remains in the model for round-trip).
+  final bool hideText;
+
+  /// `TextBkgnd` solid fill behind the text block. `null` ⇒ transparent
+  /// (Visio palette indices 0 / 255, or a missing cell).
+  final VsdxColor? backgroundColor;
+
+  /// `TextDirection` — 0 = horizontal LTR (libvisio default), 1 = vertical.
+  final int textDirection;
+
+  /// `DefaultTabStop` — tab stop distance in inches (libvisio
+  /// `style:tab-stop-distance`).
+  final double defaultTabStopInches;
+
   static const VsdxTextBlock defaults = VsdxTextBlock();
 
-  VsdxTextBlock copyWith({VsdxVertAlign? verticalAlign}) => VsdxTextBlock(
-        pinXInches: pinXInches,
-        pinYInches: pinYInches,
-        locPinXInches: locPinXInches,
-        locPinYInches: locPinYInches,
-        widthInches: widthInches,
-        heightInches: heightInches,
-        angleRad: angleRad,
+  VsdxTextBlock copyWith({
+    double? pinXInches,
+    double? pinYInches,
+    double? locPinXInches,
+    double? locPinYInches,
+    double? widthInches,
+    double? heightInches,
+    double? angleRad,
+    VsdxVertAlign? verticalAlign,
+    double? marginLeftInches,
+    double? marginRightInches,
+    double? marginTopInches,
+    double? marginBottomInches,
+    bool? hideText,
+    VsdxColor? backgroundColor,
+    int? textDirection,
+    double? defaultTabStopInches,
+  }) =>
+      VsdxTextBlock(
+        pinXInches: pinXInches ?? this.pinXInches,
+        pinYInches: pinYInches ?? this.pinYInches,
+        locPinXInches: locPinXInches ?? this.locPinXInches,
+        locPinYInches: locPinYInches ?? this.locPinYInches,
+        widthInches: widthInches ?? this.widthInches,
+        heightInches: heightInches ?? this.heightInches,
+        angleRad: angleRad ?? this.angleRad,
         verticalAlign: verticalAlign ?? this.verticalAlign,
-        marginLeftInches: marginLeftInches,
-        marginRightInches: marginRightInches,
-        marginTopInches: marginTopInches,
-        marginBottomInches: marginBottomInches,
+        marginLeftInches: marginLeftInches ?? this.marginLeftInches,
+        marginRightInches: marginRightInches ?? this.marginRightInches,
+        marginTopInches: marginTopInches ?? this.marginTopInches,
+        marginBottomInches: marginBottomInches ?? this.marginBottomInches,
+        hideText: hideText ?? this.hideText,
+        backgroundColor: backgroundColor ?? this.backgroundColor,
+        textDirection: textDirection ?? this.textDirection,
+        defaultTabStopInches:
+            defaultTabStopInches ?? this.defaultTabStopInches,
       );
 }
 

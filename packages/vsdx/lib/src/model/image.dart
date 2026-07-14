@@ -84,6 +84,43 @@ class VsdxImage {
         lower.endsWith('.webp');
   }
 
+  /// Visio `<ForeignData ForeignType>` for this media (MS-VSDX / libvisio).
+  /// `EnhMetaFile` for EMF, `MetaFile` for WMF, otherwise `Bitmap`.
+  String get foreignType => foreignTypeFor(mimeType: mimeType, partName: partName);
+
+  /// Optional `CompressionType` for bitmap payloads (`JPEG` / `PNG`).
+  String? get compressionType =>
+      compressionTypeFor(mimeType: mimeType, partName: partName);
+
+  /// Map MIME / part extension → Visio `ForeignType` attribute value.
+  static String foreignTypeFor({
+    required String mimeType,
+    required String partName,
+  }) {
+    final m = mimeType.toLowerCase();
+    final p = partName.toLowerCase();
+    if (m.contains('emf') || p.endsWith('.emf')) return 'EnhMetaFile';
+    if (m.contains('wmf') || p.endsWith('.wmf')) return 'MetaFile';
+    return 'Bitmap';
+  }
+
+  /// Map MIME / part extension → Visio `CompressionType`, or null.
+  static String? compressionTypeFor({
+    required String mimeType,
+    required String partName,
+  }) {
+    final m = mimeType.toLowerCase();
+    final p = partName.toLowerCase();
+    if (m.contains('jpeg') ||
+        m.contains('jpg') ||
+        p.endsWith('.jpg') ||
+        p.endsWith('.jpeg')) {
+      return 'JPEG';
+    }
+    if (m.contains('png') || p.endsWith('.png')) return 'PNG';
+    return null;
+  }
+
   @override
   bool operator ==(Object other) =>
       other is VsdxImage && other.partName == partName;

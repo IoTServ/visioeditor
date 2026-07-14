@@ -1,20 +1,21 @@
 /// Parses every `<Section N="Geometry">` block of a shape into one
 /// [VsdxGeometry] per section.
 ///
-/// M3-01 scope (the row types overwhelmingly used by real-world VSDX):
+/// Covered row types (aligned with libvisio / MS-VSDX):
 ///
-///  | Row `T=`            | Command          |
-///  |---------------------|------------------|
-///  | `MoveTo`            | [MoveTo]         |
-///  | `LineTo`            | [LineTo]         |
-///  | `RelMoveTo`         | [RelMoveTo]      |
-///  | `RelLineTo`         | [RelLineTo]      |
-///  | `ArcTo` / `RelArcTo`| [ArcTo]          |
-///  | `Ellipse`           | [EllipseCmd]     |
-///
-/// More exotic rows (`EllipticalArcTo`, `NURBSTo`, `SplineKnot`,
-/// `PolylineTo`, `InfiniteLine`) are intentionally **dropped with a log
-/// warning** for now — they show up in M3-02 next.
+///  | Row `T=`            | Command              |
+///  |---------------------|----------------------|
+///  | `MoveTo` / `LineTo` | [MoveTo] / [LineTo]  |
+///  | `RelMoveTo` / `RelLineTo` | [RelMoveTo] / [RelLineTo] |
+///  | `CubBezTo` / `RelCubBezTo` | [CubBezTo] / [RelCubBezTo] |
+///  | `QuadBezTo` / `RelQuadBezTo` | [QuadBezTo] / [RelQuadBezTo] |
+///  | `ArcTo` / `RelArcTo` | [ArcTo] / [RelArcTo] |
+///  | `EllipticalArcTo` / `RelEllipticalArcTo` | … |
+///  | `Ellipse`           | [EllipseCmd]         |
+///  | `PolylineTo` / `RelPolylineTo` | [PolylineTo] |
+///  | `InfiniteLine` / `RelInfiniteLine` | [InfiniteLineCmd] |
+///  | `SplineStart` / `SplineKnot` (+ Rel*) | … |
+///  | `NURBSTo` / `RelNURBSTo` | [NurbsTo]        |
 library;
 
 import 'package:logging/logging.dart';
@@ -42,9 +43,17 @@ class GeometryParser {
 
   VsdxGeometry _readSection(XmlElement section) {
     final commands = <VsdxPathCommand>[];
+    final commandFormulas = <Map<String, String>>[];
+    final rowIndices = <int>[];
+    final deletedRowIndices = <int>{};
+    final definedFlagCells = <String>{};
+    final ix = int.tryParse(section.getAttribute('IX') ?? '') ?? 0;
+    final sectionDeleted = section.getAttribute('Del') == '1';
     var noFill = false;
     var noLine = false;
     var noShow = false;
+    var noSnap = false;
+    var noQuickDrag = false;
 
     for (final child in section.childElements) {
       switch (child.name.local) {
@@ -54,22 +63,139 @@ class GeometryParser {
           switch (n) {
             case 'NoFill':
               noFill = v == '1';
+              definedFlagCells.add('NoFill');
             case 'NoLine':
               noLine = v == '1';
+              definedFlagCells.add('NoLine');
             case 'NoShow':
               noShow = v == '1';
+              definedFlagCells.add('NoShow');
+            case 'NoSnap':
+              noSnap = v == '1';
+              definedFlagCells.add('NoSnap');
+            case 'NoQuickDrag':
+              noQuickDrag = v == '1';
+              definedFlagCells.add('NoQuickDrag');
           }
         case 'Row':
+          final rowIx = int.tryParse(child.getAttribute('IX') ?? '');
+          // A `Del="1"` row deletes the same-IX row inherited from the master
+          // (MS-VSDX) — record it as a deletion rather than a spurious command.
+          if (child.getAttribute('Del') == '1') {
+            if (rowIx != null) deletedRowIndices.add(rowIx);
+            continue;
+          }
           final cmd = _readRow(child);
-          if (cmd != null) commands.add(cmd);
+          if (cmd != null) {
+            commands.add(cmd);
+            commandFormulas.add(_readRowFormulas(child));
+            rowIndices.add(rowIx ?? (rowIndices.isEmpty ? 1 : rowIndices.last + 1));
+          }
       }
     }
     return VsdxGeometry(
       commands: List.unmodifiable(commands),
+      commandFormulas: List.unmodifiable(commandFormulas),
       noFill: noFill,
       noLine: noLine,
       noShow: noShow,
+      noSnap: noSnap,
+      noQuickDrag: noQuickDrag,
+      ix: ix,
+      rowIndices: List.unmodifiable(rowIndices),
+      deletedRowIndices: Set.unmodifiable(deletedRowIndices),
+      definedFlagCells: Set.unmodifiable(definedFlagCells),
+      deleted: sectionDeleted,
     );
+  }
+
+  /// Merge master (inherited) geometry with an instance's geometry the way
+  /// libvisio / MS-VSDX do: sections match by `IX`; within a matched section
+  /// rows match by row `IX` (instance overrides master, `Del` removes the
+  /// inherited row); section flag cells inherit from the master unless the
+  /// instance explicitly declared them; a section-level `Del` drops the whole
+  /// inherited section. Sections/rows unique to either side are kept.
+  static List<VsdxGeometry> mergeInherited(
+    List<VsdxGeometry> master,
+    List<VsdxGeometry> instance,
+  ) {
+    final masterByIx = <int, VsdxGeometry>{};
+    for (final g in master) {
+      masterByIx[g.ix] = g;
+    }
+    final instanceIxs = <int>{for (final g in instance) g.ix};
+    final out = <VsdxGeometry>[];
+
+    for (final inst in instance) {
+      final m = masterByIx[inst.ix];
+      if (inst.deleted) continue; // whole inherited section removed
+      if (m == null || m.rowIndices.length != m.commands.length) {
+        out.add(_stripDeletedRows(inst));
+        continue;
+      }
+      out.add(_mergeSection(m, inst));
+    }
+    // Master sections the instance never mentioned are inherited unchanged.
+    for (final m in master) {
+      if (!instanceIxs.contains(m.ix)) out.add(m);
+    }
+    out.sort((a, b) => a.ix.compareTo(b.ix));
+    return List.unmodifiable(out);
+  }
+
+  static VsdxGeometry _stripDeletedRows(VsdxGeometry g) {
+    if (g.deletedRowIndices.isEmpty) return g;
+    // No master to delete from; deletions simply no-op (rows already absent).
+    return g;
+  }
+
+  static VsdxGeometry _mergeSection(VsdxGeometry m, VsdxGeometry inst) {
+    // rowIX -> (command, formulas), seeded from master then overridden.
+    final rows = <int, ({VsdxPathCommand cmd, Map<String, String> f})>{};
+    final masterIxs = m.rowIndices.toSet();
+    for (var i = 0; i < m.commands.length; i++) {
+      rows[m.rowIndices[i]] = (cmd: m.commands[i], f: m.formulasAt(i));
+    }
+    final instHasRowIx = inst.rowIndices.length == inst.commands.length;
+    for (var i = 0; i < inst.commands.length; i++) {
+      final rowIx = instHasRowIx ? inst.rowIndices[i] : (1000000 + i);
+      rows[rowIx] = (cmd: inst.commands[i], f: inst.formulasAt(i));
+    }
+    for (final d in inst.deletedRowIndices) {
+      rows.remove(d);
+    }
+    final ordered = rows.keys.toList()..sort();
+    bool flag(String name, bool instVal, bool masterVal) =>
+        inst.definedFlagCells.contains(name) ? instVal : masterVal;
+    return VsdxGeometry(
+      commands: List.unmodifiable([for (final k in ordered) rows[k]!.cmd]),
+      commandFormulas:
+          List.unmodifiable([for (final k in ordered) rows[k]!.f]),
+      noFill: flag('NoFill', inst.noFill, m.noFill),
+      noLine: flag('NoLine', inst.noLine, m.noLine),
+      noShow: flag('NoShow', inst.noShow, m.noShow),
+      noSnap: flag('NoSnap', inst.noSnap, m.noSnap),
+      noQuickDrag: flag('NoQuickDrag', inst.noQuickDrag, m.noQuickDrag),
+      ix: inst.ix,
+      rowIndices: List.unmodifiable(ordered),
+      deletedRowIndices: Set.unmodifiable(
+          inst.deletedRowIndices.where(masterIxs.contains)),
+      definedFlagCells: {...m.definedFlagCells, ...inst.definedFlagCells},
+    );
+  }
+
+  /// Collect per-cell `F=` on a Geometry row (`Scratch.X1`, `Width*0.5`, …).
+  static Map<String, String> _readRowFormulas(XmlElement row) {
+    final out = <String, String>{};
+    for (final child in row.childElements) {
+      if (child.name.local != 'Cell') continue;
+      final n = child.getAttribute('N');
+      final f = child.getAttribute('F');
+      if (n == null || n.isEmpty) continue;
+      if (f == null || f.isEmpty || f == 'No Formula') continue;
+      out[n] = f;
+    }
+    return Map.unmodifiable(out);
   }
 
   VsdxPathCommand? _readRow(XmlElement row) {
@@ -135,11 +261,17 @@ class GeometryParser {
           fy1: _rawDouble(row, 'B') ?? 0,
         );
       case 'ArcTo':
-      case 'RelArcTo':
         return ArcTo(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
           bow: readLengthInches(row, 'A') ?? 0,
+        );
+      case 'RelArcTo':
+        // X/Y/A are fractions of Width/Height (same convention as RelMoveTo).
+        return RelArcTo(
+          fx: _rawDouble(row, 'X') ?? 0,
+          fy: _rawDouble(row, 'Y') ?? 0,
+          fbow: _rawDouble(row, 'A') ?? 0,
         );
       case 'EllipticalArcTo':
         return EllipticalArcTo(
@@ -172,22 +304,34 @@ class GeometryParser {
           bY: readLengthInches(row, 'D') ?? 0,
         );
       case 'PolylineTo':
-      case 'RelPolylineTo':
         return PolylineTo(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
           vertices: _parsePolylineFormula(_cellValue(row, 'A')),
         );
+      case 'RelPolylineTo':
+        return PolylineTo(
+          x: _rawDouble(row, 'X') ?? 0,
+          y: _rawDouble(row, 'Y') ?? 0,
+          vertices: _parsePolylineFormula(_cellValue(row, 'A')),
+          relative: true,
+        );
       case 'InfiniteLine':
-      case 'RelInfiniteLine':
         return InfiniteLineCmd(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
           a: readLengthInches(row, 'A') ?? 0,
           b: readLengthInches(row, 'B') ?? 0,
         );
+      case 'RelInfiniteLine':
+        return InfiniteLineCmd(
+          x: _rawDouble(row, 'X') ?? 0,
+          y: _rawDouble(row, 'Y') ?? 0,
+          a: _rawDouble(row, 'A') ?? 0,
+          b: _rawDouble(row, 'B') ?? 0,
+          relative: true,
+        );
       case 'SplineStart':
-      case 'RelSplineStart':
         return SplineStart(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
@@ -196,15 +340,30 @@ class GeometryParser {
           c: _rawDouble(row, 'C') ?? 1,
           degree: (_rawDouble(row, 'D') ?? 3).toInt(),
         );
+      case 'RelSplineStart':
+        return SplineStart(
+          x: _rawDouble(row, 'X') ?? 0,
+          y: _rawDouble(row, 'Y') ?? 0,
+          a: _rawDouble(row, 'A') ?? 0,
+          b: _rawDouble(row, 'B') ?? 4,
+          c: _rawDouble(row, 'C') ?? 1,
+          degree: (_rawDouble(row, 'D') ?? 3).toInt(),
+          relative: true,
+        );
       case 'SplineKnot':
-      case 'RelSplineKnot':
         return SplineKnot(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
           knot: _rawDouble(row, 'A') ?? 0,
         );
+      case 'RelSplineKnot':
+        return SplineKnot(
+          x: _rawDouble(row, 'X') ?? 0,
+          y: _rawDouble(row, 'Y') ?? 0,
+          knot: _rawDouble(row, 'A') ?? 0,
+          relative: true,
+        );
       case 'NURBSTo':
-      case 'RelNURBSTo':
         final nurbs = _parseNurbsFull(_cellValue(row, 'E'));
         return NurbsTo(
           x: readLengthInches(row, 'X') ?? 0,
@@ -213,6 +372,17 @@ class GeometryParser {
           weights: nurbs.weights,
           knots: nurbs.knots,
           degree: nurbs.degree,
+        );
+      case 'RelNURBSTo':
+        final nurbs = _parseNurbsFull(_cellValue(row, 'E'));
+        return NurbsTo(
+          x: _rawDouble(row, 'X') ?? 0,
+          y: _rawDouble(row, 'Y') ?? 0,
+          controlPoints: nurbs.controlPoints,
+          weights: nurbs.weights,
+          knots: nurbs.knots,
+          degree: nurbs.degree,
+          relative: true,
         );
       default:
         // Drop silently-but-noisily for now; the path will fall back to its

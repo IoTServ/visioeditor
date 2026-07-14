@@ -179,8 +179,11 @@ class RichTextParser {
   /// `Title` / `DateField` resolve to real values.
   final FieldResolver fieldResolver;
 
-  /// Parse the shape's text into a [VsdxRichText]. Returns
-  /// [VsdxRichText.empty] when the shape has no `<Text>` element.
+  /// Parse the shape's text into a [VsdxRichText].
+  ///
+  /// Masters often define a `<Section N="Character">` without a `<Text>`
+  /// element — still surface that style as an empty run so instance shapes
+  /// inherit Size/Style the same way libvisio does.
   VsdxRichText parse(
     XmlElement shape, {
     VsdxCharStyle defaultChar = VsdxCharStyle.defaults,
@@ -189,12 +192,27 @@ class RichTextParser {
   }) {
     final textEl = _firstChildLocal(shape, 'Text');
     final block = _readTextBlock(shape, defaultBlock);
-    if (textEl == null) {
-      return VsdxRichText(runs: const [], textBlock: block);
-    }
-
     final charStyles = _readCharSection(shape, defaultChar);
     final paraStyles = _readParaSection(shape, defaultPara);
+    final tabSets = _readTabsSection(shape);
+
+    if (textEl == null) {
+      if (charStyles.isEmpty) {
+        return VsdxRichText(
+          runs: const [],
+          textBlock: block,
+          tabSets: tabSets,
+        );
+      }
+      final style = charStyles[0] ?? charStyles.values.first;
+      return VsdxRichText(
+        runs: List.unmodifiable(<VsdxTextRun>[
+          VsdxTextRun(text: '', charStyle: style, paraStyle: defaultPara),
+        ]),
+        textBlock: block,
+        tabSets: tabSets,
+      );
+    }
 
     final runs = _splitRuns(
       textEl,
@@ -203,7 +221,11 @@ class RichTextParser {
       defaultChar: defaultChar,
       defaultPara: defaultPara,
     );
-    return VsdxRichText(runs: List.unmodifiable(runs), textBlock: block);
+    return VsdxRichText(
+      runs: List.unmodifiable(runs),
+      textBlock: block,
+      tabSets: tabSets,
+    );
   }
 
   /// Spawn a new parser with the field resolver overridden — useful for
@@ -264,40 +286,83 @@ class RichTextParser {
     final style = styleInt == null
         ? defaults.style
         : VsdxFontStyle.fromBitmask(styleInt);
-    final colorCell = _cellString(row, 'Color');
-    final isTheme = colorCell != null &&
-        (colorCell.toUpperCase().contains('THEMEVAL') ||
-            colorCell.toUpperCase().contains('THEMEGUARD'));
-    final color = isTheme ? null : VsdxColor.tryParse(colorCell);
-    final themeIdx = isTheme ? _cellInt(row, 'ColorTrans') : null;
-    final underline = (_cellInt(row, 'Style') ?? 0) & 0x04 != 0;
-    final strike = (_cellInt(row, 'Strikethru') ?? 0) != 0;
+    final colorCell = findCell(row, 'Color');
+    final colorV = colorCell?.getAttribute('V');
+    final colorF = colorCell?.getAttribute('F') ?? '';
+    final isTheme = (colorV != null &&
+            (colorV.toUpperCase().contains('THEMEVAL') ||
+                colorV.toUpperCase().contains('THEMEGUARD'))) ||
+        colorF.toUpperCase().contains('THEMEVAL') ||
+        colorF.toUpperCase().contains('THEMEGUARD');
+    final color = isTheme ? null : VsdxColor.tryParse(colorV);
+    // Character theme colour rarely carries a QuickStyle index on the row;
+    // preserve a non-null marker so THEMEVAL round-trips.
+    final themeIdx = isTheme ? (defaults.themeColorIndex ?? 0) : null;
+    // Underline lives in Style bit 0x04 (libvisio); only inherit when absent.
+    final underline =
+        styleInt != null ? (styleInt & 0x04) != 0 : defaults.underline;
+    final strikeCell = _cellInt(row, 'Strikethru');
+    final strike =
+        strikeCell != null ? strikeCell != 0 : defaults.strikethrough;
+    final dblUnderCell = _cellInt(row, 'DblUnderline');
+    final dblUnder = dblUnderCell != null
+        ? dblUnderCell != 0
+        : defaults.doubleUnderline;
+    final dblStrikeCell = _cellInt(row, 'DoubleStrikethrough');
+    final dblStrike = dblStrikeCell != null
+        ? dblStrikeCell != 0
+        : defaults.doubleStrikethrough;
+    final overCell = _cellInt(row, 'Overline');
+    final overline = overCell != null ? overCell != 0 : defaults.overline;
     final transparency = _cellDouble(row, 'ColorTrans') ?? defaults.transparency;
-    final posInt = _cellInt(row, 'Position');
+    final posInt = _cellInt(row, 'Pos');
     final position = switch (posInt) {
       1 => VsdxTextPosition.superscript,
       2 => VsdxTextPosition.subscript,
-      _ => defaults.position,
+      null => defaults.position,
+      _ => VsdxTextPosition.normal,
     };
+    final caseInt = _cellInt(row, 'Case');
+    final textCase = switch (caseInt) {
+      1 => VsdxTextCase.allCaps,
+      2 => VsdxTextCase.initialCaps,
+      null => defaults.textCase,
+      _ => VsdxTextCase.normal,
+    };
+    final fontScale = _cellDouble(row, 'FontScale') ?? defaults.fontScale;
     return VsdxCharStyle(
       fontFamily: font,
       fontSizeInches: size,
       style: style,
       color: color ?? defaults.color,
       themeColorIndex: themeIdx ?? defaults.themeColorIndex,
-      underline: underline || defaults.underline,
-      strikethrough: strike || defaults.strikethrough,
+      underline: underline,
+      strikethrough: strike,
+      doubleUnderline: dblUnder,
+      doubleStrikethrough: dblStrike,
+      overline: overline,
       transparency: transparency.clamp(0.0, 1.0),
       letterSpacingInches:
           readLengthInches(row, 'Letterspace') ?? defaults.letterSpacingInches,
       position: position,
+      textCase: textCase,
+      fontScale: fontScale,
+      asianFont: _cellString(row, 'AsianFont') ?? defaults.asianFont,
+      complexScriptFont:
+          _cellString(row, 'ComplexScriptFont') ?? defaults.complexScriptFont,
+      langId: _cellString(row, 'LangID') ?? defaults.langId,
+      complexScriptSizeInches: readLengthInches(row, 'ComplexScriptSize') ??
+          defaults.complexScriptSizeInches,
     );
   }
 
   VsdxParaStyle _readParaRow(XmlElement row, VsdxParaStyle defaults) {
     final horz = _cellInt(row, 'HorzAlign');
     final align = horz == null ? defaults.horizontalAlign : _alignFromInt(horz);
-    final (lineSpacing, lineSpacingAbs) = _readLineSpacing(row, defaults);
+    final (lineSpacing, lineSpacingAbs, lineSpacingSolid) =
+        _readLineSpacing(row, defaults);
+    final bulletStr = _cellString(row, 'BulletStr');
+    final bulletFont = _cellString(row, 'BulletFont');
     return VsdxParaStyle(
       horizontalAlign: align,
       indentFirstInches:
@@ -312,6 +377,20 @@ class RichTextParser {
           readLengthInches(row, 'SpAfter') ?? defaults.spaceAfterInches,
       lineSpacing: lineSpacing,
       lineSpacingAbsoluteInches: lineSpacingAbs,
+      lineSpacingSolid: lineSpacingSolid,
+      bullet: _cellInt(row, 'Bullet') ?? defaults.bullet,
+      bulletStr: (bulletStr == null || bulletStr.isEmpty)
+          ? defaults.bulletStr
+          : bulletStr,
+      bulletFont: (bulletFont == null || bulletFont.isEmpty)
+          ? defaults.bulletFont
+          : bulletFont,
+      bulletFontSizeInches: readLengthInches(row, 'BulletFontSize') ??
+          defaults.bulletFontSizeInches,
+      textPosAfterBulletInches:
+          readLengthInches(row, 'TextPosAfterBullet') ??
+              defaults.textPosAfterBulletInches,
+      flags: _cellInt(row, 'Flags') ?? defaults.flags,
     );
   }
 
@@ -323,15 +402,20 @@ class RichTextParser {
   ///   * `> 0` — absolute spacing in inches, independent of type size.
   /// Feeding the raw (usually negative) value straight into a Flutter
   /// `TextStyle.height` inverts the line advance, so wrapped lines stack
-  /// upward instead of downward. Returns `(multiple, absoluteInches)`.
-  (double, double) _readLineSpacing(XmlElement row, VsdxParaStyle defaults) {
+  /// upward instead of downward. Returns `(multiple, absoluteInches, solid)`.
+  (double, double, bool) _readLineSpacing(
+      XmlElement row, VsdxParaStyle defaults) {
     final sp = _cellDouble(row, 'SpLine');
     if (sp == null) {
-      return (defaults.lineSpacing, defaults.lineSpacingAbsoluteInches);
+      return (
+        defaults.lineSpacing,
+        defaults.lineSpacingAbsoluteInches,
+        defaults.lineSpacingSolid,
+      );
     }
-    if (sp < 0) return (-sp, 0.0);
-    if (sp == 0) return (1.0, 0.0);
-    return (1.0, sp); // V is already in internal units (inches)
+    if (sp < 0) return (-sp, 0.0, false);
+    if (sp == 0) return (1.0, 0.0, true);
+    return (1.0, sp, false); // V is already in internal units (inches)
   }
 
   /// Read the shape's text-block transform. Each cell falls back to [inherit]
@@ -341,6 +425,7 @@ class RichTextParser {
   /// defaulting to horizontal. Matches Visio / libvisio cell inheritance.
   VsdxTextBlock _readTextBlock(XmlElement shape, VsdxTextBlock inherit) {
     final vAlignInt = _cellInt(shape, 'VerticalAlign');
+    final hideInt = _cellInt(shape, 'HideText');
     return VsdxTextBlock(
       pinXInches: readLengthInches(shape, 'TxtPinX') ?? inherit.pinXInches,
       pinYInches: readLengthInches(shape, 'TxtPinY') ?? inherit.pinYInches,
@@ -366,11 +451,32 @@ class RichTextParser {
           readLengthInches(shape, 'TopMargin') ?? inherit.marginTopInches,
       marginBottomInches:
           readLengthInches(shape, 'BottomMargin') ?? inherit.marginBottomInches,
+      hideText: hideInt == null ? inherit.hideText : hideInt != 0,
+      backgroundColor: _readTextBkgnd(shape) ?? inherit.backgroundColor,
+      textDirection: _cellInt(shape, 'TextDirection') ?? inherit.textDirection,
+      defaultTabStopInches: readLengthInches(shape, 'DefaultTabStop') ??
+          inherit.defaultTabStopInches,
     );
   }
 
+  /// `TextBkgnd` — solid colour behind the text. Palette indices `0` / `255`
+  /// mean transparent (libvisio); hex colours are kept.
+  VsdxColor? _readTextBkgnd(XmlElement shape) {
+    final raw = _cellString(shape, 'TextBkgnd');
+    if (raw == null || raw.isEmpty) return null;
+    final u = raw.trim().toUpperCase();
+    if (u == '0' || u == '255' || u == 'THEMED' || u.contains('THEMEVAL')) {
+      return null;
+    }
+    final asInt = int.tryParse(raw);
+    if (asInt == 0 || asInt == 255) return null;
+    return VsdxColor.tryParse(raw);
+  }
+
   /// Walk the children of `<Text>`, splitting at every `<cp/>` / `<pp/>`
-  /// marker. Returns the assembled runs in source order.
+  /// marker. Returns the assembled runs in source order. `<fld IX>` markers
+  /// keep their display cache inline and record a [VsdxFieldSpan] so the
+  /// writer can emit `<fld>` again (libvisio / Visio round-trip).
   List<VsdxTextRun> _splitRuns(
     XmlElement textEl, {
     required Map<int, VsdxCharStyle> charStyles,
@@ -382,15 +488,21 @@ class RichTextParser {
     var curChar = charStyles[0] ?? defaultChar;
     var curPara = paraStyles[0] ?? defaultPara;
     final buf = StringBuffer();
+    final fieldSpans = <VsdxFieldSpan>[];
+    final tabIndices = <int>[];
 
     void flush() {
-      if (buf.isEmpty) return;
+      if (buf.isEmpty && fieldSpans.isEmpty) return;
       runs.add(VsdxTextRun(
         text: buf.toString(),
         charStyle: curChar,
         paraStyle: curPara,
+        fieldSpans: List.unmodifiable(fieldSpans),
+        tabIndices: List.unmodifiable(tabIndices),
       ));
       buf.clear();
+      fieldSpans.clear();
+      tabIndices.clear();
     }
 
     for (final node in textEl.children) {
@@ -407,12 +519,21 @@ class RichTextParser {
             final ix = int.tryParse(node.getAttribute('IX') ?? '');
             if (ix != null) curPara = paraStyles[ix] ?? defaultPara;
           case 'tp':
-            // Tab paragraph marker — emit a tab character within the run.
+            // Tab marker — emit `\t` and record Tabs-row IX (libvisio).
             buf.write('\t');
+            tabIndices.add(int.tryParse(node.getAttribute('IX') ?? '') ?? 0);
           case 'fld':
-            // Dynamic field (PageNumber, DateField, …) — resolved via the
-            // injected field resolver.
-            buf.write(fieldResolver.resolve(node));
+            // Dynamic field — keep display text for paint, record span for
+            // XML round-trip (`<fld IX="n">cached</fld>`).
+            final ix = int.tryParse(node.getAttribute('IX') ?? '') ?? 0;
+            final display = fieldResolver.resolve(node);
+            final start = buf.length;
+            buf.write(display);
+            fieldSpans.add(VsdxFieldSpan(
+              start: start,
+              length: display.length,
+              ix: ix,
+            ));
           default:
             // Unknown inline marker — ignore but keep going.
         }
@@ -421,6 +542,51 @@ class RichTextParser {
     flush();
     _trimTrailingWhitespace(runs);
     return runs;
+  }
+
+  /// `<Section N="Tabs">` — libvisio `PositionN` / `AlignmentN` cells per row.
+  List<VsdxTabSet> _readTabsSection(XmlElement shape) {
+    final out = <VsdxTabSet>[];
+    for (final section in shape.childElements) {
+      if (section.name.local != 'Section') continue;
+      if (section.getAttribute('N') != 'Tabs') continue;
+      for (final row in section.childElements) {
+        if (row.name.local != 'Row') continue;
+        final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? out.length;
+        final byIndex = <int, VsdxTabStop>{};
+        for (final cell in row.childElements) {
+          if (cell.name.local != 'Cell') continue;
+          final n = cell.getAttribute('N') ?? '';
+          if (n.startsWith('Position') && n.length > 8) {
+            final idx = int.tryParse(n.substring(8));
+            if (idx == null) continue;
+            final pos = readLengthInches(row, n) ??
+                double.tryParse(cell.getAttribute('V') ?? '') ??
+                0;
+            final prev = byIndex[idx];
+            byIndex[idx] = VsdxTabStop(
+              positionInches: pos,
+              alignment: prev?.alignment ?? 0,
+            );
+          } else if (n.startsWith('Alignment') && n.length > 9) {
+            final idx = int.tryParse(n.substring(9));
+            if (idx == null) continue;
+            final align = int.tryParse(cell.getAttribute('V') ?? '') ?? 0;
+            final prev = byIndex[idx];
+            byIndex[idx] = VsdxTabStop(
+              positionInches: prev?.positionInches ?? 0,
+              alignment: align,
+            );
+          }
+        }
+        final keys = byIndex.keys.toList()..sort();
+        out.add(VsdxTabSet(
+          ix: ix,
+          stops: [for (final k in keys) byIndex[k]!],
+        ));
+      }
+    }
+    return List.unmodifiable(out);
   }
 
   /// Visio commonly terminates a label with a trailing newline plus an empty
@@ -434,9 +600,44 @@ class RichTextParser {
       final trimmed = last.text.replaceFirst(RegExp(r'\s+$'), '');
       if (trimmed == last.text) break;
       if (trimmed.isEmpty) {
-        runs.removeLast();
+        // Keep a run that exists only to host zero-length field markers.
+        final kept = [
+          for (final s in last.fieldSpans)
+            if (s.length == 0) s,
+        ];
+        if (kept.isEmpty) {
+          runs.removeLast();
+        } else {
+          runs[runs.length - 1] = last.copyWith(
+            text: '',
+            fieldSpans: kept,
+          );
+          break;
+        }
       } else {
-        runs[runs.length - 1] = last.copyWith(text: trimmed);
+        final newSpans = <VsdxFieldSpan>[
+          for (final s in last.fieldSpans)
+            if (s.start < trimmed.length)
+              VsdxFieldSpan(
+                start: s.start,
+                length: s.length > trimmed.length - s.start
+                    ? trimmed.length - s.start
+                    : s.length,
+                ix: s.ix,
+              )
+            else if (s.length == 0 && s.start == trimmed.length)
+              s,
+        ];
+        // Drop tab indices that belonged to trimmed trailing tabs.
+        final keptTabs = '\t'.allMatches(trimmed).length;
+        final newTabs = last.tabIndices.length <= keptTabs
+            ? last.tabIndices
+            : last.tabIndices.sublist(0, keptTabs);
+        runs[runs.length - 1] = last.copyWith(
+          text: trimmed,
+          fieldSpans: newSpans,
+          tabIndices: newTabs,
+        );
         break;
       }
     }

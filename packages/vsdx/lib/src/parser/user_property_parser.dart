@@ -38,9 +38,17 @@ class UserPropertyParser {
           name: name,
           label: _cellString(row, 'Label'),
           value: _cellString(row, 'Value'),
+          valueFormula: _formula(row, 'Value'),
           prompt: _cellString(row, 'Prompt'),
           format: _cellString(row, 'Format'),
           type: _cellInt(row, 'Type') ?? 0,
+          sortKey: _cellString(row, 'SortKey'),
+          invisible: (_cellInt(row, 'Invisible') ?? 0) != 0,
+          verify: (_cellInt(row, 'Verify') ?? 0) != 0,
+          ask: (_cellInt(row, 'Ask') ?? 0) != 0,
+          dataLinked: (_cellInt(row, 'DataLinked') ?? 0) != 0,
+          langId: _cellString(row, 'LangID'),
+          calendar: _cellInt(row, 'Calendar'),
         ));
       }
     }
@@ -61,6 +69,7 @@ class UserPropertyParser {
         out.add(VsdxUserCell(
           name: name,
           value: _cellString(row, 'Value'),
+          valueFormula: _formula(row, 'Value'),
           prompt: _cellString(row, 'Prompt'),
         ));
       }
@@ -83,5 +92,16 @@ class UserPropertyParser {
     final s = _cellString(row, name);
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+  }
+
+  static String? _formula(XmlElement parent, String name) {
+    for (final el in parent.childElements) {
+      if (el.name.local != 'Cell') continue;
+      if (el.getAttribute('N') != name) continue;
+      final f = el.getAttribute('F');
+      if (f == null || f.isEmpty || f == 'No Formula') return null;
+      return f;
+    }
+    return null;
   }
 }

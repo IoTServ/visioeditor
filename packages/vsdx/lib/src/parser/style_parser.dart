@@ -142,7 +142,7 @@ class StyleParser {
     XmlElement shape, {
     VsdxShadow defaults = VsdxShadow.disabled,
   }) {
-    final pat = _int(shape, 'ShadowPattern');
+    final pat = _int(shape, 'ShadowPattern') ?? _int(shape, 'ShdwPattern');
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
     if (!enabled) return VsdxShadow.disabled;
@@ -178,6 +178,12 @@ class StyleParser {
     final endArrow = _int(shape, 'EndArrow') ?? defaults.endArrow;
     final beginSize = _int(shape, 'BeginArrowSize');
     final endSize = _int(shape, 'EndArrowSize');
+    final rounding =
+        readLengthInches(shape, 'Rounding') ?? defaults.roundingInches;
+    final softEdges =
+        readLengthInches(shape, 'SoftEdgesSize') ?? defaults.softEdgesInches;
+    final compoundType = _int(shape, 'CompoundType') ?? defaults.compoundType;
+    final gradient = _parseLineGradient(shape) ?? defaults.gradient;
 
     return VsdxLine(
       color: colorRes.color ?? defaults.color,
@@ -194,6 +200,43 @@ class StyleParser {
       endArrowSizeInches: endSize == null
           ? defaults.endArrowSizeInches
           : _arrowSizeFromBucket(endSize),
+      roundingInches: rounding,
+      softEdgesInches: softEdges,
+      compoundType: compoundType,
+      gradient: gradient,
+    );
+  }
+
+  /// `LineGradientEnabled` + `<Section N="LineGradient">` (mirrors fill).
+  VsdxGradient? _parseLineGradient(XmlElement shape) {
+    final enabled = _int(shape, 'LineGradientEnabled') ?? 0;
+    if (enabled == 0) return null;
+    final dir = _int(shape, 'LineGradientDir') ?? 0;
+    final angle = _double(shape, 'LineGradientAngle') ?? 0;
+    final stops = <VsdxGradientStop>[];
+    for (final section in shape.childElements) {
+      if (section.name.local != 'Section') continue;
+      if (section.getAttribute('N') != 'LineGradient') continue;
+      for (final row in section.childElements) {
+        if (row.name.local != 'Row') continue;
+        final pos = _doubleIn(row, 'GradientStopPosition') ?? 0;
+        final res =
+            _resolveRowColor(row, 'GradientStopColor', 'QuickStyleLineColor');
+        final t = _doubleIn(row, 'GradientStopColorTrans') ?? 0;
+        stops.add(VsdxGradientStop(
+          position: pos.clamp(0.0, 1.0),
+          color: res.color,
+          themeColorIndex: res.themeIndex,
+          transparency: t.clamp(0.0, 1.0),
+        ));
+      }
+    }
+    if (stops.isEmpty) return null;
+    stops.sort((a, b) => a.position.compareTo(b.position));
+    return VsdxGradient(
+      stops: List.unmodifiable(stops),
+      type: _gradientTypeFromDir(dir),
+      angleRad: angle,
     );
   }
 
@@ -220,7 +263,8 @@ class StyleParser {
     final cell = findCell(shape, colorCell);
     if (cell == null) return const _ColorResolution(null, null);
     final v = cell.getAttribute('V') ?? '';
-    if (_isThemeFormula(v)) {
+    final f = cell.getAttribute('F') ?? '';
+    if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // QuickStyle*Color defaults to 1 (lt1) when absent, but real-world
       // Visio files almost always carry the cell explicitly.
       final idx = _int(shape, quickStyleCell);
@@ -239,9 +283,17 @@ class StyleParser {
     final cell = findCell(row, colorCell);
     if (cell == null) return const _ColorResolution(null, null);
     final v = cell.getAttribute('V') ?? '';
-    if (_isThemeFormula(v)) {
+    final f = cell.getAttribute('F') ?? '';
+    if (_isThemeFormula(v) || _isThemeFormula(f)) {
       final idx = _intIn(row, quickStyleCell);
       return _ColorResolution(null, idx);
+    }
+    // Visio GradientStopColor often stores a theme palette index as a bare
+    // integer (`V="1"`). Do NOT route that through [VsdxColor.tryParse], which
+    // maps small ints onto the document colour palette.
+    if (!v.startsWith('#') && !v.contains('(')) {
+      final idx = int.tryParse(v.trim());
+      if (idx != null) return _ColorResolution(null, idx);
     }
     return _ColorResolution(VsdxColor.tryParse(v), null);
   }

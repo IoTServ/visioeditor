@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:test/test.dart';
+import 'package:vsdx/src/parser/style_parser.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
@@ -256,6 +259,137 @@ void main() {
         .map((c) => c.x)
         .toList();
     expect(xs.reduce((a, b) => a > b ? a : b), closeTo(3, 1e-3));
+  });
+
+  test('RelCubBezTo geometry survives resize → save → reopen', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    VsdxShape? target;
+    for (final s in page.shapes) {
+      final n = s.geometries
+          .expand((g) => g.commands)
+          .whereType<RelCubBezTo>()
+          .length;
+      if (n > 0) {
+        target = s;
+        break;
+      }
+    }
+    expect(target, isNotNull);
+    final before = target!.geometries
+        .expand((g) => g.commands)
+        .whereType<RelCubBezTo>()
+        .length;
+    final resized = doc.replacePage(
+      0,
+      page.updateShapeById(
+        target.id,
+        (s) => s.resizeTo(
+          pinX: s.pinX,
+          pinY: s.pinY,
+          width: s.width * 1.5,
+          height: s.height * 1.5,
+        ),
+      ),
+    );
+    final reopened = parser.parse(
+      writer.write(originalBytes: bytes, edited: resized),
+    );
+    final after = reopened.pages.first.findShapeById(target.id)!;
+    final afterCount = after.geometries
+        .expand((g) => g.commands)
+        .whereType<RelCubBezTo>()
+        .length;
+    expect(afterCount, before);
+    expect(after.width, closeTo(target.width * 1.5, 1e-4));
+  });
+
+  test('master-instance partial geometry override survives resize round-trip',
+      () {
+    // test9 shape 3 inherits MoveTo(0,0) from its master, overrides LineTo IX=2
+    // and deletes IX=3. After a resize + save + reparse the geometry must stay
+    // [MoveTo, LineTo] — the deleted master row must not re-inherit.
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    final target = doc.pages.first.findShapeById(3)!;
+    expect(target.geometries.single.commands, hasLength(2));
+
+    final resized = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        3,
+        (s) => s.resizeTo(
+          pinX: s.pinX,
+          pinY: s.pinY,
+          width: s.width * 1.5,
+          height: s.height * 1.5,
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: bytes, edited: resized);
+    final after = parser.parse(out).pages.first.findShapeById(3)!;
+    final cmds = after.geometries.single.commands;
+    expect(cmds, hasLength(2),
+        reason: 'deleted master row must not re-inherit after rebuild');
+    expect(cmds[0], isA<MoveTo>());
+    expect(cmds[1], isA<LineTo>());
+  });
+
+  test('text-block TxtPin / TxtAngle / margins round-trip on new shape', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final block = VsdxTextBlock(
+      pinXInches: 0.25,
+      pinYInches: 0.5,
+      locPinXInches: 0.1,
+      locPinYInches: 0.2,
+      widthInches: 1.5,
+      heightInches: 0.75,
+      angleRad: 0.3,
+      verticalAlign: VsdxVertAlign.top,
+      marginLeftInches: 0.1,
+      marginRightInches: 0.11,
+      marginTopInches: 0.12,
+      marginBottomInches: 0.13,
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: const <VsdxTextRun>[VsdxTextRun(text: 'Label')],
+            textBlock: block,
+          ),
+        ),
+      ),
+    );
+    final after =
+        parser.parse(writer.write(originalBytes: blank, edited: doc))
+            .pages
+            .first
+            .findShapeById(id)!
+            .richText
+            .textBlock;
+    expect(after.pinXInches, closeTo(0.25, 1e-6));
+    expect(after.pinYInches, closeTo(0.5, 1e-6));
+    expect(after.locPinXInches, closeTo(0.1, 1e-6));
+    expect(after.locPinYInches, closeTo(0.2, 1e-6));
+    expect(after.widthInches, closeTo(1.5, 1e-6));
+    expect(after.heightInches, closeTo(0.75, 1e-6));
+    expect(after.angleRad, closeTo(0.3, 1e-6));
+    expect(after.verticalAlign, VsdxVertAlign.top);
+    expect(after.marginLeftInches, closeTo(0.1, 1e-6));
+    expect(after.marginRightInches, closeTo(0.11, 1e-6));
+    expect(after.marginTopInches, closeTo(0.12, 1e-6));
+    expect(after.marginBottomInches, closeTo(0.13, 1e-6));
   });
 
   test('page rename round-trips', () {
@@ -606,6 +740,44 @@ void main() {
     // No fixture carried layers; nothing to verify (still a valid pass).
   });
 
+  test('layer rename + snap patch round-trips on an existing page', () {
+    const candidates = <String>[
+      'test1.vsdx',
+      'test3_house.vsdx',
+      'test5_master.vsdx',
+      'test6_shape_properties.vsdx',
+      'test10_nested_shapes.vsdx',
+      'test12_colors.vsdx',
+    ];
+    for (final name in candidates) {
+      final bytes = _fixture(name);
+      final doc = parser.parse(bytes);
+      for (var pi = 0; pi < doc.pages.length; pi++) {
+        final page = doc.pages[pi];
+        if (page.layers.isEmpty) continue;
+        final layer = page.layers.first;
+        final edited = page.copyWith(layers: [
+          for (final l in page.layers)
+            if (l.id == layer.id)
+              l.copyWith(name: 'Renamed_${l.id}', snap: !l.snap)
+            else
+              l,
+        ]);
+        final reopened = parser.parse(
+          writer.write(
+            originalBytes: bytes,
+            edited: doc.replacePage(pi, edited),
+          ),
+        );
+        final rl =
+            reopened.pages[pi].layers.firstWhere((l) => l.id == layer.id);
+        expect(rl.name, 'Renamed_${layer.id}');
+        expect(rl.snap, !layer.snap);
+        return; // one fixture with layers is enough
+      }
+    }
+  });
+
   test('a glued connector round-trips its <Connects>', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);
@@ -752,9 +924,16 @@ void main() {
             pattern: 3,
             beginArrow: 1,
             endArrow: 5,
+            beginArrowSizeInches: 0.225, // bucket 4
+            endArrowSizeInches: 0.375, // bucket 6
+            cap: LineCap.square,
             transparency: 0.4,
           ),
-          fill: s.fill.copyWith(foregroundTransparency: 0.25),
+          fill: s.fill.copyWith(
+            foregroundTransparency: 0.25,
+            background: const VsdxColor(0xFF00AA00),
+            backgroundTransparency: 0.1,
+          ),
         ),
       ),
     );
@@ -766,8 +945,100 @@ void main() {
     expect(after.line.pattern, 3);
     expect(after.line.beginArrow, 1);
     expect(after.line.endArrow, 5);
+    expect(after.line.beginArrowSizeInches, closeTo(0.225, 1e-4));
+    expect(after.line.endArrowSizeInches, closeTo(0.375, 1e-4));
+    expect(after.line.cap, LineCap.square);
     expect(after.line.transparency, closeTo(0.4, 1e-4));
     expect(after.fill.foregroundTransparency, closeTo(0.25, 1e-4));
+    expect(after.fill.background?.value, 0xFF00AA00);
+    expect(after.fill.backgroundTransparency, closeTo(0.1, 1e-4));
+  });
+
+  test('LayerMember + User cells round-trip on new shape', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          layerMemberIds: const <int>[0, 2],
+          userCells: const <VsdxUserCell>[
+            VsdxUserCell(name: 'visVersion', value: '1', prompt: 'ver'),
+          ],
+        ),
+      ),
+    );
+    final after = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(after.layerMemberIds, <int>[0, 2]);
+    expect(after.userCells, hasLength(1));
+    expect(after.userCells.first.name, 'visVersion');
+    expect(after.userCells.first.value, '1');
+    expect(after.userCells.first.prompt, 'ver');
+  });
+
+  test('Character Pos/Letterspace + Paragraph indents round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle: VsdxCharStyle(
+                  letterSpacingInches: 0.02,
+                  position: VsdxTextPosition.superscript,
+                  transparency: 0.3,
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                  indentFirstInches: 0.15,
+                  indentLeftInches: 0.1,
+                  spaceBeforeInches: 0.05,
+                  lineSpacing: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final run = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!
+        .richText
+        .runs
+        .first;
+    expect(run.charStyle.letterSpacingInches, closeTo(0.02, 1e-6));
+    expect(run.charStyle.position, VsdxTextPosition.superscript);
+    expect(run.charStyle.transparency, closeTo(0.3, 1e-6));
+    expect(run.paraStyle.horizontalAlign, VsdxHorzAlign.center);
+    expect(run.paraStyle.indentFirstInches, closeTo(0.15, 1e-6));
+    expect(run.paraStyle.indentLeftInches, closeTo(0.1, 1e-6));
+    expect(run.paraStyle.spaceBeforeInches, closeTo(0.05, 1e-6));
+    expect(run.paraStyle.lineSpacing, closeTo(1.5, 1e-6));
   });
 
   test('shape data (custom properties) round-trips: create, edit, add, remove',
@@ -880,6 +1151,77 @@ void main() {
     expect(after.richText.textBlock.verticalAlign, VsdxVertAlign.bottom);
     expect(after.richText.runs.first.charStyle.fontFamily, 'Georgia');
     expect(after.richText.runs.first.charStyle.underline, isTrue);
+  });
+
+  test('HideText / TextBkgnd / Rounding / Glow round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          line: const VsdxLine(roundingInches: 0.05),
+          glow: const VsdxGlow(
+            sizeInches: 0.08,
+            color: VsdxColor(0xFFFF0000),
+            transparency: 0.2,
+          ),
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Hidden')],
+            textBlock: VsdxTextBlock(
+              hideText: true,
+              backgroundColor: VsdxColor(0xFFFFFF00),
+            ),
+          ),
+        ),
+      ),
+    );
+    final after = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(after.richText.textBlock.hideText, isTrue);
+    expect(after.richText.textBlock.backgroundColor?.value, 0xFFFFFF00);
+    expect(after.line.roundingInches, closeTo(0.05, 1e-6));
+    expect(after.glow.enabled, isTrue);
+    expect(after.glow.sizeInches, closeTo(0.08, 1e-6));
+    expect(after.glow.color?.value, 0xFFFF0000);
+  });
+
+  test('style-only edit preserves existing <cp> markers in Text', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    // Find a shape that already has multi-marker text in the package.
+    final archive = ZipDecoder().decodeBytes(bytes);
+    String? pageXml;
+    for (final f in archive.files) {
+      if (f.name.contains('pages/page') && f.name.endsWith('.xml')) {
+        pageXml = utf8.decode(f.content as List<int>);
+        break;
+      }
+    }
+    expect(pageXml, isNotNull);
+    expect(pageXml!, contains('<cp'));
+
+    // No-op write (identity) must keep <cp>.
+    final out = writer.write(originalBytes: bytes, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .files
+          .firstWhere((f) =>
+              f.name.contains('pages/page') && f.name.endsWith('.xml'))
+          .content as List<int>,
+    );
+    expect(outXml.contains('<cp'), isTrue);
   });
 
   test('a hyperlink round-trips: create, edit, remove', () {
@@ -1457,5 +1799,1697 @@ void main() {
     // LocPin scaled with the box (was centre → still centre).
     expect(after.effectiveLocPinX, closeTo(2.0, 1e-4));
     expect(after.effectiveLocPinY, closeTo(1.0, 1e-4));
+  });
+
+  // libvisio / Visio parametric shapes rely on F=Width*… / Scratch.* surviving
+  // a resize. Full Geometry rebuilds used to strip those formulas.
+  test('resize keeps Width/Scratch geometry formulas (workflow)', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final shape = page.shapes.firstWhere(
+      (s) => s.geometries.isNotEmpty && s.width > 0.5 && s.height > 0.5,
+    );
+    final resized = doc.replacePage(
+      0,
+      page.updateShapeById(
+        shape.id,
+        (s) => s.resizeTo(
+          pinX: s.pinX,
+          pinY: s.pinY,
+          width: s.width * 2,
+          height: s.height * 2,
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: bytes, edited: resized);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    // Parametric rounded-rect / connection formulas must still be present.
+    expect(pageXml.contains('F="Scratch.X1"'), isTrue);
+    expect(pageXml.contains('F="Width*0.5"'), isTrue);
+    expect(pageXml.contains('F="Height*0.5"'), isTrue);
+    // LocPin on the resized shape keeps its original F= (e.g. (EndX-BeginX)/2
+    // or Width*0.5) — attribute order is F before N in Visio XML.
+    final shapeXml = RegExp(
+      'ID="${shape.id}"[\\s\\S]*?(?=<Shape |</Shapes>)',
+    ).firstMatch(pageXml)?.group(0);
+    expect(shapeXml, isNotNull);
+    final locPinX = RegExp(r'<Cell[^>]*N="LocPinX"[^>]*/?>')
+        .firstMatch(shapeXml!);
+    if (locPinX != null) {
+      expect(locPinX.group(0)!.contains('F="'), isTrue,
+          reason: 'LocPinX should retain F= after proportional resize');
+    }
+  });
+
+  // Style-only Character edits must keep unmodelled cells (FontScale, …).
+  test('style edit preserves Character FontScale / AsianFont cells', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    final shape = page.shapes.firstWhere(
+      (s) => s.richText.runs.isNotEmpty && (s.text?.isNotEmpty ?? false),
+    );
+    final edited = doc.replacePage(
+      0,
+      page.updateShapeById(shape.id, (s) {
+        final run = s.richText.runs.first;
+        return s.copyWith(
+          richText: s.richText.copyWith(
+            runs: [
+              run.copyWith(
+                charStyle: run.charStyle.copyWith(
+                  style: const VsdxFontStyle(bold: true),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+    final out = writer.write(originalBytes: bytes, edited: edited);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final shapeXml = RegExp(
+      'ID="${shape.id}"[\\s\\S]*?(?=<Shape |</Shapes>)',
+    ).firstMatch(pageXml)!.group(0)!;
+    expect(shapeXml.contains('N="FontScale"'), isTrue);
+    expect(shapeXml.contains('N="AsianFont"') || shapeXml.contains('N="LangID"'),
+        isTrue);
+  });
+
+  test('materialised connection points write DirX/DirY/Type', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final a = VsdxShapeFactory.rectangle(
+        id: 1, pinX: 2, pinY: 2, width: 1, height: 1);
+    final b = VsdxShapeFactory.rectangle(
+        id: 2, pinX: 5, pinY: 2, width: 1, height: 1);
+    doc = doc.replacePage(0, doc.pages.first.addShape(a).addShape(b));
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes1);
+    final page = doc.pages.first.updateShapeById(
+      2,
+      (s) => s.copyWith(
+        connectionPoints: VsdxPage.defaultConnectionPoints(s.width, s.height),
+      ),
+    );
+    final out = writer.write(
+        originalBytes: bytes1, edited: doc.replacePage(0, page));
+    final after = parser.parse(out).pages.first.findShapeById(2)!;
+    expect(after.connectionPoints.length, 5);
+    expect(after.connectionPoints[0].dirY, closeTo(1, 1e-9));
+    expect(after.connectionPoints[1].dirX, closeTo(1, 1e-9));
+    expect(after.connectionPoints[2].dirY, closeTo(-1, 1e-9));
+    expect(after.connectionPoints[3].dirX, closeTo(-1, 1e-9));
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="DirX"'), isTrue);
+    expect(pageXml.contains('N="DirY"'), isTrue);
+    expect(pageXml.contains('N="Type"'), isTrue);
+    expect(pageXml.contains('N="AutoGen"'), isTrue);
+  });
+
+  test('LineGradient round-trips on new shape', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final grad = VsdxGradient(
+      type: VsdxGradientType.linear,
+      angleRad: 0.5,
+      stops: const [
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(line: VsdxLine(gradient: grad, weightInches: 0.05));
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.line.hasGradient, isTrue);
+    expect(after.line.gradient!.stops.length, 2);
+    expect(after.line.gradient!.angleRad, closeTo(0.5, 1e-6));
+  });
+
+  // libvisio CharIX / ParaIX fields: Case, FontScale, smallcaps, Bullet, Flags.
+  test('Character Case/FontScale/smallCaps + Paragraph Bullet/Flags round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      text: 'Hello',
+      richText: VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'Hello',
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 14 / 72,
+              style: VsdxFontStyle(bold: true, smallCaps: true),
+              textCase: VsdxTextCase.allCaps,
+              fontScale: 0.9,
+              doubleUnderline: true,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+              bullet: 1,
+              bulletStr: '•',
+              flags: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    final run = after.richText.runs.first;
+    expect(run.charStyle.style.smallCaps, isTrue);
+    expect(run.charStyle.textCase, VsdxTextCase.allCaps);
+    expect(run.charStyle.fontScale, closeTo(0.9, 1e-6));
+    expect(run.charStyle.doubleUnderline, isTrue);
+    expect(run.paraStyle.bullet, 1);
+    expect(run.paraStyle.bulletStr, '•');
+    expect(run.paraStyle.flags, 2);
+  });
+
+  test('Control + Scratch round-trip (group rebuild path)', () {
+    // Parse fixtures that carry the sections, then force a shape rebuild by
+    // grouping — writer must re-emit Control/Scratch with formulas.
+    final bytes = _fixture('test5_master.vsdx');
+    final doc = parser.parse(bytes);
+    final withControl = doc.pages.first.shapes
+        .where((s) => s.controls.isNotEmpty)
+        .toList();
+    expect(withControl, isNotEmpty);
+    final c0 = withControl.first.controls.first;
+    expect(c0.name, 'TextPosition');
+    expect(c0.dynXFormula, isNotNull);
+
+    final wf = parser.parse(_fixture('workflow.vsdx'));
+    final withScratch =
+        wf.pages.first.shapes.where((s) => s.scratch.isNotEmpty).toList();
+    expect(withScratch, isNotEmpty);
+    expect(withScratch.first.scratch.first.xFormula, contains('MIN'));
+
+    // Rebuild a new shape carrying both sections.
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 3,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      controls: [
+        VsdxControlRow(
+          name: 'TextPosition',
+          x: 1.0,
+          y: 0,
+          dynX: 1.0,
+          dynY: 0,
+          dynXFormula: 'TextPosition',
+          dynYFormula: 'TextPosition.Y',
+          prompt: 'Reposition Text',
+        ),
+      ],
+      scratch: [
+        const VsdxScratchRow(
+          ix: 0,
+          x: 0.5,
+          xFormula: 'MIN(Height/2,Width/2)',
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: [VsdxTextRun(text: 'Label')],
+        textBlock: VsdxTextBlock(pinXInches: 1.0, pinYInches: 0),
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Control"'), isTrue);
+    expect(pageXml.contains('N="TextPosition"'), isTrue);
+    expect(pageXml.contains('F="TextPosition"'), isTrue);
+    expect(
+        pageXml.contains('N="XDyn"') || pageXml.contains('N="DynX"'), isTrue);
+    expect(pageXml.contains('N="Scratch"'), isTrue);
+    expect(pageXml.contains('F="MIN(Height/2,Width/2)"'), isTrue);
+
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.controls.single.name, 'TextPosition');
+    expect(after.controls.single.dynXFormula, 'TextPosition');
+    expect(after.scratch.single.xFormula, 'MIN(Height/2,Width/2)');
+  });
+
+  test('TxtPin SETATREF formula survives pin cache update', () {
+    final bytes = _fixture('test5_master.vsdx');
+    final doc = parser.parse(bytes);
+    final shape = doc.pages.first.shapes.firstWhere(
+      (s) => s.controls.isNotEmpty && s.richText.textBlock.pinXInches != null,
+    );
+    final pin = shape.richText.textBlock.pinXInches!;
+    final edited = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        shape.id,
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.copyWith(
+              pinXInches: pin + 0.01,
+            ),
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: bytes, edited: edited);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('SETATREF(Controls.TextPosition)'), isTrue);
+  });
+
+  test('text edit emits <tp> for tab characters', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      text: 'A\tB',
+      richText: const VsdxRichText(
+        runs: [VsdxTextRun(text: 'A\tB')],
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('<tp IX="0"/>') || pageXml.contains("<tp IX=\"0\"/>"),
+        isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.plainText.contains('\t'), isTrue);
+  });
+
+  test('AsianFont / LangID round-trip on new shape', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      text: '你好',
+      richText: VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: '你好',
+            charStyle: const VsdxCharStyle(
+              fontFamily: 'Arial',
+              asianFont: 'Microsoft YaHei',
+              complexScriptFont: 'Arial',
+              langId: 'zh-CN',
+            ),
+          ),
+        ],
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final after = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    final c = after.richText.runs.first.charStyle;
+    expect(c.asianFont, 'Microsoft YaHei');
+    expect(c.langId, 'zh-CN');
+    expect(c.complexScriptFont, 'Arial');
+  });
+
+  test('Master attribute survives parse → rebuild write', () {
+    final bytes = _fixture('test5_master.vsdx');
+    final doc = parser.parse(bytes);
+    final shaped = doc.pages.first.shapes.where((s) => s.masterId != null);
+    expect(shaped, isNotEmpty);
+    final s = shaped.first;
+    // Force rebuild by grouping alone then writing a copy as new shape.
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final clone = s.copyWith(id: id, pinX: 1, pinY: 1);
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(clone));
+    final out = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('Master="${s.masterId}"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.masterId, s.masterId);
+  });
+
+  test('MasterShape + style attrs survive parse → rebuild', () {
+    final bytes = _fixture('test5_master.vsdx');
+    final doc = parser.parse(bytes);
+    VsdxShape? withMasterShape;
+    void walk(VsdxShape s) {
+      if (s.masterShapeId != null) withMasterShape ??= s;
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+    for (final s in doc.pages.first.shapes) {
+      walk(s);
+    }
+    expect(withMasterShape, isNotNull);
+    final s = withMasterShape!;
+
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final clone = s.copyWith(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      children: const [],
+      lineStyleId: s.lineStyleId ?? 3,
+      fillStyleId: s.fillStyleId ?? 3,
+      textStyleId: s.textStyleId ?? 3,
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(clone));
+    final out = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('MasterShape="${s.masterShapeId}"'), isTrue);
+    expect(pageXml.contains('LineStyle="'), isTrue);
+    expect(pageXml.contains('FillStyle="'), isTrue);
+    expect(pageXml.contains('TextStyle="'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.masterShapeId, s.masterShapeId);
+    expect(after.lineStyleId, clone.lineStyleId);
+  });
+
+  test('Field section + fld marker round-trip on rebuild', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    const display = '42';
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 0.5,
+    ).copyWith(
+      fields: const [
+        VsdxFieldRow(
+          ix: 0,
+          value: display,
+          valueFormula: 'PAGENUMBER()',
+          format: 'esc(0)',
+          formatFormula: 'FIELDPICTURE(0)',
+          type: 0,
+          uiCat: 0,
+          uiCod: 0,
+          uiFmt: 0,
+          calendar: 0,
+          objectKind: 0,
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: display,
+            fieldSpans: [VsdxFieldSpan(start: 0, length: 2, ix: 0)],
+          ),
+        ],
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Field"'), isTrue);
+    expect(pageXml.contains('F="PAGENUMBER()"'), isTrue);
+    expect(pageXml.contains('<fld IX="0">42</fld>') ||
+        pageXml.contains("<fld IX=\"0\">42</fld>"), isTrue);
+
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.fields, isNotEmpty);
+    expect(after.fields.first.valueFormula, 'PAGENUMBER()');
+    expect(after.richText.runs.first.fieldSpans, isNotEmpty);
+    expect(after.richText.plainText, display);
+  });
+
+  test('NoSnap / NoQuickDrag survive geometry rebuild', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      geometries: [
+        VsdxGeometry(
+          commands: const [
+            MoveTo(0, 0),
+            LineTo(2, 0),
+            LineTo(2, 1),
+            LineTo(0, 1),
+            LineTo(0, 0),
+          ],
+          noSnap: true,
+          noQuickDrag: true,
+        ),
+      ],
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="NoSnap" V="1"'), isTrue);
+    expect(pageXml.contains('N="NoQuickDrag" V="1"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.geometries.first.noSnap, isTrue);
+    expect(after.geometries.first.noQuickDrag, isTrue);
+  });
+
+  test('group rebuild preserves opaque EventDblClick / ObjType', () {
+    final bytes = _fixture('test5_master.vsdx');
+    final doc = parser.parse(bytes);
+    final page = doc.pages.first;
+    expect(page.shapes.length, greaterThanOrEqualTo(2));
+    final a = page.shapes[0].id;
+    final b = page.shapes[1].id;
+    final gid = page.nextFreeShapeId();
+    final grouped = doc.replacePage(0, page.group({a, b}, groupId: gid));
+    final out = writer.write(originalBytes: bytes, edited: grouped);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="EventDblClick"'), isTrue);
+    expect(pageXml.contains('OPENTEXTWIN()'), isTrue);
+    expect(pageXml.contains('N="ObjType"'), isTrue);
+  });
+
+  test('multi-run Character/Paragraph rows on rebuild', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      richText: VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'Hi ',
+            charStyle: VsdxCharStyle.defaults.copyWith(
+              fontSizeInches: 12 / 72,
+              style: const VsdxFontStyle(bold: true),
+            ),
+          ),
+          VsdxTextRun(
+            text: 'there',
+            charStyle: VsdxCharStyle.defaults.copyWith(
+              fontSizeInches: 10 / 72,
+              style: const VsdxFontStyle(italic: true),
+            ),
+          ),
+        ],
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('IX="0"'), isTrue);
+    expect(pageXml.contains('IX="1"'), isTrue);
+    expect(pageXml.contains('<cp IX="1"/>') || pageXml.contains("cp IX=\"1\""),
+        isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.richText.runs, hasLength(2));
+    expect(after.richText.runs[0].charStyle.style.bold, isTrue);
+    expect(after.richText.runs[1].charStyle.style.italic, isTrue);
+  });
+
+  test('Tabs section + tp IX round-trip', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 3,
+      height: 1,
+    ).copyWith(
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'A\tB\tC',
+            tabIndices: [0, 1],
+          ),
+        ],
+        tabSets: [
+          VsdxTabSet(
+            ix: 0,
+            stops: [VsdxTabStop(positionInches: 0.5, alignment: 0)],
+          ),
+          VsdxTabSet(
+            ix: 1,
+            stops: [
+              VsdxTabStop(positionInches: 1.25, alignment: 1),
+              VsdxTabStop(positionInches: 2.0, alignment: 2),
+            ],
+          ),
+        ],
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Tabs"'), isTrue);
+    expect(pageXml.contains('N="Position0"'), isTrue);
+    expect(pageXml.contains('N="Alignment1"'), isTrue);
+    expect(pageXml.contains('<tp IX="0"/>') || pageXml.contains('tp IX="0"'),
+        isTrue);
+    expect(pageXml.contains('<tp IX="1"/>') || pageXml.contains('tp IX="1"'),
+        isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.richText.tabSets, hasLength(2));
+    expect(after.richText.tabSets[1].stops, hasLength(2));
+    expect(after.richText.tabSets[1].stops[0].positionInches,
+        closeTo(1.25, 1e-6));
+    expect(after.richText.runs.first.tabIndices, [0, 1]);
+  });
+
+  test('themeColorIndex writes THEMEVAL on rebuild', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: const VsdxFill(themeForegroundIndex: 3, pattern: 1),
+      line: const VsdxLine(themeColorIndex: 2),
+      richText: VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'T',
+            charStyle: VsdxCharStyle.defaults.copyWith(themeColorIndex: 1),
+          ),
+        ],
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('F="THEMEVAL()"'), isTrue);
+    expect(pageXml.contains('N="QuickStyleFillColor" V="3"'), isTrue);
+    expect(pageXml.contains('N="QuickStyleLineColor" V="2"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.fill.themeForegroundIndex, 3);
+    expect(after.line.themeColorIndex, 2);
+  });
+
+  test('Visio XDyn/XCon/CanGlue Control round-trip', () {
+    final bytes = _fixture('test9_rect_and_line.vsdx');
+    final doc = parser.parse(bytes);
+    VsdxShape? withCtrl;
+    void walk(VsdxShape s) {
+      if (s.controls.isNotEmpty &&
+          s.controls.any((c) => c.useVisioDynNames)) {
+        withCtrl ??= s;
+      }
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+    for (final s in doc.pages.first.shapes) {
+      walk(s);
+    }
+    expect(withCtrl, isNotNull);
+    final found = withCtrl!.controls.firstWhere((c) => c.useVisioDynNames);
+    expect(found.dynXFormula, isNotNull);
+
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(controls: [found]);
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="XDyn"'), isTrue);
+    expect(pageXml.contains('N="XCon"'), isTrue);
+    expect(pageXml.contains('N="CanGlue"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.controls.single.useVisioDynNames, isTrue);
+    expect(after.controls.single.dynXFormula, found.dynXFormula);
+    expect(after.controls.single.conXFormula, found.conXFormula);
+  });
+
+  test('Property SortKey/Invisible + User Value F= round-trip', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      userProperties: const [
+        VsdxUserProperty(
+          name: 'Cost',
+          label: 'Cost',
+          value: '42',
+          type: 2,
+          sortKey: '01',
+          invisible: true,
+          verify: true,
+          langId: 'en-US',
+          calendar: 0,
+        ),
+      ],
+      userCells: const [
+        VsdxUserCell(
+          name: 'Half',
+          value: '1',
+          valueFormula: 'Width/2',
+        ),
+      ],
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SortKey"'), isTrue);
+    expect(pageXml.contains('N="Invisible" V="1"'), isTrue);
+    expect(pageXml.contains('F="Width/2"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.userProperties.single.sortKey, '01');
+    expect(after.userProperties.single.invisible, isTrue);
+    expect(after.userCells.single.valueFormula, 'Width/2');
+  });
+
+  test('SoftEdgesSize + CompoundType round-trip', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      line: const VsdxLine(
+        softEdgesInches: 0.05,
+        compoundType: 1,
+        roundingInches: 0.1,
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
+    expect(pageXml.contains('N="CompoundType" V="1"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.line.softEdgesInches, closeTo(0.05, 1e-6));
+    expect(after.line.compoundType, 1);
+  });
+
+  test('expanded Lock* cells written when locked', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+    ).copyWith(locked: true);
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="LockGroup"'), isTrue);
+    expect(pageXml.contains('N="LockCalcWH"'), isTrue);
+    expect(pageXml.contains('N="LockVtxEdit"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.locked, isTrue);
+  });
+
+  test('Connection X/Y formulas survive rebuild', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      connectionPoints: const [
+        VsdxConnectionPoint(
+          0,
+          0.5,
+          xFormula: 'Width*0',
+          yFormula: 'Height*0.5',
+        ),
+        VsdxConnectionPoint(
+          2,
+          0.5,
+          xFormula: 'Width*1',
+          yFormula: 'Height*0.5',
+        ),
+      ],
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('F="Width*0"'), isTrue);
+    expect(pageXml.contains('F="Height*0.5"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.connectionPoints.first.xFormula, 'Width*0');
+    expect(after.connectionPoints.first.yFormula, 'Height*0.5');
+  });
+
+  test('connector XForm PAR(PNT) + BegTrigger round-trip on rebuild', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final connectors = doc.pages.first.shapes
+        .where((s) =>
+            s.is1D &&
+            s.formulas.containsKey('BeginX') &&
+            s.formulas['BeginX']!.contains('PAR(PNT'))
+        .toList();
+    expect(connectors, isNotEmpty);
+    final src = connectors.first;
+
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final clone = src.copyWith(
+      id: id,
+      children: const [],
+      // Keep formulas / connector props / 1-D endpoints.
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(clone));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('PAR(PNT'), isTrue);
+    expect(pageXml.contains('N="BegTrigger"'), isTrue);
+    expect(pageXml.contains('_XFTRIGGER'), isTrue);
+    expect(pageXml.contains('N="GlueType"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.formulas['BeginX'], src.formulas['BeginX']);
+    expect(after.formulas['PinX'], src.formulas['PinX']);
+    expect(after.formulas['BegTrigger'], src.formulas['BegTrigger']);
+    expect(after.connectorProps?.glueType, src.connectorProps?.glueType);
+  });
+
+  test('ShdwPattern alias round-trips with ShadowPattern', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      shadow: const VsdxShadow(enabled: true, offsetXInches: 0.1),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ShadowPattern"'), isTrue);
+    expect(pageXml.contains('N="ShdwPattern"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.shadow.enabled, isTrue);
+
+    // Parser accepts ShdwPattern alone (Lucidchart / Visio alias).
+    const style = StyleParser();
+    final el = XmlDocument.parse('''
+      <Shape ID="1" Type="Shape">
+        <Cell N="PinX" V="1"/><Cell N="PinY" V="1"/>
+        <Cell N="Width" V="1"/><Cell N="Height" V="1"/>
+        <Cell N="ShdwPattern" V="1"/>
+        <Cell N="ShadowOffsetX" V="0.1"/>
+      </Shape>''').rootElement;
+    expect(style.parseShadow(el).enabled, isTrue);
+  });
+
+  test('SpLine=0 solid writes V="0" not omitted', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      richText: VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'solid',
+            paraStyle: VsdxParaStyle.defaults.copyWith(lineSpacingSolid: true),
+          ),
+        ],
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SpLine" V="0"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.richText.runs.first.paraStyle.lineSpacingSolid, isTrue);
+  });
+
+  test('Txt* SETATREF / TEXTWIDTH formulas survive group rebuild', () {
+    final bytes = _fixture('test5_master.vsdx');
+    final doc = parser.parse(bytes);
+    final src = doc.pages.first.shapes.firstWhere(
+      (s) =>
+          s.formulas['TxtPinX']?.contains('SETATREF') == true &&
+          s.formulas.containsKey('TxtWidth'),
+    );
+    expect(src.formulas['TxtPinX'], contains('SETATREF(Controls.TextPosition)'));
+
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    outDoc = outDoc.replacePage(
+      0,
+      outDoc.pages.first.addShape(src.copyWith(id: id, children: const [])),
+    );
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('SETATREF(Controls.TextPosition)'), isTrue);
+    expect(pageXml.contains('TEXTWIDTH(TheText)') || pageXml.contains('TxtWidth'),
+        isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.formulas['TxtPinX'], src.formulas['TxtPinX']);
+    expect(after.formulas['TxtPinY'], src.formulas['TxtPinY']);
+    expect(after.formulas['TxtWidth'], src.formulas['TxtWidth']);
+  });
+
+  test('Geometry Scratch.X1 / Width* formulas survive group rebuild', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final src = doc.pages.first.shapes.firstWhere((s) {
+      for (final g in s.geometries) {
+        for (var i = 0; i < g.commands.length; i++) {
+          final f = g.formulasAt(i)['X'];
+          if (f != null && f.contains('Scratch.X1')) return true;
+        }
+      }
+      return false;
+    });
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    outDoc = outDoc.replacePage(
+      0,
+      outDoc.pages.first.addShape(src.copyWith(id: id, children: const [])),
+    );
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('F="Scratch.X1"'), isTrue);
+    expect(pageXml.contains('F="Width*0') || pageXml.contains('F="Width-'),
+        isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    var found = false;
+    for (final g in after.geometries) {
+      for (var i = 0; i < g.commands.length; i++) {
+        if (g.formulasAt(i)['X']?.contains('Scratch.X1') == true) {
+          found = true;
+        }
+      }
+    }
+    expect(found, isTrue);
+  });
+
+  test('Scratch C/D cells round-trip on rebuild', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      scratch: const [
+        VsdxScratchRow(
+          ix: 0,
+          x: 0.25,
+          y: 0,
+          a: 0,
+          b: 0,
+          c: 0.1,
+          d: 0.2,
+          xFormula: 'MIN(Height/2,Width/2)',
+          cFormula: 'Width*0.05',
+          dFormula: 'Height*0.1',
+        ),
+      ],
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="C"'), isTrue);
+    expect(pageXml.contains('N="D"'), isTrue);
+    expect(pageXml.contains('F="Width*0.05"'), isTrue);
+    expect(pageXml.contains('F="Height*0.1"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.scratch.single.c, closeTo(0.1, 1e-6));
+    expect(after.scratch.single.d, closeTo(0.2, 1e-6));
+    expect(after.scratch.single.cFormula, 'Width*0.05');
+    expect(after.scratch.single.dFormula, 'Height*0.1');
+  });
+
+  test('ForeignType EnhMetaFile + CompressionType round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_emf_test.emf';
+    final payload = Uint8List.fromList(<int>[0x01, 0x00, 0x00, 0x00, 0xEE]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(
+      foreignType: 'EnhMetaFile',
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(
+              partName: part,
+              bytes: payload,
+              mimeType: 'image/x-emf',
+            ),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('ForeignType="EnhMetaFile"'), isTrue);
+    expect(pageXml.contains('ForeignType="Bitmap"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.foreignType, 'EnhMetaFile');
+    expect(after.hasImage, isTrue);
+  });
+
+  test('ForeignType Bitmap writes CompressionType=PNG', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_png_test.png';
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(
+              partName: part,
+              bytes: Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('ForeignType="Bitmap"'), isTrue);
+    expect(pageXml.contains('CompressionType="PNG"'), isTrue);
+  });
+
+  test('ObjType / EventDblClick / NoAlignBox survive brand-new rebuild', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final src = doc.pages.first.shapes.firstWhere(
+      (s) =>
+          s.objType != null &&
+          s.formulas.containsKey('EventDblClick') &&
+          s.noAlignBox,
+    );
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    outDoc = outDoc.replacePage(
+      0,
+      outDoc.pages.first.addShape(src.copyWith(id: id, children: const [])),
+    );
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ObjType"'), isTrue);
+    expect(pageXml.contains('OPENTEXTWIN()'), isTrue);
+    expect(pageXml.contains('N="NoAlignBox"'), isTrue);
+    expect(pageXml.contains('N="ShapeSplittable"'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.objType, src.objType);
+    expect(after.formulas['EventDblClick'], src.formulas['EventDblClick']);
+    expect(after.noAlignBox, isTrue);
+    expect(after.shapeSplittable, isTrue);
+  });
+
+  test('LockTheme* cells written when shape is locked', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(locked: true);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="LockThemeColors"'), isTrue);
+    expect(pageXml.contains('N="LockThemeFonts"'), isTrue);
+    expect(pageXml.contains('N="LockCustProp"'), isTrue);
+  });
+
+  test('FillGradient theme palette index stop round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: VsdxFill(
+        pattern: 1,
+        gradient: VsdxGradient(
+          type: VsdxGradientType.linear,
+          angleRad: 0,
+          stops: const [
+            VsdxGradientStop(position: 0, themeColorIndex: 1),
+            VsdxGradientStop(position: 1, themeColorIndex: 4),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="FillGradient"'), isTrue);
+    expect(pageXml.contains('N="GradientStopColor" V="1"') ||
+            pageXml.contains('V="1" N="GradientStopColor"'),
+        isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.gradient, isNotNull);
+    expect(after.fill.gradient!.stops.first.themeColorIndex, 1);
+    expect(after.fill.gradient!.stops.last.themeColorIndex, 4);
+  });
+
+  test('Property Value F= + Ask round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      userProperties: const [
+        VsdxUserProperty(
+          name: 'Cost',
+          label: 'Cost',
+          value: '1',
+          valueFormula: 'Width/2',
+          type: 2,
+          ask: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('F="Width/2"'), isTrue);
+    expect(pageXml.contains('N="Ask"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.userProperties.single.valueFormula, 'Width/2');
+    expect(after.userProperties.single.ask, isTrue);
+  });
+
+  test('Hyperlink ExtraInfo / Invisible / SortKey round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      hyperlinks: const [
+        VsdxHyperlink(
+          id: 0,
+          description: 'Docs',
+          address: 'https://example.com',
+          addressFormula: 'GUARD("https://example.com")',
+          extraInfo: 'q=1',
+          invisible: true,
+          sortKey: 'a',
+          isDefault: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ExtraInfo"'), isTrue);
+    expect(pageXml.contains('N="Invisible"'), isTrue);
+    expect(pageXml.contains('N="SortKey"'), isTrue);
+    expect(
+      pageXml.contains('GUARD("https://example.com")') ||
+          pageXml.contains('GUARD(&quot;https://example.com&quot;)'),
+      isTrue,
+    );
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.hyperlinks.single.extraInfo, 'q=1');
+    expect(after.hyperlinks.single.invisible, isTrue);
+    expect(after.hyperlinks.single.sortKey, 'a');
+    expect(after.hyperlinks.single.addressFormula, contains('GUARD'));
+  });
+
+  test('ThemeIndex + QuickStyle*Matrix survive rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      themeIndex: 0,
+      quickStyleFillMatrix: 100,
+      quickStyleLineMatrix: 100,
+      quickStyleEffectsMatrix: 100,
+      quickStyleFontMatrix: 100,
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ThemeIndex"'), isTrue);
+    expect(pageXml.contains('N="QuickStyleFillMatrix"'), isTrue);
+    expect(pageXml.contains('N="QuickStyleFontMatrix"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.themeIndex, 0);
+    expect(after.quickStyleFillMatrix, 100);
+    expect(after.quickStyleFontMatrix, 100);
+  });
+
+  test('PageSheet scale/shadow/jumps round-trip on new page', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    expect(doc.pages.first.pageSheet.pageScaleUnit, 'PT');
+    expect(doc.pages.first.pageSheet.shadowOffsetXInches, closeTo(0.125, 1e-6));
+
+    // Clone workflow PageSheet onto a blank doc page and rebuild.
+    final wf = parser.parse(_fixture('workflow.vsdx'));
+    final sheet = wf.pages.first.pageSheet;
+    expect(sheet.lineJumpCode, isNotNull);
+    expect(sheet.pageScaleUnit, 'PT');
+
+    final edited = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: 11.9583,
+        heightInches: 7.14583,
+        pageSheet: sheet,
+      ),
+    );
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(pagesXml.contains('N="PageScale"'), isTrue);
+    expect(pagesXml.contains('U="PT"'), isTrue);
+    expect(pagesXml.contains('N="ShdwOffsetX"'), isTrue);
+    expect(pagesXml.contains('N="LineJumpCode"'), isTrue);
+    expect(pagesXml.contains('N="DrawingResizeType"'), isTrue);
+
+    final after = parser.parse(out).pages.first;
+    expect(after.pageSheet.pageScale, closeTo(sheet.pageScale, 1e-9));
+    expect(after.pageSheet.pageScaleUnit, sheet.pageScaleUnit);
+    expect(after.pageSheet.shadowOffsetXInches,
+        closeTo(sheet.shadowOffsetXInches, 1e-6));
+    expect(after.pageSheet.lineJumpCode, sheet.lineJumpCode);
+    expect(after.pageSheet.lineJumpStyle, sheet.lineJumpStyle);
+    expect(after.pageSheet.drawingResizeType, sheet.drawingResizeType);
+    expect(after.pageSheet.pageShapeSplit, sheet.pageShapeSplit);
+  });
+
+  test('PageSheet VariationColorIndex/StyleIndex round-trip on new page', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final sheet = doc.pages.first.pageSheet.copyWith(
+      variationColorIndex: 3,
+      variationStyleIndex: 1,
+    );
+    final edited =
+        doc.replacePage(0, doc.pages.first.copyWith(pageSheet: sheet));
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(pagesXml.contains('N="VariationColorIndex"'), isTrue);
+    expect(pagesXml.contains('N="VariationStyleIndex"'), isTrue);
+    final after = parser.parse(out).pages.first;
+    expect(after.pageSheet.variationColorIndex, 3);
+    expect(after.pageSheet.variationStyleIndex, 1);
+  });
+
+  test('Actions section Menu/Action F= round-trip on rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      actions: const [
+        VsdxActionRow(
+          name: 'Row_1',
+          ix: 1,
+          menu: 'Open docs',
+          action: '0',
+          actionFormula: 'RUNADDON("Open")',
+          tag: 'docs',
+          sortKey: '01',
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Actions"'), isTrue);
+    expect(pageXml.contains('N="Menu"'), isTrue);
+    expect(
+      pageXml.contains('RUNADDON("Open")') ||
+          pageXml.contains('RUNADDON(&quot;Open&quot;)'),
+      isTrue,
+    );
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.actions.single.menu, 'Open docs');
+    expect(after.actions.single.actionFormula, contains('RUNADDON'));
+    expect(after.actions.single.tag, 'docs');
+    expect(after.actions.single.sortKey, '01');
+  });
+
+  test('group SelectMode/DisplayMode/IsTextEditTarget round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      isTextEditTarget: true,
+      dontMoveChildren: true,
+      selectMode: 1,
+      displayMode: 2,
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="IsTextEditTarget"'), isTrue);
+    expect(pageXml.contains('N="DontMoveChildren"'), isTrue);
+    expect(pageXml.contains('N="SelectMode"'), isTrue);
+    expect(pageXml.contains('N="DisplayMode"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.isTextEditTarget, isTrue);
+    expect(after.dontMoveChildren, isTrue);
+    expect(after.selectMode, 1);
+    expect(after.displayMode, 2);
+  });
+
+  test('connector ConLineRouteExt / jump dirs / ShapePlaceFlip round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 0.1,
+    ).copyWith(
+      connectorProps: const VsdxConnectorProps(
+        conLineRouteExt: 1,
+        conLineJumpStyle: 2,
+        conLineJumpDirX: 1,
+        conLineJumpDirY: 0,
+        shapePlaceFlip: 1,
+        shapeRouteStyle: 1,
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.connectorProps?.conLineRouteExt, 1);
+    expect(after.connectorProps?.conLineJumpStyle, 2);
+    expect(after.connectorProps?.conLineJumpDirX, 1);
+    expect(after.connectorProps?.conLineJumpDirY, 0);
+    expect(after.connectorProps?.shapePlaceFlip, 1);
+    expect(after.connectorProps?.shapeRouteStyle, 1);
+  });
+
+  test('page ViewScale / ViewCenter* round-trip on new page', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first.copyWith(
+      viewScale: 0.75,
+      viewCenterX: 4.5,
+      viewCenterY: 3.25,
+    );
+    doc = doc.replacePage(0, page);
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(pagesXml.contains('ViewScale='), isTrue);
+    expect(pagesXml.contains('ViewCenterX='), isTrue);
+    expect(pagesXml.contains('ViewCenterY='), isTrue);
+    final after = parser.parse(out).pages.first;
+    expect(after.viewScale, closeTo(0.75, 1e-6));
+    expect(after.viewCenterX, closeTo(4.5, 1e-6));
+    expect(after.viewCenterY, closeTo(3.25, 1e-6));
+  });
+
+  test('Layer Snap/Glue/NameUniv/ColorTrans/Status round-trip on new page', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first.copyWith(
+      layers: const [
+        VsdxLayer(
+          id: 0,
+          name: 'Foreground',
+          nameUniv: 'Foreground',
+          snap: false,
+          glue: false,
+          colorTrans: 0.25,
+          status: 1,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, page);
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(pagesXml.contains('N="Layer"'), isTrue);
+    expect(pagesXml.contains('N="Snap"'), isTrue);
+    expect(pagesXml.contains('N="Glue"'), isTrue);
+    expect(pagesXml.contains('N="NameUniv"'), isTrue);
+    final after = parser.parse(out).pages.first.layers.single;
+    expect(after.name, 'Foreground');
+    expect(after.nameUniv, 'Foreground');
+    expect(after.snap, isFalse);
+    expect(after.glue, isFalse);
+    expect(after.colorTrans, closeTo(0.25, 1e-6));
+    expect(after.status, 1);
+  });
+
+  test('FillPattern / LineColor F= formulas round-trip on rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      formulas: const {
+        'FillPattern': 'THEMEVAL()',
+        'LineColor': 'THEMEVAL()',
+        'LinePattern': 'THEMEVAL()',
+        'FillForegnd': 'THEMEVAL()',
+      },
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="FillPattern"'), isTrue);
+    expect(pageXml.contains('N="LineColor"'), isTrue);
+    expect(pageXml.contains('F="THEMEVAL()"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.formulas['FillPattern'], 'THEMEVAL()');
+    expect(after.formulas['LineColor'], 'THEMEVAL()');
+    expect(after.formulas['LinePattern'], 'THEMEVAL()');
+    expect(after.formulas['FillForegnd'], 'THEMEVAL()');
   });
 }

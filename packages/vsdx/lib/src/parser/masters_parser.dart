@@ -9,16 +9,22 @@ import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
 import '../model/master.dart';
+import '../model/stylesheet.dart';
 import 'master_parser.dart';
 import 'package_reader.dart';
+import 'page_parser.dart';
 import 'relationships.dart';
 
 final _log = Logger('vsdx.parser.masters');
 
 class MastersParser {
-  MastersParser(this._package, {MasterParser? masterParser})
-      : _resolver = RelationshipResolver(_package),
-        _master = masterParser ?? MasterParser();
+  MastersParser(
+    this._package, {
+    MasterParser? masterParser,
+    StyleSheetRegistry stylesheets = StyleSheetRegistry.empty,
+  })  : _resolver = RelationshipResolver(_package),
+        _master = masterParser ??
+            MasterParser(shapes: PageParser(stylesheets: stylesheets));
 
   final VsdxPackage _package;
   final RelationshipResolver _resolver;

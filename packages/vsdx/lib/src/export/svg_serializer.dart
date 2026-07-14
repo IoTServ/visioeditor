@@ -261,6 +261,24 @@ class VsdxToSvgSerializer {
             cx = x;
             cy = y;
           }
+        case RelArcTo(:final fx, :final fy, :final fbow):
+          final x = fx * w;
+          final y = fy * h;
+          final bow = fbow * (w + h) / 2;
+          if (bow == 0) {
+            l(x, y);
+          } else {
+            final dx = x - cx;
+            final dy = y - cy;
+            final chord = math.sqrt(dx * dx + dy * dy);
+            final r = (chord * chord + 4 * bow * bow) / (8 * bow.abs());
+            final large = (4 * bow.abs() > chord) ? 1 : 0;
+            final sweep = bow < 0 ? 1 : 0;
+            out.write(
+                'A ${_n(r)} ${_n(r)} 0 $large $sweep ${_n(x)} ${_n(y)} ');
+            cx = x;
+            cy = y;
+          }
         case EllipticalArcTo(
             :final x,
             :final y,
@@ -302,33 +320,47 @@ class VsdxToSvgSerializer {
               ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(rx * 2)} 0 ')
               ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(-rx * 2)} 0 ');
           }
-        case PolylineTo(:final x, :final y, :final vertices):
+        case PolylineTo(:final x, :final y, :final vertices, :final relative):
+          final sx = relative ? w : 1.0;
+          final sy = relative ? h : 1.0;
           for (final v in vertices) {
-            l(v.x, v.y);
+            l(v.x * sx, v.y * sy);
           }
-          l(x, y);
-        case InfiniteLineCmd(:final x, :final y, :final a, :final b):
-          final dx = a - x;
-          final dy = b - y;
+          l(x * sx, y * sy);
+        case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
+          final sx = relative ? w : 1.0;
+          final sy = relative ? h : 1.0;
+          final px = x * sx, py = y * sy, qx = a * sx, qy = b * sy;
+          final dx = qx - px;
+          final dy = qy - py;
           final len = math.sqrt(dx * dx + dy * dy);
           if (len == 0) continue;
           final ux = dx / len, uy = dy / len;
           final reach = 100 * math.sqrt(w * w + h * h);
-          m(x - ux * reach, y - uy * reach);
-          l(x + ux * reach, y + uy * reach);
-        case SplineStart(:final x, :final y):
+          m(px - ux * reach, py - uy * reach);
+          l(px + ux * reach, py + uy * reach);
+        case SplineStart(:final x, :final y, :final relative):
+          final px = relative ? x * w : x;
+          final py = relative ? y * h : y;
           if (!started) {
-            m(x, y);
+            m(px, py);
           } else {
-            l(x, y);
+            l(px, py);
           }
-        case SplineKnot(:final x, :final y):
-          l(x, y);
-        case NurbsTo(:final x, :final y, :final controlPoints):
+        case SplineKnot(:final x, :final y, :final relative):
+          l(relative ? x * w : x, relative ? y * h : y);
+        case NurbsTo(
+            :final x,
+            :final y,
+            :final controlPoints,
+            :final relative,
+          ):
+          final sx = relative ? w : 1.0;
+          final sy = relative ? h : 1.0;
           for (final p in controlPoints) {
-            l(p.x, p.y);
+            l(p.x * sx, p.y * sy);
           }
-          l(x, y);
+          l(x * sx, y * sy);
       }
     }
     return out.toString().trim();
@@ -410,6 +442,8 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final block = shape.richText.textBlock;
+    // Match libvisio: HideText suppresses the label entirely.
+    if (block.hideText) return;
     // The text block is pinned by its local pin (TxtLocPin); its centre — where
     // we anchor the middle-aligned label — is pin - locPin + size/2.
     final tw = block.widthInches ?? shape.width;
@@ -418,6 +452,16 @@ class VsdxToSvgSerializer {
     final lpy = block.locPinYInches ?? th / 2;
     final cx = (block.pinXInches ?? shape.width / 2) - lpx + tw / 2;
     final cy = (block.pinYInches ?? shape.height / 2) - lpy + th / 2;
+    // libvisio emits fo:background-color when TextBkgnd is filled.
+    if (block.backgroundColor != null) {
+      final left = cx - tw / 2;
+      final bottom = cy - th / 2;
+      buf.writeln(
+        '$indent<rect x="${_n(left)}" y="${_n(bottom)}" '
+        'width="${_n(tw)}" height="${_n(th)}" '
+        'fill="${_hex(block.backgroundColor!)}" stroke="none"/>',
+      );
+    }
     final run = shape.richText.runs.isNotEmpty
         ? shape.richText.runs.first
         : VsdxTextRun(text: shape.text ?? shape.name);

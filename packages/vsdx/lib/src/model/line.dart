@@ -4,6 +4,7 @@ library;
 import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
+import 'effects.dart';
 
 @immutable
 class VsdxLine {
@@ -18,6 +19,10 @@ class VsdxLine {
     this.endArrow = 0,
     this.beginArrowSizeInches = 0.05,
     this.endArrowSizeInches = 0.05,
+    this.roundingInches = 0.0,
+    this.softEdgesInches = 0.0,
+    this.compoundType = 0,
+    this.gradient,
   });
 
   /// `null` ⇒ unresolved colour. Look up [themeColorIndex] against the
@@ -51,9 +56,23 @@ class VsdxLine {
   final double beginArrowSizeInches;
   final double endArrowSizeInches;
 
+  /// `Rounding` — corner radius applied when stroking polylines (libvisio
+  /// `computeRounding`). `0` ⇒ sharp corners.
+  final double roundingInches;
+
+  /// `SoftEdgesSize` — soft-edge blur radius in inches (`0` ⇒ none).
+  final double softEdgesInches;
+
+  /// `CompoundType` — 0 = single, 1+ = double/thick-thin/… (MS-VSDX).
+  final int compoundType;
+
+  /// Optional line gradient (`LineGradientEnabled` + `<Section N="LineGradient">`).
+  final VsdxGradient? gradient;
+
   bool get hasLine => pattern != 0;
   bool get hasBeginArrow => beginArrow != 0;
   bool get hasEndArrow => endArrow != 0;
+  bool get hasGradient => gradient != null && gradient!.stops.isNotEmpty;
 
   static const VsdxLine defaultLine = VsdxLine();
 
@@ -68,6 +87,10 @@ class VsdxLine {
     int? endArrow,
     double? beginArrowSizeInches,
     double? endArrowSizeInches,
+    double? roundingInches,
+    double? softEdgesInches,
+    int? compoundType,
+    VsdxGradient? gradient,
   }) {
     return VsdxLine(
       color: color ?? this.color,
@@ -80,6 +103,10 @@ class VsdxLine {
       endArrow: endArrow ?? this.endArrow,
       beginArrowSizeInches: beginArrowSizeInches ?? this.beginArrowSizeInches,
       endArrowSizeInches: endArrowSizeInches ?? this.endArrowSizeInches,
+      roundingInches: roundingInches ?? this.roundingInches,
+      softEdgesInches: softEdgesInches ?? this.softEdgesInches,
+      compoundType: compoundType ?? this.compoundType,
+      gradient: gradient ?? this.gradient,
     );
   }
 }

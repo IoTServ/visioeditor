@@ -8,9 +8,12 @@
 ///     <Cell N="Description" V="MS docs"/>
 ///     <Cell N="Address" V="https://learn.microsoft.com/visio"/>
 ///     <Cell N="SubAddress" V="#Page-2"/>
+///     <Cell N="ExtraInfo" V=""/>
 ///     <Cell N="Frame" V=""/>
 ///     <Cell N="NewWindow" V="0"/>
 ///     <Cell N="Default" V="0"/>
+///     <Cell N="Invisible" V="0"/>
+///     <Cell N="SortKey" V=""/>
 ///   </Row>
 /// </Section>
 /// ```
@@ -28,10 +31,14 @@ class VsdxHyperlink {
     required this.id,
     this.description,
     this.address,
+    this.addressFormula,
     this.subAddress,
+    this.extraInfo,
     this.frame,
     this.newWindow = false,
     this.isDefault = false,
+    this.invisible = false,
+    this.sortKey,
   });
 
   /// Row IX within the section.
@@ -44,9 +51,15 @@ class VsdxHyperlink {
   /// in-document jump expressed via [subAddress] (e.g. `#Page-2`).
   final String? address;
 
+  /// Optional `F=` on Address (parametric / HYPERLINK formulas).
+  final String? addressFormula;
+
   /// In-document target — usually a page name prefixed with `#`. Can also
   /// reference a specific shape or named bookmark.
   final String? subAddress;
+
+  /// `ExtraInfo` — additional query / fragment payload Visio stores separately.
+  final String? extraInfo;
 
   /// HTML target frame name (mostly `_blank` / `_self`).
   final String? frame;
@@ -56,6 +69,12 @@ class VsdxHyperlink {
 
   /// The row marked as the shape's primary hyperlink.
   final bool isDefault;
+
+  /// `Invisible` — hide from Visio's hyperlink UI when true.
+  final bool invisible;
+
+  /// `SortKey` — ordering hint among multiple links.
+  final String? sortKey;
 
   /// Best-effort target for the click handler: the external URL if any,
   /// otherwise the in-document anchor.
@@ -76,19 +95,27 @@ class VsdxHyperlink {
     int? id,
     String? description,
     String? address,
+    String? addressFormula,
     String? subAddress,
+    String? extraInfo,
     String? frame,
     bool? newWindow,
     bool? isDefault,
+    bool? invisible,
+    String? sortKey,
   }) =>
       VsdxHyperlink(
         id: id ?? this.id,
         description: description ?? this.description,
         address: address ?? this.address,
+        addressFormula: addressFormula ?? this.addressFormula,
         subAddress: subAddress ?? this.subAddress,
+        extraInfo: extraInfo ?? this.extraInfo,
         frame: frame ?? this.frame,
         newWindow: newWindow ?? this.newWindow,
         isDefault: isDefault ?? this.isDefault,
+        invisible: invisible ?? this.invisible,
+        sortKey: sortKey ?? this.sortKey,
       );
 
   @override
@@ -97,20 +124,28 @@ class VsdxHyperlink {
       other.id == id &&
       other.description == description &&
       other.address == address &&
+      other.addressFormula == addressFormula &&
       other.subAddress == subAddress &&
+      other.extraInfo == extraInfo &&
       other.frame == frame &&
       other.newWindow == newWindow &&
-      other.isDefault == isDefault;
+      other.isDefault == isDefault &&
+      other.invisible == invisible &&
+      other.sortKey == sortKey;
 
   @override
   int get hashCode => Object.hash(
         id,
         description,
         address,
+        addressFormula,
         subAddress,
+        extraInfo,
         frame,
         newWindow,
         isDefault,
+        invisible,
+        sortKey,
       );
 
   @override

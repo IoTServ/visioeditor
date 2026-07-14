@@ -40,6 +40,12 @@ class DocumentSettingsParser {
       snapEnabled: (_cellInt(settings, 'SnapEnabled') ?? 1) != 0,
       gridDensityX: _cellInt(settings, 'GridDensityX') ?? 4,
       gridDensityY: _cellInt(settings, 'GridDensityY') ?? 4,
+      defaultTextStyleId:
+          int.tryParse(settings.getAttribute('DefaultTextStyle') ?? ''),
+      defaultLineStyleId:
+          int.tryParse(settings.getAttribute('DefaultLineStyle') ?? ''),
+      defaultFillStyleId:
+          int.tryParse(settings.getAttribute('DefaultFillStyle') ?? ''),
     );
   }
 

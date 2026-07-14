@@ -941,7 +941,7 @@ class _PageCanvasState extends State<PageCanvas> {
           final cpIndex = _connDragSourceIndex(s, d.localPosition);
           if (cpIndex != null) {
             final pts = VsdxPage.effectiveConnectionPoints(s);
-            final pg = VsdxPage.localToPage(s, pts[cpIndex]);
+            final pg = VsdxPage.localToPage(s, pts[cpIndex].offset);
             _connectSourceId = hover;
             _connectSourceConnIndex = cpIndex;
             _connectTargetId = null;
@@ -1313,7 +1313,7 @@ class _PageCanvasState extends State<PageCanvas> {
     var best = -1;
     var bestD = _connSnapPx * _connSnapPx;
     for (var i = 0; i < pts.length; i++) {
-      final page = VsdxPage.localToPage(s, pts[i]);
+      final page = VsdxPage.localToPage(s, pts[i].offset);
       final d = (_pageToScreen(page.x, page.y) - viewportPos).distanceSquared;
       if (d <= bestD) {
         bestD = d;
@@ -1335,7 +1335,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if ((pts[i].x - cx).abs() < 1e-6 && (pts[i].y - cy).abs() < 1e-6) {
         continue; // centre point overlaps the move-grab region
       }
-      final page = VsdxPage.localToPage(s, pts[i]);
+      final page = VsdxPage.localToPage(s, pts[i].offset);
       final d = (_pageToScreen(page.x, page.y) - viewportPos).distanceSquared;
       if (d <= bestD) {
         bestD = d;
@@ -1780,11 +1780,11 @@ class _PageCanvasState extends State<PageCanvas> {
               final t = cpShape;
               final pts = VsdxPage.effectiveConnectionPoints(t);
               connectionPointDots = <Offset>[
-                for (final p in pts.map((p) => VsdxPage.localToPage(t, p)))
+                for (final p in pts.map((p) => VsdxPage.localToPage(t, p.offset)))
                   _pageToContent(p.x, p.y),
               ];
               if (_snapConnIndex != null && _snapConnIndex! < pts.length) {
-                final pg = VsdxPage.localToPage(t, pts[_snapConnIndex!]);
+                final pg = VsdxPage.localToPage(t, pts[_snapConnIndex!].offset);
                 snappedConnectionPoint = _pageToContent(pg.x, pg.y);
               }
             }

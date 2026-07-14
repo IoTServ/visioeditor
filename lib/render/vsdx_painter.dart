@@ -672,6 +672,12 @@ class VsdxPainter extends CustomPainter {
               penDown = true;
             }
             addVertex(Offset(x, y));
+          case RelArcTo(:final fx, :final fy):
+            if (!penDown) {
+              addVertex(cursor);
+              penDown = true;
+            }
+            addVertex(Offset(fx * w, fy * h));
           case CubBezTo(:final x, :final y):
             if (!penDown) {
               addVertex(cursor);
@@ -713,28 +719,30 @@ class VsdxPainter extends CustomPainter {
               addVertex(cursor);
               penDown = true;
             }
+            final sx = poly.relative ? w : 1.0;
+            final sy = poly.relative ? h : 1.0;
             for (final v in poly.vertices) {
-              addVertex(Offset(v.x, v.y));
+              addVertex(Offset(v.x * sx, v.y * sy));
             }
-            addVertex(Offset(poly.x, poly.y));
-          case SplineStart(:final x, :final y):
+            addVertex(Offset(poly.x * sx, poly.y * sy));
+          case SplineStart(:final x, :final y, :final relative):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(x, y));
-          case SplineKnot(:final x, :final y):
+            addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
+          case SplineKnot(:final x, :final y, :final relative):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(x, y));
-          case NurbsTo(:final x, :final y):
+            addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
+          case NurbsTo(:final x, :final y, :final relative):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(x, y));
+            addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
           case EllipseCmd():
           // Closed primitive — no meaningful "tip" for arrows; skip it
           // and let the next geometry contribute endpoints.
@@ -945,6 +953,8 @@ class VsdxPainter extends CustomPainter {
     final isEdgeLabel = shape.is1D;
 
     final block = rich.textBlock;
+    // Match Visio / libvisio: HideText suppresses the painted label.
+    if (block.hideText) return;
     final s = pxPerInch;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
@@ -1021,6 +1031,13 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(pinX, pinY); // to TxtPin (shape-local, Y-up)
     if (block.angleRad != 0) canvas.rotate(block.angleRad);
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
+    // TextBkgnd — solid fill behind the text block (libvisio fo:background-color).
+    if (block.backgroundColor != null) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, tw, th),
+        Paint()..color = Color(block.backgroundColor!.value),
+      );
+    }
     canvas.translate(0, th); // to the block's upper-left corner (Y still up)
     canvas.scale(1 / s, -1 / s); // → pixel space, Y-down upright text frame
 
@@ -1097,10 +1114,17 @@ class VsdxPainter extends CustomPainter {
         const ui.FontFeature.enable('sups'),
       if (pos == VsdxTextPosition.subscript)
         const ui.FontFeature.enable('subs'),
+      if (run.charStyle.style.smallCaps) const ui.FontFeature.enable('smcp'),
     ];
     final font = fontFallback.resolve(run.charStyle.fontFamily);
+    final rawText = switch (run.charStyle.textCase) {
+      VsdxTextCase.allCaps => run.text.toUpperCase(),
+      VsdxTextCase.initialCaps => _initialCaps(run.text),
+      VsdxTextCase.normal => run.text,
+    };
+    final widthScale = run.charStyle.fontScale <= 0 ? 1.0 : run.charStyle.fontScale;
     return TextSpan(
-      text: run.text,
+      text: rawText,
       style: TextStyle(
         color: c,
         fontFamily: font.family,
@@ -1111,12 +1135,27 @@ class VsdxPainter extends CustomPainter {
         fontWeight:
             run.charStyle.style.bold ? FontWeight.bold : FontWeight.normal,
         decoration: TextDecoration.combine([
-          if (run.charStyle.underline) TextDecoration.underline,
-          if (run.charStyle.strikethrough) TextDecoration.lineThrough,
+          if (run.charStyle.underline || run.charStyle.doubleUnderline)
+            TextDecoration.underline,
+          if (run.charStyle.strikethrough || run.charStyle.doubleStrikethrough)
+            TextDecoration.lineThrough,
+          if (run.charStyle.overline) TextDecoration.overline,
         ]),
-        letterSpacing: run.charStyle.letterSpacingInches == 0
-            ? null
-            : run.charStyle.letterSpacingInches * scale,
+        decorationStyle: run.charStyle.doubleUnderline ||
+                run.charStyle.doubleStrikethrough
+            ? TextDecorationStyle.double
+            : TextDecorationStyle.solid,
+        letterSpacing: () {
+          final base = run.charStyle.letterSpacingInches == 0
+              ? 0.0
+              : run.charStyle.letterSpacingInches * scale;
+          // Approximate FontScale as extra tracking (true glyph width scale
+          // isn't available on TextStyle without a transform).
+          if ((widthScale - 1.0).abs() < 1e-6) {
+            return base == 0 ? null : base;
+          }
+          return base + scaledSize * (widthScale - 1.0) * 0.15;
+        }(),
         height: lineHeight,
         fontFeatures: features.isEmpty ? null : features,
       ),
@@ -1129,6 +1168,25 @@ class VsdxPainter extends CustomPainter {
         VsdxHorzAlign.right => TextAlign.right,
         VsdxHorzAlign.justify => TextAlign.justify,
       };
+
+  /// Visio `Case=2` (initial caps) — uppercase the first letter of each word.
+  static String _initialCaps(String text) {
+    final buf = StringBuffer();
+    var start = true;
+    for (final r in text.runes) {
+      final ch = String.fromCharCode(r);
+      if (ch == ' ' || ch == '\n' || ch == '\t') {
+        buf.write(ch);
+        start = true;
+      } else if (start) {
+        buf.write(ch.toUpperCase());
+        start = false;
+      } else {
+        buf.write(ch);
+      }
+    }
+    return buf.toString();
+  }
 
   void _drawPlaceholderText(Canvas canvas, Size size, String text) {
     final tp = TextPainter(

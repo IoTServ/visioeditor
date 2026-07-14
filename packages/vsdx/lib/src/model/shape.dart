@@ -18,6 +18,7 @@ import 'hyperlink.dart';
 import 'line.dart';
 import 'rich_text.dart';
 import 'shape_kind.dart';
+import 'sheet_sections.dart';
 import 'user_property.dart';
 
 @immutable
@@ -55,12 +56,39 @@ class VsdxShape {
     this.flipY = false,
     this.locked = false,
     this.imagePartName,
+    this.foreignType,
+    this.foreignCompressionType,
+    this.objType,
+    this.resizeMode,
+    this.eventDblClick,
+    this.noAlignBox = false,
+    this.shapeSplittable = false,
+    this.themeIndex,
+    this.quickStyleFillMatrix,
+    this.quickStyleLineMatrix,
+    this.quickStyleEffectsMatrix,
+    this.quickStyleFontMatrix,
+    this.isTextEditTarget = false,
+    this.dontMoveChildren = false,
+    this.selectMode,
+    this.displayMode,
     this.connects = const <VsdxConnect>[],
-    this.connectionPoints = const <Offset2D>[],
+    this.connectionPoints = const <VsdxConnectionPoint>[],
     this.hyperlinks = const <VsdxHyperlink>[],
     this.userProperties = const <VsdxUserProperty>[],
     this.userCells = const <VsdxUserCell>[],
+    this.controls = const <VsdxControlRow>[],
+    this.scratch = const <VsdxScratchRow>[],
+    this.fields = const <VsdxFieldRow>[],
+    this.actions = const <VsdxActionRow>[],
+    this.masterId,
+    this.masterShapeId,
     this.masterName,
+    this.lineStyleId,
+    this.fillStyleId,
+    this.textStyleId,
+    this.formulas = const <String, String>{},
+    this.connectorProps,
     this.shapeKind = VsdxShapeKind.normal,
   });
 
@@ -162,7 +190,7 @@ class VsdxShape {
   /// geometry). A glued connector end that targets index `k` here is written
   /// with `ToPart = 100 + k`; [VsdxPage.connectionPointPage] maps a point to
   /// page coordinates. Round-trips to Visio's `<Section N="Connection">`.
-  final List<Offset2D> connectionPoints;
+  final List<VsdxConnectionPoint> connectionPoints;
 
   /// `FlipX` / `FlipY` flags from the shape's XForm.
   final bool flipX;
@@ -181,6 +209,47 @@ class VsdxShape {
   /// [VsdxDocument.images.findByPart].
   final String? imagePartName;
 
+  /// `<ForeignData ForeignType="…">` — `Bitmap` / `EnhMetaFile` / `MetaFile` /
+  /// `Object`. Inferred from MIME/extension when null on write.
+  final String? foreignType;
+
+  /// Optional `CompressionType` on `<ForeignData>` (`JPEG` / `PNG` / …).
+  final String? foreignCompressionType;
+
+  /// `ObjType` — Visio object kind (`1` = shape, `2` = connector, …).
+  final int? objType;
+
+  /// `ResizeMode` cell (usually `0`).
+  final int? resizeMode;
+
+  /// `EventDblClick` cached `V=` (formula lives in [formulas]).
+  final String? eventDblClick;
+
+  /// `NoAlignBox` — hide the alignment box (common on connectors).
+  final bool noAlignBox;
+
+  /// `ShapeSplittable` — connector may be split by overlapping shapes.
+  final bool shapeSplittable;
+
+  /// `ThemeIndex` — document theme slot (0 = default / none).
+  final int? themeIndex;
+
+  /// QuickStyle matrix cells (`QuickStyleFillMatrix` / Line / Effects / Font).
+  final int? quickStyleFillMatrix;
+  final int? quickStyleLineMatrix;
+  final int? quickStyleEffectsMatrix;
+  final int? quickStyleFontMatrix;
+
+  /// `IsTextEditTarget` — group members that own the text edit target.
+  final bool isTextEditTarget;
+
+  /// `DontMoveChildren` — keep children fixed when the group moves.
+  final bool dontMoveChildren;
+
+  /// `SelectMode` / `DisplayMode` — group selection / display behaviour.
+  final int? selectMode;
+  final int? displayMode;
+
   /// `<Connect>` rows on this shape (typically only set on the page-sheet
   /// for connector wiring; most user shapes leave this empty).
   final List<VsdxConnect> connects;
@@ -196,11 +265,43 @@ class VsdxShape {
   /// useful for tooling and CLI text dumps.
   final List<VsdxUserCell> userCells;
 
+  /// `<Section N="Control">` rows — text/connector handles (`Controls.*`).
+  final List<VsdxControlRow> controls;
+
+  /// `<Section N="Scratch">` rows — parametric intermediates (`Scratch.X1`).
+  final List<VsdxScratchRow> scratch;
+
+  /// `<Section N="Field">` rows — dynamic text (`<fld IX>`).
+  final List<VsdxFieldRow> fields;
+
+  /// `<Section N="Actions">` rows — context-menu actions.
+  final List<VsdxActionRow> actions;
+
+  /// `Master="N"` attribute on the shape element (`null` when absent).
+  /// Written back on rebuild so stencil instances keep their master link.
+  final int? masterId;
+
+  /// `MasterShape="N"` — nested instance of a master sub-shape.
+  final int? masterShapeId;
+
   /// `Master.NameU` of the master this shape was instantiated from
   /// (`null` when the shape carries no `Master` attribute or its master
   /// went missing). Useful for container/swimlane detection and stencil
   /// browsing UI.
   final String? masterName;
+
+  /// ShapeSheet style inheritance attributes (`LineStyle` / `FillStyle` /
+  /// `TextStyle`) — stylesheet row ids written back on rebuild.
+  final int? lineStyleId;
+  final int? fillStyleId;
+  final int? textStyleId;
+
+  /// Parametric `F=` values for XForm / 1-D / trigger cells (`PinX`, `BeginX`,
+  /// `BegTrigger`, …). Required so group rebuild keeps PAR(PNT…) glue.
+  final Map<String, String> formulas;
+
+  /// Connector layout dynamics (`GlueType`, `ConFixedCode`, …).
+  final VsdxConnectorProps? connectorProps;
 
   /// Heuristic semantic classification (container / swimlane / callout …).
   /// See [ShapeKindDetector] in `lib/parser/shape_kind_detector.dart`.
@@ -266,16 +367,43 @@ class VsdxShape {
     bool? curved,
     bool? rounded,
     List<Offset2D>? waypoints,
-    List<Offset2D>? connectionPoints,
+    List<VsdxConnectionPoint>? connectionPoints,
     bool? flipX,
     bool? flipY,
     bool? locked,
     String? imagePartName,
+    String? foreignType,
+    String? foreignCompressionType,
+    int? objType,
+    int? resizeMode,
+    String? eventDblClick,
+    bool? noAlignBox,
+    bool? shapeSplittable,
+    int? themeIndex,
+    int? quickStyleFillMatrix,
+    int? quickStyleLineMatrix,
+    int? quickStyleEffectsMatrix,
+    int? quickStyleFontMatrix,
+    bool? isTextEditTarget,
+    bool? dontMoveChildren,
+    int? selectMode,
+    int? displayMode,
     List<VsdxConnect>? connects,
     List<VsdxHyperlink>? hyperlinks,
     List<VsdxUserProperty>? userProperties,
     List<VsdxUserCell>? userCells,
+    List<VsdxControlRow>? controls,
+    List<VsdxScratchRow>? scratch,
+    List<VsdxFieldRow>? fields,
+    List<VsdxActionRow>? actions,
+    int? masterId,
+    int? masterShapeId,
     String? masterName,
+    int? lineStyleId,
+    int? fillStyleId,
+    int? textStyleId,
+    Map<String, String>? formulas,
+    VsdxConnectorProps? connectorProps,
     VsdxShapeKind? shapeKind,
   }) {
     return VsdxShape(
@@ -312,11 +440,40 @@ class VsdxShape {
       flipY: flipY ?? this.flipY,
       locked: locked ?? this.locked,
       imagePartName: imagePartName ?? this.imagePartName,
+      foreignType: foreignType ?? this.foreignType,
+      foreignCompressionType:
+          foreignCompressionType ?? this.foreignCompressionType,
+      objType: objType ?? this.objType,
+      resizeMode: resizeMode ?? this.resizeMode,
+      eventDblClick: eventDblClick ?? this.eventDblClick,
+      noAlignBox: noAlignBox ?? this.noAlignBox,
+      shapeSplittable: shapeSplittable ?? this.shapeSplittable,
+      themeIndex: themeIndex ?? this.themeIndex,
+      quickStyleFillMatrix: quickStyleFillMatrix ?? this.quickStyleFillMatrix,
+      quickStyleLineMatrix: quickStyleLineMatrix ?? this.quickStyleLineMatrix,
+      quickStyleEffectsMatrix:
+          quickStyleEffectsMatrix ?? this.quickStyleEffectsMatrix,
+      quickStyleFontMatrix: quickStyleFontMatrix ?? this.quickStyleFontMatrix,
+      isTextEditTarget: isTextEditTarget ?? this.isTextEditTarget,
+      dontMoveChildren: dontMoveChildren ?? this.dontMoveChildren,
+      selectMode: selectMode ?? this.selectMode,
+      displayMode: displayMode ?? this.displayMode,
       connects: connects ?? this.connects,
       hyperlinks: hyperlinks ?? this.hyperlinks,
       userProperties: userProperties ?? this.userProperties,
       userCells: userCells ?? this.userCells,
+      controls: controls ?? this.controls,
+      scratch: scratch ?? this.scratch,
+      fields: fields ?? this.fields,
+      actions: actions ?? this.actions,
+      masterId: masterId ?? this.masterId,
+      masterShapeId: masterShapeId ?? this.masterShapeId,
       masterName: masterName ?? this.masterName,
+      lineStyleId: lineStyleId ?? this.lineStyleId,
+      fillStyleId: fillStyleId ?? this.fillStyleId,
+      textStyleId: textStyleId ?? this.textStyleId,
+      formulas: formulas ?? this.formulas,
+      connectorProps: connectorProps ?? this.connectorProps,
       shapeKind: shapeKind ?? this.shapeKind,
     );
   }
@@ -333,13 +490,14 @@ class VsdxShape {
     final sy = this.height == 0 ? 1.0 : height / this.height;
     final scaled = <VsdxGeometry>[
       for (final g in geometries)
-        VsdxGeometry(
+        g.copyWith(
           commands: <VsdxPathCommand>[
             for (final cmd in g.commands) scalePathCommand(cmd, sx, sy),
           ],
-          noFill: g.noFill,
-          noLine: g.noLine,
-          noShow: g.noShow,
+          // Keep parametric Geometry F= (Scratch.X1 / Width*) across resize;
+          // copyWith preserves ix / rowIndices / deletedRowIndices so master
+          // inheritance stays stable after a rebuild.
+          commandFormulas: g.commandFormulas,
         ),
     ];
     // Keep LocPin at the same *relative* position inside the box so a

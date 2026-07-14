@@ -37,6 +37,8 @@ export 'src/model/rich_text.dart';
 export 'src/model/shape.dart';
 export 'src/model/shape_factory.dart';
 export 'src/model/shape_kind.dart';
+export 'src/model/sheet_sections.dart';
+export 'src/model/stylesheet.dart';
 export 'src/model/theme.dart';
 export 'src/model/user_property.dart';
 

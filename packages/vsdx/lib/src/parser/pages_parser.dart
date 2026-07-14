@@ -12,6 +12,7 @@ import '../model/layer.dart';
 import '../model/master.dart';
 import '../model/page.dart';
 import '../model/shape.dart';
+import '../model/stylesheet.dart';
 import '../utils/color.dart';
 import 'cell_helpers.dart';
 import 'connect_parser.dart';
@@ -28,10 +29,15 @@ class PagesParser {
     this._package, {
     PageParser? pageParser,
     MasterRegistry masters = MasterRegistry.empty,
+    StyleSheetRegistry stylesheets = StyleSheetRegistry.empty,
   })  : _resolver = RelationshipResolver(_package),
         _pageParserFactory =
             ((Map<String, String>? rels) => pageParser ??
-                PageParser(masters: masters, imageRels: rels)),
+                PageParser(
+                  masters: masters,
+                  stylesheets: stylesheets,
+                  imageRels: rels,
+                )),
         _hasInjectedParser = pageParser != null;
 
   final VsdxPackage _package;
@@ -93,6 +99,9 @@ class PagesParser {
         (pageEl.getAttribute('Background') ?? '').trim() == '1';
     final backPageStr = pageEl.getAttribute('BackPage');
     final backPageId = backPageStr == null ? null : int.tryParse(backPageStr);
+    final viewScale = double.tryParse(pageEl.getAttribute('ViewScale') ?? '');
+    final viewCenterX = double.tryParse(pageEl.getAttribute('ViewCenterX') ?? '');
+    final viewCenterY = double.tryParse(pageEl.getAttribute('ViewCenterY') ?? '');
 
     // Default to US letter so we always have *some* sensible canvas; the
     // PageSheet usually overrides.
@@ -100,12 +109,14 @@ class PagesParser {
     double height = 11.0;
     var layers = const <VsdxLayer>[];
     VsdxColor? bgColor;
+    var sheet = VsdxPageSheet.defaults;
     final pageSheet = _firstChildLocal(pageEl, 'PageSheet');
     if (pageSheet != null) {
       width = readLengthInches(pageSheet, 'PageWidth') ?? width;
       height = readLengthInches(pageSheet, 'PageHeight') ?? height;
       layers = const LayerParser().parseLayers(pageSheet);
       bgColor = _readPageColor(pageSheet);
+      sheet = _readPageSheet(pageSheet);
     }
 
     // <Rel r:id="rIdN"/> → pageN.xml
@@ -156,6 +167,66 @@ class PagesParser {
       backgroundColor: bgColor,
       isBackgroundPage: isBackground,
       backgroundPageId: backPageId,
+      pageSheet: sheet,
+      viewScale: viewScale,
+      viewCenterX: viewCenterX,
+      viewCenterY: viewCenterY,
+    );
+  }
+
+  VsdxPageSheet _readPageSheet(XmlElement pageSheet) {
+    int? i(String n) {
+      final cell = findCell(pageSheet, n);
+      if (cell == null) return null;
+      return int.tryParse(cell.getAttribute('V') ?? '') ??
+          double.tryParse(cell.getAttribute('V') ?? '')?.toInt();
+    }
+
+    double? d(String n) {
+      final cell = findCell(pageSheet, n);
+      if (cell == null) return null;
+      return double.tryParse(cell.getAttribute('V') ?? '');
+    }
+
+    bool b(String n, bool fallback) => (i(n) ?? (fallback ? 1 : 0)) != 0;
+
+    String? unit(String n) => findCell(pageSheet, n)?.getAttribute('U');
+
+    const def = VsdxPageSheet.defaults;
+    return VsdxPageSheet(
+      shadowOffsetXInches:
+          readLengthInches(pageSheet, 'ShdwOffsetX') ?? def.shadowOffsetXInches,
+      shadowOffsetYInches:
+          readLengthInches(pageSheet, 'ShdwOffsetY') ?? def.shadowOffsetYInches,
+      pageScale: d('PageScale') ?? def.pageScale,
+      pageScaleUnit: unit('PageScale') ?? def.pageScaleUnit,
+      drawingScale: d('DrawingScale') ?? def.drawingScale,
+      drawingScaleUnit: unit('DrawingScale') ?? def.drawingScaleUnit,
+      drawingSizeType: i('DrawingSizeType') ?? def.drawingSizeType,
+      drawingScaleType: i('DrawingScaleType') ?? def.drawingScaleType,
+      drawingResizeType: i('DrawingResizeType') ?? def.drawingResizeType,
+      inhibitSnap: b('InhibitSnap', def.inhibitSnap),
+      pageLockReplace: b('PageLockReplace', def.pageLockReplace),
+      pageLockDuplicate: b('PageLockDuplicate', def.pageLockDuplicate),
+      uiVisibility: i('UIVisibility') ?? def.uiVisibility,
+      shadowType: i('ShdwType') ?? def.shadowType,
+      shadowObliqueAngle: d('ShdwObliqueAngle') ?? def.shadowObliqueAngle,
+      shadowScaleFactor: d('ShdwScaleFactor') ?? def.shadowScaleFactor,
+      pageShapeSplit: b('PageShapeSplit', def.pageShapeSplit),
+      lineJumpCode: i('LineJumpCode'),
+      lineJumpStyle: i('LineJumpStyle'),
+      marginLeftInches:
+          readLengthInches(pageSheet, 'PageLeftMargin') ?? def.marginLeftInches,
+      marginRightInches: readLengthInches(pageSheet, 'PageRightMargin') ??
+          def.marginRightInches,
+      marginTopInches:
+          readLengthInches(pageSheet, 'PageTopMargin') ?? def.marginTopInches,
+      marginBottomInches: readLengthInches(pageSheet, 'PageBottomMargin') ??
+          def.marginBottomInches,
+      printPageOrientation:
+          i('PrintPageOrientation') ?? def.printPageOrientation,
+      variationColorIndex: i('VariationColorIndex'),
+      variationStyleIndex: i('VariationStyleIndex'),
     );
   }
 

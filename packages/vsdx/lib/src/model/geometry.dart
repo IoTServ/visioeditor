@@ -153,6 +153,19 @@ class ArcTo extends VsdxPathCommand {
   String toString() => 'ArcTo($x, $y, bow=$bow)';
 }
 
+/// `RelArcTo` — like [ArcTo] but X/Y/A are fractions of the shape's
+/// width/height (bow scales with the average of width and height at render
+/// time, matching how absolute ArcTo bow is scaled on resize).
+@immutable
+class RelArcTo extends VsdxPathCommand {
+  const RelArcTo({required this.fx, required this.fy, required this.fbow});
+  final double fx;
+  final double fy;
+  final double fbow;
+  @override
+  String toString() => 'RelArcTo($fx, $fy, bow=$fbow)';
+}
+
 /// `EllipticalArcTo` — Visio's general elliptical arc.
 ///
 /// MS-VSDX §"EllipticalArcTo Row":
@@ -252,6 +265,7 @@ class PolylineTo extends VsdxPathCommand {
     required this.x,
     required this.y,
     required this.vertices,
+    this.relative = false,
   });
 
   /// End point of the polyline (after the last interior vertex).
@@ -260,12 +274,16 @@ class PolylineTo extends VsdxPathCommand {
 
   /// Interior vertices, in (x, y) pairs (shape-local inches). Excludes the
   /// shape's current pen position (the implicit P0) and the end point
-  /// [x]/[y] (the implicit Pn).
+  /// [x]/[y] (the implicit Pn). When [relative] is true these are fractions
+  /// of width/height (from `RelPolylineTo`).
   final List<Offset2D> vertices;
+
+  /// `true` when the row was `RelPolylineTo` (or POLYLINE useRelative).
+  final bool relative;
 
   @override
   String toString() =>
-      'PolylineTo($x, $y, ${vertices.length} verts)';
+      '${relative ? 'Rel' : ''}PolylineTo($x, $y, ${vertices.length} verts)';
 }
 
 /// `InfiniteLine` — a straight line passing through (`x`, `y`) with the
@@ -278,13 +296,16 @@ class InfiniteLineCmd extends VsdxPathCommand {
     required this.y,
     required this.a,
     required this.b,
+    this.relative = false,
   });
   final double x;
   final double y;
   final double a;
   final double b;
+  final bool relative;
   @override
-  String toString() => 'InfiniteLine(p=($x,$y), q=($a,$b))';
+  String toString() =>
+      '${relative ? 'Rel' : ''}InfiniteLine(p=($x,$y), q=($a,$b))';
 }
 
 /// `SplineStart` — anchor point for a B-spline that follows via
@@ -303,6 +324,7 @@ class SplineStart extends VsdxPathCommand {
     required this.b,
     required this.c,
     this.degree = 3,
+    this.relative = false,
   });
   final double x;
   final double y;
@@ -319,23 +341,34 @@ class SplineStart extends VsdxPathCommand {
   /// Spline degree (typically 3 for cubic). Defaults to 3.
   final int degree;
 
+  final bool relative;
+
   @override
-  String toString() => 'SplineStart($x, $y, degree=$degree)';
+  String toString() =>
+      '${relative ? 'Rel' : ''}SplineStart($x, $y, degree=$degree)';
 }
 
 /// `SplineKnot` — subsequent control point in a spline that began with
 /// [SplineStart]. Interpreted as a polyline vertex by the path builder.
 @immutable
 class SplineKnot extends VsdxPathCommand {
-  const SplineKnot({required this.x, required this.y, required this.knot});
+  const SplineKnot({
+    required this.x,
+    required this.y,
+    required this.knot,
+    this.relative = false,
+  });
   final double x;
   final double y;
 
   /// The knot value (`A` cell).
   final double knot;
 
+  final bool relative;
+
   @override
-  String toString() => 'SplineKnot($x, $y, knot=$knot)';
+  String toString() =>
+      '${relative ? 'Rel' : ''}SplineKnot($x, $y, knot=$knot)';
 }
 
 /// `NURBSTo` — non-uniform rational B-spline arc. Visio packs the control
@@ -353,6 +386,7 @@ class NurbsTo extends VsdxPathCommand {
     this.weights = const <double>[],
     this.knots = const <double>[],
     this.degree = 3,
+    this.relative = false,
   });
 
   /// Final endpoint of the NURBS arc.
@@ -371,9 +405,12 @@ class NurbsTo extends VsdxPathCommand {
 
   final int degree;
 
+  /// `true` when the row was `RelNURBSTo`.
+  final bool relative;
+
   @override
   String toString() =>
-      'NurbsTo($x, $y, ${controlPoints.length} cps, deg=$degree)';
+      '${relative ? 'Rel' : ''}NurbsTo($x, $y, ${controlPoints.length} cps, deg=$degree)';
 }
 
 /// A tiny 2D point value object, kept local to the geometry layer so the
@@ -390,6 +427,89 @@ class Offset2D {
   int get hashCode => Object.hash(x, y);
   @override
   String toString() => '($x, $y)';
+}
+
+/// A Visio `<Section N="Connection">` row — glue point with optional direction
+/// and type metadata (libvisio / MS-VSDX Connection Row).
+@immutable
+class VsdxConnectionPoint {
+  const VsdxConnectionPoint(
+    this.x,
+    this.y, {
+    this.dirX = 0.0,
+    this.dirY = 0.0,
+    this.type = 0,
+    this.autoGen = false,
+    this.prompt,
+    this.xFormula,
+    this.yFormula,
+  });
+
+  /// Shape-local inches (origin bottom-left, Y-up).
+  final double x;
+  final double y;
+
+  /// Outward direction of the connection (`DirX` / `DirY`).
+  final double dirX;
+  final double dirY;
+
+  /// Visio `Type` cell (0 = inward, …).
+  final int type;
+
+  /// `AutoGen` — Visio may regenerate this point.
+  final bool autoGen;
+
+  /// Optional `Prompt` string.
+  final String? prompt;
+
+  /// Optional `F=` on X/Y (`Width*0.5`, …) — required for group rebuild.
+  final String? xFormula;
+  final String? yFormula;
+
+  Offset2D get offset => Offset2D(x, y);
+
+  VsdxConnectionPoint copyWith({
+    double? x,
+    double? y,
+    double? dirX,
+    double? dirY,
+    int? type,
+    bool? autoGen,
+    String? prompt,
+    String? xFormula,
+    String? yFormula,
+  }) =>
+      VsdxConnectionPoint(
+        x ?? this.x,
+        y ?? this.y,
+        dirX: dirX ?? this.dirX,
+        dirY: dirY ?? this.dirY,
+        type: type ?? this.type,
+        autoGen: autoGen ?? this.autoGen,
+        prompt: prompt ?? this.prompt,
+        xFormula: xFormula ?? this.xFormula,
+        yFormula: yFormula ?? this.yFormula,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxConnectionPoint &&
+      other.x == x &&
+      other.y == y &&
+      other.dirX == dirX &&
+      other.dirY == dirY &&
+      other.type == type &&
+      other.autoGen == autoGen &&
+      other.prompt == prompt &&
+      other.xFormula == xFormula &&
+      other.yFormula == yFormula;
+
+  @override
+  int get hashCode =>
+      Object.hash(x, y, dirX, dirY, type, autoGen, prompt, xFormula, yFormula);
+
+  @override
+  String toString() => 'ConnectionPoint($x, $y, dir=($dirX,$dirY))';
 }
 
 /// Scale a path command's coordinates by ([sx], [sy]) about the shape-local
@@ -431,6 +551,8 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
       return c;
     case ArcTo(:final x, :final y, :final bow):
       return ArcTo(x: x * sx, y: y * sy, bow: bow * (sx + sy) / 2);
+    case RelArcTo():
+      return c;
     case EllipticalArcTo(
         :final x,
         :final y,
@@ -463,7 +585,8 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         bX: bX * sx,
         bY: bY * sy,
       );
-    case PolylineTo(:final x, :final y, :final vertices):
+    case PolylineTo(:final x, :final y, :final vertices, :final relative):
+      if (relative) return c;
       return PolylineTo(
         x: x * sx,
         y: y * sy,
@@ -471,11 +594,28 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
           for (final v in vertices) Offset2D(v.x * sx, v.y * sy),
         ],
       );
-    case InfiniteLineCmd(:final x, :final y, :final a, :final b):
+    case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
+      if (relative) return c;
       return InfiniteLineCmd(x: x * sx, y: y * sy, a: a * sx, b: b * sy);
-    case SplineStart(:final x, :final y, :final a, :final b, :final c, :final degree):
-      return SplineStart(x: x * sx, y: y * sy, a: a, b: b, c: c, degree: degree);
-    case SplineKnot(:final x, :final y, :final knot):
+    case SplineStart(
+        :final x,
+        :final y,
+        a: final knotA,
+        b: final knotB,
+        c: final weight,
+        :final degree,
+        :final relative,
+      ):
+      if (relative) return c;
+      return SplineStart(
+          x: x * sx,
+          y: y * sy,
+          a: knotA,
+          b: knotB,
+          c: weight,
+          degree: degree);
+    case SplineKnot(:final x, :final y, :final knot, :final relative):
+      if (relative) return c;
       return SplineKnot(x: x * sx, y: y * sy, knot: knot);
     case NurbsTo(
         :final x,
@@ -484,7 +624,9 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         :final weights,
         :final knots,
         :final degree,
+        :final relative,
       ):
+      if (relative) return c;
       return NurbsTo(
         x: x * sx,
         y: y * sy,
@@ -503,13 +645,26 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
 class VsdxGeometry {
   const VsdxGeometry({
     required this.commands,
+    this.commandFormulas = const <Map<String, String>>[],
     this.noFill = false,
     this.noLine = false,
     this.noShow = false,
+    this.noSnap = false,
+    this.noQuickDrag = false,
+    this.ix = 0,
+    this.rowIndices = const <int>[],
+    this.deletedRowIndices = const <int>{},
+    this.definedFlagCells = const <String>{},
+    this.deleted = false,
   });
 
   /// Path commands in source order.
   final List<VsdxPathCommand> commands;
+
+  /// Per-command Cell `N` → `F=` maps (aligned with [commands]). Empty when
+  /// the row has no parametric formulas. Required so group rebuild keeps
+  /// `Scratch.X1` / `Width*` / `Height*` on Geometry rows.
+  final List<Map<String, String>> commandFormulas;
 
   /// `<Cell N="NoFill" V="1"/>` — suppress fill for this geometry only.
   final bool noFill;
@@ -518,10 +673,75 @@ class VsdxGeometry {
   /// `<Cell N="NoShow" V="1"/>` — don't draw at all (still hit-tests).
   final bool noShow;
 
+  /// `<Cell N="NoSnap" V="1"/>` — exclude from snap targets.
+  final bool noSnap;
+
+  /// `<Cell N="NoQuickDrag" V="1"/>` — disable quick-drag handles.
+  final bool noQuickDrag;
+
+  /// Section index (`<Section N="Geometry" IX="N">`). Used to merge a shape's
+  /// geometry with the geometry it inherits from its master by matching IX
+  /// (mirrors libvisio's per-IX geometry inheritance). Default 0.
+  final int ix;
+
+  /// Source `IX` of each command row (parallel to [commands]). Empty for
+  /// programmatically-built geometry that never participates in master merge.
+  final List<int> rowIndices;
+
+  /// Row `IX`es explicitly deleted on this (instance) section via `Del="1"`;
+  /// they remove the same-IX row inherited from the master.
+  final Set<int> deletedRowIndices;
+
+  /// Which of the section flag cells (NoFill/NoLine/NoShow/NoSnap/NoQuickDrag)
+  /// were explicitly present, so a master merge only overrides flags the
+  /// instance actually declared (others inherit from the master).
+  final Set<String> definedFlagCells;
+
+  /// `<Section N="Geometry" IX="N" Del="1"/>` — the instance deletes the whole
+  /// inherited geometry section.
+  final bool deleted;
+
+  /// Formulas for command index [i], or an empty map.
+  Map<String, String> formulasAt(int i) =>
+      i >= 0 && i < commandFormulas.length
+          ? commandFormulas[i]
+          : const <String, String>{};
+
+  VsdxGeometry copyWith({
+    List<VsdxPathCommand>? commands,
+    List<Map<String, String>>? commandFormulas,
+    bool? noFill,
+    bool? noLine,
+    bool? noShow,
+    bool? noSnap,
+    bool? noQuickDrag,
+    int? ix,
+    List<int>? rowIndices,
+    Set<int>? deletedRowIndices,
+    Set<String>? definedFlagCells,
+    bool? deleted,
+  }) =>
+      VsdxGeometry(
+        commands: commands ?? this.commands,
+        commandFormulas: commandFormulas ?? this.commandFormulas,
+        noFill: noFill ?? this.noFill,
+        noLine: noLine ?? this.noLine,
+        noShow: noShow ?? this.noShow,
+        noSnap: noSnap ?? this.noSnap,
+        noQuickDrag: noQuickDrag ?? this.noQuickDrag,
+        ix: ix ?? this.ix,
+        rowIndices: rowIndices ?? this.rowIndices,
+        deletedRowIndices: deletedRowIndices ?? this.deletedRowIndices,
+        definedFlagCells: definedFlagCells ?? this.definedFlagCells,
+        deleted: deleted ?? this.deleted,
+      );
+
   @override
   String toString() =>
       'VsdxGeometry(${commands.length} cmd'
       '${noFill ? ' NoFill' : ''}'
       '${noLine ? ' NoLine' : ''}'
-      '${noShow ? ' NoShow' : ''})';
+      '${noShow ? ' NoShow' : ''}'
+      '${noSnap ? ' NoSnap' : ''}'
+      '${noQuickDrag ? ' NoQuickDrag' : ''})';
 }

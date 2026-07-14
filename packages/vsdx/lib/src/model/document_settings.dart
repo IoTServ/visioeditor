@@ -18,6 +18,9 @@ class VsdxDocumentSettings {
     this.snapEnabled = true,
     this.gridDensityX = 4,
     this.gridDensityY = 4,
+    this.defaultTextStyleId,
+    this.defaultLineStyleId,
+    this.defaultFillStyleId,
   });
 
   /// Whole-document fallback for the page background — populated from
@@ -36,6 +39,13 @@ class VsdxDocumentSettings {
   /// editing support; currently informational.
   final int gridDensityX;
   final int gridDensityY;
+
+  /// `DocumentSettings/@DefaultTextStyle` — StyleSheet id used when a shape
+  /// has no `TextStyle` attribute. libvisio resolves Character.Size through
+  /// this chain.
+  final int? defaultTextStyleId;
+  final int? defaultLineStyleId;
+  final int? defaultFillStyleId;
 
   static const VsdxDocumentSettings defaults = VsdxDocumentSettings();
 }

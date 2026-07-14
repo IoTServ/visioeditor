@@ -19,7 +19,12 @@ class VsdxLayer {
     this.print = true,
     this.active = false,
     this.locked = false,
+    this.snap = true,
+    this.glue = true,
     this.color,
+    this.colorTrans = 0,
+    this.nameUniv,
+    this.status = 0,
   });
 
   /// Row IX as defined inside `<Section N="Layer">`. Stable within a page.
@@ -32,16 +37,80 @@ class VsdxLayer {
   final bool print;
   final bool active;
   final bool locked;
+
+  /// `Snap` / `Glue` — whether shapes on this layer participate in snap/glue.
+  final bool snap;
+  final bool glue;
+
   final VsdxColor? color;
 
-  VsdxLayer copyWith({bool? visible, bool? print, bool? locked}) => VsdxLayer(
+  /// `ColorTrans` — 0..1 transparency for the layer colour tint.
+  final double colorTrans;
+
+  /// `NameUniv` — locale-independent layer name (often equals [name]).
+  final String? nameUniv;
+
+  /// `Status` cell (Visio layer status flags).
+  final int status;
+
+  VsdxLayer copyWith({
+    String? name,
+    bool? visible,
+    bool? print,
+    bool? active,
+    bool? locked,
+    bool? snap,
+    bool? glue,
+    VsdxColor? color,
+    double? colorTrans,
+    String? nameUniv,
+    int? status,
+  }) =>
+      VsdxLayer(
         id: id,
-        name: name,
+        name: name ?? this.name,
         visible: visible ?? this.visible,
         print: print ?? this.print,
-        active: active,
+        active: active ?? this.active,
         locked: locked ?? this.locked,
-        color: color,
+        snap: snap ?? this.snap,
+        glue: glue ?? this.glue,
+        color: color ?? this.color,
+        colorTrans: colorTrans ?? this.colorTrans,
+        nameUniv: nameUniv ?? this.nameUniv,
+        status: status ?? this.status,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxLayer &&
+      other.id == id &&
+      other.name == name &&
+      other.visible == visible &&
+      other.print == print &&
+      other.active == active &&
+      other.locked == locked &&
+      other.snap == snap &&
+      other.glue == glue &&
+      other.color == color &&
+      other.colorTrans == colorTrans &&
+      other.nameUniv == nameUniv &&
+      other.status == status;
+
+  @override
+  int get hashCode => Object.hash(
+        id,
+        name,
+        visible,
+        print,
+        active,
+        locked,
+        snap,
+        glue,
+        color,
+        colorTrans,
+        nameUniv,
+        status,
       );
 
   @override

@@ -12,6 +12,204 @@ import 'geometry.dart';
 import 'layer.dart';
 import 'shape.dart';
 
+/// PageSheet cells beyond width/height/colour (scale, page shadow, jumps,
+/// margins). Required so newly-created pages round-trip like Visio / libvisio.
+@immutable
+class VsdxPageSheet {
+  const VsdxPageSheet({
+    this.shadowOffsetXInches = 0.125,
+    this.shadowOffsetYInches = -0.125,
+    this.pageScale = 1,
+    this.pageScaleUnit = 'PT',
+    this.drawingScale = 1,
+    this.drawingScaleUnit = 'PT',
+    this.drawingSizeType = 0,
+    this.drawingScaleType = 0,
+    this.drawingResizeType = 2,
+    this.inhibitSnap = false,
+    this.pageLockReplace = false,
+    this.pageLockDuplicate = false,
+    this.uiVisibility = 0,
+    this.shadowType = 0,
+    this.shadowObliqueAngle = 0,
+    this.shadowScaleFactor = 1,
+    this.pageShapeSplit = true,
+    this.lineJumpCode,
+    this.lineJumpStyle,
+    this.marginLeftInches = 0,
+    this.marginRightInches = 0,
+    this.marginTopInches = 0,
+    this.marginBottomInches = 0,
+    this.printPageOrientation = 2,
+    this.variationColorIndex,
+    this.variationStyleIndex,
+  });
+
+  /// `ShdwOffsetX` / `ShdwOffsetY` — page-level drop-shadow offsets (inches).
+  final double shadowOffsetXInches;
+  final double shadowOffsetYInches;
+
+  /// `PageScale` — usually `V="1" U="PT"`.
+  final double pageScale;
+  final String? pageScaleUnit;
+
+  /// `DrawingScale` — usually `V="1" U="PT"`.
+  final double drawingScale;
+  final String? drawingScaleUnit;
+
+  final int drawingSizeType;
+  final int drawingScaleType;
+  final int drawingResizeType;
+  final bool inhibitSnap;
+  final bool pageLockReplace;
+  final bool pageLockDuplicate;
+  final int uiVisibility;
+  final int shadowType;
+  final double shadowObliqueAngle;
+  final double shadowScaleFactor;
+  final bool pageShapeSplit;
+
+  /// `LineJumpCode` / `LineJumpStyle` — optional; absent on some blank pages.
+  final int? lineJumpCode;
+  final int? lineJumpStyle;
+
+  final double marginLeftInches;
+  final double marginRightInches;
+  final double marginTopInches;
+  final double marginBottomInches;
+
+  /// `PrintPageOrientation` — 1 = portrait, 2 = landscape (Visio).
+  final int printPageOrientation;
+
+  /// `VariationColorIndex` / `VariationStyleIndex` — theme variation selectors
+  /// libvisio reads to resolve THEMEVAL() colours. Optional (absent on many
+  /// pages / older documents).
+  final int? variationColorIndex;
+  final int? variationStyleIndex;
+
+  static const VsdxPageSheet defaults = VsdxPageSheet();
+
+  VsdxPageSheet copyWith({
+    double? shadowOffsetXInches,
+    double? shadowOffsetYInches,
+    double? pageScale,
+    String? pageScaleUnit,
+    double? drawingScale,
+    String? drawingScaleUnit,
+    int? drawingSizeType,
+    int? drawingScaleType,
+    int? drawingResizeType,
+    bool? inhibitSnap,
+    bool? pageLockReplace,
+    bool? pageLockDuplicate,
+    int? uiVisibility,
+    int? shadowType,
+    double? shadowObliqueAngle,
+    double? shadowScaleFactor,
+    bool? pageShapeSplit,
+    int? lineJumpCode,
+    int? lineJumpStyle,
+    double? marginLeftInches,
+    double? marginRightInches,
+    double? marginTopInches,
+    double? marginBottomInches,
+    int? printPageOrientation,
+    int? variationColorIndex,
+    int? variationStyleIndex,
+  }) =>
+      VsdxPageSheet(
+        shadowOffsetXInches:
+            shadowOffsetXInches ?? this.shadowOffsetXInches,
+        shadowOffsetYInches:
+            shadowOffsetYInches ?? this.shadowOffsetYInches,
+        pageScale: pageScale ?? this.pageScale,
+        pageScaleUnit: pageScaleUnit ?? this.pageScaleUnit,
+        drawingScale: drawingScale ?? this.drawingScale,
+        drawingScaleUnit: drawingScaleUnit ?? this.drawingScaleUnit,
+        drawingSizeType: drawingSizeType ?? this.drawingSizeType,
+        drawingScaleType: drawingScaleType ?? this.drawingScaleType,
+        drawingResizeType: drawingResizeType ?? this.drawingResizeType,
+        inhibitSnap: inhibitSnap ?? this.inhibitSnap,
+        pageLockReplace: pageLockReplace ?? this.pageLockReplace,
+        pageLockDuplicate: pageLockDuplicate ?? this.pageLockDuplicate,
+        uiVisibility: uiVisibility ?? this.uiVisibility,
+        shadowType: shadowType ?? this.shadowType,
+        shadowObliqueAngle: shadowObliqueAngle ?? this.shadowObliqueAngle,
+        shadowScaleFactor: shadowScaleFactor ?? this.shadowScaleFactor,
+        pageShapeSplit: pageShapeSplit ?? this.pageShapeSplit,
+        lineJumpCode: lineJumpCode ?? this.lineJumpCode,
+        lineJumpStyle: lineJumpStyle ?? this.lineJumpStyle,
+        marginLeftInches: marginLeftInches ?? this.marginLeftInches,
+        marginRightInches: marginRightInches ?? this.marginRightInches,
+        marginTopInches: marginTopInches ?? this.marginTopInches,
+        marginBottomInches: marginBottomInches ?? this.marginBottomInches,
+        printPageOrientation:
+            printPageOrientation ?? this.printPageOrientation,
+        variationColorIndex: variationColorIndex ?? this.variationColorIndex,
+        variationStyleIndex: variationStyleIndex ?? this.variationStyleIndex,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxPageSheet &&
+      other.shadowOffsetXInches == shadowOffsetXInches &&
+      other.shadowOffsetYInches == shadowOffsetYInches &&
+      other.pageScale == pageScale &&
+      other.pageScaleUnit == pageScaleUnit &&
+      other.drawingScale == drawingScale &&
+      other.drawingScaleUnit == drawingScaleUnit &&
+      other.drawingSizeType == drawingSizeType &&
+      other.drawingScaleType == drawingScaleType &&
+      other.drawingResizeType == drawingResizeType &&
+      other.inhibitSnap == inhibitSnap &&
+      other.pageLockReplace == pageLockReplace &&
+      other.pageLockDuplicate == pageLockDuplicate &&
+      other.uiVisibility == uiVisibility &&
+      other.shadowType == shadowType &&
+      other.shadowObliqueAngle == shadowObliqueAngle &&
+      other.shadowScaleFactor == shadowScaleFactor &&
+      other.pageShapeSplit == pageShapeSplit &&
+      other.lineJumpCode == lineJumpCode &&
+      other.lineJumpStyle == lineJumpStyle &&
+      other.marginLeftInches == marginLeftInches &&
+      other.marginRightInches == marginRightInches &&
+      other.marginTopInches == marginTopInches &&
+      other.marginBottomInches == marginBottomInches &&
+      other.printPageOrientation == printPageOrientation &&
+      other.variationColorIndex == variationColorIndex &&
+      other.variationStyleIndex == variationStyleIndex;
+
+  @override
+  int get hashCode => Object.hashAll([
+        shadowOffsetXInches,
+        shadowOffsetYInches,
+        pageScale,
+        pageScaleUnit,
+        drawingScale,
+        drawingScaleUnit,
+        drawingSizeType,
+        drawingScaleType,
+        drawingResizeType,
+        inhibitSnap,
+        pageLockReplace,
+        pageLockDuplicate,
+        uiVisibility,
+        shadowType,
+        shadowObliqueAngle,
+        shadowScaleFactor,
+        pageShapeSplit,
+        lineJumpCode,
+        lineJumpStyle,
+        marginLeftInches,
+        marginRightInches,
+        marginTopInches,
+        marginBottomInches,
+        printPageOrientation,
+        variationColorIndex,
+        variationStyleIndex,
+      ]);
+}
+
 @immutable
 class VsdxPage {
   const VsdxPage({
@@ -25,6 +223,10 @@ class VsdxPage {
     this.backgroundColor,
     this.isBackgroundPage = false,
     this.backgroundPageId,
+    this.pageSheet = VsdxPageSheet.defaults,
+    this.viewScale,
+    this.viewCenterX,
+    this.viewCenterY,
   });
 
   /// Visio internal page id; unique within the document.
@@ -55,6 +257,14 @@ class VsdxPage {
   /// `BackPage="N"` attribute — id of the background page rendered
   /// underneath this one (`null` when no background).
   final int? backgroundPageId;
+
+  /// Remaining PageSheet cells (scale / shadow / jumps / margins).
+  final VsdxPageSheet pageSheet;
+
+  /// `ViewScale` / `ViewCenterX` / `ViewCenterY` attributes on `<Page>`.
+  final double? viewScale;
+  final double? viewCenterX;
+  final double? viewCenterY;
 
   /// O(1) by-connector lookup. Lazily built each access — cheap because
   /// the list is usually tiny.
@@ -97,6 +307,10 @@ class VsdxPage {
     VsdxColor? backgroundColor,
     bool? isBackgroundPage,
     int? backgroundPageId,
+    VsdxPageSheet? pageSheet,
+    double? viewScale,
+    double? viewCenterX,
+    double? viewCenterY,
   }) {
     return VsdxPage(
       id: id ?? this.id,
@@ -109,6 +323,10 @@ class VsdxPage {
       backgroundColor: backgroundColor ?? this.backgroundColor,
       isBackgroundPage: isBackgroundPage ?? this.isBackgroundPage,
       backgroundPageId: backgroundPageId ?? this.backgroundPageId,
+      pageSheet: pageSheet ?? this.pageSheet,
+      viewScale: viewScale ?? this.viewScale,
+      viewCenterX: viewCenterX ?? this.viewCenterX,
+      viewCenterY: viewCenterY ?? this.viewCenterY,
     );
   }
 
@@ -408,11 +626,11 @@ class VsdxPage {
   /// Page-inch position of connection point [index] on [s]. [index] is into
   /// [VsdxShape.connectionPoints] (shape-local inches, origin bottom-left).
   static Offset2D connectionPointPage(VsdxShape s, int index) =>
-      localToPage(s, s.connectionPoints[index]);
+      localToPage(s, s.connectionPoints[index].offset);
 
   /// Effective connection points of [s] for display / snapping: its explicit
   /// points, or the standard default set (drawio) when it has none.
-  static List<Offset2D> effectiveConnectionPoints(VsdxShape s) =>
+  static List<VsdxConnectionPoint> effectiveConnectionPoints(VsdxShape s) =>
       s.connectionPoints.isNotEmpty
           ? s.connectionPoints
           : defaultConnectionPoints(s.width, s.height);
@@ -430,14 +648,16 @@ class VsdxPage {
 
   /// Standard default connection points (drawio-style) for a [width]×[height]
   /// box, shape-local inches (origin bottom-left): top-centre, right-middle,
-  /// bottom-centre, left-middle, centre — indices 0..4.
-  static List<Offset2D> defaultConnectionPoints(double width, double height) =>
-      <Offset2D>[
-        Offset2D(width / 2, height), // 0 top
-        Offset2D(width, height / 2), // 1 right
-        Offset2D(width / 2, 0), // 2 bottom
-        Offset2D(0, height / 2), // 3 left
-        Offset2D(width / 2, height / 2), // 4 centre
+  /// bottom-centre, left-middle, centre — indices 0..4. Directions point
+  /// outward (libvisio / Visio `DirX`/`DirY`).
+  static List<VsdxConnectionPoint> defaultConnectionPoints(
+          double width, double height) =>
+      <VsdxConnectionPoint>[
+        VsdxConnectionPoint(width / 2, height, dirX: 0, dirY: 1), // 0 top
+        VsdxConnectionPoint(width, height / 2, dirX: 1, dirY: 0), // 1 right
+        VsdxConnectionPoint(width / 2, 0, dirX: 0, dirY: -1), // 2 bottom
+        VsdxConnectionPoint(0, height / 2, dirX: -1, dirY: 0), // 3 left
+        VsdxConnectionPoint(width / 2, height / 2), // 4 centre
       ];
 
   /// Whether connector [id] currently prefers a straight route.

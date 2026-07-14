@@ -24,9 +24,17 @@ class VsdxUserProperty {
     required this.name,
     this.label,
     this.value,
+    this.valueFormula,
     this.prompt,
     this.format,
     this.type = 0,
+    this.sortKey,
+    this.invisible = false,
+    this.verify = false,
+    this.ask = false,
+    this.dataLinked = false,
+    this.langId,
+    this.calendar,
   });
 
   /// `Row N="..."` — the property identifier (e.g. "Cost", "AssetTag").
@@ -41,6 +49,9 @@ class VsdxUserProperty {
   /// `Value` cell — the raw `V=` string. Numeric types remain as
   /// stringified numbers so the original precision is preserved.
   final String? value;
+
+  /// `F=` on the Value cell (parametric Property.* / Scratch.* refs).
+  final String? valueFormula;
 
   /// `Prompt` cell — tooltip text shown by Visio when editing the field.
   final String? prompt;
@@ -65,6 +76,25 @@ class VsdxUserProperty {
   /// We don't normalise — callers consult the code directly.
   final int type;
 
+  /// `SortKey` — Shape Data pane ordering hint.
+  final String? sortKey;
+
+  /// `Invisible` — hide from Shape Data UI when true.
+  final bool invisible;
+
+  /// `Verify` — prompt on edit when true.
+  final bool verify;
+
+  /// `Ask` — prompt for a value when the shape is dropped (Visio).
+  final bool ask;
+
+  /// `DataLinked` — linked to external data when true.
+  final bool dataLinked;
+
+  /// `LangID` / `Calendar` — locale for typed values.
+  final String? langId;
+  final int? calendar;
+
   /// Best-effort textual rendering for inspector chips / search hits.
   String get displayLabel => label?.trim().isNotEmpty == true ? label! : name;
   String get displayValue => value ?? '';
@@ -75,17 +105,33 @@ class VsdxUserProperty {
     String? name,
     String? label,
     String? value,
+    String? valueFormula,
     String? prompt,
     String? format,
     int? type,
+    String? sortKey,
+    bool? invisible,
+    bool? verify,
+    bool? ask,
+    bool? dataLinked,
+    String? langId,
+    int? calendar,
   }) {
     return VsdxUserProperty(
       name: name ?? this.name,
       label: label ?? this.label,
       value: value ?? this.value,
+      valueFormula: valueFormula ?? this.valueFormula,
       prompt: prompt ?? this.prompt,
       format: format ?? this.format,
       type: type ?? this.type,
+      sortKey: sortKey ?? this.sortKey,
+      invisible: invisible ?? this.invisible,
+      verify: verify ?? this.verify,
+      ask: ask ?? this.ask,
+      dataLinked: dataLinked ?? this.dataLinked,
+      langId: langId ?? this.langId,
+      calendar: calendar ?? this.calendar,
     );
   }
 
@@ -95,12 +141,35 @@ class VsdxUserProperty {
       other.name == name &&
       other.label == label &&
       other.value == value &&
+      other.valueFormula == valueFormula &&
       other.prompt == prompt &&
       other.format == format &&
-      other.type == type;
+      other.type == type &&
+      other.sortKey == sortKey &&
+      other.invisible == invisible &&
+      other.verify == verify &&
+      other.ask == ask &&
+      other.dataLinked == dataLinked &&
+      other.langId == langId &&
+      other.calendar == calendar;
 
   @override
-  int get hashCode => Object.hash(name, label, value, prompt, format, type);
+  int get hashCode => Object.hash(
+        name,
+        label,
+        value,
+        valueFormula,
+        prompt,
+        format,
+        type,
+        sortKey,
+        invisible,
+        verify,
+        ask,
+        dataLinked,
+        langId,
+        calendar,
+      );
 
   @override
   String toString() =>
@@ -114,12 +183,40 @@ class VsdxUserCell {
   const VsdxUserCell({
     required this.name,
     this.value,
+    this.valueFormula,
     this.prompt,
   });
 
   final String name;
   final String? value;
+
+  /// `F=` on the Value cell (parametric User.* references).
+  final String? valueFormula;
   final String? prompt;
+
+  VsdxUserCell copyWith({
+    String? name,
+    String? value,
+    String? valueFormula,
+    String? prompt,
+  }) =>
+      VsdxUserCell(
+        name: name ?? this.name,
+        value: value ?? this.value,
+        valueFormula: valueFormula ?? this.valueFormula,
+        prompt: prompt ?? this.prompt,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VsdxUserCell &&
+      other.name == name &&
+      other.value == value &&
+      other.valueFormula == valueFormula &&
+      other.prompt == prompt;
+
+  @override
+  int get hashCode => Object.hash(name, value, valueFormula, prompt);
 
   @override
   String toString() => 'VsdxUserCell($name=$value)';

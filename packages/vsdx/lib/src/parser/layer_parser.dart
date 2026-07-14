@@ -35,7 +35,12 @@ class LayerParser {
           print: (_cellInt(row, 'Print') ?? 1) != 0,
           active: (_cellInt(row, 'Active') ?? 0) != 0,
           locked: (_cellInt(row, 'Lock') ?? 0) != 0,
+          snap: (_cellInt(row, 'Snap') ?? 1) != 0,
+          glue: (_cellInt(row, 'Glue') ?? 1) != 0,
           color: VsdxColor.tryParse(_cellString(row, 'Color')),
+          colorTrans: _cellDouble(row, 'ColorTrans') ?? 0,
+          nameUniv: _cellString(row, 'NameUniv'),
+          status: _cellInt(row, 'Status') ?? 0,
         ));
       }
     }
@@ -69,5 +74,11 @@ class LayerParser {
     final s = _cellString(parent, name);
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+  }
+
+  double? _cellDouble(XmlElement parent, String name) {
+    final s = _cellString(parent, name);
+    if (s == null) return null;
+    return double.tryParse(s);
   }
 }

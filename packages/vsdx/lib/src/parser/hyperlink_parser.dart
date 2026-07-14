@@ -23,10 +23,14 @@ class HyperlinkParser {
           id: ix,
           description: _str(row, 'Description'),
           address: _str(row, 'Address'),
+          addressFormula: _formula(row, 'Address'),
           subAddress: _str(row, 'SubAddress'),
+          extraInfo: _str(row, 'ExtraInfo'),
           frame: _str(row, 'Frame'),
           newWindow: (_int(row, 'NewWindow') ?? 0) != 0,
           isDefault: (_int(row, 'Default') ?? 0) != 0,
+          invisible: (_int(row, 'Invisible') ?? 0) != 0,
+          sortKey: _str(row, 'SortKey'),
         ));
       }
     }
@@ -45,5 +49,12 @@ class HyperlinkParser {
     final s = _str(parent, name);
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+  }
+
+  static String? _formula(XmlElement parent, String name) {
+    final cell = findCell(parent, name);
+    final f = cell?.getAttribute('F');
+    if (f == null || f.isEmpty || f == 'No Formula') return null;
+    return f;
   }
 }

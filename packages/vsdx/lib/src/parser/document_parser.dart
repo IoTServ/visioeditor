@@ -18,6 +18,7 @@ import 'image_parser.dart';
 import 'masters_parser.dart';
 import 'package_reader.dart';
 import 'pages_parser.dart';
+import 'stylesheet_parser.dart';
 import 'theme_parser.dart';
 
 final _log = Logger('vsdx.parser.document');
@@ -45,14 +46,21 @@ class DocumentParser {
       );
     }
     final settings = const DocumentSettingsParser().parse(documentXml);
+    final stylesheets = const StyleSheetParser().parse(
+      documentXml,
+      defaultTextStyleId: settings.defaultTextStyleId,
+    );
+    _log.fine(() =>
+        'StyleSheets defaultTextStyle=${stylesheets.defaultTextStyleId}');
 
     // Theme + Masters first — pages need both for full inheritance.
     final theme =
         ThemeParser(pkg).parseTheme(documentPartName: documentPart);
-    _log.fine(() => 'Loaded theme (${theme.isEmpty ? 'empty' : '${theme.colors.length} slots'})');
+    _log.fine(() =>
+        'Loaded theme (${theme.isEmpty ? 'empty' : '${theme.colors.length} slots'})');
 
-    final masters =
-        MastersParser(pkg).parseMasters(documentPartName: documentPart);
+    final masters = MastersParser(pkg, stylesheets: stylesheets)
+        .parseMasters(documentPartName: documentPart);
     _log.fine(() => 'Loaded ${masters.length} master(s)');
 
     final images =
@@ -61,7 +69,7 @@ class DocumentParser {
 
     // PagesParser will mint its own PageParser instances per page so each
     // shape can resolve `<ForeignData r:id>` against the right rels map.
-    final pages = PagesParser(pkg, masters: masters)
+    final pages = PagesParser(pkg, masters: masters, stylesheets: stylesheets)
         .parsePages(documentPartName: documentPart);
     _log.fine(() => 'Parsed ${pages.length} page(s)');
 

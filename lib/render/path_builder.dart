@@ -100,6 +100,14 @@ Path buildPath(
         _arcByBow(path, cursorX, cursorY, x, y, bow);
         cursorX = x;
         cursorY = y;
+      case RelArcTo(:final fx, :final fy, :final fbow):
+        if (!hasStart) start(0, 0);
+        final x = fx * widthInches;
+        final y = fy * heightInches;
+        final bow = fbow * (widthInches + heightInches) / 2;
+        _arcByBow(path, cursorX, cursorY, x, y, bow);
+        cursorX = x;
+        cursorY = y;
       case EllipticalArcTo(
           :final x,
           :final y,
@@ -142,47 +150,50 @@ Path buildPath(
         ):
         _ellipseFromPoints(path, cx, cy, aX, aY, bX, bY);
       // Ellipse closes its own sub-path; cursor stays where it was.
-      case PolylineTo(:final x, :final y, :final vertices):
+      case PolylineTo(:final x, :final y, :final vertices, :final relative):
         if (!hasStart) start(0, 0);
+        final sx = relative ? widthInches : 1.0;
+        final sy = relative ? heightInches : 1.0;
         for (final v in vertices) {
-          path.lineTo(v.x, v.y);
+          path.lineTo(v.x * sx, v.y * sy);
         }
-        path.lineTo(x, y);
-        cursorX = x;
-        cursorY = y;
-      case InfiniteLineCmd(:final x, :final y, :final a, :final b):
-        // Project the line through (x,y)→(a,b) onto a long chord inside
-        // the shape's local box; render-time clipping handles the rest.
-        final dx = a - x;
-        final dy = b - y;
+        path.lineTo(x * sx, y * sy);
+        cursorX = x * sx;
+        cursorY = y * sy;
+      case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
+        final sx = relative ? widthInches : 1.0;
+        final sy = relative ? heightInches : 1.0;
+        final px = x * sx, py = y * sy, qx = a * sx, qy = b * sy;
+        final dx = qx - px;
+        final dy = qy - py;
         final len = math.sqrt(dx * dx + dy * dy);
         if (len == 0) break;
         final ux = dx / len;
         final uy = dy / len;
-        // 100× the shape diagonal — well beyond any plausible viewport.
         final reach = 100 * math.sqrt(
               widthInches * widthInches + heightInches * heightInches,
             );
-        start(x - ux * reach, y - uy * reach);
-        path.lineTo(x + ux * reach, y + uy * reach);
-        cursorX = x + ux * reach;
-        cursorY = y + uy * reach;
-      case SplineStart(:final x, :final y):
-        // Chord-polyline fallback: treat the anchor as a MoveTo (or LineTo
-        // if a sub-path is already open). True cubic-spline evaluation
-        // arrives with the NURBS pass.
+        start(px - ux * reach, py - uy * reach);
+        path.lineTo(px + ux * reach, py + uy * reach);
+        cursorX = px + ux * reach;
+        cursorY = py + uy * reach;
+      case SplineStart(:final x, :final y, :final relative):
+        final px = relative ? x * widthInches : x;
+        final py = relative ? y * heightInches : y;
         if (!hasStart) {
-          start(x, y);
+          start(px, py);
         } else {
-          path.lineTo(x, y);
-          cursorX = x;
-          cursorY = y;
+          path.lineTo(px, py);
+          cursorX = px;
+          cursorY = py;
         }
-      case SplineKnot(:final x, :final y):
-        if (!hasStart) start(x, y);
-        path.lineTo(x, y);
-        cursorX = x;
-        cursorY = y;
+      case SplineKnot(:final x, :final y, :final relative):
+        final px = relative ? x * widthInches : x;
+        final py = relative ? y * heightInches : y;
+        if (!hasStart) start(px, py);
+        path.lineTo(px, py);
+        cursorX = px;
+        cursorY = py;
       case NurbsTo(
           :final x,
           :final y,
@@ -190,19 +201,24 @@ Path buildPath(
           :final weights,
           :final knots,
           :final degree,
+          :final relative,
         ):
         if (!hasStart) start(0, 0);
+        final sx = relative ? widthInches : 1.0;
+        final sy = relative ? heightInches : 1.0;
         _emitNurbs(
           path,
           start: Offset2D(cursorX, cursorY),
-          end: Offset2D(x, y),
-          controlPoints: controlPoints,
+          end: Offset2D(x * sx, y * sy),
+          controlPoints: <Offset2D>[
+            for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+          ],
           weights: weights,
           knots: knots,
           degree: degree,
         );
-        cursorX = x;
-        cursorY = y;
+        cursorX = x * sx;
+        cursorY = y * sy;
     }
   }
   return path;

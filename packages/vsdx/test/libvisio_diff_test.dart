@@ -33,26 +33,18 @@ import 'support/libvisio_oracle.dart';
 Uint8List _fixture(String name) =>
     File('test/fixtures/$name').readAsBytesSync();
 
-// Remaining known differences from libvisio, each tracked to a parser
-// subsystem we haven't implemented yet. Listed explicitly so the suite stays
-// green *and* the backlog is visible — any NEW divergence (or a fixture leaving
-// these sets) still fails loudly.
+// Remaining known differences from libvisio, each tracked explicitly so the
+// suite stays green *and* the backlog is visible — any NEW divergence (or a
+// fixture leaving these sets) still fails loudly.
 //
-//  * Font sizes: text whose size comes from a Visio StyleSheet / the document
-//    default text style (neither inline nor on the master shape) isn't resolved
-//    yet, so those shapes fall back to the 12pt default.
+//  * test5_master: Lucidchart `com.lucidchart.Line` shapes (Line 1/2/3 @ 8pt)
+//    are present in the VSDX and in our model, but libvisio's SVG exporter
+//    omits them entirely (no path, no tspan). Not a StyleSheet bug.
 const Set<String> _fontSizeGaps = <String>{
-  'test3_house.vsdx',
-  'test4_connectors.vsdx',
-  'test9_rect_and_line.vsdx',
   'test5_master.vsdx',
 };
-//  * Text content: hidden/placeholder sub-shape text (test5_master) and Jinja
-//    field/markup text (test_jinja*) that libvisio suppresses but we surface.
 const Set<String> _textContentGaps = <String>{
   'test5_master.vsdx',
-  'test_jinja.vsdx',
-  'test_jinja_loop_showif.vsdx',
 };
 
 List<String> _fixtureNames() => Directory('test/fixtures')
@@ -110,6 +102,7 @@ String _shapeText(VsdxShape s) =>
 Set<double> _modelFontSizesPt(VsdxDocument doc) {
   final out = <double>{};
   _walk(doc, (s) {
+    if (s.richText.textBlock.hideText) return;
     for (final r in s.richText.runs) {
       if (r.text.trim().isEmpty) continue;
       out.add(_round05(r.charStyle.fontSizeInches * 72));
@@ -120,7 +113,10 @@ Set<double> _modelFontSizesPt(VsdxDocument doc) {
 
 String _modelTextChars(VsdxDocument doc) {
   final sb = StringBuffer();
-  _walk(doc, (s) => sb.write(_shapeText(s)));
+  _walk(doc, (s) {
+    if (s.richText.textBlock.hideText) return;
+    sb.write(_shapeText(s));
+  });
   return _sortedNonWhitespace(sb.toString());
 }
 
@@ -203,8 +199,8 @@ void main() {
         },
             skip: skipReason ??
                 (_fontSizeGaps.contains(name)
-                    ? 'known gap: Visio StyleSheet / default text-style size '
-                        'resolution not implemented yet'
+                    ? 'known gap: libvisio SVG omits Lucidchart Line labels '
+                        '(test5) — model retains them'
                     : null));
 
         test('visible text characters match libvisio', () {
@@ -219,10 +215,44 @@ void main() {
         },
             skip: skipReason ??
                 (_textContentGaps.contains(name)
-                    ? 'known gap: hidden/placeholder & field text suppression '
-                        'not implemented yet'
+                    ? 'known gap: libvisio SVG omits Lucidchart Line labels '
+                        '(test5) — model retains them'
                     : null));
       });
+    }
+  });
+
+  group('identity write → libvisio oracle', () {
+    for (final name in _fixtureNames()) {
+      if (_fontSizeGaps.contains(name) || _textContentGaps.contains(name)) {
+        continue; // known SVG omissions (e.g. test5 Lucidchart Lines)
+      }
+      test('$name noop save keeps fonts + text vs libvisio', () {
+        if (oracle == null) return;
+        const writer = VsdxWriter();
+        final bytes = _fixture(name);
+        final doc = parser.parse(bytes);
+        final saved = writer.write(originalBytes: bytes, edited: doc);
+        final pages = oracle.svgPages(saved);
+        expect(pages, isNotNull, reason: 'libvisio must open saved $name');
+        final reparsed = parser.parse(saved);
+
+        final refFonts = <double>{};
+        final refChars = StringBuffer();
+        for (final svg in pages!) {
+          refFonts.addAll(_svgFontSizesPt(svg));
+          refChars.write(_svgTextChars(svg));
+        }
+        if (refFonts.isNotEmpty) {
+          expect(_modelFontSizesPt(reparsed), refFonts,
+              reason: '$name fonts after identity write');
+        }
+        final refSorted = _sortedNonWhitespace(refChars.toString());
+        if (refSorted.isNotEmpty) {
+          expect(_modelTextChars(reparsed), refSorted,
+              reason: '$name text after identity write');
+        }
+      }, skip: skipReason);
     }
   });
 }
