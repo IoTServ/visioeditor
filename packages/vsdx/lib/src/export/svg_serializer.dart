@@ -347,10 +347,18 @@ class VsdxToSvgSerializer {
     final alpha = (1 - line.transparency).clamp(0.0, 1.0);
     final hex = c == null ? '#000000' : _hex(c);
     final dash = _dashAttr(line.pattern);
+    // NB: no `fill` here — the caller always emits a `fill` attribute (a colour
+    // or `fill="none"`) alongside this, so repeating it would produce an
+    // invalid element with a duplicate `fill` attribute.
+    //
+    // The stroke width is in inches (Visio's internal unit) and is deliberately
+    // left to scale with the page transform (`scale(px,-px)`), so a 0.01" line
+    // renders as ~1px. We must NOT use `vector-effect="non-scaling-stroke"`
+    // here: that would treat 0.01 as viewport pixels, collapsing stroke-only
+    // shapes (connectors) to an invisible hairline.
+    final weight = line.weightInches > 0 ? line.weightInches : 0.01;
     return 'stroke="$hex" stroke-opacity="${_n(alpha)}" '
-        'stroke-width="${_n(line.weightInches)}" '
-        'fill="none" '
-        'vector-effect="non-scaling-stroke" '
+        'stroke-width="${_n(weight)}" '
         '${dash.isEmpty ? '' : 'stroke-dasharray="$dash"'}';
   }
 
@@ -401,8 +409,14 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final block = shape.richText.textBlock;
-    final cx = block.pinXInches ?? shape.width / 2;
-    final cy = block.pinYInches ?? shape.height / 2;
+    // The text block is pinned by its local pin (TxtLocPin); its centre — where
+    // we anchor the middle-aligned label — is pin - locPin + size/2.
+    final tw = block.widthInches ?? shape.width;
+    final th = block.heightInches ?? shape.height;
+    final lpx = block.locPinXInches ?? tw / 2;
+    final lpy = block.locPinYInches ?? th / 2;
+    final cx = (block.pinXInches ?? shape.width / 2) - lpx + tw / 2;
+    final cy = (block.pinYInches ?? shape.height / 2) - lpy + th / 2;
     final run = shape.richText.runs.isNotEmpty
         ? shape.richText.runs.first
         : VsdxTextRun(text: shape.text ?? shape.name);
@@ -413,15 +427,26 @@ class VsdxToSvgSerializer {
     final fontFamily = run.charStyle.fontFamily ?? 'sans-serif';
     final weight = run.charStyle.style.bold ? 'bold' : 'normal';
     final italic = run.charStyle.style.italic ? 'italic' : 'normal';
+    final raw = shape.richText.isEmpty
+        ? (shape.text ?? shape.name)
+        : shape.richText.plainText;
+    // SVG <text> ignores literal newlines, so lay out each line as its own
+    // <tspan>, vertically centred about the text pin (matches Visio/the app).
+    final lines = raw.split('\n');
+    final lineHeight = fs * 1.2;
+    final firstDy = -(lines.length - 1) / 2 * lineHeight;
+    final tspans = StringBuffer();
+    for (var i = 0; i < lines.length; i++) {
+      tspans.write('<tspan x="0" y="${_n(firstDy + i * lineHeight)}">'
+          '${_esc(lines[i])}</tspan>');
+    }
     // Flip Y for the text so glyphs read upright.
     buf.writeln(
       '$indent<g transform="translate(${_n(cx)} ${_n(cy)}) scale(1 -1)">'
       '<text text-anchor="middle" dominant-baseline="middle" '
       'font-family="${_esc(fontFamily)}" font-size="${_n(fs)}" '
       'font-weight="$weight" font-style="$italic" '
-      'fill="${_hex(color)}">'
-      '${_esc(shape.richText.isEmpty ? (shape.text ?? shape.name) : shape.richText.plainText)}'
-      '</text></g>',
+      'fill="${_hex(color)}">$tspans</text></g>',
     );
   }
 

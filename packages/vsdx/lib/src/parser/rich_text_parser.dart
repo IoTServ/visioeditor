@@ -317,6 +317,8 @@ class RichTextParser {
     return VsdxTextBlock(
       pinXInches: readLengthInches(shape, 'TxtPinX'),
       pinYInches: readLengthInches(shape, 'TxtPinY'),
+      locPinXInches: readLengthInches(shape, 'TxtLocPinX'),
+      locPinYInches: readLengthInches(shape, 'TxtLocPinY'),
       widthInches: readLengthInches(shape, 'TxtWidth'),
       heightInches: readLengthInches(shape, 'TxtHeight'),
       angleRad: readAngleRadians(shape, 'TxtAngle') ?? 0,
@@ -386,7 +388,27 @@ class RichTextParser {
       }
     }
     flush();
+    _trimTrailingWhitespace(runs);
     return runs;
+  }
+
+  /// Visio commonly terminates a label with a trailing newline plus an empty
+  /// tab-stop marker (`…市场部需求\n<tp/>`), which would otherwise render as a
+  /// blank extra line and push the visible text off-centre. Strip trailing
+  /// whitespace from the run stream so a single-line label stays centred —
+  /// matching how Visio and libvisio lay the text out.
+  static void _trimTrailingWhitespace(List<VsdxTextRun> runs) {
+    while (runs.isNotEmpty) {
+      final last = runs.last;
+      final trimmed = last.text.replaceFirst(RegExp(r'\s+$'), '');
+      if (trimmed == last.text) break;
+      if (trimmed.isEmpty) {
+        runs.removeLast();
+      } else {
+        runs[runs.length - 1] = last.copyWith(text: trimmed);
+        break;
+      }
+    }
   }
 
   String? _cellString(XmlElement parent, String name) {

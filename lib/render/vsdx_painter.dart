@@ -941,8 +941,14 @@ class VsdxPainter extends CustomPainter {
     final block = rich.textBlock;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
-    var tpx = block.pinXInches ?? shape.width / 2;
-    var tpy = block.pinYInches ?? shape.height / 2;
+    // Visio pins the text block by its local pin (TxtLocPin), not its centre,
+    // so the block centre — the anchor the dx/dy alignment below is measured
+    // from — is pin - locPin + size/2. locPin defaults to the block centre, so
+    // shapes that omit it keep centring on their pin.
+    final tlx = block.locPinXInches ?? tw / 2;
+    final tly = block.locPinYInches ?? th / 2;
+    var tpx = (block.pinXInches ?? shape.width / 2) - tlx + tw / 2;
+    var tpy = (block.pinYInches ?? shape.height / 2) - tly + th / 2;
     if (isEdgeLabel && block.pinXInches == null && block.pinYInches == null) {
       final mid = VsdxPage.connectorMidpoint(shape);
       final local = _pageToLocal(shape, Offset(mid.x, mid.y));

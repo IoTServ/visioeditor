@@ -226,6 +226,8 @@ class VsdxTextBlock {
   const VsdxTextBlock({
     this.pinXInches,
     this.pinYInches,
+    this.locPinXInches,
+    this.locPinYInches,
     this.widthInches,
     this.heightInches,
     this.angleRad = 0,
@@ -236,9 +238,19 @@ class VsdxTextBlock {
     this.marginBottomInches = 0.04,
   });
 
-  /// `TxtPinX` / `TxtPinY`. `null` ⇒ centred on the shape.
+  /// `TxtPinX` / `TxtPinY` — where the text block's local pin sits in
+  /// shape-local coords. `null` ⇒ centred on the shape.
   final double? pinXInches;
   final double? pinYInches;
+
+  /// `TxtLocPinX` / `TxtLocPinY` — the pin's position *within* the text block,
+  /// measured from the block's lower-left corner. Together with the pin and
+  /// size this fixes the block's rectangle (Visio, like libvisio, places the
+  /// block so its local pin lands on the [pinXInches]/[pinYInches] point). When
+  /// `null` the block is assumed pinned by its centre (`TxtWidth/2`,
+  /// `TxtHeight/2`).
+  final double? locPinXInches;
+  final double? locPinYInches;
 
   /// `TxtWidth` / `TxtHeight`. `null` ⇒ inherit shape width/height.
   final double? widthInches;
@@ -259,6 +271,8 @@ class VsdxTextBlock {
   VsdxTextBlock copyWith({VsdxVertAlign? verticalAlign}) => VsdxTextBlock(
         pinXInches: pinXInches,
         pinYInches: pinYInches,
+        locPinXInches: locPinXInches,
+        locPinYInches: locPinYInches,
         widthInches: widthInches,
         heightInches: heightInches,
         angleRad: angleRad,

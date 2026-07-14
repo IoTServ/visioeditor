@@ -155,6 +155,31 @@ void main() {
     expect(rel, 8);
   });
 
+  // Regression: a shape's text block is pinned by its *local* pin (TxtLocPin),
+  // not its centre. workflow.vsdx's "开始"/"结束" pills pin the block by its top
+  // (TxtLocPinY == TxtHeight), so without parsing TxtLocPin the label floated to
+  // the top edge instead of centring in the pill.
+  test('text block TxtLocPin is parsed and re-centres the label', () {
+    final doc = parser.parse(_fixture('workflow.vsdx'));
+    bool isStart(VsdxShape s) =>
+        (s.richText.plainText).contains('开始') ||
+        (s.text ?? '').contains('开始');
+    final start = doc.pages.first.shapes.firstWhere(isStart);
+    final b = start.richText.textBlock;
+
+    expect(b.locPinYInches, isNotNull);
+    // The pill pins the block by its top edge.
+    expect(b.locPinYInches!, closeTo(start.height, 0.02));
+
+    // Block centre = pin - locPin + size/2 must land on the shape centre, so
+    // the (vertically-centred) label sits in the middle of the pill.
+    final th = b.heightInches ?? start.height;
+    final centreY = (b.pinYInches ?? start.height / 2) -
+        (b.locPinYInches ?? th / 2) +
+        th / 2;
+    expect(centreY, closeTo(start.height / 2, 0.02));
+  });
+
   // Regression: a cell's `V` is always in Visio's internal units (inches for
   // length), and the `U` attribute is only the *display* unit. workflow.vsdx
   // stores `PageWidth V="11.9583" U="MM"` (= 11.96 inches shown as mm) and
