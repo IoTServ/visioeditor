@@ -119,6 +119,10 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _connectSourceId;
   int? _connectTargetId;
 
+  // Whether the pointer sits on a connect affordance (directional arrow or an
+  // edge connection point) of the hovered shape — drives the crosshair cursor.
+  bool _hoverOnConnectPoint = false;
+
   // Fixed connection-point index the new connector's begin end glues to (the
   // arrow / blue point it was dragged out of), or null for a whole-shape glue.
   int? _connectSourceConnIndex;
@@ -543,11 +547,32 @@ class _PageCanvasState extends State<PageCanvas> {
       final s = _page?.findShapeById(next);
       if (s == null || s.is1D || s.locked) next = null;
     }
-    if (next != _hoverShapeId) setState(() => _hoverShapeId = next);
+    // Crosshair affordance: the pointer is on a directional arrow or an edge
+    // connection point of the hovered shape (drawio shows a crosshair there).
+    var onConnect = false;
+    if (next != null) {
+      final s = _page?.findShapeById(next);
+      if (s != null && !s.is1D && !s.locked) {
+        onConnect = _connectArrowHitDir(s, pos) != null ||
+            (_resizableSelection()?.id != s.id &&
+                _connDragSourceIndex(s, pos) != null);
+      }
+    }
+    if (next != _hoverShapeId || onConnect != _hoverOnConnectPoint) {
+      setState(() {
+        _hoverShapeId = next;
+        _hoverOnConnectPoint = onConnect;
+      });
+    }
   }
 
   void _clearHover() {
-    if (_hoverShapeId != null) setState(() => _hoverShapeId = null);
+    if (_hoverShapeId != null || _hoverOnConnectPoint) {
+      setState(() {
+        _hoverShapeId = null;
+        _hoverOnConnectPoint = false;
+      });
+    }
   }
 
   void _onTapUp(TapUpDetails d) {
@@ -555,10 +580,17 @@ class _PageCanvasState extends State<PageCanvas> {
       _commitTextEdit(); // a click outside the editor applies the edit
       return;
     }
-    // A click on a hover-connect arrow shouldn't clear the selection.
+    // A click on a hover-connect arrow connects to (or clones + connects) the
+    // shape one step over in that direction, drawio-style, and selects it.
     if (_connectAffordanceActive && _hoverShapeId != null) {
       final s = _page?.findShapeById(_hoverShapeId!);
-      if (s != null && _connectArrowHitDir(s, d.localPosition) != null) return;
+      if (s != null && !s.is1D && !s.locked) {
+        final dir = _connectArrowHitDir(s, d.localPosition);
+        if (dir != null) {
+          _connectInDirection(s, dir);
+          return;
+        }
+      }
     }
     if (_c.tool == EditorTool.connector) {
       return; // connectors need a drag between two points
@@ -902,6 +934,25 @@ class _PageCanvasState extends State<PageCanvas> {
     if (hover != null) {
       final s = _page?.findShapeById(hover);
       if (s != null && !s.is1D && !s.locked) {
+        // Edge connection point (drawio blue X): drag out a connector glued to
+        // that exact point. Skipped for the active resize selection so its
+        // edge-midpoint handles keep priority.
+        if (_resizableSelection()?.id != s.id) {
+          final cpIndex = _connDragSourceIndex(s, d.localPosition);
+          if (cpIndex != null) {
+            final pts = VsdxPage.effectiveConnectionPoints(s);
+            final pg = VsdxPage.localToPage(s, pts[cpIndex]);
+            _connectSourceId = hover;
+            _connectSourceConnIndex = cpIndex;
+            _connectTargetId = null;
+            _mode = _DragMode.connect;
+            setState(() {
+              _previewStart = _pageToContent(pg.x, pg.y);
+              _previewEnd = _viewportToContent(d.localPosition);
+            });
+            return;
+          }
+        }
         final dir = _connectArrowHitDir(s, d.localPosition);
         if (dir != null) {
           _connectSourceId = hover;
@@ -1270,6 +1321,58 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
     return best < 0 ? null : best;
+  }
+
+  /// Index of a connection point on [s] under [viewportPos] to start a *new*
+  /// connector from (drawio's edge connection points), or null. Excludes the
+  /// shape's centre point so pressing the middle still moves the shape.
+  int? _connDragSourceIndex(VsdxShape s, Offset viewportPos) {
+    final pts = VsdxPage.effectiveConnectionPoints(s);
+    final cx = s.width / 2, cy = s.height / 2;
+    var best = -1;
+    var bestD = _connSnapPx * _connSnapPx;
+    for (var i = 0; i < pts.length; i++) {
+      if ((pts[i].x - cx).abs() < 1e-6 && (pts[i].y - cy).abs() < 1e-6) {
+        continue; // centre point overlaps the move-grab region
+      }
+      final page = VsdxPage.localToPage(s, pts[i]);
+      final d = (_pageToScreen(page.x, page.y) - viewportPos).distanceSquared;
+      if (d <= bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best < 0 ? null : best;
+  }
+
+  /// drawio directional-arrow *click*: connect [s] to the shape one step over
+  /// in [dir] (0=N, 1=E, 2=S, 3=W) — or clone [s] there and connect to it —
+  /// then select the connected shape.
+  void _connectInDirection(VsdxShape s, int dir) {
+    // Gap between the two boxes' facing edges (snapped so clones tile neatly).
+    const gap = 0.5;
+    var cx = s.pinX, cy = s.pinY;
+    switch (dir) {
+      case 0: // north (page space is Y-up)
+        cy = s.pinY + s.height + gap;
+      case 1: // east
+        cx = s.pinX + s.width + gap;
+      case 2: // south
+        cy = s.pinY - s.height - gap;
+      default: // west
+        cx = s.pinX - s.width - gap;
+    }
+    cx = _c.snap(cx);
+    cy = _c.snap(cy);
+    // Connect to a shape already sitting where the clone would land, else clone.
+    final existing = _topLevelAt(_pageToScreen(cx, cy));
+    _c.connectDirectional(
+      s.id,
+      dir,
+      existingTargetId: existing != null && existing != s.id ? existing : null,
+      cloneX: cx,
+      cloneY: cy,
+    );
   }
 
   /// Start dragging a selected connector's begin / end handle (drawio endpoint
@@ -1731,7 +1834,8 @@ class _PageCanvasState extends State<PageCanvas> {
               cursor: _c.tool == EditorTool.text
                   ? SystemMouseCursors.text
                   : (_c.tool == EditorTool.connector ||
-                          _mode == _DragMode.connect)
+                          _mode == _DragMode.connect ||
+                          _hoverOnConnectPoint)
                       ? SystemMouseCursors.precise
                       : MouseCursor.defer,
               child: GestureDetector(

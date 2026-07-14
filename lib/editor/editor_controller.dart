@@ -597,6 +597,106 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// drawio directional-arrow click ("connect / clone in a direction").
+  ///
+  /// Creates a connector from [sourceId] toward [dir] (0=N, 1=E, 2=S, 3=W).
+  /// When [existingTargetId] names a shape already sitting where the arrow
+  /// points, the connector glues to it; otherwise the source is cloned at
+  /// ([cloneX],[cloneY]) and the connector glues to the clone. Either way the
+  /// connected shape is selected. One undo step; no-op for a 1-D source.
+  void connectDirectional(
+    int sourceId,
+    int dir, {
+    int? existingTargetId,
+    required double cloneX,
+    required double cloneY,
+  }) {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final source = page.findShapeById(sourceId);
+    if (source == null || source.is1D) return;
+
+    var next = page;
+    final int targetId;
+    if (existingTargetId != null &&
+        existingTargetId != sourceId &&
+        page.findShapeById(existingTargetId)?.is1D == false) {
+      targetId = existingTargetId;
+    } else {
+      // Nothing to connect to yet: clone the source one step over (drawio
+      // copies the shape and wires it up).
+      final newId = next.nextFreeShapeId();
+      next = next.addShape(
+        source.copyWith(id: newId, pinX: cloneX, pinY: cloneY),
+      );
+      targetId = newId;
+    }
+
+    final target = next.findShapeById(targetId)!;
+    final connId = next.nextFreeShapeId();
+    final baseLine = (_memoLine ?? const VsdxLine(color: VsdxColor.black))
+        .copyWith(endArrow: 4);
+    final connector = VsdxShapeFactory.line(
+      id: connId,
+      ax: source.pinX,
+      ay: source.pinY,
+      bx: target.pinX,
+      by: target.pinY,
+      line: baseLine,
+    );
+    next = next.addShape(connector).copyWith(
+      connects: <VsdxConnect>[
+        ...next.connects,
+        VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'BeginX',
+          fromPart: 9,
+          toSheetId: sourceId,
+          toCell: 'PinX',
+          toPart: 3,
+        ),
+        VsdxConnect(
+          fromSheetId: connId,
+          fromCell: 'EndX',
+          fromPart: 12,
+          toSheetId: targetId,
+          toCell: 'PinX',
+          toPart: 3,
+        ),
+      ],
+    ).rerouteConnectors();
+
+    // Glue each end to the facing fixed connection point so the edge meets the
+    // sides square-on (only meaningful for the default point set).
+    if (source.connectionPoints.isEmpty) {
+      next = next.setConnectorEndpoint(
+        connId,
+        begin: true,
+        targetShapeId: sourceId,
+        connectionPointIndex: dir,
+        x: source.pinX,
+        y: source.pinY,
+      );
+    }
+    if (target.connectionPoints.isEmpty) {
+      next = next.setConnectorEndpoint(
+        connId,
+        begin: false,
+        targetShapeId: targetId,
+        connectionPointIndex: (dir + 2) % 4,
+        x: target.pinX,
+        y: target.pinY,
+      );
+    }
+
+    _selection
+      ..clear()
+      ..add(targetId);
+    _tool = EditorTool.select;
+    applyEdit(doc.replacePage(_currentPageIndex, next));
+  }
+
   /// Insert an embedded raster image at the current page's centre as a new
   /// picture shape (drawio's "Insert > Image"). [bytes] are the file's
   /// contents, [fileExtension] its extension (png / jpg / gif / …).
