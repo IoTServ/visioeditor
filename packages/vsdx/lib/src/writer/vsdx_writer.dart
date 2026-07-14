@@ -1241,6 +1241,10 @@ class VsdxWriter {
   }
 
   bool _patchShape(XmlElement el, VsdxShape base, VsdxShape edited) {
+    // Persist drawio-style route flags into User cells before diffing so a
+    // curved / waypointed connector keeps its edit state across reopen.
+    base = base.persistRouteState();
+    edited = edited.persistRouteState();
     var changed = false;
     changed |= _patchLength(el, 'PinX', base.pinX, edited.pinX);
     changed |= _patchLength(el, 'PinY', base.pinY, edited.pinY);
@@ -3153,6 +3157,7 @@ class VsdxWriter {
     Map<String, String> imageRels = const <String, String>{},
     Map<int, List<XmlNode>> opaqueById = const <int, List<XmlNode>>{},
   }) {
+    s = s.persistRouteState();
     if (s.hasImage) return _buildPictureElement(s, imageRels);
     // --- XForm ---------------------------------------------------------------
     final children = <XmlNode>[
@@ -3764,6 +3769,10 @@ class VsdxWriter {
       _cell('LocPinX', _fmt(s.width / 2)),
       _cell('LocPinY', _fmt(s.height / 2)),
       _cell('Angle', _fmt(s.angleRad)),
+      // Pictures are typically fill-less / stroke-less; emit the zero patterns
+      // explicitly so reopen doesn't fall back to Visio's solid defaults.
+      _cell('FillPattern', s.fill.pattern.toString()),
+      _cell('LinePattern', s.line.pattern.toString()),
       if (s.flipX) _cell('FlipX', '1'),
       if (s.flipY) _cell('FlipY', '1'),
     ];

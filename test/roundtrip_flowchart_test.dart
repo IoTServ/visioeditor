@@ -160,6 +160,29 @@ void _diffShape(VsdxShape a, VsdxShape b, String path, List<String> out) {
   if (a.flipX != b.flipX) out.add('$path.flipX: ${a.flipX} -> ${b.flipX}');
   if (a.flipY != b.flipY) out.add('$path.flipY: ${a.flipY} -> ${b.flipY}');
   if (a.is1D != b.is1D) out.add('$path.is1D: ${a.is1D} -> ${b.is1D}');
+  if (a.locked != b.locked) out.add('$path.locked: ${a.locked} -> ${b.locked}');
+  if (a.curved != b.curved) out.add('$path.curved: ${a.curved} -> ${b.curved}');
+  if (a.rounded != b.rounded) {
+    out.add('$path.rounded: ${a.rounded} -> ${b.rounded}');
+  }
+  if (a.straightRoute != b.straightRoute) {
+    out.add('$path.straightRoute: ${a.straightRoute} -> ${b.straightRoute}');
+  }
+  if ((a.imagePartName == null) != (b.imagePartName == null)) {
+    out.add('$path.image: ${a.imagePartName != null} -> ${b.imagePartName != null}');
+  }
+
+  // Connector bend points.
+  final aw = a.waypoints, bw = b.waypoints;
+  if (aw.length != bw.length) {
+    out.add('$path.waypoints: ${aw.length} -> ${bw.length}');
+  } else {
+    for (var i = 0; i < aw.length; i++) {
+      if (!_close(aw[i].x, bw[i].x) || !_close(aw[i].y, bw[i].y)) {
+        out.add('$path.wp[$i]: (${aw[i].x},${aw[i].y}) -> (${bw[i].x},${bw[i].y})');
+      }
+    }
+  }
 
   // Trailing whitespace is intentionally normalised on reopen (Visio appends a
   // trailing newline + empty tab marker to labels; the parser strips it to
@@ -356,6 +379,10 @@ void _diffRuns(VsdxShape a, VsdxShape b, String path, List<String> out) {
   }
 }
 
+String _connectKey(VsdxConnect c) =>
+    '${c.fromSheetId}.${c.fromCell}->${c.toSheetId}.${c.toCell}'
+    '[${c.fromPart}/${c.toPart}]';
+
 List<String> _diffPage(VsdxPage a, VsdxPage b) {
   final out = <String>[];
   if (!_close(a.widthInches, b.widthInches)) {
@@ -368,6 +395,20 @@ List<String> _diffPage(VsdxPage a, VsdxPage b) {
     out.add('page.bg: ${a.backgroundColor?.value.toRadixString(16)} '
         '-> ${b.backgroundColor?.value.toRadixString(16)}');
   }
+
+  // Glue / Connect entries (page-level).
+  final ac = [...a.connects]..sort((x, y) => _connectKey(x).compareTo(_connectKey(y)));
+  final bc = [...b.connects]..sort((x, y) => _connectKey(x).compareTo(_connectKey(y)));
+  if (ac.length != bc.length) {
+    out.add('page.connects: ${ac.length} -> ${bc.length}');
+  } else {
+    for (var i = 0; i < ac.length; i++) {
+      if (_connectKey(ac[i]) != _connectKey(bc[i])) {
+        out.add('page.connect[$i]: ${_connectKey(ac[i])} -> ${_connectKey(bc[i])}');
+      }
+    }
+  }
+
   final bById = {for (final s in b.shapes) s.id: s};
   if (a.shapes.length != b.shapes.length) {
     out.add('page.shapeCount: ${a.shapes.length} -> ${b.shapes.length}');
@@ -851,5 +892,135 @@ void main() {
       print('=== RE-EDIT DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
     }
     expect(diffs, isEmpty, reason: 're-edit drift:\n${diffs.join('\n')}');
+  });
+
+  test('locked shape + dual arrows + line weight + text colour round-trip', () {
+    final c = EditorController()..newDocument(widthInches: 11, heightInches: 8.5);
+    addTearDown(c.dispose);
+
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 1.0),
+        3, 6);
+    final box = c.singleSelectedId!;
+    c
+      ..setShapeText(box, 'Locked')
+      ..setTextColor(const VsdxColor(0xFFC62828))
+      ..setTextAlign(VsdxHorzAlign.right)
+      ..setFillColor(const VsdxColor(0xFFFFF59D))
+      ..setLineColor(const VsdxColor(0xFFF57F17))
+      ..setLineWeight(0.04)
+      ..setSelectionLocked(true);
+
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.8),
+        8, 3);
+    final dest = c.singleSelectedId!;
+    c.createConnector(3.9, 6, 7.3, 3, beginTarget: box, endTarget: dest);
+    c
+      ..setBeginArrow(10)
+      ..setEndArrow(12)
+      ..setLineWeight(0.03)
+      ..setLineColor(const VsdxColor(0xFF1565C0));
+
+    final before = c.document!;
+    final after = _parser.parse(c.exportToBytes());
+    final diffs = _diffPage(before.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== LOCK/ARROW DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'lock/arrow drift:\n${diffs.join('\n')}');
+  });
+
+  test('glued rounded orthogonal connector + waypoints + connects round-trip',
+      () {
+    final c = EditorController()..newDocument(widthInches: 11, heightInches: 8.5);
+    addTearDown(c.dispose);
+
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.8),
+        2, 7);
+    final a = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.polygon(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0,
+            unit: const [
+              Offset2D(0.5, 1), Offset2D(1, 0.5),
+              Offset2D(0.5, 0), Offset2D(0, 0.5),
+            ]),
+        8, 3);
+    final b = c.singleSelectedId!;
+
+    c.createConnector(2.7, 7, 7.3, 3, beginTarget: a, endTarget: b);
+    final conn = c.singleSelectedId!;
+    c
+      ..setConnectorRouteStyle(ConnectorRouteStyle.orthogonal)
+      ..setConnectorRounded(true)
+      ..setConnectorWaypoints(conn, const <Offset2D>[
+        Offset2D(5.0, 7.0),
+        Offset2D(5.0, 3.0),
+      ]);
+
+    final before = c.document!;
+    expect(before.pages.first.connects, isNotEmpty,
+        reason: 'createConnector should emit Connect rows');
+    final after = _parser.parse(c.exportToBytes());
+    final diffs = _diffPage(before.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== CONNECT/ROUTE DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'connect/route drift:\n${diffs.join('\n')}');
+  });
+
+  test('typed shape data + insertImage media part round-trip', () {
+    final c = EditorController()..newDocument(widthInches: 11, heightInches: 8.5);
+    addTearDown(c.dispose);
+
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.9),
+        3, 6);
+    final id1 = c.singleSelectedId!;
+    c.setShapeProperties(id1, const <VsdxUserProperty>[
+      VsdxUserProperty(name: 'Cost', label: 'Cost', value: '42.5', type: 2),
+      VsdxUserProperty(name: 'Flag', label: 'Flag', value: 'TRUE', type: 3),
+      VsdxUserProperty(
+          name: 'Note', label: 'Note', value: 'hello & <world>', type: 0),
+    ]);
+
+    // Minimal 1×1 PNG (transparent).
+    const pngB64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    final png = Uri.parse('data:image/png;base64,$pngB64').data!.contentAsBytes();
+    c.insertImage(png, fileExtension: 'png', widthInches: 1.0, heightInches: 1.0);
+
+    final before = c.document!;
+    expect(before.images.all, isNotEmpty);
+    final imgBefore = before.pages.first.shapes
+        .where((s) => s.hasImage)
+        .toList();
+    expect(imgBefore, isNotEmpty);
+
+    final after = _parser.parse(c.exportToBytes());
+    final diffs = _diffPage(before.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== PROP/IMAGE DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'prop/image drift:\n${diffs.join('\n')}');
+    expect(after.images.all.length, before.images.all.length);
+    final imgAfter = after.pages.first.shapes.where((s) => s.hasImage).toList();
+    expect(imgAfter.length, imgBefore.length);
+    // Bytes of the media part must survive.
+    final part = imgBefore.first.imagePartName!;
+    final bytesA = before.images.findByPart(part)?.bytes;
+    final bytesB = after.images.findByPart(
+        imgAfter.first.imagePartName!)?.bytes;
+    expect(bytesB, isNotNull);
+    expect(bytesB!.length, bytesA!.length);
   });
 }

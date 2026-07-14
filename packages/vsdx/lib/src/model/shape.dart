@@ -160,29 +160,29 @@ class VsdxShape {
   final double? endY;
 
   /// Routing preference for connectors: `true` = a single straight segment,
-  /// `false` (default) = orthogonal elbow. Session-level (not persisted as a
-  /// dedicated cell); the drawn geometry itself is what round-trips.
+  /// `false` (default) = orthogonal elbow. The drawn geometry is baked into
+  /// ordinary `LineTo`s; the flag itself round-trips via [persistRouteState]
+  /// (`User.veStraight`) so re-routing after reopen keeps the choice.
   final bool straightRoute;
 
   /// When `true`, this connector is drawn as a smooth (drawio "curved") spline
   /// through its route control points instead of a polyline. The smooth curve
-  /// is baked into the geometry as a densely-sampled `LineTo` polyline, so it
-  /// round-trips as ordinary geometry; this flag is session-level and only
-  /// steers how [VsdxPage.rerouteConnectors] rebuilds that geometry.
+  /// is baked into the geometry as a densely-sampled `LineTo` polyline; the
+  /// flag round-trips via [persistRouteState] (`User.veCurved`).
   final bool curved;
 
   /// When `true`, the connector's route corners are **rounded** off with small
   /// fillets (drawio's "Rounded" edge option) instead of drawn as sharp
   /// right-angle bends. Applies to the straight-with-waypoints and orthogonal
-  /// elbow routes; ignored when [curved] is set (which is already smooth). Like
-  /// [curved], the fillet is baked into the geometry as an ordinary `LineTo`
-  /// polyline, so it round-trips with no dedicated cell; this flag is
-  /// session-level and only steers how the geometry is rebuilt.
+  /// elbow routes; ignored when [curved] is set (which is already smooth). The
+  /// fillet is baked into geometry; the flag round-trips via
+  /// [persistRouteState] (`User.veRounded`).
   final bool rounded;
 
   /// User-placed interior bend points for a connector, in page inches. When
   /// non-empty the route runs begin → waypoints → end (overriding straight /
-  /// elbow). Session-level; the drawn geometry is what round-trips.
+  /// elbow). Geometry is baked for display; the list round-trips via
+  /// [persistRouteState] (`User.veWaypoints`).
   final List<Offset2D> waypoints;
 
   /// Fixed connection points (drawio's blue connection points), in
@@ -476,6 +476,93 @@ class VsdxShape {
       connectorProps: connectorProps ?? this.connectorProps,
       shapeKind: shapeKind ?? this.shapeKind,
     );
+  }
+
+  /// User-cell names that carry drawio-style connector route state across
+  /// save → reopen. Geometry alone is already baked; these restore editability.
+  static const String userRouteStraight = 'veStraight';
+  static const String userRouteCurved = 'veCurved';
+  static const String userRouteRounded = 'veRounded';
+  static const String userRouteWaypoints = 'veWaypoints';
+
+  static const Set<String> _routeUserCellNames = {
+    userRouteStraight,
+    userRouteCurved,
+    userRouteRounded,
+    userRouteWaypoints,
+  };
+
+  /// Mirror [straightRoute] / [curved] / [rounded] / [waypoints] into
+  /// [userCells] so the writer emits them. No-op for non-connectors with no
+  /// route state. Safe to call repeatedly.
+  VsdxShape persistRouteState() {
+    if (!is1D) return this;
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (!_routeUserCellNames.contains(c.name)) c,
+    ];
+    final add = <VsdxUserCell>[
+      if (straightRoute)
+        const VsdxUserCell(name: userRouteStraight, value: '1'),
+      if (curved) const VsdxUserCell(name: userRouteCurved, value: '1'),
+      if (rounded) const VsdxUserCell(name: userRouteRounded, value: '1'),
+      if (waypoints.isNotEmpty)
+        VsdxUserCell(
+          name: userRouteWaypoints,
+          value: [
+            for (final p in waypoints) '${p.x},${p.y}',
+          ].join(';'),
+        ),
+    ];
+    final hadRoute =
+        userCells.any((c) => _routeUserCellNames.contains(c.name));
+    if (add.isEmpty && !hadRoute) return this;
+    return copyWith(userCells: <VsdxUserCell>[...others, ...add]);
+  }
+
+  /// Restore [straightRoute] / [curved] / [rounded] / [waypoints] from
+  /// [userCells] written by [persistRouteState]. No-op when none are present.
+  VsdxShape restoreRouteState() {
+    if (userCells.isEmpty) return this;
+    bool? straight;
+    bool? curve;
+    bool? round;
+    List<Offset2D>? wps;
+    for (final c in userCells) {
+      switch (c.name) {
+        case userRouteStraight:
+          straight = c.value == '1';
+        case userRouteCurved:
+          curve = c.value == '1';
+        case userRouteRounded:
+          round = c.value == '1';
+        case userRouteWaypoints:
+          wps = _parseRouteWaypoints(c.value);
+      }
+    }
+    if (straight == null && curve == null && round == null && wps == null) {
+      return this;
+    }
+    return copyWith(
+      straightRoute: straight ?? false,
+      curved: curve ?? false,
+      rounded: round ?? false,
+      waypoints: wps ?? const <Offset2D>[],
+    );
+  }
+
+  static List<Offset2D>? _parseRouteWaypoints(String? raw) {
+    if (raw == null || raw.isEmpty) return const <Offset2D>[];
+    final out = <Offset2D>[];
+    for (final part in raw.split(';')) {
+      final comma = part.indexOf(',');
+      if (comma <= 0) continue;
+      final x = double.tryParse(part.substring(0, comma).trim());
+      final y = double.tryParse(part.substring(comma + 1).trim());
+      if (x == null || y == null) continue;
+      out.add(Offset2D(x, y));
+    }
+    return out;
   }
 
   /// Resize to a new [width]/[height] (and re-centre at [pinX]/[pinY]),

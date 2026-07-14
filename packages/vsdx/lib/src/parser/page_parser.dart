@@ -207,9 +207,14 @@ class PageParser {
       geometries = GeometryParser.mergeInherited(proto.geometries, geometries);
     }
 
+    // Picture / Foreign shapes typically have no fill or stroke; when the
+    // cells are absent (older writers omitted them), default to pattern 0
+    // rather than Visio's solid defaults so round-trips stay visually empty.
+    final isForeign = shapeTypeAttr == 'Foreign';
     final fill = _style.parseFill(
       shapeEl,
-      defaults: proto?.fill ?? VsdxFill.defaultFill,
+      defaults: proto?.fill ??
+          (isForeign ? const VsdxFill(pattern: 0) : VsdxFill.defaultFill),
     );
     final lineStyleId = int.tryParse(shapeEl.getAttribute('LineStyle') ?? '') ??
         proto?.lineStyleId;
@@ -217,7 +222,9 @@ class PageParser {
         lineStyleId != null ? _stylesheets.resolveLine(lineStyleId) : null;
     final line = _style.parseLine(
       shapeEl,
-      defaults: proto?.line ?? sheetLine ?? VsdxLine.defaultLine,
+      defaults: proto?.line ??
+          sheetLine ??
+          (isForeign ? const VsdxLine(pattern: 0) : VsdxLine.defaultLine),
     );
     final shadow = _style.parseShadow(
       shapeEl,
@@ -420,7 +427,7 @@ class PageParser {
       formulas: formulas,
       connectorProps: connectorProps,
       shapeKind: shapeKind,
-    );
+    ).restoreRouteState();
   }
 
   /// `<Section N="Control">` — named handle rows (libvisio / MS-VSDX).
