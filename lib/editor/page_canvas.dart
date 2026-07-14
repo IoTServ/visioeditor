@@ -1856,7 +1856,19 @@ class _PageCanvasState extends State<PageCanvas> {
                         transform: Matrix4.identity()
                           ..translateByDouble(_offset.dx, _offset.dy, 0, 1)
                           ..scaleByDouble(_scale, _scale, 1, 1),
-                        child: SizedBox(
+                        // Let the sheet lay out at its true content size: as a
+                        // non-positioned Stack child it would otherwise inherit
+                        // the Stack's loose (viewport-capped) constraints and be
+                        // clamped before the transform scales it — shrinking the
+                        // page whenever it is larger than the canvas area (i.e.
+                        // most non-maximized windows).
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          minWidth: 0,
+                          maxWidth: double.infinity,
+                          minHeight: 0,
+                          maxHeight: double.infinity,
+                          child: SizedBox(
                           width: content.width,
                           height: content.height,
                           child: DecoratedBox(
@@ -1926,6 +1938,7 @@ class _PageCanvasState extends State<PageCanvas> {
                               ],
                             ),
                           ),
+                        ),
                         ),
                       ),
                       ?inlineEditor,
