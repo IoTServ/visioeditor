@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
+import 'package:visioeditor/editor/stencils.dart';
 import 'package:visioeditor/io/image_export.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -160,8 +161,14 @@ void _diffShape(VsdxShape a, VsdxShape b, String path, List<String> out) {
   if (a.flipY != b.flipY) out.add('$path.flipY: ${a.flipY} -> ${b.flipY}');
   if (a.is1D != b.is1D) out.add('$path.is1D: ${a.is1D} -> ${b.is1D}');
 
-  final at = a.richText.runs.isNotEmpty ? a.richText.plainText : (a.text ?? '');
-  final bt = b.richText.runs.isNotEmpty ? b.richText.plainText : (b.text ?? '');
+  // Trailing whitespace is intentionally normalised on reopen (Visio appends a
+  // trailing newline + empty tab marker to labels; the parser strips it to
+  // match Visio/libvisio layout — see rich_text_parser._trimTrailingWhitespace),
+  // so compare with trailing whitespace removed on both sides.
+  String plain(VsdxShape s) =>
+      (s.richText.runs.isNotEmpty ? s.richText.plainText : (s.text ?? ''))
+          .replaceFirst(RegExp(r'\s+$'), '');
+  final at = plain(a), bt = plain(b);
   if (at != bt) out.add('$path.text: "$at" -> "$bt"');
 
   // Fill
@@ -171,6 +178,10 @@ void _diffShape(VsdxShape a, VsdxShape b, String path, List<String> out) {
   if (a.fill.foreground?.value != b.fill.foreground?.value) {
     out.add('$path.fill.fg: ${a.fill.foreground?.value.toRadixString(16)} '
         '-> ${b.fill.foreground?.value.toRadixString(16)}');
+  }
+  if (a.fill.background?.value != b.fill.background?.value) {
+    out.add('$path.fill.bg: ${a.fill.background?.value.toRadixString(16)} '
+        '-> ${b.fill.background?.value.toRadixString(16)}');
   }
   final ga = a.fill.gradient, gb = b.fill.gradient;
   if ((ga == null) != (gb == null)) {
@@ -250,6 +261,44 @@ void _diffShape(VsdxShape a, VsdxShape b, String path, List<String> out) {
     }
   }
 
+  // Shape data (custom properties).
+  final ap = a.userProperties, bp = b.userProperties;
+  if (ap.length != bp.length) {
+    out.add('$path.props: ${ap.length} -> ${bp.length}');
+  } else {
+    for (var i = 0; i < ap.length; i++) {
+      if (ap[i].name != bp[i].name ||
+          ap[i].label != bp[i].label ||
+          ap[i].value != bp[i].value ||
+          ap[i].type != bp[i].type) {
+        out.add('$path.prop[$i]: '
+            '${ap[i].name}/${ap[i].label}=${ap[i].value}(t${ap[i].type}) -> '
+            '${bp[i].name}/${bp[i].label}=${bp[i].value}(t${bp[i].type})');
+      }
+    }
+  }
+
+  // Hyperlinks.
+  final ah = a.hyperlinks, bh = b.hyperlinks;
+  if (ah.length != bh.length) {
+    out.add('$path.links: ${ah.length} -> ${bh.length}');
+  } else {
+    for (var i = 0; i < ah.length; i++) {
+      if (ah[i].address != bh[i].address ||
+          ah[i].subAddress != bh[i].subAddress ||
+          ah[i].description != bh[i].description) {
+        out.add('$path.link[$i]: '
+            '${ah[i].description}|${ah[i].address}|${ah[i].subAddress} -> '
+            '${bh[i].description}|${bh[i].address}|${bh[i].subAddress}');
+      }
+    }
+  }
+
+  // Shadow.
+  if (a.shadow.enabled != b.shadow.enabled) {
+    out.add('$path.shadow: ${a.shadow.enabled} -> ${b.shadow.enabled}');
+  }
+
   // Children (matched by index).
   if (a.children.length != b.children.length) {
     out.add('$path.children: ${a.children.length} -> ${b.children.length}');
@@ -314,6 +363,10 @@ List<String> _diffPage(VsdxPage a, VsdxPage b) {
   }
   if (!_close(a.heightInches, b.heightInches)) {
     out.add('page.height: ${a.heightInches} -> ${b.heightInches}');
+  }
+  if (a.backgroundColor?.value != b.backgroundColor?.value) {
+    out.add('page.bg: ${a.backgroundColor?.value.toRadixString(16)} '
+        '-> ${b.backgroundColor?.value.toRadixString(16)}');
   }
   final bById = {for (final s in b.shapes) s.id: s};
   if (a.shapes.length != b.shapes.length) {
@@ -540,5 +593,263 @@ void main() {
     final after = _parser.parse(c.exportToBytes());
     final diffs = _diffPage(before.pages.first, after.pages.first);
     expect(diffs, isEmpty, reason: 'waypoint/no-fill/text drift:\n${diffs.join('\n')}');
+  });
+
+  test('every built-in stencil round-trips its geometry', () {
+    final blank = _writer.emptyDocument(widthInches: 40, heightInches: 40);
+    final base = _parser.parse(blank);
+    var id = 1;
+    final shapes = <VsdxShape>[
+      for (var k = 0; k < kStencils.length; k++)
+        kStencils[k].build(id++, 1.5 + (k % 8) * 3.0, 38.0 - (k ~/ 8) * 3.0),
+    ];
+    final edited = base.replacePage(
+        0, VsdxPage(id: 0, name: 'All', widthInches: 40, heightInches: 40, shapes: shapes));
+    final after = _parser.parse(_writer.write(originalBytes: blank, edited: edited));
+
+    final diffs = <String>[];
+    final bById = {for (final s in after.pages.first.shapes) s.id: s};
+    for (final sa in edited.pages.first.shapes) {
+      final sb = bById[sa.id];
+      final label = kStencils[sa.id - 1].name;
+      if (sb == null) {
+        diffs.add('"$label" (id ${sa.id}) missing');
+        continue;
+      }
+      _diffShape(sa, sb, '"$label"', diffs);
+    }
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== STENCIL DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'stencil drift:\n${diffs.join('\n')}');
+  });
+
+  test('special / unicode / whitespace text round-trips (XML escaping)', () {
+    final blank = _writer.emptyDocument();
+    final base = _parser.parse(blank);
+    const texts = <String>[
+      'A < B & C > D "quoted" \'apostrophe\'',
+      '中文标签：流程 & 决策 <节点>',
+      'emoji 🚀 ✅ ❤ tab\tend',
+      'line1\nline2\nline3',
+      '  leading and trailing spaces  ',
+      r'special </Shape> <![CDATA[x]]> & % $ #',
+    ];
+    var id = 1;
+    final shapes = <VsdxShape>[
+      for (var k = 0; k < texts.length; k++)
+        VsdxShapeFactory.rectangle(
+          id: id++, pinX: 2 + (k % 3) * 2.4, pinY: 9 - (k ~/ 3) * 2.5,
+          width: 2.2, height: 1.2,
+        ).copyWith(text: texts[k]),
+    ];
+    final edited = base.replacePage(
+        0, VsdxPage(id: 0, name: 'Txt', widthInches: 8.5, heightInches: 11, shapes: shapes));
+    final after = _parser.parse(_writer.write(originalBytes: blank, edited: edited));
+
+    final diffs = _diffPage(edited.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== TEXT DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'text drift:\n${diffs.join('\n')}');
+  });
+
+  test('shape data + hyperlink + shadow + nested group round-trip', () {
+    final c = EditorController()..newDocument(widthInches: 11, heightInches: 8.5);
+    addTearDown(c.dispose);
+
+    // A shape carrying custom properties, a hyperlink, and a drop shadow.
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 1.0),
+        3, 6);
+    final id1 = c.singleSelectedId!;
+    c.setShapeText(id1, 'Server');
+    c.setShapeProperties(id1, const <VsdxUserProperty>[
+      VsdxUserProperty(name: 'Owner', label: 'Owner', value: 'Alice'),
+      VsdxUserProperty(name: 'Zone', label: 'Zone', value: 'eu-west-1'),
+      VsdxUserProperty(name: 'Notes', label: 'Notes', value: 'a & b < c > "d"'),
+    ]);
+    c.setShapeHyperlinks(id1, const <VsdxHyperlink>[
+      VsdxHyperlink(
+          id: 0,
+          description: 'Docs',
+          address: 'https://example.com/docs?a=1&b=2',
+          subAddress: 'Page-2'),
+    ]);
+    c.setShadow(true);
+
+    // Nested group: group A+B into an inner group, then group that with C.
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 0.6),
+        6.0, 6.0);
+    final a = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.ellipse(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 0.6),
+        7.5, 6.0);
+    final b = c.singleSelectedId!;
+    c.setSelection(<int>[a, b]);
+    c.groupSelection();
+    final inner = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.polygon(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.0,
+            unit: const [Offset2D(0.5, 1), Offset2D(1, 0.5), Offset2D(0.5, 0), Offset2D(0, 0.5)]),
+        6.75, 4.0);
+    final cc = c.singleSelectedId!;
+    c.setSelection(<int>[inner, cc]);
+    c.groupSelection();
+
+    final before = c.document!;
+    final after = _parser.parse(c.exportToBytes());
+    final diffs = _diffPage(before.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== DATA/LINK/GROUP DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'data/link/group drift:\n${diffs.join('\n')}');
+  });
+
+  test('an editing session (page bg/size, resize, opacity, duplicate, z-order) '
+      'round-trips', () {
+    final c = EditorController()..newDocument(widthInches: 8.5, heightInches: 11);
+    addTearDown(c.dispose);
+
+    // Page-level edits: background colour + switch to landscape.
+    c.setBackgroundColor(const VsdxColor(0xFFE8F5E9));
+    c.setPageSize(11, 8.5);
+
+    // Add a shape, resize it, and make it translucent.
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.8),
+        3, 5);
+    final id1 = c.singleSelectedId!;
+    c.setFillColor(const VsdxColor(0xFF1E88E5));
+    c.setLineColor(const VsdxColor(0xFF0D47A1));
+    c.resizeShape(id1, pinX: 4, pinY: 6, width: 2.5, height: 1.5);
+    c
+      ..setFillOpacity(0.35)
+      ..setLineOpacity(0.70);
+
+    // Duplicate it, then add another shape and send it behind everything.
+    c.selectOnly(id1);
+    c.duplicateSelection();
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.ellipse(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.0),
+        7, 4);
+    c.sendSelectionToBack();
+
+    final before = c.document!;
+    final after = _parser.parse(c.exportToBytes());
+    expect(after.pages.first.shapes.length, before.pages.first.shapes.length,
+        reason: 'shape count / z-order changed');
+    // Shape order (z-order) must be preserved id-for-id.
+    expect(after.pages.first.shapes.map((s) => s.id).toList(),
+        before.pages.first.shapes.map((s) => s.id).toList(),
+        reason: 'z-order drift');
+    final diffs = _diffPage(before.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== EDIT SESSION DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'edit-session drift:\n${diffs.join('\n')}');
+  });
+
+  test('hatch fill patterns, dash-dot lines, and rotate+flip combos round-trip',
+      () {
+    final blank = _writer.emptyDocument(widthInches: 11, heightInches: 8.5);
+    final base = _parser.parse(blank);
+    var id = 1;
+    final shapes = <VsdxShape>[];
+
+    // Hatch fills (pattern > 1) carry both a foreground and background colour.
+    for (final pat in const <int>[2, 10, 25, 40]) {
+      shapes.add(VsdxShapeFactory.rectangle(
+        id: id, pinX: 1.4 + shapes.length * 1.8, pinY: 6.5,
+        width: 1.4, height: 1.0,
+        fill: VsdxFill(
+          foreground: const VsdxColor(0xFF3949AB),
+          background: const VsdxColor(0xFFFFFDE7),
+          pattern: pat,
+        ),
+        line: _line(0xFF1A237E),
+      ));
+      id++;
+    }
+
+    // Dash / dot / dash-dot line patterns.
+    for (final pat in const <int>[2, 3, 4]) {
+      final y = 4.5 - (id - 5) * 0.5;
+      shapes.add(VsdxShapeFactory.line(
+        id: id++, ax: 1.2, ay: y, bx: 5.2, by: y,
+        line: VsdxLine(color: const VsdxColor(0xFF00695C), weightInches: 0.03, pattern: pat, endArrow: 4),
+      ));
+    }
+
+    // A polygon that is simultaneously rotated and flipped.
+    shapes.add(VsdxShapeFactory.polygon(
+      id: id++, pinX: 8.5, pinY: 4.5, width: 1.6, height: 1.2,
+      unit: const [Offset2D(0, 0), Offset2D(1, 0), Offset2D(0.5, 1)],
+      fill: _fill(0xFFFF7043), line: _line(0xFFBF360C),
+    ).copyWith(angleRad: 40 * 3.1415926535 / 180, flipX: true));
+
+    final edited = base.replacePage(
+        0, VsdxPage(id: 0, name: 'Styles', widthInches: 11, heightInches: 8.5, shapes: shapes));
+    final after = _parser.parse(_writer.write(originalBytes: blank, edited: edited));
+    final diffs = _diffPage(edited.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== STYLE EDGE DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 'style-edge drift:\n${diffs.join('\n')}');
+  });
+
+  test('re-editing a reopened document round-trips (incremental patch path)',
+      () async {
+    // Draw + export.
+    final c = EditorController()..newDocument(widthInches: 11, heightInches: 8.5);
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.9),
+        3, 6);
+    final id1 = c.singleSelectedId!;
+    c
+      ..setFillColor(const VsdxColor(0xFFE53935))
+      ..setLineColor(const VsdxColor(0xFF7B1FA2))
+      ..setShapeText(id1, 'First');
+    final bytes1 = c.exportToBytes();
+
+    // Reopen it in a fresh editor (the app's open-file path)…
+    final c2 = EditorController();
+    addTearDown(c2.dispose);
+    await c2.openBytes(bytes1);
+
+    // …then keep editing: recolour + move the existing shape (writer patches an
+    // existing sheet) and add a brand-new one (writer emits a new sheet).
+    c2.selectOnly(id1);
+    c2
+      ..setFillColor(const VsdxColor(0xFF1E88E5))
+      ..moveSelectionBy(1.0, -0.5);
+    c2.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.ellipse(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.0),
+        7, 4);
+    c2.setShapeText(c2.singleSelectedId!, 'Second');
+
+    final before = c2.document!;
+    final after = _parser.parse(c2.exportToBytes());
+    final diffs = _diffPage(before.pages.first, after.pages.first);
+    if (diffs.isNotEmpty) {
+      // ignore: avoid_print
+      print('=== RE-EDIT DIFFS (${diffs.length}) ===\n${diffs.join('\n')}');
+    }
+    expect(diffs, isEmpty, reason: 're-edit drift:\n${diffs.join('\n')}');
   });
 }
