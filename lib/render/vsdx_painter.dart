@@ -256,8 +256,8 @@ class VsdxPainter extends CustomPainter {
 
     final w = shape.width;
     final h = shape.height;
-    final localPinX = w / 2;
-    final localPinY = h / 2;
+    final localPinX = shape.effectiveLocPinX;
+    final localPinY = shape.effectiveLocPinY;
 
     canvas.save();
     canvas.translate(shape.pinX, shape.pinY);
@@ -386,7 +386,7 @@ class VsdxPainter extends CustomPainter {
     }
     if (shape.flipX) x = -x;
     if (shape.flipY) y = -y;
-    return Offset(x + shape.width / 2, y + shape.height / 2);
+    return Offset(x + shape.effectiveLocPinX, y + shape.effectiveLocPinY);
   }
 
   void _drawFill(Canvas canvas, VsdxShape shape, Path path) {

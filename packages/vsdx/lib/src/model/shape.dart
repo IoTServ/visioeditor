@@ -29,6 +29,8 @@ class VsdxShape {
     required this.pinY,
     required this.width,
     required this.height,
+    this.locPinXInches,
+    this.locPinYInches,
     this.angleRad = 0,
     this.text,
     this.richText = VsdxRichText.empty,
@@ -74,6 +76,21 @@ class VsdxShape {
   final double pinY;
   final double width;
   final double height;
+
+  /// `LocPinX` / `LocPinY` — the point *inside* the shape (measured from its
+  /// lower-left in local inches) that coincides with [pinX]/[pinY] and is the
+  /// rotation centre. `null` ⇒ the shape's centre (`width/2`, `height/2`), the
+  /// Visio default. Connectors (and some stencils) pin off-centre — and often
+  /// carry signed width/height — so honouring this is required to place their
+  /// geometry correctly, matching libvisio. See [effectiveLocPinX].
+  final double? locPinXInches;
+  final double? locPinYInches;
+
+  /// The effective local pin X, defaulting to the shape centre when unset.
+  double get effectiveLocPinX => locPinXInches ?? width / 2;
+
+  /// The effective local pin Y, defaulting to the shape centre when unset.
+  double get effectiveLocPinY => locPinYInches ?? height / 2;
 
   /// Rotation about pin, **radians** (CCW per Visio convention, flipped at
   /// render time when mapping to Flutter's coordinate system).
@@ -227,6 +244,8 @@ class VsdxShape {
     double? pinY,
     double? width,
     double? height,
+    double? locPinXInches,
+    double? locPinYInches,
     double? angleRad,
     String? text,
     VsdxRichText? richText,
@@ -266,6 +285,8 @@ class VsdxShape {
       pinY: pinY ?? this.pinY,
       width: width ?? this.width,
       height: height ?? this.height,
+      locPinXInches: locPinXInches ?? this.locPinXInches,
+      locPinYInches: locPinYInches ?? this.locPinYInches,
       angleRad: angleRad ?? this.angleRad,
       text: text ?? this.text,
       richText: richText ?? this.richText,

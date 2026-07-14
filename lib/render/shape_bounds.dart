@@ -47,7 +47,7 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
       .translate(s.pinX, s.pinY)
       .rotate(s.angleRad)
       .scale(s.flipX ? -1 : 1, s.flipY ? -1 : 1)
-      .translate(-s.width / 2, -s.height / 2);
+      .translate(-s.effectiveLocPinX, -s.effectiveLocPinY);
   // Project the unit shape rect [0..w] × [0..h] (plus a small pad) through
   // `local` and track the AABB.
   final pad = math.max(s.width, s.height) * 0.05;

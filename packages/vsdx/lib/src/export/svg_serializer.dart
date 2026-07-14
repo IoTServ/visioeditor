@@ -147,7 +147,8 @@ class VsdxToSvgSerializer {
       );
     }
     transforms.add(
-      'translate(${_n(-shape.width / 2)} ${_n(-shape.height / 2)})',
+      'translate(${_n(-shape.effectiveLocPinX)} '
+      '${_n(-shape.effectiveLocPinY)})',
     );
     buf.writeln('$indent<g transform="${transforms.join(' ')}">');
 

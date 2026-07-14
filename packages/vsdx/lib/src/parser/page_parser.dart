@@ -152,6 +152,15 @@ class PageParser {
         readLengthInches(shapeEl, 'Height', inheritFrom: proto?.height) ??
             proto?.height ??
             1.0;
+    // LocPinX/LocPinY — the in-shape point that sits on the pin (and the
+    // rotation centre). Usually the centre for 2-D shapes, but connectors and
+    // some stencils pin off-centre; keep it so geometry maps to the right spot.
+    final locPinX =
+        readLengthInches(shapeEl, 'LocPinX', inheritFrom: proto?.locPinXInches) ??
+            proto?.locPinXInches;
+    final locPinY =
+        readLengthInches(shapeEl, 'LocPinY', inheritFrom: proto?.locPinYInches) ??
+            proto?.locPinYInches;
     final angleRad =
         readAngleRadians(shapeEl, 'Angle', inheritFrom: proto?.angleRad) ??
             proto?.angleRad ??
@@ -270,6 +279,8 @@ class PageParser {
       pinY: pinY,
       width: width,
       height: height,
+      locPinXInches: locPinX,
+      locPinYInches: locPinY,
       angleRad: angleRad,
       text: plain,
       richText: effectiveRich,
