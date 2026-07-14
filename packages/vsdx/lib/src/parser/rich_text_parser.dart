@@ -185,9 +185,10 @@ class RichTextParser {
     XmlElement shape, {
     VsdxCharStyle defaultChar = VsdxCharStyle.defaults,
     VsdxParaStyle defaultPara = VsdxParaStyle.defaults,
+    VsdxTextBlock defaultBlock = VsdxTextBlock.defaults,
   }) {
     final textEl = _firstChildLocal(shape, 'Text');
-    final block = _readTextBlock(shape);
+    final block = _readTextBlock(shape, defaultBlock);
     if (textEl == null) {
       return VsdxRichText(runs: const [], textBlock: block);
     }
@@ -312,29 +313,38 @@ class RichTextParser {
     );
   }
 
-  VsdxTextBlock _readTextBlock(XmlElement shape) {
+  /// Read the shape's text-block transform. Each cell falls back to [inherit]
+  /// (the Master prototype's text block) when the instance omits it, so a
+  /// shape that inherits its text orientation — most importantly `TxtAngle`
+  /// (vertical / rotated labels) — from its Master renders correctly instead of
+  /// defaulting to horizontal. Matches Visio / libvisio cell inheritance.
+  VsdxTextBlock _readTextBlock(XmlElement shape, VsdxTextBlock inherit) {
     final vAlignInt = _cellInt(shape, 'VerticalAlign');
     return VsdxTextBlock(
-      pinXInches: readLengthInches(shape, 'TxtPinX'),
-      pinYInches: readLengthInches(shape, 'TxtPinY'),
-      locPinXInches: readLengthInches(shape, 'TxtLocPinX'),
-      locPinYInches: readLengthInches(shape, 'TxtLocPinY'),
-      widthInches: readLengthInches(shape, 'TxtWidth'),
-      heightInches: readLengthInches(shape, 'TxtHeight'),
-      angleRad: readAngleRadians(shape, 'TxtAngle') ?? 0,
-      verticalAlign: switch (vAlignInt) {
-        0 => VsdxVertAlign.top,
-        2 => VsdxVertAlign.bottom,
-        _ => VsdxVertAlign.middle,
-      },
+      pinXInches: readLengthInches(shape, 'TxtPinX') ?? inherit.pinXInches,
+      pinYInches: readLengthInches(shape, 'TxtPinY') ?? inherit.pinYInches,
+      locPinXInches:
+          readLengthInches(shape, 'TxtLocPinX') ?? inherit.locPinXInches,
+      locPinYInches:
+          readLengthInches(shape, 'TxtLocPinY') ?? inherit.locPinYInches,
+      widthInches: readLengthInches(shape, 'TxtWidth') ?? inherit.widthInches,
+      heightInches: readLengthInches(shape, 'TxtHeight') ?? inherit.heightInches,
+      angleRad: readAngleRadians(shape, 'TxtAngle') ?? inherit.angleRad,
+      verticalAlign: vAlignInt == null
+          ? inherit.verticalAlign
+          : switch (vAlignInt) {
+              0 => VsdxVertAlign.top,
+              2 => VsdxVertAlign.bottom,
+              _ => VsdxVertAlign.middle,
+            },
       marginLeftInches:
-          readLengthInches(shape, 'LeftMargin') ?? 0.04,
+          readLengthInches(shape, 'LeftMargin') ?? inherit.marginLeftInches,
       marginRightInches:
-          readLengthInches(shape, 'RightMargin') ?? 0.04,
+          readLengthInches(shape, 'RightMargin') ?? inherit.marginRightInches,
       marginTopInches:
-          readLengthInches(shape, 'TopMargin') ?? 0.04,
+          readLengthInches(shape, 'TopMargin') ?? inherit.marginTopInches,
       marginBottomInches:
-          readLengthInches(shape, 'BottomMargin') ?? 0.04,
+          readLengthInches(shape, 'BottomMargin') ?? inherit.marginBottomInches,
     );
   }
 

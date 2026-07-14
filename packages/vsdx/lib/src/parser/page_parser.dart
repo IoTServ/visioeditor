@@ -227,6 +227,10 @@ class PageParser {
       defaultPara: proto?.richText.runs.isNotEmpty == true
           ? proto!.richText.runs.first.paraStyle
           : VsdxParaStyle.defaults,
+      // Inherit the Master's text-block transform (TxtAngle, TxtPin/LocPin,
+      // vertical align, …) so shapes that leave their text orientation on the
+      // Master aren't forced back to horizontal.
+      defaultBlock: proto?.richText.textBlock ?? VsdxTextBlock.defaults,
     );
     final effectiveRich = richText.runs.isEmpty &&
             proto != null &&
