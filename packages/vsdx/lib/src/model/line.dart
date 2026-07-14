@@ -17,8 +17,11 @@ class VsdxLine {
     this.themeColorIndex,
     this.beginArrow = 0,
     this.endArrow = 0,
-    this.beginArrowSizeInches = 0.05,
-    this.endArrowSizeInches = 0.05,
+    // Visio stores arrow size as one of 7 discrete buckets; 0.0625" is the
+    // smallest (bucket 0). Defaulting to a real bucket value keeps the size
+    // stable across a save→reopen round-trip (0.05" snapped up to 0.0625").
+    this.beginArrowSizeInches = 0.0625,
+    this.endArrowSizeInches = 0.0625,
     this.roundingInches = 0.0,
     this.softEdgesInches = 0.0,
     this.compoundType = 0,
