@@ -962,23 +962,30 @@ class VsdxPainter extends CustomPainter {
       tpy = local.dy;
     }
 
+    // Text is laid out in PIXEL space, not the canvas's inches-scale. Flutter's
+    // TextPainter is not transform-aware: shaping a 10pt font as ~0.14 logical
+    // px makes the engine quantise glyph advances to ~0, so long labels wrap at
+    // the wrong place (or pile up). So we undo the inches-scale for the block
+    // and lay out at real pixel sizes (fontSize·ppi, maxWidth·ppi), exactly as
+    // the visiovsdxviewer reference does. Geometry is identical; wrapping isn't.
+    final s = pxPerInch;
     canvas.save();
     canvas.translate(tpx, tpy);
     if (block.angleRad != 0) canvas.rotate(block.angleRad);
-    canvas.scale(1, -1);
+    canvas.scale(1 / s, -1 / s); // inches → pixels, and flip Y upright
 
     final spans = <TextSpan>[];
     if (hasRich) {
       for (final run in rich.runs) {
-        spans.add(_runToSpan(run));
+        spans.add(_runToSpan(run, s));
       }
     } else {
-      final fs = isEdgeLabel ? 0.14 : math.min(th, tw) * 0.18;
+      final fsPx = (isEdgeLabel ? 0.14 : math.min(th, tw) * 0.18) * s;
       spans.add(TextSpan(
         text: label,
         style: TextStyle(
           color: Colors.black87,
-          fontSize: fs,
+          fontSize: fsPx,
           fontWeight: FontWeight.w500,
         ),
       ));
@@ -988,40 +995,44 @@ class VsdxPainter extends CustomPainter {
         ? _flutterAlign(rich.runs.first.paraStyle.horizontalAlign)
         : TextAlign.center;
 
-    // Lay out within the block's content area (inside the margins). The
-    // canvas origin is already the text-block centre, so dx/dy are relative
-    // to that anchor. Edge labels aren't clipped to a box, so they lay out at
-    // their natural width and centre on the route midpoint.
-    final innerWidth = isEdgeLabel
-        ? double.infinity
-        : math.max(0.0, tw - block.marginLeftInches - block.marginRightInches);
+    // Lay out within the block's content area (inside the margins), in pixels.
+    // The canvas origin is the text-block centre, so dx/dy are relative to it.
+    // Edge labels aren't clipped to a box, so they lay out at natural width.
+    final twPx = tw * s;
+    final thPx = th * s;
+    final mlPx = block.marginLeftInches * s;
+    final mrPx = block.marginRightInches * s;
+    final mtPx = block.marginTopInches * s;
+    final mbPx = block.marginBottomInches * s;
+    final innerWidthPx =
+        isEdgeLabel ? double.infinity : math.max(0.0, twPx - mlPx - mrPx);
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: innerWidth);
+      maxLines: null,
+    )..layout(maxWidth: innerWidthPx);
 
     final dx = isEdgeLabel
         ? -tp.width / 2
         : switch (align) {
             TextAlign.center => -tp.width / 2,
-            TextAlign.right => tw / 2 - tp.width - block.marginRightInches,
+            TextAlign.right => twPx / 2 - tp.width - mrPx,
             // left / justify / start / end
-            _ => -tw / 2 + block.marginLeftInches,
+            _ => -twPx / 2 + mlPx,
           };
     final dy = isEdgeLabel
         ? -tp.height / 2
         : switch (block.verticalAlign) {
-            VsdxVertAlign.top => -th / 2 + block.marginTopInches,
-            VsdxVertAlign.bottom =>
-              th / 2 - tp.height - block.marginBottomInches,
+            VsdxVertAlign.top => -thPx / 2 + mtPx,
+            VsdxVertAlign.bottom => thPx / 2 - tp.height - mbPx,
             VsdxVertAlign.middle => -tp.height / 2,
           };
 
     // Edge labels sit on top of the connector line, so back them with the
     // page colour for legibility (drawio does the same).
     if (isEdgeLabel && tp.width > 0) {
-      const pad = 0.03;
+      final pad = 0.03 * s;
       final halo = Rect.fromLTWH(
         dx - pad,
         dy - pad,
@@ -1029,7 +1040,7 @@ class VsdxPainter extends CustomPainter {
         tp.height + pad * 2,
       );
       canvas.drawRRect(
-        RRect.fromRectAndRadius(halo, const Radius.circular(0.02)),
+        RRect.fromRectAndRadius(halo, Radius.circular(0.02 * s)),
         Paint()..color = _edgeLabelBackground(),
       );
     }
@@ -1044,13 +1055,17 @@ class VsdxPainter extends CustomPainter {
     return bg == null ? const Color(0xFFFFFFFF) : Color(bg.value);
   }
 
-  TextSpan _runToSpan(VsdxTextRun run) {
+  /// Build a [TextSpan] for [run]. [scale] converts the run's inch-based sizes
+  /// to the pixel units the caller lays the text out in (see [_paintRichText] —
+  /// text must be shaped at real pixel sizes, not the canvas's inches-scale, or
+  /// glyph advances quantise to zero and wrapping breaks).
+  TextSpan _runToSpan(VsdxTextRun run, double scale) {
     final base = _colourOrTheme(run.charStyle.color, run.charStyle.themeColorIndex) ??
         Colors.black87;
     final alpha = (1 - run.charStyle.transparency).clamp(0.0, 1.0);
     final c = base.withValues(alpha: base.a * alpha);
     final pos = run.charStyle.position;
-    final baseSize = math.max(run.charStyle.fontSizeInches, 0.04);
+    final baseSize = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
     final scaledSize =
         pos == VsdxTextPosition.normal ? baseSize : baseSize * 0.65;
     final features = <ui.FontFeature>[
@@ -1077,7 +1092,7 @@ class VsdxPainter extends CustomPainter {
         ]),
         letterSpacing: run.charStyle.letterSpacingInches == 0
             ? null
-            : run.charStyle.letterSpacingInches,
+            : run.charStyle.letterSpacingInches * scale,
         height: run.paraStyle.lineSpacing,
         fontFeatures: features.isEmpty ? null : features,
       ),
