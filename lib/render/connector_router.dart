@@ -8,10 +8,10 @@
 /// route between the two anchor points based on:
 ///
 ///   1. The connector's `BeginX/BeginY` and `EndX/EndY` cells (page coords).
-///   2. The page-level `<Connect>` records — when both endpoints are glued
-///      to a target shape, we replace the raw cell with the target shape's
-///      pin, so the route always lands on the centre regardless of where
-///      the connector's bounding box happens to sit.
+///   2. The page-level `<Connect>` records — when an endpoint is glued to a
+///      target shape we attach it on that shape's **perimeter** (aimed at the
+///      opposite end), matching Visio / libvisio. (An earlier version snapped
+///      to the shape *centre*, which pushed arrow heads inside the target.)
 ///
 /// Output is a [Path] in **page-inch coordinates** (Y up), ready to feed
 /// the [VsdxPainter] under its existing canvas transform.
@@ -78,23 +78,40 @@ class ConnectorRouter {
     var begin = Offset(bx, by);
     var end = Offset(ex, ey);
 
-    // Snap to the centre of any glued target shape.
+    // Attach glued endpoints on the target's perimeter (aimed at the opposite
+    // end), so a connector stops at the shape's edge instead of driving into
+    // its centre.
     if (page != null) {
-      final glue = page.connectIndex.forConnector(connector.id);
-      for (final c in glue) {
+      final rawBegin = Offset(bx, by);
+      final rawEnd = Offset(ex, ey);
+      for (final c in page.connectIndex.forConnector(connector.id)) {
         final target = page.findShapeById(c.toSheetId);
         if (target == null) continue;
-        final centre = Offset(target.pinX, target.pinY);
         final lc = c.fromCell.toLowerCase();
         final isBegin = c.fromPart == 9 || lc.contains('beginx');
         final isEnd = c.fromPart == 12 || lc.contains('endx');
-        if (isBegin) begin = centre;
-        if (isEnd) end = centre;
+        if (isBegin) begin = _perimeterAttach(target, rawEnd);
+        if (isEnd) end = _perimeterAttach(target, rawBegin);
       }
     }
 
     final waypoints = _orthogonalRoute(begin, end);
     return RoutedConnector(begin: begin, end: end, waypoints: waypoints);
+  }
+
+  /// The point on [target]'s axis-aligned box boundary along the ray from its
+  /// centre toward [aim] — i.e. where a line coming from [aim] first meets the
+  /// shape. Falls back to the centre for a degenerate box / coincident aim.
+  static Offset _perimeterAttach(VsdxShape target, Offset aim) {
+    final cx = target.pinX, cy = target.pinY;
+    final hw = target.width / 2, hh = target.height / 2;
+    if (hw <= 0 || hh <= 0) return Offset(cx, cy);
+    final dx = aim.dx - cx, dy = aim.dy - cy;
+    if (dx == 0 && dy == 0) return Offset(cx, cy);
+    final tx = dx != 0 ? hw / dx.abs() : double.infinity;
+    final ty = dy != 0 ? hh / dy.abs() : double.infinity;
+    final t = tx < ty ? tx : ty; // first edge the ray crosses
+    return Offset(cx + dx * t, cy + dy * t);
   }
 
   /// Two-corner orthogonal path. We pick the longer axis as the

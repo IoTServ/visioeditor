@@ -594,8 +594,18 @@ class VsdxPainter extends CustomPainter {
   }
 
   _LineEndpoints? _lineEndPoints(VsdxShape shape) {
-    // Prefer the routed connector — gives the correct tangent at the tip
-    // even when the route bends.
+    // The arrow tip must sit exactly where the *drawn* line ends. When the
+    // connector carries a Geometry section (the common case — Visio bakes the
+    // route already clipped to the target shape's perimeter, and so does our
+    // editor via rerouteConnectors) use those endpoints. Using the auto-router
+    // here instead snapped the tip to the target shape's centre, so arrow heads
+    // ended up *inside* the rectangles / diamonds they point at.
+    if (shape.hasGeometry) {
+      final geo = _geometryEndpoints(shape);
+      if (geo != null) return geo;
+    }
+    // Geometry-less connector: fall back to the auto-router (which now attaches
+    // on the target's perimeter, see ConnectorRouter).
     if (shape.is1D && shape.beginX != null && shape.endX != null) {
       final routed = router.route(shape, page: page);
       if (routed != null) {
@@ -603,17 +613,13 @@ class VsdxPainter extends CustomPainter {
             .map((p) => _pageToLocal(shape, p))
             .toList(growable: false);
         if (pts.length >= 2) {
-          final tipBegin = pts.first;
-          final tipEnd = pts.last;
-          // Tangent direction at each tip — based on the *adjacent* segment
-          // so the arrow head stays parallel to the last leg of the path.
-          final beginNeighbour = pts[1];
-          final endNeighbour = pts[pts.length - 2];
           return _LineEndpoints(
-            tipBegin,
-            tipEnd,
-            beginTangent: beginNeighbour,
-            endTangent: endNeighbour,
+            pts.first,
+            pts.last,
+            // Tangent direction at each tip — based on the *adjacent* segment
+            // so the arrow head stays parallel to the last leg of the path.
+            beginTangent: pts[1],
+            endTangent: pts[pts.length - 2],
           );
         }
       }
