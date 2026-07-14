@@ -55,9 +55,13 @@ final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   7: _stealth,
   8: _stealthOpen,
   9: _filledArrowFletched,
-  10: _diamond,
+  // 10 = filled circle ("ball") and 12 = filled concave/stealth arrow, matching
+  // how Visio (and the Edraw exports we import) render these two ids — see the
+  // 人才招聘冰山模型 / 数据治理 fixtures. Previously mis-mapped to a diamond and a
+  // half-triangle, so balls drew as arrows and stealth arrows drew half-clipped.
+  10: _filledCircle,
   11: _openDiamond,
-  12: _filledHalfArrow,
+  12: _stealth,
   13: _circleDot,
   14: _openCircle,
   15: _square,
@@ -185,13 +189,10 @@ ArrowDescriptor _filledArrowFletched() {
   return ArrowDescriptor(path: p, filled: true);
 }
 
-ArrowDescriptor _diamond() {
+ArrowDescriptor _filledCircle() {
+  // A "ball" terminator sitting just behind the line end (Visio arrow 10).
   final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-0.5, -0.35)
-    ..lineTo(-1, 0)
-    ..lineTo(-0.5, 0.35)
-    ..close();
+    ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.5));
   return ArrowDescriptor(path: p, filled: true);
 }
 
@@ -203,16 +204,6 @@ ArrowDescriptor _openDiamond() {
     ..lineTo(-0.5, 0.35)
     ..close();
   return ArrowDescriptor(path: p, filled: false);
-}
-
-ArrowDescriptor _filledHalfArrow() {
-  // Half (asymmetric) triangle — used for flow diagrams.
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-1, -0.5)
-    ..lineTo(-1, 0)
-    ..close();
-  return ArrowDescriptor(path: p, filled: true);
 }
 
 ArrowDescriptor _circleDot() {

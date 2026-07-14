@@ -2015,9 +2015,9 @@ class _PropertyPanel extends StatelessWidget {
     1: 'Open',
     3: 'Thin',
     7: 'Stealth',
-    10: 'Diamond',
+    10: 'Circle',
     11: 'Open diamond',
-    14: 'Circle',
+    14: 'Circle (open)',
   };
 
   Widget _arrowPickers(EditorController controller) {

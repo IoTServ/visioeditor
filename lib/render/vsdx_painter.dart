@@ -315,6 +315,13 @@ class VsdxPainter extends CustomPainter {
       if (!geom.noLine && shape.line.hasLine) {
         final strokePaint = _resolveStrokePaint(shape);
         if (strokePaint != null) {
+          // A line gradient (LineGradientEnabled) paints the stroke with a
+          // shader; without this the colour resolves to the black fallback.
+          if (shape.line.hasGradient) {
+            final shader =
+                _buildGradientShader(shape.line.gradient!, path.getBounds());
+            if (shader != null) strokePaint.shader = shader;
+          }
           var strokeSrc = path;
           if (shape.is1D && drawLineJumps) {
             final jumped = _lineJumpsPath(shape, geom);
@@ -561,9 +568,14 @@ class VsdxPainter extends CustomPainter {
     if (!shape.line.hasBeginArrow && !shape.line.hasEndArrow) return;
     final endPoints = _lineEndPoints(shape);
     if (endPoints == null) return;
-    final paint = _resolveStrokePaint(shape) ?? Paint()
-      ..style = PaintingStyle.stroke
-      ..color = fallbackStroke;
+    // NB: the fallback Paint is parenthesised so the cascade only applies to
+    // it — writing `_resolveStrokePaint(shape) ?? Paint()..color = …` binds the
+    // cascade to the whole `??` result and clobbers the real line colour with
+    // the fallback (that bug painted every arrow head black).
+    final paint = _resolveStrokePaint(shape) ??
+        (Paint()
+          ..style = PaintingStyle.stroke
+          ..color = fallbackStroke);
 
     if (shape.line.hasBeginArrow) {
       _drawArrowAt(
