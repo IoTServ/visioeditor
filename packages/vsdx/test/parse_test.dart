@@ -3,9 +3,67 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:xml/xml.dart';
 
 Uint8List _fixture(String name) =>
     File('test/fixtures/$name').readAsBytesSync();
+
+List<String> _fixtureNames() => Directory('test/fixtures')
+    .listSync()
+    .whereType<File>()
+    .map((f) => f.uri.pathSegments.last)
+    .where((n) => n.endsWith('.vsdx'))
+    .toList()
+  ..sort();
+
+/// Total number of `<Row>`s under a shape's *own* `<Section N="Geometry">`
+/// blocks, summed over every page part. Master geometry lives in a different
+/// part and is intentionally excluded.
+int _rawOwnGeometryRows(VsdxPackage pkg) {
+  var total = 0;
+  for (final part in pkg.allPartNames) {
+    if (!part.endsWith('.xml') ||
+        !part.contains('pages/page') ||
+        part.endsWith('pages.xml')) {
+      continue;
+    }
+    final xml = pkg.readPartXml(part);
+    if (xml == null) continue;
+    for (final shape in xml.descendants
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'Shape')) {
+      for (final sec in shape.childElements.where((e) =>
+          e.name.local == 'Section' && e.getAttribute('N') == 'Geometry')) {
+        total += sec.childElements.where((e) => e.name.local == 'Row').length;
+      }
+    }
+  }
+  return total;
+}
+
+/// Total number of parsed [VsdxPathCommand]s across every shape (recursing
+/// into groups).
+int _parsedGeometryCommands(VsdxDocument doc) {
+  var total = 0;
+  void walk(VsdxShape s) {
+    for (final g in s.geometries) {
+      total += g.commands.length;
+    }
+    for (final c in s.children) {
+      walk(c);
+    }
+  }
+
+  for (final p in doc.pages) {
+    for (final s in p.shapes) {
+      walk(s);
+    }
+  }
+  return total;
+}
+
+bool _hasMasters(VsdxPackage pkg) =>
+    pkg.allPartNames.any((p) => p.contains('masters/'));
 
 void main() {
   const parser = DocumentParser();
@@ -40,6 +98,61 @@ void main() {
     final doc = parser.parse(_fixture('workflow.vsdx'));
     expect(doc.pages, isNotEmpty);
     expect(doc.pages.first.shapes, isNotEmpty);
+  });
+
+  // --- libvisio parity: every fixture parses, and no geometry is dropped ----
+  //
+  // Test plan: for each bundled fixture we (a) smoke-parse it and assert the
+  // page has a positive extent, and (b) assert that every geometry `<Row>` the
+  // shape owns produced a parsed path command — i.e. the parser recognises the
+  // same geometry vocabulary libvisio does. (Fixtures whose shapes inherit
+  // geometry from masters live in a separate part, so the strict row==command
+  // count only applies to the master-free files.)
+  group('fixture smoke + geometry coverage', () {
+    final names = _fixtureNames();
+
+    test('there are fixtures to check', () => expect(names, isNotEmpty));
+
+    for (final name in names) {
+      test('$name parses with a positive page extent', () {
+        final doc = parser.parse(_fixture(name));
+        expect(doc.pages, isNotEmpty, reason: name);
+        for (final p in doc.pages) {
+          expect(p.widthInches, greaterThan(0), reason: '$name: ${p.name} w');
+          expect(p.heightInches, greaterThan(0), reason: '$name: ${p.name} h');
+        }
+      });
+
+      test('$name drops no geometry rows (parsed commands == own rows)', () {
+        final bytes = _fixture(name);
+        final pkg = VsdxPackage.open(bytes);
+        if (_hasMasters(pkg)) return; // inherited geometry, counts diverge
+        final rawRows = _rawOwnGeometryRows(pkg);
+        final parsed = _parsedGeometryCommands(parser.parse(bytes));
+        expect(parsed, rawRows,
+            reason: '$name: parsed $parsed path commands for $rawRows '
+                'geometry <Row>s — an unhandled row type was dropped');
+      });
+    }
+  });
+
+  test('workflow.vsdx keeps its RelCubBezTo (cubic Bézier) segments', () {
+    final doc = parser.parse(_fixture('workflow.vsdx'));
+    var rel = 0;
+    void walk(VsdxShape s) {
+      for (final g in s.geometries) {
+        rel += g.commands.whereType<RelCubBezTo>().length;
+      }
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final s in doc.pages.first.shapes) {
+      walk(s);
+    }
+    // The rounded start/end shapes contribute eight RelCubBezTo rows in total.
+    expect(rel, 8);
   });
 
   // Regression: a cell's `V` is always in Visio's internal units (inches for

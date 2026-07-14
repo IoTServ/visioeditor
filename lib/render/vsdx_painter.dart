@@ -666,6 +666,18 @@ class VsdxPainter extends CustomPainter {
               penDown = true;
             }
             addVertex(Offset(x, y));
+          case CubBezTo(:final x, :final y):
+            if (!penDown) {
+              addVertex(cursor);
+              penDown = true;
+            }
+            addVertex(Offset(x, y));
+          case RelCubBezTo(:final fx, :final fy):
+            if (!penDown) {
+              addVertex(cursor);
+              penDown = true;
+            }
+            addVertex(Offset(fx * w, fy * h));
           case EllipticalArcTo(:final x, :final y):
             if (!penDown) {
               addVertex(cursor);

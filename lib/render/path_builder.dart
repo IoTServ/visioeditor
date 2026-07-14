@@ -50,6 +50,39 @@ Path buildPath(
         path.lineTo(x, y);
         cursorX = x;
         cursorY = y;
+      case CubBezTo(
+          :final x,
+          :final y,
+          :final x1,
+          :final y1,
+          :final x2,
+          :final y2,
+        ):
+        if (!hasStart) start(0, 0);
+        path.cubicTo(x1, y1, x2, y2, x, y);
+        cursorX = x;
+        cursorY = y;
+      case RelCubBezTo(
+          :final fx,
+          :final fy,
+          :final fx1,
+          :final fy1,
+          :final fx2,
+          :final fy2,
+        ):
+        if (!hasStart) start(0, 0);
+        final ex = fx * widthInches;
+        final ey = fy * heightInches;
+        path.cubicTo(
+          fx1 * widthInches,
+          fy1 * heightInches,
+          fx2 * widthInches,
+          fy2 * heightInches,
+          ex,
+          ey,
+        );
+        cursorX = ex;
+        cursorY = ey;
       case ArcTo(:final x, :final y, :final bow):
         if (!hasStart) start(0, 0);
         _arcByBow(path, cursorX, cursorY, x, y, bow);

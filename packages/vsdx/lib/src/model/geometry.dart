@@ -56,6 +56,54 @@ class RelLineTo extends VsdxPathCommand {
   String toString() => 'RelLineTo($fx, $fy)';
 }
 
+/// `CubBezTo` — cubic Bézier curve to (`x`,`y`) with control points
+/// (`x1`,`y1`) and (`x2`,`y2`), all in shape-local inches. MS-VSDX
+/// §"CubBezTo Row" (`A`/`B` = first control point, `C`/`D` = second,
+/// `X`/`Y` = end point).
+@immutable
+class CubBezTo extends VsdxPathCommand {
+  const CubBezTo({
+    required this.x,
+    required this.y,
+    required this.x1,
+    required this.y1,
+    required this.x2,
+    required this.y2,
+  });
+  final double x;
+  final double y;
+  final double x1;
+  final double y1;
+  final double x2;
+  final double y2;
+  @override
+  String toString() => 'CubBezTo(c1=($x1,$y1) c2=($x2,$y2) -> ($x,$y))';
+}
+
+/// `RelCubBezTo` — like [CubBezTo] but every coordinate is a fraction of the
+/// shape's width/height (X/A/C scale by width, Y/B/D by height). The
+/// fraction→inches conversion happens in the render layer, mirroring
+/// [RelMoveTo] / [RelLineTo].
+@immutable
+class RelCubBezTo extends VsdxPathCommand {
+  const RelCubBezTo({
+    required this.fx,
+    required this.fy,
+    required this.fx1,
+    required this.fy1,
+    required this.fx2,
+    required this.fy2,
+  });
+  final double fx;
+  final double fy;
+  final double fx1;
+  final double fy1;
+  final double fx2;
+  final double fy2;
+  @override
+  String toString() => 'RelCubBezTo(c1=($fx1,$fy1) c2=($fx2,$fy2) -> ($fx,$fy))';
+}
+
 /// `ArcTo` — end point + `bow` (the perpendicular offset of the arc's apex
 /// from the chord, MS-VSDX §"ArcTo Row").
 @immutable
@@ -294,6 +342,24 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
     case RelMoveTo():
       return c;
     case RelLineTo():
+      return c;
+    case CubBezTo(
+        :final x,
+        :final y,
+        :final x1,
+        :final y1,
+        :final x2,
+        :final y2,
+      ):
+      return CubBezTo(
+        x: x * sx,
+        y: y * sy,
+        x1: x1 * sx,
+        y1: y1 * sy,
+        x2: x2 * sx,
+        y2: y2 * sy,
+      );
+    case RelCubBezTo():
       return c;
     case ArcTo(:final x, :final y, :final bow):
       return ArcTo(x: x * sx, y: y * sy, bow: bow * (sx + sy) / 2);

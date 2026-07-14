@@ -95,6 +95,29 @@ class GeometryParser {
           _rawDouble(row, 'X') ?? 0,
           _rawDouble(row, 'Y') ?? 0,
         );
+      case 'CubBezTo':
+        // Absolute cubic Bézier: A/B = control 1, C/D = control 2, X/Y = end,
+        // all in shape-local inches.
+        return CubBezTo(
+          x: readLengthInches(row, 'X') ?? 0,
+          y: readLengthInches(row, 'Y') ?? 0,
+          x1: readLengthInches(row, 'A') ?? 0,
+          y1: readLengthInches(row, 'B') ?? 0,
+          x2: readLengthInches(row, 'C') ?? 0,
+          y2: readLengthInches(row, 'D') ?? 0,
+        );
+      case 'RelCubBezTo':
+        // Relative cubic Bézier: every coordinate is a fraction of the shape's
+        // width (X/A/C) or height (Y/B/D), so read the raw V without unit
+        // normalisation (like RelMoveTo / RelLineTo).
+        return RelCubBezTo(
+          fx: _rawDouble(row, 'X') ?? 0,
+          fy: _rawDouble(row, 'Y') ?? 0,
+          fx1: _rawDouble(row, 'A') ?? 0,
+          fy1: _rawDouble(row, 'B') ?? 0,
+          fx2: _rawDouble(row, 'C') ?? 0,
+          fy2: _rawDouble(row, 'D') ?? 0,
+        );
       case 'ArcTo':
       case 'RelArcTo':
         return ArcTo(

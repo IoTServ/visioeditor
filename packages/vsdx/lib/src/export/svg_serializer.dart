@@ -208,6 +208,32 @@ class VsdxToSvgSerializer {
           l(x, y);
         case RelLineTo(:final fx, :final fy):
           l(fx * w, fy * h);
+        case CubBezTo(
+            :final x,
+            :final y,
+            :final x1,
+            :final y1,
+            :final x2,
+            :final y2,
+          ):
+          if (!started) m(0, 0);
+          out.write('C ${_n(x1)} ${_n(y1)} ${_n(x2)} ${_n(y2)} '
+              '${_n(x)} ${_n(y)} ');
+          cx = x;
+          cy = y;
+        case RelCubBezTo(
+            :final fx,
+            :final fy,
+            :final fx1,
+            :final fy1,
+            :final fx2,
+            :final fy2,
+          ):
+          if (!started) m(0, 0);
+          out.write('C ${_n(fx1 * w)} ${_n(fy1 * h)} '
+              '${_n(fx2 * w)} ${_n(fy2 * h)} ${_n(fx * w)} ${_n(fy * h)} ');
+          cx = fx * w;
+          cy = fy * h;
         case ArcTo(:final x, :final y, :final bow):
           if (bow == 0) {
             l(x, y);
