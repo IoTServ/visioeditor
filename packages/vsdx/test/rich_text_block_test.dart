@@ -46,4 +46,41 @@ void main() {
     expect(rich.textBlock.verticalAlign, VsdxVertAlign.top);
     expect(rich.textBlock.marginLeftInches, closeTo(0.2, 1e-9));
   });
+
+  group('SpLine line spacing', () {
+    XmlElement paraShape(String spLineV) => shape(
+          '<Section N="Paragraph"><Row IX="0">'
+          '<Cell N="SpLine" V="$spLineV"/>'
+          '</Row></Section>'
+          '<Text>Wrapped label</Text>',
+        );
+
+    test('a negative SpLine becomes a positive line-height multiple', () {
+      // Visio stores 120% line spacing as -1.2; it must map to a *positive*
+      // Flutter height multiple, otherwise wrapped lines stack upward.
+      final para = parser.parse(paraShape('-1.2')).runs.first.paraStyle;
+      expect(para.lineSpacing, closeTo(1.2, 1e-9));
+      expect(para.lineSpacingAbsoluteInches, 0);
+    });
+
+    test('a zero SpLine is single ("set solid") spacing', () {
+      final para = parser.parse(paraShape('0')).runs.first.paraStyle;
+      expect(para.lineSpacing, 1.0);
+      expect(para.lineSpacingAbsoluteInches, 0);
+    });
+
+    test('a positive SpLine is absolute inches, kept off the multiple', () {
+      final para = parser.parse(paraShape('0.25')).runs.first.paraStyle;
+      expect(para.lineSpacingAbsoluteInches, closeTo(0.25, 1e-9));
+      expect(para.lineSpacing, 1.0);
+    });
+
+    test('a missing SpLine inherits the master paragraph spacing', () {
+      final rich = parser.parse(
+        shape('<Text>Label</Text>'),
+        defaultPara: const VsdxParaStyle(lineSpacing: 1.5),
+      );
+      expect(rich.runs.first.paraStyle.lineSpacing, closeTo(1.5, 1e-9));
+    });
+  });
 }

@@ -160,6 +160,7 @@ class VsdxParaStyle {
     this.spaceBeforeInches = 0.0,
     this.spaceAfterInches = 0.0,
     this.lineSpacing = 1.0,
+    this.lineSpacingAbsoluteInches = 0.0,
   });
 
   final VsdxHorzAlign horizontalAlign;
@@ -169,8 +170,16 @@ class VsdxParaStyle {
   final double spaceBeforeInches;
   final double spaceAfterInches;
 
-  /// `1.0` = single, `1.5` = 1.5×, `2.0` = double.
+  /// Line height as a multiple of the font size (Visio `SpLine` < 0, e.g.
+  /// `-1.2` → `1.2`). `1.0` = single, `1.5` = 1.5×, `2.0` = double. Maps
+  /// directly onto Flutter's `TextStyle.height`, so it must stay positive.
   final double lineSpacing;
+
+  /// Absolute line height in inches (Visio `SpLine` > 0 — spacing that is
+  /// independent of type size). `0.0` when unused; when > 0 it takes
+  /// precedence over [lineSpacing] and the renderer converts it into a height
+  /// multiple using the run's font size.
+  final double lineSpacingAbsoluteInches;
 
   static const VsdxParaStyle defaults = VsdxParaStyle();
 
@@ -182,6 +191,7 @@ class VsdxParaStyle {
         spaceBeforeInches: spaceBeforeInches,
         spaceAfterInches: spaceAfterInches,
         lineSpacing: lineSpacing,
+        lineSpacingAbsoluteInches: lineSpacingAbsoluteInches,
       );
 }
 

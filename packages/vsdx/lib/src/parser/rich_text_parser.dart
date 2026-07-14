@@ -297,6 +297,7 @@ class RichTextParser {
   VsdxParaStyle _readParaRow(XmlElement row, VsdxParaStyle defaults) {
     final horz = _cellInt(row, 'HorzAlign');
     final align = horz == null ? defaults.horizontalAlign : _alignFromInt(horz);
+    final (lineSpacing, lineSpacingAbs) = _readLineSpacing(row, defaults);
     return VsdxParaStyle(
       horizontalAlign: align,
       indentFirstInches:
@@ -309,8 +310,28 @@ class RichTextParser {
           readLengthInches(row, 'SpBefore') ?? defaults.spaceBeforeInches,
       spaceAfterInches:
           readLengthInches(row, 'SpAfter') ?? defaults.spaceAfterInches,
-      lineSpacing: _cellDouble(row, 'SpLine') ?? defaults.lineSpacing,
+      lineSpacing: lineSpacing,
+      lineSpacingAbsoluteInches: lineSpacingAbs,
     );
+  }
+
+  /// Interpret Visio's `SpLine` (Paragraph section) into our two line-spacing
+  /// fields. Per the ShapeSheet reference the cell is a percentage where 100%
+  /// is a line's height:
+  ///   * `< 0` — a percentage of type size (`-1.2` → 120% → 1.2× line height).
+  ///   * `= 0` — "set solid": single spacing (100% of type size).
+  ///   * `> 0` — absolute spacing in inches, independent of type size.
+  /// Feeding the raw (usually negative) value straight into a Flutter
+  /// `TextStyle.height` inverts the line advance, so wrapped lines stack
+  /// upward instead of downward. Returns `(multiple, absoluteInches)`.
+  (double, double) _readLineSpacing(XmlElement row, VsdxParaStyle defaults) {
+    final sp = _cellDouble(row, 'SpLine');
+    if (sp == null) {
+      return (defaults.lineSpacing, defaults.lineSpacingAbsoluteInches);
+    }
+    if (sp < 0) return (-sp, 0.0);
+    if (sp == 0) return (1.0, 0.0);
+    return (1.0, sp); // V is already in internal units (inches)
   }
 
   /// Read the shape's text-block transform. Each cell falls back to [inherit]

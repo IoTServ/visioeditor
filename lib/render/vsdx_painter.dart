@@ -1075,6 +1075,23 @@ class VsdxPainter extends CustomPainter {
     final baseSize = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
     final scaledSize =
         pos == VsdxTextPosition.normal ? baseSize : baseSize * 0.65;
+    // Flutter's TextStyle.height is a multiple of the font size and must be
+    // positive — a non-positive value collapses the line advance so wrapped
+    // lines overlap or stack upward (the bug this guards against). Visio's
+    // absolute line spacing (SpLine > 0, inches) is converted to a multiple
+    // via the run's pixel font size; the relative multiple (SpLine < 0) is
+    // applied directly. Anything non-finite/≤0 falls back to the font's
+    // natural line height.
+    final para = run.paraStyle;
+    double? lineHeight;
+    if (para.lineSpacingAbsoluteInches > 0 && scaledSize > 0) {
+      lineHeight = para.lineSpacingAbsoluteInches * scale / scaledSize;
+    } else if (para.lineSpacing > 0) {
+      lineHeight = para.lineSpacing;
+    }
+    if (lineHeight != null && (!lineHeight.isFinite || lineHeight <= 0)) {
+      lineHeight = null;
+    }
     final features = <ui.FontFeature>[
       if (pos == VsdxTextPosition.superscript)
         const ui.FontFeature.enable('sups'),
@@ -1100,7 +1117,7 @@ class VsdxPainter extends CustomPainter {
         letterSpacing: run.charStyle.letterSpacingInches == 0
             ? null
             : run.charStyle.letterSpacingInches * scale,
-        height: run.paraStyle.lineSpacing,
+        height: lineHeight,
         fontFeatures: features.isEmpty ? null : features,
       ),
     );
