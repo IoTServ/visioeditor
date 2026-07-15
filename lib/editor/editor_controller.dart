@@ -1299,7 +1299,16 @@ class EditorController extends ChangeNotifier {
   VsdxShape _withMemoStyle(VsdxShape s, {required bool includeFill}) {
     var r = s;
     if (includeFill && _memoFill != null) r = r.copyWith(fill: _memoFill);
-    if (_memoLine != null) r = r.copyWith(line: _memoLine);
+    if (_memoLine != null) {
+      // Arrowheads belong on 1-D connectors. A memo line remembered from a
+      // connector must not stamp BeginArrow/EndArrow onto boxes/ellipses —
+      // otherwise the export shows stray arrowheads in 万兴图示 on vertices.
+      final memo = _memoLine!;
+      final line = (!s.is1D && (memo.beginArrow != 0 || memo.endArrow != 0))
+          ? memo.copyWith(beginArrow: 0, endArrow: 0)
+          : memo;
+      r = r.copyWith(line: line);
+    }
     return r;
   }
 

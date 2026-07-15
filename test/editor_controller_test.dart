@@ -766,6 +766,42 @@ void main() {
     expect(conn.endY, closeTo(top.y, 1e-6));
   });
 
+  test('memo line from connector does not stamp arrows onto new boxes', () {
+    // Styling a connector then dropping a rectangle must not export EndArrow
+    // on the box (万兴图示 would draw stray arrowheads on vertices).
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1, height: 0.6),
+        2,
+        8);
+    final a = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id, pinX: cx, pinY: cy, width: 1, height: 0.6),
+        5,
+        8);
+    final b = c.singleSelectedId!;
+    c.createConnector(2.5, 8, 4.5, 8, beginTarget: a, endTarget: b);
+    c
+      ..setEndArrow(10)
+      ..setBeginArrow(4)
+      ..setLinePattern(2);
+
+    c.addShapeFromBuilderAt(
+        (id, cx, cy) => VsdxShapeFactory.ellipse(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2),
+        3.5,
+        6);
+    final circle = c.currentPage!.findShapeById(c.singleSelectedId!)!;
+    expect(circle.is1D, isFalse);
+    expect(circle.line.endArrow, 0);
+    expect(circle.line.beginArrow, 0);
+    // Dash / weight from the memo stroke still apply (drawio-like).
+    expect(circle.line.pattern, 2);
+  });
+
   test('addShapeFromBuilderAt drops a shape centred on the given point', () {
     final c = EditorController()..newDocument();
     c.addShapeFromBuilderAt(
