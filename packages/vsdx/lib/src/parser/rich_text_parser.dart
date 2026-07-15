@@ -280,7 +280,12 @@ class RichTextParser {
   }
 
   VsdxCharStyle _readCharRow(XmlElement row, VsdxCharStyle defaults) {
-    final font = _cellString(row, 'Font') ?? defaults.fontFamily;
+    // Font / Color stay null when the cell is absent — do NOT materialise the
+    // stylesheet default into the model. Editor-created shapes leave both unset
+    // (inherit via DefaultTextStyle at paint / in Visio); stuffing Arial /
+    // #000000 here made save→reopen drift (`null → Arial` / `null → black`).
+    // Size and other metrics still fall back to [defaults] (TextStyle / master).
+    final font = _cellString(row, 'Font');
     final size = readLengthInches(row, 'Size') ?? defaults.fontSizeInches;
     final styleInt = _cellInt(row, 'Style');
     final style = styleInt == null
@@ -334,7 +339,7 @@ class RichTextParser {
       fontFamily: font,
       fontSizeInches: size,
       style: style,
-      color: color ?? defaults.color,
+      color: color,
       themeColorIndex: themeIdx ?? defaults.themeColorIndex,
       underline: underline,
       strikethrough: strike,

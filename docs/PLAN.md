@@ -749,3 +749,10 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   便于快速扫读。纯 UI/数据重组——渲染 / Writer / 往返零改动，`kStencils` 扁平视图不变。`flutter analyze` 干净
   （改动文件零问题）、**每个内置模具几何往返测试通过**。（注：`roundtrip_flowchart_test` 另有 6 例既有失败——
   文本 run 颜色/字体默认往返漂移 `null→ff000000/Arial`——经 `git stash` 核验属**本批之前既有**、与本改动无关。）
+- 2026-07-15 — **修复：文本 Character Color/Font 往返漂移**：根因是近期为兼容万兴图示的两处默认值物化——
+  (1) Writer `_charCells` 在 `color==null` 时仍强制写出 `Color=#000000`；(2) Parser `_readCharRow` 在 Character
+  行缺 `Font`/`Color` cell 时，用 document DefaultTextStyle（Arial / 黑）填进模型。编辑器新建标签常为
+  `color:null`/`fontFamily:null`（继承样式表），save→reopen 即漂移为 `ff000000`/`Arial`。修复：Writer **仅在
+  模型显式设色时写 Color**（缺省交给 DefaultTextStyle/StyleSheets，画笔本就以 `Colors.black87` 回退）；Parser
+  **缺省 Font/Color cell 保持 null**、不再物化 stylesheet（Size 等度量仍继承）。`roundtrip_flowchart_test` 15/15、
+  引擎 307、App 81、analyze 干净。

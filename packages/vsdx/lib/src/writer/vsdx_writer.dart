@@ -4115,12 +4115,13 @@ class VsdxWriter {
       _cell('Size', _fmt(c.fontSizeInches)),
       _cell('Style', _charStyleBits(c).toString()),
     ];
+    // Only emit Color when the model set one. Forcing #000000 on null made
+    // editor-created labels (color: null) drift to black after save→reopen.
+    // Edraw / Visio still resolve black via DefaultTextStyle / StyleSheets.
     if (c.color != null) {
       cells.add(_cell('Color', _hex(c.color!)));
     } else if (c.themeColorIndex != null) {
       cells.add(_cell('Color', '0', formula: 'THEMEVAL()'));
-    } else {
-      cells.add(_cell('Color', '#000000'));
     }
     // AsianFont (+ ComplexScriptFont) required for CJK in 万兴图示; Font
     // only when set or CJK. Match Edraw's 人才招聘 Character row shape.
