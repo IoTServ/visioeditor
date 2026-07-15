@@ -110,6 +110,11 @@ class VsdxPainter extends CustomPainter {
   List<List<Offset>> _connRoutesPage = const <List<Offset>>[];
   Map<int, int> _connZ = const <int, int>{};
 
+  /// Whether line jumps are active for the page being painted — combines the
+  /// [drawLineJumps] switch with the page's `LineJumpCode` (0 = None disables
+  /// jumps, so crossing connectors draw straight through).
+  bool _lineJumpsActive = false;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
@@ -162,7 +167,9 @@ class VsdxPainter extends CustomPainter {
     // remains cheap when many shapes overlap.
     final viewportInches = Rect.fromLTWH(0, 0, p.widthInches, p.heightInches);
 
-    if (drawLineJumps) {
+    _lineJumpsActive =
+        drawLineJumps && lineJumpsEnabledForCode(p.pageSheet.lineJumpCode);
+    if (_lineJumpsActive) {
       _computeConnectorRoutes(p);
     } else {
       _connRoutesPage = const <List<Offset>>[];
@@ -323,7 +330,7 @@ class VsdxPainter extends CustomPainter {
             if (shader != null) strokePaint.shader = shader;
           }
           var strokeSrc = path;
-          if (shape.is1D && drawLineJumps) {
+          if (shape.is1D && _lineJumpsActive) {
             final jumped = _lineJumpsPath(shape, geom);
             if (jumped != null) strokeSrc = jumped;
           }

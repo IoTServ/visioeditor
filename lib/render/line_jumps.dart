@@ -10,6 +10,14 @@ library;
 
 import 'dart:ui';
 
+/// Whether a page's Visio `LineJumpCode` (Page Layout section) enables line
+/// jumps at all. `0` (visPLOJumpNone) means the file explicitly turns jumps
+/// off, so crossing connectors must draw straight through — matching how
+/// Visio and 万兴图示/Edraw render such pages. Any other value (1 horizontal,
+/// 2 vertical, 3 last-routed, 4/5 by z-order) or an unset code keeps the
+/// hop-over overlay.
+bool lineJumpsEnabledForCode(int? lineJumpCode) => lineJumpCode != 0;
+
 /// Intersection of segments `a→b` and `c→d` when they *properly* cross
 /// (strictly interior to both segments), else `null`.
 Offset? segmentIntersection(Offset a, Offset b, Offset c, Offset d) {

@@ -39,6 +39,17 @@ void main() {
     expect(polylineCrossings(route, unders).length, 2);
   });
 
+  test('lineJumpsEnabledForCode turns jumps off only for code 0 (None)', () {
+    // 数据治理.vsdx ships LineJumpCode=0 (visPLOJumpNone): crossings must draw
+    // straight through, so no semicircle hops appear on the connectors.
+    expect(lineJumpsEnabledForCode(0), isFalse);
+    // Unset / any other Visio LineJumpCode keeps the hop-over overlay.
+    expect(lineJumpsEnabledForCode(null), isTrue);
+    expect(lineJumpsEnabledForCode(1), isTrue); // horizontal
+    expect(lineJumpsEnabledForCode(2), isTrue); // vertical
+    expect(lineJumpsEnabledForCode(4), isTrue); // last displayed (z-order)
+  });
+
   test('polylineWithJumps inserts an arc that lengthens the contour', () {
     final route = <Offset>[const Offset(0, 1), const Offset(4, 1)];
     final unders = <List<Offset>>[
