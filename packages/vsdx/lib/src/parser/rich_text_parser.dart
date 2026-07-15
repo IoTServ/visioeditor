@@ -300,9 +300,15 @@ class RichTextParser {
         colorF.toUpperCase().contains('THEMEVAL') ||
         colorF.toUpperCase().contains('THEMEGUARD');
     final color = isTheme ? null : VsdxColor.tryParse(colorV);
-    // Character theme colour rarely carries a QuickStyle index on the row;
-    // preserve a non-null marker so THEMEVAL round-trips.
-    final themeIdx = isTheme ? (defaults.themeColorIndex ?? 0) : null;
+    // A theme character colour caches its slot index in V (see the writer);
+    // read it back when present, otherwise fall back to the inherited slot.
+    int? themeIdx;
+    if (isTheme) {
+      final parsed = int.tryParse((colorV ?? '').trim());
+      themeIdx = (parsed != null && parsed >= 0 && parsed < 100)
+          ? parsed
+          : (defaults.themeColorIndex ?? 0);
+    }
     // Underline lives in Style bit 0x04 (libvisio); only inherit when absent.
     final underline =
         styleInt != null ? (styleInt & 0x04) != 0 : defaults.underline;

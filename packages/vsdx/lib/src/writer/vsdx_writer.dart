@@ -1595,10 +1595,18 @@ class VsdxWriter {
     // Protection (drawio "Lock/Unlock").
     changed |= _patchLock(el, base, edited);
     // Style.
-    changed |= _patchColor(el, 'FillForegnd', base.fill.foreground, edited.fill.foreground);
+    changed |= _patchColorOrTheme(el, 'FillForegnd', 'QuickStyleFillColor',
+        baseColor: base.fill.foreground,
+        baseTheme: base.fill.themeForegroundIndex,
+        editedColor: edited.fill.foreground,
+        editedTheme: edited.fill.themeForegroundIndex);
     changed |= _patchColor(el, 'FillBkgnd', base.fill.background, edited.fill.background);
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
-    changed |= _patchColor(el, 'LineColor', base.line.color, edited.line.color);
+    changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
+        baseColor: base.line.color,
+        baseTheme: base.line.themeColorIndex,
+        editedColor: edited.line.color,
+        editedTheme: edited.line.themeColorIndex);
     changed |= _patchLength(el, 'LineWeight', base.line.weightInches, edited.line.weightInches);
     changed |= _patchInt(el, 'LinePattern', base.line.pattern, edited.line.pattern);
     changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
@@ -2302,8 +2310,10 @@ class VsdxWriter {
     if (c.color != null) {
       _writeValue(_ensureCell(row, 'Color'), _hex(c.color!));
     } else if (c.themeColorIndex != null) {
+      // Encode the theme slot in V (a cached value Visio recomputes from the
+      // THEMEVAL formula) so the specific accent survives a round-trip.
       final cell = _ensureCell(row, 'Color');
-      _writeValue(cell, '0', preserveFormula: true);
+      _writeValue(cell, c.themeColorIndex!.toString(), preserveFormula: true);
       cell.setAttribute('F', 'THEMEVAL()');
     }
     if (c.fontFamily != null) {
@@ -2881,6 +2891,40 @@ class VsdxWriter {
     // Visio/libvisio recompute from the theme and ignore the chosen colour.
     _writeValue(_ensureCell(shape, cell), _hex(value));
     return true;
+  }
+
+  /// Patch a colour cell that may be either an explicit colour **or** a
+  /// theme-slot binding (`THEMEVAL()` + a `QuickStyle*Color` index). The parser
+  /// keys off the `THEMEVAL` formula: switching to a solid colour drops it,
+  /// switching to a theme slot (re)writes it. Without this, re-binding an
+  /// existing shape to a theme colour silently reverted to its old solid colour
+  /// on save, because [_patchColor] ignores a `null` (theme-bound) colour.
+  bool _patchColorOrTheme(
+    XmlElement shape,
+    String cell,
+    String quickStyleCell, {
+    required VsdxColor? baseColor,
+    required int? baseTheme,
+    required VsdxColor? editedColor,
+    required int? editedTheme,
+  }) {
+    if (baseColor?.value == editedColor?.value && baseTheme == editedTheme) {
+      return false;
+    }
+    if (editedColor != null) {
+      // Explicit colour: _writeValue drops any inherited THEMEVAL formula so
+      // the chosen colour is honoured (the parser then ignores QuickStyle*).
+      _writeValue(_ensureCell(shape, cell), _hex(editedColor));
+      return true;
+    }
+    if (editedTheme != null) {
+      final c = _ensureCell(shape, cell);
+      _writeValue(c, '0', preserveFormula: true);
+      c.setAttribute('F', 'THEMEVAL()');
+      _writeValue(_ensureCell(shape, quickStyleCell), editedTheme.toString());
+      return true;
+    }
+    return false;
   }
 
   bool _patchInt(XmlElement shape, String cell, int base, int value) {
