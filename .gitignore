@@ -31,6 +31,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/packages/*/build/
 /coverage/
 
 # Symbolication related
@@ -48,3 +49,7 @@ app.*.map.json
 # See third_party/README.md for the pinned URLs / commits / licenses.
 /third_party/*
 !/third_party/README.md
+
+# Compat-check outputs rewritten on every run of test/_edraw_compare.dart.
+/assets/examples/edraw_compat_demo.vsdx
+/assets/examples/Untitled333_edraw_fixed.vsdx

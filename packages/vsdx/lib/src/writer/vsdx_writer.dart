@@ -139,6 +139,7 @@ class VsdxWriter {
       }
       if (_patchLayerRows(el, bp, ep)) pagesDirty = true;
       if (_patchPageProperties(el, bp, ep)) pagesDirty = true;
+      if (_ensurePageViewCenter(el, ep)) pagesDirty = true;
     }
 
     // 2b) Removed pages.
@@ -380,6 +381,27 @@ class VsdxWriter {
     return true;
   }
 
+  /// Ensure `<Page ViewCenter*>` so 万兴图示 opens focused on content.
+  bool _ensurePageViewCenter(XmlElement pageEl, VsdxPage page) {
+    final center = _pageViewCenter(page);
+    var changed = false;
+    if (pageEl.getAttribute('ViewScale') == null) {
+      pageEl.setAttribute('ViewScale', _fmt(page.viewScale ?? 1.0));
+      changed = true;
+    }
+    if (pageEl.getAttribute('ViewCenterX') == null) {
+      pageEl.setAttribute(
+          'ViewCenterX', _fmt(page.viewCenterX ?? center.$1));
+      changed = true;
+    }
+    if (pageEl.getAttribute('ViewCenterY') == null) {
+      pageEl.setAttribute(
+          'ViewCenterY', _fmt(page.viewCenterY ?? center.$2));
+      changed = true;
+    }
+    return changed;
+  }
+
   bool _patchPageSheetCells(
       XmlElement sheet, VsdxPageSheet base, VsdxPageSheet edited) {
     var changed = false;
@@ -591,21 +613,47 @@ class VsdxWriter {
       XmlName('Rel'),
       <XmlAttribute>[XmlAttribute(XmlName('id', 'r'), rId)],
     );
+    // 万兴图示 opens at ViewCenter; without it the viewport often lands on an
+    // empty corner of Letter pages so filled shapes look "missing".
+    final center = _pageViewCenter(ep);
+    final viewScale = ep.viewScale ?? 1.0;
+    final viewCenterX = ep.viewCenterX ?? center.$1;
+    final viewCenterY = ep.viewCenterY ?? center.$2;
     return XmlElement(
       XmlName('Page'),
       <XmlAttribute>[
         XmlAttribute(XmlName('ID'), ep.id.toString()),
         XmlAttribute(XmlName('NameU'), ep.name),
         XmlAttribute(XmlName('Name'), ep.name),
-        if (ep.viewScale != null)
-          XmlAttribute(XmlName('ViewScale'), _fmt(ep.viewScale!)),
-        if (ep.viewCenterX != null)
-          XmlAttribute(XmlName('ViewCenterX'), _fmt(ep.viewCenterX!)),
-        if (ep.viewCenterY != null)
-          XmlAttribute(XmlName('ViewCenterY'), _fmt(ep.viewCenterY!)),
+        XmlAttribute(XmlName('ViewScale'), _fmt(viewScale)),
+        XmlAttribute(XmlName('ViewCenterX'), _fmt(viewCenterX)),
+        XmlAttribute(XmlName('ViewCenterY'), _fmt(viewCenterY)),
       ],
       <XmlNode>[pageSheet, rel],
     );
+  }
+
+  /// Content centroid in inches, or the page centre when the page is empty.
+  (double, double) _pageViewCenter(VsdxPage page) {
+    final w = page.widthInches <= 0 ? 8.5 : page.widthInches;
+    final h = page.heightInches <= 0 ? 11.0 : page.heightInches;
+    if (page.shapes.isEmpty) return (w / 2, h / 2);
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = -double.infinity, maxY = -double.infinity;
+    for (final s in page.shapes) {
+      final hw = (s.width.abs()) / 2;
+      final hh = (s.height.abs()) / 2;
+      final left = s.pinX - hw;
+      final right = s.pinX + hw;
+      final bottom = s.pinY - hh;
+      final top = s.pinY + hh;
+      if (left < minX) minX = left;
+      if (right > maxX) maxX = right;
+      if (bottom < minY) minY = bottom;
+      if (top > maxY) maxY = top;
+    }
+    if (!minX.isFinite) return (w / 2, h / 2);
+    return ((minX + maxX) / 2, (minY + maxY) / 2);
   }
 
   XmlElement _buildLayerSection(List<VsdxLayer> layers) => XmlElement(
@@ -1012,7 +1060,8 @@ class VsdxWriter {
           '</Relationships>',
       'visio/pages/pages.xml': '$decl\n'
           '<Pages xmlns="$_mainNs" xmlns:r="$_officeRelNs">'
-          '<Page ID="0" NameU="Page-1" Name="Page-1">'
+          '<Page ID="0" NameU="Page-1" Name="Page-1" '
+          'ViewScale="1" ViewCenterX="${_fmt(widthInches / 2)}" ViewCenterY="${_fmt(heightInches / 2)}">'
           '<PageSheet>'
           '<Cell N="PageWidth" V="${_fmt(widthInches)}"/>'
           '<Cell N="PageHeight" V="${_fmt(heightInches)}"/>'
@@ -2118,8 +2167,12 @@ class VsdxWriter {
       _writeValue(
           _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
     }
-    _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
-    _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
+    if ((c.fontScale - 1.0).abs() > _epsilon) {
+      _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
+    }
+    if (c.transparency > _epsilon) {
+      _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
+    }
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'AsianFont'), c.asianFont!);
     }
@@ -2155,10 +2208,10 @@ class VsdxWriter {
     if (p.spaceAfterInches.abs() > _epsilon) {
       _writeValue(_ensureCell(row, 'SpAfter'), _fmt(p.spaceAfterInches));
     }
-    // Always write SpLine (Edraw samples never omit it). Default single
-    // spacing is -1.0 so a round-trip keeps lineSpacing == 1.0.
-    final spLine = _spLineValue(p) ?? -1.0;
-    _writeValue(_ensureCell(row, 'SpLine'), _fmt(spLine));
+    final spLine = _spLineValue(p);
+    if (spLine != null) {
+      _writeValue(_ensureCell(row, 'SpLine'), _fmt(spLine));
+    }
     if (p.bullet != 0) {
       _writeValue(_ensureCell(row, 'Bullet'), p.bullet.toString());
     }
@@ -2176,7 +2229,9 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'TextPosAfterBullet'),
           _fmt(p.textPosAfterBulletInches));
     }
-    _writeValue(_ensureCell(row, 'Flags'), p.flags.toString());
+    if (p.flags != 0) {
+      _writeValue(_ensureCell(row, 'Flags'), p.flags.toString());
+    }
   }
 
   /// Encode [VsdxParaStyle] line spacing back to Visio's `SpLine` cell.
@@ -3158,7 +3213,7 @@ class VsdxWriter {
     addLen('TxtLocPinY', b.locPinYInches,
         defaultFormula: fillBox ? 'TxtHeight*0.5' : null,
         fallback: fillBox ? h / 2 : null);
-    if (b.angleRad.abs() > _epsilon || formulas.containsKey('TxtAngle') || hasLabel) {
+    if (b.angleRad.abs() > _epsilon || formulas.containsKey('TxtAngle')) {
       children.add(
           _cell('TxtAngle', _fmt(b.angleRad), formula: formulas['TxtAngle']));
     }
@@ -3169,8 +3224,6 @@ class VsdxWriter {
     if (b.hideText) children.add(_cell('HideText', '1'));
     if (b.backgroundColor != null) {
       children.add(_cell('TextBkgnd', _hex(b.backgroundColor!)));
-    } else if (hasLabel) {
-      children.add(_cell('TextBkgnd', '0'));
     }
     if (b.textDirection != 0) {
       children.add(_cell('TextDirection', b.textDirection.toString()));
@@ -4102,10 +4155,14 @@ class VsdxWriter {
     if (c.textCase != VsdxTextCase.normal) {
       cells.add(_cell('Case', _textCaseInt(c.textCase).toString()));
     }
-    // Always emit FontScale/ColorTrans — Edraw samples write both even at
-    // defaults, and omitting them has caused CJK metrics drift.
-    cells.add(_cell('FontScale', _fmt(c.fontScale)));
-    cells.add(_cell('ColorTrans', _fmt(c.transparency)));
+    // Only emit when non-default — always writing FontScale/ColorTrans made
+    // some 万兴图示 builds clip or hide CJK labels on brand-new shapes.
+    if ((c.fontScale - 1.0).abs() > _epsilon) {
+      cells.add(_cell('FontScale', _fmt(c.fontScale)));
+    }
+    if (c.transparency > _epsilon) {
+      cells.add(_cell('ColorTrans', _fmt(c.transparency)));
+    }
     final lang = c.langId ?? (cjk ? 'zh-CN' : null);
     if (lang != null && lang.isNotEmpty) {
       cells.add(_cell('LangID', lang));
@@ -4152,10 +4209,10 @@ class VsdxWriter {
     if (p.spaceAfterInches.abs() > _epsilon) {
       cells.add(_cell('SpAfter', _fmt(p.spaceAfterInches)));
     }
-    // Always write SpLine + Flags (Edraw samples never omit them). Default
-    // single spacing is -1.0 so a round-trip keeps lineSpacing == 1.0.
-    final spLine = _spLineValue(p) ?? -1.0;
-    cells.add(_cell('SpLine', _fmt(spLine)));
+    final spLine = _spLineValue(p);
+    if (spLine != null) {
+      cells.add(_cell('SpLine', _fmt(spLine)));
+    }
     if (p.bullet != 0) {
       cells.add(_cell('Bullet', p.bullet.toString()));
     }
@@ -4171,7 +4228,9 @@ class VsdxWriter {
     if (p.textPosAfterBulletInches.abs() > _epsilon) {
       cells.add(_cell('TextPosAfterBullet', _fmt(p.textPosAfterBulletInches)));
     }
-    cells.add(_cell('Flags', p.flags.toString()));
+    if (p.flags != 0) {
+      cells.add(_cell('Flags', p.flags.toString()));
+    }
     return cells;
   }
 
