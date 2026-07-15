@@ -736,3 +736,16 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   1 例（Or/Sort 双 geometry+第二段 `noFill`、Display/Heart 椭圆弧往返，共 58/58）、App 4 例（`line_jumps` 纯函数：真交叉点、
   拒绝平行/端点相接、交叉计数、跳线弧使轮廓变长，共 56）；`dart analyze`/`flutter analyze` 干净、`flutter test` 通过、
   `flutter build macos` 成功。
+- 2026-07-15 — **对齐 drawio（批次三十）——形状库按类别归类 + 宽屏默认展开常用图形**：参考 drawio / Visio /
+  万兴图示 的形状库分区，把形状面板从 4 组（General 混装 25 个 / Flowchart / Arrows / UML）重整为 **6 个语义清晰的
+  类别**——**General**（14 个基础几何：矩形/圆角矩形/文本/方/椭圆/圆/三角/直角三角/菱形/平行四边形/梯形/五~八边形）、
+  **Flowchart**（21 个流程图符号，Step/Card/Off-Page 归入）、**Arrows**（右/左/上/下/双向 5 箭头）、**Containers**
+  （圆柱/立方体/云/文档/标注）、**Decorative**（星/十字/心形/闪电）、**UML**（Actor/Use Case/Class/Package/Note/Node）；
+  所有形状构造器保留、仅重新分配（Document 同时列入 Flowchart 与 Containers，属合理复用）。`StencilGroup` 加
+  **`defaultExpanded`** 标记常用库（General/Flowchart/Arrows）。`_StencilPanel` 改**响应式默认折叠态**——
+  `didChangeDependencies` 按窗口宽度（`MediaQuery.sizeOf`，阈值 `_wideBreakpoint=900`px）种子化 `_collapsed`：
+  **宽屏展开常用 3 组、其余折叠；窄屏全部折叠**，用户手动展开/折叠即置 `_userAdjusted` 停止再种子化（选择随窗口缩放/
+  重建保持）；搜索框下加**快捷工具条**（类别数 + 全部展开/全部折叠按钮，`_setAllCollapsed`），分组标题显示**图形数量**
+  便于快速扫读。纯 UI/数据重组——渲染 / Writer / 往返零改动，`kStencils` 扁平视图不变。`flutter analyze` 干净
+  （改动文件零问题）、**每个内置模具几何往返测试通过**。（注：`roundtrip_flowchart_test` 另有 6 例既有失败——
+  文本 run 颜色/字体默认往返漂移 `null→ff000000/Arial`——经 `git stash` 核验属**本批之前既有**、与本改动无关。）

@@ -14,10 +14,16 @@ class Stencil {
 /// A named group of stencils — drawio's shape-library sections (General,
 /// Flowchart, Arrows …). The panel renders one collapsible header per group.
 class StencilGroup {
-  const StencilGroup(this.name, this.stencils);
+  const StencilGroup(this.name, this.stencils, {this.defaultExpanded = false});
 
   final String name;
   final List<Stencil> stencils;
+
+  /// Whether this is a **commonly-used** library that should start expanded on
+  /// wide-screen devices (drawio/Visio/万兴图示 keep basic shapes, flowchart and
+  /// arrows open by default and leave specialised libraries like UML collapsed).
+  /// On narrow windows every group starts collapsed to keep the palette compact.
+  final bool defaultExpanded;
 }
 
 const double _w = 1.5;
@@ -236,10 +242,18 @@ const List<Offset2D> _lightning = [
   Offset2D(0.50, 0.55),
 ];
 
-/// Built-in stencils grouped like drawio's shape libraries. Every builder uses
-/// polygon / ellipse / rounded-rect / elliptical-arc geometry, so each shape
-/// renders and round-trips through the writer without loss.
+/// Built-in stencils grouped like the shape libraries in drawio / Visio /
+/// 万兴图示. Every builder uses polygon / ellipse / rounded-rect /
+/// elliptical-arc geometry, so each shape renders and round-trips through the
+/// writer without loss.
+///
+/// Groups are ordered most-used-first and tagged [StencilGroup.defaultExpanded]
+/// so the shapes panel can open the everyday libraries (General / Flowchart /
+/// Arrows) on wide screens while keeping specialised ones (Containers /
+/// Decorative / UML) collapsed until needed.
 final List<StencilGroup> kStencilGroups = <StencilGroup>[
+  // Everyday geometric primitives — the first thing you reach for (drawio
+  // "General", Visio "Basic Shapes", 万兴图示 "基本形状").
   StencilGroup('General', <Stencil>[
     Stencil('Rectangle', _rect),
     Stencil(
@@ -250,45 +264,20 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Text',
         (id, cx, cy) => VsdxShapeFactory.textBox(
             id: id, pinX: cx, pinY: cy, width: 1.2, height: 0.5, text: 'Text')),
-    Stencil('Ellipse', _ellipse),
     Stencil('Square', (id, cx, cy) => _rect(id, cx, cy, w: 1, h: 1)),
+    Stencil('Ellipse', _ellipse),
     Stencil('Circle', (id, cx, cy) => _ellipse(id, cx, cy, w: 1, h: 1)),
-    Stencil('Diamond', (id, cx, cy) => _poly(id, cx, cy, _diamond)),
-    Stencil('Parallelogram', (id, cx, cy) => _poly(id, cx, cy, _parallelogram)),
     Stencil('Triangle', (id, cx, cy) => _poly(id, cx, cy, _triangle, w: 1, h: 1)),
     Stencil('Right Triangle',
         (id, cx, cy) => _poly(id, cx, cy, _rightTriangle, w: 1, h: 1)),
+    Stencil('Diamond', (id, cx, cy) => _poly(id, cx, cy, _diamond)),
+    Stencil('Parallelogram', (id, cx, cy) => _poly(id, cx, cy, _parallelogram)),
+    Stencil('Trapezoid', (id, cx, cy) => _poly(id, cx, cy, _trapezoid)),
     Stencil('Pentagon', (id, cx, cy) => _poly(id, cx, cy, _pentagon, w: 1, h: 1)),
     Stencil('Hexagon', (id, cx, cy) => _poly(id, cx, cy, _hexagon)),
     Stencil('Octagon', (id, cx, cy) => _poly(id, cx, cy, _octagon, w: 1, h: 1)),
-    Stencil('Trapezoid', (id, cx, cy) => _poly(id, cx, cy, _trapezoid)),
-    Stencil('Cross', (id, cx, cy) => _poly(id, cx, cy, _cross, w: 1, h: 1)),
-    Stencil('Star', (id, cx, cy) => _poly(id, cx, cy, _star, w: 1, h: 1)),
-    Stencil(
-        'Cylinder',
-        (id, cx, cy) => VsdxShapeFactory.cylinder(
-            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.3)),
-    Stencil(
-        'Cube',
-        (id, cx, cy) => VsdxShapeFactory.cube(
-            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
-    Stencil(
-        'Document',
-        (id, cx, cy) => VsdxShapeFactory.document(
-            id: id, pinX: cx, pinY: cy, width: _w, height: 1.1)),
-    Stencil('Card', (id, cx, cy) => _poly(id, cx, cy, _card)),
-    Stencil('Callout', (id, cx, cy) => _poly(id, cx, cy, _callout)),
-    Stencil('Step', (id, cx, cy) => _poly(id, cx, cy, _step)),
-    Stencil(
-        'Cloud',
-        (id, cx, cy) => VsdxShapeFactory.cloud(
-            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.1)),
-    Stencil('Lightning', (id, cx, cy) => _poly(id, cx, cy, _lightning, w: 1, h: 1.3)),
-    Stencil(
-        'Heart',
-        (id, cx, cy) => VsdxShapeFactory.heart(
-            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
-  ]),
+  ], defaultExpanded: true),
+  // Standard flowchart symbols (drawio / Visio "Flowchart", 万兴图示 "流程图").
   StencilGroup('Flowchart', <Stencil>[
     Stencil('Process', _rect),
     Stencil('Decision', (id, cx, cy) => _poly(id, cx, cy, _diamond)),
@@ -317,8 +306,6 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Delay',
         (id, cx, cy) => VsdxShapeFactory.delay(
             id: id, pinX: cx, pinY: cy, width: _w, height: _h)),
-    Stencil('Off-Page Ref', (id, cx, cy) => _poly(id, cx, cy, _offPage, w: 1, h: 1)),
-    Stencil('Card', (id, cx, cy) => _poly(id, cx, cy, _card)),
     Stencil(
         'Display',
         (id, cx, cy) => VsdxShapeFactory.display(
@@ -338,14 +325,49 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.sort(
             id: id, pinX: cx, pinY: cy, width: _w, height: _h)),
     Stencil('Loop Limit', (id, cx, cy) => _poly(id, cx, cy, _loopLimit)),
-  ]),
+    Stencil('Off-Page Ref', (id, cx, cy) => _poly(id, cx, cy, _offPage, w: 1, h: 1)),
+    Stencil('Card', (id, cx, cy) => _poly(id, cx, cy, _card)),
+    Stencil('Step', (id, cx, cy) => _poly(id, cx, cy, _step)),
+  ], defaultExpanded: true),
+  // Block arrows (drawio / Visio "Arrows", 万兴图示 "箭头").
   StencilGroup('Arrows', <Stencil>[
     Stencil('Arrow Right', (id, cx, cy) => _poly(id, cx, cy, _arrowRight)),
     Stencil('Arrow Left', (id, cx, cy) => _poly(id, cx, cy, _arrowLeft)),
     Stencil('Arrow Up', (id, cx, cy) => _poly(id, cx, cy, _arrowUp, w: 1, h: 1)),
     Stencil('Arrow Down', (id, cx, cy) => _poly(id, cx, cy, _arrowDown, w: 1, h: 1)),
     Stencil('Double Arrow', (id, cx, cy) => _poly(id, cx, cy, _doubleArrow)),
+  ], defaultExpanded: true),
+  // 3-D / container objects (drawio "Misc"/"Advanced", 万兴图示 "容器").
+  StencilGroup('Containers', <Stencil>[
+    Stencil(
+        'Cylinder',
+        (id, cx, cy) => VsdxShapeFactory.cylinder(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.3)),
+    Stencil(
+        'Cube',
+        (id, cx, cy) => VsdxShapeFactory.cube(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud',
+        (id, cx, cy) => VsdxShapeFactory.cloud(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.1)),
+    Stencil(
+        'Document',
+        (id, cx, cy) => VsdxShapeFactory.document(
+            id: id, pinX: cx, pinY: cy, width: _w, height: 1.1)),
+    Stencil('Callout', (id, cx, cy) => _poly(id, cx, cy, _callout)),
   ]),
+  // Decorative symbols (drawio "Misc", 万兴图示 "装饰").
+  StencilGroup('Decorative', <Stencil>[
+    Stencil('Star', (id, cx, cy) => _poly(id, cx, cy, _star, w: 1, h: 1)),
+    Stencil('Cross', (id, cx, cy) => _poly(id, cx, cy, _cross, w: 1, h: 1)),
+    Stencil(
+        'Heart',
+        (id, cx, cy) => VsdxShapeFactory.heart(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil('Lightning', (id, cx, cy) => _poly(id, cx, cy, _lightning, w: 1, h: 1.3)),
+  ]),
+  // UML basics (drawio / Visio "UML").
   StencilGroup('UML', <Stencil>[
     Stencil(
         'Actor',

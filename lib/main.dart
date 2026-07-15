@@ -1188,8 +1188,49 @@ class _StencilPanel extends StatefulWidget {
 }
 
 class _StencilPanelState extends State<_StencilPanel> {
+  /// Windows at least this wide (logical px) count as "wide-screen": the
+  /// commonly-used libraries (General / Flowchart / Arrows) start expanded.
+  /// Narrower windows start fully collapsed so the palette stays compact.
+  static const double _wideBreakpoint = 900;
+
   String _query = '';
-  final Set<String> _collapsed = <String>{};
+
+  /// Names of collapsed groups. Seeded responsively from the window width in
+  /// [didChangeDependencies]; once the user expands/collapses anything we stop
+  /// re-seeding so their choice sticks across rebuilds and window resizes.
+  Set<String> _collapsed = <String>{};
+  bool _userAdjusted = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_userAdjusted) {
+      _collapsed = _defaultCollapsed(MediaQuery.sizeOf(context).width);
+    }
+  }
+
+  /// Groups that start collapsed for the given window [width]: on wide screens
+  /// only the non-common libraries collapse (common ones default-expand); on
+  /// narrow screens every group collapses.
+  Set<String> _defaultCollapsed(double width) {
+    final wide = width >= _wideBreakpoint;
+    return <String>{
+      for (final g in kStencilGroups)
+        if (!wide || !g.defaultExpanded) g.name,
+    };
+  }
+
+  void _toggleGroup(String name) => setState(() {
+        _userAdjusted = true;
+        if (!_collapsed.remove(name)) _collapsed.add(name);
+      });
+
+  void _setAllCollapsed(bool collapsed) => setState(() {
+        _userAdjusted = true;
+        _collapsed = collapsed
+            ? <String>{for (final g in kStencilGroups) g.name}
+            : <String>{};
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -1219,6 +1260,7 @@ class _StencilPanelState extends State<_StencilPanel> {
                 onChanged: (v) => setState(() => _query = v),
               ),
             ),
+            if (!searching) _buildQuickBar(scheme),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
@@ -1234,6 +1276,40 @@ class _StencilPanelState extends State<_StencilPanel> {
     );
   }
 
+  /// A one-tap toolbar under the search box for opening or tidying the whole
+  /// library by category (drawio's expand-all / collapse-all affordance), plus
+  /// a category count so the palette is quick to scan.
+  Widget _buildQuickBar(ColorScheme scheme) {
+    final allExpanded = _collapsed.isEmpty;
+    final allCollapsed =
+        kStencilGroups.every((g) => _collapsed.contains(g.name));
+    Widget btn(IconData icon, String tip, VoidCallback? onTap) => IconButton(
+          icon: Icon(icon, size: 18),
+          tooltip: tip,
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: onTap,
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
+      child: Row(
+        children: [
+          Text('${kStencilGroups.length} categories',
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
+          const Spacer(),
+          btn(Icons.unfold_more, 'Expand all',
+              allExpanded ? null : () => _setAllCollapsed(false)),
+          btn(Icons.unfold_less, 'Collapse all',
+              allCollapsed ? null : () => _setAllCollapsed(true)),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildGroup(
       ColorScheme scheme, StencilGroup group, String q, bool searching) {
     final matches = searching
@@ -1243,15 +1319,10 @@ class _StencilPanelState extends State<_StencilPanel> {
         : group.stencils;
     if (matches.isEmpty) return const <Widget>[];
     final collapsed = !searching && _collapsed.contains(group.name);
+    final text = Theme.of(context).textTheme;
     return <Widget>[
       InkWell(
-        onTap: searching
-            ? null
-            : () => setState(() {
-                  if (!_collapsed.remove(group.name)) {
-                    _collapsed.add(group.name);
-                  }
-                }),
+        onTap: searching ? null : () => _toggleGroup(group.name),
         child: Padding(
           padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
           child: Row(
@@ -1259,7 +1330,14 @@ class _StencilPanelState extends State<_StencilPanel> {
               Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
                   size: 16),
               const SizedBox(width: 2),
-              Text(group.name, style: Theme.of(context).textTheme.labelLarge),
+              Flexible(
+                child: Text(group.name,
+                    style: text.labelLarge, overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 6),
+              Text('${matches.length}',
+                  style:
+                      text.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
             ],
           ),
         ),
