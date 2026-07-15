@@ -42,6 +42,9 @@ class ThemeParser {
     'folHlink': ThemeSlot.followedHyperlink,
   };
 
+  /// Resolve a DrawingML clrScheme child local-name to a [ThemeSlot] id.
+  static int? slotForName(String localName) => _slotForName[localName];
+
   VsdxTheme parseTheme({required String documentPartName}) {
     final themePart =
         _resolver.singleTargetOfType(documentPartName, VsdxRelType.theme);

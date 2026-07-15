@@ -32,13 +32,17 @@ export 'src/model/image.dart';
 export 'src/model/layer.dart';
 export 'src/model/line.dart';
 export 'src/model/master.dart';
+export 'src/model/obstacle_router.dart';
 export 'src/model/page.dart';
 export 'src/model/rich_text.dart';
+export 'src/model/rich_text_edit.dart';
 export 'src/model/shape.dart';
 export 'src/model/shape_factory.dart';
 export 'src/model/shape_kind.dart';
 export 'src/model/sheet_sections.dart';
 export 'src/model/stylesheet.dart';
+export 'src/model/swimlane.dart';
+export 'src/model/table.dart';
 export 'src/model/theme.dart';
 export 'src/model/user_property.dart';
 
@@ -53,6 +57,7 @@ export 'src/writer/vsdx_writer.dart';
 
 // export (interop)
 export 'src/export/svg_serializer.dart';
+export 'src/export/theme_serializer.dart';
 
 /// Engine version, surfaced in diagnostics and the app About box.
 const String kVsdxEngineVersion = '0.1.0';

@@ -277,6 +277,34 @@ void main() {
     expect(parser.parse(out).pages.first.findShapeById(id)!.objType, 2);
   });
 
+  test('freehand stroke round-trips as 1-D MoveTo/LineTo ink (ObjType=1)', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final stroke = VsdxShapeFactory.freehand(
+      id: id,
+      points: const <Offset2D>[
+        Offset2D(1, 1),
+        Offset2D(2, 2.5),
+        Offset2D(4, 1.5),
+      ],
+    );
+    final edited =
+        doc.replacePage(0, doc.pages.first.addShape(stroke));
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final again = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(again.is1D, isTrue);
+    expect(again.objType, 1); // not a glueable connector
+    expect(again.beginX, closeTo(1, 1e-6));
+    expect(again.endX, closeTo(4, 1e-6));
+    expect(again.geometries.single.commands.length, 3);
+    expect(
+      again.geometries.single.commands
+          .every((c) => c is MoveTo || c is LineTo),
+      isTrue,
+    );
+  });
+
   test('emptyDocument ships StyleSheets and FaceNames for Edraw', () {
     final blank = writer.emptyDocument();
     final docXml = VsdxPackage.open(blank)
@@ -1368,6 +1396,60 @@ void main() {
     expect(p.backgroundColor?.value, 0xFFF2F2F2);
   });
 
+  test('Background / BackPage attributes round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final fg = doc.pages.first;
+    final bgId = doc.nextPageId();
+    doc = doc.insertPage(
+      1,
+      VsdxPage(
+        id: bgId,
+        name: 'Background-1',
+        widthInches: fg.widthInches,
+        heightInches: fg.heightInches,
+        shapes: const <VsdxShape>[],
+        isBackgroundPage: true,
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      fg.copyWith(backgroundPageId: bgId, isBackgroundPage: false),
+    );
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: doc),
+    );
+    expect(reopened.pages.length, 2);
+    final page0 = reopened.pages.firstWhere((p) => p.id == fg.id);
+    final page1 = reopened.pages.firstWhere((p) => p.id == bgId);
+    expect(page1.isBackgroundPage, isTrue);
+    expect(page1.backgroundPageId, isNull);
+    expect(page0.isBackgroundPage, isFalse);
+    expect(page0.backgroundPageId, bgId);
+
+    // Clearing BackPage and the Background flag also round-trips.
+    final cleared = reopened
+        .replacePage(
+          reopened.pages.indexWhere((p) => p.id == fg.id),
+          page0.copyWith(backgroundPageId: null),
+        )
+        .replacePage(
+          reopened.pages.indexWhere((p) => p.id == bgId),
+          page1.copyWith(isBackgroundPage: false),
+        );
+    final again = parser.parse(
+      writer.write(
+        originalBytes: writer.write(originalBytes: blank, edited: doc),
+        edited: cleared,
+      ),
+    );
+    expect(again.pages.firstWhere((p) => p.id == fg.id).backgroundPageId,
+        isNull);
+    expect(again.pages.firstWhere((p) => p.id == bgId).isBackgroundPage,
+        isFalse);
+  });
+
   test('font / underline / vertical align + shadow round-trip', () {
     final bytes = _fixture('test9_rect_and_line.vsdx');
     final doc = parser.parse(bytes);
@@ -1907,6 +1989,83 @@ void main() {
     );
   });
 
+  test('drawio-parity stencil shapes (tape / stored / bpmn / uml) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+
+    void add(VsdxShape s) => page = page.addShape(s);
+    final tapeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.tape(
+        id: tapeId, pinX: 2, pinY: 8, width: 1.5, height: 1));
+    final storedId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.storedData(
+        id: storedId, pinX: 4, pinY: 8, width: 1.5, height: 1));
+    final multiId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.multiDocument(
+        id: multiId, pinX: 6, pinY: 8, width: 1.5, height: 1.2));
+    final dblId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.doubleRectangle(
+        id: dblId, pinX: 2, pinY: 5, width: 1.5, height: 1));
+    final gwId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.bpmnGateway(
+        id: gwId, pinX: 4, pinY: 5, width: 1.1, height: 1.1));
+    final compId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.umlComponent(
+        id: compId, pinX: 6, pinY: 5, width: 1.5, height: 1.1));
+    final annId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.annotation(
+        id: annId, pinX: 2, pinY: 2, width: 1.2, height: 1));
+    final coneId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.cone(
+        id: coneId, pinX: 4, pinY: 2, width: 1.2, height: 1.3));
+    final weakId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.weakEntity(
+        id: weakId, pinX: 6, pinY: 2, width: 1.5, height: 1));
+    final poolId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.bpmnPool(
+        id: poolId, pinX: 3, pinY: 0.5, width: 2.4, height: 1.4));
+    final layerId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.layeredRectangle(
+        id: layerId, pinX: 7, pinY: 0.5, width: 1.5, height: 1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(tapeId)!
+            .geometries
+            .first
+            .commands
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(storedId)!
+            .geometries
+            .first
+            .commands
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(multiId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(dblId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(dblId)!.geometries[1].noFill, isTrue);
+    expect(r.pages.first.findShapeById(gwId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(compId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(annId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(coneId)!
+            .geometries
+            .first
+            .commands
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(weakId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(poolId)!.geometries.length, greaterThanOrEqualTo(1));
+    expect(r.pages.first.findShapeById(layerId)!.geometries.length, greaterThanOrEqualTo(2));
+  });
+
   // Regression: `_buildShapeElement` used to omit arrows, flips, transparencies,
   // shadow, LocPin, VerticalAlign and Character/Paragraph sections — so a
   // freshly-created (or reparented) shape looked very different after save +
@@ -2135,6 +2294,48 @@ void main() {
     expect(shapeXml.contains('N="FontScale"'), isTrue);
     expect(shapeXml.contains('N="AsianFont"') || shapeXml.contains('N="LangID"'),
         isTrue);
+  });
+
+  test('connection point add / move / remove round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      connectionPoints: VsdxPage.defaultConnectionPoints(2, 1),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+    final bytes1 = writer.write(originalBytes: blank, edited: doc);
+
+    // Drop the centre point (index 4) and nudge the top point.
+    doc = parser.parse(bytes1);
+    final edited = doc.pages.first
+        .removeConnectionPoint(id, 4)
+        .moveConnectionPoint(id, 0, 1.5, 1.0);
+    final out = writer.write(
+      originalBytes: bytes1,
+      edited: doc.replacePage(0, edited),
+    );
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.connectionPoints.length, 4);
+    expect(after.connectionPoints[0].x, closeTo(1.5, 1e-6));
+    expect(after.connectionPoints[0].y, closeTo(1.0, 1e-6));
+    expect(after.connectionPoints[0].xFormula, isNotNull);
+    // Adding a custom point also round-trips.
+    doc = parser.parse(out);
+    final withExtra = doc.pages.first.addConnectionPoint(id, 0.25, 0.25);
+    final out2 = writer.write(
+      originalBytes: out,
+      edited: doc.replacePage(0, withExtra),
+    );
+    final again = parser.parse(out2).pages.first.findShapeById(id)!;
+    expect(again.connectionPoints.length, 5);
+    expect(again.connectionPoints.last.x, closeTo(0.25, 1e-6));
   });
 
   test('materialised connection points write DirX/DirY/Type', () {

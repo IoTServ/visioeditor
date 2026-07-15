@@ -345,7 +345,7 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
-- 连接器避让路由；富文本"逐 run 选区"编辑；公式重算引擎；矢量 PDF；LibreOffice `soffice` 交叉验证
+- 公式重算引擎；LibreOffice `soffice` 交叉验证；项目符号绘制 / 段落缩进
 
 ---
 
@@ -756,3 +756,200 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   模型显式设色时写 Color**（缺省交给 DefaultTextStyle/StyleSheets，画笔本就以 `Colors.black87` 回退）；Parser
   **缺省 Font/Color cell 保持 null**、不再物化 stylesheet（Size 等度量仍继承）。`roundtrip_flowchart_test` 15/15、
   引擎 307、App 81、analyze 干净。
+- 2026-07-15 — **对齐 drawio（批次三十一）——默认形状库全量覆盖（按分类）**：对照 drawio `Sidebar.js`
+  `defaultEntries = general;uml;er;bpmn;flowchart;basic;arrows2`，把形状面板扩到 **7 组 / ~117 个模具入口**
+  （含跨组合理复用）：**General**（31，含 Cylinder/Cloud/Document/Note/Actor/And/Or/Data Storage/Double Rect·Ellipse/
+  Corner/Tee）、**Flowchart**（33，补 Tape/Database/Multi-Document/Stored·Direct·Sequential Data/Annotation/
+  Parallel Mode/On-Page/Extract/Transfer/Start…）、**Arrows**（11，Chevron/Notched/Signal In/Quad/Triad/
+  Double Vertical）、**Basic**（15，多角星/Half Circle/Wave/Banner/Pyramid/Moon/Donut/Frame/No Symbol/
+  Cylinder Stack）、**Containers**（7）、**UML**（12，+Component/Object/Interface/Start/End/Fork）、**BPMN**
+  （8，Task/Gateway/Events/Data Object·Store/Annotation）。引擎新增 `tape/storedData/annotation/parallelMode/
+  multiDocument/doubleRectangle/doubleEllipse/andGate/halfCircle/wave/frame/donut/noSymbol/umlComponent/
+  bpmnEvent/bpmnGateway/bpmnTask/cylinderStack`（全白名单命令、往返安全）。宽屏分档展开阈值不变
+  （900/1100/1280）。测试：全模具几何往返 + 新 drawio-parity Writer 例；引擎 308、App 81、analyze 干净。
+  （ER 专用库、完整 UML 2.5 / BPMN 事件变体 / 泳道池留后续。）
+- 2026-07-15 — **对齐 drawio（批次三十二）——补齐 defaultEntries 全部分类 + 常用变体**：在批次三十一基础上继续
+  对齐 arrows2 / basic / uml / er / bpmn，形状面板扩到 **9 组 / ~169 个模具入口**：**Arrows**（18，+Slender/
+  Sharp/Tailed/Striped/Bend/U-Turn/Callout Arrow）、**Basic**（32，+Cone/Drop/Pointed Oval/Pie/Smiley/Sun/
+  Tick/X/Plaque/8-Star/Oval·Loud·Cloud Callout/Layered Rect/Acute·Obtuse Triangle…）、**UML**（15，+Boundary/
+  Control/Entity）、新增 **ER**（12，Entity/Weak Entity/Attribute 变体/Relationship/Identifying/Associative）、
+  **BPMN**（12，+Parallel·Inclusive Gateway/Pool/Conversation）、新增 **Advanced**（8，Ellipse Divider/
+  Switch/Double Rect·Ellipse…）。引擎新增 `cone/drop/pointedOval/pie/smiley/umlBoundary/umlControl/
+  associativeEntity/weakEntity/identifyingRelationship/bpmnParallelGateway/bpmnInclusiveGateway/bpmnPool/
+  bpmnConversation/ellipseDividerH·V/layeredRectangle`。完整 BPMN 事件矩阵（~169）与 UML 2.5 / 泳道表格式
+  容器仍留后续。
+- 2026-07-15 — **对齐 drawio（批次三十三）——defaultEntries 缺口收口**：对照 arrows2(27)/basic(63)/uml/
+  er(13)/bpmn.xml，把面板扩到 **9 组 / ~230+ 入口**：**Arrows** 对齐 arrows2 全套（+Notched Signal-In/
+  Slender Two Way/Stylised/Bend Double/Callout Double·Quad/Jump-In/Tailed Notch…）、**Basic** 补 Partial
+  Rect/Diagonal Snip/Button/Arc/Message/Tag/Bang/Neutral·Sad Smiley/Frame Corner/Isometric Cube…、
+  **General** +Container、**UML** +Module/Lifeline/Activation/Destruction/Frame/Provided·Required Interface、
+  **ER** +Weak Key Attribute、**BPMN** 扩到 Task 变体 + Exclusive/Complex/Event-Based Gateway + Message/
+  Timer/Terminate 事件 + Lane。引擎新增对应工厂（全白名单几何）。  仍刻意未收：BPMN 2.0 全事件矩阵图标细节、
+  Basic 填充图案矩形（pattern 渲染 M6）、真正可折叠泳道容器。
+- 2026-07-15 — **对齐 drawio（批次三十四）——defaultEntries 缺口清零**：Basic 补齐填充矩形（diag/vert/hor/
+  grid 线影近似）、Diagonal/Corner/Three-corner Rounded、Rounded/Plaque Frame、Button(shaded)；UML 补齐
+  Actor/Boundary/Entity/Control Lifeline；BPMN.xml 补齐 Ad Hoc / Compensation / Cancel·Link·Multiple·Rule
+  Intermediate / Loop Marker / Multiple Instances。面板 **9 组 / ~251 入口**；对照 arrows2/basic/er/
+  flowchart/general/uml/bpmn.xml 的标题缺口为 **0**。真正 BPMN 2.0 事件全矩阵与可折叠泳道仍留后续。
+- 2026-07-15 — **对齐 drawio（批次三十五）——general 包 Misc/Advanced**：drawio `configuration` 中
+  `general` = `general+misc+advanced`。新增 **Misc** 组（Curly Bracket / Backbone / Crossbar / Zigzag /
+  Waypoint / Lists / Isometric Square…）并按 Advanced 全表扩充 **Advanced**（Double Rounded/Square/Circle、
+  Tape Data、User、Sum、Process Bar、List Item、Ellipse dividers…）。面板 **10 组 / ~297 入口**。仍刻意未收：
+  HTML Table / Sketch 风格 / Image·Icon 占位、可折叠 List 泳道、BPMN 2.0 全事件矩阵。
+- 2026-07-15 — **对齐 drawio（批次三十六）——系统剪贴板 + 完整图层**：重要编辑 UX。
+  (1) **系统剪贴板**：`ShapeClipboardCodec` 把选中形状打成迷你 `.vsdx` 信封写入系统剪贴板；
+  `pasteFromSystem` 先读系统剪贴板（信封 → 形状；纯文本 → 文本框），跨实例 Cmd+V / Paste Here 可用；
+  应用内 `_clipboard` 仍保留（含图片）。(2) **图层面板**：始终可开；支持新建/重命名/删除、Visible/
+  Locked/Print、把选区 Assign 到图层；锁定图层上的形状不可移动/删除。测试：`shape_clipboard_test` 3 例。
+  仍优先后续：连接器避障路由、富文本选区、真正容器/泳道。
+- 2026-07-15 — **对齐 drawio（批次三十七）——连接器避障正交路由**：`ObstacleRouter`（Hanan 网格 +
+  Dijkstra）在自动正交路由时绕开其它 2-D 形状（含 clearance）；接入 `rerouteConnectors` /
+  `setConnectorStyle`；`connectorRoute` 从烘焙几何恢复折线以便标签/弯点手柄一致；绘制侧
+  `ConnectorRouter` 同步避障。用户 waypoints / 直线路由不受影响。测试：`obstacle_router_test` 5 例。
+  仍优先后续：富文本选区编辑、真正容器/泳道、主题 UI。
+- 2026-07-15 — **对齐 drawio（批次三十八）——真正容器拖入/拖出**：draw.io 式父子容纳。
+  (1) 引擎：`pageToLocal`、`findParentId`、`reparentShape`、`findDropContainerAt`、
+  `translateShape`（honour `dontMoveChildren`）；Container / BPMN Pool 打 `shapeKind`。
+  (2) 编辑器：拖动时高亮 drop 容器；松手 `applyDropContainmentAt` 挂入或弹出；与拖动同属一步 undo。
+  测试：`containment_test` 8 例。仍优先后续：富文本选区、主题 UI、可折叠泳道。
+- 2026-07-15 — **对齐 drawio（批次三十九）——富文本选区格式化**：
+  (1) 引擎 `rich_text_edit`：`applyCharStyleToRange` / `applyParaStyleToRange` /
+  `replacePlainText`（前缀/后缀保样式）/ `charStyleAt`。(2) `setShapeText` 不再压扁多 run；
+  内联编辑同步 `textEditSelection`；工具栏 Bold/Italic/Size/Color 对选区只改该段；失焦延迟一帧
+  提交以便工具栏先吃到选区。测试：`rich_text_edit_test` 6 例。仍优先后续：主题 UI、可折叠泳道、
+  内联编辑器混排预览。
+- 2026-07-15 — **对齐 drawio（批次四十）——主题 UI**：
+  (1) 内置 Office/Blue/Green/Orange/Monochrome 调色板；Diagram 面板可切换文档主题。
+  (2) Format 的 Fill/Line/Text 下增加 Theme 色条，绑定 `theme*Index`（清显式色），渲染走
+  `THEMEVAL`；无主题时自动装 Office。(3) `withSolid*` / `withTheme*` 辅助 API。
+  测试：`theme_ui_test` 4 例。仍优先后续：可折叠泳道、内联混排预览、theme XML 写出。
+- 2026-07-15 — **对齐 drawio（批次四十一）——可折叠容器/泳道**：
+  (1) `User.veCollapsed` + `withCollapsed` / `collapsed`；折叠时跳过子树绘制与命中，障碍路由
+  也不再计入子形状。(2) 标题栏/泳道条 chevron 绘制与点击 `toggleCollapsed`（undo 友好，折叠时
+  清除子形状选中）。(3) `localToPageDeep` 支持嵌套容器 chevron 命中。测试：`collapse_container_test`
+  4 例。仍优先后续：折叠时收起高度、内联混排预览、theme XML 写出。
+- 2026-07-15 — **对齐 drawio（批次四十二）——折叠收高 + 内联混排预览**：
+  (1) `fold`/`unfold`：折叠把高度收到标题带并记下 `veExpandedHeight`，顶边固定；展开恢复。
+  (2) 内联编辑用 `Text.rich` 按 run 预览粗体/颜色/字号（`replacePlainText` 跟踪输入），TextField
+  近乎透明叠在上面以保留光标与选区。测试：`collapse_container_test` 增补 fold 高度用例。
+  仍优先后续：theme XML 写出、公式重算、矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次四十三）——主题 XML 持久化**：
+  (1) `ThemeSerializer.emit` / `patchClrScheme`：写出完整 DrawingML theme，或仅改
+  `<a:clrScheme>`（保留 font/fmt）。(2) Writer `_prepareThemePart`：主题变更时创建
+  `visio/theme/theme1.xml` + document.xml.rels + Content_Types，未变更则字节透传。
+  (3) `ThemeParser.slotForName` 公开。测试：`theme_writer_test` 4 例。仍优先后续：
+  公式重算引擎、矢量 PDF、LibreOffice 交叉验证。
+- 2026-07-15 — **对齐 drawio（批次四十四）——查找替换 + 页面标签重排**：
+  (1) Find 条可展开 Replace：`replaceFind` / `replaceAllFind`（大小写不敏感，只改标签不改
+  名称；Replace All 单撤销步）；Cmd+H / 菜单 Find and Replace。(2) 页栏
+  `ReorderableListView` + `VsdxDocument.movePage` / `EditorController.movePage`（按页 id
+  保持当前页）；Writer 原有 `_reorderPages` 保序写回。测试：控制器 2 例（replace + movePage）。
+  仍优先后续：多泳道池、HTML Table、公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次四十五）——多泳道池插入/增删**：
+  (1) `SwimlaneOps`：`assemblePool` / `lane` / `layoutLanes` / `addLane` / `removeLane`；
+  `User.vePool` / `veLane` / `veLaneHorizontal`；横泳道左标题条、竖泳道顶标题条。
+  (2) Stencil：Pool（默认 2 道）、Vertical Pool、H/V Lane；右键 Add/Remove Lane；
+  拖入 pool 时自动 reflow；chevron 随方向定位。(3) 控制器 `addLaneToSelectedPool` /
+  `removeSelectedLane`。测试：`swimlane_test` 5 例 + 控制器 1 例。仍优先后续：HTML Table、
+  公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次四十六）——HTML Table（网格表）**：
+  (1) `TableOps`：`assembleTable` / `layoutCells` / `addRow`/`addColumn` /
+  `removeRow`/`removeColumn`；`User.veTable`/`veCell`/`veRow`/`veCol`；单元格为可编辑
+  矩形子形状（双击改文本）。(2) General Stencil：Table（3×3）、Table 2×2；右键 Add/Delete
+  Row|Column。(3) 控制器 `selectedTableId` + 增删 API。测试：`table_test` 4 例 + 控制器 1 例。
+  仍优先后续：合并单元格/列宽拖拽、公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次四十七）——表格合并 + 列宽/行高拖拽**：
+  (1) `veColWidths`/`veRowHeights` 比例；`resizeColumnBoundary`/`resizeRowBoundary`；选中表时
+  显示分隔线，拖拽调宽高。(2) `veRowSpan`/`veColSpan`/`veCovered` 合并：多选矩形单元格 →
+  Merge；Unmerge 还原；覆盖格不绘制/不命中。(3) 右键 Merge/Unmerge Cells。测试：`table_test`
+  6 例 + 控制器 merge 1 例。仍优先后续：公式重算 / 矢量 PDF。
+- 2026-07-15 — **修复：更多图形面板滚动条/滑块跟手**：根因是每次文档 `notifyListeners` 整页
+  `setState`，连带重建约 300 个模具缩略图，滚动条与属性滑块滞后。改为 `ListenableBuilder` +
+  图形库作 `child`（编辑不重建）；`ListView.builder` + 几何缓存 + 显式 `Scrollbar`；Opacity/
+  Corners 滑块本地拖拽值跟光标。仍优先后续：公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次四十八）——图片拖放落点 + 替换**：
+  (1) `insertImage` 支持 `cx/cy` 落点（网格吸附）；桌面拖入 PNG/JPEG/GIF/BMP/WEBP 落到光标处。
+  (2) 拖到已有图片上 / 右键 / Format「Replace Image…」→ `replaceImage`（新 media part，保持
+  位置尺寸，单撤销步）。(3) `pictureShapeAt` 命中顶层图片。测试：控制器 2 例（落点 + replace）。
+  仍优先后续：手绘 / 永久辅助线 / 公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次四十九）——Freehand 手绘**：
+  (1) `EditorTool.freehand` + 工具条；拖拽采样 content-px → 页英寸折线，实时墨迹预览。
+  (2) `VsdxShapeFactory.freehand` / `createFreehand`：1-D ink（`ObjType=1`，非连接器），简化近点，
+  继承线条记忆样式；单击不创建。(3) Writer 以 MoveTo/LineTo 往返。测试：工厂 1 + Writer 1 +
+  控制器 2。仍优先后续：永久辅助线 / 公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次五十）——标尺永久辅助线（Guides）**：
+  (1) 从上/左标尺拖出垂直/水平 `PageGuide`（按页会话级，不写回 `.vsdx`）；标尺三角标记 +
+  青色全页线；拖回标尺删除；空白右键 Clear Guides。(2) `computeSnap` 吸附永久辅助线；移动形状
+  时与邻居对齐竞争。(3) 控制器 `add/move/remove/clearPageGuide`。测试：snap 2 例 + 控制器 1 例。
+  仍优先后续：背景页 / 连接点编辑 / 公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次五十一）——背景页（BackPage）**：
+  (1) 画布 `VsdxPainter.underlayPage`：前景页下先绘制 Visio `BackPage` 形状（裁剪到前景页框）。
+  (2) Diagram 面板：开关「Background page」+「Use background」下拉；页签对背景页显示图层图标。
+  (3) 控制器 `setPageIsBackground` / `setBackgroundPage`（指定时同步把目标标为 `Background="1"`）/
+  `resolvedBackgroundPage`。(4) Writer 往返 `Background` / `BackPage` 属性。测试：Writer 1 + 控制器 1。
+  仍优先后续：连接点编辑 / 公式重算 / 矢量 PDF。
+- 2026-07-15 — **对齐 drawio（批次五十二）——编辑连接点（Edit Connection Points）**：
+  (1) 引擎：`connectionPointAt` / `materializeConnectionPoints` / `add`/`move`/`removeConnectionPoint`
+  （删点时重映射 `ToPart=100+k` 胶合）。(2) Writer `_patchConnectionPoints` 支持缩短删行 / 清空删节。
+  (3) 控制器编辑模式 + 画布：右键 / More「Edit Connection Points…」；拖移蓝叉、点击形状加点、
+  Delete 删点、Esc 退出；编辑时隐藏缩放/旋转手柄。(4) 测试：Writer 1 + 控制器 1。
+  仍优先后续：公式重算 / 矢量 PDF / LibreOffice 交叉验证。
+- 2026-07-15 — **对齐 drawio（批次五十三）——矢量 PDF + 导出保真 + 快捷键**：
+  (1) PDF 改为 SVG 路径 → `pw.SvgImage` 矢量写出（可缩放）；背景页作 underlay、跳过独立 Background
+  页；图层尊重 `Print`。(2) SVG/PNG 导出同步 underlay + Print 过滤；`printableLayerIds` /
+  `document.backgroundFor`。(3) 快捷键：Cmd+B/I/U、Cmd+E 选连接线、Cmd+Shift+I 选顶点、
+  Cmd+Shift+A 取消选中、Tab/Shift+Tab 循环选中。测试：export 2 + PDF 2 + 控制器 1。
+  仍优先后续：公式重算 / Find 跨页 / 渐变填充 UI / LibreOffice 交叉验证。
+- 2026-07-15 — **对齐 drawio（批次五十四）——Find 跨页 + Match case + 渐变填充 UI**：
+  (1) Find 匹配改为 `(pageIndex, shapeId)` 扫全文档；Find 切页保留 query；计数显示页码。
+  (2) Find 栏 `Aa` 开关 Match case；Replace / Replace All 尊重大小写；Replace All 跨页单撤销。
+  (3) Format Fill：None/Linear/Radial + Start/End 色 + 线性角度；`setFillGradient`；实心色板清除渐变；
+  `VsdxFill.withGradient` / `copyWith` 可清 null。测试：控制器 2 例。
+  仍优先后续：公式重算 / LibreOffice 交叉验证。
+- 2026-07-15 — **对齐 drawio（批次五十五）——连接点磁吸 + Align to page + Whole word**：
+  (1) 移动形状时 `computeSnap` 吸附邻居连接点（`SnapMagnet`），与边/中心/永久辅助线竞争。
+  (2) 单选对齐相对页面（左/右/上/下/水平/垂直居中）；多选仍相对选区。
+  (3) Find 栏 `W` 整词匹配；Replace 同步。测试：snap 2 + 控制器 2。
+  仍优先后续：公式重算 / LibreOffice 交叉验证 / 线渐变·阴影细节 UI。
+- 2026-07-15 — **对齐 drawio（批次五十六）——线渐变 + 阴影细节 Format UI**：
+  (1) Format Line：None/Linear/Radial + Start/End 色 + 线性角度；`setLineGradient`；
+  实心色板 / No line 清除线渐变；`VsdxLine.withGradient` / `copyWith` 可清 null。
+  (2) Format Shadow：开关外加颜色色板、Offset X/Y、Blur、Opacity；`updateShadow` /
+  `selectedShadow`；`VsdxShadow.copyWith` 支持清色。测试：控制器 2 例。
+  仍优先后续：公式重算 / LibreOffice 交叉验证 / Glow·Reflection UI。
+- 2026-07-15 — **对齐 drawio（批次五十七）——Glow + Reflection Format UI**：
+  (1) Format Glow：开关 + 颜色 / Size / Opacity；`setGlow` / `updateGlow` / `selectedGlow`；
+  `VsdxGlow.copyWith`。
+  (2) Format Reflection：开关 + Size / Dist / Blur / Opacity；`setReflection` /
+  `updateReflection` / `selectedReflection`；`VsdxReflection.copyWith`。
+  引擎渲染与 Writer 往返此前已具备。测试：控制器 1 例。
+  仍优先后续：公式重算 / LibreOffice 交叉验证。
+- 2026-07-15 — **对齐 drawio（批次五十八）——箭头大小 + 填充图案 + Match size + Z 序键**：
+  (1) Format Line 箭头 1–7 档 Size；`setBeginArrowSize` / `setEndArrowSize`。
+  (2) Format Fill 图案条（Solid + 常用 hatch）；`setFillPattern`（hatch 清渐变）。
+  (3) Arrange Same width/height/size（相对首个选中）；`matchSelection*`。
+  (4) Cmd+] / Cmd+[ 逐层前移/后移。测试：控制器 1 例。
+  仍优先后续：公式重算 / LibreOffice 交叉验证 / Soft Edges / 图层侧栏。
+- 2026-07-15 — **对齐 drawio（批次五十九）——Soft Edges + 行距 + 图层面板 + Jump 半径**：
+  (1) Soft Edges：Painter 模糊羽化 fill/stroke；Format 开关+Size；`setSoftEdges` /
+  `updateSoftEdges`（模型/Writer 已有）。
+  (2) Format Text 行距 1×/1.15×/1.5×/2×；`setLineSpacing` / `selectedParaStyle`。
+  (3) Layers 改为可钉住浮动面板（仿 Outline），替换模态对话框。
+  (4) Diagram 面板 Line jumps 开关 + Jump 半径滑块（会话级）。测试：控制器 1 例。
+  仍优先后续：公式重算 / LibreOffice 交叉验证。
+- 2026-07-15 — **对齐 drawio（批次六十）——复合线 + 段前段后 + 删除线**：
+  (1) Format Line CompoundType（Single/Double/Thick-thin/Thin-thick）；Painter
+  同心描边+clear 空隙；`setCompoundType`。
+  (2) 富文本按 `\n` 分段布局，应用 SpBefore/SpAfter；Format Text Space before/after
+  预设；`setSpaceBeforeInches` / `setSpaceAfterInches`。
+  (3) Format 删除线开关；`setStrikethrough`（绘制此前已有）。测试：控制器 1 例。
+  仍优先后续：公式重算 / LibreOffice 交叉验证 / 项目符号。
+- 2026-07-15 — **设置页：语言 / 暗黑模式 / 主题色**：
+  `AppSettings`（SharedPreferences）持久化 themeMode、seedColor、locale；
+  `SettingsPage` + AppBar/More 入口；`AppLocalizations`（en/zh）覆盖设置与主界面
+  chrome。测试：`app_settings_test` + `widget_test` 设置流程。
+- 2026-07-15 — **复核修复（批次 56–60 + 设置页）**：全量 `flutter analyze` 无错误、
+  app 127 例 + vsdx 348 例全绿。修两处：(1) 富文本渲染仅当存在段前/段后间距时才走
+  分段布局，无间距文本回退原单 `TextPainter` 路径，消除对常规标签的回归风险（并删除
+  未使用的 `maxParaW`）。(2) 复合线（CompoundType）改为统一干净双线近似，移除
+  thick-thin/thin-thick 两次 `saveLayer` 叠加产生的 4 线错乱；模型值仍照常往返。

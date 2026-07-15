@@ -11,7 +11,7 @@
 library;
 
 import 'dart:math' as math;
-import 'dart:ui' as ui show FontFeature, Gradient;
+import 'dart:ui' as ui show FontFeature, Gradient, ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -29,6 +29,7 @@ import 'shape_bounds.dart' as bounds;
 class VsdxPainter extends CustomPainter {
   VsdxPainter({
     required this.page,
+    this.underlayPage,
     this.theme = VsdxTheme.empty,
     this.images = ImageRegistry.empty,
     this.imageCache,
@@ -50,6 +51,10 @@ class VsdxPainter extends CustomPainter {
   }) : super(repaint: imageCache);
 
   final VsdxPage? page;
+
+  /// Optional Visio / draw.io background page drawn underneath [page]'s shapes
+  /// (read-only composite). Hit-testing / editing still target [page] only.
+  final VsdxPage? underlayPage;
   final VsdxTheme theme;
 
   /// Embedded raster images (`/visio/media/*`). Optional — when missing
@@ -139,7 +144,9 @@ class VsdxPainter extends CustomPainter {
         ..color = Colors.black26,
     );
 
-    if (p.shapes.isEmpty) {
+    final underlay = underlayPage;
+    final hasUnderlay = underlay != null && underlay.shapes.isNotEmpty;
+    if (p.shapes.isEmpty && !hasUnderlay) {
       _drawPlaceholderText(
         canvas,
         size,
@@ -155,31 +162,42 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(0, p.heightInches * pxPerInch);
     canvas.scale(pxPerInch, -pxPerInch);
 
-    final visibleLayers = respectLayerVisibility
-        ? (visibleLayerIdsOverride ?? p.visibleLayerIds)
-        : null;
-    final bboxes = _bboxesFor(p);
-    // Viewport in page-inch coords. The painter is currently scaled so
-    // that 1 unit = 1 inch; the visible inch-rect equals the entire page
-    // (we're inside a SizedBox of the page's pixel dimensions). When the
-    // caller embeds the painter inside an InteractiveViewer the parent
-    // already clips, so we still draw the full page — but the bbox check
-    // remains cheap when many shapes overlap.
-    final viewportInches = Rect.fromLTWH(0, 0, p.widthInches, p.heightInches);
+    // Background page first (Visio BackPage / drawio background), clipped to
+    // the foreground page's box so an oversized underlay doesn't spill.
+    if (hasUnderlay) {
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(0, 0, p.widthInches, p.heightInches));
+      _paintPageShapes(canvas, underlay);
+      canvas.restore();
+    }
 
-    _lineJumpsActive =
-        drawLineJumps && lineJumpsEnabledForCode(p.pageSheet.lineJumpCode);
+    if (p.shapes.isNotEmpty) {
+      _paintPageShapes(canvas, p);
+    }
+    canvas.restore();
+  }
+
+  /// Paint [target]'s top-level shapes in the current (page-inch, Y-up) canvas.
+  void _paintPageShapes(Canvas canvas, VsdxPage target) {
+    final visibleLayers = respectLayerVisibility
+        ? (visibleLayerIdsOverride ?? target.visibleLayerIds)
+        : null;
+    final bboxes = _bboxesFor(target);
+    final viewportInches =
+        Rect.fromLTWH(0, 0, target.widthInches, target.heightInches);
+
+    _lineJumpsActive = drawLineJumps &&
+        lineJumpsEnabledForCode(target.pageSheet.lineJumpCode);
     if (_lineJumpsActive) {
-      _computeConnectorRoutes(p);
+      _computeConnectorRoutes(target);
     } else {
       _connRoutesPage = const <List<Offset>>[];
       _connZ = const <int, int>{};
     }
 
-    for (final shape in p.shapes) {
+    for (final shape in target.shapes) {
       _paintShape(canvas, shape, visibleLayers, bboxes, viewportInches);
     }
-    canvas.restore();
   }
 
   Map<int, Rect> _bboxesFor(VsdxPage p) {
@@ -295,9 +313,17 @@ class VsdxPainter extends CustomPainter {
 
     // Children inherit the parent's local frame: their PinX/PinY are
     // interpreted in the (0..parentWidth, 0..parentHeight) box, so we paint
-    // them BEFORE restoring the canvas. (M4-06.)
-    for (final child in shape.children) {
-      _paintShape(canvas, child, visibleLayers, bboxes, viewport);
+    // them BEFORE restoring the canvas. (M4-06.) Collapsed containers keep
+    // their children in the model but hide them (draw.io fold).
+    if (!shape.collapsed) {
+      for (final child in shape.children) {
+        if (TableOps.isCovered(child)) continue;
+        _paintShape(canvas, child, visibleLayers, bboxes, viewport);
+      }
+    }
+
+    if (shape.shapeKind.isStructural) {
+      _paintCollapseChevron(canvas, shape, w, h);
     }
 
     canvas.restore();
@@ -316,6 +342,22 @@ class VsdxPainter extends CustomPainter {
       _drawShadow(canvas, shape, path);
       _drawGlow(canvas, shape, path);
       _drawReflection(canvas, shape, path);
+      // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
+      // offscreen layer. Skip 1D connectors — jumps / arrows stay crisp.
+      final soft = shape.line.softEdgesInches;
+      final useSoft = soft > 0 && !shape.is1D;
+      if (useSoft) {
+        final bounds = path.getBounds().inflate(soft * 3);
+        canvas.saveLayer(
+          bounds,
+          Paint()
+            ..imageFilter = ui.ImageFilter.blur(
+              sigmaX: soft,
+              sigmaY: soft,
+              tileMode: TileMode.decal,
+            ),
+        );
+      }
       if (!geom.noFill && shape.fill.hasFill) {
         _drawFill(canvas, shape, path);
       }
@@ -336,10 +378,52 @@ class VsdxPainter extends CustomPainter {
           }
           final strokeP =
               dashes == null ? strokeSrc : dashedPath(strokeSrc, dashes);
-          canvas.drawPath(strokeP, strokePaint);
+          _drawCompoundStroke(
+            canvas,
+            strokeP,
+            strokePaint,
+            shape.line.compoundType,
+            shape.line.weightInches,
+          );
         }
       }
+      if (useSoft) canvas.restore();
     }
+  }
+
+  /// Draw a stroke honouring Visio `CompoundType`
+  /// (0=single, 1=double, 2=thick-thin, 3=thin-thick).
+  ///
+  /// Every compound type is approximated as a clean double line: a full-width
+  /// stroke with a concentric transparent gap, preserving the stored total
+  /// width. A faithful thick-thin / thin-thick would require offsetting
+  /// arbitrary geometry, so we render the same double rail for 1–3 (the model
+  /// value still round-trips through the writer).
+  void _drawCompoundStroke(
+    Canvas canvas,
+    Path path,
+    Paint paint,
+    int compoundType,
+    double weightInches,
+  ) {
+    final w = math.max(paint.strokeWidth, weightInches);
+    if (compoundType <= 0 || w < 1e-6) {
+      canvas.drawPath(path, paint);
+      return;
+    }
+    final bounds = path.getBounds().inflate(w * 2);
+    canvas.saveLayer(bounds, Paint());
+    canvas.drawPath(path, paint..strokeWidth = w);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = paint.strokeCap
+        ..strokeJoin = paint.strokeJoin
+        ..strokeWidth = w * 0.38
+        ..blendMode = BlendMode.clear,
+    );
+    canvas.restore();
   }
 
   /// Stroke path for connector [shape]'s polyline [geom] with a small arc over
@@ -950,6 +1034,52 @@ class VsdxPainter extends CustomPainter {
     );
   }
 
+  /// Draw.io-style fold chevron in the container header / lane strip.
+  void _paintCollapseChevron(Canvas canvas, VsdxShape shape, double w, double h) {
+    final local = collapseChevronLocalCenter(shape);
+    final r = math.min(0.08, math.min(w, h) * 0.08);
+    final fill = Paint()..color = const Color(0xCC333333);
+    final cx = local.dx, cy = local.dy;
+    final path = Path();
+    if (shape.collapsed) {
+      // ▶ pointing right
+      path
+        ..moveTo(cx - r * 0.5, cy - r)
+        ..lineTo(cx + r * 0.7, cy)
+        ..lineTo(cx - r * 0.5, cy + r)
+        ..close();
+    } else {
+      // ▼ pointing down (in Y-up local space: smaller y is down on screen after
+      // the page flip, so we point toward -Y in local inches).
+      path
+        ..moveTo(cx - r, cy + r * 0.5)
+        ..lineTo(cx + r, cy + r * 0.5)
+        ..lineTo(cx, cy - r * 0.7)
+        ..close();
+    }
+    canvas.drawPath(path, fill);
+  }
+
+  /// Local-inch centre of the collapse chevron for [shape] (origin bottom-left).
+  static Offset collapseChevronLocalCenter(VsdxShape shape) {
+    final w = shape.width, h = shape.height;
+    if (shape.shapeKind == VsdxShapeKind.swimlane) {
+      if (SwimlaneOps.isHorizontal(shape)) {
+        final strip = w * 0.12;
+        return Offset(strip * 0.5, h - math.min(0.22, h * 0.12));
+      }
+      final band = h * 0.12;
+      return Offset(math.min(0.18, w * 0.08), h - band * 0.5);
+    }
+    // Container / group: top title band.
+    final band = h * 0.18;
+    return Offset(math.min(0.18, w * 0.08), h - band * 0.5);
+  }
+
+  /// Page-inch hit radius for the collapse chevron.
+  static double collapseChevronHitRadius(VsdxShape shape) =>
+      math.max(0.14, math.min(shape.width, shape.height) * 0.06);
+
   /// Auto-generated shape names (`Sheet.5`) are internal ids, never content —
   /// unlike Visio's viewer heritage we don't paint them as a label fallback.
   static final RegExp _autoName = RegExp(r'^Sheet\.\d+$');
@@ -1066,12 +1196,69 @@ class VsdxPainter extends CustomPainter {
     final mrPx = block.marginRightInches * s;
     final mtPx = block.marginTopInches * s;
     final mbPx = block.marginBottomInches * s;
+    final maxW = math.max(0.0, twPx - mlPx - mrPx);
+
+    // Rich text with paragraph spacing (SpBefore / SpAfter): lay each paragraph
+    // out separately and stack them. Text with no paragraph spacing keeps the
+    // single-painter path below unchanged, so ordinary labels don't regress.
+    final needsParaLayout = hasRich &&
+        rich.runs.any((r) =>
+            r.paraStyle.spaceBeforeInches != 0 ||
+            r.paraStyle.spaceAfterInches != 0);
+    if (needsParaLayout) {
+      final paras = _splitParagraphs(rich.runs);
+      final painters = <TextPainter>[];
+      final beforePx = <double>[];
+      final afterPx = <double>[];
+      var totalH = 0.0;
+      for (final para in paras) {
+        final pAlign = _flutterAlign(para.style.horizontalAlign);
+        final tp = TextPainter(
+          text: TextSpan(
+            children: <TextSpan>[
+              for (final r in para.runs) _runToSpan(r, s),
+            ],
+          ),
+          textAlign: pAlign,
+          textDirection: TextDirection.ltr,
+          maxLines: null,
+        )..layout(maxWidth: maxW);
+        painters.add(tp);
+        final b = para.style.spaceBeforeInches * s;
+        final a = para.style.spaceAfterInches * s;
+        beforePx.add(b);
+        afterPx.add(a);
+        totalH += b + tp.height + a;
+      }
+      var oy = switch (block.verticalAlign) {
+        VsdxVertAlign.top => mtPx,
+        VsdxVertAlign.bottom => thPx - mbPx - totalH,
+        VsdxVertAlign.middle => (thPx - totalH) / 2,
+      };
+      if (block.verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
+      var y = oy;
+      for (var i = 0; i < painters.length; i++) {
+        final tp = painters[i];
+        final pAlign = _flutterAlign(paras[i].style.horizontalAlign);
+        y += beforePx[i];
+        final ox = switch (pAlign) {
+          TextAlign.center => (twPx - tp.width) / 2,
+          TextAlign.right => twPx - mrPx - tp.width,
+          _ => mlPx,
+        };
+        tp.paint(canvas, Offset(ox, y));
+        y += tp.height + afterPx[i];
+      }
+      canvas.restore();
+      return;
+    }
+
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
       textDirection: TextDirection.ltr,
       maxLines: null,
-    )..layout(maxWidth: math.max(0.0, twPx - mlPx - mrPx));
+    )..layout(maxWidth: maxW);
 
     // Offsets measured from the block's upper-left corner (px).
     final ox = switch (align) {
@@ -1089,6 +1276,31 @@ class VsdxPainter extends CustomPainter {
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
+  }
+
+  /// Split rich-text runs into paragraphs at `\n` (Visio paragraph breaks).
+  List<({List<VsdxTextRun> runs, VsdxParaStyle style})> _splitParagraphs(
+    List<VsdxTextRun> runs,
+  ) {
+    final out = <({List<VsdxTextRun> runs, VsdxParaStyle style})>[];
+    var cur = <VsdxTextRun>[];
+    var style = VsdxParaStyle.defaults;
+    void flush() {
+      out.add((runs: cur, style: style));
+      cur = <VsdxTextRun>[];
+    }
+
+    for (final run in runs) {
+      final parts = run.text.split('\n');
+      for (var i = 0; i < parts.length; i++) {
+        if (i > 0) flush();
+        style = run.paraStyle;
+        // Keep empty segments so consecutive `\n\n` yield blank paragraphs.
+        cur.add(run.copyWith(text: parts[i]));
+      }
+    }
+    if (cur.isNotEmpty || out.isEmpty) flush();
+    return out;
   }
 
   /// Opaque backing colour for an edge label — the page background when set,
@@ -1232,6 +1444,7 @@ class VsdxPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant VsdxPainter old) =>
       old.page != page ||
+      old.underlayPage != underlayPage ||
       old.theme != theme ||
       old.images != images ||
       old.imageCache != imageCache ||
@@ -1244,7 +1457,9 @@ class VsdxPainter extends CustomPainter {
       old.fallbackStroke != fallbackStroke ||
       old.respectLayerVisibility != respectLayerVisibility ||
       old.visibleLayerIdsOverride != visibleLayerIdsOverride ||
-      old.fontFallback != fontFallback;
+      old.fontFallback != fontFallback ||
+      old.drawLineJumps != drawLineJumps ||
+      old.lineJumpRadiusInches != lineJumpRadiusInches;
 }
 
 class _LineEndpoints {

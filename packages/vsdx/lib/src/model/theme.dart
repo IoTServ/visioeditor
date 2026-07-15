@@ -49,4 +49,106 @@ class VsdxTheme {
   VsdxColor? resolve(int slotId) => colors[slotId];
 
   bool get isEmpty => colors.isEmpty;
+
+  /// Named built-in palettes (draw.io-style theme gallery). Documents without
+  /// a theme part start empty; the editor can install one of these so
+  /// theme-slot fills / lines / text resolve to real colours.
+  static const List<({String name, VsdxTheme theme})> builtins = <({
+    String name,
+    VsdxTheme theme,
+  })>[
+    (name: 'Office', theme: office),
+    (name: 'Blue', theme: blue),
+    (name: 'Green', theme: green),
+    (name: 'Orange', theme: orange),
+    (name: 'Monochrome', theme: monochrome),
+  ];
+
+  /// Default Office-like palette (Visio / PowerPoint accent defaults).
+  static const VsdxTheme office = VsdxTheme(colors: <int, VsdxColor>{
+    ThemeSlot.dk1: VsdxColor(0xFF000000),
+    ThemeSlot.lt1: VsdxColor(0xFFFFFFFF),
+    ThemeSlot.dk2: VsdxColor(0xFF44546A),
+    ThemeSlot.lt2: VsdxColor(0xFFE7E6E6),
+    ThemeSlot.accent1: VsdxColor(0xFF4472C4),
+    ThemeSlot.accent2: VsdxColor(0xFFED7D31),
+    ThemeSlot.accent3: VsdxColor(0xFFA5A5A5),
+    ThemeSlot.accent4: VsdxColor(0xFFFFC000),
+    ThemeSlot.accent5: VsdxColor(0xFF5B9BD5),
+    ThemeSlot.accent6: VsdxColor(0xFF70AD47),
+    ThemeSlot.hyperlink: VsdxColor(0xFF0563C1),
+    ThemeSlot.followedHyperlink: VsdxColor(0xFF954F72),
+  });
+
+  static const VsdxTheme blue = VsdxTheme(colors: <int, VsdxColor>{
+    ThemeSlot.dk1: VsdxColor(0xFF1B1B1B),
+    ThemeSlot.lt1: VsdxColor(0xFFFFFFFF),
+    ThemeSlot.dk2: VsdxColor(0xFF2F5496),
+    ThemeSlot.lt2: VsdxColor(0xFFD6DCE5),
+    ThemeSlot.accent1: VsdxColor(0xFF5B9BD5),
+    ThemeSlot.accent2: VsdxColor(0xFF9DC3E6),
+    ThemeSlot.accent3: VsdxColor(0xFF2F5496),
+    ThemeSlot.accent4: VsdxColor(0xFF00B0F0),
+    ThemeSlot.accent5: VsdxColor(0xFF0070C0),
+    ThemeSlot.accent6: VsdxColor(0xFF002060),
+    ThemeSlot.hyperlink: VsdxColor(0xFF0563C1),
+    ThemeSlot.followedHyperlink: VsdxColor(0xFF954F72),
+  });
+
+  static const VsdxTheme green = VsdxTheme(colors: <int, VsdxColor>{
+    ThemeSlot.dk1: VsdxColor(0xFF1B1B1B),
+    ThemeSlot.lt1: VsdxColor(0xFFFFFFFF),
+    ThemeSlot.dk2: VsdxColor(0xFF385723),
+    ThemeSlot.lt2: VsdxColor(0xFFE2EFDA),
+    ThemeSlot.accent1: VsdxColor(0xFF70AD47),
+    ThemeSlot.accent2: VsdxColor(0xFFA9D08E),
+    ThemeSlot.accent3: VsdxColor(0xFF548235),
+    ThemeSlot.accent4: VsdxColor(0xFFC6E0B4),
+    ThemeSlot.accent5: VsdxColor(0xFF375623),
+    ThemeSlot.accent6: VsdxColor(0xFF92D050),
+    ThemeSlot.hyperlink: VsdxColor(0xFF0563C1),
+    ThemeSlot.followedHyperlink: VsdxColor(0xFF954F72),
+  });
+
+  static const VsdxTheme orange = VsdxTheme(colors: <int, VsdxColor>{
+    ThemeSlot.dk1: VsdxColor(0xFF1B1B1B),
+    ThemeSlot.lt1: VsdxColor(0xFFFFFFFF),
+    ThemeSlot.dk2: VsdxColor(0xFF833C0C),
+    ThemeSlot.lt2: VsdxColor(0xFFFCE4D6),
+    ThemeSlot.accent1: VsdxColor(0xFFED7D31),
+    ThemeSlot.accent2: VsdxColor(0xFFF4B183),
+    ThemeSlot.accent3: VsdxColor(0xFFC65911),
+    ThemeSlot.accent4: VsdxColor(0xFFFFC000),
+    ThemeSlot.accent5: VsdxColor(0xFFFF6600),
+    ThemeSlot.accent6: VsdxColor(0xFF833C0C),
+    ThemeSlot.hyperlink: VsdxColor(0xFF0563C1),
+    ThemeSlot.followedHyperlink: VsdxColor(0xFF954F72),
+  });
+
+  static const VsdxTheme monochrome = VsdxTheme(colors: <int, VsdxColor>{
+    ThemeSlot.dk1: VsdxColor(0xFF000000),
+    ThemeSlot.lt1: VsdxColor(0xFFFFFFFF),
+    ThemeSlot.dk2: VsdxColor(0xFF595959),
+    ThemeSlot.lt2: VsdxColor(0xFFF2F2F2),
+    ThemeSlot.accent1: VsdxColor(0xFF404040),
+    ThemeSlot.accent2: VsdxColor(0xFF7F7F7F),
+    ThemeSlot.accent3: VsdxColor(0xFFA6A6A6),
+    ThemeSlot.accent4: VsdxColor(0xFFD9D9D9),
+    ThemeSlot.accent5: VsdxColor(0xFF262626),
+    ThemeSlot.accent6: VsdxColor(0xFFBFBFBF),
+    ThemeSlot.hyperlink: VsdxColor(0xFF0563C1),
+    ThemeSlot.followedHyperlink: VsdxColor(0xFF954F72),
+  });
+
+  /// Accent slots shown in the Format panel theme strip (draw.io-style).
+  static const List<int> accentSlots = <int>[
+    ThemeSlot.accent1,
+    ThemeSlot.accent2,
+    ThemeSlot.accent3,
+    ThemeSlot.accent4,
+    ThemeSlot.accent5,
+    ThemeSlot.accent6,
+    ThemeSlot.dk2,
+    ThemeSlot.lt2,
+  ];
 }

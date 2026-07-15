@@ -463,6 +463,520 @@ void main() {
     expect(c.findQuery, isEmpty);
   });
 
+  test('addLaneToSelectedPool and removeSelectedLane', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => SwimlaneOps.assemblePool(
+        poolId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 4,
+        height: 3,
+        laneCount: 2,
+      ),
+      4,
+      5,
+    );
+    final poolId = c.selection.single;
+    expect(c.canAddLane, isTrue);
+    expect(SwimlaneOps.lanesOf(c.currentPage!.findShapeById(poolId)!),
+        hasLength(2));
+
+    c.addLaneToSelectedPool();
+    expect(SwimlaneOps.lanesOf(c.currentPage!.findShapeById(poolId)!),
+        hasLength(3));
+    final laneId = c.selection.single;
+    expect(c.canRemoveLane, isTrue);
+
+    c.removeSelectedLane();
+    expect(SwimlaneOps.lanesOf(c.currentPage!.findShapeById(poolId)!),
+        hasLength(2));
+    expect(c.selection, <int>{poolId});
+    expect(c.currentPage!.findShapeById(laneId), isNull);
+  });
+
+  test('table add/remove row and column', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.selection.single;
+    expect(c.canAddTableRow, isTrue);
+    expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows, 2);
+
+    c.addRowToSelectedTable();
+    expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows, 3);
+    c.addColumnToSelectedTable();
+    expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).cols, 3);
+
+    // Select a cell then delete its row.
+    final cell = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!)
+        .firstWhere((x) => TableOps.cellRow(x) == 1);
+    c.selectOnly(cell.id);
+    expect(c.canRemoveTableRow, isTrue);
+    c.removeRowFromSelectedTable();
+    expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows, 2);
+  });
+
+  test('mergeSelectedCells and unmergeSelectedCell', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.selection.single;
+    final cells = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!);
+    final a = cells.firstWhere(
+        (x) => TableOps.cellRow(x) == 0 && TableOps.cellCol(x) == 0);
+    final b = cells.firstWhere(
+        (x) => TableOps.cellRow(x) == 0 && TableOps.cellCol(x) == 1);
+    c
+      ..selectOnly(a.id)
+      ..toggleSelection(b.id);
+    expect(c.canMergeCells, isTrue);
+    c.mergeSelectedCells();
+    final master = c.currentPage!.findShapeById(a.id)!;
+    expect(TableOps.colSpan(master), 2);
+    expect(c.canUnmergeCell, isTrue);
+    c.unmergeSelectedCell();
+    expect(TableOps.colSpan(c.currentPage!.findShapeById(a.id)!), 1);
+    expect(
+      TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!)
+          .where(TableOps.isCovered),
+      isEmpty,
+    );
+  });
+
+  test('replaceFind and replaceAllFind update labels', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c.setShapeText(a, 'Alpha');
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(4, 4, 5, 5);
+    final b = c.currentPage!.shapes.last.id;
+    c.setShapeText(b, 'Alphabet');
+
+    c.updateFind('alph');
+    expect(c.findMatchCount, 2);
+    c.replaceFind('Z');
+    // "Alpha" → first "Alph" (len 4) replaced → "Za"
+    expect(c.currentPage!.findShapeById(a)!.richText.plainText, 'Za');
+    // After replace, advances toward remaining "Alphabet"
+    expect(c.selection, <int>{b});
+
+    c.replaceAllFind('Q');
+    expect(c.currentPage!.findShapeById(b)!.richText.plainText, 'Qabet');
+    expect(c.findMatchCount, 0);
+
+    c.undo(); // undo replace-all
+    expect(c.currentPage!.findShapeById(b)!.richText.plainText, 'Alphabet');
+  });
+
+  test('align single selection to page', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(2, 2, 3, 3); // 1×1 at pin (2.5, 2.5)
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    c.alignLeft();
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(0.5, 1e-9));
+
+    c.alignRight();
+    final w = c.pageSize!.width;
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(w - 0.5, 1e-9));
+
+    c.alignCenterH();
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(w / 2, 1e-9));
+
+    c.alignBottom();
+    expect(c.currentPage!.findShapeById(id)!.pinY, closeTo(0.5, 1e-9));
+
+    c.alignTop();
+    final h = c.pageSize!.height;
+    expect(c.currentPage!.findShapeById(id)!.pinY, closeTo(h - 0.5, 1e-9));
+
+    c.alignMiddle();
+    expect(c.currentPage!.findShapeById(id)!.pinY, closeTo(h / 2, 1e-9));
+  });
+
+  test('find whole word excludes substring hits', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c.setShapeText(a, 'cat');
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(3, 3, 4, 4);
+    final b = c.currentPage!.shapes.last.id;
+    c.setShapeText(b, 'concatenate');
+
+    c.updateFind('cat');
+    expect(c.findMatchCount, 2);
+    c.setFindWholeWord(true);
+    expect(c.findMatchCount, 1);
+    expect(c.selection, <int>{a});
+
+    c.replaceAllFind('dog');
+    expect(c.currentPage!.findShapeById(a)!.richText.plainText, 'dog');
+    expect(c.currentPage!.findShapeById(b)!.richText.plainText, 'concatenate');
+  });
+
+  test('find spans pages, match case, and replace-all is one undo', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final a = c.currentPage!.shapes.last.id;
+    c.setShapeText(a, 'Alpha');
+    c.addPage();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final b = c.currentPage!.shapes.last.id;
+    c.setShapeText(b, 'alpha');
+
+    c.selectPage(0);
+    c.updateFind('alpha');
+    expect(c.findMatchCount, 2); // case-insensitive by default
+    expect(c.findCurrentPageIndex, 0);
+    c.findNext();
+    expect(c.currentPageIndex, 1);
+    expect(c.selection, <int>{b});
+    expect(c.findQuery, 'alpha'); // page switch via find keeps query
+
+    c.setFindMatchCase(true);
+    expect(c.findMatchCount, 1); // only lowercase "alpha"
+    expect(c.selection, <int>{b});
+
+    c.setFindMatchCase(false);
+    c.replaceAllFind('Z');
+    expect(c.document!.pages[0].findShapeById(a)!.richText.plainText, 'Z');
+    expect(c.document!.pages[1].findShapeById(b)!.richText.plainText, 'Z');
+    c.undo();
+    expect(c.document!.pages[0].findShapeById(a)!.richText.plainText, 'Alpha');
+    expect(c.document!.pages[1].findShapeById(b)!.richText.plainText, 'alpha');
+  });
+
+  test('setFillGradient installs and clears gradient fill', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    c.setFillGradient(
+      const VsdxGradient(
+        type: VsdxGradientType.linear,
+        angleRad: 0.5,
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFF1565C0)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFFFFFFFF)),
+        ],
+      ),
+    );
+    final g = c.currentPage!.findShapeById(id)!.fill.gradient!;
+    expect(g.type, VsdxGradientType.linear);
+    expect(g.stops.length, 2);
+    expect(g.angleRad, closeTo(0.5, 1e-9));
+
+    c.setFillGradient(null);
+    expect(c.currentPage!.findShapeById(id)!.fill.hasGradient, isFalse);
+
+    // Solid swatch clears any previous gradient.
+    c.setFillGradient(
+      const VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      ),
+    );
+    c.setFillColor(const VsdxColor(0xFF00FF00));
+    expect(c.currentPage!.findShapeById(id)!.fill.hasGradient, isFalse);
+    expect(c.currentPage!.findShapeById(id)!.fill.foreground?.value,
+        0xFF00FF00);
+  });
+
+  test('setLineGradient installs and clears; setNoLine clears gradient', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    c.setLineGradient(
+      const VsdxGradient(
+        type: VsdxGradientType.linear,
+        angleRad: 0.25,
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFF212121)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF90CAF9)),
+        ],
+      ),
+    );
+    final line = c.currentPage!.findShapeById(id)!.line;
+    expect(line.hasGradient, isTrue);
+    expect(line.gradient!.type, VsdxGradientType.linear);
+    expect(line.gradient!.angleRad, closeTo(0.25, 1e-9));
+    expect(line.pattern, isNonZero);
+
+    c.setLineGradient(null);
+    expect(c.currentPage!.findShapeById(id)!.line.hasGradient, isFalse);
+
+    c.setLineGradient(
+      const VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      ),
+    );
+    c.setLineColor(const VsdxColor(0xFF00FF00));
+    expect(c.currentPage!.findShapeById(id)!.line.hasGradient, isFalse);
+
+    c.setLineGradient(
+      const VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFF000000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFFFFFFFF)),
+        ],
+      ),
+    );
+    c.setNoLine();
+    final cleared = c.currentPage!.findShapeById(id)!.line;
+    expect(cleared.pattern, 0);
+    expect(cleared.hasGradient, isFalse);
+  });
+
+  test('updateShadow sets colour / offset / blur / opacity', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    c.setShadow(true);
+    c.updateShadow(
+      color: const VsdxColor(0xFF1565C0),
+      offsetXInches: 0.12,
+      offsetYInches: -0.08,
+      blurInches: 0.1,
+      transparency: 0.25,
+    );
+    final shadow = c.selectedShadow!;
+    expect(shadow.enabled, isTrue);
+    expect(shadow.color?.value, 0xFF1565C0);
+    expect(shadow.offsetXInches, closeTo(0.12, 1e-9));
+    expect(shadow.offsetYInches, closeTo(-0.08, 1e-9));
+    expect(shadow.blurInches, closeTo(0.1, 1e-9));
+    expect(shadow.transparency, closeTo(0.25, 1e-9));
+
+    c.setShadow(false);
+    expect(c.selectedHasShadow, isFalse);
+    expect(c.currentPage!.findShapeById(id)!.shadow.enabled, isFalse);
+  });
+
+  test('glow and reflection setters update selection effects', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+
+    c.setGlow(true);
+    c.updateGlow(
+      color: const VsdxColor(0xFFFFC107),
+      sizeInches: 0.1,
+      transparency: 0.3,
+    );
+    expect(c.selectedHasGlow, isTrue);
+    expect(c.selectedGlow!.color?.value, 0xFFFFC107);
+    expect(c.selectedGlow!.sizeInches, closeTo(0.1, 1e-9));
+    expect(c.selectedGlow!.transparency, closeTo(0.3, 1e-9));
+
+    c.setReflection(true);
+    c.updateReflection(
+      sizeInches: 0.4,
+      distanceInches: 0.05,
+      blurInches: 0.03,
+      transparency: 0.5,
+    );
+    expect(c.selectedHasReflection, isTrue);
+    final refl = c.selectedReflection!;
+    expect(refl.sizeInches, closeTo(0.4, 1e-9));
+    expect(refl.distanceInches, closeTo(0.05, 1e-9));
+    expect(refl.blurInches, closeTo(0.03, 1e-9));
+    expect(refl.transparency, closeTo(0.5, 1e-9));
+
+    c.setGlow(false);
+    c.setReflection(false);
+    expect(c.selectedHasGlow, isFalse);
+    expect(c.selectedHasReflection, isFalse);
+    expect(c.currentPage!.findShapeById(id)!.glow.enabled, isFalse);
+    expect(c.currentPage!.findShapeById(id)!.reflection.enabled, isFalse);
+  });
+
+  test('compound type, para spacing, and strikethrough', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    c.setShapeText(id, 'Hello\nWorld');
+
+    c.setCompoundType(1);
+    expect(c.currentPage!.findShapeById(id)!.line.compoundType, 1);
+    c.setCompoundType(2);
+    expect(c.selectedLine?.compoundType, 2);
+
+    c.setSpaceBeforeInches(12 / 72);
+    c.setSpaceAfterInches(6 / 72);
+    final para = c.selectedParaStyle!;
+    expect(para.spaceBeforeInches, closeTo(12 / 72, 1e-9));
+    expect(para.spaceAfterInches, closeTo(6 / 72, 1e-9));
+
+    c.setStrikethrough(true);
+    expect(c.selectedCharStyle?.strikethrough, isTrue);
+    c.toggleStrikethrough();
+    expect(c.selectedCharStyle?.strikethrough, isFalse);
+  });
+
+  test('soft edges, line spacing, and line jump radius', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    c.setShapeText(id, 'Hello');
+
+    c.setSoftEdges(true);
+    expect(c.selectedHasSoftEdges, isTrue);
+    expect(c.selectedSoftEdgesInches, closeTo(0.05, 1e-9));
+    c.updateSoftEdges(0.12);
+    expect(c.currentPage!.findShapeById(id)!.line.softEdgesInches,
+        closeTo(0.12, 1e-9));
+    c.setSoftEdges(false);
+    expect(c.selectedHasSoftEdges, isFalse);
+
+    c.setLineSpacing(1.5);
+    expect(c.selectedParaStyle?.lineSpacing, closeTo(1.5, 1e-9));
+    expect(
+      c.currentPage!.findShapeById(id)!.richText.runs.first.paraStyle.lineSpacing,
+      closeTo(1.5, 1e-9),
+    );
+
+    expect(c.showLineJumps, isTrue);
+    c.setLineJumpRadius(0.15);
+    expect(c.lineJumpRadiusInches, closeTo(0.15, 1e-9));
+    c.toggleLineJumps();
+    expect(c.showLineJumps, isFalse);
+  });
+
+  test('arrow size, fill pattern, and match size', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final a = c.currentPage!.shapes.single.id;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(4, 1, 5, 3);
+    final b = c.currentPage!.shapes.last.id;
+    c.setSelection(<int>{a});
+
+    c.setEndArrow(4);
+    c.setEndArrowSize(0.225);
+    expect(
+      c.currentPage!.findShapeById(a)!.line.endArrowSizeInches,
+      closeTo(0.225, 1e-9),
+    );
+
+    c.setFillPattern(6);
+    expect(c.currentPage!.findShapeById(a)!.fill.pattern, 6);
+    c.setFillGradient(
+      const VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      ),
+    );
+    expect(c.currentPage!.findShapeById(a)!.fill.hasGradient, isTrue);
+    c.setFillPattern(4);
+    expect(c.currentPage!.findShapeById(a)!.fill.pattern, 4);
+    expect(c.currentPage!.findShapeById(a)!.fill.hasGradient, isFalse);
+
+    c.setSelection(<int>{a, b});
+    final aw = c.currentPage!.findShapeById(a)!.width;
+    final ah = c.currentPage!.findShapeById(a)!.height;
+    c.matchSelectionWidth();
+    expect(c.currentPage!.findShapeById(b)!.width, closeTo(aw, 1e-9));
+    c.matchSelectionHeight();
+    expect(c.currentPage!.findShapeById(b)!.height, closeTo(ah, 1e-9));
+
+    // Resize b, then same-size restores both dimensions from a.
+    c.setSelection(<int>{b});
+    c.setSelectedWidth(1.0);
+    c.setSelectedHeight(1.0);
+    c.setSelection(<int>{a, b});
+    c.matchSelectionSize();
+    expect(c.currentPage!.findShapeById(b)!.width, closeTo(aw, 1e-9));
+    expect(c.currentPage!.findShapeById(b)!.height, closeTo(ah, 1e-9));
+  });
+
+  test('movePage reorders while keeping the active page', () {
+    final c = EditorController()..newDocument();
+    final first = c.document!.pages.first.id;
+    c.addPage();
+    c.addPage();
+    expect(c.pageCount, 3);
+    expect(c.currentPageIndex, 2);
+    final third = c.document!.pages[2].id;
+
+    c.movePage(2, 0);
+    expect(c.document!.pages.map((p) => p.id).toList(),
+        <int>[third, first, c.document!.pages[2].id]);
+    expect(c.currentPageIndex, 0);
+    expect(c.document!.pages[0].id, third);
+
+    c.movePage(0, 2);
+    expect(c.document!.pages.last.id, third);
+    expect(c.currentPageIndex, 2);
+  });
+
   test('text tool creates a borderless, selected text box', () {
     final c = EditorController()..newDocument();
     c
@@ -478,6 +992,89 @@ void main() {
 
     c.setShapeText(s.id, 'Hello');
     expect(c.isBlankTextBox(s.id), isFalse);
+  });
+
+  test('createFreehand paints a 1-D polyline stroke; undo removes it', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.freehand)
+      ..createFreehand(<Offset2D>[
+        const Offset2D(1, 1),
+        const Offset2D(1.02, 1.01), // within simplify threshold — dropped
+        const Offset2D(2, 1.5),
+        const Offset2D(3, 1),
+      ]);
+    final s = c.currentPage!.shapes.single;
+    expect(c.selection, <int>{s.id});
+    expect(c.tool, EditorTool.select);
+    expect(s.is1D, isTrue);
+    expect(s.objType, 1); // ink shape, not a glueable connector (ObjType=2)
+    expect(s.beginX, closeTo(1, 1e-9));
+    expect(s.endX, closeTo(3, 1e-9));
+    // Geometry is MoveTo + at least two LineTos after simplification.
+    final cmds = s.geometries.single.commands;
+    expect(cmds.first, isA<MoveTo>());
+    expect(cmds.whereType<LineTo>().length, greaterThanOrEqualTo(2));
+
+    c.undo();
+    expect(c.currentPage!.shapes, isEmpty);
+  });
+
+  test('createFreehand ignores a single-point (click) stroke', () {
+    final c = EditorController()..newDocument();
+    c.createFreehand(<Offset2D>[const Offset2D(1, 1)]);
+    expect(c.currentPage!.shapes, isEmpty);
+  });
+
+  test('page guides add / move / remove / clear are per-page', () {
+    final c = EditorController()..newDocument();
+    final page0 = c.currentPage!.id;
+    c.addPageGuide(vertical: true, pos: 2.0);
+    c.addPageGuide(vertical: false, pos: 3.0);
+    expect(c.pageGuides.length, 2);
+    expect(c.hasPageGuides, isTrue);
+
+    c.movePageGuide(0, 2.5);
+    expect(c.pageGuides[0].pos, closeTo(2.5, 1e-9));
+
+    c.addPage(); // new page starts with no guides
+    expect(c.pageGuides, isEmpty);
+    c.addPageGuide(vertical: true, pos: 1.0);
+    expect(c.pageGuides.length, 1);
+
+    c.selectPage(0);
+    expect(c.currentPage!.id, page0);
+    expect(c.pageGuides.length, 2);
+
+    c.removePageGuide(1);
+    expect(c.pageGuides.length, 1);
+    c.clearPageGuides();
+    expect(c.hasPageGuides, isFalse);
+  });
+
+  test('setShapeText preserves mixed run styles; range bold splits a run', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c
+      ..selectOnly(id)
+      ..setShapeText(id, 'Hello World');
+    // Seed two runs via range formatting session.
+    c.setTextEditSession(shapeId: id, start: 0, end: 5);
+    c.setBold(true);
+    final rich = c.currentPage!.findShapeById(id)!.richText;
+    expect(rich.runs.length, greaterThanOrEqualTo(2));
+    expect(rich.runs.first.charStyle.style.bold, isTrue);
+    expect(rich.plainText, 'Hello World');
+
+    // Editing the plain text must not flatten the bold prefix.
+    c.setTextEditSession();
+    c.setShapeText(id, 'Hello World!');
+    final after = c.currentPage!.findShapeById(id)!.richText;
+    expect(charStyleAt(after, 0)!.style.bold, isTrue);
+    expect(after.plainText, 'Hello World!');
   });
 
   test('new connectors carry a default end arrowhead', () {
@@ -558,6 +1155,43 @@ void main() {
     c.undo(); // orientation swap
     expect(c.pageSize!.width, closeTo(11, 1e-9));
     expect(c.pageSize!.height, closeTo(17, 1e-9));
+  });
+
+  test('background page: mark, assign BackPage, resolve, undo', () {
+    final c = EditorController()..newDocument();
+    c.addPage();
+    expect(c.pageCount, 2);
+    final bgId = c.currentPage!.id; // page added after the first
+    c.setPageIsBackground(true);
+    expect(c.currentPage!.isBackgroundPage, isTrue);
+    expect(c.currentPage!.backgroundPageId, isNull);
+
+    c.selectPage(0);
+    final fgId = c.currentPage!.id;
+    expect(c.backgroundPageOptions.map((p) => p.id), contains(bgId));
+    c.setBackgroundPage(bgId);
+    expect(c.currentPage!.id, fgId);
+    expect(c.currentPage!.backgroundPageId, bgId);
+    expect(c.currentPage!.isBackgroundPage, isFalse);
+    expect(c.resolvedBackgroundPage?.id, bgId);
+    // Target was auto-marked as a Visio background page.
+    expect(
+      c.document!.pages.firstWhere((p) => p.id == bgId).isBackgroundPage,
+      isTrue,
+    );
+
+    // Self-assign is a no-op.
+    c.setBackgroundPage(fgId);
+    expect(c.currentPage!.backgroundPageId, bgId);
+
+    c.setBackgroundPage(null);
+    expect(c.currentPage!.backgroundPageId, isNull);
+    expect(c.resolvedBackgroundPage, isNull);
+
+    c.undo(); // clear
+    expect(c.currentPage!.backgroundPageId, bgId);
+    c.undo(); // assign
+    expect(c.currentPage!.backgroundPageId, isNull);
   });
 
   test('copy/paste style transfers fill between shapes', () {
@@ -662,6 +1296,56 @@ void main() {
         fileExtension: 'png', widthInches: 1, heightInches: 1);
     final second = c.currentPage!.shapes.single.imagePartName;
     expect(second, isNot(equals(first)));
+  });
+
+  test('insertImage at (cx,cy) centres the picture on the drop point', () {
+    final c = EditorController()..newDocument();
+    c.insertImage(
+      Uint8List.fromList(<int>[1, 2, 3]),
+      fileExtension: 'png',
+      widthInches: 1,
+      heightInches: 1,
+      cx: 3.0,
+      cy: 4.0,
+    );
+    final s = c.currentPage!.shapes.single;
+    // Default grid is 0.25"; snap(3) / snap(4) stay on the grid.
+    expect(s.pinX, closeTo(3.0, 1e-9));
+    expect(s.pinY, closeTo(4.0, 1e-9));
+  });
+
+  test('replaceImage swaps media bytes; keeps pin/size; undo restores', () {
+    final c = EditorController()..newDocument();
+    final firstBytes = Uint8List.fromList(<int>[1, 2, 3]);
+    final secondBytes = Uint8List.fromList(<int>[9, 8, 7]);
+    c.insertImage(firstBytes,
+        fileExtension: 'png', widthInches: 2, heightInches: 1, cx: 2, cy: 3);
+    final shape = c.currentPage!.shapes.single;
+    final id = shape.id;
+    final oldPart = shape.imagePartName!;
+    final w = shape.width;
+    final h = shape.height;
+    final pinX = shape.pinX;
+    final pinY = shape.pinY;
+
+    expect(c.canReplaceSelectedImage, isTrue);
+    expect(c.pictureShapeAt(pinX, pinY), id);
+
+    c.replaceImage(id, secondBytes, fileExtension: 'jpg');
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.imagePartName, isNot(equals(oldPart)));
+    expect(after.imagePartName, endsWith('.jpg'));
+    expect(after.width, closeTo(w, 1e-9));
+    expect(after.height, closeTo(h, 1e-9));
+    expect(after.pinX, closeTo(pinX, 1e-9));
+    expect(after.pinY, closeTo(pinY, 1e-9));
+    expect(c.document!.images.findByPart(after.imagePartName!)!.bytes,
+        equals(secondBytes));
+
+    c.undo();
+    final restored = c.currentPage!.findShapeById(id)!;
+    expect(restored.imagePartName, oldPart);
+    expect(c.document!.images.findByPart(oldPart)!.bytes, equals(firstBytes));
   });
 
   test('reconnectEndpoint reglues one end, detaches the other; undoable', () {
@@ -840,6 +1524,80 @@ void main() {
     final img = reopened.images.findByPart(s.imagePartName!);
     expect(img, isNotNull);
     expect(img!.bytes, equals(bytes));
+  });
+
+  test('select connectors / vertices / next shape', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 1, 4, 2)
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(4, 4, 5, 5);
+    expect(c.currentPage!.shapes.length, 3);
+
+    c.selectConnectors();
+    expect(c.selection.length, 1);
+    expect(c.currentPage!.findShapeById(c.selection.first)!.is1D, isTrue);
+
+    c.selectVertices();
+    expect(c.selection.length, 2);
+    expect(
+      c.selection.every((id) => !c.currentPage!.findShapeById(id)!.is1D),
+      isTrue,
+    );
+
+    c.selectOnly(c.currentPage!.shapes.first.id);
+    final first = c.singleSelectedId!;
+    c.selectNextShape();
+    expect(c.singleSelectedId, isNot(first));
+    c.selectNextShape(reverse: true);
+    expect(c.singleSelectedId, first);
+
+    c.setShapeText(first, 'Hi');
+    c.toggleBold();
+    expect(c.selectedCharStyle?.style.bold, isTrue);
+  });
+
+  test('edit connection points: materialise, add, move, remove, undo', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    expect(c.canEditConnectionPoints, isTrue);
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints, isEmpty);
+
+    c.beginEditConnectionPoints();
+    expect(c.editingConnectionPoints, isTrue);
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints.length, 5);
+
+    c.addConnectionPointAtLocal(0.25, 0.5);
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints.length, 6);
+    expect(c.selectedConnectionPointIndex, 5);
+
+    c.moveConnectionPointAtLocal(5, 0.5, 0.75);
+    final moved = c.currentPage!.findShapeById(id)!.connectionPoints[5];
+    expect(moved.x, closeTo(0.5, 1e-9));
+    expect(moved.y, closeTo(0.75, 1e-9));
+
+    c.removeSelectedConnectionPoint();
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints.length, 5);
+
+    // Delete while editing removes a point, not the shape.
+    c.selectConnectionPoint(0);
+    c.deleteSelection();
+    expect(c.currentPage!.findShapeById(id), isNotNull);
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints.length, 4);
+
+    c.endEditConnectionPoints();
+    expect(c.editingConnectionPoints, isFalse);
+    expect(c.selection, <int>{id});
+
+    c.undo(); // end is not an edit; undo delete point
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints.length, 5);
   });
 
   test('opens the bundled workflow.vsdx example end-to-end', () async {

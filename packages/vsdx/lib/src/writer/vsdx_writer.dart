@@ -17,6 +17,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
+import '../export/theme_serializer.dart';
 import '../model/connect.dart';
 import '../model/document.dart';
 import '../model/effects.dart';
@@ -30,6 +31,7 @@ import '../model/page.dart';
 import '../model/rich_text.dart';
 import '../model/shape.dart';
 import '../model/sheet_sections.dart';
+import '../model/theme.dart';
 import '../model/user_property.dart';
 import '../parser/document_parser.dart';
 import '../parser/package_reader.dart';
@@ -211,6 +213,21 @@ class VsdxWriter {
       patched[_noSlash(pagesRelsPart)] =
           Uint8List.fromList(utf8.encode(pagesRelsXml.toXmlString()));
     }
+
+    // 3) Persist the document theme palette (draw.io theme gallery). When the
+    // edited theme differs from the baseline we patch or create theme1.xml and
+    // wire document.xml.rels + Content_Types.
+    _prepareThemePart(
+      pkg: pkg,
+      resolver: resolver,
+      docPart: docPart,
+      baseline: baseline.theme,
+      edited: edited.theme,
+      patched: patched,
+      ctXml: ctXml,
+      markCtDirty: () => ctDirty = true,
+    );
+
     if (ctDirty && ctXml != null) {
       patched['[Content_Types].xml'] =
           Uint8List.fromList(utf8.encode(ctXml.toXmlString()));
@@ -330,7 +347,15 @@ class VsdxWriter {
     final needView = bp.viewScale != ep.viewScale ||
         bp.viewCenterX != ep.viewCenterX ||
         bp.viewCenterY != ep.viewCenterY;
-    if (!needWidth && !needHeight && !needColor && !needSheet && !needView) {
+    final needBackgroundFlag = bp.isBackgroundPage != ep.isBackgroundPage;
+    final needBackPage = bp.backgroundPageId != ep.backgroundPageId;
+    if (!needWidth &&
+        !needHeight &&
+        !needColor &&
+        !needSheet &&
+        !needView &&
+        !needBackgroundFlag &&
+        !needBackPage) {
       return false;
     }
     final sheet = _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
@@ -361,6 +386,25 @@ class VsdxWriter {
           _patchDoubleAttr(pageEl, 'ViewCenterX', bp.viewCenterX, ep.viewCenterX);
       changed |=
           _patchDoubleAttr(pageEl, 'ViewCenterY', bp.viewCenterY, ep.viewCenterY);
+    }
+    // Visio pages.xml: Background="1" marks a background page; BackPage="N"
+    // references that page's ID from a foreground page (drawio "Background").
+    if (needBackgroundFlag) {
+      if (ep.isBackgroundPage) {
+        pageEl.setAttribute('Background', '1');
+      } else {
+        pageEl.removeAttribute('Background');
+      }
+      changed = true;
+    }
+    if (needBackPage) {
+      final id = ep.backgroundPageId;
+      if (id == null) {
+        pageEl.removeAttribute('BackPage');
+      } else {
+        pageEl.setAttribute('BackPage', id.toString());
+      }
+      changed = true;
     }
     return changed;
   }
@@ -619,16 +663,24 @@ class VsdxWriter {
     final viewScale = ep.viewScale ?? 1.0;
     final viewCenterX = ep.viewCenterX ?? center.$1;
     final viewCenterY = ep.viewCenterY ?? center.$2;
+    final attrs = <XmlAttribute>[
+      XmlAttribute(XmlName('ID'), ep.id.toString()),
+      XmlAttribute(XmlName('NameU'), ep.name),
+      XmlAttribute(XmlName('Name'), ep.name),
+      XmlAttribute(XmlName('ViewScale'), _fmt(viewScale)),
+      XmlAttribute(XmlName('ViewCenterX'), _fmt(viewCenterX)),
+      XmlAttribute(XmlName('ViewCenterY'), _fmt(viewCenterY)),
+    ];
+    if (ep.isBackgroundPage) {
+      attrs.add(XmlAttribute(XmlName('Background'), '1'));
+    }
+    if (ep.backgroundPageId != null) {
+      attrs.add(
+          XmlAttribute(XmlName('BackPage'), ep.backgroundPageId.toString()));
+    }
     return XmlElement(
       XmlName('Page'),
-      <XmlAttribute>[
-        XmlAttribute(XmlName('ID'), ep.id.toString()),
-        XmlAttribute(XmlName('NameU'), ep.name),
-        XmlAttribute(XmlName('Name'), ep.name),
-        XmlAttribute(XmlName('ViewScale'), _fmt(viewScale)),
-        XmlAttribute(XmlName('ViewCenterX'), _fmt(viewCenterX)),
-        XmlAttribute(XmlName('ViewCenterY'), _fmt(viewCenterY)),
-      ],
+      attrs,
       <XmlNode>[pageSheet, rel],
     );
   }
@@ -851,6 +903,98 @@ class VsdxWriter {
     }
     // Generic fallback: absolute-from-package target.
     return '/$media';
+  }
+
+  /// Relationship type for the DrawingML theme part (OOXML / Visio).
+  static const String _themeRelType =
+      'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme';
+  static const String _themeContentType =
+      'application/vnd.openxmlformats-officedocument.theme+xml';
+  static const String _defaultThemePart = 'visio/theme/theme1.xml';
+
+  /// Persist [edited] theme colours into the package when they differ from
+  /// [baseline]. Patches an existing theme part's `<a:clrScheme>` (keeping
+  /// fonts/effects) or creates `theme1.xml` + document rel + Content_Types
+  /// override. Empty [edited] is a no-op so we never wipe a baseline theme.
+  void _prepareThemePart({
+    required VsdxPackage pkg,
+    required RelationshipResolver resolver,
+    required String docPart,
+    required VsdxTheme baseline,
+    required VsdxTheme edited,
+    required Map<String, Uint8List> patched,
+    required XmlDocument? ctXml,
+    required void Function() markCtDirty,
+  }) {
+    if (edited.isEmpty) return;
+    if (ThemeSerializer.themesEqual(baseline, edited)) return;
+
+    final name = ThemeSerializer.nameFor(edited);
+    final existingPart =
+        resolver.singleTargetOfType(docPart, VsdxRelType.theme);
+
+    if (existingPart != null) {
+      final xml = pkg.readPartXml(existingPart);
+      if (xml != null) {
+        ThemeSerializer.patchClrScheme(xml, edited, name: name);
+        patched[_noSlash(existingPart)] =
+            Uint8List.fromList(utf8.encode(xml.toXmlString()));
+        return;
+      }
+    }
+
+    // No usable theme part — emit a minimal DrawingML theme and wire it up.
+    patched[_defaultThemePart] = Uint8List.fromList(
+      utf8.encode(ThemeSerializer.emit(edited, name: name)),
+    );
+
+    if (ctXml != null &&
+        _ensureThemeOverride(ctXml, '/$_defaultThemePart')) {
+      markCtDirty();
+    }
+
+    final relsPart = _relsPartFor(docPart);
+    final relsNoSlash = _noSlash(relsPart);
+    final XmlDocument relsXml;
+    if (patched.containsKey(relsNoSlash)) {
+      relsXml = XmlDocument.parse(utf8.decode(patched[relsNoSlash]!));
+    } else {
+      relsXml = pkg.readPartXml(relsPart) ??
+          XmlDocument.parse(
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            '<Relationships xmlns="$_relNs"/>',
+          );
+    }
+
+    final hasThemeRel = relsXml.rootElement.childElements.any((el) {
+      if (el.name.local != 'Relationship') return false;
+      return (el.getAttribute('Type') ?? '').endsWith('/theme');
+    });
+    if (!hasThemeRel) {
+      final rId = 'rId${_maxRelId(relsXml) + 1}';
+      relsXml.rootElement.children.add(XmlElement(XmlName('Relationship'), [
+        XmlAttribute(XmlName('Id'), rId),
+        XmlAttribute(XmlName('Type'), _themeRelType),
+        XmlAttribute(XmlName('Target'), 'theme/theme1.xml'),
+      ]));
+    }
+    patched[relsNoSlash] =
+        Uint8List.fromList(utf8.encode(relsXml.toXmlString()));
+  }
+
+  /// Ensure `[Content_Types].xml` has an Override for the theme part.
+  bool _ensureThemeOverride(XmlDocument ctXml, String partName) {
+    for (final el in ctXml.rootElement.childElements) {
+      if (el.name.local == 'Override' &&
+          el.getAttribute('PartName') == partName) {
+        return false;
+      }
+    }
+    ctXml.rootElement.children.add(XmlElement(XmlName('Override'), [
+      XmlAttribute(XmlName('PartName'), partName),
+      XmlAttribute(XmlName('ContentType'), _themeContentType),
+    ]));
+    return true;
   }
 
   /// Ensure `[Content_Types].xml` can serve [mediaPart]. Adds a `<Default>` for
@@ -1643,23 +1787,26 @@ class VsdxWriter {
     return true;
   }
 
-  /// Patch the shape's `<Section N="Connection">` to match the edited model's
-  /// fixed connection points. Points are only ever added (materialised on glue)
-  /// or left alone in our editor, so this appends a fresh section when the base
-  /// had none, and otherwise rewrites each row's cells in place (preserving
-  /// any unmodelled cells) — never clearing an existing section.
+  /// Patch the shape's `<Section N="Connection">` to match the edited model:
+  /// insert a fresh section when missing, rewrite / append rows in place
+  /// (preserving unmodelled cells), drop surplus rows when shortened, and
+  /// remove the whole section when the edited list is empty.
   bool _patchConnectionPoints(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_connectionPointsEqual(
         base.connectionPoints, edited.connectionPoints)) {
       return false;
     }
-    if (edited.connectionPoints.isEmpty) return false;
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Connection') {
         section = s;
         break;
       }
+    }
+    if (edited.connectionPoints.isEmpty) {
+      if (section == null) return false;
+      section.parent?.children.remove(section);
+      return true;
     }
     if (section == null) {
       _insertBeforeTextOrShapes(
@@ -1684,14 +1831,24 @@ class VsdxWriter {
         final keepY = old != null &&
             _formulaFitsScale(yCell.getAttribute('F'), old.y, p.y,
                 sx: sx, sy: sy);
+        // When the model carries an explicit formula that changed (user drag),
+        // rewrite F=; otherwise keep a scale-fitting formula.
+        final rewriteXF = p.xFormula != null &&
+            (old == null || p.xFormula != old.xFormula || !keepX);
+        final rewriteYF = p.yFormula != null &&
+            (old == null || p.yFormula != old.yFormula || !keepY);
         _writeValue(xCell, _fmt(p.x),
-            preserveFormula: keepX || p.xFormula != null);
+            preserveFormula: (!rewriteXF) && (keepX || p.xFormula != null));
         _writeValue(yCell, _fmt(p.y),
-            preserveFormula: keepY || p.yFormula != null);
-        if (!keepX && p.xFormula != null) {
+            preserveFormula: (!rewriteYF) && (keepY || p.yFormula != null));
+        if (rewriteXF) {
+          xCell.setAttribute('F', p.xFormula!);
+        } else if (!keepX && p.xFormula != null) {
           xCell.setAttribute('F', p.xFormula!);
         }
-        if (!keepY && p.yFormula != null) {
+        if (rewriteYF) {
+          yCell.setAttribute('F', p.yFormula!);
+        } else if (!keepY && p.yFormula != null) {
           yCell.setAttribute('F', p.yFormula!);
         }
         // Dir*/Type/AutoGen — update cached V but keep any Width* formulas.
@@ -1706,9 +1863,15 @@ class VsdxWriter {
         if (p.prompt != null) {
           _writeValue(_ensureCell(rows[i], 'Prompt'), p.prompt!);
         }
+        rows[i].setAttribute('IX', i.toString());
       } else {
         section.children.add(_connectionRow(i, p));
       }
+    }
+    // Drop surplus rows when the edited list is shorter (connection-point
+    // delete in the editor).
+    for (var i = rows.length - 1; i >= edited.connectionPoints.length; i--) {
+      rows[i].parent?.children.remove(rows[i]);
     }
     return true;
   }
@@ -3412,12 +3575,11 @@ class VsdxWriter {
     var changed = false;
     if (!_hasCell(el, 'LineCap')) {
       _ensureCell(el, 'LineCap')
-        ..setAttribute('V', _lineCapInt(s.line.cap).toString());
+          .setAttribute('V', _lineCapInt(s.line.cap).toString());
       changed = true;
     }
     if (s.is1D && !_hasCell(el, 'ObjType')) {
-      _ensureCell(el, 'ObjType')
-        ..setAttribute('V', (s.objType ?? 2).toString());
+      _ensureCell(el, 'ObjType').setAttribute('V', (s.objType ?? 2).toString());
       changed = true;
     }
     if (s.line.beginArrow != 0) {

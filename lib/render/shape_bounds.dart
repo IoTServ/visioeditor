@@ -67,6 +67,7 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
   }
   out[s.id] = Rect.fromLTRB(minX, minY, maxX, maxY);
   for (final c in s.children) {
+    if (TableOps.isCovered(c)) continue;
     _walk(c, local, out);
   }
 }

@@ -211,6 +211,35 @@ class VsdxCharStyle {
 
   static const VsdxCharStyle defaults = VsdxCharStyle();
 
+  /// Solid text colour, clearing any theme-slot binding.
+  VsdxCharStyle withSolidColor(VsdxColor color) => copyWith(
+        color: color,
+        clearThemeColorIndex: true,
+      );
+
+  /// Bind text colour to a document theme slot.
+  VsdxCharStyle withThemeColor(int slot) => VsdxCharStyle(
+        fontFamily: fontFamily,
+        fontSizeInches: fontSizeInches,
+        style: style,
+        color: null,
+        themeColorIndex: slot,
+        underline: underline,
+        strikethrough: strikethrough,
+        doubleUnderline: doubleUnderline,
+        doubleStrikethrough: doubleStrikethrough,
+        overline: overline,
+        transparency: transparency,
+        letterSpacingInches: letterSpacingInches,
+        position: position,
+        textCase: textCase,
+        fontScale: fontScale,
+        asianFont: asianFont,
+        complexScriptFont: complexScriptFont,
+        langId: langId,
+        complexScriptSizeInches: complexScriptSizeInches,
+      );
+
   VsdxCharStyle copyWith({
     String? fontFamily,
     double? fontSizeInches,
@@ -227,6 +256,7 @@ class VsdxCharStyle {
     VsdxTextCase? textCase,
     double? fontScale,
     int? themeColorIndex,
+    bool clearThemeColorIndex = false,
     String? asianFont,
     String? complexScriptFont,
     String? langId,
@@ -237,7 +267,9 @@ class VsdxCharStyle {
         fontSizeInches: fontSizeInches ?? this.fontSizeInches,
         style: style ?? this.style,
         color: color ?? this.color,
-        themeColorIndex: themeColorIndex ?? this.themeColorIndex,
+        themeColorIndex: clearThemeColorIndex
+            ? null
+            : (themeColorIndex ?? this.themeColorIndex),
         underline: underline ?? this.underline,
         strikethrough: strikethrough ?? this.strikethrough,
         doubleUnderline: doubleUnderline ?? this.doubleUnderline,

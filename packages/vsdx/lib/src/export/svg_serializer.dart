@@ -23,11 +23,25 @@ import '../model/shape.dart';
 import '../model/theme.dart';
 import '../utils/color.dart';
 
+/// Which layer flags the SVG serializer honours when filtering shapes.
+enum SvgLayerFilter {
+  /// Honour `Visible` (on-screen / interactive export).
+  visible,
+
+  /// Honour `Print` (PDF / print export).
+  print,
+
+  /// Draw every layer membership (no filter).
+  all,
+}
+
 class VsdxToSvgSerializer {
   VsdxToSvgSerializer({
     this.pxPerInch = 96.0,
     this.includeXmlHeader = true,
     this.embedImages = true,
+    this.layerFilter = SvgLayerFilter.visible,
+    this.skipBackgroundPages = true,
   });
 
   final double pxPerInch;
@@ -38,6 +52,13 @@ class VsdxToSvgSerializer {
   /// images entirely (e.g. for diff-friendly outputs).
   final bool embedImages;
 
+  /// Layer visibility vs print filtering. Defaults to [SvgLayerFilter.visible].
+  final SvgLayerFilter layerFilter;
+
+  /// When serialising a whole document, omit pages marked `Background="1"`
+  /// (they are composited via [VsdxDocument.backgroundFor] instead).
+  final bool skipBackgroundPages;
+
   /// Current image registry, swapped in by [serializePage] / [serializeDocument].
   ImageRegistry _images = ImageRegistry.empty;
 
@@ -46,13 +67,18 @@ class VsdxToSvgSerializer {
   /// [serializePage] when only one page is needed.
   String serializeDocument(VsdxDocument doc) {
     _images = doc.images;
+    final pages = <VsdxPage>[
+      for (final p in doc.pages)
+        if (!skipBackgroundPages || !p.isBackgroundPage) p,
+    ];
+    final exportPages = pages.isEmpty ? doc.pages : pages;
     final buf = StringBuffer();
     if (includeXmlHeader) buf.writeln('<?xml version="1.0" encoding="UTF-8"?>');
-    final totalH = doc.pages.fold<double>(
+    final totalH = exportPages.fold<double>(
       0,
       (acc, p) => acc + p.heightInches * pxPerInch + 24,
     );
-    final maxW = doc.pages.fold<double>(
+    final maxW = exportPages.fold<double>(
       0,
       (acc, p) => math.max(acc, p.widthInches * pxPerInch),
     );
@@ -65,11 +91,17 @@ class VsdxToSvgSerializer {
     );
     buf.writeln('  <title>${_esc(doc.title ?? 'Visio document')}</title>');
     var offsetY = 0.0;
-    for (var i = 0; i < doc.pages.length; i++) {
-      final p = doc.pages[i];
+    for (var i = 0; i < exportPages.length; i++) {
+      final p = exportPages[i];
       buf.writeln(
           '  <g class="page page-${i + 1}" transform="translate(0,${_n(offsetY)})">');
-      _writePageBody(buf, p, doc.theme, indent: '    ');
+      _writePageBody(
+        buf,
+        p,
+        doc.theme,
+        underlayPage: doc.backgroundFor(p),
+        indent: '    ',
+      );
       buf.writeln('  </g>');
       offsetY += p.heightInches * pxPerInch + 24;
     }
@@ -82,6 +114,7 @@ class VsdxToSvgSerializer {
     VsdxPage page, {
     VsdxTheme theme = VsdxTheme.empty,
     ImageRegistry images = ImageRegistry.empty,
+    VsdxPage? underlayPage,
   }) {
     _images = images;
     final buf = StringBuffer();
@@ -95,7 +128,13 @@ class VsdxToSvgSerializer {
       'height="${_n(h)}" '
       'viewBox="0 0 ${_n(w)} ${_n(h)}">',
     );
-    _writePageBody(buf, page, theme, indent: '  ');
+    _writePageBody(
+      buf,
+      page,
+      theme,
+      underlayPage: underlayPage,
+      indent: '  ',
+    );
     buf.writeln('</svg>');
     return buf.toString();
   }
@@ -104,23 +143,60 @@ class VsdxToSvgSerializer {
     StringBuffer buf,
     VsdxPage page,
     VsdxTheme theme, {
+    VsdxPage? underlayPage,
     required String indent,
   }) {
     final h = page.heightInches * pxPerInch;
+    final w = page.widthInches * pxPerInch;
+    final bg = page.backgroundColor;
+    final fill = bg == null ? '#ffffff' : _hex(bg);
     // page background
     buf.writeln('$indent<rect x="0" y="0" '
-        'width="${_n(page.widthInches * pxPerInch)}" '
-        'height="${_n(h)}" fill="#ffffff"/>');
+        'width="${_n(w)}" '
+        'height="${_n(h)}" fill="$fill"/>');
     // Visio→SVG: translate(0, height) then scale(px, -px)
     buf.writeln(
       '$indent<g transform="translate(0 ${_n(h)}) '
       'scale(${_n(pxPerInch)} ${_n(-pxPerInch)})">',
     );
-    final visible = page.visibleLayerIds;
+    final underlay = underlayPage;
+    if (underlay != null && underlay.shapes.isNotEmpty) {
+      final clipId = 'underlay-clip-${page.id}';
+      buf.writeln('$indent  <g class="underlay">');
+      // Clip to the foreground page box (page inches, Y-up after transform).
+      buf.writeln(
+        '$indent    <clipPath id="$clipId">'
+        '<rect x="0" y="0" width="${_n(page.widthInches)}" '
+        'height="${_n(page.heightInches)}"/>'
+        '</clipPath>',
+      );
+      buf.writeln('$indent    <g clip-path="url(#$clipId)">');
+      final underLayers = _layerIds(underlay);
+      for (final shape in underlay.shapes) {
+        _writeShape(
+          buf,
+          shape,
+          theme,
+          underlay,
+          underLayers,
+          indent: '$indent      ',
+        );
+      }
+      buf.writeln('$indent    </g>');
+      buf.writeln('$indent  </g>');
+    }
+    final layers = _layerIds(page);
     for (final shape in page.shapes) {
-      _writeShape(buf, shape, theme, page, visible, indent: '$indent  ');
+      _writeShape(buf, shape, theme, page, layers, indent: '$indent  ');
     }
     buf.writeln('$indent</g>');
+  }
+
+  Set<int>? _layerIds(VsdxPage page) {
+    if (page.layers.isEmpty || layerFilter == SvgLayerFilter.all) return null;
+    return layerFilter == SvgLayerFilter.print
+        ? page.printableLayerIds
+        : page.visibleLayerIds;
   }
 
   void _writeShape(
@@ -128,10 +204,11 @@ class VsdxToSvgSerializer {
     VsdxShape shape,
     VsdxTheme theme,
     VsdxPage page,
-    Set<int> visibleLayers, {
+    Set<int>? visibleLayers, {
     required String indent,
   }) {
-    if (page.layers.isNotEmpty &&
+    if (visibleLayers != null &&
+        page.layers.isNotEmpty &&
         shape.layerMemberIds.isNotEmpty &&
         !shape.isOnAnyLayer(visibleLayers)) {
       return;

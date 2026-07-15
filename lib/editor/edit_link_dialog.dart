@@ -115,18 +115,24 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
             onPressed: () => Navigator.pop(context, const <VsdxHyperlink>[]),
             icon: const Icon(Icons.link_off, size: 18),
             label: const Text('Remove Link'),
-          ),
-        const Spacer(),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _build()),
-          child: const Text('Apply'),
+          )
+        else
+          const SizedBox.shrink(),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, _build()),
+              child: const Text('Apply'),
+            ),
+          ],
         ),
       ],
-      actionsAlignment: MainAxisAlignment.start,
+      actionsAlignment: MainAxisAlignment.spaceBetween,
     );
   }
 }

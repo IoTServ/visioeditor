@@ -79,6 +79,62 @@ class VsdxLine {
 
   static const VsdxLine defaultLine = VsdxLine();
 
+  /// Solid stroke colour, clearing any theme-slot binding and any line gradient.
+  VsdxLine withSolidColor(VsdxColor color) => VsdxLine(
+        color: color,
+        weightInches: weightInches,
+        pattern: pattern == 0 ? 1 : pattern,
+        cap: cap,
+        transparency: transparency,
+        themeColorIndex: null,
+        beginArrow: beginArrow,
+        endArrow: endArrow,
+        beginArrowSizeInches: beginArrowSizeInches,
+        endArrowSizeInches: endArrowSizeInches,
+        roundingInches: roundingInches,
+        softEdgesInches: softEdgesInches,
+        compoundType: compoundType,
+      );
+
+  /// Bind stroke to a document theme slot, clearing the explicit colour and
+  /// any line gradient.
+  VsdxLine withThemeColor(int slot) => VsdxLine(
+        color: null,
+        weightInches: weightInches,
+        pattern: pattern == 0 ? 1 : pattern,
+        cap: cap,
+        transparency: transparency,
+        themeColorIndex: slot,
+        beginArrow: beginArrow,
+        endArrow: endArrow,
+        beginArrowSizeInches: beginArrowSizeInches,
+        endArrowSizeInches: endArrowSizeInches,
+        roundingInches: roundingInches,
+        softEdgesInches: softEdgesInches,
+        compoundType: compoundType,
+      );
+
+  /// Install (or clear, when [gradient] is `null`) a stroke gradient.
+  VsdxLine withGradient(VsdxGradient? gradient) => VsdxLine(
+        color: color,
+        weightInches: weightInches,
+        pattern: gradient != null && pattern == 0 ? 1 : pattern,
+        cap: cap,
+        transparency: transparency,
+        themeColorIndex: themeColorIndex,
+        beginArrow: beginArrow,
+        endArrow: endArrow,
+        beginArrowSizeInches: beginArrowSizeInches,
+        endArrowSizeInches: endArrowSizeInches,
+        roundingInches: roundingInches,
+        softEdgesInches: softEdgesInches,
+        compoundType: compoundType,
+        gradient: gradient,
+      );
+
+  /// Sentinel for [copyWith] so callers can clear [gradient] to `null`.
+  static const Object keepGradient = Object();
+
   VsdxLine copyWith({
     VsdxColor? color,
     double? weightInches,
@@ -93,7 +149,7 @@ class VsdxLine {
     double? roundingInches,
     double? softEdgesInches,
     int? compoundType,
-    VsdxGradient? gradient,
+    Object? gradient = keepGradient,
   }) {
     return VsdxLine(
       color: color ?? this.color,
@@ -109,7 +165,9 @@ class VsdxLine {
       roundingInches: roundingInches ?? this.roundingInches,
       softEdgesInches: softEdgesInches ?? this.softEdgesInches,
       compoundType: compoundType ?? this.compoundType,
-      gradient: gradient ?? this.gradient,
+      gradient: identical(gradient, keepGradient)
+          ? this.gradient
+          : gradient as VsdxGradient?,
     );
   }
 }

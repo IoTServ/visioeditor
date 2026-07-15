@@ -52,6 +52,47 @@ class VsdxFill {
   /// Default sentinel for shapes without an explicit Fill section.
   static const VsdxFill defaultFill = VsdxFill();
 
+  /// Solid foreground colour, clearing any theme-slot binding and any gradient
+  /// so the painted colour is exactly [color] (draw.io palette swatch behaviour).
+  VsdxFill withSolidForeground(VsdxColor color) => VsdxFill(
+        foreground: color,
+        background: background,
+        foregroundTransparency: foregroundTransparency,
+        backgroundTransparency: backgroundTransparency,
+        pattern: pattern == 0 ? 1 : pattern,
+        themeForegroundIndex: null,
+        themeBackgroundIndex: themeBackgroundIndex,
+      );
+
+  /// Bind fill to a document theme slot ([ThemeSlot]), clearing the explicit
+  /// foreground and any gradient so the renderer resolves via `THEMEVAL` /
+  /// [VsdxTheme].
+  VsdxFill withThemeForeground(int slot) => VsdxFill(
+        foreground: null,
+        background: background,
+        foregroundTransparency: foregroundTransparency,
+        backgroundTransparency: backgroundTransparency,
+        pattern: pattern == 0 ? 1 : pattern,
+        themeForegroundIndex: slot,
+        themeBackgroundIndex: themeBackgroundIndex,
+      );
+
+  /// Install (or clear, when [gradient] is `null`) a fill gradient. Enables
+  /// solid fill when a gradient is set on a no-fill shape.
+  VsdxFill withGradient(VsdxGradient? gradient) => VsdxFill(
+        foreground: foreground,
+        background: background,
+        foregroundTransparency: foregroundTransparency,
+        backgroundTransparency: backgroundTransparency,
+        pattern: gradient != null && pattern == 0 ? 1 : pattern,
+        themeForegroundIndex: themeForegroundIndex,
+        themeBackgroundIndex: themeBackgroundIndex,
+        gradient: gradient,
+      );
+
+  /// Sentinel for [copyWith] so callers can clear [gradient] to `null`.
+  static const Object keepGradient = Object();
+
   VsdxFill copyWith({
     VsdxColor? foreground,
     VsdxColor? background,
@@ -60,7 +101,7 @@ class VsdxFill {
     int? pattern,
     int? themeForegroundIndex,
     int? themeBackgroundIndex,
-    VsdxGradient? gradient,
+    Object? gradient = keepGradient,
   }) {
     return VsdxFill(
       foreground: foreground ?? this.foreground,
@@ -72,7 +113,9 @@ class VsdxFill {
       pattern: pattern ?? this.pattern,
       themeForegroundIndex: themeForegroundIndex ?? this.themeForegroundIndex,
       themeBackgroundIndex: themeBackgroundIndex ?? this.themeBackgroundIndex,
-      gradient: gradient ?? this.gradient,
+      gradient: identical(gradient, keepGradient)
+          ? this.gradient
+          : gradient as VsdxGradient?,
     );
   }
 }

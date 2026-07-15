@@ -2,23 +2,61 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visioeditor/editor/page_canvas.dart';
 import 'package:visioeditor/main.dart';
+import 'package:visioeditor/settings/app_settings.dart';
 
 void main() {
-  testWidgets('shows the empty state with an open action', (tester) async {
-    await tester.pumpWidget(const VisioEditorApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
+
+  Future<void> pumpApp(WidgetTester tester) async {
+    // Desktop-sized surface so the tool strip Column doesn't overflow.
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = await AppSettings.load();
+    await tester.pumpWidget(VisioEditorApp(settings: settings));
     await tester.pumpAndSettle();
+  }
+
+  testWidgets('shows the empty state with an open action', (tester) async {
+    await pumpApp(tester);
 
     expect(find.text('Editor for Visio Diagrams'), findsWidgets);
     expect(find.text('Open Visio drawing'), findsOneWidget);
     expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
+    expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+  });
+
+  testWidgets('settings page opens and switches dark mode + Chinese',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = await AppSettings.load();
+    await tester.pumpWidget(VisioEditorApp(settings: settings));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsWidgets);
+
+    await tester.tap(find.byIcon(Icons.dark_mode_outlined));
+    await tester.pumpAndSettle();
+    expect(settings.themeMode, ThemeMode.dark);
+
+    await tester.tap(find.text('简体中文'));
+    await tester.pumpAndSettle();
+    expect(settings.locale?.languageCode, 'zh');
+    expect(find.text('设置'), findsWidgets);
   });
 
   testWidgets('double-click a shape edits its label in place and round-trips',
       (tester) async {
-    await tester.pumpWidget(const VisioEditorApp());
-    await tester.pumpAndSettle();
+    await pumpApp(tester);
 
     // Start a blank drawing.
     await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
@@ -72,8 +110,7 @@ void main() {
 
   testWidgets('right-click opens a context menu with edit actions',
       (tester) async {
-    await tester.pumpWidget(const VisioEditorApp());
-    await tester.pumpAndSettle();
+    await pumpApp(tester);
 
     await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
     await tester.pumpAndSettle();

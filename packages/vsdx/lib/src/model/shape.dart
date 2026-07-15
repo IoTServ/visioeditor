@@ -485,12 +485,114 @@ class VsdxShape {
   static const String userRouteRounded = 'veRounded';
   static const String userRouteWaypoints = 'veWaypoints';
 
+  /// User-cell flag: draw.io-style collapsed container / swimlane. When set to
+  /// `'1'`, children stay in the model but are not painted or hit-tested.
+  static const String userCollapsed = 'veCollapsed';
+
+  /// Stored expanded height (inches) while [collapsed], so unfold restores size.
+  static const String userExpandedHeight = 'veExpandedHeight';
+
   static const Set<String> _routeUserCellNames = {
     userRouteStraight,
     userRouteCurved,
     userRouteRounded,
     userRouteWaypoints,
   };
+
+  /// Whether this structural container is collapsed (children hidden).
+  bool get collapsed {
+    for (final c in userCells) {
+      if (c.name == userCollapsed) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// Expanded height stored when the shape was last folded, if any.
+  double? get storedExpandedHeight {
+    for (final c in userCells) {
+      if (c.name == userExpandedHeight) {
+        return double.tryParse(c.value ?? '');
+      }
+    }
+    return null;
+  }
+
+  /// Set / clear the collapsed flag via [userCollapsed]. Round-trips through
+  /// the writer as a `User` cell. Prefer [fold] / [unfold] when also shrinking
+  /// the header height (draw.io behaviour).
+  VsdxShape withCollapsed(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userCollapsed) c,
+    ];
+    if (!value) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        const VsdxUserCell(name: userCollapsed, value: '1'),
+      ],
+    );
+  }
+
+  /// Header height used when folding a structural container (inches).
+  static double collapsedHeaderHeight(VsdxShape s) {
+    if (s.shapeKind == VsdxShapeKind.swimlane) {
+      return (s.height * 0.2).clamp(0.4, 0.65);
+    }
+    return (s.height * 0.18).clamp(0.35, math.max(0.35, s.height));
+  }
+
+  /// Fold this container: hide children, shrink height to the title band, keep
+  /// the **top** edge fixed (Y-up). Stores the previous height for [unfold].
+  VsdxShape fold() {
+    if (collapsed) return this;
+    final expandedH = height;
+    final newH = collapsedHeaderHeight(this);
+    final top = pinY + height / 2;
+    final newPinY = top - newH / 2;
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userCollapsed && c.name != userExpandedHeight) c,
+    ];
+    final flagged = copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        const VsdxUserCell(name: userCollapsed, value: '1'),
+        VsdxUserCell(name: userExpandedHeight, value: '$expandedH'),
+      ],
+    );
+    if ((newH - expandedH).abs() < 1e-6) return flagged;
+    return flagged.resizeTo(
+      pinX: pinX,
+      pinY: newPinY,
+      width: width,
+      height: newH,
+    );
+  }
+
+  /// Unfold this container: restore height from [storedExpandedHeight] (or keep
+  /// current), show children again, keep the **top** edge fixed.
+  VsdxShape unfold() {
+    if (!collapsed) return this;
+    final restoreH = storedExpandedHeight ?? height;
+    final top = pinY + height / 2;
+    final newPinY = top - restoreH / 2;
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userCollapsed && c.name != userExpandedHeight) c,
+    ];
+    final cleared = copyWith(userCells: others);
+    if ((restoreH - height).abs() < 1e-6) return cleared;
+    return cleared.resizeTo(
+      pinX: pinX,
+      pinY: newPinY,
+      width: width,
+      height: restoreH,
+    );
+  }
 
   /// Mirror [straightRoute] / [curved] / [rounded] / [waypoints] into
   /// [userCells] so the writer emits them. No-op for non-connectors with no

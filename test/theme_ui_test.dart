@@ -1,0 +1,61 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:visioeditor/editor/editor_controller.dart';
+import 'package:vsdx/vsdx.dart';
+
+void main() {
+  test('setFillThemeSlot binds theme index and installs Office theme', () {
+    final c = EditorController()..newDocument();
+    expect(c.documentTheme.isEmpty, isTrue);
+
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final id = c.selection.single;
+    c.setFillThemeSlot(ThemeSlot.accent1);
+
+    expect(c.documentTheme.isEmpty, isFalse);
+    expect(c.documentTheme.resolve(ThemeSlot.accent1), isNotNull);
+    final fill = c.currentPage!.findShapeById(id)!.fill;
+    expect(fill.foreground, isNull);
+    expect(fill.themeForegroundIndex, ThemeSlot.accent1);
+    expect(fill.pattern, isNot(0));
+  });
+
+  test('setLineThemeSlot clears solid colour', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setLineColor(const VsdxColor(0xFFFF0000))
+      ..setLineThemeSlot(ThemeSlot.accent2);
+    final line = c.currentPage!.shapes.single.line;
+    expect(line.color, isNull);
+    expect(line.themeColorIndex, ThemeSlot.accent2);
+  });
+
+  test('setDocumentTheme switches builtin palettes', () {
+    final c = EditorController()..newDocument();
+    c.setDocumentTheme(VsdxTheme.green);
+    expect(
+      c.documentTheme.resolve(ThemeSlot.accent1)?.value,
+      VsdxTheme.green.resolve(ThemeSlot.accent1)!.value,
+    );
+    c.setDocumentTheme(VsdxTheme.blue);
+    expect(
+      c.documentTheme.resolve(ThemeSlot.accent1)?.value,
+      VsdxTheme.blue.resolve(ThemeSlot.accent1)!.value,
+    );
+  });
+
+  test('solid fill clears a previous theme binding', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setFillThemeSlot(ThemeSlot.accent1)
+      ..setFillColor(const VsdxColor(0xFF00FF00));
+    final fill = c.currentPage!.shapes.single.fill;
+    expect(fill.foreground?.value, 0xFF00FF00);
+    expect(fill.themeForegroundIndex, isNull);
+  });
+}

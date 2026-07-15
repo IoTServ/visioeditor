@@ -44,6 +44,28 @@ class VsdxShadow {
 
   static const VsdxShadow disabled =
       VsdxShadow(enabled: false, transparency: 1.0);
+
+  /// Sentinel for [copyWith] so callers can clear [color] to `null`.
+  static const Object keepColor = Object();
+
+  VsdxShadow copyWith({
+    Object? color = keepColor,
+    int? themeColorIndex,
+    double? offsetXInches,
+    double? offsetYInches,
+    double? blurInches,
+    double? transparency,
+    bool? enabled,
+  }) =>
+      VsdxShadow(
+        color: identical(color, keepColor) ? this.color : color as VsdxColor?,
+        themeColorIndex: themeColorIndex ?? this.themeColorIndex,
+        offsetXInches: offsetXInches ?? this.offsetXInches,
+        offsetYInches: offsetYInches ?? this.offsetYInches,
+        blurInches: blurInches ?? this.blurInches,
+        transparency: transparency ?? this.transparency,
+        enabled: enabled ?? this.enabled,
+      );
 }
 
 /// Soft "outer glow" effect (`Glow*` cells).
@@ -64,6 +86,24 @@ class VsdxGlow {
   final bool enabled;
 
   static const VsdxGlow disabled = VsdxGlow(enabled: false, transparency: 1);
+
+  /// Sentinel for [copyWith] so callers can clear [color] to `null`.
+  static const Object keepColor = Object();
+
+  VsdxGlow copyWith({
+    Object? color = keepColor,
+    int? themeColorIndex,
+    double? sizeInches,
+    double? transparency,
+    bool? enabled,
+  }) =>
+      VsdxGlow(
+        color: identical(color, keepColor) ? this.color : color as VsdxColor?,
+        themeColorIndex: themeColorIndex ?? this.themeColorIndex,
+        sizeInches: sizeInches ?? this.sizeInches,
+        transparency: transparency ?? this.transparency,
+        enabled: enabled ?? this.enabled,
+      );
 }
 
 /// Mirror reflection below the shape (`Reflection*` cells).
@@ -85,6 +125,21 @@ class VsdxReflection {
 
   static const VsdxReflection disabled =
       VsdxReflection(enabled: false, transparency: 1);
+
+  VsdxReflection copyWith({
+    double? sizeInches,
+    double? distanceInches,
+    double? transparency,
+    double? blurInches,
+    bool? enabled,
+  }) =>
+      VsdxReflection(
+        sizeInches: sizeInches ?? this.sizeInches,
+        distanceInches: distanceInches ?? this.distanceInches,
+        transparency: transparency ?? this.transparency,
+        blurInches: blurInches ?? this.blurInches,
+        enabled: enabled ?? this.enabled,
+      );
 }
 
 /// One stop in a gradient fill (`<Section N="FillGradient">` row).

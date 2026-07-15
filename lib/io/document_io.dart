@@ -90,6 +90,19 @@ bool hasVisioExtension(String path) {
   return kVisioOpenExtensions.any((e) => lower.endsWith('.$e'));
 }
 
+/// `true` when [path] looks like a raster image the editor can embed.
+bool hasImageExtension(String path) {
+  final lower = path.toLowerCase();
+  return kImageInsertExtensions.any((e) => lower.endsWith('.$e'));
+}
+
+/// Lower-case, dot-less file extension of [path], or `''`.
+String extensionOfPath(String path) {
+  final name = path.split(RegExp(r'[/\\]')).last;
+  final dot = name.lastIndexOf('.');
+  return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+}
+
 /// Prompt for a save location. Returns the chosen path (ensured to end in
 /// `.vsdx`) or `null` if the user cancelled.
 Future<String?> pickSaveLocation({String suggestedName = 'drawing.vsdx'}) async {

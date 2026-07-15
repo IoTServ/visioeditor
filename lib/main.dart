@@ -7,6 +7,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:vsdx/vsdx.dart';
 
 import 'editor/canvas_camera.dart';
@@ -14,47 +15,80 @@ import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
+import 'editor/layers_panel.dart';
 import 'editor/outline_panel.dart';
 import 'editor/page_canvas.dart';
 import 'editor/ruler.dart';
 import 'editor/stencils.dart';
+import 'l10n/app_localizations.dart';
 import 'render/arrow_library.dart';
 import 'render/path_builder.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
 import 'io/recent_files.dart';
+import 'settings/app_settings.dart';
+import 'settings/settings_page.dart';
 
-void main() {
-  runApp(const VisioEditorApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final settings = await AppSettings.load();
+  runApp(VisioEditorApp(settings: settings));
 }
 
 class VisioEditorApp extends StatelessWidget {
-  const VisioEditorApp({super.key});
+  const VisioEditorApp({required this.settings, super.key});
+
+  final AppSettings settings;
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF1F6FEB);
-    return MaterialApp(
-      title: 'Editor for Visio Diagrams',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: seed,
-        useMaterial3: true,
-        brightness: Brightness.light,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: seed,
-        useMaterial3: true,
-        brightness: Brightness.dark,
-      ),
-      home: const EditorHomePage(),
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) {
+        final seed = settings.seedColor;
+        return MaterialApp(
+          onGenerateTitle: (ctx) => AppLocalizations.of(ctx).appTitle,
+          debugShowCheckedModeBanner: false,
+          themeMode: settings.themeMode,
+          theme: ThemeData(
+            colorSchemeSeed: seed,
+            useMaterial3: true,
+            brightness: Brightness.light,
+          ),
+          darkTheme: ThemeData(
+            colorSchemeSeed: seed,
+            useMaterial3: true,
+            brightness: Brightness.dark,
+          ),
+          locale: settings.locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localeResolutionCallback: (device, supported) {
+            final forced = settings.locale;
+            if (forced != null) return forced;
+            if (device == null) return supported.first;
+            for (final l in supported) {
+              if (l.languageCode == device.languageCode) return l;
+            }
+            return supported.first;
+          },
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: EditorHomePage(settings: settings),
+        );
+      },
     );
   }
 }
 
 class EditorHomePage extends StatefulWidget {
-  const EditorHomePage({super.key});
+  const EditorHomePage({required this.settings, super.key});
+
+  final AppSettings settings;
 
   @override
   State<EditorHomePage> createState() => _EditorHomePageState();
@@ -81,20 +115,40 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _dragging = false;
   bool _showStencils = false;
   bool _showFind = false;
+  bool _findShowReplace = false;
   bool _showOutline = false;
+  bool _showLayersPanel = false;
   bool _showRulers = true;
   final CanvasCamera _camera = CanvasCamera();
 
+  /// Host of [PageCanvas]; used to map desktop file-drop global coords → page
+  /// inches so images land under the cursor (drawio).
+  final GlobalKey _canvasHostKey = GlobalKey();
+
   EditorController? get _c => _workspace.active;
 
-  void _openFind() {
+  void _openFind({bool replace = false}) {
     if (_c == null || !_c!.hasDocument) return;
-    setState(() => _showFind = true);
+    setState(() {
+      _showFind = true;
+      if (replace) _findShowReplace = true;
+    });
   }
 
   void _closeFind() {
-    setState(() => _showFind = false);
+    setState(() {
+      _showFind = false;
+      _findShowReplace = false;
+    });
     _c?.clearFind();
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsPage(settings: widget.settings),
+      ),
+    );
   }
 
   /// Open drawio's "Edit Data" (Cmd+M) for the single selected shape.
@@ -116,7 +170,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
   @override
   void initState() {
     super.initState();
-    _workspace.addListener(_onChanged);
+    // Document edits are observed via [ListenableBuilder] below — do not
+    // setState the whole Scaffold on every controller tick (that rebuilt the
+    // shapes palette's ~300 thumbnails and made scrollbars/sliders lag).
     _recentFiles.load().then((r) {
       if (mounted) setState(() => _recents = r);
     });
@@ -143,14 +199,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
 
   @override
   void dispose() {
-    _workspace.removeListener(_onChanged);
     _workspace.dispose();
     _camera.dispose();
     super.dispose();
-  }
-
-  void _onChanged() {
-    if (mounted) setState(() {});
   }
 
   Future<void> _addRecent(String? path) async {
@@ -201,10 +252,104 @@ class _EditorHomePageState extends State<EditorHomePage> {
 
   Future<void> _onDrop(DropDoneDetails details) async {
     setState(() => _dragging = false);
+    final c = _c;
+    final pagePt = _pageInchesFromGlobal(details.globalPosition);
     for (final f in details.files) {
-      if (!hasVisioExtension(f.path)) continue;
-      final picked = await readDroppedFile(f.path);
-      await _openBytes(picked.bytes, path: picked.path, name: picked.name);
+      if (hasVisioExtension(f.path)) {
+        final picked = await readDroppedFile(f.path);
+        await _openBytes(picked.bytes, path: picked.path, name: picked.name);
+        continue;
+      }
+      // Raster image → insert at the drop point (or replace a picture under
+      // the cursor), matching drawio's drag-from-desktop behaviour.
+      if (c != null && c.hasDocument && hasImageExtension(f.path)) {
+        try {
+          final bytes = await f.readAsBytes();
+          await _embedImageBytes(
+            c,
+            bytes,
+            fileExtension: extensionOfPath(f.path),
+            name: f.name,
+            pagePt: pagePt,
+          );
+        } catch (_) {
+          _snack('Could not insert image');
+        }
+      }
+    }
+  }
+
+  /// Map a screen position onto the active page (inches), or `null` when the
+  /// canvas hasn't laid out / the point is outside the host.
+  Offset? _pageInchesFromGlobal(Offset global) {
+    final box =
+        _canvasHostKey.currentContext?.findRenderObject() as RenderBox?;
+    final page = _c?.currentPage;
+    if (box == null || !box.hasSize || page == null) return null;
+    final local = box.globalToLocal(global);
+    final cam = _camera;
+    if (cam.scale <= 0) return null;
+    final content = (local - cam.offset) / cam.scale;
+    const ppi = 96.0;
+    return Offset(
+      content.dx / ppi,
+      page.heightInches - content.dy / ppi,
+    );
+  }
+
+  /// Insert or replace a picture from [bytes] at optional [pagePt].
+  Future<void> _embedImageBytes(
+    EditorController c,
+    Uint8List bytes, {
+    required String fileExtension,
+    String? name,
+    Offset? pagePt,
+    bool replaceSelected = false,
+  }) async {
+    if (bytes.isEmpty) return;
+    final size = await _imageSizeInches(bytes);
+    if (!mounted) return;
+    final label = name ?? 'image';
+    if (replaceSelected && c.canReplaceSelectedImage) {
+      c.replaceImage(
+        c.singleSelectedId!,
+        bytes,
+        fileExtension: fileExtension,
+      );
+      _snack('Replaced with $label');
+      return;
+    }
+    // Drop onto an existing picture → replace its media (drawio).
+    if (pagePt != null) {
+      final hit = c.pictureShapeAt(pagePt.dx, pagePt.dy);
+      if (hit != null) {
+        c.replaceImage(hit, bytes, fileExtension: fileExtension);
+        _snack('Replaced with $label');
+        return;
+      }
+    }
+    c.insertImage(
+      bytes,
+      fileExtension: fileExtension,
+      widthInches: size.$1,
+      heightInches: size.$2,
+      cx: pagePt?.dx,
+      cy: pagePt?.dy,
+    );
+    _snack('Inserted $label');
+  }
+
+  /// Pixel size → inches at 96 dpi; `(null, null)` when undecodable.
+  Future<(double?, double?)> _imageSizeInches(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final w = frame.image.width / 96.0;
+      final h = frame.image.height / 96.0;
+      frame.image.dispose();
+      return (w, h);
+    } catch (_) {
+      return (null, null);
     }
   }
 
@@ -283,7 +428,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
     );
     if (path == null) return;
     try {
-      final svg = VsdxToSvgSerializer().serializeDocument(doc);
+      final svg = VsdxToSvgSerializer(
+        layerFilter: SvgLayerFilter.print,
+      ).serializeDocument(doc);
       await writeBytesToFile(path, Uint8List.fromList(utf8.encode(svg)));
       _snack('Exported SVG to $path');
     } catch (e) {
@@ -302,8 +449,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
     );
     if (path == null) return;
     try {
-      final bytes =
-          await renderPageToPng(page, theme: doc.theme, images: doc.images);
+      final bytes = await renderPageToPng(
+        page,
+        theme: doc.theme,
+        images: doc.images,
+        underlayPage: doc.backgroundFor(page),
+      );
       if (bytes == null) {
         _snack('PNG export failed');
         return;
@@ -318,31 +469,19 @@ class _EditorHomePageState extends State<EditorHomePage> {
   /// Insert an embedded raster image (drawio's "Insert > Image"): pick a file,
   /// size the placement box from the image's pixel dimensions (96 dpi), and
   /// hand the bytes to the controller, which embeds and round-trips them.
-  Future<void> _insertImage() async {
+  /// When [replaceSelected] is true and a picture is selected, replaces it.
+  Future<void> _insertImage({bool replaceSelected = false}) async {
     final c = _c;
     if (c == null || !c.hasDocument) return;
     final PickedImage? picked = await pickImageFile();
     if (picked == null) return;
-    double? wIn, hIn;
-    try {
-      final codec = await ui.instantiateImageCodec(picked.bytes);
-      final frame = await codec.getNextFrame();
-      wIn = frame.image.width / 96.0;
-      hIn = frame.image.height / 96.0;
-      frame.image.dispose();
-    } catch (_) {
-      // Undecodable (or exotic) image: fall back to a default square box.
-      wIn = null;
-      hIn = null;
-    }
-    if (!mounted) return;
-    c.insertImage(
+    await _embedImageBytes(
+      c,
       picked.bytes,
       fileExtension: picked.extension,
-      widthInches: wIn,
-      heightInches: hIn,
+      name: picked.name,
+      replaceSelected: replaceSelected,
     );
-    _snack('Inserted ${picked.name ?? 'image'}');
   }
 
   Future<void> _renamePage(int index) async {
@@ -379,49 +518,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
     textController.dispose();
   }
 
-  Future<void> _showLayers() async {
-    final c = _c;
-    if (c == null || !c.hasLayers) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Layers'),
-        content: SizedBox(
-          width: 320,
-          child: ListenableBuilder(
-            listenable: c,
-            builder: (context, _) {
-              final layers = c.currentPage?.layers ?? const [];
-              if (layers.isEmpty) {
-                return const Text('No layers on this page.');
-              }
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final l in layers)
-                      SwitchListTile(
-                        dense: true,
-                        title: Text(l.name),
-                        value: l.visible,
-                        onChanged: (_) => c.toggleLayerVisibility(l.id),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _exportPdf() async {
     final c = _c;
     final doc = c?.document;
@@ -449,7 +545,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final c = _c;
+    // Resolve the active controller at invoke-time (not build-time) so shortcuts
+    // stay correct across tab switches without rebuilding this subtree every
+    // document edit.
+    EditorController? c() => _c;
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyN, meta: true): _newDoc,
@@ -458,295 +557,420 @@ class _EditorHomePageState extends State<EditorHomePage> {
           if (_workspace.hasDocs) _closeTab(_workspace.activeIndex);
         },
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
-          if (c != null && c.hasDocument) _save();
+          if (c() != null && c()!.hasDocument) _save();
         },
         const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
-          if (c != null && c.canUndo) c.undo();
+          final cur = c();
+          if (cur != null && cur.canUndo) cur.undo();
         },
         const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
             () {
-          if (c != null && c.canRedo) c.redo();
+          final cur = c();
+          if (cur != null && cur.canRedo) cur.redo();
         },
         const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
-          if (c != null && c.hasSelection) c.duplicateSelection();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.duplicateSelection();
         },
         const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
-          if (c != null && c.hasSelection) c.copySelection();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.copySelection();
         },
         const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
-          if (c != null && c.hasClipboard) c.paste();
+          final cur = c();
+          if (cur != null && cur.hasDocument) {
+            // Always try the system clipboard first (cross-instance paste).
+            unawaited(cur.pasteFromSystem());
+          }
         },
         const SingleActivator(LogicalKeyboardKey.keyX, meta: true): () {
-          if (c != null && c.hasSelection) c.cut();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.cut();
         },
         const SingleActivator(LogicalKeyboardKey.keyA, meta: true): () {
-          if (c != null && c.hasDocument) c.selectAll();
+          final cur = c();
+          if (cur != null && cur.hasDocument) cur.selectAll();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyA, meta: true, shift: true):
+            () {
+          final cur = c();
+          if (cur != null) cur.clearSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () {
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.toggleBold();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyI, meta: true): () {
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.toggleItalic();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyU, meta: true): () {
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.toggleUnderline();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyE, meta: true): () {
+          final cur = c();
+          if (cur != null && cur.hasDocument) cur.selectConnectors();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyI, meta: true, shift: true):
+            () {
+          final cur = c();
+          if (cur != null && cur.hasDocument) cur.selectVertices();
+        },
+        const SingleActivator(LogicalKeyboardKey.tab): () {
+          final cur = c();
+          if (cur != null && cur.hasDocument) cur.selectNextShape();
+        },
+        const SingleActivator(LogicalKeyboardKey.tab, shift: true): () {
+          final cur = c();
+          if (cur != null && cur.hasDocument) {
+            cur.selectNextShape(reverse: true);
+          }
         },
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true):
             () {
-          if (c != null && c.hasSelection) c.bringSelectionToFront();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.bringSelectionToFront();
         },
         const SingleActivator(LogicalKeyboardKey.keyB, meta: true, shift: true):
             () {
-          if (c != null && c.hasSelection) c.sendSelectionToBack();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.sendSelectionToBack();
+        },
+        // draw.io: Cmd+] bring forward, Cmd+[ send backward
+        const SingleActivator(LogicalKeyboardKey.bracketRight, meta: true): () {
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.bringSelectionForward();
+        },
+        const SingleActivator(LogicalKeyboardKey.bracketLeft, meta: true): () {
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.sendSelectionBackward();
         },
         const SingleActivator(LogicalKeyboardKey.keyC, meta: true, alt: true):
             () {
-          if (c != null && c.hasSelection) c.copyStyle();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.copyStyle();
         },
         const SingleActivator(LogicalKeyboardKey.keyV, meta: true, alt: true):
             () {
-          if (c != null && c.hasStyleClipboard) c.pasteStyle();
+          final cur = c();
+          if (cur != null && cur.hasStyleClipboard) cur.pasteStyle();
         },
         const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
-          if (c != null && c.canGroup) c.groupSelection();
+          final cur = c();
+          if (cur != null && cur.canGroup) cur.groupSelection();
         },
         const SingleActivator(LogicalKeyboardKey.keyU, meta: true, shift: true):
             () {
-          if (c != null && c.canUngroup) c.ungroupSelection();
+          final cur = c();
+          if (cur != null && cur.canUngroup) cur.ungroupSelection();
         },
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () {
-          if (c != null && c.hasSelection) c.rotateSelection90();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.rotateSelection90();
         },
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true, shift: true):
             () {
-          if (c != null && c.hasSelection) {
-            c.rotateSelection90(clockwise: false);
+          final cur = c();
+          if (cur != null && cur.hasSelection) {
+            cur.rotateSelection90(clockwise: false);
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyH, meta: true): () {
+          _openFind(replace: true);
+        },
         const SingleActivator(LogicalKeyboardKey.keyM, meta: true): () {
-          if (c != null && c.singleSelectedId != null) _editData();
+          if (c()?.singleSelectedId != null) _editData();
         },
         const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
-          if (c != null && c.singleSelectedId != null) _editLink();
+          if (c()?.singleSelectedId != null) _editLink();
         },
         const SingleActivator(LogicalKeyboardKey.keyL, meta: true): () {
-          if (c != null && c.hasSelection) c.toggleLock();
+          final cur = c();
+          if (cur != null && cur.hasSelection) cur.toggleLock();
         },
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Editor for Visio Diagrams'),
-          actions: [
-            if (c != null) ...[
-              IconButton(
-                onPressed: c.canUndo ? c.undo : null,
-                icon: const Icon(Icons.undo),
-                tooltip: 'Undo',
-              ),
-              IconButton(
-                onPressed: c.canRedo ? c.redo : null,
-                icon: const Icon(Icons.redo),
-                tooltip: 'Redo',
-              ),
-              IconButton(
-                onPressed: () => setState(() => _showOutline = !_showOutline),
-                icon: const Icon(Icons.map_outlined),
-                isSelected: _showOutline,
-                tooltip: 'Outline',
-              ),
-              IconButton(
-                onPressed: () => setState(() => _showRulers = !_showRulers),
-                icon: const Icon(Icons.straighten),
-                isSelected: _showRulers,
-                tooltip: 'Rulers',
-              ),
-              IconButton(
-                onPressed: c.toggleGrid,
-                icon: Icon(c.showGrid ? Icons.grid_on : Icons.grid_off),
-                tooltip: 'Toggle grid',
-              ),
-              IconButton(
-                onPressed: c.requestFitToWindow,
-                icon: const Icon(Icons.fit_screen_outlined),
-                tooltip: 'Fit to window (⇧⌘H)',
-              ),
-              if (c.hasLayers)
-                IconButton(
-                  onPressed: _showLayers,
-                  icon: const Icon(Icons.layers_outlined),
-                  tooltip: 'Layers',
-                ),
-              IconButton(
-                onPressed: _insertImage,
-                icon: const Icon(Icons.image_outlined),
-                tooltip: 'Insert Image…',
-              ),
-              IconButton(
-                onPressed: _save,
-                icon: const Icon(Icons.save_outlined),
-                tooltip: 'Save (Cmd+S)',
-              ),
-            ],
-            IconButton(
-              onPressed: _newDoc,
-              icon: const Icon(Icons.note_add_outlined),
-              tooltip: 'New drawing (Cmd+N)',
-            ),
-            IconButton(
-              onPressed: _open,
-              icon: const Icon(Icons.folder_open_outlined),
-              tooltip: 'Open a Visio drawing (Cmd+O)',
-            ),
-            if (_recents.isNotEmpty)
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.history),
-                tooltip: 'Recent files',
-                onSelected: _openPath,
-                itemBuilder: (context) => [
-                  for (final p in _recents)
-                    PopupMenuItem<String>(
-                      value: p,
-                      child: Text(
-                        p.split(RegExp(r'[/\\]')).last,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-              ),
-            if (c != null)
-              PopupMenuButton<String>(
-                tooltip: 'More',
-                onSelected: (value) {
-                  switch (value) {
-                    case 'saveAs':
-                      _saveAs();
-                    case 'exportSvg':
-                      _exportSvg();
-                    case 'exportPng':
-                      _exportPng();
-                    case 'exportPdf':
-                      _exportPdf();
-                    case 'selectAll':
-                      c.selectAll();
-                    case 'find':
-                      _openFind();
-                    case 'insertImage':
-                      _insertImage();
-                    case 'editData':
-                      _editData();
-                    case 'editLink':
-                      _editLink();
-                    case 'lock':
-                      c.toggleLock();
-                    case 'zoomSel':
-                      c.revealSelection();
-                    case 'copyStyle':
-                      c.copyStyle();
-                    case 'pasteStyle':
-                      c.pasteStyle();
-                    case 'snap':
-                      c.toggleSnap();
-                    case 'lineJumps':
-                      c.toggleLineJumps();
-                    case 'close':
-                      _closeTab(_workspace.activeIndex);
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem<String>(
-                    value: 'selectAll',
-                    child: Text('Select All (Cmd+A)'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'find',
-                    child: Text('Find… (Cmd+F)'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'insertImage',
-                    child: Text('Insert Image…'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'editData',
-                    enabled: c.singleSelectedId != null,
-                    child: const Text('Edit Data… (Cmd+M)'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'editLink',
-                    enabled: c.singleSelectedId != null,
-                    child: const Text('Edit Link… (Cmd+K)'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'lock',
-                    enabled: c.hasSelection,
-                    child: Text(
-                        c.selectionLocked ? 'Unlock (Cmd+L)' : 'Lock (Cmd+L)'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'zoomSel',
-                    enabled: c.hasSelection,
-                    child: const Text('Zoom to Selection'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'copyStyle',
-                    enabled: c.hasSelection,
-                    child: const Text('Copy Style (Cmd+Alt+C)'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'pasteStyle',
-                    enabled: c.hasStyleClipboard && c.hasSelection,
-                    child: const Text('Paste Style (Cmd+Alt+V)'),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem<String>(
-                    value: 'saveAs',
-                    child: Text('Save As…'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'exportSvg',
-                    child: Text('Export as SVG…'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'exportPng',
-                    child: Text('Export as PNG…'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'exportPdf',
-                    child: Text('Export as PDF…'),
-                  ),
-                  CheckedPopupMenuItem<String>(
-                    value: 'snap',
-                    checked: c.snapToGrid,
-                    child: const Text('Snap to grid'),
-                  ),
-                  CheckedPopupMenuItem<String>(
-                    value: 'lineJumps',
-                    checked: c.showLineJumps,
-                    child: const Text('Line jumps'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'close',
-                    child: Text('Close tab (Cmd+W)'),
-                  ),
-                ],
-              ),
-          ],
-          bottom: _workspace.hasDocs ? _tabBar() : null,
-        ),
-        body: DropTarget(
-          onDragEntered: (_) => setState(() => _dragging = true),
-          onDragExited: (_) => setState(() => _dragging = false),
-          onDragDone: _onDrop,
-          child: Stack(
-            children: [
-              Positioned.fill(child: _buildBody(c)),
-              if (_showFind && c != null && c.hasDocument)
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: _FindBar(controller: c, onClose: _closeFind),
-                ),
-              if (_dragging) Positioned.fill(child: _dropOverlay(context)),
-            ],
-          ),
-        ),
-        bottomNavigationBar: (c != null && c.hasDocument)
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [_pageTabs(c), _statusBar(c)],
+      // Document edits rebuild the builder only; the shapes palette is [child]
+      // so its scroll position / thumbnails are not rebuilt every drag tick.
+      child: ListenableBuilder(
+        listenable: _workspace,
+        child: _showStencils
+            ? _StencilPanel(
+                key: const ValueKey<String>('stencil-panel'),
+                workspace: _workspace,
               )
             : null,
+        builder: (context, stencilChild) {
+          final cur = _workspace.active;
+          final l10n = AppLocalizations.of(context);
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(l10n.appTitle),
+              actions: [
+                if (cur != null) ...[
+                  IconButton(
+                    onPressed: cur.canUndo ? cur.undo : null,
+                    icon: const Icon(Icons.undo),
+                    tooltip: 'Undo',
+                  ),
+                  IconButton(
+                    onPressed: cur.canRedo ? cur.redo : null,
+                    icon: const Icon(Icons.redo),
+                    tooltip: 'Redo',
+                  ),
+                  IconButton(
+                    onPressed: () =>
+                        setState(() => _showOutline = !_showOutline),
+                    icon: const Icon(Icons.map_outlined),
+                    isSelected: _showOutline,
+                    tooltip: 'Outline',
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _showRulers = !_showRulers),
+                    icon: const Icon(Icons.straighten),
+                    isSelected: _showRulers,
+                    tooltip: 'Rulers',
+                  ),
+                  IconButton(
+                    onPressed: cur.toggleGrid,
+                    icon: Icon(cur.showGrid ? Icons.grid_on : Icons.grid_off),
+                    tooltip: 'Toggle grid',
+                  ),
+                  IconButton(
+                    onPressed: cur.requestFitToWindow,
+                    icon: const Icon(Icons.fit_screen_outlined),
+                    tooltip: 'Fit to window (⇧⌘H)',
+                  ),
+                  IconButton(
+                    onPressed: () =>
+                        setState(() => _showLayersPanel = !_showLayersPanel),
+                    icon: const Icon(Icons.layers_outlined),
+                    isSelected: _showLayersPanel,
+                    tooltip: 'Layers',
+                  ),
+                  IconButton(
+                    onPressed: _insertImage,
+                    icon: const Icon(Icons.image_outlined),
+                    tooltip: 'Insert Image…',
+                  ),
+                  IconButton(
+                    onPressed: _save,
+                    icon: const Icon(Icons.save_outlined),
+                    tooltip: l10n.save,
+                  ),
+                ],
+                IconButton(
+                  onPressed: _newDoc,
+                  icon: const Icon(Icons.note_add_outlined),
+                  tooltip: l10n.newDrawing,
+                ),
+                IconButton(
+                  onPressed: _open,
+                  icon: const Icon(Icons.folder_open_outlined),
+                  tooltip: l10n.openDrawing,
+                ),
+                if (_recents.isNotEmpty)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.history),
+                    tooltip: l10n.recentFiles,
+                    onSelected: _openPath,
+                    itemBuilder: (context) => [
+                      for (final p in _recents)
+                        PopupMenuItem<String>(
+                          value: p,
+                          child: Text(
+                            p.split(RegExp(r'[/\\]')).last,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                IconButton(
+                  onPressed: _openSettings,
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: l10n.settingsTooltip,
+                ),
+                if (cur != null)
+                  PopupMenuButton<String>(
+                    tooltip: l10n.more,
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'saveAs':
+                          _saveAs();
+                        case 'exportSvg':
+                          _exportSvg();
+                        case 'exportPng':
+                          _exportPng();
+                        case 'exportPdf':
+                          _exportPdf();
+                        case 'selectAll':
+                          cur.selectAll();
+                        case 'find':
+                          _openFind();
+                        case 'replace':
+                          _openFind(replace: true);
+                        case 'insertImage':
+                          _insertImage();
+                        case 'editData':
+                          _editData();
+                        case 'editLink':
+                          _editLink();
+                        case 'editConnPts':
+                          if (cur.editingConnectionPoints) {
+                            cur.endEditConnectionPoints();
+                          } else {
+                            cur.beginEditConnectionPoints();
+                          }
+                        case 'lock':
+                          cur.toggleLock();
+                        case 'zoomSel':
+                          cur.revealSelection();
+                        case 'copyStyle':
+                          cur.copyStyle();
+                        case 'pasteStyle':
+                          cur.pasteStyle();
+                        case 'snap':
+                          cur.toggleSnap();
+                        case 'lineJumps':
+                          cur.toggleLineJumps();
+                        case 'settings':
+                          _openSettings();
+                        case 'close':
+                          _closeTab(_workspace.activeIndex);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem<String>(
+                        value: 'selectAll',
+                        child: Text('Select All (Cmd+A)'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'find',
+                        child: Text('Find… (Cmd+F)'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'replace',
+                        child: Text('Find and Replace… (Cmd+H)'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'insertImage',
+                        child: Text('Insert Image…'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'editData',
+                        enabled: cur.singleSelectedId != null,
+                        child: const Text('Edit Data… (Cmd+M)'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'editLink',
+                        enabled: cur.singleSelectedId != null,
+                        child: const Text('Edit Link… (Cmd+K)'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'editConnPts',
+                        enabled: cur.editingConnectionPoints ||
+                            cur.canEditConnectionPoints,
+                        child: Text(cur.editingConnectionPoints
+                            ? 'Done Editing Connection Points'
+                            : 'Edit Connection Points…'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'lock',
+                        enabled: cur.hasSelection,
+                        child: Text(cur.selectionLocked
+                            ? 'Unlock (Cmd+L)'
+                            : 'Lock (Cmd+L)'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'zoomSel',
+                        enabled: cur.hasSelection,
+                        child: const Text('Zoom to Selection'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'copyStyle',
+                        enabled: cur.hasSelection,
+                        child: const Text('Copy Style (Cmd+Alt+C)'),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'pasteStyle',
+                        enabled: cur.hasStyleClipboard && cur.hasSelection,
+                        child: const Text('Paste Style (Cmd+Alt+V)'),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem<String>(
+                        value: 'saveAs',
+                        child: Text('Save As…'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'exportSvg',
+                        child: Text('Export as SVG…'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'exportPng',
+                        child: Text('Export as PNG…'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'exportPdf',
+                        child: Text('Export as PDF…'),
+                      ),
+                      CheckedPopupMenuItem<String>(
+                        value: 'snap',
+                        checked: cur.snapToGrid,
+                        child: const Text('Snap to grid'),
+                      ),
+                      CheckedPopupMenuItem<String>(
+                        value: 'lineJumps',
+                        checked: cur.showLineJumps,
+                        child: const Text('Line jumps'),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem<String>(
+                        value: 'settings',
+                        child: Text(l10n.settings),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'close',
+                        child: Text('Close tab (Cmd+W)'),
+                      ),
+                    ],
+                  ),
+              ],
+              bottom: _workspace.hasDocs ? _tabBar() : null,
+            ),
+            body: DropTarget(
+              onDragEntered: (_) => setState(() => _dragging = true),
+              onDragExited: (_) => setState(() => _dragging = false),
+              onDragDone: _onDrop,
+              child: Stack(
+                children: [
+                  Positioned.fill(child: _buildBody(cur, stencilChild)),
+                  if (_showFind && cur != null && cur.hasDocument)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: _FindBar(
+                        controller: cur,
+                        showReplace: _findShowReplace,
+                        onToggleReplace: () {
+                          setState(
+                              () => _findShowReplace = !_findShowReplace);
+                        },
+                        onClose: _closeFind,
+                      ),
+                    ),
+                  if (_dragging) Positioned.fill(child: _dropOverlay(context)),
+                ],
+              ),
+            ),
+            bottomNavigationBar: (cur != null && cur.hasDocument)
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [_pageTabs(cur), _statusBar(cur)],
+                  )
+                : null,
+          );
+        },
       ),
     );
   }
@@ -818,7 +1042,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     );
   }
 
-  Widget _buildBody(EditorController? c) {
+  Widget _buildBody(EditorController? c, Widget? stencilChild) {
     if (c == null) {
       return _EmptyState(
         onOpen: _open,
@@ -847,14 +1071,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
               setState(() => _showStencils = !_showStencils),
         ),
         const VerticalDivider(width: 1),
-        if (_showStencils) ...[
-          _StencilPanel(controller: c),
+        // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
+        if (stencilChild != null) ...[
+          stencilChild,
           const VerticalDivider(width: 1),
         ],
         Expanded(
           child: Stack(
             children: [
               Positioned.fill(
+                key: _canvasHostKey,
                 // Key by controller so each open document gets its own canvas
                 // state (view transform, caches). Without this the shared state
                 // leaks across tabs / new files, so a freshly-created document —
@@ -878,6 +1104,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     controller: c,
                     camera: _camera,
                     onClose: () => setState(() => _showOutline = false),
+                  ),
+                ),
+              if (_showLayersPanel)
+                Positioned(
+                  left: 16,
+                  top: 16,
+                  child: LayersPanel(
+                    controller: c,
+                    onClose: () => setState(() => _showLayersPanel = false),
                   ),
                 ),
             ],
@@ -907,7 +1142,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: scheme.primary, width: 2),
             ),
-            child: const Text('Drop to open', style: TextStyle(fontSize: 16)),
+            child: Text(
+              _c != null && _c!.hasDocument
+                  ? 'Drop Visio file or image'
+                  : 'Drop to open',
+              style: const TextStyle(fontSize: 16),
+            ),
           ),
         ),
       ),
@@ -922,22 +1162,36 @@ class _EditorHomePageState extends State<EditorHomePage> {
         child: Row(
           children: [
             Expanded(
-              child: ListView.builder(
+              child: ReorderableListView.builder(
                 scrollDirection: Axis.horizontal,
+                buildDefaultDragHandles: false,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 itemCount: c.pageCount,
+                onReorderItem: (oldIndex, newIndex) {
+                  c.movePage(oldIndex, newIndex);
+                },
                 itemBuilder: (context, i) {
                   final page = c.document!.pages[i];
-                  return Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
-                    child: GestureDetector(
-                      onDoubleTap: () => _renamePage(i),
-                      child: ChoiceChip(
-                        label: Text(page.name),
-                        selected: i == c.currentPageIndex,
-                        onSelected: (_) => c.selectPage(i),
-                        tooltip: 'Double-click to rename',
+                  return ReorderableDragStartListener(
+                    key: ValueKey<int>(page.id),
+                    index: i,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 3, vertical: 7),
+                      child: GestureDetector(
+                        onDoubleTap: () => _renamePage(i),
+                        child: ChoiceChip(
+                          avatar: page.isBackgroundPage
+                              ? const Icon(Icons.layers_outlined, size: 16)
+                              : null,
+                          label: Text(page.name),
+                          selected: i == c.currentPageIndex,
+                          onSelected: (_) => c.selectPage(i),
+                          tooltip: page.isBackgroundPage
+                              ? 'Background page · Drag to reorder · '
+                                  'Double-click to rename'
+                              : 'Drag to reorder · Double-click to rename',
+                        ),
                       ),
                     ),
                   );
@@ -1149,6 +1403,7 @@ class _ToolStrip extends StatelessWidget {
             tool(EditorTool.ellipse, Icons.circle_outlined, 'Ellipse'),
             tool(EditorTool.line, Icons.horizontal_rule, 'Line'),
             tool(EditorTool.connector, Icons.timeline, 'Connector (glue)'),
+            tool(EditorTool.freehand, Icons.gesture, 'Freehand'),
             tool(EditorTool.text, Icons.text_fields, 'Text'),
             const Spacer(),
             const Divider(height: 1, indent: 10, endIndent: 10),
@@ -1178,45 +1433,56 @@ class _ToolStrip extends StatelessWidget {
 /// Left-hand shapes palette (drawio's shapes sidebar): a search box plus
 /// collapsible groups of live-thumbnail stencils. Clicking drops a stencil at
 /// the page centre; dragging drops it at the cursor.
+///
+/// Reads the active document from [workspace] at drop/click time so this panel
+/// can stay mounted across document edits (see [ListenableBuilder.child]).
 class _StencilPanel extends StatefulWidget {
-  const _StencilPanel({required this.controller});
+  const _StencilPanel({super.key, required this.workspace});
 
-  final EditorController controller;
+  final EditorWorkspace workspace;
 
   @override
   State<_StencilPanel> createState() => _StencilPanelState();
 }
 
 class _StencilPanelState extends State<_StencilPanel> {
-  /// Windows at least this wide (logical px) count as "wide-screen": the
-  /// commonly-used libraries (General / Flowchart / Arrows) start expanded.
-  /// Narrower windows start fully collapsed so the palette stays compact.
-  static const double _wideBreakpoint = 900;
+  /// Short windows need more width before specialised libraries open, so the
+  /// palette doesn't bury the canvas under a long scroll of thumbnails.
+  static const double _shortHeight = 700;
+  static const double _heightPenalty = 200;
 
+  final ScrollController _scroll = ScrollController();
   String _query = '';
 
-  /// Names of collapsed groups. Seeded responsively from the window width in
+  /// Names of collapsed groups. Seeded responsively from the window size in
   /// [didChangeDependencies]; once the user expands/collapses anything we stop
   /// re-seeding so their choice sticks across rebuilds and window resizes.
   Set<String> _collapsed = <String>{};
   bool _userAdjusted = false;
 
   @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_userAdjusted) {
-      _collapsed = _defaultCollapsed(MediaQuery.sizeOf(context).width);
+      _collapsed = _defaultCollapsed(MediaQuery.sizeOf(context));
     }
   }
 
-  /// Groups that start collapsed for the given window [width]: on wide screens
-  /// only the non-common libraries collapse (common ones default-expand); on
-  /// narrow screens every group collapses.
-  Set<String> _defaultCollapsed(double width) {
-    final wide = width >= _wideBreakpoint;
+  /// Groups that start collapsed for the given window [size]. Each library
+  /// declares its own [StencilGroup.expandAtWidth] threshold so more groups
+  /// open as the window grows (laptop → large desktop → ultra-wide).
+  Set<String> _defaultCollapsed(Size size) {
+    final room = size.width -
+        (size.height < _shortHeight ? _heightPenalty : 0.0);
     return <String>{
       for (final g in kStencilGroups)
-        if (!wide || !g.defaultExpanded) g.name,
+        if (room < g.expandAtWidth) g.name,
     };
   }
 
@@ -1232,11 +1498,25 @@ class _StencilPanelState extends State<_StencilPanel> {
             : <String>{};
       });
 
+  void _dropStencil(Stencil s) {
+    widget.workspace.active?.addShapeFromBuilder(s.build);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final q = _query.trim().toLowerCase();
     final searching = q.isNotEmpty;
+    final groups = <({StencilGroup group, List<Stencil> matches})>[];
+    for (final group in kStencilGroups) {
+      final matches = searching
+          ? group.stencils
+              .where((s) => s.name.toLowerCase().contains(q))
+              .toList()
+          : group.stencils;
+      if (matches.isEmpty) continue;
+      groups.add((group: group, matches: matches));
+    }
     return SizedBox(
       width: 184,
       child: ColoredBox(
@@ -1262,12 +1542,27 @@ class _StencilPanelState extends State<_StencilPanel> {
             ),
             if (!searching) _buildQuickBar(scheme),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-                children: [
-                  for (final group in kStencilGroups)
-                    ..._buildGroup(scheme, group, q, searching),
-                ],
+              // Explicit Scrollbar so the thumb tracks pointer drags on desktop
+              // even when many libraries are expanded.
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                interactive: true,
+                child: ListView.builder(
+                  controller: _scroll,
+                  primary: false,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  itemCount: groups.length,
+                  itemBuilder: (context, i) {
+                    final entry = groups[i];
+                    return _buildGroup(
+                      scheme,
+                      entry.group,
+                      entry.matches,
+                      searching,
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -1310,47 +1605,45 @@ class _StencilPanelState extends State<_StencilPanel> {
     );
   }
 
-  List<Widget> _buildGroup(
-      ColorScheme scheme, StencilGroup group, String q, bool searching) {
-    final matches = searching
-        ? group.stencils
-            .where((s) => s.name.toLowerCase().contains(q))
-            .toList()
-        : group.stencils;
-    if (matches.isEmpty) return const <Widget>[];
+  Widget _buildGroup(ColorScheme scheme, StencilGroup group,
+      List<Stencil> matches, bool searching) {
     final collapsed = !searching && _collapsed.contains(group.name);
     final text = Theme.of(context).textTheme;
-    return <Widget>[
-      InkWell(
-        onTap: searching ? null : () => _toggleGroup(group.name),
-        child: Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
-          child: Row(
-            children: [
-              Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
-                  size: 16),
-              const SizedBox(width: 2),
-              Flexible(
-                child: Text(group.name,
-                    style: text.labelLarge, overflow: TextOverflow.ellipsis),
-              ),
-              const SizedBox(width: 6),
-              Text('${matches.length}',
-                  style:
-                      text.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: searching ? null : () => _toggleGroup(group.name),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
+            child: Row(
+              children: [
+                Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 16),
+                const SizedBox(width: 2),
+                Flexible(
+                  child: Text(group.name,
+                      style: text.labelLarge,
+                      overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(width: 6),
+                Text('${matches.length}',
+                    style: text.labelSmall
+                        ?.copyWith(color: scheme.onSurfaceVariant)),
+              ],
+            ),
           ),
         ),
-      ),
-      if (!collapsed)
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final s in matches) _draggableTile(scheme, s),
-          ],
-        ),
-    ];
+        if (!collapsed)
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final s in matches) _draggableTile(scheme, s),
+            ],
+          ),
+      ],
+    );
   }
 
   Widget _draggableTile(ColorScheme scheme, Stencil s) {
@@ -1358,18 +1651,21 @@ class _StencilPanelState extends State<_StencilPanel> {
       message: s.name,
       // Drag a stencil onto the canvas to drop it at the cursor (drawio); a
       // plain click still drops it at the centre.
-      child: Draggable<Stencil>(
-        data: s,
-        dragAnchorStrategy: pointerDragAnchorStrategy,
-        feedback: Material(
-          color: Colors.transparent,
-          child: Opacity(opacity: 0.85, child: _tile(scheme, s, elevated: true)),
-        ),
-        childWhenDragging: Opacity(opacity: 0.4, child: _tile(scheme, s)),
-        child: InkWell(
-          onTap: () => widget.controller.addShapeFromBuilder(s.build),
-          borderRadius: BorderRadius.circular(8),
-          child: _tile(scheme, s),
+      child: RepaintBoundary(
+        child: Draggable<Stencil>(
+          data: s,
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedback: Material(
+            color: Colors.transparent,
+            child:
+                Opacity(opacity: 0.85, child: _tile(scheme, s, elevated: true)),
+          ),
+          childWhenDragging: Opacity(opacity: 0.4, child: _tile(scheme, s)),
+          child: InkWell(
+            onTap: () => _dropStencil(s),
+            borderRadius: BorderRadius.circular(8),
+            child: _tile(scheme, s),
+          ),
         ),
       ),
     );
@@ -1380,8 +1676,9 @@ class _StencilPanelState extends State<_StencilPanel> {
       width: 72,
       height: 62,
       decoration: BoxDecoration(
-        color:
-            elevated ? scheme.surfaceContainerHighest : scheme.surfaceContainerLow,
+        color: elevated
+            ? scheme.surfaceContainerHighest
+            : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.outlineVariant),
       ),
@@ -1416,6 +1713,16 @@ class _StencilPanelState extends State<_StencilPanel> {
   }
 }
 
+/// Cached geometry for a stencil thumbnail (shape build is relatively expensive
+/// when hundreds of tiles are in the palette).
+class _ThumbGeom {
+  _ThumbGeom(this.width, this.height, this.paths);
+
+  final double width;
+  final double height;
+  final List<({Path path, bool fill, bool line})> paths;
+}
+
 /// Paints a stencil's real geometry into a thumbnail box. Builds the shape once
 /// (pin irrelevant), then maps its shape-local coordinates (origin bottom-left,
 /// Y-up, inches) into the box (origin top-left, Y-down) with a Y-flip so the
@@ -1427,12 +1734,34 @@ class _StencilThumbPainter extends CustomPainter {
   final Color fillColor;
   final Color strokeColor;
 
-  @override
-  void paint(Canvas canvas, Size size) {
+  static final Map<Stencil, _ThumbGeom> _cache = <Stencil, _ThumbGeom>{};
+
+  _ThumbGeom _geom() {
+    final hit = _cache[stencil];
+    if (hit != null) return hit;
     final shape = stencil.build(0, 0, 0);
     final w = shape.width;
     final h = shape.height;
-    if (w <= 0 || h <= 0 || shape.geometries.isEmpty) return;
+    final paths = <({Path path, bool fill, bool line})>[];
+    if (w > 0 && h > 0) {
+      for (final g in shape.geometries) {
+        if (g.noShow) continue;
+        paths.add((
+          path: buildPath(g, widthInches: w, heightInches: h),
+          fill: !g.noFill,
+          line: !g.noLine,
+        ));
+      }
+    }
+    return _cache[stencil] = _ThumbGeom(w, h, paths);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final geom = _geom();
+    final w = geom.width;
+    final h = geom.height;
+    if (w <= 0 || h <= 0 || geom.paths.isEmpty) return;
     const pad = 5.0;
     final s = math.min(
       (size.width - 2 * pad) / w,
@@ -1453,11 +1782,9 @@ class _StencilThumbPainter extends CustomPainter {
       ..strokeWidth = 1.2 / s
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
-    for (final g in shape.geometries) {
-      if (g.noShow) continue;
-      final path = buildPath(g, widthInches: w, heightInches: h);
-      if (!g.noFill) canvas.drawPath(path, fill);
-      if (!g.noLine) canvas.drawPath(path, line);
+    for (final p in geom.paths) {
+      if (p.fill) canvas.drawPath(p.path, fill);
+      if (p.line) canvas.drawPath(p.path, line);
     }
     canvas.restore();
   }
@@ -1505,9 +1832,9 @@ class _PropertyPanel extends StatelessWidget {
                   controller.bringSelectionToFront),
               _iconBtn(Icons.flip_to_back, 'Send to back',
                   controller.sendSelectionToBack),
-              _iconBtn(Icons.arrow_upward, 'Bring forward',
+              _iconBtn(Icons.arrow_upward, 'Bring forward (Cmd+])',
                   controller.bringSelectionForward),
-              _iconBtn(Icons.arrow_downward, 'Send backward',
+              _iconBtn(Icons.arrow_downward, 'Send backward (Cmd+[)',
                   controller.sendSelectionBackward),
               IconButton(
                 onPressed:
@@ -1552,27 +1879,54 @@ class _PropertyPanel extends StatelessWidget {
           ),
           if (!controller.selectionLocked) _arrangeFields(controller),
           const SizedBox(height: 16),
-          if (count >= 2) ...[
-            _section(context, 'Align'),
+          if (count >= 1) ...[
+            _section(
+              context,
+              count == 1 ? 'Align to page' : 'Align',
+            ),
             Wrap(
               children: [
-                _iconBtn(Icons.align_horizontal_left, 'Align left',
+                _iconBtn(
+                    Icons.align_horizontal_left,
+                    count == 1 ? 'Align left to page' : 'Align left',
                     controller.alignLeft),
-                _iconBtn(Icons.align_horizontal_center, 'Center horizontally',
+                _iconBtn(
+                    Icons.align_horizontal_center,
+                    count == 1
+                        ? 'Center horizontally on page'
+                        : 'Center horizontally',
                     controller.alignCenterH),
-                _iconBtn(Icons.align_horizontal_right, 'Align right',
+                _iconBtn(
+                    Icons.align_horizontal_right,
+                    count == 1 ? 'Align right to page' : 'Align right',
                     controller.alignRight),
-                _iconBtn(Icons.align_vertical_top, 'Align top',
+                _iconBtn(
+                    Icons.align_vertical_top,
+                    count == 1 ? 'Align top to page' : 'Align top',
                     controller.alignTop),
-                _iconBtn(Icons.align_vertical_center, 'Center vertically',
+                _iconBtn(
+                    Icons.align_vertical_center,
+                    count == 1
+                        ? 'Center vertically on page'
+                        : 'Center vertically',
                     controller.alignMiddle),
-                _iconBtn(Icons.align_vertical_bottom, 'Align bottom',
+                _iconBtn(
+                    Icons.align_vertical_bottom,
+                    count == 1 ? 'Align bottom to page' : 'Align bottom',
                     controller.alignBottom),
                 if (count >= 3) ...[
                   _iconBtn(Icons.horizontal_distribute, 'Distribute horizontally',
                       controller.distributeHorizontally),
                   _iconBtn(Icons.vertical_distribute, 'Distribute vertically',
                       controller.distributeVertically),
+                ],
+                if (count >= 2) ...[
+                  _iconBtn(Icons.width_normal, 'Same width',
+                      controller.matchSelectionWidth),
+                  _iconBtn(Icons.height, 'Same height',
+                      controller.matchSelectionHeight),
+                  _iconBtn(Icons.aspect_ratio, 'Same size',
+                      controller.matchSelectionSize),
                 ],
               ],
             ),
@@ -1583,6 +1937,15 @@ class _PropertyPanel extends StatelessWidget {
             onColor: (v) => controller.setFillColor(VsdxColor(v)),
             onNone: controller.setNoFill,
           ),
+          const SizedBox(height: 6),
+          _themeSwatchRow(
+            controller: controller,
+            onSlot: controller.setFillThemeSlot,
+            selectedSlot: controller.selectedFill?.foreground == null
+                ? controller.selectedFill?.themeForegroundIndex
+                : null,
+          ),
+          _fillPatternControls(controller),
           _OpacitySlider(
             label: 'Opacity',
             opacity: 1 - (controller.selectedFill?.foregroundTransparency ?? 0),
@@ -1590,12 +1953,21 @@ class _PropertyPanel extends StatelessWidget {
             onChanged: (v) => controller.setFillOpacity(v, transient: true),
             onEnd: controller.commitTransaction,
           ),
+          _fillGradientControls(context, controller),
           _roundedControl(context, controller),
           const SizedBox(height: 16),
           _section(context, 'Line'),
           _swatchRow(
             onColor: (v) => controller.setLineColor(VsdxColor(v)),
             onNone: controller.setNoLine,
+          ),
+          const SizedBox(height: 6),
+          _themeSwatchRow(
+            controller: controller,
+            onSlot: controller.setLineThemeSlot,
+            selectedSlot: controller.selectedLine?.color == null
+                ? controller.selectedLine?.themeColorIndex
+                : null,
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -1611,6 +1983,8 @@ class _PropertyPanel extends StatelessWidget {
           const SizedBox(height: 8),
           _dashDropdown(controller),
           const SizedBox(height: 8),
+          _compoundTypeRow(controller),
+          const SizedBox(height: 8),
           _arrowPickers(controller),
           _OpacitySlider(
             label: 'Opacity',
@@ -1619,6 +1993,7 @@ class _PropertyPanel extends StatelessWidget {
             onChanged: (v) => controller.setLineOpacity(v, transient: true),
             onEnd: controller.commitTransaction,
           ),
+          _lineGradientControls(context, controller),
           if (controller.hasConnectorSelected) ...[
             const SizedBox(height: 16),
             _section(context, 'Connector'),
@@ -1653,9 +2028,10 @@ class _PropertyPanel extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
+          _section(context, 'Shadow'),
           Row(
             children: [
-              const Text('Shadow'),
+              const Text('Enabled'),
               const Spacer(),
               Switch(
                 value: controller.selectedHasShadow,
@@ -1663,10 +2039,68 @@ class _PropertyPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (controller.selectedHasShadow)
+            _shadowDetailControls(context, controller),
+          const SizedBox(height: 8),
+          _section(context, 'Glow'),
+          Row(
+            children: [
+              const Text('Enabled'),
+              const Spacer(),
+              Switch(
+                value: controller.selectedHasGlow,
+                onChanged: controller.setGlow,
+              ),
+            ],
+          ),
+          if (controller.selectedHasGlow)
+            _glowDetailControls(context, controller),
+          const SizedBox(height: 8),
+          _section(context, 'Reflection'),
+          Row(
+            children: [
+              const Text('Enabled'),
+              const Spacer(),
+              Switch(
+                value: controller.selectedHasReflection,
+                onChanged: controller.setReflection,
+              ),
+            ],
+          ),
+          if (controller.selectedHasReflection)
+            _reflectionDetailControls(context, controller),
+          const SizedBox(height: 8),
+          _section(context, 'Soft Edges'),
+          Row(
+            children: [
+              const Text('Enabled'),
+              const Spacer(),
+              Switch(
+                value: controller.selectedHasSoftEdges,
+                onChanged: controller.setSoftEdges,
+              ),
+            ],
+          ),
+          if (controller.selectedHasSoftEdges)
+            _RangeSlider(
+              label: 'Size',
+              value: controller.selectedSoftEdgesInches.clamp(0.01, 0.25),
+              min: 0.01,
+              max: 0.25,
+              format: (v) => '${(v * 100).round() / 100}"',
+              onStart: controller.beginTransaction,
+              onChanged: (v) =>
+                  controller.updateSoftEdges(v, transient: true),
+              onEnd: controller.commitTransaction,
+            ),
           if (controller.selectedCharStyle != null) ...[
             const SizedBox(height: 16),
             _section(context, 'Text'),
             _textControls(context),
+          ],
+          if (controller.canReplaceSelectedImage) ...[
+            const SizedBox(height: 16),
+            _imageSection(context),
           ],
           if (controller.singleSelectedId != null) ...[
             const SizedBox(height: 16),
@@ -1689,6 +2123,33 @@ class _PropertyPanel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(label, style: Theme.of(context).textTheme.labelLarge),
       );
+
+  /// Picture shape: replace embedded media (drawio "Replace Image").
+  Widget _imageSection(BuildContext context) {
+    final id = controller.singleSelectedId;
+    if (id == null || !controller.canReplaceSelectedImage) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _section(context, 'Image'),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final picked = await pickImageFile();
+            if (picked == null) return;
+            controller.replaceImage(
+              id,
+              picked.bytes,
+              fileExtension: picked.extension,
+            );
+          },
+          icon: const Icon(Icons.image_outlined, size: 18),
+          label: const Text('Replace Image…'),
+        ),
+      ],
+    );
+  }
 
   /// Shape Data (drawio "Edit Data"): a compact read-out of the single
   /// selection's custom properties plus a button to open the editor (Cmd+M).
@@ -1780,6 +2241,429 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
+  /// Fill gradient type + two colour stops + linear angle (draw.io Format).
+  Widget _fillGradientControls(
+    BuildContext context,
+    EditorController controller,
+  ) {
+    final fill = controller.selectedFill;
+    if (fill == null) return const SizedBox.shrink();
+    final g = fill.hasGradient ? fill.gradient : null;
+    final type = g?.type;
+    final stop0 = g != null && g.stops.isNotEmpty
+        ? g.stops.first.color?.value
+        : fill.foreground?.value;
+    final stop1 = g != null && g.stops.length > 1
+        ? g.stops[1].color?.value
+        : 0xFFFFFFFF;
+    final angleDeg = g == null ? 0 : (g.angleRad * 180 / math.pi).round() % 180;
+
+    void apply({
+      VsdxGradientType? newType,
+      int? color0,
+      int? color1,
+      double? angleRad,
+    }) {
+      final t = newType ?? type ?? VsdxGradientType.linear;
+      final c0 = VsdxColor(color0 ?? stop0 ?? 0xFF1E88E5);
+      final c1 = VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF);
+      controller.setFillGradient(
+        VsdxGradient(
+          type: t,
+          angleRad: angleRad ?? g?.angleRad ?? 0,
+          stops: <VsdxGradientStop>[
+            VsdxGradientStop(position: 0, color: c0),
+            VsdxGradientStop(position: 1, color: c1),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text('Gradient', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          children: [
+            ChoiceChip(
+              label: const Text('None'),
+              selected: g == null,
+              onSelected: (_) => controller.setFillGradient(null),
+              visualDensity: VisualDensity.compact,
+            ),
+            ChoiceChip(
+              label: const Text('Linear'),
+              selected: type == VsdxGradientType.linear,
+              onSelected: (_) => apply(newType: VsdxGradientType.linear),
+              visualDensity: VisualDensity.compact,
+            ),
+            ChoiceChip(
+              label: const Text('Radial'),
+              selected: type == VsdxGradientType.radial,
+              onSelected: (_) => apply(newType: VsdxGradientType.radial),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        if (g != null) ...[
+          const SizedBox(height: 6),
+          Text('Start', style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final argb in _swatches)
+                _SwatchButton(
+                  color: Color(argb),
+                  selected: stop0 == argb,
+                  onTap: () => apply(color0: argb),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('End', style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final argb in _swatches)
+                _SwatchButton(
+                  color: Color(argb),
+                  selected: stop1 == argb,
+                  onTap: () => apply(color1: argb),
+                ),
+            ],
+          ),
+          if (type == VsdxGradientType.linear) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final deg in const <int>[0, 45, 90, 135])
+                  ChoiceChip(
+                    label: Text('$deg°'),
+                    selected: angleDeg == deg,
+                    onSelected: (_) =>
+                        apply(angleRad: deg * math.pi / 180),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  /// Line gradient type + two colour stops + linear angle (draw.io Format).
+  Widget _lineGradientControls(
+    BuildContext context,
+    EditorController controller,
+  ) {
+    final line = controller.selectedLine;
+    if (line == null) return const SizedBox.shrink();
+    final g = line.hasGradient ? line.gradient : null;
+    final type = g?.type;
+    final stop0 = g != null && g.stops.isNotEmpty
+        ? g.stops.first.color?.value
+        : line.color?.value;
+    final stop1 = g != null && g.stops.length > 1
+        ? g.stops[1].color?.value
+        : 0xFFFFFFFF;
+    final angleDeg = g == null ? 0 : (g.angleRad * 180 / math.pi).round() % 180;
+
+    void apply({
+      VsdxGradientType? newType,
+      int? color0,
+      int? color1,
+      double? angleRad,
+    }) {
+      final t = newType ?? type ?? VsdxGradientType.linear;
+      final c0 = VsdxColor(color0 ?? stop0 ?? 0xFF212121);
+      final c1 = VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF);
+      controller.setLineGradient(
+        VsdxGradient(
+          type: t,
+          angleRad: angleRad ?? g?.angleRad ?? 0,
+          stops: <VsdxGradientStop>[
+            VsdxGradientStop(position: 0, color: c0),
+            VsdxGradientStop(position: 1, color: c1),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text('Gradient', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          children: [
+            ChoiceChip(
+              label: const Text('None'),
+              selected: g == null,
+              onSelected: (_) => controller.setLineGradient(null),
+              visualDensity: VisualDensity.compact,
+            ),
+            ChoiceChip(
+              label: const Text('Linear'),
+              selected: type == VsdxGradientType.linear,
+              onSelected: (_) => apply(newType: VsdxGradientType.linear),
+              visualDensity: VisualDensity.compact,
+            ),
+            ChoiceChip(
+              label: const Text('Radial'),
+              selected: type == VsdxGradientType.radial,
+              onSelected: (_) => apply(newType: VsdxGradientType.radial),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        if (g != null) ...[
+          const SizedBox(height: 6),
+          Text('Start', style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final argb in _swatches)
+                _SwatchButton(
+                  color: Color(argb),
+                  selected: stop0 == argb,
+                  onTap: () => apply(color0: argb),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text('End', style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final argb in _swatches)
+                _SwatchButton(
+                  color: Color(argb),
+                  selected: stop1 == argb,
+                  onTap: () => apply(color1: argb),
+                ),
+            ],
+          ),
+          if (type == VsdxGradientType.linear) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final deg in const <int>[0, 45, 90, 135])
+                  ChoiceChip(
+                    label: Text('$deg°'),
+                    selected: angleDeg == deg,
+                    onSelected: (_) =>
+                        apply(angleRad: deg * math.pi / 180),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  /// Shadow colour / offset / blur / opacity (draw.io Format → Shadow).
+  Widget _shadowDetailControls(
+    BuildContext context,
+    EditorController controller,
+  ) {
+    final shadow = controller.selectedShadow;
+    if (shadow == null || !shadow.enabled) return const SizedBox.shrink();
+    final colorValue = shadow.color?.value ?? 0xFF000000;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Text('Color', style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final argb in _swatches)
+              _SwatchButton(
+                color: Color(argb),
+                selected: colorValue == argb,
+                onTap: () =>
+                    controller.updateShadow(color: VsdxColor(argb)),
+              ),
+          ],
+        ),
+        _RangeSlider(
+          label: 'Offset X',
+          value: shadow.offsetXInches,
+          min: -0.25,
+          max: 0.25,
+          format: (v) => '${(v * 100).round() / 100}"',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateShadow(offsetXInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: 'Offset Y',
+          value: shadow.offsetYInches,
+          min: -0.25,
+          max: 0.25,
+          format: (v) => '${(v * 100).round() / 100}"',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateShadow(offsetYInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: 'Blur',
+          value: shadow.blurInches,
+          min: 0,
+          max: 0.25,
+          format: (v) => '${(v * 100).round() / 100}"',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateShadow(blurInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _OpacitySlider(
+          label: 'Opacity',
+          opacity: 1 - shadow.transparency,
+          onStart: controller.beginTransaction,
+          onChanged: (v) => controller.updateShadow(
+            transparency: (1 - v).clamp(0.0, 1.0),
+            transient: true,
+          ),
+          onEnd: controller.commitTransaction,
+        ),
+      ],
+    );
+  }
+
+  /// Glow colour / size / opacity (draw.io Format → Glow).
+  Widget _glowDetailControls(
+    BuildContext context,
+    EditorController controller,
+  ) {
+    final glow = controller.selectedGlow;
+    if (glow == null || !glow.enabled) return const SizedBox.shrink();
+    final colorValue = glow.color?.value ?? 0xFFFFC107;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Text('Color', style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final argb in _swatches)
+              _SwatchButton(
+                color: Color(argb),
+                selected: colorValue == argb,
+                onTap: () => controller.updateGlow(color: VsdxColor(argb)),
+              ),
+          ],
+        ),
+        _RangeSlider(
+          label: 'Size',
+          value: glow.sizeInches,
+          min: 0.01,
+          max: 0.25,
+          format: (v) => '${(v * 100).round() / 100}"',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateGlow(sizeInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _OpacitySlider(
+          label: 'Opacity',
+          opacity: 1 - glow.transparency,
+          onStart: controller.beginTransaction,
+          onChanged: (v) => controller.updateGlow(
+            transparency: (1 - v).clamp(0.0, 1.0),
+            transient: true,
+          ),
+          onEnd: controller.commitTransaction,
+        ),
+      ],
+    );
+  }
+
+  /// Reflection size / distance / blur / opacity (draw.io Format → Reflection).
+  Widget _reflectionDetailControls(
+    BuildContext context,
+    EditorController controller,
+  ) {
+    final refl = controller.selectedReflection;
+    if (refl == null || !refl.enabled) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _RangeSlider(
+          label: 'Size',
+          value: refl.sizeInches,
+          min: 0.05,
+          max: 1.0,
+          format: (v) => '${(v * 100).round()}%',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateReflection(sizeInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: 'Dist',
+          value: refl.distanceInches,
+          min: 0,
+          max: 0.5,
+          format: (v) => '${(v * 100).round() / 100}"',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateReflection(distanceInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: 'Blur',
+          value: refl.blurInches,
+          min: 0,
+          max: 0.2,
+          format: (v) => '${(v * 100).round() / 100}"',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateReflection(blurInches: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _OpacitySlider(
+          label: 'Opacity',
+          opacity: 1 - refl.transparency,
+          onStart: controller.beginTransaction,
+          onChanged: (v) => controller.updateReflection(
+            transparency: (1 - v).clamp(0.0, 1.0),
+            transient: true,
+          ),
+          onEnd: controller.commitTransaction,
+        ),
+      ],
+    );
+  }
+
   /// Corner-radius slider for a single rectangular selection (drawio's
   /// "Rounded" + arc size). Hidden for non-rectangular / multi selections.
   Widget _roundedControl(BuildContext context, EditorController controller) {
@@ -1788,36 +2672,12 @@ class _PropertyPanel extends StatelessWidget {
     if (radius == null || s == null) return const SizedBox.shrink();
     final maxR = math.min(s.width, s.height) / 2;
     if (maxR <= 0) return const SizedBox.shrink();
-    final v = radius.clamp(0.0, maxR);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            const SizedBox(
-                width: 48,
-                child: Text('Corners', style: TextStyle(fontSize: 11))),
-            Expanded(
-              child: Slider(
-                value: v,
-                max: maxR,
-                onChangeStart: (_) => controller.beginTransaction(),
-                onChanged: (x) => controller.setCornerRadius(x, transient: true),
-                onChangeEnd: (_) => controller.commitTransaction(),
-              ),
-            ),
-            SizedBox(
-              width: 34,
-              child: Text(
-                '${(v * 100).round() / 100}"',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 11),
-              ),
-            ),
-          ],
-        ),
-      ],
+    return _CornersSlider(
+      value: radius.clamp(0.0, maxR),
+      max: maxR,
+      onStart: controller.beginTransaction,
+      onChanged: (x) => controller.setCornerRadius(x, transient: true),
+      onEnd: controller.commitTransaction,
     );
   }
 
@@ -1939,6 +2799,14 @@ class _PropertyPanel extends StatelessWidget {
               tooltip: 'Underline',
               visualDensity: VisualDensity.compact,
             ),
+            IconButton(
+              onPressed: () =>
+                  controller.setStrikethrough(!cs.strikethrough),
+              isSelected: cs.strikethrough,
+              icon: const Icon(Icons.format_strikethrough),
+              tooltip: 'Strikethrough',
+              visualDensity: VisualDensity.compact,
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1954,6 +2822,12 @@ class _PropertyPanel extends StatelessWidget {
                 onTap: () => controller.setTextColor(VsdxColor(argb)),
               ),
           ],
+        ),
+        const SizedBox(height: 6),
+        _themeSwatchRow(
+          controller: controller,
+          onSlot: controller.setTextThemeSlot,
+          selectedSlot: cs.color == null ? cs.themeColorIndex : null,
         ),
         const SizedBox(height: 8),
         Row(
@@ -1977,6 +2851,68 @@ class _PropertyPanel extends StatelessWidget {
                 VsdxVertAlign.bottom),
           ],
         ),
+        const SizedBox(height: 8),
+        Text('Line spacing', style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        Builder(
+          builder: (context) {
+            final spacing =
+                controller.selectedParaStyle?.lineSpacing ?? 1.0;
+            return Wrap(
+              spacing: 4,
+              children: [
+                for (final m in const <double>[1.0, 1.15, 1.5, 2.0])
+                  ChoiceChip(
+                    label: Text(
+                      m == m.roundToDouble()
+                          ? '${m.toInt()}×'
+                          : '$m×',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    selected: (spacing - m).abs() < 0.01,
+                    onSelected: (_) => controller.setLineSpacing(m),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Text('Space before', style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        _paraSpaceChips(
+          inches: controller.selectedParaStyle?.spaceBeforeInches ?? 0,
+          onChanged: controller.setSpaceBeforeInches,
+        ),
+        const SizedBox(height: 6),
+        Text('Space after', style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        _paraSpaceChips(
+          inches: controller.selectedParaStyle?.spaceAfterInches ?? 0,
+          onChanged: controller.setSpaceAfterInches,
+        ),
+      ],
+    );
+  }
+
+  Widget _paraSpaceChips({
+    required double inches,
+    required ValueChanged<double> onChanged,
+  }) {
+    const pts = <int>[0, 6, 12, 18];
+    final curPt = (inches * 72).round();
+    return Wrap(
+      spacing: 4,
+      children: [
+        for (final p in pts)
+          ChoiceChip(
+            label: Text('$p pt', style: const TextStyle(fontSize: 11)),
+            selected: curPt == p,
+            onSelected: (_) => onChanged(p / 72.0),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
       ],
     );
   }
@@ -2056,6 +2992,44 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
+  /// Theme accent strip — resolves against the document theme (Office defaults
+  /// when empty) so picking a swatch binds the shape to that slot.
+  Widget _themeSwatchRow({
+    required EditorController controller,
+    required void Function(int slot) onSlot,
+    int? selectedSlot,
+  }) {
+    final theme = controller.documentTheme.isEmpty
+        ? VsdxTheme.office
+        : controller.documentTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Theme',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final slot in VsdxTheme.accentSlots)
+              if (theme.resolve(slot) case final c?)
+                _SwatchButton(
+                  color: Color(c.value),
+                  selected: selectedSlot == slot,
+                  onTap: () => onSlot(slot),
+                ),
+          ],
+        ),
+      ],
+    );
+  }
+
   static const Map<int, String> _dashPresets = <int, String>{
     1: 'Solid',
     2: 'Dashed',
@@ -2085,6 +3059,38 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
+  static const Map<int, String> _compoundTypes = <int, String>{
+    0: 'Single',
+    1: 'Double',
+    2: 'Thick-thin',
+    3: 'Thin-thick',
+  };
+
+  Widget _compoundTypeRow(EditorController controller) {
+    final type = controller.selectedLine?.compoundType ?? 0;
+    final value = _compoundTypes.containsKey(type) ? type : 0;
+    return Row(
+      children: [
+        const Icon(Icons.line_weight, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButton<int>(
+            value: value,
+            isExpanded: true,
+            isDense: true,
+            items: [
+              for (final e in _compoundTypes.entries)
+                DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
+            ],
+            onChanged: (t) {
+              if (t != null) controller.setCompoundType(t);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Curated arrowhead types (Visio `BeginArrow`/`EndArrow` ids → labels),
   /// mirroring drawio's start/end arrow menus.
   static const Map<int, String> _arrowTypes = <int, String>{
@@ -2103,6 +3109,7 @@ class _PropertyPanel extends StatelessWidget {
     final begin = line?.beginArrow ?? 0;
     final end = line?.endArrow ?? 0;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
@@ -2115,6 +3122,13 @@ class _PropertyPanel extends StatelessWidget {
             ),
           ],
         ),
+        if (begin != 0) ...[
+          const SizedBox(height: 4),
+          _arrowSizeRow(
+            line?.beginArrowSizeInches ?? 0.125,
+            controller.setBeginArrowSize,
+          ),
+        ],
         const SizedBox(height: 8),
         Row(
           children: [
@@ -2127,7 +3141,76 @@ class _PropertyPanel extends StatelessWidget {
             ),
           ],
         ),
+        if (end != 0) ...[
+          const SizedBox(height: 4),
+          _arrowSizeRow(
+            line?.endArrowSizeInches ?? 0.125,
+            controller.setEndArrowSize,
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _arrowSizeRow(double inches, ValueChanged<double> onChanged) {
+    final buckets = EditorController.arrowSizeBuckets;
+    var selected = 2;
+    var best = double.infinity;
+    for (var i = 0; i < buckets.length; i++) {
+      final d = (buckets[i] - inches).abs();
+      if (d < best) {
+        best = d;
+        selected = i;
+      }
+    }
+    return Wrap(
+      spacing: 4,
+      children: [
+        for (var i = 0; i < buckets.length; i++)
+          ChoiceChip(
+            label: Text('${i + 1}', style: const TextStyle(fontSize: 11)),
+            selected: selected == i,
+            onSelected: (_) => onChanged(buckets[i]),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+      ],
+    );
+  }
+
+  /// Fill pattern chips: solid + common Visio hatches (draw.io Style → Fill).
+  Widget _fillPatternControls(EditorController controller) {
+    final pattern = controller.selectedFill?.pattern ?? 1;
+    const labels = <int, String>{
+      1: 'Solid',
+      2: 'H',
+      3: 'V',
+      4: '/',
+      5: '\\',
+      6: 'X',
+      7: '+',
+      8: '·',
+      9: '::',
+      10: 'Brick',
+      11: 'Shingle',
+      14: 'Grid',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          for (final e in labels.entries)
+            ChoiceChip(
+              label: Text(e.value, style: const TextStyle(fontSize: 11)),
+              selected: pattern == e.key,
+              onSelected: (_) => controller.setFillPattern(e.key),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+        ],
+      ),
     );
   }
 
@@ -2245,6 +3328,24 @@ class _PageFormatPanel extends StatelessWidget {
             value: controller.snapToGrid,
             onChanged: (_) => controller.toggleSnap(),
           ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Line jumps'),
+            value: controller.showLineJumps,
+            onChanged: (_) => controller.toggleLineJumps(),
+          ),
+          if (controller.showLineJumps)
+            _RangeSlider(
+              label: 'Jump r',
+              value: controller.lineJumpRadiusInches,
+              min: 0.02,
+              max: 0.2,
+              format: (v) => '${(v * 100).round() / 100}"',
+              onStart: () {},
+              onChanged: controller.setLineJumpRadius,
+              onEnd: () {},
+            ),
           const SizedBox(height: 16),
           Text('Background', style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
@@ -2258,6 +3359,111 @@ class _PageFormatPanel extends StatelessWidget {
                   selected: bg?.value == argb,
                   onTap: () => controller.setBackgroundColor(VsdxColor(argb)),
                 ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Background page'),
+            subtitle: const Text('Use as underlay for other pages'),
+            value: controller.currentPage?.isBackgroundPage ?? false,
+            onChanged: controller.setPageIsBackground,
+          ),
+          if (!(controller.currentPage?.isBackgroundPage ?? false) &&
+              controller.backgroundPageOptions.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Use background', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            DropdownButton<int?>(
+              value: controller.currentPage?.backgroundPageId,
+              isExpanded: true,
+              isDense: true,
+              hint: const Text('None'),
+              items: <DropdownMenuItem<int?>>[
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('None'),
+                ),
+                for (final p in controller.backgroundPageOptions)
+                  DropdownMenuItem<int?>(
+                    value: p.id,
+                    child: Text(
+                      p.isBackgroundPage ? p.name : '${p.name} (will mark bg)',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: controller.setBackgroundPage,
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text('Theme', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          DropdownButton<String>(
+            value: _matchedBuiltinThemeName(controller.documentTheme),
+            isExpanded: true,
+            isDense: true,
+            hint: Text(
+              controller.documentTheme.isEmpty ? 'None (default)' : 'Custom',
+            ),
+            items: [
+              for (final t in VsdxTheme.builtins)
+                DropdownMenuItem<String>(
+                  value: t.name,
+                  child: Row(
+                    children: [
+                      for (final slot in const [
+                        ThemeSlot.accent1,
+                        ThemeSlot.accent2,
+                        ThemeSlot.accent3,
+                        ThemeSlot.accent4,
+                      ])
+                        if (t.theme.resolve(slot) case final c?)
+                          Container(
+                            width: 14,
+                            height: 14,
+                            margin: const EdgeInsets.only(right: 3),
+                            decoration: BoxDecoration(
+                              color: Color(c.value),
+                              borderRadius: BorderRadius.circular(2),
+                              border: Border.all(color: Colors.black26),
+                            ),
+                          ),
+                      const SizedBox(width: 6),
+                      Text(t.name),
+                    ],
+                  ),
+                ),
+            ],
+            onChanged: (name) {
+              if (name == null) return;
+              final match = VsdxTheme.builtins.where((t) => t.name == name);
+              if (match.isNotEmpty) {
+                controller.setDocumentTheme(match.first.theme);
+              }
+            },
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final slot in VsdxTheme.accentSlots)
+                if ((controller.documentTheme.isEmpty
+                        ? VsdxTheme.office
+                        : controller.documentTheme)
+                    .resolve(slot)
+                    case final c?)
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: Color(c.value),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: Colors.black26),
+                    ),
+                  ),
             ],
           ),
           const SizedBox(height: 16),
@@ -2319,6 +3525,18 @@ class _PageFormatPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Name of a [VsdxTheme.builtins] entry that matches [theme], or `null`.
+  String? _matchedBuiltinThemeName(VsdxTheme theme) {
+    if (theme.isEmpty) return null;
+    for (final t in VsdxTheme.builtins) {
+      if (t.theme.colors.length != theme.colors.length) continue;
+      final same = t.theme.colors.entries
+          .every((e) => theme.colors[e.key]?.value == e.value.value);
+      if (same) return t.name;
+    }
+    return null;
   }
 
   /// The preset matching (w, h) in either orientation, or `null` for a custom
@@ -2399,9 +3617,152 @@ class _ArrowPreviewPainter extends CustomPainter {
       old.id != id || old.color != color || old.flip != flip;
 }
 
+/// Corner-radius slider with a local drag value so the thumb tracks the cursor
+/// while geometry rebuilds on the canvas.
+class _CornersSlider extends StatefulWidget {
+  const _CornersSlider({
+    required this.value,
+    required this.max,
+    required this.onStart,
+    required this.onChanged,
+    required this.onEnd,
+  });
+
+  final double value;
+  final double max;
+  final VoidCallback onStart;
+  final ValueChanged<double> onChanged;
+  final VoidCallback onEnd;
+
+  @override
+  State<_CornersSlider> createState() => _CornersSliderState();
+}
+
+class _CornersSliderState extends State<_CornersSlider> {
+  double? _drag;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxR = widget.max;
+    final v = (_drag ?? widget.value).clamp(0.0, maxR);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const SizedBox(
+                width: 48,
+                child: Text('Corners', style: TextStyle(fontSize: 11))),
+            Expanded(
+              child: Slider(
+                value: v,
+                max: maxR,
+                onChangeStart: (_) {
+                  _drag = widget.value.clamp(0.0, maxR);
+                  widget.onStart();
+                },
+                onChanged: (x) {
+                  setState(() => _drag = x);
+                  widget.onChanged(x);
+                },
+                onChangeEnd: (_) {
+                  setState(() => _drag = null);
+                  widget.onEnd();
+                },
+              ),
+            ),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '${(v * 100).round() / 100}"',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact numeric range slider with transactional live preview (one undo step).
+class _RangeSlider extends StatefulWidget {
+  const _RangeSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.format,
+    required this.onStart,
+    required this.onChanged,
+    required this.onEnd,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final String Function(double) format;
+  final VoidCallback onStart;
+  final ValueChanged<double> onChanged;
+  final VoidCallback onEnd;
+
+  @override
+  State<_RangeSlider> createState() => _RangeSliderState();
+}
+
+class _RangeSliderState extends State<_RangeSlider> {
+  double? _drag;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = (_drag ?? widget.value).clamp(widget.min, widget.max);
+    return Row(
+      children: [
+        SizedBox(
+          width: 56,
+          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
+        ),
+        Expanded(
+          child: Slider(
+            value: v,
+            min: widget.min,
+            max: widget.max,
+            onChangeStart: (_) {
+              _drag = widget.value.clamp(widget.min, widget.max);
+              widget.onStart();
+            },
+            onChanged: (x) {
+              setState(() => _drag = x);
+              widget.onChanged(x);
+            },
+            onChangeEnd: (_) {
+              setState(() => _drag = null);
+              widget.onEnd();
+            },
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            widget.format(v),
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 11),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Compact opacity slider (0–100%) with transactional live preview so the drag
 /// records a single undo step.
-class _OpacitySlider extends StatelessWidget {
+///
+/// Keeps a local drag value so the thumb stays under the cursor even when the
+/// parent tree is busy painting the canvas.
+class _OpacitySlider extends StatefulWidget {
   const _OpacitySlider({
     required this.label,
     required this.opacity,
@@ -2417,20 +3778,36 @@ class _OpacitySlider extends StatelessWidget {
   final VoidCallback onEnd;
 
   @override
+  State<_OpacitySlider> createState() => _OpacitySliderState();
+}
+
+class _OpacitySliderState extends State<_OpacitySlider> {
+  double? _drag;
+
+  @override
   Widget build(BuildContext context) {
-    final v = opacity.clamp(0.0, 1.0);
+    final v = (_drag ?? widget.opacity).clamp(0.0, 1.0);
     return Row(
       children: [
         SizedBox(
           width: 48,
-          child: Text(label, style: const TextStyle(fontSize: 11)),
+          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
         ),
         Expanded(
           child: Slider(
             value: v,
-            onChangeStart: (_) => onStart(),
-            onChanged: onChanged,
-            onChangeEnd: (_) => onEnd(),
+            onChangeStart: (_) {
+              _drag = widget.opacity.clamp(0.0, 1.0);
+              widget.onStart();
+            },
+            onChanged: (x) {
+              setState(() => _drag = x);
+              widget.onChanged(x);
+            },
+            onChangeEnd: (_) {
+              setState(() => _drag = null);
+              widget.onEnd();
+            },
           ),
         ),
         SizedBox(
@@ -2531,13 +3908,19 @@ class _NumFieldState extends State<_NumField> {
   }
 }
 
-/// Floating Find bar (drawio Cmd+F). Filters shapes by text/name on the
-/// current page, shows a match counter, and cycles matches with the arrows or
-/// Enter / Shift+Enter. Escape closes it.
+/// Floating Find / Replace bar (draw.io Cmd+F / Cmd+H). Filters shapes by
+/// text/name across all pages, cycles matches, and can replace labels.
 class _FindBar extends StatefulWidget {
-  const _FindBar({required this.controller, required this.onClose});
+  const _FindBar({
+    required this.controller,
+    required this.showReplace,
+    required this.onToggleReplace,
+    required this.onClose,
+  });
 
   final EditorController controller;
+  final bool showReplace;
+  final VoidCallback onToggleReplace;
   final VoidCallback onClose;
 
   @override
@@ -2546,21 +3929,40 @@ class _FindBar extends StatefulWidget {
 
 class _FindBarState extends State<_FindBar> {
   final TextEditingController _text = TextEditingController();
+  final TextEditingController _replace = TextEditingController();
   final FocusNode _focus = FocusNode();
+  final FocusNode _replaceFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _text.text = widget.controller.findQuery;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focus.requestFocus();
+      if (!mounted) return;
+      if (widget.showReplace) {
+        _replaceFocus.requestFocus();
+      } else {
+        _focus.requestFocus();
+      }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant _FindBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.showReplace && !oldWidget.showReplace) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _replaceFocus.requestFocus();
+      });
+    }
   }
 
   @override
   void dispose() {
     _text.dispose();
+    _replace.dispose();
     _focus.dispose();
+    _replaceFocus.dispose();
     super.dispose();
   }
 
@@ -2576,69 +3978,168 @@ class _FindBarState extends State<_FindBar> {
         builder: (context, _) {
           final count = widget.controller.findMatchCount;
           final ord = widget.controller.findCurrentOrdinal;
+          final pageIdx = widget.controller.findCurrentPageIndex;
+          final multiPage = widget.controller.pageCount > 1;
           final label = count == 0
               ? (widget.controller.findQuery.trim().isEmpty ? '' : 'No results')
-              : '$ord / $count';
+              : (multiPage && pageIdx != null)
+                  ? '$ord/$count · p${pageIdx + 1}'
+                  : '$ord / $count';
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            child: Row(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.search, size: 18),
-                const SizedBox(width: 6),
-                SizedBox(
-                  width: 180,
-                  child: CallbackShortcuts(
-                    bindings: <ShortcutActivator, VoidCallback>{
-                      const SingleActivator(LogicalKeyboardKey.escape):
-                          widget.onClose,
-                    },
-                    child: TextField(
-                      controller: _text,
-                      focusNode: _focus,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        hintText: 'Find shapes…',
-                        border: InputBorder.none,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.search, size: 18),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 180,
+                      child: CallbackShortcuts(
+                        bindings: <ShortcutActivator, VoidCallback>{
+                          const SingleActivator(LogicalKeyboardKey.escape):
+                              widget.onClose,
+                        },
+                        child: TextField(
+                          controller: _text,
+                          focusNode: _focus,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Find shapes…',
+                            border: InputBorder.none,
+                          ),
+                          onChanged: widget.controller.updateFind,
+                          onSubmitted: (_) {
+                            if (HardwareKeyboard.instance.isShiftPressed) {
+                              widget.controller.findPrevious();
+                            } else {
+                              widget.controller.findNext();
+                            }
+                          },
+                        ),
                       ),
-                      onChanged: widget.controller.updateFind,
-                      onSubmitted: (_) {
-                        if (HardwareKeyboard.instance.isShiftPressed) {
-                          widget.controller.findPrevious();
-                        } else {
-                          widget.controller.findNext();
-                        }
-                      },
                     ),
+                    SizedBox(
+                      width: multiPage ? 72 : 56,
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => widget.controller.setFindMatchCase(
+                        !widget.controller.findMatchCase,
+                      ),
+                      icon: Text(
+                        'Aa',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: widget.controller.findMatchCase
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      tooltip: widget.controller.findMatchCase
+                          ? 'Match case: on'
+                          : 'Match case: off',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      onPressed: () => widget.controller.setFindWholeWord(
+                        !widget.controller.findWholeWord,
+                      ),
+                      icon: Text(
+                        'W',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: widget.controller.findWholeWord
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      tooltip: widget.controller.findWholeWord
+                          ? 'Whole word: on'
+                          : 'Whole word: off',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      onPressed:
+                          count == 0 ? null : widget.controller.findPrevious,
+                      icon: const Icon(Icons.keyboard_arrow_up),
+                      tooltip: 'Previous (Shift+Enter)',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      onPressed: count == 0 ? null : widget.controller.findNext,
+                      icon: const Icon(Icons.keyboard_arrow_down),
+                      tooltip: 'Next (Enter)',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      onPressed: widget.onToggleReplace,
+                      icon: Icon(
+                        widget.showReplace
+                            ? Icons.expand_less
+                            : Icons.find_replace,
+                        size: 18,
+                      ),
+                      tooltip: widget.showReplace
+                          ? 'Hide replace'
+                          : 'Show replace (Cmd+H)',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    IconButton(
+                      onPressed: widget.onClose,
+                      icon: const Icon(Icons.close, size: 18),
+                      tooltip: 'Close (Esc)',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+                if (widget.showReplace) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: 24),
+                      SizedBox(
+                        width: 180,
+                        child: TextField(
+                          controller: _replace,
+                          focusNode: _replaceFocus,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Replace with…',
+                            border: InputBorder.none,
+                          ),
+                          onSubmitted: (_) => widget.controller
+                              .replaceFind(_replace.text),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: count == 0
+                            ? null
+                            : () => widget.controller
+                                .replaceFind(_replace.text),
+                        child: const Text('Replace'),
+                      ),
+                      TextButton(
+                        onPressed: widget.controller.findQuery.trim().isEmpty
+                            ? null
+                            : () => widget.controller
+                                .replaceAllFind(_replace.text),
+                        child: const Text('All'),
+                      ),
+                    ],
                   ),
-                ),
-                SizedBox(
-                  width: 56,
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style:
-                        TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                  ),
-                ),
-                IconButton(
-                  onPressed: count == 0 ? null : widget.controller.findPrevious,
-                  icon: const Icon(Icons.keyboard_arrow_up),
-                  tooltip: 'Previous (Shift+Enter)',
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  onPressed: count == 0 ? null : widget.controller.findNext,
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                  tooltip: 'Next (Enter)',
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  onPressed: widget.onClose,
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: 'Close (Esc)',
-                  visualDensity: VisualDensity.compact,
-                ),
+                ],
               ],
             ),
           );

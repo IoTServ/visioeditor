@@ -105,6 +105,18 @@ class VsdxDocument {
     return maxId + 1;
   }
 
+  /// Page with [id], or `null`.
+  VsdxPage? pageById(int? id) {
+    if (id == null) return null;
+    for (final p in pages) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
+  /// Resolved Visio `BackPage` underlay for [page], or `null`.
+  VsdxPage? backgroundFor(VsdxPage page) => pageById(page.backgroundPageId);
+
   /// Insert [page] at [index] (clamped).
   VsdxDocument insertPage(int index, VsdxPage page) {
     final newPages = List<VsdxPage>.of(pages)
@@ -116,6 +128,22 @@ class VsdxDocument {
   VsdxDocument removePageAt(int index) {
     if (index < 0 || index >= pages.length) return this;
     final newPages = List<VsdxPage>.of(pages)..removeAt(index);
+    return copyWith(pages: newPages);
+  }
+
+  /// Move the page at [from] to [to] (draw.io page-tab reorder). Indices are
+  /// clamped; a no-op when [from] == [to] or either is out of range.
+  VsdxDocument movePage(int from, int to) {
+    if (from < 0 ||
+        from >= pages.length ||
+        to < 0 ||
+        to >= pages.length ||
+        from == to) {
+      return this;
+    }
+    final newPages = List<VsdxPage>.of(pages);
+    final page = newPages.removeAt(from);
+    newPages.insert(to, page);
     return copyWith(pages: newPages);
   }
 

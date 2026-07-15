@@ -7,23 +7,32 @@ import 'package:vsdx/vsdx.dart';
 import '../render/vsdx_painter.dart';
 
 /// Rasterise a single [page] to PNG bytes at [pxPerInch] using the same
-/// [VsdxPainter] the on-screen canvas uses.
+/// [VsdxPainter] the on-screen canvas uses. Pass [underlayPage] to composite
+/// a Visio BackPage; [visibleLayerIdsOverride] defaults to printable layers
+/// when the page has layers (export honouring Visio `Print`).
 Future<Uint8List?> renderPageToPng(
   VsdxPage page, {
   VsdxTheme theme = VsdxTheme.empty,
   ImageRegistry images = ImageRegistry.empty,
+  VsdxPage? underlayPage,
+  Set<int>? visibleLayerIdsOverride,
   double pxPerInch = 150.0,
 }) async {
   final w = (page.widthInches <= 0 ? 8.5 : page.widthInches) * pxPerInch;
   final h = (page.heightInches <= 0 ? 11.0 : page.heightInches) * pxPerInch;
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
+  final layerIds = visibleLayerIdsOverride ??
+      (page.layers.isEmpty ? null : page.printableLayerIds);
   VsdxPainter(
     page: page,
+    underlayPage: underlayPage,
     theme: theme,
     images: images,
     pxPerInch: pxPerInch,
     backgroundColor: const Color(0xFFFFFFFF),
+    respectLayerVisibility: layerIds != null,
+    visibleLayerIdsOverride: layerIds,
   ).paint(canvas, Size(w, h));
   final picture = recorder.endRecording();
   final image = await picture.toImage(w.ceil(), h.ceil());

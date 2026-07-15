@@ -58,18 +58,53 @@ class SnapResult {
   bool get isEmpty => dx == 0 && dy == 0 && guides.isEmpty;
 }
 
+/// A permanent page guide (drawio guide): a full-span vertical or horizontal
+/// line at [pos] page-inches. Session-level (not written to `.vsdx`).
+class PageGuide {
+  const PageGuide({required this.vertical, required this.pos});
+
+  /// `true` → vertical line at x = [pos]; `false` → horizontal at y = [pos].
+  final bool vertical;
+  final double pos;
+
+  PageGuide copyWith({double? pos}) =>
+      PageGuide(vertical: vertical, pos: pos ?? this.pos);
+
+  @override
+  bool operator ==(Object other) =>
+      other is PageGuide && other.vertical == vertical && other.pos == pos;
+
+  @override
+  int get hashCode => Object.hash(vertical, pos);
+}
+
+/// A point magnet in page inches (typically a neighbour's connection point).
+class SnapMagnet {
+  const SnapMagnet(this.x, this.y);
+  final double x;
+  final double y;
+}
+
 /// drawio-style alignment snapping: given a [moving] box and the [others] on the
 /// page, find the closest edge/centre alignment within [threshold] on each axis
 /// and return the adjustment that snaps to it, together with the guide lines
 /// connecting the moving box to the shape it aligned with.
+///
+/// Optional [pageGuides] (permanent ruler guides) and [magnets] (connection
+/// points / other hotspots) compete with neighbour alignments on the same axes.
 ///
 /// Pure and Flutter-free so it can be unit-tested directly.
 SnapResult computeSnap({
   required SnapBox moving,
   required List<SnapBox> others,
   required double threshold,
+  List<PageGuide> pageGuides = const <PageGuide>[],
+  List<SnapMagnet> magnets = const <SnapMagnet>[],
 }) {
-  if (others.isEmpty || threshold <= 0) return SnapResult.none;
+  if (threshold <= 0) return SnapResult.none;
+  if (others.isEmpty && pageGuides.isEmpty && magnets.isEmpty) {
+    return SnapResult.none;
+  }
 
   // Candidate alignment values on each axis: near edge, centre, far edge.
   List<double> xs(SnapBox b) => <double>[b.l, b.cx, b.r];
@@ -79,11 +114,13 @@ SnapResult computeSnap({
   var bestXDiff = threshold;
   SnapBox? xMatch;
   var xLinePos = 0.0;
+  var xFromPageGuide = false;
 
   var bestDy = 0.0;
   var bestYDiff = threshold;
   SnapBox? yMatch;
   var yLinePos = 0.0;
+  var yFromPageGuide = false;
 
   final mxs = xs(moving);
   final mys = ys(moving);
@@ -97,6 +134,7 @@ SnapResult computeSnap({
           bestDx = diff;
           xMatch = o;
           xLinePos = ox;
+          xFromPageGuide = false;
         }
       }
     }
@@ -108,6 +146,59 @@ SnapResult computeSnap({
           bestDy = diff;
           yMatch = o;
           yLinePos = oy;
+          yFromPageGuide = false;
+        }
+      }
+    }
+  }
+
+  // Connection-point magnets (draw.io): snap moving edges/centres to the
+  // magnet's x or y. Represented as a degenerate box for guide span.
+  for (final m in magnets) {
+    final magnetBox = SnapBox(m.x, m.y, m.x, m.y);
+    for (final mx in mxs) {
+      final diff = m.x - mx;
+      if (diff.abs() < bestXDiff) {
+        bestXDiff = diff.abs();
+        bestDx = diff;
+        xMatch = magnetBox;
+        xLinePos = m.x;
+        xFromPageGuide = false;
+      }
+    }
+    for (final my in mys) {
+      final diff = m.y - my;
+      if (diff.abs() < bestYDiff) {
+        bestYDiff = diff.abs();
+        bestDy = diff;
+        yMatch = magnetBox;
+        yLinePos = m.y;
+        yFromPageGuide = false;
+      }
+    }
+  }
+
+  for (final g in pageGuides) {
+    if (g.vertical) {
+      for (final mx in mxs) {
+        final diff = g.pos - mx;
+        if (diff.abs() < bestXDiff) {
+          bestXDiff = diff.abs();
+          bestDx = diff;
+          xMatch = null;
+          xLinePos = g.pos;
+          xFromPageGuide = true;
+        }
+      }
+    } else {
+      for (final my in mys) {
+        final diff = g.pos - my;
+        if (diff.abs() < bestYDiff) {
+          bestYDiff = diff.abs();
+          bestDy = diff;
+          yMatch = null;
+          yLinePos = g.pos;
+          yFromPageGuide = true;
         }
       }
     }
@@ -115,20 +206,28 @@ SnapResult computeSnap({
 
   final guides = <SnapGuide>[];
   final snapped = moving.shifted(bestDx, bestDy);
-  if (xMatch != null) {
+  if (xFromPageGuide || xMatch != null) {
     guides.add(SnapGuide(
       vertical: true,
       pos: xLinePos,
-      start: math.min(snapped.b, xMatch.b),
-      end: math.max(snapped.t, xMatch.t),
+      start: xMatch == null
+          ? snapped.b
+          : math.min(snapped.b, xMatch.b),
+      end: xMatch == null
+          ? snapped.t
+          : math.max(snapped.t, xMatch.t),
     ));
   }
-  if (yMatch != null) {
+  if (yFromPageGuide || yMatch != null) {
     guides.add(SnapGuide(
       vertical: false,
       pos: yLinePos,
-      start: math.min(snapped.l, yMatch.l),
-      end: math.max(snapped.r, yMatch.r),
+      start: yMatch == null
+          ? snapped.l
+          : math.min(snapped.l, yMatch.l),
+      end: yMatch == null
+          ? snapped.r
+          : math.max(snapped.r, yMatch.r),
     ));
   }
   return SnapResult(bestDx, bestDy, guides);

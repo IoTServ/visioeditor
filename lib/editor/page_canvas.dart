@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
+import '../io/document_io.dart';
 import '../render/image_cache.dart';
 import '../render/shape_bounds.dart';
 import '../render/vsdx_painter.dart';
@@ -61,6 +63,9 @@ enum _DragMode {
   moveWaypoint,
   moveEndpoint,
   connect,
+  tableColResize,
+  tableRowResize,
+  moveConnectionPoint,
 }
 
 /// The eight resize handles around a selection box.
@@ -86,6 +91,11 @@ class _PageCanvasState extends State<PageCanvas> {
   // Shape state captured when a resize begins, so aspect-lock / resize-from-
   // centre stay stable across the whole drag.
   VsdxShape? _resizeStartShape;
+
+  /// Table column/row divider drag (draw.io table resize).
+  int? _tableResizeId;
+  int? _tableDividerIndex; // boundary after this col/row
+  double _tableResizeLastPage = 0; // last page-inch coord along the axis
 
   // In-place text editing: the shape whose label is being edited (if any),
   // plus the field's controller / focus node.
@@ -119,6 +129,9 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _connectSourceId;
   int? _connectTargetId;
 
+  /// Container under the pointer while dragging shapes (drop-into highlight).
+  int? _dropContainerId;
+
   // Whether the pointer sits on a connect affordance (directional arrow or an
   // edge connection point) of the hovered shape — drives the crosshair cursor.
   bool _hoverOnConnectPoint = false;
@@ -132,6 +145,9 @@ class _PageCanvasState extends State<PageCanvas> {
   // target's effective connection points), or null for a whole-shape glue.
   int? _snapConnIndex;
 
+  /// Index of the connection point being dragged in edit-connection-points mode.
+  int? _connPointDragIndex;
+
   /// Screen-px gap from a shape's box to its hover-connect arrows.
   static const double _connectArrowGapPx = 22;
   static const double _connectArrowHitPx = 15;
@@ -142,6 +158,9 @@ class _PageCanvasState extends State<PageCanvas> {
   // Creation preview, in content-px space.
   Offset? _previewStart;
   Offset? _previewEnd;
+
+  /// Freehand stroke samples in content-px (drawio Freehand live ink).
+  final List<Offset> _freehandPoints = <Offset>[];
 
   // Marquee selection rectangle, in content-px space.
   Offset? _marqueeStart;
@@ -157,6 +176,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void initState() {
     super.initState();
     _textFocus.addListener(_onEditorFocusChange);
+    _textController.addListener(_onTextControllerChanged);
     _imageCacheEpoch = widget.controller.documentEpoch;
   }
 
@@ -165,17 +185,54 @@ class _PageCanvasState extends State<PageCanvas> {
     _textFocus
       ..removeListener(_onEditorFocusChange)
       ..dispose();
-    _textController.dispose();
+    _textController
+      ..removeListener(_onTextControllerChanged)
+      ..dispose();
     _imageCache.dispose();
     super.dispose();
   }
 
   /// Commit the in-place edit when the field loses focus (e.g. the user clicks
-  /// another window or tabs away).
+  /// another window or tabs away). Deferred one frame so a toolbar Bold/Color
+  /// press can still see [EditorController.textEditSelection] and apply a
+  /// range format before the session is cleared (draw.io behaviour).
   void _onEditorFocusChange() {
     if (!_textFocus.hasFocus && _editingShapeId != null && mounted) {
-      _commitTextEdit();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_textFocus.hasFocus && _editingShapeId != null && mounted) {
+          _commitTextEdit();
+        }
+      });
     }
+  }
+
+  /// Keep the controller's text-edit session in sync so toolbar formatting can
+  /// target the current UTF-16 selection (draw.io-style per-run edits).
+  void _onTextControllerChanged() {
+    final id = _editingShapeId;
+    if (id == null) return;
+    final sel = _textController.selection;
+    _c.setTextEditSession(
+      shapeId: id,
+      start: sel.start,
+      end: sel.end,
+    );
+    // Rebuild so the mixed-style preview tracks typing.
+    if (mounted) setState(() {});
+  }
+
+  void _syncTextEditSession() {
+    final id = _editingShapeId;
+    if (id == null) {
+      _c.setTextEditSession();
+      return;
+    }
+    final sel = _textController.selection;
+    _c.setTextEditSession(
+      shapeId: id,
+      start: sel.start,
+      end: sel.end,
+    );
   }
 
   EditorController get _c => widget.controller;
@@ -339,6 +396,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final out = <int>[];
     void walk(VsdxShape s) {
       out.add(s.id);
+      if (s.collapsed) return; // hide children while folded (draw.io)
       for (final c in s.children) {
         walk(c);
       }
@@ -348,6 +406,28 @@ class _PageCanvasState extends State<PageCanvas> {
       walk(s);
     }
     return out;
+  }
+
+  /// Click the fold chevron on a container / swimlane header (draw.io).
+  bool _tryToggleCollapse(Offset viewportPos) {
+    final page = _page;
+    if (page == null) return false;
+    final pt = _contentToPageInches(_viewportToContent(viewportPos));
+    for (final id in _drawOrder(page).reversed) {
+      final s = page.findShapeById(id);
+      if (s == null || !s.shapeKind.isStructural) continue;
+      final local = VsdxPainter.collapseChevronLocalCenter(s);
+      final pagePt =
+          page.localToPageDeep(s.id, Offset2D(local.dx, local.dy));
+      final r = VsdxPainter.collapseChevronHitRadius(s);
+      final dx = pt.dx - pagePt.x;
+      final dy = pt.dy - pagePt.y;
+      if (dx * dx + dy * dy <= r * r) {
+        _c.toggleCollapsed(id);
+        return true;
+      }
+    }
+    return false;
   }
 
   // --- Gestures --------------------------------------------------------------
@@ -377,6 +457,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// The single selected shape if it is a non-rotated 2-D shape that supports
   /// box resize. Locked shapes never expose resize handles (drawio parity).
   VsdxShape? _resizableSelection() {
+    if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
     return (s == null || s.is1D || s.angleRad != 0 || s.locked) ? null : s;
   }
@@ -384,6 +465,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// The single selected shape if it is a 2-D shape that supports rotation.
   /// Locked shapes never expose the rotation handle (drawio parity).
   VsdxShape? _rotatableSelection() {
+    if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
     return (s == null || s.is1D || s.locked) ? null : s;
   }
@@ -461,7 +543,8 @@ class _PageCanvasState extends State<PageCanvas> {
   bool get _connectAffordanceActive =>
       _mode == _DragMode.none &&
       _c.tool == EditorTool.select &&
-      _editingShapeId == null;
+      _editingShapeId == null &&
+      !_c.editingConnectionPoints;
 
   /// Content-px anchor + direction (0=N,1=E,2=S,3=W) of each connect arrow
   /// around [box] (content-px, Y-down), sitting [gap] content-px outside it.
@@ -592,8 +675,8 @@ class _PageCanvasState extends State<PageCanvas> {
         }
       }
     }
-    if (_c.tool == EditorTool.connector) {
-      return; // connectors need a drag between two points
+    if (_c.tool == EditorTool.connector || _c.tool == EditorTool.freehand) {
+      return; // connectors / freehand need a drag
     }
     if (_c.tool != EditorTool.select) {
       final wasText = _c.tool == EditorTool.text;
@@ -653,9 +736,7 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(const PopupMenuItem(value: 'copy', child: Text('Copy')));
       items.add(
           const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')));
-      if (_c.hasClipboard) {
-        items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
-      }
+      items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
       items.add(const PopupMenuItem(value: 'delete', child: Text('Delete')));
       items.add(PopupMenuItem(
           value: 'lock',
@@ -699,16 +780,74 @@ class _PageCanvasState extends State<PageCanvas> {
         items.add(const PopupMenuItem(
             value: 'editLink', child: Text('Edit Link…')));
       }
-    } else {
-      if (_c.hasClipboard) {
-        items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
+      if (_c.canReplaceSelectedImage) {
         items.add(const PopupMenuItem(
-            value: 'pasteHere', child: Text('Paste Here')));
+            value: 'replaceImage', child: Text('Replace Image…')));
       }
+      if (_c.editingConnectionPoints) {
+        items.add(const PopupMenuItem(
+            value: 'doneConnPts',
+            child: Text('Done Editing Connection Points')));
+      } else if (_c.canEditConnectionPoints) {
+        items.add(const PopupMenuItem(
+            value: 'editConnPts',
+            child: Text('Edit Connection Points…')));
+      }
+      if (_c.canAddLane || _c.canRemoveLane) {
+        items.add(const PopupMenuDivider());
+        if (_c.canAddLane) {
+          items.add(const PopupMenuItem(
+              value: 'addLane', child: Text('Add Lane')));
+        }
+        if (_c.canRemoveLane) {
+          items.add(const PopupMenuItem(
+              value: 'removeLane', child: Text('Remove Lane')));
+        }
+      }
+      if (_c.canAddTableRow ||
+          _c.canAddTableColumn ||
+          _c.canRemoveTableRow ||
+          _c.canRemoveTableColumn ||
+          _c.canMergeCells ||
+          _c.canUnmergeCell) {
+        items.add(const PopupMenuDivider());
+        if (_c.canAddTableRow) {
+          items.add(const PopupMenuItem(
+              value: 'addRow', child: Text('Add Row')));
+        }
+        if (_c.canAddTableColumn) {
+          items.add(const PopupMenuItem(
+              value: 'addColumn', child: Text('Add Column')));
+        }
+        if (_c.canRemoveTableRow) {
+          items.add(const PopupMenuItem(
+              value: 'removeRow', child: Text('Delete Row')));
+        }
+        if (_c.canRemoveTableColumn) {
+          items.add(const PopupMenuItem(
+              value: 'removeColumn', child: Text('Delete Column')));
+        }
+        if (_c.canMergeCells) {
+          items.add(const PopupMenuItem(
+              value: 'mergeCells', child: Text('Merge Cells')));
+        }
+        if (_c.canUnmergeCell) {
+          items.add(const PopupMenuItem(
+              value: 'unmergeCells', child: Text('Unmerge Cells')));
+        }
+      }
+    } else {
+      items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
+      items.add(const PopupMenuItem(
+          value: 'pasteHere', child: Text('Paste Here')));
       items.add(
           const PopupMenuItem(value: 'selectAll', child: Text('Select All')));
       items.add(
           const PopupMenuItem(value: 'fit', child: Text('Fit to Window')));
+      if (_c.hasPageGuides) {
+        items.add(const PopupMenuItem(
+            value: 'clearGuides', child: Text('Clear Guides')));
+      }
     }
     final value = await showMenu<String>(
       context: context,
@@ -727,9 +866,9 @@ class _PageCanvasState extends State<PageCanvas> {
       case 'duplicate':
         _c.duplicateSelection();
       case 'paste':
-        _c.paste();
+        unawaited(_c.pasteFromSystem());
       case 'pasteHere':
-        _c.pasteAt(cx: pagePos.dx, cy: pagePos.dy);
+        unawaited(_c.pasteFromSystem(cx: pagePos.dx, cy: pagePos.dy));
       case 'delete':
         _c.deleteSelection();
       case 'lock':
@@ -761,10 +900,38 @@ class _PageCanvasState extends State<PageCanvas> {
       case 'editLink':
         final id = _c.singleSelectedId;
         if (id != null) await showEditLinkDialog(context, _c, id);
+      case 'replaceImage':
+        final id = _c.singleSelectedId;
+        if (id == null) break;
+        final picked = await pickImageFile();
+        if (picked == null || !mounted) break;
+        _c.replaceImage(id, picked.bytes, fileExtension: picked.extension);
+      case 'editConnPts':
+        _c.beginEditConnectionPoints();
+      case 'doneConnPts':
+        _c.endEditConnectionPoints();
+      case 'addLane':
+        _c.addLaneToSelectedPool();
+      case 'removeLane':
+        _c.removeSelectedLane();
+      case 'addRow':
+        _c.addRowToSelectedTable();
+      case 'addColumn':
+        _c.addColumnToSelectedTable();
+      case 'removeRow':
+        _c.removeRowFromSelectedTable();
+      case 'removeColumn':
+        _c.removeColumnFromSelectedTable();
+      case 'mergeCells':
+        _c.mergeSelectedCells();
+      case 'unmergeCells':
+        _c.unmergeSelectedCell();
       case 'selectAll':
         _c.selectAll();
       case 'fit':
         fitToScreen();
+      case 'clearGuides':
+        _c.clearPageGuides();
     }
   }
 
@@ -784,6 +951,7 @@ class _PageCanvasState extends State<PageCanvas> {
       selection: TextSelection(baseOffset: 0, extentOffset: initial.length),
     );
     setState(() => _editingShapeId = id);
+    _syncTextEditSession();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _editingShapeId == id) _textFocus.requestFocus();
     });
@@ -806,6 +974,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final wasNewBox = id == _newTextBoxId;
     _newTextBoxId = null;
     setState(() => _editingShapeId = null);
+    _c.setTextEditSession();
     if (_textFocus.hasFocus) _textFocus.unfocus();
     // An untyped Text-tool box is discarded rather than left invisible.
     if (wasNewBox && text.trim().isEmpty) {
@@ -823,6 +992,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final wasNewBox = id == _newTextBoxId;
     _newTextBoxId = null;
     setState(() => _editingShapeId = null);
+    _c.setTextEditSession();
     if (_textFocus.hasFocus) _textFocus.unfocus();
     if (wasNewBox) _c.deleteShapeById(id);
   }
@@ -830,6 +1000,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// The overlaid text editor for the shape being edited, positioned over its
   /// box in screen space (`null` when not editing). Enter inserts a newline;
   /// Cmd/Ctrl+Enter or clicking away applies; Esc cancels.
+  ///
+  /// When the shape has rich-text runs, a [Text.rich] preview mirrors bold /
+  /// colour / size per run under a near-transparent [TextField] so typing and
+  /// selection still work (draw.io-style mixed-style editing feedback).
   Widget? _buildInlineEditor(BuildContext context) {
     final id = _editingShapeId;
     final s = id == null ? null : _page?.findShapeById(id);
@@ -839,6 +1013,12 @@ class _PageCanvasState extends State<PageCanvas> {
     final fontPx = math.max(cs.fontSizeInches * widget.pxPerInch * _scale, 8.0);
     final align = run?.paraStyle.horizontalAlign ?? VsdxHorzAlign.center;
     final scheme = Theme.of(context).colorScheme;
+    final docTheme = _c.documentTheme.isEmpty
+        ? VsdxTheme.office
+        : _c.documentTheme;
+    final preview = s.richText.runs.isEmpty
+        ? null
+        : replacePlainText(s.richText, _textController.text);
 
     final double left, top, width, height;
     if (s.is1D) {
@@ -880,28 +1060,94 @@ class _PageCanvasState extends State<PageCanvas> {
                 BoxShadow(color: Color(0x33000000), blurRadius: 6),
               ],
             ),
-            child: TextField(
-              controller: _textController,
-              focusNode: _textFocus,
-              maxLines: null,
-              expands: true,
-              textAlign: _textAlign(align),
-              textAlignVertical: TextAlignVertical.center,
-              cursorColor: scheme.primary,
-              style: TextStyle(
-                fontSize: fontPx,
-                height: 1.15,
-                color: scheme.onSurface,
-              ),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (preview != null)
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: IgnorePointer(
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: Text.rich(
+                          TextSpan(
+                            children: <InlineSpan>[
+                              for (final r in preview.runs)
+                                _inlineRunSpan(
+                                  r,
+                                  widget.pxPerInch * _scale,
+                                  docTheme,
+                                  scheme.onSurface,
+                                ),
+                            ],
+                          ),
+                          textAlign: _textAlign(align),
+                        ),
+                      ),
+                    ),
+                  ),
+                TextField(
+                  controller: _textController,
+                  focusNode: _textFocus,
+                  maxLines: null,
+                  expands: true,
+                  textAlign: _textAlign(align),
+                  textAlignVertical: TextAlignVertical.center,
+                  cursorColor: scheme.primary,
+                  style: TextStyle(
+                    fontSize: fontPx,
+                    height: 1.15,
+                    // Hide glyphs when a rich preview is shown; keep a tiny
+                    // alpha so caret / selection metrics stay stable.
+                    color: preview != null
+                        ? const Color(0x01FFFFFF)
+                        : scheme.onSurface,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// One styled span for the inline rich-text preview (mirrors painter rules
+  /// for bold / italic / underline / colour / size).
+  static TextSpan _inlineRunSpan(
+    VsdxTextRun run,
+    double pxPerInch,
+    VsdxTheme theme,
+    Color fallback,
+  ) {
+    final cs = run.charStyle;
+    final themeColor = cs.themeColorIndex == null
+        ? null
+        : theme.resolve(cs.themeColorIndex!);
+    final color = cs.color != null
+        ? Color(cs.color!.value)
+        : (themeColor != null ? Color(themeColor.value) : fallback);
+    final size = math.max(cs.fontSizeInches * pxPerInch, 8.0);
+    return TextSpan(
+      text: run.text,
+      style: TextStyle(
+        color: color,
+        fontSize: size,
+        height: 1.15,
+        fontWeight: cs.style.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: cs.style.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: TextDecoration.combine([
+          if (cs.underline) TextDecoration.underline,
+          if (cs.strikethrough) TextDecoration.lineThrough,
+        ]),
+        fontFamily: cs.fontFamily,
       ),
     );
   }
@@ -920,6 +1166,22 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     _lastPointer = d.localPosition;
+    if (_c.editingConnectionPoints) {
+      _onConnPointEditPanStart(d.localPosition);
+      return;
+    }
+    if (_c.tool == EditorTool.freehand) {
+      _mode = _DragMode.createShape;
+      final p = _viewportToContent(d.localPosition);
+      setState(() {
+        _freehandPoints
+          ..clear()
+          ..add(p);
+        _previewStart = p;
+        _previewEnd = p;
+      });
+      return;
+    }
     if (_c.tool != EditorTool.select) {
       _mode = _DragMode.createShape;
       setState(() {
@@ -999,8 +1261,12 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
+    // Table column / row dividers (when a table or cell is selected).
+    if (_tryStartTableDividerDrag(d.localPosition)) return;
+
     // Connector endpoint handles (reconnect / detach) then bend points take
     // priority over hit-testing (they sit on top of the connector).
+    if (_tryToggleCollapse(d.localPosition)) return;
     if (_tryStartEndpointDrag(d.localPosition)) return;
     if (_tryStartWaypointDrag(d.localPosition)) return;
 
@@ -1026,14 +1292,85 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  /// Connection-point edit mode: drag existing points, or click the shape to
+  /// add a new one (draw.io Edit Connection Points).
+  void _onConnPointEditPanStart(Offset localPos) {
+    final id = _c.singleSelectedId;
+    final s = id == null ? null : _page?.findShapeById(id);
+    if (s == null || s.is1D) {
+      _mode = _DragMode.none;
+      return;
+    }
+    final hit = _connPointHitIndex(s, localPos);
+    if (hit != null) {
+      _connPointDragIndex = hit;
+      _c.selectConnectionPoint(hit);
+      _mode = _DragMode.moveConnectionPoint;
+      _c.beginTransaction();
+      return;
+    }
+    if (_hitTest(localPos) == id) {
+      final pagePos = _pageInchesAt(localPos);
+      final local = VsdxPage.pageToLocal(s, Offset2D(pagePos.dx, pagePos.dy));
+      _c.addConnectionPointAtLocal(local.x, local.y);
+    }
+    _mode = _DragMode.none;
+  }
+
+  /// Index of the connection point under [localPos], or `null` (~12 px hit).
+  int? _connPointHitIndex(VsdxShape s, Offset localPos) {
+    final pts = VsdxPage.effectiveConnectionPoints(s);
+    for (var i = 0; i < pts.length; i++) {
+      final pg = VsdxPage.localToPage(s, pts[i].offset);
+      final screen = _offset + _pageToContent(pg.x, pg.y) * _scale;
+      if ((screen - localPos).distanceSquared <= 144) return i;
+    }
+    return null;
+  }
+
   void _onPanUpdate(DragUpdateDetails d) {
     final pos = d.localPosition;
     switch (_mode) {
+      case _DragMode.moveConnectionPoint:
+        final id = _c.singleSelectedId;
+        final idx = _connPointDragIndex;
+        final s = id == null ? null : _page?.findShapeById(id);
+        if (id != null && idx != null && s != null) {
+          final pagePos = _pageInchesAt(pos);
+          final local =
+              VsdxPage.pageToLocal(s, Offset2D(pagePos.dx, pagePos.dy));
+          _c.moveConnectionPointAtLocal(idx, local.x, local.y,
+              transient: true);
+        }
       case _DragMode.moveShapes:
         _applyMove((pos - _lastPointer) / _scale);
+        final pagePt = _contentToPageInches(_viewportToContent(pos));
+        final drop = _page?.findDropContainerAt(
+          pagePt.dx,
+          pagePt.dy,
+          excludeIds: Set<int>.of(_c.selection),
+        );
+        if (drop != _dropContainerId) {
+          setState(() => _dropContainerId = drop);
+        }
       case _DragMode.panCanvas:
         setState(() => _offset += pos - _lastPointer);
       case _DragMode.createShape:
+        if (_c.tool == EditorTool.freehand) {
+          final p = _viewportToContent(pos);
+          // Sample in content-px (~3 device px at current zoom) for smooth ink.
+          final minPx = 3.0 / _scale;
+          final last = _freehandPoints.isEmpty ? null : _freehandPoints.last;
+          if (last == null || (p - last).distance >= minPx) {
+            setState(() {
+              _freehandPoints.add(p);
+              _previewEnd = p;
+            });
+          } else {
+            setState(() => _previewEnd = p);
+          }
+          break;
+        }
         final connTarget =
             _c.tool == EditorTool.connector ? _topLevelAt(pos) : null;
         final connTs =
@@ -1059,6 +1396,10 @@ class _PageCanvasState extends State<PageCanvas> {
         });
       case _DragMode.resize:
         _applyResize(pos);
+      case _DragMode.tableColResize:
+        _applyTableColResize(pos);
+      case _DragMode.tableRowResize:
+        _applyTableRowResize(pos);
       case _DragMode.marquee:
         setState(() => _marqueeEnd = _viewportToContent(pos));
       case _DragMode.moveWaypoint:
@@ -1225,8 +1566,33 @@ class _PageCanvasState extends State<PageCanvas> {
     ];
   }
 
+  /// Connection-point magnets on non-selected 2-D shapes (page inches).
+  List<SnapMagnet> _otherConnectionMagnets() {
+    final page = _page;
+    if (page == null) return const <SnapMagnet>[];
+    final sel = _c.selection;
+    final out = <SnapMagnet>[];
+    void walk(VsdxShape s) {
+      if (!sel.contains(s.id) && !s.is1D) {
+        final pts = VsdxPage.effectiveConnectionPoints(s);
+        for (final p in pts) {
+          final pg = VsdxPage.localToPage(s, p.offset);
+          out.add(SnapMagnet(pg.x, pg.y));
+        }
+      }
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final s in page.shapes) {
+      walk(s);
+    }
+    return out;
+  }
+
   /// Apply a raw pointer delta (content px) to the moving selection, snapping to
-  /// neighbour edges/centres and updating the visible guide lines.
+  /// neighbour edges/centres / connection points and updating guide lines.
   void _applyMove(Offset deltaContentPx) {
     final ppi = widget.pxPerInch;
     _moveAccumInches += Offset(deltaContentPx.dx / ppi, -deltaContentPx.dy / ppi);
@@ -1253,6 +1619,8 @@ class _PageCanvasState extends State<PageCanvas> {
         moving: moving,
         others: _otherShapeBoxes(),
         threshold: 6 / (_scale * ppi),
+        pageGuides: _c.pageGuides,
+        magnets: _otherConnectionMagnets(),
       );
       snapDx = res.dx;
       snapDy = res.dy;
@@ -1436,8 +1804,110 @@ class _PageCanvasState extends State<PageCanvas> {
     return false;
   }
 
+  /// Start dragging a table column/row divider near [viewportPos].
+  bool _tryStartTableDividerDrag(Offset viewportPos) {
+    final tableId = _c.selectedTableId;
+    final page = _page;
+    if (tableId == null || page == null) return false;
+    final table = page.findShapeById(tableId);
+    if (table == null || !TableOps.isTable(table)) return false;
+    const hitPx = 6.0;
+    final hit2 = hitPx * hitPx;
+
+    final colDivs = TableOps.colDividerLocals(table);
+    for (var i = 0; i < colDivs.length; i++) {
+      final lx = colDivs[i];
+      final a = page.localToPageDeep(tableId, Offset2D(lx, 0));
+      final b = page.localToPageDeep(tableId, Offset2D(lx, table.height));
+      final sa = _pageToScreen(a.x, a.y);
+      final sb = _pageToScreen(b.x, b.y);
+      if (_distToSegmentSq(viewportPos, sa, sb) <= hit2) {
+        _tableResizeId = tableId;
+        _tableDividerIndex = i;
+        _tableResizeLastPage = _pageInchesAt(viewportPos).dx;
+        _mode = _DragMode.tableColResize;
+        _c.beginTransaction();
+        return true;
+      }
+    }
+    final rowDivs = TableOps.rowDividerLocalsFromBottom(table);
+    for (var i = 0; i < rowDivs.length; i++) {
+      final ly = rowDivs[i];
+      final a = page.localToPageDeep(tableId, Offset2D(0, ly));
+      final b = page.localToPageDeep(tableId, Offset2D(table.width, ly));
+      final sa = _pageToScreen(a.x, a.y);
+      final sb = _pageToScreen(b.x, b.y);
+      if (_distToSegmentSq(viewportPos, sa, sb) <= hit2) {
+        _tableResizeId = tableId;
+        _tableDividerIndex = i;
+        _tableResizeLastPage = _pageInchesAt(viewportPos).dy;
+        _mode = _DragMode.tableRowResize;
+        _c.beginTransaction();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _applyTableColResize(Offset pos) {
+    final id = _tableResizeId;
+    final idx = _tableDividerIndex;
+    if (id == null || idx == null) return;
+    final x = _pageInchesAt(pos).dx;
+    final delta = x - _tableResizeLastPage;
+    _tableResizeLastPage = x;
+    if (delta.abs() < 1e-9) return;
+    _c.resizeTableColumn(id, idx, delta, transient: true);
+  }
+
+  void _applyTableRowResize(Offset pos) {
+    final id = _tableResizeId;
+    final idx = _tableDividerIndex;
+    if (id == null || idx == null) return;
+    final y = _pageInchesAt(pos).dy;
+    final delta = y - _tableResizeLastPage;
+    _tableResizeLastPage = y;
+    if (delta.abs() < 1e-9) return;
+    _c.resizeTableRow(id, idx, delta, transient: true);
+  }
+
+  static double _distToSegmentSq(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (len2 < 1e-12) return (p - a).distanceSquared;
+    var t = ((p.dx - a.dx) * ab.dx + (p.dy - a.dy) * ab.dy) / len2;
+    t = t.clamp(0.0, 1.0);
+    final proj = Offset(a.dx + ab.dx * t, a.dy + ab.dy * t);
+    return (p - proj).distanceSquared;
+  }
+
+  /// Table divider guides in content-px for the selection overlay.
+  List<(Offset, Offset)> _tableDividerSegments(VsdxPage page) {
+    final tableId = _c.selectedTableId;
+    if (tableId == null) return const <(Offset, Offset)>[];
+    final table = page.findShapeById(tableId);
+    if (table == null || !TableOps.isTable(table)) {
+      return const <(Offset, Offset)>[];
+    }
+    final out = <(Offset, Offset)>[];
+    for (final lx in TableOps.colDividerLocals(table)) {
+      final a = page.localToPageDeep(tableId, Offset2D(lx, 0));
+      final b = page.localToPageDeep(tableId, Offset2D(lx, table.height));
+      out.add((_pageToContent(a.x, a.y), _pageToContent(b.x, b.y)));
+    }
+    for (final ly in TableOps.rowDividerLocalsFromBottom(table)) {
+      final a = page.localToPageDeep(tableId, Offset2D(0, ly));
+      final b = page.localToPageDeep(tableId, Offset2D(table.width, ly));
+      out.add((_pageToContent(a.x, a.y), _pageToContent(b.x, b.y)));
+    }
+    return out;
+  }
+
   void _onPanEnd(DragEndDetails d) {
     switch (_mode) {
+      case _DragMode.moveConnectionPoint:
+        _c.commitTransaction();
+        _connPointDragIndex = null;
       case _DragMode.moveWaypoint:
         _c.commitTransaction();
         _waypointConnId = null;
@@ -1452,12 +1922,44 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.moveShapes:
       case _DragMode.resize:
       case _DragMode.rotate:
+      case _DragMode.tableColResize:
+      case _DragMode.tableRowResize:
+        if (_mode == _DragMode.moveShapes) {
+          final end = _lastPointer;
+          final pagePt = _contentToPageInches(_viewportToContent(end));
+          _c.applyDropContainmentAt(pagePt.dx, pagePt.dy, transient: true);
+        }
         _c.commitTransaction();
         _activeHandle = null;
         _resizeShapeId = null;
         _resizeStartShape = null;
+        _tableResizeId = null;
+        _tableDividerIndex = null;
         _clearMoveGuides();
+        setState(() => _dropContainerId = null);
       case _DragMode.createShape:
+        if (_c.tool == EditorTool.freehand) {
+          final end = _previewEnd;
+          if (end != null &&
+              _freehandPoints.isNotEmpty &&
+              _freehandPoints.last != end) {
+            _freehandPoints.add(end);
+          }
+          if (_freehandPoints.length >= 2) {
+            final pts = <Offset2D>[];
+            for (final p in _freehandPoints) {
+              final inch = _contentToPageInches(p);
+              pts.add(Offset2D(inch.dx, inch.dy));
+            }
+            _c.createFreehand(pts);
+          }
+          setState(() {
+            _freehandPoints.clear();
+            _previewStart = null;
+            _previewEnd = null;
+          });
+          break;
+        }
         final start = _previewStart;
         final end = _previewEnd;
         if (start != null && end != null) {
@@ -1530,6 +2032,9 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.rotate:
       case _DragMode.moveWaypoint:
       case _DragMode.moveEndpoint:
+      case _DragMode.moveConnectionPoint:
+      case _DragMode.tableColResize:
+      case _DragMode.tableRowResize:
         _c.cancelTransaction();
       case _DragMode.none:
       case _DragMode.panCanvas:
@@ -1542,17 +2047,22 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.none;
       _previewStart = null;
       _previewEnd = null;
+      _freehandPoints.clear();
       _marqueeStart = null;
       _marqueeEnd = null;
       _connectSourceId = null;
       _connectSourceConnIndex = null;
       _connectTargetId = null;
+      _tableResizeId = null;
+      _tableDividerIndex = null;
+      _dropContainerId = null;
       _activeHandle = null;
       _resizeShapeId = null;
       _resizeStartShape = null;
       _waypointConnId = null;
       _waypointIndex = null;
       _endpointConnId = null;
+      _connPointDragIndex = null;
       _snapConnIndex = null;
       _guides = const <SnapGuide>[];
       _moveStartBounds = null;
@@ -1612,6 +2122,13 @@ class _PageCanvasState extends State<PageCanvas> {
       return KeyEventResult.ignored; // let app-level Cmd shortcuts run
     }
     if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace) {
+      if (_c.editingConnectionPoints) {
+        if (_c.selectedConnectionPointIndex != null) {
+          _c.removeSelectedConnectionPoint();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.handled; // don't delete the shape while editing
+      }
       if (_c.hasSelection) {
         _c.deleteSelection();
         return KeyEventResult.handled;
@@ -1622,13 +2139,17 @@ class _PageCanvasState extends State<PageCanvas> {
         _cancelActiveDrag();
         return KeyEventResult.handled;
       }
+      if (_c.editingConnectionPoints) {
+        _c.endEditConnectionPoints();
+        return KeyEventResult.handled;
+      }
       if (_c.tool != EditorTool.select) {
         _c.setTool(EditorTool.select);
       } else {
         _c.clearSelection();
       }
       return KeyEventResult.handled;
-    } else if (_c.hasSelection) {
+    } else if (_c.hasSelection && !_c.editingConnectionPoints) {
       final step = _c.snapToGrid ? _c.gridInches : 0.1;
       if (key == LogicalKeyboardKey.arrowLeft) {
         _c.moveSelectionBy(-step, 0);
@@ -1658,6 +2179,16 @@ class _PageCanvasState extends State<PageCanvas> {
     } else {
       setState(() => _offset -= e.scrollDelta);
     }
+  }
+
+  /// Resolve [page]'s Visio `BackPage` underlay from [doc], or `null`.
+  VsdxPage? _resolvedUnderlay(VsdxDocument doc, VsdxPage page) {
+    final id = page.backgroundPageId;
+    if (id == null) return null;
+    for (final p in doc.pages) {
+      if (p.id == id) return p;
+    }
+    return null;
   }
 
   // --- Build -----------------------------------------------------------------
@@ -1753,21 +2284,20 @@ class _PageCanvasState extends State<PageCanvas> {
               final s = page.findShapeById(_hoverShapeId!);
               if (s != null && !s.is1D) hoverBox = _exactContentBox(s);
             }
-            final targetId = _connectTargetId;
+            final targetId = _connectTargetId ?? _dropContainerId;
             final Rect? connectTargetRect = (targetId != null &&
                     bounds[targetId] != null)
                 ? _boundsInchesToContent(bounds[targetId]!)
                 : null;
             // Fixed connection points (drawio blue points) on the shape a
             // connector is being wired / dragged onto, plus the snapped one.
+            // Also always shown while editing connection points on the selection.
             var connectionPointDots = const <Offset>[];
             Offset? snappedConnectionPoint;
-            // Show a shape's fixed connection points (drawio blue crosses) both
-            // while wiring / dragging an endpoint onto it *and* while simply
-            // hovering it in idle select mode, so the attach points are always
-            // visible before you start dragging.
             VsdxShape? cpShape;
-            if (targetId != null &&
+            if (_c.editingConnectionPoints && _c.singleSelectedId != null) {
+              cpShape = page.findShapeById(_c.singleSelectedId!);
+            } else if (targetId != null &&
                 (_mode == _DragMode.connect ||
                     _mode == _DragMode.moveEndpoint ||
                     (_mode == _DragMode.createShape &&
@@ -1783,8 +2313,11 @@ class _PageCanvasState extends State<PageCanvas> {
                 for (final p in pts.map((p) => VsdxPage.localToPage(t, p.offset)))
                   _pageToContent(p.x, p.y),
               ];
-              if (_snapConnIndex != null && _snapConnIndex! < pts.length) {
-                final pg = VsdxPage.localToPage(t, pts[_snapConnIndex!].offset);
+              final selIdx = _c.editingConnectionPoints
+                  ? _c.selectedConnectionPointIndex
+                  : _snapConnIndex;
+              if (selIdx != null && selIdx < pts.length) {
+                final pg = VsdxPage.localToPage(t, pts[selIdx].offset);
                 snappedConnectionPoint = _pageToContent(pg.x, pg.y);
               }
             }
@@ -1794,6 +2327,7 @@ class _PageCanvasState extends State<PageCanvas> {
                 g.vertical
                     ? (_pageToContent(g.pos, g.start), _pageToContent(g.pos, g.end))
                     : (_pageToContent(g.start, g.pos), _pageToContent(g.end, g.pos)),
+              ..._tableDividerSegments(page),
             ];
             final connector = _selectedConnector();
             var waypointHandles = const <Offset>[];
@@ -1833,7 +2367,8 @@ class _PageCanvasState extends State<PageCanvas> {
               onExit: (_) => _clearHover(),
               cursor: _c.tool == EditorTool.text
                   ? SystemMouseCursors.text
-                  : (_c.tool == EditorTool.connector ||
+                  : (_c.tool == EditorTool.freehand ||
+                          _c.tool == EditorTool.connector ||
                           _mode == _DragMode.connect ||
                           _hoverOnConnectPoint)
                       ? SystemMouseCursors.precise
@@ -1894,11 +2429,14 @@ class _PageCanvasState extends State<PageCanvas> {
                                   child: CustomPaint(
                                     painter: VsdxPainter(
                                       page: page,
+                                      underlayPage: _resolvedUnderlay(doc, page),
                                       theme: doc.theme,
                                       images: doc.images,
                                       imageCache: _imageCache,
                                       pxPerInch: widget.pxPerInch,
                                       drawLineJumps: _c.showLineJumps,
+                                      lineJumpRadiusInches:
+                                          _c.lineJumpRadiusInches,
                                       backgroundColor: _c.showGrid
                                           ? const Color(0x00000000)
                                           : widget.pageColor,
@@ -1920,6 +2458,11 @@ class _PageCanvasState extends State<PageCanvas> {
                                       previewStart: _previewStart,
                                       previewEnd: _previewEnd,
                                       previewTool: previewTool,
+                                      freehandPoints: _c.tool ==
+                                                  EditorTool.freehand &&
+                                              _mode == _DragMode.createShape
+                                          ? List<Offset>.of(_freehandPoints)
+                                          : const <Offset>[],
                                       marquee: marquee,
                                       guides: guideSegments,
                                       waypointHandles: waypointHandles,
@@ -1980,6 +2523,7 @@ class _SelectionPainter extends CustomPainter {
     this.previewStart,
     this.previewEnd,
     this.previewTool,
+    this.freehandPoints = const <Offset>[],
     this.marquee,
     this.guides = const <(Offset, Offset)>[],
     this.waypointHandles = const <Offset>[],
@@ -2002,6 +2546,9 @@ class _SelectionPainter extends CustomPainter {
   final Offset? previewStart;
   final Offset? previewEnd;
   final EditorTool? previewTool;
+
+  /// Live freehand ink samples (content-px).
+  final List<Offset> freehandPoints;
 
   /// Hover-connect arrow ring around the hovered shape (content-px) and the
   /// gap from its box; plus the glue-target highlight while wiring.
@@ -2208,9 +2755,22 @@ class _SelectionPainter extends CustomPainter {
       );
 
   void _paintPreview(Canvas canvas, Paint outline) {
+    final tool = previewTool;
+    if (tool == EditorTool.freehand) {
+      if (freehandPoints.length < 2) return;
+      final path = Path()..moveTo(freehandPoints.first.dx, freehandPoints.first.dy);
+      for (var i = 1; i < freehandPoints.length; i++) {
+        path.lineTo(freehandPoints[i].dx, freehandPoints[i].dy);
+      }
+      final end = previewEnd;
+      if (end != null && end != freehandPoints.last) {
+        path.lineTo(end.dx, end.dy);
+      }
+      canvas.drawPath(path, outline);
+      return;
+    }
     final a = previewStart;
     final b = previewEnd;
-    final tool = previewTool;
     if (a == null || b == null || tool == null) return;
     switch (tool) {
       case EditorTool.line:
@@ -2221,6 +2781,7 @@ class _SelectionPainter extends CustomPainter {
       case EditorTool.rectangle:
       case EditorTool.text:
       case EditorTool.select:
+      case EditorTool.freehand:
         canvas.drawRect(Rect.fromPoints(a, b), outline);
     }
   }
@@ -2246,7 +2807,8 @@ class _SelectionPainter extends CustomPainter {
       !listEquals(old.waypointHandles, waypointHandles) ||
       !listEquals(old.midpointHandles, midpointHandles) ||
       !listEquals(old.endpointHandles, endpointHandles) ||
-      !listEquals(old.connectionPoints, connectionPoints);
+      !listEquals(old.connectionPoints, connectionPoints) ||
+      !listEquals(old.freehandPoints, freehandPoints);
 }
 
 /// Light grid drawn behind the page content (content-px space).

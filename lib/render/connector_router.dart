@@ -1,20 +1,11 @@
 /// Auto-routing for 1-D connector shapes that lack an explicit Geometry
 /// section.
 ///
-/// Visio draws connectors with a built-in autorouting engine that produces
-/// orthogonal "Manhattan" paths between the connector's begin/end shapes.
-/// We don't reimplement the full algorithm (which considers other shapes
-/// and the page layout grid); instead we compute a sensible right-angle
-/// route between the two anchor points based on:
-///
-///   1. The connector's `BeginX/BeginY` and `EndX/EndY` cells (page coords).
-///   2. The page-level `<Connect>` records — when an endpoint is glued to a
-///      target shape we attach it on that shape's **perimeter** (aimed at the
-///      opposite end), matching Visio / libvisio. (An earlier version snapped
-///      to the shape *centre*, which pushed arrow heads inside the target.)
-///
-/// Output is a [Path] in **page-inch coordinates** (Y up), ready to feed
-/// the [VsdxPainter] under its existing canvas transform.
+/// Visio / draw.io draw connectors with an autorouting engine that produces
+/// orthogonal "Manhattan" paths between the connector's begin/end shapes,
+/// skirting other shapes on the page. When a [VsdxPage] is supplied we reuse
+/// [ObstacleRouter] so paint-time fallback matches the editor's baked routes.
+/// Without a page we fall back to a simple two-corner elbow.
 library;
 
 import 'dart:ui';
@@ -35,8 +26,7 @@ class RoutedConnector {
   /// End anchor, in page-inch coords.
   final Offset end;
 
-  /// Intermediate waypoints (orthogonal corners). Always at least zero,
-  /// at most two for the strategies below.
+  /// Intermediate waypoints (orthogonal corners). Always at least zero.
   final List<Offset> waypoints;
 
   /// Convenience: every vertex in source order.
@@ -64,9 +54,9 @@ class ConnectorRouter {
   /// Compute a routed path for [connector]. Returns `null` when the shape
   /// is not a 1-D connector or is missing endpoints.
   ///
-  /// [page] is consulted for `<Connect>` glue records (so we can snap onto
-  /// glued target shapes). When [page] is `null` we fall back to the raw
-  /// `BeginX/EndX` cells.
+  /// [page] is consulted for `<Connect>` glue records and for other shapes as
+  /// obstacles. When [page] is `null` we fall back to the raw `BeginX/EndX`
+  /// cells and a plain elbow.
   RoutedConnector? route(VsdxShape connector, {VsdxPage? page}) {
     if (!connector.is1D) return null;
     final bx = connector.beginX;
@@ -77,6 +67,7 @@ class ConnectorRouter {
 
     var begin = Offset(bx, by);
     var end = Offset(ex, ey);
+    final exclude = <int>{connector.id};
 
     // Attach glued endpoints on the target's perimeter (aimed at the opposite
     // end), so a connector stops at the shape's edge instead of driving into
@@ -87,6 +78,7 @@ class ConnectorRouter {
       for (final c in page.connectIndex.forConnector(connector.id)) {
         final target = page.findShapeById(c.toSheetId);
         if (target == null) continue;
+        exclude.add(target.id);
         final lc = c.fromCell.toLowerCase();
         final isBegin = c.fromPart == 9 || lc.contains('beginx');
         final isEnd = c.fromPart == 12 || lc.contains('endx');
@@ -95,7 +87,41 @@ class ConnectorRouter {
       }
     }
 
-    final waypoints = _orthogonalRoute(begin, end);
+    final List<Offset> waypoints;
+    if (page != null) {
+      final obstacles = <RouteAabb>[];
+      void walk(List<VsdxShape> list) {
+        for (final s in list) {
+          if (s.children.isNotEmpty) {
+            walk(s.children);
+            continue;
+          }
+          if (exclude.contains(s.id) || s.is1D) continue;
+          if (s.width < 0.05 || s.height < 0.05) continue;
+          obstacles.add(RouteAabb.fromCenter(
+            pinX: s.pinX,
+            pinY: s.pinY,
+            width: s.width,
+            height: s.height,
+            pad: ObstacleRouter.defaultClearance,
+          ));
+        }
+      }
+
+      walk(page.shapes);
+      final poly = const ObstacleRouter().route(
+        begin.dx,
+        begin.dy,
+        end.dx,
+        end.dy,
+        obstacles: obstacles,
+      );
+      waypoints = <Offset>[
+        for (final p in poly.skip(1).take(poly.length - 2)) Offset(p.x, p.y),
+      ];
+    } else {
+      waypoints = _orthogonalRoute(begin, end);
+    }
     return RoutedConnector(begin: begin, end: end, waypoints: waypoints);
   }
 
@@ -114,9 +140,7 @@ class ConnectorRouter {
     return Offset(cx + dx * t, cy + dy * t);
   }
 
-  /// Two-corner orthogonal path. We pick the longer axis as the
-  /// "primary" leg so short labels read naturally; degenerate axes are
-  /// handled with single-segment routes.
+  /// Two-corner orthogonal path used when no page/obstacles are available.
   List<Offset> _orthogonalRoute(Offset a, Offset b) {
     final dx = (b.dx - a.dx).abs();
     final dy = (b.dy - a.dy).abs();
@@ -125,7 +149,6 @@ class ConnectorRouter {
       return const <Offset>[];
     }
     if (dx >= dy) {
-      // Horizontal-first: (a) → (mid, a.y) → (mid, b.y) → (b)
       final midX = a.dx + (b.dx - a.dx) / 2;
       return <Offset>[
         Offset(midX, a.dy),

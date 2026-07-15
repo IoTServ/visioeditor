@@ -312,4 +312,23 @@ void main() {
     // Original document unchanged.
     expect(doc.pages.first.shapes.first.pinX, page0.shapes.first.pinX);
   });
+
+  test('freehand factory builds a 1-D ink polyline (not a connector)', () {
+    final stroke = VsdxShapeFactory.freehand(
+      id: 7,
+      points: const <Offset2D>[
+        Offset2D(1, 1),
+        Offset2D(2, 2),
+        Offset2D(3, 1.5),
+      ],
+    );
+    expect(stroke.is1D, isTrue);
+    expect(stroke.objType, 1); // ink shape, not connector
+    expect(stroke.beginX, closeTo(1, 1e-9));
+    expect(stroke.endX, closeTo(3, 1e-9));
+    expect(stroke.width, closeTo(2, 1e-9));
+    expect(stroke.geometries.single.noFill, isTrue);
+    expect(stroke.geometries.single.commands.length, 3); // MoveTo + 2×LineTo
+    expect(stroke.geometries.single.commands.first, isA<MoveTo>());
+  });
 }

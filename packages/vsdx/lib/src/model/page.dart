@@ -10,7 +10,9 @@ import '../utils/color.dart';
 import 'connect.dart';
 import 'geometry.dart';
 import 'layer.dart';
+import 'obstacle_router.dart';
 import 'shape.dart';
+import 'shape_kind.dart';
 
 /// PageSheet cells beyond width/height/colour (scale, page shadow, jumps,
 /// margins). Required so newly-created pages round-trip like Visio / libvisio.
@@ -278,6 +280,12 @@ class VsdxPage {
           if (l.visible) l.id,
       };
 
+  /// Layer ids whose Visio `Print` flag is on — used by PDF / SVG / PNG export.
+  Set<int> get printableLayerIds => {
+        for (final l in layers)
+          if (l.print) l.id,
+      };
+
   /// Walk the shape tree (DFS) and return the shape with [id], or `null`.
   VsdxShape? findShapeById(int id) {
     for (final s in shapes) {
@@ -296,6 +304,10 @@ class VsdxPage {
     return null;
   }
 
+  /// Sentinel for [copyWith] so callers can clear [backgroundPageId] to `null`
+  /// (plain `null` would mean "leave unchanged").
+  static const Object keepBackgroundPageId = Object();
+
   VsdxPage copyWith({
     int? id,
     String? name,
@@ -306,7 +318,7 @@ class VsdxPage {
     List<VsdxConnect>? connects,
     VsdxColor? backgroundColor,
     bool? isBackgroundPage,
-    int? backgroundPageId,
+    Object? backgroundPageId = keepBackgroundPageId,
     VsdxPageSheet? pageSheet,
     double? viewScale,
     double? viewCenterX,
@@ -322,7 +334,9 @@ class VsdxPage {
       connects: connects ?? this.connects,
       backgroundColor: backgroundColor ?? this.backgroundColor,
       isBackgroundPage: isBackgroundPage ?? this.isBackgroundPage,
-      backgroundPageId: backgroundPageId ?? this.backgroundPageId,
+      backgroundPageId: identical(backgroundPageId, keepBackgroundPageId)
+          ? this.backgroundPageId
+          : backgroundPageId as int?,
       pageSheet: pageSheet ?? this.pageSheet,
       viewScale: viewScale ?? this.viewScale,
       viewCenterX: viewCenterX ?? this.viewCenterX,
@@ -446,6 +460,11 @@ class VsdxPage {
           : endShape != null
               ? _edgePoint(endShape, refBx, refBy)
               : (refEx, refEy);
+      final exclude = <int>{
+        cid,
+        if (beginShape != null) beginShape.id,
+        if (endShape != null) endShape.id,
+      };
       final control = connector.waypoints.isNotEmpty
           ? <Offset2D>[
               Offset2D(ax, ay),
@@ -454,7 +473,7 @@ class VsdxPage {
             ]
           : connector.straightRoute
               ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
-              : _elbowRoute(ax, ay, bx, by);
+              : next._autoRoute(ax, ay, bx, by, excludeIds: exclude);
       final geometry = _bakeRoute(control,
           curved: connector.curved, rounded: connector.rounded);
       next = next.updateShapeById(cid, (s) => s.reshapeAsPolyline(geometry));
@@ -464,6 +483,11 @@ class VsdxPage {
 
   /// The drawn route of connector [s] in page inches: begin → waypoints → end,
   /// or the straight / elbow route when it has no explicit waypoints.
+  ///
+  /// Sharp auto-routes (including obstacle-avoiding polylines) are recovered
+  /// from baked geometry so labels and bend handles match what is drawn.
+  /// Curved / rounded connectors keep the control polyline (waypoints or
+  /// elbow) because their geometry is a dense sample.
   static List<Offset2D> connectorRoute(VsdxShape s) {
     final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
     final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
@@ -471,7 +495,33 @@ class VsdxPage {
       return <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)];
     }
     if (s.straightRoute) return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+    if (!s.curved && !s.rounded) {
+      final fromGeom = _polylineFromGeometry(s);
+      if (fromGeom != null && fromGeom.length >= 2) return fromGeom;
+    }
     return _elbowRoute(ax, ay, bx, by);
+  }
+
+  /// Recover a page-space polyline from a 1-D shape's first geometry section
+  /// (MoveTo / LineTo only). Returns `null` when geometry is missing or not a
+  /// simple polyline.
+  static List<Offset2D>? _polylineFromGeometry(VsdxShape s) {
+    if (s.geometries.isEmpty) return null;
+    final cmds = s.geometries.first.commands;
+    if (cmds.length < 2) return null;
+    final ox = s.pinX - s.width / 2;
+    final oy = s.pinY - s.height / 2;
+    final pts = <Offset2D>[];
+    for (final c in cmds) {
+      if (c is MoveTo) {
+        pts.add(Offset2D(c.x + ox, c.y + oy));
+      } else if (c is LineTo) {
+        pts.add(Offset2D(c.x + ox, c.y + oy));
+      } else {
+        return null;
+      }
+    }
+    return pts.length >= 2 ? pts : null;
   }
 
   /// The point half-way along connector [s]'s drawn route (by arc length), in
@@ -623,6 +673,24 @@ class VsdxPage {
     return Offset2D(s.pinX + dx, s.pinY + dy);
   }
 
+  /// Map a page-inch point back into [s]'s local coordinates (origin
+  /// bottom-left / Y-up), honouring pin, size, rotation and flip. Inverse of
+  /// [localToPage].
+  static Offset2D pageToLocal(VsdxShape s, Offset2D page) {
+    var dx = page.x - s.pinX;
+    var dy = page.y - s.pinY;
+    if (s.angleRad != 0) {
+      final cosA = math.cos(-s.angleRad), sinA = math.sin(-s.angleRad);
+      final rx = dx * cosA - dy * sinA;
+      final ry = dx * sinA + dy * cosA;
+      dx = rx;
+      dy = ry;
+    }
+    if (s.flipX) dx = -dx;
+    if (s.flipY) dy = -dy;
+    return Offset2D(dx + s.width / 2, dy + s.height / 2);
+  }
+
   /// Page-inch position of connection point [index] on [s]. [index] is into
   /// [VsdxShape.connectionPoints] (shape-local inches, origin bottom-left).
   static Offset2D connectionPointPage(VsdxShape s, int index) =>
@@ -668,6 +736,159 @@ class VsdxPage {
             xFormula: 'Width*0.5', yFormula: 'Height*0.5'), // 4 centre
       ];
 
+  /// Build a connection point at shape-local ([x],[y]) with `Width*`/`Height*`
+  /// formulas (so resize keeps the relative position) and an outward
+  /// `DirX`/`DirY` inferred from the nearest edge.
+  static VsdxConnectionPoint connectionPointAt(
+    double x,
+    double y,
+    double width,
+    double height,
+  ) {
+    final w = width <= 0 ? 1.0 : width;
+    final h = height <= 0 ? 1.0 : height;
+    final fx = (x / w).clamp(0.0, 1.0);
+    final fy = (y / h).clamp(0.0, 1.0);
+    final dl = x, dr = w - x, db = y, dt = h - y;
+    var dirX = 0.0, dirY = 0.0;
+    final m = math.min(math.min(dl, dr), math.min(db, dt));
+    if (m == dl) {
+      dirX = -1;
+    } else if (m == dr) {
+      dirX = 1;
+    } else if (m == db) {
+      dirY = -1;
+    } else {
+      dirY = 1;
+    }
+    return VsdxConnectionPoint(
+      x,
+      y,
+      dirX: dirX,
+      dirY: dirY,
+      xFormula: 'Width*${_fracFormula(fx)}',
+      yFormula: 'Height*${_fracFormula(fy)}',
+    );
+  }
+
+  static String _fracFormula(double f) {
+    final r = (f * 10000).round() / 10000;
+    if ((r - r.roundToDouble()).abs() < 1e-9) return '${r.round()}';
+    var s = r.toStringAsFixed(4);
+    while (s.endsWith('0')) {
+      s = s.substring(0, s.length - 1);
+    }
+    if (s.endsWith('.')) s = s.substring(0, s.length - 1);
+    return s;
+  }
+
+  /// Ensure [id] has an explicit Connection section (materialise the default
+  /// 5 points when empty). No-op for missing / 1-D shapes.
+  VsdxPage materializeConnectionPoints(int id) {
+    final s = findShapeById(id);
+    if (s == null || s.is1D || s.connectionPoints.isNotEmpty) return this;
+    return updateShapeById(
+      id,
+      (t) => t.copyWith(
+        connectionPoints: defaultConnectionPoints(t.width, t.height),
+      ),
+    );
+  }
+
+  /// Append a connection point at shape-local ([localX],[localY]) on [id]
+  /// (materialising defaults first when the shape has none).
+  VsdxPage addConnectionPoint(int id, double localX, double localY) {
+    var next = materializeConnectionPoints(id);
+    final s = next.findShapeById(id);
+    if (s == null || s.is1D) return this;
+    final pt = connectionPointAt(localX, localY, s.width, s.height);
+    return next.updateShapeById(
+      id,
+      (t) => t.copyWith(
+        connectionPoints: <VsdxConnectionPoint>[...t.connectionPoints, pt],
+      ),
+    );
+  }
+
+  /// Move connection point [index] on [id] to shape-local ([localX],[localY]).
+  VsdxPage moveConnectionPoint(
+    int id,
+    int index,
+    double localX,
+    double localY,
+  ) {
+    final s = findShapeById(id);
+    if (s == null ||
+        s.is1D ||
+        index < 0 ||
+        index >= s.connectionPoints.length) {
+      return this;
+    }
+    final built = connectionPointAt(localX, localY, s.width, s.height);
+    final old = s.connectionPoints[index];
+    final pts = List<VsdxConnectionPoint>.of(s.connectionPoints);
+    pts[index] = VsdxConnectionPoint(
+      built.x,
+      built.y,
+      dirX: built.dirX,
+      dirY: built.dirY,
+      type: old.type,
+      autoGen: false,
+      prompt: old.prompt,
+      xFormula: built.xFormula,
+      yFormula: built.yFormula,
+    );
+    return updateShapeById(id, (t) => t.copyWith(connectionPoints: pts));
+  }
+
+  /// Remove connection point [index] on [id], remapping any connectors pinned
+  /// to that point (deleted → whole-shape glue; higher indices shift down).
+  VsdxPage removeConnectionPoint(int id, int index) {
+    final s = findShapeById(id);
+    if (s == null ||
+        s.is1D ||
+        index < 0 ||
+        index >= s.connectionPoints.length) {
+      return this;
+    }
+    final pts = List<VsdxConnectionPoint>.of(s.connectionPoints)..removeAt(index);
+    final nextConnects = <VsdxConnect>[];
+    for (final c in connects) {
+      if (c.toSheetId != id) {
+        nextConnects.add(c);
+        continue;
+      }
+      final idx = fixedConnectionIndex(c);
+      if (idx == null) {
+        nextConnects.add(c);
+      } else if (idx == index) {
+        nextConnects.add(VsdxConnect(
+          fromSheetId: c.fromSheetId,
+          fromCell: c.fromCell,
+          fromPart: c.fromPart,
+          toSheetId: c.toSheetId,
+          toCell: 'PinX',
+          toPart: 3,
+        ));
+      } else if (idx > index) {
+        final n = idx - 1;
+        nextConnects.add(VsdxConnect(
+          fromSheetId: c.fromSheetId,
+          fromCell: c.fromCell,
+          fromPart: c.fromPart,
+          toSheetId: c.toSheetId,
+          toCell: 'Connections.X${n + 1}',
+          toPart: 100 + n,
+        ));
+      } else {
+        nextConnects.add(c);
+      }
+    }
+    return updateShapeById(id, (t) => t.copyWith(connectionPoints: pts))
+        .copyWith(connects: nextConnects)
+        .rerouteConnectors();
+  }
+
   /// Whether connector [id] currently prefers a straight route.
   bool isConnectorStraight(int id) => findShapeById(id)?.straightRoute ?? false;
 
@@ -698,7 +919,7 @@ class VsdxPage {
           ? <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)]
           : straight
               ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
-              : _elbowRoute(ax, ay, bx, by);
+              : next._autoRoute(ax, ay, bx, by, excludeIds: <int>{id});
       final geometry = _bakeRoute(control, curved: curved, rounded: s.rounded);
       next = next.updateShapeById(
         id,
@@ -721,13 +942,7 @@ class VsdxPage {
     for (final id in ids) {
       final s = next.findShapeById(id);
       if (s == null || !s.is1D) continue;
-      final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
-      final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
-      final control = s.waypoints.isNotEmpty
-          ? <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)]
-          : s.straightRoute
-              ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
-              : _elbowRoute(ax, ay, bx, by);
+      final control = connectorRoute(s);
       final geometry = _bakeRoute(control, curved: s.curved, rounded: rounded);
       next = next.updateShapeById(
         id,
@@ -759,6 +974,9 @@ class VsdxPage {
 
   /// Orthogonal (elbow / Z) route between two page points. Falls back to a
   /// straight line when the points already share an axis.
+  ///
+  /// Prefer [_autoRoute] when a page context is available so other shapes are
+  /// treated as obstacles (draw.io-style avoidance).
   static List<Offset2D> _elbowRoute(
     double ax,
     double ay,
@@ -784,6 +1002,55 @@ class VsdxPage {
       Offset2D(bx, my),
       Offset2D(bx, by),
     ];
+  }
+
+  /// Obstacle-avoiding orthogonal route on this page. [excludeIds] are shapes
+  /// that must not block the path (typically the connector and its begin/end
+  /// targets). Falls back to [_elbowRoute] when avoidance finds nothing better.
+  List<Offset2D> _autoRoute(
+    double ax,
+    double ay,
+    double bx,
+    double by, {
+    Set<int> excludeIds = const <int>{},
+  }) {
+    final obstacles = _obstacleAabbs(excludeIds);
+    return const ObstacleRouter().route(
+      ax,
+      ay,
+      bx,
+      by,
+      obstacles: obstacles,
+    );
+  }
+
+  /// Inflated AABBs of every 2-D shape on the page that should deflect
+  /// auto-routed connectors. Skips 1-D shapes, excluded ids, tiny stubs, and
+  /// shapes on invisible layers.
+  List<RouteAabb> _obstacleAabbs(Set<int> excludeIds) {
+    final visible = layers.isEmpty ? null : visibleLayerIds;
+    final out = <RouteAabb>[];
+    void walk(List<VsdxShape> list) {
+      for (final s in list) {
+        if (s.children.isNotEmpty && !s.collapsed) {
+          walk(s.children);
+          continue;
+        }
+        if (excludeIds.contains(s.id) || s.is1D) continue;
+        if (s.width < 0.05 || s.height < 0.05) continue;
+        if (visible != null && !s.isOnAnyLayer(visible)) continue;
+        out.add(RouteAabb.fromCenter(
+          pinX: s.pinX,
+          pinY: s.pinY,
+          width: s.width,
+          height: s.height,
+          pad: ObstacleRouter.defaultClearance,
+        ));
+      }
+    }
+
+    walk(shapes);
+    return out;
   }
 
   /// Sample a smooth Catmull-Rom spline that passes through every point in
@@ -1043,6 +1310,34 @@ class VsdxPage {
     return (minX, minY, maxX, maxY);
   }
 
+  /// Translate [s] by ([dx],[dy]) in page inches. When [dontMoveChildren] is
+  /// set, children are rewritten so their on-page positions stay fixed.
+  static VsdxShape translateShape(
+    VsdxShape s,
+    double dx,
+    double dy, {
+    bool honourDontMoveChildren = true,
+  }) {
+    if (dx == 0 && dy == 0) return s;
+    if (!honourDontMoveChildren ||
+        !s.dontMoveChildren ||
+        s.children.isEmpty) {
+      final shifted = _shiftShape(s, dx, dy);
+      if (s.waypoints.isEmpty) return shifted;
+      return shifted.copyWith(
+        waypoints: <Offset2D>[
+          for (final w in s.waypoints) Offset2D(w.x + dx, w.y + dy),
+        ],
+      );
+    }
+    final movedParent = _shiftShape(s, dx, dy);
+    final kids = <VsdxShape>[
+      for (final c in s.children)
+        _demotePageToChild(_promoteChildToPage(c, s), movedParent),
+    ];
+    return movedParent.copyWith(children: kids);
+  }
+
   /// Translate a shape's pin and (for 1-D shapes) its begin/end by (dx, dy).
   static VsdxShape _shiftShape(VsdxShape s, double dx, double dy) => s.copyWith(
         pinX: s.pinX + dx,
@@ -1071,6 +1366,192 @@ class VsdxPage {
       r = r.copyWith(endX: ex, endY: ey);
     }
     return r;
+  }
+
+  /// Promote [child] from under [parent] into page-absolute coordinates.
+  static VsdxShape _promoteChildToPage(VsdxShape child, VsdxShape parent) {
+    final cosA = math.cos(parent.angleRad);
+    final sinA = math.sin(parent.angleRad);
+    final fx = parent.flipX ? -1.0 : 1.0;
+    final fy = parent.flipY ? -1.0 : 1.0;
+    (double, double) toPage(double lx, double ly) {
+      final rx = (lx - parent.width / 2) * fx;
+      final ry = (ly - parent.height / 2) * fy;
+      return (
+        parent.pinX + rx * cosA - ry * sinA,
+        parent.pinY + rx * sinA + ry * cosA,
+      );
+    }
+
+    return _childToPage(child, toPage, parent.angleRad);
+  }
+
+  /// Convert a page-absolute shape into [parent]'s local coordinate system.
+  static VsdxShape _demotePageToChild(VsdxShape pageShape, VsdxShape parent) {
+    final pin = pageToLocal(parent, Offset2D(pageShape.pinX, pageShape.pinY));
+    var r = pageShape.copyWith(
+      pinX: pin.x,
+      pinY: pin.y,
+      angleRad: pageShape.angleRad - parent.angleRad,
+    );
+    if (pageShape.beginX != null && pageShape.beginY != null) {
+      final b =
+          pageToLocal(parent, Offset2D(pageShape.beginX!, pageShape.beginY!));
+      r = r.copyWith(beginX: b.x, beginY: b.y);
+    }
+    if (pageShape.endX != null && pageShape.endY != null) {
+      final e =
+          pageToLocal(parent, Offset2D(pageShape.endX!, pageShape.endY!));
+      r = r.copyWith(endX: e.x, endY: e.y);
+    }
+    if (pageShape.waypoints.isNotEmpty) {
+      r = r.copyWith(
+        waypoints: <Offset2D>[
+          for (final w in pageShape.waypoints) pageToLocal(parent, w),
+        ],
+      );
+    }
+    return r;
+  }
+
+  /// Map a point in [shapeId]'s local coordinates to page inches, walking up
+  /// through any parent groups / containers.
+  Offset2D localToPageDeep(int shapeId, Offset2D local) {
+    var p = local;
+    var id = shapeId;
+    while (true) {
+      final s = findShapeById(id);
+      if (s == null) return p;
+      p = localToPage(s, p);
+      final parent = findParentId(id);
+      if (parent == null) return p;
+      id = parent;
+    }
+  }
+
+  /// Parent shape id of [id], or `null` when [id] is top-level / missing.
+  int? findParentId(int id) {
+    if (findShapeById(id) == null) return null;
+    int? search(List<VsdxShape> list, int? parentId) {
+      for (final s in list) {
+        if (s.id == id) return parentId;
+        final found = search(s.children, s.id);
+        // Non-null means a nested match reported its parent. A top-level match
+        // in this list returns [parentId] above (possibly null).
+        if (found != null) return found;
+        // Direct child of [s] matched with parentId == s.id — already handled
+        // by the recursive call returning s.id. If the match was top-level of
+        // [s.children], found == s.id (!= null). Nothing more to do.
+      }
+      return null;
+    }
+
+    return search(shapes, null);
+  }
+
+  /// Whether [s] can accept dropped children (draw.io-style containers /
+  /// swimlanes / groups). Empty structural stencils qualify via
+  /// [VsdxShapeKind.isStructural]; any shape that already has children does too.
+  static bool isDropContainer(VsdxShape s) =>
+      !s.is1D && (s.shapeKind.isStructural || s.children.isNotEmpty);
+
+  /// Whether page point ([x],[y]) lies inside [s]'s axis-aligned bounds.
+  static bool containsPagePoint(VsdxShape s, double x, double y) {
+    final (l, b, r, t) = _aabb(s);
+    return x >= l && x <= r && y >= b && y <= t;
+  }
+
+  /// Deepest drop-container under page point ([x],[y]), excluding [excludeIds]
+  /// and their ancestors / descendants (so a shape cannot be dropped into
+  /// itself or its own subtree). Returns `null` when nothing qualifies.
+  int? findDropContainerAt(
+    double x,
+    double y, {
+    Set<int> excludeIds = const <int>{},
+  }) {
+    final blocked = <int>{...excludeIds};
+    for (final id in excludeIds) {
+      var p = findParentId(id);
+      while (p != null) {
+        blocked.add(p);
+        p = findParentId(p);
+      }
+      final s = findShapeById(id);
+      if (s != null) _collectDescendantIds(s, blocked);
+    }
+
+    int? best;
+    var bestDepth = -1;
+    void walk(List<VsdxShape> list, int depth) {
+      for (final s in list) {
+        if (s.children.isNotEmpty) walk(s.children, depth + 1);
+        if (blocked.contains(s.id) || !isDropContainer(s)) continue;
+        if (!containsPagePoint(s, x, y)) continue;
+        if (depth >= bestDepth) {
+          best = s.id;
+          bestDepth = depth;
+        }
+      }
+    }
+
+    walk(shapes, 0);
+    return best;
+  }
+
+  static void _collectDescendantIds(VsdxShape s, Set<int> out) {
+    for (final c in s.children) {
+      out.add(c.id);
+      _collectDescendantIds(c, out);
+    }
+  }
+
+  /// Move [childId] under [newParentId] (draw.io drop-into-container).
+  ///
+  /// When [newParentId] is `null` the shape is promoted to the top level.
+  /// Coordinates are converted between page and parent-local space so the
+  /// on-page appearance is preserved. Returns `this` unchanged when the shape
+  /// is missing, when the parent is missing, or when membership would not
+  /// change.
+  VsdxPage reparentShape(int childId, int? newParentId) {
+    final child = findShapeById(childId);
+    if (child == null) return this;
+    final oldParentId = findParentId(childId);
+    if (oldParentId == newParentId) return this;
+    if (newParentId == childId) return this;
+    if (newParentId != null) {
+      final parent = findShapeById(newParentId);
+      if (parent == null || parent.is1D) return this;
+      final descendants = <int>{};
+      _collectDescendantIds(child, descendants);
+      if (descendants.contains(newParentId)) return this;
+    }
+
+    late final VsdxShape pageShape;
+    late final VsdxPage without;
+    if (oldParentId == null) {
+      pageShape = child;
+      without = removeShapeById(childId);
+    } else {
+      final oldParent = findShapeById(oldParentId)!;
+      pageShape = _promoteChildToPage(child, oldParent);
+      without = removeShapeById(childId);
+    }
+
+    if (newParentId == null) {
+      return without.addShape(pageShape);
+    }
+    final parent = without.findShapeById(newParentId);
+    if (parent == null) return without.addShape(pageShape);
+    final local = _demotePageToChild(pageShape, parent);
+    return without.updateShapeById(
+      newParentId,
+      (p) => p.copyWith(
+        children: <VsdxShape>[...p.children, local],
+        shapeKind: p.shapeKind == VsdxShapeKind.normal
+            ? VsdxShapeKind.group
+            : p.shapeKind,
+      ),
+    );
   }
 
   /// The smallest shape id greater than every id currently used on the page
