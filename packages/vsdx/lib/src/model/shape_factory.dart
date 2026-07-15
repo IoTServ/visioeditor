@@ -980,6 +980,8 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       is1D: true,
+      // Visio connector object type — required for glue / routing in other apps.
+      objType: 2,
       beginX: ax,
       beginY: ay,
       endX: bx,

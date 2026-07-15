@@ -208,6 +208,60 @@ void main() {
     expect(reopened.pages.first.findShapeById(id), isNotNull);
   });
 
+  test('new shapes always emit LocPin (Edraw/libvisio default is 0,0)', () {
+    // Untitled333.vsdx regression: omitting LocPin made Edraw/libvisio treat
+    // the pin as the shape's bottom-left, shifting every centred shape by
+    // half its width/height versus this editor (and Visio's Width*0.5 default).
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final edited = doc.replacePage(
+      0,
+      doc.pages.first.addShape(VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 4.25,
+        pinY: 9.75,
+        width: 1.5,
+        height: 1.0,
+      )),
+    );
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('N="LocPinX"'));
+    expect(pageXml, contains('N="LocPinY"'));
+    expect(pageXml, contains('Width*0.5'));
+    expect(pageXml, contains('Height*0.5'));
+
+    final reopened = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(reopened.effectiveLocPinX, closeTo(0.75, 1e-6));
+    expect(reopened.effectiveLocPinY, closeTo(0.5, 1e-6));
+  });
+
+  test('new connectors emit ObjType=2', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final edited = doc.replacePage(
+      0,
+      doc.pages.first.addShape(VsdxShapeFactory.line(
+        id: id,
+        ax: 1,
+        ay: 1,
+        bx: 3,
+        by: 2,
+      )),
+    );
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('N="ObjType"'));
+    expect(pageXml, contains('V="2"'));
+    expect(parser.parse(out).pages.first.findShapeById(id)!.objType, 2);
+  });
+
   test('rotates a shape across a round-trip', () {
     final bytes = _fixture('test9_rect_and_line.vsdx');
     final doc = parser.parse(bytes);

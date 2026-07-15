@@ -3166,19 +3166,22 @@ class VsdxWriter {
       _cell('Width', _fmt(s.width), formula: s.formulas['Width']),
       _cell('Height', _fmt(s.height), formula: s.formulas['Height']),
     ];
-    // LocPin — only when it isn't the shape centre (the Visio default the
-    // parser assumes when the cells are absent). Off-centre pins arise on
-    // regrouped stencil shapes and must survive the rebuild.
-    if ((s.effectiveLocPinX - s.width / 2).abs() > _epsilon ||
-        s.formulas.containsKey('LocPinX')) {
-      children.add(_cell('LocPinX', _fmt(s.effectiveLocPinX),
-          formula: s.formulas['LocPinX']));
-    }
-    if ((s.effectiveLocPinY - s.height / 2).abs() > _epsilon ||
-        s.formulas.containsKey('LocPinY')) {
-      children.add(_cell('LocPinY', _fmt(s.effectiveLocPinY),
-          formula: s.formulas['LocPinY']));
-    }
+    // Always emit LocPin. Visio's *formula* default is Width/2, Height/2, but
+    // when the cells are absent Edraw / libvisio fall back to (0,0) (= pin at
+    // the shape's bottom-left), shifting every centred shape by half its size.
+    // Writing the cells (with Width*0.5 / Height*0.5 when centred) keeps
+    // exports aligned with how this editor and Visio place the pin.
+    final locPinXF = s.formulas['LocPinX'] ??
+        ((s.effectiveLocPinX - s.width / 2).abs() <= _epsilon
+            ? 'Width*0.5'
+            : null);
+    final locPinYF = s.formulas['LocPinY'] ??
+        ((s.effectiveLocPinY - s.height / 2).abs() <= _epsilon
+            ? 'Height*0.5'
+            : null);
+    children
+      ..add(_cell('LocPinX', _fmt(s.effectiveLocPinX), formula: locPinXF))
+      ..add(_cell('LocPinY', _fmt(s.effectiveLocPinY), formula: locPinYF));
     children.add(_cell('Angle', _fmt(s.angleRad), formula: s.formulas['Angle']));
     if (s.flipX) children.add(_cell('FlipX', '1'));
     if (s.flipY) children.add(_cell('FlipY', '1'));
@@ -3362,8 +3365,12 @@ class VsdxWriter {
         ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
     }
     _appendTextBlockCells(children, s.richText.textBlock, s.formulas);
-    if (s.objType != null) {
-      children.add(_cell('ObjType', s.objType.toString()));
+    // Visio / Edraw treat ObjType=2 as a connector (glue, routing, line ends).
+    // Brand-new 1-D shapes from our factory leave objType null — emit the
+    // connector value so other apps recognise the edge.
+    final objType = s.objType ?? (s.is1D ? 2 : null);
+    if (objType != null) {
+      children.add(_cell('ObjType', objType.toString()));
     }
     if (s.resizeMode != null) {
       children.add(_cell('ResizeMode', s.resizeMode.toString()));
