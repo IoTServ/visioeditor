@@ -879,13 +879,23 @@ class VsdxWriter {
 
   /// Minimal `<StyleSheets>` + `<FaceNames>` fragment used by [emptyDocument]
   /// and by [_ensureDocumentStyles] when patching legacy blanks.
+  /// Default CJK face Edraw / Visio ship with — required so Chinese labels
+  /// don't render as tofu (□□) in 万兴图示.
+  static const String _defaultAsianFont = 'Microsoft YaHei';
+
   static const String _minimalStylesXml =
       '<FaceNames>'
       '<FaceName NameU="Arial" UnicodeRanges="-459292017 -1073730379 9 0" CharSets="1610612799 0" Panose="2 11 6 4 2 2 2 2 2 4" Flags="325"/>'
       '<FaceName NameU="Calibri" UnicodeRanges="-469750017 -1073732485 9 0" CharSets="536871423 0" Panose="2 15 5 2 2 2 4 3 2 4" Flags="325"/>'
+      '<FaceName NameU="Microsoft YaHei" UnicodeRanges="-2147483648 0 0 0" CharSets="262145 0" Panose="2 11 5 3 2 2 2 2 2 4" Flags="325"/>'
+      '<FaceName NameU="PingFang SC" UnicodeRanges="-2147483648 0 0 0" CharSets="262145 0" Panose="2 11 5 3 2 2 2 2 2 4" Flags="325"/>'
+      '<FaceName NameU="Songti SC" UnicodeRanges="-2147483648 0 0 0" CharSets="262145 0" Panose="2 1 6 0 4 1 1 1 1 1" Flags="325"/>'
       '</FaceNames>'
       '<StyleSheets>'
       '<StyleSheet ID="0" NameU="No Style" Name="No Style">'
+      '<Cell N="EnableLineProps" V="1"/>'
+      '<Cell N="EnableFillProps" V="1"/>'
+      '<Cell N="EnableTextProps" V="1"/>'
       '<Cell N="LineWeight" V="0.01"/>'
       '<Cell N="LineColor" V="#000000"/>'
       '<Cell N="LinePattern" V="1"/>'
@@ -904,9 +914,12 @@ class VsdxWriter {
       '<Cell N="BottomMargin" V="0.05555555555555555"/>'
       '<Section N="Character">'
       '<Row IX="0">'
+      '<Cell N="Font" V="Arial"/>'
       '<Cell N="Color" V="#000000"/>'
       '<Cell N="Style" V="0"/>'
       '<Cell N="Size" V="0.1666666666666667"/>'
+      '<Cell N="AsianFont" V="Microsoft YaHei"/>'
+      '<Cell N="LangID" V="zh-CN"/>'
       '</Row>'
       '</Section>'
       '<Section N="Paragraph">'
@@ -1435,9 +1448,14 @@ class VsdxWriter {
     // Older exports wrote bare <Text> without Character — Edraw then uses a
     // wrong default size. Ensure style sections exist whenever there is text.
     changed |= _ensureTextStyleSections(el, edited);
+    // Older exports also omitted Txt* / VerticalAlign; Visio defaults to a
+    // full-shape centred box, but Edraw treats missing TxtPin as top-left.
+    changed |= _ensureCentredTextBox(el, edited);
     // Geometry (regenerate when it changed and every command is representable,
     // e.g. after resize scaling or connector re-routing).
     changed |= _patchGeometry(el, base, edited);
+    // Edraw defaults absent NoFill → 1 (hollow); inject explicit 0/1.
+    changed |= _ensureGeometryNoFillNoLine(el, edited);
     // Text formatting (Character size/color/style + Paragraph alignment).
     changed |= _patchRichText(el, base, edited);
     // Tabs section (libvisio PositionN / AlignmentN).
@@ -2731,12 +2749,30 @@ class VsdxWriter {
     if (t == null || t.isEmpty) return const <VsdxTextRun>[];
     final box = math.min(s.width.abs(), s.height.abs());
     final sizeInches = (s.is1D ? 0.14 : box * 0.18).clamp(4.0 / 72.0, 1.0);
+    final cjk = _containsCjk(t);
     return <VsdxTextRun>[
       VsdxTextRun(
         text: t,
-        charStyle: VsdxCharStyle(fontSizeInches: sizeInches),
+        charStyle: VsdxCharStyle(
+          fontSizeInches: sizeInches,
+          fontFamily: cjk ? _defaultAsianFont : 'Arial',
+          asianFont: _defaultAsianFont,
+          langId: cjk ? 'zh-CN' : null,
+        ),
+        // Match the canvas (centred labels) and Edraw flowchart defaults.
+        paraStyle:
+            const VsdxParaStyle(horizontalAlign: VsdxHorzAlign.center),
       ),
     ];
+  }
+
+  static bool _containsCjk(String s) {
+    for (final r in s.runes) {
+      if (r >= 0x4E00 && r <= 0x9FFF) return true;
+      if (r >= 0x3400 && r <= 0x4DBF) return true;
+      if (r >= 0xF900 && r <= 0xFAFF) return true;
+    }
+    return false;
   }
 
   /// Emit one rich-text run: tabs → `<tp/>`, field spans → `<fld IX>`.
@@ -3078,29 +3114,57 @@ class VsdxWriter {
 
   /// Emit text-block cells for a brand-new shape (non-default values only).
   /// [formulas] carries Txt* `F=` (`SETATREF`, `TEXTWIDTH`, `Width*…`).
+  /// When [hasLabel] and [shapeForDefaults] are set, synthesise a centred
+  /// text box (TxtPin*/TxtWidth/TxtHeight + VerticalAlign) for EdrawMax.
   void _appendTextBlockCells(
     List<XmlNode> children,
-    VsdxTextBlock b, [
+    VsdxTextBlock b, {
     Map<String, String> formulas = const <String, String>{},
-  ]) {
-    void addLen(String name, double? v) {
-      final f = formulas[name];
-      if (v == null && f == null) return;
-      children.add(_cell(name, _fmt(v ?? 0), formula: f));
+    VsdxShape? shapeForDefaults,
+    bool hasLabel = false,
+  }) {
+    void addLen(String name, double? v, {String? defaultFormula, double? fallback}) {
+      final f = formulas[name] ?? defaultFormula;
+      final value = v ?? fallback;
+      if (value == null && f == null) return;
+      children.add(_cell(name, _fmt(value ?? 0), formula: f));
     }
 
-    addLen('TxtPinX', b.pinXInches);
-    addLen('TxtPinY', b.pinYInches);
-    addLen('TxtLocPinX', b.locPinXInches);
-    addLen('TxtLocPinY', b.locPinYInches);
-    addLen('TxtWidth', b.widthInches);
-    addLen('TxtHeight', b.heightInches);
+    // Edraw needs an explicit text box + VerticalAlign for centred labels;
+    // without Txt* cells Chinese/Latin text often sits at the top-left.
+    final fillBox = hasLabel &&
+        shapeForDefaults != null &&
+        !shapeForDefaults.is1D &&
+        b.pinXInches == null &&
+        !formulas.containsKey('TxtPinX');
+    final w = shapeForDefaults?.width ?? 0;
+    final h = shapeForDefaults?.height ?? 0;
+
+    addLen('TxtPinX', b.pinXInches,
+        defaultFormula: fillBox ? 'Width*0.5' : null,
+        fallback: fillBox ? w / 2 : null);
+    addLen('TxtPinY', b.pinYInches,
+        defaultFormula: fillBox ? 'Height*0.5' : null,
+        fallback: fillBox ? h / 2 : null);
+    addLen('TxtWidth', b.widthInches,
+        defaultFormula: fillBox ? 'Width*1' : null,
+        fallback: fillBox ? w : null);
+    addLen('TxtHeight', b.heightInches,
+        defaultFormula: fillBox ? 'Height*1' : null,
+        fallback: fillBox ? h : null);
+    addLen('TxtLocPinX', b.locPinXInches,
+        defaultFormula: fillBox ? 'TxtWidth*0.5' : null,
+        fallback: fillBox ? w / 2 : null);
+    addLen('TxtLocPinY', b.locPinYInches,
+        defaultFormula: fillBox ? 'TxtHeight*0.5' : null,
+        fallback: fillBox ? h / 2 : null);
     if (b.angleRad.abs() > _epsilon || formulas.containsKey('TxtAngle')) {
       children.add(
           _cell('TxtAngle', _fmt(b.angleRad), formula: formulas['TxtAngle']));
     }
-    if (b.verticalAlign != VsdxVertAlign.middle) {
-      children.add(_cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
+    if (hasLabel || b.verticalAlign != VsdxVertAlign.middle) {
+      children.add(
+          _cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
     }
     if (b.hideText) children.add(_cell('HideText', '1'));
     if (b.backgroundColor != null) {
@@ -3113,17 +3177,26 @@ class VsdxWriter {
       children.add(_cell('DefaultTabStop', _fmt(b.defaultTabStopInches)));
     }
     const d = VsdxTextBlock.defaults;
+    final margin = hasLabel ? 0.05555555555555555 : null;
     if ((b.marginLeftInches - d.marginLeftInches).abs() > _epsilon) {
       children.add(_cell('LeftMargin', _fmt(b.marginLeftInches)));
+    } else if (margin != null) {
+      children.add(_cell('LeftMargin', _fmt(margin)));
     }
     if ((b.marginRightInches - d.marginRightInches).abs() > _epsilon) {
       children.add(_cell('RightMargin', _fmt(b.marginRightInches)));
+    } else if (margin != null) {
+      children.add(_cell('RightMargin', _fmt(margin)));
     }
     if ((b.marginTopInches - d.marginTopInches).abs() > _epsilon) {
       children.add(_cell('TopMargin', _fmt(b.marginTopInches)));
+    } else if (margin != null) {
+      children.add(_cell('TopMargin', _fmt(margin)));
     }
     if ((b.marginBottomInches - d.marginBottomInches).abs() > _epsilon) {
       children.add(_cell('BottomMargin', _fmt(b.marginBottomInches)));
+    } else if (margin != null) {
+      children.add(_cell('BottomMargin', _fmt(margin)));
     }
   }
 
@@ -3291,6 +3364,57 @@ class VsdxWriter {
     return changed;
   }
 
+  /// Write Geometry NoFill/NoLine when absent. Edraw treats missing NoFill as
+  /// 1 (no fill), so filled shapes export hollow unless we emit V="0".
+  bool _ensureGeometryNoFillNoLine(XmlElement el, VsdxShape s) {
+    final sections = <XmlElement>[
+      for (final child in el.childElements)
+        if (child.name.local == 'Section' &&
+            child.getAttribute('N') == 'Geometry')
+          child,
+    ];
+    if (sections.isEmpty) return false;
+    var changed = false;
+    for (var i = 0; i < sections.length; i++) {
+      final section = sections[i];
+      final g = i < s.geometries.length ? s.geometries[i] : null;
+      final wantFill = g?.noFill ?? false;
+      final wantLine = g?.noLine ?? false;
+      if (!_hasCell(section, 'NoFill')) {
+        // Insert before first Row so flags stay section-level.
+        var insertAt = 0;
+        for (var j = 0; j < section.children.length; j++) {
+          final n = section.children[j];
+          if (n is XmlElement && n.name.local == 'Row') {
+            insertAt = j;
+            break;
+          }
+        }
+        section.children.insert(
+          insertAt,
+          _cell('NoFill', wantFill ? '1' : '0'),
+        );
+        changed = true;
+      }
+      if (!_hasCell(section, 'NoLine')) {
+        var insertAt = 0;
+        for (var j = 0; j < section.children.length; j++) {
+          final n = section.children[j];
+          if (n is XmlElement && n.name.local == 'Row') {
+            insertAt = j;
+            break;
+          }
+        }
+        section.children.insert(
+          insertAt,
+          _cell('NoLine', wantLine ? '1' : '0'),
+        );
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   /// Write LocPinX/Y when absent so Edraw/libvisio don't default to (0,0).
   bool _ensureLocPinPresent(XmlElement el, VsdxShape s) {
     var changed = false;
@@ -3311,6 +3435,83 @@ class VsdxWriter {
       changed = true;
     }
     return changed;
+  }
+
+  /// Inject Visio-default text box (full width/height, centred) when a labelled
+  /// 2-D shape has no TxtPinX — required for EdrawMax to centre the label.
+  bool _ensureCentredTextBox(XmlElement el, VsdxShape s) {
+    if (el.getAttribute('Master') != null ||
+        el.getAttribute('MasterShape') != null) {
+      return false;
+    }
+    if (s.is1D || _effectiveTextRuns(s).isEmpty) return false;
+    if (_hasCell(el, 'TxtPinX')) return false;
+
+    final w = s.width.abs();
+    final h = s.height.abs();
+    void put(String name, double v, String f) {
+      final cell = _ensureCell(el, name);
+      cell.setAttribute('V', _fmt(v));
+      cell.setAttribute('F', f);
+    }
+
+    put('TxtPinX', w / 2, 'Width*0.5');
+    put('TxtPinY', h / 2, 'Height*0.5');
+    put('TxtWidth', w, 'Width*1');
+    put('TxtHeight', h, 'Height*1');
+    put('TxtLocPinX', w / 2, 'TxtWidth*0.5');
+    put('TxtLocPinY', h / 2, 'TxtHeight*0.5');
+    if (!_hasCell(el, 'VerticalAlign')) {
+      _writeValue(_ensureCell(el, 'VerticalAlign'), '1');
+    }
+    // Small margins match Edraw flowchart defaults (~4pt).
+    const m = 0.05555555555555555;
+    for (final name in const [
+      'LeftMargin',
+      'RightMargin',
+      'TopMargin',
+      'BottomMargin',
+    ]) {
+      if (!_hasCell(el, name)) {
+        _writeValue(_ensureCell(el, name), _fmt(m));
+      }
+    }
+    // Our canvas centres plain labels; older exports wrote HorzAlign=0.
+    // Align Paragraph when we synthesise the Edraw text box.
+    _ensureParagraphHorzAlignCenter(el);
+    return true;
+  }
+
+  /// Set Paragraph/HorzAlign=1 when missing or left (0).
+  bool _ensureParagraphHorzAlignCenter(XmlElement el) {
+    XmlElement? para;
+    for (final child in el.childElements) {
+      if (child.name.local == 'Section' &&
+          child.getAttribute('N') == 'Paragraph') {
+        para = child;
+        break;
+      }
+    }
+    if (para == null) return false;
+    XmlElement? row;
+    for (final r in para.childElements) {
+      if (r.name.local == 'Row') {
+        row = r;
+        break;
+      }
+    }
+    if (row == null) {
+      row = XmlElement(
+        XmlName('Row'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), '0')],
+      );
+      para.children.add(row);
+    }
+    final cell = _ensureCell(row, 'HorzAlign');
+    final cur = cell.getAttribute('V');
+    if (cur == '1') return false;
+    cell.setAttribute('V', '1');
+    return true;
   }
 
   bool _ensureTextStyleSections(XmlElement el, VsdxShape s) {
@@ -3580,7 +3781,16 @@ class VsdxWriter {
             _gradientDirFromType(s.line.gradient!.type).toString()))
         ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
     }
-    _appendTextBlockCells(children, s.richText.textBlock, s.formulas);
+    // Character / Paragraph — one row per rich-text run (matches <cp>/<pp>).
+    // Computed early so text-block defaults know whether a label is present.
+    final textRuns = _effectiveTextRuns(s);
+    _appendTextBlockCells(
+      children,
+      s.richText.textBlock,
+      formulas: s.formulas,
+      shapeForDefaults: s,
+      hasLabel: textRuns.isNotEmpty,
+    );
     // Visio / Edraw treat ObjType=2 as a connector (glue, routing, line ends).
     // Brand-new 1-D shapes from our factory leave objType null — emit the
     // connector value so other apps recognise the edge.
@@ -3633,10 +3843,8 @@ class VsdxWriter {
       }
     }
     // --- Sections ------------------------------------------------------------
-    // Character / Paragraph — one row per rich-text run (matches <cp>/<pp>).
     // Plain `.text` without runs is synthesised so Edraw gets an explicit Size
     // matching this editor's proportional label (not a missing-style default).
-    final textRuns = _effectiveTextRuns(s);
     if (textRuns.isNotEmpty) {
       children
         ..add(_buildCharacterSection(textRuns))
@@ -3746,7 +3954,7 @@ class VsdxWriter {
         XmlElement(
           XmlName('Row'),
           <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-          _charCells(runs[i].charStyle),
+          _charCells(runs[i].charStyle, text: runs[i].text),
         ),
     ];
     return XmlElement(
@@ -3756,7 +3964,8 @@ class VsdxWriter {
     );
   }
 
-  List<XmlNode> _charCells(VsdxCharStyle c) {
+  List<XmlNode> _charCells(VsdxCharStyle c, {String text = ''}) {
+    final cjk = _containsCjk(text);
     final cells = <XmlNode>[
       _cell('Size', _fmt(c.fontSizeInches)),
       _cell('Style', _charStyleBits(c).toString()),
@@ -3765,9 +3974,28 @@ class VsdxWriter {
       cells.add(_cell('Color', _hex(c.color!)));
     } else if (c.themeColorIndex != null) {
       cells.add(_cell('Color', '0', formula: 'THEMEVAL()'));
+    } else {
+      cells.add(_cell('Color', '#000000'));
     }
+    // AsianFont (+ ComplexScriptFont) required for CJK in 万兴图示; Font
+    // only when set or CJK. Match Edraw's 人才招聘 Character row shape.
+    final asian = (c.asianFont != null && c.asianFont!.isNotEmpty)
+        ? c.asianFont!
+        : _defaultAsianFont;
     if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
       cells.add(_cell('Font', c.fontFamily!));
+    } else if (cjk) {
+      cells.add(_cell('Font', _defaultAsianFont));
+    }
+    cells.add(_cell('AsianFont', asian));
+    if (cjk ||
+        (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty)) {
+      cells.add(_cell(
+        'ComplexScriptFont',
+        (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty)
+            ? c.complexScriptFont!
+            : asian,
+      ));
     }
     if (c.strikethrough) cells.add(_cell('Strikethru', '1'));
     if (c.doubleUnderline) cells.add(_cell('DblUnderline', '1'));
@@ -3788,14 +4016,9 @@ class VsdxWriter {
     if (c.transparency > _epsilon) {
       cells.add(_cell('ColorTrans', _fmt(c.transparency)));
     }
-    if (c.asianFont != null && c.asianFont!.isNotEmpty) {
-      cells.add(_cell('AsianFont', c.asianFont!));
-    }
-    if (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty) {
-      cells.add(_cell('ComplexScriptFont', c.complexScriptFont!));
-    }
-    if (c.langId != null && c.langId!.isNotEmpty) {
-      cells.add(_cell('LangID', c.langId!));
+    final lang = c.langId ?? (cjk ? 'zh-CN' : null);
+    if (lang != null && lang.isNotEmpty) {
+      cells.add(_cell('LangID', lang));
     }
     if (c.complexScriptSizeInches != null) {
       cells.add(_cell('ComplexScriptSize', _fmt(c.complexScriptSizeInches!)));
@@ -4287,8 +4510,10 @@ class VsdxWriter {
 
   XmlElement? _buildGeometrySection(VsdxGeometry g, int ix) {
     final rows = <XmlNode>[];
-    if (g.noFill) rows.add(_cell('NoFill', '1'));
-    if (g.noLine) rows.add(_cell('NoLine', '1'));
+    // Always emit NoFill/NoLine. Visio defaults missing NoFill to 0 (filled),
+    // but 万兴图示 treats a missing cell as NoFill=1 → hollow shapes.
+    rows.add(_cell('NoFill', g.noFill ? '1' : '0'));
+    rows.add(_cell('NoLine', g.noLine ? '1' : '0'));
     // NoShow must survive a geometry rebuild — otherwise a hidden guide
     // geometry (common in stencils) becomes visible after editing the shape.
     if (g.noShow) rows.add(_cell('NoShow', '1'));

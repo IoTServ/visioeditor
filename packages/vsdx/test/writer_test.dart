@@ -287,6 +287,28 @@ void main() {
     expect(docXml, contains('<FaceNames>'));
   });
 
+  test('filled shapes emit NoFill=0 so Edraw does not hollow them', () {
+    // 万兴图示 defaults a missing Geometry/NoFill cell to 1 (no fill).
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id, pinX: 4, pinY: 5, width: 1.5, height: 1.0,
+    ).copyWith(
+      fill: const VsdxFill(foreground: VsdxColor(0xFF42A5F5), pattern: 1),
+    );
+    final out = writer.write(
+      originalBytes: blank,
+      edited: doc.replacePage(0, doc.pages.first.addShape(shape)),
+    );
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('N="NoFill" V="0"'));
+    expect(pageXml, contains('N="NoLine" V="0"'));
+    expect(pageXml, contains('N="FillForegnd" V="#42A5F5"'));
+  });
+
   test('plain .text emits Character/Paragraph + pp/cp for Edraw', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);
@@ -310,12 +332,90 @@ void main() {
     expect(pageXml, contains('<pp'));
     expect(pageXml, contains('<cp'));
     expect(pageXml, contains('N="LineCap"'));
+    expect(pageXml, contains('N="VerticalAlign"'));
+    expect(pageXml, contains('N="TxtPinX"'));
+    expect(pageXml, contains('AsianFont'));
+    expect(pageXml, contains('HorzAlign'));
     // Proportional size for 0.5" tall box: 0.5*0.18 = 0.09".
     expect(pageXml, contains('N="Size"'));
     final reopened = parser.parse(out).pages.first.findShapeById(id)!;
     expect(reopened.richText.runs, isNotEmpty);
     expect(reopened.richText.runs.first.charStyle.fontSizeInches,
         closeTo(0.09, 1e-4));
+    expect(reopened.richText.runs.first.paraStyle.horizontalAlign,
+        VsdxHorzAlign.center);
+  });
+
+  test('Chinese labels emit Microsoft YaHei AsianFont for Edraw', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id, pinX: 4, pinY: 5, width: 1.6, height: 0.9,
+    ).copyWith(text: '开始');
+    final out = writer.write(
+      originalBytes: blank,
+      edited: doc.replacePage(0, doc.pages.first.addShape(shape)),
+    );
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('Microsoft YaHei'));
+    expect(pageXml, contains('zh-CN'));
+    expect(pageXml, contains('开始'));
+    final docXml = VsdxPackage.open(out)
+        .readPartXml('/visio/document.xml')!
+        .toXmlString();
+    expect(docXml, contains('Microsoft YaHei'));
+  });
+
+  test('re-saving labelled shape without TxtPin injects centred text box', () {
+    // Brand-new write, then strip Txt* / VerticalAlign to mimic Untitled333.
+    final blank = writer.emptyDocument();
+    final doc0 = parser.parse(blank);
+    final id = doc0.pages.first.nextFreeShapeId();
+    final withText = doc0.replacePage(
+      0,
+      doc0.pages.first.addShape(VsdxShapeFactory.rectangle(
+        id: id, pinX: 4, pinY: 5, width: 1.2, height: 0.5,
+      ).copyWith(text: 'Text')),
+    );
+    final mid = writer.write(originalBytes: blank, edited: withText);
+    final pkg = VsdxPackage.open(mid);
+    final pageXml = pkg.readPartXml('/visio/pages/page1.xml')!;
+    for (final shape in pageXml.rootElement.descendants
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'Shape')) {
+      for (final cell in shape.childElements.toList()) {
+        if (cell.name.local != 'Cell') continue;
+        final n = cell.getAttribute('N') ?? '';
+        if (n.startsWith('Txt') ||
+            n == 'VerticalAlign' ||
+            n.endsWith('Margin')) {
+          cell.remove();
+        }
+        // Simulate older exports that wrote left-aligned labels.
+        if (n == 'HorzAlign') {
+          cell.setAttribute('V', '0');
+        }
+      }
+    }
+    final stripped = _rezipWith(
+      mid,
+      'visio/pages/page1.xml',
+      utf8.encode(pageXml.toXmlString()),
+    );
+    final reopened = parser.parse(stripped);
+    final out = writer.write(originalBytes: stripped, edited: reopened);
+    final outPage = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(outPage, contains('N="TxtPinX"'));
+    expect(outPage, contains('N="TxtWidth"'));
+    expect(outPage, contains('N="VerticalAlign"'));
+    expect(outPage, contains('F="Width*0.5"'));
+    // Injecting the centred text box also upgrades left HorzAlign → center.
+    expect(outPage, contains('N="HorzAlign" V="1"'));
   });
 
   test('re-saving a legacy blank export injects LocPin + StyleSheets', () {

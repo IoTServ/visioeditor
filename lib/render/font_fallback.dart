@@ -55,6 +55,19 @@ class VsdxFontFallback {
       'Arial Black': 'Arial Black',
       'Helvetica': 'Helvetica',
       'Symbol': 'Symbol',
+      // CJK — keep the Visio/Edraw name first; platform CJK fallbacks cover
+      // machines without Microsoft YaHei (typical macOS / Linux).
+      'Microsoft YaHei': 'Microsoft YaHei',
+      '微软雅黑': 'Microsoft YaHei',
+      'Microsoft YaHei UI': 'Microsoft YaHei UI',
+      'SimSun': 'SimSun',
+      '宋体': 'SimSun',
+      'SimHei': 'SimHei',
+      '黑体': 'SimHei',
+      'PingFang SC': 'PingFang SC',
+      'PingFang TC': 'PingFang TC',
+      'Songti SC': 'Songti SC',
+      'Hiragino Sans GB': 'Hiragino Sans GB',
       // Visio-specific symbol fonts (we don't render glyphs, but keeping
       // the family name avoids forcing a wrong substitution).
       'Wingdings': 'Wingdings',
@@ -63,49 +76,72 @@ class VsdxFontFallback {
       'Webdings': 'Webdings',
     },
     platformFallbacks: {
-      // Apple platforms ship SF Pro + a wide PostScript classics set.
+      // Apple: SF Pro first for Latin; CJK faces after so YaHei substitutes
+      // cleanly when Office fonts aren't installed.
       'mac': <String>[
         'SF Pro Text',
         'SF Pro',
         'Helvetica Neue',
         'Helvetica',
         'Arial',
+        'PingFang SC',
+        'Hiragino Sans GB',
+        'Heiti SC',
+        'Songti SC',
+        'Arial Unicode MS',
         'Lucida Grande',
       ],
       'ios': <String>[
         'SF Pro Text',
         'SF Pro',
         'Helvetica Neue',
+        'PingFang SC',
+        'Hiragino Sans GB',
+        'Heiti SC',
         'Helvetica',
         'Arial',
       ],
-      // Android ships Roboto + Noto.
+      // Android ships Roboto + Noto CJK.
       'android': <String>[
         'Roboto',
+        'Noto Sans CJK SC',
+        'Noto Sans SC',
         'Noto Sans',
+        'Droid Sans Fallback',
         'Droid Sans',
         'Arial',
         'Helvetica',
       ],
-      // Most Linux distros ship DejaVu + Liberation; both have decent
-      // Calibri-ish metrics for sans-serif fallbacks.
+      // Most Linux distros ship DejaVu + Liberation; Noto CJK when present.
       'linux': <String>[
         'Liberation Sans',
         'DejaVu Sans',
+        'Noto Sans CJK SC',
+        'Noto Sans SC',
         'Noto Sans',
+        'WenQuanYi Micro Hei',
         'Arial',
       ],
       // On Windows the original family almost always exists, so we add
       // fonts that exist as lower-bound fallbacks.
-      'windows': <String>['Segoe UI', 'Tahoma', 'Arial'],
+      'windows': <String>[
+        'Microsoft YaHei UI',
+        'Microsoft YaHei',
+        'Segoe UI',
+        'Tahoma',
+        'Arial',
+      ],
       // Web fallback hits the OS-default sans-serif eventually.
       'web': <String>[
         'Helvetica Neue',
         'Helvetica',
+        'PingFang SC',
+        'Microsoft YaHei',
+        'Noto Sans SC',
         'Arial',
         'sans-serif',
       ],
-      'fuchsia': <String>['Roboto', 'Noto Sans', 'Arial'],
+      'fuchsia': <String>['Roboto', 'Noto Sans CJK SC', 'Noto Sans', 'Arial'],
     },
   );
 
@@ -115,23 +151,37 @@ class VsdxFontFallback {
   /// Unknown family ⇒ pass-through with the platform fallback chain
   /// appended, so a custom font still wins where installed but degrades
   /// gracefully elsewhere.
-  ResolvedFont resolve(String? rawFamily, {String? platformOverride}) {
+  ///
+  /// When [asianFont] is set (Visio `AsianFont` cell), it is tried right
+  /// after the Latin [rawFamily] so CJK glyphs resolve on Edraw exports.
+  ResolvedFont resolve(
+    String? rawFamily, {
+    String? asianFont,
+    String? platformOverride,
+  }) {
     final platform = platformOverride ?? _currentPlatform();
     final fallbacks = platformFallbacks[platform] ?? const <String>[];
-    if (rawFamily == null || rawFamily.trim().isEmpty) {
-      return ResolvedFont(
-        family: null,
-        familyFallback: List<String>.unmodifiable(fallbacks),
-      );
+    final primary = (rawFamily == null || rawFamily.trim().isEmpty)
+        ? null
+        : (familyMap[rawFamily] ?? rawFamily);
+    final asian = (asianFont == null || asianFont.trim().isEmpty)
+        ? null
+        : (familyMap[asianFont] ?? asianFont);
+
+    final chain = <String>[];
+    void add(String? name) {
+      if (name == null || name.isEmpty) return;
+      if (primary != null && name == primary) return;
+      if (chain.contains(name)) return;
+      chain.add(name);
     }
-    final family = familyMap[rawFamily] ?? rawFamily;
-    // De-dupe — `family` itself shouldn't appear in the fallback chain.
-    final chain = <String>[
-      for (final f in fallbacks)
-        if (f != family) f,
-    ];
+
+    add(asian);
+    for (final f in fallbacks) {
+      add(f);
+    }
     return ResolvedFont(
-      family: family,
+      family: primary ?? asian,
       familyFallback: List<String>.unmodifiable(chain),
     );
   }

@@ -1754,6 +1754,15 @@ class EditorController extends ChangeNotifier {
     applyEdit(doc.replacePage(_currentPageIndex, next));
   }
 
+  static bool _containsCjk(String s) {
+    for (final r in s.runes) {
+      if (r >= 0x4E00 && r <= 0x9FFF) return true;
+      if (r >= 0x3400 && r <= 0x4DBF) return true;
+      if (r >= 0xF900 && r <= 0xFAFF) return true;
+    }
+    return false;
+  }
+
   /// Replace a shape's label text. Keeps any (uniform) run styling in sync so
   /// the canvas — which renders [VsdxRichText] in preference to [VsdxShape.text]
   /// — reflects the edit immediately, while the writer persists the new content
@@ -1770,13 +1779,22 @@ class EditorController extends ChangeNotifier {
             final box = math.min(s.width.abs(), s.height.abs());
             final sizeInches =
                 (s.is1D ? 0.14 : box * 0.18).clamp(4.0 / 72.0, 1.0);
+            final cjk = _containsCjk(text);
             return s.copyWith(
               text: text,
               richText: s.richText.copyWith(
                 runs: <VsdxTextRun>[
                   VsdxTextRun(
                     text: text,
-                    charStyle: VsdxCharStyle(fontSizeInches: sizeInches),
+                    charStyle: VsdxCharStyle(
+                      fontSizeInches: sizeInches,
+                      fontFamily: cjk ? 'Microsoft YaHei' : null,
+                      asianFont: 'Microsoft YaHei',
+                      langId: cjk ? 'zh-CN' : null,
+                    ),
+                    paraStyle: const VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
                   ),
                 ],
               ),

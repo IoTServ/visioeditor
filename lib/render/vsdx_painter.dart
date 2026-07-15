@@ -1128,7 +1128,10 @@ class VsdxPainter extends CustomPainter {
         const ui.FontFeature.enable('subs'),
       if (run.charStyle.style.smallCaps) const ui.FontFeature.enable('smcp'),
     ];
-    final font = fontFallback.resolve(run.charStyle.fontFamily);
+    final font = fontFallback.resolve(
+      run.charStyle.fontFamily,
+      asianFont: run.charStyle.asianFont,
+    );
     final rawText = switch (run.charStyle.textCase) {
       VsdxTextCase.allCaps => run.text.toUpperCase(),
       VsdxTextCase.initialCaps => _initialCaps(run.text),
