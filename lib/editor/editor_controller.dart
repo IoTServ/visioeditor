@@ -773,6 +773,7 @@ class EditorController extends ChangeNotifier {
     bool transient = false,
   }) {
     if (_selection.isEmpty || (dxInches == 0 && dyInches == 0)) return;
+    final movedIds = _subtreeIds(_selection);
     updateCurrentPage(
       (page) {
         var next = page;
@@ -786,7 +787,9 @@ class EditorController extends ChangeNotifier {
           );
           moved = true;
         }
-        return moved ? next.rerouteConnectors() : page;
+        return moved
+            ? next.rerouteConnectors(movedShapeIds: movedIds)
+            : page;
       },
       transient: transient,
     );
@@ -796,6 +799,10 @@ class EditorController extends ChangeNotifier {
   /// when [containerId] is `null`). Used by canvas drop-into-container.
   void reparentSelectionInto(int? containerId) {
     if (_selection.isEmpty) return;
+    final movedIds = <int>{
+      ..._subtreeIds(_selection),
+      if (containerId != null) ..._subtreeIds(<int>{containerId}),
+    };
     updateCurrentPage((page) {
       var next = page;
       for (final id in List<int>.of(_selection)) {
@@ -803,7 +810,7 @@ class EditorController extends ChangeNotifier {
         if (containerId != null && id == containerId) continue;
         next = next.reparentShape(id, containerId);
       }
-      return next.rerouteConnectors();
+      return next.rerouteConnectors(movedShapeIds: movedIds);
     });
   }
 
@@ -812,11 +819,14 @@ class EditorController extends ChangeNotifier {
   /// container height shrinks to the header band (top edge fixed) and restores
   /// on unfold.
   void toggleCollapsed(int id) {
+    final movedIds = _subtreeIds(<int>{id});
     updateCurrentPage((page) {
       final s = page.findShapeById(id);
       if (s == null || !s.shapeKind.isStructural) return page;
       final next = s.collapsed ? s.unfold() : s.fold();
-      return page.updateShapeById(id, (_) => next).rerouteConnectors();
+      return page
+          .updateShapeById(id, (_) => next)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     final page = currentPage;
     final s = page?.findShapeById(id);
@@ -858,6 +868,10 @@ class EditorController extends ChangeNotifier {
       pageY,
       excludeIds: Set<int>.of(_selection),
     );
+    final movedIds = <int>{
+      ..._subtreeIds(_selection),
+      if (dropId != null) ..._subtreeIds(<int>{dropId}),
+    };
     var changed = false;
     updateCurrentPage(
       (p) {
@@ -902,7 +916,9 @@ class EditorController extends ChangeNotifier {
             }
           }
         }
-        return changed ? next.rerouteConnectors() : p;
+        return changed
+            ? next.rerouteConnectors(movedShapeIds: movedIds)
+            : p;
       },
       transient: transient,
     );
@@ -963,12 +979,13 @@ class EditorController extends ChangeNotifier {
       name: 'Lane $n',
       text: 'Lane $n',
     );
+    final movedIds = _subtreeIds(<int>{poolId});
     updateCurrentPage((p) {
       final host = p.findShapeById(poolId);
       if (host == null) return p;
       return p
           .updateShapeById(poolId, (_) => SwimlaneOps.addLane(host, newLane))
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -983,12 +1000,13 @@ class EditorController extends ChangeNotifier {
     final laneId = singleSelectedId;
     final poolId = selectedPoolId;
     if (page == null || laneId == null || poolId == null) return;
+    final movedIds = _subtreeIds(<int>{poolId});
     updateCurrentPage((p) {
       final host = p.findShapeById(poolId);
       if (host == null) return p;
       return p
           .updateShapeById(poolId, (_) => SwimlaneOps.removeLane(host, laneId))
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1049,13 +1067,14 @@ class EditorController extends ChangeNotifier {
     final tableId = selectedTableId;
     if (page == null || tableId == null) return;
     final startId = page.nextFreeShapeId();
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
       return p
           .updateShapeById(
               tableId, (_) => TableOps.addRow(host, startId: startId))
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1068,13 +1087,14 @@ class EditorController extends ChangeNotifier {
     final tableId = selectedTableId;
     if (page == null || tableId == null) return;
     final startId = page.nextFreeShapeId();
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
       return p
           .updateShapeById(
               tableId, (_) => TableOps.addColumn(host, startId: startId))
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1096,12 +1116,13 @@ class EditorController extends ChangeNotifier {
         rowIndex = TableOps.cellRow(cell) ?? rowIndex;
       }
     }
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
       return p
           .updateShapeById(tableId, (_) => TableOps.removeRow(host, rowIndex))
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1123,13 +1144,14 @@ class EditorController extends ChangeNotifier {
         colIndex = TableOps.cellCol(cell) ?? colIndex;
       }
     }
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
       return p
           .updateShapeById(
               tableId, (_) => TableOps.removeColumn(host, colIndex))
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1224,6 +1246,7 @@ class EditorController extends ChangeNotifier {
       if (col < minC) minC = col;
       if (col > maxC) maxC = col;
     }
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
@@ -1238,7 +1261,7 @@ class EditorController extends ChangeNotifier {
               colSpan: maxC - minC + 1,
             ),
           )
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     // Select the master cell after merge.
     final table = currentPage?.findShapeById(tableId);
@@ -1267,6 +1290,7 @@ class EditorController extends ChangeNotifier {
     }
     final row = TableOps.cellRow(s)!;
     final col = TableOps.cellCol(s)!;
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
@@ -1275,7 +1299,7 @@ class EditorController extends ChangeNotifier {
             tableId,
             (_) => TableOps.unmergeCells(host, row: row, col: col),
           )
-          .rerouteConnectors();
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1574,7 +1598,11 @@ class EditorController extends ChangeNotifier {
       );
     }
     if (beginIdx == null && endIdx == null) {
-      next = next.rerouteConnectors();
+      next = next.rerouteConnectors(movedShapeIds: <int>{
+        id,
+        ?beginTarget,
+        ?endTarget,
+      });
     }
     applyEdit(
       doc.replacePage(
@@ -1678,7 +1706,7 @@ class EditorController extends ChangeNotifier {
           toPart: 3,
         ),
       ],
-    ).rerouteConnectors();
+    ).rerouteConnectors(movedShapeIds: <int>{connId, sourceId, targetId});
 
     // Glue each end to the facing fixed connection point so the edge meets the
     // sides square-on (only meaningful for the default point set).
@@ -2175,6 +2203,7 @@ class EditorController extends ChangeNotifier {
     if (shapes.length < 2) return;
     final deltas = compute(shapes);
     if (deltas.isEmpty) return;
+    final movedIds = _subtreeIds(deltas.keys);
     updateCurrentPage((p) {
       var next = p;
       deltas.forEach((id, d) {
@@ -2183,7 +2212,7 @@ class EditorController extends ChangeNotifier {
           (s) => s.copyWith(pinX: s.pinX + d.$1, pinY: s.pinY + d.$2),
         );
       });
-      return next.rerouteConnectors();
+      return next.rerouteConnectors(movedShapeIds: movedIds);
     });
   }
 
@@ -2197,12 +2226,13 @@ class EditorController extends ChangeNotifier {
     if (s == null) return;
     final d = delta(page, s);
     if (d.$1 == 0 && d.$2 == 0) return;
+    final movedIds = _subtreeIds(<int>{id});
     updateCurrentPage((p) => p
         .updateShapeById(
           id,
           (sh) => sh.copyWith(pinX: sh.pinX + d.$1, pinY: sh.pinY + d.$2),
         )
-        .rerouteConnectors());
+        .rerouteConnectors(movedShapeIds: movedIds));
   }
 
   void alignLeft() {
@@ -2316,6 +2346,7 @@ class EditorController extends ChangeNotifier {
     final tw = ref.width;
     final th = ref.height;
     if ((width && tw <= 0) || (height && th <= 0)) return;
+    final movedIds = _subtreeIds(_selection);
     updateCurrentPage((page) {
       var next = page;
       var changed = false;
@@ -2341,7 +2372,9 @@ class EditorController extends ChangeNotifier {
         );
         changed = true;
       }
-      return changed ? next.rerouteConnectors() : page;
+      return changed
+          ? next.rerouteConnectors(movedShapeIds: movedIds)
+          : page;
     });
   }
 
@@ -2433,10 +2466,11 @@ class EditorController extends ChangeNotifier {
   }
 
   void _moveSingle(VsdxShape s, double pinX, double pinY) {
+    final movedIds = _subtreeIds(<int>{s.id});
     updateCurrentPage(
       (page) => page
           .updateShapeById(s.id, (sh) => _translated(sh, pinX - sh.pinX, pinY - sh.pinY))
-          .rerouteConnectors(),
+          .rerouteConnectors(movedShapeIds: movedIds),
     );
   }
 
@@ -2469,6 +2503,7 @@ class EditorController extends ChangeNotifier {
     if (_selection.isEmpty) return;
     // Visio angles are CCW-positive, so a clockwise turn subtracts 90°.
     final delta = (clockwise ? -1 : 1) * math.pi / 2;
+    final movedIds = _subtreeIds(_selection);
     updateCurrentPage((page) {
       var next = page;
       var rotated = false;
@@ -2479,7 +2514,9 @@ class EditorController extends ChangeNotifier {
             id, (s) => s.copyWith(angleRad: s.angleRad + delta));
         rotated = true;
       }
-      return rotated ? next.rerouteConnectors() : page;
+      return rotated
+          ? next.rerouteConnectors(movedShapeIds: movedIds)
+          : page;
     });
   }
 
@@ -3758,10 +3795,11 @@ class EditorController extends ChangeNotifier {
 
   /// Rotate a single shape about its pin (radians, Visio CCW convention).
   void rotateShape(int id, double angleRad, {bool transient = false}) {
+    final movedIds = _subtreeIds(<int>{id});
     updateCurrentPage(
       (page) => page
           .updateShapeById(id, (s) => s.copyWith(angleRad: angleRad))
-          .rerouteConnectors(),
+          .rerouteConnectors(movedShapeIds: movedIds),
       transient: transient,
     );
   }
@@ -3776,6 +3814,7 @@ class EditorController extends ChangeNotifier {
     required double height,
     bool transient = false,
   }) {
+    final movedIds = _subtreeIds(<int>{id});
     updateCurrentPage(
       (page) => page
           .updateShapeById(
@@ -3787,9 +3826,38 @@ class EditorController extends ChangeNotifier {
               height: height,
             ),
           )
-          .rerouteConnectors(),
+          .rerouteConnectors(movedShapeIds: movedIds),
       transient: transient,
     );
+  }
+
+  /// Every id in the subtrees rooted at [rootIds] — a moved/edited shape plus
+  /// any descendants. Connectors glue to leaf shapes, so scoping
+  /// [VsdxPage.rerouteConnectors] to a transform must cover the whole subtree
+  /// of what actually changed.
+  Set<int> _subtreeIds(Iterable<int> rootIds) {
+    final page = currentPage;
+    final out = <int>{};
+    if (page == null) {
+      out.addAll(rootIds);
+      return out;
+    }
+    void walk(VsdxShape s) {
+      out.add(s.id);
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final r in rootIds) {
+      final s = page.findShapeById(r);
+      if (s != null) {
+        walk(s);
+      } else {
+        out.add(r);
+      }
+    }
+    return out;
   }
 
   static VsdxShape _translated(VsdxShape s, double dx, double dy) =>

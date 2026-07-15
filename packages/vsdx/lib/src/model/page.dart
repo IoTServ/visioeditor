@@ -410,10 +410,17 @@ class VsdxPage {
     return (result, changed);
   }
 
-  /// Re-route every glued connector so its endpoints follow the current
-  /// centres of the shapes they are connected to (via [connects]). Returns
-  /// `this` unchanged when there are no connects.
-  VsdxPage rerouteConnectors() {
+  /// Re-route glued connectors so their endpoints follow the current shapes
+  /// they are connected to (via [connects]). Returns `this` unchanged when
+  /// there are no connects.
+  ///
+  /// When [movedShapeIds] is supplied, only connectors glued to one of those
+  /// shapes (or whose own id is listed) are re-routed; every other connector
+  /// keeps its baked geometry untouched. This is what stops an edit to one part
+  /// of an imported Visio drawing from re-routing — and thereby scrambling —
+  /// hand-drawn / multi-bend connectors elsewhere on the page. Passing `null`
+  /// re-routes all glued connectors (connector-level edits, tests).
+  VsdxPage rerouteConnectors({Set<int>? movedShapeIds}) {
     if (connects.isEmpty) return this;
     final index = connectIndex;
     final connectorIds = <int>{for (final c in connects) c.fromSheetId};
@@ -435,6 +442,14 @@ class VsdxPage {
           endShape = target;
           endConnect = e;
         }
+      }
+      // Only re-route connectors affected by this edit; leave the rest (and
+      // their authored geometry) alone.
+      if (movedShapeIds != null &&
+          !movedShapeIds.contains(cid) &&
+          !(beginShape != null && movedShapeIds.contains(beginShape.id)) &&
+          !(endShape != null && movedShapeIds.contains(endShape.id))) {
+        continue;
       }
       // A fixed connection point (drawio blue point) pins the endpoint to a
       // specific spot on the shape; otherwise we attach on the edge aimed at
@@ -568,7 +583,7 @@ class VsdxPage {
       id,
       (sh) => sh.copyWith(waypoints: waypoints).reshapeAsPolyline(geometry),
     );
-    return next.rerouteConnectors();
+    return next.rerouteConnectors(movedShapeIds: <int>{id});
   }
 
   /// Move / reconnect one end of connector [id] (drawio endpoint editing).
@@ -639,7 +654,7 @@ class VsdxPage {
     final next = base
         .updateShapeById(id, (sh) => sh.reshapeAsPolyline(geometry))
         .copyWith(connects: nextConnects);
-    return next.rerouteConnectors();
+    return next.rerouteConnectors(movedShapeIds: <int>{id});
   }
 
   /// Remove connector [id]'s interior bend points, resetting it to the plain
@@ -886,7 +901,7 @@ class VsdxPage {
     }
     return updateShapeById(id, (t) => t.copyWith(connectionPoints: pts))
         .copyWith(connects: nextConnects)
-        .rerouteConnectors();
+        .rerouteConnectors(movedShapeIds: <int>{id});
   }
 
   /// Whether connector [id] currently prefers a straight route.
