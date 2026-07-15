@@ -11,6 +11,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -58,6 +59,13 @@ class VsdxWriter {
     final removed = <String>{};
 
     final docPart = pkg.resolveDocumentPartName();
+    // Back-fill minimal StyleSheets / FaceNames on legacy blank exports so
+    // Edraw can resolve Default*Style (otherwise fills/text look wrong).
+    final docXml = pkg.readPartXml(docPart);
+    if (docXml != null && _ensureDocumentStyles(docXml)) {
+      patched[_noSlash(docPart)] =
+          Uint8List.fromList(utf8.encode(docXml.toXmlString()));
+    }
     final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
     final pagesXml = pagesPart == null ? null : pkg.readPartXml(pagesPart);
     if (pagesPart == null || pagesXml == null) {
@@ -869,6 +877,78 @@ class VsdxWriter {
   static const String _officeRelNs =
       'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
+  /// Minimal `<StyleSheets>` + `<FaceNames>` fragment used by [emptyDocument]
+  /// and by [_ensureDocumentStyles] when patching legacy blanks.
+  static const String _minimalStylesXml =
+      '<FaceNames>'
+      '<FaceName NameU="Arial" UnicodeRanges="-459292017 -1073730379 9 0" CharSets="1610612799 0" Panose="2 11 6 4 2 2 2 2 2 4" Flags="325"/>'
+      '<FaceName NameU="Calibri" UnicodeRanges="-469750017 -1073732485 9 0" CharSets="536871423 0" Panose="2 15 5 2 2 2 4 3 2 4" Flags="325"/>'
+      '</FaceNames>'
+      '<StyleSheets>'
+      '<StyleSheet ID="0" NameU="No Style" Name="No Style">'
+      '<Cell N="LineWeight" V="0.01"/>'
+      '<Cell N="LineColor" V="#000000"/>'
+      '<Cell N="LinePattern" V="1"/>'
+      '<Cell N="LineCap" V="0"/>'
+      '<Cell N="BeginArrow" V="0"/>'
+      '<Cell N="EndArrow" V="0"/>'
+      '<Cell N="BeginArrowSize" V="2"/>'
+      '<Cell N="EndArrowSize" V="2"/>'
+      '<Cell N="FillForegnd" V="#FFFFFF"/>'
+      '<Cell N="FillBkgnd" V="#FFFFFF"/>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="VerticalAlign" V="1"/>'
+      '<Cell N="LeftMargin" V="0.05555555555555555"/>'
+      '<Cell N="RightMargin" V="0.05555555555555555"/>'
+      '<Cell N="TopMargin" V="0.05555555555555555"/>'
+      '<Cell N="BottomMargin" V="0.05555555555555555"/>'
+      '<Section N="Character">'
+      '<Row IX="0">'
+      '<Cell N="Color" V="#000000"/>'
+      '<Cell N="Style" V="0"/>'
+      '<Cell N="Size" V="0.1666666666666667"/>'
+      '</Row>'
+      '</Section>'
+      '<Section N="Paragraph">'
+      '<Row IX="0">'
+      '<Cell N="HorzAlign" V="1"/>'
+      '<Cell N="SpLine" V="-1.2"/>'
+      '</Row>'
+      '</Section>'
+      '</StyleSheet>'
+      '</StyleSheets>';
+
+  /// Inject FaceNames + StyleSheets into [document.xml] when missing.
+  bool _ensureDocumentStyles(XmlDocument docXml) {
+    final root = docXml.rootElement;
+    if (root.name.local != 'VisioDocument') return false;
+    var hasSheets = false;
+    var hasFaces = false;
+    for (final c in root.childElements) {
+      if (c.name.local == 'StyleSheets') hasSheets = true;
+      if (c.name.local == 'FaceNames') hasFaces = true;
+    }
+    if (hasSheets && hasFaces) return false;
+    final wrap = XmlDocument.parse('<Wrap>$_minimalStylesXml</Wrap>').rootElement;
+    if (!hasFaces) {
+      for (final n in wrap.childElements) {
+        if (n.name.local == 'FaceNames') {
+          root.children.add(n.copy());
+          break;
+        }
+      }
+    }
+    if (!hasSheets) {
+      for (final n in wrap.childElements) {
+        if (n.name.local == 'StyleSheets') {
+          root.children.add(n.copy());
+          break;
+        }
+      }
+    }
+    return true;
+  }
+
   /// Generate a minimal, valid blank `.vsdx` (one empty page). Used as the
   /// base for "New drawing": the editor parses it, then normal
   /// load-preserve-patch saves append the user's shapes into `page1.xml`.
@@ -900,9 +980,16 @@ class VsdxWriter {
       'docProps/app.xml': '$decl\n'
           '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
           '<Application>Editor for Visio Diagrams</Application></Properties>',
+      // Minimal StyleSheets + FaceNames so Edraw / Visio resolve Default*Style
+      // (previously pointed at missing sheet 0 → hollow fills, wrong text size).
       'visio/document.xml': '$decl\n'
           '<VisioDocument xmlns="$_mainNs" xmlns:r="$_officeRelNs">'
-          '<DocumentSettings TopPage="0" DefaultTextStyle="0" DefaultLineStyle="0" DefaultFillStyle="0" DefaultGuideStyle="0"/>'
+          '<DocumentSettings TopPage="0" DefaultTextStyle="0" DefaultLineStyle="0" DefaultFillStyle="0" DefaultGuideStyle="0">'
+          '<GlueSettings>9</GlueSettings>'
+          '<SnapSettings>65847</SnapSettings>'
+          '<DynamicGridEnabled>1</DynamicGridEnabled>'
+          '</DocumentSettings>'
+          '$_minimalStylesXml'
           '</VisioDocument>',
       'visio/_rels/document.xml.rels': '$decl\n'
           '<Relationships xmlns="$_relNs">'
@@ -1270,6 +1357,9 @@ class VsdxWriter {
       preserveFormula: _sameRatio(
           base.effectiveLocPinY, base.height, edited.effectiveLocPinY, edited.height),
     );
+    // Older exports omitted LocPin; Edraw then pins at (0,0). Back-fill on save.
+    changed |= _ensureLocPinPresent(el, edited);
+    changed |= _ensureLineFillBasics(el, edited);
     changed |= _patchAngle(el, 'Angle', base.angleRad, edited.angleRad);
     changed |= _patchNullableLength(el, 'BeginX', base.beginX, edited.beginX,
         preserveFormula: _cellHasParametricFormula(el, 'BeginX'));
@@ -1342,6 +1432,9 @@ class VsdxWriter {
     // round-trip). When content does change we rebuild from rich runs with
     // cp/pp markers when possible.
     changed |= _patchTextContent(el, base, edited);
+    // Older exports wrote bare <Text> without Character — Edraw then uses a
+    // wrong default size. Ensure style sections exist whenever there is text.
+    changed |= _ensureTextStyleSections(el, edited);
     // Geometry (regenerate when it changed and every command is representable,
     // e.g. after resize scaling or connector re-routing).
     changed |= _patchGeometry(el, base, edited);
@@ -2592,25 +2685,58 @@ class VsdxWriter {
       el.children.add(textEl);
     }
     textEl.children.clear();
-    final runs = edited.richText.runs;
-    if (runs.isEmpty) {
-      _appendTextWithTabs(textEl.children, editedPlain);
-    } else if (runs.length == 1) {
-      _appendRunText(textEl.children, runs.first);
-    } else {
-      for (var i = 0; i < runs.length; i++) {
-        textEl.children.add(XmlElement(
-          XmlName('cp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        textEl.children.add(XmlElement(
-          XmlName('pp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        _appendRunText(textEl.children, runs[i]);
+    final runs = _effectiveTextRuns(edited);
+    for (var i = 0; i < runs.length; i++) {
+      textEl.children.add(XmlElement(
+        XmlName('pp'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+      ));
+      textEl.children.add(XmlElement(
+        XmlName('cp'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+      ));
+      _appendRunText(textEl.children, runs[i]);
+    }
+    // Keep Character / Paragraph sections in sync when content is rewritten.
+    _patchTextStyleSections(el, runs);
+    return true;
+  }
+
+  void _patchTextStyleSections(XmlElement el, List<VsdxTextRun> runs) {
+    if (runs.isEmpty) return;
+    for (final child in el.childElements.toList()) {
+      if (child.name.local != 'Section') continue;
+      final n = child.getAttribute('N');
+      if (n == 'Character' || n == 'Paragraph') child.remove();
+    }
+    XmlElement? textEl;
+    for (final c in el.childElements) {
+      if (c.name.local == 'Text') {
+        textEl = c;
+        break;
       }
     }
-    return true;
+    final insertAt =
+        textEl == null ? el.children.length : el.children.indexOf(textEl);
+    el.children.insert(insertAt, _buildCharacterSection(runs));
+    el.children.insert(insertAt + 1, _buildParagraphSection(runs));
+  }
+
+  /// Rich runs, or a synthesised run from plain [VsdxShape.text] using the same
+  /// proportional size the Flutter painter uses for unstyled labels — so Edraw
+  /// matches in-app appearance after export.
+  static List<VsdxTextRun> _effectiveTextRuns(VsdxShape s) {
+    if (s.richText.runs.isNotEmpty) return s.richText.runs;
+    final t = s.text;
+    if (t == null || t.isEmpty) return const <VsdxTextRun>[];
+    final box = math.min(s.width.abs(), s.height.abs());
+    final sizeInches = (s.is1D ? 0.14 : box * 0.18).clamp(4.0 / 72.0, 1.0);
+    return <VsdxTextRun>[
+      VsdxTextRun(
+        text: t,
+        charStyle: VsdxCharStyle(fontSizeInches: sizeInches),
+      ),
+    ];
   }
 
   /// Emit one rich-text run: tabs → `<tp/>`, field spans → `<fld IX>`.
@@ -3142,6 +3268,95 @@ class VsdxWriter {
     return cell;
   }
 
+  bool _hasCell(XmlElement shape, String name) {
+    for (final el in shape.childElements) {
+      if (el.name.local == 'Cell' && el.getAttribute('N') == name) return true;
+    }
+    return false;
+  }
+
+  /// Write LineCap / ObjType when absent (Edraw is picky about both).
+  bool _ensureLineFillBasics(XmlElement el, VsdxShape s) {
+    var changed = false;
+    if (!_hasCell(el, 'LineCap')) {
+      _ensureCell(el, 'LineCap')
+        ..setAttribute('V', _lineCapInt(s.line.cap).toString());
+      changed = true;
+    }
+    if (s.is1D && !_hasCell(el, 'ObjType')) {
+      _ensureCell(el, 'ObjType')
+        ..setAttribute('V', (s.objType ?? 2).toString());
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// Write LocPinX/Y when absent so Edraw/libvisio don't default to (0,0).
+  bool _ensureLocPinPresent(XmlElement el, VsdxShape s) {
+    var changed = false;
+    if (!_hasCell(el, 'LocPinX')) {
+      final cell = _ensureCell(el, 'LocPinX');
+      cell.setAttribute('V', _fmt(s.effectiveLocPinX));
+      if ((s.effectiveLocPinX - s.width / 2).abs() <= _epsilon) {
+        cell.setAttribute('F', 'Width*0.5');
+      }
+      changed = true;
+    }
+    if (!_hasCell(el, 'LocPinY')) {
+      final cell = _ensureCell(el, 'LocPinY');
+      cell.setAttribute('V', _fmt(s.effectiveLocPinY));
+      if ((s.effectiveLocPinY - s.height / 2).abs() <= _epsilon) {
+        cell.setAttribute('F', 'Height*0.5');
+      }
+      changed = true;
+    }
+    return changed;
+  }
+
+  bool _ensureTextStyleSections(XmlElement el, VsdxShape s) {
+    // Never rewrite text on master instances — Character/Text often live on
+    // the master and injecting a local Character row drops libvisio/Visio text.
+    if (el.getAttribute('Master') != null ||
+        el.getAttribute('MasterShape') != null) {
+      return false;
+    }
+    final runs = _effectiveTextRuns(s);
+    if (runs.isEmpty) return false;
+    var hasChar = false;
+    XmlElement? textEl;
+    for (final child in el.childElements) {
+      if (child.name.local == 'Section' &&
+          child.getAttribute('N') == 'Character') {
+        hasChar = true;
+      }
+      if (child.name.local == 'Text') textEl = child;
+    }
+    if (hasChar || textEl == null) return false;
+    // Only upgrade bare <Text>hello</Text> (no cp/pp) from our older exports.
+    final hasMarker = textEl.childElements
+        .any((c) => c.name.local == 'cp' || c.name.local == 'pp');
+    if (hasMarker) return false;
+    final plain = textEl.innerText;
+    if (plain.trim().isEmpty) return false;
+    _patchTextStyleSections(el, runs);
+    textEl.children.clear();
+    for (var i = 0; i < runs.length; i++) {
+      textEl.children.add(XmlElement(
+        XmlName('pp'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+      ));
+      textEl.children.add(XmlElement(
+        XmlName('cp'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+      ));
+      _appendRunText(
+        textEl.children,
+        runs[i].copyWith(text: i == 0 ? plain : runs[i].text),
+      );
+    }
+    return true;
+  }
+
   // --- New-shape emission ----------------------------------------------------
 
   XmlElement _ensureShapesElement(XmlElement root) {
@@ -3266,6 +3481,7 @@ class VsdxWriter {
     } else if (s.formulas.containsKey('FillBkgnd')) {
       children.add(_cell('FillBkgnd', '0', formula: s.formulas['FillBkgnd']));
     }
+    // FillBkgnd default comes from document StyleSheets (No Style) when omitted.
     children.add(_cell('FillPattern', s.fill.pattern.toString(),
         formula: s.formulas['FillPattern']));
     if (s.fill.foregroundTransparency > _epsilon) {
@@ -3291,24 +3507,24 @@ class VsdxWriter {
     children
       ..add(_cell('LineWeight', _fmt(s.line.weightInches)))
       ..add(_cell('LinePattern', s.line.pattern.toString(),
-          formula: s.formulas['LinePattern']));
-    if (s.line.cap != LineCap.round) {
-      children.add(_cell('LineCap', _lineCapInt(s.line.cap).toString()));
-    }
+          formula: s.formulas['LinePattern']))
+      // Always emit LineCap (Visio/Edraw "No Style" default is 0 = round).
+      ..add(_cell('LineCap', _lineCapInt(s.line.cap).toString()));
     if (s.line.transparency > _epsilon) {
       children.add(_cell('LineColorTrans', _fmt(s.line.transparency)));
     }
-    if (s.line.beginArrow != 0) {
-      children.add(_cell('BeginArrow', s.line.beginArrow.toString()));
-      children.add(_cell(
-          'BeginArrowSize',
-          _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()));
-    }
-    if (s.line.endArrow != 0) {
-      children.add(_cell('EndArrow', s.line.endArrow.toString()));
-      children.add(_cell(
-          'EndArrowSize',
-          _arrowSizeToBucket(s.line.endArrowSizeInches).toString()));
+    // Emit both arrow ends whenever either is set (and sizes), so Edraw
+    // doesn't inherit odd BeginArrowSize from a missing StyleSheet.
+    if (s.line.beginArrow != 0 || s.line.endArrow != 0) {
+      children
+        ..add(_cell('BeginArrow', s.line.beginArrow.toString()))
+        ..add(_cell(
+            'BeginArrowSize',
+            _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()))
+        ..add(_cell('EndArrow', s.line.endArrow.toString()))
+        ..add(_cell(
+            'EndArrowSize',
+            _arrowSizeToBucket(s.line.endArrowSizeInches).toString()));
     }
     if (s.line.roundingInches > _epsilon) {
       children.add(_cell('Rounding', _fmt(s.line.roundingInches)));
@@ -3418,10 +3634,13 @@ class VsdxWriter {
     }
     // --- Sections ------------------------------------------------------------
     // Character / Paragraph — one row per rich-text run (matches <cp>/<pp>).
-    if (s.richText.runs.isNotEmpty) {
+    // Plain `.text` without runs is synthesised so Edraw gets an explicit Size
+    // matching this editor's proportional label (not a missing-style default).
+    final textRuns = _effectiveTextRuns(s);
+    if (textRuns.isNotEmpty) {
       children
-        ..add(_buildCharacterSection(s.richText.runs))
-        ..add(_buildParagraphSection(s.richText.runs));
+        ..add(_buildCharacterSection(textRuns))
+        ..add(_buildParagraphSection(textRuns));
     }
     if (s.richText.tabSets.isNotEmpty) {
       children.add(_buildTabsSection(s.richText.tabSets));
@@ -3467,28 +3686,21 @@ class VsdxWriter {
       children.addAll(opaque.map((n) => n.copy()));
     }
     // --- Text ----------------------------------------------------------------
-    if (s.richText.runs.isNotEmpty) {
+    // Always emit <pp>/<cp> markers (Edraw / Visio do even for a single run).
+    if (textRuns.isNotEmpty) {
       final textEl = XmlElement(XmlName('Text'));
-      if (s.richText.runs.length == 1) {
-        _appendRunText(textEl.children, s.richText.runs.first);
-      } else {
-        for (var i = 0; i < s.richText.runs.length; i++) {
-          textEl.children.add(XmlElement(
-            XmlName('cp'),
-            <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-          ));
-          textEl.children.add(XmlElement(
-            XmlName('pp'),
-            <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-          ));
-          _appendRunText(textEl.children, s.richText.runs[i]);
-        }
+      for (var i = 0; i < textRuns.length; i++) {
+        textEl.children.add(XmlElement(
+          XmlName('pp'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+        ));
+        textEl.children.add(XmlElement(
+          XmlName('cp'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+        ));
+        _appendRunText(textEl.children, textRuns[i]);
       }
       if (textEl.children.isNotEmpty) children.add(textEl);
-    } else if (s.text != null && s.text!.isNotEmpty) {
-      final textEl = XmlElement(XmlName('Text'));
-      _appendTextWithTabs(textEl.children, s.text!);
-      children.add(textEl);
     }
     final isGroup = s.children.isNotEmpty;
     if (isGroup) {
@@ -3773,13 +3985,14 @@ class VsdxWriter {
       _cell('PinY', _fmt(s.pinY)),
       _cell('Width', _fmt(s.width)),
       _cell('Height', _fmt(s.height)),
-      _cell('LocPinX', _fmt(s.width / 2)),
-      _cell('LocPinY', _fmt(s.height / 2)),
+      _cell('LocPinX', _fmt(s.width / 2), formula: 'Width*0.5'),
+      _cell('LocPinY', _fmt(s.height / 2), formula: 'Height*0.5'),
       _cell('Angle', _fmt(s.angleRad)),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),
       _cell('LinePattern', s.line.pattern.toString()),
+      _cell('LineCap', '0'),
       if (s.flipX) _cell('FlipX', '1'),
       if (s.flipY) _cell('FlipY', '1'),
     ];

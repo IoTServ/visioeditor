@@ -1764,7 +1764,24 @@ class EditorController extends ChangeNotifier {
           final current =
               runs.isNotEmpty ? s.richText.plainText : (s.text ?? '');
           if (current == text) return s;
-          if (runs.isEmpty) return s.copyWith(text: text);
+          // Always keep a Character run so export → Edraw uses the same size
+          // the canvas paints (proportional to the box when previously plain).
+          if (runs.isEmpty) {
+            final box = math.min(s.width.abs(), s.height.abs());
+            final sizeInches =
+                (s.is1D ? 0.14 : box * 0.18).clamp(4.0 / 72.0, 1.0);
+            return s.copyWith(
+              text: text,
+              richText: s.richText.copyWith(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: text,
+                    charStyle: VsdxCharStyle(fontSizeInches: sizeInches),
+                  ),
+                ],
+              ),
+            );
+          }
           return s.copyWith(
             text: text,
             richText: s.richText.copyWith(

@@ -11,6 +11,21 @@ import 'package:xml/xml.dart';
 Uint8List _fixture(String name) =>
     File('test/fixtures/$name').readAsBytesSync();
 
+/// Replace one part inside a .vsdx zip and return the re-encoded bytes.
+Uint8List _rezipWith(Uint8List src, String partName, List<int> newBytes) {
+  final archive = ZipDecoder().decodeBytes(src);
+  final out = Archive();
+  final target = partName.startsWith('/') ? partName.substring(1) : partName;
+  for (final f in archive) {
+    if (f.name == target) {
+      out.addFile(ArchiveFile(f.name, newBytes.length, newBytes));
+    } else {
+      out.addFile(ArchiveFile(f.name, f.size, f.content));
+    }
+  }
+  return Uint8List.fromList(ZipEncoder().encode(out)!);
+}
+
 void main() {
   const parser = DocumentParser();
   const writer = VsdxWriter();
@@ -260,6 +275,87 @@ void main() {
     expect(pageXml, contains('N="ObjType"'));
     expect(pageXml, contains('V="2"'));
     expect(parser.parse(out).pages.first.findShapeById(id)!.objType, 2);
+  });
+
+  test('emptyDocument ships StyleSheets and FaceNames for Edraw', () {
+    final blank = writer.emptyDocument();
+    final docXml = VsdxPackage.open(blank)
+        .readPartXml('/visio/document.xml')!
+        .toXmlString();
+    expect(docXml, contains('<StyleSheets>'));
+    expect(docXml, contains('NameU="No Style"'));
+    expect(docXml, contains('<FaceNames>'));
+  });
+
+  test('plain .text emits Character/Paragraph + pp/cp for Edraw', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // Plain text without rich runs — the path Untitled333 used.
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 4,
+      pinY: 5,
+      width: 1.2,
+      height: 0.5,
+    ).copyWith(text: 'Text');
+    final edited =
+        doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('N="Character"'));
+    expect(pageXml, contains('N="Paragraph"'));
+    expect(pageXml, contains('<pp'));
+    expect(pageXml, contains('<cp'));
+    expect(pageXml, contains('N="LineCap"'));
+    // Proportional size for 0.5" tall box: 0.5*0.18 = 0.09".
+    expect(pageXml, contains('N="Size"'));
+    final reopened = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(reopened.richText.runs, isNotEmpty);
+    expect(reopened.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(0.09, 1e-4));
+  });
+
+  test('re-saving a legacy blank export injects LocPin + StyleSheets', () {
+    // Simulate Untitled333: shapes without LocPin, document without StyleSheets.
+    final legacyBlank = writer.emptyDocument();
+    // Strip StyleSheets from a copy to mimic the pre-fix blank.
+    final pkg0 = VsdxPackage.open(legacyBlank);
+    final docXml = pkg0.readPartXml('/visio/document.xml')!;
+    for (final c in docXml.rootElement.childElements.toList()) {
+      if (c.name.local == 'StyleSheets' || c.name.local == 'FaceNames') {
+        c.remove();
+      }
+    }
+    final stripped = _rezipWith(
+      legacyBlank,
+      'visio/document.xml',
+      utf8.encode(docXml.toXmlString()),
+    );
+    final base = parser.parse(stripped);
+    final id = base.pages.first.nextFreeShapeId();
+    final edited = base.replacePage(
+      0,
+      base.pages.first.addShape(VsdxShapeFactory.rectangle(
+        id: id, pinX: 4.25, pinY: 9.75, width: 1.5, height: 1.0,
+      ).copyWith(text: 'Hi')),
+    );
+    // First write builds shapes with LocPin into stripped blank…
+    final mid = writer.write(originalBytes: stripped, edited: edited);
+    // …then parse + no-op save must still restore StyleSheets on document.xml.
+    final midDoc = parser.parse(mid);
+    final out = writer.write(originalBytes: mid, edited: midDoc);
+    final outDoc = VsdxPackage.open(out)
+        .readPartXml('/visio/document.xml')!
+        .toXmlString();
+    expect(outDoc, contains('<StyleSheets>'));
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('N="LocPinX"'));
+    expect(pageXml, contains('N="Character"'));
   });
 
   test('rotates a shape across a round-trip', () {
