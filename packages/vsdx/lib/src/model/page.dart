@@ -650,14 +650,22 @@ class VsdxPage {
   /// box, shape-local inches (origin bottom-left): top-centre, right-middle,
   /// bottom-centre, left-middle, centre — indices 0..4. Directions point
   /// outward (libvisio / Visio `DirX`/`DirY`).
+  ///
+  /// X/Y carry `Width*` / `Height*` formulas so 万兴图示 / Visio keep the
+  /// points on the edges when the shape is resized.
   static List<VsdxConnectionPoint> defaultConnectionPoints(
           double width, double height) =>
       <VsdxConnectionPoint>[
-        VsdxConnectionPoint(width / 2, height, dirX: 0, dirY: 1), // 0 top
-        VsdxConnectionPoint(width, height / 2, dirX: 1, dirY: 0), // 1 right
-        VsdxConnectionPoint(width / 2, 0, dirX: 0, dirY: -1), // 2 bottom
-        VsdxConnectionPoint(0, height / 2, dirX: -1, dirY: 0), // 3 left
-        VsdxConnectionPoint(width / 2, height / 2), // 4 centre
+        VsdxConnectionPoint(width / 2, height,
+            dirX: 0, dirY: 1, xFormula: 'Width*0.5', yFormula: 'Height*1'), // 0 top
+        VsdxConnectionPoint(width, height / 2,
+            dirX: 1, dirY: 0, xFormula: 'Width*1', yFormula: 'Height*0.5'), // 1 right
+        VsdxConnectionPoint(width / 2, 0,
+            dirX: 0, dirY: -1, xFormula: 'Width*0.5', yFormula: 'Height*0'), // 2 bottom
+        VsdxConnectionPoint(0, height / 2,
+            dirX: -1, dirY: 0, xFormula: 'Width*0', yFormula: 'Height*0.5'), // 3 left
+        VsdxConnectionPoint(width / 2, height / 2,
+            xFormula: 'Width*0.5', yFormula: 'Height*0.5'), // 4 centre
       ];
 
   /// Whether connector [id] currently prefers a straight route.

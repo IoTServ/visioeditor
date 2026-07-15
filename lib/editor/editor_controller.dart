@@ -498,7 +498,8 @@ class EditorController extends ChangeNotifier {
 
   /// Create a connector line between two page points. When [beginTarget] /
   /// [endTarget] name a shape, that end is glued (a `<Connect>` row is added
-  /// and the endpoint snaps to the shape's centre; it follows on later moves).
+  /// and the endpoint snaps to the nearest mid-edge connection point so
+  /// 万兴图示 / Visio attach at the border, not the pin centre).
   void createConnector(
     double ax,
     double ay,
@@ -540,6 +541,18 @@ class EditorController extends ChangeNotifier {
       by: sby,
       line: baseLine,
     );
+    // Prefer explicit CP indices; otherwise pick the mid-edge point aimed at
+    // the opposite end (indices 0..3 — skip centre).
+    int? beginIdx = beginConnectionPointIndex;
+    int? endIdx = endConnectionPointIndex;
+    if (beginTarget != null && beginIdx == null) {
+      final t = page.findShapeById(beginTarget);
+      if (t != null) beginIdx = _nearestEdgeConnectionIndex(t, sbx, sby);
+    }
+    if (endTarget != null && endIdx == null) {
+      final t = page.findShapeById(endTarget);
+      if (t != null) endIdx = _nearestEdgeConnectionIndex(t, sax, say);
+    }
     final connects = <VsdxConnect>[
       ...page.connects,
       if (beginTarget != null)
@@ -548,8 +561,8 @@ class EditorController extends ChangeNotifier {
           fromCell: 'BeginX',
           fromPart: 9,
           toSheetId: beginTarget,
-          toCell: 'PinX',
-          toPart: 3,
+          toCell: beginIdx != null ? 'Connections.X${beginIdx + 1}' : 'PinX',
+          toPart: beginIdx != null ? 100 + beginIdx : 3,
         ),
       if (endTarget != null)
         VsdxConnect(
@@ -557,37 +570,38 @@ class EditorController extends ChangeNotifier {
           fromCell: 'EndX',
           fromPart: 12,
           toSheetId: endTarget,
-          toCell: 'PinX',
-          toPart: 3,
+          toCell: endIdx != null ? 'Connections.X${endIdx + 1}' : 'PinX',
+          toPart: endIdx != null ? 100 + endIdx : 3,
         ),
     ];
     _selection
       ..clear()
       ..add(id);
     _tool = EditorTool.select;
-    var next =
-        page.addShape(connector).copyWith(connects: connects).rerouteConnectors();
-    // Pin either end to a fixed connection point when one was snapped (drawio
-    // glues to the specific blue point you start from / drop onto).
-    if (beginTarget != null && beginConnectionPointIndex != null) {
+    var next = page.addShape(connector).copyWith(connects: connects);
+    // Materialise Connection rows on targets so the glue indices round-trip.
+    if (beginTarget != null && beginIdx != null) {
       next = next.setConnectorEndpoint(
         id,
         begin: true,
         targetShapeId: beginTarget,
-        connectionPointIndex: beginConnectionPointIndex,
+        connectionPointIndex: beginIdx,
         x: sax,
         y: say,
       );
     }
-    if (endTarget != null && endConnectionPointIndex != null) {
+    if (endTarget != null && endIdx != null) {
       next = next.setConnectorEndpoint(
         id,
         begin: false,
         targetShapeId: endTarget,
-        connectionPointIndex: endConnectionPointIndex,
+        connectionPointIndex: endIdx,
         x: sbx,
         y: sby,
       );
+    }
+    if (beginIdx == null && endIdx == null) {
+      next = next.rerouteConnectors();
     }
     applyEdit(
       doc.replacePage(
@@ -595,6 +609,32 @@ class EditorController extends ChangeNotifier {
         next,
       ),
     );
+  }
+
+  /// Index 0..3 of the mid-edge connection point on [shape] closest to the
+  /// ray from the shape centre toward ([towardX],[towardY]).
+  static int _nearestEdgeConnectionIndex(
+    VsdxShape shape,
+    double towardX,
+    double towardY,
+  ) {
+    final pts = VsdxPage.effectiveConnectionPoints(shape);
+    var best = 0;
+    var bestD = double.infinity;
+    for (var i = 0; i < pts.length && i < 4; i++) {
+      final page = VsdxPage.connectionPointPage(
+        shape.copyWith(connectionPoints: pts),
+        i,
+      );
+      final dx = page.x - towardX;
+      final dy = page.y - towardY;
+      final d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
   }
 
   /// drawio directional-arrow click ("connect / clone in a direction").

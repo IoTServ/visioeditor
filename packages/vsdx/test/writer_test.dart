@@ -1759,14 +1759,14 @@ void main() {
     ]).rerouteConnectors();
     doc = doc.replacePage(0, page);
 
-    // First write: b has no connection points yet.
+    // First write: 2-D shapes without Connection rows get the standard mid-
+    // edge set so 万兴图示 glues to borders (not an empty / odd attachment).
     final bytes1 = writer.write(originalBytes: blank, edited: doc);
     final r1 = parser.parse(bytes1);
-    expect(r1.pages.first.findShapeById(b.id)!.connectionPoints, isEmpty);
+    expect(r1.pages.first.findShapeById(b.id)!.connectionPoints.length, 5);
 
-    // Glue the END to b's top connection point (index 0). This materialises
-    // b's standard point set, and the second write patches a Connection
-    // section onto the (now existing) shape.
+    // Glue the END to b's top connection point (index 0). Connection already
+    // exists from the first write; the second write patches ToPart / endpoint.
     final edited = r1.replacePage(
       0,
       r1.pages.first.setConnectorEndpoint(

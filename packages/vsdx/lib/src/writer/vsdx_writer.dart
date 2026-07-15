@@ -1456,6 +1456,8 @@ class VsdxWriter {
     changed |= _patchGeometry(el, base, edited);
     // Edraw defaults absent NoFill → 1 (hollow); inject explicit 0/1.
     changed |= _ensureGeometryNoFillNoLine(el, edited);
+    // Edge glue points for 2-D shapes (Edraw attaches oddly without them).
+    changed |= _ensureConnectionPoints(el, edited);
     // Text formatting (Character size/color/style + Paragraph alignment).
     changed |= _patchRichText(el, base, edited);
     // Tabs section (libvisio PositionN / AlignmentN).
@@ -3364,6 +3366,28 @@ class VsdxWriter {
     return changed;
   }
 
+  /// Write default mid-edge Connection points when a 2-D shape has none.
+  /// Write default mid-edge Connection points when a 2-D shape has none.
+  bool _ensureConnectionPoints(XmlElement el, VsdxShape s) {
+    if (s.is1D) return false;
+    if (el.getAttribute('Master') != null ||
+        el.getAttribute('MasterShape') != null) {
+      return false;
+    }
+    for (final child in el.childElements) {
+      if (child.name.local == 'Section' &&
+          child.getAttribute('N') == 'Connection') {
+        return false;
+      }
+    }
+    final cps = s.connectionPoints.isNotEmpty
+        ? s.connectionPoints
+        : VsdxPage.defaultConnectionPoints(s.width, s.height);
+    if (cps.isEmpty) return false;
+    el.children.add(_buildConnectionSection(cps));
+    return true;
+  }
+
   /// Write Geometry NoFill/NoLine when absent. Edraw treats missing NoFill as
   /// 1 (no fill), so filled shapes export hollow unless we emit V="0".
   bool _ensureGeometryNoFillNoLine(XmlElement el, VsdxShape s) {
@@ -3885,8 +3909,15 @@ class VsdxWriter {
     if (s.hyperlinks.isNotEmpty) {
       children.add(_buildHyperlinkSection(s.hyperlinks));
     }
-    if (s.connectionPoints.isNotEmpty) {
-      children.add(_buildConnectionSection(s.connectionPoints));
+    // Emit edge glue points so 万兴图示 attaches connectors at mid-sides
+    // (missing Connection → Edraw falls back to Pin/odd corners).
+    final cps = s.connectionPoints.isNotEmpty
+        ? s.connectionPoints
+        : (!s.is1D
+            ? VsdxPage.defaultConnectionPoints(s.width, s.height)
+            : const <VsdxConnectionPoint>[]);
+    if (cps.isNotEmpty) {
+      children.add(_buildConnectionSection(cps));
     }
     // Unmodelled cells / sections from the prior XML (group rebuild).
     final opaque = opaqueById[s.id];
