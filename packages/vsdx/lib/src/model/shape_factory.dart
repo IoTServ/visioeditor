@@ -12,6 +12,7 @@ import 'fill.dart';
 import 'geometry.dart';
 import 'line.dart';
 import 'shape.dart';
+import 'sheet_sections.dart';
 
 abstract final class VsdxShapeFactory {
   VsdxShapeFactory._();
@@ -957,6 +958,9 @@ abstract final class VsdxShapeFactory {
   }
 
   /// Straight 1-D line from page point ([ax],[ay]) to ([bx],[by]) (inches).
+  ///
+  /// Emits Edraw/Visio-friendly Pin formulas and connector dynamics so 万兴图示
+  /// treats the edge as a glueable connector (not a static stroke).
   static VsdxShape line({
     required int id,
     required double ax,
@@ -986,6 +990,20 @@ abstract final class VsdxShapeFactory {
       beginY: ay,
       endX: bx,
       endY: by,
+      noAlignBox: true,
+      shapeSplittable: true,
+      formulas: const <String, String>{
+        'PinX': '(BeginX+EndX)*0.5',
+        'PinY': '(BeginY+EndY)*0.5',
+      },
+      connectorProps: const VsdxConnectorProps(
+        glueType: 2,
+        conFixedCode: 0,
+        dynFeedback: 2,
+        noLiveDynamics: true,
+        conLineRouteExt: 1,
+        shapeRouteStyle: 16,
+      ),
       geometries: <VsdxGeometry>[
         VsdxGeometry(
           commands: <VsdxPathCommand>[

@@ -907,6 +907,8 @@ class VsdxWriter {
       '<Cell N="FillForegnd" V="#FFFFFF"/>'
       '<Cell N="FillBkgnd" V="#FFFFFF"/>'
       '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="ShdwPattern" V="0"/>'
+      '<Cell N="ShapeShdwShow" V="0"/>'
       '<Cell N="VerticalAlign" V="1"/>'
       '<Cell N="LeftMargin" V="0.05555555555555555"/>'
       '<Cell N="RightMargin" V="0.05555555555555555"/>'
@@ -1458,6 +1460,8 @@ class VsdxWriter {
     changed |= _ensureGeometryNoFillNoLine(el, edited);
     // Edge glue points for 2-D shapes (Edraw attaches oddly without them).
     changed |= _ensureConnectionPoints(el, edited);
+    // 1-D dynamics Edraw expects on every connector (GlueType / route style).
+    changed |= _ensureConnectorDynamics(el, edited);
     // Text formatting (Character size/color/style + Paragraph alignment).
     changed |= _patchRichText(el, base, edited);
     // Tabs section (libvisio PositionN / AlignmentN).
@@ -2114,12 +2118,8 @@ class VsdxWriter {
       _writeValue(
           _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
     }
-    if ((c.fontScale - 1.0).abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
-    }
-    if (c.transparency > _epsilon) {
-      _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
-    }
+    _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
+    _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'AsianFont'), c.asianFont!);
     }
@@ -2155,10 +2155,10 @@ class VsdxWriter {
     if (p.spaceAfterInches.abs() > _epsilon) {
       _writeValue(_ensureCell(row, 'SpAfter'), _fmt(p.spaceAfterInches));
     }
-    final spLine = _spLineValue(p);
-    if (spLine != null) {
-      _writeValue(_ensureCell(row, 'SpLine'), _fmt(spLine));
-    }
+    // Always write SpLine (Edraw samples never omit it). Default single
+    // spacing is -1.0 so a round-trip keeps lineSpacing == 1.0.
+    final spLine = _spLineValue(p) ?? -1.0;
+    _writeValue(_ensureCell(row, 'SpLine'), _fmt(spLine));
     if (p.bullet != 0) {
       _writeValue(_ensureCell(row, 'Bullet'), p.bullet.toString());
     }
@@ -2176,9 +2176,7 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'TextPosAfterBullet'),
           _fmt(p.textPosAfterBulletInches));
     }
-    if (p.flags != 0) {
-      _writeValue(_ensureCell(row, 'Flags'), p.flags.toString());
-    }
+    _writeValue(_ensureCell(row, 'Flags'), p.flags.toString());
   }
 
   /// Encode [VsdxParaStyle] line spacing back to Visio's `SpLine` cell.
@@ -3160,7 +3158,7 @@ class VsdxWriter {
     addLen('TxtLocPinY', b.locPinYInches,
         defaultFormula: fillBox ? 'TxtHeight*0.5' : null,
         fallback: fillBox ? h / 2 : null);
-    if (b.angleRad.abs() > _epsilon || formulas.containsKey('TxtAngle')) {
+    if (b.angleRad.abs() > _epsilon || formulas.containsKey('TxtAngle') || hasLabel) {
       children.add(
           _cell('TxtAngle', _fmt(b.angleRad), formula: formulas['TxtAngle']));
     }
@@ -3171,6 +3169,8 @@ class VsdxWriter {
     if (b.hideText) children.add(_cell('HideText', '1'));
     if (b.backgroundColor != null) {
       children.add(_cell('TextBkgnd', _hex(b.backgroundColor!)));
+    } else if (hasLabel) {
+      children.add(_cell('TextBkgnd', '0'));
     }
     if (b.textDirection != 0) {
       children.add(_cell('TextDirection', b.textDirection.toString()));
@@ -3343,14 +3343,18 @@ class VsdxWriter {
     return cell;
   }
 
-  bool _hasCell(XmlElement shape, String name) {
+  bool _hasCell(XmlElement shape, String name) => _findCell(shape, name) != null;
+
+  XmlElement? _findCell(XmlElement shape, String name) {
     for (final el in shape.childElements) {
-      if (el.name.local == 'Cell' && el.getAttribute('N') == name) return true;
+      if (el.name.local == 'Cell' && el.getAttribute('N') == name) return el;
     }
-    return false;
+    return null;
   }
 
   /// Write LineCap / ObjType when absent (Edraw is picky about both).
+  /// Also upgrade arrow-size bucket 0→2 when an arrow is present so legacy
+  /// files reopen in 万兴图示 with Visio-default arrowheads.
   bool _ensureLineFillBasics(XmlElement el, VsdxShape s) {
     var changed = false;
     if (!_hasCell(el, 'LineCap')) {
@@ -3363,10 +3367,23 @@ class VsdxWriter {
         ..setAttribute('V', (s.objType ?? 2).toString());
       changed = true;
     }
+    if (s.line.beginArrow != 0) {
+      final cell = _findCell(el, 'BeginArrowSize');
+      if (cell == null || (cell.getAttribute('V') ?? '0') == '0') {
+        _ensureCell(el, 'BeginArrowSize').setAttribute('V', '2');
+        changed = true;
+      }
+    }
+    if (s.line.endArrow != 0) {
+      final cell = _findCell(el, 'EndArrowSize');
+      if (cell == null || (cell.getAttribute('V') ?? '0') == '0') {
+        _ensureCell(el, 'EndArrowSize').setAttribute('V', '2');
+        changed = true;
+      }
+    }
     return changed;
   }
 
-  /// Write default mid-edge Connection points when a 2-D shape has none.
   /// Write default mid-edge Connection points when a 2-D shape has none.
   bool _ensureConnectionPoints(XmlElement el, VsdxShape s) {
     if (s.is1D) return false;
@@ -3386,6 +3403,46 @@ class VsdxWriter {
     if (cps.isEmpty) return false;
     el.children.add(_buildConnectionSection(cps));
     return true;
+  }
+
+  /// Write Edraw-default connector dynamics when a 1-D shape lacks them.
+  bool _ensureConnectorDynamics(XmlElement el, VsdxShape s) {
+    if (!s.is1D) return false;
+    var changed = false;
+    void put(String name, String value) {
+      if (!_hasCell(el, name)) {
+        _ensureCell(el, name).setAttribute('V', value);
+        changed = true;
+      }
+    }
+
+    put('GlueType', (s.connectorProps?.glueType ?? 2).toString());
+    put('ConLineRouteExt', (s.connectorProps?.conLineRouteExt ?? 1).toString());
+    put('ShapeRouteStyle',
+        (s.connectorProps?.shapeRouteStyle ?? 16).toString());
+    put('DynFeedback', (s.connectorProps?.dynFeedback ?? 2).toString());
+    put('ConFixedCode', (s.connectorProps?.conFixedCode ?? 0).toString());
+    put('NoAlignBox', '1');
+    put('NoLiveDynamics', '1');
+    put('ShapeSplittable', '1');
+    put('ShdwPattern', s.shadow.enabled ? '1' : '0');
+    // Pin centred on Begin/End — Edraw samples always carry these formulas.
+    void putPinFormula(String name, String fallback, double value) {
+      final cell = _ensureCell(el, name);
+      final formula = s.formulas[name] ?? fallback;
+      if (cell.getAttribute('F') != formula) {
+        cell.setAttribute('F', formula);
+        changed = true;
+      }
+      if (cell.getAttribute('V') == null) {
+        cell.setAttribute('V', _fmt(value));
+        changed = true;
+      }
+    }
+
+    putPinFormula('PinX', '(BeginX+EndX)*0.5', s.pinX);
+    putPinFormula('PinY', '(BeginY+EndY)*0.5', s.pinY);
+    return changed;
   }
 
   /// Write Geometry NoFill/NoLine when absent. Edraw treats missing NoFill as
@@ -3775,6 +3832,10 @@ class VsdxWriter {
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+    } else {
+      // Edraw StyleSheet defaults can leave a residual shadow unless the shape
+      // explicitly disables it.
+      children.add(_cell('ShdwPattern', '0'));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
@@ -4041,12 +4102,10 @@ class VsdxWriter {
     if (c.textCase != VsdxTextCase.normal) {
       cells.add(_cell('Case', _textCaseInt(c.textCase).toString()));
     }
-    if ((c.fontScale - 1.0).abs() > _epsilon) {
-      cells.add(_cell('FontScale', _fmt(c.fontScale)));
-    }
-    if (c.transparency > _epsilon) {
-      cells.add(_cell('ColorTrans', _fmt(c.transparency)));
-    }
+    // Always emit FontScale/ColorTrans — Edraw samples write both even at
+    // defaults, and omitting them has caused CJK metrics drift.
+    cells.add(_cell('FontScale', _fmt(c.fontScale)));
+    cells.add(_cell('ColorTrans', _fmt(c.transparency)));
     final lang = c.langId ?? (cjk ? 'zh-CN' : null);
     if (lang != null && lang.isNotEmpty) {
       cells.add(_cell('LangID', lang));
@@ -4093,10 +4152,10 @@ class VsdxWriter {
     if (p.spaceAfterInches.abs() > _epsilon) {
       cells.add(_cell('SpAfter', _fmt(p.spaceAfterInches)));
     }
-    final spLine = _spLineValue(p);
-    if (spLine != null) {
-      cells.add(_cell('SpLine', _fmt(spLine)));
-    }
+    // Always write SpLine + Flags (Edraw samples never omit them). Default
+    // single spacing is -1.0 so a round-trip keeps lineSpacing == 1.0.
+    final spLine = _spLineValue(p) ?? -1.0;
+    cells.add(_cell('SpLine', _fmt(spLine)));
     if (p.bullet != 0) {
       cells.add(_cell('Bullet', p.bullet.toString()));
     }
@@ -4112,9 +4171,7 @@ class VsdxWriter {
     if (p.textPosAfterBulletInches.abs() > _epsilon) {
       cells.add(_cell('TextPosAfterBullet', _fmt(p.textPosAfterBulletInches)));
     }
-    if (p.flags != 0) {
-      cells.add(_cell('Flags', p.flags.toString()));
-    }
+    cells.add(_cell('Flags', p.flags.toString()));
     return cells;
   }
 
@@ -4541,15 +4598,15 @@ class VsdxWriter {
 
   XmlElement? _buildGeometrySection(VsdxGeometry g, int ix) {
     final rows = <XmlNode>[];
-    // Always emit NoFill/NoLine. Visio defaults missing NoFill to 0 (filled),
-    // but 万兴图示 treats a missing cell as NoFill=1 → hollow shapes.
+    // Always emit NoFill/NoLine/NoShow/NoSnap/NoQuickDrag. Visio defaults
+    // missing NoFill to 0 (filled), but 万兴图示 treats a missing cell as
+    // NoFill=1 → hollow shapes; the other three flags follow the same pattern
+    // in Edraw samples (always written as 0 when inactive).
     rows.add(_cell('NoFill', g.noFill ? '1' : '0'));
     rows.add(_cell('NoLine', g.noLine ? '1' : '0'));
-    // NoShow must survive a geometry rebuild — otherwise a hidden guide
-    // geometry (common in stencils) becomes visible after editing the shape.
-    if (g.noShow) rows.add(_cell('NoShow', '1'));
-    if (g.noSnap) rows.add(_cell('NoSnap', '1'));
-    if (g.noQuickDrag) rows.add(_cell('NoQuickDrag', '1'));
+    rows.add(_cell('NoShow', g.noShow ? '1' : '0'));
+    rows.add(_cell('NoSnap', g.noSnap ? '1' : '0'));
+    rows.add(_cell('NoQuickDrag', g.noQuickDrag ? '1' : '0'));
     // When the geometry was parsed (row IX known) preserve the source row IX so
     // an instance that inherits/overrides master rows keeps aligning by IX on
     // re-parse; otherwise number rows sequentially (freshly-built shapes).

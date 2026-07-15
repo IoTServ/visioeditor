@@ -533,7 +533,7 @@ class EditorController extends ChangeNotifier {
     // at their target); the stroke follows the last-used line style.
     final baseLine = (_memoLine ?? const VsdxLine(color: VsdxColor.black))
         .copyWith(endArrow: 4);
-    final connector = VsdxShapeFactory.line(
+    var connector = VsdxShapeFactory.line(
       id: id,
       ax: sax,
       ay: say,
@@ -541,6 +541,24 @@ class EditorController extends ChangeNotifier {
       by: sby,
       line: baseLine,
     );
+    // Prefixed XFTRIGGER formulas so 万兴图示 re-glues when targets move.
+    if (beginTarget != null || endTarget != null) {
+      final formulas = Map<String, String>.from(connector.formulas);
+      final props = connector.connectorProps ?? const VsdxConnectorProps();
+      if (beginTarget != null) {
+        formulas['BegTrigger'] = '_XFTRIGGER(Sheet.$beginTarget!EventXFMod)';
+      }
+      if (endTarget != null) {
+        formulas['EndTrigger'] = '_XFTRIGGER(Sheet.$endTarget!EventXFMod)';
+      }
+      connector = connector.copyWith(
+        formulas: formulas,
+        connectorProps: props.copyWith(
+          begTrigger: beginTarget != null ? '2' : props.begTrigger,
+          endTrigger: endTarget != null ? '2' : props.endTrigger,
+        ),
+      );
+    }
     // Prefer explicit CP indices; otherwise pick the mid-edge point aimed at
     // the opposite end (indices 0..3 — skip centre).
     int? beginIdx = beginConnectionPointIndex;
