@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:vsdx/vsdx.dart';
 
+import '../l10n/editor_l10n.dart';
 import 'editor_controller.dart';
 
 /// Open drawio's "Edit Link" (Cmd+K) for shape [shapeId]: set or clear the
@@ -69,11 +70,12 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
     final hasLink = (widget.initial?.effectiveTarget ?? '').isNotEmpty;
     return AlertDialog(
       title: Row(
         children: [
-          const Expanded(child: Text('Edit Link')),
+          Expanded(child: Text(el.editLink.replaceAll('…', ''))),
           Text(
             widget.title,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
@@ -90,20 +92,20 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
               controller: _link,
               autofocus: true,
               onSubmitted: (_) => Navigator.pop(context, _build()),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                labelText: 'Link',
-                hintText: 'https://example.com  or  #Page-2',
-                border: OutlineInputBorder(),
+                labelText: el.link,
+                hintText: el.linkHint,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _label,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                labelText: 'Label (optional)',
-                border: OutlineInputBorder(),
+                labelText: el.labelOptional,
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -114,7 +116,7 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
           TextButton.icon(
             onPressed: () => Navigator.pop(context, const <VsdxHyperlink>[]),
             icon: const Icon(Icons.link_off, size: 18),
-            label: const Text('Remove Link'),
+            label: Text(el.removeLink),
           )
         else
           const SizedBox.shrink(),
@@ -123,11 +125,11 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
           children: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(el.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, _build()),
-              child: const Text('Apply'),
+              child: Text(el.apply),
             ),
           ],
         ),

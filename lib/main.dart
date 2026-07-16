@@ -21,6 +21,7 @@ import 'editor/page_canvas.dart';
 import 'editor/ruler.dart';
 import 'editor/stencils.dart';
 import 'l10n/app_localizations.dart';
+import 'l10n/editor_l10n.dart';
 import 'render/arrow_library.dart';
 import 'render/path_builder.dart';
 import 'io/document_io.dart';
@@ -218,7 +219,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }) async {
     final c = await _workspace.openBytes(bytes, path: path, name: name);
     if (c.error != null) {
-      _snack('Could not open file: ${c.error}');
+      if (mounted) {
+        _snack(EditorL10n.of(context).openFileFailed('${c.error}'));
+      }
       final i = _workspace.indexOf(c);
       if (i >= 0) _workspace.closeAt(i);
       return;
@@ -237,7 +240,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final picked = await readDroppedFile(path);
       await _openBytes(picked.bytes, path: picked.path, name: picked.name);
     } catch (e) {
-      _snack('Could not open $path');
+      if (mounted) {
+        _snack(EditorL10n.of(context).openPathFailed(path));
+      }
     }
   }
 
@@ -246,7 +251,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final data = await rootBundle.load('assets/examples/$assetName');
       await _openBytes(data.buffer.asUint8List(), name: assetName);
     } catch (e) {
-      _snack('Could not open example $assetName');
+      if (mounted) {
+        _snack(EditorL10n.of(context).openExampleFailed(assetName));
+      }
     }
   }
 
@@ -273,7 +280,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
             pagePt: pagePt,
           );
         } catch (_) {
-          _snack('Could not insert image');
+          if (mounted) {
+            _snack(EditorL10n.of(context).insertImageFailed);
+          }
         }
       }
     }
@@ -310,13 +319,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final size = await _imageSizeInches(bytes);
     if (!mounted) return;
     final label = name ?? 'image';
+    final el = EditorL10n.of(context);
     if (replaceSelected && c.canReplaceSelectedImage) {
       c.replaceImage(
         c.singleSelectedId!,
         bytes,
         fileExtension: fileExtension,
       );
-      _snack('Replaced with $label');
+      _snack(el.replacedWith(label));
       return;
     }
     // Drop onto an existing picture → replace its media (drawio).
@@ -324,7 +334,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final hit = c.pictureShapeAt(pagePt.dx, pagePt.dy);
       if (hit != null) {
         c.replaceImage(hit, bytes, fileExtension: fileExtension);
-        _snack('Replaced with $label');
+        _snack(el.replacedWith(label));
         return;
       }
     }
@@ -336,7 +346,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
       cx: pagePt?.dx,
       cy: pagePt?.dy,
     );
-    _snack('Inserted $label');
+    _snack(el.insertedNamed(label));
   }
 
   /// Pixel size → inches at 96 dpi; `(null, null)` when undecodable.
@@ -355,19 +365,20 @@ class _EditorHomePageState extends State<EditorHomePage> {
 
   Future<bool> _confirmDiscard(EditorController c) async {
     if (!c.isDirty) return true;
+    final el = EditorL10n.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Discard unsaved changes?'),
-        content: Text('“${c.fileName ?? 'Untitled'}” has unsaved changes.'),
+        title: Text(el.discardUnsavedTitle),
+        content: Text(el.discardUnsavedBody(c.fileName ?? el.untitled)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(el.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Discard'),
+            child: Text(el.discard),
           ),
         ],
       ),
@@ -387,6 +398,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   Future<void> _save() async {
     final c = _c;
     if (c == null || !c.hasDocument) return;
+    final el = EditorL10n.of(context);
     var path = c.filePath;
     path ??= await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
     if (path == null) return;
@@ -395,15 +407,18 @@ class _EditorHomePageState extends State<EditorHomePage> {
       await writeBytesToFile(path, bytes);
       c.markSaved(bytes, path: path);
       await _addRecent(path);
-      _snack('Saved to $path');
+      if (!mounted) return;
+      _snack(el.savedTo(path));
     } catch (e) {
-      _snack('Save failed: $e');
+      if (!mounted) return;
+      _snack(el.saveFailed('$e'));
     }
   }
 
   Future<void> _saveAs() async {
     final c = _c;
     if (c == null || !c.hasDocument) return;
+    final el = EditorL10n.of(context);
     final path =
         await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
     if (path == null) return;
@@ -412,9 +427,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
       await writeBytesToFile(path, bytes);
       c.markSaved(bytes, path: path);
       await _addRecent(path);
-      _snack('Saved to $path');
+      if (!mounted) return;
+      _snack(el.savedTo(path));
     } catch (e) {
-      _snack('Save failed: $e');
+      if (!mounted) return;
+      _snack(el.saveFailed('$e'));
     }
   }
 
@@ -422,6 +439,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     final doc = c?.document;
     if (c == null || doc == null) return;
+    final el = EditorL10n.of(context);
     final path = await pickExportLocation(
       ext: 'svg',
       suggestedName: '${baseName(c.fileName)}.svg',
@@ -432,9 +450,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
         layerFilter: SvgLayerFilter.print,
       ).serializeDocument(doc);
       await writeBytesToFile(path, Uint8List.fromList(utf8.encode(svg)));
-      _snack('Exported SVG to $path');
+      if (!mounted) return;
+      _snack(el.exportedSvg(path));
     } catch (e) {
-      _snack('SVG export failed: $e');
+      if (!mounted) return;
+      _snack(el.svgExportFailed('$e'));
     }
   }
 
@@ -443,6 +463,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final doc = c?.document;
     final page = c?.currentPage;
     if (c == null || doc == null || page == null) return;
+    final el = EditorL10n.of(context);
     final path = await pickExportLocation(
       ext: 'png',
       suggestedName: '${baseName(c.fileName)}.png',
@@ -456,13 +477,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
         underlayPage: doc.backgroundFor(page),
       );
       if (bytes == null) {
-        _snack('PNG export failed');
+        if (!mounted) return;
+        _snack(el.pngExportFailed);
         return;
       }
       await writeBytesToFile(path, bytes);
-      _snack('Exported PNG to $path');
+      if (!mounted) return;
+      _snack(el.exportedPng(path));
     } catch (e) {
-      _snack('PNG export failed: $e');
+      if (!mounted) return;
+      _snack(el.pngExportFailedError('$e'));
     }
   }
 
@@ -492,24 +516,25 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
     final textController =
         TextEditingController(text: doc.pages[index].name);
+    final el = EditorL10n.of(context);
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rename page'),
+        title: Text(el.renamePage),
         content: TextField(
           controller: textController,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Page name'),
+          decoration: InputDecoration(hintText: el.pageNameHint),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(el.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, textController.text),
-            child: const Text('OK'),
+            child: Text(el.ok),
           ),
         ],
       ),
@@ -522,6 +547,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     final doc = c?.document;
     if (c == null || doc == null) return;
+    final el = EditorL10n.of(context);
     final path = await pickExportLocation(
       ext: 'pdf',
       suggestedName: '${baseName(c.fileName)}.pdf',
@@ -530,9 +556,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
     try {
       final bytes = await exportDocumentToPdf(doc);
       await writeBytesToFile(path, bytes);
-      _snack('Exported PDF to $path');
+      if (!mounted) return;
+      _snack(el.exportedPdf(path));
     } catch (e) {
-      _snack('PDF export failed: $e');
+      if (!mounted) return;
+      _snack(el.pdfExportFailed('$e'));
     }
   }
 
@@ -704,6 +732,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         builder: (context, stencilChild) {
           final cur = _workspace.active;
           final l10n = AppLocalizations.of(context);
+          final el = EditorL10n.of(context);
           return Scaffold(
             appBar: AppBar(
               title: Text(l10n.appTitle),
@@ -712,47 +741,47 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   IconButton(
                     onPressed: cur.canUndo ? cur.undo : null,
                     icon: const Icon(Icons.undo),
-                    tooltip: 'Undo',
+                    tooltip: el.undo,
                   ),
                   IconButton(
                     onPressed: cur.canRedo ? cur.redo : null,
                     icon: const Icon(Icons.redo),
-                    tooltip: 'Redo',
+                    tooltip: el.redo,
                   ),
                   IconButton(
                     onPressed: () =>
                         setState(() => _showOutline = !_showOutline),
                     icon: const Icon(Icons.map_outlined),
                     isSelected: _showOutline,
-                    tooltip: 'Outline',
+                    tooltip: el.outline,
                   ),
                   IconButton(
                     onPressed: () => setState(() => _showRulers = !_showRulers),
                     icon: const Icon(Icons.straighten),
                     isSelected: _showRulers,
-                    tooltip: 'Rulers',
+                    tooltip: el.rulers,
                   ),
                   IconButton(
                     onPressed: cur.toggleGrid,
                     icon: Icon(cur.showGrid ? Icons.grid_on : Icons.grid_off),
-                    tooltip: 'Toggle grid',
+                    tooltip: el.toggleGrid,
                   ),
                   IconButton(
                     onPressed: cur.requestFitToWindow,
                     icon: const Icon(Icons.fit_screen_outlined),
-                    tooltip: 'Fit to window (⇧⌘H)',
+                    tooltip: el.fitToWindowShortcut,
                   ),
                   IconButton(
                     onPressed: () =>
                         setState(() => _showLayersPanel = !_showLayersPanel),
                     icon: const Icon(Icons.layers_outlined),
                     isSelected: _showLayersPanel,
-                    tooltip: 'Layers',
+                    tooltip: el.layers,
                   ),
                   IconButton(
                     onPressed: _insertImage,
                     icon: const Icon(Icons.image_outlined),
-                    tooltip: 'Insert Image…',
+                    tooltip: el.insertImage,
                   ),
                   IconButton(
                     onPressed: _save,
@@ -841,97 +870,97 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       }
                     },
                     itemBuilder: (context) => [
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'selectAll',
-                        child: Text('Select All (Cmd+A)'),
+                        child: Text(el.selectAllShortcut),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'find',
-                        child: Text('Find… (Cmd+F)'),
+                        child: Text(el.findShortcut),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'replace',
-                        child: Text('Find and Replace… (Cmd+H)'),
+                        child: Text(el.findReplaceShortcut),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'insertImage',
-                        child: Text('Insert Image…'),
+                        child: Text(el.insertImage),
                       ),
                       PopupMenuItem<String>(
                         value: 'editData',
                         enabled: cur.singleSelectedId != null,
-                        child: const Text('Edit Data… (Cmd+M)'),
+                        child: Text(el.editDataShortcut),
                       ),
                       PopupMenuItem<String>(
                         value: 'editLink',
                         enabled: cur.singleSelectedId != null,
-                        child: const Text('Edit Link… (Cmd+K)'),
+                        child: Text(el.editLinkShortcut),
                       ),
                       PopupMenuItem<String>(
                         value: 'editConnPts',
                         enabled: cur.editingConnectionPoints ||
                             cur.canEditConnectionPoints,
                         child: Text(cur.editingConnectionPoints
-                            ? 'Done Editing Connection Points'
-                            : 'Edit Connection Points…'),
+                            ? el.doneEditingConnectionPoints
+                            : el.editConnectionPoints),
                       ),
                       PopupMenuItem<String>(
                         value: 'lock',
                         enabled: cur.hasSelection,
                         child: Text(cur.selectionLocked
-                            ? 'Unlock (Cmd+L)'
-                            : 'Lock (Cmd+L)'),
+                            ? el.unlockShortcut
+                            : el.lockShortcut),
                       ),
                       PopupMenuItem<String>(
                         value: 'zoomSel',
                         enabled: cur.hasSelection,
-                        child: const Text('Zoom to Selection'),
+                        child: Text(el.zoomToSelection),
                       ),
                       PopupMenuItem<String>(
                         value: 'copyStyle',
                         enabled: cur.hasSelection,
-                        child: const Text('Copy Style (Cmd+Alt+C)'),
+                        child: Text(el.copyStyleShortcut),
                       ),
                       PopupMenuItem<String>(
                         value: 'pasteStyle',
                         enabled: cur.hasStyleClipboard && cur.hasSelection,
-                        child: const Text('Paste Style (Cmd+Alt+V)'),
+                        child: Text(el.pasteStyleShortcut),
                       ),
                       const PopupMenuDivider(),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'saveAs',
-                        child: Text('Save As…'),
+                        child: Text(el.saveAs),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'exportSvg',
-                        child: Text('Export as SVG…'),
+                        child: Text(el.exportSvg),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'exportPng',
-                        child: Text('Export as PNG…'),
+                        child: Text(el.exportPng),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'exportPdf',
-                        child: Text('Export as PDF…'),
+                        child: Text(el.exportPdf),
                       ),
                       CheckedPopupMenuItem<String>(
                         value: 'snap',
                         checked: cur.snapToGrid,
-                        child: const Text('Snap to grid'),
+                        child: Text(el.snapToGrid),
                       ),
                       CheckedPopupMenuItem<String>(
                         value: 'lineJumps',
                         checked: cur.showLineJumps,
-                        child: const Text('Line jumps'),
+                        child: Text(el.lineJumps),
                       ),
                       const PopupMenuDivider(),
                       PopupMenuItem<String>(
                         value: 'settings',
                         child: Text(l10n.settings),
                       ),
-                      const PopupMenuItem<String>(
+                      PopupMenuItem<String>(
                         value: 'close',
-                        child: Text('Close tab (Cmd+W)'),
+                        child: Text(el.closeTabShortcut),
                       ),
                     ],
                   ),
@@ -979,6 +1008,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final scheme = Theme.of(context).colorScheme;
     final page = c.currentPage;
     final selCount = c.selection.length;
+    final el = EditorL10n.of(context);
     final style = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
     return Material(
       color: scheme.surfaceContainerHighest,
@@ -994,15 +1024,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 Text('${_trimNum(page.widthInches)} × '
                     '${_trimNum(page.heightInches)} in', style: style),
                 const SizedBox(width: 16),
-                Text('Page ${c.currentPageIndex + 1} of ${c.pageCount}',
+                Text(el.pageOf(c.currentPageIndex + 1, c.pageCount),
                     style: style),
               ],
               const Spacer(),
               if (c.isDirty) ...[
-                Text('Unsaved', style: style),
+                Text(el.unsaved, style: style),
                 const SizedBox(width: 12),
               ],
-              Text(selCount == 0 ? 'No selection' : '$selCount selected',
+              Text(selCount == 0 ? el.noSelection : el.selectedCount(selCount),
                   style: style),
             ],
           ),
@@ -1030,7 +1060,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
           itemBuilder: (context, i) {
             final doc = _workspace.docs[i];
             return _DocTab(
-              label: doc.fileName ?? 'Untitled',
+              label: doc.fileName ?? EditorL10n.of(context).untitled,
               dirty: doc.isDirty,
               active: i == _workspace.activeIndex,
               onTap: () => _workspace.setActive(i),
@@ -1144,8 +1174,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
             ),
             child: Text(
               _c != null && _c!.hasDocument
-                  ? 'Drop Visio file or image'
-                  : 'Drop to open',
+                  ? EditorL10n.of(context).dropHint
+                  : EditorL10n.of(context).dropToOpen,
               style: const TextStyle(fontSize: 16),
             ),
           ),
@@ -1188,9 +1218,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                           selected: i == c.currentPageIndex,
                           onSelected: (_) => c.selectPage(i),
                           tooltip: page.isBackgroundPage
-                              ? 'Background page · Drag to reorder · '
-                                  'Double-click to rename'
-                              : 'Drag to reorder · Double-click to rename',
+                              ? EditorL10n.of(context).backgroundPageReorderHint
+                              : EditorL10n.of(context).pageReorderHint,
                         ),
                       ),
                     ),
@@ -1201,17 +1230,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
             IconButton(
               onPressed: c.addPage,
               icon: const Icon(Icons.add),
-              tooltip: 'Add page',
+              tooltip: EditorL10n.of(context).addPage,
             ),
             IconButton(
               onPressed: c.duplicateCurrentPage,
               icon: const Icon(Icons.copy_all_outlined),
-              tooltip: 'Duplicate page',
+              tooltip: EditorL10n.of(context).duplicatePage,
             ),
             IconButton(
               onPressed: c.pageCount > 1 ? c.deleteCurrentPage : null,
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete page',
+              tooltip: EditorL10n.of(context).deletePage,
             ),
             const SizedBox(width: 8),
           ],
@@ -1240,6 +1269,7 @@ class _DocTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       child: Material(
@@ -1272,7 +1302,7 @@ class _DocTab extends StatelessWidget {
                   onPressed: onClose,
                   icon: const Icon(Icons.close, size: 16),
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Close tab',
+                  tooltip: el.closeTab,
                 ),
               ],
             ),
@@ -1299,20 +1329,21 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
+    final el = EditorL10n.of(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.account_tree_outlined, size: 72, color: scheme.primary),
           const SizedBox(height: 20),
-          const Text(
-            'Editor for Visio Diagrams',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          Text(
+            l10n.appTitle,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
-            'Create a new drawing, or drag & drop / open .vsdx files '
-            '(each opens in its own tab).',
+            el.emptySubtitle,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
@@ -1322,18 +1353,18 @@ class _EmptyState extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onNew,
                 icon: const Icon(Icons.note_add_outlined),
-                label: const Text('New drawing'),
+                label: Text(el.newDrawing),
               ),
               const SizedBox(width: 12),
               OutlinedButton.icon(
                 onPressed: onOpen,
                 icon: const Icon(Icons.folder_open_outlined),
-                label: const Text('Open Visio drawing'),
+                label: Text(el.openVisioDrawing),
               ),
             ],
           ),
           const SizedBox(height: 28),
-          Text('Or try a sample:',
+          Text(el.orTrySample,
               style: TextStyle(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 10),
           ConstrainedBox(
@@ -1373,6 +1404,7 @@ class _ToolStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
 
     Widget tool(EditorTool t, IconData icon, String tip) {
       final active = controller.tool == t;
@@ -1398,13 +1430,13 @@ class _ToolStrip extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 8),
-            tool(EditorTool.select, Icons.near_me_outlined, 'Select / move'),
-            tool(EditorTool.rectangle, Icons.crop_square, 'Rectangle'),
-            tool(EditorTool.ellipse, Icons.circle_outlined, 'Ellipse'),
-            tool(EditorTool.line, Icons.horizontal_rule, 'Line'),
-            tool(EditorTool.connector, Icons.timeline, 'Connector (glue)'),
-            tool(EditorTool.freehand, Icons.gesture, 'Freehand'),
-            tool(EditorTool.text, Icons.text_fields, 'Text'),
+            tool(EditorTool.select, Icons.near_me_outlined, el.toolSelect),
+            tool(EditorTool.rectangle, Icons.crop_square, el.toolRectangle),
+            tool(EditorTool.ellipse, Icons.circle_outlined, el.toolEllipse),
+            tool(EditorTool.line, Icons.horizontal_rule, el.toolLine),
+            tool(EditorTool.connector, Icons.timeline, el.toolConnector),
+            tool(EditorTool.freehand, Icons.gesture, el.toolFreehand),
+            tool(EditorTool.text, Icons.text_fields, el.toolText),
             const Spacer(),
             const Divider(height: 1, indent: 10, endIndent: 10),
             // Unified shapes entry: the "more shapes" library toggle lives with
@@ -1418,7 +1450,7 @@ class _ToolStrip extends StatelessWidget {
                 child: IconButton(
                   onPressed: onToggleStencils,
                   icon: const Icon(Icons.category_outlined),
-                  tooltip: 'More shapes',
+                  tooltip: el.moreShapes,
                   color: showStencils ? cs.onPrimaryContainer : null,
                 ),
               ),
@@ -1505,13 +1537,14 @@ class _StencilPanelState extends State<_StencilPanel> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
     final q = _query.trim().toLowerCase();
     final searching = q.isNotEmpty;
     final groups = <({StencilGroup group, List<Stencil> matches})>[];
     for (final group in kStencilGroups) {
       final matches = searching
           ? group.stencils
-              .where((s) => s.name.toLowerCase().contains(q))
+              .where((s) => el.stencilMatches(s.name, q))
               .toList()
           : group.stencils;
       if (matches.isEmpty) continue;
@@ -1530,7 +1563,7 @@ class _StencilPanelState extends State<_StencilPanel> {
                 decoration: InputDecoration(
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: 'Search shapes',
+                  hintText: el.searchShapes,
                   contentPadding:
                       const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                   border: OutlineInputBorder(
@@ -1575,6 +1608,7 @@ class _StencilPanelState extends State<_StencilPanel> {
   /// library by category (drawio's expand-all / collapse-all affordance), plus
   /// a category count so the palette is quick to scan.
   Widget _buildQuickBar(ColorScheme scheme) {
+    final el = EditorL10n.of(context);
     final allExpanded = _collapsed.isEmpty;
     final allCollapsed =
         kStencilGroups.every((g) => _collapsed.contains(g.name));
@@ -1590,15 +1624,15 @@ class _StencilPanelState extends State<_StencilPanel> {
       padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
       child: Row(
         children: [
-          Text('${kStencilGroups.length} categories',
+          Text(el.categoriesCount(kStencilGroups.length),
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
                   ?.copyWith(color: scheme.onSurfaceVariant)),
           const Spacer(),
-          btn(Icons.unfold_more, 'Expand all',
+          btn(Icons.unfold_more, el.expandAll,
               allExpanded ? null : () => _setAllCollapsed(false)),
-          btn(Icons.unfold_less, 'Collapse all',
+          btn(Icons.unfold_less, el.collapseAll,
               allCollapsed ? null : () => _setAllCollapsed(true)),
         ],
       ),
@@ -1622,7 +1656,7 @@ class _StencilPanelState extends State<_StencilPanel> {
                     size: 16),
                 const SizedBox(width: 2),
                 Flexible(
-                  child: Text(group.name,
+                  child: Text(EditorL10n.of(context).stencilGroup(group.name),
                       style: text.labelLarge,
                       overflow: TextOverflow.ellipsis),
                 ),
@@ -1648,7 +1682,7 @@ class _StencilPanelState extends State<_StencilPanel> {
 
   Widget _draggableTile(ColorScheme scheme, Stencil s) {
     return Tooltip(
-      message: s.name,
+      message: EditorL10n.of(context).stencil(s.name),
       // Drag a stencil onto the canvas to drop it at the cursor (drawio); a
       // plain click still drops it at the centre.
       child: RepaintBoundary(
@@ -1822,57 +1856,63 @@ class _PropertyPanel extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            '$count shape${count == 1 ? '' : 's'} selected',
+            count == 0
+                ? EditorL10n.of(context).noSelection
+                : EditorL10n.of(context).selectedCount(count),
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
           Wrap(
             children: [
-              _iconBtn(Icons.flip_to_front, 'Bring to front',
+              _iconBtn(Icons.flip_to_front, EditorL10n.of(context).bringToFront,
                   controller.bringSelectionToFront),
-              _iconBtn(Icons.flip_to_back, 'Send to back',
+              _iconBtn(Icons.flip_to_back, EditorL10n.of(context).sendToBack,
                   controller.sendSelectionToBack),
-              _iconBtn(Icons.arrow_upward, 'Bring forward (Cmd+])',
+              _iconBtn(Icons.arrow_upward, EditorL10n.of(context).bringForwardShortcut,
                   controller.bringSelectionForward),
-              _iconBtn(Icons.arrow_downward, 'Send backward (Cmd+[)',
+              _iconBtn(Icons.arrow_downward, EditorL10n.of(context).sendBackwardShortcut,
                   controller.sendSelectionBackward),
               IconButton(
                 onPressed:
                     controller.canGroup ? controller.groupSelection : null,
                 icon: const Icon(Icons.group_work_outlined),
-                tooltip: 'Group (Cmd+G)',
+                tooltip: EditorL10n.of(context).groupShortcut,
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
                 onPressed:
                     controller.canUngroup ? controller.ungroupSelection : null,
                 icon: const Icon(Icons.call_split),
-                tooltip: 'Ungroup (Cmd+Shift+U)',
+                tooltip: EditorL10n.of(context).ungroupShortcut,
                 visualDensity: VisualDensity.compact,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          _section(context, 'Arrange'),
+          _section(context, EditorL10n.of(context).panelArrange),
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (!controller.selectionLocked) ...[
-                _iconBtn(Icons.flip, 'Flip horizontal',
+                _iconBtn(Icons.flip, EditorL10n.of(context).flipHorizontal,
                     controller.flipHorizontal),
                 Transform.rotate(
                   angle: math.pi / 2,
                   child: _iconBtn(
-                      Icons.flip, 'Flip vertical', controller.flipVertical),
+                      Icons.flip,
+                      EditorL10n.of(context).flipVertical,
+                      controller.flipVertical),
                 ),
-                _iconBtn(Icons.rotate_left, 'Rotate 90° left',
+                _iconBtn(Icons.rotate_left, EditorL10n.of(context).rotateLeft90,
                     () => controller.rotateSelection90(clockwise: false)),
-                _iconBtn(Icons.rotate_right, 'Rotate 90° right (Cmd+R)',
+                _iconBtn(
+                    Icons.rotate_right,
+                    EditorL10n.of(context).rotateRight90Shortcut,
                     () => controller.rotateSelection90()),
               ],
               _iconBtn(
                 controller.selectionLocked ? Icons.lock : Icons.lock_open,
-                controller.selectionLocked ? 'Unlock (Cmd+L)' : 'Lock (Cmd+L)',
+                controller.selectionLocked ? EditorL10n.of(context).unlockShortcut : EditorL10n.of(context).lockShortcut,
                 controller.toggleLock,
               ),
             ],
@@ -1882,72 +1922,87 @@ class _PropertyPanel extends StatelessWidget {
           if (count >= 1) ...[
             _section(
               context,
-              count == 1 ? 'Align to page' : 'Align',
+              count == 1
+                  ? EditorL10n.of(context).panelAlignToPage
+                  : EditorL10n.of(context).panelAlign,
             ),
             Wrap(
               children: [
                 _iconBtn(
                     Icons.align_horizontal_left,
-                    count == 1 ? 'Align left to page' : 'Align left',
+                    count == 1
+                        ? EditorL10n.of(context).alignLeftPage
+                        : EditorL10n.of(context).alignLeft,
                     controller.alignLeft),
                 _iconBtn(
                     Icons.align_horizontal_center,
                     count == 1
-                        ? 'Center horizontally on page'
-                        : 'Center horizontally',
+                        ? EditorL10n.of(context).centerHorizontallyPage
+                        : EditorL10n.of(context).centerHorizontally,
                     controller.alignCenterH),
                 _iconBtn(
                     Icons.align_horizontal_right,
-                    count == 1 ? 'Align right to page' : 'Align right',
+                    count == 1
+                        ? EditorL10n.of(context).alignRightPage
+                        : EditorL10n.of(context).alignRight,
                     controller.alignRight),
                 _iconBtn(
                     Icons.align_vertical_top,
-                    count == 1 ? 'Align top to page' : 'Align top',
+                    count == 1
+                        ? EditorL10n.of(context).alignTopPage
+                        : EditorL10n.of(context).alignTop,
                     controller.alignTop),
                 _iconBtn(
                     Icons.align_vertical_center,
                     count == 1
-                        ? 'Center vertically on page'
-                        : 'Center vertically',
+                        ? EditorL10n.of(context).centerVerticallyPage
+                        : EditorL10n.of(context).centerVertically,
                     controller.alignMiddle),
                 _iconBtn(
                     Icons.align_vertical_bottom,
-                    count == 1 ? 'Align bottom to page' : 'Align bottom',
+                    count == 1
+                        ? EditorL10n.of(context).alignBottomPage
+                        : EditorL10n.of(context).alignBottom,
                     controller.alignBottom),
                 if (count >= 3) ...[
-                  _iconBtn(Icons.horizontal_distribute, 'Distribute horizontally',
+                  _iconBtn(
+                      Icons.horizontal_distribute,
+                      EditorL10n.of(context).distributeH,
                       controller.distributeHorizontally),
-                  _iconBtn(Icons.vertical_distribute, 'Distribute vertically',
+                  _iconBtn(
+                      Icons.vertical_distribute,
+                      EditorL10n.of(context).distributeV,
                       controller.distributeVertically),
                 ],
                 if (count >= 2) ...[
-                  _iconBtn(Icons.width_normal, 'Same width',
+                  _iconBtn(Icons.width_normal, EditorL10n.of(context).sameWidth,
                       controller.matchSelectionWidth),
-                  _iconBtn(Icons.height, 'Same height',
+                  _iconBtn(Icons.height, EditorL10n.of(context).sameHeight,
                       controller.matchSelectionHeight),
-                  _iconBtn(Icons.aspect_ratio, 'Same size',
+                  _iconBtn(Icons.aspect_ratio, EditorL10n.of(context).sameSize,
                       controller.matchSelectionSize),
                 ],
               ],
             ),
             const SizedBox(height: 16),
           ],
-          _section(context, 'Fill'),
+          _section(context, EditorL10n.of(context).panelFill),
           _swatchRow(
             onColor: (v) => controller.setFillColor(VsdxColor(v)),
             onNone: controller.setNoFill,
           ),
           const SizedBox(height: 6),
           _themeSwatchRow(
+            context,
             controller: controller,
             onSlot: controller.setFillThemeSlot,
             selectedSlot: controller.selectedFill?.foreground == null
                 ? controller.selectedFill?.themeForegroundIndex
                 : null,
           ),
-          _fillPatternControls(controller),
+          _fillPatternControls(context, controller),
           _OpacitySlider(
-            label: 'Opacity',
+            label: EditorL10n.of(context).opacity,
             opacity: 1 - (controller.selectedFill?.foregroundTransparency ?? 0),
             onStart: controller.beginTransaction,
             onChanged: (v) => controller.setFillOpacity(v, transient: true),
@@ -1956,13 +2011,14 @@ class _PropertyPanel extends StatelessWidget {
           _fillGradientControls(context, controller),
           _roundedControl(context, controller),
           const SizedBox(height: 16),
-          _section(context, 'Line'),
+          _section(context, EditorL10n.of(context).panelLine),
           _swatchRow(
             onColor: (v) => controller.setLineColor(VsdxColor(v)),
             onNone: controller.setNoLine,
           ),
           const SizedBox(height: 6),
           _themeSwatchRow(
+            context,
             controller: controller,
             onSlot: controller.setLineThemeSlot,
             selectedSlot: controller.selectedLine?.color == null
@@ -1981,13 +2037,13 @@ class _PropertyPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          _dashDropdown(controller),
+          _dashDropdown(context, controller),
           const SizedBox(height: 8),
-          _compoundTypeRow(controller),
+          _compoundTypeRow(context, controller),
           const SizedBox(height: 8),
-          _arrowPickers(controller),
+          _arrowPickers(context, controller),
           _OpacitySlider(
-            label: 'Opacity',
+            label: EditorL10n.of(context).opacity,
             opacity: 1 - (controller.selectedLine?.transparency ?? 0),
             onStart: controller.beginTransaction,
             onChanged: (v) => controller.setLineOpacity(v, transient: true),
@@ -1996,16 +2052,19 @@ class _PropertyPanel extends StatelessWidget {
           _lineGradientControls(context, controller),
           if (controller.hasConnectorSelected) ...[
             const SizedBox(height: 16),
-            _section(context, 'Connector'),
+            _section(context, EditorL10n.of(context).panelConnector),
             Wrap(
               spacing: 8,
               children: [
                 for (final s in ConnectorRouteStyle.values)
                   ChoiceChip(
                     label: Text(switch (s) {
-                      ConnectorRouteStyle.straight => 'Straight',
-                      ConnectorRouteStyle.orthogonal => 'Orthogonal',
-                      ConnectorRouteStyle.curved => 'Curved',
+                      ConnectorRouteStyle.straight =>
+                        EditorL10n.of(context).straight,
+                      ConnectorRouteStyle.orthogonal =>
+                        EditorL10n.of(context).orthogonal,
+                      ConnectorRouteStyle.curved =>
+                        EditorL10n.of(context).curved,
                     }),
                     selected: controller.selectedConnectorRouteStyle == s,
                     onSelected: (_) => controller.setConnectorRouteStyle(s),
@@ -2014,7 +2073,7 @@ class _PropertyPanel extends StatelessWidget {
             ),
             Row(
               children: [
-                const Text('Rounded'),
+                Text(EditorL10n.of(context).rounded),
                 const Spacer(),
                 Switch(
                   value: controller.selectedConnectorRounded,
@@ -2028,10 +2087,10 @@ class _PropertyPanel extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
-          _section(context, 'Shadow'),
+          _section(context, EditorL10n.of(context).panelShadow),
           Row(
             children: [
-              const Text('Enabled'),
+              Text(EditorL10n.of(context).enabled),
               const Spacer(),
               Switch(
                 value: controller.selectedHasShadow,
@@ -2042,10 +2101,10 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.selectedHasShadow)
             _shadowDetailControls(context, controller),
           const SizedBox(height: 8),
-          _section(context, 'Glow'),
+          _section(context, EditorL10n.of(context).panelGlow),
           Row(
             children: [
-              const Text('Enabled'),
+              Text(EditorL10n.of(context).enabled),
               const Spacer(),
               Switch(
                 value: controller.selectedHasGlow,
@@ -2056,10 +2115,10 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.selectedHasGlow)
             _glowDetailControls(context, controller),
           const SizedBox(height: 8),
-          _section(context, 'Reflection'),
+          _section(context, EditorL10n.of(context).panelReflection),
           Row(
             children: [
-              const Text('Enabled'),
+              Text(EditorL10n.of(context).enabled),
               const Spacer(),
               Switch(
                 value: controller.selectedHasReflection,
@@ -2070,10 +2129,10 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.selectedHasReflection)
             _reflectionDetailControls(context, controller),
           const SizedBox(height: 8),
-          _section(context, 'Soft Edges'),
+          _section(context, EditorL10n.of(context).panelSoftEdges),
           Row(
             children: [
-              const Text('Enabled'),
+              Text(EditorL10n.of(context).enabled),
               const Spacer(),
               Switch(
                 value: controller.selectedHasSoftEdges,
@@ -2083,7 +2142,7 @@ class _PropertyPanel extends StatelessWidget {
           ),
           if (controller.selectedHasSoftEdges)
             _RangeSlider(
-              label: 'Size',
+              label: EditorL10n.of(context).size,
               value: controller.selectedSoftEdgesInches.clamp(0.01, 0.25),
               min: 0.01,
               max: 0.25,
@@ -2095,7 +2154,7 @@ class _PropertyPanel extends StatelessWidget {
             ),
           if (controller.selectedCharStyle != null) ...[
             const SizedBox(height: 16),
-            _section(context, 'Text'),
+            _section(context, EditorL10n.of(context).panelText),
             _textControls(context),
           ],
           if (controller.canReplaceSelectedImage) ...[
@@ -2112,7 +2171,7 @@ class _PropertyPanel extends StatelessWidget {
           FilledButton.tonalIcon(
             onPressed: controller.deleteSelection,
             icon: const Icon(Icons.delete_outline),
-            label: const Text('Delete'),
+            label: Text(EditorL10n.of(context).delete),
           ),
         ],
       ),
@@ -2133,7 +2192,7 @@ class _PropertyPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _section(context, 'Image'),
+        _section(context, EditorL10n.of(context).panelImage),
         OutlinedButton.icon(
           onPressed: () async {
             final picked = await pickImageFile();
@@ -2145,7 +2204,7 @@ class _PropertyPanel extends StatelessWidget {
             );
           },
           icon: const Icon(Icons.image_outlined, size: 18),
-          label: const Text('Replace Image…'),
+          label: Text(EditorL10n.of(context).replaceImage),
         ),
       ],
     );
@@ -2161,10 +2220,10 @@ class _PropertyPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _section(context, 'Data'),
+        _section(context, EditorL10n.of(context).panelData),
         if (props.isEmpty)
           Text(
-            'No shape data',
+            EditorL10n.of(context).noShapeData,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           )
         else
@@ -2200,7 +2259,7 @@ class _PropertyPanel extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: () => showEditDataDialog(context, controller, id),
           icon: const Icon(Icons.data_object, size: 18),
-          label: const Text('Edit Data…'),
+          label: Text(EditorL10n.of(context).editData),
         ),
       ],
     );
@@ -2217,10 +2276,10 @@ class _PropertyPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _section(context, 'Link'),
+        _section(context, EditorL10n.of(context).panelLink),
         if (target == null || target.isEmpty)
           Text(
-            'No link',
+            EditorL10n.of(context).noLink,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           )
         else
@@ -2235,7 +2294,7 @@ class _PropertyPanel extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: () => showEditLinkDialog(context, controller, id),
           icon: const Icon(Icons.link, size: 18),
-          label: const Text('Edit Link…'),
+          label: Text(EditorL10n.of(context).editLink),
         ),
       ],
     );
@@ -2283,25 +2342,25 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
-        Text('Gradient', style: Theme.of(context).textTheme.labelMedium),
+        Text(EditorL10n.of(context).gradient, style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: 4),
         Wrap(
           spacing: 6,
           children: [
             ChoiceChip(
-              label: const Text('None'),
+              label: Text(EditorL10n.of(context).none),
               selected: g == null,
               onSelected: (_) => controller.setFillGradient(null),
               visualDensity: VisualDensity.compact,
             ),
             ChoiceChip(
-              label: const Text('Linear'),
+              label: Text(EditorL10n.of(context).linear),
               selected: type == VsdxGradientType.linear,
               onSelected: (_) => apply(newType: VsdxGradientType.linear),
               visualDensity: VisualDensity.compact,
             ),
             ChoiceChip(
-              label: const Text('Radial'),
+              label: Text(EditorL10n.of(context).radial),
               selected: type == VsdxGradientType.radial,
               onSelected: (_) => apply(newType: VsdxGradientType.radial),
               visualDensity: VisualDensity.compact,
@@ -2310,7 +2369,7 @@ class _PropertyPanel extends StatelessWidget {
         ),
         if (g != null) ...[
           const SizedBox(height: 6),
-          Text('Start', style: Theme.of(context).textTheme.labelSmall),
+          Text(EditorL10n.of(context).start, style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 4),
           Wrap(
             spacing: 6,
@@ -2325,7 +2384,7 @@ class _PropertyPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text('End', style: Theme.of(context).textTheme.labelSmall),
+          Text(EditorL10n.of(context).end, style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 4),
           Wrap(
             spacing: 6,
@@ -2402,25 +2461,25 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 8),
-        Text('Gradient', style: Theme.of(context).textTheme.labelMedium),
+        Text(EditorL10n.of(context).gradient, style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: 4),
         Wrap(
           spacing: 6,
           children: [
             ChoiceChip(
-              label: const Text('None'),
+              label: Text(EditorL10n.of(context).none),
               selected: g == null,
               onSelected: (_) => controller.setLineGradient(null),
               visualDensity: VisualDensity.compact,
             ),
             ChoiceChip(
-              label: const Text('Linear'),
+              label: Text(EditorL10n.of(context).linear),
               selected: type == VsdxGradientType.linear,
               onSelected: (_) => apply(newType: VsdxGradientType.linear),
               visualDensity: VisualDensity.compact,
             ),
             ChoiceChip(
-              label: const Text('Radial'),
+              label: Text(EditorL10n.of(context).radial),
               selected: type == VsdxGradientType.radial,
               onSelected: (_) => apply(newType: VsdxGradientType.radial),
               visualDensity: VisualDensity.compact,
@@ -2429,7 +2488,7 @@ class _PropertyPanel extends StatelessWidget {
         ),
         if (g != null) ...[
           const SizedBox(height: 6),
-          Text('Start', style: Theme.of(context).textTheme.labelSmall),
+          Text(EditorL10n.of(context).start, style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 4),
           Wrap(
             spacing: 6,
@@ -2444,7 +2503,7 @@ class _PropertyPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text('End', style: Theme.of(context).textTheme.labelSmall),
+          Text(EditorL10n.of(context).end, style: Theme.of(context).textTheme.labelSmall),
           const SizedBox(height: 4),
           Wrap(
             spacing: 6,
@@ -2492,7 +2551,7 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 6),
-        Text('Color', style: Theme.of(context).textTheme.labelSmall),
+        Text(EditorL10n.of(context).color, style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 4),
         Wrap(
           spacing: 6,
@@ -2508,7 +2567,7 @@ class _PropertyPanel extends StatelessWidget {
           ],
         ),
         _RangeSlider(
-          label: 'Offset X',
+          label: EditorL10n.of(context).offsetX,
           value: shadow.offsetXInches,
           min: -0.25,
           max: 0.25,
@@ -2519,7 +2578,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _RangeSlider(
-          label: 'Offset Y',
+          label: EditorL10n.of(context).offsetY,
           value: shadow.offsetYInches,
           min: -0.25,
           max: 0.25,
@@ -2530,7 +2589,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _RangeSlider(
-          label: 'Blur',
+          label: EditorL10n.of(context).blur,
           value: shadow.blurInches,
           min: 0,
           max: 0.25,
@@ -2541,7 +2600,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _OpacitySlider(
-          label: 'Opacity',
+          label: EditorL10n.of(context).opacity,
           opacity: 1 - shadow.transparency,
           onStart: controller.beginTransaction,
           onChanged: (v) => controller.updateShadow(
@@ -2567,7 +2626,7 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 6),
-        Text('Color', style: Theme.of(context).textTheme.labelSmall),
+        Text(EditorL10n.of(context).color, style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 4),
         Wrap(
           spacing: 6,
@@ -2582,7 +2641,7 @@ class _PropertyPanel extends StatelessWidget {
           ],
         ),
         _RangeSlider(
-          label: 'Size',
+          label: EditorL10n.of(context).size,
           value: glow.sizeInches,
           min: 0.01,
           max: 0.25,
@@ -2593,7 +2652,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _OpacitySlider(
-          label: 'Opacity',
+          label: EditorL10n.of(context).opacity,
           opacity: 1 - glow.transparency,
           onStart: controller.beginTransaction,
           onChanged: (v) => controller.updateGlow(
@@ -2618,7 +2677,7 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _RangeSlider(
-          label: 'Size',
+          label: EditorL10n.of(context).size,
           value: refl.sizeInches,
           min: 0.05,
           max: 1.0,
@@ -2629,7 +2688,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _RangeSlider(
-          label: 'Dist',
+          label: EditorL10n.of(context).dist,
           value: refl.distanceInches,
           min: 0,
           max: 0.5,
@@ -2640,7 +2699,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _RangeSlider(
-          label: 'Blur',
+          label: EditorL10n.of(context).blur,
           value: refl.blurInches,
           min: 0,
           max: 0.2,
@@ -2651,7 +2710,7 @@ class _PropertyPanel extends StatelessWidget {
           onEnd: controller.commitTransaction,
         ),
         _OpacitySlider(
-          label: 'Opacity',
+          label: EditorL10n.of(context).opacity,
           opacity: 1 - refl.transparency,
           onStart: controller.beginTransaction,
           onChanged: (v) => controller.updateReflection(
@@ -2782,21 +2841,21 @@ class _PropertyPanel extends StatelessWidget {
               onPressed: () => controller.setBold(!cs.style.bold),
               isSelected: cs.style.bold,
               icon: const Icon(Icons.format_bold),
-              tooltip: 'Bold',
+              tooltip: EditorL10n.of(context).bold,
               visualDensity: VisualDensity.compact,
             ),
             IconButton(
               onPressed: () => controller.setItalic(!cs.style.italic),
               isSelected: cs.style.italic,
               icon: const Icon(Icons.format_italic),
-              tooltip: 'Italic',
+              tooltip: EditorL10n.of(context).italic,
               visualDensity: VisualDensity.compact,
             ),
             IconButton(
               onPressed: () => controller.setUnderline(!cs.underline),
               isSelected: cs.underline,
               icon: const Icon(Icons.format_underlined),
-              tooltip: 'Underline',
+              tooltip: EditorL10n.of(context).underline,
               visualDensity: VisualDensity.compact,
             ),
             IconButton(
@@ -2804,13 +2863,13 @@ class _PropertyPanel extends StatelessWidget {
                   controller.setStrikethrough(!cs.strikethrough),
               isSelected: cs.strikethrough,
               icon: const Icon(Icons.format_strikethrough),
-              tooltip: 'Strikethrough',
+              tooltip: EditorL10n.of(context).strikethrough,
               visualDensity: VisualDensity.compact,
             ),
           ],
         ),
         const SizedBox(height: 8),
-        _fontDropdown(cs),
+        _fontDropdown(context, cs),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -2825,6 +2884,7 @@ class _PropertyPanel extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         _themeSwatchRow(
+          context,
           controller: controller,
           onSlot: controller.setTextThemeSlot,
           selectedSlot: cs.color == null ? cs.themeColorIndex : null,
@@ -2832,27 +2892,31 @@ class _PropertyPanel extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           children: [
-            _iconBtn(Icons.format_align_left, 'Align left',
+            _iconBtn(Icons.format_align_left, EditorL10n.of(context).alignLeft,
                 () => controller.setTextAlign(VsdxHorzAlign.left)),
-            _iconBtn(Icons.format_align_center, 'Align center',
+            _iconBtn(
+                Icons.format_align_center,
+                EditorL10n.of(context).alignCenterH,
                 () => controller.setTextAlign(VsdxHorzAlign.center)),
-            _iconBtn(Icons.format_align_right, 'Align right',
+            _iconBtn(Icons.format_align_right, EditorL10n.of(context).alignRight,
                 () => controller.setTextAlign(VsdxHorzAlign.right)),
-            _iconBtn(Icons.format_align_justify, 'Justify',
+            _iconBtn(Icons.format_align_justify, EditorL10n.of(context).justify,
                 () => controller.setTextAlign(VsdxHorzAlign.justify)),
           ],
         ),
         Row(
           children: [
-            _vAlignBtn(Icons.vertical_align_top, 'Align top', VsdxVertAlign.top),
-            _vAlignBtn(Icons.vertical_align_center, 'Align middle',
-                VsdxVertAlign.middle),
-            _vAlignBtn(Icons.vertical_align_bottom, 'Align bottom',
-                VsdxVertAlign.bottom),
+            _vAlignBtn(Icons.vertical_align_top,
+                EditorL10n.of(context).alignTop, VsdxVertAlign.top),
+            _vAlignBtn(Icons.vertical_align_center,
+                EditorL10n.of(context).alignCenterV, VsdxVertAlign.middle),
+            _vAlignBtn(Icons.vertical_align_bottom,
+                EditorL10n.of(context).alignBottom, VsdxVertAlign.bottom),
           ],
         ),
         const SizedBox(height: 8),
-        Text('Line spacing', style: Theme.of(context).textTheme.labelSmall),
+        Text(EditorL10n.of(context).lineSpacing,
+            style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 4),
         Builder(
           builder: (context) {
@@ -2879,14 +2943,16 @@ class _PropertyPanel extends StatelessWidget {
           },
         ),
         const SizedBox(height: 8),
-        Text('Space before', style: Theme.of(context).textTheme.labelSmall),
+        Text(EditorL10n.of(context).spaceBefore,
+            style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 4),
         _paraSpaceChips(
           inches: controller.selectedParaStyle?.spaceBeforeInches ?? 0,
           onChanged: controller.setSpaceBeforeInches,
         ),
         const SizedBox(height: 6),
-        Text('Space after', style: Theme.of(context).textTheme.labelSmall),
+        Text(EditorL10n.of(context).spaceAfter,
+            style: Theme.of(context).textTheme.labelSmall),
         const SizedBox(height: 4),
         _paraSpaceChips(
           inches: controller.selectedParaStyle?.spaceAfterInches ?? 0,
@@ -2927,7 +2993,7 @@ class _PropertyPanel extends StatelessWidget {
     'Comic Sans MS',
   ];
 
-  Widget _fontDropdown(VsdxCharStyle cs) {
+  Widget _fontDropdown(BuildContext context, VsdxCharStyle cs) {
     final current = cs.fontFamily;
     final items = <String>{..._fonts, ?current}.toList();
     return Row(
@@ -2939,7 +3005,7 @@ class _PropertyPanel extends StatelessWidget {
             value: current != null && items.contains(current) ? current : null,
             isExpanded: true,
             isDense: true,
-            hint: const Text('Default'),
+            hint: Text(EditorL10n.of(context).defaultFont),
             items: [
               for (final f in items)
                 DropdownMenuItem<String>(
@@ -2994,7 +3060,8 @@ class _PropertyPanel extends StatelessWidget {
 
   /// Theme accent strip — resolves against the document theme (Office defaults
   /// when empty) so picking a swatch binds the shape to that slot.
-  Widget _themeSwatchRow({
+  Widget _themeSwatchRow(
+    BuildContext context, {
     required EditorController controller,
     required void Function(int slot) onSlot,
     int? selectedSlot,
@@ -3006,7 +3073,7 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Theme',
+          EditorL10n.of(context).theme,
           style: TextStyle(
             fontSize: 11,
             color: Colors.grey.shade600,
@@ -3030,16 +3097,18 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
-  static const Map<int, String> _dashPresets = <int, String>{
-    1: 'Solid',
-    2: 'Dashed',
-    3: 'Dotted',
-    4: 'Dash-dot',
-  };
+  Map<int, String> _dashPresets(EditorL10n el) => <int, String>{
+        1: el.solid,
+        2: el.dashed,
+        3: el.dotted,
+        4: el.dashDot,
+      };
 
-  Widget _dashDropdown(EditorController controller) {
+  Widget _dashDropdown(BuildContext context, EditorController controller) {
+    final el = EditorL10n.of(context);
+    final presets = _dashPresets(el);
     final pattern = controller.selectedLine?.pattern ?? 1;
-    final value = _dashPresets.containsKey(pattern) ? pattern : 1;
+    final value = presets.containsKey(pattern) ? pattern : 1;
     return Row(
       children: [
         const Icon(Icons.line_style, size: 18),
@@ -3048,7 +3117,7 @@ class _PropertyPanel extends StatelessWidget {
           value: value,
           isDense: true,
           items: [
-            for (final e in _dashPresets.entries)
+            for (final e in presets.entries)
               DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
           ],
           onChanged: (p) {
@@ -3059,16 +3128,18 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
-  static const Map<int, String> _compoundTypes = <int, String>{
-    0: 'Single',
-    1: 'Double',
-    2: 'Thick-thin',
-    3: 'Thin-thick',
-  };
+  Map<int, String> _compoundTypes(EditorL10n el) => <int, String>{
+        0: el.compoundSingle,
+        1: el.compoundDouble,
+        2: el.compoundThickThin,
+        3: el.compoundThinThick,
+      };
 
-  Widget _compoundTypeRow(EditorController controller) {
+  Widget _compoundTypeRow(BuildContext context, EditorController controller) {
+    final el = EditorL10n.of(context);
+    final types = _compoundTypes(el);
     final type = controller.selectedLine?.compoundType ?? 0;
-    final value = _compoundTypes.containsKey(type) ? type : 0;
+    final value = types.containsKey(type) ? type : 0;
     return Row(
       children: [
         const Icon(Icons.line_weight, size: 18),
@@ -3079,7 +3150,7 @@ class _PropertyPanel extends StatelessWidget {
             isExpanded: true,
             isDense: true,
             items: [
-              for (final e in _compoundTypes.entries)
+              for (final e in types.entries)
                 DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
             ],
             onChanged: (t) {
@@ -3091,20 +3162,20 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
-  /// Curated arrowhead types (Visio `BeginArrow`/`EndArrow` ids → labels),
-  /// mirroring drawio's start/end arrow menus.
-  static const Map<int, String> _arrowTypes = <int, String>{
-    0: 'None',
-    4: 'Filled',
-    1: 'Open',
-    3: 'Thin',
-    7: 'Stealth',
-    10: 'Circle',
-    11: 'Open diamond',
-    14: 'Circle (open)',
-  };
+  /// Curated arrowhead types (Visio `BeginArrow`/`EndArrow` ids → labels).
+  Map<int, String> _arrowTypes(EditorL10n el) => <int, String>{
+        0: el.none,
+        4: el.arrowFilled,
+        1: el.arrowOpen,
+        3: el.arrowThin,
+        7: el.arrowStealth,
+        10: el.arrowCircle,
+        11: el.arrowOpenDiamond,
+        14: el.arrowCircleOpen,
+      };
 
-  Widget _arrowPickers(EditorController controller) {
+  Widget _arrowPickers(BuildContext context, EditorController controller) {
+    final el = EditorL10n.of(context);
     final line = controller.selectedLine;
     final begin = line?.beginArrow ?? 0;
     final end = line?.endArrow ?? 0;
@@ -3113,12 +3184,12 @@ class _PropertyPanel extends StatelessWidget {
       children: [
         Row(
           children: [
-            const SizedBox(
+            SizedBox(
                 width: 40,
-                child: Text('Start', style: TextStyle(fontSize: 12))),
+                child: Text(el.start, style: const TextStyle(fontSize: 12))),
             Expanded(
               child: _arrowDropdown(
-                  begin, controller.setBeginArrow, flip: true),
+                  context, begin, controller.setBeginArrow, flip: true),
             ),
           ],
         ),
@@ -3132,12 +3203,12 @@ class _PropertyPanel extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           children: [
-            const SizedBox(
+            SizedBox(
                 width: 40,
-                child: Text('End', style: TextStyle(fontSize: 12))),
+                child: Text(el.end, style: const TextStyle(fontSize: 12))),
             Expanded(
-              child:
-                  _arrowDropdown(end, controller.setEndArrow, flip: false),
+              child: _arrowDropdown(
+                  context, end, controller.setEndArrow, flip: false),
             ),
           ],
         ),
@@ -3179,10 +3250,12 @@ class _PropertyPanel extends StatelessWidget {
   }
 
   /// Fill pattern chips: solid + common Visio hatches (draw.io Style → Fill).
-  Widget _fillPatternControls(EditorController controller) {
+  Widget _fillPatternControls(
+      BuildContext context, EditorController controller) {
+    final el = EditorL10n.of(context);
     final pattern = controller.selectedFill?.pattern ?? 1;
-    const labels = <int, String>{
-      1: 'Solid',
+    final labels = <int, String>{
+      1: el.solid,
       2: 'H',
       3: 'V',
       4: '/',
@@ -3191,9 +3264,9 @@ class _PropertyPanel extends StatelessWidget {
       7: '+',
       8: '·',
       9: '::',
-      10: 'Brick',
-      11: 'Shingle',
-      14: 'Grid',
+      10: el.patternBrick,
+      11: el.patternShingle,
+      14: el.grid,
     };
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
@@ -3215,12 +3288,15 @@ class _PropertyPanel extends StatelessWidget {
   }
 
   Widget _arrowDropdown(
+    BuildContext context,
     int value,
     ValueChanged<int> onChanged, {
     required bool flip,
   }) {
-    final ids = <int>{..._arrowTypes.keys, value}.toList()..sort();
-    String label(int id) => _arrowTypes[id] ?? 'Arrow #$id';
+    final el = EditorL10n.of(context);
+    final types = _arrowTypes(el);
+    final ids = <int>{...types.keys, value}.toList()..sort();
+    String label(int id) => types[id] ?? el.arrowNumbered(id);
     return DropdownButton<int>(
       value: value,
       isExpanded: true,
@@ -3311,33 +3387,33 @@ class _PageFormatPanel extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Diagram', style: theme.textTheme.titleSmall),
+          Text(EditorL10n.of(context).panelDiagram, style: theme.textTheme.titleSmall),
           const SizedBox(height: 16),
-          Text('View', style: theme.textTheme.labelLarge),
+          Text(EditorL10n.of(context).panelView, style: theme.textTheme.labelLarge),
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('Grid'),
+            title: Text(EditorL10n.of(context).grid),
             value: controller.showGrid,
             onChanged: (_) => controller.toggleGrid(),
           ),
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('Snap to grid'),
+            title: Text(EditorL10n.of(context).snapToGrid),
             value: controller.snapToGrid,
             onChanged: (_) => controller.toggleSnap(),
           ),
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('Line jumps'),
+            title: Text(EditorL10n.of(context).lineJumps),
             value: controller.showLineJumps,
             onChanged: (_) => controller.toggleLineJumps(),
           ),
           if (controller.showLineJumps)
             _RangeSlider(
-              label: 'Jump r',
+              label: EditorL10n.of(context).jumpRadius,
               value: controller.lineJumpRadiusInches,
               min: 0.02,
               max: 0.2,
@@ -3347,7 +3423,7 @@ class _PageFormatPanel extends StatelessWidget {
               onEnd: () {},
             ),
           const SizedBox(height: 16),
-          Text('Background', style: theme.textTheme.labelLarge),
+          Text(EditorL10n.of(context).background, style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -3365,31 +3441,34 @@ class _PageFormatPanel extends StatelessWidget {
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('Background page'),
-            subtitle: const Text('Use as underlay for other pages'),
+            title: Text(EditorL10n.of(context).backgroundPage),
+            subtitle: Text(EditorL10n.of(context).backgroundPageHint),
             value: controller.currentPage?.isBackgroundPage ?? false,
             onChanged: controller.setPageIsBackground,
           ),
           if (!(controller.currentPage?.isBackgroundPage ?? false) &&
               controller.backgroundPageOptions.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text('Use background', style: theme.textTheme.labelMedium),
+            Text(EditorL10n.of(context).useBackground,
+                style: theme.textTheme.labelMedium),
             const SizedBox(height: 4),
             DropdownButton<int?>(
               value: controller.currentPage?.backgroundPageId,
               isExpanded: true,
               isDense: true,
-              hint: const Text('None'),
+              hint: Text(EditorL10n.of(context).none),
               items: <DropdownMenuItem<int?>>[
-                const DropdownMenuItem<int?>(
+                DropdownMenuItem<int?>(
                   value: null,
-                  child: Text('None'),
+                  child: Text(EditorL10n.of(context).none),
                 ),
                 for (final p in controller.backgroundPageOptions)
                   DropdownMenuItem<int?>(
                     value: p.id,
                     child: Text(
-                      p.isBackgroundPage ? p.name : '${p.name} (will mark bg)',
+                      p.isBackgroundPage
+                          ? p.name
+                          : EditorL10n.of(context).willMarkBackground(p.name),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -3398,14 +3477,16 @@ class _PageFormatPanel extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 16),
-          Text('Theme', style: theme.textTheme.labelLarge),
+          Text(EditorL10n.of(context).theme, style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
           DropdownButton<String>(
             value: _matchedBuiltinThemeName(controller.documentTheme),
             isExpanded: true,
             isDense: true,
             hint: Text(
-              controller.documentTheme.isEmpty ? 'None (default)' : 'Custom',
+              controller.documentTheme.isEmpty
+                  ? EditorL10n.of(context).noneDefault
+                  : EditorL10n.of(context).custom,
             ),
             items: [
               for (final t in VsdxTheme.builtins)
@@ -3467,13 +3548,13 @@ class _PageFormatPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Text('Paper Size', style: theme.textTheme.labelLarge),
+          Text(EditorL10n.of(context).paperSize, style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
           DropdownButton<_Paper>(
             value: matched,
             isExpanded: true,
             isDense: true,
-            hint: const Text('Custom'),
+            hint: Text(EditorL10n.of(context).custom),
             items: [
               for (final p in _papers)
                 DropdownMenuItem<_Paper>(
@@ -3495,9 +3576,13 @@ class _PageFormatPanel extends StatelessWidget {
           const SizedBox(height: 8),
           SegmentedButton<bool>(
             showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<bool>(value: false, label: Text('Portrait')),
-              ButtonSegment<bool>(value: true, label: Text('Landscape')),
+            segments: [
+              ButtonSegment<bool>(
+                  value: false,
+                  label: Text(EditorL10n.of(context).portrait)),
+              ButtonSegment<bool>(
+                  value: true,
+                  label: Text(EditorL10n.of(context).landscape)),
             ],
             selected: <bool>{landscape},
             onSelectionChanged: (s) => controller.setPageLandscape(s.first),
@@ -3651,9 +3736,10 @@ class _CornersSliderState extends State<_CornersSlider> {
         const SizedBox(height: 12),
         Row(
           children: [
-            const SizedBox(
+            SizedBox(
                 width: 48,
-                child: Text('Corners', style: TextStyle(fontSize: 11))),
+                child: Text(EditorL10n.of(context).corners,
+                    style: const TextStyle(fontSize: 11))),
             Expanded(
               child: Slider(
                 value: v,
@@ -3980,8 +4066,11 @@ class _FindBarState extends State<_FindBar> {
           final ord = widget.controller.findCurrentOrdinal;
           final pageIdx = widget.controller.findCurrentPageIndex;
           final multiPage = widget.controller.pageCount > 1;
+          final el = EditorL10n.of(context);
           final label = count == 0
-              ? (widget.controller.findQuery.trim().isEmpty ? '' : 'No results')
+              ? (widget.controller.findQuery.trim().isEmpty
+                  ? ''
+                  : el.noResults)
               : (multiPage && pageIdx != null)
                   ? '$ord/$count · p${pageIdx + 1}'
                   : '$ord / $count';
@@ -4006,9 +4095,9 @@ class _FindBarState extends State<_FindBar> {
                         child: TextField(
                           controller: _text,
                           focusNode: _focus,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             isDense: true,
-                            hintText: 'Find shapes…',
+                            hintText: el.findShapesHint,
                             border: InputBorder.none,
                           ),
                           onChanged: widget.controller.updateFind,
@@ -4046,8 +4135,8 @@ class _FindBarState extends State<_FindBar> {
                         ),
                       ),
                       tooltip: widget.controller.findMatchCase
-                          ? 'Match case: on'
-                          : 'Match case: off',
+                          ? el.matchCaseOn
+                          : el.matchCaseOff,
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
@@ -4065,21 +4154,21 @@ class _FindBarState extends State<_FindBar> {
                         ),
                       ),
                       tooltip: widget.controller.findWholeWord
-                          ? 'Whole word: on'
-                          : 'Whole word: off',
+                          ? el.wholeWordOn
+                          : el.wholeWordOff,
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       onPressed:
                           count == 0 ? null : widget.controller.findPrevious,
                       icon: const Icon(Icons.keyboard_arrow_up),
-                      tooltip: 'Previous (Shift+Enter)',
+                      tooltip: el.previousShortcut,
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       onPressed: count == 0 ? null : widget.controller.findNext,
                       icon: const Icon(Icons.keyboard_arrow_down),
-                      tooltip: 'Next (Enter)',
+                      tooltip: el.nextShortcut,
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
@@ -4091,14 +4180,14 @@ class _FindBarState extends State<_FindBar> {
                         size: 18,
                       ),
                       tooltip: widget.showReplace
-                          ? 'Hide replace'
-                          : 'Show replace (Cmd+H)',
+                          ? el.hideReplace
+                          : el.showReplaceShortcut,
                       visualDensity: VisualDensity.compact,
                     ),
                     IconButton(
                       onPressed: widget.onClose,
                       icon: const Icon(Icons.close, size: 18),
-                      tooltip: 'Close (Esc)',
+                      tooltip: el.closeEsc,
                       visualDensity: VisualDensity.compact,
                     ),
                   ],
@@ -4114,9 +4203,9 @@ class _FindBarState extends State<_FindBar> {
                         child: TextField(
                           controller: _replace,
                           focusNode: _replaceFocus,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             isDense: true,
-                            hintText: 'Replace with…',
+                            hintText: EditorL10n.of(context).replaceWithHint,
                             border: InputBorder.none,
                           ),
                           onSubmitted: (_) => widget.controller
@@ -4128,14 +4217,14 @@ class _FindBarState extends State<_FindBar> {
                             ? null
                             : () => widget.controller
                                 .replaceFind(_replace.text),
-                        child: const Text('Replace'),
+                        child: Text(EditorL10n.of(context).replace),
                       ),
                       TextButton(
                         onPressed: widget.controller.findQuery.trim().isEmpty
                             ? null
                             : () => widget.controller
                                 .replaceAllFind(_replace.text),
-                        child: const Text('All'),
+                        child: Text(EditorL10n.of(context).replaceAll),
                       ),
                     ],
                   ),

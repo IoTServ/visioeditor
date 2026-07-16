@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:vsdx/vsdx.dart';
 
+import '../l10n/editor_l10n.dart';
 import 'editor_controller.dart';
 
 /// Open drawio's "Edit Data" (Cmd+M) for shape [shapeId]: edit its Shape Data
@@ -90,10 +91,11 @@ class _EditDataDialogState extends State<_EditDataDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
     return AlertDialog(
       title: Row(
         children: [
-          const Expanded(child: Text('Edit Data')),
+          Expanded(child: Text(el.editData.replaceAll('…', ''))),
           Text(
             widget.title,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
@@ -103,9 +105,9 @@ class _EditDataDialogState extends State<_EditDataDialog> {
       content: SizedBox(
         width: 420,
         child: _fields.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('No shape data. Add a property to get started.'),
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(el.noShapeDataHint),
               )
             : ListView.separated(
                 shrinkWrap: true,
@@ -120,10 +122,10 @@ class _EditDataDialogState extends State<_EditDataDialog> {
                         width: 130,
                         child: TextField(
                           controller: f.name,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             isDense: true,
-                            labelText: 'Name',
-                            border: OutlineInputBorder(),
+                            labelText: el.name,
+                            border: const OutlineInputBorder(),
                           ),
                         ),
                       ),
@@ -131,17 +133,17 @@ class _EditDataDialogState extends State<_EditDataDialog> {
                       Expanded(
                         child: TextField(
                           controller: f.value,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             isDense: true,
-                            labelText: 'Value',
-                            border: OutlineInputBorder(),
+                            labelText: el.value,
+                            border: const OutlineInputBorder(),
                           ),
                         ),
                       ),
                       IconButton(
                         onPressed: () => _removeAt(i),
                         icon: const Icon(Icons.remove_circle_outline, size: 20),
-                        tooltip: 'Remove',
+                        tooltip: el.remove,
                         visualDensity: VisualDensity.compact,
                       ),
                     ],
@@ -153,16 +155,16 @@ class _EditDataDialogState extends State<_EditDataDialog> {
         TextButton.icon(
           onPressed: _add,
           icon: const Icon(Icons.add, size: 18),
-          label: const Text('Add Property'),
+          label: Text(el.addProperty),
         ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(el.cancel),
             ),
-            FilledButton(onPressed: _apply, child: const Text('Apply')),
+            FilledButton(onPressed: _apply, child: Text(el.apply)),
           ],
         ),
       ],

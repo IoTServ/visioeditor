@@ -82,30 +82,15 @@ class SettingsPage extends StatelessWidget {
               ),
               const Divider(height: 32),
               _sectionHeader(context, l10n.language),
-              RadioGroup<String>(
-                groupValue: settings.localePreference,
-                onChanged: (v) {
-                  if (v != null) settings.setLocalePreference(v);
-                },
-                child: Column(
-                  children: [
-                    RadioListTile<String>(
-                      title: Text(l10n.languageSystem),
-                      value: 'system',
-                    ),
-                    RadioListTile<String>(
-                      title: Text(l10n.languageEnglish),
-                      value: 'en',
-                    ),
-                    RadioListTile<String>(
-                      title: Text(l10n.languageChinese),
-                      value: 'zh',
-                    ),
-                  ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: _LanguagePicker(
+                  settings: settings,
+                  l10n: l10n,
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Text(
                   l10n.languageHint,
                   style: Theme.of(context).textTheme.bodySmall,
@@ -141,6 +126,50 @@ class SettingsPage extends StatelessWidget {
               color: Theme.of(context).colorScheme.primary,
             ),
       ),
+    );
+  }
+}
+
+/// Collapsed searchable language dropdown (system + all supported locales).
+class _LanguagePicker extends StatelessWidget {
+  const _LanguagePicker({
+    required this.settings,
+    required this.l10n,
+  });
+
+  final AppSettings settings;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = settings.localePreference;
+    final codes = AppLocalizations.languagePreferenceCodes;
+    final menuWidth = MediaQuery.sizeOf(context).width - 32;
+
+    return DropdownMenu<String>(
+      key: ValueKey<String>(selected),
+      width: menuWidth,
+      initialSelection: selected,
+      enableFilter: true,
+      enableSearch: true,
+      requestFocusOnTap: true,
+      leadingIcon: const Icon(Icons.translate_outlined),
+      hintText: l10n.languageSearchHint,
+      label: Text(l10n.language),
+      inputDecorationTheme: const InputDecorationTheme(
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      dropdownMenuEntries: [
+        for (final code in codes)
+          DropdownMenuEntry<String>(
+            value: code,
+            label: l10n.labelForLanguagePreference(code),
+          ),
+      ],
+      onSelected: (code) {
+        if (code != null) settings.setLocalePreference(code);
+      },
     );
   }
 }

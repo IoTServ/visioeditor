@@ -48,7 +48,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(settings.themeMode, ThemeMode.dark);
 
-    await tester.tap(find.text('简体中文'));
+    final languageMenu = find.byType(DropdownMenu<String>);
+    expect(languageMenu, findsOneWidget);
+    await tester.tap(languageMenu);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: languageMenu,
+        matching: find.byType(TextField),
+      ),
+      '简体',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('简体中文').last);
     await tester.pumpAndSettle();
     expect(settings.locale?.languageCode, 'zh');
     expect(find.text('设置'), findsWidgets);

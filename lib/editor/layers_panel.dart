@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vsdx/vsdx.dart';
 
 import 'editor_controller.dart';
+import '../l10n/editor_l10n.dart';
 
 /// draw.io-style floating Layers panel (visibility / lock / print / assign).
 class LayersPanel extends StatelessWidget {
@@ -17,25 +18,26 @@ class LayersPanel extends StatelessWidget {
   final double width;
 
   Future<void> _rename(BuildContext context, VsdxLayer layer) async {
+    final el = EditorL10n.of(context);
     final textController = TextEditingController(text: layer.name);
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rename layer'),
+        title: Text(el.renameLayer),
         content: TextField(
           controller: textController,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
+          decoration: InputDecoration(labelText: el.name),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(el.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, textController.text),
-            child: const Text('Rename'),
+            child: Text(el.rename),
           ),
         ],
       ),
@@ -47,6 +49,7 @@ class LayersPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
     return Material(
       elevation: 6,
       color: scheme.surface,
@@ -66,11 +69,11 @@ class LayersPanel extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
                   child: Row(
                     children: [
-                      Text('Layers', style: Theme.of(context).textTheme.titleSmall),
+                      Text(el.layers, style: Theme.of(context).textTheme.titleSmall),
                       const Spacer(),
                       if (onClose != null)
                         IconButton(
-                          tooltip: 'Close',
+                          tooltip: el.close,
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: onClose,
                           visualDensity: VisualDensity.compact,
@@ -82,8 +85,7 @@ class LayersPanel extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                     child: Text(
-                      'No layers yet. Add one to organise shapes '
-                      '(visibility / lock / print).',
+                      el.noLayersYet,
                       style: TextStyle(
                         fontSize: 12,
                         color: scheme.onSurfaceVariant,
@@ -117,14 +119,14 @@ class LayersPanel extends StatelessWidget {
                                         ),
                                       ),
                                       IconButton(
-                                        tooltip: 'Rename',
+                                        tooltip: el.rename,
                                         icon: const Icon(Icons.edit_outlined,
                                             size: 18),
                                         onPressed: () => _rename(context, l),
                                         visualDensity: VisualDensity.compact,
                                       ),
                                       IconButton(
-                                        tooltip: 'Delete layer',
+                                        tooltip: el.deleteLayer,
                                         icon: const Icon(Icons.delete_outline,
                                             size: 18),
                                         onPressed: () =>
@@ -138,21 +140,21 @@ class LayersPanel extends StatelessWidget {
                                     runSpacing: 0,
                                     children: [
                                       FilterChip(
-                                        label: const Text('Visible'),
+                                        label: Text(el.visible),
                                         selected: l.visible,
                                         onSelected: (_) => controller
                                             .toggleLayerVisibility(l.id),
                                         visualDensity: VisualDensity.compact,
                                       ),
                                       FilterChip(
-                                        label: const Text('Locked'),
+                                        label: Text(el.locked),
                                         selected: l.locked,
                                         onSelected: (_) => controller
                                             .toggleLayerLocked(l.id),
                                         visualDensity: VisualDensity.compact,
                                       ),
                                       FilterChip(
-                                        label: const Text('Print'),
+                                        label: Text(el.print),
                                         selected: l.print,
                                         onSelected: (_) =>
                                             controller.toggleLayerPrint(l.id),
@@ -160,7 +162,7 @@ class LayersPanel extends StatelessWidget {
                                       ),
                                       if (controller.hasSelection)
                                         ActionChip(
-                                          label: const Text('Assign sel.'),
+                                          label: Text(el.assignSelection),
                                           onPressed: () => controller
                                               .assignSelectionToLayer(l.id),
                                           visualDensity: VisualDensity.compact,
@@ -184,8 +186,8 @@ class LayersPanel extends StatelessWidget {
                     icon: const Icon(Icons.add, size: 18),
                     label: Text(
                       controller.hasSelection
-                          ? 'Add layer (with selection)'
-                          : 'Add layer',
+                          ? el.addLayerWithSelection
+                          : el.addLayer,
                     ),
                   ),
                 ),

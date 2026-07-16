@@ -15,6 +15,7 @@ import 'canvas_camera.dart';
 import 'edit_data_dialog.dart';
 import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
+import '../l10n/editor_l10n.dart';
 import 'snap_guides.dart';
 import 'stencils.dart';
 
@@ -730,78 +731,68 @@ class _PageCanvasState extends State<PageCanvas> {
     final overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlay == null) return;
+    final el = EditorL10n.of(context);
     final items = <PopupMenuEntry<String>>[];
     if (_c.hasSelection) {
-      items.add(const PopupMenuItem(value: 'cut', child: Text('Cut')));
-      items.add(const PopupMenuItem(value: 'copy', child: Text('Copy')));
-      items.add(
-          const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')));
-      items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
-      items.add(const PopupMenuItem(value: 'delete', child: Text('Delete')));
+      items.add(PopupMenuItem(value: 'cut', child: Text(el.cut)));
+      items.add(PopupMenuItem(value: 'copy', child: Text(el.copy)));
+      items.add(PopupMenuItem(value: 'duplicate', child: Text(el.duplicate)));
+      items.add(PopupMenuItem(value: 'paste', child: Text(el.paste)));
+      items.add(PopupMenuItem(value: 'delete', child: Text(el.delete)));
       items.add(PopupMenuItem(
           value: 'lock',
-          child: Text(_c.selectionLocked ? 'Unlock' : 'Lock')));
+          child: Text(_c.selectionLocked ? el.unlock : el.lock)));
       if (_c.canClearWaypoints) {
-        items.add(const PopupMenuItem(
-            value: 'clearWaypoints', child: Text('Clear Waypoints')));
+        items.add(PopupMenuItem(
+            value: 'clearWaypoints', child: Text(el.clearWaypoints)));
       }
       items.add(const PopupMenuDivider());
-      items.add(
-          const PopupMenuItem(value: 'front', child: Text('Bring to Front')));
-      items.add(
-          const PopupMenuItem(value: 'back', child: Text('Send to Back')));
-      items.add(const PopupMenuItem(
-          value: 'forward', child: Text('Bring Forward')));
-      items.add(const PopupMenuItem(
-          value: 'backward', child: Text('Send Backward')));
+      items.add(PopupMenuItem(value: 'front', child: Text(el.bringToFront)));
+      items.add(PopupMenuItem(value: 'back', child: Text(el.sendToBack)));
+      items.add(PopupMenuItem(value: 'forward', child: Text(el.bringForward)));
+      items.add(PopupMenuItem(value: 'backward', child: Text(el.sendBackward)));
       if (_c.canGroup || _c.canUngroup) {
         items.add(const PopupMenuDivider());
         if (_c.canGroup) {
-          items.add(const PopupMenuItem(value: 'group', child: Text('Group')));
+          items.add(PopupMenuItem(value: 'group', child: Text(el.group)));
         }
         if (_c.canUngroup) {
-          items.add(
-              const PopupMenuItem(value: 'ungroup', child: Text('Ungroup')));
+          items.add(PopupMenuItem(value: 'ungroup', child: Text(el.ungroup)));
         }
       }
       items.add(const PopupMenuDivider());
-      items.add(
-          const PopupMenuItem(value: 'copyStyle', child: Text('Copy Style')));
+      items.add(PopupMenuItem(value: 'copyStyle', child: Text(el.copyStyle)));
       if (_c.hasStyleClipboard) {
-        items.add(const PopupMenuItem(
-            value: 'pasteStyle', child: Text('Paste Style')));
+        items.add(PopupMenuItem(
+            value: 'pasteStyle', child: Text(el.pasteStyle)));
       }
       items.add(const PopupMenuDivider());
-      items
-          .add(const PopupMenuItem(value: 'edit', child: Text('Edit Text…')));
+      items.add(PopupMenuItem(value: 'edit', child: Text(el.editText)));
       if (_c.singleSelectedId != null) {
-        items.add(const PopupMenuItem(
-            value: 'editData', child: Text('Edit Data…')));
-        items.add(const PopupMenuItem(
-            value: 'editLink', child: Text('Edit Link…')));
+        items.add(PopupMenuItem(value: 'editData', child: Text(el.editData)));
+        items.add(PopupMenuItem(value: 'editLink', child: Text(el.editLink)));
       }
       if (_c.canReplaceSelectedImage) {
-        items.add(const PopupMenuItem(
-            value: 'replaceImage', child: Text('Replace Image…')));
+        items.add(PopupMenuItem(
+            value: 'replaceImage', child: Text(el.replaceImage)));
       }
       if (_c.editingConnectionPoints) {
-        items.add(const PopupMenuItem(
+        items.add(PopupMenuItem(
             value: 'doneConnPts',
-            child: Text('Done Editing Connection Points')));
+            child: Text(el.doneEditingConnectionPoints)));
       } else if (_c.canEditConnectionPoints) {
-        items.add(const PopupMenuItem(
+        items.add(PopupMenuItem(
             value: 'editConnPts',
-            child: Text('Edit Connection Points…')));
+            child: Text(el.editConnectionPoints)));
       }
       if (_c.canAddLane || _c.canRemoveLane) {
         items.add(const PopupMenuDivider());
         if (_c.canAddLane) {
-          items.add(const PopupMenuItem(
-              value: 'addLane', child: Text('Add Lane')));
+          items.add(PopupMenuItem(value: 'addLane', child: Text(el.addLane)));
         }
         if (_c.canRemoveLane) {
-          items.add(const PopupMenuItem(
-              value: 'removeLane', child: Text('Remove Lane')));
+          items.add(PopupMenuItem(
+              value: 'removeLane', child: Text(el.removeLane)));
         }
       }
       if (_c.canAddTableRow ||
@@ -812,41 +803,37 @@ class _PageCanvasState extends State<PageCanvas> {
           _c.canUnmergeCell) {
         items.add(const PopupMenuDivider());
         if (_c.canAddTableRow) {
-          items.add(const PopupMenuItem(
-              value: 'addRow', child: Text('Add Row')));
+          items.add(PopupMenuItem(value: 'addRow', child: Text(el.addRow)));
         }
         if (_c.canAddTableColumn) {
-          items.add(const PopupMenuItem(
-              value: 'addColumn', child: Text('Add Column')));
+          items.add(PopupMenuItem(
+              value: 'addColumn', child: Text(el.addColumn)));
         }
         if (_c.canRemoveTableRow) {
-          items.add(const PopupMenuItem(
-              value: 'removeRow', child: Text('Delete Row')));
+          items.add(PopupMenuItem(
+              value: 'removeRow', child: Text(el.deleteRow)));
         }
         if (_c.canRemoveTableColumn) {
-          items.add(const PopupMenuItem(
-              value: 'removeColumn', child: Text('Delete Column')));
+          items.add(PopupMenuItem(
+              value: 'removeColumn', child: Text(el.deleteColumn)));
         }
         if (_c.canMergeCells) {
-          items.add(const PopupMenuItem(
-              value: 'mergeCells', child: Text('Merge Cells')));
+          items.add(PopupMenuItem(
+              value: 'mergeCells', child: Text(el.mergeCells)));
         }
         if (_c.canUnmergeCell) {
-          items.add(const PopupMenuItem(
-              value: 'unmergeCells', child: Text('Unmerge Cells')));
+          items.add(PopupMenuItem(
+              value: 'unmergeCells', child: Text(el.unmergeCells)));
         }
       }
     } else {
-      items.add(const PopupMenuItem(value: 'paste', child: Text('Paste')));
-      items.add(const PopupMenuItem(
-          value: 'pasteHere', child: Text('Paste Here')));
-      items.add(
-          const PopupMenuItem(value: 'selectAll', child: Text('Select All')));
-      items.add(
-          const PopupMenuItem(value: 'fit', child: Text('Fit to Window')));
+      items.add(PopupMenuItem(value: 'paste', child: Text(el.paste)));
+      items.add(PopupMenuItem(value: 'pasteHere', child: Text(el.pasteHere)));
+      items.add(PopupMenuItem(value: 'selectAll', child: Text(el.selectAll)));
+      items.add(PopupMenuItem(value: 'fit', child: Text(el.fitToWindow)));
       if (_c.hasPageGuides) {
-        items.add(const PopupMenuItem(
-            value: 'clearGuides', child: Text('Clear Guides')));
+        items.add(PopupMenuItem(
+            value: 'clearGuides', child: Text(el.clearGuides)));
       }
     }
     final value = await showMenu<String>(
@@ -2870,16 +2857,16 @@ class _ZoomControls extends StatelessWidget {
           IconButton(
             onPressed: onFit,
             icon: const Icon(Icons.fit_screen_outlined),
-            tooltip: 'Fit to window (⇧⌘H)',
+            tooltip: EditorL10n.of(context).fitToWindowShortcut,
           ),
           const VerticalDivider(width: 1, indent: 8, endIndent: 8),
           IconButton(
             onPressed: onZoomOut,
             icon: const Icon(Icons.remove),
-            tooltip: 'Zoom out',
+            tooltip: EditorL10n.of(context).zoomOut,
           ),
           Tooltip(
-            message: 'Fit to window',
+            message: EditorL10n.of(context).fitToWindow,
             child: InkWell(
               onTap: onFit,
               borderRadius: BorderRadius.circular(6),
@@ -2896,7 +2883,7 @@ class _ZoomControls extends StatelessWidget {
           IconButton(
             onPressed: onZoomIn,
             icon: const Icon(Icons.add),
-            tooltip: 'Zoom in',
+            tooltip: EditorL10n.of(context).zoomIn,
           ),
         ],
       ),

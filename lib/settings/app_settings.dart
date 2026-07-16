@@ -29,7 +29,7 @@ class AppSettings extends ChangeNotifier {
 
   ThemeMode _themeMode;
   int _seedColorValue;
-  String? _localeCode; // null = follow system; 'en' / 'zh'
+  String? _localeCode; // null = follow system; else language code (en/zh/ja/…)
 
   ThemeMode get themeMode => _themeMode;
   Color get seedColor => Color(_seedColorValue);
@@ -42,7 +42,7 @@ class AppSettings extends ChangeNotifier {
     return Locale(code);
   }
 
-  /// Preference key stored in prefs (`system` / `en` / `zh`).
+  /// Preference key stored in prefs (`system` or a language code).
   String get localePreference => _localeCode ?? 'system';
 
   static Future<AppSettings> load() async {

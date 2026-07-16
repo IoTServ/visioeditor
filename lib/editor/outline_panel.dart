@@ -6,6 +6,7 @@ import 'package:vsdx/vsdx.dart';
 import '../render/vsdx_painter.dart';
 import 'canvas_camera.dart';
 import 'editor_controller.dart';
+import '../l10n/editor_l10n.dart';
 
 /// drawio's "Outline" panel: a thumbnail of the whole current page with a
 /// rectangle showing the part currently visible on the main canvas. Click or
@@ -48,6 +49,7 @@ class OutlinePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
     return Material(
       elevation: 6,
       color: scheme.surface,
@@ -64,7 +66,7 @@ class OutlinePanel extends StatelessWidget {
               height: height,
               child: Center(
                 child: Text(
-                  'Outline',
+                  el.outline,
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
               ),
@@ -100,7 +102,7 @@ class OutlinePanel extends StatelessWidget {
                     right: -4,
                     child: IconButton(
                       icon: const Icon(Icons.close, size: 16),
-                      tooltip: 'Hide outline',
+                      tooltip: el.hideOutline,
                       visualDensity: VisualDensity.compact,
                       onPressed: onClose,
                     ),
