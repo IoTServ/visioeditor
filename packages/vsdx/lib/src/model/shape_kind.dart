@@ -35,5 +35,13 @@ extension VsdxShapeKindX on VsdxShapeKind {
       this == VsdxShapeKind.container ||
       this == VsdxShapeKind.swimlane;
 
+  /// Draw.io-style fold chevron / collapse hit target.
+  ///
+  /// Only true containers and swimlanes — **not** plain Visio/Edraw
+  /// `Type="Group"` nesting. Those groups still count as [isStructural] for
+  /// containment, but must not paint editor chrome (libvisio / Edraw never do).
+  bool get isFoldable =>
+      this == VsdxShapeKind.container || this == VsdxShapeKind.swimlane;
+
   bool get isAnnotative => this == VsdxShapeKind.callout;
 }

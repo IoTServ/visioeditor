@@ -814,15 +814,15 @@ class EditorController extends ChangeNotifier {
     });
   }
 
-  /// Toggle draw.io-style fold on a structural container / swimlane. Children
+  /// Toggle draw.io-style fold on a foldable container / swimlane. Children
   /// stay in the model; paint and hit-testing hide them while collapsed. The
   /// container height shrinks to the header band (top edge fixed) and restores
-  /// on unfold.
+  /// on unfold. Plain Visio/Edraw groups are not foldable.
   void toggleCollapsed(int id) {
     final movedIds = _subtreeIds(<int>{id});
     updateCurrentPage((page) {
       final s = page.findShapeById(id);
-      if (s == null || !s.shapeKind.isStructural) return page;
+      if (s == null || !s.shapeKind.isFoldable) return page;
       final next = s.collapsed ? s.unfold() : s.fold();
       return page
           .updateShapeById(id, (_) => next)

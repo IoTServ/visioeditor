@@ -416,7 +416,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final pt = _contentToPageInches(_viewportToContent(viewportPos));
     for (final id in _drawOrder(page).reversed) {
       final s = page.findShapeById(id);
-      if (s == null || !s.shapeKind.isStructural) continue;
+      if (s == null || !s.shapeKind.isFoldable) continue;
       final local = VsdxPainter.collapseChevronLocalCenter(s);
       final pagePt =
           page.localToPageDeep(s.id, Offset2D(local.dx, local.dy));

@@ -2,7 +2,9 @@
 ///
 /// As of M3+M6-snapshot the painter:
 ///  * Draws real shape geometry when available (`VsdxShape.geometries`
-///    non-empty), falling back to a bounding-box placeholder otherwise.
+///    non-empty). Geometry-less 2-D shapes (common Edraw text labels) paint
+///    text only — matching libvisio, which skips fill/line when there is no
+///    path. Missing foreign images still get a bounding-box placeholder.
 ///  * Honours [VsdxFill] / [VsdxLine] (incl. gradients, dashes, themes).
 ///  * Applies drop-shadow effects when the shape has `Shadow*` cells.
 ///  * Decorates 1-D shapes' line endings with [arrowDescriptor] heads.
@@ -298,13 +300,16 @@ class VsdxPainter extends CustomPainter {
       _paintGeometries(canvas, shape);
     } else if (shape.is1D) {
       _paint1DFallback(canvas, shape);
-    } else if (shape.children.isEmpty) {
-      // Pure container groups have no own geometry — don't paint a
-      // placeholder rectangle that would obscure their children.
-      _paintPlaceholderBox(canvas, w, h);
     }
+    // Geometry-less 2-D leaves (e.g. Edraw "70% 隐性" text boxes that store
+    // FillPattern/LinePattern but no `<Section N="Geometry">`) must not get a
+    // synthetic rect. libvisio only emits fill/line when path geometry exists
+    // (`m_fillStyle.pattern && !m_currentFillGeometry.empty()`). Groups with
+    // children already skip any placeholder; text is painted below.
 
-    if (shape.shapeKind.isStructural || shape.shapeKind.isAnnotative) {
+    // Editor chrome (dashed kind hint / fold chevron) is only for foldable
+    // containers & callouts — never for plain Visio/Edraw groups.
+    if (shape.shapeKind.isFoldable || shape.shapeKind.isAnnotative) {
       _paintKindHint(canvas, shape, w, h);
     }
 
@@ -322,7 +327,7 @@ class VsdxPainter extends CustomPainter {
       }
     }
 
-    if (shape.shapeKind.isStructural) {
+    if (shape.shapeKind.isFoldable) {
       _paintCollapseChevron(canvas, shape, w, h);
     }
 

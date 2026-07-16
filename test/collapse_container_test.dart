@@ -142,4 +142,11 @@ void main() {
     expect(c.dy, greaterThan(box.height * 0.8)); // near the top (Y-up)
     expect(c.dx, lessThan(box.width * 0.2));
   });
+
+  test('plain groups are not foldable; containers are', () {
+    expect(VsdxShapeKind.group.isFoldable, isFalse);
+    expect(VsdxShapeKind.normal.isFoldable, isFalse);
+    expect(VsdxShapeKind.container.isFoldable, isTrue);
+    expect(VsdxShapeKind.swimlane.isFoldable, isTrue);
+  });
 }
