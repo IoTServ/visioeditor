@@ -273,6 +273,8 @@ const Map<String, String> _en = <String, String>{
   'dropToOpen': 'Drop to open',
   'openFileFailed': 'Could not open file: {error}',
   'openPathFailed': 'Could not open {path}',
+  'legacyVsdUnsupported':
+      'Legacy .vsd (binary) files are not supported yet. Please open a .vsdx file.',
   'openExampleFailed': 'Could not open example {name}',
   'insertImageFailed': 'Could not insert image',
   'replacedWith': 'Replaced with {name}',
@@ -788,6 +790,7 @@ const Map<String, String> _zh = <String, String>{
   'dropToOpen': '拖放到此处打开',
   'openFileFailed': '无法打开文件：{error}',
   'openPathFailed': '无法打开 {path}',
+  'legacyVsdUnsupported': '暂不支持旧版二进制 .vsd 文件，请打开 .vsdx 文件。',
   'openExampleFailed': '无法打开示例 {name}',
   'insertImageFailed': '无法插入图片',
   'replacedWith': '已替换为 {name}',

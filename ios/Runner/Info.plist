@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Visioeditor</string>
+	<string>$(VISIOEDITOR_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -70,6 +70,10 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<!--
+	  Match system Visio UTIs (.vsdx → drawing.opc, .vsd → drawing).
+	  See macos/Runner/Info.plist for the full rationale.
+	-->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -81,7 +85,37 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
+				<string>com.microsoft.visio.drawing.opc</string>
+				<string>com.microsoft.visio.drawing.macro-enabled</string>
+				<string>com.microsoft.visio.template.opc</string>
+				<string>com.microsoft.visio.template.macro-enabled</string>
+				<string>com.microsoft.visio.stencil.opc</string>
+				<string>com.microsoft.visio.stencil.macro-enabled</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>vsdx</string>
+				<string>vsdm</string>
+				<string>vstx</string>
+				<string>vstm</string>
+				<string>vssx</string>
+				<string>vssm</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Visio Binary Drawing</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
 				<string>com.microsoft.visio.drawing</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>vsd</string>
 			</array>
 		</dict>
 	</array>
@@ -90,6 +124,27 @@
 		<dict>
 			<key>UTTypeIdentifier</key>
 			<string>com.microsoft.visio.drawing</string>
+			<key>UTTypeDescription</key>
+			<string>Visio Binary Drawing</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>vsd</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.visio</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.visio.drawing.opc</string>
 			<key>UTTypeDescription</key>
 			<string>Visio Drawing</string>
 			<key>UTTypeConformsTo</key>
@@ -102,11 +157,120 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>vsdx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-visio.drawing</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.visio.drawing.macro-enabled</string>
+			<key>UTTypeDescription</key>
+			<string>Visio Drawing (macro-enabled)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
 					<string>vsdm</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-visio.drawing.macroEnabled</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.visio.template.opc</string>
+			<key>UTTypeDescription</key>
+			<string>Visio Template</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
 					<string>vstx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-visio.template</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.visio.template.macro-enabled</string>
+			<key>UTTypeDescription</key>
+			<string>Visio Template (macro-enabled)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
 					<string>vstm</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-visio.template.macroEnabled</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.visio.stencil.opc</string>
+			<key>UTTypeDescription</key>
+			<string>Visio Stencil</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
 					<string>vssx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-visio.stencil</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.microsoft.visio.stencil.macro-enabled</string>
+			<key>UTTypeDescription</key>
+			<string>Visio Stencil (macro-enabled)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
 					<string>vssm</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.ms-visio.stencil.macroEnabled</string>
 				</array>
 			</dict>
 		</dict>

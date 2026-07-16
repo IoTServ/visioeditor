@@ -55,8 +55,9 @@ flutter build macos             # release build → build/macos/Build/Products/
 ```
 
 The produced app is named **"Editor for Visio Diagrams"** and registers the
-Visio drawing file types (`.vsdx` / `.vsdm` / `.vstx` / `.vstm` / `.vssx` /
-`.vssm`) so Finder offers *Open With → Editor for Visio Diagrams*.
+Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
+`.vssx` / `.vssm`) so Finder offers *Open With → Editor for Visio Diagrams*.
+(Legacy `.vsd` is associated for Open With; binary import is still deferred.)
 
 ## Keyboard shortcuts
 

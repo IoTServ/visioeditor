@@ -11,7 +11,7 @@ class PickedDocument {
   final String? name;
 }
 
-/// Visio drawing extensions the editor can open.
+/// Visio OPC drawing extensions the editor can open and round-trip.
 const List<String> kVisioOpenExtensions = <String>[
   'vsdx',
   'vsdm',
@@ -19,6 +19,13 @@ const List<String> kVisioOpenExtensions = <String>[
   'vstm',
   'vssx',
   'vssm',
+];
+
+/// Extensions registered with the OS for "Open With" / file association.
+/// Includes legacy binary `.vsd` (associated, but not yet importable).
+const List<String> kVisioAssociatedExtensions = <String>[
+  'vsd',
+  ...kVisioOpenExtensions,
 ];
 
 /// Show the native open dialog and return the chosen file's bytes, or `null`
@@ -88,6 +95,19 @@ Future<PickedDocument> readDroppedFile(String path) async {
 bool hasVisioExtension(String path) {
   final lower = path.toLowerCase();
   return kVisioOpenExtensions.any((e) => lower.endsWith('.$e'));
+}
+
+/// `true` when [path] matches an OS-associated Visio extension (OPC or `.vsd`).
+bool hasVisioAssociatedExtension(String path) {
+  final lower = path.toLowerCase();
+  return kVisioAssociatedExtensions.any((e) => lower.endsWith('.$e'));
+}
+
+/// Legacy Visio 2003–2010 binary drawing (OLE2), not yet importable.
+bool isLegacyVisioBinary(String path) {
+  final lower = path.toLowerCase();
+  // Exact `.vsd` only — do not match `.vsdx` / `.vsdm`.
+  return lower.endsWith('.vsd') && !hasVisioExtension(path);
 }
 
 /// `true` when [path] looks like a raster image the editor can embed.

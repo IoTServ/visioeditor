@@ -177,10 +177,13 @@ class _EditorHomePageState extends State<EditorHomePage> {
     _recentFiles.load().then((r) {
       if (mounted) setState(() => _recents = r);
     });
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
       _fileChannel.setMethodCallHandler(_onNativeMethod);
       // Tell the native side we're listening so it can flush any file that was
-      // opened before the Dart isolate was ready (cold launch from Finder).
+      // opened before the Dart isolate was ready (cold launch from Finder /
+      // Files / "Open in…").
       unawaited(_fileChannel.invokeMethod<void>('ready').catchError((Object _) {}));
     }
   }
@@ -191,7 +194,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final args = call.arguments;
       if (args is List) {
         for (final p in args) {
-          if (p is String && hasVisioExtension(p)) await _openPath(p);
+          if (p is String && hasVisioAssociatedExtension(p)) {
+            await _openPath(p);
+          }
         }
       }
     }
@@ -236,6 +241,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   Future<void> _openPath(String path) async {
+    if (isLegacyVisioBinary(path)) {
+      if (mounted) {
+        _snack(EditorL10n.of(context).legacyVsdUnsupported);
+      }
+      return;
+    }
     try {
       final picked = await readDroppedFile(path);
       await _openBytes(picked.bytes, path: picked.path, name: picked.name);
@@ -262,6 +273,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     final pagePt = _pageInchesFromGlobal(details.globalPosition);
     for (final f in details.files) {
+      if (isLegacyVisioBinary(f.path)) {
+        if (mounted) {
+          _snack(EditorL10n.of(context).legacyVsdUnsupported);
+        }
+        continue;
+      }
       if (hasVisioExtension(f.path)) {
         final picked = await readDroppedFile(f.path);
         await _openBytes(picked.bytes, path: picked.path, name: picked.name);

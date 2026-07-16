@@ -13,7 +13,7 @@ associations in `pubspec.yaml`:
 msix_config:
   display_name: Editor for Visio Diagrams
   identity_name: com.example.visioeditor
-  file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm
+  file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd
 ```
 
 Then `dart run msix:create`. The installer registers the extensions and points
@@ -21,8 +21,9 @@ them at the packaged executable — no manual registry edits.
 
 ## Option B — Registry (dev / manual / Inno Setup)
 
-`visioeditor-file-association.reg` registers the six extensions under a shared
-`VisioEditor.Drawing` ProgID (per-user, `HKCU\Software\Classes`).
+`visioeditor-file-association.reg` registers the OPC extensions under
+`VisioEditor.Drawing` and legacy `.vsd` under `VisioEditor.Drawing.Binary`
+(per-user, `HKCU\Software\Classes`).
 
 1. Edit the file and replace `C:\Path\To\visioeditor.exe` with the real path.
 2. Double-click it (or `reg import visioeditor-file-association.reg`).

@@ -11,16 +11,20 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
 
+  override func applicationDidFinishLaunching(_ notification: Notification) {
+    super.applicationDidFinishLaunching(notification)
+    // Ensure Launch Services sees this build's Info.plist (critical for Debug,
+    // which lives under build/macos/... and shares document types with Release).
+    LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
+  }
+
   /// Finder double-click, "Open With", and `open drawing.vsdx` deliver the
   /// document URLs here on modern macOS (10.13+). We still let Flutter plugins
   /// process any URLs they registered for (via `super`), then forward local
   /// file paths to the Dart side through the file-open bridge.
   override func application(_ application: NSApplication, open urls: [URL]) {
     super.application(application, open: urls)
-    let paths = urls.filter { $0.isFileURL }.map { $0.path }
-    if !paths.isEmpty {
-      FileOpenBridge.shared.open(paths)
-    }
+    FileOpenBridge.shared.open(urls)
   }
 }
 
@@ -28,6 +32,10 @@ class AppDelegate: FlutterAppDelegate {
 /// `FlutterMethodChannel`. Because a document open can arrive before the Dart
 /// isolate has installed its handler (cold launch from Finder), paths are
 /// buffered until Dart signals `ready`, then flushed.
+///
+/// Sandboxed apps receive security-scoped URLs from Launch Services; we copy
+/// into the app caches directory so Dart can `File.readAsBytes` without
+/// holding the scope open across the async channel hop.
 final class FileOpenBridge {
   static let shared = FileOpenBridge()
   private init() {}
@@ -47,8 +55,16 @@ final class FileOpenBridge {
     flush()
   }
 
-  /// Queue document paths and deliver them when possible.
-  func open(_ paths: [String]) {
+  /// Queue document URLs (security-scoped copies) and deliver when possible.
+  func open(_ urls: [URL]) {
+    let paths = urls.compactMap { Self.sandboxReadablePath(for: $0) }
+    guard !paths.isEmpty else { return }
+    pending.append(contentsOf: paths)
+    flush()
+  }
+
+  /// Legacy path-based entry (tests / callers that already have a path string).
+  func open(paths: [String]) {
     pending.append(contentsOf: paths)
     flush()
   }
@@ -58,5 +74,33 @@ final class FileOpenBridge {
     let paths = pending
     pending.removeAll()
     channel.invokeMethod("openFiles", arguments: paths)
+  }
+
+  /// Copy a security-scoped file URL into Caches so Dart can read it.
+  private static func sandboxReadablePath(for url: URL) -> String? {
+    guard url.isFileURL else { return nil }
+    let accessed = url.startAccessingSecurityScopedResource()
+    defer {
+      if accessed { url.stopAccessingSecurityScopedResource() }
+    }
+
+    let fm = FileManager.default
+    guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+      return url.path
+    }
+    let destDir = caches.appendingPathComponent("opened-docs", isDirectory: true)
+    do {
+      try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+      let dest = destDir.appendingPathComponent(
+        "\(UUID().uuidString)-\(url.lastPathComponent)")
+      if fm.fileExists(atPath: dest.path) {
+        try fm.removeItem(at: dest)
+      }
+      try fm.copyItem(at: url, to: dest)
+      return dest.path
+    } catch {
+      // Non-scoped paths (already readable) or copy failures: fall back.
+      return url.path
+    }
   }
 }
