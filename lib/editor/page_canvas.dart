@@ -457,10 +457,28 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// The single selected shape if it is a non-rotated 2-D shape that supports
   /// box resize. Locked shapes never expose resize handles (drawio parity).
+  /// Nested shapes under a rotated ancestor are excluded — page-AABB handles
+  /// would not align with the local resize axes.
   VsdxShape? _resizableSelection() {
     if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
-    return (s == null || s.is1D || s.angleRad != 0 || s.locked) ? null : s;
+    if (s == null || s.is1D || s.angleRad != 0 || s.locked) return null;
+    if (_ancestorRotated(s.id)) return null;
+    return s;
+  }
+
+  /// Whether any ancestor of [id] has a non-zero rotation.
+  bool _ancestorRotated(int id) {
+    final page = _page;
+    if (page == null) return false;
+    var parent = page.findParentId(id);
+    while (parent != null) {
+      final s = page.findShapeById(parent);
+      if (s == null) return false;
+      if (s.angleRad != 0) return true;
+      parent = page.findParentId(parent);
+    }
+    return false;
   }
 
   /// The single selected shape if it is a 2-D shape that supports rotation.
@@ -488,27 +506,41 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Content-px positions of (rotate-line anchor at the shape's oriented top
   /// centre, rotate-handle knob just beyond it).
   (Offset anchor, Offset knob) _rotateAnchors(VsdxShape s) {
-    final sin = math.sin(s.angleRad);
-    final cos = math.cos(s.angleRad);
-    // Local up vector (0, h/2) rotated into page space (CCW).
-    final topX = s.pinX - sin * (s.height / 2);
-    final topY = s.pinY + cos * (s.height / 2);
+    final page = _page!;
+    // Top-centre of the local box, mapped through any parent groups.
+    final top = page.localToPageDeep(s.id, Offset2D(s.width / 2, s.height));
+    final pin = page.shapePinPage(s.id);
+    final dx = top.x - pin.x;
+    final dy = top.y - pin.y;
+    final len = math.sqrt(dx * dx + dy * dy);
     final offIn = 22 / (_scale * widget.pxPerInch);
-    final knobX = topX - sin * offIn;
-    final knobY = topY + cos * offIn;
-    return (_pageToContent(topX, topY), _pageToContent(knobX, knobY));
+    final ux = len > 1e-9 ? dx / len : 0.0;
+    final uy = len > 1e-9 ? dy / len : 1.0;
+    final knobX = top.x + ux * offIn;
+    final knobY = top.y + uy * offIn;
+    return (_pageToContent(top.x, top.y), _pageToContent(knobX, knobY));
   }
 
   /// Axis-aligned selection box of [s] in content-px space.
+  ///
+  /// Uses page-space AABB with ancestor XForms composed — nested Group
+  /// children store Pin in parent-local inches, not page inches.
   Rect _exactContentBox(VsdxShape s) {
-    final ppi = widget.pxPerInch;
-    final ph = _page!.heightInches;
-    final l = (s.pinX - s.width / 2) * ppi;
-    final r = (s.pinX + s.width / 2) * ppi;
-    final top = (ph - (s.pinY + s.height / 2)) * ppi;
-    final bottom = (ph - (s.pinY - s.height / 2)) * ppi;
-    return Rect.fromLTRB(l, top, r, bottom);
+    final page = _page!;
+    final aabb = page.shapePageAabb(s.id);
+    if (aabb == null) {
+      return Rect.zero;
+    }
+    return _normaliseRect(
+      _boundsInchesToContent(
+        Rect.fromLTRB(aabb.left, aabb.bottom, aabb.right, aabb.top),
+      ),
+    );
   }
+
+  /// Page-inch position of a connection point on [s] (ancestor-aware).
+  Offset2D _connPointPage(VsdxShape s, Offset2D local) =>
+      _page!.localToPageDeep(s.id, local);
 
   Map<_Handle, Offset> _handleScreens(Rect contentBox) {
     Offset scr(Offset c) => _offset + c * _scale;
@@ -1190,7 +1222,7 @@ class _PageCanvasState extends State<PageCanvas> {
           final cpIndex = _connDragSourceIndex(s, d.localPosition);
           if (cpIndex != null) {
             final pts = VsdxPage.effectiveConnectionPoints(s);
-            final pg = VsdxPage.localToPage(s, pts[cpIndex].offset);
+            final pg = _connPointPage(s, pts[cpIndex].offset);
             _connectSourceId = hover;
             _connectSourceConnIndex = cpIndex;
             _connectTargetId = null;
@@ -1308,7 +1340,7 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _connPointHitIndex(VsdxShape s, Offset localPos) {
     final pts = VsdxPage.effectiveConnectionPoints(s);
     for (var i = 0; i < pts.length; i++) {
-      final pg = VsdxPage.localToPage(s, pts[i].offset);
+      final pg = _connPointPage(s, pts[i].offset);
       final screen = _offset + _pageToContent(pg.x, pg.y) * _scale;
       if ((screen - localPos).distanceSquared <= 144) return i;
     }
@@ -1427,7 +1459,8 @@ class _PageCanvasState extends State<PageCanvas> {
         final s = id == null ? null : _c.currentPage?.findShapeById(id);
         if (s != null) {
           final p = _pageInchesAt(pos);
-          final angle = math.atan2(-(p.dx - s.pinX), p.dy - s.pinY);
+          final pin = _page!.shapePinPage(s.id);
+          final angle = math.atan2(-(p.dx - pin.x), p.dy - pin.y);
           _c.rotateShape(id!, angle, transient: true);
         }
       case _DragMode.none:
@@ -1440,15 +1473,23 @@ class _PageCanvasState extends State<PageCanvas> {
     final id = _resizeShapeId;
     final handle = _activeHandle;
     final s0 = _resizeStartShape;
-    if (id == null || handle == null || s0 == null) return;
+    final page = _page;
+    if (id == null || handle == null || s0 == null || page == null) return;
     final p = _pageInchesAt(pos);
     final px = _c.snap(p.dx);
     final py = _c.snap(p.dy);
-    final cx = s0.pinX, cy = s0.pinY;
-    var l = s0.pinX - s0.width / 2;
-    var r = s0.pinX + s0.width / 2;
-    var b = s0.pinY - s0.height / 2;
-    var t = s0.pinY + s0.height / 2;
+    // Start from the page-space AABB so nested Group children resize correctly.
+    final aabb0 = page.shapePageAabb(s0.id);
+    final cx = aabb0 != null
+        ? (aabb0.left + aabb0.right) / 2
+        : s0.pinX;
+    final cy = aabb0 != null
+        ? (aabb0.bottom + aabb0.top) / 2
+        : s0.pinY;
+    var l = aabb0?.left ?? (s0.pinX - s0.width / 2);
+    var r = aabb0?.right ?? (s0.pinX + s0.width / 2);
+    var b = aabb0?.bottom ?? (s0.pinY - s0.height / 2);
+    var t = aabb0?.top ?? (s0.pinY + s0.height / 2);
 
     final movesL =
         handle == _Handle.tl || handle == _Handle.bl || handle == _Handle.l;
@@ -1495,9 +1536,11 @@ class _PageCanvasState extends State<PageCanvas> {
         nb = cy - h / 2;
         nt = cy + h / 2;
       } else {
-        // Anchor the corner opposite the one being dragged.
-        final fixedX = movesL ? s0.pinX + s0.width / 2 : s0.pinX - s0.width / 2;
-        final fixedY = movesB ? s0.pinY + s0.height / 2 : s0.pinY - s0.height / 2;
+        // Anchor the corner opposite the one being dragged (page space).
+        final fixedX = movesL ? (aabb0?.right ?? (s0.pinX + s0.width / 2))
+            : (aabb0?.left ?? (s0.pinX - s0.width / 2));
+        final fixedY = movesB ? (aabb0?.top ?? (s0.pinY + s0.height / 2))
+            : (aabb0?.bottom ?? (s0.pinY - s0.height / 2));
         nl = movesL ? fixedX - w : fixedX;
         nr = movesL ? fixedX : fixedX + w;
         nb = movesB ? fixedY - h : fixedY;
@@ -1505,10 +1548,20 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
+    // Pin is stored in the parent-local frame for nested shapes.
+    var pinX = (nl + nr) / 2;
+    var pinY = (nb + nt) / 2;
+    final parentId = page.findParentId(id);
+    if (parentId != null) {
+      final local = page.pageToLocalDeep(parentId, Offset2D(pinX, pinY));
+      pinX = local.x;
+      pinY = local.y;
+    }
+
     _c.resizeShape(
       id,
-      pinX: (nl + nr) / 2,
-      pinY: (nb + nt) / 2,
+      pinX: pinX,
+      pinY: pinY,
       width: math.max(nr - nl, 0.05),
       height: math.max(nt - nb, 0.05),
       transient: true,
@@ -1523,14 +1576,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (page == null) return null;
     double? l, b, r, t;
     for (final id in _c.selection) {
-      final s = page.findShapeById(id);
-      if (s == null) continue;
-      final sl = s.pinX - s.width / 2, sr = s.pinX + s.width / 2;
-      final sb = s.pinY - s.height / 2, st = s.pinY + s.height / 2;
-      l = l == null ? sl : math.min(l, sl);
-      r = r == null ? sr : math.max(r, sr);
-      b = b == null ? sb : math.min(b, sb);
-      t = t == null ? st : math.max(t, st);
+      final aabb = page.shapePageAabb(id);
+      if (aabb == null) continue;
+      l = l == null ? aabb.left : math.min(l, aabb.left);
+      r = r == null ? aabb.right : math.max(r, aabb.right);
+      b = b == null ? aabb.bottom : math.min(b, aabb.bottom);
+      t = t == null ? aabb.top : math.max(t, aabb.top);
     }
     if (l == null) return null;
     return (l: l, b: b!, r: r!, t: t!);
@@ -1563,7 +1614,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if (!sel.contains(s.id) && !s.is1D) {
         final pts = VsdxPage.effectiveConnectionPoints(s);
         for (final p in pts) {
-          final pg = VsdxPage.localToPage(s, p.offset);
+          final pg = page.localToPageDeep(s.id, p.offset);
           out.add(SnapMagnet(pg.x, pg.y));
         }
       }
@@ -1668,7 +1719,7 @@ class _PageCanvasState extends State<PageCanvas> {
     var best = -1;
     var bestD = _connSnapPx * _connSnapPx;
     for (var i = 0; i < pts.length; i++) {
-      final page = VsdxPage.localToPage(s, pts[i].offset);
+      final page = _connPointPage(s, pts[i].offset);
       final d = (_pageToScreen(page.x, page.y) - viewportPos).distanceSquared;
       if (d <= bestD) {
         bestD = d;
@@ -1690,7 +1741,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if ((pts[i].x - cx).abs() < 1e-6 && (pts[i].y - cy).abs() < 1e-6) {
         continue; // centre point overlaps the move-grab region
       }
-      final page = VsdxPage.localToPage(s, pts[i].offset);
+      final page = _connPointPage(s, pts[i].offset);
       final d = (_pageToScreen(page.x, page.y) - viewportPos).distanceSquared;
       if (d <= bestD) {
         bestD = d;
@@ -1706,16 +1757,20 @@ class _PageCanvasState extends State<PageCanvas> {
   void _connectInDirection(VsdxShape s, int dir) {
     // Gap between the two boxes' facing edges (snapped so clones tile neatly).
     const gap = 0.5;
-    var cx = s.pinX, cy = s.pinY;
+    final aabb = _page!.shapePageAabb(s.id);
+    final pin = _page!.shapePinPage(s.id);
+    final w = aabb != null ? (aabb.right - aabb.left) : s.width;
+    final h = aabb != null ? (aabb.top - aabb.bottom) : s.height;
+    var cx = pin.x, cy = pin.y;
     switch (dir) {
       case 0: // north (page space is Y-up)
-        cy = s.pinY + s.height + gap;
+        cy = pin.y + h + gap;
       case 1: // east
-        cx = s.pinX + s.width + gap;
+        cx = pin.x + w + gap;
       case 2: // south
-        cy = s.pinY - s.height - gap;
+        cy = pin.y - h - gap;
       default: // west
-        cx = s.pinX - s.width - gap;
+        cx = pin.x - w - gap;
     }
     cx = _c.snap(cx);
     cy = _c.snap(cy);
@@ -2297,14 +2352,14 @@ class _PageCanvasState extends State<PageCanvas> {
               final t = cpShape;
               final pts = VsdxPage.effectiveConnectionPoints(t);
               connectionPointDots = <Offset>[
-                for (final p in pts.map((p) => VsdxPage.localToPage(t, p.offset)))
+                for (final p in pts.map((p) => _connPointPage(t, p.offset)))
                   _pageToContent(p.x, p.y),
               ];
               final selIdx = _c.editingConnectionPoints
                   ? _c.selectedConnectionPointIndex
                   : _snapConnIndex;
               if (selIdx != null && selIdx < pts.length) {
-                final pg = VsdxPage.localToPage(t, pts[selIdx].offset);
+                final pg = _connPointPage(t, pts[selIdx].offset);
                 snappedConnectionPoint = _pageToContent(pg.x, pg.y);
               }
             }

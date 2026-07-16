@@ -82,8 +82,8 @@ class ConnectorRouter {
         final lc = c.fromCell.toLowerCase();
         final isBegin = c.fromPart == 9 || lc.contains('beginx');
         final isEnd = c.fromPart == 12 || lc.contains('endx');
-        if (isBegin) begin = _perimeterAttach(target, rawEnd);
-        if (isEnd) end = _perimeterAttach(target, rawBegin);
+        if (isBegin) begin = _perimeterAttach(target, rawEnd, page: page);
+        if (isEnd) end = _perimeterAttach(target, rawBegin, page: page);
       }
     }
 
@@ -98,13 +98,23 @@ class ConnectorRouter {
           }
           if (exclude.contains(s.id) || s.is1D) continue;
           if (s.width < 0.05 || s.height < 0.05) continue;
-          obstacles.add(RouteAabb.fromCenter(
-            pinX: s.pinX,
-            pinY: s.pinY,
-            width: s.width,
-            height: s.height,
-            pad: ObstacleRouter.defaultClearance,
-          ));
+          final aabb = page.shapePageAabb(s.id);
+          if (aabb != null) {
+            obstacles.add(RouteAabb(
+              aabb.left - ObstacleRouter.defaultClearance,
+              aabb.bottom - ObstacleRouter.defaultClearance,
+              aabb.right + ObstacleRouter.defaultClearance,
+              aabb.top + ObstacleRouter.defaultClearance,
+            ));
+          } else {
+            obstacles.add(RouteAabb.fromCenter(
+              pinX: s.pinX,
+              pinY: s.pinY,
+              width: s.width,
+              height: s.height,
+              pad: ObstacleRouter.defaultClearance,
+            ));
+          }
         }
       }
 
@@ -128,9 +138,23 @@ class ConnectorRouter {
   /// The point on [target]'s axis-aligned box boundary along the ray from its
   /// centre toward [aim] — i.e. where a line coming from [aim] first meets the
   /// shape. Falls back to the centre for a degenerate box / coincident aim.
-  static Offset _perimeterAttach(VsdxShape target, Offset aim) {
-    final cx = target.pinX, cy = target.pinY;
-    final hw = target.width / 2, hh = target.height / 2;
+  static Offset _perimeterAttach(
+    VsdxShape target,
+    Offset aim, {
+    VsdxPage? page,
+  }) {
+    double cx = target.pinX, cy = target.pinY;
+    double hw = target.width / 2, hh = target.height / 2;
+    if (page != null) {
+      final pin = page.shapePinPage(target.id);
+      cx = pin.x;
+      cy = pin.y;
+      final aabb = page.shapePageAabb(target.id);
+      if (aabb != null) {
+        hw = (aabb.right - aabb.left) / 2;
+        hh = (aabb.top - aabb.bottom) / 2;
+      }
+    }
     if (hw <= 0 || hh <= 0) return Offset(cx, cy);
     final dx = aim.dx - cx, dy = aim.dy - cy;
     if (dx == 0 && dy == 0) return Offset(cx, cy);

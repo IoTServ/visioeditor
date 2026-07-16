@@ -672,10 +672,13 @@ class VsdxPage {
   }
 
   /// Map a shape-local point [local] (inches, origin bottom-left / Y-up) on [s]
-  /// to page inches, honouring its pin, size, rotation and flip.
+  /// to parent-local (or page) inches, honouring pin, LocPin, rotation and flip.
+  ///
+  /// Matches the paint / bbox transform
+  /// `T(pin) · R · S(±1) · T(-LocPin)`.
   static Offset2D localToPage(VsdxShape s, Offset2D local) {
-    var dx = local.x - s.width / 2;
-    var dy = local.y - s.height / 2;
+    var dx = local.x - s.effectiveLocPinX;
+    var dy = local.y - s.effectiveLocPinY;
     if (s.flipX) dx = -dx;
     if (s.flipY) dy = -dy;
     if (s.angleRad != 0) {
@@ -688,9 +691,9 @@ class VsdxPage {
     return Offset2D(s.pinX + dx, s.pinY + dy);
   }
 
-  /// Map a page-inch point back into [s]'s local coordinates (origin
-  /// bottom-left / Y-up), honouring pin, size, rotation and flip. Inverse of
-  /// [localToPage].
+  /// Map a parent-local (or page) inch point back into [s]'s local coordinates
+  /// (origin bottom-left / Y-up), honouring pin, LocPin, rotation and flip.
+  /// Inverse of [localToPage].
   static Offset2D pageToLocal(VsdxShape s, Offset2D page) {
     var dx = page.x - s.pinX;
     var dy = page.y - s.pinY;
@@ -703,7 +706,7 @@ class VsdxPage {
     }
     if (s.flipX) dx = -dx;
     if (s.flipY) dy = -dy;
-    return Offset2D(dx + s.width / 2, dy + s.height / 2);
+    return Offset2D(dx + s.effectiveLocPinX, dy + s.effectiveLocPinY);
   }
 
   /// Page-inch position of connection point [index] on [s]. [index] is into
@@ -726,7 +729,8 @@ class VsdxPage {
     if (idx == null || idx < 0 || idx >= shape.connectionPoints.length) {
       return null;
     }
-    return connectionPointPage(shape, idx);
+    // Nested Group children need ancestor composition.
+    return localToPageDeep(shape.id, shape.connectionPoints[idx].offset);
   }
 
   /// Standard default connection points (drawio-style) for a [width]×[height]
@@ -1054,13 +1058,23 @@ class VsdxPage {
         if (excludeIds.contains(s.id) || s.is1D) continue;
         if (s.width < 0.05 || s.height < 0.05) continue;
         if (visible != null && !s.isOnAnyLayer(visible)) continue;
-        out.add(RouteAabb.fromCenter(
-          pinX: s.pinX,
-          pinY: s.pinY,
-          width: s.width,
-          height: s.height,
-          pad: ObstacleRouter.defaultClearance,
-        ));
+        final aabb = shapePageAabb(s.id);
+        if (aabb != null) {
+          out.add(RouteAabb(
+            aabb.left - ObstacleRouter.defaultClearance,
+            aabb.bottom - ObstacleRouter.defaultClearance,
+            aabb.right + ObstacleRouter.defaultClearance,
+            aabb.top + ObstacleRouter.defaultClearance,
+          ));
+        } else {
+          out.add(RouteAabb.fromCenter(
+            pinX: s.pinX,
+            pinY: s.pinY,
+            width: s.width,
+            height: s.height,
+            pad: ObstacleRouter.defaultClearance,
+          ));
+        }
       }
     }
 
@@ -1442,6 +1456,60 @@ class VsdxPage {
       if (parent == null) return p;
       id = parent;
     }
+  }
+
+  /// Map a page-inch point into [shapeId]'s local coordinates, walking down
+  /// through any parent groups / containers. Inverse of [localToPageDeep].
+  Offset2D pageToLocalDeep(int shapeId, Offset2D page) {
+    final chain = <int>[];
+    var id = shapeId;
+    while (true) {
+      chain.add(id);
+      final parent = findParentId(id);
+      if (parent == null) break;
+      id = parent;
+    }
+    var p = page;
+    for (final sid in chain.reversed) {
+      final s = findShapeById(sid);
+      if (s == null) return p;
+      p = pageToLocal(s, p);
+    }
+    return p;
+  }
+
+  /// Page-inch position of [shapeId]'s pin (LocPin mapped through ancestors).
+  Offset2D shapePinPage(int shapeId) {
+    final s = findShapeById(shapeId);
+    if (s == null) return const Offset2D(0, 0);
+    return localToPageDeep(
+      shapeId,
+      Offset2D(s.effectiveLocPinX, s.effectiveLocPinY),
+    );
+  }
+
+  /// Exact (unpadded) axis-aligned page-inch bbox of [shapeId]'s local
+  /// `[0..W]×[0..H]` box after composing ancestor XForms, or `null` if missing.
+  ({double left, double bottom, double right, double top})? shapePageAabb(
+    int shapeId,
+  ) {
+    final s = findShapeById(shapeId);
+    if (s == null) return null;
+    final corners = <Offset2D>[
+      localToPageDeep(shapeId, const Offset2D(0, 0)),
+      localToPageDeep(shapeId, Offset2D(s.width, 0)),
+      localToPageDeep(shapeId, Offset2D(s.width, s.height)),
+      localToPageDeep(shapeId, Offset2D(0, s.height)),
+    ];
+    var minX = corners.first.x, maxX = corners.first.x;
+    var minY = corners.first.y, maxY = corners.first.y;
+    for (final c in corners.skip(1)) {
+      if (c.x < minX) minX = c.x;
+      if (c.x > maxX) maxX = c.x;
+      if (c.y < minY) minY = c.y;
+      if (c.y > maxY) maxY = c.y;
+    }
+    return (left: minX, bottom: minY, right: maxX, top: maxY);
   }
 
   /// Parent shape id of [id], or `null` when [id] is top-level / missing.

@@ -469,18 +469,18 @@ class VsdxPainter extends CustomPainter {
   /// point back into the shape's local frame
   /// (`(0..width) × (0..height)`).
   ///
-  /// Forward transform: `T(pinX,pinY) · R(angleRad) · S(±1,±1) · T(-w/2,-h/2)`.
-  /// Inverse:           `T(w/2,h/2) · S(±1,±1) · R(-angleRad) · T(-pinX,-pinY)`.
+  /// Forward transform: `T(pin) · R · S(±1) · T(-LocPin)`.
+  /// Inverse:           `T(LocPin) · S(±1) · R(-angle) · T(-pin)`.
   Offset _pageToLocal(VsdxShape shape, Offset pagePoint) {
     var x = pagePoint.dx - shape.pinX;
     var y = pagePoint.dy - shape.pinY;
     if (shape.angleRad != 0) {
-      final c = math.cos(-shape.angleRad);
-      final s = math.sin(-shape.angleRad);
-      final nx = c * x - s * y;
-      final ny = s * x + c * y;
-      x = nx;
-      y = ny;
+      final cosA = math.cos(-shape.angleRad);
+      final sinA = math.sin(-shape.angleRad);
+      final rx = x * cosA - y * sinA;
+      final ry = x * sinA + y * cosA;
+      x = rx;
+      y = ry;
     }
     if (shape.flipX) x = -x;
     if (shape.flipY) y = -y;
