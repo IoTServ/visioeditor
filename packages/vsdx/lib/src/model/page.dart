@@ -11,6 +11,7 @@ import 'connect.dart';
 import 'geometry.dart';
 import 'layer.dart';
 import 'obstacle_router.dart';
+import 'perimeter.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
 
@@ -468,12 +469,12 @@ class VsdxPage {
       final (ax, ay) = beginFixed != null
           ? (beginFixed.x, beginFixed.y)
           : beginShape != null
-              ? _edgePoint(beginShape, refEx, refEy)
+              ? _perimeterPoint(beginShape, refEx, refEy)
               : (refBx, refBy);
       final (bx, by) = endFixed != null
           ? (endFixed.x, endFixed.y)
           : endShape != null
-              ? _edgePoint(endShape, refBx, refBy)
+              ? _perimeterPoint(endShape, refBx, refBy)
               : (refEx, refEy);
       final exclude = <int>{
         cid,
@@ -520,12 +521,15 @@ class VsdxPage {
   /// Recover a page-space polyline from a 1-D shape's first geometry section
   /// (MoveTo / LineTo only). Returns `null` when geometry is missing or not a
   /// simple polyline.
+  ///
+  /// Maps local → page via `pin − LocPin` (Visio Begin-origin connectors:
+  /// local (0,0) is Begin). Avoids the old AABB `pin − size/2` assumption.
   static List<Offset2D>? _polylineFromGeometry(VsdxShape s) {
     if (s.geometries.isEmpty) return null;
     final cmds = s.geometries.first.commands;
     if (cmds.length < 2) return null;
-    final ox = s.pinX - s.width / 2;
-    final oy = s.pinY - s.height / 2;
+    final ox = s.pinX - s.effectiveLocPinX;
+    final oy = s.pinY - s.effectiveLocPinY;
     final pts = <Offset2D>[];
     for (final c in cmds) {
       if (c is MoveTo) {
@@ -971,24 +975,33 @@ class VsdxPage {
     return next;
   }
 
-  /// Point on [s]'s axis-aligned bounding box boundary along the ray from its
-  /// centre toward ([towardX], [towardY]).
-  static (double, double) _edgePoint(
+  /// Point on [s]'s **drawn outline** (Geometry) along the ray from its pin
+  /// toward ([towardX], [towardY]), in page inches. Falls back to the local
+  /// Width×Height box when geometry is missing. Nested groups compose via
+  /// [localToPageDeep] so the tip meets the body, not a parent-local AABB.
+  (double, double) _perimeterPoint(
     VsdxShape s,
     double towardX,
     double towardY,
   ) {
-    final cx = s.pinX;
-    final cy = s.pinY;
-    final dx = towardX - cx;
-    final dy = towardY - cy;
-    if (dx == 0 && dy == 0) return (cx, cy);
-    final hw = s.width / 2;
-    final hh = s.height / 2;
-    final sx = dx == 0 ? double.infinity : hw / dx.abs();
-    final sy = dy == 0 ? double.infinity : hh / dy.abs();
-    final t = math.min(sx, sy);
-    return (cx + dx * t, cy + dy * t);
+    final hit = ShapePerimeter.attachToward(
+      s,
+      pinPage: shapePinPage(s.id),
+      towardX: towardX,
+      towardY: towardY,
+      localToPage: (local) => localToPageDeep(s.id, local),
+      pageToLocal: (page) => pageToLocalDeep(s.id, page),
+    );
+    return (hit.x, hit.y);
+  }
+
+  /// Page-inch attach point on [shapeId]'s outline aimed at ([towardX],
+  /// [towardY]) — shared by the editor router and paint-time fallback.
+  Offset2D perimeterAttach(int shapeId, double towardX, double towardY) {
+    final s = findShapeById(shapeId);
+    if (s == null) return Offset2D(towardX, towardY);
+    final (x, y) = _perimeterPoint(s, towardX, towardY);
+    return Offset2D(x, y);
   }
 
   /// Orthogonal (elbow / Z) route between two page points. Falls back to a

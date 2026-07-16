@@ -1476,9 +1476,11 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Create a connector line between two page points. When [beginTarget] /
-  /// [endTarget] name a shape, that end is glued (a `<Connect>` row is added
-  /// and the endpoint snaps to the nearest mid-edge connection point so
-  /// 万兴图示 / Visio attach at the border, not the pin centre).
+  /// [endTarget] name a shape, that end is glued (a `<Connect>` row is added).
+  /// With an explicit [beginConnectionPointIndex] / [endConnectionPointIndex]
+  /// the end pins to that fixed blue point; otherwise whole-shape glue
+  /// (`ToPart=3`) attaches on the geometry perimeter aimed at the opposite end
+  /// (draw.io-style — any border point, not only the four mid-edge dots).
   void createConnector(
     double ax,
     double ay,
@@ -1538,18 +1540,11 @@ class EditorController extends ChangeNotifier {
         ),
       );
     }
-    // Prefer explicit CP indices; otherwise pick the mid-edge point aimed at
-    // the opposite end (indices 0..3 — skip centre).
-    int? beginIdx = beginConnectionPointIndex;
-    int? endIdx = endConnectionPointIndex;
-    if (beginTarget != null && beginIdx == null) {
-      final t = page.findShapeById(beginTarget);
-      if (t != null) beginIdx = _nearestEdgeConnectionIndex(t, sbx, sby);
-    }
-    if (endTarget != null && endIdx == null) {
-      final t = page.findShapeById(endTarget);
-      if (t != null) endIdx = _nearestEdgeConnectionIndex(t, sax, say);
-    }
+    // Prefer explicit CP indices (drawio blue points). Otherwise use whole-shape
+    // glue (ToPart=3) so the endpoint attaches anywhere on the geometry
+    // perimeter aimed at the opposite end — not only the four mid-edge points.
+    final beginIdx = beginConnectionPointIndex;
+    final endIdx = endConnectionPointIndex;
     final connects = <VsdxConnect>[
       ...page.connects,
       if (beginTarget != null)
@@ -1576,7 +1571,7 @@ class EditorController extends ChangeNotifier {
       ..add(id);
     _tool = EditorTool.select;
     var next = page.addShape(connector).copyWith(connects: connects);
-    // Materialise Connection rows on targets so the glue indices round-trip.
+    // Materialise Connection rows on targets so fixed-point glue round-trips.
     if (beginTarget != null && beginIdx != null) {
       next = next.setConnectorEndpoint(
         id,
@@ -1597,7 +1592,7 @@ class EditorController extends ChangeNotifier {
         y: sby,
       );
     }
-    if (beginIdx == null && endIdx == null) {
+    if (beginIdx == null || endIdx == null) {
       next = next.rerouteConnectors(movedShapeIds: <int>{
         id,
         ?beginTarget,
@@ -1610,32 +1605,6 @@ class EditorController extends ChangeNotifier {
         next,
       ),
     );
-  }
-
-  /// Index 0..3 of the mid-edge connection point on [shape] closest to the
-  /// ray from the shape centre toward ([towardX],[towardY]).
-  static int _nearestEdgeConnectionIndex(
-    VsdxShape shape,
-    double towardX,
-    double towardY,
-  ) {
-    final pts = VsdxPage.effectiveConnectionPoints(shape);
-    var best = 0;
-    var bestD = double.infinity;
-    for (var i = 0; i < pts.length && i < 4; i++) {
-      final page = VsdxPage.connectionPointPage(
-        shape.copyWith(connectionPoints: pts),
-        i,
-      );
-      final dx = page.x - towardX;
-      final dy = page.y - towardY;
-      final d = dx * dx + dy * dy;
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    return best;
   }
 
   /// drawio directional-arrow click ("connect / clone in a direction").

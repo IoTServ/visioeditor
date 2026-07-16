@@ -34,6 +34,7 @@ export 'src/model/line.dart';
 export 'src/model/master.dart';
 export 'src/model/obstacle_router.dart';
 export 'src/model/page.dart';
+export 'src/model/perimeter.dart';
 export 'src/model/rich_text.dart';
 export 'src/model/rich_text_edit.dart';
 export 'src/model/shape.dart';

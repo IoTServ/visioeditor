@@ -135,33 +135,28 @@ class ConnectorRouter {
     return RoutedConnector(begin: begin, end: end, waypoints: waypoints);
   }
 
-  /// The point on [target]'s axis-aligned box boundary along the ray from its
-  /// centre toward [aim] — i.e. where a line coming from [aim] first meets the
-  /// shape. Falls back to the centre for a degenerate box / coincident aim.
+  /// The point on [target]'s **drawn outline** along the ray from its pin
+  /// toward [aim] — i.e. where a line coming from [aim] first meets the shape
+  /// body (not the selection AABB). Falls back to the Width×Height box when
+  /// geometry is missing.
   static Offset _perimeterAttach(
     VsdxShape target,
     Offset aim, {
     VsdxPage? page,
   }) {
-    double cx = target.pinX, cy = target.pinY;
-    double hw = target.width / 2, hh = target.height / 2;
     if (page != null) {
-      final pin = page.shapePinPage(target.id);
-      cx = pin.x;
-      cy = pin.y;
-      final aabb = page.shapePageAabb(target.id);
-      if (aabb != null) {
-        hw = (aabb.right - aabb.left) / 2;
-        hh = (aabb.top - aabb.bottom) / 2;
-      }
+      final p = page.perimeterAttach(target.id, aim.dx, aim.dy);
+      return Offset(p.x, p.y);
     }
-    if (hw <= 0 || hh <= 0) return Offset(cx, cy);
-    final dx = aim.dx - cx, dy = aim.dy - cy;
-    if (dx == 0 && dy == 0) return Offset(cx, cy);
-    final tx = dx != 0 ? hw / dx.abs() : double.infinity;
-    final ty = dy != 0 ? hh / dy.abs() : double.infinity;
-    final t = tx < ty ? tx : ty; // first edge the ray crosses
-    return Offset(cx + dx * t, cy + dy * t);
+    final hit = ShapePerimeter.attachToward(
+      target,
+      pinPage: Offset2D(target.pinX, target.pinY),
+      towardX: aim.dx,
+      towardY: aim.dy,
+      localToPage: (local) => VsdxPage.localToPage(target, local),
+      pageToLocal: (pagePt) => VsdxPage.pageToLocal(target, pagePt),
+    );
+    return Offset(hit.x, hit.y);
   }
 
   /// Two-corner orthogonal path used when no page/obstacles are available.

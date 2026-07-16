@@ -1543,8 +1543,29 @@ class VsdxWriter {
     var changed = false;
     changed |= _patchLength(el, 'PinX', base.pinX, edited.pinX);
     changed |= _patchLength(el, 'PinY', base.pinY, edited.pinY);
-    changed |= _patchLength(el, 'Width', base.width, edited.width);
-    changed |= _patchLength(el, 'Height', base.height, edited.height);
+    // For connectors (ObjType=2), Width/Height are End−Begin (may be signed).
+    // Preserve / restore those formulas after the numeric V= patch so 万兴图示
+    // keeps the Visio 1-D convention instead of treating size as an AABB.
+    final connectorXForm = edited.is1D &&
+        (edited.objType == null || edited.objType == 2);
+    changed |= _patchLength(
+      el,
+      'Width',
+      base.width,
+      edited.width,
+      preserveFormula: connectorXForm &&
+          (edited.formulas['Width'] != null ||
+              _cellHasParametricFormula(el, 'Width')),
+    );
+    changed |= _patchLength(
+      el,
+      'Height',
+      base.height,
+      edited.height,
+      preserveFormula: connectorXForm &&
+          (edited.formulas['Height'] != null ||
+              _cellHasParametricFormula(el, 'Height')),
+    );
     // LocPin follows the shape when it is resized (effective centre moves) or
     // when an off-centre pin is edited explicitly. Compare the *effective*
     // values so a null LocPin (implicit centre) still updates after resize.
@@ -3664,9 +3685,13 @@ class VsdxWriter {
     return true;
   }
 
-  /// Write Edraw-default connector dynamics when a 1-D shape lacks them.
+  /// Write Edraw-default connector dynamics when a 1-D **connector** lacks them.
+  /// Skips freehand ink (`ObjType=1`) which uses an AABB local frame, not the
+  /// Visio Begin-origin Width=EndX-BeginX convention.
   bool _ensureConnectorDynamics(XmlElement el, VsdxShape s) {
     if (!s.is1D) return false;
+    // Freehand / ink strokes are 1-D but not glueable connectors.
+    if (s.objType != null && s.objType != 2) return false;
     var changed = false;
     void put(String name, String value) {
       if (!_hasCell(el, name)) {
@@ -3680,7 +3705,9 @@ class VsdxWriter {
     put('ShapeRouteStyle',
         (s.connectorProps?.shapeRouteStyle ?? 16).toString());
     put('DynFeedback', (s.connectorProps?.dynFeedback ?? 2).toString());
-    put('ConFixedCode', (s.connectorProps?.conFixedCode ?? 0).toString());
+    // Default 3 (reroute on crossover) — matches Visio fixtures. Never use 0
+    // (reroute freely): 万兴图示 then discards multi-segment Geometry.
+    put('ConFixedCode', (s.connectorProps?.conFixedCode ?? 3).toString());
     put('NoAlignBox', '1');
     put('NoLiveDynamics', '1');
     put('ShapeSplittable', '1');
@@ -3701,6 +3728,19 @@ class VsdxWriter {
 
     putPinFormula('PinX', '(BeginX+EndX)*0.5', s.pinX);
     putPinFormula('PinY', '(BeginY+EndY)*0.5', s.pinY);
+    // Visio 1-D size / LocPin — required so Geometry rooted at Begin (0,0)
+    // places correctly when Width/Height are signed End−Begin deltas.
+    putPinFormula('Width', 'EndX-BeginX', s.width);
+    putPinFormula('Height', 'EndY-BeginY', s.height);
+    putPinFormula('LocPinX', '(EndX-BeginX)/2', s.effectiveLocPinX);
+    putPinFormula('LocPinY', '(EndY-BeginY)/2', s.effectiveLocPinY);
+    // If an older export left ConFixedCode=0, force it up to the model value.
+    final wantFixed = s.connectorProps?.conFixedCode ?? 3;
+    final fixedCell = _ensureCell(el, 'ConFixedCode');
+    if (fixedCell.getAttribute('V') != wantFixed.toString()) {
+      fixedCell.setAttribute('V', wantFixed.toString());
+      changed = true;
+    }
     return changed;
   }
 

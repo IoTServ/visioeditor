@@ -4524,8 +4524,8 @@ abstract final class VsdxShapeFactory {
 
   /// Straight 1-D line from page point ([ax],[ay]) to ([bx],[by]) (inches).
   ///
-  /// Emits Edraw/Visio-friendly Pin formulas and connector dynamics so 万兴图示
-  /// treats the edge as a glueable connector (not a static stroke).
+  /// Uses Visio Begin-origin XForm (`Width=EndX-BeginX`) and `ConFixedCode=3`
+  /// so 万兴图示 keeps baked elbow Geometry instead of freely re-routing.
   static VsdxShape line({
     required int id,
     required double ax,
@@ -4535,19 +4535,17 @@ abstract final class VsdxShapeFactory {
     VsdxLine line = _defaultLine,
     String? name,
   }) {
-    final left = math.min(ax, bx);
-    final right = math.max(ax, bx);
-    final bottom = math.min(ay, by);
-    final top = math.max(ay, by);
-    final w = right - left;
-    final h = top - bottom;
+    final w = bx - ax;
+    final h = by - ay;
     return VsdxShape(
       id: id,
       name: name ?? 'Sheet.$id',
-      pinX: (left + right) / 2,
-      pinY: (bottom + top) / 2,
+      pinX: (ax + bx) / 2,
+      pinY: (ay + by) / 2,
       width: w,
       height: h,
+      locPinXInches: w / 2,
+      locPinYInches: h / 2,
       is1D: true,
       // Visio connector object type — required for glue / routing in other apps.
       objType: 2,
@@ -4560,10 +4558,16 @@ abstract final class VsdxShapeFactory {
       formulas: const <String, String>{
         'PinX': '(BeginX+EndX)*0.5',
         'PinY': '(BeginY+EndY)*0.5',
+        'Width': 'EndX-BeginX',
+        'Height': 'EndY-BeginY',
+        'LocPinX': '(EndX-BeginX)/2',
+        'LocPinY': '(EndY-BeginY)/2',
       },
       connectorProps: const VsdxConnectorProps(
         glueType: 2,
-        conFixedCode: 0,
+        // 3 = Reroute on crossover (Visio authored elbows). 0 = freely —
+        // 万兴图示 then replaces Geometry with a Begin→End straight line.
+        conFixedCode: 3,
         dynFeedback: 2,
         noLiveDynamics: true,
         conLineRouteExt: 1,
@@ -4572,8 +4576,8 @@ abstract final class VsdxShapeFactory {
       geometries: <VsdxGeometry>[
         VsdxGeometry(
           commands: <VsdxPathCommand>[
-            MoveTo(ax - left, ay - bottom),
-            LineTo(bx - left, by - bottom),
+            const MoveTo(0, 0),
+            LineTo(w, h),
           ],
           noFill: true,
         ),

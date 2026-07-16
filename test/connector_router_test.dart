@@ -40,6 +40,28 @@ void main() {
     expect(routed.begin.dx, closeTo(0.0, 1e-6)); // un-glued end untouched
   });
 
+  test('diamond glue lands on a slanted edge, not the AABB', () {
+    final target = VsdxShapeFactory.polygon(
+      id: 1,
+      pinX: 5,
+      pinY: 5,
+      width: 2,
+      height: 2,
+      unit: const <Offset2D>[
+        Offset2D(0.5, 1),
+        Offset2D(1, 0.5),
+        Offset2D(0.5, 0),
+        Offset2D(0, 0.5),
+      ],
+    );
+    final connector = VsdxShapeFactory.line(id: 2, ax: 0, ay: 0, bx: 5, by: 5);
+    final routed = router.route(connector, page: pageWith(target, connector))!;
+    // Ray from (0,0) aim — attach from centre (5,5) toward begin (0,0)
+    // → diamond edge at (4.5, 4.5).
+    expect(routed.end.dx, closeTo(4.5, 1e-6));
+    expect(routed.end.dy, closeTo(4.5, 1e-6));
+  });
+
   test('vertical glue lands on the bottom edge', () {
     final target =
         VsdxShapeFactory.rectangle(id: 1, pinX: 5, pinY: 5, width: 2, height: 1);

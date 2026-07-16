@@ -1450,6 +1450,29 @@ void main() {
     expect(conn.endY, closeTo(top.y, 1e-6));
   });
 
+  test('createConnector without CP index uses whole-shape perimeter glue', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(a.pinX, a.pinY, b.pinX, b.pinY,
+        beginTarget: a.id, endTarget: b.id);
+    final connId = c.currentPage!.shapes.last.id;
+    final page = c.currentPage!;
+    final begin = page.connects
+        .firstWhere((e) => e.fromSheetId == connId && e.isBegin);
+    final end =
+        page.connects.firstWhere((e) => e.fromSheetId == connId && e.isEnd);
+    // draw.io-style floating glue — not forced onto mid-edge Connection rows.
+    expect(begin.toPart, 3);
+    expect(end.toPart, 3);
+    expect(begin.toCell, 'PinX');
+    expect(end.toCell, 'PinX');
+    // Endpoints sit on the shape bodies (AABB edges for rectangles).
+    final conn = page.findShapeById(connId)!;
+    expect(conn.beginX, isNot(closeTo(a.pinX, 1e-3)));
+    expect(conn.endX, isNot(closeTo(b.pinX, 1e-3)));
+  });
+
   test('memo line from connector does not stamp arrows onto new boxes', () {
     // Styling a connector then dropping a rectangle must not export EndArrow
     // on the box (万兴图示 would draw stray arrowheads on vertices).

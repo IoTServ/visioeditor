@@ -671,7 +671,8 @@ class _PageCanvasState extends State<PageCanvas> {
       if (s != null && !s.is1D && !s.locked) {
         onConnect = _connectArrowHitDir(s, pos) != null ||
             (_resizableSelection()?.id != s.id &&
-                _connDragSourceIndex(s, pos) != null);
+                (_connDragSourceIndex(s, pos) != null ||
+                    _nearShapePerimeter(s, pos)));
       }
     }
     if (next != _hoverShapeId || onConnect != _hoverOnConnectPoint) {
@@ -1217,7 +1218,8 @@ class _PageCanvasState extends State<PageCanvas> {
       if (s != null && !s.is1D && !s.locked) {
         // Edge connection point (drawio blue X): drag out a connector glued to
         // that exact point. Skipped for the active resize selection so its
-        // edge-midpoint handles keep priority.
+        // edge-midpoint handles keep priority. Otherwise any point on the
+        // geometry perimeter starts a whole-shape glue (draw.io floating).
         if (_resizableSelection()?.id != s.id) {
           final cpIndex = _connDragSourceIndex(s, d.localPosition);
           if (cpIndex != null) {
@@ -1229,6 +1231,18 @@ class _PageCanvasState extends State<PageCanvas> {
             _mode = _DragMode.connect;
             setState(() {
               _previewStart = _pageToContent(pg.x, pg.y);
+              _previewEnd = _viewportToContent(d.localPosition);
+            });
+            return;
+          }
+          final peri = _nearestPerimeterPage(s, d.localPosition);
+          if (peri != null) {
+            _connectSourceId = hover;
+            _connectSourceConnIndex = null;
+            _connectTargetId = null;
+            _mode = _DragMode.connect;
+            setState(() {
+              _previewStart = _pageToContent(peri.x, peri.y);
               _previewEnd = _viewportToContent(d.localPosition);
             });
             return;
@@ -1727,6 +1741,26 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
     return best < 0 ? null : best;
+  }
+
+  /// Whether [viewportPos] is within the snap radius of [s]'s geometry outline
+  /// (draw.io: start a connector from anywhere on the body, not only blue dots).
+  bool _nearShapePerimeter(VsdxShape s, Offset viewportPos) =>
+      _nearestPerimeterPage(s, viewportPos) != null;
+
+  /// Nearest page-inch point on [s]'s outline to [viewportPos], or `null` when
+  /// farther than [_connSnapPx] from every segment.
+  Offset2D? _nearestPerimeterPage(VsdxShape s, Offset viewportPos) {
+    final page = _page;
+    if (page == null) return null;
+    final inch = _pageInchesAt(viewportPos);
+    final local = page.pageToLocalDeep(s.id, Offset2D(inch.dx, inch.dy));
+    final nearest = ShapePerimeter.nearestLocal(s, local);
+    if (nearest == null) return null;
+    final pg = page.localToPageDeep(s.id, nearest);
+    final d = (_pageToScreen(pg.x, pg.y) - viewportPos).distanceSquared;
+    if (d > _connSnapPx * _connSnapPx) return null;
+    return pg;
   }
 
   /// Index of a connection point on [s] under [viewportPos] to start a *new*

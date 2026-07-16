@@ -711,67 +711,66 @@ class VsdxShape {
   }
 
   /// Re-position this shape as a straight 1-D line between page points
-  /// ([ax],[ay]) and ([bx],[by]); recomputes pin / size / begin-end and the
-  /// local geometry. Used by connector re-routing.
+  /// ([ax],[ay]) and ([bx],[by]). Delegates to [reshapeAsPolyline] so the
+  /// Visio Begin-origin XForm convention is shared.
   VsdxShape reshapeAsLine({
     required double ax,
     required double ay,
     required double bx,
     required double by,
-  }) {
-    final left = math.min(ax, bx);
-    final right = math.max(ax, bx);
-    final bottom = math.min(ay, by);
-    final top = math.max(ay, by);
+  }) =>
+      reshapeAsPolyline(<Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]);
+
+  /// Re-position this shape as a 1-D polyline through page-space [points]
+  /// (≥2). Uses Visio / 万兴图示 connector convention so exported elbows survive:
+  ///
+  /// * local `MoveTo(0,0)` = Begin; last vertex = `(Width, Height)` = End
+  /// * `Width = EndX−BeginX`, `Height = EndY−BeginY` (may be negative)
+  /// * `ConFixedCode = 3` so hosts don't freely re-route over baked Geometry
+  VsdxShape reshapeAsPolyline(List<Offset2D> points) {
+    if (points.length < 2) return this;
+    final ax = points.first.x;
+    final ay = points.first.y;
+    final bx = points.last.x;
+    final by = points.last.y;
+    final w = bx - ax;
+    final h = by - ay;
+    final commands = <VsdxPathCommand>[
+      const MoveTo(0, 0),
+      for (final p in points.skip(1)) LineTo(p.x - ax, p.y - ay),
+    ];
+    final props = (connectorProps ?? const VsdxConnectorProps()).copyWith(
+      // Match Visio dynamic connectors (fixture ConFixedCode=3): preserve the
+      // baked Geometry in 万兴图示 / Visio instead of "Reroute freely" (0).
+      conFixedCode: 3,
+      noLiveDynamics: true,
+      glueType: connectorProps?.glueType ?? 2,
+      dynFeedback: connectorProps?.dynFeedback ?? 2,
+      conLineRouteExt: connectorProps?.conLineRouteExt ?? 1,
+      shapeRouteStyle: connectorProps?.shapeRouteStyle ?? 16,
+    );
+    final nextFormulas = Map<String, String>.from(formulas)
+      ..['PinX'] = '(BeginX+EndX)*0.5'
+      ..['PinY'] = '(BeginY+EndY)*0.5'
+      ..['Width'] = 'EndX-BeginX'
+      ..['Height'] = 'EndY-BeginY'
+      ..['LocPinX'] = '(EndX-BeginX)/2'
+      ..['LocPinY'] = '(EndY-BeginY)/2';
     return copyWith(
-      pinX: (left + right) / 2,
-      pinY: (bottom + top) / 2,
-      width: right - left,
-      height: top - bottom,
+      pinX: (ax + bx) / 2,
+      pinY: (ay + by) / 2,
+      width: w,
+      height: h,
+      locPinXInches: w / 2,
+      locPinYInches: h / 2,
       is1D: true,
+      objType: objType ?? 2,
       beginX: ax,
       beginY: ay,
       endX: bx,
       endY: by,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(
-          commands: <VsdxPathCommand>[
-            MoveTo(ax - left, ay - bottom),
-            LineTo(bx - left, by - bottom),
-          ],
-          noFill: true,
-        ),
-      ],
-    );
-  }
-
-  /// Re-position this shape as a 1-D polyline through page-space [points]
-  /// (≥2). Recomputes pin / size / begin-end and the local geometry. Used by
-  /// connector re-routing (straight or elbow).
-  VsdxShape reshapeAsPolyline(List<Offset2D> points) {
-    if (points.length < 2) return this;
-    var minX = points.first.x, maxX = points.first.x;
-    var minY = points.first.y, maxY = points.first.y;
-    for (final p in points) {
-      minX = math.min(minX, p.x);
-      maxX = math.max(maxX, p.x);
-      minY = math.min(minY, p.y);
-      maxY = math.max(maxY, p.y);
-    }
-    final commands = <VsdxPathCommand>[
-      MoveTo(points.first.x - minX, points.first.y - minY),
-      for (final p in points.skip(1)) LineTo(p.x - minX, p.y - minY),
-    ];
-    return copyWith(
-      pinX: (minX + maxX) / 2,
-      pinY: (minY + maxY) / 2,
-      width: maxX - minX,
-      height: maxY - minY,
-      is1D: true,
-      beginX: points.first.x,
-      beginY: points.first.y,
-      endX: points.last.x,
-      endY: points.last.y,
+      formulas: nextFormulas,
+      connectorProps: props,
       geometries: <VsdxGeometry>[
         VsdxGeometry(commands: commands, noFill: true),
       ],
