@@ -1880,6 +1880,1049 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'User',
         (id, cx, cy) => VsdxShapeFactory.umlActor(
             id: id, pinX: cx, pinY: cy, width: 0.8, height: 1.4)),
+    Stencil(
+        'Switch',
+        (id, cx, cy) => VsdxShapeFactory.networkSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.9)),
+    Stencil(
+        'Hub',
+        (id, cx, cy) => VsdxShapeFactory.networkHub(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.3)),
+    Stencil(
+        'PC',
+        (id, cx, cy) => VsdxShapeFactory.networkPc(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.3)),
+    Stencil(
+        'Tablet',
+        (id, cx, cy) => VsdxShapeFactory.networkTablet(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.1)),
+    Stencil(
+        'Phone',
+        (id, cx, cy) => VsdxShapeFactory.networkPhone(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Modem',
+        (id, cx, cy) => VsdxShapeFactory.networkModem(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.9)),
+    Stencil(
+        'Storage',
+        (id, cx, cy) => VsdxShapeFactory.networkStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.4)),
+    Stencil(
+        'Load Balancer',
+        (id, cx, cy) => VsdxShapeFactory.networkLoadBalancer(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Security Camera',
+        (id, cx, cy) => VsdxShapeFactory.networkSecurityCamera(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+  ], expandAtWidth: 1280),
+  // drawio Mockup (mxgraph.mockup.*) — UI wireframe essentials.
+  StencilGroup('Mockup', <Stencil>[
+    Stencil(
+        'Button',
+        (id, cx, cy) => VsdxShapeFactory.button(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.55)),
+    Stencil(
+        'Checkbox',
+        (id, cx, cy) => VsdxShapeFactory.mockupCheckbox(
+            id: id, pinX: cx, pinY: cy, width: 0.55, height: 0.55)),
+    Stencil(
+        'Radio Button',
+        (id, cx, cy) => VsdxShapeFactory.mockupRadio(
+            id: id, pinX: cx, pinY: cy, width: 0.55, height: 0.55)),
+    Stencil(
+        'Text Field',
+        (id, cx, cy) => VsdxShapeFactory.mockupTextField(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.5)),
+    Stencil(
+        'Combo Box',
+        (id, cx, cy) => VsdxShapeFactory.mockupComboBox(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.5)),
+    Stencil(
+        'Window',
+        (id, cx, cy) => VsdxShapeFactory.mockupWindow(
+            id: id, pinX: cx, pinY: cy, width: 2.2, height: 1.6)),
+    Stencil(
+        'Progress Bar',
+        (id, cx, cy) => VsdxShapeFactory.mockupProgressBar(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.35)),
+    Stencil(
+        'Slider',
+        (id, cx, cy) => VsdxShapeFactory.mockupSlider(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.45)),
+    Stencil(
+        'Tab Bar',
+        (id, cx, cy) => VsdxShapeFactory.mockupTabBar(
+            id: id, pinX: cx, pinY: cy, width: 2.0, height: 0.9)),
+    Stencil(
+        'Menu Bar',
+        (id, cx, cy) => VsdxShapeFactory.mockupMenuBar(
+            id: id, pinX: cx, pinY: cy, width: 2.0, height: 0.4)),
+    Stencil(
+        'Toggle',
+        (id, cx, cy) => VsdxShapeFactory.mockupToggle(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 0.5)),
+    Stencil(
+        'Search Box',
+        (id, cx, cy) => VsdxShapeFactory.mockupSearchBox(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.5)),
+    Stencil(
+        'Star Rating',
+        (id, cx, cy) => VsdxShapeFactory.mockupStarRating(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.4)),
+    Stencil(
+        'Help Icon',
+        (id, cx, cy) => VsdxShapeFactory.mockupHelpIcon(
+            id: id, pinX: cx, pinY: cy, width: 0.7, height: 0.7)),
+    Stencil(
+        'Information Icon',
+        (id, cx, cy) => VsdxShapeFactory.mockupInfoIcon(
+            id: id, pinX: cx, pinY: cy, width: 0.7, height: 0.7)),
+    Stencil(
+        'Loading Circle',
+        (id, cx, cy) => VsdxShapeFactory.mockupLoadingCircle(
+            id: id, pinX: cx, pinY: cy, width: 0.8, height: 0.8)),
+    Stencil(
+        'Horizontal Splitter',
+        (id, cx, cy) => VsdxShapeFactory.mockupHorizontalSplitter(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.45)),
+    Stencil(
+        'Dropdown Menu',
+        (id, cx, cy) => VsdxShapeFactory.mockupDropdownMenu(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.3)),
+  ], expandAtWidth: 1280),
+  // drawio Electrical (mxgraph.electrical.*) — common circuit symbols.
+  StencilGroup('Electrical', <Stencil>[
+    Stencil(
+        'Resistor',
+        (id, cx, cy) => VsdxShapeFactory.electricalResistor(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.55)),
+    Stencil(
+        'Capacitor',
+        (id, cx, cy) => VsdxShapeFactory.electricalCapacitor(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 0.8)),
+    Stencil(
+        'Inductor',
+        (id, cx, cy) => VsdxShapeFactory.electricalInductor(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.7)),
+    Stencil(
+        'Diode',
+        (id, cx, cy) => VsdxShapeFactory.electricalDiode(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 0.7)),
+    Stencil(
+        'LED',
+        (id, cx, cy) => VsdxShapeFactory.electricalLed(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 0.8)),
+    Stencil(
+        'Ground',
+        (id, cx, cy) => VsdxShapeFactory.electricalGround(
+            id: id, pinX: cx, pinY: cy, width: 0.9, height: 0.8)),
+    Stencil(
+        'Battery',
+        (id, cx, cy) => VsdxShapeFactory.electricalBattery(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.7)),
+    Stencil(
+        'Transformer',
+        (id, cx, cy) => VsdxShapeFactory.electricalTransformer(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'AC Source',
+        (id, cx, cy) => VsdxShapeFactory.electricalAcSource(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.0)),
+    Stencil(
+        'Electrical Switch',
+        (id, cx, cy) => VsdxShapeFactory.electricalSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.7)),
+    Stencil(
+        'Fuse',
+        (id, cx, cy) => VsdxShapeFactory.electricalFuse(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.55)),
+    Stencil(
+        'DC Source',
+        (id, cx, cy) => VsdxShapeFactory.electricalDcSource(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.0)),
+    Stencil(
+        'Inverter',
+        (id, cx, cy) => VsdxShapeFactory.electricalInverter(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 0.9)),
+    Stencil(
+        'Potentiometer',
+        (id, cx, cy) => VsdxShapeFactory.electricalPotentiometer(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.7)),
+    Stencil(
+        'Circuit Breaker',
+        (id, cx, cy) => VsdxShapeFactory.electricalCircuitBreaker(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.7)),
+    Stencil(
+        'Crystal',
+        (id, cx, cy) => VsdxShapeFactory.electricalCrystal(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 0.7)),
+    Stencil(
+        'Lamp',
+        (id, cx, cy) => VsdxShapeFactory.electricalLamp(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.0)),
+    Stencil(
+        'AND Gate',
+        (id, cx, cy) => VsdxShapeFactory.electricalAndGate(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'OR Gate',
+        (id, cx, cy) => VsdxShapeFactory.electricalOrGate(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'NAND Gate',
+        (id, cx, cy) => VsdxShapeFactory.electricalNandGate(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'NOR Gate',
+        (id, cx, cy) => VsdxShapeFactory.electricalNorGate(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'XOR Gate',
+        (id, cx, cy) => VsdxShapeFactory.electricalXorGate(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'XNOR Gate',
+        (id, cx, cy) => VsdxShapeFactory.electricalXnorGate(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'Buffer',
+        (id, cx, cy) => VsdxShapeFactory.electricalBuffer(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 0.9)),
+  ], expandAtWidth: 1280),
+  // drawio Signs (mxGraph.signs.*) — safety / info glyphs.
+  StencilGroup('Signs', <Stencil>[
+    Stencil(
+        'Warning',
+        (id, cx, cy) => VsdxShapeFactory.signWarning(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'No Entry',
+        (id, cx, cy) => VsdxShapeFactory.signNoEntry(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Mandatory',
+        (id, cx, cy) => VsdxShapeFactory.signMandatory(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Exit',
+        (id, cx, cy) => VsdxShapeFactory.signExit(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'Radiation',
+        (id, cx, cy) => VsdxShapeFactory.signRadiation(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'First Aid',
+        (id, cx, cy) => VsdxShapeFactory.signFirstAid(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'High Voltage',
+        (id, cx, cy) => VsdxShapeFactory.signHighVoltage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Fragile',
+        (id, cx, cy) => VsdxShapeFactory.signFragile(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.2)),
+    Stencil(
+        'No Smoking',
+        (id, cx, cy) => VsdxShapeFactory.signNoSmoking(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Biohazard',
+        (id, cx, cy) => VsdxShapeFactory.signBiohazard(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Pedestrian Crossing',
+        (id, cx, cy) => VsdxShapeFactory.signPedestrianCrossing(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.3)),
+    Stencil(
+        'Keep Dry',
+        (id, cx, cy) => VsdxShapeFactory.signKeepDry(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Slip Hazard',
+        (id, cx, cy) => VsdxShapeFactory.signSlipHazard(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Fire Extinguisher',
+        (id, cx, cy) => VsdxShapeFactory.signFireExtinguisher(
+            id: id, pinX: cx, pinY: cy, width: 0.9, height: 1.3)),
+  ], expandAtWidth: 1280),
+  // drawio Floorplan — top-down furniture / openings starter set.
+  StencilGroup('Floorplan', <Stencil>[
+    Stencil(
+        'Wall',
+        (id, cx, cy) => VsdxShapeFactory.floorplanWall(
+            id: id, pinX: cx, pinY: cy, width: 2.0, height: 0.25)),
+    Stencil(
+        'Door',
+        (id, cx, cy) => VsdxShapeFactory.floorplanDoor(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Window Opening',
+        (id, cx, cy) => VsdxShapeFactory.floorplanWindowOpening(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.55)),
+    Stencil(
+        'Table',
+        (id, cx, cy) => VsdxShapeFactory.floorplanTable(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.0)),
+    Stencil(
+        'Chair',
+        (id, cx, cy) => VsdxShapeFactory.floorplanChair(
+            id: id, pinX: cx, pinY: cy, width: 0.8, height: 0.9)),
+    Stencil(
+        'Desk',
+        (id, cx, cy) => VsdxShapeFactory.floorplanDesk(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 1.1)),
+    Stencil(
+        'Bed',
+        (id, cx, cy) => VsdxShapeFactory.floorplanBed(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.8)),
+    Stencil(
+        'Sofa',
+        (id, cx, cy) => VsdxShapeFactory.floorplanSofa(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.9)),
+    Stencil(
+        'Sink',
+        (id, cx, cy) => VsdxShapeFactory.floorplanSink(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 0.8)),
+    Stencil(
+        'Toilet',
+        (id, cx, cy) => VsdxShapeFactory.floorplanToilet(
+            id: id, pinX: cx, pinY: cy, width: 0.8, height: 1.2)),
+    Stencil(
+        'Stairs',
+        (id, cx, cy) => VsdxShapeFactory.floorplanStairs(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.6)),
+    Stencil(
+        'Elevator',
+        (id, cx, cy) => VsdxShapeFactory.floorplanElevator(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Plant',
+        (id, cx, cy) => VsdxShapeFactory.floorplanPlant(
+            id: id, pinX: cx, pinY: cy, width: 0.9, height: 0.9)),
+    Stencil(
+        'Refrigerator',
+        (id, cx, cy) => VsdxShapeFactory.floorplanRefrigerator(
+            id: id, pinX: cx, pinY: cy, width: 0.9, height: 1.2)),
+    Stencil(
+        'Double Door',
+        (id, cx, cy) => VsdxShapeFactory.floorplanDoubleDoor(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 1.2)),
+    Stencil(
+        'Sliding Door',
+        (id, cx, cy) => VsdxShapeFactory.floorplanSlidingDoor(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.7)),
+    Stencil(
+        'Bathtub',
+        (id, cx, cy) => VsdxShapeFactory.floorplanBathtub(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.9)),
+    Stencil(
+        'Shower',
+        (id, cx, cy) => VsdxShapeFactory.floorplanShower(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Closet',
+        (id, cx, cy) => VsdxShapeFactory.floorplanCloset(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.7)),
+    Stencil(
+        'Bookshelf',
+        (id, cx, cy) => VsdxShapeFactory.floorplanBookshelf(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.45)),
+    Stencil(
+        'Fireplace',
+        (id, cx, cy) => VsdxShapeFactory.floorplanFireplace(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.9)),
+    Stencil(
+        'Kitchen Island',
+        (id, cx, cy) => VsdxShapeFactory.floorplanKitchenIsland(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 1.0)),
+    Stencil(
+        'Parking Space',
+        (id, cx, cy) => VsdxShapeFactory.floorplanParkingSpace(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 2.2)),
+    Stencil(
+        'TV Stand',
+        (id, cx, cy) => VsdxShapeFactory.floorplanTvStand(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.7)),
+    Stencil(
+        'File Cabinet',
+        (id, cx, cy) => VsdxShapeFactory.floorplanFileCabinet(
+            id: id, pinX: cx, pinY: cy, width: 0.7, height: 1.1)),
+    Stencil(
+        'Column',
+        (id, cx, cy) => VsdxShapeFactory.floorplanColumn(
+            id: id, pinX: cx, pinY: cy, width: 0.55, height: 0.55)),
+    Stencil(
+        'Escalator',
+        (id, cx, cy) => VsdxShapeFactory.floorplanEscalator(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.8)),
+    Stencil(
+        'Copier',
+        (id, cx, cy) => VsdxShapeFactory.floorplanCopier(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 0.9)),
+  ], expandAtWidth: 1280),
+  // drawio EIP (mxgraph.eip.*) — Enterprise Integration Patterns starter set.
+  StencilGroup('EIP', <Stencil>[
+    Stencil(
+        'Message Channel',
+        (id, cx, cy) => VsdxShapeFactory.eipMessageChannel(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.45)),
+    Stencil(
+        'Dead Letter Channel',
+        (id, cx, cy) => VsdxShapeFactory.eipDeadLetterChannel(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.45)),
+    Stencil(
+        'Message',
+        (id, cx, cy) => VsdxShapeFactory.message(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 0.8)),
+    Stencil(
+        'Aggregator',
+        (id, cx, cy) => VsdxShapeFactory.eipAggregator(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Splitter',
+        (id, cx, cy) => VsdxShapeFactory.eipSplitter(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Content Based Router',
+        (id, cx, cy) => VsdxShapeFactory.eipContentBasedRouter(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Message Filter',
+        (id, cx, cy) => VsdxShapeFactory.eipMessageFilter(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Message Translator',
+        (id, cx, cy) => VsdxShapeFactory.eipMessageTranslator(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Content Enricher',
+        (id, cx, cy) => VsdxShapeFactory.eipContentEnricher(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Messaging Gateway',
+        (id, cx, cy) => VsdxShapeFactory.eipMessagingGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Channel Adapter',
+        (id, cx, cy) => VsdxShapeFactory.eipChannelAdapter(
+            id: id, pinX: cx, pinY: cy, width: 0.7, height: 1.2)),
+    Stencil(
+        'Wire Tap',
+        (id, cx, cy) => VsdxShapeFactory.eipWireTap(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Recipient List',
+        (id, cx, cy) => VsdxShapeFactory.eipRecipientList(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Competing Consumers',
+        (id, cx, cy) => VsdxShapeFactory.eipCompetingConsumers(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Event Driven Consumer',
+        (id, cx, cy) => VsdxShapeFactory.eipEventDrivenConsumer(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Messaging Bridge',
+        (id, cx, cy) => VsdxShapeFactory.eipMessagingBridge(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Process Manager',
+        (id, cx, cy) => VsdxShapeFactory.eipProcessManager(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Claim Check',
+        (id, cx, cy) => VsdxShapeFactory.eipClaimCheck(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Resequencer',
+        (id, cx, cy) => VsdxShapeFactory.eipResequencer(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Composed Message Processor',
+        (id, cx, cy) => VsdxShapeFactory.eipComposedMessageProcessor(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Content Filter',
+        (id, cx, cy) => VsdxShapeFactory.eipContentFilter(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Control Bus',
+        (id, cx, cy) => VsdxShapeFactory.eipControlBus(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 0.7)),
+    Stencil(
+        'Detour',
+        (id, cx, cy) => VsdxShapeFactory.eipDetour(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Durable Subscriber',
+        (id, cx, cy) => VsdxShapeFactory.eipDurableSubscriber(
+            id: id, pinX: cx, pinY: cy, width: 0.7, height: 0.85)),
+    Stencil(
+        'Dynamic Router',
+        (id, cx, cy) => VsdxShapeFactory.eipDynamicRouter(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Envelope Wrapper',
+        (id, cx, cy) => VsdxShapeFactory.eipEnvelopeWrapper(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Message Dispatcher',
+        (id, cx, cy) => VsdxShapeFactory.eipMessageDispatcher(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Message Store',
+        (id, cx, cy) => VsdxShapeFactory.eipMessageStore(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Normalizer',
+        (id, cx, cy) => VsdxShapeFactory.eipNormalizer(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Polling Consumer',
+        (id, cx, cy) => VsdxShapeFactory.eipPollingConsumer(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Routing Slip',
+        (id, cx, cy) => VsdxShapeFactory.eipRoutingSlip(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Selective Consumer',
+        (id, cx, cy) => VsdxShapeFactory.eipSelectiveConsumer(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Service Activator',
+        (id, cx, cy) => VsdxShapeFactory.eipServiceActivator(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Smart Proxy',
+        (id, cx, cy) => VsdxShapeFactory.eipSmartProxy(
+            id: id, pinX: cx, pinY: cy, width: 0.9, height: 1.2)),
+    Stencil(
+        'Transactional Client',
+        (id, cx, cy) => VsdxShapeFactory.eipTransactionalClient(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Channel Purger',
+        (id, cx, cy) => VsdxShapeFactory.eipChannelPurger(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Test Message',
+        (id, cx, cy) => VsdxShapeFactory.eipTestMessage(
+            id: id, pinX: cx, pinY: cy, width: 1.7, height: 1.0)),
+    Stencil(
+        'Datatype Channel',
+        (id, cx, cy) => VsdxShapeFactory.eipDatatypeChannel(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.45)),
+    Stencil(
+        'Invalid Message Channel',
+        (id, cx, cy) => VsdxShapeFactory.eipInvalidMessageChannel(
+            id: id, pinX: cx, pinY: cy, width: 1.8, height: 0.45)),
+  ], expandAtWidth: 1280),
+  // drawio AWS (mxgraph.aws4.*) — geometric architecture starters.
+  StencilGroup('AWS', <Stencil>[
+    Stencil(
+        'EC2',
+        (id, cx, cy) => VsdxShapeFactory.awsEc2(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'S3',
+        (id, cx, cy) => VsdxShapeFactory.awsS3(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Lambda',
+        (id, cx, cy) => VsdxShapeFactory.awsLambda(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'VPC',
+        (id, cx, cy) => VsdxShapeFactory.awsVpc(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.1)),
+    Stencil(
+        'RDS',
+        (id, cx, cy) => VsdxShapeFactory.awsRds(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'DynamoDB',
+        (id, cx, cy) => VsdxShapeFactory.awsDynamoDb(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'SQS',
+        (id, cx, cy) => VsdxShapeFactory.awsSqs(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.9)),
+    Stencil(
+        'SNS',
+        (id, cx, cy) => VsdxShapeFactory.awsSns(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+    Stencil(
+        'CloudFront',
+        (id, cx, cy) => VsdxShapeFactory.awsCloudFront(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'API Gateway',
+        (id, cx, cy) => VsdxShapeFactory.awsApiGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'IAM',
+        (id, cx, cy) => VsdxShapeFactory.awsIam(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.2)),
+    Stencil(
+        'ELB',
+        (id, cx, cy) => VsdxShapeFactory.awsElb(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.2)),
+    Stencil(
+        'ECS',
+        (id, cx, cy) => VsdxShapeFactory.awsEcs(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'EKS',
+        (id, cx, cy) => VsdxShapeFactory.awsEks(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Step Functions',
+        (id, cx, cy) => VsdxShapeFactory.awsStepFunctions(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.3)),
+    Stencil(
+        'CloudWatch',
+        (id, cx, cy) => VsdxShapeFactory.awsCloudWatch(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Kinesis',
+        (id, cx, cy) => VsdxShapeFactory.awsKinesis(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'ElastiCache',
+        (id, cx, cy) => VsdxShapeFactory.awsElastiCache(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Redshift',
+        (id, cx, cy) => VsdxShapeFactory.awsRedshift(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'EventBridge',
+        (id, cx, cy) => VsdxShapeFactory.awsEventBridge(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Cognito',
+        (id, cx, cy) => VsdxShapeFactory.awsCognito(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Route 53',
+        (id, cx, cy) => VsdxShapeFactory.awsRoute53(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'EFS',
+        (id, cx, cy) => VsdxShapeFactory.awsEfs(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Aurora',
+        (id, cx, cy) => VsdxShapeFactory.awsAurora(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Fargate',
+        (id, cx, cy) => VsdxShapeFactory.awsFargate(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.0)),
+    Stencil(
+        'ECR',
+        (id, cx, cy) => VsdxShapeFactory.awsEcr(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Glue',
+        (id, cx, cy) => VsdxShapeFactory.awsGlue(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Athena',
+        (id, cx, cy) => VsdxShapeFactory.awsAthena(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'EMR',
+        (id, cx, cy) => VsdxShapeFactory.awsEmr(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'SageMaker',
+        (id, cx, cy) => VsdxShapeFactory.awsSageMaker(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'CloudTrail',
+        (id, cx, cy) => VsdxShapeFactory.awsCloudTrail(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Secrets Manager',
+        (id, cx, cy) => VsdxShapeFactory.awsSecretsManager(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'CodePipeline',
+        (id, cx, cy) => VsdxShapeFactory.awsCodePipeline(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.0)),
+    Stencil(
+        'CodeBuild',
+        (id, cx, cy) => VsdxShapeFactory.awsCodeBuild(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'WAF',
+        (id, cx, cy) => VsdxShapeFactory.awsWaf(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Transit Gateway',
+        (id, cx, cy) => VsdxShapeFactory.awsTransitGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Direct Connect',
+        (id, cx, cy) => VsdxShapeFactory.awsDirectConnect(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'OpenSearch',
+        (id, cx, cy) => VsdxShapeFactory.awsOpenSearch(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+  ], expandAtWidth: 1280),
+  // drawio Azure (azure / azure2) — geometric architecture starters.
+  StencilGroup('Azure', <Stencil>[
+    Stencil(
+        'Virtual Machine',
+        (id, cx, cy) => VsdxShapeFactory.azureVirtualMachine(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'App Service',
+        (id, cx, cy) => VsdxShapeFactory.azureAppService(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Azure Functions',
+        (id, cx, cy) => VsdxShapeFactory.azureFunctions(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Blob Storage',
+        (id, cx, cy) => VsdxShapeFactory.azureBlobStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'SQL Database',
+        (id, cx, cy) => VsdxShapeFactory.azureSqlDatabase(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cosmos DB',
+        (id, cx, cy) => VsdxShapeFactory.azureCosmosDb(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'AKS',
+        (id, cx, cy) => VsdxShapeFactory.azureAks(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Virtual Network',
+        (id, cx, cy) => VsdxShapeFactory.azureVirtualNetwork(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.1)),
+    Stencil(
+        'Application Gateway',
+        (id, cx, cy) => VsdxShapeFactory.azureApplicationGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Azure AD',
+        (id, cx, cy) => VsdxShapeFactory.azureActiveDirectory(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Key Vault',
+        (id, cx, cy) => VsdxShapeFactory.azureKeyVault(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Service Bus',
+        (id, cx, cy) => VsdxShapeFactory.azureServiceBus(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+    Stencil(
+        'Event Hubs',
+        (id, cx, cy) => VsdxShapeFactory.azureEventHubs(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Azure Monitor',
+        (id, cx, cy) => VsdxShapeFactory.azureMonitor(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Container Instances',
+        (id, cx, cy) => VsdxShapeFactory.azureContainerInstances(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Container Registry',
+        (id, cx, cy) => VsdxShapeFactory.azureContainerRegistry(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Redis Cache',
+        (id, cx, cy) => VsdxShapeFactory.azureRedisCache(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Front Door',
+        (id, cx, cy) => VsdxShapeFactory.azureFrontDoor(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'API Management',
+        (id, cx, cy) => VsdxShapeFactory.azureApiManagement(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Logic Apps',
+        (id, cx, cy) => VsdxShapeFactory.azureLogicApps(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Data Factory',
+        (id, cx, cy) => VsdxShapeFactory.azureDataFactory(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Synapse Analytics',
+        (id, cx, cy) => VsdxShapeFactory.azureSynapseAnalytics(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'IoT Hub',
+        (id, cx, cy) => VsdxShapeFactory.azureIotHub(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Event Grid',
+        (id, cx, cy) => VsdxShapeFactory.azureEventGrid(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Azure Firewall',
+        (id, cx, cy) => VsdxShapeFactory.azureFirewall(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Bastion',
+        (id, cx, cy) => VsdxShapeFactory.azureBastion(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Azure DNS',
+        (id, cx, cy) => VsdxShapeFactory.azureDns(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Azure DevOps',
+        (id, cx, cy) => VsdxShapeFactory.azureDevOps(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+  ], expandAtWidth: 1280),
+  // drawio GCP (gcp2) — geometric architecture starters.
+  StencilGroup('GCP', <Stencil>[
+    Stencil(
+        'Compute Engine',
+        (id, cx, cy) => VsdxShapeFactory.gcpComputeEngine(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'App Engine',
+        (id, cx, cy) => VsdxShapeFactory.gcpAppEngine(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud Functions',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudFunctions(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Cloud Storage',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Cloud SQL',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudSql(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'BigQuery',
+        (id, cx, cy) => VsdxShapeFactory.gcpBigQuery(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'GKE',
+        (id, cx, cy) => VsdxShapeFactory.gcpGke(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'VPC Network',
+        (id, cx, cy) => VsdxShapeFactory.gcpVpcNetwork(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.1)),
+    Stencil(
+        'Cloud Load Balancing',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudLoadBalancing(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud IAM',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudIam(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Pub/Sub',
+        (id, cx, cy) => VsdxShapeFactory.gcpPubSub(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud Spanner',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudSpanner(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Cloud Run',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudRun(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Cloud Monitoring',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudMonitoring(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Bigtable',
+        (id, cx, cy) => VsdxShapeFactory.gcpBigtable(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Dataflow',
+        (id, cx, cy) => VsdxShapeFactory.gcpDataflow(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.0)),
+    Stencil(
+        'Dataproc',
+        (id, cx, cy) => VsdxShapeFactory.gcpDataproc(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud Composer',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudComposer(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Cloud Armor',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudArmor(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Cloud CDN',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudCdn(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Memorystore',
+        (id, cx, cy) => VsdxShapeFactory.gcpMemorystore(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud Build',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudBuild(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Artifact Registry',
+        (id, cx, cy) => VsdxShapeFactory.gcpArtifactRegistry(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud Scheduler',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudScheduler(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'Cloud Tasks',
+        (id, cx, cy) => VsdxShapeFactory.gcpCloudTasks(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Firestore',
+        (id, cx, cy) => VsdxShapeFactory.gcpFirestore(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.3)),
+    Stencil(
+        'Secret Manager',
+        (id, cx, cy) => VsdxShapeFactory.gcpSecretManager(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Vertex AI',
+        (id, cx, cy) => VsdxShapeFactory.gcpVertexAi(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+  ], expandAtWidth: 1280),
+  // drawio Cisco — geometric network gear starters (not brand-mark replicas).
+  StencilGroup('Cisco', <Stencil>[
+    Stencil(
+        'Cisco Router',
+        (id, cx, cy) => VsdxShapeFactory.ciscoRouter(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'Cisco Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 0.9)),
+    Stencil(
+        'ASA Firewall',
+        (id, cx, cy) => VsdxShapeFactory.ciscoAsaFirewall(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Access Point',
+        (id, cx, cy) => VsdxShapeFactory.ciscoAccessPoint(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Nexus Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoNexusSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.3)),
+    Stencil(
+        'Catalyst Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoCatalystSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'IP Phone',
+        (id, cx, cy) => VsdxShapeFactory.ciscoIpPhone(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Call Manager',
+        (id, cx, cy) => VsdxShapeFactory.ciscoCallManager(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.3)),
+    Stencil(
+        'Layer 3 Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoLayer3Switch(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'WAN Router',
+        (id, cx, cy) => VsdxShapeFactory.ciscoWanRouter(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Voice Gateway',
+        (id, cx, cy) => VsdxShapeFactory.ciscoVoiceGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'UCS',
+        (id, cx, cy) => VsdxShapeFactory.ciscoUcs(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Fabric Interconnect',
+        (id, cx, cy) => VsdxShapeFactory.ciscoFabricInterconnect(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.1)),
+    Stencil(
+        'Content Engine',
+        (id, cx, cy) => VsdxShapeFactory.ciscoContentEngine(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Wireless Controller',
+        (id, cx, cy) => VsdxShapeFactory.ciscoWirelessController(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'PIX Firewall',
+        (id, cx, cy) => VsdxShapeFactory.ciscoPixFirewall(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'ATM Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoAtmSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Workgroup Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoWorkgroupSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.9)),
+    Stencil(
+        'Content Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoContentSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'VPN Concentrator',
+        (id, cx, cy) => VsdxShapeFactory.ciscoVpnConcentrator(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+    Stencil(
+        'Wireless Bridge',
+        (id, cx, cy) => VsdxShapeFactory.ciscoWirelessBridge(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+    Stencil(
+        'Meraki AP',
+        (id, cx, cy) => VsdxShapeFactory.ciscoMerakiAp(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Cisco ISE',
+        (id, cx, cy) => VsdxShapeFactory.ciscoIse(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'DNA Center',
+        (id, cx, cy) => VsdxShapeFactory.ciscoDnaCenter(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Telepresence',
+        (id, cx, cy) => VsdxShapeFactory.ciscoTelepresence(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Expressway',
+        (id, cx, cy) => VsdxShapeFactory.ciscoExpressway(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Core Switch',
+        (id, cx, cy) => VsdxShapeFactory.ciscoCoreSwitch(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.3)),
+    Stencil(
+        'Branch Router',
+        (id, cx, cy) => VsdxShapeFactory.ciscoBranchRouter(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.0)),
   ], expandAtWidth: 1280),
 ];
 

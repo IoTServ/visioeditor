@@ -981,3 +981,110 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   新增 network 往返 1 例（几何数/砖缝段数/圆角弧/无线三弧）；`roundtrip_flowchart` 全 stencil 往返
   自动覆盖。全量 `flutter analyze` 无错误、app 150 例 + vsdx 375 例全绿。仍优先后续：Network 补
   Switch/Hub/PC 等、Mockup/Electrical 库、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十三）——Network 补齐 + Mockup / Electrical / Signs 起步库**：
+  (1) Network 补 `networkSwitch`（机箱+6 口）、`networkHub`（圆体+放射端口）、`networkPc`（塔机+显示器）。
+  (2) 新增 Mockup 组（`mxgraph.mockup`）：Checkbox / Radio / Text Field / Combo Box / Window /
+  Progress Bar / Slider / Tab Bar / Menu Bar / Toggle（+ 复用 Button）。
+  (3) 新增 Electrical 组（`mxgraph.electrical`）：Resistor / Capacitor / Inductor / Diode / LED /
+  Ground / Battery / Transformer / AC Source / Electrical Switch（IEEE 风格线框符号）。
+  (4) 新增 Signs 组（`mxGraph.signs`）：Warning / No Entry / Mandatory / Exit / Radiation /
+  First Aid / High Voltage / Fragile。
+  (5) l10n：30 个新 st_ + 3 个 sg_（Mockup/Electrical/Signs）补入 37 语言；审计计数 259→289。
+  测试：`writer_test` 新增综合往返 1 例。仍优先后续：各库扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十四）——Network/Mockup/Electrical/Signs 扩容**：
+  在起步库上继续补常用预制项（几何可辨、可往返）。(1) Network +Tablet/Phone/Modem/Storage/
+  Load Balancer/Security Camera。(2) Mockup +Search Box/Star Rating/Help Icon/Information Icon/
+  Loading Circle/Horizontal Splitter/Dropdown Menu。(3) Electrical +Fuse/DC Source/Inverter/
+  Potentiometer/Circuit Breaker/Crystal/Lamp。(4) Signs +No Smoking/Biohazard/Pedestrian Crossing/
+  Keep Dry/Slip Hazard/Fire Extinguisher。(5) l10n 26 个新 st_ 补入 37 语言；审计 289→315。
+  测试：`writer_test` 新增扩容往返 1 例。仍优先后续：AWS/Cisco 等专业库、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十五）——IEEE 逻辑门 + Floorplan 起步库**：
+  (1) Electrical +AND/OR/NAND/NOR/XOR/XNOR Gate、Buffer（IEEE 门符号，与流程图 Or/And 区分）。
+  (2) 新增 Floorplan 组：Wall / Door / Window Opening / Table / Chair / Desk / Bed / Sofa /
+  Sink / Toilet / Stairs / Elevator / Plant / Refrigerator（俯视家具与开口）。
+  (3) l10n：20 个新 st_（Table 复用已有键）+ `sg_Floorplan` 补入 37 语言；审计 315→335。
+  测试：`writer_test` 新增 gates+floorplan 往返 1 例。仍优先后续：Floorplan/EIP/云厂商库扩容、
+  Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十六）——Floorplan 扩容**：
+  Floorplan +Double Door / Sliding Door / Bathtub / Shower / Closet / Bookshelf /
+  Fireplace / Kitchen Island / Parking Space / TV Stand / File Cabinet / Column /
+  Escalator / Copier（14 项俯视家具与开口）。l10n 14 个新 st_ 补入 37 语言；审计 335→349。
+  测试：`writer_test` 新增 floorplan 扩容往返 1 例。仍优先后续：EIP/云厂商库、Curved Text、
+  公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十七）——EIP 起步库**：
+  新增 EIP 组（`mxgraph.eip`）：Message Channel / Dead Letter Channel、Aggregator /
+  Splitter / Content Based Router / Message Filter / Message Translator /
+  Content Enricher / Messaging Gateway / Channel Adapter / Wire Tap /
+  Recipient List / Competing Consumers / Event Driven Consumer / Messaging Bridge /
+  Process Manager（+ 复用 Message）。几何对齐 Hohpe/Woolf 经典图标（盒体+消息方块+箭头/
+  漏斗/管道）。l10n：16 个新 st_ + `sg_EIP` 补入 37 语言；审计 349→365。
+  测试：`writer_test` 新增 EIP 往返 1 例。仍优先后续：EIP 扩容、AWS/Cisco 等云厂商库、
+  Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十八）——EIP 扩容**：
+  EIP +Claim Check / Resequencer / Composed Message Processor / Content Filter /
+  Control Bus / Detour / Durable Subscriber / Dynamic Router / Envelope Wrapper /
+  Message Dispatcher / Message Store / Normalizer / Polling Consumer /
+  Routing Slip / Selective Consumer / Service Activator（16 项）。l10n 16 个新 st_
+  补入 37 语言；审计 365→381。测试：`writer_test` 新增扩容往返 1 例。仍优先后续：
+  剩余 EIP（Smart Proxy/Transactional Client 等）、AWS/Cisco 云厂商库、Curved Text、
+  公式重算。
+- 2026-07-17 — **对齐 drawio（批次六十九）——EIP 收尾 + AWS 起步库**：
+  (1) EIP 补齐 Smart Proxy / Transactional Client / Channel Purger / Test Message /
+  Datatype Channel / Invalid Message Channel（XML + Sidebar 管道变体）。
+  (2) 新增 AWS 组（`mxgraph.aws4` 几何起步，非商标复刻）：EC2 / S3 / Lambda / VPC /
+  RDS / DynamoDB / SQS / SNS / CloudFront / API Gateway。
+  (3) l10n：16 个新 st_ + `sg_AWS` 补入 37 语言；审计 381→397。
+  测试：`writer_test` 新增 EIP 收尾 + AWS 往返 1 例。仍优先后续：AWS/Azure/GCP/Cisco
+  扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十）——AWS 扩容**：
+  AWS +IAM / ELB / ECS / EKS / Step Functions / CloudWatch / Kinesis /
+  ElastiCache / Redshift / EventBridge / Cognito / Route 53 / EFS / Aurora
+  （14 项几何架构图标）。l10n 14 个新 st_ 补入 37 语言；审计 397→411。
+  测试：`writer_test` 新增 AWS 扩容往返 1 例。仍优先后续：Azure/GCP/Cisco 起步库、
+  AWS 继续扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十一）——Azure 起步库**：
+  新增 Azure 组（`azure` / `azure2` 几何起步，非商标复刻）：Virtual Machine /
+  App Service / Azure Functions / Blob Storage / SQL Database / Cosmos DB /
+  AKS / Virtual Network / Application Gateway / Azure AD / Key Vault /
+  Service Bus / Event Hubs / Azure Monitor。l10n：14 个新 st_ + `sg_Azure`
+  补入 37 语言；审计 411→425。测试：`writer_test` 新增 Azure 往返 1 例。
+  仍优先后续：GCP/Cisco 起步、Azure/AWS 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十二）——GCP 起步库**：
+  新增 GCP 组（`gcp2` 几何起步，非商标复刻）：Compute Engine / App Engine /
+  Cloud Functions / Cloud Storage / Cloud SQL / BigQuery / GKE / VPC Network /
+  Cloud Load Balancing / Cloud IAM / Pub/Sub / Cloud Spanner / Cloud Run /
+  Cloud Monitoring。l10n：14 个新 st_ + `sg_GCP` 补入 37 语言；审计 425→439。
+  测试：`writer_test` 新增 GCP 往返 1 例。仍优先后续：Cisco 起步、Azure/AWS/GCP
+  扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十三）——Cisco 起步库**：
+  新增 Cisco 组（几何起步，非商标复刻；显示名避开与 Network 组冲突）：
+  Cisco Router / Cisco Switch / ASA Firewall / Access Point / Nexus Switch /
+  Catalyst Switch / IP Phone / Call Manager / Layer 3 Switch / WAN Router /
+  Voice Gateway / UCS / Fabric Interconnect / Content Engine。
+  l10n：14 个新 st_ + `sg_Cisco` 补入 37 语言；审计 439→453。
+  测试：`writer_test` 新增 Cisco 往返 1 例。仍优先后续：Azure/AWS/GCP/Cisco
+  扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十四）——Azure 扩容**：
+  Azure +Container Instances / Container Registry / Redis Cache / Front Door /
+  API Management / Logic Apps / Data Factory / Synapse Analytics / IoT Hub /
+  Event Grid / Azure Firewall / Bastion / Azure DNS / Azure DevOps（14 项）。
+  l10n 14 个新 st_ 补入 37 语言；审计 453→467。测试：`writer_test` 新增 Azure
+  扩容往返 1 例。仍优先后续：GCP/Cisco/AWS 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十五）——GCP 扩容**：
+  GCP +Bigtable / Dataflow / Dataproc / Cloud Composer / Cloud Armor /
+  Cloud CDN / Memorystore / Cloud Build / Artifact Registry / Cloud Scheduler /
+  Cloud Tasks / Firestore / Secret Manager / Vertex AI（14 项）。
+  l10n 14 个新 st_ 补入 37 语言；审计 467→481。测试：`writer_test` 新增 GCP
+  扩容往返 1 例。仍优先后续：Cisco/AWS 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十六）——Cisco 扩容**：
+  Cisco +Wireless Controller / PIX Firewall / ATM Switch / Workgroup Switch /
+  Content Switch / VPN Concentrator / Wireless Bridge / Meraki AP / Cisco ISE /
+  DNA Center / Telepresence / Expressway / Core Switch / Branch Router（14 项）。
+  l10n 14 个新 st_ 补入 37 语言；审计 481→495。测试：`writer_test` 新增 Cisco
+  扩容往返 1 例。仍优先后续：AWS 续扩、其他厂商库、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十七）——AWS 续扩**：
+  AWS +Fargate / ECR / Glue / Athena / EMR / SageMaker / CloudTrail /
+  Secrets Manager / CodePipeline / CodeBuild / WAF / Transit Gateway /
+  Direct Connect / OpenSearch（14 项）。l10n 14 个新 st_ 补入 37 语言；
+  审计 495→509。测试：`writer_test` 新增 AWS 续扩往返 1 例。仍优先后续：
+  其他厂商库（Alibaba/IBM 等）、Curved Text、公式重算。

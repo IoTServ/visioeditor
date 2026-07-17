@@ -2204,6 +2204,1080 @@ void main() {
     expect(r.pages.first.findShapeById(rtrId)!.geometries.length, 3);
   });
 
+  test('drawio-parity network+/mockup/electrical/signs starter shapes round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final swId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkSwitch(
+        id: swId, pinX: 1, pinY: 9, width: 1.6, height: 0.9));
+    final hubId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkHub(
+        id: hubId, pinX: 3, pinY: 9, width: 1.3, height: 1.3));
+    final pcId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkPc(
+        id: pcId, pinX: 5, pinY: 9, width: 1.6, height: 1.3));
+    final cbId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.mockupCheckbox(
+        id: cbId, pinX: 7, pinY: 9, width: 0.55, height: 0.55));
+    final winId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.mockupWindow(
+        id: winId, pinX: 1, pinY: 6, width: 2.0, height: 1.4));
+    final togId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.mockupToggle(
+        id: togId, pinX: 4, pinY: 6, width: 1.1, height: 0.5));
+    final resId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalResistor(
+        id: resId, pinX: 6, pinY: 6, width: 1.6, height: 0.55));
+    final capId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalCapacitor(
+        id: capId, pinX: 8, pinY: 6, width: 1.2, height: 0.8));
+    final diodeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalDiode(
+        id: diodeId, pinX: 1, pinY: 3, width: 1.3, height: 0.7));
+    final gndId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalGround(
+        id: gndId, pinX: 3, pinY: 3, width: 0.9, height: 0.8));
+    final warnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.signWarning(
+        id: warnId, pinX: 5, pinY: 3, width: 1.2, height: 1.1));
+    final aidId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.signFirstAid(
+        id: aidId, pinX: 7, pinY: 3, width: 1.1, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(swId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(hubId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(pcId)!.geometries.length, 6);
+    expect(r.pages.first.findShapeById(cbId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(winId)!.text, 'Window');
+    expect(
+        r.pages.first
+            .findShapeById(togId)!
+            .geometries
+            .first
+            .commands
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(resId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first
+            .findShapeById(capId)!
+            .geometries
+            .single
+            .commands
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(3));
+    expect(r.pages.first.findShapeById(diodeId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(gndId)!.geometries.single.noFill, isTrue);
+    expect(r.pages.first.findShapeById(warnId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(aidId)!.geometries.length, 2);
+  });
+
+  test('drawio-parity batch64 expansions (tablet/search/fuse/biohazard) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final tabId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkTablet(
+        id: tabId, pinX: 1, pinY: 8, width: 1.6, height: 1.1));
+    final lbId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkLoadBalancer(
+        id: lbId, pinX: 3, pinY: 8, width: 1.4, height: 1.2));
+    final searchId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.mockupSearchBox(
+        id: searchId, pinX: 5, pinY: 8, width: 1.8, height: 0.5));
+    final loadId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.mockupLoadingCircle(
+        id: loadId, pinX: 7, pinY: 8, width: 0.8, height: 0.8));
+    final fuseId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalFuse(
+        id: fuseId, pinX: 1, pinY: 5, width: 1.5, height: 0.55));
+    final invId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalInverter(
+        id: invId, pinX: 3, pinY: 5, width: 1.3, height: 0.9));
+    final smokeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.signNoSmoking(
+        id: smokeId, pinX: 5, pinY: 5, width: 1.1, height: 1.1));
+    final bioId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.signBiohazard(
+        id: bioId, pinX: 7, pinY: 5, width: 1.1, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(tabId)!
+            .geometries
+            .first
+            .commands
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(lbId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(searchId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(loadId)!.geometries.single.noFill, isTrue);
+    expect(r.pages.first.findShapeById(fuseId)!.geometries.single.noFill, isTrue);
+    expect(r.pages.first.findShapeById(invId)!.geometries.length, 3);
+    expect(r.pages.first.findShapeById(smokeId)!.geometries.length, greaterThan(1));
+    expect(
+        r.pages.first
+            .findShapeById(bioId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+  });
+
+  test('drawio-parity batch65 (IEEE gates + floorplan) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final andId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalAndGate(
+        id: andId, pinX: 1, pinY: 8, width: 1.4, height: 1.0));
+    final xorId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalXorGate(
+        id: xorId, pinX: 3, pinY: 8, width: 1.4, height: 1.0));
+    final bufId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.electricalBuffer(
+        id: bufId, pinX: 5, pinY: 8, width: 1.3, height: 0.9));
+    final doorId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanDoor(
+        id: doorId, pinX: 1, pinY: 5, width: 1.4, height: 1.2));
+    final stairsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanStairs(
+        id: stairsId, pinX: 3, pinY: 5, width: 1.0, height: 1.6));
+    final elevId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanElevator(
+        id: elevId, pinX: 5, pinY: 5, width: 1.1, height: 1.1));
+    final plantId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanPlant(
+        id: plantId, pinX: 7, pinY: 5, width: 0.9, height: 0.9));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(andId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(xorId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(bufId)!.geometries.length, greaterThan(1));
+    expect(
+        r.pages.first
+            .findShapeById(doorId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(stairsId)!
+            .geometries
+            .single
+            .commands
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(6));
+    expect(r.pages.first.findShapeById(elevId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(plantId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch66 floorplan expansion round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final ddId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanDoubleDoor(
+        id: ddId, pinX: 1, pinY: 8, width: 1.8, height: 1.2));
+    final tubId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanBathtub(
+        id: tubId, pinX: 3, pinY: 8, width: 1.8, height: 0.9));
+    final islandId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanKitchenIsland(
+        id: islandId, pinX: 5, pinY: 8, width: 1.8, height: 1.0));
+    final parkId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanParkingSpace(
+        id: parkId, pinX: 7, pinY: 8, width: 1.4, height: 2.2));
+    final colId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanColumn(
+        id: colId, pinX: 1, pinY: 4, width: 0.55, height: 0.55));
+    final escId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.floorplanEscalator(
+        id: escId, pinX: 3, pinY: 4, width: 1.2, height: 1.8));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(ddId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>()
+            .length,
+        greaterThanOrEqualTo(2));
+    expect(
+        r.pages.first
+            .findShapeById(tubId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(islandId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+    expect(r.pages.first.findShapeById(parkId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first
+            .findShapeById(colId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(escId)!
+            .geometries
+            .single
+            .commands
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(5));
+  });
+
+  test('drawio-parity batch67 EIP starter (channel/router/filter) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final chId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipMessageChannel(
+        id: chId, pinX: 1, pinY: 8, width: 1.8, height: 0.45));
+    final dlId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipDeadLetterChannel(
+        id: dlId, pinX: 3, pinY: 8, width: 1.8, height: 0.45));
+    final aggId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipAggregator(
+        id: aggId, pinX: 5, pinY: 8, width: 1.7, height: 1.0));
+    final routerId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipContentBasedRouter(
+        id: routerId, pinX: 1, pinY: 5, width: 1.7, height: 1.0));
+    final filterId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipMessageFilter(
+        id: filterId, pinX: 3, pinY: 5, width: 1.7, height: 1.0));
+    final adapterId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipChannelAdapter(
+        id: adapterId, pinX: 5, pinY: 5, width: 0.7, height: 1.2));
+    final tapId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipWireTap(
+        id: tapId, pinX: 7, pinY: 5, width: 1.7, height: 1.0));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(chId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(dlId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(aggId)!.geometries.length,
+        greaterThanOrEqualTo(6));
+    expect(
+        r.pages.first
+            .findShapeById(routerId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(r.pages.first.findShapeById(filterId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(adapterId)!.geometries.length, 1);
+    expect(
+        r.pages.first
+            .findShapeById(tapId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch68 EIP expansion (claim/store/router) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final claimId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipClaimCheck(
+        id: claimId, pinX: 1, pinY: 8, width: 1.7, height: 1.0));
+    final reseqId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipResequencer(
+        id: reseqId, pinX: 3, pinY: 8, width: 1.7, height: 1.0));
+    final storeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipMessageStore(
+        id: storeId, pinX: 5, pinY: 8, width: 1.7, height: 1.0));
+    final dynId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipDynamicRouter(
+        id: dynId, pinX: 1, pinY: 5, width: 1.7, height: 1.0));
+    final busId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipControlBus(
+        id: busId, pinX: 3, pinY: 5, width: 1.1, height: 0.7));
+    final envId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipEnvelopeWrapper(
+        id: envId, pinX: 5, pinY: 5, width: 1.7, height: 1.0));
+    final slipId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipRoutingSlip(
+        id: slipId, pinX: 7, pinY: 5, width: 1.7, height: 1.0));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(claimId)!.geometries.length,
+        greaterThanOrEqualTo(5));
+    expect(r.pages.first.findShapeById(reseqId)!.geometries.length,
+        greaterThanOrEqualTo(7));
+    expect(
+        r.pages.first
+            .findShapeById(storeId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(dynId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(
+        r.pages.first
+            .findShapeById(busId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(envId)!.geometries.length, 3);
+    expect(r.pages.first.findShapeById(slipId)!.geometries.length, 6);
+  });
+
+  test('drawio-parity batch69 EIP finish + AWS starter round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final proxyId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipSmartProxy(
+        id: proxyId, pinX: 1, pinY: 8, width: 0.9, height: 1.2));
+    final txId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipTransactionalClient(
+        id: txId, pinX: 3, pinY: 8, width: 1.7, height: 1.0));
+    final dtId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipDatatypeChannel(
+        id: dtId, pinX: 5, pinY: 8, width: 1.8, height: 0.45));
+    final invId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.eipInvalidMessageChannel(
+        id: invId, pinX: 7, pinY: 8, width: 1.8, height: 0.45));
+    final ec2Id = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsEc2(
+        id: ec2Id, pinX: 1, pinY: 5, width: 1.2, height: 1.1));
+    final s3Id = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsS3(
+        id: s3Id, pinX: 3, pinY: 5, width: 1.1, height: 1.2));
+    final lambdaId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsLambda(
+        id: lambdaId, pinX: 5, pinY: 5, width: 1.1, height: 1.1));
+    final sqsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsSqs(
+        id: sqsId, pinX: 7, pinY: 5, width: 1.5, height: 0.9));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(proxyId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(
+        r.pages.first
+            .findShapeById(txId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(dtId)!.geometries.length,
+        greaterThanOrEqualTo(3));
+    expect(
+        r.pages.first.findShapeById(invId)!.geometries.length,
+        greaterThanOrEqualTo(3));
+    expect(r.pages.first.findShapeById(ec2Id)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(s3Id)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(lambdaId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(sqsId)!.geometries.length, 4);
+  });
+
+  test('drawio-parity batch70 AWS expansion (iam/eks/kinesis) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final iamId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsIam(
+        id: iamId, pinX: 1, pinY: 8, width: 1.0, height: 1.2));
+    final elbId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsElb(
+        id: elbId, pinX: 3, pinY: 8, width: 1.5, height: 1.2));
+    final eksId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsEks(
+        id: eksId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final stepId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsStepFunctions(
+        id: stepId, pinX: 7, pinY: 8, width: 1.4, height: 1.3));
+    final kinId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsKinesis(
+        id: kinId, pinX: 1, pinY: 5, width: 1.4, height: 1.0));
+    final ebId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsEventBridge(
+        id: ebId, pinX: 3, pinY: 5, width: 1.3, height: 1.2));
+    final auroraId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsAurora(
+        id: auroraId, pinX: 5, pinY: 5, width: 1.3, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(iamId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(elbId)!.geometries.length, 5);
+    expect(
+        r.pages.first
+            .findShapeById(eksId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(7));
+    expect(
+        r.pages.first
+            .findShapeById(stepId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(kinId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(ebId)!.geometries.length,
+        greaterThanOrEqualTo(7));
+    expect(
+        r.pages.first
+            .findShapeById(auroraId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+  });
+
+  test('drawio-parity batch71 Azure starter (vm/cosmos/keyvault) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final vmId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureVirtualMachine(
+        id: vmId, pinX: 1, pinY: 8, width: 1.3, height: 1.2));
+    final fnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureFunctions(
+        id: fnId, pinX: 3, pinY: 8, width: 1.1, height: 1.1));
+    final cosmosId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureCosmosDb(
+        id: cosmosId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final aksId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureAks(
+        id: aksId, pinX: 7, pinY: 8, width: 1.2, height: 1.2));
+    final kvId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureKeyVault(
+        id: kvId, pinX: 1, pinY: 5, width: 1.1, height: 1.2));
+    final busId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureServiceBus(
+        id: busId, pinX: 3, pinY: 5, width: 1.4, height: 1.1));
+    final monId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureMonitor(
+        id: monId, pinX: 5, pinY: 5, width: 1.2, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(vmId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(fnId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(cosmosId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(r.pages.first.findShapeById(aksId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(kvId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(busId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+    expect(
+        r.pages.first
+            .findShapeById(monId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch72 GCP starter (compute/gke/pubsub) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final ceId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpComputeEngine(
+        id: ceId, pinX: 1, pinY: 8, width: 1.3, height: 1.2));
+    final fnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpCloudFunctions(
+        id: fnId, pinX: 3, pinY: 8, width: 1.1, height: 1.1));
+    final gkeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpGke(
+        id: gkeId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final vpcId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpVpcNetwork(
+        id: vpcId, pinX: 7, pinY: 8, width: 1.5, height: 1.1));
+    final pubId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpPubSub(
+        id: pubId, pinX: 1, pinY: 5, width: 1.2, height: 1.2));
+    final spanId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpCloudSpanner(
+        id: spanId, pinX: 3, pinY: 5, width: 1.3, height: 1.2));
+    final monId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpCloudMonitoring(
+        id: monId, pinX: 5, pinY: 5, width: 1.2, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(ceId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(fnId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(gkeId)!.geometries.length, 5);
+    expect(
+        r.pages.first
+            .findShapeById(vpcId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(pubId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(
+        r.pages.first
+            .findShapeById(spanId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(
+        r.pages.first
+            .findShapeById(monId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch77 AWS expansion2 (fargate/glue/waf) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final fgId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsFargate(
+        id: fgId, pinX: 1, pinY: 8, width: 1.3, height: 1.0));
+    final glueId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsGlue(
+        id: glueId, pinX: 3, pinY: 8, width: 1.2, height: 1.3));
+    final athId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsAthena(
+        id: athId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final emrId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsEmr(
+        id: emrId, pinX: 7, pinY: 8, width: 1.2, height: 1.2));
+    final smId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsSecretsManager(
+        id: smId, pinX: 1, pinY: 5, width: 1.1, height: 1.2));
+    final pipeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsCodePipeline(
+        id: pipeId, pinX: 3, pinY: 5, width: 1.5, height: 1.0));
+    final wafId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsWaf(
+        id: wafId, pinX: 5, pinY: 5, width: 1.1, height: 1.2));
+    final tgId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.awsTransitGateway(
+        id: tgId, pinX: 7, pinY: 5, width: 1.2, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(fgId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(glueId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(athId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(emrId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(smId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(pipeId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(wafId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(tgId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(6));
+  });
+
+  test('drawio-parity batch76 Cisco expansion (wlc/ise/core) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final wlcId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoWirelessController(
+        id: wlcId, pinX: 1, pinY: 8, width: 1.4, height: 1.0));
+    final atmId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoAtmSwitch(
+        id: atmId, pinX: 3, pinY: 8, width: 1.2, height: 1.2));
+    final vpnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoVpnConcentrator(
+        id: vpnId, pinX: 5, pinY: 8, width: 1.4, height: 1.1));
+    final bridgeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoWirelessBridge(
+        id: bridgeId, pinX: 7, pinY: 8, width: 1.4, height: 1.1));
+    final iseId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoIse(
+        id: iseId, pinX: 1, pinY: 5, width: 1.1, height: 1.2));
+    final dnaId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoDnaCenter(
+        id: dnaId, pinX: 3, pinY: 5, width: 1.2, height: 1.2));
+    final tpId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoTelepresence(
+        id: tpId, pinX: 5, pinY: 5, width: 1.4, height: 1.2));
+    final coreId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoCoreSwitch(
+        id: coreId, pinX: 7, pinY: 5, width: 1.4, height: 1.3));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(wlcId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(atmId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(
+        r.pages.first
+            .findShapeById(vpnId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(bridgeId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(2));
+    expect(
+        r.pages.first
+            .findShapeById(iseId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(dnaId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(r.pages.first.findShapeById(tpId)!.geometries.length, 4);
+    expect(r.pages.first.findShapeById(coreId)!.geometries.length, 4);
+  });
+
+  test('drawio-parity batch75 GCP expansion (dataflow/firestore/vertex) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final dfId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpDataflow(
+        id: dfId, pinX: 1, pinY: 8, width: 1.5, height: 1.0));
+    final dpId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpDataproc(
+        id: dpId, pinX: 3, pinY: 8, width: 1.2, height: 1.2));
+    final compId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpCloudComposer(
+        id: compId, pinX: 5, pinY: 8, width: 1.3, height: 1.2));
+    final armorId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpCloudArmor(
+        id: armorId, pinX: 7, pinY: 8, width: 1.1, height: 1.2));
+    final schedId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpCloudScheduler(
+        id: schedId, pinX: 1, pinY: 5, width: 1.1, height: 1.1));
+    final fsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpFirestore(
+        id: fsId, pinX: 3, pinY: 5, width: 1.1, height: 1.3));
+    final secId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpSecretManager(
+        id: secId, pinX: 5, pinY: 5, width: 1.1, height: 1.2));
+    final vtxId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.gcpVertexAi(
+        id: vtxId, pinX: 7, pinY: 5, width: 1.3, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(dfId)!.geometries.length, 3);
+    expect(r.pages.first.findShapeById(dpId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(compId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(6));
+    expect(
+        r.pages.first
+            .findShapeById(armorId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(schedId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(fsId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(secId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(vtxId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(6));
+  });
+
+  test('drawio-parity batch74 Azure expansion (aci/iot/firewall) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final aciId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureContainerInstances(
+        id: aciId, pinX: 1, pinY: 8, width: 1.2, height: 1.3));
+    final redisId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureRedisCache(
+        id: redisId, pinX: 3, pinY: 8, width: 1.2, height: 1.2));
+    final fdId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureFrontDoor(
+        id: fdId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final logicId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureLogicApps(
+        id: logicId, pinX: 7, pinY: 8, width: 1.3, height: 1.2));
+    final iotId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureIotHub(
+        id: iotId, pinX: 1, pinY: 5, width: 1.2, height: 1.2));
+    final fwId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureFirewall(
+        id: fwId, pinX: 3, pinY: 5, width: 1.2, height: 1.3));
+    final bastionId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureBastion(
+        id: bastionId, pinX: 5, pinY: 5, width: 1.1, height: 1.2));
+    final devopsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.azureDevOps(
+        id: devopsId, pinX: 7, pinY: 5, width: 1.2, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(aciId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(redisId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(fdId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(
+        r.pages.first
+            .findShapeById(logicId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+    expect(
+        r.pages.first
+            .findShapeById(iotId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(r.pages.first.findShapeById(fwId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(bastionId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(devopsId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch73 Cisco starter (router/asa/ap) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final rtrId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoRouter(
+        id: rtrId, pinX: 1, pinY: 8, width: 1.4, height: 1.0));
+    final swId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoSwitch(
+        id: swId, pinX: 3, pinY: 8, width: 1.5, height: 0.9));
+    final asaId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoAsaFirewall(
+        id: asaId, pinX: 5, pinY: 8, width: 1.3, height: 1.1));
+    final apId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoAccessPoint(
+        id: apId, pinX: 7, pinY: 8, width: 1.2, height: 1.1));
+    final phoneId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoIpPhone(
+        id: phoneId, pinX: 1, pinY: 5, width: 1.3, height: 1.1));
+    final wanId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoWanRouter(
+        id: wanId, pinX: 3, pinY: 5, width: 1.4, height: 1.2));
+    final fiId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ciscoFabricInterconnect(
+        id: fiId, pinX: 5, pinY: 5, width: 1.5, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(rtrId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+    expect(
+        r.pages.first
+            .findShapeById(swId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(asaId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(apId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(phoneId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(wanId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(fiId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+  });
+
   // Regression: `_buildShapeElement` used to omit arrows, flips, transparencies,
   // shadow, LocPin, VerticalAlign and Character/Paragraph sections — so a
   // freshly-created (or reparented) shape looked very different after save +

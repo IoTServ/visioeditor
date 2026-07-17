@@ -44,8 +44,64 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   node; **parallelepiped, rounded rectangular callout, list / vertical list,
   image placeholder, open-sided partial rectangles**).
 - **Network shapes** (drawio `mxgraph.networks`): a new **Network** library with
-  server, router, firewall, monitor, laptop, mobile, printer, wireless (plus
-  cloud / database / user), drawn as clean geometry that round-trips to `.vsdx`.
+  server, router, firewall, monitor, laptop, mobile, printer, wireless, switch,
+  hub, PC (plus cloud / database / user), drawn as clean geometry that
+  round-trips to `.vsdx`.
+- **Mockup / Electrical / Signs** libraries (drawio mockup, electrical, signs):
+  UI wireframes (checkbox, radio, text field, combo, window, progress, slider,
+  tabs, menu, toggle, search, rating, icons, loading, splitter, dropdown),
+  circuit symbols (resistor, capacitor, inductor, diode, LED, ground, battery,
+  transformer, AC/DC source, switch, fuse, inverter, potentiometer, breaker,
+  crystal, lamp, IEEE AND/OR/NAND/NOR/XOR/XNOR gates, buffer), and safety
+  glyphs (warning, no entry, mandatory, exit, radiation, first aid, high
+  voltage, fragile, no smoking, biohazard, pedestrian, keep dry, slip hazard,
+  fire extinguisher).
+- **Floorplan** library (drawio floorplan): wall, door, double/sliding door,
+  window opening, table, chair, desk, bed, sofa, sink, toilet, bathtub, shower,
+  closet, bookshelf, fireplace, kitchen island, parking space, TV stand, file
+  cabinet, column, stairs, escalator, elevator, plant, refrigerator, copier —
+  top-down furniture and openings that round-trip to `.vsdx`.
+- **EIP** library (drawio `mxgraph.eip`): Enterprise Integration Patterns —
+  message / dead-letter / datatype / invalid-message channels, aggregator,
+  splitter, content-based / dynamic routers, message / content filters,
+  translator, content enricher, claim check, resequencer, composed message
+  processor, normalizer, envelope wrapper, routing slip, messaging gateway,
+  channel adapter / purger, wire tap, recipient list, competing / event-driven /
+  polling / selective consumers, message dispatcher / store, messaging bridge,
+  process manager, control bus, detour, durable subscriber, smart proxy,
+  transactional client, service activator, test message (plus reused Message).
+- **AWS** library (drawio `mxgraph.aws4` geometric starters): EC2, S3, Lambda,
+  VPC, RDS, DynamoDB, SQS, SNS, CloudFront, API Gateway, IAM, ELB, ECS, EKS,
+  Step Functions, CloudWatch, Kinesis, ElastiCache, Redshift, EventBridge,
+  Cognito, Route 53, EFS, Aurora, Fargate, ECR, Glue, Athena, EMR, SageMaker,
+  CloudTrail, Secrets Manager, CodePipeline, CodeBuild, WAF, Transit Gateway,
+  Direct Connect, OpenSearch — clean architecture glyphs that round-trip to
+  `.vsdx` (not brand-mark replicas).
+- **Azure** library (drawio azure / azure2 geometric starters): Virtual Machine,
+  App Service, Azure Functions, Blob Storage, SQL Database, Cosmos DB, AKS,
+  Virtual Network, Application Gateway, Azure AD, Key Vault, Service Bus,
+  Event Hubs, Azure Monitor, Container Instances, Container Registry, Redis
+  Cache, Front Door, API Management, Logic Apps, Data Factory, Synapse
+  Analytics, IoT Hub, Event Grid, Azure Firewall, Bastion, Azure DNS, Azure
+  DevOps — clean architecture glyphs that round-trip to `.vsdx` (not
+  brand-mark replicas).
+- **GCP** library (drawio gcp2 geometric starters): Compute Engine, App Engine,
+  Cloud Functions, Cloud Storage, Cloud SQL, BigQuery, GKE, VPC Network,
+  Cloud Load Balancing, Cloud IAM, Pub/Sub, Cloud Spanner, Cloud Run,
+  Cloud Monitoring, Bigtable, Dataflow, Dataproc, Cloud Composer, Cloud Armor,
+  Cloud CDN, Memorystore, Cloud Build, Artifact Registry, Cloud Scheduler,
+  Cloud Tasks, Firestore, Secret Manager, Vertex AI — clean architecture
+  glyphs that round-trip to `.vsdx` (not brand-mark replicas).
+- **Cisco** library (geometric network-gear starters): Cisco Router, Cisco
+  Switch, ASA Firewall, Access Point, Nexus Switch, Catalyst Switch, IP Phone,
+  Call Manager, Layer 3 Switch, WAN Router, Voice Gateway, UCS, Fabric
+  Interconnect, Content Engine, Wireless Controller, PIX Firewall, ATM Switch,
+  Workgroup Switch, Content Switch, VPN Concentrator, Wireless Bridge, Meraki
+  AP, Cisco ISE, DNA Center, Telepresence, Expressway, Core Switch, Branch
+  Router — clean architecture glyphs that round-trip to `.vsdx` (not
+  brand-mark replicas; names avoid Network-group collisions).
+- **Network** also includes tablet, phone, modem, storage, load balancer, and
+  security camera.
   Each tile is a **live geometry thumbnail** (not an icon), so the preview
   matches what drops on the canvas. Click to drop at the centre, or **drag it
   onto the canvas** to drop at the cursor. Every stencil is built from
