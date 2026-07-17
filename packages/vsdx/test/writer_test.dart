@@ -374,6 +374,81 @@ void main() {
         VsdxHorzAlign.center);
   });
 
+  test('heal injects missing docProps/core.xml on save', () {
+    // test5_master references core in .rels but the part is absent.
+    final bytes =
+        File('test/fixtures/test5_master.vsdx').readAsBytesSync();
+    expect(
+      VsdxPackage.open(bytes).readPartBytes('/docProps/core.xml'),
+      isNull,
+    );
+    final doc = parser.parse(bytes);
+    final out = writer.write(originalBytes: bytes, edited: doc);
+    final pkg = VsdxPackage.open(out);
+    final core = pkg.readPartBytes('/docProps/core.xml');
+    expect(core, isNotNull);
+    expect(utf8.decode(core!), contains('coreProperties'));
+    expect(utf8.decode(core!), contains('dc:creator'));
+  });
+
+  test('save adds Character when Text has pp but no Character section', () {
+    final bytes = File('test/fixtures/test2.vsdx').readAsBytesSync();
+    final doc = parser.parse(bytes);
+    final out = writer.write(originalBytes: bytes, edited: doc);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    // Shape 9 historically had Paragraph + <pp> only — Edraw needs Character.
+    expect(pageXml, contains('N="Character"'));
+    final issues = <String>[];
+    final xml = XmlDocument.parse(pageXml);
+    for (final sh in xml.findAllElements('Shape')) {
+      final texts = sh.findElements('Text');
+      if (texts.isEmpty || texts.first.innerText.trim().isEmpty) continue;
+      final hasChar = sh.childElements.any(
+        (c) =>
+            c.name.local == 'Section' && c.getAttribute('N') == 'Character',
+      );
+      if (!hasChar) issues.add('id=${sh.getAttribute('ID')}');
+    }
+    expect(issues, isEmpty, reason: 'text without Character: $issues');
+  });
+
+  test('Foreign picture caption emits Character/Paragraph', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_caption_test.png';
+    final png = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+      0x00, 0x00, 0x00, 0x00,
+    ]);
+    final shape = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 3,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(text: 'Caption');
+    final edited = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('Type="Foreign"'));
+    expect(pageXml, contains('N="Character"'));
+    expect(pageXml, contains('N="Paragraph"'));
+    expect(pageXml, contains('Caption'));
+    expect(pageXml, contains('<pp'));
+  });
+
   test('Chinese labels emit Microsoft YaHei AsianFont for Edraw', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);

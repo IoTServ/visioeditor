@@ -54,6 +54,7 @@ export 'src/parser/document_parser.dart';
 export 'src/parser/formula.dart';
 export 'src/parser/parse_visio.dart';
 export 'src/parser/emf_embedded_bitmap.dart';
+export 'src/parser/metafile.dart';
 export 'src/parser/vsd/vsd_document_parser.dart';
 export 'src/parser/vsd/cfb/compound_file.dart';
 

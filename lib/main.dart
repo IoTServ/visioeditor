@@ -491,7 +491,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
     if (c == null || !c.hasDocument) return;
     final el = EditorL10n.of(context);
     var path = c.filePath;
-    path ??= await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
+    // Never overwrite a legacy .vsd with OPC bytes.
+    if (path != null && isLegacyVisioBinary(path)) {
+      path = null;
+    }
+    path ??=
+        await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
     if (path == null) return;
     try {
       final bytes = c.exportToBytes();

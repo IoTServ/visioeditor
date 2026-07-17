@@ -71,6 +71,7 @@ class VsdxWriter {
     final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
     final pagesXml = pagesPart == null ? null : pkg.readPartXml(pagesPart);
     if (pagesPart == null || pagesXml == null) {
+      _healMissingCore(pkg, patched, edited);
       return _rezip(originalBytes, patched, removed);
     }
 
@@ -228,12 +229,110 @@ class VsdxWriter {
       markCtDirty: () => ctDirty = true,
     );
 
+    // Heal broken OPC that references docProps/core.xml but omits the part
+    // (common in third-party fixtures). Edraw / Visio expect the part present.
+    _healMissingCore(
+      pkg,
+      patched,
+      edited,
+      ctXml: ctXml,
+      markCtDirty: () => ctDirty = true,
+    );
+
     if (ctDirty && ctXml != null) {
       patched['[Content_Types].xml'] =
           Uint8List.fromList(utf8.encode(ctXml.toXmlString()));
     }
 
     return _rezip(originalBytes, patched, removed);
+  }
+
+  /// Inject a minimal `docProps/core.xml` when the package omits it so Save
+  /// always produces a structurally complete OPC (Edraw / Visio expect it).
+  void _healMissingCore(
+    VsdxPackage pkg,
+    Map<String, Uint8List> patched,
+    VsdxDocument edited, {
+    XmlDocument? ctXml,
+    void Function()? markCtDirty,
+  }) {
+    const coreName = 'docProps/core.xml';
+    if (pkg.readPartBytes('/$coreName') != null ||
+        patched.containsKey(coreName)) {
+      return;
+    }
+
+    const decl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    final creatorXml =
+        _xmlEscape(edited.creator ?? 'Editor for Visio Diagrams');
+    final titleXml = (edited.title != null && edited.title!.isNotEmpty)
+        ? '<dc:title>${_xmlEscape(edited.title!)}</dc:title>'
+        : '';
+    patched[coreName] = Uint8List.fromList(utf8.encode(
+      '$decl\n'
+      '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+      '$titleXml'
+      '<dc:creator>$creatorXml</dc:creator></cp:coreProperties>',
+    ));
+
+    final types = ctXml ?? pkg.readPartXml('/[Content_Types].xml');
+    if (types != null) {
+      final hasOverride = types.rootElement.childElements.any((el) {
+        if (el.name.local != 'Override') return false;
+        final pn = el.getAttribute('PartName') ?? '';
+        return pn == '/docProps/core.xml' || pn == 'docProps/core.xml';
+      });
+      if (!hasOverride) {
+        types.rootElement.children.add(XmlElement(
+          XmlName('Override'),
+          <XmlAttribute>[
+            XmlAttribute(XmlName('PartName'), '/docProps/core.xml'),
+            XmlAttribute(
+              XmlName('ContentType'),
+              'application/vnd.openxmlformats-package.core-properties+xml',
+            ),
+          ],
+        ));
+        patched['[Content_Types].xml'] =
+            Uint8List.fromList(utf8.encode(types.toXmlString()));
+        markCtDirty?.call();
+      }
+    }
+
+    final rels = pkg.readPartXml('/_rels/.rels');
+    if (rels == null) return;
+    final hasCoreRel = rels.rootElement.childElements.any((el) {
+      if (el.name.local != 'Relationship') return false;
+      final t = el.getAttribute('Type') ?? '';
+      final target = el.getAttribute('Target') ?? '';
+      return t.contains('core-properties') ||
+          target == 'docProps/core.xml' ||
+          target.endsWith('/docProps/core.xml');
+    });
+    if (hasCoreRel) return;
+    var maxId = 0;
+    for (final el in rels.rootElement.childElements) {
+      if (el.name.local != 'Relationship') continue;
+      final id = el.getAttribute('Id') ?? '';
+      final m = RegExp(r'rId(\d+)$').firstMatch(id);
+      if (m != null) {
+        final n = int.tryParse(m.group(1)!) ?? 0;
+        if (n > maxId) maxId = n;
+      }
+    }
+    rels.rootElement.children.add(XmlElement(
+      XmlName('Relationship'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('Id'), 'rId${maxId + 1}'),
+        XmlAttribute(
+          XmlName('Type'),
+          'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties',
+        ),
+        XmlAttribute(XmlName('Target'), 'docProps/core.xml'),
+      ],
+    ));
+    patched['_rels/.rels'] =
+        Uint8List.fromList(utf8.encode(rels.toXmlString()));
   }
 
   // --- pages.xml helpers -----------------------------------------------------
@@ -1162,8 +1261,14 @@ class VsdxWriter {
   Uint8List emptyDocument({
     double widthInches = 8.5,
     double heightInches = 11.0,
+    String? title,
+    String? creator,
   }) {
     const decl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    final creatorXml = VsdxWriter._xmlEscape(creator ?? 'Editor for Visio Diagrams');
+    final titleXml = (title != null && title.isNotEmpty)
+        ? '<dc:title>${VsdxWriter._xmlEscape(title)}</dc:title>'
+        : '';
     final parts = <String, String>{
       '[Content_Types].xml': '$decl\n'
           '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -1183,7 +1288,8 @@ class VsdxWriter {
           '</Relationships>',
       'docProps/core.xml': '$decl\n'
           '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">'
-          '<dc:creator>Editor for Visio Diagrams</dc:creator></cp:coreProperties>',
+          '$titleXml'
+          '<dc:creator>$creatorXml</dc:creator></cp:coreProperties>',
       'docProps/app.xml': '$decl\n'
           '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
           '<Application>Editor for Visio Diagrams</Application></Properties>',
@@ -3895,12 +4001,11 @@ class VsdxWriter {
   }
 
   bool _ensureTextStyleSections(XmlElement el, VsdxShape s) {
-    // Never rewrite text on master instances — Character/Text often live on
-    // the master and injecting a local Character row drops libvisio/Visio text.
-    if (el.getAttribute('Master') != null ||
-        el.getAttribute('MasterShape') != null) {
-      return false;
-    }
+    // Only act when this shape already has a *local* non-empty <Text>. That
+    // covers bare Text (older exports), Paragraph-only + <pp> (third-party
+    // fixtures), and Master instances that overrode text locally — Edraw
+    // needs a sibling Character section or it picks a wrong default size.
+    // Shapes that inherit Text purely from a Master keep master Character.
     final runs = _effectiveTextRuns(s);
     if (runs.isEmpty) return false;
     var hasChar = false;
@@ -3913,27 +4018,28 @@ class VsdxWriter {
       if (child.name.local == 'Text') textEl = child;
     }
     if (hasChar || textEl == null) return false;
-    // Only upgrade bare <Text>hello</Text> (no cp/pp) from our older exports.
-    final hasMarker = textEl.childElements
-        .any((c) => c.name.local == 'cp' || c.name.local == 'pp');
-    if (hasMarker) return false;
     final plain = textEl.innerText;
     if (plain.trim().isEmpty) return false;
+    final hasMarker = textEl.childElements
+        .any((c) => c.name.local == 'cp' || c.name.local == 'pp');
     _patchTextStyleSections(el, runs);
-    textEl.children.clear();
-    for (var i = 0; i < runs.length; i++) {
-      textEl.children.add(XmlElement(
-        XmlName('pp'),
-        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-      ));
-      textEl.children.add(XmlElement(
-        XmlName('cp'),
-        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-      ));
-      _appendRunText(
-        textEl.children,
-        runs[i].copyWith(text: i == 0 ? plain : runs[i].text),
-      );
+    if (!hasMarker) {
+      // Upgrade bare <Text>hello</Text> to pp/cp so Character rows apply.
+      textEl.children.clear();
+      for (var i = 0; i < runs.length; i++) {
+        textEl.children.add(XmlElement(
+          XmlName('pp'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+        ));
+        textEl.children.add(XmlElement(
+          XmlName('cp'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+        ));
+        _appendRunText(
+          textEl.children,
+          runs[i].copyWith(text: i == 0 ? plain : runs[i].text),
+        );
+      }
     }
     return true;
   }
@@ -4052,6 +4158,11 @@ class VsdxWriter {
           _cell('QuickStyleFillColor', s.fill.themeForegroundIndex!.toString()));
     } else if (s.formulas.containsKey('FillForegnd')) {
       children.add(_cell('FillForegnd', '0', formula: s.formulas['FillForegnd']));
+    } else if (s.fill.pattern != 0) {
+      // VSD import / defaultFill often leave foreground null while pattern=1.
+      // Visio resolves via StyleSheets; 万兴图示 treats missing FillForegnd as
+      // hollow — emit opaque white (Visio "No Style" default).
+      children.add(_cell('FillForegnd', '#FFFFFF'));
     }
     if (s.fill.background != null) {
       children.add(_cell('FillBkgnd', _hex(s.fill.background!),
@@ -4618,8 +4729,26 @@ class VsdxWriter {
         children.add(_cell(name, '1'));
       }
     }
-    if (s.text != null && s.text!.isNotEmpty) {
-      children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
+    // Caption text with Character/Paragraph (same as normal shapes) so Edraw
+    // does not fall back to a wrong default font size.
+    final pictureRuns = _effectiveTextRuns(s);
+    if (pictureRuns.isNotEmpty) {
+      children
+        ..add(_buildCharacterSection(pictureRuns))
+        ..add(_buildParagraphSection(pictureRuns));
+      final textEl = XmlElement(XmlName('Text'));
+      for (var i = 0; i < pictureRuns.length; i++) {
+        textEl.children.add(XmlElement(
+          XmlName('pp'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+        ));
+        textEl.children.add(XmlElement(
+          XmlName('cp'),
+          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+        ));
+        _appendRunText(textEl.children, pictureRuns[i]);
+      }
+      children.add(textEl);
     }
     // Emit frame Geometry when present so import→synth→reopen keeps hit-test
     // / selection bounds (Foreign shapes previously dropped all path rows).
@@ -4628,6 +4757,9 @@ class VsdxWriter {
       if (!_canRebuild(g)) continue;
       final section = _buildGeometrySection(g, gIx++);
       if (section != null) children.add(section);
+    }
+    if (s.hyperlinks.isNotEmpty) {
+      children.add(_buildHyperlinkSection(s.hyperlinks));
     }
     if (rId != null) {
       children.add(XmlElement(
@@ -5252,6 +5384,13 @@ class VsdxWriter {
   // --- Helpers ---------------------------------------------------------------
 
   static String _noSlash(String s) => s.startsWith('/') ? s.substring(1) : s;
+
+  static String _xmlEscape(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&apos;');
 
   static String _fmt(double v) {
     if (!v.isFinite) return '0';

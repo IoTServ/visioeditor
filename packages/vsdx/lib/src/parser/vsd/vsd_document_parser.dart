@@ -8,6 +8,7 @@ import '../../model/document.dart';
 import '../../model/page.dart';
 import '../../writer/vsdx_writer.dart';
 import 'cfb/compound_file.dart';
+import 'vsd_metadata.dart';
 import 'vsd_parser.dart';
 
 /// Detects OLE2 compound files that contain a VisioDocument stream.
@@ -43,7 +44,23 @@ class VsdDocumentParser {
     if (stream == null) {
       throw const VsdxFormatException('Missing VisioDocument stream');
     }
-    return VsdBinaryParser(stream).parse();
+    final doc = VsdBinaryParser(stream).parse();
+    final meta = _readOleMeta(cfb);
+    if (meta == null) return doc;
+    return doc.copyWith(
+      title: meta.title ?? doc.title,
+      creator: meta.creator ?? doc.creator,
+    );
+  }
+}
+
+VsdOleMetaData? _readOleMeta(CompoundFile cfb) {
+  try {
+    final summary = cfb.readStream('\x05SummaryInformation');
+    if (summary == null || summary.isEmpty) return null;
+    return parseOleSummaryInformation(summary);
+  } catch (_) {
+    return null;
   }
 }
 
@@ -62,9 +79,11 @@ Uint8List synthesizeVsdx(VsdxDocument doc) {
           shapes: [],
         )
       : pages.first;
-  final empty = const VsdxWriter().emptyDocument(
+  final empty = VsdxWriter().emptyDocument(
     widthInches: first.widthInches,
     heightInches: first.heightInches,
+    title: doc.title,
+    creator: doc.creator ?? 'Editor for Visio Diagrams',
   );
   final remapped = <VsdxPage>[
     first.copyWith(id: 0),

@@ -85,10 +85,20 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
   multi-run CharIX/ParaIX, TabsData, Gantt Number date heuristic,
   CharIX Case/Pos/Strike/FontScale, EMF/WMF media import, ShapeList z-order,
   string field case formats, FontFace/FontIX, TextBlock, ParaIX, StyleSheet
-  text chain, Layer); Save As writes `.vsdx`. Encrypted files / masters deep
-  edit / binary `.vsd` write-back are still deferred. OLE embeds import as
-  `ForeignType=Object` media (canvas placeholder); EMF with an embedded DIB
-  paints on canvas, pure vector EMF/WMF still show a labelled placeholder.
+  text chain, Layer, Multidimensional area, OLE media, EMF DIB paint,
+  Name as field table, VSD5 TextField formats, CharList/ParaList/FieldList
+  trailer reorder, DrawingUnits/PageUnits page default unit, OLE title metadata,
+  Edraw-safe FillForegnd for solid fills, signed 1D Width/Height,
+  FeetAndInches/fraction TextField formats, NameIDX shape/layer display names,
+  Connection Points / Control handles / Shape Data / Scratch / User cells /
+  Actions / Protection (locked) / Group behaviour / Hyperlink (`0xc4`) /
+  Event (`0x84` OPENTEXTWIN / RUNADDONW) import;
+  empty ConnectList (`0x72`) headers are skipped safely);
+  Save As writes `.vsdx` only (legacy `.vsd` is import-only; no binary
+  write-back). Encrypted files / masters deep edit remain deferred.
+  EMF/WMF/OLE canvas paint uses embedded-DIB extraction plus vector
+  metafile replay (WMF/EMF GDI records); exotic records may still fall
+  back to a labelled placeholder.
 - **Text editing applies to a whole shape label** (no per-character selection
   ranges yet); connectors route straight or orthogonal (with draggable
   waypoints) but not obstacle-avoiding; PDF export is rasterised (not vector);

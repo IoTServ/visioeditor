@@ -125,12 +125,22 @@ String extensionOfPath(String path) {
   return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
 }
 
-/// Prompt for a save location. Returns the chosen path (ensured to end in
-/// `.vsdx`) or `null` if the user cancelled.
+/// Prompt for a save location. Returns a `.vsdx` path, or `null` if cancelled.
+///
+/// Legacy `.vsd` is import-only; persistence is always OPC `.vsdx`.
 Future<String?> pickSaveLocation({String suggestedName = 'drawing.vsdx'}) async {
+  var suggested = suggestedName;
+  if (isLegacyVisioBinary(suggested)) {
+    suggested = suggested.replaceFirst(
+      RegExp(r'\.vsd$', caseSensitive: false),
+      '.vsdx',
+    );
+  } else if (!suggested.toLowerCase().endsWith('.vsdx')) {
+    suggested = '$suggested.vsdx';
+  }
   final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Save Visio drawing',
-    fileName: suggestedName,
+    dialogTitle: 'Save Visio drawing (.vsdx)',
+    fileName: suggested,
     type: FileType.custom,
     allowedExtensions: <String>['vsdx'],
   );

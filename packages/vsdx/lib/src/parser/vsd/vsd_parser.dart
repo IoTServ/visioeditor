@@ -8,21 +8,52 @@ library;
 import 'dart:typed_data';
 
 import '../../core/exceptions.dart';
+import '../../model/connect.dart';
 import '../../model/document.dart';
 import '../../model/fill.dart';
 import '../../model/geometry.dart';
+import '../../model/hyperlink.dart';
 import '../../model/image.dart';
 import '../../model/layer.dart';
 import '../../model/line.dart';
 import '../../model/page.dart';
 import '../../model/rich_text.dart';
 import '../../model/shape.dart';
+import '../../model/sheet_sections.dart';
+import '../../model/user_property.dart';
 import '../../utils/color.dart';
 import 'vsd_byte_reader.dart';
 import 'vsd_internal_stream.dart';
 import 'vsd_record_ids.dart';
 
 const int _minusOne = 0xFFFFFFFF;
+
+/// Reorder list items by trailer id sequence (CharList / ParaList / FieldList).
+///
+/// Ids present in [order] come first (first occurrence wins); remaining items
+/// keep relative encounter order. Used by VSD6/11 list trailers.
+List<T> vsdReorderById<T>(
+  List<T> items,
+  List<int> order,
+  int Function(T) idOf,
+) {
+  if (order.isEmpty || items.isEmpty) return items;
+  final byId = <int, T>{};
+  for (final item in items) {
+    byId.putIfAbsent(idOf(item), () => item);
+  }
+  final out = <T>[];
+  final seen = <int>{};
+  for (final id in order) {
+    final item = byId[id];
+    if (item != null && seen.add(id)) out.add(item);
+  }
+  for (final item in items) {
+    final id = idOf(item);
+    if (seen.add(id)) out.add(item);
+  }
+  return out;
+}
 
 class _GeomBuilder {
   _GeomBuilder();
@@ -55,6 +86,11 @@ class _ShapeDraft {
   bool flipX = false;
   bool flipY = false;
   bool is1D = false;
+  bool locked = false;
+  bool dontMoveChildren = false;
+  bool isTextEditTarget = false;
+  int? selectMode;
+  int? displayMode;
   double? beginX;
   double? beginY;
   double? endX;
@@ -82,6 +118,9 @@ class _ShapeDraft {
   double? marginBottom;
   VsdxVertAlign? verticalAlign;
   VsdxColor? textBgColor;
+  /// Whether TextBlock explicitly sets a filled text background.
+  /// `false` = transparent (overrides master/style inheritance).
+  bool? textBgFilled;
   double? defaultTabStop;
   int? textDirection;
   bool underline = false;
@@ -123,15 +162,122 @@ class _ShapeDraft {
   final pendingNurbsDataIds = <int, ({double x, double y, int dataId})>{};
   /// Text field display values in document order (for ￼ / 0x1E substitution).
   final fieldDisplays = <String>[];
-  /// CharIX rows in encounter order (libvisio `m_charList`) for multi-run text.
+  /// Parallel chunk ids for [fieldDisplays] (libvisio field list element ids).
+  final fieldIds = <int>[];
+  /// Parallel raw numeric fields for late format (DrawingUnits / VSD5 format
+  /// byte). Null entries are string fields.
+  final fieldRaw =
+      <({double number, int cellType, int format, String? customFormat})?>[];
+  /// Shape-local Name table (libvisio `m_shape.m_names`) — format ids /
+  /// string-field payloads, NOT the shape display name.
+  final localNames = <int, String>{};
+  /// CharIX rows keyed by chunk id (libvisio `m_charList`).
   final charRuns = <_CharRunDraft>[];
-  /// ParaIX rows in encounter order (libvisio `m_paraList`).
+  /// ParaIX rows keyed by chunk id (libvisio `m_paraList`).
   final paraRuns = <_ParaRunDraft>[];
   /// TabsData rows (libvisio `m_tabSets`).
   final tabRuns = <_TabSetDraft>[];
+  /// Trailer order from CharList / ParaList / FieldList / TabsDataList.
+  final charOrder = <int>[];
+  final paraOrder = <int>[];
+  final fieldOrder = <int>[];
+  final tabOrder = <int>[];
+  /// Connection point rows (ShapeSheet Connection section).
+  final connectionPoints = <_ConnectionPointDraft>[];
+  final connectionOrder = <int>[];
+  /// Control handle rows (ShapeSheet Control section).
+  final controls = <_ControlDraft>[];
+  final controlOrder = <int>[];
+  /// Shape Data rows (ShapeSheet Property section).
+  final userProperties = <_UserPropDraft>[];
+  final propOrder = <int>[];
+  /// Scratch rows (ShapeSheet Scratch section).
+  final scratchRows = <_ScratchDraft>[];
+  final scratchOrder = <int>[];
+  /// User-defined cells (ShapeSheet User section).
+  final userCells = <_UserCellDraft>[];
+  /// Actions rows (ShapeSheet Actions section).
+  final actions = <_ActionDraft>[];
+  final actionOrder = <int>[];
+  /// Hyperlink rows (ShapeSheet Hyperlink section).
+  final hyperlinks = <_HyperlinkDraft>[];
+  final hyperlinkOrder = <int>[];
+  /// ShapeSheet formulas (`F=`), e.g. EventDblClick → OPENTEXTWIN().
+  final formulas = <String, String>{};
+  /// Cached `V=` for EventDblClick when present.
+  String? eventDblClick;
+}
+
+class _ConnectionPointDraft {
+  int id = 0;
+  double x = 0;
+  double y = 0;
+  double dirX = 0;
+  double dirY = 0;
+  int type = 0;
+}
+
+class _ControlDraft {
+  int id = 0;
+  double x = 0;
+  double y = 0;
+  double dynX = 0;
+  double dynY = 0;
+  double conX = 0;
+  double conY = 0;
+  bool canGlue = false;
+  String? prompt;
+  String? name;
+}
+
+class _UserPropDraft {
+  int id = 0;
+  String? name;
+  String? label;
+  String? value;
+  String? prompt;
+  String? format;
+  int type = 0;
+}
+
+class _ScratchDraft {
+  int id = 0;
+  double x = 0;
+  double y = 0;
+  double a = 0;
+  double b = 0;
+  double c = 0;
+  double d = 0;
+}
+
+class _UserCellDraft {
+  int id = 0;
+  String? name;
+  String? value;
+  String? prompt;
+}
+
+class _ActionDraft {
+  int id = 0;
+  String? name;
+  String? menu;
+  String? prompt;
+}
+
+class _HyperlinkDraft {
+  int id = 0;
+  String? description;
+  String? address;
+  String? subAddress;
+  String? extraInfo;
+  String? frame;
+  bool newWindow = false;
+  bool isDefault = false;
+  bool invisible = false;
 }
 
 class _CharRunDraft {
+  int id = 0;
   int charCount = 0;
   String? fontFamily;
   double? fontSizeInches;
@@ -149,6 +295,7 @@ class _CharRunDraft {
 }
 
 class _ParaRunDraft {
+  int id = 0;
   int charCount = 0;
   VsdxHorzAlign? paraAlign;
   double? indFirst;
@@ -198,6 +345,7 @@ class _StyleDraft {
   double? marginBottom;
   VsdxVertAlign? verticalAlign;
   VsdxColor? textBgColor;
+  bool? textBgFilled;
   double? defaultTabStop;
   int? textDirection;
   VsdxHorzAlign? paraAlign;
@@ -226,9 +374,20 @@ class _PageDraft {
   double height = 11.0;
   /// `pageScale / drawingScale` from PageProps (libvisio `m_scale`).
   double scale = 1.0;
+  double pageScale = 1.0;
+  double drawingScale = 1.0;
+  /// PageProps `drawingScaleUnit` cell type (libvisio `m_defaultDrawingUnit`).
+  /// Used when TextField cell type is DrawingUnits (64) / PageUnits (63).
+  int drawingScaleUnit = 0;
+  double shadowOffsetX = 0.125;
+  double shadowOffsetY = -0.125;
   final shapes = <_ShapeDraft>[];
   final shapeOrder = <int>[];
   final layers = <VsdxLayer>[];
+  /// Page-scoped NameIDX elementId → display name (shapes / layers).
+  final elementNames = <int, String>{};
+  /// Page-level Connect rows (glue); filled when ConnectList is understood.
+  final connects = <VsdxConnect>[];
 }
 
 /// Parses a VisioDocument stream (VSD5 / VSD6 / VSD11) into an editable model.
@@ -742,7 +901,6 @@ class VsdBinaryParser {
   }
 
   void _handleChunk(VsdByteReader input, {required bool collectStylesOnly}) {
-    // In styles-only pass, keep style + name/font tables needed for content.
     if (collectStylesOnly) {
       switch (_header.chunkType) {
         case VsdRecordId.colors:
@@ -831,6 +989,8 @@ class VsdBinaryParser {
         _readTextField(input);
       case VsdRecordId.misc:
         _readMisc(input);
+      case VsdRecordId.event:
+        if (!collectStylesOnly) _readEvent(input);
       case VsdRecordId.layer:
         _readLayer(input);
       case VsdRecordId.layerMembership:
@@ -863,13 +1023,36 @@ class VsdBinaryParser {
         _readStyleSheet(input);
       case VsdRecordId.shapeList:
         _readShapeList(input);
+      case VsdRecordId.nameList:
+        // libvisio `readNameList` — clear shape-local names before new Name rows.
+        if (!collectStylesOnly) _shape?.localNames.clear();
       case VsdRecordId.charList:
+        if (_version == 5) {
+          _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+        } else if (!collectStylesOnly) {
+          _readListOrder(input, into: _shape?.charOrder);
+        }
       case VsdRecordId.paraList:
+        if (_version == 5) {
+          _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+        } else if (!collectStylesOnly) {
+          _readListOrder(input, into: _shape?.paraOrder);
+        }
       case VsdRecordId.fieldList:
+        if (_version == 5) {
+          _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+        } else if (!collectStylesOnly) {
+          _readListOrder(input, into: _shape?.fieldOrder);
+        }
       case VsdRecordId.propList:
+        if (_version == 5) {
+          _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+        }
       case VsdRecordId.tabsDataList:
         if (_version == 5) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+        } else if (!collectStylesOnly) {
+          _readListOrder(input, into: _shape?.tabOrder);
         }
       case VsdRecordId.tabsData1:
       case VsdRecordId.tabsData2:
@@ -890,6 +1073,53 @@ class VsdBinaryParser {
         if (!collectStylesOnly) _readOleData(input);
       case VsdRecordId.pageSheet:
         _currentShapeLevel = _header.level;
+      case VsdRecordId.cPntsList:
+        // Trailer id order for Connection rows (like CharList).
+        if (_version != 5) {
+          _readListOrder(input, into: _shape?.connectionOrder);
+        }
+      case VsdRecordId.connectionPoints:
+      case VsdRecordId.connectionPointsAlt:
+        _readConnectionPoints(input);
+      case VsdRecordId.ctrlList:
+        if (_version != 5) {
+          _readListOrder(input, into: _shape?.controlOrder);
+        }
+      case VsdRecordId.control:
+      case VsdRecordId.controlAlt:
+        if (!collectStylesOnly) _readControl(input);
+      case VsdRecordId.custPropsList:
+        if (_version != 5) {
+          _readListOrder(input, into: _shape?.propOrder);
+        }
+      case VsdRecordId.customProps:
+        if (!collectStylesOnly) _readCustomProps(input);
+      case VsdRecordId.scratchList:
+        if (_version != 5) {
+          _readListOrder(input, into: _shape?.scratchOrder);
+        }
+      case VsdRecordId.scratch:
+        if (!collectStylesOnly) _readScratch(input);
+      case VsdRecordId.userDefinedCells:
+        if (!collectStylesOnly) _readUserDefinedCell(input);
+      case VsdRecordId.actIdList:
+        if (_version != 5) {
+          _readListOrder(input, into: _shape?.actionOrder);
+        }
+      case VsdRecordId.actId:
+        if (!collectStylesOnly) _readActId(input);
+      case VsdRecordId.protection:
+        if (!collectStylesOnly) _readProtection(input);
+      case VsdRecordId.group:
+        if (!collectStylesOnly) _readGroup(input);
+      case VsdRecordId.hyperLnkList:
+        if (_version != 5) {
+          _readListOrder(input, into: _shape?.hyperlinkOrder);
+        }
+      case VsdRecordId.hyperlink:
+        if (!collectStylesOnly) _readHyperlink(input);
+      case VsdRecordId.connectList:
+        _readConnectList(input);
       default:
         break;
     }
@@ -919,6 +1149,7 @@ class VsdBinaryParser {
 
     if (_currentPage == null) return;
     _applyMasterInheritance(d);
+    d.shapeName ??= _currentPage!.elementNames[d.id];
     if (d.line == null && d.lineStyleId != _minusOne) {
       d.line = _styles[d.lineStyleId]?.line;
     }
@@ -927,6 +1158,7 @@ class VsdBinaryParser {
     }
     _applyTextStyle(d);
     _resolvePendingShapeData(d);
+    _dedupeConnectionPoints(d);
     // Drop GeomList shells that never received path commands (common on
     // ForeignData picture frames — trailer may list child ids with no rows).
     d.geometries.removeWhere((g) => g.byId.isEmpty);
@@ -964,24 +1196,24 @@ class VsdBinaryParser {
   void _resolvePendingShapeData(_ShapeDraft d) {
     for (final e in d.pendingPolylineDataIds.entries) {
       final pts = d.polylineData[e.value.dataId];
+      if (pts == null || pts.isEmpty) continue;
       for (final g in d.geometries) {
-        if (!g.byId.containsKey(e.key)) continue;
-        if (pts != null && pts.isNotEmpty) {
+        if (g.byId.containsKey(e.key)) {
           g.byId[e.key] = PolylineTo(
             x: e.value.x,
             y: e.value.y,
             vertices: pts,
           );
+          break;
         }
-        break;
       }
     }
     d.pendingPolylineDataIds.clear();
     for (final e in d.pendingNurbsDataIds.entries) {
       final n = d.nurbsData[e.value.dataId];
+      if (n == null || n.cps.isEmpty) continue;
       for (final g in d.geometries) {
-        if (!g.byId.containsKey(e.key)) continue;
-        if (n != null && n.cps.isNotEmpty) {
+        if (g.byId.containsKey(e.key)) {
           g.byId[e.key] = NurbsTo(
             x: e.value.x,
             y: e.value.y,
@@ -990,11 +1222,135 @@ class VsdBinaryParser {
             weights: n.weights,
             degree: n.degree,
           );
+          break;
         }
-        break;
       }
     }
     d.pendingNurbsDataIds.clear();
+  }
+
+  void _dedupeConnectionPoints(_ShapeDraft d) {
+    if (d.connectionPoints.length < 2) return;
+    final seen = <String>{};
+    d.connectionPoints.retainWhere((c) {
+      final key =
+          '${c.x.toStringAsFixed(6)},${c.y.toStringAsFixed(6)},${c.type}';
+      return seen.add(key);
+    });
+  }
+
+  /// Apply CharList / ParaList / FieldList / TabsDataList trailer order
+  /// (libvisio `setElementsOrder`). Encounter order is used when no trailer.
+  void _applyListOrders(_ShapeDraft d) {
+    if (d.charOrder.isNotEmpty && d.charRuns.isNotEmpty) {
+      final ordered =
+          vsdReorderById(List.of(d.charRuns), d.charOrder, (c) => c.id);
+      d.charRuns
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.paraOrder.isNotEmpty && d.paraRuns.isNotEmpty) {
+      final ordered =
+          vsdReorderById(List.of(d.paraRuns), d.paraOrder, (p) => p.id);
+      d.paraRuns
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.tabOrder.isNotEmpty && d.tabRuns.isNotEmpty) {
+      final ordered =
+          vsdReorderById(List.of(d.tabRuns), d.tabOrder, (t) => t.id);
+      d.tabRuns
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.connectionOrder.isNotEmpty && d.connectionPoints.isNotEmpty) {
+      final ordered = vsdReorderById(
+        List.of(d.connectionPoints),
+        d.connectionOrder,
+        (c) => c.id,
+      );
+      d.connectionPoints
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.controlOrder.isNotEmpty && d.controls.isNotEmpty) {
+      final ordered = vsdReorderById(
+        List.of(d.controls),
+        d.controlOrder,
+        (c) => c.id,
+      );
+      d.controls
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.propOrder.isNotEmpty && d.userProperties.isNotEmpty) {
+      final ordered = vsdReorderById(
+        List.of(d.userProperties),
+        d.propOrder,
+        (p) => p.id,
+      );
+      d.userProperties
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.scratchOrder.isNotEmpty && d.scratchRows.isNotEmpty) {
+      final ordered = vsdReorderById(
+        List.of(d.scratchRows),
+        d.scratchOrder,
+        (r) => r.id,
+      );
+      d.scratchRows
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.actionOrder.isNotEmpty && d.actions.isNotEmpty) {
+      final ordered = vsdReorderById(
+        List.of(d.actions),
+        d.actionOrder,
+        (a) => a.id,
+      );
+      d.actions
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.hyperlinkOrder.isNotEmpty && d.hyperlinks.isNotEmpty) {
+      final ordered = vsdReorderById(
+        List.of(d.hyperlinks),
+        d.hyperlinkOrder,
+        (h) => h.id,
+      );
+      d.hyperlinks
+        ..clear()
+        ..addAll(ordered);
+    }
+    if (d.fieldOrder.isNotEmpty &&
+        d.fieldDisplays.isNotEmpty &&
+        d.fieldIds.length == d.fieldDisplays.length) {
+      final entries = <({
+        int id,
+        String text,
+        ({double number, int cellType, int format, String? customFormat})? raw,
+      })>[
+        for (var i = 0; i < d.fieldDisplays.length; i++)
+          (
+            id: d.fieldIds[i],
+            text: d.fieldDisplays[i],
+            raw: i < d.fieldRaw.length ? d.fieldRaw[i] : null,
+          ),
+      ];
+      final ordered = vsdReorderById(entries, d.fieldOrder, (e) => e.id);
+      d.fieldDisplays
+        ..clear()
+        ..addAll([for (final e in ordered) e.text]);
+      d.fieldIds
+        ..clear()
+        ..addAll([for (final e in ordered) e.id]);
+      if (d.fieldRaw.isNotEmpty) {
+        d.fieldRaw
+          ..clear()
+          ..addAll([for (final e in ordered) e.raw]);
+      }
+    }
   }
 
   /// Replace Visio field placeholders (`U+FFFC` / `0x1E`) with field values.
@@ -1013,6 +1369,76 @@ class VsdBinaryParser {
       }
     }
     return out.toString();
+  }
+
+  /// Re-apply numeric field formatting with the page's DrawingUnits default
+  /// (libvisio `getString(..., m_defaultDrawingUnit)`). Needed because
+  /// TextField chunks may be read before PageProps sets [drawingScaleUnit].
+  void _reformatNumericFields(_ShapeDraft d, {int defaultDrawingUnit = 0}) {
+    if (d.fieldRaw.isEmpty) return;
+    for (var i = 0; i < d.fieldRaw.length && i < d.fieldDisplays.length; i++) {
+      final raw = d.fieldRaw[i];
+      if (raw == null) continue;
+      d.fieldDisplays[i] = _formatNumericField(
+        raw.number,
+        raw.cellType,
+        raw.format,
+        raw.customFormat,
+        defaultDrawingUnit,
+      );
+    }
+  }
+
+  /// VSD5 text encodes the numeric format after the field marker as
+  /// `0x1E` + spaces + `(formatId + 0x20)`. Apply that format and strip the
+  /// encoding bytes (libvisio VSD5 leaves format Unknown).
+  void _finalizeVsd5FieldFormats(
+    _ShapeDraft d, {
+    int defaultDrawingUnit = 0,
+  }) {
+    if (_version != 5) return;
+    final text = d.text;
+    if (text == null || text.isEmpty || d.fieldDisplays.isEmpty) return;
+    final out = StringBuffer();
+    var fi = 0;
+    for (var i = 0; i < text.length; i++) {
+      final cu = text.codeUnitAt(i);
+      if (cu == 0x1E || cu == 0xFFFC) {
+        out.writeCharCode(cu);
+        var j = i + 1;
+        while (j < text.length && text.codeUnitAt(j) == 0x20) {
+          j++;
+        }
+        if (j < text.length) {
+          final next = text.codeUnitAt(j);
+          // Non-space printable → formatId + 0x20 (e.g. '%' → 5).
+          if (next > 0x20 && next <= 0x7E) {
+            final fmt = next - 0x20;
+            if (fi < d.fieldRaw.length && d.fieldRaw[fi] != null) {
+              final raw = d.fieldRaw[fi]!;
+              d.fieldRaw[fi] = (
+                number: raw.number,
+                cellType: raw.cellType,
+                format: fmt,
+                customFormat: raw.customFormat,
+              );
+              d.fieldDisplays[fi] = _formatNumericField(
+                raw.number,
+                raw.cellType,
+                fmt,
+                raw.customFormat,
+                defaultDrawingUnit,
+              );
+            }
+            i = j; // skip spaces + format byte
+          }
+        }
+        fi++;
+      } else {
+        out.writeCharCode(cu);
+      }
+    }
+    d.text = out.toString();
   }
 
   void _applyMasterInheritance(_ShapeDraft d) {
@@ -1054,7 +1480,14 @@ class VsdBinaryParser {
     d.marginTop ??= master.marginTop;
     d.marginBottom ??= master.marginBottom;
     d.verticalAlign ??= master.verticalAlign;
-    d.textBgColor ??= master.textBgColor;
+    // TextBkgnd: explicit transparent (bgIdx 0/0xff) must not inherit a
+    // filled colour from the stencil (libvisio isTextBkgndFilled).
+    if (d.textBgFilled == null) {
+      d.textBgColor ??= master.textBgColor;
+      d.textBgFilled = master.textBgFilled;
+    } else if (d.textBgFilled == false) {
+      d.textBgColor = null;
+    }
     d.defaultTabStop ??= master.defaultTabStop;
     d.textDirection ??= master.textDirection;
     d.paraAlign ??= master.paraAlign;
@@ -1093,6 +1526,10 @@ class VsdBinaryParser {
     if (d.paraRuns.isEmpty && master.paraRuns.isNotEmpty) {
       d.paraRuns.addAll(master.paraRuns);
     }
+    // FieldList: inherit stencil formats (libvisio collectNumericField clones
+    // stencil element and only overrides value/cellType; format comes from
+    // master when the instance block is Unknown).
+    _inheritMasterFields(d, master);
     // Only inherit tab sets that actually define stops (empty TabsData is
     // common on masters and would otherwise inflate every instance).
     if (d.tabRuns.isEmpty &&
@@ -1101,6 +1538,174 @@ class VsdBinaryParser {
     }
     if (d.layerMemberIds.isEmpty && master.layerMemberIds.isNotEmpty) {
       d.layerMemberIds = List<int>.from(master.layerMemberIds);
+    }
+    if (d.connectionPoints.isEmpty && master.connectionPoints.isNotEmpty) {
+      for (final c in master.connectionPoints) {
+        d.connectionPoints.add(
+          _ConnectionPointDraft()
+            ..id = c.id
+            ..x = c.x
+            ..y = c.y
+            ..dirX = c.dirX
+            ..dirY = c.dirY
+            ..type = c.type,
+        );
+      }
+    }
+    if (d.controls.isEmpty && master.controls.isNotEmpty) {
+      for (final c in master.controls) {
+        d.controls.add(
+          _ControlDraft()
+            ..id = c.id
+            ..x = c.x
+            ..y = c.y
+            ..dynX = c.dynX
+            ..dynY = c.dynY
+            ..conX = c.conX
+            ..conY = c.conY
+            ..canGlue = c.canGlue
+            ..prompt = c.prompt
+            ..name = c.name,
+        );
+      }
+    }
+    if (d.userProperties.isEmpty && master.userProperties.isNotEmpty) {
+      for (final p in master.userProperties) {
+        d.userProperties.add(
+          _UserPropDraft()
+            ..id = p.id
+            ..name = p.name
+            ..label = p.label
+            ..value = p.value
+            ..prompt = p.prompt
+            ..format = p.format
+            ..type = p.type,
+        );
+      }
+    } else if (d.userProperties.isNotEmpty &&
+        master.userProperties.isNotEmpty) {
+      // Instance often overrides Value only; take Label/Prompt/Format from
+      // the stencil row with the same id.
+      final byId = <int, _UserPropDraft>{
+        for (final p in master.userProperties) p.id: p,
+      };
+      for (final p in d.userProperties) {
+        final m = byId[p.id];
+        if (m == null) continue;
+        p.label ??= m.label;
+        p.prompt ??= m.prompt;
+        p.format ??= m.format;
+        if (p.name == null || p.name!.startsWith('Row')) {
+          p.name = m.name ?? p.name;
+        }
+        if (p.type == 0 && m.type != 0) p.type = m.type;
+        p.value ??= m.value;
+      }
+    }
+    if (d.scratchRows.isEmpty && master.scratchRows.isNotEmpty) {
+      for (final r in master.scratchRows) {
+        d.scratchRows.add(
+          _ScratchDraft()
+            ..id = r.id
+            ..x = r.x
+            ..y = r.y
+            ..a = r.a
+            ..b = r.b
+            ..c = r.c
+            ..d = r.d,
+        );
+      }
+    }
+    if (d.userCells.isEmpty && master.userCells.isNotEmpty) {
+      for (final c in master.userCells) {
+        d.userCells.add(
+          _UserCellDraft()
+            ..id = c.id
+            ..name = c.name
+            ..value = c.value
+            ..prompt = c.prompt,
+        );
+      }
+    } else if (d.userCells.isNotEmpty && master.userCells.isNotEmpty) {
+      final byId = <int, _UserCellDraft>{
+        for (final c in master.userCells) c.id: c,
+      };
+      for (final c in d.userCells) {
+        final m = byId[c.id];
+        if (m == null) continue;
+        c.name ??= m.name;
+        c.prompt ??= m.prompt;
+        c.value ??= m.value;
+      }
+    }
+    if (d.actions.isEmpty && master.actions.isNotEmpty) {
+      for (final a in master.actions) {
+        d.actions.add(
+          _ActionDraft()
+            ..id = a.id
+            ..name = a.name
+            ..menu = a.menu
+            ..prompt = a.prompt,
+        );
+      }
+    }
+    if (d.hyperlinks.isEmpty && master.hyperlinks.isNotEmpty) {
+      for (final h in master.hyperlinks) {
+        d.hyperlinks.add(
+          _HyperlinkDraft()
+            ..id = h.id
+            ..description = h.description
+            ..address = h.address
+            ..subAddress = h.subAddress
+            ..extraInfo = h.extraInfo
+            ..frame = h.frame
+            ..newWindow = h.newWindow
+            ..isDefault = h.isDefault
+            ..invisible = h.invisible,
+        );
+      }
+    }
+    for (final e in master.formulas.entries) {
+      d.formulas.putIfAbsent(e.key, () => e.value);
+    }
+    d.eventDblClick ??= master.eventDblClick;
+    if (!d.locked) d.locked = master.locked;
+    if (!d.dontMoveChildren) d.dontMoveChildren = master.dontMoveChildren;
+    if (!d.isTextEditTarget) d.isTextEditTarget = master.isTextEditTarget;
+    d.selectMode ??= master.selectMode;
+    d.displayMode ??= master.displayMode;
+  }
+
+  /// Merge stencil FieldList into the instance (libvisio `m_stencilFields`).
+  void _inheritMasterFields(_ShapeDraft d, _ShapeDraft master) {
+    const formatUnknown = 0xffff;
+    if (master.fieldRaw.isEmpty && master.fieldDisplays.isEmpty) return;
+    if (d.fieldDisplays.isEmpty) {
+      d.fieldDisplays.addAll(master.fieldDisplays);
+      d.fieldIds.addAll(master.fieldIds);
+      d.fieldRaw.addAll(master.fieldRaw);
+      return;
+    }
+    // Instance has its own fields: keep value/cellType, take format from
+    // stencil when the instance format block is Unknown (libvisio
+    // collectNumericField). Skip CELL_TYPE_Number so Gantt date-serial
+    // Unknown→calendar heuristic is not overridden by a numeric master format.
+    const cellTypeNumber = 32;
+    for (var i = 0; i < d.fieldRaw.length; i++) {
+      final raw = d.fieldRaw[i];
+      if (raw == null) continue;
+      if (raw.format != formatUnknown) continue;
+      if (raw.cellType == cellTypeNumber) continue;
+      if (i >= master.fieldRaw.length) continue;
+      final mRaw = master.fieldRaw[i];
+      if (mRaw == null) continue;
+      if (mRaw.format == formatUnknown && mRaw.customFormat == null) continue;
+      d.fieldRaw[i] = (
+        number: raw.number,
+        cellType: raw.cellType,
+        format: mRaw.format,
+        customFormat: raw.customFormat ?? mRaw.customFormat,
+      );
     }
   }
 
@@ -1141,7 +1746,12 @@ class VsdBinaryParser {
         d.marginTop ??= st.marginTop;
         d.marginBottom ??= st.marginBottom;
         d.verticalAlign ??= st.verticalAlign;
-        d.textBgColor ??= st.textBgColor;
+        if (d.textBgFilled == null) {
+          d.textBgColor ??= st.textBgColor;
+          d.textBgFilled = st.textBgFilled;
+        } else if (d.textBgFilled == false) {
+          d.textBgColor = null;
+        }
         d.defaultTabStop ??= st.defaultTabStop;
         d.textDirection ??= st.textDirection;
         if (!d.hideText) d.hideText = st.hideText;
@@ -1263,6 +1873,421 @@ class VsdBinaryParser {
     s.endX = input.readF64();
     input.skip(1);
     s.endY = input.readF64();
+  }
+
+  /// Connection Points row (0x99 / 0xba). Layout mirrors other cell rows:
+  /// `(tag, f64) × {X,Y}` and optionally `{DirX,DirY}` + Type.
+  /// libvisio defines the ids but does not parse them.
+  void _readConnectionPoints(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    // 0xba extended rows need DirX/DirY; short/foreign payloads → skip.
+    final minLen = _header.chunkType == VsdRecordId.connectionPointsAlt ? 36 : 18;
+    if (_header.dataLength < minLen) return;
+    try {
+      final start = input.offset;
+      input.skip(1);
+      final x = input.readF64();
+      input.skip(1);
+      final y = input.readF64();
+      var dirX = 0.0;
+      var dirY = 0.0;
+      var type = 0;
+      if (input.offset + 18 <= start + _header.dataLength) {
+        input.skip(1);
+        dirX = input.readF64();
+        input.skip(1);
+        dirY = input.readF64();
+      }
+      if (input.offset < start + _header.dataLength) {
+        type = input.readU8();
+      }
+      // Reject NaN / non-finite (mis-framed chunks).
+      if (!x.isFinite || !y.isFinite) return;
+      s.connectionPoints.add(
+        _ConnectionPointDraft()
+          ..id = _header.id
+          ..x = x
+          ..y = y
+          ..dirX = dirX.isFinite ? dirX : 0
+          ..dirY = dirY.isFinite ? dirY : 0
+          ..type = type,
+      );
+    } catch (_) {}
+  }
+
+  /// Control row (0xaa / 0xa2). Layout (beyond libvisio, which only defines
+  /// the ids): `(tag, f64)×{X,Y,XDyn,YDyn}` then `XCon,YCon,CanGlue` bytes.
+  /// Longer rows carry formula/string payloads after the fixed prefix.
+  void _readControl(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 36) return;
+    try {
+      final start = input.offset;
+      input.skip(1);
+      final x = input.readF64();
+      input.skip(1);
+      final y = input.readF64();
+      input.skip(1);
+      final dynX = input.readF64();
+      input.skip(1);
+      final dynY = input.readF64();
+      if (!x.isFinite || !y.isFinite) return;
+      var conX = 0.0;
+      var conY = 0.0;
+      var canGlue = false;
+      if (input.offset + 3 <= start + _header.dataLength) {
+        conX = input.readU8().toDouble();
+        conY = input.readU8().toDouble();
+        canGlue = input.readU8() != 0;
+      }
+      // Optional Prompt string in extended payloads (0x60 length-prefixed).
+      String? prompt;
+      if (_header.dataLength > 47) {
+        final end = start + _header.dataLength;
+        final remain = end - input.offset;
+        if (remain > 0) {
+          final tail = input.data.sublist(input.offset, end);
+          final strings = _extractVisioAnsiStrings(tail);
+          if (strings.isNotEmpty) prompt = strings.first;
+        }
+      }
+      s.controls.add(
+        _ControlDraft()
+          ..id = _header.id
+          ..x = x
+          ..y = y
+          ..dynX = dynX.isFinite ? dynX : x
+          ..dynY = dynY.isFinite ? dynY : y
+          ..conX = conX
+          ..conY = conY
+          ..canGlue = canGlue
+          ..prompt = prompt,
+      );
+    } catch (_) {}
+  }
+
+  /// Custom Props / Shape Data row (0xb6). libvisio defines the id but does
+  /// not parse it. Best-effort: numeric Value + Type + ANSI Prompt/Label/Format.
+  void _readCustomProps(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 9) return;
+    try {
+      final start = input.offset;
+      final end = start + _header.dataLength;
+      final tag = input.readU8();
+      String? value;
+      if (tag >= 0x40 && tag <= 0x42 && input.offset + 8 <= end) {
+        final v = input.readF64();
+        if (v.isFinite) {
+          value = v == v.roundToDouble() ? '${v.toInt()}' : v.toString();
+        }
+      } else if (input.offset + 8 <= end) {
+        input.skip(8); // non-numeric cell placeholder
+      }
+      var type = 0;
+      if (input.offset + 18 <= end) {
+        // Four i32 formula markers, then Type (u16).
+        input.skip(16);
+        type = input.readU16();
+      }
+      final remain = end - input.offset;
+      final strings = remain > 0
+          ? _extractVisioAnsiStrings(input.data.sublist(input.offset, end))
+          : const <String>[];
+      String? prompt;
+      String? label;
+      String? format;
+      if (strings.length >= 3) {
+        prompt = strings[0];
+        label = strings[1];
+        format = strings[2];
+      } else if (strings.length == 2) {
+        prompt = strings[0];
+        label = strings[1];
+      } else if (strings.length == 1) {
+        label = strings[0];
+      }
+      final name = s.localNames[_header.id] ?? 'Row${_header.id}';
+      // Skip empty placeholder rows (no value/label/prompt).
+      if (value == null && label == null && prompt == null) return;
+      s.userProperties.add(
+        _UserPropDraft()
+          ..id = _header.id
+          ..name = name
+          ..label = label
+          ..value = value
+          ..prompt = prompt
+          ..format = format
+          ..type = type,
+      );
+    } catch (_) {}
+  }
+
+  /// Scratch row (0x9e): `(tag, f64)×{X,Y,A,B,C,D}`. libvisio defines the id
+  /// but has no reader. Longer rows carry formula payloads after the cells.
+  void _readScratch(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 54) return;
+    try {
+      double cell() {
+        input.skip(1);
+        return input.readF64();
+      }
+
+      final x = cell();
+      final y = cell();
+      final a = cell();
+      final b = cell();
+      final c = cell();
+      final d = cell();
+      if (![x, y, a, b, c, d].every((v) => v.isFinite)) return;
+      s.scratchRows.add(
+        _ScratchDraft()
+          ..id = _header.id
+          ..x = x
+          ..y = y
+          ..a = a
+          ..b = b
+          ..c = c
+          ..d = d,
+      );
+    } catch (_) {}
+  }
+
+  /// User-defined cell (0xb4) → `<Section N="User">`. Best-effort Value +
+  /// ANSI name/prompt strings (beyond libvisio).
+  void _readUserDefinedCell(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 9) return;
+    try {
+      final start = input.offset;
+      final end = start + _header.dataLength;
+      final tag = input.readU8();
+      String? value;
+      if (tag >= 0x40 && tag <= 0x42 && input.offset + 8 <= end) {
+        final v = input.readF64();
+        if (v.isFinite) {
+          value = v == v.roundToDouble() ? '${v.toInt()}' : v.toString();
+        }
+      } else if (tag == 0x20 && input.offset + 8 <= end) {
+        final v = input.readF64();
+        if (v.isFinite && v != 0) {
+          value = v == v.roundToDouble() ? '${v.toInt()}' : v.toString();
+        }
+      } else if (input.offset + 8 <= end) {
+        input.skip(8);
+      }
+      final remain = end - input.offset;
+      final strings = remain > 0
+          ? _extractVisioAnsiStrings(input.data.sublist(input.offset, end))
+          : const <String>[];
+      String? name;
+      String? prompt;
+      if (strings.isNotEmpty) {
+        // Prefer identifier-like first string as the User row name.
+        name = strings.firstWhere(
+          (t) => RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(t),
+          orElse: () => strings.first,
+        );
+        for (final t in strings) {
+          if (t != name) {
+            prompt = t;
+            break;
+          }
+        }
+      }
+      name ??= s.localNames[_header.id] ?? 'Row_${_header.id}';
+      if (value == null && prompt == null && strings.isEmpty) return;
+      s.userCells.add(
+        _UserCellDraft()
+          ..id = _header.id
+          ..name = name
+          ..value = value
+          ..prompt = prompt,
+      );
+    } catch (_) {}
+  }
+
+  /// Action row (0xa9) → `<Section N="Actions">`. Menu/prompt from ANSI
+  /// strings; libvisio defines the id but has no reader.
+  void _readActId(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 4) return;
+    try {
+      final start = input.offset;
+      final end = start + _header.dataLength;
+      final strings = _extractVisioAnsiStrings(
+        input.data.sublist(start, end),
+      );
+      if (strings.isEmpty) return;
+      final menu = strings.first;
+      final prompt = strings.length > 1 ? strings[1] : null;
+      s.actions.add(
+        _ActionDraft()
+          ..id = _header.id
+          ..name = 'Row_${_header.id}'
+          ..menu = menu
+          ..prompt = prompt,
+      );
+    } catch (_) {}
+  }
+
+  /// Protection (0xa0). Bool flags as u8 in Visio order; LockMoveX=2 /
+  /// LockMoveY=3 drive [VsdxShape.locked] (same canonical bit as vsdx writer).
+  void _readProtection(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 4) return;
+    try {
+      final n = _header.dataLength.clamp(0, input.remaining);
+      final bytes = input.data.sublist(input.offset, input.offset + n);
+      // Indices: Width=0 Height=1 MoveX=2 MoveY=3 …
+      final moveX = bytes.length > 2 && bytes[2] != 0;
+      final moveY = bytes.length > 3 && bytes[3] != 0;
+      if (moveX || moveY) s.locked = true;
+    } catch (_) {}
+  }
+
+  /// Group (0xbe). Leading u8 SelectMode / DisplayMode, then flag bytes
+  /// including IsTextEditTarget / DontMoveChildren (beyond libvisio).
+  void _readGroup(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 2) return;
+    try {
+      final n = _header.dataLength.clamp(0, input.remaining);
+      final bytes = input.data.sublist(input.offset, input.offset + n);
+      s.selectMode = bytes[0];
+      s.displayMode = bytes[1];
+      // Common short layout: SelectMode, DisplayMode, IsDropTarget,
+      // IsDropSource, IsSnapTarget, IsTextEditTarget, DontMoveChildren.
+      if (bytes.length > 5) s.isTextEditTarget = bytes[5] != 0;
+      if (bytes.length > 6) s.dontMoveChildren = bytes[6] != 0;
+    } catch (_) {}
+  }
+
+  /// Scan Visio ANSI string cells (`0x60` + u8 length + bytes) in a payload.
+  List<String> _extractVisioAnsiStrings(List<int> bytes) {
+    final out = <String>[];
+    for (var i = 0; i + 2 < bytes.length; i++) {
+      if (bytes[i] != 0x60) continue;
+      final len = bytes[i + 1];
+      if (len <= 0 || i + 2 + len > bytes.length) continue;
+      final slice = bytes.sublist(i + 2, i + 2 + len);
+      // Require mostly printable ASCII (allow trailing NUL).
+      var ok = true;
+      final chars = <int>[];
+      for (final b in slice) {
+        if (b == 0) break;
+        if (b < 0x20 || b > 0x7e) {
+          ok = false;
+          break;
+        }
+        chars.add(b);
+      }
+      if (!ok || chars.isEmpty) continue;
+      out.add(String.fromCharCodes(chars));
+      i += 1 + len; // loop +1
+    }
+    return out;
+  }
+
+  /// Hyperlink row (0xc4) → `<Section N="Hyperlink">`.
+  ///
+  /// Layout from vsdump `chunks_parse_cmds.tbl` (start 196) + POI sample
+  /// `visio_with_embeded.vsd`: flags at offset 39 (NewWindow bit0, Default
+  /// bit2); string blocks from ~offset 65 as `0x60` + u8 UTF-16LE code-unit
+  /// count. libvisio has no reader for this chunk.
+  void _readHyperlink(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 8) return;
+    try {
+      final start = input.offset;
+      final end = start + _header.dataLength.clamp(0, input.remaining);
+      final bytes = input.data.sublist(start, end);
+      var newWindow = false;
+      var isDefault = false;
+      if (bytes.length > 39) {
+        final flags = bytes[39];
+        newWindow = (flags & 0x1) != 0;
+        isDefault = (flags & 0x4) != 0;
+      }
+      final strings = _extractVisioUtf16Strings(bytes);
+      String? cell(int i) {
+        if (i >= strings.length) return null;
+        final v = strings[i];
+        return v.isEmpty ? null : v;
+      }
+
+      s.hyperlinks.add(
+        _HyperlinkDraft()
+          ..id = _header.id
+          ..description = cell(0)
+          ..address = cell(1)
+          ..subAddress = cell(2)
+          ..extraInfo = cell(3)
+          ..frame = cell(4)
+          ..newWindow = newWindow
+          ..isDefault = isDefault,
+      );
+    } catch (_) {}
+  }
+
+  /// Scan Visio UTF-16 string cells (`0x60` + u8 code-unit count + UTF-16LE).
+  /// Empty cells (`0x60 0x00` or all-NUL payload) are kept so column order
+  /// (Description/Address/SubAddress/ExtraInfo/Frame) stays aligned.
+  List<String> _extractVisioUtf16Strings(List<int> bytes) {
+    final out = <String>[];
+    for (var i = 0; i + 1 < bytes.length; i++) {
+      if (bytes[i] != 0x60) continue;
+      final cu = bytes[i + 1];
+      if (cu < 0 || i + 2 + cu * 2 > bytes.length) continue;
+      if (cu == 0) {
+        out.add('');
+        i += 1;
+        continue;
+      }
+      final units = <int>[];
+      var ok = true;
+      for (var c = 0; c < cu; c++) {
+        final ch = bytes[i + 2 + c * 2] | (bytes[i + 3 + c * 2] << 8);
+        if (ch == 0) break;
+        if (ch < 0x09 || (ch > 0x0d && ch < 0x20) || ch > 0xfffd) {
+          ok = false;
+          break;
+        }
+        units.add(ch);
+      }
+      if (!ok) continue;
+      out.add(String.fromCharCodes(units));
+      i += 1 + cu * 2; // loop +1
+    }
+    return out;
+  }
+
+  /// ConnectList (0x72) — page-level glue list header.
+  ///
+  /// vsdump marks layout Unknown; Apache POI `44594*.vsd` only contain empty
+  /// list headers (`childrenListLength=0`). libvisio has no reader. Chunk
+  /// alignment is handled by `_handleChunks` seek-to-end; do not invent
+  /// Connect From/To rows until a non-empty sample is available.
+  /// ConnectList (0x72) — page-level glue list header.
+  ///
+  /// libvisio only defines `VSD_CONNECT_LIST` and treats 0x72 as a list-chunk
+  /// for trailer sizing; there is **no** `readConnectList` / FromSheet–ToSheet
+  /// reader. vsdump marks 0x72 Unknown (0x71 is Connection*Points* list).
+  /// Public samples (`44594*.vsd`) only have empty list headers
+  /// (`childrenListLength=0`). Seek-to-end keeps alignment; do not invent
+  /// Connect rows without a non-empty sample to reverse-engineer.
+  void _readConnectList(VsdByteReader input) {
+    // Intentionally empty — no libvisio layout; seek restores cursor.
   }
 
   void _readTextXForm(VsdByteReader input) {
@@ -1550,12 +2575,12 @@ class VsdBinaryParser {
     input.skip(1);
     final pageHeight = input.readF64();
     input.skip(1);
-    input.readF64(); // shadowOffsetX
+    final shadowOffsetX = input.readF64();
     input.skip(1);
-    input.readF64(); // shadowOffsetY
+    final shadowOffsetY = input.readF64();
     input.skip(1);
     final pageScale = input.readF64();
-    input.readU8(); // drawingScaleUnit
+    final drawingScaleUnit = input.readU8();
     var drawingScale = input.readF64();
     if (drawingScale.abs() < 1e-12) drawingScale = 1.0;
     final scale = (pageScale / drawingScale).abs();
@@ -1563,6 +2588,11 @@ class VsdBinaryParser {
       _currentPage!.width = pageWidth > 0 ? pageWidth : 8.5;
       _currentPage!.height = pageHeight > 0 ? pageHeight : 11.0;
       if (scale > 0 && scale.isFinite) _currentPage!.scale = scale;
+      _currentPage!.pageScale = pageScale;
+      _currentPage!.drawingScale = drawingScale;
+      _currentPage!.drawingScaleUnit = drawingScaleUnit;
+      _currentPage!.shadowOffsetX = shadowOffsetX;
+      _currentPage!.shadowOffsetY = shadowOffsetY;
     }
   }
 
@@ -1891,17 +2921,32 @@ class VsdBinaryParser {
     const formatUnknown = 0xffff;
     try {
       if (_version == 5) {
-        // VSD5Parser::readTextField — no format block.
+        // VSD5Parser::readTextField — no format block in the chunk; the text
+        // stream encodes format as the byte after 0x1E (`formatId + 0x20`).
         input.skip(3);
         final cellType = input.readU8();
         if (cellType == stringWithoutUnit) {
-          input.readS16();
-          s.fieldDisplays.add('');
+          final nameId = input.readS16();
+          final text = nameId >= 0
+              ? (s.localNames[nameId] ?? _names[nameId] ?? '')
+              : '';
+          s.fieldDisplays.add(text);
+          s.fieldIds.add(_header.id);
+          s.fieldRaw.add(null);
         } else {
           final numeric = input.readF64();
+          // Placeholder until `_finalizeVsd5FieldFormats` applies the
+          // format byte from the text stream (beyond libvisio VSD5).
           final fmt = cellType == cellTypeDate ? 200 : formatUnknown;
           s.fieldDisplays
               .add(_formatNumericField(numeric, cellType, fmt, null));
+          s.fieldIds.add(_header.id);
+          s.fieldRaw.add((
+            number: numeric,
+            cellType: cellType,
+            format: fmt,
+            customFormat: null,
+          ));
         }
         return;
       }
@@ -1912,7 +2957,10 @@ class VsdBinaryParser {
         final nameId = input.readS32();
         input.skip(6);
         final formatStringId = input.readS32();
-        var text = nameId >= 0 ? (_names[nameId] ?? '') : '';
+        // Shape-local Name first (libvisio `m_names`), then document Name2.
+        var text = nameId >= 0
+            ? (s.localNames[nameId] ?? _names[nameId] ?? '')
+            : '';
         // Format block may request StrUpper / StrLower (libvisio TODO; we apply).
         final formatNumber = _readFieldFormatBlock(
           input,
@@ -1921,10 +2969,14 @@ class VsdBinaryParser {
         );
         var fmt = formatNumber;
         if (fmt == formatUnknown && formatStringId >= 0) {
-          fmt = _parseFormatId(_names[formatStringId]) ?? formatUnknown;
+          fmt = _parseFormatId(
+                s.localNames[formatStringId] ?? _names[formatStringId]) ??
+              formatUnknown;
         }
         text = _applyStringFieldFormat(text, fmt);
         s.fieldDisplays.add(text);
+        s.fieldIds.add(_header.id);
+        s.fieldRaw.add(null);
         final end = initial + _header.dataLength;
         if (end <= input.length && end >= input.offset) input.seek(end);
         return;
@@ -1998,7 +3050,8 @@ class VsdBinaryParser {
         if (cellType == cellTypeDate) {
           formatNumber = 200; // VSD_FIELD_FORMAT_MsoDateShort
         } else if (formatStringId >= 0) {
-          final parsed = _parseFormatId(_names[formatStringId]);
+          final parsed = _parseFormatId(
+              s.localNames[formatStringId] ?? _names[formatStringId]);
           if (parsed != null) formatNumber = parsed;
         }
       }
@@ -2023,6 +3076,13 @@ class VsdBinaryParser {
       }
       s.fieldDisplays.add(_formatNumericField(
           effectiveNumeric, effectiveCell, formatNumber, customFormat));
+      s.fieldIds.add(_header.id);
+      s.fieldRaw.add((
+        number: effectiveNumeric,
+        cellType: effectiveCell,
+        format: formatNumber,
+        customFormat: customFormat,
+      ));
       final end = initial + _header.dataLength;
       if (end <= input.length && end >= input.offset) input.seek(end);
     } catch (_) {}
@@ -2162,8 +3222,23 @@ class VsdBinaryParser {
     int cellType,
     int format, [
     String? customFormat,
+    int? defaultDrawingUnit,
   ]) {
     const formatUnknown = 0xffff;
+    const cellTypePageUnits = 63;
+    const cellTypeDrawingUnits = 64;
+
+    // Resolve DrawingUnits / PageUnits → page default first (libvisio
+    // `getString`), so Unknown-format fallbacks still use the right unit.
+    var effectiveType = cellType;
+    var effectiveFormat = format;
+    final pageUnit = defaultDrawingUnit ??
+        _currentPage?.drawingScaleUnit ??
+        0;
+    if ((cellType == cellTypeDrawingUnits || cellType == cellTypePageUnits) &&
+        pageUnit != 0) {
+      effectiveType = pageUnit;
+    }
 
     // Custom Visio format string from type-0x60 block (e.g. `<,$>U #,##0.00`).
     if (customFormat != null && customFormat.isNotEmpty) {
@@ -2181,6 +3256,15 @@ class VsdBinaryParser {
         final formatted = _formatVisioDate(value, fmt);
         if (formatted != null) return formatted;
       }
+      // Length/angle units with Unknown format: still convert (values are
+      // always inches/radians internally). Prefer 1 decimal + unit — common
+      // for dimension labels when the format block is Missing and stencil
+      // inheritance has not supplied one yet.
+      final converted = _convertNumber(effectiveType, value);
+      final suffix = _unitSuffix(effectiveType);
+      if (suffix.isNotEmpty) {
+        return '${converted.toStringAsFixed(1)}$suffix';
+      }
       return _formatFieldNumber(value);
     }
 
@@ -2191,8 +3275,6 @@ class VsdBinaryParser {
     }
 
     // Resolve AngleUnits → concrete angle cell type (libvisio getString).
-    var effectiveType = cellType;
-    var effectiveFormat = format;
     if (cellType == 80) {
       // CELL_TYPE_AngleUnits
       if (format == 11) {
@@ -2244,9 +3326,80 @@ class VsdBinaryParser {
           return '${degInt.round()} deg ${minInt.round()} min ${sec.round()} sec';
         }
         return '${_convertNumber(81, value).round()} deg';
+      case 10: // FeetAndInches   (<,FEET/INCH>0.000 u)
+      case 13: // FeetAndInches1Pl (<,FEET/INCH># #/# u)
+      case 14: // FeetAndInches2Pl (<,FEET/INCH># #/## u)
+        // libvisio still TODOs these; emit Visio-style marks (e.g. 20'-6").
+        return _formatFeetAndInches(value, effectiveFormat);
+      case 15: // Fraction1PlNoUnits  (0 #/#)
+      case 16: // Fraction1PlDefUnits (0 #/# u)
+      case 17: // Fraction2PlNoUnits  (0 #/##)
+      case 18: // Fraction2PlDefUnits (0 #/## u)
+        final denom =
+            (effectiveFormat == 15 || effectiveFormat == 16) ? 8 : 16;
+        final frac = _formatFraction(converted, denom);
+        final withUnit = effectiveFormat == 16 || effectiveFormat == 18;
+        return withUnit ? '$frac$suffix' : frac;
       default:
         return _formatFieldNumber(converted);
     }
+  }
+
+  /// Feet-and-inches display for Visio field formats 10/13/14. libvisio's
+  /// `VSDFieldList` leaves these as TODO; Visio renders `20'-6"` style marks.
+  /// [valueInches] is the raw internal length (Visio stores lengths in inches).
+  String _formatFeetAndInches(double valueInches, int format) {
+    final neg = valueInches < 0;
+    final total = valueInches.abs();
+    final feet = (total / 12).floor();
+    final inches = total - feet * 12;
+    final sign = neg ? '-' : '';
+    if (format == 10) {
+      // Decimal inches; strip trailing zeros so whole inches read `6"`.
+      var inchStr = inches.toStringAsFixed(3);
+      if (inchStr.contains('.')) {
+        inchStr = inchStr
+            .replaceAll(RegExp(r'0+$'), '')
+            .replaceAll(RegExp(r'\.$'), '');
+      }
+      return "$sign$feet'-$inchStr\"";
+    }
+    // 13 → single-digit fraction (…/8); 14 → double-digit fraction (…/16).
+    final denom = format == 13 ? 8 : 16;
+    final whole = inches.floor();
+    final num = ((inches - whole) * denom).round();
+    if (num >= denom) {
+      final bumped = whole + 1;
+      if (bumped >= 12) return "$sign${feet + 1}'-0\"";
+      return "$sign$feet'-$bumped\"";
+    }
+    if (num == 0) return "$sign$feet'-$whole\"";
+    final g = _gcdInt(num, denom);
+    return "$sign$feet'-$whole ${num ~/ g}/${denom ~/ g}\"";
+  }
+
+  /// Whole + reduced fraction display for Visio formats 15–18 (`0 #/#`).
+  String _formatFraction(double value, int denom) {
+    final neg = value < 0;
+    final v = value.abs();
+    final whole = v.floor();
+    final num = ((v - whole) * denom).round();
+    final sign = neg ? '-' : '';
+    if (num >= denom) return '$sign${whole + 1}';
+    if (num == 0) return '$sign$whole';
+    final g = _gcdInt(num, denom);
+    return '$sign$whole ${num ~/ g}/${denom ~/ g}';
+  }
+
+  int _gcdInt(int a, int b) {
+    a = a.abs();
+    b = b.abs();
+    while (b != 0) {
+      final t = b;
+      b = a % b;
+      a = t;
+    }
+    return a == 0 ? 1 : a;
   }
 
   /// Inches/radians/days → display units (libvisio `convertNumber`).
@@ -2394,8 +3547,8 @@ class VsdBinaryParser {
         return _weekdayName(dt.weekday);
       case 22:
       case 23:
-      case 203: // M/d/yy
-        return '${dt.month}/${dt.day}/$y2()';
+      case 203: // MsoDateShortAlt — libvisio `%m/%d/%y`
+        return '${two(dt.month)}/${two(dt.day)}/$y2()';
       case 24: // MMM d, yyyy
         return '${_monthAbbr(dt.month)} ${dt.day}, ${dt.year}';
       case 25:
@@ -2431,8 +3584,8 @@ class VsdBinaryParser {
         return '${dt.year}-${two(dt.month)}-${two(dt.day)}';
       case 205: // d-MMM-yy
         return '${dt.day}-${_monthAbbr(dt.month)}-$y2()';
-      case 206: // M.d.yyyy
-        return '${dt.month}.${dt.day}.${dt.year}';
+      case 206: // M.d.yyyy — libvisio `%m.%d.%Y`
+        return '${two(dt.month)}.${two(dt.day)}.${dt.year}';
       case 207:
         return '${_monthAbbr(dt.month)}.${dt.day}, $y2()';
       case 209:
@@ -2445,19 +3598,19 @@ class VsdBinaryParser {
           final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
           final ampm = dt.hour >= 12 ? 'PM' : 'AM';
           if (format == 212) {
-            return '${dt.month}/${dt.day}/${dt.year} '
+            return '${two(dt.month)}/${two(dt.day)}/${dt.year} '
                 '$h12:${two(dt.minute)}:${two(dt.second)} $ampm';
           }
-          return '${dt.month}/${dt.day}/${dt.year} '
+          return '${two(dt.month)}/${two(dt.day)}/${dt.year} '
               '$h12:${two(dt.minute)} $ampm';
         }
       case 214:
       case 216:
         return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
-      case 200: // MsoDateShort M/d/yyyy
+      case 200: // MsoDateShort — libvisio `%m/%d/%Y` (zero-padded)
       default:
-        // Most remaining date codes map to M/d/yyyy (libvisio).
-        return '${dt.month}/${dt.day}/${dt.year}';
+        // Most remaining date codes map to MM/dd/yyyy (libvisio).
+        return '${two(dt.month)}/${two(dt.day)}/${dt.year}';
     }
   }
 
@@ -2508,6 +3661,23 @@ class VsdBinaryParser {
     };
   }
 
+  /// Visio ShapeSheet `U=` token for a CELL_TYPE length unit.
+  String? _visioUnitToken(int cellType) {
+    return switch (cellType) {
+      50 => 'PT',
+      51 => 'PICA',
+      65 => 'IN',
+      66 => 'FT',
+      68 => 'MI',
+      69 => 'CM',
+      70 => 'MM',
+      71 => 'M',
+      72 => 'KM',
+      75 => 'YD',
+      _ => null,
+    };
+  }
+
   String _monthAbbr(int m) => const [
         'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -2534,6 +3704,96 @@ class VsdBinaryParser {
     s = s.replaceFirst(RegExp(r'\.?0+$'), '');
     return s;
   }
+
+
+  /// Event (0x84) → EventDblClick / EventXFMod / EventDrop formulas.
+  ///
+  /// vsdump: TheText@20, BlockStarts@36 (older layout). VSD11 samples store
+  /// formula blocks from offset 17 as `u32 length + u8 + u8 cellRef + body`
+  /// (same block header as libvisio NURBS formula walk). Cell refs:
+  /// 1=TheText, 2=EventDblClick, 3=EventXFMod, 4=EventDrop.
+  /// Recognises OPENTEXTWIN (`80 4c`) and RUNADDONW from UTF-16 `0x60` strings.
+  void _readEvent(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength < 8) return;
+    try {
+      final start = input.offset;
+      final end = start + _header.dataLength.clamp(0, input.remaining);
+      final bytes = input.data.sublist(start, end);
+      // Prefer VSD11 block stream at 17; fall back to vsdump BlockStarts@36.
+      var pos = bytes.length > 17 ? 17 : 0;
+      if (bytes.length > 36) {
+        final lenAt17 = bytes.length >= 21
+            ? bytes[17] |
+                (bytes[18] << 8) |
+                (bytes[19] << 16) |
+                (bytes[20] << 24)
+            : 0;
+        final plausible17 = lenAt17 >= 6 &&
+            lenAt17 < 0x10000 &&
+            17 + lenAt17 <= bytes.length;
+        if (!plausible17) pos = 36;
+      }
+      while (pos + 6 <= bytes.length) {
+        final length = bytes[pos] |
+            (bytes[pos + 1] << 8) |
+            (bytes[pos + 2] << 16) |
+            (bytes[pos + 3] << 24);
+        if (length < 6 || pos + length > bytes.length) break;
+        final cellRef = bytes[pos + 5];
+        final body = bytes.sublist(pos + 6, pos + length);
+        final name = switch (cellRef) {
+          1 => 'TheText',
+          2 => 'EventDblClick',
+          3 => 'EventXFMod',
+          4 => 'EventDrop',
+          _ => null,
+        };
+        if (name != null) {
+          final formula = _decompileEventFormula(body);
+          if (formula != null && formula.isNotEmpty) {
+            s.formulas[name] = formula;
+            if (name == 'EventDblClick') {
+              s.eventDblClick ??= '0';
+            }
+          }
+        }
+        pos += length;
+      }
+    } catch (_) {}
+  }
+
+  /// Best-effort Event formula decompile from a discretionary block body.
+  String? _decompileEventFormula(List<int> body) {
+    if (body.isEmpty) return null;
+    final strings = _extractVisioUtf16Strings(body);
+    // RUNADDONW("Addon","/CMD=…") — common Visio add-on EventDblClick.
+    if (strings.length >= 2) {
+      final a = strings[0];
+      final b = strings[1];
+      if (a.isNotEmpty &&
+          (b.startsWith('/') || b.toUpperCase().startsWith('CMD'))) {
+        return 'RUNADDONW(${_visioQuote(a)},${_visioQuote(b)})';
+      }
+      if (a.isNotEmpty && b.isNotEmpty) {
+        return 'RUNADDONW(${_visioQuote(a)},${_visioQuote(b)})';
+      }
+    }
+    if (strings.length == 1 && strings[0].isNotEmpty) {
+      return 'RUNADDON(${_visioQuote(strings[0])})';
+    }
+    // OPENTEXTWIN() — function token `80 4c … 40` seen across VSD11 samples
+    // and matching workflow.vsdx EventDblClick.
+    for (var i = 0; i + 1 < body.length; i++) {
+      if (body[i] == 0x80 && body[i + 1] == 0x4c) {
+        return 'OPENTEXTWIN()';
+      }
+    }
+    return null;
+  }
+
+  String _visioQuote(String s) => '"${s.replaceAll('"', '""')}"';
 
   void _readMisc(VsdByteReader input) {
     // Algorithm reference: libvisio VSDParser::readMisc (HideText bit 0x20).
@@ -2565,10 +3825,13 @@ class VsdBinaryParser {
       input.skip(1);
       final visible = input.readU8() != 0;
       final printable = input.readU8() != 0;
+      final named = page.elementNames[_header.id];
       page.layers.add(
         VsdxLayer(
           id: _header.id,
-          name: 'Layer ${_header.id}',
+          name: (named != null && _isPlausibleDisplayName(named))
+              ? named
+              : 'Layer ${_header.id}',
           visible: visible,
           print: printable,
           color: color,
@@ -2639,14 +3902,16 @@ class VsdBinaryParser {
   }
 
   void _readName(VsdByteReader input) {
-    // Shape-local name: UTF-16 on VSD11, ANSI on VSD5/6 (libvisio VSD6Parser::readName).
+    // Shape-local Name table (libvisio `VSDParser::readName` →
+    // `m_shape.m_names[id]`). Holds format ids (`esc(N)`) and string-field
+    // payloads — NOT the shape's display name (that comes from NameIDX).
     final s = _shape;
     if (s == null) return;
     if (_header.dataLength <= 0 || input.remaining < _header.dataLength) return;
     try {
       final raw = input.readBytes(_header.dataLength);
       final text = _version < 11 ? _decodeAnsi(raw) : _decodeUtf16Le(raw);
-      if (text.isNotEmpty) s.shapeName = text;
+      if (text.isNotEmpty) s.localNames[_header.id] = text;
     } catch (_) {}
   }
 
@@ -2679,6 +3944,7 @@ class VsdBinaryParser {
         }
       }
       _namesByLevel[_header.level] = names;
+      _absorbPageElementNames(names);
     } catch (_) {}
   }
 
@@ -2694,8 +3960,67 @@ class VsdBinaryParser {
         if (n != null) names[elementId] = n;
       }
       _namesByLevel[_header.level] = names;
+      _absorbPageElementNames(names);
     } catch (_) {}
   }
+
+  /// Bind page NameIDX rows to shapes / layers (beyond libvisio, which keeps
+  /// names only for its IR). Style / stencil / prop-field tables are skipped.
+  void _absorbPageElementNames(Map<int, String> names) {
+    if (_isInStyles || _isStencilStarted) return;
+    final page = _currentPage;
+    if (page == null || names.isEmpty) return;
+    if (!_mapLooksLikeDisplayNames(names)) return;
+    for (final e in names.entries) {
+      if (!_isPlausibleDisplayName(e.value)) continue;
+      page.elementNames.putIfAbsent(e.key, () => e.value);
+    }
+    for (final s in page.shapes) {
+      final n = page.elementNames[s.id];
+      if (n != null) s.shapeName ??= n;
+    }
+    for (var i = 0; i < page.layers.length; i++) {
+      final layer = page.layers[i];
+      final n = page.elementNames[layer.id];
+      if (n != null && layer.name.startsWith('Layer ')) {
+        page.layers[i] = layer.copyWith(name: n);
+      }
+    }
+  }
+
+  bool _mapLooksLikeDisplayNames(Map<int, String> names) {
+    for (final v in names.values) {
+      if (v.contains(' ') || v.contains('"') || v.contains('-')) return true;
+      if (_knownStencilDisplayNames.contains(v)) return true;
+    }
+    return false;
+  }
+
+  bool _isPlausibleDisplayName(String raw) {
+    final n = raw.trim();
+    if (n.isEmpty || RegExp(r'^\d+$').hasMatch(n)) return false;
+    if (n.contains('esc(') || n.contains('{<')) return false;
+    if (n.startsWith('vis') || n.startsWith('Vis')) return false;
+    if (n.length <= 2 && !n.contains('"')) return false;
+    // ShapeSheet-ish tokens: LX1, Closed2, WallFill, RefLn…
+    if (RegExp(r'^[A-Za-z]+[0-9]+$').hasMatch(n)) return false;
+    if (RegExp(r'^[A-Z][a-z]+[A-Z]').hasMatch(n)) return false;
+    if (n.contains(' ') || n.contains('"') || n.contains('-')) return true;
+    if (_knownStencilDisplayNames.contains(n)) return true;
+    // Single Title-Case word (Wall, Building, Space, Guide…).
+    return RegExp(r'^[A-Z][a-z]+$').hasMatch(n);
+  }
+
+  static const _knownStencilDisplayNames = {
+    'Wall',
+    'Door',
+    'Window',
+    'Space',
+    'Building',
+    'Guide',
+    'Dimension',
+    'Furniture',
+  };
 
   String? _nameFromId(int id, int level) {
     final map = _namesByLevel[level];
@@ -2800,7 +4125,8 @@ class VsdBinaryParser {
         t.marginTop = marginTop;
         t.marginBottom = marginBottom;
         t.verticalAlign = verticalAlign;
-        if (textBgColor != null) t.textBgColor = textBgColor;
+        t.textBgFilled = isBgFilled;
+        t.textBgColor = textBgColor;
         t.defaultTabStop = defaultTabStop;
         t.textDirection = textDirection;
         if (t is _StyleDraft) t.hasTextBlock = true;
@@ -2922,6 +4248,7 @@ class VsdBinaryParser {
       if (shape != null) {
         apply(shape);
         shape.charRuns.add(_CharRunDraft()
+          ..id = _header.id
           ..charCount = charCount
           ..fontFamily = family
           ..fontSizeInches = fontSizeInches
@@ -3028,6 +4355,7 @@ class VsdBinaryParser {
       if (shape != null) {
         apply(shape);
         shape.paraRuns.add(_ParaRunDraft()
+          ..id = _header.id
           ..charCount = charCount
           ..paraAlign = paraAlign
           ..indFirst = indFirst
@@ -3112,6 +4440,18 @@ class VsdBinaryParser {
       _handleChunkRecords(input, collectStylesOnly: false);
       return;
     }
+    if (!_isShapeStarted && _currentPage != null) {
+      _readListOrder(input, into: _currentPage!.shapeOrder);
+    } else if (_isShapeStarted && _shape != null) {
+      _readListOrder(input, into: _shape!.childOrder);
+    } else {
+      _readListOrder(input, into: null);
+    }
+  }
+
+  /// Read a list chunk trailer of child ids (libvisio `readCharList` /
+  /// `readParaList` / `readFieldList` / `readShapeList`).
+  void _readListOrder(VsdByteReader input, {List<int>? into}) {
     if (_header.trailer == 0) return;
     try {
       final subHeaderLength = input.readU32();
@@ -3121,14 +4461,12 @@ class VsdBinaryParser {
         childrenListLength = input.remaining;
       }
       final count = childrenListLength ~/ 4;
-      final order = <int>[];
-      for (var i = 0; i < count; i++) {
-        order.add(input.readU32());
+      if (into == null) {
+        input.skip(count * 4);
+        return;
       }
-      if (!_isShapeStarted && _currentPage != null) {
-        _currentPage!.shapeOrder.addAll(order);
-      } else if (_isShapeStarted && _shape != null) {
-        _shape!.childOrder.addAll(order);
+      for (var i = 0; i < count; i++) {
+        into.add(input.readU32());
       }
     } catch (_) {}
   }
@@ -3205,8 +4543,21 @@ class VsdBinaryParser {
           name: p.name,
           widthInches: p.width * scale,
           heightInches: p.height * scale,
-          shapes: _assembleShapes(p.shapes, p.shapeOrder),
+          shapes: _assembleShapes(
+            p.shapes,
+            shapeOrder: p.shapeOrder,
+            defaultDrawingUnit: p.drawingScaleUnit,
+          ),
           layers: List<VsdxLayer>.from(p.layers),
+          connects: List<VsdxConnect>.from(p.connects),
+          pageSheet: VsdxPageSheet(
+            shadowOffsetXInches: p.shadowOffsetX * scale,
+            shadowOffsetYInches: p.shadowOffsetY * scale,
+            pageScale: p.pageScale,
+            pageScaleUnit: 'IN',
+            drawingScale: p.drawingScale,
+            drawingScaleUnit: _visioUnitToken(p.drawingScaleUnit) ?? 'IN',
+          ),
         ),
       );
     }
@@ -3229,6 +4580,21 @@ class VsdBinaryParser {
     if (d.beginY != null) d.beginY = d.beginY! * s;
     if (d.endX != null) d.endX = d.endX! * s;
     if (d.endY != null) d.endY = d.endY! * s;
+    for (final c in d.connectionPoints) {
+      c.x *= s;
+      c.y *= s;
+    }
+    for (final c in d.controls) {
+      c.x *= s;
+      c.y *= s;
+      c.dynX *= s;
+      c.dynY *= s;
+    }
+    for (final r in d.scratchRows) {
+      // X/Y are typically length cells; leave A–D (angles / flags) alone.
+      r.x *= s;
+      r.y *= s;
+    }
     if (d.fontSizeInches != null) d.fontSizeInches = d.fontSizeInches! * s;
     if (d.txtPinX != null) d.txtPinX = d.txtPinX! * s;
     if (d.txtPinY != null) d.txtPinY = d.txtPinY! * s;
@@ -3588,9 +4954,10 @@ class VsdBinaryParser {
   }
 
   List<VsdxShape> _assembleShapes(
-    List<_ShapeDraft> drafts, [
+    List<_ShapeDraft> drafts, {
     List<int> shapeOrder = const [],
-  ]) {
+    int defaultDrawingUnit = 0,
+  }) {
     final byId = <int, _ShapeDraft>{for (final d in drafts) d.id: d};
     final childrenOf = <int, List<int>>{};
     final roots = <int>[];
@@ -3622,13 +4989,21 @@ class VsdBinaryParser {
     VsdxShape build(int id) {
       final d = byId[id]!;
       final kids = orderIds(childrenOf[id] ?? const <int>[], d.childOrder);
-      return _toShape(d, kids.map(build).toList());
+      return _toShape(
+        d,
+        kids.map(build).toList(),
+        defaultDrawingUnit: defaultDrawingUnit,
+      );
     }
 
     return orderedRoots.map(build).toList();
   }
 
-  VsdxShape _toShape(_ShapeDraft d, List<VsdxShape> children) {
+  VsdxShape _toShape(
+    _ShapeDraft d,
+    List<VsdxShape> children, {
+    int defaultDrawingUnit = 0,
+  }) {
     final geoms = <VsdxGeometry>[];
     for (var i = 0; i < d.geometries.length; i++) {
       final g = d.geometries[i];
@@ -3677,13 +5052,17 @@ class VsdBinaryParser {
       defaultTabStopInches: d.defaultTabStop,
       textDirection: d.textDirection,
     );
+    _applyListOrders(d);
     final tabSets = [
       for (final t in d.tabRuns)
         VsdxTabSet(ix: t.id, stops: List<VsdxTabStop>.from(t.stops)),
     ];
     String? text;
     if (rawText != null && rawText.trim().isNotEmpty) {
-      final built = _buildRichText(d, rawText, textBlock, tabSets);
+      _reformatNumericFields(d, defaultDrawingUnit: defaultDrawingUnit);
+      _finalizeVsd5FieldFormats(d, defaultDrawingUnit: defaultDrawingUnit);
+      final textForFields = d.text ?? rawText;
+      final built = _buildRichText(d, textForFields, textBlock, tabSets);
       rich = built.rich;
       text = built.plain;
     } else if (d.hideText ||
@@ -3702,17 +5081,32 @@ class VsdBinaryParser {
       name: d.shapeName ?? 'Sheet.${d.id}',
       pinX: d.pinX,
       pinY: d.pinY,
-      width: d.width <= 0 ? 1.0 : d.width,
-      height: d.height <= 0 ? 1.0 : d.height,
+      // 1D shapes store Width/Height as End−Begin, which may be negative.
+      // Only clamp non-positive dimensions for 2D shapes (libvisio keeps the
+      // signed 1D extents so LocPin / synthesized .vsdx stay aligned).
+      width: d.is1D ? d.width : (d.width <= 0 ? 1.0 : d.width),
+      height: d.is1D ? d.height : (d.height <= 0 ? 1.0 : d.height),
       locPinXInches: d.locPinX,
       locPinYInches: d.locPinY,
       angleRad: d.angle,
       flipX: d.flipX,
       flipY: d.flipY,
+      locked: d.locked,
+      dontMoveChildren: d.dontMoveChildren,
+      isTextEditTarget: d.isTextEditTarget,
+      selectMode: d.selectMode,
+      displayMode: d.displayMode,
+      eventDblClick: d.eventDblClick,
+      formulas: Map<String, String>.unmodifiable(d.formulas),
       text: text,
       richText: rich,
       geometries: geoms,
-      fill: d.fill ?? VsdxFill.defaultFill,
+      fill: d.fill ??
+          const VsdxFill(
+            foreground: VsdxColor(0xFFFFFFFF),
+            background: VsdxColor(0xFFFFFFFF),
+            pattern: 1,
+          ),
       line: d.line ?? VsdxLine.defaultLine,
       is1D: d.is1D,
       beginX: d.beginX,
@@ -3722,6 +5116,84 @@ class VsdBinaryParser {
       imagePartName: _foreignPartByShapeId[d.id],
       foreignType: _foreignTypeByShapeId[d.id],
       layerMemberIds: List<int>.from(d.layerMemberIds),
+      connectionPoints: [
+        for (final c in d.connectionPoints)
+          VsdxConnectionPoint(
+            c.x,
+            c.y,
+            dirX: c.dirX,
+            dirY: c.dirY,
+            type: c.type,
+          ),
+      ],
+      controls: [
+        for (var i = 0; i < d.controls.length; i++)
+          VsdxControlRow(
+            name: d.controls[i].name ?? 'Row_${i + 1}',
+            x: d.controls[i].x,
+            y: d.controls[i].y,
+            dynX: d.controls[i].dynX,
+            dynY: d.controls[i].dynY,
+            conX: d.controls[i].conX,
+            conY: d.controls[i].conY,
+            canGlue: d.controls[i].canGlue,
+            prompt: d.controls[i].prompt,
+          ),
+      ],
+      userProperties: [
+        for (final p in d.userProperties)
+          VsdxUserProperty(
+            name: p.name ?? 'Row${p.id}',
+            label: p.label,
+            value: p.value,
+            prompt: p.prompt,
+            format: p.format,
+            type: p.type,
+          ),
+      ],
+      scratch: [
+        for (final r in d.scratchRows)
+          VsdxScratchRow(
+            ix: r.id,
+            x: r.x,
+            y: r.y,
+            a: r.a,
+            b: r.b,
+            c: r.c,
+            d: r.d,
+          ),
+      ],
+      userCells: [
+        for (final c in d.userCells)
+          VsdxUserCell(
+            name: c.name ?? 'Row_${c.id}',
+            value: c.value,
+            prompt: c.prompt,
+          ),
+      ],
+      actions: [
+        for (final a in d.actions)
+          VsdxActionRow(
+            name: a.name ?? 'Row_${a.id}',
+            ix: a.id,
+            menu: a.menu,
+            tag: a.prompt,
+          ),
+      ],
+      hyperlinks: [
+        for (final h in d.hyperlinks)
+          VsdxHyperlink(
+            id: h.id,
+            description: h.description,
+            address: h.address,
+            subAddress: h.subAddress,
+            extraInfo: h.extraInfo,
+            frame: h.frame,
+            newWindow: h.newWindow,
+            isDefault: h.isDefault,
+            invisible: h.invisible,
+          ),
+      ],
       children: children,
     );
   }

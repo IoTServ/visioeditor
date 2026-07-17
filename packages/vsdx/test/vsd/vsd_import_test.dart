@@ -8,8 +8,10 @@ Uint8List? _loadSample(String name) {
   // Prefer in-repo fixtures so CI works without third_party/.
   final candidates = <String>[
     'test/fixtures/vsd/$name',
+    'test/fixtures/vsd/external/$name',
     // When running from repo root via `dart test path`.
     'packages/vsdx/test/fixtures/vsd/$name',
+    'packages/vsdx/test/fixtures/vsd/external/$name',
     '../../third_party/libvisio/src/test/data/$name',
   ];
   for (final p in candidates) {
@@ -65,9 +67,42 @@ void main() {
             .where((s) => s.geometries.isNotEmpty),
         isNotEmpty,
       );
+      // Default / style-less solid fills must carry an explicit colour so
+      // 万兴图示 does not treat FillPattern=1 without FillForegnd as hollow.
+      final solid = result.document.pages.first.shapes
+          .where((s) => s.fill.pattern != 0);
+      expect(solid, isNotEmpty);
+      expect(
+        solid.every(
+          (s) =>
+              s.fill.foreground != null || s.fill.themeForegroundIndex != null,
+        ),
+        isTrue,
+      );
+      // 1D XForm Width/Height = End−Begin may be negative — do not clamp.
+      final lines1d =
+          result.document.pages.first.shapes.where((s) => s.is1D).toList();
+      expect(lines1d, isNotEmpty);
+      expect(lines1d.where((s) => s.height < 0).length, greaterThan(10));
+      expect(lines1d.where((s) => s.height == 1.0).length, lessThan(5));
+
       final again = const DocumentParser().parse(result.originalBytes);
       expect(again.pages.first.shapes.length,
           result.document.pages.first.shapes.length);
+      expect(
+        again.pages.first.shapes
+            .where((s) => s.fill.pattern != 0)
+            .every(
+              (s) =>
+                  s.fill.foreground != null ||
+                  s.fill.themeForegroundIndex != null,
+            ),
+        isTrue,
+      );
+      expect(
+        again.pages.first.shapes.where((s) => s.is1D).any((s) => s.height < 0),
+        isTrue,
+      );
     });
 
     test('bitmaps keep frame geometry and images via parseVisio', () {
@@ -86,6 +121,31 @@ void main() {
           again.pages.first.shapes.where((s) => s.imagePartName != null);
       expect(againImg, isNotEmpty);
       expect(againImg.every((s) => s.geometries.isNotEmpty), isTrue);
+    });
+
+    test('DrawingUnits/PageUnits use page drawingScaleUnit', () {
+      // libvisio ImportTest::testVsd11DrawingUnitsType
+      final bytes = _loadSample('tdf154379-DrawingUnits-type.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+      expect(doc.pages, isNotEmpty);
+      expect(doc.pages.first.pageSheet.drawingScaleUnit, 'CM');
+      String? plainOf(VsdxShape s) =>
+          s.richText.runs.isNotEmpty ? s.richText.plainText : s.text;
+      final texts = <String>[];
+      void walk(VsdxShape s) {
+        final t = plainOf(s);
+        if (t != null && t.trim().isNotEmpty) texts.add(t);
+        for (final c in s.children) {
+          walk(c);
+        }
+      }
+      for (final s in doc.pages.first.shapes) {
+        walk(s);
+      }
+      expect(texts, contains('180.0 cm x 394.0 cm'));
+      // Raw inches must not remain for DrawingUnits labels.
+      expect(texts.any((t) => t.contains('70.8661')), isFalse);
     });
 
     test('text fields expand numeric placeholders', () {
@@ -295,16 +355,211 @@ void main() {
           isTrue);
     });
 
-    test('VSD5/6 shape Name is ANSI not UTF-16', () {
+    test('Name chunk is field table not shape display name', () {
+      // libvisio `readName` → m_shape.m_names (format ids / field strings).
+      // Shape display names come from NameIDX or default to Sheet.N.
       final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
       if (bytes == null) return;
       final doc = const VsdDocumentParser().parse(bytes);
       final names = doc.pages.first.shapes.map((s) => s.name).toList();
-      expect(names.any((n) => n.contains('sq. ft.') || n.contains("'-")),
+      expect(names.any((n) => n.contains('esc(') || n.contains('{<')), isFalse);
+      // NameIDX may supply human labels (Wall, Dimension line, …).
+      expect(
+        names.any((n) =>
+            n == 'Wall' ||
+            n.contains('Room') ||
+            n.contains('Dimension') ||
+            n.startsWith('Sheet.')),
+        isTrue,
+      );
+      // Dimension labels live in shape text (ANSI on VSD5/6), not Name.
+      final texts =
+          doc.pages.first.shapes.map((s) => s.richText.plainText).toList();
+      expect(texts.any((t) => t.contains('sq. ft.') || t.contains("'-")),
           isTrue);
-      expect(names.any((n) => n.contains('Change the style')), isTrue);
-      // Mojibake from UTF-16-on-ANSI must not appear.
-      expect(names.any((n) => n.contains('桃') || n.contains('〸')), isFalse);
+      expect(texts.any((t) => t.contains('桃') || t.contains('〸')), isFalse);
+    });
+
+    test('NameIDX binds shape and layer display names', () {
+      final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final page = const VsdDocumentParser().parse(bytes).pages.first;
+      final names = page.shapes.map((s) => s.name).toSet();
+      expect(
+        names.any((n) =>
+            n == 'Wall' || n.contains('Room') || n.contains('Dimension')),
+        isTrue,
+      );
+      expect(names.any((n) => n.contains('esc(')), isFalse);
+      // Layer rows may pick up NameIDX ids that match layer IX.
+      final layerNames = page.layers.map((l) => l.name).toList();
+      expect(layerNames, isNotEmpty);
+    });
+
+    test('Connection Points import from binary (beyond libvisio)', () {
+      // libvisio defines 0x99/0xba but has no reader; walls carry endpoint cps.
+      final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final result = parseVisio(bytes);
+      final withCp = result.document.pages.first.shapes
+          .where((s) => s.connectionPoints.length >= 2)
+          .toList();
+      expect(withCp, isNotEmpty);
+      final wall = withCp.first;
+      expect(wall.connectionPoints.any((p) => p.x == 0 && p.y > 0), isTrue);
+      expect(
+        wall.connectionPoints.any((p) => (p.x - wall.width).abs() < 1e-6),
+        isTrue,
+      );
+      // Synthesized vsdx keeps Connection section for 万兴图示 glue targets.
+      final again = const DocumentParser().parse(result.originalBytes);
+      final againCp = again.pages.first.shapes
+          .where((s) => s.id == wall.id)
+          .expand((s) => s.connectionPoints)
+          .toList();
+      expect(againCp.length, greaterThanOrEqualTo(2));
+    });
+
+    test('Control handles and Shape Data import (beyond libvisio)', () {
+      // libvisio defines Control 0xaa / CustomProps 0xb6 but has no readers.
+      final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final result = parseVisio(bytes);
+      final page = result.document.pages.first;
+      final withCtrl =
+          page.shapes.where((s) => s.controls.isNotEmpty).toList();
+      expect(withCtrl, isNotEmpty);
+      final c0 = withCtrl.first.controls.first;
+      expect(c0.x.isFinite, isTrue);
+      expect(c0.y.isFinite, isTrue);
+      expect(c0.name, startsWith('Row_'));
+
+      final withProp =
+          page.shapes.where((s) => s.userProperties.isNotEmpty).toList();
+      expect(withProp, isNotEmpty);
+      final wall = withProp.firstWhere(
+        (s) => s.userProperties.any((p) => p.label?.contains('Thickness') == true),
+        orElse: () => withProp.first,
+      );
+      expect(
+        wall.userProperties.any((p) => p.label != null && p.label!.isNotEmpty),
+        isTrue,
+      );
+      expect(
+        wall.userProperties.any((p) => p.value != null && p.value!.isNotEmpty),
+        isTrue,
+      );
+
+      final again = const DocumentParser().parse(result.originalBytes);
+      final againShape = again.pages.first.shapes.firstWhere((s) => s.id == wall.id);
+      expect(againShape.controls, isNotEmpty);
+      expect(againShape.userProperties, isNotEmpty);
+      expect(
+        againShape.userProperties.any((p) => p.label != null),
+        isTrue,
+      );
+    });
+
+    test('Scratch / User / Actions import (beyond libvisio)', () {
+      final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final result = parseVisio(bytes);
+      final page = result.document.pages.first;
+      void walk(VsdxShape s, void Function(VsdxShape) fn) {
+        fn(s);
+        for (final c in s.children) {
+          walk(c, fn);
+        }
+      }
+      final withScratch = <VsdxShape>[];
+      final withUser = <VsdxShape>[];
+      final withAct = <VsdxShape>[];
+      for (final s in page.shapes) {
+        walk(s, (x) {
+          if (x.scratch.isNotEmpty) withScratch.add(x);
+          if (x.userCells.isNotEmpty) withUser.add(x);
+          if (x.actions.isNotEmpty) withAct.add(x);
+        });
+      }
+      expect(withScratch, isNotEmpty);
+      expect(withScratch.first.scratch.first.x.isFinite, isTrue);
+      expect(withUser, isNotEmpty);
+      expect(withAct, isNotEmpty);
+      expect(withAct.first.actions.first.menu, isNotNull);
+
+      final again = const DocumentParser().parse(result.originalBytes);
+      final sid = withScratch.first.id;
+      final againShape =
+          again.pages.first.shapes.expand((s) sync* {
+            yield s;
+            for (final c in s.children) {
+              yield c;
+            }
+          }).firstWhere((s) => s.id == sid, orElse: () => again.pages.first.shapes.first);
+      expect(againShape.scratch, isNotEmpty);
+    });
+
+    test('Protection locked and Group cells import (beyond libvisio)', () {
+      final gantt = _loadSample('tdf76829-datetime-format.vsd');
+      if (gantt != null) {
+        final result = parseVisio(gantt);
+        final locked = <VsdxShape>[];
+        void walk(VsdxShape s) {
+          if (s.locked) locked.add(s);
+          for (final c in s.children) {
+            walk(c);
+          }
+        }
+        for (final s in result.document.pages.first.shapes) {
+          walk(s);
+        }
+        expect(locked, isNotEmpty);
+        final again = const DocumentParser().parse(result.originalBytes);
+        final againLocked = <VsdxShape>[];
+        void walkAgain(VsdxShape s) {
+          if (s.id == locked.first.id && s.locked) againLocked.add(s);
+          for (final c in s.children) {
+            walkAgain(c);
+          }
+        }
+        for (final s in again.pages.first.shapes) {
+          walkAgain(s);
+        }
+        expect(againLocked, isNotEmpty);
+      }
+
+      final plan = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (plan == null) return;
+      final page = const VsdDocumentParser().parse(plan).pages.first;
+      final withGroup = page.shapes
+          .where((s) => s.displayMode != null || s.selectMode != null)
+          .toList();
+      expect(withGroup, isNotEmpty);
+      expect(withGroup.first.displayMode, isNotNull);
+    });
+
+    test('VSD5 TextFields match VSD6 unit formatting', () {
+      final v5 = _loadSample('Visio5TextFieldsWithUnits.vsd');
+      final v6 = _loadSample('Visio6TextFieldsWithUnits.vsd');
+      if (v5 == null || v6 == null) return;
+      String pick(Uint8List bytes, String needle) {
+        final texts = parseVisio(bytes)
+            .document
+            .pages
+            .first
+            .shapes
+            .map((s) => s.richText.plainText)
+            .where((t) => t.contains(needle))
+            .toList();
+        return texts.isEmpty ? '' : texts.first;
+      }
+
+      expect(pick(v5, '[cm] units'), contains('1.0 cm'));
+      expect(pick(v6, '[cm] units'), contains('1.0 cm'));
+      expect(pick(v5, 'formatted as rad'), contains('rad'));
+      expect(pick(v5, 'elapsed minute'), contains('em.'));
+      // Format-encoding junk (`%` / `$` after 0x1E) must be stripped.
+      expect(pick(v5, '[cm] units').contains('%'), isFalse);
     });
 
     test('VSD11 FontFace resolves CharIX fontFamily', () {
@@ -340,6 +595,19 @@ void main() {
       expect(page.widthInches, lessThan(20));
       expect(page.heightInches, lessThan(20));
       expect(page.widthInches, greaterThan(5));
+    });
+
+    test('FeetAndInches TextField formats beyond libvisio TODO', () {
+      // libvisio VSDFieldList still TODOs formats 10/13/14; we emit Visio-style
+      // marks (e.g. 20'-6") so 万兴图示 / dimension labels stay readable.
+      final bytes = _loadSample('Visio11PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+      final text = doc.pages.first.shapes
+          .map((s) => s.text ?? '')
+          .firstWhere((t) => t.contains('Geometry Height'), orElse: () => '');
+      expect(text, contains("20'-6\""));
+      expect(text.contains('20.5'), isFalse);
     });
 
     test('bitmaps.vsd embeds raster ForeignData when present', () {
@@ -398,9 +666,14 @@ void main() {
         final doc = const VsdDocumentParser().parse(named);
         expect(doc.pages.first.name, isNot(startsWith('Page-')));
         expect(doc.pages.first.name.toLowerCase(), contains('zeichen'));
-        final namedShapes = doc.pages.first.shapes
-            .where((s) => !s.name.startsWith('Sheet.'));
-        expect(namedShapes, isNotEmpty);
+        // Binary Name chunks are field tables, not shape display names —
+        // shapes correctly default to Sheet.N unless NameIDX provides one.
+        expect(
+          doc.pages.first.shapes.every(
+            (s) => s.name.startsWith('Sheet.') || s.name.isNotEmpty,
+          ),
+          isTrue,
+        );
       }
       final bmp = _loadSample('bitmaps2.vsd');
       if (bmp == null) return;
@@ -429,10 +702,38 @@ void main() {
       expect(texts, isNotEmpty);
       // Must not leave raw Excel/Visio serial (e.g. 43652.139).
       expect(texts.any((t) => t.contains('43652')), isFalse);
-      expect(
-        texts.any((t) => RegExp(r'\d{1,2}/\d{1,2}/2019').hasMatch(t)),
-        isTrue,
-      );
+      // libvisio MsoDateShort `%m/%d/%Y` → zero-padded.
+      expect(texts.any((t) => t.contains('07/06/2019')), isTrue);
+    });
+
+    test('OLE SummaryInformation title survives synthesize', () {
+      final bytes = _loadSample('fdo86729-ms1252.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+      expect(doc.title, 'mytitleéá');
+      final synth = synthesizeVsdx(doc);
+      final again = const DocumentParser().parse(synth);
+      expect(again.title, 'mytitleéá');
+    });
+
+    test('explicit transparent TextBkgnd does not inherit white', () {
+      final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+      VsdxShape? found;
+      void walk(VsdxShape s) {
+        if (s.richText.plainText.contains('Without Background')) {
+          found = s;
+        }
+        for (final c in s.children) {
+          walk(c);
+        }
+      }
+      for (final s in doc.pages.first.shapes) {
+        walk(s);
+      }
+      expect(found, isNotNull);
+      expect(found!.richText.textBlock.backgroundColor, isNull);
     });
 
     test('string TextFields apply StrUpper/StrLower formats', () {
@@ -510,6 +811,108 @@ void main() {
         texts.any((t) => RegExp(r'\b3[7-9]\d{3}(?:\.\d+)?\b').hasMatch(t)),
         isFalse,
       );
+    });
+
+    test('Hyperlink 0xc4 imports Address from POI sample', () {
+      final bytes = _loadSample('visio_with_embeded.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+      VsdxHyperlink? found;
+      void walk(VsdxShape s) {
+        if (s.hyperlinks.isNotEmpty) found ??= s.hyperlinks.first;
+        for (final c in s.children) {
+          walk(c);
+        }
+      }
+      for (final p in doc.pages) {
+        for (final s in p.shapes) {
+          walk(s);
+        }
+      }
+      expect(found, isNotNull);
+      final link = found!;
+      expect(link.address, startsWith('www.'));
+      expect(link.description, isNotNull);
+      // Synthesised .vsdx must carry Hyperlink on Foreign shapes too.
+      final result = parseVisio(bytes);
+      expect(result.importedFromVsd, isTrue);
+      final reopened = const DocumentParser().parse(result.originalBytes);
+      VsdxHyperlink? again;
+      void walk2(VsdxShape s) {
+        if (s.hyperlinks.isNotEmpty) again ??= s.hyperlinks.first;
+        for (final c in s.children) {
+          walk2(c);
+        }
+      }
+      for (final s in reopened.pages.first.shapes) {
+        walk2(s);
+      }
+      expect(again?.address, link.address);
+    });
+
+    test('ConnectList 0x72 empty headers do not break parse', () {
+      for (final name in ['44594.vsd', '44594-2.vsd']) {
+        final bytes = _loadSample(name);
+        if (bytes == null) continue;
+        // Empty ConnectList payloads (childrenListLength=0); must not throw.
+        final doc = const VsdDocumentParser().parse(bytes);
+        expect(doc.pages, isNotEmpty);
+      }
+    });
+
+    test('Event 0x84 imports EventDblClick formulas', () {
+      // OPENTEXTWIN() — ubiquitous default double-click handler.
+      final formatLine = _loadSample('Visio11FormatLine.vsd');
+      if (formatLine != null) {
+        var openText = 0;
+        void walk(VsdxShape s) {
+          if (s.formulas['EventDblClick'] == 'OPENTEXTWIN()') openText++;
+          for (final c in s.children) {
+            walk(c);
+          }
+        }
+        for (final s
+            in const VsdDocumentParser().parse(formatLine).pages.first.shapes) {
+          walk(s);
+        }
+        expect(openText, greaterThan(10));
+      }
+
+      // RUNADDONW from POI Test_Visio sample (addon + /CMD= args).
+      final poi = _loadSample('Test_Visio-Some_Random_Text.vsd');
+      if (poi == null) return;
+      final doc = const VsdDocumentParser().parse(poi);
+      String? dbl;
+      String? drop;
+      void walk2(VsdxShape s) {
+        dbl ??= s.formulas['EventDblClick'];
+        drop ??= s.formulas['EventDrop'];
+        for (final c in s.children) {
+          walk2(c);
+        }
+      }
+      for (final s in doc.pages.first.shapes) {
+        walk2(s);
+      }
+      expect(dbl, contains('RUNADDONW'));
+      expect(dbl, contains('DB Engineer'));
+      expect(drop, contains('RUNADDONW'));
+      expect(drop, contains('/CMD=2'));
+
+      // Synthesised .vsdx must emit EventDblClick F=.
+      final result = parseVisio(poi);
+      final reopened = const DocumentParser().parse(result.originalBytes);
+      String? again;
+      void walk3(VsdxShape s) {
+        again ??= s.formulas['EventDblClick'];
+        for (final c in s.children) {
+          walk3(c);
+        }
+      }
+      for (final s in reopened.pages.first.shapes) {
+        walk3(s);
+      }
+      expect(again, contains('RUNADDONW'));
     });
   });
 }

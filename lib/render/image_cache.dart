@@ -5,14 +5,18 @@
 /// we maintain a small cache: the first paint kicks off the decode and
 /// triggers a repaint via the cache's [Listenable] when the image is
 /// ready.
+///
+/// EMF / WMF / OLE: try embedded-bitmap extraction first, then vector
+/// metafile replay ([parseMetafileDrawing] → [rasterizeMetafileDrawing]).
 library;
 
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
 import 'package:vsdx/vsdx.dart';
+
+import 'metafile_rasterizer.dart';
 
 class VsdxImageCache extends ChangeNotifier {
   VsdxImageCache();
@@ -45,24 +49,49 @@ class VsdxImageCache extends ChangeNotifier {
     if (_pending.contains(src.partName)) return null;
     if (src.isFlutterDecodable) {
       _pending.add(src.partName);
-      _decode(src, src.bytes);
+      _decodeRaster(src, src.bytes);
       return null;
     }
-    // EMF/WMF: try embedded DIB extraction for canvas paint; keep original
-    // media bytes untouched for vsdx round-trip.
-    final m = src.mimeType.toLowerCase();
-    if (m.contains('emf') || src.partName.toLowerCase().endsWith('.emf')) {
-      final bmp = extractEmfEmbeddedBitmap(Uint8List.fromList(src.bytes));
-      if (bmp != null) {
-        _pending.add(src.partName);
-        _decode(src, bmp);
-        return null;
-      }
-    }
+    _pending.add(src.partName);
+    _decodeMetafile(src);
     return null;
   }
 
-  Future<void> _decode(VsdxImage src, List<int> bytes) async {
+  Future<void> _decodeMetafile(VsdxImage src) async {
+    try {
+      // 1) Wrapped DIB inside EMF (or OLE→EMF).
+      final raster = extractMetafileRaster(
+        Uint8List.fromList(src.bytes),
+        mimeType: src.mimeType,
+      );
+      if (raster != null) {
+        await _decodeRaster(src, raster, clearPending: false);
+        return;
+      }
+      // 2) Vector WMF / EMF / OLE presentation replay.
+      final drawing = parseMetafileDrawing(
+        Uint8List.fromList(src.bytes),
+        mimeType: src.mimeType,
+        partName: src.partName,
+      );
+      if (drawing == null || drawing.isEmpty) return;
+      final image = await rasterizeMetafileDrawing(drawing);
+      if (image == null) return;
+      _ready[src.partName] = image;
+      _decodeEpoch++;
+      notifyListeners();
+    } catch (_) {
+      // Leave pending cleared in finally; painter keeps the placeholder.
+    } finally {
+      _pending.remove(src.partName);
+    }
+  }
+
+  Future<void> _decodeRaster(
+    VsdxImage src,
+    List<int> bytes, {
+    bool clearPending = true,
+  }) async {
     try {
       final codec = await ui.instantiateImageCodec(
         Uint8List.fromList(bytes),
@@ -72,10 +101,9 @@ class VsdxImageCache extends ChangeNotifier {
       _decodeEpoch++;
       notifyListeners();
     } catch (_) {
-      // Decoding failure — leave the entry pending so we don't retry in
-      // a hot loop; the renderer falls back to its placeholder.
+      // Decoding failure — renderer falls back to its placeholder.
     } finally {
-      _pending.remove(src.partName);
+      if (clearPending) _pending.remove(src.partName);
     }
   }
 

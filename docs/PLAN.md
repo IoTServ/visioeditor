@@ -1229,7 +1229,7 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   富文本 runs（对照 libvisio `m_charList`/`m_paraList` 文本遍历）；解析
   TabsData（`0x88`/`0x96`/`0x97`/`0xb5`）写入 `VsdxTabSet`；字段占位在拆分后再
   展开以免 charCount 错位。另存仍为合成 `.vsdx`（Writer 已支持 Tabs / multi-run）。
-  CharList/ParaList 显式重排序仍延后。
+  CharList/ParaList trailer 重排已落地（见同日后续条目）。
 - 2026-07-17 — **`.vsd` Gantt Number 序列日**：`CELL_TYPE_Number` 且无 format 块时，
   将落在 20000–60000 的 Visio 序列日格式化为日历（libvisio 此处返回空串）；并识别
   format 块类型 `0x70`（样例中的备用 format id）。`tdf76829-datetime-format` 的
@@ -1249,3 +1249,79 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   `foreignType==2` → media `object/ole` / `ForeignType=Object`；无 CharIX 时
   `fontFamily` 回退 `Arial`；画布对含嵌入 DIB 的 EMF 提取位图绘制，其余
   EMF/WMF/OLE 显示对角占位。**二进制 `.vsd` 写回仍按产品决策延后**（仅另存 `.vsdx`）。
+- 2026-07-17 — **`.vsd` Name 字段表 + VSD5 TextField 格式**：`readName` 对齐 libvisio
+  写入 shape-local 名字表（`esc(N)` / 字符串字段），不再污染 `VsdxShape.name`；
+  VSD5 文本流 `0x1E`+空格+`(formatId+0x20)` 解码格式并去掉编码字节（超出
+  libvisio VSD5 `format=Unknown`），Visio5/6 TextFieldsWithUnits 单位输出对齐。
+  CharList trailer 重排 / Connect 导入 / 图层真名仍后续。
+- 2026-07-17 — **`.vsd` CharList/ParaList/FieldList/TabsDataList trailer 重排**：
+  VSD6/11 读 list trailer 子 id 序列并对齐 libvisio `setElementsOrder`，在构建
+  rich text 前重排 CharIX / ParaIX / TextField / TabsData；VSD5 仍走
+  `_handleChunkRecords`（无独立 trailer 消费）。Connect / 图层真名仍后续。
+- 2026-07-17 — **`.vsd` DrawingUnits/PageUnits + stencil FieldList**：PageProps
+  `drawingScaleUnit` → `VsdxPageSheet.drawingScaleUnit`；TextField cell 63/64
+  按页面默认单位格式化（对齐 libvisio `m_defaultDrawingUnit`）；实例 FieldList
+  继承 master 的 format（`format=Unknown` 时）。`tdf154379` → `180.0 cm x 394.0 cm`。
+  Connect / 图层真名 / FeetAndInches(10,13–18) 仍后续（后者 libvisio 亦 TODO）。
+- 2026-07-17 — **`.vsd` OLE 元数据 + TextBkgnd 透明 + MsoDateShort**：读
+  `\x05SummaryInformation` → `title`/`creator`，`synthesizeVsdx` 写入
+  `docProps/core.xml`；TextBlock `bgIdx` 0/0xff 显式透明覆盖 master/style 白底；
+  MsoDateShort 对齐 libvisio `%m/%d/%Y`（`07/06/2019`）。Connect / 图层真名仍后续。
+- 2026-07-17 — **`.vsd` → `.vsdx` 万兴图示填充对齐**：无 Fill 块时默认实心白
+  （`FillForegnd=#FFFFFF` + `FillPattern=1`），Writer 在 `pattern≠0` 且无前景色时
+  亦补写 `FillForegnd`，避免万兴图示将「有 Pattern 无 Foregnd」渲染为空心。
+  libvisio 样例批量导出结构检查全 `ok`；本机万兴图示可打开 FormatLine / Plan /
+  bitmaps / DrawingUnits / TextFields 等。Connect / 图层真名仍后续。
+- 2026-07-17 — **`.vsd` 1D 负宽高保真**：`_toShape` 不再把 1D 的 `Width`/`Height`
+  （`End−Begin`，可为负）钳成 `1.0`；避免 LocPin 与合成 `.vsdx` 在万兴图示中错位。
+  **二进制 `.vsd` 写回**：libvisio 亦无 Writer（仅 parse）；产品线仍为导入 → 另存
+  `.vsdx`（OLE2/CFB ShapeSheet 序列化无参考实现，短期不做）。Connect / 图层真名仍后续。
+- 2026-07-17 — **`.vsd` FeetAndInches / 分数格式**：实现 format 10/13/14（`20'-6"` /
+  `# #/#` / `# #/##`）与 15–18 分数，超出 libvisio `VSDFieldList` TODO；
+  `Visio11PlanWithDimensions` 的 Geometry Height 由 `20.5` → `20'-6"`。
+  Connect / 图层真名仍后续；另存仍为 `.vsdx`。
+- 2026-07-17 — **`.vsd` NameIDX 形状/图层显示名**：页面作用域吸收 NameIDX（跳过
+  style/stencil/属性字段表），绑定 `VsdxShape.name` 与匹配的 Layer 名（如
+  `Wall`、`"L" Room`、`Dimension line`）；Name 块仍只作字段表。超出 libvisio
+ （其 IR 不保留显示名）。ConnectList 仍后续；另存仍为 `.vsdx`。
+- 2026-07-17 — **`.vsd` Connection Points**：解析 `0x99`/`0xba`（X/Y[/DirX/DirY]/Type），
+  继承 master、按页面 scale 缩放、去重后写入合成 `.vsdx` 的 `<Section N="Connection">`
+  （万兴图示胶合目标）。libvisio 仅有常量无 Reader。ConnectList `0x72` 胶合边仍后续；
+  另存仍为 `.vsdx`。
+- 2026-07-17 — **`.vsd` Control / Shape Data**：解析 Control `0xaa`/`0xa2`
+  （X/Y/XDyn/YDyn + XCon/YCon/CanGlue）与 Custom Props `0xb6`（Value/Type +
+  Prompt/Label/Format 字符串；实例 Value 与 master Label 按 id 合并），写入合成
+  `.vsdx` 的 `<Section N="Control">` / `<Section N="Property">`。libvisio 仅有
+  常量无 Reader；样例中无 ConnectList `0x72` 数据。另存仍为 `.vsdx`（不做二进制
+  `.vsd` 写回）。
+- 2026-07-18 — **`.vsd` Scratch / User / Actions**：解析 Scratch `0x9e`
+  （X/Y/A/B/C/D）、User `0xb4`（Value + 名称/Prompt）、ActId `0xa9`（Menu/Tag），
+  写入合成 `.vsdx` 对应 Section。libvisio 仅有常量无 Reader。ConnectList `0x72`
+  / Hyperlink `0xc4` 仍后续（样例中无或极少）；另存仍为 `.vsdx`。
+- 2026-07-18 — **`.vsd` Protection / Group**：解析 Protection `0xa0`（LockMoveX/Y →
+  `locked`）与 Group `0xbe`（SelectMode/DisplayMode/DontMoveChildren/
+  IsTextEditTarget），写入合成 `.vsdx` 保护位与 Group 行为 Cell。libvisio 仅有
+  常量无 Reader。ConnectList / Hyperlink / Event 公式仍后续；另存仍为 `.vsdx`。
+- 2026-07-18 — **`.vsd` Hyperlink `0xc4` / ConnectList `0x72`**：用 Apache POI
+  样例（`visio_with_embeded.vsd`、`44594*.vsd`）补齐。Hyperlink：flags@39
+  （NewWindow/Default）+ `0x60` UTF-16 串（Description/Address/SubAddress…）→
+  `VsdxHyperlink` / `<Section N="Hyperlink">`（HyperLnkList `0x73` 排序）。
+  ConnectList：仅见空 list 头（`childrenListLength=0`），安全跳过、不臆造
+  Connect 边；非空胶合样例与 Event 公式仍后续。另存仍为 `.vsdx`。
+- 2026-07-18 — **`.vsd` Event `0x84` 公式**：解析公式块（`u32 len + cellRef`；
+  2=EventDblClick / 3=EventXFMod / 4=EventDrop），识别 `OPENTEXTWIN()`（`80 4c`）
+  与 `RUNADDONW("…","/CMD=…")`（UTF-16 `0x60` 串），写入 `formulas` 并合成
+  `.vsdx` Event 单元格。libvisio 仅有常量无 Reader。非空 ConnectList 仍后续。
+- 2026-07-18 — **格式能力澄清（产品）**：打开 `.vsdx` + 旧版 `.vsd`；编辑共用
+  `VsdxDocument`；**保存 / 另存仅为 `.vsdx`**（load-preserve-patch）。**不做**
+  二进制 `.vsd` 写回。空态文案已写明可开 `.vsd`、保存为 `.vsdx`；导入 `.vsd`
+  后清空 `filePath`，避免 OPC 字节覆盖源文件；`tool/edraw_roundtrip_check.dart`
+  批量校验 vsdx 往返与 vsd→vsdx（配合万兴图示打开）。
+- 2026-07-18 — **导出 `.vsdx` 互操作**：Save 时愈合缺失的 `docProps/core.xml`；
+  对本地有 `<Text>` 但无 Character 的形状（含仅有 `<pp>`、Master 本地文本）补
+  Character/Paragraph；Foreign 图片 caption 同步写出样式段。纯矢量 EMF/WMF
+  画布占位仍后续。
+- 2026-07-18 — **画布 metafile 保真**：WMF/EMF 矢量回放（polygon/polyline/text/
+  pen/brush）+ OLE `\x02OlePres000` 提取 EMF 预览；`VsdxImageCache` 先试嵌入
+  DIB，再光栅化矢量显示列表。LibreOffice 平面图 `.wmf` 与 `visio_with_embeded`
+  OLE 预览可画。

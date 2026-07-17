@@ -17,7 +17,23 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   StyleSheet text parent chain, Layer/LayerMem, EMF/WMF media import,
   ShapeList z-order, string field StrUpper/StrLower), Multidimensional area
   fields via trailing typed result (beyond libvisio), OLE `object/ole` media
-  import, EMF embedded-bitmap canvas paint, synthesised .vsdx
+  import, EMF embedded-bitmap canvas paint, Name→field-table (not shape
+  display name), VSD5 TextField format-from-text-stream, CharList/ParaList/
+  FieldList/TabsDataList trailer reorder (libvisio setElementsOrder),
+  DrawingUnits/PageUnits → page drawingScaleUnit + stencil FieldList format
+  inheritance, OLE SummaryInformation title/creator → core.xml, transparent
+  TextBkgnd override, MsoDateShort zero-pad, Edraw-safe default FillForegnd
+  when FillPattern≠0, preserve signed 1D Width/Height (End−Begin), FeetAndInches
+  formats 10/13/14 + fraction 15–18 (beyond libvisio TODO), NameIDX → shape/layer
+  display names, Connection Points 0x99/0xba → vsdx Connection section, Control
+  0xaa/0xa2 → Control section, Custom Props 0xb6 → Property (Shape Data) with
+  master Label/Prompt merge, Scratch 0x9e / User 0xb4 / ActId 0xa9 → Scratch /
+  User / Actions sections, Protection 0xa0 → locked, Group 0xbe → SelectMode /
+  DisplayMode / DontMoveChildren, Hyperlink 0xc4 → Hyperlink section (UTF-16
+  `0x60` cells; POI `visio_with_embeded.vsd`), ConnectList 0x72 empty-list
+  safe-skip, Event 0x84 → EventDblClick/EventDrop formulas (OPENTEXTWIN /
+  RUNADDONW), synthesised
+  .vsdx
   baseline for edit / Save As. Algorithm reference: libvisio (no FFI).
 - **Pure-Dart `.vsdx` engine** (`packages/vsdx`): OPC/XML reader → strongly-typed
   editable model → round-trip writer. Recovered and adapted from the MIT viewer
@@ -243,6 +259,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   **underline**, colour, and **horizontal + vertical alignment** (written back
   to the Character / Paragraph sections and the `VerticalAlign` cell).
 - **Save / Save As** with round-trip fidelity; unsaved-changes indicator.
+  Save writes `.vsdx` only (legacy `.vsd` is import-only). Heals missing
+  `docProps/core.xml` and ensures Character sections for local text so Edraw
+  opens exports with correct font size.
+- **Canvas metafile paint**: WMF/EMF vector replay + OLE `OlePres` EMF preview
+  (embedded DIB first, then GDI display-list rasterisation).
 - **Export**: to SVG (pure-model `VsdxToSvgSerializer`), PNG and multi-page PDF
   (rasterised via the on-screen painter).
 - **Pages**: add / duplicate / delete / rename pages from the page bar; all
