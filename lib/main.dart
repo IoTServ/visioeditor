@@ -1766,26 +1766,31 @@ class _StencilPanelState extends State<_StencilPanel> {
             ),
             if (!searching) _buildQuickBar(scheme),
             Expanded(
-              // Explicit Scrollbar so the thumb tracks pointer drags on desktop
-              // even when many libraries are expanded.
+              // Build all groups eagerly inside a SingleChildScrollView so
+              // maxScrollExtent is exact. ListView.builder estimates extent
+              // from lazily measured variable-height Wrap tiles, which makes
+              // the desktop scrollbar thumb jump away from the cursor.
               child: Scrollbar(
                 controller: _scroll,
                 thumbVisibility: true,
+                trackVisibility: true,
                 interactive: true,
-                child: ListView.builder(
+                child: SingleChildScrollView(
                   controller: _scroll,
                   primary: false,
                   padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-                  itemCount: groups.length,
-                  itemBuilder: (context, i) {
-                    final entry = groups[i];
-                    return _buildGroup(
-                      scheme,
-                      entry.group,
-                      entry.matches,
-                      searching,
-                    );
-                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final entry in groups)
+                        _buildGroup(
+                          scheme,
+                          entry.group,
+                          entry.matches,
+                          searching,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1952,6 +1957,9 @@ class _ThumbGeom {
 /// (pin irrelevant), then maps its shape-local coordinates (origin bottom-left,
 /// Y-up, inches) into the box (origin top-left, Y-down) with a Y-flip so the
 /// preview matches what drops on the canvas.
+///
+/// Records a [ui.Picture] per (stencil, colours, size) so scrolling the shapes
+/// panel only blits pictures instead of rebuilding paths every frame.
 class _StencilThumbPainter extends CustomPainter {
   _StencilThumbPainter(this.stencil, this.fillColor, this.strokeColor);
 
@@ -1959,10 +1967,12 @@ class _StencilThumbPainter extends CustomPainter {
   final Color fillColor;
   final Color strokeColor;
 
-  static final Map<Stencil, _ThumbGeom> _cache = <Stencil, _ThumbGeom>{};
+  static final Map<Stencil, _ThumbGeom> _geomCache = <Stencil, _ThumbGeom>{};
+  static final Map<(Stencil, int, int, int, int), ui.Picture> _pictureCache =
+      <(Stencil, int, int, int, int), ui.Picture>{};
 
   _ThumbGeom _geom() {
-    final hit = _cache[stencil];
+    final hit = _geomCache[stencil];
     if (hit != null) return hit;
     final shape = stencil.build(0, 0, 0);
     final w = shape.width;
@@ -1978,40 +1988,59 @@ class _StencilThumbPainter extends CustomPainter {
         ));
       }
     }
-    return _cache[stencil] = _ThumbGeom(w, h, paths);
+    return _geomCache[stencil] = _ThumbGeom(w, h, paths);
+  }
+
+  ui.Picture _picture(Size size) {
+    final key = (
+      stencil,
+      fillColor.toARGB32(),
+      strokeColor.toARGB32(),
+      size.width.round(),
+      size.height.round(),
+    );
+    final hit = _pictureCache[key];
+    if (hit != null) return hit;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final geom = _geom();
+    final w = geom.width;
+    final h = geom.height;
+    if (w > 0 && h > 0 && geom.paths.isNotEmpty) {
+      const pad = 5.0;
+      final s = math.min(
+        (size.width - 2 * pad) / w,
+        (size.height - 2 * pad) / h,
+      );
+      if (s > 0) {
+        final dx = (size.width - w * s) / 2;
+        final dy = (size.height - h * s) / 2;
+        canvas.save();
+        canvas.translate(dx, size.height - dy);
+        canvas.scale(s, -s);
+        final fill = Paint()
+          ..color = fillColor
+          ..style = PaintingStyle.fill;
+        final line = Paint()
+          ..color = strokeColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2 / s
+          ..strokeJoin = StrokeJoin.round
+          ..strokeCap = StrokeCap.round;
+        for (final p in geom.paths) {
+          if (p.fill) canvas.drawPath(p.path, fill);
+          if (p.line) canvas.drawPath(p.path, line);
+        }
+        canvas.restore();
+      }
+    }
+    return _pictureCache[key] = recorder.endRecording();
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final geom = _geom();
-    final w = geom.width;
-    final h = geom.height;
-    if (w <= 0 || h <= 0 || geom.paths.isEmpty) return;
-    const pad = 5.0;
-    final s = math.min(
-      (size.width - 2 * pad) / w,
-      (size.height - 2 * pad) / h,
-    );
-    if (s <= 0) return;
-    final dx = (size.width - w * s) / 2;
-    final dy = (size.height - h * s) / 2;
-    canvas.save();
-    canvas.translate(dx, size.height - dy);
-    canvas.scale(s, -s);
-    final fill = Paint()
-      ..color = fillColor
-      ..style = PaintingStyle.fill;
-    final line = Paint()
-      ..color = strokeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2 / s
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-    for (final p in geom.paths) {
-      if (p.fill) canvas.drawPath(p.path, fill);
-      if (p.line) canvas.drawPath(p.path, line);
-    }
-    canvas.restore();
+    if (size.isEmpty) return;
+    canvas.drawPicture(_picture(size));
   }
 
   @override
@@ -3921,43 +3950,39 @@ class _CornersSliderState extends State<_CornersSlider> {
   Widget build(BuildContext context) {
     final maxR = widget.max;
     final v = (_drag ?? widget.value).clamp(0.0, maxR);
+    const style = TextStyle(fontSize: 11);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
         Row(
           children: [
-            SizedBox(
-                width: 48,
-                child: Text(EditorL10n.of(context).corners,
-                    style: const TextStyle(fontSize: 11))),
             Expanded(
-              child: Slider(
-                value: v,
-                max: maxR,
-                onChangeStart: (_) {
-                  _drag = widget.value.clamp(0.0, maxR);
-                  widget.onStart();
-                },
-                onChanged: (x) {
-                  setState(() => _drag = x);
-                  widget.onChanged(x);
-                },
-                onChangeEnd: (_) {
-                  setState(() => _drag = null);
-                  widget.onEnd();
-                },
-              ),
-            ),
-            SizedBox(
-              width: 34,
               child: Text(
-                '${(v * 100).round() / 100}"',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 11),
+                EditorL10n.of(context).corners,
+                style: style,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            Text('${(v * 100).round() / 100}"', style: style),
           ],
+        ),
+        Slider(
+          value: v,
+          max: maxR,
+          onChangeStart: (_) {
+            _drag = widget.value.clamp(0.0, maxR);
+            widget.onStart();
+          },
+          onChanged: (x) {
+            setState(() => _drag = x);
+            widget.onChanged(x);
+          },
+          onChangeEnd: (_) {
+            setState(() => _drag = null);
+            widget.onEnd();
+          },
         ),
       ],
     );
@@ -3996,38 +4021,41 @@ class _RangeSliderState extends State<_RangeSlider> {
   @override
   Widget build(BuildContext context) {
     final v = (_drag ?? widget.value).clamp(widget.min, widget.max);
-    return Row(
+    const style = TextStyle(fontSize: 11);
+    // Stack label/value above the track: a horizontal Row cannot fit Material's
+    // ~144px-min Slider inside the 200px-wide inspector content area.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          width: 56,
-          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.label,
+                style: style,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(widget.format(v), style: style),
+          ],
         ),
-        Expanded(
-          child: Slider(
-            value: v,
-            min: widget.min,
-            max: widget.max,
-            onChangeStart: (_) {
-              _drag = widget.value.clamp(widget.min, widget.max);
-              widget.onStart();
-            },
-            onChanged: (x) {
-              setState(() => _drag = x);
-              widget.onChanged(x);
-            },
-            onChangeEnd: (_) {
-              setState(() => _drag = null);
-              widget.onEnd();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 36,
-          child: Text(
-            widget.format(v),
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 11),
-          ),
+        Slider(
+          value: v,
+          min: widget.min,
+          max: widget.max,
+          onChangeStart: (_) {
+            _drag = widget.value.clamp(widget.min, widget.max);
+            widget.onStart();
+          },
+          onChanged: (x) {
+            setState(() => _drag = x);
+            widget.onChanged(x);
+          },
+          onChangeEnd: (_) {
+            setState(() => _drag = null);
+            widget.onEnd();
+          },
         ),
       ],
     );
@@ -4064,36 +4092,37 @@ class _OpacitySliderState extends State<_OpacitySlider> {
   @override
   Widget build(BuildContext context) {
     final v = (_drag ?? widget.opacity).clamp(0.0, 1.0);
-    return Row(
+    const style = TextStyle(fontSize: 11);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          width: 48,
-          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.label,
+                style: style,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text('${(v * 100).round()}%', style: style),
+          ],
         ),
-        Expanded(
-          child: Slider(
-            value: v,
-            onChangeStart: (_) {
-              _drag = widget.opacity.clamp(0.0, 1.0);
-              widget.onStart();
-            },
-            onChanged: (x) {
-              setState(() => _drag = x);
-              widget.onChanged(x);
-            },
-            onChangeEnd: (_) {
-              setState(() => _drag = null);
-              widget.onEnd();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 32,
-          child: Text(
-            '${(v * 100).round()}%',
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 11),
-          ),
+        Slider(
+          value: v,
+          onChangeStart: (_) {
+            _drag = widget.opacity.clamp(0.0, 1.0);
+            widget.onStart();
+          },
+          onChanged: (x) {
+            setState(() => _drag = x);
+            widget.onChanged(x);
+          },
+          onChangeEnd: (_) {
+            setState(() => _drag = null);
+            widget.onEnd();
+          },
         ),
       ],
     );
