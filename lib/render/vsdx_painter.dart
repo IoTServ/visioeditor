@@ -1203,57 +1203,47 @@ class VsdxPainter extends CustomPainter {
     final mbPx = block.marginBottomInches * s;
     final maxW = math.max(0.0, twPx - mlPx - mrPx);
 
-    // Rich text with paragraph spacing (SpBefore / SpAfter): lay each paragraph
-    // out separately and stack them. Text with no paragraph spacing keeps the
-    // single-painter path below unchanged, so ordinary labels don't regress.
+    // Curved Text: place glyphs along a quadratic arc inside the text block.
+    // Falls back to the rectangular layout when the shape is a 1-D edge label.
+    if (shape.curvedText && !isEdgeLabel) {
+      _paintCurvedText(
+        canvas,
+        spans: spans,
+        plain: hasRich ? rich.plainText : label!,
+        twPx: twPx,
+        thPx: thPx,
+        mlPx: mlPx,
+        mrPx: mrPx,
+      );
+      canvas.restore();
+      return;
+    }
+
+    // Paragraph layout when spacing / indents / bullets / multi-line need it.
+    // Ordinary single-run labels keep the fast path below.
     final needsParaLayout = hasRich &&
-        rich.runs.any((r) =>
-            r.paraStyle.spaceBeforeInches != 0 ||
-            r.paraStyle.spaceAfterInches != 0);
+        (rich.runs.any((r) =>
+                r.paraStyle.spaceBeforeInches != 0 ||
+                r.paraStyle.spaceAfterInches != 0 ||
+                r.paraStyle.indentLeftInches != 0 ||
+                r.paraStyle.indentFirstInches != 0 ||
+                r.paraStyle.indentRightInches != 0 ||
+                r.paraStyle.bullet != 0 ||
+                r.text.contains('\n')));
     if (needsParaLayout) {
-      final paras = _splitParagraphs(rich.runs);
-      final painters = <TextPainter>[];
-      final beforePx = <double>[];
-      final afterPx = <double>[];
-      var totalH = 0.0;
-      for (final para in paras) {
-        final pAlign = _flutterAlign(para.style.horizontalAlign);
-        final tp = TextPainter(
-          text: TextSpan(
-            children: <TextSpan>[
-              for (final r in para.runs) _runToSpan(r, s),
-            ],
-          ),
-          textAlign: pAlign,
-          textDirection: TextDirection.ltr,
-          maxLines: null,
-        )..layout(maxWidth: maxW);
-        painters.add(tp);
-        final b = para.style.spaceBeforeInches * s;
-        final a = para.style.spaceAfterInches * s;
-        beforePx.add(b);
-        afterPx.add(a);
-        totalH += b + tp.height + a;
-      }
-      var oy = switch (block.verticalAlign) {
-        VsdxVertAlign.top => mtPx,
-        VsdxVertAlign.bottom => thPx - mbPx - totalH,
-        VsdxVertAlign.middle => (thPx - totalH) / 2,
-      };
-      if (block.verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
-      var y = oy;
-      for (var i = 0; i < painters.length; i++) {
-        final tp = painters[i];
-        final pAlign = _flutterAlign(paras[i].style.horizontalAlign);
-        y += beforePx[i];
-        final ox = switch (pAlign) {
-          TextAlign.center => (twPx - tp.width) / 2,
-          TextAlign.right => twPx - mrPx - tp.width,
-          _ => mlPx,
-        };
-        tp.paint(canvas, Offset(ox, y));
-        y += tp.height + afterPx[i];
-      }
+      _paintParagraphBlock(
+        canvas,
+        runs: rich.runs,
+        twPx: twPx,
+        thPx: thPx,
+        mlPx: mlPx,
+        mrPx: mrPx,
+        mtPx: mtPx,
+        mbPx: mbPx,
+        maxW: maxW,
+        verticalAlign: block.verticalAlign,
+        scale: s,
+      );
       canvas.restore();
       return;
     }
@@ -1281,6 +1271,160 @@ class VsdxPainter extends CustomPainter {
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
+  }
+
+  /// Lay out rich-text paragraphs with SpBefore/After, IndLeft/First, and
+  /// Visio bullets (`Bullet` / `BulletStr` / `TextPosAfterBullet`).
+  void _paintParagraphBlock(
+    Canvas canvas, {
+    required List<VsdxTextRun> runs,
+    required double twPx,
+    required double thPx,
+    required double mlPx,
+    required double mrPx,
+    required double mtPx,
+    required double mbPx,
+    required double maxW,
+    required VsdxVertAlign verticalAlign,
+    required double scale,
+  }) {
+    final paras = _splitParagraphs(runs);
+    final painters = <TextPainter>[];
+    final beforePx = <double>[];
+    final afterPx = <double>[];
+    final textOriginsX = <double>[];
+    final bulletPainters = <TextPainter?>[];
+    final bulletOriginsX = <double>[];
+    var totalH = 0.0;
+
+    for (final para in paras) {
+      final style = para.style;
+      final pAlign = _flutterAlign(style.horizontalAlign);
+      final indentL = style.indentLeftInches * scale;
+      final indentF = style.indentFirstInches * scale;
+      final indentR = style.indentRightInches * scale;
+      final hasBullet = style.bullet != 0;
+      final afterBullet = style.textPosAfterBulletInches > 0
+          ? style.textPosAfterBulletInches * scale
+          : (hasBullet ? 0.18 * scale : 0.0);
+
+      TextPainter? bulletTp;
+      var bulletX = mlPx + indentL + indentF;
+      var textX = mlPx + indentL;
+      if (hasBullet) {
+        final glyph = _bulletGlyph(style);
+        final fontPx = () {
+          if (style.bulletFontSizeInches != null &&
+              style.bulletFontSizeInches! > 0) {
+            return style.bulletFontSizeInches! * scale;
+          }
+          // Match the first run's size when available.
+          for (final r in para.runs) {
+            if (r.text.isNotEmpty) {
+              return (r.charStyle.fontSizeInches > 0
+                      ? r.charStyle.fontSizeInches
+                      : 0.14) *
+                  scale;
+            }
+          }
+          return 0.14 * scale;
+        }();
+        bulletTp = TextPainter(
+          text: TextSpan(
+            text: glyph,
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: fontPx,
+              fontFamily: style.bulletFont,
+              height: 1.0,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+        // Hanging indent: bullet sits on the first-line indent; body text
+        // starts at IndLeft + TextPosAfterBullet (or a default gap).
+        textX = mlPx + indentL + afterBullet;
+        if (bulletX > textX - bulletTp.width) {
+          bulletX = textX - bulletTp.width - 0.04 * scale;
+        }
+      } else {
+        // Without a bullet, IndFirst shifts the whole paragraph (good enough
+        // for single-line shape labels; multi-line first-line-only indent is
+        // a follow-up).
+        textX = mlPx + indentL + indentF;
+      }
+
+      final avail = math.max(
+        0.0,
+        maxW - (textX - mlPx) - indentR,
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          children: <TextSpan>[
+            for (final r in para.runs) _runToSpan(r, scale),
+          ],
+        ),
+        textAlign: pAlign,
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      )..layout(maxWidth: avail);
+
+      painters.add(tp);
+      bulletPainters.add(bulletTp);
+      bulletOriginsX.add(bulletX);
+      // Horizontal align still applies within the remaining text band.
+      final alignedX = switch (pAlign) {
+        TextAlign.center => textX + (avail - tp.width) / 2,
+        TextAlign.right => textX + avail - tp.width,
+        _ => textX,
+      };
+      textOriginsX.add(alignedX);
+
+      final b = style.spaceBeforeInches * scale;
+      final a = style.spaceAfterInches * scale;
+      beforePx.add(b);
+      afterPx.add(a);
+      final rowH = math.max(tp.height, bulletTp?.height ?? 0);
+      totalH += b + rowH + a;
+    }
+
+    var oy = switch (verticalAlign) {
+      VsdxVertAlign.top => mtPx,
+      VsdxVertAlign.bottom => thPx - mbPx - totalH,
+      VsdxVertAlign.middle => (thPx - totalH) / 2,
+    };
+    if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
+
+    var y = oy;
+    for (var i = 0; i < painters.length; i++) {
+      final tp = painters[i];
+      final bulletTp = bulletPainters[i];
+      y += beforePx[i];
+      final rowH = math.max(tp.height, bulletTp?.height ?? 0);
+      if (bulletTp != null) {
+        final by = y + (rowH - bulletTp.height) / 2;
+        bulletTp.paint(canvas, Offset(bulletOriginsX[i], by));
+      }
+      final ty = y + (rowH - tp.height) / 2;
+      tp.paint(canvas, Offset(textOriginsX[i], ty));
+      y += rowH + afterPx[i];
+    }
+  }
+
+  /// Default Visio-style bullet glyph for [VsdxParaStyle.bullet] (1…).
+  static String _bulletGlyph(VsdxParaStyle style) {
+    final custom = style.bulletStr;
+    if (custom != null && custom.isNotEmpty) return custom;
+    return switch (style.bullet) {
+      2 => '○',
+      3 => '■',
+      4 => '□',
+      5 => '◆',
+      6 => '–',
+      7 => '✓',
+      _ => '•',
+    };
   }
 
   /// Split rich-text runs into paragraphs at `\n` (Visio paragraph breaks).
@@ -1399,6 +1543,134 @@ class VsdxPainter extends CustomPainter {
         fontFeatures: features.isEmpty ? null : features,
       ),
     );
+  }
+
+  /// Place [plain] glyphs along a quadratic arc bowing upward inside the text
+  /// block (draw.io Curved Text). Uses the style from the first [spans] entry.
+  void _paintCurvedText(
+    Canvas canvas, {
+    required List<TextSpan> spans,
+    required String plain,
+    required double twPx,
+    required double thPx,
+    required double mlPx,
+    required double mrPx,
+  }) {
+    final text = plain.replaceAll('\n', ' ').trim();
+    if (text.isEmpty) return;
+
+    final availW = math.max(0.0, twPx - mlPx - mrPx);
+    if (availW <= 1) return;
+
+    final baseStyle = spans.isNotEmpty && spans.first.style != null
+        ? spans.first.style!
+        : const TextStyle(color: Colors.black87, fontSize: 14);
+
+    // Measure each character for arc-length placement.
+    final chars = <String>[];
+    final widths = <double>[];
+    var totalW = 0.0;
+    for (final r in text.runes) {
+      final ch = String.fromCharCode(r);
+      final tp = TextPainter(
+        text: TextSpan(text: ch, style: baseStyle),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      chars.add(ch);
+      widths.add(tp.width);
+      totalW += tp.width;
+    }
+    if (totalW <= 0) return;
+
+    // Quadratic arc: left → right along the text block, bowing upward (Y-down).
+    final midY = thPx * 0.58;
+    final bulge = math.min(thPx * 0.32, thPx * 0.45);
+    final p0 = Offset(mlPx, midY);
+    final p2 = Offset(twPx - mrPx, midY);
+    final p1 = Offset(twPx / 2, midY - bulge);
+
+    // Approximate arc length via polyline samples.
+    const samples = 48;
+    final pts = <Offset>[];
+    final cum = <double>[0.0];
+    Offset prev = p0;
+    pts.add(p0);
+    for (var i = 1; i <= samples; i++) {
+      final t = i / samples;
+      final o = _quadBezierPoint(p0, p1, p2, t);
+      pts.add(o);
+      cum.add(cum.last + (o - prev).distance);
+      prev = o;
+    }
+    final arcLen = cum.last;
+    if (arcLen <= 0) return;
+
+    // Centre the string along the arc when shorter than the arc.
+    final pad = math.max(0.0, (arcLen - totalW) / 2);
+    var cursor = pad;
+    for (var i = 0; i < chars.length; i++) {
+      final w = widths[i];
+      final centerDist = cursor + w / 2;
+      final t = _arcTForDistance(cum, centerDist.clamp(0.0, arcLen));
+      final pos = _quadBezierPoint(p0, p1, p2, t);
+      final tangent = _quadBezierTangent(p0, p1, p2, t);
+      final angle = math.atan2(tangent.dy, tangent.dx);
+
+      final tp = TextPainter(
+        text: TextSpan(text: chars[i], style: baseStyle),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(angle);
+      tp.paint(canvas, Offset(-tp.width / 2, -tp.height * 0.75));
+      canvas.restore();
+
+      cursor += w;
+    }
+  }
+
+  static Offset _quadBezierPoint(Offset p0, Offset p1, Offset p2, double t) {
+    final u = 1 - t;
+    return Offset(
+      u * u * p0.dx + 2 * u * t * p1.dx + t * t * p2.dx,
+      u * u * p0.dy + 2 * u * t * p1.dy + t * t * p2.dy,
+    );
+  }
+
+  static Offset _quadBezierTangent(Offset p0, Offset p1, Offset p2, double t) {
+    // B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
+    final d = Offset(
+      2 * (1 - t) * (p1.dx - p0.dx) + 2 * t * (p2.dx - p1.dx),
+      2 * (1 - t) * (p1.dy - p0.dy) + 2 * t * (p2.dy - p1.dy),
+    );
+    final len = d.distance;
+    if (len < 1e-9) return const Offset(1, 0);
+    return Offset(d.dx / len, d.dy / len);
+  }
+
+  /// Map a distance along the sampled polyline [cum] to a Bezier [t] in 0..1.
+  static double _arcTForDistance(List<double> cum, double dist) {
+    final n = cum.length - 1;
+    if (n <= 0) return 0;
+    if (dist <= 0) return 0;
+    if (dist >= cum.last) return 1;
+    var lo = 0;
+    var hi = n;
+    while (lo + 1 < hi) {
+      final mid = (lo + hi) >> 1;
+      if (cum[mid] <= dist) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    final seg = cum[hi] - cum[lo];
+    final local = seg <= 1e-12 ? 0.0 : (dist - cum[lo]) / seg;
+    return (lo + local) / n;
   }
 
   TextAlign _flutterAlign(VsdxHorzAlign a) => switch (a) {

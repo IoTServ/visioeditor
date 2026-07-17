@@ -85,8 +85,9 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
   ranges yet); connectors route straight or orthogonal (with draggable
   waypoints) but not obstacle-avoiding; PDF export is rasterised (not vector);
   formulas are preserved but not recomputed.
-- Interop is currently proven by the project's own open → save → reopen
-  round-trip tests; LibreOffice `soffice` headless cross-conversion is pending.
+- Interop is proven by open → save → reopen round-trip tests and by CI
+  LibreOffice `soffice --headless --convert-to pdf` on a writer `.vsdx`
+  (`REQUIRE_SOFFICE=1`; local runs skip when soffice is absent).
 
 ## Verification
 

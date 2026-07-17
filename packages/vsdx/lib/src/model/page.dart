@@ -353,6 +353,73 @@ class VsdxPage {
     return changed ? copyWith(shapes: newShapes) : this;
   }
 
+  /// Re-evaluate ShapeSheet formulas across shapes on this page, resolving
+  /// `Sheet.n!Cell` against sibling shapes (PinX/Y, Width/Height, Angle,
+  /// LocPin*, Begin*/End*).
+  ///
+  /// When [changedShapeIds] is set, recalculates those shapes plus any shape
+  /// whose formulas reference them. When omitted, recalculates every shape
+  /// that carries formula sources. Up to four passes settle short dependency
+  /// chains (A→B→C). Cycles leave unresolved cells at their prior `V`.
+  VsdxPage recalculateFormulas({Set<int>? changedShapeIds}) {
+    final index = <int, VsdxShape>{};
+    void indexTree(VsdxShape s) {
+      index[s.id] = s;
+      for (final c in s.children) {
+        indexTree(c);
+      }
+    }
+
+    void rebuildIndex(VsdxPage page) {
+      index.clear();
+      for (final s in page.shapes) {
+        indexTree(s);
+      }
+    }
+
+    rebuildIndex(this);
+    if (index.isEmpty) return this;
+
+    final Set<int> targets;
+    if (changedShapeIds == null || changedShapeIds.isEmpty) {
+      targets = {
+        for (final e in index.entries)
+          if (e.value.formulaSources.isNotEmpty) e.key,
+      };
+    } else {
+      targets = {...changedShapeIds};
+      for (final e in index.entries) {
+        if (e.value.referencesAnySheet(changedShapeIds)) {
+          targets.add(e.key);
+        }
+      }
+    }
+    if (targets.isEmpty) return this;
+
+    var page = this;
+    for (var pass = 0; pass < 4; pass++) {
+      rebuildIndex(page);
+      double? lookup(int id, String cell) {
+        final sh = index[id];
+        if (sh == null) return null;
+        return sh.lookupSheetCell(cell);
+      }
+
+      var any = false;
+      for (final id in targets) {
+        final s = index[id];
+        if (s == null) continue;
+        final next = s.recalculateLocalFormulas(sheetLookup: lookup);
+        if (!identical(next, s)) {
+          page = page.updateShapeById(id, (_) => next);
+          any = true;
+        }
+      }
+      if (!any) break;
+    }
+    return page;
+  }
+
   static (List<VsdxShape>, bool) _updateInList(
     List<VsdxShape> list,
     int id,

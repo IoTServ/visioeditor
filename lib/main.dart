@@ -3134,6 +3134,26 @@ class _PropertyPanel extends StatelessWidget {
                 EditorL10n.of(context).alignBottom, VsdxVertAlign.bottom),
           ],
         ),
+        Row(
+          children: [
+            Text(EditorL10n.of(context).curvedText),
+            const Spacer(),
+            Switch(
+              value: controller.selectedCurvedText,
+              onChanged: controller.setCurvedText,
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Text(EditorL10n.of(context).bulletList),
+            const Spacer(),
+            Switch(
+              value: controller.selectedHasBullet,
+              onChanged: controller.setBullet,
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         Text(EditorL10n.of(context).lineSpacing,
             style: Theme.of(context).textTheme.labelSmall),

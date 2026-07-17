@@ -2891,6 +2891,486 @@ void main() {
         isNotEmpty);
   });
 
+  test('drawio-parity batch83 Oracle expansion (api-gw/fastconnect/devops) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final gwId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleApiGateway(
+        id: gwId, pinX: 1, pinY: 8, width: 1.2, height: 1.2));
+    final scId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleServiceConnector(
+        id: scId, pinX: 3, pinY: 8, width: 1.4, height: 1.0));
+    final evId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleEvents(
+        id: evId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final dsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleDataScience(
+        id: dsId, pinX: 7, pinY: 8, width: 1.2, height: 1.2));
+    final fcId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleFastConnect(
+        id: fcId, pinX: 1, pinY: 5, width: 1.4, height: 1.2));
+    final nlbId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleNetworkLoadBalancer(
+        id: nlbId, pinX: 3, pinY: 5, width: 1.2, height: 1.2));
+    final cgId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleCloudGuard(
+        id: cgId, pinX: 5, pinY: 5, width: 1.1, height: 1.2));
+    final doId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleDevOps(
+        id: doId, pinX: 7, pinY: 5, width: 1.4, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(gwId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(
+        r.pages.first
+            .findShapeById(scId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(2));
+    expect(r.pages.first.findShapeById(evId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(dsId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(fcId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(nlbId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(
+        r.pages.first
+            .findShapeById(cgId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(doId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(3));
+  });
+
+  test('drawio-parity batch82 IBM expansion (schematics/satellite/aspera) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final atId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmActivityTracker(
+        id: atId, pinX: 1, pinY: 8, width: 1.3, height: 1.1));
+    final logId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmLogAnalysis(
+        id: logId, pinX: 3, pinY: 8, width: 1.2, height: 1.2));
+    final schId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmSchematics(
+        id: schId, pinX: 5, pinY: 8, width: 1.2, height: 1.3));
+    final satId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmSatellite(
+        id: satId, pinX: 7, pinY: 8, width: 1.2, height: 1.2));
+    final pvsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmPowerVs(
+        id: pvsId, pinX: 1, pinY: 5, width: 1.3, height: 1.2));
+    final cisId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmCis(
+        id: cisId, pinX: 3, pinY: 5, width: 1.2, height: 1.2));
+    final aspId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmAspera(
+        id: aspId, pinX: 5, pinY: 5, width: 1.3, height: 1.0));
+    final secId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmSecurityAdvisor(
+        id: secId, pinX: 7, pinY: 5, width: 1.1, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(atId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(r.pages.first.findShapeById(logId)!.geometries.length, 2);
+    expect(r.pages.first.findShapeById(schId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(satId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(2));
+    expect(r.pages.first.findShapeById(pvsId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(cisId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(r.pages.first.findShapeById(aspId)!.geometries.length, 2);
+    expect(
+        r.pages.first
+            .findShapeById(secId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch81 Alibaba expansion (cdn/flink/nat) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final cdnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaCdn(
+        id: cdnId, pinX: 1, pinY: 8, width: 1.2, height: 1.2));
+    final wafId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaWaf(
+        id: wafId, pinX: 3, pinY: 8, width: 1.1, height: 1.2));
+    final dwId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaDataWorks(
+        id: dwId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final flinkId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaFlink(
+        id: flinkId, pinX: 7, pinY: 8, width: 1.5, height: 1.0));
+    final mseId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaMse(
+        id: mseId, pinX: 1, pinY: 5, width: 1.2, height: 1.2));
+    final eipId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaEip(
+        id: eipId, pinX: 3, pinY: 5, width: 1.1, height: 1.1));
+    final natId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaNatGateway(
+        id: natId, pinX: 5, pinY: 5, width: 1.3, height: 1.2));
+    final dtsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaDts(
+        id: dtsId, pinX: 7, pinY: 5, width: 1.2, height: 1.3));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(cdnId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(wafId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(dwId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(flinkId)!.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(mseId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(
+        r.pages.first
+            .findShapeById(eipId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(2));
+    expect(
+        r.pages.first
+            .findShapeById(natId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(r.pages.first.findShapeById(dtsId)!.geometries.length, 2);
+  });
+
+  test('drawio-parity batch80 Oracle starter (adb/oke/exadata) round-trip',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final ciId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleComputeInstance(
+        id: ciId, pinX: 1, pinY: 8, width: 1.3, height: 1.2));
+    final adbId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleAutonomousDatabase(
+        id: adbId, pinX: 3, pinY: 8, width: 1.2, height: 1.3));
+    final okeId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleOke(
+        id: okeId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final vcnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleVcn(
+        id: vcnId, pinX: 7, pinY: 8, width: 1.5, height: 1.1));
+    final streamId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleStreaming(
+        id: streamId, pinX: 1, pinY: 5, width: 1.4, height: 1.0));
+    final exaId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleExadata(
+        id: exaId, pinX: 3, pinY: 5, width: 1.3, height: 1.3));
+    final hwId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleMysqlHeatwave(
+        id: hwId, pinX: 5, pinY: 5, width: 1.4, height: 1.2));
+    final ggId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.oracleGoldenGate(
+        id: ggId, pinX: 7, pinY: 5, width: 1.5, height: 1.0));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(ciId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(adbId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(okeId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(vcnId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(streamId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(exaId)!.geometries.length, 5);
+    expect(
+        r.pages.first
+            .findShapeById(hwId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(ggId)!.geometries.length, 3);
+  });
+
+  test('drawio-parity batch79 IBM starter (vpc/db2/watsonx) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final vpcId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmVpc(
+        id: vpcId, pinX: 1, pinY: 8, width: 1.5, height: 1.1));
+    final cosId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmCloudObjectStorage(
+        id: cosId, pinX: 3, pinY: 8, width: 1.2, height: 1.3));
+    final iksId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmIks(
+        id: iksId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final db2Id = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmDb2(
+        id: db2Id, pinX: 7, pinY: 8, width: 1.2, height: 1.2));
+    final esId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmEventStreams(
+        id: esId, pinX: 1, pinY: 5, width: 1.4, height: 1.0));
+    final wxId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmWatsonx(
+        id: wxId, pinX: 3, pinY: 5, width: 1.3, height: 1.2));
+    final ceId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmCodeEngine(
+        id: ceId, pinX: 5, pinY: 5, width: 1.3, height: 1.0));
+    final kpId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.ibmKeyProtect(
+        id: kpId, pinX: 7, pinY: 5, width: 1.1, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(
+        r.pages.first
+            .findShapeById(vpcId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(cosId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(iksId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(db2Id)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(esId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(wxId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(6));
+    expect(
+        r.pages.first
+            .findShapeById(ceId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(kpId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+  });
+
+  test('drawio-parity batch78 Alibaba starter (ecs/oss/ack) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final ecsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaEcs(
+        id: ecsId, pinX: 1, pinY: 8, width: 1.3, height: 1.2));
+    final ossId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaOss(
+        id: ossId, pinX: 3, pinY: 8, width: 1.2, height: 1.3));
+    final slbId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaSlb(
+        id: slbId, pinX: 5, pinY: 8, width: 1.2, height: 1.2));
+    final ackId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaAck(
+        id: ackId, pinX: 7, pinY: 8, width: 1.2, height: 1.2));
+    final polarId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaPolarDb(
+        id: polarId, pinX: 1, pinY: 5, width: 1.2, height: 1.3));
+    final mqId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaRocketMq(
+        id: mqId, pinX: 3, pinY: 5, width: 1.2, height: 1.2));
+    final cenId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaCen(
+        id: cenId, pinX: 5, pinY: 5, width: 1.2, height: 1.2));
+    final slsId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.alibabaSls(
+        id: slsId, pinX: 7, pinY: 5, width: 1.2, height: 1.1));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    expect(r.pages.first.findShapeById(ecsId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(ossId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(slbId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(4));
+    expect(r.pages.first.findShapeById(ackId)!.geometries.length, 4);
+    expect(
+        r.pages.first
+            .findShapeById(polarId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(
+        r.pages.first
+            .findShapeById(mqId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(
+        r.pages.first
+            .findShapeById(cenId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        greaterThanOrEqualTo(5));
+    expect(
+        r.pages.first
+            .findShapeById(slsId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+  });
+
   test('drawio-parity batch77 AWS expansion2 (fargate/glue/waf) round-trip',
       () {
     final blank = writer.emptyDocument();

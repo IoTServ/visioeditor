@@ -788,7 +788,9 @@ class EditorController extends ChangeNotifier {
           moved = true;
         }
         return moved
-            ? next.rerouteConnectors(movedShapeIds: movedIds)
+            ? next
+                .recalculateFormulas(changedShapeIds: movedIds)
+                .rerouteConnectors(movedShapeIds: movedIds)
             : page;
       },
       transient: transient,
@@ -2181,7 +2183,9 @@ class EditorController extends ChangeNotifier {
           (s) => s.copyWith(pinX: s.pinX + d.$1, pinY: s.pinY + d.$2),
         );
       });
-      return next.rerouteConnectors(movedShapeIds: movedIds);
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
   }
 
@@ -2201,6 +2205,7 @@ class EditorController extends ChangeNotifier {
           id,
           (sh) => sh.copyWith(pinX: sh.pinX + d.$1, pinY: sh.pinY + d.$2),
         )
+        .recalculateFormulas(changedShapeIds: movedIds)
         .rerouteConnectors(movedShapeIds: movedIds));
   }
 
@@ -3541,6 +3546,36 @@ class EditorController extends ChangeNotifier {
         para: (p) => p.copyWith(spaceAfterInches: inches.clamp(0.0, 1.0)),
       );
 
+  /// Toggle Visio paragraph bullets on the selection / in-edit text.
+  ///
+  /// Enables `Bullet=1` with a hanging indent defaults when turning on;
+  /// clears `Bullet` when turning off (glyph/`BulletStr` retained for reopen).
+  void setBullet(bool enabled) => _updateText(
+        para: (p) {
+          if (!enabled) {
+            return p.copyWith(bullet: 0);
+          }
+          if (p.bullet != 0) return p;
+          return p.copyWith(
+            bullet: 1,
+            bulletStr: p.bulletStr ?? '•',
+            indentLeftInches:
+                p.indentLeftInches > 0 ? p.indentLeftInches : 0.2,
+            indentFirstInches:
+                p.indentFirstInches != 0 ? p.indentFirstInches : -0.15,
+            textPosAfterBulletInches: p.textPosAfterBulletInches > 0
+                ? p.textPosAfterBulletInches
+                : 0.2,
+          );
+        },
+      );
+
+  /// Whether every selected / in-edit shape paragraph currently has bullets.
+  bool get selectedHasBullet {
+    final style = selectedParaStyle;
+    return style != null && style.bullet != 0;
+  }
+
   void setStrikethrough(bool value) => _updateText(
         char: (c) => c.copyWith(strikethrough: value),
       );
@@ -3570,6 +3605,28 @@ class EditorController extends ChangeNotifier {
           ),
         ),
       );
+
+  /// Toggle Curved Text (label along an arc) on selected 2-D shapes.
+  void setCurvedText(bool value) => _updateSelectedShapes(
+        (s) {
+          if (s.is1D || s.locked) return s;
+          return s.curvedText == value ? s : s.withCurvedText(value);
+        },
+      );
+
+  /// Whether every selected 2-D shape currently has Curved Text enabled.
+  bool get selectedCurvedText {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s == null || s.is1D) continue;
+      any = true;
+      if (!s.curvedText) return false;
+    }
+    return any;
+  }
 
   VsdxVertAlign? get selectedVerticalAlign {
     final page = currentPage;
@@ -3768,6 +3825,7 @@ class EditorController extends ChangeNotifier {
     updateCurrentPage(
       (page) => page
           .updateShapeById(id, (s) => s.copyWith(angleRad: angleRad))
+          .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds),
       transient: transient,
     );
@@ -3795,6 +3853,7 @@ class EditorController extends ChangeNotifier {
               height: height,
             ),
           )
+          .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds),
       transient: transient,
     );

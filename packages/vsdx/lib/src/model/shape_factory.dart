@@ -17432,6 +17432,4343 @@ abstract final class VsdxShapeFactory {
     );
   }
 
+  /// Alibaba ECS: compute tower with status LEDs.
+  static VsdxShape alibabaEcs({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final d = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.12 * h),
+          LineTo(0.72 * w, 0.12 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.08 * w, 0.78 * h),
+          LineTo(0.08 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.72 * w, 0.12 * h),
+          LineTo(0.72 * w + d, 0.12 * h + d),
+          LineTo(0.72 * w + d, 0.78 * h + d),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.72 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.78 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.72 * w + d, 0.78 * h + d),
+          LineTo(0.08 * w + d, 0.78 * h + d),
+          LineTo(0.08 * w, 0.78 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.28, 0.42, 0.56]) ...[
+            MoveTo(0.18 * w, y * h),
+            LineTo(0.58 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba OSS: object storage bucket.
+  static VsdxShape alibabaOss({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.82 * h),
+          LineTo(0.85 * w, 0.82 * h),
+          LineTo(0.78 * w, 0.28 * h),
+          LineTo(0.22 * w, 0.28 * h),
+          LineTo(0.15 * w, 0.82 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.28 * h),
+          LineTo(0.8 * w, 0.28 * h),
+          LineTo(0.8 * w, 0.4 * h),
+          LineTo(0.2 * w, 0.4 * h),
+          LineTo(0.2 * w, 0.28 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.5 * w, 0.4 * h),
+          LineTo(0.5 * w, 0.72 * h),
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.58 * h,
+              aX: 0.62 * w,
+              aY: 0.58 * h,
+              bX: 0.5 * w,
+              bY: 0.68 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba SLB: server load balancer fan-out.
+  static VsdxShape alibabaSlb({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.25 * w, 0.38 * h),
+          LineTo(0.75 * w, 0.38 * h),
+          LineTo(0.75 * w, 0.58 * h),
+          LineTo(0.25 * w, 0.58 * h),
+          LineTo(0.25 * w, 0.38 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, 0.12 * h),
+          LineTo(cx, 0.38 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(0.18 * w, 0.88 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(cx, 0.9 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(0.82 * w, 0.88 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.5, 0.12],
+          [0.18, 0.88],
+          [0.5, 0.9],
+          [0.82, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba ACK: Kubernetes hex cluster.
+  static VsdxShape alibabaAck({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    List<VsdxPathCommand> hex(double cx, double cy, double r) =>
+        <VsdxPathCommand>[
+          MoveTo(cx + r, cy),
+          LineTo(cx + 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - r, cy),
+          LineTo(cx - 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + r, cy),
+        ];
+    final r = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: hex(0.5 * w, 0.55 * h, 0.36 * math.min(w, h))),
+        VsdxGeometry(commands: hex(0.5 * w, 0.55 * h, r)),
+        VsdxGeometry(commands: hex(0.32 * w, 0.35 * h, r * 0.7)),
+        VsdxGeometry(commands: hex(0.68 * w, 0.35 * h, r * 0.7)),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba Function Compute: serverless function badge.
+  static VsdxShape alibabaFunctionCompute({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.25 * w, h),
+          LineTo(0.75 * w, h),
+          LineTo(w, 0.5 * h),
+          LineTo(0.75 * w, 0),
+          LineTo(0.25 * w, 0),
+          LineTo(0, 0.5 * h),
+          LineTo(0.25 * w, h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.78 * h),
+          LineTo(0.48 * w, 0.78 * h),
+          LineTo(0.62 * w, 0.22 * h),
+          LineTo(0.78 * w, 0.22 * h),
+          MoveTo(0.4 * w, 0.5 * h),
+          LineTo(0.68 * w, 0.5 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba PolarDB: clustered relational engine.
+  static VsdxShape alibabaPolarDb({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final left = 0.18 * w;
+    final right = 0.82 * w;
+    final ry = 0.08 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(left, 0.78 * h),
+          LineTo(left, 0.32 * h),
+          EllipticalArcTo(
+              x: right, y: 0.32 * h, controlX: cx, controlY: 0.32 * h + ry),
+          LineTo(right, 0.78 * h),
+          EllipticalArcTo(
+              x: left, y: 0.78 * h, controlX: cx, controlY: 0.78 * h - ry),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: 0.32 * h,
+              aX: cx + 0.32 * w,
+              aY: 0.32 * h,
+              bX: cx,
+              bY: 0.32 * h + ry),
+          MoveTo(0.35 * w, 0.32 * h),
+          LineTo(0.22 * w, 0.12 * h),
+          MoveTo(0.5 * w, 0.32 * h),
+          LineTo(0.5 * w, 0.1 * h),
+          MoveTo(0.65 * w, 0.32 * h),
+          LineTo(0.78 * w, 0.12 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.22, 0.12],
+          [0.5, 0.1],
+          [0.78, 0.12],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.06 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.06 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba TableStore: wide-column NoSQL grid.
+  static VsdxShape alibabaTableStore({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.1 * w, 0.15 * h),
+          LineTo(0.9 * w, 0.15 * h),
+          LineTo(0.9 * w, 0.9 * h),
+          LineTo(0.1 * w, 0.9 * h),
+          LineTo(0.1 * w, 0.15 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final x in <double>[0.3, 0.5, 0.7]) ...[
+            MoveTo(x * w, 0.22 * h),
+            LineTo(x * w, 0.82 * h),
+          ],
+          for (final y in <double>[0.35, 0.55, 0.75]) ...[
+            MoveTo(0.18 * w, y * h),
+            LineTo(0.82 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba MaxCompute: big-data warehouse funnel.
+  static VsdxShape alibabaMaxCompute({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.1 * w, 0.15 * h),
+          LineTo(0.9 * w, 0.15 * h),
+          LineTo(0.7 * w, 0.48 * h),
+          LineTo(0.7 * w, 0.85 * h),
+          LineTo(0.3 * w, 0.85 * h),
+          LineTo(0.3 * w, 0.48 * h),
+          LineTo(0.1 * w, 0.15 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.22 * w, 0.3 * h),
+          LineTo(0.78 * w, 0.3 * h),
+          MoveTo(0.38 * w, 0.58 * h),
+          LineTo(0.62 * w, 0.58 * h),
+          MoveTo(0.38 * w, 0.72 * h),
+          LineTo(0.62 * w, 0.72 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba RocketMQ: message broker with topic rays.
+  static VsdxShape alibabaRocketMq({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.4 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.14 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.14 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, cy + 0.14 * h),
+          LineTo(0.18 * w, 0.85 * h),
+          MoveTo(cx, cy + 0.14 * h),
+          LineTo(cx, 0.88 * h),
+          MoveTo(cx, cy + 0.14 * h),
+          LineTo(0.82 * w, 0.85 * h),
+          MoveTo(cx, cy - 0.14 * h),
+          LineTo(cx, 0.1 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.18, 0.85],
+          [0.5, 0.88],
+          [0.82, 0.85],
+          [0.5, 0.1],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba RAM: identity key / access control.
+  static VsdxShape alibabaRam({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.32 * h,
+              aX: 0.68 * w,
+              aY: 0.32 * h,
+              bX: 0.5 * w,
+              bY: 0.5 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.42 * w, 0.48 * h),
+          LineTo(0.58 * w, 0.48 * h),
+          LineTo(0.58 * w, 0.78 * h),
+          LineTo(0.42 * w, 0.78 * h),
+          LineTo(0.42 * w, 0.48 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.58 * w, 0.62 * h),
+          LineTo(0.82 * w, 0.62 * h),
+          MoveTo(0.72 * w, 0.62 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          MoveTo(0.82 * w, 0.62 * h),
+          LineTo(0.82 * w, 0.72 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba CEN: cloud enterprise network hub.
+  static VsdxShape alibabaCen({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.5 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.16 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.16 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final a in <double>[0, 0.25, 0.5, 0.75]) ...[
+            MoveTo(cx, cy),
+            LineTo(
+                cx + 0.38 * w * math.cos(a * 2 * math.pi),
+                cy + 0.38 * h * math.sin(a * 2 * math.pi)),
+          ],
+        ]),
+        for (final a in <double>[0, 0.25, 0.5, 0.75])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: cx + 0.38 * w * math.cos(a * 2 * math.pi),
+                cy: cy + 0.38 * h * math.sin(a * 2 * math.pi),
+                aX: cx + 0.38 * w * math.cos(a * 2 * math.pi) + 0.06 * w,
+                aY: cy + 0.38 * h * math.sin(a * 2 * math.pi),
+                bX: cx + 0.38 * w * math.cos(a * 2 * math.pi),
+                bY: cy + 0.38 * h * math.sin(a * 2 * math.pi) + 0.06 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba SLS: log service stream lines.
+  static VsdxShape alibabaSls({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.1 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.28, 0.45, 0.62]) ...[
+            MoveTo(0.15 * w, y * h),
+            LineTo(0.85 * w, y * h),
+          ],
+          MoveTo(0.15 * w, 0.78 * h),
+          LineTo(0.55 * w, 0.78 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba NAS: network attached storage drawers.
+  static VsdxShape alibabaNas({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.15, 0.12, 0.85, 0.38],
+          [0.15, 0.4, 0.85, 0.66],
+          [0.15, 0.68, 0.85, 0.9],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.53, 0.79]) ...[
+            MoveTo(0.25 * w, y * h),
+            LineTo(0.55 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba AnalyticDB: analytics warehouse columns.
+  static VsdxShape alibabaAnalyticDb({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.1 * w, 0.12 * h),
+          LineTo(0.9 * w, 0.12 * h),
+          LineTo(0.9 * w, 0.9 * h),
+          LineTo(0.1 * w, 0.9 * h),
+          LineTo(0.1 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final x in <double>[0.3, 0.5, 0.7]) ...[
+            MoveTo(x * w, 0.2 * h),
+            LineTo(x * w, 0.82 * h),
+          ],
+          MoveTo(0.18 * w, 0.35 * h),
+          LineTo(0.82 * w, 0.35 * h),
+          MoveTo(0.18 * w, 0.55 * h),
+          LineTo(0.82 * w, 0.55 * h),
+          MoveTo(0.18 * w, 0.75 * h),
+          LineTo(0.82 * w, 0.75 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.34 * w, 0.55 * h),
+          LineTo(0.46 * w, 0.55 * h),
+          LineTo(0.46 * w, 0.82 * h),
+          LineTo(0.34 * w, 0.82 * h),
+          LineTo(0.34 * w, 0.55 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba CDN: edge cache with globe arcs.
+  static VsdxShape alibabaCdn({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.48 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.32 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.28 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.12 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.28 * h),
+          MoveTo(0.18 * w, cy),
+          LineTo(0.82 * w, cy),
+        ]),
+        for (final x in <double>[0.2, 0.5, 0.8])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(x * w - 0.06 * w, 0.82 * h),
+            LineTo(x * w + 0.06 * w, 0.82 * h),
+            LineTo(x * w + 0.06 * w, 0.95 * h),
+            LineTo(x * w - 0.06 * w, 0.95 * h),
+            LineTo(x * w - 0.06 * w, 0.82 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba WAF: web application firewall shield.
+  static VsdxShape alibabaWaf({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.5 * w, 0.08 * h),
+          LineTo(0.9 * w, 0.28 * h),
+          LineTo(0.84 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.16 * w, y: 0.62 * h, controlX: 0.5 * w, controlY: 0.95 * h),
+          LineTo(0.1 * w, 0.28 * h),
+          LineTo(0.5 * w, 0.08 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.3 * w, 0.4 * h),
+          LineTo(0.7 * w, 0.4 * h),
+          MoveTo(0.35 * w, 0.55 * h),
+          LineTo(0.65 * w, 0.55 * h),
+          MoveTo(0.5 * w, 0.28 * h),
+          LineTo(0.5 * w, 0.7 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba DataWorks: data pipeline board.
+  static VsdxShape alibabaDataWorks({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.08 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.18 * w, 0.25 * h),
+          LineTo(0.55 * w, 0.25 * h),
+          MoveTo(0.18 * w, 0.42 * h),
+          LineTo(0.7 * w, 0.42 * h),
+          MoveTo(0.18 * w, 0.59 * h),
+          LineTo(0.45 * w, 0.59 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.55 * w, 0.68 * h),
+          LineTo(0.75 * w, 0.68 * h),
+          LineTo(0.85 * w, 0.8 * h),
+          LineTo(0.75 * w, 0.92 * h),
+          LineTo(0.55 * w, 0.92 * h),
+          LineTo(0.65 * w, 0.8 * h),
+          LineTo(0.55 * w, 0.68 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba Hologres: real-time warehouse grid.
+  static VsdxShape alibabaHologres({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.1 * w, 0.12 * h),
+          LineTo(0.9 * w, 0.12 * h),
+          LineTo(0.9 * w, 0.9 * h),
+          LineTo(0.1 * w, 0.9 * h),
+          LineTo(0.1 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final x in <double>[0.3, 0.5, 0.7]) ...[
+            MoveTo(x * w, 0.2 * h),
+            LineTo(x * w, 0.82 * h),
+          ],
+          MoveTo(0.18 * w, 0.35 * h),
+          LineTo(0.82 * w, 0.35 * h),
+          MoveTo(0.18 * w, 0.55 * h),
+          LineTo(0.82 * w, 0.55 * h),
+          MoveTo(0.18 * w, 0.75 * h),
+          LineTo(0.82 * w, 0.75 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.55 * w, 0.2 * h),
+          LineTo(0.65 * w, 0.2 * h),
+          LineTo(0.65 * w, 0.82 * h),
+          LineTo(0.55 * w, 0.82 * h),
+          LineTo(0.55 * w, 0.2 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba Flink: streaming compute chevrons.
+  static VsdxShape alibabaFlink({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    VsdxGeometry chevron(double x0, double x1) => VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(x0, 0.28 * h),
+            LineTo(x1 - 0.07 * w, 0.28 * h),
+            LineTo(x1, 0.5 * h),
+            LineTo(x1 - 0.07 * w, 0.72 * h),
+            LineTo(x0, 0.72 * h),
+            LineTo(x0 + 0.07 * w, 0.5 * h),
+            LineTo(x0, 0.28 * h),
+          ],
+        );
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        chevron(0.05 * w, 0.38 * w),
+        chevron(0.34 * w, 0.67 * w),
+        chevron(0.63 * w, 0.96 * w),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba MSE: microservices engine hub.
+  static VsdxShape alibabaMse({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.5 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.16 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.16 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final a in <double>[0, 0.25, 0.5, 0.75]) ...[
+            MoveTo(cx, cy),
+            LineTo(
+                cx + 0.36 * w * math.cos(a * 2 * math.pi),
+                cy + 0.36 * h * math.sin(a * 2 * math.pi)),
+          ],
+        ]),
+        for (final a in <double>[0, 0.25, 0.5, 0.75])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: cx + 0.36 * w * math.cos(a * 2 * math.pi),
+                cy: cy + 0.36 * h * math.sin(a * 2 * math.pi),
+                aX: cx + 0.36 * w * math.cos(a * 2 * math.pi) + 0.06 * w,
+                aY: cy + 0.36 * h * math.sin(a * 2 * math.pi),
+                bX: cx + 0.36 * w * math.cos(a * 2 * math.pi),
+                bY: cy + 0.36 * h * math.sin(a * 2 * math.pi) + 0.06 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba ASM: service mesh hex cells.
+  static VsdxShape alibabaAsm({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    List<VsdxPathCommand> hex(double cx, double cy, double r) =>
+        <VsdxPathCommand>[
+          MoveTo(cx + r, cy),
+          LineTo(cx + 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - r, cy),
+          LineTo(cx - 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + r, cy),
+        ];
+    final r = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: hex(0.3 * w, 0.55 * h, r)),
+        VsdxGeometry(commands: hex(0.7 * w, 0.55 * h, r)),
+        VsdxGeometry(commands: hex(0.5 * w, 0.28 * h, r)),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.3 * w, 0.55 * h),
+          LineTo(0.5 * w, 0.28 * h),
+          LineTo(0.7 * w, 0.55 * h),
+          LineTo(0.3 * w, 0.55 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba ACR: container registry vault.
+  static VsdxShape alibabaAcr({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.2 * h),
+          LineTo(0.85 * w, 0.2 * h),
+          LineTo(0.85 * w, 0.85 * h),
+          LineTo(0.15 * w, 0.85 * h),
+          LineTo(0.15 * w, 0.2 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.55 * w, 0.32 * h),
+          LineTo(0.78 * w, 0.32 * h),
+          LineTo(0.78 * w, 0.52 * h),
+          LineTo(0.55 * w, 0.52 * h),
+          LineTo(0.55 * w, 0.32 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.25 * w, 0.38 * h),
+          LineTo(0.48 * w, 0.38 * h),
+          MoveTo(0.25 * w, 0.55 * h),
+          LineTo(0.48 * w, 0.55 * h),
+          MoveTo(0.25 * w, 0.7 * h),
+          LineTo(0.7 * w, 0.7 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba EIP: elastic public IP badge.
+  static VsdxShape alibabaEip({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.5 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.38 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.38 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.22 * w, cy),
+          LineTo(0.78 * w, cy),
+          MoveTo(cx, 0.22 * h),
+          LineTo(cx, 0.78 * h),
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.18 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.38 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba NAT Gateway: outbound NAT appliance.
+  static VsdxShape alibabaNatGateway({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.35 * h),
+          LineTo(0.85 * w, 0.35 * h),
+          LineTo(0.85 * w, 0.7 * h),
+          LineTo(0.15 * w, 0.7 * h),
+          LineTo(0.15 * w, 0.35 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.28 * w, 0.2 * h),
+          LineTo(0.28 * w, 0.35 * h),
+          MoveTo(0.5 * w, 0.15 * h),
+          LineTo(0.5 * w, 0.35 * h),
+          MoveTo(0.72 * w, 0.2 * h),
+          LineTo(0.72 * w, 0.35 * h),
+          MoveTo(0.5 * w, 0.7 * h),
+          LineTo(0.5 * w, 0.88 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.28, 0.2],
+          [0.5, 0.15],
+          [0.72, 0.2],
+          [0.5, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba KMS: key management vault.
+  static VsdxShape alibabaKms({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.32 * h,
+              aX: 0.68 * w,
+              aY: 0.32 * h,
+              bX: 0.5 * w,
+              bY: 0.5 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.42 * w, 0.48 * h),
+          LineTo(0.58 * w, 0.48 * h),
+          LineTo(0.58 * w, 0.78 * h),
+          LineTo(0.42 * w, 0.78 * h),
+          LineTo(0.42 * w, 0.48 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.58 * w, 0.62 * h),
+          LineTo(0.82 * w, 0.62 * h),
+          MoveTo(0.72 * w, 0.62 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          MoveTo(0.82 * w, 0.62 * h),
+          LineTo(0.82 * w, 0.72 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba ARMS: APM metrics sparkline.
+  static VsdxShape alibabaArms({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.1 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.65 * h),
+          LineTo(0.32 * w, 0.45 * h),
+          LineTo(0.45 * w, 0.55 * h),
+          LineTo(0.6 * w, 0.28 * h),
+          LineTo(0.75 * w, 0.4 * h),
+          LineTo(0.88 * w, 0.22 * h),
+          MoveTo(0.15 * w, 0.8 * h),
+          LineTo(0.88 * w, 0.8 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba Lindorm: multi-model store stack.
+  static VsdxShape alibabaLindorm({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.15, 0.7, 0.85, 0.92],
+          [0.22, 0.42, 0.78, 0.64],
+          [0.3, 0.14, 0.7, 0.36],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.81 * h),
+          LineTo(0.65 * w, 0.81 * h),
+          MoveTo(0.4 * w, 0.53 * h),
+          LineTo(0.6 * w, 0.53 * h),
+          MoveTo(0.42 * w, 0.25 * h),
+          LineTo(0.58 * w, 0.25 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Alibaba DTS: data transmission funnel.
+  static VsdxShape alibabaDts({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.1 * w, 0.15 * h),
+          LineTo(0.9 * w, 0.15 * h),
+          LineTo(0.7 * w, 0.48 * h),
+          LineTo(0.7 * w, 0.85 * h),
+          LineTo(0.3 * w, 0.85 * h),
+          LineTo(0.3 * w, 0.48 * h),
+          LineTo(0.1 * w, 0.15 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.22 * w, 0.3 * h),
+          LineTo(0.78 * w, 0.3 * h),
+          MoveTo(0.38 * w, 0.58 * h),
+          LineTo(0.62 * w, 0.58 * h),
+          MoveTo(0.38 * w, 0.72 * h),
+          LineTo(0.62 * w, 0.72 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM VPC: region cloud with subnet nodes.
+  static VsdxShape ibmVpc({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.38 * w, y: 0.42 * h, controlX: 0.18 * w, controlY: 0.4 * h),
+          EllipticalArcTo(
+              x: 0.62 * w, y: 0.35 * h, controlX: 0.5 * w, controlY: 0.18 * h),
+          EllipticalArcTo(
+              x: 0.82 * w, y: 0.55 * h, controlX: 0.88 * w, controlY: 0.3 * h),
+          EllipticalArcTo(
+              x: 0.72 * w, y: 0.78 * h, controlX: 0.9 * w, controlY: 0.78 * h),
+          LineTo(0.28 * w, 0.78 * h),
+          EllipticalArcTo(
+              x: 0.2 * w, y: 0.62 * h, controlX: 0.12 * w, controlY: 0.78 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.35, 0.55],
+          [0.5, 0.48],
+          [0.65, 0.58],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.04 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.04 * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.55 * h),
+          LineTo(0.5 * w, 0.48 * h),
+          LineTo(0.65 * w, 0.58 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Cloud Object Storage: COS bucket.
+  static VsdxShape ibmCloudObjectStorage({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.82 * h),
+          LineTo(0.85 * w, 0.82 * h),
+          LineTo(0.78 * w, 0.28 * h),
+          LineTo(0.22 * w, 0.28 * h),
+          LineTo(0.15 * w, 0.82 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.28 * h),
+          LineTo(0.8 * w, 0.28 * h),
+          LineTo(0.8 * w, 0.4 * h),
+          LineTo(0.2 * w, 0.4 * h),
+          LineTo(0.2 * w, 0.28 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.28 * h),
+          EllipticalArcTo(
+              x: 0.68 * w,
+              y: 0.28 * h,
+              controlX: 0.5 * w,
+              controlY: 0.08 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM IKS: Kubernetes hex cluster.
+  static VsdxShape ibmIks({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    List<VsdxPathCommand> hex(double cx, double cy, double r) =>
+        <VsdxPathCommand>[
+          MoveTo(cx + r, cy),
+          LineTo(cx + 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - r, cy),
+          LineTo(cx - 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + r, cy),
+        ];
+    final r = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: hex(0.5 * w, 0.55 * h, 0.36 * math.min(w, h))),
+        VsdxGeometry(commands: hex(0.5 * w, 0.55 * h, r)),
+        VsdxGeometry(commands: hex(0.32 * w, 0.35 * h, r * 0.7)),
+        VsdxGeometry(commands: hex(0.68 * w, 0.35 * h, r * 0.7)),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM ROKS: OpenShift-style wheel.
+  static VsdxShape ibmRoks({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.5 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.38 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.38 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.14 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.14 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final a in <double>[0, 0.2, 0.4, 0.6, 0.8]) ...[
+            MoveTo(
+                cx + 0.14 * w * math.cos(a * 2 * math.pi),
+                cy + 0.14 * h * math.sin(a * 2 * math.pi)),
+            LineTo(
+                cx + 0.38 * w * math.cos(a * 2 * math.pi),
+                cy + 0.38 * h * math.sin(a * 2 * math.pi)),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Db2: cylinder database.
+  static VsdxShape ibmDb2({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final left = 0.18 * w;
+    final right = 0.82 * w;
+    final cx = 0.5 * w;
+    final ry = 0.08 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(left, 0.78 * h),
+          LineTo(left, 0.28 * h),
+          EllipticalArcTo(
+              x: right, y: 0.28 * h, controlX: cx, controlY: 0.28 * h + ry),
+          LineTo(right, 0.78 * h),
+          EllipticalArcTo(
+              x: left, y: 0.78 * h, controlX: cx, controlY: 0.78 * h - ry),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: 0.28 * h,
+              aX: cx + 0.32 * w,
+              aY: 0.28 * h,
+              bX: cx,
+              bY: 0.28 * h + ry),
+          MoveTo(left, 0.5 * h),
+          EllipticalArcTo(
+              x: right, y: 0.5 * h, controlX: cx, controlY: 0.5 * h + ry),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Cloudant: document store with couch glyph.
+  static VsdxShape ibmCloudant({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.2 * h),
+          LineTo(0.7 * w, 0.2 * h),
+          LineTo(0.85 * w, 0.35 * h),
+          LineTo(0.85 * w, 0.88 * h),
+          LineTo(0.2 * w, 0.88 * h),
+          LineTo(0.2 * w, 0.2 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.7 * w, 0.2 * h),
+          LineTo(0.7 * w, 0.35 * h),
+          LineTo(0.85 * w, 0.35 * h),
+          LineTo(0.7 * w, 0.2 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.48 * h),
+          LineTo(0.7 * w, 0.48 * h),
+          MoveTo(0.32 * w, 0.62 * h),
+          LineTo(0.7 * w, 0.62 * h),
+          MoveTo(0.32 * w, 0.76 * h),
+          LineTo(0.58 * w, 0.76 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Event Streams: Kafka-style stream waves.
+  static VsdxShape ibmEventStreams({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.5, 0.75]) ...[
+            MoveTo(0.08 * w, y * h),
+            EllipticalArcTo(
+                x: 0.35 * w,
+                y: y * h,
+                controlX: 0.22 * w,
+                controlY: y * h + 0.12 * h),
+            EllipticalArcTo(
+                x: 0.65 * w,
+                y: y * h,
+                controlX: 0.5 * w,
+                controlY: y * h - 0.12 * h),
+            EllipticalArcTo(
+                x: 0.92 * w,
+                y: y * h,
+                controlX: 0.78 * w,
+                controlY: y * h + 0.12 * h),
+          ],
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.78 * w, 0.42 * h),
+          LineTo(0.95 * w, 0.5 * h),
+          LineTo(0.78 * w, 0.58 * h),
+          LineTo(0.78 * w, 0.42 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM MQ: message queue broker.
+  static VsdxShape ibmMq({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.42 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.14 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.14 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, cy + 0.14 * h),
+          LineTo(0.18 * w, 0.85 * h),
+          MoveTo(cx, cy + 0.14 * h),
+          LineTo(cx, 0.88 * h),
+          MoveTo(cx, cy + 0.14 * h),
+          LineTo(0.82 * w, 0.85 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.18, 0.85],
+          [0.5, 0.88],
+          [0.82, 0.85],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM watsonx: AI neural-net cluster.
+  static VsdxShape ibmWatsonx({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final p in <List<double>>[
+          [0.2, 0.25],
+          [0.2, 0.5],
+          [0.2, 0.75],
+          [0.5, 0.35],
+          [0.5, 0.65],
+          [0.8, 0.5],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.07 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.07 * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.5, 0.75]) ...[
+            MoveTo(0.2 * w, y * h),
+            LineTo(0.5 * w, 0.35 * h),
+            MoveTo(0.2 * w, y * h),
+            LineTo(0.5 * w, 0.65 * h),
+          ],
+          MoveTo(0.5 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.5 * h),
+          MoveTo(0.5 * w, 0.65 * h),
+          LineTo(0.8 * w, 0.5 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Code Engine: serverless run capsule.
+  static VsdxShape ibmCodeEngine({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.2 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, 0.78 * h),
+          LineTo(w - r, 0.78 * h),
+          EllipticalArcTo(
+              x: w, y: 0.78 * h - r, controlX: w, controlY: 0.78 * h),
+          LineTo(w, 0.22 * h + r),
+          EllipticalArcTo(
+              x: w - r, y: 0.22 * h, controlX: w, controlY: 0.22 * h),
+          LineTo(r, 0.22 * h),
+          EllipticalArcTo(
+              x: 0, y: 0.22 * h + r, controlX: 0, controlY: 0.22 * h),
+          LineTo(0, 0.78 * h - r),
+          EllipticalArcTo(x: r, y: 0.78 * h, controlX: 0, controlY: 0.78 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.62 * w, 0.4 * h),
+          LineTo(0.82 * w, 0.5 * h),
+          LineTo(0.62 * w, 0.6 * h),
+          LineTo(0.62 * w, 0.4 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.4 * h),
+          LineTo(0.5 * w, 0.4 * h),
+          MoveTo(0.2 * w, 0.55 * h),
+          LineTo(0.45 * w, 0.55 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM API Connect: API portal gateway.
+  static VsdxShape ibmApiConnect({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.1 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.3 * h),
+          LineTo(0.55 * w, 0.3 * h),
+          MoveTo(0.2 * w, 0.5 * h),
+          LineTo(0.7 * w, 0.5 * h),
+          MoveTo(0.2 * w, 0.7 * h),
+          LineTo(0.45 * w, 0.7 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.75 * w,
+              cy: 0.7 * h,
+              aX: 0.82 * w,
+              aY: 0.7 * h,
+              bX: 0.75 * w,
+              bY: 0.78 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM App ID: identity badge.
+  static VsdxShape ibmAppId({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.5 * w, 0.1 * h),
+          LineTo(0.88 * w, 0.3 * h),
+          LineTo(0.82 * w, 0.7 * h),
+          EllipticalArcTo(
+              x: 0.18 * w, y: 0.7 * h, controlX: 0.5 * w, controlY: 0.95 * h),
+          LineTo(0.12 * w, 0.3 * h),
+          LineTo(0.5 * w, 0.1 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.4 * h,
+              aX: 0.6 * w,
+              aY: 0.4 * h,
+              bX: 0.5 * w,
+              bY: 0.52 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.62 * h),
+          LineTo(0.65 * w, 0.62 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Key Protect: vault with keyhole.
+  static VsdxShape ibmKeyProtect({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.9 * h),
+          LineTo(0.2 * w, 0.9 * h),
+          LineTo(0.2 * w, 0.35 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.35 * h),
+          EllipticalArcTo(
+              x: 0.68 * w, y: 0.35 * h, controlX: 0.5 * w, controlY: 0.08 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.55 * h,
+              aX: 0.58 * w,
+              aY: 0.55 * h,
+              bX: 0.5 * w,
+              bY: 0.63 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.46 * w, 0.6 * h),
+          LineTo(0.54 * w, 0.6 * h),
+          LineTo(0.54 * w, 0.78 * h),
+          LineTo(0.46 * w, 0.78 * h),
+          LineTo(0.46 * w, 0.6 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Direct Link: dedicated interconnect.
+  static VsdxShape ibmDirectLink({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.55 * h),
+          LineTo(0.42 * w, 0.55 * h),
+          LineTo(0.42 * w, 0.85 * h),
+          LineTo(0.08 * w, 0.85 * h),
+          LineTo(0.08 * w, 0.55 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.55 * w, 0.48 * h),
+          EllipticalArcTo(
+              x: 0.7 * w, y: 0.32 * h, controlX: 0.52 * w, controlY: 0.3 * h),
+          EllipticalArcTo(
+              x: 0.88 * w, y: 0.42 * h, controlX: 0.82 * w, controlY: 0.18 * h),
+          EllipticalArcTo(
+              x: 0.82 * w, y: 0.62 * h, controlX: 0.95 * w, controlY: 0.62 * h),
+          LineTo(0.62 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.55 * w, y: 0.48 * h, controlX: 0.5 * w, controlY: 0.62 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.42 * w, 0.7 * h),
+          LineTo(0.58 * w, 0.55 * h),
+          MoveTo(0.15 * w, 0.65 * h),
+          LineTo(0.35 * w, 0.65 * h),
+          MoveTo(0.15 * w, 0.75 * h),
+          LineTo(0.35 * w, 0.75 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Activity Tracker: audit trail footprints.
+  static VsdxShape ibmActivityTracker({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.75 * h),
+          LineTo(0.35 * w, 0.55 * h),
+          LineTo(0.55 * w, 0.65 * h),
+          LineTo(0.75 * w, 0.35 * h),
+          LineTo(0.9 * w, 0.25 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.15, 0.75],
+          [0.35, 0.55],
+          [0.55, 0.65],
+          [0.75, 0.35],
+          [0.9, 0.25],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Log Analysis: log stream lines in a tile.
+  static VsdxShape ibmLogAnalysis({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.1 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.28, 0.45, 0.62]) ...[
+            MoveTo(0.15 * w, y * h),
+            LineTo(0.85 * w, y * h),
+          ],
+          MoveTo(0.15 * w, 0.78 * h),
+          LineTo(0.55 * w, 0.78 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Schematics: IaC template stack.
+  static VsdxShape ibmSchematics({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.12, 0.15, 0.78, 0.4],
+          [0.18, 0.38, 0.84, 0.63],
+          [0.24, 0.61, 0.9, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.27, 0.5, 0.74]) ...[
+            MoveTo(0.3 * w, y * h),
+            LineTo(0.7 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Satellite: hybrid edge satellite node.
+  static VsdxShape ibmSatellite({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.55 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.22 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.18 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.22 * w, 0.28 * h),
+          EllipticalArcTo(
+              x: 0.78 * w, y: 0.28 * h, controlX: cx, controlY: 0.08 * h),
+          MoveTo(0.3 * w, 0.38 * h),
+          EllipticalArcTo(
+              x: 0.7 * w, y: 0.38 * h, controlX: cx, controlY: 0.22 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.08 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.08 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Power VS: Power Virtual Server chassis.
+  static VsdxShape ibmPowerVs({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final d = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.12 * h),
+          LineTo(0.72 * w, 0.12 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.08 * w, 0.78 * h),
+          LineTo(0.08 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.72 * w, 0.12 * h),
+          LineTo(0.72 * w + d, 0.12 * h + d),
+          LineTo(0.72 * w + d, 0.78 * h + d),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.72 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.78 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.72 * w + d, 0.78 * h + d),
+          LineTo(0.08 * w + d, 0.78 * h + d),
+          LineTo(0.08 * w, 0.78 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.55 * w, 0.28 * h),
+          LineTo(0.65 * w, 0.42 * h),
+          LineTo(0.55 * w, 0.56 * h),
+          LineTo(0.45 * w, 0.42 * h),
+          LineTo(0.55 * w, 0.28 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Bare Metal: dense rack server.
+  static VsdxShape ibmBareMetal({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.12 * w, 0.1 * h),
+          LineTo(0.88 * w, 0.1 * h),
+          LineTo(0.88 * w, 0.9 * h),
+          LineTo(0.12 * w, 0.9 * h),
+          LineTo(0.12 * w, 0.1 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.28, 0.45, 0.62, 0.78]) ...[
+            MoveTo(0.22 * w, y * h),
+            LineTo(0.78 * w, y * h),
+          ],
+        ]),
+        for (final y in <double>[0.28, 0.45, 0.62, 0.78])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: 0.78 * w,
+                cy: y * h,
+                aX: 0.84 * w,
+                aY: y * h,
+                bX: 0.78 * w,
+                bY: y * h + 0.04 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Block Storage: stacked block volumes.
+  static VsdxShape ibmBlockStorage({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.15, 0.15, 0.85, 0.4],
+          [0.15, 0.42, 0.85, 0.67],
+          [0.15, 0.69, 0.85, 0.9],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.27, 0.54, 0.79]) ...[
+            MoveTo(0.28 * w, y * h),
+            LineTo(0.72 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM File Storage: file share drawers.
+  static VsdxShape ibmFileStorage({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.15, 0.12, 0.85, 0.38],
+          [0.15, 0.4, 0.85, 0.66],
+          [0.15, 0.68, 0.85, 0.9],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.53, 0.79]) ...[
+            MoveTo(0.25 * w, y * h),
+            LineTo(0.55 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM CIS: Cloud Internet Services edge.
+  static VsdxShape ibmCis({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.58 * h),
+          LineTo(0.2 * w, 0.58 * h),
+          LineTo(0.2 * w, 0.35 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, 0.1 * h),
+          LineTo(cx, 0.35 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(0.18 * w, 0.88 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(cx, 0.9 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(0.82 * w, 0.88 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.5, 0.1],
+          [0.18, 0.88],
+          [0.5, 0.9],
+          [0.82, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Internet Services: DNS / CDN / WAF edge stack.
+  static VsdxShape ibmInternetServices({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.55 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.38 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.32 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx - 0.18 * w, cy - 0.28 * h),
+          LineTo(cx - 0.18 * w, cy + 0.28 * h),
+          MoveTo(cx + 0.18 * w, cy - 0.28 * h),
+          LineTo(cx + 0.18 * w, cy + 0.28 * h),
+          MoveTo(cx - 0.35 * w, cy - 0.1 * h),
+          EllipticalArcTo(
+              x: cx + 0.35 * w,
+              y: cy - 0.1 * h,
+              controlX: cx,
+              controlY: cy - 0.22 * h),
+          MoveTo(cx - 0.35 * w, cy + 0.12 * h),
+          EllipticalArcTo(
+              x: cx + 0.35 * w,
+              y: cy + 0.12 * h,
+              controlX: cx,
+              controlY: cy + 0.24 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.22 * w, 0.12 * h),
+          LineTo(0.78 * w, 0.12 * h),
+          LineTo(0.78 * w, 0.28 * h),
+          LineTo(0.22 * w, 0.28 * h),
+          LineTo(0.22 * w, 0.12 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Aspera: high-speed transfer arrow.
+  static VsdxShape ibmAspera({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.38 * h),
+          LineTo(0.58 * w, 0.38 * h),
+          LineTo(0.58 * w, 0.22 * h),
+          LineTo(0.92 * w, 0.5 * h),
+          LineTo(0.58 * w, 0.78 * h),
+          LineTo(0.58 * w, 0.62 * h),
+          LineTo(0.08 * w, 0.62 * h),
+          LineTo(0.08 * w, 0.38 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.18 * w, 0.28 * h),
+          LineTo(0.35 * w, 0.28 * h),
+          MoveTo(0.18 * w, 0.72 * h),
+          LineTo(0.35 * w, 0.72 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Certificate Manager: cert badge with seal.
+  static VsdxShape ibmCertificateManager({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.18 * w, 0.15 * h),
+          LineTo(0.82 * w, 0.15 * h),
+          LineTo(0.82 * w, 0.75 * h),
+          LineTo(0.5 * w, 0.9 * h),
+          LineTo(0.18 * w, 0.75 * h),
+          LineTo(0.18 * w, 0.15 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.3 * w, 0.35 * h),
+          LineTo(0.7 * w, 0.35 * h),
+          MoveTo(0.3 * w, 0.5 * h),
+          LineTo(0.7 * w, 0.5 * h),
+          MoveTo(0.3 * w, 0.65 * h),
+          LineTo(0.55 * w, 0.65 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.65 * w,
+              cy: 0.72 * h,
+              aX: 0.75 * w,
+              aY: 0.72 * h,
+              bX: 0.65 * w,
+              bY: 0.82 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Toolchain: CI/CD linked stages.
+  static VsdxShape ibmToolchain({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final p in <List<double>>[
+          [0.2, 0.5],
+          [0.5, 0.5],
+          [0.8, 0.5],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.1 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.12 * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.3 * w, 0.5 * h),
+          LineTo(0.4 * w, 0.5 * h),
+          MoveTo(0.6 * w, 0.5 * h),
+          LineTo(0.7 * w, 0.5 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.2 * h),
+          LineTo(0.35 * w, 0.2 * h),
+          LineTo(0.35 * w, 0.32 * h),
+          LineTo(0.15 * w, 0.32 * h),
+          LineTo(0.15 * w, 0.2 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// IBM Security Advisor: security posture shield.
+  static VsdxShape ibmSecurityAdvisor({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.5 * w, 0.08 * h),
+          LineTo(0.9 * w, 0.28 * h),
+          LineTo(0.84 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.16 * w, y: 0.62 * h, controlX: 0.5 * w, controlY: 0.95 * h),
+          LineTo(0.1 * w, 0.28 * h),
+          LineTo(0.5 * w, 0.08 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.45 * h),
+          LineTo(0.48 * w, 0.6 * h),
+          LineTo(0.7 * w, 0.35 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Compute Instance: isometric compute cube.
+  static VsdxShape oracleComputeInstance({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final d = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.12 * h),
+          LineTo(0.72 * w, 0.12 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.08 * w, 0.78 * h),
+          LineTo(0.08 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.72 * w, 0.12 * h),
+          LineTo(0.72 * w + d, 0.12 * h + d),
+          LineTo(0.72 * w + d, 0.78 * h + d),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.72 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.78 * h),
+          LineTo(0.72 * w, 0.78 * h),
+          LineTo(0.72 * w + d, 0.78 * h + d),
+          LineTo(0.08 * w + d, 0.78 * h + d),
+          LineTo(0.08 * w, 0.78 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.28, 0.42, 0.56]) ...[
+            MoveTo(0.18 * w, y * h),
+            LineTo(0.58 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Autonomous Database: ADB cylinder with autonomy badge.
+  static VsdxShape oracleAutonomousDatabase({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final left = 0.18 * w;
+    final right = 0.82 * w;
+    final cx = 0.5 * w;
+    final ry = 0.08 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(left, 0.78 * h),
+          LineTo(left, 0.32 * h),
+          EllipticalArcTo(
+              x: right, y: 0.32 * h, controlX: cx, controlY: 0.32 * h + ry),
+          LineTo(right, 0.78 * h),
+          EllipticalArcTo(
+              x: left, y: 0.78 * h, controlX: cx, controlY: 0.78 * h - ry),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: 0.32 * h,
+              aX: cx + 0.32 * w,
+              aY: 0.32 * h,
+              bX: cx,
+              bY: 0.32 * h + ry),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.72 * w,
+              cy: 0.18 * h,
+              aX: 0.82 * w,
+              aY: 0.18 * h,
+              bX: 0.72 * w,
+              bY: 0.28 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Object Storage: storage bucket.
+  static VsdxShape oracleObjectStorage({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.82 * h),
+          LineTo(0.85 * w, 0.82 * h),
+          LineTo(0.78 * w, 0.28 * h),
+          LineTo(0.22 * w, 0.28 * h),
+          LineTo(0.15 * w, 0.82 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.28 * h),
+          LineTo(0.8 * w, 0.28 * h),
+          LineTo(0.8 * w, 0.4 * h),
+          LineTo(0.2 * w, 0.4 * h),
+          LineTo(0.2 * w, 0.28 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.28 * h),
+          EllipticalArcTo(
+              x: 0.68 * w,
+              y: 0.28 * h,
+              controlX: 0.5 * w,
+              controlY: 0.08 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Block Volume: stacked disk volumes.
+  static VsdxShape oracleBlockVolume({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.15, 0.15, 0.85, 0.4],
+          [0.15, 0.42, 0.85, 0.67],
+          [0.15, 0.69, 0.85, 0.9],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.27, 0.54, 0.79]) ...[
+            MoveTo(0.28 * w, y * h),
+            LineTo(0.72 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle OKE: Kubernetes Engine hex cluster.
+  static VsdxShape oracleOke({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    List<VsdxPathCommand> hex(double cx, double cy, double r) =>
+        <VsdxPathCommand>[
+          MoveTo(cx + r, cy),
+          LineTo(cx + 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - 0.5 * r, cy + 0.866 * r),
+          LineTo(cx - r, cy),
+          LineTo(cx - 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + 0.5 * r, cy - 0.866 * r),
+          LineTo(cx + r, cy),
+        ];
+    final r = 0.18 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: hex(0.5 * w, 0.55 * h, 0.36 * math.min(w, h))),
+        VsdxGeometry(commands: hex(0.5 * w, 0.55 * h, r)),
+        VsdxGeometry(commands: hex(0.32 * w, 0.35 * h, r * 0.7)),
+        VsdxGeometry(commands: hex(0.68 * w, 0.35 * h, r * 0.7)),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Functions: serverless hex badge.
+  static VsdxShape oracleFunctions({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.25 * w, h),
+          LineTo(0.75 * w, h),
+          LineTo(w, 0.5 * h),
+          LineTo(0.75 * w, 0),
+          LineTo(0.25 * w, 0),
+          LineTo(0, 0.5 * h),
+          LineTo(0.25 * w, h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.78 * h),
+          LineTo(0.48 * w, 0.78 * h),
+          LineTo(0.62 * w, 0.22 * h),
+          LineTo(0.78 * w, 0.22 * h),
+          MoveTo(0.4 * w, 0.5 * h),
+          LineTo(0.68 * w, 0.5 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle VCN: virtual cloud network outline.
+  static VsdxShape oracleVcn({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.38 * w, y: 0.42 * h, controlX: 0.18 * w, controlY: 0.4 * h),
+          EllipticalArcTo(
+              x: 0.62 * w, y: 0.35 * h, controlX: 0.5 * w, controlY: 0.18 * h),
+          EllipticalArcTo(
+              x: 0.82 * w, y: 0.55 * h, controlX: 0.88 * w, controlY: 0.3 * h),
+          EllipticalArcTo(
+              x: 0.72 * w, y: 0.78 * h, controlX: 0.9 * w, controlY: 0.78 * h),
+          LineTo(0.28 * w, 0.78 * h),
+          EllipticalArcTo(
+              x: 0.2 * w, y: 0.62 * h, controlX: 0.12 * w, controlY: 0.78 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.35, 0.55],
+          [0.5, 0.48],
+          [0.65, 0.58],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.04 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.04 * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.55 * h),
+          LineTo(0.5 * w, 0.48 * h),
+          LineTo(0.65 * w, 0.58 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Load Balancer: fan-out balancer.
+  static VsdxShape oracleLoadBalancer({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.25 * w, 0.38 * h),
+          LineTo(0.75 * w, 0.38 * h),
+          LineTo(0.75 * w, 0.58 * h),
+          LineTo(0.25 * w, 0.58 * h),
+          LineTo(0.25 * w, 0.38 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, 0.12 * h),
+          LineTo(cx, 0.38 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(0.18 * w, 0.88 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(cx, 0.9 * h),
+          MoveTo(cx, 0.58 * h),
+          LineTo(0.82 * w, 0.88 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.5, 0.12],
+          [0.18, 0.88],
+          [0.5, 0.9],
+          [0.82, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Streaming: data stream waves.
+  static VsdxShape oracleStreaming({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.5, 0.75]) ...[
+            MoveTo(0.08 * w, y * h),
+            EllipticalArcTo(
+                x: 0.35 * w,
+                y: y * h,
+                controlX: 0.22 * w,
+                controlY: y * h + 0.12 * h),
+            EllipticalArcTo(
+                x: 0.65 * w,
+                y: y * h,
+                controlX: 0.5 * w,
+                controlY: y * h - 0.12 * h),
+            EllipticalArcTo(
+                x: 0.92 * w,
+                y: y * h,
+                controlX: 0.78 * w,
+                controlY: y * h + 0.12 * h),
+          ],
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.78 * w, 0.42 * h),
+          LineTo(0.95 * w, 0.5 * h),
+          LineTo(0.78 * w, 0.58 * h),
+          LineTo(0.78 * w, 0.42 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Vault: secrets vault with keyhole.
+  static VsdxShape oracleVault({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.35 * h),
+          LineTo(0.8 * w, 0.9 * h),
+          LineTo(0.2 * w, 0.9 * h),
+          LineTo(0.2 * w, 0.35 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.35 * h),
+          EllipticalArcTo(
+              x: 0.68 * w, y: 0.35 * h, controlX: 0.5 * w, controlY: 0.08 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.55 * h,
+              aX: 0.58 * w,
+              aY: 0.55 * h,
+              bX: 0.5 * w,
+              bY: 0.63 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.46 * w, 0.6 * h),
+          LineTo(0.54 * w, 0.6 * h),
+          LineTo(0.54 * w, 0.78 * h),
+          LineTo(0.46 * w, 0.78 * h),
+          LineTo(0.46 * w, 0.6 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Exadata: engineered system chassis.
+  static VsdxShape oracleExadata({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.1 * h),
+          LineTo(0.92 * w, 0.1 * h),
+          LineTo(0.92 * w, 0.9 * h),
+          LineTo(0.08 * w, 0.9 * h),
+          LineTo(0.08 * w, 0.1 * h),
+        ]),
+        for (final y in <double>[0.22, 0.42, 0.62])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0.16 * w, y * h),
+            LineTo(0.84 * w, y * h),
+            LineTo(0.84 * w, (y + 0.14) * h),
+            LineTo(0.16 * w, (y + 0.14) * h),
+            LineTo(0.16 * w, y * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.2 * w, 0.82 * h),
+          LineTo(0.45 * w, 0.82 * h),
+          EllipseCmd(
+              cx: 0.75 * w,
+              cy: 0.82 * h,
+              aX: 0.8 * w,
+              aY: 0.82 * h,
+              bX: 0.75 * w,
+              bY: 0.87 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle MySQL HeatWave: accelerated analytics DB.
+  static VsdxShape oracleMysqlHeatwave({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final left = 0.15 * w;
+    final right = 0.7 * w;
+    final cx = 0.425 * w;
+    final ry = 0.07 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(left, 0.75 * h),
+          LineTo(left, 0.3 * h),
+          EllipticalArcTo(
+              x: right, y: 0.3 * h, controlX: cx, controlY: 0.3 * h + ry),
+          LineTo(right, 0.75 * h),
+          EllipticalArcTo(
+              x: left, y: 0.75 * h, controlX: cx, controlY: 0.75 * h - ry),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: 0.3 * h,
+              aX: cx + 0.275 * w,
+              aY: 0.3 * h,
+              bX: cx,
+              bY: 0.3 * h + ry),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.72 * w, 0.25 * h),
+          LineTo(0.88 * w, 0.45 * h),
+          LineTo(0.78 * w, 0.45 * h),
+          LineTo(0.92 * w, 0.75 * h),
+          LineTo(0.76 * w, 0.55 * h),
+          LineTo(0.85 * w, 0.55 * h),
+          LineTo(0.72 * w, 0.25 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle GoldenGate: replication pipeline chevrons.
+  static VsdxShape oracleGoldenGate({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    VsdxGeometry chevron(double x0, double x1) => VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(x0, 0.28 * h),
+            LineTo(x1 - 0.07 * w, 0.28 * h),
+            LineTo(x1, 0.5 * h),
+            LineTo(x1 - 0.07 * w, 0.72 * h),
+            LineTo(x0, 0.72 * h),
+            LineTo(x0 + 0.07 * w, 0.5 * h),
+            LineTo(x0, 0.28 * h),
+          ],
+        );
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        chevron(0.05 * w, 0.38 * w),
+        chevron(0.34 * w, 0.67 * w),
+        chevron(0.63 * w, 0.96 * w),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Oracle Analytics Cloud: analytics dashboard tile.
+  static VsdxShape oracleAnalyticsCloud({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.1 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.15 * w, 0.65 * h),
+          LineTo(0.32 * w, 0.45 * h),
+          LineTo(0.45 * w, 0.55 * h),
+          LineTo(0.6 * w, 0.28 * h),
+          LineTo(0.75 * w, 0.4 * h),
+          LineTo(0.88 * w, 0.22 * h),
+          MoveTo(0.15 * w, 0.8 * h),
+          LineTo(0.88 * w, 0.8 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI API Gateway: gateway portal with routes.
+  static VsdxShape oracleApiGateway({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.18 * w, 0.28 * h),
+          LineTo(0.82 * w, 0.28 * h),
+          LineTo(0.82 * w, 0.62 * h),
+          LineTo(0.18 * w, 0.62 * h),
+          LineTo(0.18 * w, 0.28 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, 0.08 * h),
+          LineTo(cx, 0.28 * h),
+          MoveTo(cx, 0.62 * h),
+          LineTo(0.2 * w, 0.9 * h),
+          MoveTo(cx, 0.62 * h),
+          LineTo(cx, 0.92 * h),
+          MoveTo(cx, 0.62 * h),
+          LineTo(0.8 * w, 0.9 * h),
+          MoveTo(0.28 * w, 0.4 * h),
+          LineTo(0.72 * w, 0.4 * h),
+          MoveTo(0.28 * w, 0.5 * h),
+          LineTo(0.55 * w, 0.5 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.5, 0.08],
+          [0.2, 0.9],
+          [0.5, 0.92],
+          [0.8, 0.9],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Service Connector: pipe linking source to target.
+  static VsdxShape oracleServiceConnector({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.2 * w,
+              cy: 0.5 * h,
+              aX: 0.32 * w,
+              aY: 0.5 * h,
+              bX: 0.2 * w,
+              bY: 0.68 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.8 * w,
+              cy: 0.5 * h,
+              aX: 0.92 * w,
+              aY: 0.5 * h,
+              bX: 0.8 * w,
+              bY: 0.68 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.38 * h),
+          LineTo(0.68 * w, 0.38 * h),
+          LineTo(0.68 * w, 0.62 * h),
+          LineTo(0.32 * w, 0.62 * h),
+          LineTo(0.32 * w, 0.38 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.4 * w, 0.5 * h),
+          LineTo(0.6 * w, 0.5 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Notifications: bell / alert tile.
+  static VsdxShape oracleNotifications({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.5 * w, 0.12 * h),
+          EllipticalArcTo(
+              x: 0.28 * w, y: 0.42 * h, controlX: 0.28 * w, controlY: 0.18 * h),
+          LineTo(0.22 * w, 0.68 * h),
+          LineTo(0.78 * w, 0.68 * h),
+          LineTo(0.72 * w, 0.42 * h),
+          EllipticalArcTo(
+              x: 0.5 * w, y: 0.12 * h, controlX: 0.72 * w, controlY: 0.18 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.68 * h),
+          EllipticalArcTo(
+              x: 0.65 * w, y: 0.68 * h, controlX: 0.5 * w, controlY: 0.9 * h),
+          LineTo(0.35 * w, 0.68 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.72 * w,
+              cy: 0.22 * h,
+              aX: 0.82 * w,
+              aY: 0.22 * h,
+              bX: 0.72 * w,
+              bY: 0.32 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Events: event burst rays from a core.
+  static VsdxShape oracleEvents({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.5 * h;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.16 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.16 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final p in <List<double>>[
+            [0.5, 0.1, 0.5, 0.28],
+            [0.5, 0.72, 0.5, 0.9],
+            [0.1, 0.5, 0.28, 0.5],
+            [0.72, 0.5, 0.9, 0.5],
+            [0.22, 0.22, 0.34, 0.34],
+            [0.66, 0.66, 0.78, 0.78],
+            [0.78, 0.22, 0.66, 0.34],
+            [0.22, 0.78, 0.34, 0.66],
+          ]) ...[
+            MoveTo(p[0] * w, p[1] * h),
+            LineTo(p[2] * w, p[3] * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Data Science: notebook / ML tile.
+  static VsdxShape oracleDataScience({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.1 * math.min(w, h);
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, r),
+          EllipticalArcTo(x: w - r, y: 0, controlX: w, controlY: 0),
+          LineTo(r, 0),
+          EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.18 * w, 0.28 * h),
+          LineTo(0.55 * w, 0.28 * h),
+          MoveTo(0.18 * w, 0.45 * h),
+          LineTo(0.72 * w, 0.45 * h),
+          MoveTo(0.18 * w, 0.62 * h),
+          LineTo(0.45 * w, 0.62 * h),
+          MoveTo(0.18 * w, 0.78 * h),
+          LineTo(0.62 * w, 0.78 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.78 * w,
+              cy: 0.28 * h,
+              aX: 0.88 * w,
+              aY: 0.28 * h,
+              bX: 0.78 * w,
+              bY: 0.38 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Data Flow: spark / parallel flow arrows.
+  static VsdxShape oracleDataFlow({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final y in <double>[0.22, 0.45, 0.68])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0.08 * w, y * h),
+            LineTo(0.62 * w, y * h),
+            LineTo(0.62 * w, (y - 0.08) * h),
+            LineTo(0.92 * w, (y + 0.08) * h),
+            LineTo(0.62 * w, (y + 0.16) * h),
+            LineTo(0.62 * w, (y + 0.08) * h),
+            LineTo(0.08 * w, (y + 0.08) * h),
+            LineTo(0.08 * w, y * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Data Catalog: catalog card stack.
+  static VsdxShape oracleDataCatalog({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.12, 0.12, 0.78, 0.38],
+          [0.18, 0.35, 0.84, 0.62],
+          [0.24, 0.58, 0.9, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.48, 0.72]) ...[
+            MoveTo(0.32 * w, y * h),
+            LineTo(0.7 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI FastConnect: dedicated interconnect.
+  static VsdxShape oracleFastConnect({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.55 * h),
+          LineTo(0.4 * w, 0.55 * h),
+          LineTo(0.4 * w, 0.85 * h),
+          LineTo(0.08 * w, 0.85 * h),
+          LineTo(0.08 * w, 0.55 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.58 * w, 0.48 * h),
+          EllipticalArcTo(
+              x: 0.72 * w, y: 0.32 * h, controlX: 0.55 * w, controlY: 0.3 * h),
+          EllipticalArcTo(
+              x: 0.9 * w, y: 0.42 * h, controlX: 0.84 * w, controlY: 0.18 * h),
+          EllipticalArcTo(
+              x: 0.84 * w, y: 0.62 * h, controlX: 0.97 * w, controlY: 0.62 * h),
+          LineTo(0.65 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.58 * w, y: 0.48 * h, controlX: 0.52 * w, controlY: 0.62 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.4 * w, 0.7 * h),
+          LineTo(0.6 * w, 0.55 * h),
+          MoveTo(0.15 * w, 0.65 * h),
+          LineTo(0.33 * w, 0.65 * h),
+          MoveTo(0.15 * w, 0.75 * h),
+          LineTo(0.33 * w, 0.75 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI File Storage: NFS share drawers.
+  static VsdxShape oracleFileStorage({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.15, 0.12, 0.85, 0.38],
+          [0.15, 0.4, 0.85, 0.66],
+          [0.15, 0.68, 0.85, 0.9],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.25, 0.53, 0.79]) ...[
+            MoveTo(0.25 * w, y * h),
+            LineTo(0.55 * w, y * h),
+            MoveTo(0.7 * w, y * h - 0.04 * h),
+            LineTo(0.78 * w, y * h + 0.04 * h),
+            MoveTo(0.78 * w, y * h - 0.04 * h),
+            LineTo(0.7 * w, y * h + 0.04 * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Bastion: fortified access gate.
+  static VsdxShape oracleBastion({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.12 * w, 0.35 * h),
+          LineTo(0.12 * w, 0.9 * h),
+          LineTo(0.88 * w, 0.9 * h),
+          LineTo(0.88 * w, 0.35 * h),
+          LineTo(0.75 * w, 0.35 * h),
+          LineTo(0.75 * w, 0.18 * h),
+          LineTo(0.25 * w, 0.18 * h),
+          LineTo(0.25 * w, 0.35 * h),
+          LineTo(0.12 * w, 0.35 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.38 * w, 0.55 * h),
+          LineTo(0.62 * w, 0.55 * h),
+          LineTo(0.62 * w, 0.9 * h),
+          LineTo(0.38 * w, 0.9 * h),
+          LineTo(0.38 * w, 0.55 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.55 * w,
+              cy: 0.7 * h,
+              aX: 0.59 * w,
+              aY: 0.7 * h,
+              bX: 0.55 * w,
+              bY: 0.74 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Network Load Balancer: L4 fan-out.
+  static VsdxShape oracleNetworkLoadBalancer({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: 0.38 * h,
+              aX: cx + 0.28 * w,
+              aY: 0.38 * h,
+              bX: cx,
+              bY: 0.55 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx, 0.1 * h),
+          LineTo(cx, 0.22 * h),
+          MoveTo(cx, 0.55 * h),
+          LineTo(0.15 * w, 0.88 * h),
+          MoveTo(cx, 0.55 * h),
+          LineTo(cx, 0.9 * h),
+          MoveTo(cx, 0.55 * h),
+          LineTo(0.85 * w, 0.88 * h),
+        ]),
+        for (final p in <List<double>>[
+          [0.5, 0.1],
+          [0.15, 0.88],
+          [0.5, 0.9],
+          [0.85, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.05 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.05 * h),
+          ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Cloud Guard: posture shield.
+  static VsdxShape oracleCloudGuard({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.5 * w, 0.08 * h),
+          LineTo(0.9 * w, 0.28 * h),
+          LineTo(0.84 * w, 0.62 * h),
+          EllipticalArcTo(
+              x: 0.16 * w, y: 0.62 * h, controlX: 0.5 * w, controlY: 0.95 * h),
+          LineTo(0.1 * w, 0.28 * h),
+          LineTo(0.5 * w, 0.08 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.35 * w, 0.42 * h),
+          LineTo(0.48 * w, 0.58 * h),
+          LineTo(0.7 * w, 0.32 * h),
+          MoveTo(0.28 * w, 0.7 * h),
+          LineTo(0.72 * w, 0.7 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI Resource Manager: IaC stack layers.
+  static VsdxShape oracleResourceManager({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final entry in <List<double>>[
+          [0.12, 0.15, 0.78, 0.4],
+          [0.18, 0.38, 0.84, 0.63],
+          [0.24, 0.61, 0.9, 0.88],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(entry[0] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[1] * h),
+            LineTo(entry[2] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[3] * h),
+            LineTo(entry[0] * w, entry[1] * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          for (final y in <double>[0.27, 0.5, 0.74]) ...[
+            MoveTo(0.3 * w, y * h),
+            LineTo(0.7 * w, y * h),
+          ],
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// OCI DevOps: CI/CD pipeline stages.
+  static VsdxShape oracleDevOps({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        for (final p in <List<double>>[
+          [0.2, 0.5],
+          [0.5, 0.5],
+          [0.8, 0.5],
+        ])
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: p[0] * w,
+                cy: p[1] * h,
+                aX: p[0] * w + 0.1 * w,
+                aY: p[1] * h,
+                bX: p[0] * w,
+                bY: p[1] * h + 0.12 * h),
+          ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.3 * w, 0.5 * h),
+          LineTo(0.4 * w, 0.5 * h),
+          MoveTo(0.6 * w, 0.5 * h),
+          LineTo(0.7 * w, 0.5 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.12 * w, 0.18 * h),
+          LineTo(0.38 * w, 0.18 * h),
+          LineTo(0.38 * w, 0.32 * h),
+          LineTo(0.12 * w, 0.32 * h),
+          LineTo(0.12 * w, 0.18 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.62 * w, 0.68 * h),
+          LineTo(0.88 * w, 0.68 * h),
+          LineTo(0.88 * w, 0.82 * h),
+          LineTo(0.62 * w, 0.82 * h),
+          LineTo(0.62 * w, 0.68 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
   /// Double rounded rectangle (advanced).
   static VsdxShape doubleRoundedRectangle({
     required int id,

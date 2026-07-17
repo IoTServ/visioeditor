@@ -267,6 +267,8 @@ class EditorL10n {
   String get patternBrick => _t('patternBrick');
   String get patternShingle => _t('patternShingle');
   String get lineSpacing => _t('lineSpacing');
+  String get curvedText => _t('curvedText');
+  String get bulletList => _t('bulletList');
   String get noShapeData => _t('noShapeData');
   String get noLink => _t('noLink');
   String get alignLeft => _t('alignLeft');

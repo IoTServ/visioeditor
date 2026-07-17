@@ -512,6 +512,183 @@ class VsdxConnectionPoint {
   String toString() => 'ConnectionPoint($x, $y, dir=($dirX,$dirY))';
 }
 
+/// Re-apply ShapeSheet cell formulas onto an absolute path command.
+///
+/// [eval] resolves `F=` strings (may return `null` when the formula needs
+/// context we don't have). Relative (`Rel*`) commands are returned unchanged
+/// — they already scale with Width/Height at paint time. `PolylineTo` /
+/// NURBS / spline rows are left alone when their packed formulas cannot be
+/// re-evaluated locally.
+VsdxPathCommand applyPathCommandFormulas(
+  VsdxPathCommand cmd,
+  Map<String, String> formulas,
+  double? Function(String? formula) eval,
+) {
+  if (formulas.isEmpty) return cmd;
+  double? cell(String name) {
+    final f = formulas[name];
+    if (f == null || f.isEmpty) return null;
+    return eval(f);
+  }
+
+  switch (cmd) {
+    case MoveTo(:final x, :final y):
+      final nx = cell('X');
+      final ny = cell('Y');
+      if (nx == null && ny == null) return cmd;
+      return MoveTo(nx ?? x, ny ?? y);
+    case LineTo(:final x, :final y):
+      final nx = cell('X');
+      final ny = cell('Y');
+      if (nx == null && ny == null) return cmd;
+      return LineTo(nx ?? x, ny ?? y);
+    case ArcTo(:final x, :final y, :final bow):
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      if (nx == null && ny == null && na == null) return cmd;
+      return ArcTo(x: nx ?? x, y: ny ?? y, bow: na ?? bow);
+    case EllipticalArcTo(
+        :final x,
+        :final y,
+        :final controlX,
+        :final controlY,
+        :final angle,
+        :final eccentricity,
+      ):
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      final nb = cell('B');
+      final nc = cell('C');
+      final nd = cell('D');
+      if (nx == null &&
+          ny == null &&
+          na == null &&
+          nb == null &&
+          nc == null &&
+          nd == null) {
+        return cmd;
+      }
+      return EllipticalArcTo(
+        x: nx ?? x,
+        y: ny ?? y,
+        controlX: na ?? controlX,
+        controlY: nb ?? controlY,
+        angle: nc ?? angle,
+        eccentricity: nd ?? eccentricity,
+      );
+    case CubBezTo(
+        :final x,
+        :final y,
+        :final x1,
+        :final y1,
+        :final x2,
+        :final y2,
+      ):
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      final nb = cell('B');
+      final nc = cell('C');
+      final nd = cell('D');
+      if (nx == null &&
+          ny == null &&
+          na == null &&
+          nb == null &&
+          nc == null &&
+          nd == null) {
+        return cmd;
+      }
+      return CubBezTo(
+        x: nx ?? x,
+        y: ny ?? y,
+        x1: na ?? x1,
+        y1: nb ?? y1,
+        x2: nc ?? x2,
+        y2: nd ?? y2,
+      );
+    case QuadBezTo(:final x, :final y, :final x1, :final y1):
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      final nb = cell('B');
+      if (nx == null && ny == null && na == null && nb == null) return cmd;
+      return QuadBezTo(
+        x: nx ?? x,
+        y: ny ?? y,
+        x1: na ?? x1,
+        y1: nb ?? y1,
+      );
+    case EllipseCmd(
+        :final cx,
+        :final cy,
+        :final aX,
+        :final aY,
+        :final bX,
+        :final bY,
+      ):
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      final nb = cell('B');
+      final nc = cell('C');
+      final nd = cell('D');
+      if (nx == null &&
+          ny == null &&
+          na == null &&
+          nb == null &&
+          nc == null &&
+          nd == null) {
+        return cmd;
+      }
+      return EllipseCmd(
+        cx: nx ?? cx,
+        cy: ny ?? cy,
+        aX: na ?? aX,
+        aY: nb ?? aY,
+        bX: nc ?? bX,
+        bY: nd ?? bY,
+      );
+    case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
+      if (relative) return cmd;
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      final nb = cell('B');
+      if (nx == null && ny == null && na == null && nb == null) return cmd;
+      return InfiniteLineCmd(
+        x: nx ?? x,
+        y: ny ?? y,
+        a: na ?? a,
+        b: nb ?? b,
+      );
+    case PolylineTo(:final x, :final y, :final vertices, :final relative):
+      if (relative) return cmd;
+      final nx = cell('X');
+      final ny = cell('Y');
+      if (nx == null && ny == null) return cmd;
+      // Interior POLYLINE(...) vertices stay as cached; only the end point
+      // X/Y cells are locally re-evaluated.
+      return PolylineTo(
+        x: nx ?? x,
+        y: ny ?? y,
+        vertices: vertices,
+        relative: relative,
+      );
+    case RelMoveTo():
+    case RelLineTo():
+    case RelCubBezTo():
+    case RelQuadBezTo():
+    case RelArcTo():
+    case RelEllipticalArcTo():
+    case SplineStart():
+    case SplineKnot():
+    case NurbsTo():
+      return cmd;
+  }
+}
+
 /// Scale a path command's coordinates by ([sx], [sy]) about the shape-local
 /// origin. Fractional `Rel*` commands are returned unchanged because they
 /// already scale with the shape's width/height at render time.

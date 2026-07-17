@@ -20,6 +20,7 @@ import 'rich_text.dart';
 import 'shape_kind.dart';
 import 'sheet_sections.dart';
 import 'user_property.dart';
+import '../parser/formula.dart';
 
 @immutable
 class VsdxShape {
@@ -489,6 +490,10 @@ class VsdxShape {
   /// `'1'`, children stay in the model but are not painted or hit-tested.
   static const String userCollapsed = 'veCollapsed';
 
+  /// User-cell flag: paint this shape's label along an arc inside the text
+  /// block (editor "Curved Text"). Round-trips via `User.veCurvedText`.
+  static const String userCurvedText = 'veCurvedText';
+
   /// Stored expanded height (inches) while [collapsed], so unfold restores size.
   static const String userExpandedHeight = 'veExpandedHeight';
 
@@ -505,6 +510,32 @@ class VsdxShape {
       if (c.name == userCollapsed) return c.value == '1';
     }
     return false;
+  }
+
+  /// Whether the label is painted along an arc (editor Curved Text).
+  bool get curvedText {
+    for (final c in userCells) {
+      if (c.name == userCurvedText) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// Set / clear Curved Text via [userCurvedText]. Round-trips as a `User` cell.
+  VsdxShape withCurvedText(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userCurvedText) c,
+    ];
+    if (!value) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        const VsdxUserCell(name: userCurvedText, value: '1'),
+      ],
+    );
   }
 
   /// Expanded height stored when the shape was last folded, if any.
@@ -669,6 +700,8 @@ class VsdxShape {
 
   /// Resize to a new [width]/[height] (and re-centre at [pinX]/[pinY]),
   /// scaling every geometry command so the drawn path fills the new box.
+  /// Then re-evaluates local ShapeSheet formulas (Connection / LocPin /
+  /// Scratch / Controls / User) that depend on Width/Height/Pin*.
   VsdxShape resizeTo({
     required double pinX,
     required double pinY,
@@ -693,6 +726,7 @@ class VsdxShape {
     // centre-pinned shape stays centre-pinned after resize (and an off-centre
     // LocPin scales with the box). When LocPin was unset (implicit centre),
     // leave it unset so the writer / renderer keep defaulting to width/2.
+    // [recalculateLocalFormulas] may then override from LocPinX/Y formulas.
     final newLocPinX = locPinXInches == null
         ? null
         : (this.width == 0 ? locPinXInches : locPinXInches! * sx);
@@ -707,7 +741,657 @@ class VsdxShape {
       locPinXInches: newLocPinX,
       locPinYInches: newLocPinY,
       geometries: scaled,
+    ).recalculateLocalFormulas();
+  }
+
+  /// Look up a Transform / 1-D endpoint cell for cross-sheet `Sheet.n!Cell`
+  /// resolution. Returns `null` for unsupported cell names.
+  double? lookupSheetCell(String cell) {
+    switch (cell.toUpperCase()) {
+      case 'PINX':
+        return pinX;
+      case 'PINY':
+        return pinY;
+      case 'WIDTH':
+        return width;
+      case 'HEIGHT':
+        return height;
+      case 'ANGLE':
+        return angleRad;
+      case 'LOCPINX':
+        return locPinXInches;
+      case 'LOCPINY':
+        return locPinYInches;
+      case 'BEGINX':
+        return beginX;
+      case 'BEGINY':
+        return beginY;
+      case 'ENDX':
+        return endX;
+      case 'ENDY':
+        return endY;
+      default:
+        return null;
+    }
+  }
+
+  /// Resolve a local ShapeSheet ref (`Controls.*` / `User.*` / `Prop.*` /
+  /// transform cells) for SETATREF recalc / redirect.
+  double? lookupLocalRef(String ref) {
+    final t = ref.trim();
+    if (t.isEmpty) return null;
+
+    final ctrl = RegExp(
+      r'^Controls\.([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (ctrl != null) {
+      final name = ctrl.group(1)!;
+      VsdxControlRow? row;
+      for (final c in controls) {
+        if (c.name == name) {
+          row = c;
+          break;
+        }
+      }
+      if (row == null) return null;
+      final cell = ctrl.group(2)?.toUpperCase();
+      if (cell == null) return row.x;
+      return switch (cell) {
+        'Y' || 'YDYN' || 'DYNY' => row.y,
+        'X' || 'XDYN' || 'DYNX' => row.x,
+        'XCON' || 'CONX' => row.conX,
+        'YCON' || 'CONY' => row.conY,
+        _ => row.x,
+      };
+    }
+
+    final user = RegExp(
+      r'^User\.([A-Za-z_][\w]*)$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (user != null) {
+      final name = user.group(1)!;
+      for (final c in userCells) {
+        if (c.name == name) return _parseNumericCache(c.value);
+      }
+      return null;
+    }
+
+    final prop = RegExp(
+      r'^Prop\.([A-Za-z_][\w]*)$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (prop != null) {
+      final name = prop.group(1)!;
+      for (final p in userProperties) {
+        if (p.name == name) return _parseNumericCache(p.value);
+      }
+      return null;
+    }
+
+    return lookupSheetCell(t);
+  }
+
+  static double? _parseNumericCache(String? raw) {
+    if (raw == null) return null;
+    final t = raw.trim();
+    if (t.isEmpty) return null;
+    // Strip a trailing Visio unit token when present (`1.25 in`).
+    final m = RegExp(r'^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)').firstMatch(t);
+    if (m == null) return null;
+    return double.tryParse(m.group(1)!);
+  }
+
+  static String _formatNumericCache(double v) {
+    if (v == v.roundToDouble() && v.abs() < 1e15) return '${v.toInt()}';
+    return '$v';
+  }
+
+  /// Write [value] into a local `Controls.*` / `User.*` / `Prop.*` ref.
+  VsdxShape writeLocalRef(String ref, double value) {
+    final t = ref.trim();
+    final ctrl = RegExp(
+      r'^Controls\.([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (ctrl != null) {
+      final name = ctrl.group(1)!;
+      final cell = ctrl.group(2)?.toUpperCase();
+      final out = <VsdxControlRow>[];
+      var touched = false;
+      for (final c in controls) {
+        if (c.name != name) {
+          out.add(c);
+          continue;
+        }
+        touched = true;
+        if (cell == null ||
+            cell == 'X' ||
+            cell == 'XDYN' ||
+            cell == 'DYNX') {
+          out.add(c.copyWith(x: value));
+        } else if (cell == 'Y' ||
+            cell == 'YDYN' ||
+            cell == 'DYNY') {
+          out.add(c.copyWith(y: value));
+        } else if (cell == 'XCON' || cell == 'CONX') {
+          out.add(c.copyWith(conX: value));
+        } else if (cell == 'YCON' || cell == 'CONY') {
+          out.add(c.copyWith(conY: value));
+        } else {
+          out.add(c.copyWith(x: value));
+        }
+      }
+      return touched ? copyWith(controls: out) : this;
+    }
+
+    final user = RegExp(
+      r'^User\.([A-Za-z_][\w]*)$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (user != null) {
+      final name = user.group(1)!;
+      final asStr = _formatNumericCache(value);
+      final out = <VsdxUserCell>[];
+      var found = false;
+      for (final c in userCells) {
+        if (c.name != name) {
+          out.add(c);
+          continue;
+        }
+        found = true;
+        out.add(c.copyWith(value: asStr));
+      }
+      if (!found) {
+        out.add(VsdxUserCell(name: name, value: asStr));
+      }
+      return copyWith(userCells: out);
+    }
+
+    final prop = RegExp(
+      r'^Prop\.([A-Za-z_][\w]*)$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (prop != null) {
+      final name = prop.group(1)!;
+      final asStr = _formatNumericCache(value);
+      final out = <VsdxUserProperty>[];
+      var found = false;
+      for (final p in userProperties) {
+        if (p.name != name) {
+          out.add(p);
+          continue;
+        }
+        found = true;
+        out.add(p.copyWith(value: asStr));
+      }
+      if (!found) {
+        out.add(VsdxUserProperty(name: name, value: asStr));
+      }
+      return copyWith(userProperties: out);
+    }
+
+    return this;
+  }
+
+  /// `F=` on a local `Controls.*` / `User.*` / `Prop.*` cell, if any.
+  String? formulaOfLocalRef(String ref) {
+    final t = ref.trim();
+    final ctrl = RegExp(
+      r'^Controls\.([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (ctrl != null) {
+      final name = ctrl.group(1)!;
+      VsdxControlRow? row;
+      for (final c in controls) {
+        if (c.name == name) {
+          row = c;
+          break;
+        }
+      }
+      if (row == null) return null;
+      final cell = ctrl.group(2)?.toUpperCase();
+      if (cell == null ||
+          cell == 'X' ||
+          cell == 'XDYN' ||
+          cell == 'DYNX') {
+        return row.xFormula;
+      }
+      if (cell == 'Y' || cell == 'YDYN' || cell == 'DYNY') {
+        return row.yFormula;
+      }
+      if (cell == 'XCON' || cell == 'CONX') return row.conXFormula;
+      if (cell == 'YCON' || cell == 'CONY') return row.conYFormula;
+      return row.xFormula;
+    }
+
+    final user = RegExp(
+      r'^User\.([A-Za-z_][\w]*)$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (user != null) {
+      final name = user.group(1)!;
+      for (final c in userCells) {
+        if (c.name == name) return c.valueFormula;
+      }
+      return null;
+    }
+
+    final prop = RegExp(
+      r'^Prop\.([A-Za-z_][\w]*)$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (prop != null) {
+      final name = prop.group(1)!;
+      for (final p in userProperties) {
+        if (p.name == name) return p.valueFormula;
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /// Redirect incoming cell values through SETATREF / SETATREFEVAL formulas
+  /// (e.g. after the editor moves TxtPin). Writes the transformed value into
+  /// the referenced Controls / User / Prop cell, following SETATREF chains.
+  VsdxShape applySetAtRefInputs(Map<String, double> incomingByCell) {
+    if (incomingByCell.isEmpty) return this;
+    final locals = <String, double>{
+      'Width': width,
+      'Height': height,
+      'PinX': pinX,
+      'PinY': pinY,
+      'Angle': angleRad,
+      if (locPinXInches != null) 'LocPinX': locPinXInches!,
+      if (locPinYInches != null) 'LocPinY': locPinYInches!,
+      if (beginX != null) 'BeginX': beginX!,
+      if (beginY != null) 'BeginY': beginY!,
+      if (endX != null) 'EndX': endX!,
+      if (endY != null) 'EndY': endY!,
+    };
+    var next = this;
+    var touched = false;
+    for (final e in incomingByCell.entries) {
+      final formula = next.formulas[e.key];
+      final redirect = computeSetAtRefRedirect(
+        formula,
+        e.value,
+        locals: locals,
+        cellLookup: next.lookupLocalRef,
+        formulaOfRef: next.formulaOfLocalRef,
+      );
+      if (redirect == null) continue;
+      final written = next.writeLocalRef(redirect.reference, redirect.value);
+      if (!identical(written, next)) {
+        next = written;
+        touched = true;
+      }
+    }
+    return touched ? next : this;
+  }
+
+  /// All `F=` strings on this shape that may contain `Sheet.n!` refs.
+  Iterable<String> get formulaSources sync* {
+    yield* formulas.values;
+    for (final p in connectionPoints) {
+      final xf = p.xFormula;
+      final yf = p.yFormula;
+      if (xf != null && xf.isNotEmpty) yield xf;
+      if (yf != null && yf.isNotEmpty) yield yf;
+    }
+    for (final r in scratch) {
+      for (final f in <String?>[
+        r.xFormula,
+        r.yFormula,
+        r.aFormula,
+        r.bFormula,
+        r.cFormula,
+        r.dFormula,
+      ]) {
+        if (f != null && f.isNotEmpty) yield f;
+      }
+    }
+    for (final r in controls) {
+      for (final f in <String?>[
+        r.xFormula,
+        r.yFormula,
+        r.dynXFormula,
+        r.dynYFormula,
+        r.conXFormula,
+        r.conYFormula,
+      ]) {
+        if (f != null && f.isNotEmpty) yield f;
+      }
+    }
+    for (final c in userCells) {
+      final f = c.valueFormula;
+      if (f != null && f.isNotEmpty) yield f;
+    }
+    for (final g in geometries) {
+      for (final row in g.commandFormulas) {
+        for (final f in row.values) {
+          if (f.isNotEmpty) yield f;
+        }
+      }
+    }
+  }
+
+  /// Whether any formula on this shape references a sheet id in [ids].
+  bool referencesAnySheet(Set<int> ids) {
+    if (ids.isEmpty) return false;
+    for (final f in formulaSources) {
+      if (formulaReferencesAnySheet(f, ids)) return true;
+    }
+    return false;
+  }
+
+  /// Re-evaluate local ShapeSheet formulas against this shape's current
+  /// Width / Height / Pin* / Begin* / End* / Angle (and Scratch.* after the
+  /// Scratch section is refreshed) and write updated cache values. Formulas
+  /// that cannot be resolved (`SETATREF`, unresolved cross-sheet, theme, …)
+  /// keep their previous `V` and retain `F=`.
+  ///
+  /// Pass [sheetLookup] to resolve `Sheet.n!Cell` against sibling shapes
+  /// (see [VsdxPage.recalculateFormulas]).
+  VsdxShape recalculateLocalFormulas({
+    double? Function(int sheetId, String cell)? sheetLookup,
+  }) {
+    final locals = <String, double>{
+      'Width': width,
+      'Height': height,
+      'PinX': pinX,
+      'PinY': pinY,
+      'Angle': angleRad,
+      if (locPinXInches != null) 'LocPinX': locPinXInches!,
+      if (locPinYInches != null) 'LocPinY': locPinYInches!,
+      if (beginX != null) 'BeginX': beginX!,
+      if (beginY != null) 'BeginY': beginY!,
+      if (endX != null) 'EndX': endX!,
+      if (endY != null) 'EndY': endY!,
+    };
+
+    double? eval(String? f) => evaluateFormula(
+          f,
+          locals: locals,
+          sheetLookup: sheetLookup,
+          cellLookup: lookupLocalRef,
+        );
+
+    void bindScratch(List<VsdxScratchRow> rows) {
+      for (var i = 0; i < rows.length; i++) {
+        final r = rows[i];
+        void put(String cell, double v) {
+          locals['SCRATCH.$cell${r.ix}'] = v;
+          locals['SCRATCH.$cell${i + 1}'] = v;
+        }
+        put('X', r.x);
+        put('Y', r.y);
+        put('A', r.a);
+        put('B', r.b);
+        put('C', r.c);
+        put('D', r.d);
+      }
+    }
+
+    List<VsdxScratchRow> evalScratch(List<VsdxScratchRow> rows) {
+      final out = <VsdxScratchRow>[];
+      for (final r in rows) {
+        final nx = eval(r.xFormula);
+        final ny = eval(r.yFormula);
+        final na = eval(r.aFormula);
+        final nb = eval(r.bFormula);
+        final nc = eval(r.cFormula);
+        final nd = eval(r.dFormula);
+        if (nx == null &&
+            ny == null &&
+            na == null &&
+            nb == null &&
+            nc == null &&
+            nd == null) {
+          out.add(r);
+          continue;
+        }
+        out.add(r.copyWith(
+          x: nx ?? r.x,
+          y: ny ?? r.y,
+          a: na ?? r.a,
+          b: nb ?? r.b,
+          c: nc ?? r.c,
+          d: nd ?? r.d,
+        ));
+      }
+      return out;
+    }
+
+    var changed = false;
+
+    List<VsdxConnectionPoint>? nextPts;
+    if (connectionPoints.isNotEmpty) {
+      final out = <VsdxConnectionPoint>[];
+      for (final p in connectionPoints) {
+        final nx = eval(p.xFormula);
+        final ny = eval(p.yFormula);
+        if (nx == null && ny == null) {
+          out.add(p);
+          continue;
+        }
+        changed = true;
+        out.add(p.copyWith(x: nx ?? p.x, y: ny ?? p.y));
+      }
+      nextPts = out;
+    }
+
+    double? nextLocX = locPinXInches;
+    double? nextLocY = locPinYInches;
+    final locXF = formulas['LocPinX'];
+    final locYF = formulas['LocPinY'];
+    if (locXF != null) {
+      final v = eval(locXF);
+      if (v != null && (nextLocX == null || (nextLocX - v).abs() > 1e-12)) {
+        nextLocX = v;
+        changed = true;
+      }
+    }
+    if (locYF != null) {
+      final v = eval(locYF);
+      if (v != null && (nextLocY == null || (nextLocY - v).abs() > 1e-12)) {
+        nextLocY = v;
+        changed = true;
+      }
+    }
+
+    // Scratch: Width/Height pass, then up to two passes with Scratch.* bound
+    // so rows that reference earlier Scratch cells can settle.
+    List<VsdxScratchRow>? nextScratch;
+    var effectiveScratch = scratch;
+    if (scratch.isNotEmpty) {
+      var rows = evalScratch(scratch);
+      if (rows != scratch) changed = true;
+      for (var pass = 0; pass < 2; pass++) {
+        bindScratch(rows);
+        final again = evalScratch(rows);
+        if (again == rows) break;
+        rows = again;
+        changed = true;
+      }
+      bindScratch(rows);
+      nextScratch = rows;
+      effectiveScratch = rows;
+    } else {
+      bindScratch(effectiveScratch);
+    }
+
+    List<VsdxControlRow>? nextControls;
+    if (controls.isNotEmpty) {
+      final out = <VsdxControlRow>[];
+      for (final r in controls) {
+        final nx = eval(r.xFormula);
+        final ny = eval(r.yFormula);
+        final ndx = eval(r.dynXFormula);
+        final ndy = eval(r.dynYFormula);
+        final ncx = eval(r.conXFormula);
+        final ncy = eval(r.conYFormula);
+        if (nx == null &&
+            ny == null &&
+            ndx == null &&
+            ndy == null &&
+            ncx == null &&
+            ncy == null) {
+          out.add(r);
+          continue;
+        }
+        changed = true;
+        out.add(r.copyWith(
+          x: nx ?? r.x,
+          y: ny ?? r.y,
+          dynX: ndx ?? r.dynX,
+          dynY: ndy ?? r.dynY,
+          conX: ncx ?? r.conX,
+          conY: ncy ?? r.conY,
+        ));
+      }
+      nextControls = out;
+    }
+
+    List<VsdxUserCell>? nextUsers;
+    if (userCells.isNotEmpty) {
+      final out = <VsdxUserCell>[];
+      for (final c in userCells) {
+        final v = eval(c.valueFormula);
+        if (v == null) {
+          out.add(c);
+          continue;
+        }
+        final asStr = v == v.roundToDouble() ? '${v.toInt()}' : '$v';
+        if (c.value == asStr) {
+          out.add(c);
+          continue;
+        }
+        changed = true;
+        out.add(c.copyWith(value: asStr));
+      }
+      nextUsers = out;
+    }
+
+    List<VsdxGeometry>? nextGeoms;
+    if (geometries.isNotEmpty) {
+      final out = <VsdxGeometry>[];
+      var geomChanged = false;
+      for (final g in geometries) {
+        if (g.commandFormulas.isEmpty) {
+          out.add(g);
+          continue;
+        }
+        final cmds = <VsdxPathCommand>[];
+        var sectionChanged = false;
+        for (var i = 0; i < g.commands.length; i++) {
+          final cmd = g.commands[i];
+          final f = g.formulasAt(i);
+          if (f.isEmpty) {
+            cmds.add(cmd);
+            continue;
+          }
+          final next = applyPathCommandFormulas(cmd, f, eval);
+          if (!identical(next, cmd) && next != cmd) {
+            sectionChanged = true;
+          }
+          cmds.add(next);
+        }
+        if (sectionChanged) {
+          geomChanged = true;
+          out.add(g.copyWith(commands: cmds));
+        } else {
+          out.add(g);
+        }
+      }
+      if (geomChanged) {
+        changed = true;
+        nextGeoms = out;
+      }
+    }
+
+    if (!changed) return syncSetAtRefFromControls();
+    return copyWith(
+      connectionPoints: nextPts,
+      locPinXInches: nextLocX,
+      locPinYInches: nextLocY,
+      scratch: nextScratch,
+      controls: nextControls,
+      userCells: nextUsers,
+      geometries: nextGeoms,
+    ).syncSetAtRefFromControls();
+  }
+
+  /// Pull `TxtPinX` / `TxtPinY` cache values from SETATREF formulas
+  /// (sole or composite, e.g. `SETATREF(User.DeltaX)+Width*0.5`).
+  VsdxShape syncSetAtRefFromControls() {
+    final fx = formulas['TxtPinX'];
+    final fy = formulas['TxtPinY'];
+    if (fx == null && fy == null) return this;
+
+    final locals = <String, double>{
+      'Width': width,
+      'Height': height,
+      'PinX': pinX,
+      'PinY': pinY,
+      'Angle': angleRad,
+      if (locPinXInches != null) 'LocPinX': locPinXInches!,
+      if (locPinYInches != null) 'LocPinY': locPinYInches!,
+      if (beginX != null) 'BeginX': beginX!,
+      if (beginY != null) 'BeginY': beginY!,
+      if (endX != null) 'EndX': endX!,
+      if (endY != null) 'EndY': endY!,
+    };
+
+    double? resolve(String? formula, {required bool forY}) {
+      if (formula == null || formula.isEmpty) return null;
+      // Bare SETATREF(Controls.Name) on TxtPinY → Controls.Name.Y.
+      final ctrl = parseSetAtRefControl(formula);
+      if (ctrl != null && ctrl.cell == null && forY) {
+        return lookupLocalRef('Controls.${ctrl.name}.Y');
+      }
+      return evaluateFormula(
+        formula,
+        locals: locals,
+        cellLookup: lookupLocalRef,
+      );
+    }
+
+    final block = richText.textBlock;
+    var txtPinX = block.pinXInches;
+    var txtPinY = block.pinYInches;
+    var touched = false;
+    final rx = resolve(fx, forY: false);
+    if (rx != null && (txtPinX == null || (txtPinX - rx).abs() > 1e-12)) {
+      txtPinX = rx;
+      touched = true;
+    }
+    final ry = resolve(fy, forY: true);
+    if (ry != null && (txtPinY == null || (txtPinY - ry).abs() > 1e-12)) {
+      txtPinY = ry;
+      touched = true;
+    }
+    if (!touched) return this;
+    return copyWith(
+      richText: richText.copyWith(
+        textBlock: block.copyWith(pinXInches: txtPinX, pinYInches: txtPinY),
+      ),
     );
+  }
+
+  /// Push current `TxtPinX` / `TxtPinY` cache values through SETATREF /
+  /// SETATREFEVAL into the referenced Controls / User / Prop cells.
+  VsdxShape pushSetAtRefToControls() {
+    final pinX = richText.textBlock.pinXInches;
+    final pinY = richText.textBlock.pinYInches;
+    if (pinX == null && pinY == null) return this;
+    return applySetAtRefInputs(<String, double>{
+      if (pinX != null) 'TxtPinX': pinX,
+      if (pinY != null) 'TxtPinY': pinY,
+    });
   }
 
   /// Re-position this shape as a straight 1-D line between page points

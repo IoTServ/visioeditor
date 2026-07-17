@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vsdx:
+    name: vsdx (Dart)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vsdx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart analyze
+      - run: dart test
+
+  flutter:
+    name: app (Flutter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  libreoffice-crosscheck:
+    name: LibreOffice cross-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Install LibreOffice Draw (headless)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libreoffice-draw-nogui \
+            libreoffice-core-nogui \
+          || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libreoffice-draw
+          command -v soffice || command -v libreoffice
+          soffice --version 2>/dev/null || libreoffice --version
+      - name: soffice convert writer .vsdx → PDF
+        working-directory: packages/vsdx
+        env:
+          REQUIRE_SOFFICE: '1'
+        run: |
+          dart pub get
+          dart test test/libreoffice_crosscheck_test.dart

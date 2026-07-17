@@ -7,40 +7,450 @@
 ///   * Parses numeric literals with optional Visio unit suffix
 ///     (e.g. `1.5 in`, `90 deg`, `25.4 mm`).
 ///   * Folds nested `MAX(...)`, `MIN(...)`, `IF(c,a,b)`, `ABS(...)`,
-///     `ROUND(...)`, `NEG(...)`, `INT(...)`.
+///     `ROUND(...)`, `NEG(...)`, `INT(...)`, `GUARD(...)`.
 ///   * Honours `+ - * / ( )` with the standard precedence.
-///   * Returns `null` when it encounters an *external* reference
-///     (`Sheet.42!PinX`), an `Inh`/`USE` directive, `THEMEVAL`, etc. The
-///     caller falls back to the cell's `V=` literal (already pre-resolved
-///     by Visio).
+///   * Optionally resolves bare cell names via [evaluateFormula]'s `locals`
+///     map (`Width`, `Height`, `PinX`, …) for local ShapeSheet recalc.
+///   * Optionally resolves `Sheet.n!Cell` via [sheetLookup] (page-level).
+///   * Optionally peels `SETATREF` / `SETATREFEXPR` / `SETATREFEVAL` for
+///     recalc transparency and input redirect ([computeSetAtRefRedirect]).
+///   * Returns `null` when it encounters an unresolved external reference,
+///     an `Inh`/`USE` directive, `THEMEVAL`, etc. The caller falls back to
+///     the cell's `V=` literal (already pre-resolved by Visio).
 ///
 /// The goal is to be **non-destructive**: if the evaluator can't make
 /// sense of the expression it returns `null` so the cell's literal value
 /// wins. We intentionally don't throw on parse errors.
 library;
 
+import 'package:meta/meta.dart';
+
 import '../utils/units.dart';
+
+/// Matches Visio cross-sheet cell refs: `Sheet.42!PinX`.
+final RegExp sheetCellRefPattern = RegExp(
+  r'Sheet\.(\d+)!([A-Za-z_][\w]*)',
+  caseSensitive: false,
+);
+
+/// Every distinct sheet id referenced by `Sheet.n!…` in [raw].
+Set<int> referencedSheetIds(String? raw) {
+  if (raw == null || raw.isEmpty) return const <int>{};
+  final out = <int>{};
+  for (final m in sheetCellRefPattern.allMatches(raw)) {
+    out.add(int.parse(m.group(1)!));
+  }
+  return out;
+}
+
+/// Whether [raw] references any sheet id in [ids].
+bool formulaReferencesAnySheet(String? raw, Set<int> ids) {
+  if (raw == null || raw.isEmpty || ids.isEmpty) return false;
+  for (final m in sheetCellRefPattern.allMatches(raw)) {
+    if (ids.contains(int.parse(m.group(1)!))) return true;
+  }
+  return false;
+}
+
+/// Parse a Visio `SETATREF(Controls.Name)` / `SETATREF(Controls.Name.X)`
+/// target. Returns `null` when the formula is not a sole local Controls
+/// SETATREF (no second arg / trailing arithmetic).
+({String name, String? cell})? parseSetAtRefControl(String? raw) {
+  final call = parseSetAtRefCall(raw);
+  if (call == null || call.setExpression != null) return null;
+  if (!isSoleSetAtRefFormula(raw)) return null;
+  final m = RegExp(
+    r'^Controls\.([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?$',
+    caseSensitive: false,
+  ).firstMatch(call.reference.trim());
+  if (m == null) return null;
+  return (name: m.group(1)!, cell: m.group(2)?.toUpperCase());
+}
+
+/// Parsed `SETATREF(reference [, set_expression [, ignore_eval]])` call.
+@immutable
+class SetAtRefCall {
+  const SetAtRefCall({
+    required this.reference,
+    this.setExpression,
+    this.ignoreEval = false,
+  });
+
+  /// Target cell ref, e.g. `Controls.TextPosition.Y` / `User.DeltaX`.
+  final String reference;
+
+  /// Optional transform assigned to [reference] on input (may contain
+  /// `SETATREFEXPR` / `SETATREFEVAL`).
+  final String? setExpression;
+
+  /// When true, SETATREF evaluates to 0 on recalc.
+  final bool ignoreEval;
+}
+
+/// Result of redirecting an incoming UI/Automation value through SETATREF.
+@immutable
+class SetAtRefRedirect {
+  const SetAtRefRedirect({required this.reference, required this.value});
+  final String reference;
+  final double value;
+}
+
+/// Locate the first `SETATREF(...)` call in [raw] (not EXPR/EVAL).
+SetAtRefCall? parseSetAtRefCall(String? raw) {
+  if (raw == null) return null;
+  final src = raw.trim();
+  if (src.isEmpty) return null;
+  final m = RegExp(r'SETATREF(?!EXPR|EVAL)\s*\(', caseSensitive: false)
+      .firstMatch(src);
+  if (m == null) return null;
+  final open = m.end - 1;
+  final close = matchingCloseParen(src, open);
+  if (close == null) return null;
+  final parts = splitTopLevelArgs(src.substring(open + 1, close));
+  if (parts.isEmpty || parts.first.trim().isEmpty) return null;
+  return SetAtRefCall(
+    reference: parts[0].trim(),
+    setExpression: parts.length >= 2 ? parts[1].trim() : null,
+    ignoreEval: parts.length >= 3 && isFormulaTruthy(parts[2]),
+  );
+}
+
+/// Whether [raw] is exactly one `SETATREF(...)` call (no trailing ops).
+bool isSoleSetAtRefFormula(String? raw) {
+  if (raw == null) return false;
+  final src = raw.trim();
+  final m = RegExp(r'^SETATREF(?!EXPR|EVAL)\s*\(', caseSensitive: false)
+      .firstMatch(src);
+  if (m == null) return false;
+  final open = m.end - 1;
+  final close = matchingCloseParen(src, open);
+  return close != null && close == src.length - 1;
+}
+
+/// Index of the `)` matching the `(` at [openIdx], or `null`.
+int? matchingCloseParen(String s, int openIdx) {
+  if (openIdx < 0 || openIdx >= s.length || s[openIdx] != '(') return null;
+  var depth = 0;
+  for (var i = openIdx; i < s.length; i++) {
+    final c = s[i];
+    if (c == '(') {
+      depth++;
+    } else if (c == ')') {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return null;
+}
+
+/// Split function-argument text on top-level commas.
+List<String> splitTopLevelArgs(String args) {
+  if (args.isEmpty) return const <String>[''];
+  final out = <String>[];
+  var start = 0;
+  var depth = 0;
+  for (var i = 0; i < args.length; i++) {
+    final c = args[i];
+    if (c == '(') {
+      depth++;
+    } else if (c == ')') {
+      depth--;
+    } else if (c == ',' && depth == 0) {
+      out.add(args.substring(start, i).trim());
+      start = i + 1;
+    }
+  }
+  out.add(args.substring(start).trim());
+  return out;
+}
+
+bool isFormulaTruthy(String raw) {
+  final t = raw.trim().toUpperCase();
+  return t == 'TRUE' || t == '1' || t == '1.0';
+}
+
+bool _containsSetAtRefFn(String s) =>
+    RegExp(r'SETATREF(?:EXPR|EVAL)?\s*\(', caseSensitive: false).hasMatch(s);
+
+RegExp _setAtRefFnOpen(String name) {
+  if (name.toUpperCase() == 'SETATREF') {
+    return RegExp(r'SETATREF(?!EXPR|EVAL)\s*\(', caseSensitive: false);
+  }
+  return RegExp('$name\\s*\\(', caseSensitive: false);
+}
+
+/// Replace one leaf call of [name] whose args contain no nested SETATREF*.
+/// Returns [src] unchanged when no leaf exists; `null` on malformed parens /
+/// failed expand.
+String? _expandOneLeafFn(
+  String src,
+  String name,
+  String? Function(String args) expand,
+) {
+  final re = _setAtRefFnOpen(name);
+  for (final m in re.allMatches(src)) {
+    final open = m.end - 1;
+    final close = matchingCloseParen(src, open);
+    if (close == null) return null;
+    final args = src.substring(open + 1, close);
+    if (_containsSetAtRefFn(args)) continue;
+    final rep = expand(args);
+    if (rep == null) return null;
+    return '${src.substring(0, m.start)}$rep${src.substring(close + 1)}';
+  }
+  return src;
+}
+
+/// Recalc peel: `SETATREFEXPR(x)`→x, `SETATREFEVAL(e)`→eval(e),
+/// `SETATREF(ref[,…])`→lookup(ref) (or 0 when ignore_eval).
+String? expandSetAtRefForRecalc(
+  String src, {
+  Map<String, double>? locals,
+  double? Function(int sheetId, String cell)? sheetLookup,
+  double? Function(String ref)? cellLookup,
+}) {
+  var s = src;
+  for (var pass = 0; pass < 32; pass++) {
+    final before = s;
+    final expr = _expandOneLeafFn(s, 'SETATREFEXPR', (args) {
+      if (args.trim().isEmpty) return '0';
+      final v = evaluateFormula(
+        args,
+        locals: locals,
+        sheetLookup: sheetLookup,
+        cellLookup: cellLookup,
+        expandSetAtRef: false,
+      );
+      if (v == null) return null;
+      return _formulaNumberLiteral(v);
+    });
+    if (expr == null) return null;
+    s = expr;
+
+    final evaled = _expandOneLeafFn(s, 'SETATREFEVAL', (args) {
+      final v = evaluateFormula(
+        args,
+        locals: locals,
+        sheetLookup: sheetLookup,
+        cellLookup: cellLookup,
+        expandSetAtRef: false,
+      );
+      if (v == null) return null;
+      return _formulaNumberLiteral(v);
+    });
+    if (evaled == null) return null;
+    s = evaled;
+
+    final refs = _expandOneLeafFn(s, 'SETATREF', (args) {
+      final parts = splitTopLevelArgs(args);
+      if (parts.isEmpty || parts.first.trim().isEmpty) return null;
+      if (parts.length >= 3 && isFormulaTruthy(parts[2])) return '0';
+      if (cellLookup == null) return null;
+      final v = cellLookup(parts[0].trim());
+      if (v == null) return null;
+      return _formulaNumberLiteral(v);
+    });
+    if (refs == null) return null;
+    s = refs;
+    if (s == before) break;
+  }
+  return s;
+}
+
+/// Redirect an incoming UI value through a cell's SETATREF formula.
+///
+/// When [set_expression] is omitted, [incoming] is written to the reference.
+/// When it contains `SETATREFEVAL(SETATREFEXPR(…)…)`, EXPR is replaced by
+/// [incoming], EVAL is computed, and that result is written to the reference.
+///
+/// When [formulaOfRef] is provided, follows SETATREF chains (Visio allows up
+/// to 10 hops): if the target cell's own `F=` is also SETATREF, the value is
+/// redirected again until a non-SETATREF leaf is reached.
+SetAtRefRedirect? computeSetAtRefRedirect(
+  String? formula,
+  double incoming, {
+  Map<String, double>? locals,
+  double? Function(int sheetId, String cell)? sheetLookup,
+  double? Function(String ref)? cellLookup,
+  String? Function(String ref)? formulaOfRef,
+  int maxHops = 10,
+}) {
+  var currentFormula = formula;
+  var currentIncoming = incoming;
+  SetAtRefRedirect? last;
+  final seen = <String>{};
+
+  final hops = maxHops < 1 ? 1 : (maxHops > 10 ? 10 : maxHops);
+  for (var hop = 0; hop < hops; hop++) {
+    final one = _computeSetAtRefRedirectOnce(
+      currentFormula,
+      currentIncoming,
+      locals: locals,
+      sheetLookup: sheetLookup,
+      cellLookup: cellLookup,
+    );
+    if (one == null) return last;
+    last = one;
+    final key = one.reference.toUpperCase();
+    if (!seen.add(key)) return one; // cycle — stop at this write
+
+    final nextF = formulaOfRef?.call(one.reference);
+    if (nextF == null || parseSetAtRefCall(nextF) == null) {
+      return one;
+    }
+    currentFormula = nextF;
+    currentIncoming = one.value;
+  }
+  return last;
+}
+
+SetAtRefRedirect? _computeSetAtRefRedirectOnce(
+  String? formula,
+  double incoming, {
+  Map<String, double>? locals,
+  double? Function(int sheetId, String cell)? sheetLookup,
+  double? Function(String ref)? cellLookup,
+}) {
+  final call = parseSetAtRefCall(formula);
+  if (call == null) return null;
+  final setExpr = call.setExpression;
+  if (setExpr == null || setExpr.isEmpty) {
+    return SetAtRefRedirect(reference: call.reference, value: incoming);
+  }
+
+  // Visio places the incoming value into SETATREFEXPR(…).
+  var expr = setExpr;
+  for (var i = 0; i < 16; i++) {
+    final next = _expandOneLeafFn(
+      expr,
+      'SETATREFEXPR',
+      (_) => _formulaNumberLiteral(incoming),
+    );
+    if (next == null) return null;
+    if (next == expr) break;
+    expr = next;
+  }
+
+  for (var i = 0; i < 16; i++) {
+    final next = _expandOneLeafFn(expr, 'SETATREFEVAL', (args) {
+      final v = evaluateFormula(
+        args,
+        locals: locals,
+        sheetLookup: sheetLookup,
+        cellLookup: cellLookup,
+        expandSetAtRef: true,
+      );
+      if (v == null) return null;
+      return _formulaNumberLiteral(v);
+    });
+    if (next == null) return null;
+    if (next == expr) break;
+    expr = next;
+  }
+
+  final v = evaluateFormula(
+    expr,
+    locals: locals,
+    sheetLookup: sheetLookup,
+    cellLookup: cellLookup,
+  );
+  if (v == null) return null;
+  return SetAtRefRedirect(reference: call.reference, value: v);
+}
+
+/// Substitute `Sheet.n!Cell` with numeric literals via [sheetLookup].
+/// Returns `null` if any referenced sheet/cell cannot be resolved.
+String? substituteSheetRefs(
+  String src,
+  double? Function(int sheetId, String cell) sheetLookup,
+) {
+  final buf = StringBuffer();
+  var last = 0;
+  var saw = false;
+  for (final m in sheetCellRefPattern.allMatches(src)) {
+    saw = true;
+    final id = int.parse(m.group(1)!);
+    final cell = m.group(2)!;
+    final v = sheetLookup(id, cell);
+    if (v == null) return null;
+    buf
+      ..write(src.substring(last, m.start))
+      ..write(_formulaNumberLiteral(v));
+    last = m.end;
+  }
+  if (!saw) return src;
+  buf.write(src.substring(last));
+  return buf.toString();
+}
+
+String _formulaNumberLiteral(double v) {
+  if (v.isNaN || v.isInfinite) return '0';
+  if (v == v.roundToDouble() && v.abs() < 1e15) {
+    return '${v.toInt()}';
+  }
+  // Trim trailing zeros so the lexer accepts a clean decimal.
+  var s = v.toStringAsFixed(12);
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    if (s.endsWith('.')) s = s.substring(0, s.length - 1);
+  }
+  return s;
+}
 
 /// Evaluate a ShapeSheet formula string. Returns the resolved value in
 /// **inches** (for lengths) or the unitless number for ratios / angles
 /// in degrees stay as-is — the caller decides what the unit is. When the
 /// formula references anything we can't resolve (external sheet, Inh,
 /// theme), returns `null`.
-double? evaluateFormula(String? raw) {
+///
+/// [locals] binds bare cell names (`Width`, `Height`, `PinX`, …) for local
+/// ShapeSheet recalculation. Keys are matched case-insensitively.
+///
+/// [sheetLookup] resolves `Sheet.n!Cell` for page-level cross-shape
+/// recalculation. Without it, any `!` reference hard-exits to `null`.
+///
+/// [cellLookup] resolves `Controls.*` / `User.*` / `Prop.*` (and similar)
+/// for SETATREF recalc transparency. When SETATREF wrappers are present,
+/// they are expanded via [expandSetAtRefForRecalc] first.
+double? evaluateFormula(
+  String? raw, {
+  Map<String, double>? locals,
+  double? Function(int sheetId, String cell)? sheetLookup,
+  double? Function(String ref)? cellLookup,
+  bool expandSetAtRef = true,
+}) {
   if (raw == null) return null;
-  final src = raw.trim();
+  var src = raw.trim();
   if (src.isEmpty) return null;
+  if (sheetLookup != null && sheetCellRefPattern.hasMatch(src)) {
+    final sub = substituteSheetRefs(src, sheetLookup);
+    if (sub == null) return null;
+    src = sub;
+  }
+  if (expandSetAtRef &&
+      RegExp(r'SETATREF(?:EXPR|EVAL)?\s*\(', caseSensitive: false)
+          .hasMatch(src)) {
+    final expanded = expandSetAtRefForRecalc(
+      src,
+      locals: locals,
+      sheetLookup: sheetLookup,
+      cellLookup: cellLookup,
+    );
+    if (expanded == null) return null;
+    src = expanded;
+  }
   // Hard exits — these always need outer context to resolve.
   final upper = src.toUpperCase();
   if (upper.contains('THEMEVAL') ||
       upper.contains('THEMEGUARD') ||
       upper.contains('USE(') ||
+      upper.contains('SETATREF') ||
       upper.startsWith('INH') ||
       upper.contains('!')) {
     return null;
   }
   final lex = _Lexer(src);
-  final parser = _Parser(lex);
+  final parser = _Parser(lex, locals: locals);
   try {
     final v = parser.parseExpression();
     if (!parser.atEof) return null;
@@ -179,10 +589,19 @@ class _Lexer {
 }
 
 class _Parser {
-  _Parser(this._lex) {
+  _Parser(this._lex, {Map<String, double>? locals})
+      : _locals = _normalizeLocals(locals) {
     _lex.advance();
   }
   final _Lexer _lex;
+  final Map<String, double> _locals;
+
+  static Map<String, double> _normalizeLocals(Map<String, double>? locals) {
+    if (locals == null || locals.isEmpty) return const <String, double>{};
+    return <String, double>{
+      for (final e in locals.entries) e.key.toUpperCase(): e.value,
+    };
+  }
 
   bool get atEof => _lex.tok == _Tok.end;
 
@@ -259,6 +678,8 @@ class _Parser {
       if (_lex.tok == _Tok.lparen) {
         return _callFunction(name);
       }
+      final bound = _locals[name];
+      if (bound != null) return bound;
       // Bare identifier — not resolvable here.
       throw const _FormulaError();
     }

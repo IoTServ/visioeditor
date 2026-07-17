@@ -2924,6 +2924,351 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.ciscoBranchRouter(
             id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.0)),
   ], expandAtWidth: 1280),
+  // drawio Alibaba Cloud — geometric architecture starters.
+  StencilGroup('Alibaba', <Stencil>[
+    Stencil(
+        'Alibaba ECS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaEcs(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'OSS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaOss(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'SLB',
+        (id, cx, cy) => VsdxShapeFactory.alibabaSlb(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'ACK',
+        (id, cx, cy) => VsdxShapeFactory.alibabaAck(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Function Compute',
+        (id, cx, cy) => VsdxShapeFactory.alibabaFunctionCompute(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'PolarDB',
+        (id, cx, cy) => VsdxShapeFactory.alibabaPolarDb(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'TableStore',
+        (id, cx, cy) => VsdxShapeFactory.alibabaTableStore(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'MaxCompute',
+        (id, cx, cy) => VsdxShapeFactory.alibabaMaxCompute(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'RocketMQ',
+        (id, cx, cy) => VsdxShapeFactory.alibabaRocketMq(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'RAM',
+        (id, cx, cy) => VsdxShapeFactory.alibabaRam(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'CEN',
+        (id, cx, cy) => VsdxShapeFactory.alibabaCen(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'SLS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaSls(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'NAS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaNas(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'AnalyticDB',
+        (id, cx, cy) => VsdxShapeFactory.alibabaAnalyticDb(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'CDN',
+        (id, cx, cy) => VsdxShapeFactory.alibabaCdn(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Aliyun WAF',
+        (id, cx, cy) => VsdxShapeFactory.alibabaWaf(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'DataWorks',
+        (id, cx, cy) => VsdxShapeFactory.alibabaDataWorks(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Hologres',
+        (id, cx, cy) => VsdxShapeFactory.alibabaHologres(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Flink',
+        (id, cx, cy) => VsdxShapeFactory.alibabaFlink(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.0)),
+    Stencil(
+        'MSE',
+        (id, cx, cy) => VsdxShapeFactory.alibabaMse(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'ASM',
+        (id, cx, cy) => VsdxShapeFactory.alibabaAsm(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'ACR',
+        (id, cx, cy) => VsdxShapeFactory.alibabaAcr(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'EIP',
+        (id, cx, cy) => VsdxShapeFactory.alibabaEip(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'NAT Gateway',
+        (id, cx, cy) => VsdxShapeFactory.alibabaNatGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'KMS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaKms(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'ARMS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaArms(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'Lindorm',
+        (id, cx, cy) => VsdxShapeFactory.alibabaLindorm(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'DTS',
+        (id, cx, cy) => VsdxShapeFactory.alibabaDts(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+  ], expandAtWidth: 1280),
+  // drawio IBM Cloud — geometric architecture starters.
+  StencilGroup('IBM', <Stencil>[
+    Stencil(
+        'IBM VPC',
+        (id, cx, cy) => VsdxShapeFactory.ibmVpc(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.1)),
+    Stencil(
+        'Cloud Object Storage',
+        (id, cx, cy) => VsdxShapeFactory.ibmCloudObjectStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'IKS',
+        (id, cx, cy) => VsdxShapeFactory.ibmIks(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'ROKS',
+        (id, cx, cy) => VsdxShapeFactory.ibmRoks(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Db2',
+        (id, cx, cy) => VsdxShapeFactory.ibmDb2(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloudant',
+        (id, cx, cy) => VsdxShapeFactory.ibmCloudant(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.3)),
+    Stencil(
+        'Event Streams',
+        (id, cx, cy) => VsdxShapeFactory.ibmEventStreams(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'IBM MQ',
+        (id, cx, cy) => VsdxShapeFactory.ibmMq(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'watsonx',
+        (id, cx, cy) => VsdxShapeFactory.ibmWatsonx(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Code Engine',
+        (id, cx, cy) => VsdxShapeFactory.ibmCodeEngine(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.0)),
+    Stencil(
+        'API Connect',
+        (id, cx, cy) => VsdxShapeFactory.ibmApiConnect(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'App ID',
+        (id, cx, cy) => VsdxShapeFactory.ibmAppId(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Key Protect',
+        (id, cx, cy) => VsdxShapeFactory.ibmKeyProtect(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Direct Link',
+        (id, cx, cy) => VsdxShapeFactory.ibmDirectLink(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Activity Tracker',
+        (id, cx, cy) => VsdxShapeFactory.ibmActivityTracker(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Log Analysis',
+        (id, cx, cy) => VsdxShapeFactory.ibmLogAnalysis(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Schematics',
+        (id, cx, cy) => VsdxShapeFactory.ibmSchematics(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Satellite',
+        (id, cx, cy) => VsdxShapeFactory.ibmSatellite(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Power VS',
+        (id, cx, cy) => VsdxShapeFactory.ibmPowerVs(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Bare Metal',
+        (id, cx, cy) => VsdxShapeFactory.ibmBareMetal(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.3)),
+    Stencil(
+        'Block Storage',
+        (id, cx, cy) => VsdxShapeFactory.ibmBlockStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'File Storage',
+        (id, cx, cy) => VsdxShapeFactory.ibmFileStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'CIS',
+        (id, cx, cy) => VsdxShapeFactory.ibmCis(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Internet Services',
+        (id, cx, cy) => VsdxShapeFactory.ibmInternetServices(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.1)),
+    Stencil(
+        'Aspera',
+        (id, cx, cy) => VsdxShapeFactory.ibmAspera(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.0)),
+    Stencil(
+        'Certificate Manager',
+        (id, cx, cy) => VsdxShapeFactory.ibmCertificateManager(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.3)),
+    Stencil(
+        'Toolchain',
+        (id, cx, cy) => VsdxShapeFactory.ibmToolchain(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+    Stencil(
+        'Security Advisor',
+        (id, cx, cy) => VsdxShapeFactory.ibmSecurityAdvisor(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+  ], expandAtWidth: 1280),
+  // drawio Oracle Cloud (OCI) — geometric architecture starters.
+  StencilGroup('Oracle', <Stencil>[
+    Stencil(
+        'Compute Instance',
+        (id, cx, cy) => VsdxShapeFactory.oracleComputeInstance(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.2)),
+    Stencil(
+        'Autonomous Database',
+        (id, cx, cy) => VsdxShapeFactory.oracleAutonomousDatabase(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Object Storage',
+        (id, cx, cy) => VsdxShapeFactory.oracleObjectStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Block Volume',
+        (id, cx, cy) => VsdxShapeFactory.oracleBlockVolume(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'OKE',
+        (id, cx, cy) => VsdxShapeFactory.oracleOke(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Oracle Functions',
+        (id, cx, cy) => VsdxShapeFactory.oracleFunctions(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.1)),
+    Stencil(
+        'VCN',
+        (id, cx, cy) => VsdxShapeFactory.oracleVcn(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.1)),
+    Stencil(
+        'Oracle Load Balancer',
+        (id, cx, cy) => VsdxShapeFactory.oracleLoadBalancer(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Streaming',
+        (id, cx, cy) => VsdxShapeFactory.oracleStreaming(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'Oracle Vault',
+        (id, cx, cy) => VsdxShapeFactory.oracleVault(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Exadata',
+        (id, cx, cy) => VsdxShapeFactory.oracleExadata(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.3)),
+    Stencil(
+        'MySQL HeatWave',
+        (id, cx, cy) => VsdxShapeFactory.oracleMysqlHeatwave(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'GoldenGate',
+        (id, cx, cy) => VsdxShapeFactory.oracleGoldenGate(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.0)),
+    Stencil(
+        'Analytics Cloud',
+        (id, cx, cy) => VsdxShapeFactory.oracleAnalyticsCloud(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.1)),
+    Stencil(
+        'OCI API Gateway',
+        (id, cx, cy) => VsdxShapeFactory.oracleApiGateway(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Service Connector',
+        (id, cx, cy) => VsdxShapeFactory.oracleServiceConnector(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.0)),
+    Stencil(
+        'OCI Notifications',
+        (id, cx, cy) => VsdxShapeFactory.oracleNotifications(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'OCI Events',
+        (id, cx, cy) => VsdxShapeFactory.oracleEvents(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Data Science',
+        (id, cx, cy) => VsdxShapeFactory.oracleDataScience(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Data Flow',
+        (id, cx, cy) => VsdxShapeFactory.oracleDataFlow(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+    Stencil(
+        'Data Catalog',
+        (id, cx, cy) => VsdxShapeFactory.oracleDataCatalog(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'FastConnect',
+        (id, cx, cy) => VsdxShapeFactory.oracleFastConnect(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'OCI File Storage',
+        (id, cx, cy) => VsdxShapeFactory.oracleFileStorage(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'OCI Bastion',
+        (id, cx, cy) => VsdxShapeFactory.oracleBastion(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'Network Load Balancer',
+        (id, cx, cy) => VsdxShapeFactory.oracleNetworkLoadBalancer(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Cloud Guard',
+        (id, cx, cy) => VsdxShapeFactory.oracleCloudGuard(
+            id: id, pinX: cx, pinY: cy, width: 1.1, height: 1.2)),
+    Stencil(
+        'Resource Manager',
+        (id, cx, cy) => VsdxShapeFactory.oracleResourceManager(
+            id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.3)),
+    Stencil(
+        'DevOps',
+        (id, cx, cy) => VsdxShapeFactory.oracleDevOps(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
+  ], expandAtWidth: 1280),
 ];
 
 /// Flattened view of every stencil (used for search / lookups).

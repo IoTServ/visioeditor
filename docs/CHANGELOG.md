@@ -100,6 +100,26 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   AP, Cisco ISE, DNA Center, Telepresence, Expressway, Core Switch, Branch
   Router — clean architecture glyphs that round-trip to `.vsdx` (not
   brand-mark replicas; names avoid Network-group collisions).
+- **Alibaba** library (Alibaba Cloud geometric starters): Alibaba ECS, OSS,
+  SLB, ACK, Function Compute, PolarDB, TableStore, MaxCompute, RocketMQ, RAM,
+  CEN, SLS, NAS, AnalyticDB, CDN, Aliyun WAF, DataWorks, Hologres, Flink, MSE,
+  ASM, ACR, EIP, NAT Gateway, KMS, ARMS, Lindorm, DTS — clean architecture
+  glyphs that round-trip to `.vsdx` (not brand-mark replicas).
+- **IBM** library (IBM Cloud geometric starters): IBM VPC, Cloud Object
+  Storage, IKS, ROKS, Db2, Cloudant, Event Streams, IBM MQ, watsonx, Code
+  Engine, API Connect, App ID, Key Protect, Direct Link, Activity Tracker,
+  Log Analysis, Schematics, Satellite, Power VS, Bare Metal, Block Storage,
+  File Storage, CIS, Internet Services, Aspera, Certificate Manager,
+  Toolchain, Security Advisor — clean architecture glyphs that round-trip
+  to `.vsdx` (not brand-mark replicas).
+- **Oracle** library (OCI geometric starters): Compute Instance, Autonomous
+  Database, Object Storage, Block Volume, OKE, Oracle Functions, VCN, Oracle
+  Load Balancer, Streaming, Oracle Vault, Exadata, MySQL HeatWave, GoldenGate,
+  Analytics Cloud, OCI API Gateway, Service Connector, OCI Notifications,
+  OCI Events, Data Science, Data Flow, Data Catalog, FastConnect, OCI File
+  Storage, OCI Bastion, Network Load Balancer, Cloud Guard, Resource Manager,
+  DevOps — clean architecture glyphs that round-trip to `.vsdx` (not
+  brand-mark replicas).
 - **Network** also includes tablet, phone, modem, storage, load balancer, and
   security camera.
   Each tile is a **live geometry thumbnail** (not an icon), so the preview
@@ -144,6 +164,25 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Edge labels**: double-click a connector to label it; the text is drawn
   centred on the route's midpoint (drawio-style) with a page-coloured backing
   for legibility, and the in-place editor opens right there.
+- **Curved Text** (drawio-style arc labels): toggle in the text inspector to
+  paint a 2-D shape's label along a quadratic arc inside its text block.
+  Stored as `User.veCurvedText` so it survives save → reopen.
+- **Bullets / paragraph indents**: Visio `Bullet` / `BulletStr` /
+  `IndLeft` / `IndFirst` / `TextPosAfterBullet` are painted (hanging indent)
+  and can be toggled from the text inspector; values round-trip.
+- **Local ShapeSheet recalc** (first slices): after resize, Connection /
+  LocPin / Scratch / Controls / User cells whose `F=` only references local
+  Width/Height/Pin*/Begin*/End* (and Geometry rows that reference those or
+  `Scratch.Xn`) are re-evaluated so glue points and parametric paths stay
+  consistent. Cross-shape `Sheet.n!Cell` refs (PinX/Y, Width/Height, Angle,
+  LocPin*, Begin*/End*) are resolved on page-level `recalculateFormulas`
+  after move / resize / rotate / align. Local `SETATREF` / `SETATREFEXPR` /
+  `SETATREFEVAL` support input redirect into Controls / User / Prop (including
+  redirect chains up to 10 hops) and recalc transparency via cell lookup;
+  composite formulas such as `SETATREF(…)+Width*0.5` evaluate on sync.
+  Unresolved theme / unknown cells keep their prior `V`.
+  `SETATREF(Controls.…)` / `SETATREF(User.…)` on `TxtPinX`/`TxtPinY` syncs
+  the text-block pin with the bound target.
 - **Hover-to-connect** (drawio HoverIcons): hovering a shape in select mode
   shows directional connect arrows around it; drag one out to wire a new
   connector — dropping on another shape glues both ends, dropping on empty
@@ -274,9 +313,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   editing; vector (non-raster) PDF; custom / imported stencils.
 - Other platforms (Windows / Linux / Android / iOS) and legacy `.vsd` import
   (via libvisio); `.vsdx` OS file association, app icon and packaging/signing.
-- LibreOffice / Visio interop is currently covered by our own open→save→reopen
-  round-trip tests; `soffice` headless cross-conversion is pending a local
-  LibreOffice install.
+- LibreOffice / Visio interop is covered by open→save→reopen round-trip tests;
+  CI installs LibreOffice and runs
+  `packages/vsdx/test/libreoffice_crosscheck_test.dart` (`REQUIRE_SOFFICE=1`,
+  soffice `--convert-to pdf`). Locally the same test skips when LibreOffice is
+  not installed (set `SOFFICE` to override the binary path).
 
 ### Tested
 - Engine: 54 unit tests (parse; model edit / immutability / structural sharing;

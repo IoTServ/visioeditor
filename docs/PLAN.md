@@ -120,7 +120,8 @@
 - [x] 保存 UI：`EditorController.exportToBytes()`/`markSaved()`；工具栏 Save + Save As…；保存后清脏、成为新基线
 - [x] 测试：编辑往返（移动→save→reopen 位置正确）、未编辑形状无损、无编辑保存保留全部 part 名与值（3/3，共 11/11）
 - [ ] 删除/新增 Shape 的 XML 处理、`emit-from-scratch` 新建文档 —— 归入 E5
-- [ ] LibreOffice `soffice --headless` 交叉验证 —— 本机未安装 soffice，留待安装后或 CI 执行
+- [x] LibreOffice `soffice --headless` 交叉验证 —— CI job 安装 LibreOffice；
+  本机无 soffice 时测试 skip（`REQUIRE_SOFFICE=1` 强制失败）
 
 验收：**Slice-0 达成** —— 打开→渲染→选中移动→保存→重开位置正确、其余无损（引擎单测证明）。Visio/LibreOffice 人工核验待安装 soffice。
 
@@ -345,7 +346,6 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 老格式经 libvisio 导入
-- 公式重算引擎；LibreOffice `soffice` 交叉验证；项目符号绘制 / 段落缩进
 
 ---
 
@@ -1088,3 +1088,106 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   Direct Connect / OpenSearch（14 项）。l10n 14 个新 st_ 补入 37 语言；
   审计 495→509。测试：`writer_test` 新增 AWS 续扩往返 1 例。仍优先后续：
   其他厂商库（Alibaba/IBM 等）、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十八）——Alibaba Cloud 起步库**：
+  新增 Alibaba 组（几何起步，非商标复刻）：Alibaba ECS / OSS / SLB / ACK /
+  Function Compute / PolarDB / TableStore / MaxCompute / RocketMQ / RAM /
+  CEN / SLS / NAS / AnalyticDB。l10n：14 个新 st_ + `sg_Alibaba` 补入 37 语言；
+  审计 509→523。测试：`writer_test` 新增 Alibaba 往返 1 例。仍优先后续：
+  IBM/Oracle 等厂商库、Alibaba 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次七十九）——IBM Cloud 起步库**：
+  新增 IBM 组（几何起步，非商标复刻）：IBM VPC / Cloud Object Storage / IKS /
+  ROKS / Db2 / Cloudant / Event Streams / IBM MQ / watsonx / Code Engine /
+  API Connect / App ID / Key Protect / Direct Link。l10n：14 个新 st_ +
+  `sg_IBM` 补入 37 语言；审计 523→537。测试：`writer_test` 新增 IBM 往返 1 例。
+  仍优先后续：Oracle 起步、Alibaba/IBM 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次八十）——Oracle Cloud 起步库**：
+  新增 Oracle 组（OCI 几何起步，非商标复刻）：Compute Instance /
+  Autonomous Database / Object Storage / Block Volume / OKE /
+  Oracle Functions / VCN / Oracle Load Balancer / Streaming / Oracle Vault /
+  Exadata / MySQL HeatWave / GoldenGate / Analytics Cloud。
+  l10n：14 个新 st_ + `sg_Oracle` 补入 37 语言；审计 537→551。
+  测试：`writer_test` 新增 Oracle 往返 1 例。仍优先后续：各云厂商扩容、
+  Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次八十一）——Alibaba 扩容**：
+  Alibaba +CDN / Aliyun WAF / DataWorks / Hologres / Flink / MSE / ASM /
+  ACR / EIP / NAT Gateway / KMS / ARMS / Lindorm / DTS（14 项）。
+  l10n 14 个新 st_ 补入 37 语言；审计 551→565。测试：`writer_test` 新增
+  Alibaba 扩容往返 1 例。仍优先后续：IBM/Oracle 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次八十二）——IBM 扩容**：
+  IBM +Activity Tracker / Log Analysis / Schematics / Satellite / Power VS /
+  Bare Metal / Block Storage / File Storage / CIS / Internet Services /
+  Aspera / Certificate Manager / Toolchain / Security Advisor（14 项；跳过
+  已占用名 container_registry / secrets_manager / transit_gateway）。
+  l10n 14 个新 st_ 补入 37 语言；审计 565→579。测试：`writer_test` 新增
+  IBM 扩容往返 1 例。仍优先后续：Oracle 扩容、Curved Text、公式重算。
+- 2026-07-17 — **对齐 drawio（批次八十三）——Oracle 扩容**：
+  Oracle +OCI API Gateway / Service Connector / OCI Notifications /
+  OCI Events / Data Science / Data Flow / Data Catalog / FastConnect /
+  OCI File Storage / OCI Bastion / Network Load Balancer / Cloud Guard /
+  Resource Manager / DevOps（14 项；前缀 OCI 避开跨组冲突）。
+  l10n 14 个新 st_ 补入 37 语言；审计 579→593。测试：`writer_test` 新增
+  Oracle 扩容往返 1 例。仍优先后续：Curved Text、公式重算、或其他厂商续扩。
+- 2026-07-17 — **对齐 drawio（批次八十四）——Curved Text（文本走弧）**：
+  补齐已接线但未实现的弧形标签。(1) `VsdxShape.curvedText` /
+  `withCurvedText` 经 `User.veCurvedText` 往返。(2) `VsdxPainter._paintCurvedText`
+  将字形沿二次贝塞尔弧放置（块内上拱）。(3) 属性面板开关与控制器
+  `setCurvedText` 已可用。测试：`curved_text_test` 3 例。仍优先后续：
+  公式重算引擎、LibreOffice 交叉验证、项目符号。
+- 2026-07-17 — **公式重算（批次八十五）——本地 ShapeSheet 切片**：
+  (1) `evaluateFormula` 支持 `locals` 绑定 Width/Height/Pin*/Begin*/End* 等。
+  (2) `VsdxShape.recalculateLocalFormulas` 重算 Connection / LocPin /
+  Scratch / Controls / User 的本地算术公式缓存 `V`，保留 `F=`；求不出
+  （SETATREF / 跨 sheet / Scratch.Xn）则不动。(3) `resizeTo` 末尾接入。
+  测试：`formula_recalc_test`。仍优先后续：跨 shape 依赖图、SETATREF 语义、
+  Geometry↔Scratch 拓扑、LibreOffice 交叉验证、项目符号。
+- 2026-07-17 — **公式重算（批次八十六）——Geometry↔Scratch 本地拓扑**：
+  (1) Scratch 求值后绑定 `Scratch.X1`…（按 IX 与 1-based 序）并做最多两轮
+  回填。(2) `applyPathCommandFormulas` 按行 `F=` 重写 MoveTo/LineTo/弧/
+  贝塞尔/椭圆等绝对几何缓存 `V`。(3) 仍挂在 `resizeTo`→
+  `recalculateLocalFormulas`。测试：`formula_recalc_test` 增补 Geometry+Scratch
+  例。仍优先后续：跨 shape 依赖图、SETATREF 语义、LibreOffice 交叉验证、
+  项目符号。
+- 2026-07-17 — **对齐 drawio（批次八十七）——项目符号绘制 / 段落缩进**：
+  (1) `VsdxPainter` 段落布局识别 Bullet / IndLeft / IndFirst / IndRight /
+  多段换行，绘制字形（`BulletStr` 或默认 •○■…）与悬挂缩进。
+  (2) 控制器 `setBullet` / `selectedHasBullet`；属性面板开关。
+  (3) l10n `bulletList` 补入 37 语言。测试：`bullet_list_test`。
+  仍优先后续：跨 shape 公式依赖、SETATREF、LibreOffice 交叉验证。
+- 2026-07-17 — **公式重算（批次八十八）——SETATREF(Controls) + soffice 脚手架**：
+  (1) `parseSetAtRefControl` 解析本地 `SETATREF(Controls.Name[.X|.Y])`。
+  (2) `syncSetAtRefFromControls` / `pushSetAtRefToControls`：TxtPin ↔
+  Controls 双向缓存同步；挂在 `recalculateLocalFormulas` 末尾（resize 后
+  文本手柄跟随 Width* 控制点）。(3) `libreoffice_crosscheck_test`：本机无
+  soffice 时 skip，安装后或设 `SOFFICE` 可跑 headless 往返。
+  测试：`formula_recalc_test` 增补 SETATREF 例。仍优先后续：跨 shape
+  `Sheet.n!` 依赖图、完整 SETATREFEVAL、CI 装 LibreOffice。
+- 2026-07-17 — **公式重算（批次八十九）——跨 shape `Sheet.n!` 切片**：
+  (1) `evaluateFormula` 可选 `sheetLookup`，预处理 `Sheet.n!Cell`。
+  (2) `VsdxShape.lookupSheetCell` / `formulaSources` / `referencesAnySheet`。
+  (3) `VsdxPage.recalculateFormulas({changedShapeIds})`：多轮重算依赖方；
+  可解 PinX/Y、Width/Height、Angle、LocPin*、Begin*/End*。
+  (4) 编辑器 move / resize / rotate / align 后接入页面级重算。
+  测试：`formula_recalc_test` 增补 Sheet.n! 例。仍优先后续：完整
+  SETATREFEVAL、CI 装 LibreOffice。
+- 2026-07-17 — **公式重算（批次九十）——SETATREFEVAL / SETATREFEXPR 切片**：
+  (1) `parseSetAtRefCall` / `computeSetAtRefRedirect`：输入路径把
+  `SETATREFEXPR` 换成入值，求 `SETATREFEVAL`，写入 Controls/User/Prop。
+  (2) `expandSetAtRefForRecalc`：重算时剥离 SETATREF/EXPR/EVAL（ignore_eval→0）。
+  (3) `lookupLocalRef` / `writeLocalRef` / `applySetAtRefInputs`；
+  `pushSetAtRefToControls` 改走通用重定向；`syncSetAtRefFromControls`
+  支持 sole `SETATREF(User.*)`。
+  测试：`formula_recalc_test` 增补 SETATREFEVAL 例。仍优先后续：CI 装
+  LibreOffice、SETATREF 链式/复合公式更全覆盖。
+- 2026-07-17 — **交叉验证（批次九十一）——CI 装 LibreOffice**：
+  (1) `.github/workflows/ci.yml`：vsdx / Flutter / `libreoffice-crosscheck`
+  三 job；后者 apt 安装 Draw nogui（失败则回退 libreoffice-draw）。
+  (2) `libreoffice_crosscheck_test`：`REQUIRE_SOFFICE=1` 时缺 soffice 失败；
+  headless 转 PDF（UserInstallation + svp），断言非空 `in.pdf`。
+  本机无 LO 仍 skip。仍优先后续：SETATREF 链式/复合更全、平台打包签名。
+- 2026-07-17 — **公式重算（批次九十二）——SETATREF 链式 / 复合公式**：
+  (1) `computeSetAtRefRedirect` 经 `formulaOfRef` 跟随最多 10 跳链，
+  写入叶 cell；环检测。(2) `formulaOfLocalRef`；`applySetAtRefInputs`
+  接入链式重定向。(3) `syncSetAtRefFromControls` 对复合
+  `SETATREF(…)+算术` 用 `evaluateFormula` 求 TxtPin。
+  测试：`formula_recalc_test` 增补链/复合例。仍优先后续：平台打包签名、
+  `.vsd` 导入。
