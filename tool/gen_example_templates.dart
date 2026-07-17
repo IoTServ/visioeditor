@@ -229,12 +229,16 @@ Uint8List _write(String pageName, List<VsdxShape> shapes, List<VsdxConnect> conn
     heightInches: kPageH,
   );
   var doc = _parser.parse(blank);
-  final page = doc.pages.first.copyWith(
-    name: pageName,
-    shapes: shapes,
-    connects: connects,
-    pageSheet: doc.pages.first.pageSheet.copyWith(printPageOrientation: 2),
-  );
+  // Glue rows alone keep Begin/End on pins; reroute snaps each end to the
+  // target outline aimed at the opposite shape (same as the editor).
+  final page = doc.pages.first
+      .copyWith(
+        name: pageName,
+        shapes: shapes,
+        connects: connects,
+        pageSheet: doc.pages.first.pageSheet.copyWith(printPageOrientation: 2),
+      )
+      .rerouteConnectors();
   doc = doc
       .replacePage(0, page)
       .copyWith(title: pageName, creator: 'Editor for Visio Diagrams');
