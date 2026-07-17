@@ -123,6 +123,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _presentationMode = false;
   final CanvasCamera _camera = CanvasCamera();
 
+  /// Double-tap detection for page tabs ([ChoiceChip] swallows
+  /// [GestureDetector.onDoubleTap]).
+  int? _lastPageTabIndex;
+  DateTime? _lastPageTabTapAt;
+
   /// Host of [PageCanvas]; used to map desktop file-drop global coords → page
   /// inches so images land under the cursor (drawio).
   final GlobalKey _canvasHostKey = GlobalKey();
@@ -575,6 +580,23 @@ class _EditorHomePageState extends State<EditorHomePage> {
       name: picked.name,
       replaceSelected: replaceSelected,
     );
+  }
+
+  void _onPageTabSelected(int index) {
+    final c = _c;
+    if (c == null) return;
+    final now = DateTime.now();
+    final isDoubleTap = _lastPageTabIndex == index &&
+        _lastPageTabTapAt != null &&
+        now.difference(_lastPageTabTapAt!) < const Duration(milliseconds: 400);
+    _lastPageTabIndex = index;
+    _lastPageTabTapAt = now;
+    if (isDoubleTap) {
+      _lastPageTabTapAt = null;
+      _renamePage(index);
+      return;
+    }
+    c.selectPage(index);
   }
 
   Future<void> _renamePage(int index) async {
@@ -1334,24 +1356,26 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 3, vertical: 7),
-                      child: GestureDetector(
-                        onDoubleTap: () => _renamePage(i),
-                        child: ChoiceChip(
-                          avatar: page.isBackgroundPage
-                              ? const Icon(Icons.layers_outlined, size: 16)
-                              : null,
-                          label: Text(page.name),
-                          selected: i == c.currentPageIndex,
-                          onSelected: (_) => c.selectPage(i),
-                          tooltip: page.isBackgroundPage
-                              ? EditorL10n.of(context).backgroundPageReorderHint
-                              : EditorL10n.of(context).pageReorderHint,
-                        ),
+                      child: ChoiceChip(
+                        avatar: page.isBackgroundPage
+                            ? const Icon(Icons.layers_outlined, size: 16)
+                            : null,
+                        label: Text(page.name),
+                        selected: i == c.currentPageIndex,
+                        onSelected: (_) => _onPageTabSelected(i),
+                        tooltip: page.isBackgroundPage
+                            ? EditorL10n.of(context).backgroundPageReorderHint
+                            : EditorL10n.of(context).pageReorderHint,
                       ),
                     ),
                   );
                 },
               ),
+            ),
+            IconButton(
+              onPressed: () => _renamePage(c.currentPageIndex),
+              icon: const Icon(Icons.drive_file_rename_outline),
+              tooltip: EditorL10n.of(context).renamePage,
             ),
             IconButton(
               onPressed: c.addPage,
