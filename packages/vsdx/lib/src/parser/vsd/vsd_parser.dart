@@ -882,6 +882,12 @@ class VsdBinaryParser {
         _readForeignDataType(input);
       case VsdRecordId.foreignData:
         _readForeignData(input);
+      case VsdRecordId.oleList:
+        // libvisio `readOLEList` is empty; collector clears the foreign buffer
+        // before subsequent `oleData` chunks append.
+        if (!collectStylesOnly) _shape?.foreignBytes = Uint8List(0);
+      case VsdRecordId.oleData:
+        if (!collectStylesOnly) _readOleData(input);
       case VsdRecordId.pageSheet:
         _currentShapeLevel = _header.level;
       default:
@@ -1589,6 +1595,23 @@ class VsdBinaryParser {
     s.foreignBytes = input.readBytes(_header.dataLength);
   }
 
+  /// Append an OLE data chunk (libvisio `VSDParser::readOLEData`).
+  void _readOleData(VsdByteReader input) {
+    final s = _shape;
+    if (s == null) return;
+    if (_header.dataLength <= 0 || input.remaining < _header.dataLength) return;
+    final chunk = input.readBytes(_header.dataLength);
+    final prev = s.foreignBytes;
+    if (prev == null || prev.isEmpty) {
+      s.foreignBytes = chunk;
+      return;
+    }
+    final out = Uint8List(prev.length + chunk.length);
+    out.setRange(0, prev.length, prev);
+    out.setRange(prev.length, out.length, chunk);
+    s.foreignBytes = out;
+  }
+
   void _readPolylineTo(VsdByteReader input) {
     // Algorithm reference: libvisio VSDParser::readPolylineTo.
     input.skip(1);
@@ -1979,11 +2002,94 @@ class VsdBinaryParser {
           if (parsed != null) formatNumber = parsed;
         }
       }
-      s.fieldDisplays.add(
-          _formatNumericField(numeric, cellType, formatNumber, customFormat));
+      // Multidimensional (233): primary F64 is often a denormal placeholder
+      // (libvisio TODO). A trailing typed result `0x46 <sqIn F64> <unit> 0x02`
+      // carries the real area in square inches plus display unit.
+      var effectiveCell = cellType;
+      var effectiveNumeric = numeric;
+      if (cellType == 233) {
+        final saved = input.offset;
+        input.seek(initial);
+        final payload = input.readBytes(
+          (_header.dataLength).clamp(0, input.length - initial),
+        );
+        input.seek(saved);
+        final resolved = _resolveMultidimensional(payload);
+        if (resolved != null) {
+          effectiveNumeric =
+              _sqInchesToArea(resolved.sqInches, resolved.unit);
+          effectiveCell = _areaDisplayCellType(resolved.unit);
+        }
+      }
+      s.fieldDisplays.add(_formatNumericField(
+          effectiveNumeric, effectiveCell, formatNumber, customFormat));
       final end = initial + _header.dataLength;
       if (end <= input.length && end >= input.offset) input.seek(end);
     } catch (_) {}
+  }
+
+  /// Parse Multidimensional TextField trailer: `0x46` + sq-inches F64 + unit + `0x02`.
+  /// Returns square-inches value and VisUnitCodes display unit, or null.
+  ({double sqInches, int unit})? _resolveMultidimensional(Uint8List payload) {
+    // Scan from the end for the last well-formed typed double result.
+    for (var i = payload.length - 11; i >= 0; i--) {
+      if (payload[i] != 0x46) continue;
+      if (payload[i + 10] != 0x02) continue;
+      final unit = payload[i + 9];
+      // Accept known linear/area VisUnitCodes used as area display units.
+      const areaUnits = {
+        36, // Acre
+        37, // Hectare
+        65, // Inches → in^2
+        66, // Feet → ft^2
+        68, // Miles → mi^2
+        69, // Centimeters → cm^2
+        70, // Millimeters → mm^2
+        71, // Meters → m^2
+        72, // Kilometers → km^2
+        75, // Yards → yd^2
+      };
+      if (!areaUnits.contains(unit)) continue;
+      final bd = ByteData.sublistView(payload, i + 1, i + 9);
+      final sqIn = bd.getFloat64(0, Endian.little);
+      if (!sqIn.isFinite) continue;
+      return (sqInches: sqIn, unit: unit);
+    }
+    return null;
+  }
+
+  /// Convert square inches → display area for Multidimensional unit codes.
+  double _sqInchesToArea(double sqIn, int unit) {
+    return switch (unit) {
+      36 => sqIn / 6272640.0, // acres
+      37 => sqIn / 15500031.000062, // hectares
+      65 => sqIn, // sq in
+      66 => sqIn / 144.0, // sq ft
+      68 => sqIn / 4014489600.0, // sq mi
+      69 => sqIn * 6.4516, // cm^2
+      70 => sqIn * 645.16, // mm^2
+      71 => sqIn * 0.00064516, // m^2
+      72 => sqIn * 6.4516e-10, // km^2
+      75 => sqIn / 1296.0, // sq yd
+      _ => sqIn,
+    };
+  }
+
+  /// Map VisUnitCodes used as area display → synthetic cell types for suffixes.
+  int _areaDisplayCellType(int unit) {
+    return switch (unit) {
+      36 => 36, // acres
+      37 => 37, // ha
+      65 => 239, // in^2
+      66 => 240, // ft^2
+      68 => 245, // mi^2
+      69 => 238, // cm^2
+      70 => 243, // mm^2
+      71 => 242, // m^2
+      72 => 244, // km^2
+      75 => 241, // yd^2
+      _ => unit,
+    };
   }
 
   /// Parse `{<N>}` / `esc(N)` format-string ids (libvisio `parseFormatId`).
@@ -2362,7 +2468,7 @@ class VsdBinaryParser {
   }
 
   String _unitSuffix(int cellType) {
-    // Match libvisio `getUnitString`.
+    // Match libvisio `getUnitString`, plus Multidimensional area suffixes.
     return switch (cellType) {
       33 => '%',
       36 => ' acres',
@@ -2389,6 +2495,15 @@ class VsdBinaryParser {
       83 => ' rad',
       84 => ' min',
       85 => ' sec',
+      // Synthetic Multidimensional area units (not in libvisio).
+      238 => ' cm^2',
+      239 => ' in^2',
+      240 => ' ft^2',
+      241 => ' yd^2',
+      242 => ' m^2',
+      243 => ' mm^2',
+      244 => ' km^2',
+      245 => ' mi^2',
       _ => '',
     };
   }
@@ -3257,7 +3372,7 @@ class VsdBinaryParser {
   final _foreignTypeByShapeId = <int, String>{};
 
   /// Convert Visio ForeignData payload using type/format (libvisio
-  /// `VSDContentCollector::_handleForeignData`). OLE still skipped.
+  /// `VSDContentCollector::_handleForeignData`).
   ({Uint8List bytes, String ext, String mime, String foreignType})?
       _decodeForeignImage(Uint8List raw, int foreignType, int foreignFormat) {
     if (foreignType == 1) {
@@ -3301,8 +3416,17 @@ class VsdBinaryParser {
           );
       }
     }
+    // OLE object (libvisio foreignType 2 → mime `object/ole`).
+    if (foreignType == 2 && raw.isNotEmpty) {
+      return (
+        bytes: raw,
+        ext: 'bin',
+        mime: 'object/ole',
+        foreignType: 'Object',
+      );
+    }
     // EMF / WMF (libvisio foreignType 0 or 4) — keep bytes for vsdx round-trip;
-    // Flutter cannot paint them natively (renderer shows a placeholder).
+    // Flutter paints via embedded-bitmap extraction or a placeholder.
     if (foreignType == 0 || foreignType == 4) {
       final isEmf = raw.length > 0x2B &&
           raw[0x28] == 0x20 &&
@@ -3364,7 +3488,7 @@ class VsdBinaryParser {
         );
       }
     }
-    return null; // OLE / unknown
+    return null; // unknown foreign payload
   }
 
   /// Prepend BITMAPFILEHEADER to a DIB (BITMAPINFOHEADER + pixels).
@@ -3620,7 +3744,7 @@ class VsdBinaryParser {
       final italic = c?.italic ?? d.italic;
       final smallCaps = c?.smallCaps ?? d.smallCaps;
       return VsdxCharStyle(
-        fontFamily: c?.fontFamily ?? d.fontFamily,
+        fontFamily: c?.fontFamily ?? d.fontFamily ?? 'Arial',
         fontSizeInches: c?.fontSizeInches ?? d.fontSizeInches ?? (12.0 / 72.0),
         color: c?.textColor ?? d.textColor,
         style: VsdxFontStyle(

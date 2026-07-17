@@ -101,6 +101,7 @@ class VsdxImage {
     final p = partName.toLowerCase();
     if (m.contains('emf') || p.endsWith('.emf')) return 'EnhMetaFile';
     if (m.contains('wmf') || p.endsWith('.wmf')) return 'MetaFile';
+    if (m == 'object/ole' || m.startsWith('object/')) return 'Object';
     return 'Bitmap';
   }
 

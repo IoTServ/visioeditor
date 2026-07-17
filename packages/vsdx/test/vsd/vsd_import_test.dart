@@ -121,6 +121,57 @@ void main() {
       expect(texts.any((t) => RegExp(r'3937\d').hasMatch(t)), isFalse);
     });
 
+    test('text fields expand Multidimensional area units', () {
+      final bytes = _loadSample('Visio11TextFieldsWithUnits.vsd');
+      if (bytes == null) return;
+      final texts = parseVisio(bytes)
+          .document
+          .pages
+          .first
+          .shapes
+          .map((s) => s.richText.plainText)
+          .toList();
+      expect(texts.any((t) => t.contains('1 Acre') && t.contains('1 acres')),
+          isTrue);
+      expect(texts.any((t) => t.contains('1 cm^2')), isTrue);
+      expect(texts.any((t) => t.contains('1 ha')), isTrue);
+      expect(texts.any((t) => t.contains('1 in^2')), isTrue);
+      expect(texts.any((t) => t.contains('1 ft^2')), isTrue);
+      // Denormal primary F64 must not surface as a bare " 0".
+      expect(texts.any((t) => RegExp(r'Acre 0$').hasMatch(t)), isFalse);
+    });
+
+    test('missing CharIX fontFamily falls back to Arial', () {
+      final bytes = _loadSample('tdf154379-DrawingUnits-type.vsd');
+      if (bytes == null) return;
+      final shapes = parseVisio(bytes).document.pages.first.shapes;
+      final withText = shapes
+          .where((s) => s.richText.plainText.trim().isNotEmpty)
+          .toList();
+      expect(withText, isNotEmpty);
+      for (final s in withText) {
+        for (final r in s.richText.runs) {
+          expect(r.charStyle.fontFamily, isNotNull);
+          expect(r.charStyle.fontFamily, isNotEmpty);
+        }
+      }
+      final a4 = withText.where((s) => s.richText.plainText.contains('A4'));
+      if (a4.isNotEmpty) {
+        expect(a4.first.richText.runs.first.charStyle.fontFamily, 'Arial');
+      }
+    });
+
+    test('dwg.vsd imports without OLE media (metadata-only sample)', () {
+      final bytes = _loadSample('dwg.vsd');
+      if (bytes == null) return;
+      final result = parseVisio(bytes);
+      expect(result.document.pages, isNotEmpty);
+      expect(result.document.pages.first.shapes, isNotEmpty);
+      // Sample has no foreignType=2 / oleData payloads (libvisio uses it for
+      // document properties only). OLE import path is wired for real embeds.
+      expect(result.document.images.length, 0);
+    });
+
     test('text fields convert angle and currency formats', () {
       final angleBytes = _loadSample('Visio11TextFieldsWithAngle.vsd');
       final currencyBytes = _loadSample('Visio11TextFieldsWithCurrency.vsd');

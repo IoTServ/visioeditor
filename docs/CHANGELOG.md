@@ -15,7 +15,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   blocks, Name2/NameIDX page & shape names (ANSI on VSD5/6), TextXForm,
   FontFace/FontIX (incl. Case/Pos/Strike/FontScale), TextBlock, ParaIX,
   StyleSheet text parent chain, Layer/LayerMem, EMF/WMF media import,
-  ShapeList z-order, string field StrUpper/StrLower), synthesised .vsdx
+  ShapeList z-order, string field StrUpper/StrLower), Multidimensional area
+  fields via trailing typed result (beyond libvisio), OLE `object/ole` media
+  import, EMF embedded-bitmap canvas paint, synthesised .vsdx
   baseline for edit / Save As. Algorithm reference: libvisio (no FFI).
 - **Pure-Dart `.vsdx` engine** (`packages/vsdx`): OPC/XML reader → strongly-typed
   editable model → round-trip writer. Recovered and adapted from the MIT viewer

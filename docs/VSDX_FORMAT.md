@@ -15,7 +15,7 @@
 | `.vssm` | Stencil with Macros | 是 | M2+ ✅ |
 | `.vstx` | Template（模板） | 否 | M2+ ✅ |
 | `.vstm` | Template with Macros | 是 | M2+ ✅ |
-| `.vsd` / `.vss` / `.vst` | Visio 5 / 2000-2010 二进制（OLE2） | 是 | VSD5/VSD6/VSD11 导入 ✅（另存 `.vsdx`）；写回二进制待续 |
+| `.vsd` / `.vss` / `.vst` | Visio 5 / 2000-2010 二进制（OLE2） | 是 | VSD5/VSD6/VSD11 导入 ✅（另存 `.vsdx`）；**不写回**二进制 OLE2 |
 | `.vdx` / `.vsx` / `.vtx` | Visio 2003-2010 XML | 否 | 不规划（可后续兼容） |
 
 `.vsdx` 与 `.docx`/`.xlsx`/`.pptx` 同属 **OOXML 家族**，皆遵循

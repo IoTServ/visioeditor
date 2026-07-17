@@ -980,7 +980,15 @@ class VsdxPainter extends CustomPainter {
         ..strokeWidth = 1 / pxPerInch
         ..color = const Color(0xFFB0B0B0),
     );
-    final label = src.isFlutterDecodable ? 'Image…' : 'Image (EMF/WMF)';
+    // Diagonal cross — Visio-style missing-picture cue.
+    final cross = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1 / pxPerInch
+      ..color = const Color(0xFFC0C0C0);
+    canvas.drawLine(bounds.topLeft, bounds.bottomRight, cross);
+    canvas.drawLine(bounds.topRight, bounds.bottomLeft, cross);
+
+    final label = _foreignPlaceholderLabel(src);
     canvas.save();
     canvas.translate(bounds.center.dx, bounds.center.dy);
     canvas.scale(1, -1);
@@ -999,6 +1007,16 @@ class VsdxPainter extends CustomPainter {
     )..layout(maxWidth: bounds.width * 0.9);
     tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
     canvas.restore();
+  }
+
+  String _foreignPlaceholderLabel(VsdxImage src) {
+    final m = src.mimeType.toLowerCase();
+    final p = src.partName.toLowerCase();
+    if (m == 'object/ole' || m.startsWith('object/')) return 'OLE Object';
+    if (m.contains('emf') || p.endsWith('.emf')) return 'EMF';
+    if (m.contains('wmf') || p.endsWith('.wmf')) return 'WMF';
+    if (src.isFlutterDecodable) return 'Image…';
+    return 'Image';
   }
 
   void _paintPlaceholderBox(Canvas canvas, double w, double h) {

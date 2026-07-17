@@ -7,6 +7,7 @@
 /// ready.
 library;
 
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -41,17 +42,30 @@ class VsdxImageCache extends ChangeNotifier {
   ui.Image? lookup(VsdxImage src) {
     final cached = _ready[src.partName];
     if (cached != null) return cached;
-    if (!src.isFlutterDecodable) return null;
-    if (_pending.add(src.partName)) {
-      _decode(src);
+    if (_pending.contains(src.partName)) return null;
+    if (src.isFlutterDecodable) {
+      _pending.add(src.partName);
+      _decode(src, src.bytes);
+      return null;
+    }
+    // EMF/WMF: try embedded DIB extraction for canvas paint; keep original
+    // media bytes untouched for vsdx round-trip.
+    final m = src.mimeType.toLowerCase();
+    if (m.contains('emf') || src.partName.toLowerCase().endsWith('.emf')) {
+      final bmp = extractEmfEmbeddedBitmap(Uint8List.fromList(src.bytes));
+      if (bmp != null) {
+        _pending.add(src.partName);
+        _decode(src, bmp);
+        return null;
+      }
     }
     return null;
   }
 
-  Future<void> _decode(VsdxImage src) async {
+  Future<void> _decode(VsdxImage src, List<int> bytes) async {
     try {
       final codec = await ui.instantiateImageCodec(
-        Uint8List.fromList(src.bytes),
+        Uint8List.fromList(bytes),
       );
       final frame = await codec.getNextFrame();
       _ready[src.partName] = frame.image;

@@ -86,8 +86,9 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
   CharIX Case/Pos/Strike/FontScale, EMF/WMF media import, ShapeList z-order,
   string field case formats, FontFace/FontIX, TextBlock, ParaIX, StyleSheet
   text chain, Layer); Save As writes `.vsdx`. Encrypted files / masters deep
-  edit / binary `.vsd` write-back / OLE / EMF·WMF canvas paint are still
-  deferred.
+  edit / binary `.vsd` write-back are still deferred. OLE embeds import as
+  `ForeignType=Object` media (canvas placeholder); EMF with an embedded DIB
+  paints on canvas, pure vector EMF/WMF still show a labelled placeholder.
 - **Text editing applies to a whole shape label** (no per-character selection
   ranges yet); connectors route straight or orthogonal (with draggable
   waypoints) but not obstacle-avoiding; PDF export is rasterised (not vector);

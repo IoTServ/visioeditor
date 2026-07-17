@@ -345,7 +345,7 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 加密 / masters 深编辑 / 写回二进制（VSD5+VSD6+VSD11 导入 → 另存 `.vsdx` 已落地；加密与二进制写回仍延后）
+- `.vsd` 加密 / masters 深编辑 / 写回二进制（产品决策：导入 → 另存 `.vsdx` only；不实现 OLE2 写回）
 
 ---
 
@@ -1223,13 +1223,13 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 - 2026-07-17 — **`.vsd` TextField 单位/角度/货币**：对齐 libvisio `convertNumber`
   （英寸→mm/cm/…、弧度→度）；`CELL_TYPE_AngleUnits` + Degrees/Radians/DMS；
   format 块 `0x60` 自定义 UTF-16 格式（如 `<,$>U #,##0.00`→`$1.00`）。libvisio
-  仅认 `0x62`+`0x80/0xc2`，`0x60` 为本项目增强。面积 Multidimensional / 完整
+  仅认 `0x62`+`0x80/0xc2`，`0x60` 为本项目增强。面积 Multidimensional 已于后续条目补齐。
   `{{…}}` 自定义串仍有限。
 - 2026-07-17 — **`.vsd` 多 run CharIX/ParaIX + TabsData**：按 `charCount` 拆分
   富文本 runs（对照 libvisio `m_charList`/`m_paraList` 文本遍历）；解析
   TabsData（`0x88`/`0x96`/`0x97`/`0xb5`）写入 `VsdxTabSet`；字段占位在拆分后再
   展开以免 charCount 错位。另存仍为合成 `.vsdx`（Writer 已支持 Tabs / multi-run）。
-  CharList/ParaList 显式重排序、EMF/WMF 仍延后。
+  CharList/ParaList 显式重排序仍延后。
 - 2026-07-17 — **`.vsd` Gantt Number 序列日**：`CELL_TYPE_Number` 且无 format 块时，
   将落在 20000–60000 的 Visio 序列日格式化为日历（libvisio 此处返回空串）；并识别
   format 块类型 `0x70`（样例中的备用 format id）。`tdf76829-datetime-format` 的
@@ -1237,9 +1237,15 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 - 2026-07-17 — **`.vsd` CharIX 扩展 + EMF/WMF 入库**：对齐 libvisio `readCharIX`
   的 Case/Pos/Strike/FontScale（allcaps/initcaps/super/sub/双下划线/删除线/
   `scaleWidth/10000`）；ForeignData `type` 0/4 按签名识别 EMF/WMF 写入 media
-  （`EnhMetaFile`/`MetaFile`）供另存 vsdx 往返，画布仍无法原生绘制。OLE /
-  Multidimensional 面积值（样例中为非 double 占位）仍有限。
+  （`EnhMetaFile`/`MetaFile`）供另存 vsdx 往返；画布侧后续对嵌入 DIB 的 EMF
+  做了提取绘制。OLE / Multidimensional 面积见下一条。
 - 2026-07-17 — **`.vsd` ShapeList z-order + 字符串字段大小写**：应用页面/组
   ShapeList trailer 顺序组装根与子形状（此前只收集未使用）；字符串 TextField
   识别 format 37/38/39（StrNormal/Lower/Upper，libvisio 仍为 TODO）→
   `TheDoc`/`THEDOC`/`thedoc`。
+- 2026-07-17 — **`.vsd` Multidimensional 面积 + OLE + 缺字体 + EMF 画布**：
+  TextField `CELL_TYPE_Multidimensional`(233) 解析尾部 `0x46 <sqIn F64> <unit> 0x02`
+  （平方英寸→acres/ha/cm²/…，超出 libvisio TODO）；`oleList`/`oleData` +
+  `foreignType==2` → media `object/ole` / `ForeignType=Object`；无 CharIX 时
+  `fontFamily` 回退 `Arial`；画布对含嵌入 DIB 的 EMF 提取位图绘制，其余
+  EMF/WMF/OLE 显示对角占位。**二进制 `.vsd` 写回仍按产品决策延后**（仅另存 `.vsdx`）。
