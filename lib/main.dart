@@ -110,11 +110,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
   /// (double-click / "Open With") or the `open` command.
   static const MethodChannel _fileChannel = MethodChannel('visioeditor/files');
 
+  /// Match [StencilGroup.expandAtWidth] for everyday libraries (General /
+  /// Flowchart / Arrows): at this width the shapes sidebar opens by default.
+  static const double _stencilsSidebarBreakpoint = 900;
+
   final EditorWorkspace _workspace = EditorWorkspace();
   final RecentFiles _recentFiles = RecentFiles();
   List<String> _recents = const <String>[];
   bool _dragging = false;
   bool _showStencils = false;
+  /// Once the user toggles the shapes sidebar, stop re-seeding from width.
+  bool _stencilsUserAdjusted = false;
   bool _showFind = false;
   bool _findShowReplace = false;
   bool _showOutline = false;
@@ -242,6 +248,25 @@ class _EditorHomePageState extends State<EditorHomePage> {
       // Files / "Open in…").
       unawaited(_fileChannel.invokeMethod<void>('ready').catchError((Object _) {}));
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Wide: open the shapes sidebar so the responsive group seeds inside
+    // [_StencilPanel] are visible. Narrow: keep it closed to preserve canvas.
+    // Assignment without setState is fine — MediaQuery already schedules build.
+    if (!_stencilsUserAdjusted) {
+      _showStencils =
+          MediaQuery.sizeOf(context).width >= _stencilsSidebarBreakpoint;
+    }
+  }
+
+  void _toggleStencils() {
+    setState(() {
+      _stencilsUserAdjusted = true;
+      _showStencils = !_showStencils;
+    });
   }
 
   /// Handle calls pushed from the native side (currently only `openFiles`).
@@ -1237,8 +1262,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
           _ToolStrip(
             controller: c,
             showStencils: _showStencils,
-            onToggleStencils: () =>
-                setState(() => _showStencils = !_showStencils),
+            onToggleStencils: _toggleStencils,
           ),
           const VerticalDivider(width: 1),
           // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
