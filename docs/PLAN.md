@@ -953,3 +953,31 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   分段布局，无间距文本回退原单 `TextPainter` 路径，消除对常规标签的回归风险（并删除
   未使用的 `maxParaW`）。(2) 复合线（CompoundType）改为统一干净双线近似，移除
   thick-thin/thin-thick 两次 `saveLayer` 叠加产生的 4 线错乱；模型值仍照常往返。
+- 2026-07-17 — **对齐 drawio（批次六十一）——补齐默认库缺失预制图形（杂项优先）**：
+  对照 draw.io `Sidebar.js`（`addGeneralPalette` / `addMiscPalette` / `createAdvancedShapes`）
+  与 `stencils/basic.xml` 逐一比对，补齐仍缺的默认库图形。(1) 新增几何工厂
+  `parallelepiped`（斜三维盒，含顶/右面内棱）、`roundedRectangularCallout`（圆角气泡+
+  左下指向尾，复用按钮式 `EllipticalArcTo` 圆角）、`list`（标题栏+三行分隔的列表容器，
+  文字可空）、`imagePlaceholder`（相框+山峦+太阳字形）。(2) `partialRectangle` 增加
+  `top/right/bottom/left` 开边参数（默认仍为历史 ∪，字节不变），Misc 补上下轨/左右轨两个变体。
+  (3) Stencil 接入：General +Parallelepiped/List，Basic +Parallelepiped/Rounded Rectangular
+  Callout，Misc +Vertical List/Image/两个 Partial Rectangle 变体，Advanced +List。
+  (4) l10n：5 个新名（Parallelepiped / Rounded Rectangular Callout / List / Vertical List /
+  Image）补入全部 37 个语言表并翻译主要语言；`editor_l10n_audit` 计数 246→251。
+  测试：`writer_test` 新增 misc 往返 1 例（几何数/弧线/开边段数/文字往返）；既有
+  `roundtrip_flowchart` 全 stencil 往返自动覆盖新条目。全量 `flutter analyze` 无错误、
+  app 150 例 + vsdx 374 例全绿。仍优先后续：Curved Text（文本走弧）/ 公式重算 / LibreOffice 交叉验证。
+- 2026-07-17 — **对齐 drawio（批次六十二）——新增 Network 图形库（`mxgraph.networks`）**：
+  默认 7 大库（general/uml/er/bpmn/flowchart/basic/arrows2）已齐全后，开始补 draw.io 的常用
+  可选库。本批新增通用网络设备类别。(1) 新增 8 个几何工厂（以几何系统绘制干净可辨的图标，
+  轮廓对齐 draw.io 网络库）：`networkServer`（机箱+插槽+LED）、`networkFirewall`（错缝砖墙，
+  循环生成砖缝）、`networkMobile`（圆角机身+屏幕+听筒+home 键，按钮式圆角弧）、`networkMonitor`
+  （屏+颈+底座）、`networkLaptop`（屏+梯形键盘底）、`networkPrinter`（机身+进纸+出纸盘）、
+  `networkWireless`（发射点+三段同心弧，弧顶高度≈半宽以近半圆）、`networkRouter`（扁盒+双天线+端口）。
+  (2) 新增 `Network` 分组（`expandAtWidth: 1280`）：8 新图形 + 复用 Cloud/Database/User 共 11 项。
+  (3) l10n：8 个新名（Server/Router/Firewall/Monitor/Laptop/Mobile/Printer/Wireless）+ 组名
+  `sg_Network` 补入全部 37 个语言表并翻译；`editor_l10n_audit` 计数 251→259。
+  (4) 全部 8 图形经渲染快照人工核验（砖墙/笔记本/打印机/无线尤其清晰）。测试：`writer_test`
+  新增 network 往返 1 例（几何数/砖缝段数/圆角弧/无线三弧）；`roundtrip_flowchart` 全 stencil 往返
+  自动覆盖。全量 `flutter analyze` 无错误、app 150 例 + vsdx 375 例全绿。仍优先后续：Network 补
+  Switch/Hub/PC 等、Mockup/Electrical 库、Curved Text、公式重算。

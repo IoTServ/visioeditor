@@ -2066,6 +2066,144 @@ void main() {
     expect(r.pages.first.findShapeById(layerId)!.geometries.length, greaterThanOrEqualTo(2));
   });
 
+  test('drawio-parity misc shapes (parallelepiped / callout / list / image / '
+      'partial rectangle) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final pldId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.parallelepiped(
+        id: pldId, pinX: 2, pinY: 8, width: 1.5, height: 1));
+    final rrcId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.roundedRectangularCallout(
+        id: rrcId, pinX: 4, pinY: 8, width: 1.5, height: 1.1));
+    final listId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.list(
+        id: listId, pinX: 6, pinY: 8, width: 1.6, height: 1.4, text: 'List'));
+    final imgId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.imagePlaceholder(
+        id: imgId, pinX: 2, pinY: 5, width: 1.4, height: 1.1));
+    // Open-side variants: horizontal rails only, then vertical rails only.
+    final prHId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.partialRectangle(
+        id: prHId,
+        pinX: 4,
+        pinY: 5,
+        width: 1.5,
+        height: 1,
+        top: true,
+        bottom: true,
+        left: false,
+        right: false));
+    final prVId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.partialRectangle(
+        id: prVId,
+        pinX: 6,
+        pinY: 5,
+        width: 1.5,
+        height: 1,
+        top: false,
+        bottom: false));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final pld = r.pages.first.findShapeById(pldId)!;
+    expect(pld.geometries.length, 3);
+    expect(
+        r.pages.first
+            .findShapeById(rrcId)!
+            .geometries
+            .first
+            .commands
+            .whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    final list = r.pages.first.findShapeById(listId)!;
+    expect(list.geometries.length, 4);
+    expect(list.text, 'List');
+    expect(
+        r.pages.first
+            .findShapeById(imgId)!
+            .geometries
+            .expand((g) => g.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty);
+    // Horizontal-rails partial rectangle: two disjoint segments (2×MoveTo).
+    final prH = r.pages.first.findShapeById(prHId)!;
+    expect(prH.geometries.single.commands.whereType<MoveTo>().length, 2);
+    expect(prH.geometries.single.noFill, isTrue);
+    final prV = r.pages.first.findShapeById(prVId)!;
+    expect(prV.geometries.single.commands.whereType<MoveTo>().length, 2);
+  });
+
+  test('drawio-parity network shapes (server / firewall / mobile / monitor / '
+      'laptop / printer / wireless / router) round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    void add(VsdxShape s) => page = page.addShape(s);
+
+    final srvId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkServer(
+        id: srvId, pinX: 1, pinY: 8, width: 1, height: 1.4));
+    final fwId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkFirewall(
+        id: fwId, pinX: 3, pinY: 8, width: 1.4, height: 1.2));
+    final mobId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkMobile(
+        id: mobId, pinX: 5, pinY: 8, width: 0.9, height: 1.5));
+    final monId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkMonitor(
+        id: monId, pinX: 7, pinY: 8, width: 1.5, height: 1.3));
+    final lapId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkLaptop(
+        id: lapId, pinX: 1, pinY: 5, width: 1.6, height: 1.2));
+    final prnId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkPrinter(
+        id: prnId, pinX: 3, pinY: 5, width: 1.4, height: 1.3));
+    final wifiId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkWireless(
+        id: wifiId, pinX: 5, pinY: 5, width: 1.3, height: 1.3));
+    final rtrId = page.nextFreeShapeId();
+    add(VsdxShapeFactory.networkRouter(
+        id: rtrId, pinX: 7, pinY: 5, width: 1.4, height: 1.2));
+    doc = doc.replacePage(0, page);
+
+    final r = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    // Server: body + slot rails + LED.
+    expect(r.pages.first.findShapeById(srvId)!.geometries.length, 3);
+    // Firewall: outer wall + mortar sub-paths (several MoveTo).
+    expect(
+        r.pages.first
+            .findShapeById(fwId)!
+            .geometries
+            .last
+            .commands
+            .whereType<MoveTo>()
+            .length,
+        greaterThan(3));
+    // Mobile: rounded body carries corner arcs + round home button.
+    final mob = r.pages.first.findShapeById(mobId)!;
+    expect(mob.geometries.first.commands.whereType<EllipticalArcTo>(),
+        isNotEmpty);
+    expect(mob.geometries.expand((g) => g.commands).whereType<EllipseCmd>(),
+        isNotEmpty);
+    expect(r.pages.first.findShapeById(monId)!.geometries.length, 4);
+    expect(r.pages.first.findShapeById(lapId)!.geometries.length, 3);
+    expect(r.pages.first.findShapeById(prnId)!.geometries.length, 4);
+    // Wireless: emitter ellipse + 3 arcs.
+    final wifi = r.pages.first.findShapeById(wifiId)!;
+    expect(wifi.geometries.length, 4);
+    expect(
+        wifi.geometries
+            .expand((g) => g.commands)
+            .whereType<EllipticalArcTo>()
+            .length,
+        3);
+    expect(r.pages.first.findShapeById(rtrId)!.geometries.length, 3);
+  });
+
   // Regression: `_buildShapeElement` used to omit arrows, flips, transparencies,
   // shadow, LocPin, VerticalAlign and Character/Paragraph sections — so a
   // freshly-created (or reparented) shape looked very different after save +

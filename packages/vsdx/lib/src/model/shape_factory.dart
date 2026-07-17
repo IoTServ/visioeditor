@@ -2345,18 +2345,50 @@ abstract final class VsdxShapeFactory {
   }
 
   /// Partial rectangle (basic): three sides (open top), like a U.
+  /// Open-sided rectangle (drawio `shape=partialRectangle`). Each of
+  /// [top]/[right]/[bottom]/[left] toggles whether that border edge is
+  /// stroked. The default (every side but [top]) reproduces drawio's
+  /// `top=0` ∪ variant; e.g. `left=false,right=false` draws only the top
+  /// and bottom rails, `top=false,bottom=false` only the two verticals.
   static VsdxShape partialRectangle({
     required int id,
     required double pinX,
     required double pinY,
     required double width,
     required double height,
+    bool top = false,
+    bool right = true,
+    bool bottom = true,
+    bool left = true,
     VsdxFill fill = _defaultFill,
     VsdxLine line = _defaultLine,
     String? name,
   }) {
     final w = width.abs();
     final h = height.abs();
+    // Walk the border counter-clockwise from the top-left corner. A MoveTo is
+    // emitted only when the pen was lifted (an edge was skipped), so adjacent
+    // drawn edges remain a single connected sub-path (the all-but-top default
+    // stays byte-identical to the historical ∪ path).
+    final edges = <List<double>>[
+      <double>[0, h, 0, 0, left ? 1 : 0], // left  : TL → BL
+      <double>[0, 0, w, 0, bottom ? 1 : 0], // bottom: BL → BR
+      <double>[w, 0, w, h, right ? 1 : 0], // right : BR → TR
+      <double>[w, h, 0, h, top ? 1 : 0], // top   : TR → TL
+    ];
+    final commands = <VsdxPathCommand>[];
+    double? curX, curY;
+    for (final e in edges) {
+      if (e[4] == 0) {
+        curX = null;
+        curY = null;
+        continue;
+      }
+      if (curX != e[0] || curY != e[1]) commands.add(MoveTo(e[0], e[1]));
+      commands.add(LineTo(e[2], e[3]));
+      curX = e[2];
+      curY = e[3];
+    }
     return VsdxShape(
       id: id,
       name: name ?? 'Sheet.$id',
@@ -2365,15 +2397,7 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(
-          noFill: true,
-          commands: <VsdxPathCommand>[
-            MoveTo(0, h),
-            LineTo(0, 0),
-            LineTo(w, 0),
-            LineTo(w, h),
-          ],
-        ),
+        VsdxGeometry(noFill: true, commands: commands),
       ],
       fill: const VsdxFill(pattern: 0),
       line: line,
@@ -4347,6 +4371,624 @@ abstract final class VsdxShapeFactory {
           LineTo(w / 2, 0),
           LineTo(0, h * 0.5),
           LineTo(w / 2, h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Parallelepiped / oblique 3-D box (drawio basic `Parallelepiped`),
+  /// drawn with visible top and right faces so it reads as a solid rather
+  /// than a plain parallelogram.
+  static VsdxShape parallelepiped({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final d = math.min(w, h) * 0.28;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        // Outer silhouette.
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0, 0),
+          LineTo(w - d, 0),
+          LineTo(w, d),
+          LineTo(w, h),
+          LineTo(d, h),
+          LineTo(0, h - d),
+          LineTo(0, 0),
+        ]),
+        // Front-face top and right inner edges (the L-shaped junction).
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0, h - d),
+          LineTo(w - d, h - d),
+          LineTo(w - d, 0),
+        ]),
+        // Diagonal from the junction to the back top-right corner.
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(w - d, h - d),
+          LineTo(w, h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Rounded rectangular callout / speech bubble (drawio basic
+  /// `Rounded Rectangular Callout`): a rounded-corner body with a tail
+  /// pointing to the bottom-left.
+  static VsdxShape roundedRectangularCallout({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final by = h * 0.28; // body bottom edge (tail occupies the strip below).
+    final bodyH = h - by;
+    final r = math.min(w, bodyH) * 0.18;
+    final tailRight = (w * 0.42).clamp(r, w - r).toDouble();
+    final tailLeft = (w * 0.24).clamp(r, w - r).toDouble();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(r, h),
+          LineTo(w - r, h),
+          EllipticalArcTo(x: w, y: h - r, controlX: w, controlY: h),
+          LineTo(w, by + r),
+          EllipticalArcTo(x: w - r, y: by, controlX: w, controlY: by),
+          LineTo(tailRight, by),
+          LineTo(w * 0.08, 0),
+          LineTo(tailLeft, by),
+          LineTo(r, by),
+          EllipticalArcTo(x: 0, y: by + r, controlX: 0, controlY: by),
+          LineTo(0, h - r),
+          EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Stacked list container (drawio general/advanced `List` and misc
+  /// `Vertical List`): a titled box divided into three item rows.
+  static VsdxShape list({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? text,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final titleY = h * 0.72; // divider under the title band.
+    final row1 = titleY * (2 / 3);
+    final row2 = titleY * (1 / 3);
+    VsdxGeometry rail(double y) => VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[MoveTo(0, y), LineTo(w, y)],
+        );
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      text: text,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0, 0),
+          LineTo(w, 0),
+          LineTo(w, h),
+          LineTo(0, h),
+          LineTo(0, 0),
+        ]),
+        rail(titleY),
+        rail(row1),
+        rail(row2),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Image / icon placeholder (drawio misc `Image`): a frame containing a
+  /// simple mountains-and-sun glyph.
+  static VsdxShape imagePlaceholder({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final sun = math.min(w, h) * 0.09;
+    final sx = w * 0.70;
+    final sy = h * 0.70;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        // Frame.
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0, 0),
+          LineTo(w, 0),
+          LineTo(w, h),
+          LineTo(0, h),
+          LineTo(0, 0),
+        ]),
+        // Sun.
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            EllipseCmd(cx: sx, cy: sy, aX: sx + sun, aY: sy, bX: sx, bY: sy + sun),
+          ],
+        ),
+        // Mountain range.
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(w * 0.08, h * 0.30),
+          LineTo(w * 0.30, h * 0.62),
+          LineTo(w * 0.45, h * 0.45),
+          LineTo(w * 0.68, h * 0.75),
+          LineTo(w * 0.92, h * 0.30),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  // --- Network shapes (drawio `mxgraph.networks`) -------------------------
+  // Clean, recognisable geometric renderings of the common vendor-neutral
+  // network devices; silhouettes follow draw.io's networks library.
+
+  /// Server tower: tall box with slot rails and a status LED.
+  static VsdxShape networkServer({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.24 * w, 0),
+          LineTo(0.76 * w, 0),
+          LineTo(0.76 * w, h),
+          LineTo(0.24 * w, h),
+          LineTo(0.24 * w, 0),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.86 * h),
+          LineTo(0.68 * w, 0.86 * h),
+          MoveTo(0.32 * w, 0.74 * h),
+          LineTo(0.68 * w, 0.74 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.32 * w, 0.1 * h),
+          LineTo(0.44 * w, 0.1 * h),
+          LineTo(0.44 * w, 0.18 * h),
+          LineTo(0.32 * w, 0.18 * h),
+          LineTo(0.32 * w, 0.1 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Firewall: an offset brick wall.
+  static VsdxShape networkFirewall({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    const rows = 4;
+    final rh = h / rows;
+    final mortar = <VsdxPathCommand>[];
+    for (var i = 1; i < rows; i++) {
+      mortar
+        ..add(MoveTo(0, i * rh))
+        ..add(LineTo(w, i * rh));
+    }
+    for (var r = 0; r < rows; r++) {
+      final y0 = r * rh;
+      final y1 = (r + 1) * rh;
+      // Even rows split in thirds; odd rows offset by half a brick.
+      final xs = r.isEven
+          ? <double>[w / 3, 2 * w / 3]
+          : <double>[w / 6, w / 2, 5 * w / 6];
+      for (final x in xs) {
+        mortar
+          ..add(MoveTo(x, y0))
+          ..add(LineTo(x, y1));
+      }
+    }
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0, 0),
+          LineTo(w, 0),
+          LineTo(w, h),
+          LineTo(0, h),
+          LineTo(0, 0),
+        ]),
+        VsdxGeometry(noFill: true, commands: mortar),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Smartphone / mobile: rounded body, screen, speaker and home button.
+  static VsdxShape networkMobile({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final r = 0.12 * w;
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.18 * w + r, h),
+          LineTo(0.82 * w - r, h),
+          EllipticalArcTo(x: 0.82 * w, y: h - r, controlX: 0.82 * w, controlY: h),
+          LineTo(0.82 * w, r),
+          EllipticalArcTo(x: 0.82 * w - r, y: 0, controlX: 0.82 * w, controlY: 0),
+          LineTo(0.18 * w + r, 0),
+          EllipticalArcTo(x: 0.18 * w, y: r, controlX: 0.18 * w, controlY: 0),
+          LineTo(0.18 * w, h - r),
+          EllipticalArcTo(x: 0.18 * w + r, y: h, controlX: 0.18 * w, controlY: h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.26 * w, 0.14 * h),
+          LineTo(0.74 * w, 0.14 * h),
+          LineTo(0.74 * w, 0.86 * h),
+          LineTo(0.26 * w, 0.86 * h),
+          LineTo(0.26 * w, 0.14 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.43 * w, 0.93 * h),
+          LineTo(0.57 * w, 0.93 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: 0.5 * w,
+              cy: 0.07 * h,
+              aX: 0.53 * w,
+              aY: 0.07 * h,
+              bX: 0.5 * w,
+              bY: 0.1 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Desktop monitor: screen with inner bezel, neck and base.
+  static VsdxShape networkMonitor({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.05 * w, 0.32 * h),
+          LineTo(0.95 * w, 0.32 * h),
+          LineTo(0.95 * w, h),
+          LineTo(0.05 * w, h),
+          LineTo(0.05 * w, 0.32 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.12 * w, 0.42 * h),
+          LineTo(0.88 * w, 0.42 * h),
+          LineTo(0.88 * w, 0.92 * h),
+          LineTo(0.12 * w, 0.92 * h),
+          LineTo(0.12 * w, 0.42 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.43 * w, 0.1 * h),
+          LineTo(0.57 * w, 0.1 * h),
+          LineTo(0.57 * w, 0.32 * h),
+          LineTo(0.43 * w, 0.32 * h),
+          LineTo(0.43 * w, 0.1 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.28 * w, 0),
+          LineTo(0.72 * w, 0),
+          LineTo(0.72 * w, 0.1 * h),
+          LineTo(0.28 * w, 0.1 * h),
+          LineTo(0.28 * w, 0),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Laptop: screen over a tapered keyboard base.
+  static VsdxShape networkLaptop({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.17 * w, 0.32 * h),
+          LineTo(0.83 * w, 0.32 * h),
+          LineTo(0.83 * w, h),
+          LineTo(0.17 * w, h),
+          LineTo(0.17 * w, 0.32 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.23 * w, 0.4 * h),
+          LineTo(0.77 * w, 0.4 * h),
+          LineTo(0.77 * w, 0.92 * h),
+          LineTo(0.23 * w, 0.92 * h),
+          LineTo(0.23 * w, 0.4 * h),
+        ]),
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.05 * w, 0),
+          LineTo(0.95 * w, 0),
+          LineTo(0.83 * w, 0.32 * h),
+          LineTo(0.17 * w, 0.32 * h),
+          LineTo(0.05 * w, 0),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Printer: body with paper feed and an output tray.
+  static VsdxShape networkPrinter({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        // Paper feed (behind body).
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.28 * w, 0.6 * h),
+          LineTo(0.28 * w, 0.95 * h),
+          LineTo(0.72 * w, 0.95 * h),
+          LineTo(0.72 * w, 0.6 * h),
+        ]),
+        // Body.
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.08 * w, 0.14 * h),
+          LineTo(0.92 * w, 0.14 * h),
+          LineTo(0.92 * w, 0.62 * h),
+          LineTo(0.08 * w, 0.62 * h),
+          LineTo(0.08 * w, 0.14 * h),
+        ]),
+        // Output tray (front, on top of body).
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.24 * w, 0),
+          LineTo(0.76 * w, 0),
+          LineTo(0.76 * w, 0.2 * h),
+          LineTo(0.24 * w, 0.2 * h),
+          LineTo(0.24 * w, 0),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.16 * w, 0.44 * h),
+          LineTo(0.84 * w, 0.44 * h),
+        ]),
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Wireless signal: stacked arcs over an emitter dot.
+  static VsdxShape networkWireless({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    final cx = 0.5 * w;
+    final cy = 0.12 * h;
+    final hw = <double>[0.22 * w, 0.35 * w, 0.48 * w];
+    // Arc apex height ≈ half-width keeps the sweep close to a semicircle
+    // rather than the pointed peak a taller quadratic control would give.
+    final ph = <double>[0.22 * h, 0.35 * h, 0.48 * h];
+    final arcs = <VsdxGeometry>[
+      for (var i = 0; i < 3; i++)
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(cx - hw[i], cy),
+          EllipticalArcTo(
+              x: cx + hw[i], y: cy, controlX: cx, controlY: cy + ph[i]),
+        ]),
+    ];
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: cx + 0.06 * w,
+              aY: cy,
+              bX: cx,
+              bY: cy + 0.06 * h),
+        ]),
+        ...arcs,
+      ],
+      fill: fill,
+      line: line,
+    );
+  }
+
+  /// Router: flat box with two antennas and status ports.
+  static VsdxShape networkRouter({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(0.12 * w, 0.12 * h),
+          LineTo(0.88 * w, 0.12 * h),
+          LineTo(0.88 * w, 0.55 * h),
+          LineTo(0.12 * w, 0.55 * h),
+          LineTo(0.12 * w, 0.12 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.34 * w, 0.55 * h),
+          LineTo(0.27 * w, 0.96 * h),
+          MoveTo(0.62 * w, 0.55 * h),
+          LineTo(0.69 * w, 0.96 * h),
+        ]),
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+          MoveTo(0.22 * w, 0.3 * h),
+          LineTo(0.5 * w, 0.3 * h),
         ]),
       ],
       fill: fill,

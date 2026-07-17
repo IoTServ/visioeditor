@@ -41,7 +41,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   manual input, manual operation, preparation, delay, off-page reference,
   **display, merge, collate, or, summing junction, sort, loop limit**;
   right/left/up/down/double arrows; UML actor, use case, class, package, note,
-  node).
+  node; **parallelepiped, rounded rectangular callout, list / vertical list,
+  image placeholder, open-sided partial rectangles**).
+- **Network shapes** (drawio `mxgraph.networks`): a new **Network** library with
+  server, router, firewall, monitor, laptop, mobile, printer, wireless (plus
+  cloud / database / user), drawn as clean geometry that round-trips to `.vsdx`.
   Each tile is a **live geometry thumbnail** (not an icon), so the preview
   matches what drops on the canvas. Click to drop at the centre, or **drag it
   onto the canvas** to drop at the cursor. Every stencil is built from

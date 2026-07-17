@@ -775,6 +775,10 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Cube',
         (id, cx, cy) => VsdxShapeFactory.cube(
             id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Parallelepiped',
+        (id, cx, cy) => VsdxShapeFactory.parallelepiped(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.0)),
     Stencil('Step', (id, cx, cy) => _poly(id, cx, cy, _step)),
     Stencil('Card', (id, cx, cy) => _poly(id, cx, cy, _card)),
     Stencil('Callout', (id, cx, cy) => _poly(id, cx, cy, _callout)),
@@ -816,6 +820,10 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Horizontal Container',
         (id, cx, cy) => VsdxShapeFactory.container(
             id: id, pinX: cx, pinY: cy, width: 2.6, height: 1.2)),
+    Stencil(
+        'List',
+        (id, cx, cy) => VsdxShapeFactory.list(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.4)),
     Stencil(
         'Table',
         (id, cx, cy) => TableOps.assembleTable(
@@ -1037,6 +1045,10 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => _poly(id, cx, cy, _ovalCallout, w: 1.4, h: 1.1)),
     Stencil('Rectangular Callout',
         (id, cx, cy) => _poly(id, cx, cy, _rectCallout, w: 1.4, h: 1.1)),
+    Stencil(
+        'Rounded Rectangular Callout',
+        (id, cx, cy) => VsdxShapeFactory.roundedRectangularCallout(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.2)),
     Stencil('Loud Callout', (id, cx, cy) => _poly(id, cx, cy, _callout, w: 1.4, h: 1.1)),
     Stencil(
         'Cloud Callout',
@@ -1162,6 +1174,10 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Isometric Cube',
         (id, cx, cy) => VsdxShapeFactory.cube(
             id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
+    Stencil(
+        'Parallelepiped',
+        (id, cx, cy) => VsdxShapeFactory.parallelepiped(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.0)),
     Stencil(
         'Cylinder Stack',
         (id, cx, cy) => VsdxShapeFactory.cylinderStack(
@@ -1655,6 +1671,30 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.partialRectangle(
             id: id, pinX: cx, pinY: cy, width: _w, height: _h)),
     Stencil(
+        'Partial Rectangle',
+        (id, cx, cy) => VsdxShapeFactory.partialRectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: _w,
+            height: _h,
+            top: true,
+            bottom: true,
+            left: false,
+            right: false)),
+    Stencil(
+        'Partial Rectangle',
+        (id, cx, cy) => VsdxShapeFactory.partialRectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: _w,
+            height: _h,
+            top: false,
+            bottom: false,
+            left: true,
+            right: true)),
+    Stencil(
         'Isometric Cube',
         (id, cx, cy) => VsdxShapeFactory.cube(
             id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
@@ -1674,6 +1714,14 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Note',
         (id, cx, cy) => VsdxShapeFactory.note(
             id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.4)),
+    Stencil(
+        'Vertical List',
+        (id, cx, cy) => VsdxShapeFactory.list(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.4)),
+    Stencil(
+        'Image',
+        (id, cx, cy) => VsdxShapeFactory.imagePlaceholder(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
   ], expandAtWidth: 1280),
   // Misc composites + drawio Advanced (bundled with general pack).
   StencilGroup('Advanced', <Stencil>[
@@ -1762,6 +1810,10 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.container(
             id: id, pinX: cx, pinY: cy, width: 2.2, height: 1.6)),
     Stencil(
+        'List',
+        (id, cx, cy) => VsdxShapeFactory.list(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.4)),
+    Stencil(
         'List Item',
         (id, cx, cy) => VsdxShapeFactory.listItem(
             id: id, pinX: cx, pinY: cy, width: 1.4, height: 0.4)),
@@ -1781,6 +1833,53 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         'Partial Rectangle',
         (id, cx, cy) => VsdxShapeFactory.partialRectangle(
             id: id, pinX: cx, pinY: cy, width: _w, height: _h)),
+  ], expandAtWidth: 1280),
+  // drawio "Network" (mxgraph.networks) — common vendor-neutral devices.
+  StencilGroup('Network', <Stencil>[
+    Stencil(
+        'Server',
+        (id, cx, cy) => VsdxShapeFactory.networkServer(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.4)),
+    Stencil(
+        'Router',
+        (id, cx, cy) => VsdxShapeFactory.networkRouter(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Firewall',
+        (id, cx, cy) => VsdxShapeFactory.networkFirewall(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.2)),
+    Stencil(
+        'Monitor',
+        (id, cx, cy) => VsdxShapeFactory.networkMonitor(
+            id: id, pinX: cx, pinY: cy, width: 1.5, height: 1.3)),
+    Stencil(
+        'Laptop',
+        (id, cx, cy) => VsdxShapeFactory.networkLaptop(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.2)),
+    Stencil(
+        'Mobile',
+        (id, cx, cy) => VsdxShapeFactory.networkMobile(
+            id: id, pinX: cx, pinY: cy, width: 0.9, height: 1.5)),
+    Stencil(
+        'Printer',
+        (id, cx, cy) => VsdxShapeFactory.networkPrinter(
+            id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.3)),
+    Stencil(
+        'Wireless',
+        (id, cx, cy) => VsdxShapeFactory.networkWireless(
+            id: id, pinX: cx, pinY: cy, width: 1.3, height: 1.3)),
+    Stencil(
+        'Cloud',
+        (id, cx, cy) => VsdxShapeFactory.cloud(
+            id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.1)),
+    Stencil(
+        'Database',
+        (id, cx, cy) => VsdxShapeFactory.cylinder(
+            id: id, pinX: cx, pinY: cy, width: 1.0, height: 1.3)),
+    Stencil(
+        'User',
+        (id, cx, cy) => VsdxShapeFactory.umlActor(
+            id: id, pinX: cx, pinY: cy, width: 0.8, height: 1.4)),
   ], expandAtWidth: 1280),
 ];
 
