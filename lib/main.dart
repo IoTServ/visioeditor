@@ -120,6 +120,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _showOutline = false;
   bool _showLayersPanel = false;
   bool _showRulers = true;
+  bool _presentationMode = false;
   final CanvasCamera _camera = CanvasCamera();
 
   /// Host of [PageCanvas]; used to map desktop file-drop global coords → page
@@ -142,6 +143,56 @@ class _EditorHomePageState extends State<EditorHomePage> {
       _findShowReplace = false;
     });
     _c?.clearFind();
+  }
+
+  void _enterPresentation() {
+    final cur = _c;
+    if (cur == null || !cur.hasDocument || _presentationMode) return;
+    if (_showFind) _closeFind();
+    cur.clearSelection();
+    if (cur.tool != EditorTool.select) cur.setTool(EditorTool.select);
+    setState(() => _presentationMode = true);
+    _applyPresentationSystemUi(true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) cur.requestFitToWindow();
+    });
+  }
+
+  void _exitPresentation() {
+    if (!_presentationMode) return;
+    setState(() => _presentationMode = false);
+    _applyPresentationSystemUi(false);
+    final cur = _c;
+    if (cur != null && cur.hasDocument) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) cur.requestFitToWindow();
+      });
+    }
+  }
+
+  void _togglePresentation() {
+    if (_presentationMode) {
+      _exitPresentation();
+    } else {
+      _enterPresentation();
+    }
+  }
+
+  void _applyPresentationSystemUi(bool presenting) {
+    // Immersive system UI on phones/tablets; desktop chrome is handled by
+    // hiding the Scaffold app bar / side panels.
+    if (kIsWeb) return;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        SystemChrome.setEnabledSystemUIMode(
+          presenting
+              ? SystemUiMode.immersiveSticky
+              : SystemUiMode.edgeToEdge,
+        );
+      default:
+        break;
+    }
   }
 
   Future<void> _openSettings() async {
@@ -205,6 +256,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
 
   @override
   void dispose() {
+    if (_presentationMode) _applyPresentationSystemUi(false);
     _workspace.dispose();
     _camera.dispose();
     super.dispose();
@@ -735,6 +787,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
           final cur = c();
           if (cur != null && cur.hasSelection) cur.toggleLock();
         },
+        // Presentation / fullscreen: F5 enter, F11 toggle,
+        // Cmd/Ctrl+Shift+P toggle (avoids Fn-keys on macOS laptops).
+        // Escape is handled by PageCanvas so it does not steal the editor's
+        // Escape (cancel drag / clear selection) outside presentation.
+        const SingleActivator(LogicalKeyboardKey.f5): _enterPresentation,
+        const SingleActivator(LogicalKeyboardKey.f11): _togglePresentation,
+        const SingleActivator(LogicalKeyboardKey.keyP, meta: true, shift: true):
+            _togglePresentation,
+        const SingleActivator(
+                LogicalKeyboardKey.keyP, control: true, shift: true):
+            _togglePresentation,
       },
       // Document edits rebuild the builder only; the shapes palette is [child]
       // so its scroll position / thumbnails are not rebuilt every drag tick.
@@ -751,239 +814,256 @@ class _EditorHomePageState extends State<EditorHomePage> {
           final l10n = AppLocalizations.of(context);
           final el = EditorL10n.of(context);
           return Scaffold(
-            appBar: AppBar(
-              title: Text(l10n.appTitle),
-              actions: [
-                if (cur != null) ...[
-                  IconButton(
-                    onPressed: cur.canUndo ? cur.undo : null,
-                    icon: const Icon(Icons.undo),
-                    tooltip: el.undo,
-                  ),
-                  IconButton(
-                    onPressed: cur.canRedo ? cur.redo : null,
-                    icon: const Icon(Icons.redo),
-                    tooltip: el.redo,
-                  ),
-                  IconButton(
-                    onPressed: () =>
-                        setState(() => _showOutline = !_showOutline),
-                    icon: const Icon(Icons.map_outlined),
-                    isSelected: _showOutline,
-                    tooltip: el.outline,
-                  ),
-                  IconButton(
-                    onPressed: () => setState(() => _showRulers = !_showRulers),
-                    icon: const Icon(Icons.straighten),
-                    isSelected: _showRulers,
-                    tooltip: el.rulers,
-                  ),
-                  IconButton(
-                    onPressed: cur.toggleGrid,
-                    icon: Icon(cur.showGrid ? Icons.grid_on : Icons.grid_off),
-                    tooltip: el.toggleGrid,
-                  ),
-                  IconButton(
-                    onPressed: cur.requestFitToWindow,
-                    icon: const Icon(Icons.fit_screen_outlined),
-                    tooltip: el.fitToWindowShortcut,
-                  ),
-                  IconButton(
-                    onPressed: () =>
-                        setState(() => _showLayersPanel = !_showLayersPanel),
-                    icon: const Icon(Icons.layers_outlined),
-                    isSelected: _showLayersPanel,
-                    tooltip: el.layers,
-                  ),
-                  IconButton(
-                    onPressed: _insertImage,
-                    icon: const Icon(Icons.image_outlined),
-                    tooltip: el.insertImage,
-                  ),
-                  IconButton(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save_outlined),
-                    tooltip: l10n.save,
-                  ),
-                ],
-                IconButton(
-                  onPressed: _newDoc,
-                  icon: const Icon(Icons.note_add_outlined),
-                  tooltip: l10n.newDrawing,
-                ),
-                IconButton(
-                  onPressed: _open,
-                  icon: const Icon(Icons.folder_open_outlined),
-                  tooltip: l10n.openDrawing,
-                ),
-                if (_recents.isNotEmpty)
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.history),
-                    tooltip: l10n.recentFiles,
-                    onSelected: _openPath,
-                    itemBuilder: (context) => [
-                      for (final p in _recents)
-                        PopupMenuItem<String>(
-                          value: p,
-                          child: Text(
-                            p.split(RegExp(r'[/\\]')).last,
-                            overflow: TextOverflow.ellipsis,
+            appBar: _presentationMode
+                ? null
+                : AppBar(
+                    title: Text(l10n.appTitle),
+                    actions: [
+                      if (cur != null) ...[
+                        IconButton(
+                          onPressed: cur.canUndo ? cur.undo : null,
+                          icon: const Icon(Icons.undo),
+                          tooltip: el.undo,
+                        ),
+                        IconButton(
+                          onPressed: cur.canRedo ? cur.redo : null,
+                          icon: const Icon(Icons.redo),
+                          tooltip: el.redo,
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setState(() => _showOutline = !_showOutline),
+                          icon: const Icon(Icons.map_outlined),
+                          isSelected: _showOutline,
+                          tooltip: el.outline,
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setState(() => _showRulers = !_showRulers),
+                          icon: const Icon(Icons.straighten),
+                          isSelected: _showRulers,
+                          tooltip: el.rulers,
+                        ),
+                        IconButton(
+                          onPressed: cur.toggleGrid,
+                          icon: Icon(
+                              cur.showGrid ? Icons.grid_on : Icons.grid_off),
+                          tooltip: el.toggleGrid,
+                        ),
+                        IconButton(
+                          onPressed: cur.requestFitToWindow,
+                          icon: const Icon(Icons.fit_screen_outlined),
+                          tooltip: el.fitToWindowShortcut,
+                        ),
+                        if (cur.hasDocument)
+                          IconButton(
+                            onPressed: _enterPresentation,
+                            icon: const Icon(Icons.slideshow_outlined),
+                            tooltip: el.presentationModeShortcut,
                           ),
+                        IconButton(
+                          onPressed: () => setState(
+                              () => _showLayersPanel = !_showLayersPanel),
+                          icon: const Icon(Icons.layers_outlined),
+                          isSelected: _showLayersPanel,
+                          tooltip: el.layers,
+                        ),
+                        IconButton(
+                          onPressed: _insertImage,
+                          icon: const Icon(Icons.image_outlined),
+                          tooltip: el.insertImage,
+                        ),
+                        IconButton(
+                          onPressed: _save,
+                          icon: const Icon(Icons.save_outlined),
+                          tooltip: l10n.save,
+                        ),
+                      ],
+                      IconButton(
+                        onPressed: _newDoc,
+                        icon: const Icon(Icons.note_add_outlined),
+                        tooltip: l10n.newDrawing,
+                      ),
+                      IconButton(
+                        onPressed: _open,
+                        icon: const Icon(Icons.folder_open_outlined),
+                        tooltip: l10n.openDrawing,
+                      ),
+                      if (_recents.isNotEmpty)
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.history),
+                          tooltip: l10n.recentFiles,
+                          onSelected: _openPath,
+                          itemBuilder: (context) => [
+                            for (final p in _recents)
+                              PopupMenuItem<String>(
+                                value: p,
+                                child: Text(
+                                  p.split(RegExp(r'[/\\]')).last,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                        ),
+                      IconButton(
+                        onPressed: _openSettings,
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: l10n.settingsTooltip,
+                      ),
+                      if (cur != null)
+                        PopupMenuButton<String>(
+                          tooltip: l10n.more,
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'saveAs':
+                                _saveAs();
+                              case 'exportSvg':
+                                _exportSvg();
+                              case 'exportPng':
+                                _exportPng();
+                              case 'exportPdf':
+                                _exportPdf();
+                              case 'selectAll':
+                                cur.selectAll();
+                              case 'find':
+                                _openFind();
+                              case 'replace':
+                                _openFind(replace: true);
+                              case 'insertImage':
+                                _insertImage();
+                              case 'editData':
+                                _editData();
+                              case 'editLink':
+                                _editLink();
+                              case 'editConnPts':
+                                if (cur.editingConnectionPoints) {
+                                  cur.endEditConnectionPoints();
+                                } else {
+                                  cur.beginEditConnectionPoints();
+                                }
+                              case 'lock':
+                                cur.toggleLock();
+                              case 'zoomSel':
+                                cur.revealSelection();
+                              case 'copyStyle':
+                                cur.copyStyle();
+                              case 'pasteStyle':
+                                cur.pasteStyle();
+                              case 'presentation':
+                                _enterPresentation();
+                              case 'snap':
+                                cur.toggleSnap();
+                              case 'lineJumps':
+                                cur.toggleLineJumps();
+                              case 'settings':
+                                _openSettings();
+                              case 'close':
+                                _closeTab(_workspace.activeIndex);
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem<String>(
+                              value: 'selectAll',
+                              child: Text(el.selectAllShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'find',
+                              child: Text(el.findShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'replace',
+                              child: Text(el.findReplaceShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'insertImage',
+                              child: Text(el.insertImage),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'editData',
+                              enabled: cur.singleSelectedId != null,
+                              child: Text(el.editDataShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'editLink',
+                              enabled: cur.singleSelectedId != null,
+                              child: Text(el.editLinkShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'editConnPts',
+                              enabled: cur.editingConnectionPoints ||
+                                  cur.canEditConnectionPoints,
+                              child: Text(cur.editingConnectionPoints
+                                  ? el.doneEditingConnectionPoints
+                                  : el.editConnectionPoints),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'lock',
+                              enabled: cur.hasSelection,
+                              child: Text(cur.selectionLocked
+                                  ? el.unlockShortcut
+                                  : el.lockShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'zoomSel',
+                              enabled: cur.hasSelection,
+                              child: Text(el.zoomToSelection),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'copyStyle',
+                              enabled: cur.hasSelection,
+                              child: Text(el.copyStyleShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'pasteStyle',
+                              enabled: cur.hasStyleClipboard && cur.hasSelection,
+                              child: Text(el.pasteStyleShortcut),
+                            ),
+                            if (cur.hasDocument)
+                              PopupMenuItem<String>(
+                                value: 'presentation',
+                                child: Text(el.presentationModeShortcut),
+                              ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'saveAs',
+                              child: Text(el.saveAs),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'exportSvg',
+                              child: Text(el.exportSvg),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'exportPng',
+                              child: Text(el.exportPng),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'exportPdf',
+                              child: Text(el.exportPdf),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'snap',
+                              checked: cur.snapToGrid,
+                              child: Text(el.snapToGrid),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'lineJumps',
+                              checked: cur.showLineJumps,
+                              child: Text(el.lineJumps),
+                            ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'settings',
+                              child: Text(l10n.settings),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'close',
+                              child: Text(el.closeTabShortcut),
+                            ),
+                          ],
                         ),
                     ],
+                    bottom: _workspace.hasDocs ? _tabBar() : null,
                   ),
-                IconButton(
-                  onPressed: _openSettings,
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: l10n.settingsTooltip,
-                ),
-                if (cur != null)
-                  PopupMenuButton<String>(
-                    tooltip: l10n.more,
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'saveAs':
-                          _saveAs();
-                        case 'exportSvg':
-                          _exportSvg();
-                        case 'exportPng':
-                          _exportPng();
-                        case 'exportPdf':
-                          _exportPdf();
-                        case 'selectAll':
-                          cur.selectAll();
-                        case 'find':
-                          _openFind();
-                        case 'replace':
-                          _openFind(replace: true);
-                        case 'insertImage':
-                          _insertImage();
-                        case 'editData':
-                          _editData();
-                        case 'editLink':
-                          _editLink();
-                        case 'editConnPts':
-                          if (cur.editingConnectionPoints) {
-                            cur.endEditConnectionPoints();
-                          } else {
-                            cur.beginEditConnectionPoints();
-                          }
-                        case 'lock':
-                          cur.toggleLock();
-                        case 'zoomSel':
-                          cur.revealSelection();
-                        case 'copyStyle':
-                          cur.copyStyle();
-                        case 'pasteStyle':
-                          cur.pasteStyle();
-                        case 'snap':
-                          cur.toggleSnap();
-                        case 'lineJumps':
-                          cur.toggleLineJumps();
-                        case 'settings':
-                          _openSettings();
-                        case 'close':
-                          _closeTab(_workspace.activeIndex);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem<String>(
-                        value: 'selectAll',
-                        child: Text(el.selectAllShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'find',
-                        child: Text(el.findShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'replace',
-                        child: Text(el.findReplaceShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'insertImage',
-                        child: Text(el.insertImage),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'editData',
-                        enabled: cur.singleSelectedId != null,
-                        child: Text(el.editDataShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'editLink',
-                        enabled: cur.singleSelectedId != null,
-                        child: Text(el.editLinkShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'editConnPts',
-                        enabled: cur.editingConnectionPoints ||
-                            cur.canEditConnectionPoints,
-                        child: Text(cur.editingConnectionPoints
-                            ? el.doneEditingConnectionPoints
-                            : el.editConnectionPoints),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'lock',
-                        enabled: cur.hasSelection,
-                        child: Text(cur.selectionLocked
-                            ? el.unlockShortcut
-                            : el.lockShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'zoomSel',
-                        enabled: cur.hasSelection,
-                        child: Text(el.zoomToSelection),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'copyStyle',
-                        enabled: cur.hasSelection,
-                        child: Text(el.copyStyleShortcut),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'pasteStyle',
-                        enabled: cur.hasStyleClipboard && cur.hasSelection,
-                        child: Text(el.pasteStyleShortcut),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem<String>(
-                        value: 'saveAs',
-                        child: Text(el.saveAs),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'exportSvg',
-                        child: Text(el.exportSvg),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'exportPng',
-                        child: Text(el.exportPng),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'exportPdf',
-                        child: Text(el.exportPdf),
-                      ),
-                      CheckedPopupMenuItem<String>(
-                        value: 'snap',
-                        checked: cur.snapToGrid,
-                        child: Text(el.snapToGrid),
-                      ),
-                      CheckedPopupMenuItem<String>(
-                        value: 'lineJumps',
-                        checked: cur.showLineJumps,
-                        child: Text(el.lineJumps),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem<String>(
-                        value: 'settings',
-                        child: Text(l10n.settings),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'close',
-                        child: Text(el.closeTabShortcut),
-                      ),
-                    ],
-                  ),
-              ],
-              bottom: _workspace.hasDocs ? _tabBar() : null,
-            ),
             body: DropTarget(
               onDragEntered: (_) => setState(() => _dragging = true),
               onDragExited: (_) => setState(() => _dragging = false),
@@ -991,7 +1071,25 @@ class _EditorHomePageState extends State<EditorHomePage> {
               child: Stack(
                 children: [
                   Positioned.fill(child: _buildBody(cur, stencilChild)),
-                  if (_showFind && cur != null && cur.hasDocument)
+                  if (_presentationMode && cur != null && cur.hasDocument)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: Material(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                        child: IconButton(
+                          onPressed: _exitPresentation,
+                          icon: const Icon(Icons.fullscreen_exit,
+                              color: Colors.white),
+                          tooltip: el.exitPresentationShortcut,
+                        ),
+                      ),
+                    ),
+                  if (!_presentationMode &&
+                      _showFind &&
+                      cur != null &&
+                      cur.hasDocument)
                     Positioned(
                       top: 12,
                       right: 12,
@@ -1009,7 +1107,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 ],
               ),
             ),
-            bottomNavigationBar: (cur != null && cur.hasDocument)
+            bottomNavigationBar: (!_presentationMode &&
+                    cur != null &&
+                    cur.hasDocument)
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [_pageTabs(cur), _statusBar(cur)],
@@ -1111,17 +1211,19 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
     return Row(
       children: [
-        _ToolStrip(
-          controller: c,
-          showStencils: _showStencils,
-          onToggleStencils: () =>
-              setState(() => _showStencils = !_showStencils),
-        ),
-        const VerticalDivider(width: 1),
-        // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
-        if (stencilChild != null) ...[
-          stencilChild,
+        if (!_presentationMode) ...[
+          _ToolStrip(
+            controller: c,
+            showStencils: _showStencils,
+            onToggleStencils: () =>
+                setState(() => _showStencils = !_showStencils),
+          ),
           const VerticalDivider(width: 1),
+          // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
+          if (stencilChild != null) ...[
+            stencilChild,
+            const VerticalDivider(width: 1),
+          ],
         ],
         Expanded(
           child: Stack(
@@ -1137,13 +1239,18 @@ class _EditorHomePageState extends State<EditorHomePage> {
                   key: ObjectKey(c),
                   controller: c,
                   camera: _camera,
+                  canvasColor: _presentationMode
+                      ? const Color(0xFF1A1C1E)
+                      : const Color(0xFFECEFF3),
+                  presentationMode: _presentationMode,
+                  onExitPresentation: _exitPresentation,
                 ),
               ),
-              if (_showRulers)
+              if (!_presentationMode && _showRulers)
                 Positioned.fill(
                   child: RulerOverlay(controller: c, camera: _camera),
                 ),
-              if (_showOutline)
+              if (!_presentationMode && _showOutline)
                 Positioned(
                   right: 16,
                   bottom: 64,
@@ -1153,7 +1260,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     onClose: () => setState(() => _showOutline = false),
                   ),
                 ),
-              if (_showLayersPanel)
+              if (!_presentationMode && _showLayersPanel)
                 Positioned(
                   left: 16,
                   top: 16,
@@ -1165,13 +1272,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
             ],
           ),
         ),
-        const VerticalDivider(width: 1),
-        // drawio always keeps the Format panel docked: a shape inspector when
-        // something is selected, otherwise the page/"Diagram" settings.
-        if (c.hasSelection)
-          _PropertyPanel(controller: c)
-        else
-          _PageFormatPanel(controller: c),
+        if (!_presentationMode) ...[
+          const VerticalDivider(width: 1),
+          // drawio always keeps the Format panel docked: a shape inspector when
+          // something is selected, otherwise the page/"Diagram" settings.
+          if (c.hasSelection)
+            _PropertyPanel(controller: c)
+          else
+            _PageFormatPanel(controller: c),
+        ],
       ],
     );
   }

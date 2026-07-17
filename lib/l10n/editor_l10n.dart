@@ -42,6 +42,10 @@ class EditorL10n {
   String get toggleGrid => _t('toggleGrid');
   String get fitToWindow => _t('fitToWindow');
   String get fitToWindowShortcut => _t('fitToWindowShortcut');
+  String get presentationMode => _t('presentationMode');
+  String get presentationModeShortcut => _t('presentationModeShortcut');
+  String get exitPresentation => _t('exitPresentation');
+  String get exitPresentationShortcut => _t('exitPresentationShortcut');
   String get layers => _t('layers');
   String get insertImage => _t('insertImage');
   String get hideOutline => _t('hideOutline');

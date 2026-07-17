@@ -35,6 +35,8 @@ class PageCanvas extends StatefulWidget {
     this.maxScale = 32.0,
     this.canvasColor = const Color(0xFFECEFF3),
     this.pageColor = Colors.white,
+    this.presentationMode = false,
+    this.onExitPresentation,
   });
 
   final EditorController controller;
@@ -48,6 +50,14 @@ class PageCanvas extends StatefulWidget {
   final double maxScale;
   final Color canvasColor;
   final Color pageColor;
+
+  /// When true, chrome such as zoom controls is hidden and Escape exits
+  /// presentation instead of clearing the selection.
+  final bool presentationMode;
+
+  /// Called when the user presses Escape in [presentationMode] (after any
+  /// in-progress drag / connection-point edit is cancelled).
+  final VoidCallback? onExitPresentation;
 
   @override
   State<PageCanvas> createState() => _PageCanvasState();
@@ -574,6 +584,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// Whether hover-connect affordances should be offered right now.
   bool get _connectAffordanceActive =>
+      !widget.presentationMode &&
       _mode == _DragMode.none &&
       _c.tool == EditorTool.select &&
       _editingShapeId == null &&
@@ -697,6 +708,17 @@ class _PageCanvasState extends State<PageCanvas> {
       _commitTextEdit(); // a click outside the editor applies the edit
       return;
     }
+    if (widget.presentationMode) {
+      // Slideshow: click advances; Shift+click goes back.
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        if (_c.currentPageIndex > 0) {
+          _c.selectPage(_c.currentPageIndex - 1);
+        }
+      } else if (_c.currentPageIndex < _c.pageCount - 1) {
+        _c.selectPage(_c.currentPageIndex + 1);
+      }
+      return;
+    }
     // A click on a hover-connect arrow connects to (or clones + connects) the
     // shape one step over in that direction, drawio-style, and selects it.
     if (_connectAffordanceActive && _hoverShapeId != null) {
@@ -733,6 +755,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onDoubleTap() {
+    if (widget.presentationMode) return;
     // Double-clicking a connector's bend point removes it.
     final conn = _selectedConnector();
     if (conn != null && conn.waypoints.isNotEmpty) {
@@ -753,6 +776,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // --- Context menu (right-click) --------------------------------------------
 
   void _onSecondaryTapUp(TapUpDetails d) {
+    if (widget.presentationMode) return;
     if (_editingShapeId != null) _commitTextEdit();
     final hit = _hitTest(d.localPosition);
     if (hit != null && !_c.isSelected(hit)) _c.selectOnly(hit);
@@ -1183,6 +1207,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_editingShapeId != null) {
       _commitTextEdit(); // dragging elsewhere applies the edit first
       _mode = _DragMode.none;
+      return;
+    }
+    if (widget.presentationMode) {
+      // View-only: drag pans the canvas; editing gestures are disabled.
+      _lastPointer = d.localPosition;
+      _mode = _DragMode.panCanvas;
       return;
     }
     _lastPointer = d.localPosition;
@@ -2197,6 +2227,41 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return KeyEventResult.ignored; // let app-level Cmd shortcuts run
     }
+    if (widget.presentationMode) {
+      if (key == LogicalKeyboardKey.escape) {
+        if (_mode != _DragMode.none) {
+          _cancelActiveDrag();
+          return KeyEventResult.handled;
+        }
+        widget.onExitPresentation?.call();
+        return KeyEventResult.handled;
+      }
+      // Slideshow-style page navigation (editing keys are ignored).
+      if (key == LogicalKeyboardKey.arrowRight ||
+          key == LogicalKeyboardKey.arrowDown ||
+          key == LogicalKeyboardKey.pageDown ||
+          key == LogicalKeyboardKey.space) {
+        if (_c.currentPageIndex < _c.pageCount - 1) {
+          _c.selectPage(_c.currentPageIndex + 1);
+        }
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.pageUp ||
+          key == LogicalKeyboardKey.backspace) {
+        if (_c.currentPageIndex > 0) {
+          _c.selectPage(_c.currentPageIndex - 1);
+        }
+        return KeyEventResult.handled;
+      }
+      // Swallow delete / typing so presentation never mutates the document.
+      if (key == LogicalKeyboardKey.delete ||
+          key == LogicalKeyboardKey.backspace) {
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace) {
       if (_c.editingConnectionPoints) {
         if (_c.selectedConnectionPointIndex != null) {
@@ -2561,16 +2626,17 @@ class _PageCanvasState extends State<PageCanvas> {
                         ),
                       ),
                       ?inlineEditor,
-                      Positioned(
-                        right: 12,
-                        bottom: 12,
-                        child: _ZoomControls(
-                          zoom: _scale,
-                          onZoomIn: () => _zoomBy(1.25),
-                          onZoomOut: () => _zoomBy(0.8),
-                          onFit: fitToScreen,
+                      if (!widget.presentationMode)
+                        Positioned(
+                          right: 12,
+                          bottom: 12,
+                          child: _ZoomControls(
+                            zoom: _scale,
+                            onZoomIn: () => _zoomBy(1.25),
+                            onZoomOut: () => _zoomBy(0.8),
+                            onFit: fitToScreen,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
