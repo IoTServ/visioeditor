@@ -1112,21 +1112,32 @@ class _PageCanvasState extends State<PageCanvas> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: IgnorePointer(
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: Text.rich(
-                          TextSpan(
-                            children: <InlineSpan>[
-                              for (final r in preview.runs)
-                                _inlineRunSpan(
-                                  r,
-                                  widget.pxPerInch * _scale,
-                                  docTheme,
-                                  scheme.onSurface,
-                                ),
-                            ],
+                      // Match [TextField] layout: full-width box + same
+                      // textAlign so the invisible field's caret/selection
+                      // land on the visible glyphs (not left-side empty
+                      // space while a centred preview is shown).
+                      child: SizedBox(
+                        width: math.max(width - 8, 1),
+                        height: math.max(height - 4, 1),
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                            width: math.max(width - 8, 1),
+                            child: Text.rich(
+                              TextSpan(
+                                children: <InlineSpan>[
+                                  for (final r in preview.runs)
+                                    _inlineRunSpan(
+                                      r,
+                                      widget.pxPerInch * _scale,
+                                      docTheme,
+                                      scheme.onSurface,
+                                    ),
+                                ],
+                              ),
+                              textAlign: _textAlign(align),
+                            ),
                           ),
-                          textAlign: _textAlign(align),
                         ),
                       ),
                     ),

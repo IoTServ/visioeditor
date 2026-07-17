@@ -264,6 +264,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   opens exports with correct font size.
 - **Canvas metafile paint**: WMF/EMF vector replay + OLE `OlePres` EMF preview
   (embedded DIB first, then GDI display-list rasterisation).
+- **Text align fidelity**: SVG/PDF honour Paragraph `HorzAlign`; Process Flow
+  example labels centred; inline editor preview shares TextField width so
+  caret/selection hit the visible glyphs.
 - **Export**: to SVG (pure-model `VsdxToSvgSerializer`), PNG and multi-page PDF
   (rasterised via the on-screen painter).
 - **Pages**: add / duplicate / delete / rename pages from the page bar; all

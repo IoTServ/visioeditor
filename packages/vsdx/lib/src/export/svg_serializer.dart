@@ -557,6 +557,14 @@ class VsdxToSvgSerializer {
     final lines = raw.split('\n');
     final lineHeight = fs * 1.2;
     final firstDy = -(lines.length - 1) / 2 * lineHeight;
+    // Honour Paragraph HorzAlign (canvas + PDF must agree). Older SVG always
+    // used middle, which made left-aligned labels look centred in PDF export.
+    final align = run.paraStyle.horizontalAlign;
+    final (anchor, tx) = switch (align) {
+      VsdxHorzAlign.left || VsdxHorzAlign.justify => ('start', cx - tw / 2),
+      VsdxHorzAlign.right => ('end', cx + tw / 2),
+      VsdxHorzAlign.center => ('middle', cx),
+    };
     final tspans = StringBuffer();
     for (var i = 0; i < lines.length; i++) {
       tspans.write('<tspan x="0" y="${_n(firstDy + i * lineHeight)}">'
@@ -564,8 +572,8 @@ class VsdxToSvgSerializer {
     }
     // Flip Y for the text so glyphs read upright.
     buf.writeln(
-      '$indent<g transform="translate(${_n(cx)} ${_n(cy)}) scale(1 -1)">'
-      '<text text-anchor="middle" dominant-baseline="middle" '
+      '$indent<g transform="translate(${_n(tx)} ${_n(cy)}) scale(1 -1)">'
+      '<text text-anchor="$anchor" dominant-baseline="middle" '
       'font-family="${_esc(fontFamily)}" font-size="${_n(fs)}" '
       'font-weight="$weight" font-style="$italic" '
       'fill="${_hex(color)}">$tspans</text></g>',

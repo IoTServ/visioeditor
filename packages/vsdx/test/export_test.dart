@@ -28,6 +28,47 @@ void main() {
     expect(svg, contains('<svg'));
   });
 
+  test('SVG text-anchor follows Paragraph HorzAlign', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final left = VsdxShapeFactory.rectangle(
+      id: page.nextFreeShapeId(),
+      pinX: 2,
+      pinY: 5,
+      width: 2,
+      height: 0.6,
+    ).copyWith(
+      richText: VsdxRichText(runs: [
+        VsdxTextRun(
+          text: 'Left',
+          paraStyle: const VsdxParaStyle(horizontalAlign: VsdxHorzAlign.left),
+        ),
+      ]),
+    );
+    final center = VsdxShapeFactory.rectangle(
+      id: page.nextFreeShapeId() + 1,
+      pinX: 5,
+      pinY: 5,
+      width: 2,
+      height: 0.6,
+    ).copyWith(
+      richText: VsdxRichText(runs: [
+        VsdxTextRun(
+          text: 'Center',
+          paraStyle: const VsdxParaStyle(horizontalAlign: VsdxHorzAlign.center),
+        ),
+      ]),
+    );
+    doc = doc.replacePage(
+      0,
+      page.addShape(left).addShape(center),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('text-anchor="start"'));
+    expect(svg, contains('text-anchor="middle"'));
+  });
+
   test('SVG composites BackPage underlay and skips background pages', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
