@@ -4621,6 +4621,14 @@ class VsdxWriter {
     if (s.text != null && s.text!.isNotEmpty) {
       children.add(XmlElement(XmlName('Text'), const [], [XmlText(s.text!)]));
     }
+    // Emit frame Geometry when present so import→synth→reopen keeps hit-test
+    // / selection bounds (Foreign shapes previously dropped all path rows).
+    var gIx = 0;
+    for (final g in s.geometries) {
+      if (!_canRebuild(g)) continue;
+      final section = _buildGeometrySection(g, gIx++);
+      if (section != null) children.add(section);
+    }
     if (rId != null) {
       children.add(XmlElement(
         XmlName('ForeignData'),

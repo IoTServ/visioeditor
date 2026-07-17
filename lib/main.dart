@@ -314,6 +314,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (i >= 0) _workspace.closeAt(i);
       return;
     }
+    if (mounted && c.importedFromVsd) {
+      _snack(EditorL10n.of(context).vsdImportedSaveAsVsdx);
+    }
     if (path != null) await _addRecent(path);
   }
 
@@ -324,12 +327,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   Future<void> _openPath(String path) async {
-    if (isLegacyVisioBinary(path)) {
-      if (mounted) {
-        _snack(EditorL10n.of(context).legacyVsdUnsupported);
-      }
-      return;
-    }
     try {
       final picked = await readDroppedFile(path);
       await _openBytes(picked.bytes, path: picked.path, name: picked.name);
@@ -356,13 +353,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     final pagePt = _pageInchesFromGlobal(details.globalPosition);
     for (final f in details.files) {
-      if (isLegacyVisioBinary(f.path)) {
-        if (mounted) {
-          _snack(EditorL10n.of(context).legacyVsdUnsupported);
-        }
-        continue;
-      }
-      if (hasVisioExtension(f.path)) {
+      if (hasVisioExtension(f.path) || isLegacyVisioBinary(f.path)) {
         final picked = await readDroppedFile(f.path);
         await _openBytes(picked.bytes, path: picked.path, name: picked.name);
         continue;

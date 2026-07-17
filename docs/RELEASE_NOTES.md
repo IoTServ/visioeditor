@@ -57,7 +57,7 @@ flutter build macos             # release build → build/macos/Build/Products/
 The produced app is named **"Editor for Visio Diagrams"** and registers the
 Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 `.vssx` / `.vssm`) so Finder offers *Open With → Editor for Visio Diagrams*.
-(Legacy `.vsd` is associated for Open With; binary import is still deferred.)
+(Legacy `.vsd` opens via pure-Dart VSD5/VSD6/VSD11 import; Save As writes `.vsdx`.)
 
 ## Keyboard shortcuts
 
@@ -79,8 +79,15 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
   Developer certificate and is planned for a later release.
 - **macOS-first.** Windows / Linux / mobile are not yet verified; the OS file
   association is macOS-only.
-- **Legacy `.vsd`** (binary) import is not supported — only the modern
-  `.vsdx` OPC format.
+- **Legacy `.vsd`** (Visio 5 / 2000–2010 binary): VSD5/VSD6/VSD11 import is supported
+  (pure Dart: stencil inheritance, bitmaps, InfiniteLine/Spline/NURBS basics,
+  TextField expand with date/numeric formats, unit/angle/currency formatting,
+  multi-run CharIX/ParaIX, TabsData, Gantt Number date heuristic,
+  CharIX Case/Pos/Strike/FontScale, EMF/WMF media import, ShapeList z-order,
+  string field case formats, FontFace/FontIX, TextBlock, ParaIX, StyleSheet
+  text chain, Layer); Save As writes `.vsdx`. Encrypted files / masters deep
+  edit / binary `.vsd` write-back / OLE / EMF·WMF canvas paint are still
+  deferred.
 - **Text editing applies to a whole shape label** (no per-character selection
   ranges yet); connectors route straight or orthogonal (with draggable
   waypoints) but not obstacle-avoiding; PDF export is rasterised (not vector);

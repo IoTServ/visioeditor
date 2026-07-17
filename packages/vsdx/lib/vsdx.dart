@@ -52,6 +52,9 @@ export 'src/parser/package_reader.dart';
 export 'src/parser/relationships.dart';
 export 'src/parser/document_parser.dart';
 export 'src/parser/formula.dart';
+export 'src/parser/parse_visio.dart';
+export 'src/parser/vsd/vsd_document_parser.dart';
+export 'src/parser/vsd/cfb/compound_file.dart';
 
 // writer (round-trip save)
 export 'src/writer/vsdx_writer.dart';

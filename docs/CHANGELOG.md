@@ -6,6 +6,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **Legacy `.vsd` import (pure Dart)**: MS-CFB + VSD5/VSD6/VSD11 record parser →
+  `VsdxDocument` (stencil/master inheritance, ForeignData bitmaps with DIB→BMP,
+  InfiniteLine/Spline/NURBS/ShapeData, TextField expand with date/numeric formats,
+  unit conversion (`convertNumber`), angle Degrees/Radians/DMS, currency via
+  `0x60` custom format blocks, multi-run CharIX/ParaIX by charCount, TabsData
+  (`0x88`/`0x96`/`0x97`/`0xb5`), Gantt Number→date heuristic / `0x70` format
+  blocks, Name2/NameIDX page & shape names (ANSI on VSD5/6), TextXForm,
+  FontFace/FontIX (incl. Case/Pos/Strike/FontScale), TextBlock, ParaIX,
+  StyleSheet text parent chain, Layer/LayerMem, EMF/WMF media import,
+  ShapeList z-order, string field StrUpper/StrLower), synthesised .vsdx
+  baseline for edit / Save As. Algorithm reference: libvisio (no FFI).
 - **Pure-Dart `.vsdx` engine** (`packages/vsdx`): OPC/XML reader → strongly-typed
   editable model → round-trip writer. Recovered and adapted from the MIT viewer
   stack (`visiovsdxviewer@0fcaf66^`).
@@ -311,8 +322,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ### Deferred (post-v0.1)
 - Obstacle-avoiding connector routing; per-run (selection-range) rich-text
   editing; vector (non-raster) PDF; custom / imported stencils.
-- Other platforms (Windows / Linux / Android / iOS) and legacy `.vsd` import
-  (via libvisio); `.vsdx` OS file association, app icon and packaging/signing.
+- Other platforms (Windows / Linux / Android / iOS); `.vsd` encrypted /
+  masters deep inheritance / binary write-back; packaging/signing.
 - LibreOffice / Visio interop is covered by open→save→reopen round-trip tests;
   CI installs LibreOffice and runs
   `packages/vsdx/test/libreoffice_crosscheck_test.dart` (`REQUIRE_SOFFICE=1`,

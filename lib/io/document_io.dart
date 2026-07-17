@@ -11,8 +11,12 @@ class PickedDocument {
   final String? name;
 }
 
-/// Visio OPC drawing extensions the editor can open and round-trip.
+/// Visio drawing extensions the editor can open.
+///
+/// OPC formats (`.vsdx` …) round-trip in place. Legacy binary `.vsd` is
+/// imported into the editable model and saved as `.vsdx`.
 const List<String> kVisioOpenExtensions = <String>[
+  'vsd',
   'vsdx',
   'vsdm',
   'vstx',
@@ -22,9 +26,7 @@ const List<String> kVisioOpenExtensions = <String>[
 ];
 
 /// Extensions registered with the OS for "Open With" / file association.
-/// Includes legacy binary `.vsd` (associated, but not yet importable).
 const List<String> kVisioAssociatedExtensions = <String>[
-  'vsd',
   ...kVisioOpenExtensions,
 ];
 
@@ -103,11 +105,11 @@ bool hasVisioAssociatedExtension(String path) {
   return kVisioAssociatedExtensions.any((e) => lower.endsWith('.$e'));
 }
 
-/// Legacy Visio 2003–2010 binary drawing (OLE2), not yet importable.
+/// Legacy Visio 2003–2010 binary drawing (OLE2). Importable; Save As `.vsdx`.
 bool isLegacyVisioBinary(String path) {
   final lower = path.toLowerCase();
   // Exact `.vsd` only — do not match `.vsdx` / `.vsdm`.
-  return lower.endsWith('.vsd') && !hasVisioExtension(path);
+  return lower.endsWith('.vsd') && !lower.endsWith('.vsdx') && !lower.endsWith('.vsdm');
 }
 
 /// `true` when [path] looks like a raster image the editor can embed.

@@ -114,7 +114,7 @@ class EditorL10n {
       _t('openFileFailed').replaceAll('{error}', error);
   String openPathFailed(String path) =>
       _t('openPathFailed').replaceAll('{path}', path);
-  String get legacyVsdUnsupported => _t('legacyVsdUnsupported');
+  String get vsdImportedSaveAsVsdx => _t('vsdImportedSaveAsVsdx');
   String openExampleFailed(String name) =>
       _t('openExampleFailed').replaceAll('{name}', name);
   String get insertImageFailed => _t('insertImageFailed');

@@ -1,0 +1,78 @@
+/// Visio binary record / stream type IDs (algorithm reference: libvisio
+/// `VSDDocumentStructure.h`). Constants only — independent implementation.
+library;
+
+abstract final class VsdRecordId {
+  static const int foreignData = 0x0c;
+  static const int oleList = 0x0d;
+  static const int text = 0x0e;
+  static const int trailerStream = 0x14;
+  static const int page = 0x15;
+  static const int colors = 0x16;
+  static const int fontList = 0x18;
+  static const int fontIx = 0x19;
+  static const int styles = 0x1a;
+  static const int stencils = 0x1d;
+  static const int stencilPage = 0x1e;
+  static const int oleData = 0x1f;
+  static const int pages = 0x27;
+  static const int nameList = 0x2c;
+  static const int name = 0x2d;
+  static const int nameList2 = 0x32;
+  static const int name2 = 0x33;
+  static const int nameIdx123 = 0x34;
+  static const int pageSheet = 0x46;
+  static const int shapeGroup = 0x47;
+  static const int shapeShape = 0x48;
+  static const int styleSheet = 0x4a;
+  static const int shapeGuide = 0x4d;
+  static const int shapeForeign = 0x4e;
+  static const int scratchList = 0x64;
+  static const int shapeList = 0x65;
+  static const int fieldList = 0x66;
+  static const int propList = 0x68;
+  static const int charList = 0x69;
+  static const int paraList = 0x6a;
+  static const int tabsDataList = 0x6b;
+  static const int geomList = 0x6c;
+  static const int layerList = 0x6f;
+  static const int ctrlList = 0x70;
+  static const int cPntsList = 0x71;
+  static const int shapeId = 0x83;
+  static const int line = 0x85;
+  static const int fillAndShadow = 0x86;
+  static const int textBlock = 0x87;
+  static const int geometry = 0x89;
+  static const int moveTo = 0x8a;
+  static const int lineTo = 0x8b;
+  static const int arcTo = 0x8c;
+  static const int infiniteLine = 0x8d;
+  static const int ellipse = 0x8f;
+  static const int ellipticalArcTo = 0x90;
+  static const int pageProps = 0x92;
+  static const int styleProps = 0x93;
+  static const int charIx = 0x94;
+  static const int paraIx = 0x95;
+  static const int foreignDataType = 0x98;
+  static const int xformData = 0x9b;
+  static const int textXform = 0x9c;
+  static const int xform1d = 0x9d;
+  static const int textField = 0xa1;
+  static const int misc = 0xa4;
+  static const int splineStart = 0xa5;
+  static const int splineKnot = 0xa6;
+  static const int layerMembership = 0xa7;
+  static const int layer = 0xa8;
+  static const int polylineTo = 0xc1;
+  static const int nurbsTo = 0xc3;
+  static const int nameIdx = 0xc9;
+  static const int shapeData = 0xd1;
+  static const int fontFace = 0xd7;
+  static const int fontFaces = 0xd8;
+
+  // TabsData variants (libvisio VSD_TABS_DATA_1..4).
+  static const int tabsData1 = 0x88;
+  static const int tabsData2 = 0x96;
+  static const int tabsData3 = 0x97;
+  static const int tabsData4 = 0xb5;
+}

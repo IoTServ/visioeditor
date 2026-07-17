@@ -345,7 +345,7 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
-- `.vsd` 老格式经 libvisio 导入
+- `.vsd` 加密 / masters 深编辑 / 写回二进制（VSD5+VSD6+VSD11 导入 → 另存 `.vsdx` 已落地；加密与二进制写回仍延后）
 
 ---
 
@@ -1189,5 +1189,57 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   写入叶 cell；环检测。(2) `formulaOfLocalRef`；`applySetAtRefInputs`
   接入链式重定向。(3) `syncSetAtRefFromControls` 对复合
   `SETATREF(…)+算术` 用 `evaluateFormula` 求 TxtPin。
-  测试：`formula_recalc_test` 增补链/复合例。仍优先后续：平台打包签名、
-  `.vsd` 导入。
+  测试：`formula_recalc_test` 增补链/复合例。仍优先后续：平台打包签名；
+  `.vsd` VSD6 / 图片 / masters（VSD11 导入已落地）。
+- 2026-07-17 — **`.vsd` 导入打磨**：PageProps `pageScale/drawingScale` 缩放（平面图
+  从 528″ 归一到信纸尺寸）；ForeignData 光栅（PNG/JPEG/GIF/BMP）嵌入；PolylineTo
+  端点回退；导入→移形→另存 `.vsdx`→再开单测。导出仍为 `.vsdx`（不写二进制 `.vsd`）。
+- 2026-07-17 — **`.vsd` VSD5 导入**：对照 libvisio `VSD5Parser` 补齐 Visio 5
+  指针 / chunk header / list 子记录 / Line·Fill 索引色 / Shape 字段宽度；
+  libvisio 全部 `.vsd` 样例可解析；另存仍为合成 `.vsdx`。
+- 2026-07-17 — **`.vsd` ForeignData 位图**：按 `foreignType/format` 识别 JPEG/PNG/GIF，
+  并对 DIB（无 BM 头）重建 BITMAPFILEHEADER（对照 libvisio `_handleForeignData`）；
+  `bitmaps.vsd` 20 张图入库且合成 vsdx 往返保留。EMF/WMF/OLE 仍跳过。
+- 2026-07-17 — **`.vsd` 协议对齐加深**：InfiniteLine / SplineStart·Knot / NURBSTo /
+  ShapeData 折线·NURBS / TextField 数值占位展开；空 GeomList 不再挡住图片框
+  矩形兜底；`parseVisio` 编辑模型改用二进制解析结果（合成 vsdx 仅作 Writer 基线），
+  避免 write→reparse 丢掉字段文本与图片框几何。
+- 2026-07-17 — **`.vsd`→vsdx 合成保真**：`_buildPictureElement` 写出 Foreign 时一并
+  写入 Geometry（修复 bitmaps 另存后丢框）；Misc `HideText` 导入。
+- 2026-07-17 — **`.vsd` Name / TextXForm / Font**：Name2+NameIDX 页名（如
+  `Zeichenblatt-1`）、形状 Name、TxtXForm→textBlock、FontFace→CharIX
+  fontFamily；字符串 TextField 经 Name 表展开；纯数字伪页名回退 `Page-N`。
+- 2026-07-17 — **`.vsd` FontIX / TextBlock / ParaIX**：VSD6 FontList+FontIX
+  （`getUInt` codePage + ANSI 名）正确解析为 Liberation Sans 等；TextBlock
+  页边距/垂直对齐/背景；ParaIX 水平对齐/缩进/行距/项目符号写入富文本；
+  CharIX 补 underline/smallCaps。另存仍为合成 `.vsdx`。
+- 2026-07-17 — **`.vsd` Name ANSI / 样式链 / Layer**：VSD5/6 Name·Name2 按
+  ANSI（非 UTF-16）解码，修复 `esc(5)` / `80,00 sq. ft.` 乱码；StyleSheet
+  父链 + CharIX/ParaIX/TextBlock 样式继承（TextFields 字体）；Layer /
+  LayerMem 导入。另存仍为合成 `.vsdx`。
+- 2026-07-17 — **`.vsd` TextField 日期格式**：解析 format 块（`0x80/0xc2`）与
+  `CELL_TYPE_Date`→MsoDateShort；Visio 序列日转日历（如 `43652.139`→`7/6/2019`）；
+  常用数值精度/单位后缀。自定义 `{{…}}` 与甘特 Number 序列仍按 libvisio 同等限制。
+- 2026-07-17 — **`.vsd` TextField 单位/角度/货币**：对齐 libvisio `convertNumber`
+  （英寸→mm/cm/…、弧度→度）；`CELL_TYPE_AngleUnits` + Degrees/Radians/DMS；
+  format 块 `0x60` 自定义 UTF-16 格式（如 `<,$>U #,##0.00`→`$1.00`）。libvisio
+  仅认 `0x62`+`0x80/0xc2`，`0x60` 为本项目增强。面积 Multidimensional / 完整
+  `{{…}}` 自定义串仍有限。
+- 2026-07-17 — **`.vsd` 多 run CharIX/ParaIX + TabsData**：按 `charCount` 拆分
+  富文本 runs（对照 libvisio `m_charList`/`m_paraList` 文本遍历）；解析
+  TabsData（`0x88`/`0x96`/`0x97`/`0xb5`）写入 `VsdxTabSet`；字段占位在拆分后再
+  展开以免 charCount 错位。另存仍为合成 `.vsdx`（Writer 已支持 Tabs / multi-run）。
+  CharList/ParaList 显式重排序、EMF/WMF 仍延后。
+- 2026-07-17 — **`.vsd` Gantt Number 序列日**：`CELL_TYPE_Number` 且无 format 块时，
+  将落在 20000–60000 的 Visio 序列日格式化为日历（libvisio 此处返回空串）；并识别
+  format 块类型 `0x70`（样例中的备用 format id）。`tdf76829-datetime-format` 的
+  raw `37xxx` 已清零。
+- 2026-07-17 — **`.vsd` CharIX 扩展 + EMF/WMF 入库**：对齐 libvisio `readCharIX`
+  的 Case/Pos/Strike/FontScale（allcaps/initcaps/super/sub/双下划线/删除线/
+  `scaleWidth/10000`）；ForeignData `type` 0/4 按签名识别 EMF/WMF 写入 media
+  （`EnhMetaFile`/`MetaFile`）供另存 vsdx 往返，画布仍无法原生绘制。OLE /
+  Multidimensional 面积值（样例中为非 double 占位）仍有限。
+- 2026-07-17 — **`.vsd` ShapeList z-order + 字符串字段大小写**：应用页面/组
+  ShapeList trailer 顺序组装根与子形状（此前只收集未使用）；字符串 TextField
+  识别 format 37/38/39（StrNormal/Lower/Upper，libvisio 仍为 TODO）→
+  `TheDoc`/`THEDOC`/`thedoc`。

@@ -80,6 +80,8 @@ class EditorController extends ChangeNotifier {
   // (and so never collides with a stale entry in the render image cache).
   int _imageSeq = 0;
 
+  bool _importedFromVsd = false;
+
   VsdxDocument? get document => _document;
   Uint8List? get originalBytes => _originalBytes;
   String? get filePath => _filePath;
@@ -88,6 +90,10 @@ class EditorController extends ChangeNotifier {
   Object? get error => _error;
   bool get hasDocument => _document != null;
   bool get isDirty => _dirty;
+
+  /// `true` when the active document was imported from a legacy `.vsd`.
+  /// Cleared after the first successful Save As `.vsdx`.
+  bool get importedFromVsd => _importedFromVsd;
 
   int get pageCount => _document?.pages.length ?? 0;
   int get currentPageIndex => _currentPageIndex;
@@ -4232,6 +4238,7 @@ class EditorController extends ChangeNotifier {
     if (path != null) _filePath = path;
     _fileName = name ?? _basename(_filePath) ?? _fileName;
     _dirty = false;
+    _importedFromVsd = false;
     notifyListeners();
   }
 
@@ -4255,6 +4262,7 @@ class EditorController extends ChangeNotifier {
     _originalBytes = bytes;
     _filePath = null;
     _fileName = 'Untitled.vsdx';
+    _importedFromVsd = false;
     _currentPageIndex = 0;
     _error = null;
     _resetHistory();
@@ -4262,6 +4270,10 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Parse [bytes] into a document and make it the active file.
+  ///
+  /// Accepts OPC `.vsdx` (and siblings) or legacy binary `.vsd`. Binary imports
+  /// synthesise a `.vsdx` baseline; [importedFromVsd] is set and [filePath] is
+  /// cleared so the next Save prompts for a `.vsdx` location.
   Future<void> openBytes(
     Uint8List bytes, {
     String? path,
@@ -4271,11 +4283,21 @@ class EditorController extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final doc = const DocumentParser().parse(bytes);
-      _document = doc;
-      _originalBytes = bytes;
-      _filePath = path;
-      _fileName = name ?? _basename(path);
+      final result = parseVisio(bytes);
+      _document = result.document;
+      _originalBytes = result.originalBytes;
+      _importedFromVsd = result.importedFromVsd;
+      if (result.importedFromVsd) {
+        // Never overwrite the source `.vsd` with OPC bytes.
+        _filePath = null;
+        final base = name ?? _basename(path) ?? 'drawing.vsd';
+        _fileName = base.toLowerCase().endsWith('.vsd')
+            ? '${base.substring(0, base.length - 4)}.vsdx'
+            : (base.toLowerCase().endsWith('.vsdx') ? base : '$base.vsdx');
+      } else {
+        _filePath = path;
+        _fileName = name ?? _basename(path);
+      }
       _currentPageIndex = 0;
       _resetHistory();
     } catch (e) {
@@ -4284,6 +4306,7 @@ class EditorController extends ChangeNotifier {
       _originalBytes = null;
       _filePath = null;
       _fileName = null;
+      _importedFromVsd = false;
       _resetHistory();
     } finally {
       _isLoading = false;
@@ -4296,6 +4319,7 @@ class EditorController extends ChangeNotifier {
     _originalBytes = null;
     _filePath = null;
     _fileName = null;
+    _importedFromVsd = false;
     _currentPageIndex = 0;
     _error = null;
     _resetHistory();
