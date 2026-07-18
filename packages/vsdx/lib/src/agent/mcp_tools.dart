@@ -209,15 +209,17 @@ void _registerFileTools(McpServer server) {
 
   server.addTool(McpTool(
     name: 'import_iac',
-    description: 'Convert docker-compose or Kubernetes YAML to an architecture '
-        'diagram .vsdx (auto-detected; services/workloads + dependency edges, '
+    description: 'Convert docker-compose / Kubernetes YAML / Terraform HCL to '
+        'an architecture diagram .vsdx (auto-detected; services/workloads/'
+        'resources + dependency edges, '
         'volumes/PVCs, Service/Ingress links). Set open=true to open it.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
         'yaml': <String, dynamic>{
           'type': 'string',
-          'description': 'docker-compose or Kubernetes YAML source.',
+          'description':
+              'docker-compose / Kubernetes YAML, or Terraform (.tf) HCL source.',
         },
         'path': <String, dynamic>{'type': 'string'},
         'open': <String, dynamic>{'type': 'boolean'},

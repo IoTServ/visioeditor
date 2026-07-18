@@ -193,14 +193,15 @@ class _ImportIacCommand extends Command<int> {
     argParser
       ..addOption('input',
           abbr: 'i',
-          help: 'docker-compose / Kubernetes YAML path, or stdin.')
+          help: 'docker-compose / Kubernetes YAML / Terraform .tf path, or stdin.')
       ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }
   @override
   String get name => 'import-iac';
   @override
   String get description =>
-      'Convert docker-compose / Kubernetes YAML to an architecture diagram .vsdx.';
+      'Convert docker-compose / Kubernetes YAML / Terraform HCL to an '
+      'architecture diagram .vsdx.';
 
   @override
   int run() {

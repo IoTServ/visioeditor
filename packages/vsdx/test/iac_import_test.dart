@@ -75,6 +75,32 @@ spec:
                 name: web-svc
 ''';
 
+const _terraform = '''
+terraform {
+  required_version = ">= 1.0"
+}
+
+module "vpc" {
+  source = "./modules/vpc"
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+}
+
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro"
+  subnet_id     = module.vpc.subnet_id
+}
+
+resource "aws_lb" "app" {
+  # attach to the instance
+  depends_on = [aws_instance.web]
+  subnets    = [module.vpc.subnet_id]
+}
+''';
+
 void main() {
   group('iacToSpec — docker-compose', () {
     test('services, depends_on/links edges, named volumes', () {
@@ -110,8 +136,30 @@ void main() {
     });
   });
 
-  test('both build valid round-trip .vsdx', () {
-    for (final src in <String>[_compose, _k8s]) {
+  group('iacToSpec — terraform', () {
+    test('resources/modules/data + depends_on / reference edges', () {
+      final spec = iacToSpec(_terraform);
+      final ids = spec.nodes.map((n) => n.id).toSet();
+      expect(
+          ids,
+          containsAll(<String>[
+            'tf:module.vpc',
+            'tf:data.aws_ami.ubuntu',
+            'tf:aws_instance.web',
+            'tf:aws_lb.app',
+          ]));
+      bool edge(String a, String b) =>
+          spec.edges.any((e) => e.from == a && e.to == b);
+      expect(edge('tf:aws_instance.web', 'tf:data.aws_ami.ubuntu'), isTrue);
+      expect(edge('tf:aws_instance.web', 'tf:module.vpc'), isTrue);
+      expect(edge('tf:aws_lb.app', 'tf:aws_instance.web'), isTrue); // depends_on
+      expect(edge('tf:aws_lb.app', 'tf:module.vpc'), isTrue);
+      expect(spec.title, 'Terraform');
+    });
+  });
+
+  test('all formats build valid round-trip .vsdx', () {
+    for (final src in <String>[_compose, _k8s, _terraform]) {
       final doc = const DocumentParser().parse(iacToSpec(src).build());
       expect(doc.pages.single.shapes.where((s) => !s.is1D), isNotEmpty);
       expect(validateDocument(doc).where((i) => i.severity == 'error'), isEmpty);

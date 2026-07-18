@@ -1,12 +1,16 @@
 /// Infrastructure-as-Code → [DiagramSpec] architecture diagram.
 ///
-/// Auto-detects **docker-compose** (`services:`) and **Kubernetes** manifests
-/// (`kind:` / multi-doc YAML) and draws the resource graph:
+/// Auto-detects **docker-compose** (`services:`), **Kubernetes** manifests
+/// (`kind:` / multi-doc YAML), and **Terraform** HCL (`resource` / `module` /
+/// `data` blocks) and draws the resource graph:
 ///   * compose: one node per service, edges from `depends_on` / `links`, named
 ///     `volumes` as cylinders.
 ///   * k8s: one node per resource (coloured by kind); Service→workload (label
 ///     selector), Ingress→Service (backends), workload→ConfigMap/Secret/PVC
 ///     (volumes + envFrom).
+///   * terraform: one node per resource/module/data; edges from `depends_on`
+///     and in-body references (`aws_instance.web`, `module.vpc`,
+///     `data.aws_ami.x`, `${…}` interpolations).
 ///
 /// Mirrors drawio-skill's `composeimports` / `k8simports`. See
 /// `docs/MCP_SKILL_PLAN.md` (M5).
@@ -18,8 +22,10 @@ import 'package:yaml/yaml.dart';
 
 import 'diagram_spec.dart';
 
-/// Parse IaC [source] (docker-compose or Kubernetes YAML) into a [DiagramSpec].
+/// Parse IaC [source] (compose / Kubernetes YAML / Terraform HCL) into a
+/// [DiagramSpec].
 DiagramSpec iacToSpec(String source) {
+  if (_looksTerraform(source)) return _terraformToSpec(source);
   final docs = <Map<String, dynamic>>[];
   for (final node in loadYamlStream(source)) {
     final v = jsonDecode(jsonEncode(node));
@@ -35,6 +41,14 @@ DiagramSpec iacToSpec(String source) {
 
 /// Build `.vsdx` bytes directly from IaC source.
 List<int> iacToVsdx(String source) => iacToSpec(source).build();
+
+bool _looksTerraform(String source) {
+  // Prefer HCL keywords with quoted labels over YAML `resource:` keys.
+  return RegExp(
+    r'^\s*(?:resource|module|data|terraform|provider)\s+"',
+    multiLine: true,
+  ).hasMatch(source);
+}
 
 // --- docker-compose --------------------------------------------------------
 
@@ -299,6 +313,195 @@ Iterable<String> _workloadRefs(Map<dynamic, dynamic>? podSpec) sync* {
       }
     }
   }
+}
+
+// --- terraform (HCL subset) ------------------------------------------------
+
+final _tfBlockRe = RegExp(
+  r'^\s*(resource|data|module)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{',
+  multiLine: true,
+);
+
+/// Strip `#` / `//` line comments and `/* … */` block comments (best-effort).
+String _tfStripComments(String source) {
+  final noBlock = source.replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '');
+  return noBlock
+      .split('\n')
+      .map((line) {
+        final hash = line.indexOf('#');
+        final slash = line.indexOf('//');
+        var cut = line.length;
+        if (hash >= 0) cut = hash;
+        if (slash >= 0 && slash < cut) cut = slash;
+        return line.substring(0, cut);
+      })
+      .join('\n');
+}
+
+/// Extract `{ … }` body starting at [openBrace] (index of `{`), or `null`.
+String? _tfBlockBody(String source, int openBrace) {
+  var depth = 0;
+  for (var i = openBrace; i < source.length; i++) {
+    final c = source[i];
+    if (c == '{') {
+      depth++;
+    } else if (c == '}') {
+      depth--;
+      if (depth == 0) return source.substring(openBrace + 1, i);
+    }
+  }
+  return null;
+}
+
+class _TfNode {
+  _TfNode({
+    required this.kind,
+    required this.type,
+    required this.name,
+    required this.body,
+  });
+  final String kind; // resource | data | module
+  final String type; // aws_instance / module label / …
+  final String name;
+  final String body;
+
+  String get id => kind == 'module'
+      ? 'tf:module.$name'
+      : kind == 'data'
+          ? 'tf:data.$type.$name'
+          : 'tf:$type.$name';
+
+  /// Address forms that other blocks may reference.
+  Iterable<String> get addresses sync* {
+    yield id;
+    if (kind == 'module') {
+      yield 'module.$name';
+    } else if (kind == 'data') {
+      yield 'data.$type.$name';
+    } else {
+      yield '$type.$name';
+    }
+  }
+}
+
+DiagramSpec _terraformToSpec(String source) {
+  final cleaned = _tfStripComments(source);
+  final nodes = <_TfNode>[];
+  for (final m in _tfBlockRe.allMatches(cleaned)) {
+    final kind = m.group(1)!;
+    final a = m.group(2)!;
+    final b = m.group(3);
+    if (kind == 'module') {
+      if (b != null) continue; // malformed
+      final body = _tfBlockBody(cleaned, m.end - 1);
+      if (body == null) continue;
+      nodes.add(_TfNode(kind: kind, type: 'module', name: a, body: body));
+    } else {
+      if (b == null) continue;
+      final body = _tfBlockBody(cleaned, m.end - 1);
+      if (body == null) continue;
+      nodes.add(_TfNode(kind: kind, type: a, name: b, body: body));
+    }
+  }
+
+  final byAddress = <String, String>{}; // address → node id
+  for (final n in nodes) {
+    for (final a in n.addresses) {
+      byAddress[a] = n.id;
+    }
+  }
+
+  final outNodes = <NodeSpec>[
+    for (final n in nodes)
+      NodeSpec(
+        id: n.id,
+        stencil: n.kind == 'module'
+            ? 'hexagon'
+            : n.kind == 'data'
+                ? 'data'
+                : 'rounded',
+        text: n.kind == 'module'
+            ? 'module.${n.name}'
+            : n.kind == 'data'
+                ? 'data.${n.type}.${n.name}'
+                : '${n.type}.${n.name}',
+        fill: _tfFill(n),
+        line: '#6C8EBF',
+        bold: n.kind == 'module',
+      ),
+  ];
+
+  final edges = <EdgeSpec>[];
+  final seen = <String>{};
+  for (final n in nodes) {
+    for (final target in _tfRefs(n.body, byAddress, n.id)) {
+      if (seen.add('${n.id}\u0000$target')) {
+        edges.add(EdgeSpec(from: n.id, to: target, arrow: true));
+      }
+    }
+  }
+
+  return DiagramSpec(
+    title: 'Terraform',
+    direction: 'LR',
+    spacing: 0.8,
+    nodes: outNodes,
+    edges: edges,
+  );
+}
+
+String _tfFill(_TfNode n) {
+  if (n.kind == 'module') return '#E1D5E7';
+  if (n.kind == 'data') return '#F5F5F5';
+  final t = n.type;
+  if (t.startsWith('aws_')) return '#FFD966';
+  if (t.startsWith('google_') || t.startsWith('gcp_')) return '#DAE8FC';
+  if (t.startsWith('azurerm_') || t.startsWith('azure_')) return '#B0E3E6';
+  return '#D5E8D4';
+}
+
+/// Resolve references in a block body to other node ids.
+Iterable<String> _tfRefs(
+    String body, Map<String, String> byAddress, String selfId) sync* {
+  final found = <String>{};
+
+  // depends_on = [ aws_instance.web, module.vpc ]
+  for (final m in RegExp(r'depends_on\s*=\s*\[([^\]]*)\]').allMatches(body)) {
+    for (final part in m.group(1)!.split(',')) {
+      final addr = part.trim().replaceAll('"', '').replaceAll("'", '');
+      final id = byAddress[addr];
+      if (id != null && id != selfId) found.add(id);
+    }
+  }
+
+  // Bare / interpolation references: module.x, data.t.n, type.name
+  final patterns = <RegExp>[
+    RegExp(r'\bmodule\.([A-Za-z0-9_-]+)'),
+    RegExp(r'\bdata\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)'),
+    RegExp(r'\b([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'),
+  ];
+  for (final re in patterns) {
+    for (final m in re.allMatches(body)) {
+      final addr = m.group(0)!;
+      // Skip false positives like var.x / local.x / path.module / count.index
+      if (addr.startsWith('var.') ||
+          addr.startsWith('local.') ||
+          addr.startsWith('path.') ||
+          addr.startsWith('count.') ||
+          addr.startsWith('each.') ||
+          addr.startsWith('terraform.') ||
+          addr.startsWith('provider.')) {
+        continue;
+      }
+      final id = byAddress[addr];
+      if (id != null && id != selfId) found.add(id);
+    }
+  }
+
+  // Also match full data./module. addresses already handled; for
+  // `type.name.attr` the third pattern may capture `type.name` — good.
+
+  yield* found;
 }
 
 // --- helpers ---------------------------------------------------------------
