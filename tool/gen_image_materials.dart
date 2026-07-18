@@ -36,26 +36,56 @@ typedef _Drawer = void Function(img.Image dst);
 void main() {
   Directory(kOutDir).createSync(recursive: true);
   final drawers = <String, _Drawer>{
+    // People
     'person': _drawPerson,
     'users': _drawUsers,
+    'manager': _drawManager,
+    'handshake': _drawHandshake,
+    // IT
     'server': _drawServer,
     'database': _drawDatabase,
     'cloud': _drawCloud,
-    'document': _drawDocument,
-    'folder': _drawFolder,
     'laptop': _drawLaptop,
     'phone': _drawPhone,
+    'globe': _drawGlobe,
+    'monitor': _drawMonitor,
+    'hard_drive': _drawHardDrive,
+    'code': _drawCode,
+    // Office
+    'document': _drawDocument,
+    'folder': _drawFolder,
     'email': _drawEmail,
     'building': _drawBuilding,
-    'globe': _drawGlobe,
+    'calendar': _drawCalendar,
+    'printer': _drawPrinter,
+    'clipboard': _drawClipboard,
+    'briefcase': _drawBriefcase,
+    'sticky_note': _drawStickyNote,
+    // Status
     'lock': _drawLock,
     'warning': _drawWarning,
     'check': _drawCheck,
     'settings': _drawSettings,
-    'calendar': _drawCalendar,
     'chart': _drawChart,
-    'printer': _drawPrinter,
     'camera': _drawCamera,
+    'info': _drawInfo,
+    'cross': _drawCross,
+    'star': _drawStar,
+    'bell': _drawBell,
+    // Network
+    'wifi': _drawWifi,
+    'router': _drawRouter,
+    'firewall': _drawFirewall,
+    'api': _drawApi,
+    // Business / process
+    'lightbulb': _drawLightbulb,
+    'target': _drawTarget,
+    'flag': _drawFlag,
+    'rocket': _drawRocket,
+    'clock': _drawClock,
+    'package': _drawPackage,
+    'map_pin': _drawMapPin,
+    'wallet': _drawWallet,
   };
 
   for (final entry in drawers.entries) {
@@ -304,4 +334,212 @@ void _drawCamera(img.Image dst) {
   _circle(dst, 32, 36, 10, kBlue);
   _circle(dst, 32, 36, 5, kBlueDark);
   _circle(dst, 46, 28, 2, kRed);
+}
+
+void _drawManager(img.Image dst) {
+  _circle(dst, 32, 16, 9, kInk);
+  _circle(dst, 32, 40, 15, kBlue);
+  _rect(dst, 17, 40, 47, 56, kBlue);
+  // Tie.
+  for (var y = 28; y <= 48; y++) {
+    final half = y < 36 ? 2 : 3;
+    _rect(dst, 32 - half, y, 32 + half, y + 1, kOrange);
+  }
+}
+
+void _drawHandshake(img.Image dst) {
+  _rect(dst, 8, 28, 30, 42, kBlue);
+  _rect(dst, 34, 28, 56, 42, kTeal);
+  _rect(dst, 22, 24, 42, 46, kGrayLight);
+  _rect(dst, 18, 30, 46, 40, kOrange);
+}
+
+void _drawMonitor(img.Image dst) {
+  _rect(dst, 10, 10, 54, 42, kInk);
+  _rect(dst, 14, 14, 50, 36, kBlue);
+  _rect(dst, 28, 42, 36, 50, kGray);
+  _rect(dst, 20, 50, 44, 54, kGray);
+}
+
+void _drawHardDrive(img.Image dst) {
+  _rect(dst, 10, 18, 54, 48, kGray);
+  _rect(dst, 14, 24, 50, 30, kGrayLight);
+  _circle(dst, 44, 38, 3, kGreen);
+  _circle(dst, 34, 38, 3, kGrayLight);
+}
+
+void _drawCode(img.Image dst) {
+  _rect(dst, 10, 10, 54, 54, kInk);
+  // </ >
+  for (var i = 0; i < 10; i++) {
+    _circle(dst, 20 + i, 22 + i, 2, kTealLight);
+    _circle(dst, 20 + i, 42 - i, 2, kTealLight);
+    _circle(dst, 44 - i, 22 + i, 2, kOrange);
+    _circle(dst, 44 - i, 42 - i, 2, kOrange);
+  }
+  _rect(dst, 30, 18, 34, 46, kBlueLight);
+}
+
+void _drawClipboard(img.Image dst) {
+  _rect(dst, 16, 12, 48, 56, kGrayLight);
+  img.drawRect(dst, x1: 16, y1: 12, x2: 48, y2: 56, color: _c(kGray));
+  _rect(dst, 24, 8, 40, 18, kOrange);
+  for (final y in [26, 34, 42, 50]) {
+    _rect(dst, 22, y, 42, y + 3, kBlue);
+  }
+}
+
+void _drawBriefcase(img.Image dst) {
+  _rect(dst, 24, 12, 40, 22, kGray);
+  _rect(dst, 10, 20, 54, 50, kOrange);
+  _rect(dst, 10, 32, 54, 38, kOrangeLight);
+  _rect(dst, 28, 30, 36, 40, kInk);
+}
+
+void _drawStickyNote(img.Image dst) {
+  _rect(dst, 14, 12, 52, 52, 0xFFFFE08A);
+  _rect(dst, 14, 12, 52, 20, 0xFFFFD24A);
+  for (final y in [28, 36, 44]) {
+    _rect(dst, 22, y, 44, y + 3, 0xFFE0B84A);
+  }
+}
+
+void _drawInfo(img.Image dst) {
+  _circle(dst, 32, 32, 22, kBlue);
+  _circle(dst, 32, 18, 3, kWhite);
+  _rect(dst, 29, 26, 35, 48, kWhite);
+}
+
+void _drawCross(img.Image dst) {
+  _circle(dst, 32, 32, 22, kRed);
+  for (var i = 0; i < 18; i++) {
+    _circle(dst, 22 + i, 22 + i, 2, kWhite);
+    _circle(dst, 42 - i, 22 + i, 2, kWhite);
+  }
+}
+
+void _drawStar(img.Image dst) {
+  // Simple 5-point approximation via overlapping triangles / diamonds.
+  final pts = <List<int>>[
+    [32, 8],
+    [38, 24],
+    [54, 24],
+    [42, 36],
+    [46, 52],
+    [32, 42],
+    [18, 52],
+    [22, 36],
+    [10, 24],
+    [26, 24],
+  ];
+  for (final p in pts) {
+    _circle(dst, p[0], p[1], 5, 0xFFF5C518);
+  }
+  _circle(dst, 32, 30, 10, 0xFFF5C518);
+}
+
+void _drawBell(img.Image dst) {
+  _circle(dst, 32, 20, 8, kOrange);
+  _rect(dst, 18, 20, 46, 40, kOrange);
+  _circle(dst, 32, 40, 14, kOrange);
+  _rect(dst, 14, 40, 50, 46, kOrangeLight);
+  _circle(dst, 32, 50, 3, kInk);
+}
+
+void _drawWifi(img.Image dst) {
+  // Thick upper arcs + hotspot.
+  for (final r in [10, 16, 22]) {
+    for (var t = 0; t <= 180; t++) {
+      final rad = t * math.pi / 180;
+      final x = 32 + (r * math.cos(rad)).round();
+      final y = 44 - (r * math.sin(rad)).round();
+      _circle(dst, x, y, 2, kBlue);
+    }
+  }
+  _circle(dst, 32, 46, 4, kBlue);
+}
+
+void _drawRouter(img.Image dst) {
+  _rect(dst, 10, 28, 54, 50, kGray);
+  _circle(dst, 20, 39, 3, kGreen);
+  _circle(dst, 30, 39, 3, kGrayLight);
+  _rect(dst, 18, 10, 22, 30, kInk);
+  _rect(dst, 42, 10, 46, 30, kInk);
+  _circle(dst, 20, 10, 3, kInk);
+  _circle(dst, 44, 10, 3, kInk);
+}
+
+void _drawFirewall(img.Image dst) {
+  _rect(dst, 12, 12, 52, 52, kRed);
+  for (final y in [20, 30, 40]) {
+    _rect(dst, 12, y, 52, y + 4, kOrange);
+  }
+  _rect(dst, 28, 22, 36, 48, kInk);
+}
+
+void _drawApi(img.Image dst) {
+  _circle(dst, 18, 32, 8, kTeal);
+  _circle(dst, 46, 32, 8, kBlue);
+  _rect(dst, 24, 28, 40, 36, kGrayLight);
+  _rect(dst, 30, 18, 34, 46, kOrange);
+}
+
+void _drawLightbulb(img.Image dst) {
+  _circle(dst, 32, 26, 16, 0xFFF5C518);
+  _rect(dst, 24, 36, 40, 44, 0xFFF5C518);
+  _rect(dst, 26, 44, 38, 54, kGray);
+  _rect(dst, 28, 50, 36, 56, kGrayLight);
+}
+
+void _drawTarget(img.Image dst) {
+  _circle(dst, 32, 32, 22, kRed);
+  _circle(dst, 32, 32, 15, kWhite);
+  _circle(dst, 32, 32, 9, kRed);
+  _circle(dst, 32, 32, 4, kInk);
+}
+
+void _drawFlag(img.Image dst) {
+  _rect(dst, 16, 8, 20, 56, kGray);
+  _rect(dst, 20, 10, 50, 30, kBlue);
+  _rect(dst, 20, 30, 50, 34, kBlueDark);
+}
+
+void _drawRocket(img.Image dst) {
+  _circle(dst, 32, 16, 8, kBlue);
+  _rect(dst, 24, 16, 40, 42, kBlue);
+  _rect(dst, 18, 36, 26, 48, kOrange);
+  _rect(dst, 38, 36, 46, 48, kOrange);
+  _rect(dst, 28, 42, 36, 56, kRed);
+}
+
+void _drawClock(img.Image dst) {
+  _circle(dst, 32, 32, 22, kGrayLight);
+  img.drawCircle(dst, x: 32, y: 32, radius: 22, color: _c(kGray));
+  _rect(dst, 30, 18, 34, 34, kInk);
+  _rect(dst, 30, 30, 46, 34, kInk);
+  _circle(dst, 32, 32, 3, kOrange);
+}
+
+void _drawPackage(img.Image dst) {
+  _rect(dst, 12, 22, 52, 52, kOrange);
+  _rect(dst, 12, 22, 52, 34, kOrangeLight);
+  _rect(dst, 30, 22, 34, 52, kInk);
+  _rect(dst, 12, 32, 52, 36, kInk);
+}
+
+void _drawMapPin(img.Image dst) {
+  _circle(dst, 32, 24, 14, kRed);
+  _circle(dst, 32, 24, 6, kWhite);
+  for (var y = 32; y <= 54; y++) {
+    final t = (y - 32) / 22;
+    final half = ((1 - t) * 10).round().clamp(1, 10);
+    _rect(dst, 32 - half, y, 32 + half, y + 1, kRed);
+  }
+}
+
+void _drawWallet(img.Image dst) {
+  _rect(dst, 10, 18, 54, 50, kTeal);
+  _rect(dst, 10, 18, 54, 28, kTealDark);
+  _rect(dst, 36, 30, 52, 42, kTealLight);
+  _circle(dst, 44, 36, 3, kOrange);
 }

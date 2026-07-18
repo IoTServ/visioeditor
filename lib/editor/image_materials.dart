@@ -33,68 +33,69 @@ class ImageMaterialGroup {
 /// source files cannot dominate the page. 64×64 @ 96 dpi is ~0.67".
 const double kImageMaterialMaxInches = 1.0;
 
-const List<ImageMaterialGroup> kImageMaterialGroups = <ImageMaterialGroup>[
+ImageMaterial _m(String id, String name) => ImageMaterial(
+      id: id,
+      name: name,
+      assetPath: 'assets/materials/$id.png',
+    );
+
+/// Diagram-friendly clipart grouped for the materials sidebar.
+final List<ImageMaterialGroup> kImageMaterialGroups = <ImageMaterialGroup>[
   ImageMaterialGroup('People', <ImageMaterial>[
-    ImageMaterial(
-        id: 'person', name: 'Person', assetPath: 'assets/materials/person.png'),
-    ImageMaterial(
-        id: 'users', name: 'Users', assetPath: 'assets/materials/users.png'),
+    _m('person', 'Person'),
+    _m('users', 'Users'),
+    _m('manager', 'Manager'),
+    _m('handshake', 'Handshake'),
   ]),
   ImageMaterialGroup('IT', <ImageMaterial>[
-    ImageMaterial(
-        id: 'server', name: 'Server', assetPath: 'assets/materials/server.png'),
-    ImageMaterial(
-        id: 'database',
-        name: 'Database',
-        assetPath: 'assets/materials/database.png'),
-    ImageMaterial(
-        id: 'cloud', name: 'Cloud', assetPath: 'assets/materials/cloud.png'),
-    ImageMaterial(
-        id: 'laptop', name: 'Laptop', assetPath: 'assets/materials/laptop.png'),
-    ImageMaterial(
-        id: 'phone', name: 'Phone', assetPath: 'assets/materials/phone.png'),
-    ImageMaterial(
-        id: 'globe', name: 'Globe', assetPath: 'assets/materials/globe.png'),
+    _m('server', 'Server'),
+    _m('database', 'Database'),
+    _m('cloud', 'Cloud'),
+    _m('laptop', 'Laptop'),
+    _m('phone', 'Phone'),
+    _m('globe', 'Globe'),
+    _m('monitor', 'Monitor'),
+    _m('hard_drive', 'Hard Drive'),
+    _m('code', 'Code'),
   ]),
   ImageMaterialGroup('Office', <ImageMaterial>[
-    ImageMaterial(
-        id: 'document',
-        name: 'Document',
-        assetPath: 'assets/materials/document.png'),
-    ImageMaterial(
-        id: 'folder', name: 'Folder', assetPath: 'assets/materials/folder.png'),
-    ImageMaterial(
-        id: 'email', name: 'Email', assetPath: 'assets/materials/email.png'),
-    ImageMaterial(
-        id: 'building',
-        name: 'Building',
-        assetPath: 'assets/materials/building.png'),
-    ImageMaterial(
-        id: 'calendar',
-        name: 'Calendar',
-        assetPath: 'assets/materials/calendar.png'),
-    ImageMaterial(
-        id: 'printer',
-        name: 'Printer',
-        assetPath: 'assets/materials/printer.png'),
+    _m('document', 'Document'),
+    _m('folder', 'Folder'),
+    _m('email', 'Email'),
+    _m('building', 'Building'),
+    _m('calendar', 'Calendar'),
+    _m('printer', 'Printer'),
+    _m('clipboard', 'Clipboard'),
+    _m('briefcase', 'Briefcase'),
+    _m('sticky_note', 'Sticky Note'),
   ]),
   ImageMaterialGroup('Status', <ImageMaterial>[
-    ImageMaterial(
-        id: 'lock', name: 'Lock', assetPath: 'assets/materials/lock.png'),
-    ImageMaterial(
-        id: 'warning',
-        name: 'Warning',
-        assetPath: 'assets/materials/warning.png'),
-    ImageMaterial(
-        id: 'check', name: 'Check', assetPath: 'assets/materials/check.png'),
-    ImageMaterial(
-        id: 'settings',
-        name: 'Settings',
-        assetPath: 'assets/materials/settings.png'),
-    ImageMaterial(
-        id: 'chart', name: 'Chart', assetPath: 'assets/materials/chart.png'),
-    ImageMaterial(
-        id: 'camera', name: 'Camera', assetPath: 'assets/materials/camera.png'),
+    _m('lock', 'Lock'),
+    _m('warning', 'Warning'),
+    _m('check', 'Check'),
+    _m('cross', 'Cross'),
+    _m('info', 'Info'),
+    _m('settings', 'Settings'),
+    _m('chart', 'Chart'),
+    _m('camera', 'Camera'),
+    _m('star', 'Star'),
+    _m('bell', 'Bell'),
+  ]),
+  ImageMaterialGroup('Network', <ImageMaterial>[
+    _m('wifi', 'Wifi'),
+    _m('router', 'Router'),
+    _m('firewall', 'Firewall'),
+    _m('api', 'API'),
+  ]),
+  ImageMaterialGroup('Business', <ImageMaterial>[
+    _m('lightbulb', 'Lightbulb'),
+    _m('target', 'Target'),
+    _m('flag', 'Flag'),
+    _m('rocket', 'Rocket'),
+    _m('clock', 'Clock'),
+    _m('package', 'Package'),
+    _m('map_pin', 'Map Pin'),
+    _m('wallet', 'Wallet'),
   ]),
 ];
 

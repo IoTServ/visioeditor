@@ -35,7 +35,8 @@ dependencies:
   meta: ^1.15.0
   pdf: ^3.12.0
   flutter_lucide: ^1.11.0
-  phosphor_flutter: ^2.1.0
+  # Compatible with Flutter 3.44+ (IconData is final; phosphor_flutter is not).
+  phosphoricons_flutter: ^1.0.0
 
 dev_dependencies:
   flutter_test:
