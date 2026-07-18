@@ -157,9 +157,7 @@ void main() {
     expect(e.selection, equals({a}));
   });
 
-  test('Cmd shortcuts: delete has no main.dart binding (canvas-only)', () {
-    // Documentary: ensure Delete isn't in editor bindings by checking we can
-    // still delete via controller.
+  test('deleteSelection removes the selected shape', () {
     final e = ctrl();
     final a = rect(e, 2, 4);
     e.deleteSelection();

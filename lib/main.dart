@@ -816,7 +816,21 @@ class _EditorHomePageState extends State<EditorHomePage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// True when a text field / inline editor owns primary focus so plain keys
+  /// (Delete, arrows, …) must not mutate the diagram.
+  bool _isEditableTextFocused() {
+    final primary = FocusManager.instance.primaryFocus;
+    final ctx = primary?.context;
+    if (ctx == null) return false;
+    return ctx.findAncestorStateOfType<EditableTextState>() != null;
+  }
+
   /// Editor shortcuts with both Cmd (macOS) and Ctrl (Windows/Linux) bindings.
+  ///
+  /// Plain keys such as Delete / arrows are bound here (not only on the canvas
+  /// [Focus]) so they still work after focus moves to a toolbar button or
+  /// sidebar control. Editable text focus is excluded via
+  /// [_isEditableTextFocused].
   Map<ShortcutActivator, VoidCallback> _editorShortcutBindings(
     EditorController? Function() c,
   ) {
@@ -838,6 +852,45 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       if (cur != null && cur.canRedo) cur.redo();
     }
+
+    // Delete / Backspace: remove selection (or a connection point while editing
+    // glue). Bound at app level so they work even when the canvas Focus node
+    // does not have primary focus (e.g. after clicking a toolstrip button).
+    void deleteSel() {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur == null || !cur.hasDocument) return;
+      if (cur.editingConnectionPoints) {
+        cur.deleteSelection();
+        return;
+      }
+      if (cur.hasSelection) cur.deleteSelection();
+    }
+
+    bindings[const SingleActivator(LogicalKeyboardKey.delete)] = deleteSel;
+    bindings[const SingleActivator(LogicalKeyboardKey.backspace)] = deleteSel;
+
+    // Arrow-key nudge (same step as the canvas handler).
+    void nudge(double dx, double dy) {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur == null ||
+          !cur.hasSelection ||
+          cur.editingConnectionPoints) {
+        return;
+      }
+      final step = cur.snapToGrid ? cur.gridInches : 0.1;
+      cur.moveSelectionBy(dx * step, dy * step);
+    }
+
+    bindings[const SingleActivator(LogicalKeyboardKey.arrowLeft)] =
+        () => nudge(-1, 0);
+    bindings[const SingleActivator(LogicalKeyboardKey.arrowRight)] =
+        () => nudge(1, 0);
+    bindings[const SingleActivator(LogicalKeyboardKey.arrowUp)] =
+        () => nudge(0, 1);
+    bindings[const SingleActivator(LogicalKeyboardKey.arrowDown)] =
+        () => nudge(0, -1);
 
     mod(LogicalKeyboardKey.keyN, _newDoc);
     mod(LogicalKeyboardKey.keyO, _open);
@@ -970,10 +1023,33 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.toggleLock();
     });
+    // Escape: exit presentation / close find / end glue edit / reset tool /
+    // clear selection. Canvas still handles Escape first when it has focus
+    // (so in-progress drags cancel before selection clears).
+    bindings[const SingleActivator(LogicalKeyboardKey.escape)] = () {
+      if (_isEditableTextFocused()) return;
+      if (_presentationMode) {
+        _exitPresentation();
+        return;
+      }
+      if (_showFind) {
+        setState(() => _showFind = false);
+        return;
+      }
+      final cur = c();
+      if (cur == null || !cur.hasDocument) return;
+      if (cur.editingConnectionPoints) {
+        cur.endEditConnectionPoints();
+        return;
+      }
+      if (cur.tool != EditorTool.select) {
+        cur.setTool(EditorTool.select);
+        return;
+      }
+      if (cur.hasSelection) cur.clearSelection();
+    };
     // Presentation / fullscreen: F5 enter, F11 toggle,
     // Cmd/Ctrl+Shift+P toggle (avoids Fn-keys on macOS laptops).
-    // Escape is handled by PageCanvas so it does not steal the editor's
-    // Escape (cancel drag / clear selection) outside presentation.
     bindings[const SingleActivator(LogicalKeyboardKey.f5)] =
         _enterPresentation;
     bindings[const SingleActivator(LogicalKeyboardKey.f11)] =

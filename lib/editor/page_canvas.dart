@@ -129,6 +129,10 @@ class _PageCanvasState extends State<PageCanvas> {
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocus = FocusNode(debugLabel: 'inlineTextEditor');
 
+  /// Owns canvas keyboard handling (Delete, arrows, Escape, zoom). Re-focused
+  /// on pointer interaction so keys keep working after toolbar / sidebar focus.
+  final FocusNode _canvasFocus = FocusNode(debugLabel: 'pageCanvas');
+
   // Smart alignment guides (drawio-style) shown while moving a selection.
   ({double l, double b, double r, double t})? _moveStartBounds; // inches, y-up
   Offset _moveAccumInches = Offset.zero; // raw accumulated delta from start
@@ -211,8 +215,15 @@ class _PageCanvasState extends State<PageCanvas> {
     _textController
       ..removeListener(_onTextControllerChanged)
       ..dispose();
+    _canvasFocus.dispose();
     _imageCache.dispose();
     super.dispose();
+  }
+
+  /// Ensure diagram keys reach [_onKey] after the user clicks / drags the page.
+  void _ensureCanvasFocus() {
+    if (_editingShapeId != null) return;
+    if (!_canvasFocus.hasFocus) _canvasFocus.requestFocus();
   }
 
   /// Commit the in-place edit when the field loses focus (e.g. the user clicks
@@ -769,6 +780,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _commitTextEdit(); // a click outside the editor applies the edit
       return;
     }
+    _ensureCanvasFocus();
     if (widget.presentationMode) {
       // Slideshow: click advances; Shift+click goes back.
       if (HardwareKeyboard.instance.isShiftPressed) {
@@ -841,6 +853,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _onSecondaryTapUp(TapUpDetails d) {
     if (widget.presentationMode) return;
     if (_editingShapeId != null) _commitTextEdit();
+    _ensureCanvasFocus();
     final hit = _hitTest(d.localPosition);
     if (hit != null && !_c.isSelected(hit)) _c.selectOnly(hit);
     _showContextMenu(d.globalPosition, hit, _pageInchesAt(d.localPosition));
@@ -1307,6 +1320,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.none;
       return;
     }
+    _ensureCanvasFocus();
     if (widget.presentationMode) {
       // View-only: drag pans the canvas; editing gestures are disabled.
       _lastPointer = d.localPosition;
@@ -2725,6 +2739,7 @@ class _PageCanvasState extends State<PageCanvas> {
                   DragTarget<Stencil>(
               onAcceptWithDetails: _onStencilDropped,
               builder: (context, candidate, rejected) => Focus(
+              focusNode: _canvasFocus,
               autofocus: true,
               onKeyEvent: _onKey,
               child: Listener(
