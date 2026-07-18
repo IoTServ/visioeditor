@@ -26,6 +26,7 @@ Future<void> main(List<String> args) async {
     ..addCommand(_ImportSqlCommand())
     ..addCommand(_PatchCommand())
     ..addCommand(_RenderCommand())
+    ..addCommand(_ToMermaidCommand())
     ..addCommand(_ValidateCommand())
     ..addCommand(_ExplainCommand())
     ..addCommand(_ShapesCommand())
@@ -167,6 +168,35 @@ class _RenderCommand extends Command<int> {
     final out = argResults!['output'] as String;
     File(out).writeAsStringSync(svg);
     stdout.writeln('rendered $out (${svg.length} bytes, ${doc.pages.length} pages)');
+    return 0;
+  }
+}
+
+class _ToMermaidCommand extends Command<int> {
+  _ToMermaidCommand() {
+    argParser
+      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('output',
+          abbr: 'o', help: 'Output .md path (prints to stdout if omitted).')
+      ..addFlag('fenced',
+          help: 'Wrap each page in a ```mermaid fence.', defaultsTo: false);
+  }
+  @override
+  String get name => 'to-mermaid';
+  @override
+  String get description => 'Convert a .vsdx to a Mermaid flowchart (structural).';
+
+  @override
+  int run() {
+    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final mmd = documentToMermaid(doc, fenced: argResults!['fenced'] as bool);
+    final out = argResults!['output'] as String?;
+    if (out == null) {
+      stdout.write(mmd);
+    } else {
+      File(out).writeAsStringSync(mmd);
+      stdout.writeln('wrote $out (${mmd.length} bytes)');
+    }
     return 0;
   }
 }

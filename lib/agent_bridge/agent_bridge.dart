@@ -185,16 +185,24 @@ class AgentBridge {
 
   Future<Map<String, dynamic>> _applyOps(List<dynamic> ops) async {
     final c = workspace.active;
-    if (c == null || c.document == null) {
+    final doc = c?.document;
+    if (c == null || doc == null) {
       throw StateError('no active document');
     }
-    // Edit the in-memory model: export current → patch bytes → reopen in place.
-    // No disk write, so the file watcher won't double-fire; instant repaint.
-    final current = c.exportToBytes();
-    final patched = applyOpsBytes(current, jsonEncode(<String, dynamic>{'ops': ops}));
-    await c.openBytes(patched, path: c.filePath, name: c.fileName);
-    _bumpMtime(c.filePath);
-    _emit('documentChanged', <String, dynamic>{'reason': 'applyOps'});
+    // L3 co-editing: apply the ops to the LIVE in-memory model and commit as a
+    // single undo step (via the editor's own history). The user's undo stack
+    // and selection are preserved — the Agent edits alongside them, and any
+    // change is one Cmd-Z away. No disk write; instant repaint.
+    final opsList = <Map<String, dynamic>>[
+      for (final o in ops) (o as Map).cast<String, dynamic>(),
+    ];
+    final result = applyOps(doc, opsList, pageIndex: c.currentPageIndex);
+    c.applyEdit(result.document);
+    _emit('documentChanged', <String, dynamic>{
+      'reason': 'applyOps',
+      'created': result.createdIds,
+      if (result.log.isNotEmpty) 'log': result.log,
+    });
     return _state();
   }
 

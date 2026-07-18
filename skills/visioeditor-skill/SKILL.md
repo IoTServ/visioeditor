@@ -130,6 +130,10 @@ spec:
 Both produce a normal `.vsdx` you can then refine with Edit Ops and preview
 live. (Code / IaC / OpenAPI importers are planned — see `docs/MCP_SKILL_PLAN.md`.)
 
+**Reverse** — describe or convert an existing `.vsdx`:
+`explain` → structured Markdown; `to-mermaid` (MCP `to_mermaid`) → a Mermaid
+flowchart to drop into a GitHub-rendered README.
+
 ## Diagram Spec — quick reference
 
 ```jsonc

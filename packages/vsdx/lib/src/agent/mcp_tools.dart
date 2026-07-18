@@ -20,6 +20,7 @@ import 'diagram_spec.dart';
 import 'edit_ops.dart';
 import 'inspect.dart';
 import 'mcp_server.dart';
+import 'mermaid_export.dart';
 import 'mermaid_import.dart';
 import 'sql_import.dart';
 import 'stencil_catalog.dart';
@@ -283,6 +284,28 @@ void _registerFileTools(McpServer server) {
     handler: (args) async {
       final doc = const DocumentParser().parse(_read(args['path'] as String));
       return <McpContent>[McpContent.text(explainDocument(doc))];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'to_mermaid',
+    description: 'Convert a .vsdx to a Mermaid flowchart (structural — nodes + '
+        'edges + labels). Good for embedding a diagram in Markdown.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'path': <String, dynamic>{'type': 'string'},
+        'fenced': <String, dynamic>{
+          'type': 'boolean',
+          'description': 'Wrap in a ```mermaid fence.',
+        },
+      },
+      'required': <String>['path'],
+    },
+    handler: (args) async {
+      final doc = const DocumentParser().parse(_read(args['path'] as String));
+      final mmd = documentToMermaid(doc, fenced: args['fenced'] == true);
+      return <McpContent>[McpContent.text(mmd)];
     },
   ));
 

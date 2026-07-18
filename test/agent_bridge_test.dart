@@ -95,6 +95,23 @@ void main() {
     expect(File(file.path).statSync().modified, before);
   });
 
+  test('applyOps is L3 co-editing: one undoable step, history preserved', () async {
+    final c = workspace.active!;
+    final beforeShapes = c.document!.pages.single.shapes.length;
+    expect(c.canUndo, isFalse); // freshly opened document
+    await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{'op': 'add_shape', 'text': 'Live', 'x': 1.0, 'y': 1.0},
+      ],
+    });
+    expect(c.canUndo, isTrue);
+    expect(c.document!.pages.single.shapes.length, beforeShapes + 1);
+    // The user can undo the Agent's edit.
+    c.undo();
+    expect(c.document!.pages.single.shapes.length, beforeShapes);
+    expect(c.document!.pages.single.shapes.any((s) => s.text == 'Live'), isFalse);
+  });
+
   test('snapshot returns a PNG', () async {
     final r = await call('snapshot');
     expect(r['ok'], isTrue, reason: '${r['error']}');
