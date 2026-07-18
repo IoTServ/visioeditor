@@ -528,7 +528,11 @@ class EditorController extends ChangeNotifier {
   void selectAll() {
     final page = currentPage;
     if (page == null) return;
-    setSelection(<int>[for (final s in page.shapes) s.id]);
+    // Match hit-test / paint: hidden-layer shapes are not selectable via Cmd+A.
+    setSelection(<int>[
+      for (final s in page.shapes)
+        if (page.isShapeVisible(s)) s.id,
+    ]);
   }
 
   /// Select every 1-D shape on the page, including nested ones (draw.io
@@ -538,7 +542,9 @@ class EditorController extends ChangeNotifier {
     if (page == null) return;
     final ids = <int>[];
     void walk(VsdxShape s) {
+      if (!page.isShapeVisible(s)) return;
       if (s.is1D) ids.add(s.id);
+      if (s.collapsed) return;
       for (final c in s.children) {
         walk(c);
       }
@@ -557,7 +563,9 @@ class EditorController extends ChangeNotifier {
     if (page == null) return;
     final ids = <int>[];
     void walk(VsdxShape s) {
+      if (!page.isShapeVisible(s)) return;
       if (!s.is1D) ids.add(s.id);
+      if (s.collapsed) return;
       for (final c in s.children) {
         walk(c);
       }
@@ -573,7 +581,10 @@ class EditorController extends ChangeNotifier {
   void selectNextShape({bool reverse = false}) {
     final page = currentPage;
     if (page == null || page.shapes.isEmpty) return;
-    final ids = <int>[for (final s in page.shapes) s.id];
+    final ids = <int>[
+      for (final s in page.shapes)
+        if (page.isShapeVisible(s)) s.id,
+    ];
     if (ids.isEmpty) return;
     final cur = singleSelectedId;
     var idx = cur == null ? -1 : ids.indexOf(cur);
@@ -731,18 +742,11 @@ class EditorController extends ChangeNotifier {
     if (page == null) return false;
     final s = page.findShapeById(shapeId);
     if (s == null) return false;
-    return _shapeOnLockedLayer(page, s);
+    return page.isShapeOnLockedLayer(s);
   }
 
-  static bool _shapeOnLockedLayer(VsdxPage page, VsdxShape s) {
-    if (s.layerMemberIds.isEmpty) return false;
-    for (final id in s.layerMemberIds) {
-      for (final l in page.layers) {
-        if (l.id == id && l.locked) return true;
-      }
-    }
-    return false;
-  }
+  static bool _shapeOnLockedLayer(VsdxPage page, VsdxShape s) =>
+      page.isShapeOnLockedLayer(s);
 
   // --- Undo / redo -----------------------------------------------------------
 
@@ -920,25 +924,34 @@ class EditorController extends ChangeNotifier {
   ///
   /// When a moved shape has [VsdxShape.dontMoveChildren], its children are
   /// compensated so their on-page positions stay fixed (Visio semantics).
+  /// Only selection roots move (a group + child multi-select does not double
+  /// apply the delta to the child).
   void moveSelectionBy(
     double dxInches,
     double dyInches, {
     bool transient = false,
   }) {
     if (_selection.isEmpty || (dxInches == 0 && dyInches == 0)) return;
-    final movedIds = _subtreeIds(_selection);
+    final page0 = currentPage;
+    if (page0 == null) return;
+    final roots = _selectionRoots(page0, <int>[
+      for (final id in _selection)
+        if (page0.findShapeById(id) case final s?
+            when !s.locked && !isOnLockedLayer(id))
+          id,
+    ]);
+    if (roots.isEmpty) return;
+    final movedIds = _subtreeIds(roots);
     updateCurrentPage(
       (page) {
         var next = page;
         var moved = false;
-        for (final id in _selection) {
-          final s = page.findShapeById(id);
-          if (s == null || s.locked || isOnLockedLayer(id)) continue;
-          next = next.updateShapeById(
-            id,
-            (sh) => _translatedHonouringDontMoveChildren(sh, dxInches, dyInches),
-          );
-          moved = true;
+        for (final id in roots) {
+          final after = _nudgeShapeOnPage(next, id, dxInches, dyInches);
+          if (!identical(after, next)) {
+            next = after;
+            moved = true;
+          }
         }
         return moved
             ? next
@@ -950,19 +963,48 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Nudge shape [id] by a page-space delta, converting into parent-local pins
+  /// when nested (so rotated ancestors do not shear the move).
+  static VsdxPage _nudgeShapeOnPage(
+    VsdxPage page,
+    int id,
+    double dx,
+    double dy,
+  ) {
+    final s = page.findShapeById(id);
+    if (s == null || (dx == 0 && dy == 0)) return page;
+    final parentId = page.findParentId(id);
+    if (parentId == null) {
+      return page.updateShapeById(
+        id,
+        (sh) => VsdxPage.translateShape(sh, dx, dy),
+      );
+    }
+    final pin = page.shapePinPage(id);
+    final local = page.pageToLocalDeep(
+      parentId,
+      Offset2D(pin.x + dx, pin.y + dy),
+    );
+    return page.updateShapeById(
+      id,
+      (sh) => VsdxPage.translateShape(sh, local.x - sh.pinX, local.y - sh.pinY),
+    );
+  }
+
   /// Reparent each selected shape into [containerId] (or out to the top level
   /// when [containerId] is `null`). Used by canvas drop-into-container.
   void reparentSelectionInto(int? containerId) {
     if (_selection.isEmpty) return;
     final page0 = currentPage;
     if (page0 == null) return;
-    final movable = <int>[
+    // Roots only — co-selecting group+child must not eject the child.
+    final movable = _selectionRoots(page0, <int>[
       for (final id in _selection)
         if (containerId == null || id != containerId)
           if (page0.findShapeById(id) case final s?
               when !s.locked && !isOnLockedLayer(id))
             id,
-    ];
+    ]);
     if (movable.isEmpty) return;
     final movedIds = <int>{
       ..._subtreeIds(movable),
@@ -981,6 +1023,10 @@ class EditorController extends ChangeNotifier {
   /// stay in the model; paint and hit-testing hide them while collapsed. The
   /// container height shrinks to the header band (top edge fixed) and restores
   /// on unfold. Plain Visio/Edraw groups are not foldable.
+  ///
+  /// Glue aimed at children is detached while folded (so connectors don't pin
+  /// to invisible targets) and stashed on the host via
+  /// [VsdxShape.userCollapsedGlue] so unfold — and undo — restore it.
   void toggleCollapsed(int id) {
     final page0 = currentPage;
     final host = page0?.findShapeById(id);
@@ -996,32 +1042,55 @@ class EditorController extends ChangeNotifier {
       if (s == null || !s.shapeKind.isFoldable) return page;
       final next = s.collapsed ? s.unfold() : s.fold();
       var out = page.updateShapeById(id, (_) => next);
-      // Detach glue aimed at children that become hidden by the fold so
-      // connectors don't stay pinned to invisible targets.
       if (next.collapsed && !s.collapsed) {
-        final hidden = <int>{};
-        void walk(VsdxShape n) {
-          for (final c in n.children) {
-            hidden.add(c.id);
-            walk(c);
+        final hidden = _childIdSet(next);
+        if (hidden.isNotEmpty) {
+          final detached = <VsdxConnect>[
+            for (final c in out.connects)
+              if (hidden.contains(c.toSheetId)) c,
+          ];
+          if (detached.isNotEmpty) {
+            out = out.copyWith(
+              connects: <VsdxConnect>[
+                for (final c in out.connects)
+                  if (!hidden.contains(c.toSheetId)) c,
+              ],
+            );
+            out = out.updateShapeById(
+              id,
+              (shape) => _withCollapsedGlue(shape, detached),
+            );
           }
         }
-
-        walk(next);
-        if (hidden.isNotEmpty) {
+      } else if (!next.collapsed && s.collapsed) {
+        // Only restore glue whose connector and target still exist (delete
+        // while folded must not resurrect zombie Connect rows).
+        final detached = <VsdxConnect>[
+          for (final c in _readCollapsedGlue(s))
+            if (out.findShapeById(c.fromSheetId) != null &&
+                out.findShapeById(c.toSheetId) != null)
+              c,
+        ];
+        if (detached.isNotEmpty) {
           out = out.copyWith(
-            connects: <VsdxConnect>[
-              for (final c in out.connects)
-                if (!hidden.contains(c.toSheetId)) c,
-            ],
+            connects: <VsdxConnect>[...out.connects, ...detached],
           );
         }
+        out = out.updateShapeById(id, _withoutCollapsedGlue);
       }
       return out.rerouteConnectors(movedShapeIds: movedIds);
     });
     final page = currentPage;
     final s = page?.findShapeById(id);
     if (page == null || s == null || !s.collapsed) return;
+    final hidden = _childIdSet(s);
+    if (_selection.any(hidden.contains)) {
+      _selection.removeWhere(hidden.contains);
+      notifyListeners();
+    }
+  }
+
+  static Set<int> _childIdSet(VsdxShape root) {
     final hidden = <int>{};
     void walk(VsdxShape n) {
       for (final c in n.children) {
@@ -1030,11 +1099,84 @@ class EditorController extends ChangeNotifier {
       }
     }
 
-    walk(s);
-    if (_selection.any(hidden.contains)) {
-      _selection.removeWhere(hidden.contains);
-      notifyListeners();
+    walk(root);
+    return hidden;
+  }
+
+  static VsdxShape _withCollapsedGlue(
+    VsdxShape shape,
+    List<VsdxConnect> detached,
+  ) {
+    final others = <VsdxUserCell>[
+      for (final c in shape.userCells)
+        if (c.name != VsdxShape.userCollapsedGlue) c,
+    ];
+    return shape.copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(
+          name: VsdxShape.userCollapsedGlue,
+          value: _encodeCollapsedGlue(detached),
+        ),
+      ],
+    );
+  }
+
+  static VsdxShape _withoutCollapsedGlue(VsdxShape shape) {
+    final others = <VsdxUserCell>[
+      for (final c in shape.userCells)
+        if (c.name != VsdxShape.userCollapsedGlue) c,
+    ];
+    if (others.length == shape.userCells.length) return shape;
+    return shape.copyWith(userCells: others);
+  }
+
+  static List<VsdxConnect> _readCollapsedGlue(VsdxShape shape) {
+    for (final c in shape.userCells) {
+      if (c.name == VsdxShape.userCollapsedGlue) {
+        return _decodeCollapsedGlue(c.value);
+      }
     }
+    return const <VsdxConnect>[];
+  }
+
+  static String _encodeCollapsedGlue(List<VsdxConnect> connects) {
+    return connects
+        .map(
+          (c) => <String>[
+            '${c.fromSheetId}',
+            c.fromCell,
+            c.fromPart?.toString() ?? '',
+            '${c.toSheetId}',
+            c.toCell,
+            c.toPart?.toString() ?? '',
+          ].join('\t'),
+        )
+        .join('\n');
+  }
+
+  static List<VsdxConnect> _decodeCollapsedGlue(String? raw) {
+    if (raw == null || raw.isEmpty) return const <VsdxConnect>[];
+    final out = <VsdxConnect>[];
+    for (final line in raw.split('\n')) {
+      if (line.isEmpty) continue;
+      final p = line.split('\t');
+      if (p.length < 5) continue;
+      final fromId = int.tryParse(p[0]);
+      final toId = int.tryParse(p[3]);
+      if (fromId == null || toId == null) continue;
+      out.add(
+        VsdxConnect(
+          fromSheetId: fromId,
+          fromCell: p[1],
+          fromPart: p[2].isEmpty ? null : int.tryParse(p[2]),
+          toSheetId: toId,
+          toCell: p[4],
+          toPart: p.length > 5 && p[5].isNotEmpty ? int.tryParse(p[5]) : null,
+        ),
+      );
+    }
+    return out;
   }
 
   /// Whether [id] is a foldable container currently collapsed.
@@ -1054,13 +1196,21 @@ class EditorController extends ChangeNotifier {
   }) {
     final page = currentPage;
     if (page == null || _selection.isEmpty) return null;
+    // Match [reparentSelectionInto]: roots only; locked / locked-layer stay.
+    final movable = _selectionRoots(page, <int>[
+      for (final id in _selection)
+        if (page.findShapeById(id) case final s?
+            when !s.locked && !isOnLockedLayer(id))
+          id,
+    ]);
+    if (movable.isEmpty) return null;
     final dropId = page.findDropContainerAt(
       pageX,
       pageY,
       excludeIds: Set<int>.of(_selection),
     );
     final movedIds = <int>{
-      ..._subtreeIds(_selection),
+      ..._subtreeIds(movable),
       if (dropId != null) ..._subtreeIds(<int>{dropId}),
     };
     var changed = false;
@@ -1071,7 +1221,7 @@ class EditorController extends ChangeNotifier {
         var targetId = dropId;
         if (targetId != null) {
           final host = next.findShapeById(targetId);
-          final droppingLane = _selection.any((id) {
+          final droppingLane = movable.any((id) {
             final s = next.findShapeById(id);
             return s != null && SwimlaneOps.isLane(s);
           });
@@ -1084,7 +1234,7 @@ class EditorController extends ChangeNotifier {
             }
           }
         }
-        for (final id in List<int>.of(_selection)) {
+        for (final id in movable) {
           final oldParent = next.findParentId(id);
           if (targetId != null) {
             if (oldParent != targetId) {
@@ -1132,7 +1282,10 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Whether Add Lane is available for the current selection.
-  bool get canAddLane => selectedPoolId != null;
+  bool get canAddLane {
+    final poolId = selectedPoolId;
+    return poolId != null && !_isStructureLocked(poolId);
+  }
 
   /// Whether Remove Lane is available (selected lane inside a multi-lane pool).
   bool get canRemoveLane {
@@ -1141,15 +1294,25 @@ class EditorController extends ChangeNotifier {
     if (page == null || id == null) return false;
     final s = page.findShapeById(id);
     if (s == null || !SwimlaneOps.isLane(s)) return false;
+    // Locked lane (or locked layer) cannot be removed even if the pool is free.
+    if (s.locked || isOnLockedLayer(id)) return false;
     final poolId = selectedPoolId;
-    if (poolId == null) return false;
+    if (poolId == null || _isStructureLocked(poolId)) return false;
     final pool = page.findShapeById(poolId);
     return pool != null && SwimlaneOps.lanesOf(pool).length > 1;
+  }
+
+  /// True when [shapeId] (table / pool host) is locked or on a locked layer.
+  bool _isStructureLocked(int shapeId) {
+    final page = currentPage;
+    final s = page?.findShapeById(shapeId);
+    return s == null || s.locked || isOnLockedLayer(shapeId);
   }
 
   /// Append a lane to the selected pool (or the pool that owns the selected
   /// lane). One undo step; new lane is selected.
   void addLaneToSelectedPool() {
+    if (!canAddLane) return;
     final page = currentPage;
     final poolId = selectedPoolId;
     if (page == null || poolId == null) return;
@@ -1232,13 +1395,22 @@ class EditorController extends ChangeNotifier {
     return tableId;
   }
 
-  bool get canAddTableRow => selectedTableId != null;
-  bool get canAddTableColumn => selectedTableId != null;
+  bool get canAddTableRow {
+    final tableId = selectedTableId;
+    return tableId != null && !_isStructureLocked(tableId);
+  }
+
+  bool get canAddTableColumn {
+    final tableId = selectedTableId;
+    return tableId != null && !_isStructureLocked(tableId);
+  }
 
   bool get canRemoveTableRow {
     final page = currentPage;
     final tableId = selectedTableId;
-    if (page == null || tableId == null) return false;
+    if (page == null || tableId == null || _isStructureLocked(tableId)) {
+      return false;
+    }
     final table = page.findShapeById(tableId);
     if (table == null) return false;
     return TableOps.dimensions(table).rows > 1;
@@ -1247,13 +1419,16 @@ class EditorController extends ChangeNotifier {
   bool get canRemoveTableColumn {
     final page = currentPage;
     final tableId = selectedTableId;
-    if (page == null || tableId == null) return false;
+    if (page == null || tableId == null || _isStructureLocked(tableId)) {
+      return false;
+    }
     final table = page.findShapeById(tableId);
     if (table == null) return false;
     return TableOps.dimensions(table).cols > 1;
   }
 
   void addRowToSelectedTable() {
+    if (!canAddTableRow) return;
     final page = currentPage;
     final tableId = selectedTableId;
     if (page == null || tableId == null) return;
@@ -1274,6 +1449,7 @@ class EditorController extends ChangeNotifier {
   }
 
   void addColumnToSelectedTable() {
+    if (!canAddTableColumn) return;
     final page = currentPage;
     final tableId = selectedTableId;
     if (page == null || tableId == null) return;
@@ -1379,10 +1555,13 @@ class EditorController extends ChangeNotifier {
 
   /// Whether the current multi-selection of cells can be merged into one block.
   bool get canMergeCells {
+    final tableId = selectedTableId;
+    if (tableId == null || _isStructureLocked(tableId)) return false;
     final cells = _selectedTableCells;
     if (cells.length < 2) return false;
     var minR = 1 << 30, maxR = -1, minC = 1 << 30, maxC = -1;
     for (final c in cells) {
+      if (c.locked || isOnLockedLayer(c.id)) return false;
       if (TableOps.rowSpan(c) != 1 || TableOps.colSpan(c) != 1) return false;
       final r = TableOps.cellRow(c)!;
       final col = TableOps.cellCol(c)!;
@@ -1407,9 +1586,12 @@ class EditorController extends ChangeNotifier {
   bool get canUnmergeCell {
     final page = currentPage;
     final id = singleSelectedId;
-    if (page == null || id == null) return false;
+    final tableId = selectedTableId;
+    if (page == null || id == null || tableId == null) return false;
+    if (_isStructureLocked(tableId)) return false;
     final s = page.findShapeById(id);
     if (s == null || !TableOps.isCell(s)) return false;
+    if (s.locked || isOnLockedLayer(id)) return false;
     if (TableOps.isMerged(s)) return true;
     if (!TableOps.isCovered(s)) return false;
     return _masterForCovered(page, s) != null;
@@ -1515,6 +1697,7 @@ class EditorController extends ChangeNotifier {
     double deltaInches, {
     bool transient = false,
   }) {
+    if (_isStructureLocked(tableId)) return;
     updateCurrentPage(
       (p) {
         final host = p.findShapeById(tableId);
@@ -1535,6 +1718,7 @@ class EditorController extends ChangeNotifier {
     double deltaPageY, {
     bool transient = false,
   }) {
+    if (_isStructureLocked(tableId)) return;
     updateCurrentPage(
       (p) {
         final host = p.findShapeById(tableId);
@@ -1615,14 +1799,12 @@ class EditorController extends ChangeNotifier {
       var bottom = math.min(sy, ey);
       var w = (math.max(sx, ex) - left).abs();
       var h = (math.max(sy, ey) - bottom).abs();
-      if (w < 0.1 && h < 0.1) {
+      // Either edge too small (click / hairline drag) → default text box.
+      if (w < 0.1 || h < 0.1) {
         w = 1.5;
         h = 0.5;
         left = sx - w / 2;
         bottom = sy - h / 2;
-      } else {
-        w = math.max(w, 0.05);
-        h = math.max(h, 0.05);
       }
       final box = VsdxShapeFactory.textBox(
         id: id,
@@ -1657,14 +1839,12 @@ class EditorController extends ChangeNotifier {
       var bottom = math.min(sy, ey);
       var w = (math.max(sx, ex) - left).abs();
       var h = (math.max(sy, ey) - bottom).abs();
-      if (w < 0.1 && h < 0.1) {
+      // Either edge too small → default size (avoid 0.05 hairline strips).
+      if (w < 0.1 || h < 0.1) {
         w = 1.5;
         h = 0.75;
         left = sx - w / 2;
         bottom = sy - h / 2;
-      } else {
-        w = math.max(w, 0.05);
-        h = math.max(h, 0.05);
       }
       final pinX = left + w / 2;
       final pinY = bottom + h / 2;
@@ -1709,19 +1889,15 @@ class EditorController extends ChangeNotifier {
     if (doc == null || page == null) return;
     final id = page.nextFreeShapeId();
     var sax = ax, say = ay, sbx = bx, sby = by;
-    if (beginTarget != null) {
-      final t = page.findShapeById(beginTarget);
-      if (t != null) {
-        sax = t.pinX;
-        say = t.pinY;
-      }
+    if (beginTarget != null && page.findShapeById(beginTarget) != null) {
+      final pin = page.shapePinPage(beginTarget);
+      sax = pin.x;
+      say = pin.y;
     }
-    if (endTarget != null) {
-      final t = page.findShapeById(endTarget);
-      if (t != null) {
-        sbx = t.pinX;
-        sby = t.pinY;
-      }
+    if (endTarget != null && page.findShapeById(endTarget) != null) {
+      final pin = page.shapePinPage(endTarget);
+      sbx = pin.x;
+      sby = pin.y;
     }
     // Connectors carry a filled end arrowhead by default (drawio edges point
     // at their target); the stroke follows the last-used line style (never
@@ -1730,6 +1906,9 @@ class EditorController extends ChangeNotifier {
         .copyWith(endArrow: 4);
     if (baseLine.softEdgesInches > 0) {
       baseLine = baseLine.copyWith(softEdgesInches: 0);
+    }
+    if (baseLine.pattern == 0) {
+      baseLine = baseLine.copyWith(pattern: 1);
     }
     var connector = VsdxShapeFactory.line(
       id: id,
@@ -1862,7 +2041,10 @@ class EditorController extends ChangeNotifier {
       // copies the shape and wires it up). Remap the whole subtree so a
       // group source does not collide with its original children.
       var nextId = next.nextFreeShapeId();
-      final clone = source.withRemappedIds(
+      // Nested sources keep parent-local pin/angle — materialize page space
+      // before cloning as a top-level neighbour (same as clipboard roots).
+      final cloneSrc = _clipboardRoot(page, sourceId);
+      final clone = cloneSrc.withRemappedIds(
         () => nextId++,
         pinX: cloneX,
         pinY: cloneY,
@@ -1878,12 +2060,17 @@ class EditorController extends ChangeNotifier {
     if (baseLine.softEdgesInches > 0) {
       baseLine = baseLine.copyWith(softEdgesInches: 0);
     }
+    if (baseLine.pattern == 0) {
+      baseLine = baseLine.copyWith(pattern: 1);
+    }
+    final srcPin = next.shapePinPage(sourceId);
+    final tgtPin = next.shapePinPage(targetId);
     var connector = VsdxShapeFactory.line(
       id: connId,
-      ax: source.pinX,
-      ay: source.pinY,
-      bx: target.pinX,
-      by: target.pinY,
+      ax: srcPin.x,
+      ay: srcPin.y,
+      bx: tgtPin.x,
+      by: tgtPin.y,
       line: baseLine,
     );
     // Same XFTRIGGER wiring as [createConnector] so exported diagrams re-glue.
@@ -1919,14 +2106,15 @@ class EditorController extends ChangeNotifier {
 
     // Glue each end to the facing fixed connection point so the edge meets the
     // sides square-on (only meaningful for the default point set).
+    // Endpoint coords are page inches (connector is top-level).
     if (source.connectionPoints.isEmpty) {
       next = next.setConnectorEndpoint(
         connId,
         begin: true,
         targetShapeId: sourceId,
         connectionPointIndex: dir,
-        x: source.pinX,
-        y: source.pinY,
+        x: srcPin.x,
+        y: srcPin.y,
       );
     }
     if (target.connectionPoints.isEmpty) {
@@ -1935,8 +2123,8 @@ class EditorController extends ChangeNotifier {
         begin: false,
         targetShapeId: targetId,
         connectionPointIndex: (dir + 2) % 4,
-        x: target.pinX,
-        y: target.pinY,
+        x: tgtPin.x,
+        y: tgtPin.y,
       );
     }
 
@@ -2021,8 +2209,13 @@ class EditorController extends ChangeNotifier {
     final page = currentPage;
     if (doc == null || page == null || bytes.isEmpty) return;
     final shape = page.findShapeById(shapeId);
-    if (shape == null || !shape.hasImage || shape.locked) return;
-    if (isOnLockedLayer(shapeId)) return;
+    if (shape == null ||
+        !shape.hasImage ||
+        shape.locked ||
+        isOnLockedLayer(shapeId) ||
+        !page.isShapeVisible(shape)) {
+      return;
+    }
 
     final minted = _mintImage(doc, bytes, fileExtension);
     final next = page.updateShapeById(
@@ -2047,12 +2240,17 @@ class EditorController extends ChangeNotifier {
     );
   }
 
-  /// True when the single selection is an unlocked picture shape.
+  /// True when the single selection is an unlocked, visible picture shape.
   bool get canReplaceSelectedImage {
     final id = singleSelectedId;
-    if (id == null) return false;
-    final s = currentPage?.findShapeById(id);
-    return s != null && s.hasImage && !s.locked && !isOnLockedLayer(id);
+    final page = currentPage;
+    if (id == null || page == null) return false;
+    final s = page.findShapeById(id);
+    return s != null &&
+        s.hasImage &&
+        !s.locked &&
+        !isOnLockedLayer(id) &&
+        page.isShapeVisible(s);
   }
 
   /// Top-most picture shape whose bounds contain page point ([x],[y]), or
@@ -2078,7 +2276,11 @@ class EditorController extends ChangeNotifier {
     int? best;
     for (final id in order) {
       final s = page.findShapeById(id);
-      if (s == null || !s.hasImage || s.locked || isOnLockedLayer(id)) {
+      if (s == null ||
+          !s.hasImage ||
+          s.locked ||
+          isOnLockedLayer(id) ||
+          !page.isShapeVisible(s)) {
         continue;
       }
       final b = bounds[id];
@@ -2204,38 +2406,45 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Remove a just-created abandoned shape (empty Text-tool box) without
-  /// leaving a resurrectable undo step. Collapses the matching create entry
-  /// when it is still on top of the history stack; otherwise falls back to
-  /// [deleteShapeById].
+  /// leaving a resurrectable undo step. Collapses history back to the
+  /// snapshot before [id] existed when that is still a pure create (+ edits
+  /// of that shape only); otherwise falls back to [deleteShapeById].
   void discardAbandonedShape(int id) {
     if (_collapseCreateOf(id)) return;
     deleteShapeById(id);
   }
 
-  /// When the tip of the undo stack is the document immediately before [id]
-  /// was created as a new top-level shape, pop that entry and restore it.
+  /// Restore the newest undo snapshot that predates top-level shape [id],
+  /// when current page top-level count is exactly that snapshot + 1 (only
+  /// this shape was added). Covers "create → Bold → Esc" as well as a bare
+  /// create tip.
   bool _collapseCreateOf(int id) {
     if (_undo.isEmpty || _document == null) return false;
-    final tip = _undo.last;
-    if (tip.pageIndex != _currentPageIndex) return false;
-    final tipPage = tip.document.pages[tip.pageIndex];
     final curPage = currentPage;
-    if (curPage == null) return false;
-    if (tipPage.findShapeById(id) != null) return false;
-    if (curPage.findShapeById(id) == null) return false;
-    if (curPage.shapes.length != tipPage.shapes.length + 1) return false;
-    _undo.removeLast();
-    _document = tip.document;
-    _currentPageIndex = tip.pageIndex;
-    _selection
-      ..clear()
-      ..addAll(tip.selection);
-    _redo.clear();
-    _dirty = !identical(_document, _cleanDocument);
-    _clampPageIndex();
-    _pruneSelection();
-    notifyListeners();
-    return true;
+    if (curPage == null || curPage.findShapeById(id) == null) return false;
+    for (var i = _undo.length - 1; i >= 0; i--) {
+      final tip = _undo[i];
+      if (tip.pageIndex != _currentPageIndex) continue;
+      final tipPage = tip.document.pages[tip.pageIndex];
+      if (tipPage.findShapeById(id) != null) continue;
+      if (curPage.shapes.length != tipPage.shapes.length + 1) {
+        // Other structural edits happened after create — do not collapse.
+        return false;
+      }
+      _undo.removeRange(i, _undo.length);
+      _document = tip.document;
+      _currentPageIndex = tip.pageIndex;
+      _selection
+        ..clear()
+        ..addAll(tip.selection);
+      _redo.clear();
+      _dirty = !identical(_document, _cleanDocument);
+      _clampPageIndex();
+      _pruneSelection();
+      notifyListeners();
+      return true;
+    }
+    return false;
   }
 
   /// Whether [id] is an empty, borderless text box (no text, no fill, no line,
@@ -2283,33 +2492,85 @@ class EditorController extends ChangeNotifier {
   List<VsdxConnect> _clipboardConnects = const <VsdxConnect>[];
   /// Successive plain pastes offset further so copies do not stack.
   int _pasteGeneration = 0;
+  /// Last envelope we wrote to the system clipboard (trimmed). Used so
+  /// [syncClipboardFromSystem] does not replace a richer in-memory clipboard
+  /// (Connect rows / images) with our own stripped system encode.
+  String? _lastSystemEnvelope;
+  /// While true, system envelope sync is ignored so a pending write (or an
+  /// image-only copy that cannot encode) cannot clobber in-memory paste data.
+  bool _preferMemoryClipboard = false;
   bool get hasClipboard => _clipboard.isNotEmpty;
+
+  /// Selection ids that are not descendants of another selected shape — used
+  /// so copy/paste of a group + child does not duplicate the child.
+  static List<int> _selectionRoots(VsdxPage page, Iterable<int> ids) {
+    final selected = ids.toSet();
+    bool hasSelectedAncestor(int id) {
+      var p = page.findParentId(id);
+      while (p != null) {
+        if (selected.contains(p)) return true;
+        p = page.findParentId(p);
+      }
+      return false;
+    }
+
+    return <int>[
+      for (final id in ids)
+        if (page.findShapeById(id) != null && !hasSelectedAncestor(id)) id,
+    ];
+  }
 
   /// Copy the current selection into the in-app clipboard **and** the system
   /// clipboard (encoded as a tiny `.vsdx` envelope for cross-instance paste).
   void copySelection() {
     final page = currentPage;
     if (page == null || _selection.isEmpty) return;
-    final ids = Set<int>.of(_selection);
+    final roots = _selectionRoots(page, _selection);
+    if (roots.isEmpty) return;
+    final subtree = _subtreeIds(roots);
+    // Nested roots keep parent-local pins; materialize page pin/angle so paste
+    // as a top-level shape lands where the original appeared on the page.
     _clipboard = <VsdxShape>[
-      for (final id in _selection)
-        if (page.findShapeById(id) != null) page.findShapeById(id)!,
+      for (final id in roots) _clipboardRoot(page, id),
     ];
-    // Keep glue rows whose both ends are in the selection so paste can
+    // Keep glue rows whose both ends are in the copied subtree so paste can
     // re-wire the copies to each other (not the originals).
     _clipboardConnects = <VsdxConnect>[
       for (final c in page.connects)
-        if (ids.contains(c.fromSheetId) && ids.contains(c.toSheetId)) c,
+        if (subtree.contains(c.fromSheetId) && subtree.contains(c.toSheetId)) c,
     ];
     _pasteGeneration = 0;
+    _preferMemoryClipboard = true;
+    _lastSystemEnvelope = null;
     notifyListeners();
-    unawaited(_writeSystemClipboard(_clipboard));
+    unawaited(_writeSystemClipboard(_clipboard, _clipboardConnects));
   }
 
-  Future<void> _writeSystemClipboard(List<VsdxShape> shapes) async {
+  /// Shape tree ready for top-level paste: page pin + page absolute angle when
+  /// [id] is nested (children stay in the root's local frame).
+  static VsdxShape _clipboardRoot(VsdxPage page, int id) {
+    final s = page.findShapeById(id)!;
+    if (page.findParentId(id) == null) return s;
+    final pin = page.shapePinPage(id);
+    final lx = s.effectiveLocPinX;
+    final ly = s.effectiveLocPinY;
+    final origin = page.localToPageDeep(id, Offset2D(lx, ly));
+    final up = page.localToPageDeep(id, Offset2D(lx, ly + 1));
+    final pageAngle = math.atan2(-(up.x - origin.x), up.y - origin.y);
+    return s.copyWith(pinX: pin.x, pinY: pin.y, angleRad: pageAngle);
+  }
+
+  Future<void> _writeSystemClipboard(
+    List<VsdxShape> shapes,
+    List<VsdxConnect> connects,
+  ) async {
     try {
-      final envelope = ShapeClipboardCodec.encode(shapes);
+      final envelope = ShapeClipboardCodec.encode(shapes, connects: connects);
       if (envelope.isEmpty) {
+        // Image-only (or empty) — keep preferring memory so a stale system
+        // envelope cannot wipe pictures from the in-app clipboard.
+        _preferMemoryClipboard = true;
+        _lastSystemEnvelope = null;
         // Fall back to joined labels so external apps still get something.
         final labels = <String>[
           for (final s in shapes)
@@ -2320,6 +2581,8 @@ class EditorController extends ChangeNotifier {
         return;
       }
       await Clipboard.setData(ClipboardData(text: envelope));
+      _lastSystemEnvelope = envelope.trim();
+      _preferMemoryClipboard = false;
     } catch (_) {
       // Clipboard can fail in headless tests / locked pasteboards — ignore.
     }
@@ -2332,16 +2595,24 @@ class EditorController extends ChangeNotifier {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       final text = data?.text;
       if (text == null || text.isEmpty) return false;
-      final shapes = ShapeClipboardCodec.decode(text);
-      if (shapes != null) {
-        if (shapes.isEmpty) return false;
-        _clipboard = shapes;
-        _clipboardConnects = const <VsdxConnect>[];
+      final payload = ShapeClipboardCodec.decodeEnvelope(text);
+      if (payload != null) {
+        if (payload.shapes.isEmpty) return false;
+        final trimmed = text.trim();
+        // Same-app copy: keep in-memory clipboard (images + Connect rows).
+        if (_preferMemoryClipboard && _clipboard.isNotEmpty) return false;
+        if (_lastSystemEnvelope != null && trimmed == _lastSystemEnvelope) {
+          return false;
+        }
+        _clipboard = payload.shapes;
+        _clipboardConnects = payload.connects;
         _pasteGeneration = 0;
+        _preferMemoryClipboard = false;
         notifyListeners();
         return true;
       }
-      // External plain text → a single text box ready to paste.
+      // External plain text always wins over an image-only memory clipboard
+      // (_preferMemory only guards our own shape envelopes, not foreign text).
       final trimmed = text.trim();
       if (trimmed.isEmpty || ShapeClipboardCodec.looksLikeEnvelope(text)) {
         return false;
@@ -2358,6 +2629,7 @@ class EditorController extends ChangeNotifier {
       ];
       _clipboardConnects = const <VsdxConnect>[];
       _pasteGeneration = 0;
+      _preferMemoryClipboard = false;
       notifyListeners();
       return true;
     } catch (_) {
@@ -2372,24 +2644,26 @@ class EditorController extends ChangeNotifier {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null || _selection.isEmpty) return;
-    final cuttable = <int>[
+    final cuttable = _selectionRoots(page, <int>[
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
             when !s.locked && !isOnLockedLayer(id))
           id,
-    ];
+    ]);
     if (cuttable.isEmpty) return;
-    final cutSet = cuttable.toSet();
+    final subtree = _subtreeIds(cuttable);
     final originalSel = Set<int>.of(_selection);
     _clipboard = <VsdxShape>[
-      for (final id in cuttable) page.findShapeById(id)!,
+      for (final id in cuttable) _clipboardRoot(page, id),
     ];
     _clipboardConnects = <VsdxConnect>[
       for (final c in page.connects)
-        if (cutSet.contains(c.fromSheetId) && cutSet.contains(c.toSheetId)) c,
+        if (subtree.contains(c.fromSheetId) && subtree.contains(c.toSheetId)) c,
     ];
     _pasteGeneration = 0;
-    unawaited(_writeSystemClipboard(_clipboard));
+    _preferMemoryClipboard = true;
+    _lastSystemEnvelope = null;
+    unawaited(_writeSystemClipboard(_clipboard, _clipboardConnects));
 
     var next = page;
     for (final id in cuttable) {
@@ -2426,10 +2700,12 @@ class EditorController extends ChangeNotifier {
       var minX = double.infinity, minY = double.infinity;
       var maxX = double.negativeInfinity, maxY = double.negativeInfinity;
       for (final s in _clipboard) {
-        minX = math.min(minX, s.pinX - s.width / 2);
-        minY = math.min(minY, s.pinY - s.height / 2);
-        maxX = math.max(maxX, s.pinX + s.width / 2);
-        maxY = math.max(maxY, s.pinY + s.height / 2);
+        // Use rotation-aware AABB so Paste Here centres rotated shapes.
+        final b = _bounds(s);
+        minX = math.min(minX, b.$1);
+        minY = math.min(minY, b.$2);
+        maxX = math.max(maxX, b.$3);
+        maxY = math.max(maxY, b.$4);
       }
       dx = snap(cx) - (minX + maxX) / 2;
       dy = snap(cy) - (minY + maxY) / 2;
@@ -2451,17 +2727,20 @@ class EditorController extends ChangeNotifier {
   void duplicateSelection() {
     final page = currentPage;
     if (page == null || _selection.isEmpty) return;
-    final shapes = <VsdxShape>[
+    final roots = _selectionRoots(page, <int>[
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
             when !s.locked && !isOnLockedLayer(id))
-          s,
+          id,
+    ]);
+    if (roots.isEmpty) return;
+    final shapes = <VsdxShape>[
+      for (final id in roots) _clipboardRoot(page, id),
     ];
-    if (shapes.isEmpty) return;
-    final ids = <int>{for (final s in shapes) s.id};
+    final subtree = _subtreeIds(roots);
     final connects = <VsdxConnect>[
       for (final c in page.connects)
-        if (ids.contains(c.fromSheetId) && ids.contains(c.toSheetId)) c,
+        if (subtree.contains(c.fromSheetId) && subtree.contains(c.toSheetId)) c,
     ];
     _cloneShapesOntoPage(
       shapes,
@@ -2507,11 +2786,15 @@ class EditorController extends ChangeNotifier {
 
     for (final s in shapes) {
       var nextId = next.nextFreeShapeId();
-      final cloned = remintImages(s).withRemappedIds(
-        () => nextId++,
-        pinX: s.pinX + dx,
-        pinY: s.pinY + dy,
-        idMap: idMap,
+      // Paste / duplicate clones are always unlocked so the user can edit them
+      // (draw.io clears lock on the copy; the original stays locked).
+      final cloned = _withTreeUnlocked(
+        remintImages(s).withRemappedIds(
+          () => nextId++,
+          pinX: s.pinX + dx,
+          pinY: s.pinY + dy,
+          idMap: idMap,
+        ),
       );
       next = next.addShape(cloned);
       newIds.add(cloned.id);
@@ -2579,15 +2862,26 @@ class EditorController extends ChangeNotifier {
     return (minX, minY, maxX, maxY);
   }
 
-  void _align(Map<int, (double, double)> Function(List<VsdxShape>) compute) {
+  /// Page-space AABB (left, bottom, right, top) for [id], or `null`.
+  static (double, double, double, double)? _pageBounds(VsdxPage page, int id) {
+    final aabb = page.shapePageAabb(id);
+    if (aabb == null) return null;
+    return (aabb.left, aabb.bottom, aabb.right, aabb.top);
+  }
+
+  void _align(
+    Map<int, (double, double)> Function(VsdxPage page, List<int> ids) compute,
+  ) {
     final page = currentPage;
     if (page == null) return;
-    final shapes = <VsdxShape>[
+    // Roots only for gap/anchor math — co-selected nested children must not
+    // inflate distribute spacing (group AABB already covers them).
+    final ids = _selectionRoots(page, <int>[
       for (final id in _selection)
-        if (page.findShapeById(id) != null) page.findShapeById(id)!,
-    ];
-    if (shapes.length < 2) return;
-    final deltas = compute(shapes);
+        if (page.findShapeById(id) != null) id,
+    ]);
+    if (ids.length < 2) return;
+    final deltas = compute(page, ids);
     if (deltas.isEmpty) return;
     // Locked shapes still participate as align anchors, but do not move.
     final movable = <int, (double, double)>{
@@ -2603,10 +2897,7 @@ class EditorController extends ChangeNotifier {
     updateCurrentPage((p) {
       var next = p;
       movable.forEach((id, d) {
-        next = next.updateShapeById(
-          id,
-          (s) => s.copyWith(pinX: s.pinX + d.$1, pinY: s.pinY + d.$2),
-        );
+        next = _nudgeShapeOnPage(next, id, d.$1, d.$2);
       });
       return next
           .recalculateFormulas(changedShapeIds: movedIds)
@@ -2616,135 +2907,203 @@ class EditorController extends ChangeNotifier {
 
   /// Align a single selection to the page box (draw.io "to page" when one
   /// shape is selected). Multi-selection keeps relative-to-selection align.
-  void _alignToPage((double, double) Function(VsdxPage page, VsdxShape s) delta) {
+  void _alignToPage(
+    (double, double) Function(VsdxPage page, (double, double, double, double) b)
+        delta,
+  ) {
     final page = currentPage;
     final id = singleSelectedId;
     if (page == null || id == null) return;
     final s = page.findShapeById(id);
     if (s == null || s.locked || isOnLockedLayer(id)) return;
-    final d = delta(page, s);
+    final b = _pageBounds(page, id);
+    if (b == null) return;
+    final d = delta(page, b);
     if (d.$1 == 0 && d.$2 == 0) return;
     final movedIds = _subtreeIds(<int>{id});
-    updateCurrentPage((p) => p
-        .updateShapeById(
-          id,
-          (sh) => sh.copyWith(pinX: sh.pinX + d.$1, pinY: sh.pinY + d.$2),
-        )
-        .recalculateFormulas(changedShapeIds: movedIds)
-        .rerouteConnectors(movedShapeIds: movedIds));
+    updateCurrentPage((p) {
+      final next = _nudgeShapeOnPage(p, id, d.$1, d.$2);
+      return identical(next, p)
+          ? p
+          : next
+              .recalculateFormulas(changedShapeIds: movedIds)
+              .rerouteConnectors(movedShapeIds: movedIds);
+    });
   }
 
   void alignLeft() {
     if (_selection.length == 1) {
-      _alignToPage((_, s) => (0.0 - _bounds(s).$1, 0.0));
+      _alignToPage((_, b) => (0.0 - b.$1, 0.0));
       return;
     }
-    _align((shapes) {
-      final target = shapes.map((s) => _bounds(s).$1).reduce(math.min);
-      return {for (final s in shapes) s.id: (target - _bounds(s).$1, 0.0)};
+    _align((page, ids) {
+      final bounds = <int, (double, double, double, double)>{
+        for (final id in ids)
+          if (_pageBounds(page, id) case final b?) id: b,
+      };
+      if (bounds.length < 2) return const {};
+      final target = bounds.values.map((b) => b.$1).reduce(math.min);
+      return {
+        for (final e in bounds.entries) e.key: (target - e.value.$1, 0.0),
+      };
     });
   }
 
   void alignRight() {
     if (_selection.length == 1) {
-      _alignToPage((page, s) => (page.widthInches - _bounds(s).$3, 0.0));
+      _alignToPage((page, b) => (page.widthInches - b.$3, 0.0));
       return;
     }
-    _align((shapes) {
-      final target = shapes.map((s) => _bounds(s).$3).reduce(math.max);
-      return {for (final s in shapes) s.id: (target - _bounds(s).$3, 0.0)};
+    _align((page, ids) {
+      final bounds = <int, (double, double, double, double)>{
+        for (final id in ids)
+          if (_pageBounds(page, id) case final b?) id: b,
+      };
+      if (bounds.length < 2) return const {};
+      final target = bounds.values.map((b) => b.$3).reduce(math.max);
+      return {
+        for (final e in bounds.entries) e.key: (target - e.value.$3, 0.0),
+      };
     });
   }
 
   void alignCenterH() {
     if (_selection.length == 1) {
-      _alignToPage((page, s) => (page.widthInches / 2 - s.pinX, 0.0));
+      _alignToPage((page, b) => (page.widthInches / 2 - (b.$1 + b.$3) / 2, 0.0));
       return;
     }
-    _align((shapes) {
-      final l = shapes.map((s) => _bounds(s).$1).reduce(math.min);
-      final r = shapes.map((s) => _bounds(s).$3).reduce(math.max);
+    _align((page, ids) {
+      final bounds = <int, (double, double, double, double)>{
+        for (final id in ids)
+          if (_pageBounds(page, id) case final b?) id: b,
+      };
+      if (bounds.length < 2) return const {};
+      final l = bounds.values.map((b) => b.$1).reduce(math.min);
+      final r = bounds.values.map((b) => b.$3).reduce(math.max);
       final target = (l + r) / 2;
-      return {for (final s in shapes) s.id: (target - s.pinX, 0.0)};
+      return {
+        for (final e in bounds.entries)
+          e.key: (target - (e.value.$1 + e.value.$3) / 2, 0.0),
+      };
     });
   }
 
   void alignTop() {
     if (_selection.length == 1) {
-      _alignToPage((page, s) => (0.0, page.heightInches - _bounds(s).$4));
+      _alignToPage((page, b) => (0.0, page.heightInches - b.$4));
       return;
     }
-    _align((shapes) {
-      final target = shapes.map((s) => _bounds(s).$4).reduce(math.max);
-      return {for (final s in shapes) s.id: (0.0, target - _bounds(s).$4)};
+    _align((page, ids) {
+      final bounds = <int, (double, double, double, double)>{
+        for (final id in ids)
+          if (_pageBounds(page, id) case final b?) id: b,
+      };
+      if (bounds.length < 2) return const {};
+      final target = bounds.values.map((b) => b.$4).reduce(math.max);
+      return {
+        for (final e in bounds.entries) e.key: (0.0, target - e.value.$4),
+      };
     });
   }
 
   void alignBottom() {
     if (_selection.length == 1) {
-      _alignToPage((_, s) => (0.0, 0.0 - _bounds(s).$2));
+      _alignToPage((_, b) => (0.0, 0.0 - b.$2));
       return;
     }
-    _align((shapes) {
-      final target = shapes.map((s) => _bounds(s).$2).reduce(math.min);
-      return {for (final s in shapes) s.id: (0.0, target - _bounds(s).$2)};
+    _align((page, ids) {
+      final bounds = <int, (double, double, double, double)>{
+        for (final id in ids)
+          if (_pageBounds(page, id) case final b?) id: b,
+      };
+      if (bounds.length < 2) return const {};
+      final target = bounds.values.map((b) => b.$2).reduce(math.min);
+      return {
+        for (final e in bounds.entries) e.key: (0.0, target - e.value.$2),
+      };
     });
   }
 
   void alignMiddle() {
     if (_selection.length == 1) {
-      _alignToPage((page, s) => (0.0, page.heightInches / 2 - s.pinY));
+      _alignToPage(
+        (page, b) => (0.0, page.heightInches / 2 - (b.$2 + b.$4) / 2),
+      );
       return;
     }
-    _align((shapes) {
-      final b = shapes.map((s) => _bounds(s).$2).reduce(math.min);
-      final t = shapes.map((s) => _bounds(s).$4).reduce(math.max);
-      final target = (b + t) / 2;
-      return {for (final s in shapes) s.id: (0.0, target - s.pinY)};
+    _align((page, ids) {
+      final bounds = <int, (double, double, double, double)>{
+        for (final id in ids)
+          if (_pageBounds(page, id) case final b?) id: b,
+      };
+      if (bounds.length < 2) return const {};
+      final bot = bounds.values.map((b) => b.$2).reduce(math.min);
+      final top = bounds.values.map((b) => b.$4).reduce(math.max);
+      final target = (bot + top) / 2;
+      return {
+        for (final e in bounds.entries)
+          e.key: (0.0, target - (e.value.$2 + e.value.$4) / 2),
+      };
     });
   }
 
   /// Equalise gaps between axis-aligned bounds (draw.io Distribute).
-  void distributeHorizontally() => _align((shapes) {
-        if (shapes.length < 3) return const {};
-        final sorted = [...shapes]
-          ..sort((a, b) => _bounds(a).$1.compareTo(_bounds(b).$1));
-        final first = _bounds(sorted.first);
-        final last = _bounds(sorted.last);
-        final totalW = sorted.fold<double>(0, (sum, s) {
-          final b = _bounds(s);
-          return sum + (b.$3 - b.$1);
-        });
+  void distributeHorizontally() => _align((page, ids) {
+        if (ids.length < 3) return const {};
+        final bounds = <int, (double, double, double, double)>{
+          for (final id in ids)
+            if (_pageBounds(page, id) case final b?) id: b,
+        };
+        if (bounds.length < 3) return const {};
+        final sorted = bounds.keys.toList()
+          ..sort((a, b) => bounds[a]!.$1.compareTo(bounds[b]!.$1));
+        final first = bounds[sorted.first]!;
+        final last = bounds[sorted.last]!;
+        final totalW = sorted.fold<double>(
+          0,
+          (sum, id) {
+            final b = bounds[id]!;
+            return sum + (b.$3 - b.$1);
+          },
+        );
         final gap = (last.$3 - first.$1 - totalW) / (sorted.length - 1);
         var cursor = first.$1;
         final out = <int, (double, double)>{};
-        for (final s in sorted) {
-          final b = _bounds(s);
+        for (final id in sorted) {
+          final b = bounds[id]!;
           final w = b.$3 - b.$1;
-          out[s.id] = (cursor - b.$1, 0.0);
+          out[id] = (cursor - b.$1, 0.0);
           cursor += w + gap;
         }
         return out;
       });
 
   /// Equalise gaps between axis-aligned bounds (draw.io Distribute).
-  void distributeVertically() => _align((shapes) {
-        if (shapes.length < 3) return const {};
-        final sorted = [...shapes]
-          ..sort((a, b) => _bounds(a).$2.compareTo(_bounds(b).$2));
-        final first = _bounds(sorted.first);
-        final last = _bounds(sorted.last);
-        final totalH = sorted.fold<double>(0, (sum, s) {
-          final b = _bounds(s);
-          return sum + (b.$4 - b.$2);
-        });
+  void distributeVertically() => _align((page, ids) {
+        if (ids.length < 3) return const {};
+        final bounds = <int, (double, double, double, double)>{
+          for (final id in ids)
+            if (_pageBounds(page, id) case final b?) id: b,
+        };
+        if (bounds.length < 3) return const {};
+        final sorted = bounds.keys.toList()
+          ..sort((a, b) => bounds[a]!.$2.compareTo(bounds[b]!.$2));
+        final first = bounds[sorted.first]!;
+        final last = bounds[sorted.last]!;
+        final totalH = sorted.fold<double>(
+          0,
+          (sum, id) {
+            final b = bounds[id]!;
+            return sum + (b.$4 - b.$2);
+          },
+        );
         final gap = (last.$4 - first.$2 - totalH) / (sorted.length - 1);
         var cursor = first.$2;
         final out = <int, (double, double)>{};
-        for (final s in sorted) {
-          final b = _bounds(s);
+        for (final id in sorted) {
+          final b = bounds[id]!;
           final h = b.$4 - b.$2;
-          out[s.id] = (0.0, cursor - b.$2);
+          out[id] = (0.0, cursor - b.$2);
           cursor += h + gap;
         }
         return out;
@@ -2764,16 +3123,30 @@ class EditorController extends ChangeNotifier {
   void matchSelectionSize() => _matchSelectionSize(width: true, height: true);
 
   void _matchSelectionSize({required bool width, required bool height}) {
-    final ref = _firstSelected;
-    if (ref == null || _selection.length < 2) return;
+    // Prefer a 2-D reference so a leading connector does not resize boxes
+    // to a hairline Begin/End span.
+    final ref = _firstSelected2D ?? _firstSelected;
+    final page0 = currentPage;
+    if (ref == null || ref.is1D || _selection.length < 2 || page0 == null) {
+      return;
+    }
     final tw = ref.width;
     final th = ref.height;
     if ((width && tw <= 0) || (height && th <= 0)) return;
-    final movedIds = _subtreeIds(_selection);
+    // Resize selection roots only (group+child co-selection must not double-
+    // apply width/height to the nested child).
+    final roots = _selectionRoots(page0, <int>[
+      for (final id in _selection)
+        if (page0.findShapeById(id) case final s?
+            when !s.locked && !isOnLockedLayer(id) && !s.is1D)
+          id,
+    ]);
+    if (roots.isEmpty) return;
+    final movedIds = _subtreeIds(roots);
     updateCurrentPage((page) {
       var next = page;
       var changed = false;
-      for (final id in _selection) {
+      for (final id in roots) {
         if (id == ref.id) continue;
         final s = next.findShapeById(id);
         if (s == null || s.locked || isOnLockedLayer(id) || s.is1D) {
@@ -2785,7 +3158,7 @@ class EditorController extends ChangeNotifier {
           continue;
         }
         // Keep the page-space AABB top-left stable (draw.io Same Size),
-        // including for rotated shapes.
+        // including under rotated ancestors (page Δ → parent-local).
         final beforeAabb = next.shapePageAabb(id);
         next = next.updateShapeById(
           id,
@@ -2802,10 +3175,7 @@ class EditorController extends ChangeNotifier {
             final dx = beforeAabb.left - afterAabb.left;
             final dy = beforeAabb.top - afterAabb.top;
             if (dx != 0 || dy != 0) {
-              next = next.updateShapeById(
-                id,
-                (sh) => sh.copyWith(pinX: sh.pinX + dx, pinY: sh.pinY + dy),
-              );
+              next = _nudgeShapeOnPage(next, id, dx, dy);
             }
           }
         }
@@ -2999,12 +3369,12 @@ class EditorController extends ChangeNotifier {
     final s = singleSelected;
     final page = currentPage;
     if (s == null || page == null) return;
+    if (s.locked || isOnLockedLayer(s.id)) return;
     final aabb = page.shapePageAabb(s.id);
-    if (aabb == null) {
-      _moveSingle(s, x + s.width / 2, s.pinY);
-      return;
-    }
-    _moveSingle(s, s.pinX + (x - aabb.left), s.pinY);
+    if (aabb == null) return;
+    final dx = x - aabb.left;
+    if (dx.abs() < 1e-12) return;
+    moveSelectionBy(dx, 0);
   }
 
   /// Move the single selection so its page-AABB top edge sits at [y] inches
@@ -3013,13 +3383,13 @@ class EditorController extends ChangeNotifier {
     final s = singleSelected;
     final page = currentPage;
     if (s == null || page == null) return;
+    if (s.locked || isOnLockedLayer(s.id)) return;
     final aabb = page.shapePageAabb(s.id);
-    if (aabb == null) {
-      _moveSingle(s, s.pinX, page.heightInches - y - s.height / 2);
-      return;
-    }
+    if (aabb == null) return;
     final targetTop = page.heightInches - y;
-    _moveSingle(s, s.pinX, s.pinY + (targetTop - aabb.top));
+    final dy = targetTop - aabb.top;
+    if (dy.abs() < 1e-12) return;
+    moveSelectionBy(0, dy);
   }
 
   void _moveSingle(VsdxShape s, double pinX, double pinY) {
@@ -3032,20 +3402,40 @@ class EditorController extends ChangeNotifier {
     );
   }
 
-  /// Resize the single selection to [w] inches wide, keeping its left edge.
+  /// Resize the single selection to [w] inches wide, keeping its page-AABB
+  /// left edge (matches [selectedGeometry] / Arrange panel).
   void setSelectedWidth(double w) {
     final s = singleSelected;
-    if (s == null || w <= 0 || s.locked || isOnLockedLayer(s.id)) return;
-    final left = s.pinX - s.width / 2;
-    resizeShape(s.id, pinX: left + w / 2, pinY: s.pinY, width: w, height: s.height);
+    final page = currentPage;
+    if (s == null || page == null || w <= 0 || s.locked || isOnLockedLayer(s.id)) {
+      return;
+    }
+    final before = page.shapePageAabb(s.id);
+    resizeShape(s.id, pinX: s.pinX, pinY: s.pinY, width: w, height: s.height);
+    if (before == null) return;
+    final after = currentPage?.shapePageAabb(s.id);
+    if (after == null) return;
+    final dx = before.left - after.left;
+    final dy = before.top - after.top;
+    if (dx != 0 || dy != 0) moveSelectionBy(dx, dy);
   }
 
-  /// Resize the single selection to [h] inches tall, keeping its top edge.
+  /// Resize the single selection to [h] inches tall, keeping its page-AABB
+  /// top edge (matches [selectedGeometry] / Arrange panel).
   void setSelectedHeight(double h) {
     final s = singleSelected;
-    if (s == null || h <= 0 || s.locked || isOnLockedLayer(s.id)) return;
-    final top = s.pinY + s.height / 2;
-    resizeShape(s.id, pinX: s.pinX, pinY: top - h / 2, width: s.width, height: h);
+    final page = currentPage;
+    if (s == null || page == null || h <= 0 || s.locked || isOnLockedLayer(s.id)) {
+      return;
+    }
+    final before = page.shapePageAabb(s.id);
+    resizeShape(s.id, pinX: s.pinX, pinY: s.pinY, width: s.width, height: h);
+    if (before == null) return;
+    final after = currentPage?.shapePageAabb(s.id);
+    if (after == null) return;
+    final dx = before.left - after.left;
+    final dy = before.top - after.top;
+    if (dx != 0 || dy != 0) moveSelectionBy(dx, dy);
   }
 
   /// Set the single selection's rotation from a value in degrees.
@@ -3059,15 +3449,22 @@ class EditorController extends ChangeNotifier {
   /// `clockwise: false` to turn the other way.
   void rotateSelection90({bool clockwise = true}) {
     if (_selection.isEmpty) return;
+    final page0 = currentPage;
+    if (page0 == null) return;
     // Visio angles are CCW-positive, so a clockwise turn subtracts 90°.
     final delta = (clockwise ? -1 : 1) * math.pi / 2;
-    final movedIds = _subtreeIds(_selection);
+    final roots = _selectionRoots(page0, <int>[
+      for (final id in _selection)
+        if (page0.findShapeById(id) case final s?
+            when !s.locked && !isOnLockedLayer(id))
+          id,
+    ]);
+    if (roots.isEmpty) return;
+    final movedIds = _subtreeIds(roots);
     updateCurrentPage((page) {
       var next = page;
       var rotated = false;
-      for (final id in _selection) {
-        final s = page.findShapeById(id);
-        if (s == null || s.locked || isOnLockedLayer(id)) continue;
+      for (final id in roots) {
         next = next.updateShapeById(
             id, (s) => s.copyWith(angleRad: s.angleRad + delta));
         rotated = true;
@@ -3088,13 +3485,20 @@ class EditorController extends ChangeNotifier {
 
   void _flipSelection(VsdxShape Function(VsdxShape) flip) {
     if (_selection.isEmpty) return;
-    final movedIds = _subtreeIds(_selection);
+    final page0 = currentPage;
+    if (page0 == null) return;
+    final roots = _selectionRoots(page0, <int>[
+      for (final id in _selection)
+        if (page0.findShapeById(id) case final s?
+            when !s.locked && !isOnLockedLayer(id))
+          id,
+    ]);
+    if (roots.isEmpty) return;
+    final movedIds = _subtreeIds(roots);
     updateCurrentPage((page) {
       var next = page;
       var flipped = false;
-      for (final id in _selection) {
-        final s = page.findShapeById(id);
-        if (s == null || s.locked || isOnLockedLayer(id)) continue;
+      for (final id in roots) {
         next = next.updateShapeById(id, flip);
         flipped = true;
       }
@@ -3218,6 +3622,10 @@ class EditorController extends ChangeNotifier {
       if (s.is1D && line.softEdgesInches > 0) {
         line = line.copyWith(softEdgesInches: 0);
       }
+      // "No line" on a box must not birth invisible connectors / freehands.
+      if (s.is1D && line.pattern == 0) {
+        line = line.copyWith(pattern: 1);
+      }
       r = r.copyWith(line: line);
     }
     return r;
@@ -3235,7 +3643,29 @@ class EditorController extends ChangeNotifier {
     return null;
   }
 
-  VsdxFill? get selectedFill => _firstSelected?.fill;
+  /// First selected 2-D shape — used by fill / effect inspectors so a leading
+  /// connector in a mixed selection does not hide box styles.
+  VsdxShape? get _firstSelected2D {
+    final page = currentPage;
+    if (page == null) return null;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s != null && !s.is1D) return s;
+    }
+    return null;
+  }
+
+  /// Clear [locked] on [s] and every descendant (paste / duplicate clones).
+  static VsdxShape _withTreeUnlocked(VsdxShape s) {
+    final kids = s.children;
+    final unlockedKids = kids.isEmpty
+        ? kids
+        : <VsdxShape>[for (final c in kids) _withTreeUnlocked(c)];
+    if (!s.locked && identical(unlockedKids, kids)) return s;
+    return s.copyWith(locked: false, children: unlockedKids);
+  }
+
+  VsdxFill? get selectedFill => (_firstSelected2D ?? _firstSelected)?.fill;
   VsdxLine? get selectedLine => _firstSelected?.line;
 
   void setFillColor(VsdxColor color) => _updateSelectedShapes(
@@ -3555,16 +3985,36 @@ class EditorController extends ChangeNotifier {
   }
 
   void moveWaypoint(int id, int index, Offset2D p, {bool transient = false}) {
+    final page = currentPage;
+    if (page == null) return;
     final wps = List<Offset2D>.of(connectorWaypoints(id));
     if (index < 0 || index >= wps.length) return;
-    wps[index] = p;
+    // Canvas passes page inches; nested connectors store parent-local.
+    wps[index] = _pagePointToConnectorLocal(page, id, p);
     setConnectorWaypoints(id, wps, transient: transient);
   }
 
   void addWaypoint(int id, int index, Offset2D p, {bool transient = false}) {
+    final page = currentPage;
+    if (page == null) return;
     final wps = List<Offset2D>.of(connectorWaypoints(id));
-    wps.insert(index.clamp(0, wps.length), p);
+    wps.insert(
+      index.clamp(0, wps.length),
+      _pagePointToConnectorLocal(page, id, p),
+    );
     setConnectorWaypoints(id, wps, transient: transient);
+  }
+
+  /// Map a page-inch point into the coordinate frame used by connector [id]
+  /// (page for top-level, parent-local when nested).
+  static Offset2D _pagePointToConnectorLocal(
+    VsdxPage page,
+    int connectorId,
+    Offset2D pagePoint,
+  ) {
+    final parentId = page.findParentId(connectorId);
+    if (parentId == null) return pagePoint;
+    return page.pageToLocalDeep(parentId, pagePoint);
   }
 
   void removeWaypoint(int id, int index) {
@@ -3587,18 +4037,23 @@ class EditorController extends ChangeNotifier {
     required double y,
     bool transient = false,
   }) {
-    final page = currentPage;
-    final s = page?.findShapeById(connectorId);
+    final page0 = currentPage;
+    final s = page0?.findShapeById(connectorId);
     if (s == null || s.locked || isOnLockedLayer(connectorId)) return;
     updateCurrentPage(
-      (page) => page.setConnectorEndpoint(
-        connectorId,
-        begin: begin,
-        targetShapeId: targetShapeId,
-        connectionPointIndex: connectionPointIndex,
-        x: x,
-        y: y,
-      ),
+      (page) {
+        // [x]/[y] are page inches from the canvas; nested connectors store
+        // Begin/End in parent-local space.
+        final local = _pagePointToConnectorLocal(page, connectorId, Offset2D(x, y));
+        return page.setConnectorEndpoint(
+          connectorId,
+          begin: begin,
+          targetShapeId: targetShapeId,
+          connectionPointIndex: connectionPointIndex,
+          x: local.x,
+          y: local.y,
+        );
+      },
       transient: transient,
     );
   }
@@ -3756,6 +4211,8 @@ class EditorController extends ChangeNotifier {
     VsdxShadow shadow,
     VsdxGlow glow,
     VsdxReflection reflection,
+    bool includeFill,
+    bool includeEffects,
   })? _styleClipboard;
   bool get hasStyleClipboard => _styleClipboard != null;
 
@@ -3775,6 +4232,9 @@ class EditorController extends ChangeNotifier {
           shadow: s.shadow,
           glow: s.glow,
           reflection: s.reflection,
+          // Connectors have no meaningful fill / effects to transfer onto boxes.
+          includeFill: !s.is1D,
+          includeEffects: !s.is1D,
         );
         notifyListeners();
         return;
@@ -3785,7 +4245,8 @@ class EditorController extends ChangeNotifier {
   /// Apply the copied styling to every selected shape (one undo step).
   /// 1-D shapes take only the stroke (never a fill); 2-D shapes never inherit
   /// connector arrowheads — same rules as [_withMemoStyle]. Effects
-  /// (shadow / glow / reflection) are included for 2-D shapes.
+  /// (shadow / glow / reflection) are included for 2-D shapes when the
+  /// clipboard came from a 2-D source.
   void pasteStyle() {
     final clip = _styleClipboard;
     if (clip == null) return;
@@ -3797,14 +4258,19 @@ class EditorController extends ChangeNotifier {
       if (s.is1D && line.softEdgesInches > 0) {
         line = line.copyWith(softEdgesInches: 0);
       }
+      // A no-line memo must not make connectors invisible.
+      if (s.is1D && line.pattern == 0) {
+        line = line.copyWith(pattern: 1);
+      }
       var next = s.is1D
           ? s.copyWith(line: line)
           : s.copyWith(
-              fill: clip.fill,
+              fill: clip.includeFill ? clip.fill : s.fill,
               line: line,
-              shadow: clip.shadow,
-              glow: clip.glow,
-              reflection: clip.reflection,
+              shadow: clip.includeEffects ? clip.shadow : s.shadow,
+              glow: clip.includeEffects ? clip.glow : s.glow,
+              reflection:
+                  clip.includeEffects ? clip.reflection : s.reflection,
             );
       if (clip.char != null || clip.para != null) {
         var runs = next.richText.runs;
@@ -3970,10 +4436,16 @@ class EditorController extends ChangeNotifier {
       next = next.ungroup(g.id);
     }
     if (identical(next, page)) return;
+    final groupIds = <int>{for (final g in groups) g.id};
+    final keep = <int>{
+      for (final id in _selection)
+        if (!groupIds.contains(id) && next.findShapeById(id) != null) id,
+    };
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
-      ..addAll(childIds);
+      ..addAll(childIds)
+      ..addAll(keep);
     applyEdit(
       doc.replacePage(_currentPageIndex, next),
       undoSelection: undoSel,
@@ -4494,17 +4966,12 @@ class EditorController extends ChangeNotifier {
       );
 
   bool get selectedHasShadow {
-    final page = currentPage;
-    if (page == null) return false;
-    for (final id in _selection) {
-      final s = page.findShapeById(id);
-      if (s != null) return s.shadow.enabled;
-    }
-    return false;
+    final s = _firstSelected2D;
+    return s != null && s.shadow.enabled;
   }
 
-  /// First selected shape's shadow (may be disabled).
-  VsdxShadow? get selectedShadow => _firstSelected?.shadow;
+  /// First selected 2-D shape's shadow (may be disabled).
+  VsdxShadow? get selectedShadow => _firstSelected2D?.shadow;
 
   /// Update shadow colour / offsets / blur / opacity on the selection.
   void updateShadow({
@@ -4551,11 +5018,11 @@ class EditorController extends ChangeNotifier {
       );
 
   bool get selectedHasGlow {
-    final g = _firstSelected?.glow;
+    final g = _firstSelected2D?.glow;
     return g != null && g.enabled;
   }
 
-  VsdxGlow? get selectedGlow => _firstSelected?.glow;
+  VsdxGlow? get selectedGlow => _firstSelected2D?.glow;
 
   void updateGlow({
     VsdxColor? color,
@@ -4597,11 +5064,11 @@ class EditorController extends ChangeNotifier {
       );
 
   bool get selectedHasReflection {
-    final r = _firstSelected?.reflection;
+    final r = _firstSelected2D?.reflection;
     return r != null && r.enabled;
   }
 
-  VsdxReflection? get selectedReflection => _firstSelected?.reflection;
+  VsdxReflection? get selectedReflection => _firstSelected2D?.reflection;
 
   void updateReflection({
     double? sizeInches,
@@ -4631,10 +5098,10 @@ class EditorController extends ChangeNotifier {
 
   /// Whether the selection has Soft Edges (`SoftEdgesSize` > 0).
   bool get selectedHasSoftEdges =>
-      (selectedLine?.softEdgesInches ?? 0) > 0;
+      (_firstSelected2D?.line.softEdgesInches ?? 0) > 0;
 
   double get selectedSoftEdgesInches =>
-      selectedLine?.softEdgesInches ?? 0;
+      _firstSelected2D?.line.softEdgesInches ?? 0;
 
   /// Toggle Soft Edges on the selection (default size 0.05"; 2-D only).
   void setSoftEdges(bool enabled) => _updateSelectedShapes(
@@ -5270,6 +5737,9 @@ class EditorController extends ChangeNotifier {
     _memoFill = null;
     _memoLine = null;
     _imageSeq = 0;
+    // Page guides are keyed by page id; empty docs reuse id 0, so clear on
+    // every fresh document load or the previous file's guides leak through.
+    _pageGuides.clear();
     _docEpoch++;
   }
 

@@ -106,7 +106,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Table column/row divider drag (draw.io table resize).
   int? _tableResizeId;
   int? _tableDividerIndex; // boundary after this col/row
-  double _tableResizeLastPage = 0; // last page-inch coord along the axis
+  Offset _tableResizeLastPage = Offset.zero; // last pointer in page inches
 
   // In-place text editing: the shape whose label is being edited (if any),
   // plus the field's controller / focus node.
@@ -394,9 +394,11 @@ class _PageCanvasState extends State<PageCanvas> {
     final bounds = buildShapeBounds(page);
     // Prefer the top-most shape in draw order (parents before children,
     // siblings in list order), so we walk the flattened order and keep the
-    // last hit.
+    // last hit. Skip shapes on hidden layers (match paint).
     int? best;
     for (final id in _drawOrder(page)) {
+      final s = page.findShapeById(id);
+      if (s == null || !page.isShapeVisible(s)) continue;
       final r = bounds[id];
       if (r != null && r.contains(pt)) best = id;
     }
@@ -426,7 +428,11 @@ class _PageCanvasState extends State<PageCanvas> {
     final pt = _contentToPageInches(_viewportToContent(viewportPos));
     for (final id in _drawOrder(page).reversed) {
       final s = page.findShapeById(id);
-      if (s == null || !s.shapeKind.isFoldable) continue;
+      if (s == null ||
+          !s.shapeKind.isFoldable ||
+          !page.isShapeVisible(s)) {
+        continue;
+      }
       final local = VsdxPainter.collapseChevronLocalCenter(s);
       final pagePt =
           page.localToPageDeep(s.id, Offset2D(local.dx, local.dy));
@@ -508,6 +514,14 @@ class _PageCanvasState extends State<PageCanvas> {
     return s;
   }
 
+  /// 2-D shape eligible for hover-connect / connection-point affordances.
+  bool _canConnectFrom(VsdxShape s) =>
+      !s.is1D && !s.locked && !_c.isOnLockedLayer(s.id);
+
+  /// Connector eligible for endpoint / waypoint editing.
+  bool _canEditConnector(VsdxShape s) =>
+      s.is1D && !s.locked && !_c.isOnLockedLayer(s.id);
+
   Offset _pageToContent(double x, double y) => Offset(
         x * widget.pxPerInch,
         (_page!.heightInches - y) * widget.pxPerInch,
@@ -585,6 +599,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final bounds = buildShapeBounds(page);
     int? best;
     for (final s in page.shapes) {
+      if (!page.isShapeVisible(s)) continue;
       final r = bounds[s.id];
       if (r != null && r.contains(pt)) best = s.id;
     }
@@ -668,27 +683,30 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     final pos = e.localPosition;
-    var next = _topLevelAt(pos);
+    // Deepest 2-D shape so nested children get hover-connect arrows too.
+    var next = _glueTargetAt(pos);
     // Keep the current hover while the pointer is anywhere in its arrow halo
     // (the arrows sit outside the shape, so a plain hit-test there clears it —
     // and there's a gap between the edge and the arrow hit-circles).
     if (next == null && _hoverShapeId != null) {
       final s = _page?.findShapeById(_hoverShapeId!);
-      if (s != null && !s.is1D && !s.locked && _withinConnectAffordance(s, pos)) {
+      if (s != null &&
+          _canConnectFrom(s) &&
+          _withinConnectAffordance(s, pos)) {
         next = _hoverShapeId;
       }
     }
-    // Don't offer arrows on 1-D shapes (connectors) or locked shapes.
+    // Don't offer arrows on 1-D shapes (connectors) or locked / locked-layer.
     if (next != null) {
       final s = _page?.findShapeById(next);
-      if (s == null || s.is1D || s.locked) next = null;
+      if (s == null || !_canConnectFrom(s)) next = null;
     }
     // Crosshair affordance: the pointer is on a directional arrow or an edge
     // connection point of the hovered shape (drawio shows a crosshair there).
     var onConnect = false;
     if (next != null) {
       final s = _page?.findShapeById(next);
-      if (s != null && !s.is1D && !s.locked) {
+      if (s != null && _canConnectFrom(s)) {
         onConnect = _connectArrowHitDir(s, pos) != null ||
             (_resizableSelection()?.id != s.id &&
                 (_connDragSourceIndex(s, pos) != null ||
@@ -732,7 +750,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // shape one step over in that direction, drawio-style, and selects it.
     if (_connectAffordanceActive && _hoverShapeId != null) {
       final s = _page?.findShapeById(_hoverShapeId!);
-      if (s != null && !s.is1D && !s.locked) {
+      if (s != null && _canConnectFrom(s)) {
         final dir = _connectArrowHitDir(s, d.localPosition);
         if (dir != null) {
           _connectInDirection(s, dir);
@@ -767,8 +785,10 @@ class _PageCanvasState extends State<PageCanvas> {
     if (widget.presentationMode) return;
     // Double-clicking a connector's bend point removes it.
     final conn = _selectedConnector();
-    if (conn != null && conn.waypoints.isNotEmpty) {
-      final route = VsdxPage.connectorRoute(conn);
+    if (conn != null &&
+        _canEditConnector(conn) &&
+        conn.waypoints.isNotEmpty) {
+      final route = _connectorRoutePage(conn);
       for (var r = 1; r < route.length - 1; r++) {
         if ((_pageToScreen(route[r].x, route[r].y) - _doubleTapPos)
                 .distanceSquared <=
@@ -1078,7 +1098,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final double left, top, width, height;
     if (s.is1D) {
       // Edge label: a compact editor centred on the connector's route midpoint.
-      final mid = VsdxPage.connectorMidpoint(s);
+      final mid = _connectorMidpointPage(s);
       final screen = _pageToScreen(mid.x, mid.y);
       width = 140.0;
       height = math.max(fontPx + 14, 30.0);
@@ -1257,12 +1277,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_c.tool != EditorTool.select) {
       _mode = _DragMode.createShape;
       if (_c.tool == EditorTool.connector) {
-        // Capture the begin glue point at press (same as hover-connect).
-        final beginId = _topLevelAt(d.localPosition);
+        // Capture the begin glue point at press (deepest 2-D, matches drop).
+        final beginId = _glueTargetAt(d.localPosition);
         final beginShape =
             beginId == null ? null : _page?.findShapeById(beginId);
         _connectSourceConnIndex =
-            (beginShape != null && !beginShape.is1D && !beginShape.locked)
+            (beginShape != null && _canConnectFrom(beginShape))
                 ? _connSnapIndex(beginShape, d.localPosition)
                 : null;
       } else {
@@ -1279,7 +1299,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final hover = _hoverShapeId;
     if (hover != null) {
       final s = _page?.findShapeById(hover);
-      if (s != null && !s.is1D && !s.locked) {
+      if (s != null && _canConnectFrom(s)) {
         // Edge connection point (drawio blue X): drag out a connector glued to
         // that exact point. Skipped for the active resize selection so its
         // edge-midpoint handles keep priority. Otherwise any point on the
@@ -1408,7 +1428,8 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (_hitTest(localPos) == id) {
       final pagePos = _pageInchesAt(localPos);
-      final local = VsdxPage.pageToLocal(s, Offset2D(pagePos.dx, pagePos.dy));
+      final local =
+          _page!.pageToLocalDeep(s.id, Offset2D(pagePos.dx, pagePos.dy));
       _c.addConnectionPointAtLocal(local.x, local.y);
     }
     _mode = _DragMode.none;
@@ -1435,7 +1456,7 @@ class _PageCanvasState extends State<PageCanvas> {
         if (id != null && idx != null && s != null) {
           final pagePos = _pageInchesAt(pos);
           final local =
-              VsdxPage.pageToLocal(s, Offset2D(pagePos.dx, pagePos.dy));
+              _page!.pageToLocalDeep(s.id, Offset2D(pagePos.dx, pagePos.dy));
           _c.moveConnectionPointAtLocal(idx, local.x, local.y,
               transient: true);
         }
@@ -1468,8 +1489,9 @@ class _PageCanvasState extends State<PageCanvas> {
           }
           break;
         }
-        final connTarget =
-            _c.tool == EditorTool.connector ? _topLevelAt(pos) : null;
+        final connTarget = _c.tool == EditorTool.connector
+            ? _glueTargetAt(pos)
+            : null;
         final connTs =
             connTarget == null ? null : _page?.findShapeById(connTarget);
         setState(() {
@@ -1478,18 +1500,17 @@ class _PageCanvasState extends State<PageCanvas> {
           // its end to a fixed connection point when the pointer is near one.
           _connectTargetId = connTarget;
           _snapConnIndex =
-              (connTs != null && !connTs.is1D) ? _connSnapIndex(connTs, pos) : null;
+              connTs != null ? _connSnapIndex(connTs, pos) : null;
         });
       case _DragMode.connect:
         final src = _connectSourceId;
-        final t = _topLevelAt(pos);
-        final target = (t == src) ? null : t;
+        final target = _glueTargetAt(pos, excludeId: src);
         final ts = target == null ? null : _page?.findShapeById(target);
         setState(() {
           _previewEnd = _viewportToContent(pos);
           _connectTargetId = target;
           _snapConnIndex =
-              (ts != null && !ts.is1D) ? _connSnapIndex(ts, pos) : null;
+              ts != null ? _connSnapIndex(ts, pos) : null;
         });
       case _DragMode.resize:
         _applyResize(pos);
@@ -1534,12 +1555,30 @@ class _PageCanvasState extends State<PageCanvas> {
         }
       case _DragMode.rotate:
         final id = _resizeShapeId;
-        final s = id == null ? null : _c.currentPage?.findShapeById(id);
-        if (s != null) {
+        final page = _page;
+        final s = id == null ? null : page?.findShapeById(id);
+        if (s != null && page != null) {
           final p = _pageInchesAt(pos);
-          final pin = _page!.shapePinPage(s.id);
-          final angle = math.atan2(-(p.dx - pin.x), p.dy - pin.y);
-          _c.rotateShape(id!, angle, transient: true);
+          final pin = page.shapePinPage(s.id);
+          // Pointer gives a page-space heading; angleRad is parent-relative.
+          final pageAngle = math.atan2(-(p.dx - pin.x), p.dy - pin.y);
+          final tipPage = Offset2D(
+            pin.x - math.sin(pageAngle),
+            pin.y + math.cos(pageAngle),
+          );
+          final parentId = page.findParentId(s.id);
+          final double localAngle;
+          if (parentId == null) {
+            localAngle = pageAngle;
+          } else {
+            final tipLocal = page.pageToLocalDeep(parentId, tipPage);
+            final pinLocal = page.pageToLocalDeep(parentId, pin);
+            localAngle = math.atan2(
+              -(tipLocal.x - pinLocal.x),
+              tipLocal.y - pinLocal.y,
+            );
+          }
+          _c.rotateShape(id!, localAngle, transient: true);
         }
       case _DragMode.none:
         break;
@@ -1665,21 +1704,28 @@ class _PageCanvasState extends State<PageCanvas> {
     return (l: l, b: b!, r: r!, t: t!);
   }
 
-  /// AABBs (page inches) of the top-level shapes not in the selection.
+  /// AABBs (page inches) of non-selected visible 2-D shapes (nested included).
   List<SnapBox> _otherShapeBoxes() {
     final page = _page;
     if (page == null) return const <SnapBox>[];
     final sel = _c.selection;
-    return <SnapBox>[
-      for (final s in page.shapes)
-        if (!sel.contains(s.id))
-          SnapBox(
-            s.pinX - s.width / 2,
-            s.pinY - s.height / 2,
-            s.pinX + s.width / 2,
-            s.pinY + s.height / 2,
-          ),
-    ];
+    final out = <SnapBox>[];
+    void walk(VsdxShape s) {
+      if (!sel.contains(s.id) && !s.is1D && page.isShapeVisible(s)) {
+        final aabb = page.shapePageAabb(s.id);
+        if (aabb != null) {
+          out.add(SnapBox(aabb.left, aabb.bottom, aabb.right, aabb.top));
+        }
+      }
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final s in page.shapes) {
+      walk(s);
+    }
+    return out;
   }
 
   /// Connection-point magnets on non-selected 2-D shapes (page inches).
@@ -1689,7 +1735,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final sel = _c.selection;
     final out = <SnapMagnet>[];
     void walk(VsdxShape s) {
-      if (!sel.contains(s.id) && !s.is1D) {
+      if (!sel.contains(s.id) && !s.is1D && page.isShapeVisible(s)) {
         final pts = VsdxPage.effectiveConnectionPoints(s);
         for (final p in pts) {
           final pg = page.localToPageDeep(s.id, p.offset);
@@ -1777,17 +1823,42 @@ class _PageCanvasState extends State<PageCanvas> {
     return true;
   }
 
-  /// If [localPos] is over a selected connector's bend-point or segment-midpoint
-  /// handle, start a waypoint drag (promoting an auto route to explicit
-  /// waypoints, inserting one at a midpoint). Returns true when a drag started.
-  /// The top-level non-connector shape the endpoint would glue to at [pos],
-  /// excluding the connector [connId] being edited.
-  int? _endpointTargetAt(Offset pos, int connId) {
-    final t = _topLevelAt(pos);
-    if (t == null || t == connId) return null;
-    final s = _page?.findShapeById(t);
-    if (s == null || s.is1D) return null;
+  /// Deepest non-connector shape the endpoint would glue to at [pos]
+  /// (including nested children), excluding the connector [connId] being edited.
+  int? _endpointTargetAt(Offset pos, int connId) =>
+      _glueTargetAt(pos, excludeId: connId);
+
+  /// Deepest visible 2-D shape under [pos] (nested children included).
+  int? _glueTargetAt(Offset pos, {int? excludeId}) {
+    final t = _hitTest(pos);
+    if (t == null || t == excludeId) return null;
+    final page = _page;
+    final s = page?.findShapeById(t);
+    if (s == null || s.is1D || !page!.isShapeVisible(s)) return null;
     return t;
+  }
+
+  /// [VsdxPage.connectorRoute] in **page** inches (nested connectors store
+  /// Begin/End in parent-local space).
+  List<Offset2D> _connectorRoutePage(VsdxShape conn) {
+    final route = VsdxPage.connectorRoute(conn);
+    final page = _page;
+    if (page == null || route.isEmpty) return route;
+    final parentId = page.findParentId(conn.id);
+    if (parentId == null) return route;
+    return <Offset2D>[
+      for (final p in route) page.localToPageDeep(parentId, p),
+    ];
+  }
+
+  /// Arc-length midpoint of [conn]'s route in **page** inches.
+  Offset2D _connectorMidpointPage(VsdxShape conn) {
+    final mid = VsdxPage.connectorMidpoint(conn);
+    final page = _page;
+    if (page == null) return mid;
+    final parentId = page.findParentId(conn.id);
+    if (parentId == null) return mid;
+    return page.localToPageDeep(parentId, mid);
   }
 
   /// Index of [s]'s effective connection point nearest [viewportPos] within the
@@ -1873,11 +1944,11 @@ class _PageCanvasState extends State<PageCanvas> {
     cx = _c.snap(cx);
     cy = _c.snap(cy);
     // Connect to a shape already sitting where the clone would land, else clone.
-    final existing = _topLevelAt(_pageToScreen(cx, cy));
+    final existing = _glueTargetAt(_pageToScreen(cx, cy), excludeId: s.id);
     _c.connectDirectional(
       s.id,
       dir,
-      existingTargetId: existing != null && existing != s.id ? existing : null,
+      existingTargetId: existing,
       cloneX: cx,
       cloneY: cy,
     );
@@ -1887,8 +1958,8 @@ class _PageCanvasState extends State<PageCanvas> {
   /// editing). Returns whether the drag was started.
   bool _tryStartEndpointDrag(Offset localPos) {
     final conn = _selectedConnector();
-    if (conn == null || conn.locked) return false;
-    final route = VsdxPage.connectorRoute(conn);
+    if (conn == null || !_canEditConnector(conn)) return false;
+    final route = _connectorRoutePage(conn);
     if (route.length < 2) return false;
     final ends = <bool>[true, false]; // begin, end
     for (final begin in ends) {
@@ -1906,18 +1977,24 @@ class _PageCanvasState extends State<PageCanvas> {
 
   bool _tryStartWaypointDrag(Offset localPos) {
     final conn = _selectedConnector();
-    if (conn == null) return false;
-    final route = VsdxPage.connectorRoute(conn);
+    if (conn == null || !_canEditConnector(conn)) return false;
+    // Hit-test in page space; promote stores parent-local waypoints.
+    final pageRoute = _connectorRoutePage(conn);
+    final localRoute = VsdxPage.connectorRoute(conn);
     void promote() {
-      if (conn.waypoints.isEmpty && route.length > 2) {
-        _c.setConnectorWaypoints(conn.id, route.sublist(1, route.length - 1),
-            transient: true);
+      if (conn.waypoints.isEmpty && localRoute.length > 2) {
+        _c.setConnectorWaypoints(
+          conn.id,
+          localRoute.sublist(1, localRoute.length - 1),
+          transient: true,
+        );
       }
     }
 
     // Existing interior vertices → move that bend point.
-    for (var r = 1; r < route.length - 1; r++) {
-      if ((_pageToScreen(route[r].x, route[r].y) - localPos).distanceSquared <=
+    for (var r = 1; r < pageRoute.length - 1; r++) {
+      if ((_pageToScreen(pageRoute[r].x, pageRoute[r].y) - localPos)
+              .distanceSquared <=
           100) {
         _c.beginTransaction();
         promote();
@@ -1928,9 +2005,9 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
     // Segment midpoints → insert a new bend point there and drag it.
-    for (var r = 0; r < route.length - 1; r++) {
-      final mx = (route[r].x + route[r + 1].x) / 2;
-      final my = (route[r].y + route[r + 1].y) / 2;
+    for (var r = 0; r < pageRoute.length - 1; r++) {
+      final mx = (pageRoute[r].x + pageRoute[r + 1].x) / 2;
+      final my = (pageRoute[r].y + pageRoute[r + 1].y) / 2;
       if ((_pageToScreen(mx, my) - localPos).distanceSquared <= 100) {
         _c.beginTransaction();
         promote();
@@ -1950,7 +2027,12 @@ class _PageCanvasState extends State<PageCanvas> {
     final page = _page;
     if (tableId == null || page == null) return false;
     final table = page.findShapeById(tableId);
-    if (table == null || !TableOps.isTable(table)) return false;
+    if (table == null ||
+        !TableOps.isTable(table) ||
+        table.locked ||
+        _c.isOnLockedLayer(tableId)) {
+      return false;
+    }
     const hitPx = 6.0;
     final hit2 = hitPx * hitPx;
 
@@ -1964,7 +2046,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_distToSegmentSq(viewportPos, sa, sb) <= hit2) {
         _tableResizeId = tableId;
         _tableDividerIndex = i;
-        _tableResizeLastPage = _pageInchesAt(viewportPos).dx;
+        _tableResizeLastPage = _pageInchesAt(viewportPos);
         _mode = _DragMode.tableColResize;
         _c.beginTransaction();
         return true;
@@ -1980,7 +2062,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_distToSegmentSq(viewportPos, sa, sb) <= hit2) {
         _tableResizeId = tableId;
         _tableDividerIndex = i;
-        _tableResizeLastPage = _pageInchesAt(viewportPos).dy;
+        _tableResizeLastPage = _pageInchesAt(viewportPos);
         _mode = _DragMode.tableRowResize;
         _c.beginTransaction();
         return true;
@@ -1992,10 +2074,17 @@ class _PageCanvasState extends State<PageCanvas> {
   void _applyTableColResize(Offset pos) {
     final id = _tableResizeId;
     final idx = _tableDividerIndex;
-    if (id == null || idx == null) return;
-    final x = _pageInchesAt(pos).dx;
-    final delta = x - _tableResizeLastPage;
-    _tableResizeLastPage = x;
+    final page = _page;
+    if (id == null || idx == null || page == null) return;
+    final cur = _pageInchesAt(pos);
+    // Column width is table-local X; project page delta through ancestors.
+    final prevLocal = page.pageToLocalDeep(
+      id,
+      Offset2D(_tableResizeLastPage.dx, _tableResizeLastPage.dy),
+    );
+    final curLocal = page.pageToLocalDeep(id, Offset2D(cur.dx, cur.dy));
+    final delta = curLocal.x - prevLocal.x;
+    _tableResizeLastPage = cur;
     if (delta.abs() < 1e-9) return;
     _c.resizeTableColumn(id, idx, delta, transient: true);
   }
@@ -2003,10 +2092,16 @@ class _PageCanvasState extends State<PageCanvas> {
   void _applyTableRowResize(Offset pos) {
     final id = _tableResizeId;
     final idx = _tableDividerIndex;
-    if (id == null || idx == null) return;
-    final y = _pageInchesAt(pos).dy;
-    final delta = y - _tableResizeLastPage;
-    _tableResizeLastPage = y;
+    final page = _page;
+    if (id == null || idx == null || page == null) return;
+    final cur = _pageInchesAt(pos);
+    final prevLocal = page.pageToLocalDeep(
+      id,
+      Offset2D(_tableResizeLastPage.dx, _tableResizeLastPage.dy),
+    );
+    final curLocal = page.pageToLocalDeep(id, Offset2D(cur.dx, cur.dy));
+    final delta = curLocal.y - prevLocal.y;
+    _tableResizeLastPage = cur;
     if (delta.abs() < 1e-9) return;
     _c.resizeTableRow(id, idx, delta, transient: true);
   }
@@ -2106,8 +2201,9 @@ class _PageCanvasState extends State<PageCanvas> {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
           if (_c.tool == EditorTool.connector) {
-            final beginTarget = _hitTest(_offset + start * _scale);
-            final endTarget = _connectTargetId ?? _hitTest(_offset + end * _scale);
+            final beginTarget = _glueTargetAt(_offset + start * _scale);
+            final endTarget = _connectTargetId ??
+                _glueTargetAt(_offset + end * _scale);
             _c.createConnector(
               a.dx,
               a.dy,
@@ -2227,7 +2323,10 @@ class _PageCanvasState extends State<PageCanvas> {
     // Ignore accidental micro-drags (treat as a click that cleared already).
     if ((r - l) < 0.02 && (top - bottom) < 0.02) return;
     final bounds = buildShapeBounds(page);
-    final topLevel = <int>{for (final sh in page.shapes) sh.id};
+    final topLevel = <int>{
+      for (final sh in page.shapes)
+        if (page.isShapeVisible(sh)) sh.id,
+    };
     final ids = <int>[
       for (final entry in bounds.entries)
         if (topLevel.contains(entry.key) &&
@@ -2485,7 +2584,7 @@ class _PageCanvasState extends State<PageCanvas> {
             } else if (_connectAffordanceActive && _hoverShapeId != null) {
               cpShape = page.findShapeById(_hoverShapeId!);
             }
-            if (cpShape != null && !cpShape.is1D && !cpShape.locked) {
+            if (cpShape != null && _canConnectFrom(cpShape)) {
               final t = cpShape;
               final pts = VsdxPage.effectiveConnectionPoints(t);
               connectionPointDots = <Offset>[
@@ -2512,8 +2611,8 @@ class _PageCanvasState extends State<PageCanvas> {
             var waypointHandles = const <Offset>[];
             var midpointHandles = const <Offset>[];
             var endpointHandles = const <Offset>[];
-            if (connector != null) {
-              final route = VsdxPage.connectorRoute(connector);
+            if (connector != null && _canEditConnector(connector)) {
+              final route = _connectorRoutePage(connector);
               waypointHandles = <Offset>[
                 for (var r = 1; r < route.length - 1; r++)
                   _pageToContent(route[r].x, route[r].y),
@@ -2527,7 +2626,7 @@ class _PageCanvasState extends State<PageCanvas> {
               ];
               // Begin / end handles (drawio endpoint editing): drag to
               // reconnect to another shape or detach to a floating point.
-              if (!connector.locked && route.length >= 2) {
+              if (route.length >= 2) {
                 endpointHandles = <Offset>[
                   _pageToContent(route.first.x, route.first.y),
                   _pageToContent(route.last.x, route.last.y),

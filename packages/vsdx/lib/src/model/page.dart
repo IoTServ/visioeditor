@@ -283,6 +283,13 @@ class VsdxPage {
           if (l.visible) l.id,
       };
 
+  /// Whether [s] would be painted when layer visibility is respected
+  /// (shapes with no layer membership are always visible).
+  bool isShapeVisible(VsdxShape s) {
+    if (s.layerMemberIds.isEmpty || layers.isEmpty) return true;
+    return s.isOnAnyLayer(visibleLayerIds);
+  }
+
   /// Layer ids whose Visio `Print` flag is on — used by PDF / SVG / PNG export.
   Set<int> get printableLayerIds => {
         for (final l in layers)
@@ -455,9 +462,38 @@ class VsdxPage {
 
   /// A new page with the shape [id] removed (recursing into groups). Returns
   /// `this` (identical) when nothing matched.
-  VsdxPage removeShapeById(int id) {
+  ///
+  /// When [pruneConnects] is true (default), `<Connect>` rows that reference
+  /// the removed shape or any of its descendants are dropped too. Pass
+  /// `false` for temporary removals such as [reparentShape], which put the
+  /// shape back on the page in the same edit.
+  VsdxPage removeShapeById(int id, {bool pruneConnects = true}) {
+    final victim = findShapeById(id);
+    if (victim == null) return this;
+    final removedIds = <int>{};
+    void walk(VsdxShape s) {
+      removedIds.add(s.id);
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    walk(victim);
     final (newShapes, changed) = _removeInList(shapes, id);
-    return changed ? copyWith(shapes: newShapes) : this;
+    if (!changed) return this;
+    if (!pruneConnects || connects.isEmpty) {
+      return copyWith(shapes: newShapes);
+    }
+    final nextConnects = <VsdxConnect>[
+      for (final c in connects)
+        if (!removedIds.contains(c.fromSheetId) &&
+            !removedIds.contains(c.toSheetId))
+          c,
+    ];
+    return copyWith(
+      shapes: newShapes,
+      connects: nextConnects.length == connects.length ? connects : nextConnects,
+    );
   }
 
   static (List<VsdxShape>, bool) _removeInList(List<VsdxShape> list, int id) {
@@ -720,10 +756,15 @@ class VsdxPage {
 
     // Materialise the standard connection points on the target when pinning to
     // a fixed point and the shape has none yet (so the point round-trips).
+    // Skip locked / locked-layer targets — glue may still reference the index
+    // via [effectiveConnectionPoints], but must not mutate a locked shape.
     var base = this;
     if (targetShapeId != null && connectionPointIndex != null) {
       final target = base.findShapeById(targetShapeId);
-      if (target != null && target.connectionPoints.isEmpty) {
+      if (target != null &&
+          target.connectionPoints.isEmpty &&
+          !target.locked &&
+          !base.isShapeOnLockedLayer(target)) {
         base = base.updateShapeById(
           targetShapeId,
           (t) => t.copyWith(
@@ -912,11 +953,28 @@ class VsdxPage {
     return s;
   }
 
+  /// True when [s] belongs to at least one layer with `Lock=1`.
+  bool isShapeOnLockedLayer(VsdxShape s) {
+    if (s.layerMemberIds.isEmpty || layers.isEmpty) return false;
+    for (final id in s.layerMemberIds) {
+      for (final l in layers) {
+        if (l.id == id && l.locked) return true;
+      }
+    }
+    return false;
+  }
+
   /// Ensure [id] has an explicit Connection section (materialise the default
-  /// 5 points when empty). No-op for missing / 1-D shapes.
+  /// 5 points when empty). No-op for missing / 1-D / locked shapes.
   VsdxPage materializeConnectionPoints(int id) {
     final s = findShapeById(id);
-    if (s == null || s.is1D || s.connectionPoints.isNotEmpty) return this;
+    if (s == null ||
+        s.is1D ||
+        s.locked ||
+        isShapeOnLockedLayer(s) ||
+        s.connectionPoints.isNotEmpty) {
+      return this;
+    }
     return updateShapeById(
       id,
       (t) => t.copyWith(
@@ -1783,11 +1841,11 @@ class VsdxPage {
     late final VsdxPage without;
     if (oldParentId == null) {
       pageShape = child;
-      without = removeShapeById(childId);
+      without = removeShapeById(childId, pruneConnects: false);
     } else {
       final oldParent = findShapeById(oldParentId)!;
       pageShape = _promoteChildToPage(child, oldParent);
-      without = removeShapeById(childId);
+      without = removeShapeById(childId, pruneConnects: false);
     }
 
     if (newParentId == null) {

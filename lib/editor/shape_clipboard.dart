@@ -2,6 +2,17 @@ import 'dart:convert';
 
 import 'package:vsdx/vsdx.dart';
 
+/// Decoded system-clipboard payload (shapes + optional Connect rows).
+class ShapeClipboardPayload {
+  const ShapeClipboardPayload({
+    required this.shapes,
+    this.connects = const <VsdxConnect>[],
+  });
+
+  final List<VsdxShape> shapes;
+  final List<VsdxConnect> connects;
+}
+
 /// Codec for the system clipboard: a tiny one-page `.vsdx` payload carrying
 /// the copied shapes (draw.io-style cross-instance paste within this app).
 ///
@@ -13,34 +24,67 @@ abstract final class ShapeClipboardCodec {
   static final DocumentParser _parser = DocumentParser();
   static final VsdxWriter _writer = VsdxWriter();
 
-  /// Pack [shapes] into a clipboard envelope string.
-  static String encode(List<VsdxShape> shapes) {
+  /// Pack [shapes] (and optional [connects]) into a clipboard envelope string.
+  static String encode(
+    List<VsdxShape> shapes, {
+    List<VsdxConnect> connects = const <VsdxConnect>[],
+  }) {
     if (shapes.isEmpty) return '';
     final blank = _writer.emptyDocument();
     var doc = _parser.parse(blank);
     var page = doc.pages.first;
+    final idMap = <int, int>{};
     for (final s in shapes) {
       // Image media parts are session-local — skip them for the system clip
       // (in-memory clipboard still holds the original with the image).
       if (s.hasImage) continue;
       var nextId = page.nextFreeShapeId();
-      page = page.addShape(s.withRemappedIds(() => nextId++));
+      page = page.addShape(
+        s.withRemappedIds(() => nextId++, idMap: idMap),
+      );
     }
     if (page.shapes.isEmpty) return '';
+    if (connects.isNotEmpty) {
+      final remapped = <VsdxConnect>[
+        for (final c in connects)
+          if (idMap.containsKey(c.fromSheetId) &&
+              idMap.containsKey(c.toSheetId))
+            VsdxConnect(
+              fromSheetId: idMap[c.fromSheetId]!,
+              fromCell: c.fromCell,
+              fromPart: c.fromPart,
+              toSheetId: idMap[c.toSheetId]!,
+              toCell: c.toCell,
+              toPart: c.toPart,
+            ),
+      ];
+      if (remapped.isNotEmpty) {
+        page = page.copyWith(connects: remapped);
+      }
+    }
     doc = doc.replacePage(0, page);
     final bytes = _writer.write(originalBytes: blank, edited: doc);
     return prefix + base64Encode(bytes);
   }
 
   /// Decode an envelope into shapes, or `null` if [text] is not ours.
-  static List<VsdxShape>? decode(String text) {
+  static List<VsdxShape>? decode(String text) => decodeEnvelope(text)?.shapes;
+
+  /// Decode an envelope into shapes + Connect rows, or `null` if not ours.
+  static ShapeClipboardPayload? decodeEnvelope(String text) {
     final trimmed = text.trim();
     if (!trimmed.startsWith(prefix)) return null;
     try {
       final bytes = base64Decode(trimmed.substring(prefix.length));
       final doc = _parser.parse(bytes);
-      if (doc.pages.isEmpty) return const <VsdxShape>[];
-      return doc.pages.first.shapes;
+      if (doc.pages.isEmpty) {
+        return const ShapeClipboardPayload(shapes: <VsdxShape>[]);
+      }
+      final page = doc.pages.first;
+      return ShapeClipboardPayload(
+        shapes: page.shapes,
+        connects: page.connects,
+      );
     } catch (_) {
       return null;
     }

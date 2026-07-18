@@ -561,6 +561,10 @@ class VsdxShape {
   /// Stored expanded height (inches) while [collapsed], so unfold restores size.
   static const String userExpandedHeight = 'veExpandedHeight';
 
+  /// Serialized [VsdxConnect] rows detached while [collapsed] so unfold (and
+  /// undo) can restore glue to hidden children. Editor-owned; not used by Visio.
+  static const String userCollapsedGlue = 'veCollapsedGlue';
+
   static const Set<String> _routeUserCellNames = {
     userRouteStraight,
     userRouteCurved,
