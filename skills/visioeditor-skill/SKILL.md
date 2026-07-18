@@ -130,6 +130,10 @@ spec:
   `VSDXTOOL import-code -d ./src -o code.vsdx` (MCP: `import_code({ dir,
   language?, path, open })`). One box per module; edges are intra-project
   imports (external/SDK deps dropped). Language auto-detected.
+- **OpenAPI / Swagger** (JSON or YAML) → API diagram:
+  `VSDXTOOL import-openapi -i openapi.yaml -o api.vsdx`
+  (MCP: `import_openapi({ spec, path, open })`). Operations coloured by HTTP
+  method + schema boxes + `$ref` edges.
 
 Both produce a normal `.vsdx` you can then refine with Edit Ops and preview
 live. (Code / IaC / OpenAPI importers are planned — see `docs/MCP_SKILL_PLAN.md`.)

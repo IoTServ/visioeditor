@@ -25,6 +25,7 @@ Future<void> main(List<String> args) async {
     ..addCommand(_ImportMermaidCommand())
     ..addCommand(_ImportSqlCommand())
     ..addCommand(_ImportCodeCommand())
+    ..addCommand(_ImportOpenapiCommand())
     ..addCommand(_PatchCommand())
     ..addCommand(_RenderCommand())
     ..addCommand(_ToMermaidCommand())
@@ -155,6 +156,33 @@ class _ImportCodeCommand extends Command<int> {
     File(out).writeAsBytesSync(bytes);
     stdout.writeln('imported $out (${bytes.length} bytes, '
         '${spec.nodes.length} modules, ${spec.edges.length} imports)');
+    return 0;
+  }
+}
+
+class _ImportOpenapiCommand extends Command<int> {
+  _ImportOpenapiCommand() {
+    argParser
+      ..addOption('input',
+          abbr: 'i', help: 'OpenAPI/Swagger spec (.yaml/.json), or stdin.')
+      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+  }
+  @override
+  String get name => 'import-openapi';
+  @override
+  String get description =>
+      'Convert an OpenAPI/Swagger spec (JSON/YAML) to an editable API diagram .vsdx.';
+
+  @override
+  int run() {
+    final input = argResults!['input'] as String?;
+    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final spec = openapiToSpec(text);
+    final bytes = spec.build();
+    final out = argResults!['output'] as String;
+    File(out).writeAsBytesSync(bytes);
+    stdout.writeln('imported $out (${bytes.length} bytes, '
+        '${spec.nodes.length} nodes, ${spec.edges.length} refs)');
     return 0;
   }
 }

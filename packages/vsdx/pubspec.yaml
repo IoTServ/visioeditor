@@ -17,6 +17,8 @@ dependencies:
   logging: ^1.2.0
   # Multi-command CLI (bin/vsdxtool.dart) — the headless Agent backend.
   args: ^2.5.0
+  # Parse YAML OpenAPI/Swagger specs (import-openapi); JSON handled by dart:convert.
+  yaml: ^3.1.2
 
 dev_dependencies:
   lints: ^5.0.0

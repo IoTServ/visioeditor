@@ -23,6 +23,7 @@ import 'inspect.dart';
 import 'mcp_server.dart';
 import 'mermaid_export.dart';
 import 'mermaid_import.dart';
+import 'openapi_import.dart';
 import 'sql_import.dart';
 import 'stencil_catalog.dart';
 
@@ -188,6 +189,46 @@ void _registerFileTools(McpServer server) {
       final out = StringBuffer()
         ..writeln('Imported ${_abs(path)}')
         ..writeln('${spec.nodes.length} modules, ${spec.edges.length} imports')
+        ..writeln(_validationSummary(bytes));
+      if (args['open'] == true) {
+        try {
+          final client = await BridgeClient.connect();
+          await client.call('open', <String, dynamic>{'path': _abs(path)});
+          await client.close();
+          out.writeln('Opened in the running editor (live preview).');
+        } catch (e) {
+          out.writeln('Note: could not open in app ($e).');
+        }
+      }
+      return <McpContent>[McpContent.text(out.toString().trimRight())];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'import_openapi',
+    description: 'Convert an OpenAPI 3 / Swagger 2 spec (JSON or YAML) to an '
+        'editable API diagram .vsdx (operations coloured by HTTP method + '
+        r'schema nodes + $ref edges). Set open=true to open it in the editor.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'spec': <String, dynamic>{
+          'type': 'string',
+          'description': 'OpenAPI/Swagger source (JSON or YAML).',
+        },
+        'path': <String, dynamic>{'type': 'string'},
+        'open': <String, dynamic>{'type': 'boolean'},
+      },
+      'required': <String>['spec', 'path'],
+    },
+    handler: (args) async {
+      final spec = openapiToSpec('${args['spec']}');
+      final bytes = spec.build();
+      final path = args['path'] as String;
+      File(path).writeAsBytesSync(bytes);
+      final out = StringBuffer()
+        ..writeln('Imported ${_abs(path)}')
+        ..writeln('${spec.nodes.length} nodes, ${spec.edges.length} refs')
         ..writeln(_validationSummary(bytes));
       if (args['open'] == true) {
         try {

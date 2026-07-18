@@ -410,7 +410,11 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       扫描项目、提取 import/from/require/export-from、解析为**仅项目内**模块依赖边
       （Dart `package:`→lib/、Python 相对导入 + `__init__` 包、JS 相对 + `index` 解析），
       每模块一框 + 依赖边；单测 `code_import_test` 7 例（提取器 + 三语言临时目录集成）。
-- [ ] 导入器：`import-openapi`（其余 Go/Rust 依赖图与 IaC 后续）。
+- [x] 导入器：**`import-openapi`**（OpenAPI 3 / Swagger 2，JSON+YAML）—— `lib/src/agent/openapi_import.dart`，
+      CLI `import-openapi` + MCP `import_openapi`；操作按 HTTP 方法着色、schema 节点、`$ref` 引用边
+      （operation→schema、schema→schema），支持 `components/schemas` 与 Swagger `definitions`；
+      单测 `openapi_import_test` 3 例（YAML/JSON + 往返）。新增 `yaml` 依赖。
+- [ ] 导入器：Go/Rust 依赖图、IaC（Terraform/K8s/compose）后续。
 - [x] **L3 协同编辑**：应用桥 `applyOps` 改为经 `EditorController.applyEdit(next)` 提交——
       Agent 编辑成为**单步可撤销**、**保留用户 undo 历史与选中**（复用既有 `applyOps` 引擎逻辑，
       含 `rerouteConnectors`）；不落盘、即时重绘。桥测试新增 L3 撤销用例（共 8 例）。
@@ -432,7 +436,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       Cloud Storage 建图校验干净。应用 `flutter test` 555 无回归（下沉透明）。
 
 **M5 导入/导出矩阵（现状）**：入 = Diagram Spec · Edit Ops · Mermaid · SQL DDL ·
-Code（Dart/Py/JS-TS）；出 = `.vsdx` · SVG · Mermaid · Markdown（explain）· PNG（应用 snapshot）。
+Code（Dart/Py/JS-TS）· OpenAPI/Swagger（JSON/YAML）；出 = `.vsdx` · SVG · Mermaid ·
+Markdown（explain）· PNG（应用 snapshot）。
 **形状词汇**：全量 ~600 图形（core + 全部专业库）经 `resolveStencilShape` 对 Agent 可用。
 
 ### M6 —— 打磨  `LATER`
@@ -600,4 +605,8 @@ visioeditor/
   下沉到 `packages/vsdx/lib/src/stencils.dart` + barrel `package:vsdx/stencils.dart`，应用侧改 re-export；
   Agent `resolveStencilShape`（核心→全量目录 resize+可选覆盖样式→兜底）+ `search_shapes` 检索全量；
   `diagram_spec`/`edit_ops` 统一走解析。单测 `stencil_catalog_test` 8 例。`dart test` **534**、
-  `flutter test` **555** 全绿（下沉对应用透明）。仍待：`import-openapi`、发布二进制/`npx`、l10n 菜单文案。
+  `flutter test` **555** 全绿（下沉对应用透明）。
+- 2026-07-18 — **M5 续（import-openapi）**：新增 `lib/src/agent/openapi_import.dart`
+  （OpenAPI 3 / Swagger 2，JSON+YAML → API 图：操作按方法着色 + schema 节点 + `$ref` 边），
+  CLI `import-openapi` + MCP `import_openapi`，新增 `yaml` 依赖；单测 `openapi_import_test` 3 例。
+  `dart test` **537**、`flutter test` 555 全绿。仍待：Go/Rust 依赖图、IaC、发布二进制/`npx`、l10n。

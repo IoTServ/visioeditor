@@ -18,5 +18,6 @@ export 'src/agent/mcp_server.dart';
 export 'src/agent/mermaid_export.dart';
 export 'src/agent/mermaid_import.dart';
 export 'src/agent/mcp_tools.dart';
+export 'src/agent/openapi_import.dart';
 export 'src/agent/sql_import.dart';
 export 'src/agent/stencil_catalog.dart';
