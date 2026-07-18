@@ -17,6 +17,7 @@ import 'package:vsdx/vsdx.dart';
 
 import 'agent_style.dart';
 import 'stencil_catalog.dart';
+import 'style_presets.dart';
 
 /// A node in a [DiagramSpec]. Coordinates ([x]/[y]) are page inches with the
 /// origin at the bottom-left (Visio convention); omit them to auto-layout.
@@ -33,6 +34,7 @@ class NodeSpec {
     this.line,
     this.textColor,
     this.bold = false,
+    this.role,
   });
 
   factory NodeSpec.fromJson(Map<String, dynamic> j) => NodeSpec(
@@ -47,6 +49,7 @@ class NodeSpec {
         line: (j['line'] ?? j['stroke'])?.toString(),
         textColor: (j['textColor'] ?? j['fontColor'])?.toString(),
         bold: j['bold'] == true,
+        role: j['role']?.toString(),
       );
 
   final String id;
@@ -60,6 +63,8 @@ class NodeSpec {
   final String? line;
   final String? textColor;
   final bool bold;
+  /// Semantic role for style presets (`service`, `database`, …).
+  final String? role;
 
   // Resolved by layout:
   double cx = 0;
@@ -137,6 +142,7 @@ class PageSpec {
 class DiagramSpec {
   DiagramSpec({
     this.title,
+    this.style,
     this.direction = 'TB',
     this.spacing = 0.6,
     PageSpec? page,
@@ -150,6 +156,7 @@ class DiagramSpec {
     final layout = (j['layout'] as Map?)?.cast<String, dynamic>();
     return DiagramSpec(
       title: j['title']?.toString(),
+      style: j['style']?.toString(),
       direction:
           (layout?['direction'] ?? j['direction'] ?? 'TB').toString().toUpperCase(),
       spacing: _d(layout?['spacing'] ?? j['spacing']) ?? 0.6,
@@ -170,14 +177,22 @@ class DiagramSpec {
       DiagramSpec.fromJson((jsonDecode(jsonText) as Map).cast<String, dynamic>());
 
   final String? title;
+  /// Optional style preset name (`default` / `corporate` / `dark`); applied in
+  /// [build] unless colours were set explicitly on nodes.
+  final String? style;
   final String direction;
   final double spacing;
   final PageSpec page;
   final List<NodeSpec> nodes;
   final List<EdgeSpec> edges;
 
-  /// Build the `.vsdx` bytes for this spec.
-  Uint8List build() => buildDiagramBytes(this);
+  /// Build the `.vsdx` bytes for this spec (applies [style] when set).
+  Uint8List build() {
+    final styled = (style != null && style!.isNotEmpty)
+        ? applyStylePreset(this, style!)
+        : this;
+    return buildDiagramBytes(styled);
+  }
 }
 
 double? _d(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));

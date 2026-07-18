@@ -22,6 +22,7 @@ Future<void> main(List<String> args) async {
     'Headless .vsdx authoring/editing backend for AI agents (visioeditor).',
   )
     ..addCommand(_BuildCommand())
+    ..addCommand(_StylesCommand())
     ..addCommand(_ImportMermaidCommand())
     ..addCommand(_ImportSqlCommand())
     ..addCommand(_ImportCodeCommand())
@@ -51,7 +52,10 @@ class _BuildCommand extends Command<int> {
     argParser
       ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true)
       ..addOption('spec',
-          abbr: 's', help: 'Diagram Spec JSON path (or read stdin if omitted).');
+          abbr: 's', help: 'Diagram Spec JSON path (or read stdin if omitted).')
+      ..addOption('style',
+          help: 'Style preset: default | corporate | dark '
+              '(overrides spec.style).');
   }
   @override
   String get name => 'build';
@@ -63,13 +67,39 @@ class _BuildCommand extends Command<int> {
     final specPath = argResults!['spec'] as String?;
     final jsonText =
         specPath != null ? File(specPath).readAsStringSync() : _readAllStdin();
-    final spec = DiagramSpec.parse(jsonText);
+    final jsonText2 = () {
+      final style = argResults!['style'] as String?;
+      if (style == null || style.isEmpty) return jsonText;
+      final map = (jsonDecode(jsonText) as Map).cast<String, dynamic>();
+      map['style'] = style;
+      return jsonEncode(map);
+    }();
+    final spec = DiagramSpec.parse(jsonText2);
     final bytes = spec.build();
     final out = argResults!['output'] as String;
     File(out).writeAsBytesSync(bytes);
     stdout.writeln(
         'built $out (${bytes.length} bytes, ${spec.nodes.length} nodes, '
         '${spec.edges.length} edges)');
+    return 0;
+  }
+}
+
+class _StylesCommand extends Command<int> {
+  @override
+  String get name => 'styles';
+  @override
+  String get description =>
+      'List Diagram Spec style presets (default / corporate / dark).';
+
+  @override
+  int run() {
+    for (final name in listStylePresets()) {
+      final p = stylePreset(name)!;
+      final primary = p.palette['primary']!;
+      stdout.writeln('$name\tprimary=${primary.fill}/${primary.stroke}'
+          '${p.background == null ? '' : '\tbg=${p.background}'}');
+    }
     return 0;
   }
 }

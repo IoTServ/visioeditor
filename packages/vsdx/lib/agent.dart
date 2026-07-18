@@ -22,3 +22,4 @@ export 'src/agent/mcp_tools.dart';
 export 'src/agent/openapi_import.dart';
 export 'src/agent/sql_import.dart';
 export 'src/agent/stencil_catalog.dart';
+export 'src/agent/style_presets.dart';

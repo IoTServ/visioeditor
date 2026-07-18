@@ -350,8 +350,9 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 
 - [x] MCP stdio 服务骨架（`McpServer`：`initialize`/`notifications`/`ping`/
       `tools/list`/`tools/call`，newline-delimited JSON-RPC 2.0）。
-- [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_shapes/search_shapes`
-      （后端调 agent 库；`list_shapes` 双模式，返回结构化 id/text/坐标供 Agent 定位）。
+- [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_shapes/
+      search_shapes/list_styles`（后端调 agent 库；`list_shapes` 双模式；`list_styles` 列
+      样式预设）。
 - [x] 实时类工具：`open_in_app/live_apply_ops/select/snapshot/get_app_state`
       （`BridgeClient` 连应用桥；`select` 按 id 高亮选中）。
 - [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
@@ -377,20 +378,21 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] 自检回路（≤2 轮，用 `snapshot` 视觉纠错）+ 评审回路（≤5 轮）落到 `SKILL.md`。
 
 验收（已达成）：skill 指引 Agent 用 `vsdxtool`/MCP 端到端出 `.vsdx` 并可在应用实时预览。
-> 后续：样式预设 `styles/` 与薄 `scripts/` 封装（当前直接调 CLI/MCP，已够用）；l10n 菜单文案。
+> **styles / scripts 已落地**（见下 M4 勾选）。后续：l10n 菜单文案。
 
 ---
 
-### M4 —— Skill  `TODO`
+### M4 —— Skill  `DONE`
 
-- [ ] `SKILL.md`：frontmatter（name/description/触发词/兼容性/平台）+ §5.4 工作流。
-- [ ] `references/`：spec-schema / shape-catalog / diagram-types / styling / live-preview /
+- [x] `SKILL.md`：frontmatter（name/description/触发词/兼容性/平台）+ §5.4 工作流。
+- [x] `references/`：spec-schema / shape-catalog / diagram-types / styling / live-preview /
       troubleshooting。
-- [ ] 图型预设：流程图 / 组织架构 / 网络拓扑 / 架构 / ERD / UML 类图·时序 / BPMN / 泳道
+- [x] 图型预设：流程图 / 组织架构 / 网络拓扑 / 架构 / ERD / UML 类图·时序 / BPMN / 泳道
       （复用主线已有 stencil 与容器/泳道/表格能力）。
-- [ ] 自检回路（Step 5，≤2 轮）+ 评审回路（Step 6，≤5 轮）落到 SKILL.md。
-- [ ] 样式预设机制（`styles/`，schema 对齐 drawio-skill）。
-- [ ] `scripts/` 薄封装（无 MCP 环境也能跑）。
+- [x] 自检回路（Step 5，≤2 轮）+ 评审回路（Step 6，≤5 轮）落到 SKILL.md。
+- [x] 样式预设机制（`styles/` + 引擎 `style_presets.dart`：default/corporate/dark；
+      Spec `"style"` / node `"role"` / CLI `--style` / MCP `list_styles`+`create_diagram.style`）。
+- [x] `scripts/` 薄封装（`build`/`patch`/`validate`/`render`/`explain`，解析 `vsdxtool`）。
 
 验收：在 Cursor/Claude Code 装此 skill，`"画一张订单微服务架构图并在应用里打开"` 端到端完成
 （生成 → 自检 → 应用实时可见 → 定稿导出）。
@@ -643,4 +645,7 @@ visioeditor/
 - 2026-07-18 — **打磨（select 选中工具）**：应用桥新增 `select`（按 id 高亮/清空选中，
   未知 id 丢弃并回报 `unknown`，推送 `selectionChanged`）；MCP 直播工具 `select`；
   `agent_bridge_test`+1、`mcp_server_test`+1。工具总数 **24**。
+- 2026-07-18 — **M4 收口（styles + scripts）**：`style_presets.dart`（default/corporate/dark，
+  role→色/形）；Spec `"style"` / CLI `build --style` + `styles` / MCP `list_styles`；
+  skill `styles/` + `scripts/` 薄封装。工具总数 **25**。`style_presets_test` 4 例。
   仍待：发布二进制/`npx`、l10n 菜单文案。

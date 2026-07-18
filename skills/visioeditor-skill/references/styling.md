@@ -1,5 +1,21 @@
 # Styling
 
+## Style presets (preferred)
+
+Apply a named preset so fills/lines stay consistent:
+
+| Preset | Spec / CLI / MCP |
+| --- | --- |
+| `default` | `{ "style": "default", … }` · `--style default` · `create_diagram({ style })` |
+| `corporate` | cooler blues, sharper rectangles |
+| `dark` | dark page + light ink |
+
+Set node `"role"` (`service` · `database` · `queue` · `gateway` · `error` ·
+`external` · `security`) to pick a palette slot; `database` also maps to the
+`cylinder` stencil when the stencil is still the default rectangle. Explicit
+`fill` / `line` / `stencil` always win. Discover presets with `VSDXTOOL styles`
+or MCP `list_styles`. Details: `styles/README.md`.
+
 ## Colors
 
 Colors are hex strings: `#RGB`, `#RRGGBB`, or `#AARRGGBB` (with or without `#`).

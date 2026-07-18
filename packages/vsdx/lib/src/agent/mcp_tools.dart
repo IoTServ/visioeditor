@@ -1,7 +1,7 @@
 /// Registers the visioeditor Agent toolset on an [McpServer].
 ///
 /// **File tools** (no app needed): `create_diagram`, `apply_ops`, `export`,
-/// `validate`, `explain`, `search_shapes`.
+/// `validate`, `explain`, `search_shapes`, `list_styles`.
 /// **Live tools** (drive the running editor via the bridge): `open_in_app`,
 /// `live_apply_ops`, `select`, `snapshot`, `get_app_state`.
 ///
@@ -27,6 +27,7 @@ import 'mermaid_import.dart';
 import 'openapi_import.dart';
 import 'sql_import.dart';
 import 'stencil_catalog.dart';
+import 'style_presets.dart';
 
 /// Register every Agent tool on [server]. Set [includeLiveTools] to `false`
 /// (e.g. in tests) to skip the bridge-backed tools.
@@ -71,17 +72,24 @@ void _registerFileTools(McpServer server) {
     name: 'create_diagram',
     description:
         'Build a .vsdx from a Diagram Spec (nodes + edges; layered auto-layout '
-        'when coordinates are omitted). Returns the file path. Set open=true to '
-        'also open it in the running editor for live preview.',
+        'when coordinates are omitted). Optional style preset (default/'
+        'corporate/dark) fills colours from node roles. Set open=true to also '
+        'open it in the running editor for live preview.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
         'spec': <String, dynamic>{
           'type': 'object',
           'description':
-              'Diagram Spec v0: {title?, layout?:{direction,spacing}, page?, '
-              'nodes:[{id,stencil,text,x?,y?,w?,h?,fill?,line?,bold?}], '
-              'edges:[{from,to,label?,arrow?,line?}]}',
+              'Diagram Spec v0: {title?, style?, layout?:{direction,spacing}, '
+              'page?, nodes:[{id,stencil,text,role?,x?,y?,w?,h?,fill?,line?,'
+              'bold?}], edges:[{from,to,label?,arrow?,line?}]}',
+        },
+        'style': <String, dynamic>{
+          'type': 'string',
+          'enum': <String>['default', 'corporate', 'dark'],
+          'description':
+              'Style preset (overrides spec.style). Use list_styles to discover.',
         },
         'path': <String, dynamic>{
           'type': 'string',
@@ -95,7 +103,9 @@ void _registerFileTools(McpServer server) {
       'required': <String>['spec'],
     },
     handler: (args) async {
-      final spec = DiagramSpec.fromJson(_asMap(args['spec']));
+      final raw = _asMap(args['spec']);
+      if (args['style'] != null) raw['style'] = args['style'];
+      final spec = DiagramSpec.fromJson(raw);
       final bytes = spec.build();
       final path = (args['path'] as String?) ??
           '${(spec.title ?? 'diagram').replaceAll(RegExp(r'[^\w.-]+'), '_')}.vsdx';
@@ -505,6 +515,30 @@ void _registerFileTools(McpServer server) {
                   '${e.aliases.isEmpty ? '' : '  (aka ${e.aliases.join(', ')})'}')
               .join('\n');
       return <McpContent>[McpContent.text(text)];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'list_styles',
+    description: 'List Diagram Spec style presets (default / corporate / dark). '
+        'Use with create_diagram({ style }) or put "style" / node "role" in the '
+        'spec (roles: service, database, queue, gateway, error, external, '
+        'security).',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{},
+    },
+    handler: (args) async {
+      final lines = <String>[
+        for (final name in listStylePresets())
+          () {
+            final p = stylePreset(name)!;
+            final primary = p.palette['primary']!;
+            return '$name  primary=${primary.fill}/${primary.stroke}'
+                '${p.background == null ? '' : '  bg=${p.background}'}';
+          }(),
+      ];
+      return <McpContent>[McpContent.text(lines.join('\n'))];
     },
   ));
 }

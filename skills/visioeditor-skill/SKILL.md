@@ -44,6 +44,8 @@ Read on demand — none need to be in context up front.
 | `references/shape-catalog.md` | You need the right `stencil` name for a node (aliases, groups) or want `search_shapes` usage |
 | `references/diagram-types.md` | The user names a diagram type (flowchart, org chart, architecture, network, ERD, UML, BPMN, swimlane) — layout direction, stencils, and color conventions per type |
 | `references/styling.md` | Applying colors / a palette / semantic conventions (fills, lines, text) |
+| `styles/` | Named presets (`default` / `corporate` / `dark`) — use Spec `"style"` or CLI `--style` |
+| `scripts/` | Thin wrappers (`build` / `patch` / `validate` / `render` / `explain`) when MCP is unavailable |
 | `references/live-preview.md` | You want the diagram to appear/update **live in the running app**, or need to configure the MCP server in Cursor / Claude |
 | `references/troubleshooting.md` | A command fails, the bridge won't connect, or a render looks wrong |
 
@@ -65,8 +67,9 @@ dart compile exe bin/vsdxtool_mcp.dart -o vsdxtool-mcp
 
 If using the **MCP server** instead of the CLI, register it once (see
 `references/live-preview.md`) and call its tools (`create_diagram`,
-`apply_ops`, `export`, `validate`, `explain`, `search_shapes`, and the live
-tools `open_in_app` / `live_apply_ops` / `select` / `snapshot` / `get_app_state`).
+`apply_ops`, `export`, `validate`, `explain`, `search_shapes`, `list_styles`,
+and the live tools `open_in_app` / `live_apply_ops` / `select` / `snapshot` /
+`get_app_state`).
 
 ## Workflow
 

@@ -79,10 +79,19 @@ void main() {
           'validate',
           'explain',
           'search_shapes',
+          'list_styles',
         ]));
     // Live tools excluded in this configuration.
     expect(names, isNot(contains('snapshot')));
     expect(names, isNot(contains('select')));
+  });
+
+  test('list_styles names the built-in presets', () async {
+    final result = await callTool('list_styles', <String, dynamic>{});
+    final text = firstText(result);
+    expect(text, contains('default'));
+    expect(text, contains('corporate'));
+    expect(text, contains('dark'));
   });
 
   test('tools/list includes live select when enabled', () async {
