@@ -158,8 +158,9 @@ void _registerFileTools(McpServer server) {
 
   server.addTool(McpTool(
     name: 'import_code',
-    description: 'Visualize a codebase import graph (Dart / Python / JS-TS / Go) '
-        'as an editable .vsdx (one box per module/package, edges = imports). '
+    description: 'Visualize a codebase import graph '
+        '(Dart / Python / JS-TS / Go / Rust) as an editable .vsdx '
+        '(one box per module/package, edges = imports). '
         'Set open=true to open it in the running editor.',
     inputSchema: <String, dynamic>{
       'type': 'object',
@@ -170,7 +171,7 @@ void _registerFileTools(McpServer server) {
         },
         'language': <String, dynamic>{
           'type': 'string',
-          'enum': <String>['dart', 'python', 'js', 'go'],
+          'enum': <String>['dart', 'python', 'js', 'go', 'rust'],
           'description': 'Auto-detected if omitted.',
         },
         'path': <String, dynamic>{'type': 'string'},

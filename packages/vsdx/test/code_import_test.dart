@@ -60,6 +60,29 @@ import "solo/pkg"
         'solo/pkg',
       ]));
     });
+
+    test('rust mod + use crate/super/self (external dropped)', () {
+      final imps = extractImports('''
+pub mod foo;
+mod bar;
+use crate::foo::Thing;
+use crate::foo::{A, B};
+use super::sibling;
+use self::nested::X;
+use serde::Serialize;
+pub(crate) use crate::bar::Y;
+''', 'rust');
+      expect(imps, containsAll(<String>[
+        'mod:foo',
+        'mod:bar',
+        'crate:foo::Thing',
+        'crate:foo',
+        'super::sibling',
+        'self:nested::X',
+        'crate:bar::Y',
+      ]));
+      expect(imps.any((s) => s.contains('serde')), isFalse);
+    });
   });
 
   group('codeToSpec (temp project)', () {
@@ -123,6 +146,30 @@ import "solo/pkg"
       expect(edge('pkg:pkg/foo', 'pkg:pkg/bar'), isTrue);
       // stdlib "fmt" produced no edge.
       expect(spec.edges.every((e) => !e.to.contains('fmt')), isTrue);
+    });
+
+    test('rust: mod + crate/super edges; mod.rs collapsed; externals dropped', () {
+      write('Cargo.toml', '[package]\nname = "demo"\nversion = "0.1.0"\n');
+      write('src/lib.rs', 'mod foo;\nmod util;\nuse crate::foo::Item;\nuse serde::Serialize;');
+      write('src/foo/mod.rs', 'pub mod nested;\nuse super::util::Helper;');
+      write('src/foo/nested.rs', 'pub struct Item;');
+      write('src/util.rs', 'pub struct Helper;');
+      final spec = codeToSpec(tmp.path, language: 'rust');
+      final ids = spec.nodes.map((n) => n.id).toSet();
+      expect(ids, containsAll(<String>[
+        'src/lib',
+        'src/foo', // foo/mod.rs collapsed
+        'src/foo/nested',
+        'src/util',
+      ]));
+      bool edge(String a, String b) =>
+          spec.edges.any((e) => e.from == a && e.to == b);
+      expect(edge('src/lib', 'src/foo'), isTrue); // mod foo
+      expect(edge('src/lib', 'src/util'), isTrue); // mod util
+      expect(edge('src/lib', 'src/foo'), isTrue); // use crate::foo::Item (same edge)
+      expect(edge('src/foo', 'src/foo/nested'), isTrue); // mod nested
+      expect(edge('src/foo', 'src/util'), isTrue); // use super::util
+      expect(spec.edges.every((e) => !e.to.contains('serde')), isTrue);
     });
 
     test('builds a valid round-trip .vsdx and auto-detects language', () {

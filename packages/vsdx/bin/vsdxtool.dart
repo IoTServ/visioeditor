@@ -134,7 +134,7 @@ class _ImportCodeCommand extends Command<int> {
       ..addOption('dir',
           abbr: 'd', help: 'Project root to scan (default: current dir).')
       ..addOption('lang',
-          help: 'dart | python | js | go (auto-detected if omitted).')
+          help: 'dart | python | js | go | rust (auto-detected if omitted).')
       ..addOption('max', help: 'Max source files.', defaultsTo: '300')
       ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }

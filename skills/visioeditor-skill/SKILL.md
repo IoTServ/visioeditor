@@ -132,10 +132,11 @@ spec:
   `VSDXTOOL import-sql -i schema.sql -o erd.vsdx`
   (MCP: `import_sql({ sql, path, open })`). Tables become boxes with columns +
   PK/FK markers; foreign keys become edges.
-- **Codebase** (Dart / Python / JS-TS / Go) → module/package import graph:
+- **Codebase** (Dart / Python / JS-TS / Go / Rust) → module/package import graph:
   `VSDXTOOL import-code -d ./src -o code.vsdx` (MCP: `import_code({ dir,
-  language?, path, open })`). One box per module (per package for Go, via
-  `go.mod`); edges are intra-project imports (external/SDK dropped). Auto-detected.
+  language?, path, open })`). One box per module (per package for Go via
+  `go.mod`; Rust modules via `mod` / `use crate|super|self`, `foo/mod.rs`
+  collapsed); edges are intra-project imports (external/SDK dropped). Auto-detected.
 - **OpenAPI / Swagger** (JSON or YAML) → API diagram:
   `VSDXTOOL import-openapi -i openapi.yaml -o api.vsdx`
   (MCP: `import_openapi({ spec, path, open })`). Operations coloured by HTTP

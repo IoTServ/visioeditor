@@ -406,11 +406,12 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       FK（行内 REFERENCES + 表级/CONSTRAINT FOREIGN KEY），每表一框（列 + PK/FK 标记）+ 外键边；
       单测 `sql_import_test` 4 例。
 - [x] 导入器：**`import-code`**（代码依赖图）—— `lib/src/agent/code_import.dart`，
-      CLI `import-code` + MCP `import_code`；支持 **Dart / Python / JS-TS / Go**（自动侦测语言；
-      Go 为包级图，经 `go.mod` 模块前缀识别项目内包依赖），
+      CLI `import-code` + MCP `import_code`；支持 **Dart / Python / JS-TS / Go / Rust**
+      （自动侦测语言；Go 为包级图，经 `go.mod` 模块前缀识别项目内包依赖；Rust 为模块图，
+      `mod` / `use crate|super|self`，`foo/mod.rs` 折叠为模块 `foo`），
       扫描项目、提取 import/from/require/export-from、解析为**仅项目内**模块依赖边
       （Dart `package:`→lib/、Python 相对导入 + `__init__` 包、JS 相对 + `index` 解析），
-      每模块一框 + 依赖边；单测 `code_import_test` 7 例（提取器 + 三语言临时目录集成）。
+      每模块一框 + 依赖边；单测 `code_import_test`（提取器 + 各语言临时目录集成）。
 - [x] 导入器：**`import-openapi`**（OpenAPI 3 / Swagger 2，JSON+YAML）—— `lib/src/agent/openapi_import.dart`，
       CLI `import-openapi` + MCP `import_openapi`；操作按 HTTP 方法着色、schema 节点、`$ref` 引用边
       （operation→schema、schema→schema），支持 `components/schemas` 与 Swagger `definitions`；
@@ -420,7 +421,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       边 + 具名 volumes 圆柱）与 **Kubernetes**（多文档 YAML，按 kind 着色/选形；Service→workload
       标签选择器、Ingress→Service backend、workload→ConfigMap/Secret/PVC 卷与 envFrom 边）；
       单测 `iac_import_test` 3 例。
-- [ ] 导入器：Rust 依赖图、Terraform（HCL）后续。
+- [x] 导入器：**Rust 依赖图**（`import-code --lang rust`）——见上。
+- [ ] 导入器：Terraform（HCL）后续。
 - [x] **L3 协同编辑**：应用桥 `applyOps` 改为经 `EditorController.applyEdit(next)` 提交——
       Agent 编辑成为**单步可撤销**、**保留用户 undo 历史与选中**（复用既有 `applyOps` 引擎逻辑，
       含 `rerouteConnectors`）；不落盘、即时重绘。桥测试新增 L3 撤销用例（共 8 例）。
@@ -442,7 +444,7 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       Cloud Storage 建图校验干净。应用 `flutter test` 555 无回归（下沉透明）。
 
 **M5 导入/导出矩阵（现状）**：入 = Diagram Spec · Edit Ops · Mermaid · SQL DDL ·
-Code（Dart/Py/JS-TS）· OpenAPI/Swagger（JSON/YAML）· IaC（docker-compose / Kubernetes）；
+Code（Dart/Py/JS-TS/Go/Rust）· OpenAPI/Swagger（JSON/YAML）· IaC（docker-compose / Kubernetes）；
 出 = `.vsdx` · SVG · Mermaid · Markdown（explain）· PNG（应用 snapshot）。
 **形状词汇**：全量 ~600 图形（core + 全部专业库）经 `resolveStencilShape` 对 Agent 可用。
 
@@ -629,4 +631,7 @@ visioeditor/
 - 2026-07-18 — **M5 续（import-code 增 Go）**：`code_import.dart` 增 Go 包级依赖图
   （`go.mod` 模块前缀→项目内包，包=目录，单/块 import + 别名），CLI `--lang go` + MCP enum 加 `go`；
   `code_import_test` +2（Go 提取器 + go.mod 临时工程）。`dart test` **547**、`flutter test` 556 全绿。
-  仍待：Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案。
+- 2026-07-18 — **M5 续（import-code 增 Rust）**：`code_import.dart` 增 Rust 模块依赖图
+  （`mod` / `use crate|super|self`；`foo/mod.rs` 折叠；外部 crate 丢弃；自动侦测含 `.rs`），
+  CLI `--lang rust` + MCP enum 加 `rust`；`code_import_test` +2。
+  仍待：Terraform（HCL）、发布二进制/`npx`、l10n 菜单文案。

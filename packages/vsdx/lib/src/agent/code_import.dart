@@ -1,10 +1,11 @@
 /// Visualize a codebase: scan a project directory, extract the **import graph**
 /// (which module imports which), and emit a [DiagramSpec] → `.vsdx`.
 ///
-/// Supports Dart, Python, and JavaScript/TypeScript. Only *intra-project* edges
-/// are kept (external / SDK packages are dropped), so the diagram shows the
-/// project's own module structure. Matches drawio-skill's `pyimports` /
-/// `jsimports` importers in spirit. See `docs/MCP_SKILL_PLAN.md` (M5).
+/// Supports Dart, Python, JavaScript/TypeScript, Go, and Rust. Only
+/// *intra-project* edges are kept (external / SDK packages are dropped), so the
+/// diagram shows the project's own module structure. Matches drawio-skill's
+/// `pyimports` / `jsimports` importers in spirit. See `docs/MCP_SKILL_PLAN.md`
+/// (M5).
 library;
 
 import 'dart:io';
@@ -17,7 +18,7 @@ import 'diagram_spec.dart';
 const _skipDirs = <String>{
   '.git', 'node_modules', 'build', '.dart_tool', '.pub-cache', 'dist',
   '__pycache__', '.venv', 'venv', '.idea', '.vscode', 'coverage', '.next',
-  'vendor', 'target',
+  'vendor', 'target', '.cargo',
 };
 
 const _langExts = <String, List<String>>{
@@ -25,6 +26,7 @@ const _langExts = <String, List<String>>{
   'python': <String>['.py'],
   'js': <String>['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'],
   'go': <String>['.go'],
+  'rust': <String>['.rs'],
 };
 
 /// Build an import-graph [DiagramSpec] for the project at [root].
@@ -42,7 +44,11 @@ DiagramSpec codeToSpec(String root, {String? language, int maxFiles = 300}) {
   final labels = <String, String>{};
   for (final f in files) {
     final rel = _rel(root, f);
-    final id = _stripExt(rel, exts);
+    var id = _stripExt(rel, exts);
+    // Rust `foo/mod.rs` is the module `foo` (like Python `__init__.py`).
+    if (lang == 'rust' && p.posix.basename(id) == 'mod') {
+      id = p.posix.dirname(id);
+    }
     idByFile[f] = id;
     labels[id] = p.posix.basename(id);
     idByKey[id] = id;
@@ -197,6 +203,18 @@ final _jsFromRe =
     RegExp(r'''(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]''');
 final _jsBareImportRe = RegExp(r'''import\s+['"]([^'"]+)['"]''');
 final _jsRequireRe = RegExp(r'''require\(\s*['"]([^'"]+)['"]\s*\)''');
+final _rustModRe = RegExp(
+    r'^\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+(\w+)\s*;',
+    multiLine: true);
+final _rustUseCrateRe = RegExp(
+    r'^\s*(?:pub(?:\s*\([^)]*\))?\s+)?use\s+crate::([\w:]+)',
+    multiLine: true);
+final _rustUseSuperRe = RegExp(
+    r'^\s*(?:pub(?:\s*\([^)]*\))?\s+)?use\s+((?:super::)+[\w:]*)',
+    multiLine: true);
+final _rustUseSelfRe = RegExp(
+    r'^\s*(?:pub(?:\s*\([^)]*\))?\s+)?use\s+self::([\w:]+)',
+    multiLine: true);
 
 /// Extract raw import specifiers from [content] for [language].
 List<String> extractImports(String content, String language) {
@@ -214,6 +232,19 @@ List<String> extractImports(String content, String language) {
               multiLine: true)
           .allMatches(content)) {
         out.add(m.group(1)!);
+      }
+    case 'rust':
+      for (final m in _rustModRe.allMatches(content)) {
+        out.add('mod:${m.group(1)!}');
+      }
+      for (final m in _rustUseCrateRe.allMatches(content)) {
+        out.add('crate:${_rustTrimPath(m.group(1)!)}');
+      }
+      for (final m in _rustUseSuperRe.allMatches(content)) {
+        out.add(_rustTrimPath(m.group(1)!));
+      }
+      for (final m in _rustUseSelfRe.allMatches(content)) {
+        out.add('self:${_rustTrimPath(m.group(1)!)}');
       }
     case 'python':
       for (final m in _pyImportRe.allMatches(content)) {
@@ -281,9 +312,130 @@ String? _resolve(String spec, String file, String root, String lang,
       return _resolveRelative(spec, file, root, exts, idByKey);
     case 'python':
       return _resolvePython(spec, file, root, idByKey);
+    case 'rust':
+      return _resolveRust(spec, file, root, idByKey);
     default:
       return null;
   }
+}
+
+String _rustTrimPath(String path) {
+  var t = path.trim();
+  while (t.endsWith('::')) {
+    t = t.substring(0, t.length - 2);
+  }
+  return t;
+}
+
+/// Resolve Rust `mod:name` / `crate:…` / `super::…` / `self:…` to a module id.
+String? _resolveRust(
+    String spec, String file, String root, Map<String, String> idByKey) {
+  if (spec.startsWith('mod:')) {
+    final name = spec.substring(4);
+    return _rustLookup(_rustChildModDir(file), <String>[name], root, idByKey);
+  }
+  if (spec.startsWith('crate:')) {
+    final srcRoot = _rustSrcRoot(file, root);
+    if (srcRoot == null) return null;
+    final parts = _rustParts(spec.substring('crate:'.length));
+    return _rustLookupLongest(srcRoot, parts, root, idByKey);
+  }
+  if (spec.startsWith('super::')) {
+    var rest = spec;
+    var ups = 0;
+    while (rest.startsWith('super::')) {
+      ups++;
+      rest = rest.substring('super::'.length);
+    }
+    var dir = _rustParentModDir(file);
+    for (var i = 1; i < ups; i++) {
+      if (dir == null) return null;
+      dir = p.dirname(dir);
+    }
+    if (dir == null) return null;
+    final parts = _rustParts(rest);
+    if (parts.isEmpty) return idByKey[_rel(root, dir)];
+    return _rustLookupLongest(dir, parts, root, idByKey);
+  }
+  if (spec.startsWith('self:')) {
+    final parts = _rustParts(spec.substring('self:'.length));
+    if (parts.isEmpty) return null;
+    return _rustLookupLongest(_rustChildModDir(file), parts, root, idByKey);
+  }
+  return null;
+}
+
+List<String> _rustParts(String path) => path
+    .split('::')
+    .where((s) => s.isNotEmpty)
+    .toList();
+
+String? _rustLookupLongest(String baseDir, List<String> parts, String root,
+    Map<String, String> idByKey) {
+  for (var n = parts.length; n >= 1; n--) {
+    final hit = _rustLookup(baseDir, parts.sublist(0, n), root, idByKey);
+    if (hit != null) return hit;
+  }
+  return null;
+}
+
+/// Directory that owns child `mod name;` declarations for [file].
+String _rustChildModDir(String file) {
+  final base = p.basename(file).toLowerCase();
+  if (base == 'mod.rs' || base == 'lib.rs' || base == 'main.rs') {
+    return p.dirname(file);
+  }
+  final stem = p.basenameWithoutExtension(file);
+  return p.join(p.dirname(file), stem);
+}
+
+/// Parent module directory of [file], or `null` at crate root.
+String? _rustParentModDir(String file) {
+  final base = p.basename(file).toLowerCase();
+  if (base == 'lib.rs' || base == 'main.rs') return null;
+  if (base == 'mod.rs') return p.dirname(p.dirname(file));
+  return p.dirname(file);
+}
+
+/// Crate `src/` directory containing `lib.rs` / `main.rs`, walking up from [file].
+String? _rustSrcRoot(String file, String root) {
+  var dir = p.dirname(file);
+  final rootNorm = p.normalize(root);
+  while (true) {
+    if (File(p.join(dir, 'lib.rs')).existsSync() ||
+        File(p.join(dir, 'main.rs')).existsSync()) {
+      return dir;
+    }
+    final parent = p.dirname(dir);
+    if (parent == dir) break;
+    if (!_isUnder(parent, rootNorm) && p.normalize(parent) != rootNorm) break;
+    dir = parent;
+  }
+  // Fallback: <crate>/src when Cargo.toml is present.
+  dir = p.dirname(file);
+  while (true) {
+    final cargo = File(p.join(dir, 'Cargo.toml'));
+    final src = p.join(dir, 'src');
+    if (cargo.existsSync() && Directory(src).existsSync()) return src;
+    final parent = p.dirname(dir);
+    if (parent == dir) break;
+    if (!_isUnder(parent, rootNorm) && p.normalize(parent) != rootNorm) break;
+    dir = parent;
+  }
+  return null;
+}
+
+bool _isUnder(String path, String root) {
+  final n = p.normalize(path);
+  final r = p.normalize(root);
+  return n == r || p.isWithin(r, n);
+}
+
+String? _rustLookup(String baseDir, List<String> parts, String root,
+    Map<String, String> idByKey) {
+  if (parts.isEmpty) return null;
+  final abs = p.normalize(p.joinAll(<String>[baseDir, ...parts]));
+  return idByKey[_rel(root, abs)];
 }
 
 String? _resolveRelative(String spec, String file, String root,
@@ -338,7 +490,9 @@ List<String> _scan(String root, List<String> exts, int maxFiles) {
 }
 
 String _detectLanguage(String root) {
-  final counts = <String, int>{'dart': 0, 'python': 0, 'js': 0};
+  final counts = <String, int>{
+    for (final k in _langExts.keys) k: 0,
+  };
   final dir = Directory(root);
   if (!dir.existsSync()) return 'dart';
   var scanned = 0;
