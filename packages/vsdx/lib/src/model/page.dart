@@ -8,8 +8,10 @@ import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
 import 'connect.dart';
+import 'fill.dart';
 import 'geometry.dart';
 import 'layer.dart';
+import 'line.dart';
 import 'obstacle_router.dart';
 import 'perimeter.dart';
 import 'shape.dart';
@@ -429,8 +431,9 @@ class VsdxPage {
     final result = <VsdxShape>[];
     for (final s in list) {
       if (s.id == id) {
-        result.add(update(s));
-        changed = true;
+        final u = update(s);
+        result.add(u);
+        if (!identical(u, s)) changed = true;
       } else if (s.children.isNotEmpty) {
         final (newChildren, childChanged) = _updateInList(s.children, id, update);
         if (childChanged) {
@@ -519,20 +522,41 @@ class VsdxPage {
           !(endShape != null && movedShapeIds.contains(endShape.id))) {
         continue;
       }
+      // Nested connectors store Begin/End/waypoints in the *parent's* local
+      // frame. Routing math is always in page inches — convert at the edges.
+      final parentId = next.findParentId(cid);
+      Offset2D connToPage(double x, double y) {
+        final local = Offset2D(x, y);
+        if (parentId == null) return local;
+        return next.localToPageDeep(parentId, local);
+      }
+
+      Offset2D pageToConn(Offset2D page) {
+        if (parentId == null) return page;
+        return next.pageToLocalDeep(parentId, page);
+      }
+
       // A fixed connection point (drawio blue point) pins the endpoint to a
       // specific spot on the shape; otherwise we attach on the edge aimed at
       // the opposite end.
       final beginFixed = _fixedPoint(beginShape, beginConnect);
       final endFixed = _fixedPoint(endShape, endConnect);
+      final connBegin = connToPage(
+        connector.beginX ?? connector.pinX,
+        connector.beginY ?? connector.pinY,
+      );
+      final connEnd = connToPage(
+        connector.endX ?? connector.pinX,
+        connector.endY ?? connector.pinY,
+      );
       // Reference points used to aim edge attachments at the opposite end.
-      final refBx =
-          beginFixed?.x ?? beginShape?.pinX ?? connector.beginX ?? connector.pinX;
-      final refBy =
-          beginFixed?.y ?? beginShape?.pinY ?? connector.beginY ?? connector.pinY;
-      final refEx =
-          endFixed?.x ?? endShape?.pinX ?? connector.endX ?? connector.pinX;
-      final refEy =
-          endFixed?.y ?? endShape?.pinY ?? connector.endY ?? connector.pinY;
+      final beginPin =
+          beginShape != null ? next.shapePinPage(beginShape.id) : null;
+      final endPin = endShape != null ? next.shapePinPage(endShape.id) : null;
+      final refBx = beginFixed?.x ?? beginPin?.x ?? connBegin.x;
+      final refBy = beginFixed?.y ?? beginPin?.y ?? connBegin.y;
+      final refEx = endFixed?.x ?? endPin?.x ?? connEnd.x;
+      final refEy = endFixed?.y ?? endPin?.y ?? connEnd.y;
       final (ax, ay) = beginFixed != null
           ? (beginFixed.x, beginFixed.y)
           : beginShape != null
@@ -548,10 +572,13 @@ class VsdxPage {
         if (beginShape != null) beginShape.id,
         if (endShape != null) endShape.id,
       };
-      final control = connector.waypoints.isNotEmpty
+      final pageWaypoints = <Offset2D>[
+        for (final w in connector.waypoints) connToPage(w.x, w.y),
+      ];
+      final control = pageWaypoints.isNotEmpty
           ? <Offset2D>[
               Offset2D(ax, ay),
-              ...connector.waypoints,
+              ...pageWaypoints,
               Offset2D(bx, by),
             ]
           : connector.straightRoute
@@ -559,7 +586,20 @@ class VsdxPage {
               : next._autoRoute(ax, ay, bx, by, excludeIds: exclude);
       final geometry = _bakeRoute(control,
           curved: connector.curved, rounded: connector.rounded);
-      next = next.updateShapeById(cid, (s) => s.reshapeAsPolyline(geometry));
+      final localGeom = <Offset2D>[for (final p in geometry) pageToConn(p)];
+      final localWaypoints = pageWaypoints.isEmpty
+          ? null
+          : <Offset2D>[
+              for (final p in control.skip(1).take(control.length - 2))
+                pageToConn(p),
+            ];
+      next = next.updateShapeById(
+        cid,
+        (s) => (localWaypoints != null
+                ? s.copyWith(waypoints: localWaypoints)
+                : s)
+            .reshapeAsPolyline(localGeom),
+      );
     }
     return next;
   }
@@ -1286,46 +1326,76 @@ class VsdxPage {
 
   /// Move a top-level shape to the front (drawn last). No-op for nested shapes.
   VsdxPage bringToFront(int id) {
-    if (!shapes.any((s) => s.id == id)) return this;
-    return copyWith(shapes: <VsdxShape>[
-      for (final s in shapes)
+    final siblings = _siblingList(id);
+    if (siblings == null) return this;
+    final i = siblings.indexWhere((s) => s.id == id);
+    if (i < 0 || i == siblings.length - 1) return this;
+    final next = <VsdxShape>[
+      for (final s in siblings)
         if (s.id != id) s,
-      shapes.firstWhere((s) => s.id == id),
-    ]);
+      siblings[i],
+    ];
+    return _replaceSiblingList(id, next);
   }
 
-  /// Move a top-level shape to the back (drawn first).
+  /// Move a shape to the back among its siblings (drawn first).
   VsdxPage sendToBack(int id) {
-    if (!shapes.any((s) => s.id == id)) return this;
-    return copyWith(shapes: <VsdxShape>[
-      shapes.firstWhere((s) => s.id == id),
-      for (final s in shapes)
+    final siblings = _siblingList(id);
+    if (siblings == null) return this;
+    final i = siblings.indexWhere((s) => s.id == id);
+    if (i <= 0) return this;
+    final next = <VsdxShape>[
+      siblings[i],
+      for (final s in siblings)
         if (s.id != id) s,
-    ]);
+    ];
+    return _replaceSiblingList(id, next);
   }
 
-  /// Move a top-level shape one step forward (later in draw order). No-op when
-  /// it is already frontmost or is not a top-level shape.
+  /// Move a shape one step forward among its siblings (later in draw order).
+  /// Works for top-level shapes and nested children inside groups/containers.
   VsdxPage bringForward(int id) {
-    final i = shapes.indexWhere((s) => s.id == id);
-    if (i < 0 || i >= shapes.length - 1) return this;
-    final next = <VsdxShape>[...shapes];
+    final siblings = _siblingList(id);
+    if (siblings == null) return this;
+    final i = siblings.indexWhere((s) => s.id == id);
+    if (i < 0 || i >= siblings.length - 1) return this;
+    final next = <VsdxShape>[...siblings];
     final tmp = next[i];
     next[i] = next[i + 1];
     next[i + 1] = tmp;
-    return copyWith(shapes: next);
+    return _replaceSiblingList(id, next);
   }
 
-  /// Move a top-level shape one step backward (earlier in draw order). No-op
-  /// when it is already backmost or is not a top-level shape.
+  /// Move a shape one step backward among its siblings (earlier in draw order).
+  /// Works for top-level shapes and nested children inside groups/containers.
   VsdxPage sendBackward(int id) {
-    final i = shapes.indexWhere((s) => s.id == id);
+    final siblings = _siblingList(id);
+    if (siblings == null) return this;
+    final i = siblings.indexWhere((s) => s.id == id);
     if (i <= 0) return this;
-    final next = <VsdxShape>[...shapes];
+    final next = <VsdxShape>[...siblings];
     final tmp = next[i];
     next[i] = next[i - 1];
     next[i - 1] = tmp;
-    return copyWith(shapes: next);
+    return _replaceSiblingList(id, next);
+  }
+
+  /// Sibling list containing [id] (page [shapes] or a parent's [children]).
+  List<VsdxShape>? _siblingList(int id) {
+    if (shapes.any((s) => s.id == id)) return shapes;
+    final parentId = findParentId(id);
+    if (parentId == null) return null;
+    return findShapeById(parentId)?.children;
+  }
+
+  /// Replace the sibling list that contains [id] with [next].
+  VsdxPage _replaceSiblingList(int id, List<VsdxShape> next) {
+    if (shapes.any((s) => s.id == id)) {
+      return copyWith(shapes: next);
+    }
+    final parentId = findParentId(id);
+    if (parentId == null) return this;
+    return updateShapeById(parentId, (p) => p.copyWith(children: next));
   }
 
   // --- Grouping --------------------------------------------------------------
@@ -1352,6 +1422,9 @@ class VsdxPage {
     final left = l!, bottom = b!;
     final w = math.max(r! - left, 0.01);
     final h = math.max(t! - bottom, 0.01);
+    // Groups are containers: no fill / no stroke. Leaving the default
+    // FillPattern=1 with a null foreground made the writer invent #FFFFFF for
+    // Edraw, which then drifted on save→reopen (null → opaque white).
     final group = VsdxShape(
       id: groupId,
       name: name.isEmpty ? 'Group.$groupId' : name,
@@ -1359,6 +1432,9 @@ class VsdxPage {
       pinY: bottom + h / 2,
       width: w,
       height: h,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      shapeKind: VsdxShapeKind.group,
       children: <VsdxShape>[
         for (final m in members) _shiftShape(m, -left, -bottom),
       ],
@@ -1618,10 +1694,23 @@ class VsdxPage {
   static bool isDropContainer(VsdxShape s) =>
       !s.is1D && (s.shapeKind.isStructural || s.children.isNotEmpty);
 
-  /// Whether page point ([x],[y]) lies inside [s]'s axis-aligned bounds.
+  /// Whether page point ([x],[y]) lies inside [s]'s axis-aligned **local**
+  /// bounds (pin ± size/2). Prefer [containsShapePagePoint] for nested shapes
+  /// whose pins are parent-local.
   static bool containsPagePoint(VsdxShape s, double x, double y) {
     final (l, b, r, t) = _aabb(s);
     return x >= l && x <= r && y >= b && y <= t;
+  }
+
+  /// Whether page point ([x],[y]) lies inside [shapeId]'s page-space AABB
+  /// (accounts for parent transforms / nested swimlanes).
+  bool containsShapePagePoint(int shapeId, double x, double y) {
+    final aabb = shapePageAabb(shapeId);
+    if (aabb == null) return false;
+    return x >= aabb.left &&
+        x <= aabb.right &&
+        y >= aabb.bottom &&
+        y <= aabb.top;
   }
 
   /// Deepest drop-container under page point ([x],[y]), excluding [excludeIds]
@@ -1649,7 +1738,8 @@ class VsdxPage {
       for (final s in list) {
         if (s.children.isNotEmpty) walk(s.children, depth + 1);
         if (blocked.contains(s.id) || !isDropContainer(s)) continue;
-        if (!containsPagePoint(s, x, y)) continue;
+        // Use page-space AABB so nested lanes / containers hit-test correctly.
+        if (!containsShapePagePoint(s.id, x, y)) continue;
         if (depth >= bestDepth) {
           best = s.id;
           bestDepth = depth;

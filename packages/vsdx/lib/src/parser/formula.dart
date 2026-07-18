@@ -43,6 +43,18 @@ Set<int> referencedSheetIds(String? raw) {
   return out;
 }
 
+/// Rewrite `Sheet.n!Cell` refs in [raw] using [idMap] (old id → new id).
+/// Unmapped sheet ids are left unchanged.
+String rewriteSheetRefs(String raw, Map<int, int> idMap) {
+  if (raw.isEmpty || idMap.isEmpty) return raw;
+  return raw.replaceAllMapped(sheetCellRefPattern, (m) {
+    final oldId = int.parse(m.group(1)!);
+    final newId = idMap[oldId];
+    if (newId == null) return m.group(0)!;
+    return 'Sheet.$newId!${m.group(2)}';
+  });
+}
+
 /// Whether [raw] references any sheet id in [ids].
 bool formulaReferencesAnySheet(String? raw, Set<int> ids) {
   if (raw == null || raw.isEmpty || ids.isEmpty) return false;

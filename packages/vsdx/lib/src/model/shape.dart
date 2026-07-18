@@ -479,6 +479,70 @@ class VsdxShape {
     );
   }
 
+  /// Deep-clone this shape (and every descendant) with freshly allocated ids
+  /// from [allocId]. Used by duplicate / paste / directional-clone so nested
+  /// group members never collide with the originals on the same page.
+  ///
+  /// When [idMap] is provided it is filled with `oldId → newId` for the whole
+  /// subtree. Cross-sheet `Sheet.n!` formulas are rewritten via that map.
+  VsdxShape withRemappedIds(
+    int Function() allocId, {
+    double? pinX,
+    double? pinY,
+    Map<int, int>? idMap,
+  }) {
+    final map = idMap ?? <int, int>{};
+    VsdxShape assignIds(VsdxShape s, {double? px, double? py}) {
+      final newId = allocId();
+      map[s.id] = newId;
+      final defaultName = 'Sheet.${s.id}';
+      return s.copyWith(
+        id: newId,
+        name: s.name == defaultName ? 'Sheet.$newId' : s.name,
+        pinX: px ?? s.pinX,
+        pinY: py ?? s.pinY,
+        children: <VsdxShape>[
+          for (final c in s.children) assignIds(c),
+        ],
+      );
+    }
+
+    final cloned = assignIds(this, px: pinX, py: pinY);
+    return _rewriteSheetRefsInTree(cloned, map);
+  }
+
+  static VsdxShape _rewriteSheetRefsInTree(
+    VsdxShape s,
+    Map<int, int> idMap,
+  ) {
+    final newChildren = <VsdxShape>[
+      for (final c in s.children) _rewriteSheetRefsInTree(c, idMap),
+    ];
+    Map<String, String>? formulas;
+    if (s.formulas.isNotEmpty) {
+      final next = <String, String>{};
+      var changed = false;
+      for (final e in s.formulas.entries) {
+        final rewritten = rewriteSheetRefs(e.value, idMap);
+        next[e.key] = rewritten;
+        if (rewritten != e.value) changed = true;
+      }
+      if (changed) formulas = next;
+    }
+    var childrenChanged = false;
+    for (var i = 0; i < newChildren.length; i++) {
+      if (!identical(newChildren[i], s.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+    if (formulas == null && !childrenChanged) return s;
+    return s.copyWith(
+      formulas: formulas,
+      children: childrenChanged ? newChildren : null,
+    );
+  }
+
   /// User-cell names that carry drawio-style connector route state across
   /// save → reopen. Geometry alone is already baked; these restore editability.
   static const String userRouteStraight = 'veStraight';

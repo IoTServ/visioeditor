@@ -472,7 +472,13 @@ class _PageCanvasState extends State<PageCanvas> {
   VsdxShape? _resizableSelection() {
     if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
-    if (s == null || s.is1D || s.angleRad != 0 || s.locked) return null;
+    if (s == null ||
+        s.is1D ||
+        s.angleRad != 0 ||
+        s.locked ||
+        _c.isOnLockedLayer(s.id)) {
+      return null;
+    }
     if (_ancestorRotated(s.id)) return null;
     return s;
   }
@@ -496,7 +502,10 @@ class _PageCanvasState extends State<PageCanvas> {
   VsdxShape? _rotatableSelection() {
     if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
-    return (s == null || s.is1D || s.locked) ? null : s;
+    if (s == null || s.is1D || s.locked || _c.isOnLockedLayer(s.id)) {
+      return null;
+    }
+    return s;
   }
 
   Offset _pageToContent(double x, double y) => Offset(
@@ -985,7 +994,9 @@ class _PageCanvasState extends State<PageCanvas> {
   /// current label (all selected) and focus the overlaid editor.
   void _beginTextEdit(int id) {
     final s = _page?.findShapeById(id);
-    if (s == null || s.locked) return; // locked shapes can't be text-edited
+    if (s == null || s.locked || _c.isOnLockedLayer(id)) {
+      return; // locked shapes / layers can't be text-edited
+    }
     _newTextBoxId = null; // editing an existing shape, not a fresh text box
     _c.selectOnly(id);
     final initial =
@@ -1022,7 +1033,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_textFocus.hasFocus) _textFocus.unfocus();
     // An untyped Text-tool box is discarded rather than left invisible.
     if (wasNewBox && text.trim().isEmpty) {
-      _c.deleteShapeById(id);
+      _c.discardAbandonedShape(id);
     } else {
       _c.setShapeText(id, text);
     }
@@ -1038,7 +1049,7 @@ class _PageCanvasState extends State<PageCanvas> {
     setState(() => _editingShapeId = null);
     _c.setTextEditSession();
     if (_textFocus.hasFocus) _textFocus.unfocus();
-    if (wasNewBox) _c.deleteShapeById(id);
+    if (wasNewBox) _c.discardAbandonedShape(id);
   }
 
   /// The overlaid text editor for the shape being edited, positioned over its
@@ -1245,6 +1256,18 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (_c.tool != EditorTool.select) {
       _mode = _DragMode.createShape;
+      if (_c.tool == EditorTool.connector) {
+        // Capture the begin glue point at press (same as hover-connect).
+        final beginId = _topLevelAt(d.localPosition);
+        final beginShape =
+            beginId == null ? null : _page?.findShapeById(beginId);
+        _connectSourceConnIndex =
+            (beginShape != null && !beginShape.is1D && !beginShape.locked)
+                ? _connSnapIndex(beginShape, d.localPosition)
+                : null;
+      } else {
+        _connectSourceConnIndex = null;
+      }
       setState(() {
         _previewStart = _viewportToContent(d.localPosition);
         _previewEnd = _previewStart;
@@ -2083,14 +2106,17 @@ class _PageCanvasState extends State<PageCanvas> {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
           if (_c.tool == EditorTool.connector) {
+            final beginTarget = _hitTest(_offset + start * _scale);
             final endTarget = _connectTargetId ?? _hitTest(_offset + end * _scale);
             _c.createConnector(
               a.dx,
               a.dy,
               b.dx,
               b.dy,
-              beginTarget: _hitTest(_offset + start * _scale),
+              beginTarget: beginTarget,
               endTarget: endTarget,
+              beginConnectionPointIndex:
+                  beginTarget != null ? _connectSourceConnIndex : null,
               endConnectionPointIndex: endTarget != null ? _snapConnIndex : null,
             );
           } else {
@@ -2104,6 +2130,7 @@ class _PageCanvasState extends State<PageCanvas> {
           _previewEnd = null;
           _connectTargetId = null;
           _snapConnIndex = null;
+          _connectSourceConnIndex = null;
         });
       case _DragMode.connect:
         final start = _previewStart;

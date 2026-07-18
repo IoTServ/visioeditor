@@ -85,6 +85,19 @@ VsdxRichText replacePlainText(VsdxRichText rich, String newText) {
       ],
     );
   }
+  // Empty → non-empty: inherit the seeded run's style (Bold-before-type).
+  if (old.isEmpty) {
+    final first = rich.runs.first;
+    return rich.copyWith(
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: newText,
+          charStyle: first.charStyle,
+          paraStyle: first.paraStyle,
+        ),
+      ],
+    );
+  }
 
   final styles = <VsdxCharStyle>[];
   final paras = <VsdxParaStyle>[];

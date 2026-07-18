@@ -7,6 +7,8 @@
 /// Lane title strips: horizontal → left strip; vertical → top strip.
 library;
 
+import 'dart:math' as math;
+
 import '../utils/color.dart';
 import 'fill.dart';
 import 'geometry.dart';
@@ -18,6 +20,8 @@ import 'user_property.dart';
 /// Pure helpers for assembling and editing multi-lane pools.
 abstract final class SwimlaneOps {
   SwimlaneOps._();
+
+  static const double minLaneSize = 0.25;
 
   static const String userPool = 'vePool';
   static const String userLane = 'veLane';
@@ -210,6 +214,88 @@ abstract final class SwimlaneOps {
       }
     }
     return pool.copyWith(
+      children: <VsdxShape>[...nonLaneChildren(pool), ...laidOut],
+      userCells: _ensurePoolCell(pool.userCells),
+      shapeKind: VsdxShapeKind.container,
+    );
+  }
+
+  /// Reflow [pool] using each lane's current size (after a lane resize),
+  /// growing/shrinking the pool so lanes tile without overlap. Keeps the
+  /// pool's top (horizontal) or left (vertical) edge fixed.
+  static VsdxShape layoutLanesPreservingSizes(VsdxShape pool) {
+    final lanes = lanesOf(pool);
+    if (lanes.isEmpty) return pool;
+    final horizontal = isHorizontal(lanes.first);
+    final laidOut = <VsdxShape>[];
+    if (horizontal) {
+      final w = pool.width.abs();
+      final heights = <double>[
+        for (final l in lanes) math.max(l.height.abs(), minLaneSize),
+      ];
+      final totalH = heights.fold<double>(0, (sum, h) => sum + h);
+      var y = 0.0;
+      for (var i = 0; i < lanes.length; i++) {
+        final lane = lanes[i];
+        final lh = heights[i];
+        laidOut.add(
+          lane.copyWith(
+            pinX: w / 2,
+            pinY: y + lh / 2,
+            width: w,
+            height: lh,
+            geometries: laneGeometry(
+              width: w,
+              height: lh,
+              horizontal: true,
+            ),
+            userCells: _mergeLaneCells(lane.userCells, horizontal: true),
+            shapeKind: VsdxShapeKind.swimlane,
+          ),
+        );
+        y += lh;
+      }
+      final top = pool.pinY + pool.height / 2;
+      return pool.copyWith(
+        width: w,
+        height: totalH <= 0 ? pool.height : totalH,
+        pinY: top - (totalH <= 0 ? pool.height : totalH) / 2,
+        children: <VsdxShape>[...nonLaneChildren(pool), ...laidOut],
+        userCells: _ensurePoolCell(pool.userCells),
+        shapeKind: VsdxShapeKind.container,
+      );
+    }
+    final h = pool.height.abs();
+    final widths = <double>[
+      for (final l in lanes) math.max(l.width.abs(), minLaneSize),
+    ];
+    final totalW = widths.fold<double>(0, (sum, w) => sum + w);
+    var x = 0.0;
+    for (var i = 0; i < lanes.length; i++) {
+      final lane = lanes[i];
+      final lw = widths[i];
+      laidOut.add(
+        lane.copyWith(
+          pinX: x + lw / 2,
+          pinY: h / 2,
+          width: lw,
+          height: h,
+          geometries: laneGeometry(
+            width: lw,
+            height: h,
+            horizontal: false,
+          ),
+          userCells: _mergeLaneCells(lane.userCells, horizontal: false),
+          shapeKind: VsdxShapeKind.swimlane,
+        ),
+      );
+      x += lw;
+    }
+    final left = pool.pinX - pool.width / 2;
+    return pool.copyWith(
+      width: totalW <= 0 ? pool.width : totalW,
+      height: h,
+      pinX: left + (totalW <= 0 ? pool.width : totalW) / 2,
       children: <VsdxShape>[...nonLaneChildren(pool), ...laidOut],
       userCells: _ensurePoolCell(pool.userCells),
       shapeKind: VsdxShapeKind.container,

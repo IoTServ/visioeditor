@@ -4,11 +4,45 @@ import 'package:vsdx/vsdx.dart';
 import '../l10n/editor_l10n.dart';
 import 'editor_controller.dart';
 
+/// Merge an edited (or cleared) primary hyperlink into [existing] without
+/// dropping secondary rows. [editedPrimary] `null` removes only the primary.
+@visibleForTesting
+List<VsdxHyperlink> mergeEditedPrimaryLink({
+  required List<VsdxHyperlink> existing,
+  required VsdxHyperlink? editedPrimary,
+}) {
+  VsdxHyperlink? oldPrimary;
+  for (final h in existing) {
+    if (h.isDefault) {
+      oldPrimary = h;
+      break;
+    }
+  }
+  oldPrimary ??= existing.isEmpty ? null : existing.first;
+  final secondary = <VsdxHyperlink>[
+    for (final h in existing)
+      if (oldPrimary == null || h.id != oldPrimary.id)
+        h.copyWith(isDefault: false),
+  ];
+  if (editedPrimary == null) return secondary;
+  return <VsdxHyperlink>[
+    editedPrimary.copyWith(isDefault: true),
+    ...secondary,
+  ];
+}
+
+/// Dialog result: apply with optional primary (null = remove primary only).
+class _LinkEditResult {
+  const _LinkEditResult(this.primary);
+  final VsdxHyperlink? primary;
+}
+
 /// Open drawio's "Edit Link" (Cmd+K) for shape [shapeId]: set or clear the
 /// shape's primary hyperlink (Visio `<Section N="Hyperlink">`). A value that
 /// starts with `#` is treated as an in-document anchor (e.g. `#Page-2`),
 /// everything else as an external address. Applying commits a single undo step
-/// via [EditorController.setShapeHyperlinks]; an empty field removes the link.
+/// via [EditorController.setShapeHyperlinks]. Secondary hyperlink rows are
+/// preserved when editing or removing the primary.
 Future<void> showEditLinkDialog(
   BuildContext context,
   EditorController controller,
@@ -16,14 +50,22 @@ Future<void> showEditLinkDialog(
 ) async {
   final shape = controller.currentPage?.findShapeById(shapeId);
   if (shape == null) return;
-  final result = await showDialog<List<VsdxHyperlink>>(
+  final existing = List<VsdxHyperlink>.of(shape.hyperlinks);
+  final result = await showDialog<_LinkEditResult>(
     context: context,
     builder: (_) => _EditLinkDialog(
       title: shape.name,
       initial: shape.primaryHyperlink,
     ),
   );
-  if (result != null) controller.setShapeHyperlinks(shapeId, result);
+  if (result == null) return; // cancelled
+  controller.setShapeHyperlinks(
+    shapeId,
+    mergeEditedPrimaryLink(
+      existing: existing,
+      editedPrimary: result.primary,
+    ),
+  );
 }
 
 class _EditLinkDialog extends StatefulWidget {
@@ -51,20 +93,18 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
     super.dispose();
   }
 
-  List<VsdxHyperlink> _build() {
+  VsdxHyperlink? _buildPrimary() {
     final raw = _link.text.trim();
-    if (raw.isEmpty) return const <VsdxHyperlink>[];
+    if (raw.isEmpty) return null;
     final desc = _label.text.trim();
     final isAnchor = raw.startsWith('#');
-    return <VsdxHyperlink>[
-      VsdxHyperlink(
-        id: widget.initial?.id ?? 0,
-        address: isAnchor ? null : raw,
-        subAddress: isAnchor ? raw : null,
-        description: desc.isEmpty ? null : desc,
-        isDefault: true,
-      ),
-    ];
+    return VsdxHyperlink(
+      id: widget.initial?.id ?? 0,
+      address: isAnchor ? null : raw,
+      subAddress: isAnchor ? raw : null,
+      description: desc.isEmpty ? null : desc,
+      isDefault: true,
+    );
   }
 
   @override
@@ -91,7 +131,10 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
             TextField(
               controller: _link,
               autofocus: true,
-              onSubmitted: (_) => Navigator.pop(context, _build()),
+              onSubmitted: (_) => Navigator.pop(
+                context,
+                _LinkEditResult(_buildPrimary()),
+              ),
               decoration: InputDecoration(
                 isDense: true,
                 labelText: el.link,
@@ -114,7 +157,8 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
       actions: [
         if (hasLink)
           TextButton.icon(
-            onPressed: () => Navigator.pop(context, const <VsdxHyperlink>[]),
+            onPressed: () =>
+                Navigator.pop(context, const _LinkEditResult(null)),
             icon: const Icon(Icons.link_off, size: 18),
             label: Text(el.removeLink),
           )
@@ -128,7 +172,10 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
               child: Text(el.cancel),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, _build()),
+              onPressed: () => Navigator.pop(
+                context,
+                _LinkEditResult(_buildPrimary()),
+              ),
               child: Text(el.apply),
             ),
           ],

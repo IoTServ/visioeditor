@@ -51,20 +51,30 @@ void main() {
     c
       ..setTool(EditorTool.rectangle)
       ..createShapeByDrag(1, 1, 3, 3);
-    final id = c.currentPage!.shapes.single.id;
-    c.setSelection(<int>{id});
+    final boxId = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{boxId});
 
     c.setLinePattern(2);
-    c.setLineArrows(begin: 1, end: 1);
     c.setLineOpacity(0.5);
     c.setFillOpacity(0.25);
 
-    final s = c.currentPage!.findShapeById(id)!;
-    expect(s.line.pattern, 2);
-    expect(s.line.beginArrow, 1);
-    expect(s.line.endArrow, 1);
-    expect(s.line.transparency, closeTo(0.5, 1e-9));
-    expect(s.fill.foregroundTransparency, closeTo(0.75, 1e-9));
+    final box = c.currentPage!.findShapeById(boxId)!;
+    expect(box.line.pattern, 2);
+    expect(box.line.transparency, closeTo(0.5, 1e-9));
+    expect(box.fill.foregroundTransparency, closeTo(0.75, 1e-9));
+    // Arrowheads are 1-D only — stamping them on a box is ignored.
+    c.setLineArrows(begin: 1, end: 1);
+    expect(c.currentPage!.findShapeById(boxId)!.line.beginArrow, 0);
+
+    c
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 1, 4, 1);
+    final lineId = c.currentPage!.shapes.last.id;
+    c.setSelection(<int>{lineId});
+    c.setLineArrows(begin: 1, end: 1);
+    final line = c.currentPage!.findShapeById(lineId)!;
+    expect(line.line.beginArrow, 1);
+    expect(line.line.endArrow, 1);
   });
 
   test('begin/end arrowhead type setters update the model', () {
@@ -915,15 +925,20 @@ void main() {
       ..setTool(EditorTool.rectangle)
       ..createShapeByDrag(4, 1, 5, 3);
     final b = c.currentPage!.shapes.last.id;
-    c.setSelection(<int>{a});
+    c
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 4, 4, 4);
+    final lineId = c.currentPage!.shapes.last.id;
+    c.setSelection(<int>{lineId});
 
     c.setEndArrow(4);
     c.setEndArrowSize(0.225);
     expect(
-      c.currentPage!.findShapeById(a)!.line.endArrowSizeInches,
+      c.currentPage!.findShapeById(lineId)!.line.endArrowSizeInches,
       closeTo(0.225, 1e-9),
     );
 
+    c.setSelection(<int>{a});
     c.setFillPattern(6);
     expect(c.currentPage!.findShapeById(a)!.fill.pattern, 6);
     c.setFillGradient(

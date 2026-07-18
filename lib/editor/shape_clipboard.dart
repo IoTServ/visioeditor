@@ -23,8 +23,8 @@ abstract final class ShapeClipboardCodec {
       // Image media parts are session-local — skip them for the system clip
       // (in-memory clipboard still holds the original with the image).
       if (s.hasImage) continue;
-      final newId = page.nextFreeShapeId();
-      page = page.addShape(s.copyWith(id: newId));
+      var nextId = page.nextFreeShapeId();
+      page = page.addShape(s.withRemappedIds(() => nextId++));
     }
     if (page.shapes.isEmpty) return '';
     doc = doc.replacePage(0, page);

@@ -684,6 +684,172 @@ class _EditorHomePageState extends State<EditorHomePage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Editor shortcuts with both Cmd (macOS) and Ctrl (Windows/Linux) bindings.
+  Map<ShortcutActivator, VoidCallback> _editorShortcutBindings(
+    EditorController? Function() c,
+  ) {
+    final bindings = <ShortcutActivator, VoidCallback>{};
+
+    void mod(
+      LogicalKeyboardKey key,
+      VoidCallback action, {
+      bool shift = false,
+      bool alt = false,
+    }) {
+      bindings[SingleActivator(key, meta: true, shift: shift, alt: alt)] =
+          action;
+      bindings[SingleActivator(key, control: true, shift: shift, alt: alt)] =
+          action;
+    }
+
+    void redo() {
+      final cur = c();
+      if (cur != null && cur.canRedo) cur.redo();
+    }
+
+    mod(LogicalKeyboardKey.keyN, _newDoc);
+    mod(LogicalKeyboardKey.keyO, _open);
+    mod(LogicalKeyboardKey.keyW, () {
+      if (_workspace.hasDocs) _closeTab(_workspace.activeIndex);
+    });
+    mod(LogicalKeyboardKey.keyS, () {
+      if (c() != null && c()!.hasDocument) _save();
+    });
+    mod(LogicalKeyboardKey.keyZ, () {
+      final cur = c();
+      if (cur != null && cur.canUndo) cur.undo();
+    });
+    mod(LogicalKeyboardKey.keyZ, redo, shift: true);
+    // Windows/Linux redo convention; also bind meta+Y for completeness.
+    bindings[const SingleActivator(LogicalKeyboardKey.keyY, control: true)] =
+        redo;
+    bindings[const SingleActivator(LogicalKeyboardKey.keyY, meta: true)] = redo;
+    mod(LogicalKeyboardKey.keyD, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.duplicateSelection();
+    });
+    mod(LogicalKeyboardKey.keyC, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.copySelection();
+    });
+    mod(LogicalKeyboardKey.keyV, () {
+      final cur = c();
+      if (cur != null && cur.hasDocument) {
+        // Always try the system clipboard first (cross-instance paste).
+        unawaited(cur.pasteFromSystem());
+      }
+    });
+    mod(LogicalKeyboardKey.keyX, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.cut();
+    });
+    mod(LogicalKeyboardKey.keyA, () {
+      final cur = c();
+      if (cur != null && cur.hasDocument) cur.selectAll();
+    });
+    mod(LogicalKeyboardKey.keyA, () {
+      final cur = c();
+      if (cur != null) cur.clearSelection();
+    }, shift: true);
+    mod(LogicalKeyboardKey.keyB, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.toggleBold();
+    });
+    mod(LogicalKeyboardKey.keyI, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.toggleItalic();
+    });
+    mod(LogicalKeyboardKey.keyU, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.toggleUnderline();
+    });
+    mod(LogicalKeyboardKey.keyE, () {
+      final cur = c();
+      if (cur != null && cur.hasDocument) cur.selectConnectors();
+    });
+    mod(LogicalKeyboardKey.keyI, () {
+      final cur = c();
+      if (cur != null && cur.hasDocument) cur.selectVertices();
+    }, shift: true);
+    bindings[const SingleActivator(LogicalKeyboardKey.tab)] = () {
+      final cur = c();
+      if (cur != null && cur.hasDocument) cur.selectNextShape();
+    };
+    bindings[const SingleActivator(LogicalKeyboardKey.tab, shift: true)] = () {
+      final cur = c();
+      if (cur != null && cur.hasDocument) {
+        cur.selectNextShape(reverse: true);
+      }
+    };
+    mod(LogicalKeyboardKey.keyF, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.bringSelectionToFront();
+    }, shift: true);
+    mod(LogicalKeyboardKey.keyB, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.sendSelectionToBack();
+    }, shift: true);
+    // draw.io: Cmd/Ctrl+] bring forward, Cmd/Ctrl+[ send backward
+    mod(LogicalKeyboardKey.bracketRight, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.bringSelectionForward();
+    });
+    mod(LogicalKeyboardKey.bracketLeft, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.sendSelectionBackward();
+    });
+    mod(LogicalKeyboardKey.keyC, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.copyStyle();
+    }, alt: true);
+    mod(LogicalKeyboardKey.keyV, () {
+      final cur = c();
+      if (cur != null && cur.hasStyleClipboard) cur.pasteStyle();
+    }, alt: true);
+    mod(LogicalKeyboardKey.keyG, () {
+      final cur = c();
+      if (cur != null && cur.canGroup) cur.groupSelection();
+    });
+    mod(LogicalKeyboardKey.keyU, () {
+      final cur = c();
+      if (cur != null && cur.canUngroup) cur.ungroupSelection();
+    }, shift: true);
+    mod(LogicalKeyboardKey.keyR, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.rotateSelection90();
+    });
+    mod(LogicalKeyboardKey.keyR, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) {
+        cur.rotateSelection90(clockwise: false);
+      }
+    }, shift: true);
+    mod(LogicalKeyboardKey.keyF, _openFind);
+    mod(LogicalKeyboardKey.keyH, () {
+      _openFind(replace: true);
+    });
+    mod(LogicalKeyboardKey.keyM, () {
+      if (c()?.singleSelectedId != null) _editData();
+    });
+    mod(LogicalKeyboardKey.keyK, () {
+      if (c()?.singleSelectedId != null) _editLink();
+    });
+    mod(LogicalKeyboardKey.keyL, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.toggleLock();
+    });
+    // Presentation / fullscreen: F5 enter, F11 toggle,
+    // Cmd/Ctrl+Shift+P toggle (avoids Fn-keys on macOS laptops).
+    // Escape is handled by PageCanvas so it does not steal the editor's
+    // Escape (cancel drag / clear selection) outside presentation.
+    bindings[const SingleActivator(LogicalKeyboardKey.f5)] =
+        _enterPresentation;
+    bindings[const SingleActivator(LogicalKeyboardKey.f11)] =
+        _togglePresentation;
+    mod(LogicalKeyboardKey.keyP, _togglePresentation, shift: true);
+    return bindings;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Resolve the active controller at invoke-time (not build-time) so shortcuts
@@ -691,158 +857,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     // document edit.
     EditorController? c() => _c;
     return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): _newDoc,
-        const SingleActivator(LogicalKeyboardKey.keyO, meta: true): _open,
-        const SingleActivator(LogicalKeyboardKey.keyW, meta: true): () {
-          if (_workspace.hasDocs) _closeTab(_workspace.activeIndex);
-        },
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
-          if (c() != null && c()!.hasDocument) _save();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.canUndo) cur.undo();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.canRedo) cur.redo();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.duplicateSelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.copySelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasDocument) {
-            // Always try the system clipboard first (cross-instance paste).
-            unawaited(cur.pasteFromSystem());
-          }
-        },
-        const SingleActivator(LogicalKeyboardKey.keyX, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.cut();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyA, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasDocument) cur.selectAll();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyA, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null) cur.clearSelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.toggleBold();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyI, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.toggleItalic();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyU, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.toggleUnderline();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyE, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasDocument) cur.selectConnectors();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyI, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.hasDocument) cur.selectVertices();
-        },
-        const SingleActivator(LogicalKeyboardKey.tab): () {
-          final cur = c();
-          if (cur != null && cur.hasDocument) cur.selectNextShape();
-        },
-        const SingleActivator(LogicalKeyboardKey.tab, shift: true): () {
-          final cur = c();
-          if (cur != null && cur.hasDocument) {
-            cur.selectNextShape(reverse: true);
-          }
-        },
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.bringSelectionToFront();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyB, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.sendSelectionToBack();
-        },
-        // draw.io: Cmd+] bring forward, Cmd+[ send backward
-        const SingleActivator(LogicalKeyboardKey.bracketRight, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.bringSelectionForward();
-        },
-        const SingleActivator(LogicalKeyboardKey.bracketLeft, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.sendSelectionBackward();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyC, meta: true, alt: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.copyStyle();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyV, meta: true, alt: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.hasStyleClipboard) cur.pasteStyle();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.canGroup) cur.groupSelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyU, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.canUngroup) cur.ungroupSelection();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.rotateSelection90();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyR, meta: true, shift: true):
-            () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) {
-            cur.rotateSelection90(clockwise: false);
-          }
-        },
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
-        const SingleActivator(LogicalKeyboardKey.keyH, meta: true): () {
-          _openFind(replace: true);
-        },
-        const SingleActivator(LogicalKeyboardKey.keyM, meta: true): () {
-          if (c()?.singleSelectedId != null) _editData();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () {
-          if (c()?.singleSelectedId != null) _editLink();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyL, meta: true): () {
-          final cur = c();
-          if (cur != null && cur.hasSelection) cur.toggleLock();
-        },
-        // Presentation / fullscreen: F5 enter, F11 toggle,
-        // Cmd/Ctrl+Shift+P toggle (avoids Fn-keys on macOS laptops).
-        // Escape is handled by PageCanvas so it does not steal the editor's
-        // Escape (cancel drag / clear selection) outside presentation.
-        const SingleActivator(LogicalKeyboardKey.f5): _enterPresentation,
-        const SingleActivator(LogicalKeyboardKey.f11): _togglePresentation,
-        const SingleActivator(LogicalKeyboardKey.keyP, meta: true, shift: true):
-            _togglePresentation,
-        const SingleActivator(
-                LogicalKeyboardKey.keyP, control: true, shift: true):
-            _togglePresentation,
-      },
+      bindings: _editorShortcutBindings(c),
       // Document edits rebuild the builder only; the shapes palette is [child]
       // so its scroll position / thumbnails are not rebuilt every drag tick.
       child: ListenableBuilder(

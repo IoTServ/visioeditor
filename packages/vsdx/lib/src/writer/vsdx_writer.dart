@@ -4158,10 +4158,11 @@ class VsdxWriter {
           _cell('QuickStyleFillColor', s.fill.themeForegroundIndex!.toString()));
     } else if (s.formulas.containsKey('FillForegnd')) {
       children.add(_cell('FillForegnd', '0', formula: s.formulas['FillForegnd']));
-    } else if (s.fill.pattern != 0) {
+    } else if (s.fill.pattern != 0 && s.children.isEmpty) {
       // VSD import / defaultFill often leave foreground null while pattern=1.
       // Visio resolves via StyleSheets; 万兴图示 treats missing FillForegnd as
-      // hollow — emit opaque white (Visio "No Style" default).
+      // hollow — emit opaque white (Visio "No Style" default). Skip groups:
+      // inventing a fill on a container paints a phantom rectangle after reopen.
       children.add(_cell('FillForegnd', '#FFFFFF'));
     }
     if (s.fill.background != null) {
