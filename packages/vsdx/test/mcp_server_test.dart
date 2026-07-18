@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:vsdx/agent.dart';
+import 'package:vsdx/vsdx.dart';
 
 const _spec = {
   'title': 'MCP Flow',
@@ -131,5 +132,76 @@ void main() {
         <String, dynamic>{'spec': jsonEncode(_spec), 'path': path});
     expect(result['isError'], isFalse);
     expect(File(path).existsSync(), isTrue);
+  });
+
+  group('convenience edit tools (file mode)', () {
+    late String path;
+    setUp(() async {
+      path = '${tmp.path}/edit.vsdx';
+      await callTool('create_diagram', <String, dynamic>{
+        'spec': <String, dynamic>{
+          'nodes': <dynamic>[
+            <String, dynamic>{'id': 'a', 'text': 'A'},
+            <String, dynamic>{'id': 'b', 'text': 'B'},
+          ],
+        },
+        'path': path,
+      });
+    });
+
+    List<VsdxShape> shapes() => const DocumentParser()
+        .parse(File(path).readAsBytesSync())
+        .pages
+        .single
+        .shapes;
+    int idOf(String text) => shapes().firstWhere((s) => s.text == text).id;
+
+    test('add_shape → set_text → delete_shape', () async {
+      await callTool('add_shape', <String, dynamic>{
+        'path': path,
+        'stencil': 'process',
+        'text': 'C',
+        'x': 1.0,
+        'y': 1.0,
+      });
+      expect(shapes().any((s) => s.text == 'C'), isTrue);
+      final id = idOf('C');
+      await callTool('set_text',
+          <String, dynamic>{'path': path, 'id': id, 'text': 'C2'});
+      expect(shapes().any((s) => s.text == 'C2'), isTrue);
+      await callTool('delete_shape', <String, dynamic>{'path': path, 'id': id});
+      expect(shapes().any((s) => s.id == id), isFalse);
+    });
+
+    test('set_style sets fill (by "shape:<id>")', () async {
+      final id = idOf('A');
+      await callTool('set_style', <String, dynamic>{
+        'path': path,
+        'ids': <dynamic>['shape:$id'],
+        'fill': '#FF0000',
+      });
+      expect(shapes().firstWhere((s) => s.id == id).fill.foreground?.value,
+          0xFFFF0000);
+    });
+
+    test('move_shape sets the centre', () async {
+      final id = idOf('A');
+      await callTool(
+          'move_shape', <String, dynamic>{'path': path, 'id': id, 'x': 6.0, 'y': 5.0});
+      final s = shapes().firstWhere((s) => s.id == id);
+      expect(s.pinX, closeTo(6.0, 1e-6));
+      expect(s.pinY, closeTo(5.0, 1e-6));
+    });
+
+    test('add_connector links two shapes', () async {
+      final before = shapes().where((s) => s.is1D).length;
+      await callTool('add_connector', <String, dynamic>{
+        'path': path,
+        'from': 'shape:${idOf('A')}',
+        'to': 'shape:${idOf('B')}',
+        'label': 'x',
+      });
+      expect(shapes().where((s) => s.is1D).length, before + 1);
+    });
   });
 }

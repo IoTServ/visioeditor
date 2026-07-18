@@ -32,6 +32,7 @@ import 'stencil_catalog.dart';
 /// (e.g. in tests) to skip the bridge-backed tools.
 void registerVsdxMcpTools(McpServer server, {bool includeLiveTools = true}) {
   _registerFileTools(server);
+  _registerEditTools(server);
   if (includeLiveTools) _registerLiveTools(server);
 }
 
@@ -465,6 +466,141 @@ void _registerFileTools(McpServer server) {
               .join('\n');
       return <McpContent>[McpContent.text(text)];
     },
+  ));
+}
+
+/// One-shape convenience edits. Each routes to a **file** when `path` is given,
+/// else to the **running app** (via the bridge) — same underlying Edit Op.
+void _registerEditTools(McpServer server) {
+  Map<String, dynamic> op(
+      String name, Map<String, dynamic> args, List<String> keys) {
+    return <String, dynamic>{
+      'op': name,
+      for (final k in keys)
+        if (args.containsKey(k)) k: args[k],
+    };
+  }
+
+  Future<List<McpContent>> applyOne(
+      Map<String, dynamic> args, Map<String, dynamic> single) async {
+    final path = args['path'] as String?;
+    if (path != null) {
+      final patched =
+          applyOpsBytes(_read(path), jsonEncode(<String, dynamic>{'ops': <dynamic>[single]}));
+      File(path).writeAsBytesSync(patched);
+      return <McpContent>[
+        McpContent.text('Applied to ${_abs(path)}\n${_validationSummary(patched)}'),
+      ];
+    }
+    final client = await BridgeClient.connect();
+    try {
+      final state =
+          await client.call('applyOps', <String, dynamic>{'ops': <dynamic>[single]});
+      return <McpContent>[McpContent.text('Applied live. ${jsonEncode(state)}')];
+    } finally {
+      await client.close();
+    }
+  }
+
+  // Shared: an optional file path; omit to edit the running app's active doc.
+  Map<String, dynamic> withPath(Map<String, dynamic> props) => <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'path': <String, dynamic>{
+            'type': 'string',
+            'description': 'Target .vsdx file; omit to edit the running app.',
+          },
+          ...props,
+        },
+      };
+
+  server.addTool(McpTool(
+    name: 'add_shape',
+    description: 'Add one shape. See search_shapes for stencil names.',
+    inputSchema: withPath(<String, dynamic>{
+      'stencil': <String, dynamic>{'type': 'string'},
+      'text': <String, dynamic>{'type': 'string'},
+      'x': <String, dynamic>{'type': 'number'},
+      'y': <String, dynamic>{'type': 'number'},
+      'w': <String, dynamic>{'type': 'number'},
+      'h': <String, dynamic>{'type': 'number'},
+      'fill': <String, dynamic>{'type': 'string'},
+      'line': <String, dynamic>{'type': 'string'},
+      'bold': <String, dynamic>{'type': 'boolean'},
+    })
+      ..['required'] = <String>['stencil'],
+    handler: (args) => applyOne(
+        args,
+        op('add_shape', args,
+            <String>['stencil', 'text', 'x', 'y', 'w', 'h', 'fill', 'line', 'bold', 'textColor'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'add_connector',
+    description: 'Connect two shapes by id (e.g. "shape:5" or 5).',
+    inputSchema: withPath(<String, dynamic>{
+      'from': <String, dynamic>{'type': 'string'},
+      'to': <String, dynamic>{'type': 'string'},
+      'label': <String, dynamic>{'type': 'string'},
+      'arrow': <String, dynamic>{'type': 'boolean'},
+      'line': <String, dynamic>{'type': 'string'},
+    })
+      ..['required'] = <String>['from', 'to'],
+    handler: (args) => applyOne(args,
+        op('add_connector', args, <String>['from', 'to', 'label', 'arrow', 'line'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_style',
+    description: 'Set fill/line on one or more shapes (ids).',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+      'fill': <String, dynamic>{'type': 'string'},
+      'line': <String, dynamic>{'type': 'string'},
+    })
+      ..['required'] = <String>['ids'],
+    handler: (args) =>
+        applyOne(args, op('set_style', args, <String>['ids', 'fill', 'line'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_text',
+    description: "Set a shape's text label by id.",
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'text': <String, dynamic>{'type': 'string'},
+      'bold': <String, dynamic>{'type': 'boolean'},
+    })
+      ..['required'] = <String>['id', 'text'],
+    handler: (args) => applyOne(
+        args, op('set_text', args, <String>['id', 'text', 'bold', 'textColor'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'move_shape',
+    description: 'Move a shape to a new centre (x,y inches).',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'x': <String, dynamic>{'type': 'number'},
+      'y': <String, dynamic>{'type': 'number'},
+    })
+      ..['required'] = <String>['id', 'x', 'y'],
+    handler: (args) =>
+        applyOne(args, op('move_shape', args, <String>['id', 'x', 'y'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'delete_shape',
+    description: 'Delete a shape by id.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+    })
+      ..['required'] = <String>['id'],
+    handler: (args) =>
+        applyOne(args, op('delete_shape', args, <String>['id'])),
   ));
 }
 

@@ -352,15 +352,15 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] 文件类工具：`create_diagram/import_mermaid/apply_ops/export/validate/explain/search_shapes`
       （后端调 agent 库）。
 - [x] 实时类工具：`open_in_app/live_apply_ops/snapshot/get_app_state`（`BridgeClient` 连应用桥）。
-- [x] 便捷路由：`create_diagram`/`import_mermaid` 带 `open:true` 时探测握手文件并在应用打开。
+- [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
-- [x] 协议 + 文件类工具单测 `mcp_server_test` 9 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟通过。
+- [x] **便捷单步工具**：`add_shape`/`add_connector`/`set_style`/`set_text`/`move_shape`/`delete_shape`
+      ——**双模式**（给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op；单测 4 例。
+- [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + 10 工具；文件类工具
-端到端建图/校验/描述/导出；实时类工具经 `BridgeClient` 驱动应用。
-> 便捷类单步工具（add_shape 等）暂由 Agent 用 `apply_ops`/`live_apply_ops` 组合；render_preview
-> 以 `export`(SVG) + `snapshot`(PNG) 覆盖。
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **22 个工具**（12 文件/导入 +
+6 便捷编辑 + 4 实时）；文件类端到端建图/校验/描述/导出；实时类经 `BridgeClient` 驱动应用。
 
 ### M4 —— Skill  `DONE`
 
@@ -619,4 +619,7 @@ visioeditor/
   （docker-compose + Kubernetes 自动侦测；compose 服务/依赖/具名卷；k8s 按 kind 着色 +
   Service 选择器/Ingress backend/workload→CM·Secret·PVC 边），CLI `import-iac` + MCP `import_iac`；
   单测 `iac_import_test` 3 例。`dart test` **540**、`flutter test` 555 全绿。
+- 2026-07-18 — **M3 收口（便捷单步工具）**：MCP 增 `add_shape`/`add_connector`/`set_style`/
+  `set_text`/`move_shape`/`delete_shape`（双模式：`path`→文件、省略→运行中应用），内部转单条
+  Edit Op；`mcp_server_test` 增 4 例（共 13）。工具总数 **22**。`dart test` **544**、`flutter test` 555 全绿。
   仍待：Go/Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案。
