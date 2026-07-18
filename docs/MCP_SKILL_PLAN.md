@@ -417,8 +417,11 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] 反向/衍生：**`vsdx→mermaid`**（`lib/src/agent/mermaid_export.dart`，结构化 flowchart，
       保边标签、可 `--fenced`），CLI `to-mermaid` + MCP `to_mermaid`；单测 `mermaid_export_test` 4 例
       （含 mermaid→vsdx→mermaid 往返）。交互式 HTML 查看器留后续。
-- [ ] 分发：`vsdxtool`/`vsdxtool-mcp` 各平台二进制 release；可选 Node 薄壳 `npx` 包；
-      skill 上架（clone / 插件）。
+- [x] 分发（本地一键可用）：仓库内置 `.cursor/mcp.json`（`dart run` 启动、免编译，工作区根
+      即可被 Cursor 调用）；构建脚本 `packages/vsdx/tool/build_agent_binaries.sh` 产出
+      `vsdxtool` / `vsdxtool-mcp` 原生二进制（`.gitignore` 忽略）；MCP `serve()` 端到端集成测试
+      `mcp_stdio_test` 2 例（行分隔框校 + 通知无响应 + 工具落盘）。
+- [ ] 分发（发布）：各平台二进制 release；可选 Node 薄壳 `npx` 包；skill 上架（clone / 插件）。
 
 **M5 导入/导出矩阵（现状）**：入 = Diagram Spec · Edit Ops · Mermaid · SQL DDL ·
 Code（Dart/Py/JS-TS）；出 = `.vsdx` · SVG · Mermaid · Markdown（explain）· PNG（应用 snapshot）。
@@ -579,4 +582,9 @@ visioeditor/
   （Dart/Python/JS-TS 项目 → 模块 import 图 → `.vsdx`，仅项目内边，自动侦测语言），
   CLI `import-code` + MCP `import_code`；单测 `code_import_test` 7 例（提取器 + 三语言临时目录）。
   狗粮：本仓 `lib/src/agent` → 12 模块/17 依赖，校验干净。`dart test` **524**、`flutter test` 555 全绿。
-  仍待：`import-openapi`、分发打包、full stencil catalog、l10n 菜单文案。
+- 2026-07-18 — **M5 续（本地一键分发 + MCP stdio 测试）**：新增 `.cursor/mcp.json`
+  （`dart run packages/vsdx/bin/vsdxtool_mcp.dart`，打开本仓即可在 Cursor 调用全部工具，免编译）、
+  构建脚本 `packages/vsdx/tool/build_agent_binaries.sh`（编译 `vsdxtool`/`vsdxtool-mcp` 原生二进制，
+  `.gitignore` 忽略）、README「AI Agent 接口」一节与 skill 配置说明；新增 `mcp_stdio_test` 2 例
+  （`serve()` 真实流框校 + 通知无响应 + create_diagram 落盘）。`dart test` **526**、`flutter test` 555 全绿。
+  仍待：`import-openapi`、发布二进制/`npx`、full stencil catalog、l10n 菜单文案。

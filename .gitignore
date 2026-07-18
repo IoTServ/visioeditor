@@ -34,6 +34,11 @@ migrate_working_dir/
 /packages/*/build/
 /coverage/
 
+# Agent backend compiled binaries (build via
+# packages/vsdx/tool/build_agent_binaries.sh; not committed).
+/packages/vsdx/vsdxtool
+/packages/vsdx/vsdxtool-mcp
+
 # Symbolication related
 app.*.symbols
 

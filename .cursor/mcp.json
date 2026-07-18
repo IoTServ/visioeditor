@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "visioeditor": {
+      "command": "dart",
+      "args": ["run", "packages/vsdx/bin/vsdxtool_mcp.dart"],
+      "env": {}
+    }
+  }
+}

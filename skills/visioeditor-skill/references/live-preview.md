@@ -31,7 +31,12 @@ Typical live flow: `create_diagram({ spec, open:true })` → a few
 
 ## Register the MCP server (Cursor / Claude)
 
-Build it once: `cd packages/vsdx && dart compile exe bin/vsdxtool_mcp.dart -o vsdxtool-mcp`.
+**This repo ships a ready `.cursor/mcp.json`** that launches the server with
+`dart run packages/vsdx/bin/vsdxtool_mcp.dart` (no compile step) — open the repo
+in Cursor and the `visioeditor` MCP tools are available. To use it elsewhere,
+or to prefer a fast native binary, build once
+(`bash packages/vsdx/tool/build_agent_binaries.sh` →
+`packages/vsdx/vsdxtool-mcp`) and register one of the configs below.
 
 **Cursor** — `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 

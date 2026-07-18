@@ -43,6 +43,21 @@ flutter test
 flutter analyze
 ```
 
+## AI Agent 接口（MCP / Skill）
+
+本仓内置 **AI 代理接口**：无头 CLI `vsdxtool`、MCP 服务器 `vsdxtool-mcp`、Agent Skill
+（`skills/visioeditor-skill/`），以及运行中应用的**实时预览桥**。自然语言 / Mermaid /
+SQL DDL / 代码依赖图 → 可编辑保真 `.vsdx`，并可在桌面应用里**实时预览与协同编辑**。
+
+- **Cursor 一键可用**：仓库已附 [`.cursor/mcp.json`](.cursor/mcp.json)（`dart run` 启动、免编译）。
+  打开本仓即可调用 `create_diagram` / `import_mermaid` / `import_sql` / `import_code` /
+  `apply_ops` / `to_mermaid` / `snapshot` 等工具。
+- **编译原生二进制**（更快启动）：`bash packages/vsdx/tool/build_agent_binaries.sh`
+  → `packages/vsdx/vsdxtool(-mcp)`。
+- 实时预览：应用 More（⋯）菜单勾选 **Agent live preview**（默认关，loopback + token）。
+- 设计与里程碑见 [`docs/MCP_SKILL_PLAN.md`](docs/MCP_SKILL_PLAN.md)；用法见
+  [`skills/visioeditor-skill/SKILL.md`](skills/visioeditor-skill/SKILL.md)。
+
 ## License
 
 - 主仓：**MIT**（见 `LICENSE`）。引擎/渲染层部分代码恢复自同为 MIT 的
