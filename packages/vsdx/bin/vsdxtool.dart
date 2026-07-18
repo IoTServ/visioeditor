@@ -24,6 +24,7 @@ Future<void> main(List<String> args) async {
     ..addCommand(_BuildCommand())
     ..addCommand(_ImportMermaidCommand())
     ..addCommand(_ImportSqlCommand())
+    ..addCommand(_ImportCodeCommand())
     ..addCommand(_PatchCommand())
     ..addCommand(_RenderCommand())
     ..addCommand(_ToMermaidCommand())
@@ -121,6 +122,39 @@ class _ImportSqlCommand extends Command<int> {
     File(out).writeAsBytesSync(bytes);
     stdout.writeln('imported $out (${bytes.length} bytes, '
         '${spec.nodes.length} tables, ${spec.edges.length} FKs)');
+    return 0;
+  }
+}
+
+class _ImportCodeCommand extends Command<int> {
+  _ImportCodeCommand() {
+    argParser
+      ..addOption('dir',
+          abbr: 'd', help: 'Project root to scan (default: current dir).')
+      ..addOption('lang',
+          help: 'dart | python | js (auto-detected if omitted).')
+      ..addOption('max', help: 'Max source files.', defaultsTo: '300')
+      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+  }
+  @override
+  String get name => 'import-code';
+  @override
+  String get description =>
+      'Visualize a codebase import graph (Dart/Python/JS-TS) as an editable .vsdx.';
+
+  @override
+  int run() {
+    final dir = (argResults!['dir'] as String?) ?? Directory.current.path;
+    final spec = codeToSpec(
+      dir,
+      language: argResults!['lang'] as String?,
+      maxFiles: int.tryParse(argResults!['max'] as String) ?? 300,
+    );
+    final bytes = spec.build();
+    final out = argResults!['output'] as String;
+    File(out).writeAsBytesSync(bytes);
+    stdout.writeln('imported $out (${bytes.length} bytes, '
+        '${spec.nodes.length} modules, ${spec.edges.length} imports)');
     return 0;
   }
 }

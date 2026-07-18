@@ -10,6 +10,7 @@
 library;
 
 export 'src/agent/bridge_client.dart';
+export 'src/agent/code_import.dart';
 export 'src/agent/diagram_spec.dart';
 export 'src/agent/edit_ops.dart';
 export 'src/agent/inspect.dart';

@@ -405,7 +405,12 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       CLI `import-sql` + MCP `import_sql`；解析 CREATE TABLE 表名/列/类型、PK（行内+表级）、
       FK（行内 REFERENCES + 表级/CONSTRAINT FOREIGN KEY），每表一框（列 + PK/FK 标记）+ 外键边；
       单测 `sql_import_test` 4 例。
-- [ ] 导入器：`import-code`（Py/JS/Go/Rust 依赖图）/ `import-openapi`。
+- [x] 导入器：**`import-code`**（代码依赖图）—— `lib/src/agent/code_import.dart`，
+      CLI `import-code` + MCP `import_code`；支持 **Dart / Python / JS-TS**（自动侦测语言），
+      扫描项目、提取 import/from/require/export-from、解析为**仅项目内**模块依赖边
+      （Dart `package:`→lib/、Python 相对导入 + `__init__` 包、JS 相对 + `index` 解析），
+      每模块一框 + 依赖边；单测 `code_import_test` 7 例（提取器 + 三语言临时目录集成）。
+- [ ] 导入器：`import-openapi`（其余 Go/Rust 依赖图与 IaC 后续）。
 - [x] **L3 协同编辑**：应用桥 `applyOps` 改为经 `EditorController.applyEdit(next)` 提交——
       Agent 编辑成为**单步可撤销**、**保留用户 undo 历史与选中**（复用既有 `applyOps` 引擎逻辑，
       含 `rerouteConnectors`）；不落盘、即时重绘。桥测试新增 L3 撤销用例（共 8 例）。
@@ -414,6 +419,9 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       （含 mermaid→vsdx→mermaid 往返）。交互式 HTML 查看器留后续。
 - [ ] 分发：`vsdxtool`/`vsdxtool-mcp` 各平台二进制 release；可选 Node 薄壳 `npx` 包；
       skill 上架（clone / 插件）。
+
+**M5 导入/导出矩阵（现状）**：入 = Diagram Spec · Edit Ops · Mermaid · SQL DDL ·
+Code（Dart/Py/JS-TS）；出 = `.vsdx` · SVG · Mermaid · Markdown（explain）· PNG（应用 snapshot）。
 
 ### M6 —— 打磨  `LATER`
 
@@ -567,4 +575,8 @@ visioeditor/
   桥测试加 L3 撤销用例（8 例）。(2) 新增 `lib/src/agent/mermaid_export.dart`（`vsdx→mermaid`
   结构化 flowchart，保边标签），CLI `to-mermaid` + MCP `to_mermaid`，单测 `mermaid_export_test`
   4 例（含往返）。`dart test` **517**、`flutter test` **555** 全绿。
-  仍待：`import-code`/`import-openapi`、分发打包、full stencil catalog、l10n 菜单文案。
+- 2026-07-18 — **M5 续（import-code / 代码依赖图）**：新增 `lib/src/agent/code_import.dart`
+  （Dart/Python/JS-TS 项目 → 模块 import 图 → `.vsdx`，仅项目内边，自动侦测语言），
+  CLI `import-code` + MCP `import_code`；单测 `code_import_test` 7 例（提取器 + 三语言临时目录）。
+  狗粮：本仓 `lib/src/agent` → 12 模块/17 依赖，校验干净。`dart test` **524**、`flutter test` 555 全绿。
+  仍待：`import-openapi`、分发打包、full stencil catalog、l10n 菜单文案。

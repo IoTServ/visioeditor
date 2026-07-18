@@ -126,6 +126,10 @@ spec:
   `VSDXTOOL import-sql -i schema.sql -o erd.vsdx`
   (MCP: `import_sql({ sql, path, open })`). Tables become boxes with columns +
   PK/FK markers; foreign keys become edges.
+- **Codebase** (Dart / Python / JS-TS) → module import graph:
+  `VSDXTOOL import-code -d ./src -o code.vsdx` (MCP: `import_code({ dir,
+  language?, path, open })`). One box per module; edges are intra-project
+  imports (external/SDK deps dropped). Language auto-detected.
 
 Both produce a normal `.vsdx` you can then refine with Edit Ops and preview
 live. (Code / IaC / OpenAPI importers are planned — see `docs/MCP_SKILL_PLAN.md`.)

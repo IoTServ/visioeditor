@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'package:vsdx/vsdx.dart';
 
 import 'bridge_client.dart';
+import 'code_import.dart';
 import 'diagram_spec.dart';
 import 'edit_ops.dart';
 import 'inspect.dart';
@@ -137,6 +138,56 @@ void _registerFileTools(McpServer server) {
       final out = StringBuffer()
         ..writeln('Imported ${_abs(path)}')
         ..writeln('${spec.nodes.length} nodes, ${spec.edges.length} edges')
+        ..writeln(_validationSummary(bytes));
+      if (args['open'] == true) {
+        try {
+          final client = await BridgeClient.connect();
+          await client.call('open', <String, dynamic>{'path': _abs(path)});
+          await client.close();
+          out.writeln('Opened in the running editor (live preview).');
+        } catch (e) {
+          out.writeln('Note: could not open in app ($e).');
+        }
+      }
+      return <McpContent>[McpContent.text(out.toString().trimRight())];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'import_code',
+    description: 'Visualize a codebase import graph (Dart / Python / JS-TS) as '
+        'an editable .vsdx (one box per module, edges = imports). Set open=true '
+        'to open it in the running editor.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'dir': <String, dynamic>{
+          'type': 'string',
+          'description': 'Project root to scan.',
+        },
+        'language': <String, dynamic>{
+          'type': 'string',
+          'enum': <String>['dart', 'python', 'js'],
+          'description': 'Auto-detected if omitted.',
+        },
+        'path': <String, dynamic>{'type': 'string'},
+        'max': <String, dynamic>{'type': 'integer', 'default': 300},
+        'open': <String, dynamic>{'type': 'boolean'},
+      },
+      'required': <String>['dir', 'path'],
+    },
+    handler: (args) async {
+      final spec = codeToSpec(
+        args['dir'] as String,
+        language: args['language'] as String?,
+        maxFiles: (args['max'] as num?)?.toInt() ?? 300,
+      );
+      final bytes = spec.build();
+      final path = args['path'] as String;
+      File(path).writeAsBytesSync(bytes);
+      final out = StringBuffer()
+        ..writeln('Imported ${_abs(path)}')
+        ..writeln('${spec.nodes.length} modules, ${spec.edges.length} imports')
         ..writeln(_validationSummary(bytes));
       if (args['open'] == true) {
         try {
