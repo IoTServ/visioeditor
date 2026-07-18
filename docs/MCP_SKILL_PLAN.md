@@ -349,8 +349,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 
 - [x] MCP stdio 服务骨架（`McpServer`：`initialize`/`notifications`/`ping`/
       `tools/list`/`tools/call`，newline-delimited JSON-RPC 2.0）。
-- [x] 文件类工具：`create_diagram/import_mermaid/apply_ops/export/validate/explain/search_shapes`
-      （后端调 agent 库）。
+- [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_shapes/search_shapes`
+      （后端调 agent 库；`list_shapes` 双模式，返回结构化 id/text/坐标供 Agent 定位）。
 - [x] 实时类工具：`open_in_app/live_apply_ops/snapshot/get_app_state`（`BridgeClient` 连应用桥）。
 - [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
@@ -359,8 +359,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       ——**双模式**（给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op；单测 4 例。
 - [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **22 个工具**（12 文件/导入 +
-6 便捷编辑 + 4 实时）；文件类端到端建图/校验/描述/导出；实时类经 `BridgeClient` 驱动应用。
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **23 个工具**（13 文件/导入 +
+6 便捷编辑 + 4 实时）；文件类端到端建图/校验/描述/导出/列举；实时类经 `BridgeClient` 驱动应用。
 
 ### M4 —— Skill  `DONE`
 
@@ -622,4 +622,7 @@ visioeditor/
 - 2026-07-18 — **M3 收口（便捷单步工具）**：MCP 增 `add_shape`/`add_connector`/`set_style`/
   `set_text`/`move_shape`/`delete_shape`（双模式：`path`→文件、省略→运行中应用），内部转单条
   Edit Op；`mcp_server_test` 增 4 例（共 13）。工具总数 **22**。`dart test` **544**、`flutter test` 555 全绿。
-  仍待：Go/Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案。
+- 2026-07-18 — **打磨（list_shapes 形状发现）**：`inspect.listShapes` 结构化列举（id/text/连接器/坐标）；
+  MCP `list_shapes`（双模式：文件解析 / 桥 `listShapes`）+ 应用桥新增 `listShapes` 方法。工具总数 **23**。
+  `mcp_server_test`+1、`agent_bridge_test`+1。`dart test` **545**、`flutter test` **556** 全绿。
+  仍待：Go/Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案（需补 37 语言表）。

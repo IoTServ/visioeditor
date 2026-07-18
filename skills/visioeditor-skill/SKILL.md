@@ -111,8 +111,9 @@ VSDXTOOL patch -i diagram.vsdx --ops ops.json     # file
 # or MCP: apply_ops({ path, ops })  /  live_apply_ops({ ops })  for the live app
 ```
 
-Get current shape ids with `explain` (MCP) / `VSDXTOOL explain -i file.vsdx`
-or `get_app_state` (live). Reference shapes as `"shape:<id>"` or the raw id.
+Get current shape ids with `list_shapes` (MCP; JSON of id/text/x/y/w/h, file or
+live) or `explain` (`VSDXTOOL explain -i file.vsdx`). Reference shapes as
+`"shape:<id>"` or the raw id.
 
 **Convenience single-step tools** (MCP) avoid hand-building op arrays:
 `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,

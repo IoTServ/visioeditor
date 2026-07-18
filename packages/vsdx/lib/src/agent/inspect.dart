@@ -84,6 +84,26 @@ bool _overlaps(VsdxShape a, VsdxShape b) {
   return !ix && !iy;
 }
 
+/// A compact, machine-readable listing of a page's shapes — the ids/labels an
+/// Agent needs before editing (via `apply_ops` / the convenience tools).
+List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
+  if (doc.pages.isEmpty) return const <Map<String, dynamic>>[];
+  final page = doc.pages[pageIndex.clamp(0, doc.pages.length - 1)];
+  double r(double v) => double.parse(v.toStringAsFixed(3));
+  return <Map<String, dynamic>>[
+    for (final s in page.shapes)
+      <String, dynamic>{
+        'id': s.id,
+        'text': (s.text ?? s.richText.plainText).trim().replaceAll('\n', ' '),
+        'connector': s.is1D,
+        'x': r(s.pinX),
+        'y': r(s.pinY),
+        'w': r(s.width),
+        'h': r(s.height),
+      },
+  ];
+}
+
 /// Reverse a document into structured Markdown (components + relations),
 /// suitable for a README / PR summary.
 String explainDocument(VsdxDocument doc) {

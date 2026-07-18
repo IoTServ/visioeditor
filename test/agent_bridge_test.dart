@@ -80,6 +80,15 @@ void main() {
     expect((state['pages'] as List).first['shapes'], greaterThanOrEqualTo(3));
   });
 
+  test('listShapes returns the active page shapes with ids', () async {
+    final r = await call('listShapes');
+    final shapes = (r['result'] as Map)['shapes'] as List;
+    expect(shapes, isNotEmpty);
+    expect(shapes.first.containsKey('id'), isTrue);
+    final texts = shapes.map((s) => s['text']).toSet();
+    expect(texts, containsAll(<String>['A', 'B']));
+  });
+
   test('applyOps edits the in-memory model (instant, no disk write)', () async {
     final before = File(file.path).statSync().modified;
     final r = await call('applyOps', <String, dynamic>{

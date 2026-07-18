@@ -203,5 +203,15 @@ void main() {
       });
       expect(shapes().where((s) => s.is1D).length, before + 1);
     });
+
+    test('list_shapes returns ids + text as JSON', () async {
+      final result = await callTool('list_shapes', <String, dynamic>{'path': path});
+      final text = firstText(result);
+      final decoded = jsonDecode(text) as Map<String, dynamic>;
+      final list = decoded['shapes'] as List;
+      final texts = list.map((s) => s['text']).toSet();
+      expect(texts, containsAll(<String>['A', 'B']));
+      expect(list.first.containsKey('id'), isTrue);
+    });
   });
 }

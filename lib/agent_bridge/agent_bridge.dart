@@ -134,6 +134,15 @@ class AgentBridge {
         return <String, dynamic>{'pong': true, 'engine': kVsdxEngineVersion};
       case 'getState':
         return _state();
+      case 'listShapes':
+        final doc = workspace.active?.document;
+        if (doc == null) throw StateError('no active document');
+        final page = (params['page'] as num?)?.toInt() ??
+            workspace.active!.currentPageIndex;
+        return <String, dynamic>{
+          'page': page,
+          'shapes': listShapes(doc, pageIndex: page),
+        };
       case 'open':
         final path = params['path']?.toString();
         if (path == null) throw ArgumentError('open: missing path');

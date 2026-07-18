@@ -444,6 +444,43 @@ void _registerFileTools(McpServer server) {
   ));
 
   server.addTool(McpTool(
+    name: 'list_shapes',
+    description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h) '
+        '— use it to find ids before editing. Give `path` for a file; omit to '
+        'read the running app.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'path': <String, dynamic>{'type': 'string'},
+        'page': <String, dynamic>{'type': 'integer', 'default': 0},
+      },
+    },
+    handler: (args) async {
+      const enc = JsonEncoder.withIndent('  ');
+      final path = args['path'] as String?;
+      if (path != null) {
+        final doc = const DocumentParser().parse(_read(path));
+        final page = (args['page'] as num?)?.toInt() ?? 0;
+        return <McpContent>[
+          McpContent.text(enc.convert(<String, dynamic>{
+            'page': page,
+            'shapes': listShapes(doc, pageIndex: page),
+          })),
+        ];
+      }
+      final client = await BridgeClient.connect();
+      try {
+        final res = await client.call('listShapes', <String, dynamic>{
+          if (args['page'] != null) 'page': args['page'],
+        });
+        return <McpContent>[McpContent.text(enc.convert(res))];
+      } finally {
+        await client.close();
+      }
+    },
+  ));
+
+  server.addTool(McpTool(
     name: 'search_shapes',
     description: 'Search the stencil catalog for a shape name to use as a '
         'node "stencil" (e.g. "database" -> cylinder).',
