@@ -50,8 +50,8 @@ class NodeSpec {
       );
 
   final String id;
-  final String stencil;
-  final String text;
+  String stencil;
+  String text;
   double? x;
   double? y;
   double? w;

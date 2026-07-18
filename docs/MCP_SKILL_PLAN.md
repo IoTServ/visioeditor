@@ -272,9 +272,9 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - **M0 规划与脚手架** — `DONE`
 - **M1 无头 CLI（build/patch/render/validate/explain/shapes）** — `DONE`
 - **M2 应用实时预览桥 L1+L2（监听重载 + loopback 通道 + snapshot）** — `DONE`
-- **M3 MCP 服务器（文件类 + 实时类 + 便捷类工具）** — `TODO`
-- **M4 Skill（SKILL.md + references + 自检回路 + 图型预设）** — `TODO`
-- **M5 实时协同 L3 + 导入器（mermaid/sql/code）+ 分发打包** — `LATER`
+- **M3 MCP 服务器（文件类 + 实时类 + 便捷类工具）** — `DONE`
+- **M4 Skill（SKILL.md + references + 自检回路 + 图型预设）** — `DONE`
+- **M5 实时协同 L3 + 导入器（mermaid/sql/code）+ 分发打包** — `DOING`（import-mermaid 完成）
 - **M6 打磨（安全/文档/示例/CI/跨平台）** — `LATER`
 
 > **最薄端到端切片已打通（2026-07-18）**：`vsdxtool build spec.json → out.vsdx` →
@@ -341,19 +341,41 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 
 ---
 
-### M3 —— MCP 服务器  `TODO`
+### M3 —— MCP 服务器  `DONE`
 
-- [ ] MCP stdio 服务骨架（Dart，`package:mcp_dart` 或自写 JSON-RPC）；`tools/list` 就绪。
-- [ ] 文件类工具：`create_diagram/apply_ops/export/validate/explain/search_shapes/render_preview`
-      （后端调 `vsdxtool`）。
-- [ ] 实时类工具：`open_in_app/live_apply_ops/snapshot/select/get_state`（后端调应用桥）。
-- [ ] 便捷类工具：`add_shape/add_connector/set_style/set_text/move_shape/…`（转 ops）。
-- [ ] **智能路由**：探测应用桥握手文件，在线走实时、离线走文件 + `render_preview`。
-- [ ] `render_preview` 返回 MCP image content（Agent 内联视觉）。
-- [ ] `.cursor`/Claude 配置样例（`command: vsdxtool-mcp` 或 `npx`）。
+自写最小 MCP（**无第三方依赖**，ADR-3 备选路径），实现于
+`packages/vsdx/lib/src/agent/{mcp_server,mcp_tools,bridge_client}.dart` +
+`bin/vsdxtool_mcp.dart`。
 
-验收：在 Cursor 里注册该 MCP，一句话 `create_diagram` 出 `.vsdx` + 内联预览；应用运行时
-`open_in_app` + `live_apply_ops` 实时可见。
+- [x] MCP stdio 服务骨架（`McpServer`：`initialize`/`notifications`/`ping`/
+      `tools/list`/`tools/call`，newline-delimited JSON-RPC 2.0）。
+- [x] 文件类工具：`create_diagram/import_mermaid/apply_ops/export/validate/explain/search_shapes`
+      （后端调 agent 库）。
+- [x] 实时类工具：`open_in_app/live_apply_ops/snapshot/get_app_state`（`BridgeClient` 连应用桥）。
+- [x] 便捷路由：`create_diagram`/`import_mermaid` 带 `open:true` 时探测握手文件并在应用打开。
+- [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
+- [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
+- [x] 协议 + 文件类工具单测 `mcp_server_test` 9 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟通过。
+
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + 10 工具；文件类工具
+端到端建图/校验/描述/导出；实时类工具经 `BridgeClient` 驱动应用。
+> 便捷类单步工具（add_shape 等）暂由 Agent 用 `apply_ops`/`live_apply_ops` 组合；render_preview
+> 以 `export`(SVG) + `snapshot`(PNG) 覆盖。
+
+### M4 —— Skill  `DONE`
+
+实现于 `skills/visioeditor-skill/`（`SKILL.md` + `references/`）。
+
+- [x] `SKILL.md`：frontmatter（name/description 触发词/兼容性/平台）+ §5.4 工作流
+      （check→plan→spec→build→preview→self-check→iterate→deliver）+ Spec/Ops 速查。
+- [x] `references/`：`spec-schema` / `shape-catalog` / `diagram-types` / `styling` /
+      `live-preview`（含 MCP 配置）/ `troubleshooting`。
+- [x] 图型预设：flowchart / org chart / architecture / network / ERD / UML / BPMN / swimlane
+      （`diagram-types.md`，语义配色表）。
+- [x] 自检回路（≤2 轮，用 `snapshot` 视觉纠错）+ 评审回路（≤5 轮）落到 `SKILL.md`。
+
+验收（已达成）：skill 指引 Agent 用 `vsdxtool`/MCP 端到端出 `.vsdx` 并可在应用实时预览。
+> 后续：样式预设 `styles/` 与薄 `scripts/` 封装（当前直接调 CLI/MCP，已够用）；l10n 菜单文案。
 
 ---
 
@@ -373,12 +395,15 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 
 ---
 
-### M5 —— 实时协同 L3 + 导入器 + 分发  `LATER`
+### M5 —— 实时协同 L3 + 导入器 + 分发  `DOING`
 
+- [x] 导入器：**`import-mermaid`**（flowchart/graph 子集 → Diagram Spec → `.vsdx`）——
+      `lib/src/agent/mermaid_import.dart`，CLI `import-mermaid` + MCP `import_mermaid`；
+      支持方向/节点形状（`[] () ([]) [()] {} {{}} [//] (())`）/边操作符/管道与内联标签/边链；
+      单测 `mermaid_import_test` 6 例。
+- [ ] 导入器：`import-sql`（ERD）/ `import-code`（Py/JS/Go/Rust 依赖图）/ `import-openapi`。
 - [ ] **L3**：Edit Ops → `EditorController` 撤销感知 API（每步一个 undo 步、参与吸附/避障/主题）。
-- [ ] 导入器：`import-mermaid` / `import-sql`（ERD）/ `import-code`（Py/JS/Go/Rust 依赖图）/
-      `import-openapi`；复用 `ObstacleRouter` 布局。
-- [ ] 反向/衍生：`explain`（已在 M1）+ `vsdx→mermaid` + 交互式 HTML 查看器（对齐 drawio）。
+- [ ] 反向/衍生：`vsdx→mermaid` + 交互式 HTML 查看器（对齐 drawio）。
 - [ ] 分发：`vsdxtool`/`vsdxtool-mcp` 各平台二进制 release；可选 Node 薄壳 `npx` 包；
       skill 上架（clone / 插件）。
 
@@ -517,4 +542,13 @@ visioeditor/
   `snapshot` 光栅化回传 + `save`），`main.dart` More 菜单加「Agent live preview」开关并管理
   生命周期。集成测试 `test/agent_bridge_test.dart` 7 例、`flutter analyze` 干净、
   `flutter test` 554/554 无回归。**最薄端到端切片打通**：一句话 spec → CLI 生成 → 应用实时刷新。
-  仍待：M3 MCP 服务器、M4 Skill、M5 L3 协同 + 导入器。
+- 2026-07-18 — **M3 完成（MCP 服务器）**：新增 `lib/src/agent/{mcp_server,mcp_tools,bridge_client}.dart`
+  + `bin/vsdxtool_mcp.dart`（自写最小 MCP stdio，无第三方依赖）；10 工具（6 文件 + 4 实时）；
+  `snapshot` 回图片内容；单测 `mcp_server_test` 9 例 + stdio 冒烟（`initialize`/`tools/list`）。
+- 2026-07-18 — **M4 完成（Skill）**：新增 `skills/visioeditor-skill/SKILL.md` + 6 篇 references
+  （spec-schema / shape-catalog / diagram-types / styling / live-preview / troubleshooting），
+  对齐 drawio-skill 工作流（含自检/评审回路、图型预设、MCP 配置样例）。
+- 2026-07-18 — **M5 起步（import-mermaid）**：新增 `lib/src/agent/mermaid_import.dart`
+  （Mermaid flowchart/graph → Spec → `.vsdx`），CLI `import-mermaid` + MCP `import_mermaid`；
+  单测 `mermaid_import_test` 6 例。`dart test` **509**、`flutter test` 554 全绿。
+  仍待：其余导入器（sql/code/openapi）、L3 协同、分发打包。

@@ -9,7 +9,11 @@
 /// in the editor. See `docs/MCP_SKILL_PLAN.md`.
 library;
 
+export 'src/agent/bridge_client.dart';
 export 'src/agent/diagram_spec.dart';
 export 'src/agent/edit_ops.dart';
 export 'src/agent/inspect.dart';
+export 'src/agent/mcp_server.dart';
+export 'src/agent/mermaid_import.dart';
+export 'src/agent/mcp_tools.dart';
 export 'src/agent/stencil_catalog.dart';

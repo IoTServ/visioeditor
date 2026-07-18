@@ -22,6 +22,7 @@ Future<void> main(List<String> args) async {
     'Headless .vsdx authoring/editing backend for AI agents (visioeditor).',
   )
     ..addCommand(_BuildCommand())
+    ..addCommand(_ImportMermaidCommand())
     ..addCommand(_PatchCommand())
     ..addCommand(_RenderCommand())
     ..addCommand(_ValidateCommand())
@@ -64,6 +65,33 @@ class _BuildCommand extends Command<int> {
     stdout.writeln(
         'built $out (${bytes.length} bytes, ${spec.nodes.length} nodes, '
         '${spec.edges.length} edges)');
+    return 0;
+  }
+}
+
+class _ImportMermaidCommand extends Command<int> {
+  _ImportMermaidCommand() {
+    argParser
+      ..addOption('input',
+          abbr: 'i', help: 'Mermaid (.mmd) path (or read stdin if omitted).')
+      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+  }
+  @override
+  String get name => 'import-mermaid';
+  @override
+  String get description =>
+      'Convert a Mermaid flowchart/graph to an editable .vsdx.';
+
+  @override
+  int run() {
+    final input = argResults!['input'] as String?;
+    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final spec = mermaidToSpec(text);
+    final bytes = spec.build();
+    final out = argResults!['output'] as String;
+    File(out).writeAsBytesSync(bytes);
+    stdout.writeln('imported $out (${bytes.length} bytes, '
+        '${spec.nodes.length} nodes, ${spec.edges.length} edges)');
     return 0;
   }
 }
