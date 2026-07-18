@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:vsdx/vsdx.dart';
 
+import 'agent_bridge/agent_bridge.dart';
 import 'editor/canvas_camera.dart';
 import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
@@ -129,6 +130,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _showRulers = true;
   bool _presentationMode = false;
   final CanvasCamera _camera = CanvasCamera();
+
+  /// L1+L2 live-preview bridge for AI agents; null when disabled (default).
+  AgentBridge? _agentBridge;
 
   /// Double-tap detection for page tabs ([ChoiceChip] swallows
   /// [GestureDetector.onDoubleTap]).
@@ -288,9 +292,30 @@ class _EditorHomePageState extends State<EditorHomePage> {
   @override
   void dispose() {
     if (_presentationMode) _applyPresentationSystemUi(false);
+    _agentBridge?.dispose();
     _workspace.dispose();
     _camera.dispose();
     super.dispose();
+  }
+
+  /// Start/stop the loopback live-preview bridge (see `AgentBridge`).
+  Future<void> _toggleAgentPreview() async {
+    final bridge = _agentBridge;
+    if (bridge != null) {
+      await bridge.stop();
+      bridge.dispose();
+      if (mounted) setState(() => _agentBridge = null);
+      _snack('Agent live preview off');
+      return;
+    }
+    try {
+      final b = AgentBridge(workspace: _workspace, openPath: _openPath);
+      await b.start();
+      if (mounted) setState(() => _agentBridge = b);
+      _snack('Agent live preview on · 127.0.0.1:${b.port}');
+    } catch (e) {
+      _snack('Agent live preview failed: $e');
+    }
   }
 
   Future<void> _addRecent(String? path) async {
@@ -1014,6 +1039,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.toggleSnap();
                               case 'lineJumps':
                                 cur.toggleLineJumps();
+                              case 'agentPreview':
+                                _toggleAgentPreview();
                               case 'settings':
                                 _openSettings();
                               case 'close':
@@ -1108,6 +1135,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'lineJumps',
                               checked: cur.showLineJumps,
                               child: Text(el.lineJumps),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'agentPreview',
+                              checked: _agentBridge?.isRunning ?? false,
+                              child: const Text('Agent live preview'),
                             ),
                             const PopupMenuDivider(),
                             PopupMenuItem<String>(

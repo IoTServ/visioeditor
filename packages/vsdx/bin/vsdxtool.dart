@@ -1,0 +1,217 @@
+/// `vsdxtool` — the headless Agent backend for visioeditor.
+///
+/// Turns a **Diagram Spec** into a round-trip-faithful `.vsdx`, applies
+/// **Edit Ops** to an existing file, renders SVG previews, and lints / explains
+/// documents — all in pure Dart (no Flutter, no Electron). Compile a single
+/// binary with `dart compile exe bin/vsdxtool.dart -o vsdxtool`.
+///
+/// See `docs/MCP_SKILL_PLAN.md`.
+library;
+
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:args/command_runner.dart';
+import 'package:vsdx/agent.dart';
+import 'package:vsdx/vsdx.dart';
+
+Future<void> main(List<String> args) async {
+  final runner = CommandRunner<int>(
+    'vsdxtool',
+    'Headless .vsdx authoring/editing backend for AI agents (visioeditor).',
+  )
+    ..addCommand(_BuildCommand())
+    ..addCommand(_PatchCommand())
+    ..addCommand(_RenderCommand())
+    ..addCommand(_ValidateCommand())
+    ..addCommand(_ExplainCommand())
+    ..addCommand(_ShapesCommand())
+    ..addCommand(_VersionCommand());
+  try {
+    final code = await runner.run(args) ?? 0;
+    exitCode = code;
+  } on UsageException catch (e) {
+    stderr.writeln(e);
+    exitCode = 64;
+  }
+}
+
+Uint8List _readBytes(String path) =>
+    Uint8List.fromList(File(path).readAsBytesSync());
+
+class _BuildCommand extends Command<int> {
+  _BuildCommand() {
+    argParser
+      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true)
+      ..addOption('spec',
+          abbr: 's', help: 'Diagram Spec JSON path (or read stdin if omitted).');
+  }
+  @override
+  String get name => 'build';
+  @override
+  String get description => 'Build a .vsdx from a Diagram Spec JSON.';
+
+  @override
+  int run() {
+    final specPath = argResults!['spec'] as String?;
+    final jsonText =
+        specPath != null ? File(specPath).readAsStringSync() : _readAllStdin();
+    final spec = DiagramSpec.parse(jsonText);
+    final bytes = spec.build();
+    final out = argResults!['output'] as String;
+    File(out).writeAsBytesSync(bytes);
+    stdout.writeln(
+        'built $out (${bytes.length} bytes, ${spec.nodes.length} nodes, '
+        '${spec.edges.length} edges)');
+    return 0;
+  }
+}
+
+class _PatchCommand extends Command<int> {
+  _PatchCommand() {
+    argParser
+      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('ops', help: 'Edit Ops JSON path.', mandatory: true)
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path (defaults to overwriting input).');
+  }
+  @override
+  String get name => 'patch';
+  @override
+  String get description => 'Apply Edit Ops JSON to a .vsdx (round-trip faithful).';
+
+  @override
+  int run() {
+    final input = argResults!['input'] as String;
+    final opsJson = File(argResults!['ops'] as String).readAsStringSync();
+    final out = (argResults!['output'] as String?) ?? input;
+    final bytes = applyOpsBytes(_readBytes(input), opsJson);
+    File(out).writeAsBytesSync(bytes);
+    stdout.writeln('patched $out (${bytes.length} bytes)');
+    return 0;
+  }
+}
+
+class _RenderCommand extends Command<int> {
+  _RenderCommand() {
+    argParser
+      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('output', abbr: 'o', help: 'Output .svg path.', mandatory: true);
+  }
+  @override
+  String get name => 'render';
+  @override
+  String get description => 'Render a .vsdx to SVG (headless).';
+
+  @override
+  int run() {
+    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final svg = VsdxToSvgSerializer().serializeDocument(doc);
+    final out = argResults!['output'] as String;
+    File(out).writeAsStringSync(svg);
+    stdout.writeln('rendered $out (${svg.length} bytes, ${doc.pages.length} pages)');
+    return 0;
+  }
+}
+
+class _ValidateCommand extends Command<int> {
+  _ValidateCommand() {
+    argParser
+      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addFlag('strict',
+          help: 'Exit non-zero on warnings too (default: errors only).',
+          defaultsTo: false);
+  }
+  @override
+  String get name => 'validate';
+  @override
+  String get description => 'Structural lint of a .vsdx.';
+
+  @override
+  int run() {
+    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final issues = validateDocument(doc);
+    for (final i in issues) {
+      stdout.writeln(i);
+    }
+    final errors = issues.where((i) => i.severity == 'error').length;
+    final warnings = issues.length - errors;
+    stdout.writeln('$errors error(s), $warnings warning(s)');
+    final strict = argResults!['strict'] as bool;
+    return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+  }
+}
+
+class _ExplainCommand extends Command<int> {
+  _ExplainCommand() {
+    argParser
+      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('output',
+          abbr: 'o', help: 'Output .md path (prints to stdout if omitted).');
+  }
+  @override
+  String get name => 'explain';
+  @override
+  String get description => 'Describe a .vsdx as structured Markdown.';
+
+  @override
+  int run() {
+    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final md = explainDocument(doc);
+    final out = argResults!['output'] as String?;
+    if (out == null) {
+      stdout.write(md);
+    } else {
+      File(out).writeAsStringSync(md);
+      stdout.writeln('wrote $out (${md.length} bytes)');
+    }
+    return 0;
+  }
+}
+
+class _ShapesCommand extends Command<int> {
+  _ShapesCommand() {
+    argParser.addOption('limit', help: 'Max results.', defaultsTo: '20');
+  }
+  @override
+  String get name => 'shapes';
+  @override
+  String get description => 'Search the stencil catalog (e.g. `shapes search db`).';
+
+  @override
+  int run() {
+    final rest = argResults!.rest;
+    final query = rest.isEmpty
+        ? ''
+        : (rest.first == 'search' ? rest.skip(1).join(' ') : rest.join(' '));
+    final limit = int.tryParse(argResults!['limit'] as String) ?? 20;
+    final hits = searchStencils(query, limit: limit);
+    for (final e in hits) {
+      final aliases = e.aliases.isEmpty ? '' : ' (aka ${e.aliases.join(', ')})';
+      stdout.writeln('${e.name.padRight(14)} [${e.group}]$aliases');
+    }
+    return 0;
+  }
+}
+
+class _VersionCommand extends Command<int> {
+  @override
+  String get name => 'version';
+  @override
+  String get description => 'Print the engine version.';
+  @override
+  int run() {
+    stdout.writeln('vsdxtool (engine $kVsdxEngineVersion)');
+    return 0;
+  }
+}
+
+String _readAllStdin() {
+  final buf = StringBuffer();
+  String? line;
+  while ((line = stdin.readLineSync(encoding: utf8)) != null) {
+    buf.writeln(line);
+  }
+  return buf.toString();
+}

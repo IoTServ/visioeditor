@@ -33,6 +33,22 @@
   转换等，可读性高，供几何与形状映射参考。
 - 许可：`drawio/LICENSE`
 
+### drawio-skill （Agents365-ai） — MIT ✅ AI Skill 参考
+- URL: <https://github.com/Agents365-ai/drawio-skill>
+- commit: `6f33563adce24450003d1cb61111ebbcc5579f28`（2026-07-17，`--depth 1`）
+- 用途：纯 `SKILL.md` + 31 个 Python 脚本，自然语言 → `.drawio` → 导出，含自检回路、
+  importers、样式预设。是本项目 [`docs/MCP_SKILL_PLAN.md`](../docs/MCP_SKILL_PLAN.md)
+  **Skill 与工作流**的主要参考。
+- 许可：`drawio-skill/LICENSE`
+
+### drawio-mcp （jgraph） — Apache-2.0 ✅ MCP 参考
+- URL: <https://github.com/jgraph/drawio-mcp>
+- commit: `e26f034ef2aae81bbb3c5d92c9b9bb470c8a1e6a`（2026-07-17，`--depth 1`）
+- 用途：官方 MCP —— `mcp-tool-server`（浏览器打开）/ `mcp-app-server`（聊天内联渲染）/
+  Claude Code 插件 / `shape-search`（1 万+形状索引）/ `shared`（xml/style/mermaid 参考）。
+  是本项目 **MCP 服务器与工具接口设计**的主要参考。
+- 许可：`drawio-mcp/LICENSE`
+
 ---
 
 ## 重新克隆命令
@@ -42,4 +58,6 @@ cd third_party
 git clone --depth 1 https://github.com/dave-howard/vsdx.git vsdx
 git clone --depth 1 https://github.com/LibreOffice/libvisio.git libvisio
 git clone --depth 1 --filter=blob:limit=1m https://github.com/jgraph/drawio.git drawio
+git clone --depth 1 https://github.com/Agents365-ai/drawio-skill.git drawio-skill
+git clone --depth 1 https://github.com/jgraph/drawio-mcp.git drawio-mcp
 ```

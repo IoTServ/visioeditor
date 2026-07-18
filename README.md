@@ -16,6 +16,7 @@ Cell，其余结构/公式/主题原样透传）。
 ## 文档导航
 
 - [`docs/PLAN.md`](docs/PLAN.md) — 开发规划与状态跟踪（里程碑 E0–E6、任务、验收）
+- [`docs/MCP_SKILL_PLAN.md`](docs/MCP_SKILL_PLAN.md) — AI Agent 接口规划（MCP + Skill + 无头 CLI + 应用实时预览桥）
 - [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) — v0.1 发布说明（亮点 / 运行 / 快捷键 / 已知限制）
 - [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — 变更日志（Keep a Changelog）
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 分层架构、数据流、目录结构、决策
