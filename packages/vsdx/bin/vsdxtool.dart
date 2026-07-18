@@ -23,6 +23,7 @@ Future<void> main(List<String> args) async {
   )
     ..addCommand(_BuildCommand())
     ..addCommand(_ImportMermaidCommand())
+    ..addCommand(_ImportSqlCommand())
     ..addCommand(_PatchCommand())
     ..addCommand(_RenderCommand())
     ..addCommand(_ValidateCommand())
@@ -92,6 +93,33 @@ class _ImportMermaidCommand extends Command<int> {
     File(out).writeAsBytesSync(bytes);
     stdout.writeln('imported $out (${bytes.length} bytes, '
         '${spec.nodes.length} nodes, ${spec.edges.length} edges)');
+    return 0;
+  }
+}
+
+class _ImportSqlCommand extends Command<int> {
+  _ImportSqlCommand() {
+    argParser
+      ..addOption('input',
+          abbr: 'i', help: 'SQL DDL (.sql) path (or read stdin if omitted).')
+      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+  }
+  @override
+  String get name => 'import-sql';
+  @override
+  String get description =>
+      'Convert SQL DDL (CREATE TABLE …) to an editable ER diagram .vsdx.';
+
+  @override
+  int run() {
+    final input = argResults!['input'] as String?;
+    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final spec = sqlToSpec(text);
+    final bytes = spec.build();
+    final out = argResults!['output'] as String;
+    File(out).writeAsBytesSync(bytes);
+    stdout.writeln('imported $out (${bytes.length} bytes, '
+        '${spec.nodes.length} tables, ${spec.edges.length} FKs)');
     return 0;
   }
 }

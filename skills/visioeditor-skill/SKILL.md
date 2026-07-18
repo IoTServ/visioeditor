@@ -114,6 +114,22 @@ VSDXTOOL patch -i diagram.vsdx --ops ops.json     # file
 Get current shape ids with `explain` (MCP) / `VSDXTOOL explain -i file.vsdx`
 or `get_app_state` (live). Reference shapes as `"shape:<id>"` or the raw id.
 
+## Importers (structure in → editable .vsdx)
+
+When the user already has the structure, import it instead of hand-writing a
+spec:
+
+- **Mermaid** flowchart/graph → `VSDXTOOL import-mermaid -i flow.mmd -o out.vsdx`
+  (MCP: `import_mermaid({ text, path, open })`). Node shapes, edge labels, and
+  direction are mapped automatically.
+- **SQL DDL** (`CREATE TABLE …`) → ER diagram:
+  `VSDXTOOL import-sql -i schema.sql -o erd.vsdx`
+  (MCP: `import_sql({ sql, path, open })`). Tables become boxes with columns +
+  PK/FK markers; foreign keys become edges.
+
+Both produce a normal `.vsdx` you can then refine with Edit Ops and preview
+live. (Code / IaC / OpenAPI importers are planned — see `docs/MCP_SKILL_PLAN.md`.)
+
 ## Diagram Spec — quick reference
 
 ```jsonc

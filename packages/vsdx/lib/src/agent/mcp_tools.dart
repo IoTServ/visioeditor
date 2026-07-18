@@ -21,6 +21,7 @@ import 'edit_ops.dart';
 import 'inspect.dart';
 import 'mcp_server.dart';
 import 'mermaid_import.dart';
+import 'sql_import.dart';
 import 'stencil_catalog.dart';
 
 /// Register every Agent tool on [server]. Set [includeLiveTools] to `false`
@@ -135,6 +136,43 @@ void _registerFileTools(McpServer server) {
       final out = StringBuffer()
         ..writeln('Imported ${_abs(path)}')
         ..writeln('${spec.nodes.length} nodes, ${spec.edges.length} edges')
+        ..writeln(_validationSummary(bytes));
+      if (args['open'] == true) {
+        try {
+          final client = await BridgeClient.connect();
+          await client.call('open', <String, dynamic>{'path': _abs(path)});
+          await client.close();
+          out.writeln('Opened in the running editor (live preview).');
+        } catch (e) {
+          out.writeln('Note: could not open in app ($e).');
+        }
+      }
+      return <McpContent>[McpContent.text(out.toString().trimRight())];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'import_sql',
+    description: 'Convert SQL DDL (CREATE TABLE …) to an editable ER diagram '
+        '.vsdx (tables + PK/FK, foreign-key edges). Set open=true to open it '
+        'in the running editor.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'sql': <String, dynamic>{'type': 'string', 'description': 'SQL DDL text.'},
+        'path': <String, dynamic>{'type': 'string'},
+        'open': <String, dynamic>{'type': 'boolean'},
+      },
+      'required': <String>['sql', 'path'],
+    },
+    handler: (args) async {
+      final spec = sqlToSpec('${args['sql']}');
+      final bytes = spec.build();
+      final path = args['path'] as String;
+      File(path).writeAsBytesSync(bytes);
+      final out = StringBuffer()
+        ..writeln('Imported ${_abs(path)}')
+        ..writeln('${spec.nodes.length} tables, ${spec.edges.length} FKs')
         ..writeln(_validationSummary(bytes));
       if (args['open'] == true) {
         try {

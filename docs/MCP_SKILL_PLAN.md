@@ -401,7 +401,11 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       `lib/src/agent/mermaid_import.dart`，CLI `import-mermaid` + MCP `import_mermaid`；
       支持方向/节点形状（`[] () ([]) [()] {} {{}} [//] (())`）/边操作符/管道与内联标签/边链；
       单测 `mermaid_import_test` 6 例。
-- [ ] 导入器：`import-sql`（ERD）/ `import-code`（Py/JS/Go/Rust 依赖图）/ `import-openapi`。
+- [x] 导入器：**`import-sql`**（SQL DDL → ERD）—— `lib/src/agent/sql_import.dart`，
+      CLI `import-sql` + MCP `import_sql`；解析 CREATE TABLE 表名/列/类型、PK（行内+表级）、
+      FK（行内 REFERENCES + 表级/CONSTRAINT FOREIGN KEY），每表一框（列 + PK/FK 标记）+ 外键边；
+      单测 `sql_import_test` 4 例。
+- [ ] 导入器：`import-code`（Py/JS/Go/Rust 依赖图）/ `import-openapi`。
 - [ ] **L3**：Edit Ops → `EditorController` 撤销感知 API（每步一个 undo 步、参与吸附/避障/主题）。
 - [ ] 反向/衍生：`vsdx→mermaid` + 交互式 HTML 查看器（对齐 drawio）。
 - [ ] 分发：`vsdxtool`/`vsdxtool-mcp` 各平台二进制 release；可选 Node 薄壳 `npx` 包；
@@ -550,5 +554,8 @@ visioeditor/
   对齐 drawio-skill 工作流（含自检/评审回路、图型预设、MCP 配置样例）。
 - 2026-07-18 — **M5 起步（import-mermaid）**：新增 `lib/src/agent/mermaid_import.dart`
   （Mermaid flowchart/graph → Spec → `.vsdx`），CLI `import-mermaid` + MCP `import_mermaid`；
-  单测 `mermaid_import_test` 6 例。`dart test` **509**、`flutter test` 554 全绿。
-  仍待：其余导入器（sql/code/openapi）、L3 协同、分发打包。
+  单测 `mermaid_import_test` 6 例。
+- 2026-07-18 — **M5 续（import-sql / ERD）**：新增 `lib/src/agent/sql_import.dart`
+  （SQL DDL → ER 图：表/列/PK/FK + 外键边），CLI `import-sql` + MCP `import_sql`；
+  单测 `sql_import_test` 4 例。`dart test` **513**、`flutter test` 554 全绿。
+  仍待：`import-code`/`import-openapi`、L3 协同（EditorController）、分发打包、full stencil catalog。
