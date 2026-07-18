@@ -57,15 +57,15 @@ ApplyResult applyOps(
         final id = page.nextFreeShapeId();
         final w = _d(op['w'] ?? op['width']) ?? 1.7;
         final h = _d(op['h'] ?? op['height']) ?? 0.9;
-        var s = buildStencilShape(
+        var s = resolveStencilShape(
           stencil: (op['stencil'] ?? op['shape'] ?? 'rectangle').toString(),
           id: id,
           cx: _d(op['x']) ?? page.widthInches / 2,
           cy: _d(op['y']) ?? page.heightInches / 2,
           w: w,
           h: h,
-          fill: fillFromHex(op['fill']?.toString()),
-          line: lineFromHex((op['line'] ?? op['stroke'])?.toString()),
+          fillHex: op['fill']?.toString(),
+          lineHex: (op['line'] ?? op['stroke'])?.toString(),
         );
         final text = (op['text'] ?? op['label'] ?? '').toString();
         if (text.isNotEmpty) {

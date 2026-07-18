@@ -26,12 +26,25 @@ vsdxtool shapes search database     # -> cylinder [Containers] (aka database, db
 ```
 MCP: `search_shapes({ "query": "database" })`.
 
-## Note on the full library
+## Full library (600+ shapes)
 
-The desktop app ships **~300** stencils (AWS/Azure/GCP/Cisco, network, UML,
-BPMN, ERD, EIP, floorplan, electrical, …). The Agent build path currently
-exposes the **curated core set** above (enough for flowcharts, org charts,
-architecture, ERD-ish, and swimlane-style diagrams). To use a specialized
-shape today, build the structure with core stencils and open it in the app to
-swap in a library shape; full-catalog exposure to the Agent is planned
-(see `docs/MCP_SKILL_PLAN.md` M5).
+The **entire** shape library is available to the Agent — not just the core set.
+Use any library shape's display name as `stencil` (case- and space-insensitive):
+e.g. `"Cloud"`, `"Class"` (UML), `"Cisco Router"`, `"EC2"` / `"S3"` / `"Lambda"`
+(AWS), `"Firewall"`, `"Pool"` / `"Lane"` (swimlanes), `"Table"`, and hundreds
+more across **General, Flowchart, Arrows, Basic, Containers, UML, ER, BPMN,
+Network, Mockup, Electrical, Signs, Floorplan, EIP, AWS, Azure, GCP, Cisco,
+Alibaba, IBM, Oracle** groups.
+
+Resolution order: curated core (clean size + fill control) → full catalog
+(resized to your `w`/`h`; `fill`/`line` applied only when you set them, else the
+shape's own styling is kept) → rectangle fallback.
+
+**Discover exact names** with search (don't guess):
+
+```bash
+vsdxtool shapes search "aws"       # EC2, S3, Lambda, VPC, RDS, DynamoDB, …
+vsdxtool shapes search "firewall"  # ASA Firewall, Azure Firewall, Firewall, …
+```
+MCP: `search_shapes({ "query": "uml" })`. Then pass the returned name as
+`stencil`.

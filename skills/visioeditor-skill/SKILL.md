@@ -158,10 +158,12 @@ flowchart to drop into a GitHub-rendered README.
 }
 ```
 
-Omit `x`/`y` to auto-layout. Common stencils: `process` (rectangle),
+Omit `x`/`y` to auto-layout. Common core stencils: `process` (rectangle),
 `rounded`, `terminator`/`ellipse`, `decision` (diamond), `data`
-(parallelogram), `hexagon`, `cylinder` (database), `text`. Full list +
-aliases: `references/shape-catalog.md`.
+(parallelogram), `hexagon`, `cylinder` (database), `text`. **The full ~600-shape
+library is also available** — pass any library shape's display name as
+`stencil` (e.g. `"Cloud"`, `"Class"`, `"EC2"`, `"Cisco Router"`, `"Pool"`).
+Use `search_shapes` to find exact names; details in `references/shape-catalog.md`.
 
 ## Edit Ops — quick reference
 

@@ -307,15 +307,15 @@ Uint8List buildDiagramBytes(DiagramSpec spec) {
   final shapes = <VsdxShape>[];
   for (final n in spec.nodes) {
     n.shapeId = nextId++;
-    var s = buildStencilShape(
+    var s = resolveStencilShape(
       stencil: n.stencil,
       id: n.shapeId,
       cx: n.cx,
       cy: n.cy,
       w: n.rw,
       h: n.rh,
-      fill: fillFromHex(n.fill),
-      line: lineFromHex(n.line),
+      fillHex: n.fill,
+      lineHex: n.line,
     );
     if (n.text.isNotEmpty) {
       s = withLabel(s, n.text, bold: n.bold, colorHex: n.textColor);

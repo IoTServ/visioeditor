@@ -423,8 +423,17 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       `mcp_stdio_test` 2 例（行分隔框校 + 通知无响应 + 工具落盘）。
 - [ ] 分发（发布）：各平台二进制 release；可选 Node 薄壳 `npx` 包；skill 上架（clone / 插件）。
 
+- [x] **全量 stencil 目录接入 Agent**：把 `lib/editor/stencils.dart`（纯 Dart，~600 图形/
+      Stencil(name,build)）**下沉到 `packages/vsdx/lib/src/stencils.dart`** + barrel
+      `package:vsdx/stencils.dart`，应用侧 `lib/editor/stencils.dart` 改为 re-export（调用点零改动）。
+      Agent `resolveStencilShape`：核心（干净尺寸/填充）→ 全量目录（按名归一匹配、resize、仅显式时覆盖
+      fill/line）→ 矩形兜底；`search_shapes` 检索全量（AWS/UML/BPMN/Cisco/Network…）。
+      单测 `stencil_catalog_test` 8 例；狗粮：`shapes search aws`→EC2/S3/Lambda…、Actor/CloudFront/
+      Cloud Storage 建图校验干净。应用 `flutter test` 555 无回归（下沉透明）。
+
 **M5 导入/导出矩阵（现状）**：入 = Diagram Spec · Edit Ops · Mermaid · SQL DDL ·
 Code（Dart/Py/JS-TS）；出 = `.vsdx` · SVG · Mermaid · Markdown（explain）· PNG（应用 snapshot）。
+**形状词汇**：全量 ~600 图形（core + 全部专业库）经 `resolveStencilShape` 对 Agent 可用。
 
 ### M6 —— 打磨  `LATER`
 
@@ -587,4 +596,8 @@ visioeditor/
   构建脚本 `packages/vsdx/tool/build_agent_binaries.sh`（编译 `vsdxtool`/`vsdxtool-mcp` 原生二进制，
   `.gitignore` 忽略）、README「AI Agent 接口」一节与 skill 配置说明；新增 `mcp_stdio_test` 2 例
   （`serve()` 真实流框校 + 通知无响应 + create_diagram 落盘）。`dart test` **526**、`flutter test` 555 全绿。
-  仍待：`import-openapi`、发布二进制/`npx`、full stencil catalog、l10n 菜单文案。
+- 2026-07-18 — **M5 续（全量 stencil 目录接入 Agent）**：`lib/editor/stencils.dart`（~600 图形，纯 Dart）
+  下沉到 `packages/vsdx/lib/src/stencils.dart` + barrel `package:vsdx/stencils.dart`，应用侧改 re-export；
+  Agent `resolveStencilShape`（核心→全量目录 resize+可选覆盖样式→兜底）+ `search_shapes` 检索全量；
+  `diagram_spec`/`edit_ops` 统一走解析。单测 `stencil_catalog_test` 8 例。`dart test` **534**、
+  `flutter test` **555** 全绿（下沉对应用透明）。仍待：`import-openapi`、发布二进制/`npx`、l10n 菜单文案。
