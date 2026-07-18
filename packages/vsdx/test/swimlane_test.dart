@@ -123,9 +123,13 @@ void main() {
       heightInches: 10,
       shapes: <VsdxShape>[pool, box],
     );
+    final before = page.shapePinPage(50);
     page = page.reparentShape(50, lane.id);
     expect(page.findParentId(50), lane.id);
     final nested = page.findShapeById(50)!;
     expect(nested.id, 50);
+    final after = page.shapePinPage(50);
+    expect(after.x, closeTo(before.x, 1e-6));
+    expect(after.y, closeTo(before.y, 1e-6));
   });
 }

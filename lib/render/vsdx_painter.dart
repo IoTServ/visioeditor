@@ -44,6 +44,7 @@ class VsdxPainter extends CustomPainter {
     this.fallbackStroke = Colors.black,
     this.respectLayerVisibility = true,
     this.visibleLayerIdsOverride,
+    this.underlayVisibleLayerIdsOverride,
     this.router = const ConnectorRouter(),
     this.fontFallback = VsdxFontFallback.defaults,
     this.noPageLoadedMessage = 'No page loaded',
@@ -91,7 +92,12 @@ class VsdxPainter extends CustomPainter {
 
   /// When non-null, overrides [VsdxPage.visibleLayerIds] — used by the
   /// layer panel to toggle visibility without mutating the parsed model.
+  /// Applies only to [page], never to [underlayPage] (layer ids differ).
   final Set<int>? visibleLayerIdsOverride;
+
+  /// Layer filter for [underlayPage] only (e.g. printable layers on PNG export).
+  /// When null, the underlay uses its own [VsdxPage.visibleLayerIds].
+  final Set<int>? underlayVisibleLayerIdsOverride;
 
   /// Auto-router for 1-D connectors that lack a Geometry section. The
   /// default router emits orthogonal Manhattan paths.
@@ -181,9 +187,15 @@ class VsdxPainter extends CustomPainter {
 
   /// Paint [target]'s top-level shapes in the current (page-inch, Y-up) canvas.
   void _paintPageShapes(Canvas canvas, VsdxPage target) {
-    final visibleLayers = respectLayerVisibility
-        ? (visibleLayerIdsOverride ?? target.visibleLayerIds)
-        : null;
+    final isUnderlay =
+        underlayPage != null && identical(target, underlayPage);
+    final visibleLayers = !respectLayerVisibility
+        ? null
+        : isUnderlay
+            ? (underlayVisibleLayerIdsOverride ??
+                (target.layers.isEmpty ? null : target.visibleLayerIds))
+            : (visibleLayerIdsOverride ??
+                (target.layers.isEmpty ? null : target.visibleLayerIds));
     final bboxes = _bboxesFor(target);
     final viewportInches =
         Rect.fromLTWH(0, 0, target.widthInches, target.heightInches);
@@ -1752,6 +1764,7 @@ class VsdxPainter extends CustomPainter {
       old.fallbackStroke != fallbackStroke ||
       old.respectLayerVisibility != respectLayerVisibility ||
       old.visibleLayerIdsOverride != visibleLayerIdsOverride ||
+      old.underlayVisibleLayerIdsOverride != underlayVisibleLayerIdsOverride ||
       old.fontFallback != fontFallback ||
       old.drawLineJumps != drawLineJumps ||
       old.lineJumpRadiusInches != lineJumpRadiusInches;

@@ -213,8 +213,10 @@ abstract final class SwimlaneOps {
         );
       }
     }
+    // Lanes first (fill), then pool-level content on top — same draw order as
+    // drop-into-pool so shapes sitting on the pool are not covered by lanes.
     return pool.copyWith(
-      children: <VsdxShape>[...nonLaneChildren(pool), ...laidOut],
+      children: <VsdxShape>[...laidOut, ...nonLaneChildren(pool)],
       userCells: _ensurePoolCell(pool.userCells),
       shapeKind: VsdxShapeKind.container,
     );
@@ -260,7 +262,7 @@ abstract final class SwimlaneOps {
         width: w,
         height: totalH <= 0 ? pool.height : totalH,
         pinY: top - (totalH <= 0 ? pool.height : totalH) / 2,
-        children: <VsdxShape>[...nonLaneChildren(pool), ...laidOut],
+        children: <VsdxShape>[...laidOut, ...nonLaneChildren(pool)],
         userCells: _ensurePoolCell(pool.userCells),
         shapeKind: VsdxShapeKind.container,
       );
@@ -296,7 +298,7 @@ abstract final class SwimlaneOps {
       width: totalW <= 0 ? pool.width : totalW,
       height: h,
       pinX: left + (totalW <= 0 ? pool.width : totalW) / 2,
-      children: <VsdxShape>[...nonLaneChildren(pool), ...laidOut],
+      children: <VsdxShape>[...laidOut, ...nonLaneChildren(pool)],
       userCells: _ensurePoolCell(pool.userCells),
       shapeKind: VsdxShapeKind.container,
     );

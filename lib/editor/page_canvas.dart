@@ -408,6 +408,8 @@ class _PageCanvasState extends State<PageCanvas> {
   static List<int> _drawOrder(VsdxPage page) {
     final out = <int>[];
     void walk(VsdxShape s) {
+      // Match paint: hidden-layer hosts skip their whole subtree.
+      if (!page.isShapeVisible(s)) return;
       out.add(s.id);
       if (s.collapsed) return; // hide children while folded (draw.io)
       for (final c in s.children) {
@@ -1096,6 +1098,9 @@ class _PageCanvasState extends State<PageCanvas> {
         : replacePlainText(s.richText, _textController.text);
 
     final double left, top, width, height;
+    var pageAngle = 0.0;
+    var locAlignX = 0.0;
+    var locAlignY = 0.0;
     if (s.is1D) {
       // Edge label: a compact editor centred on the connector's route midpoint.
       final mid = _connectorMidpointPage(s);
@@ -1105,103 +1110,122 @@ class _PageCanvasState extends State<PageCanvas> {
       left = screen.dx - width / 2;
       top = screen.dy - height / 2;
     } else {
-      final box = _exactContentBox(s); // content-px, axis-aligned
-      left = _offset.dx + box.left * _scale;
-      top = _offset.dy + box.top * _scale;
-      width = math.max(box.width * _scale, 44.0);
-      height = math.max(box.height * _scale, 26.0);
+      // Local w×h at the page pin, rotated by page heading so nested / rotated
+      // shapes get an editor that matches painted text (not the AABB).
+      final ppi = widget.pxPerInch;
+      width = math.max(s.width * ppi * _scale, 44.0);
+      height = math.max(s.height * ppi * _scale, 26.0);
+      final pin = _page!.shapePinPage(s.id);
+      final pinScr = _pageToScreen(pin.x, pin.y);
+      pageAngle = _page!.shapePageAngle(s.id);
+      final locPinX = s.effectiveLocPinX * ppi * _scale;
+      final locPinYFromTop =
+          (s.height - s.effectiveLocPinY) * ppi * _scale;
+      left = pinScr.dx - locPinX;
+      top = pinScr.dy - locPinYFromTop;
+      locAlignX = width <= 0 ? 0.0 : (locPinX / width) * 2 - 1;
+      locAlignY = height <= 0 ? 0.0 : (locPinYFromTop / height) * 2 - 1;
+    }
+    Widget editor = CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.escape): _cancelTextEdit,
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+            _commitTextEdit,
+        const SingleActivator(LogicalKeyboardKey.enter, control: true):
+            _commitTextEdit,
+      },
+      child: Material(
+        type: MaterialType.transparency,
+        child: Container(
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            border: Border.all(color: scheme.primary, width: 1.5),
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 6),
+            ],
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (preview != null)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: IgnorePointer(
+                    // Match [TextField] layout: full-width box + same
+                    // textAlign so the invisible field's caret/selection
+                    // land on the visible glyphs (not left-side empty
+                    // space while a centred preview is shown).
+                    child: SizedBox(
+                      width: math.max(width - 8, 1),
+                      height: math.max(height - 4, 1),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: SizedBox(
+                          width: math.max(width - 8, 1),
+                          child: Text.rich(
+                            TextSpan(
+                              children: <InlineSpan>[
+                                for (final r in preview.runs)
+                                  _inlineRunSpan(
+                                    r,
+                                    widget.pxPerInch * _scale,
+                                    docTheme,
+                                    scheme.onSurface,
+                                  ),
+                              ],
+                            ),
+                            textAlign: _textAlign(align),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              TextField(
+                controller: _textController,
+                focusNode: _textFocus,
+                maxLines: null,
+                expands: true,
+                textAlign: _textAlign(align),
+                textAlignVertical: TextAlignVertical.center,
+                cursorColor: scheme.primary,
+                style: TextStyle(
+                  fontSize: fontPx,
+                  height: 1.15,
+                  // Hide glyphs when a rich preview is shown; keep a tiny
+                  // alpha so caret / selection metrics stay stable.
+                  color: preview != null
+                      ? const Color(0x01FFFFFF)
+                      : scheme.onSurface,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!s.is1D && pageAngle.abs() > 1e-9) {
+      // Visio CCW / Y-up → Flutter CW / Y-down.
+      editor = Transform.rotate(
+        angle: -pageAngle,
+        alignment: Alignment(locAlignX, locAlignY),
+        child: editor,
+      );
     }
     return Positioned(
       left: left,
       top: top,
       width: width,
       height: height,
-      child: CallbackShortcuts(
-        bindings: <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.escape): _cancelTextEdit,
-          const SingleActivator(LogicalKeyboardKey.enter, meta: true):
-              _commitTextEdit,
-          const SingleActivator(LogicalKeyboardKey.enter, control: true):
-              _commitTextEdit,
-        },
-        child: Material(
-          type: MaterialType.transparency,
-          child: Container(
-            decoration: BoxDecoration(
-              color: scheme.surface,
-              border: Border.all(color: scheme.primary, width: 1.5),
-              borderRadius: BorderRadius.circular(3),
-              boxShadow: const [
-                BoxShadow(color: Color(0x33000000), blurRadius: 6),
-              ],
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (preview != null)
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: IgnorePointer(
-                      // Match [TextField] layout: full-width box + same
-                      // textAlign so the invisible field's caret/selection
-                      // land on the visible glyphs (not left-side empty
-                      // space while a centred preview is shown).
-                      child: SizedBox(
-                        width: math.max(width - 8, 1),
-                        height: math.max(height - 4, 1),
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: SizedBox(
-                            width: math.max(width - 8, 1),
-                            child: Text.rich(
-                              TextSpan(
-                                children: <InlineSpan>[
-                                  for (final r in preview.runs)
-                                    _inlineRunSpan(
-                                      r,
-                                      widget.pxPerInch * _scale,
-                                      docTheme,
-                                      scheme.onSurface,
-                                    ),
-                                ],
-                              ),
-                              textAlign: _textAlign(align),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                TextField(
-                  controller: _textController,
-                  focusNode: _textFocus,
-                  maxLines: null,
-                  expands: true,
-                  textAlign: _textAlign(align),
-                  textAlignVertical: TextAlignVertical.center,
-                  cursorColor: scheme.primary,
-                  style: TextStyle(
-                    fontSize: fontPx,
-                    height: 1.15,
-                    // Hide glyphs when a rich preview is shown; keep a tiny
-                    // alpha so caret / selection metrics stay stable.
-                    color: preview != null
-                        ? const Color(0x01FFFFFF)
-                        : scheme.onSurface,
-                  ),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      child: editor,
     );
   }
 
@@ -1567,7 +1591,7 @@ class _PageCanvasState extends State<PageCanvas> {
             pin.y + math.cos(pageAngle),
           );
           final parentId = page.findParentId(s.id);
-          final double localAngle;
+          double localAngle;
           if (parentId == null) {
             localAngle = pageAngle;
           } else {
@@ -1578,6 +1602,8 @@ class _PageCanvasState extends State<PageCanvas> {
               tipLocal.y - pinLocal.y,
             );
           }
+          // Match [EditorController.setSelectedAngleDegrees]: flipY adds π.
+          if (s.flipY) localAngle -= math.pi;
           _c.rotateShape(id!, localAngle, transient: true);
         }
       case _DragMode.none:
@@ -1704,19 +1730,42 @@ class _PageCanvasState extends State<PageCanvas> {
     return (l: l, b: b!, r: r!, t: t!);
   }
 
+  /// Selection ids plus every descendant — excluded from snap targets so a
+  /// moved group does not magnetize to its own children.
+  Set<int> _snapBlockedIds() {
+    final page = _page;
+    if (page == null) return Set<int>.of(_c.selection);
+    final blocked = <int>{};
+    void walk(VsdxShape s) {
+      blocked.add(s.id);
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final id in _c.selection) {
+      final s = page.findShapeById(id);
+      if (s != null) walk(s);
+    }
+    return blocked;
+  }
+
   /// AABBs (page inches) of non-selected visible 2-D shapes (nested included).
   List<SnapBox> _otherShapeBoxes() {
     final page = _page;
     if (page == null) return const <SnapBox>[];
-    final sel = _c.selection;
+    final blocked = _snapBlockedIds();
     final out = <SnapBox>[];
     void walk(VsdxShape s) {
-      if (!sel.contains(s.id) && !s.is1D && page.isShapeVisible(s)) {
+      // Match paint / hit-test: skip hidden-layer hosts and folded children.
+      if (!page.isShapeVisible(s)) return;
+      if (!blocked.contains(s.id) && !s.is1D) {
         final aabb = page.shapePageAabb(s.id);
         if (aabb != null) {
           out.add(SnapBox(aabb.left, aabb.bottom, aabb.right, aabb.top));
         }
       }
+      if (s.collapsed) return;
       for (final c in s.children) {
         walk(c);
       }
@@ -1732,16 +1781,18 @@ class _PageCanvasState extends State<PageCanvas> {
   List<SnapMagnet> _otherConnectionMagnets() {
     final page = _page;
     if (page == null) return const <SnapMagnet>[];
-    final sel = _c.selection;
+    final blocked = _snapBlockedIds();
     final out = <SnapMagnet>[];
     void walk(VsdxShape s) {
-      if (!sel.contains(s.id) && !s.is1D && page.isShapeVisible(s)) {
+      if (!page.isShapeVisible(s)) return;
+      if (!blocked.contains(s.id) && !s.is1D) {
         final pts = VsdxPage.effectiveConnectionPoints(s);
         for (final p in pts) {
           final pg = page.localToPageDeep(s.id, p.offset);
           out.add(SnapMagnet(pg.x, pg.y));
         }
       }
+      if (s.collapsed) return;
       for (final c in s.children) {
         walk(c);
       }

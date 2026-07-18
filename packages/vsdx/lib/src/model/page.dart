@@ -290,6 +290,19 @@ class VsdxPage {
     return s.isOnAnyLayer(visibleLayerIds);
   }
 
+  /// Whether [shapeId] is painted: [isShapeVisible] for it and every ancestor.
+  /// Children of a hidden-layer group are not interactive even if they have no
+  /// layer membership of their own (matches [VsdxPainter] early-out).
+  bool isShapeTreeVisible(int shapeId) {
+    int? id = shapeId;
+    while (id != null) {
+      final s = findShapeById(id);
+      if (s == null || !isShapeVisible(s)) return false;
+      id = findParentId(id);
+    }
+    return true;
+  }
+
   /// Layer ids whose Visio `Print` flag is on — used by PDF / SVG / PNG export.
   Set<int> get printableLayerIds => {
         for (final l in layers)
@@ -764,7 +777,7 @@ class VsdxPage {
       if (target != null &&
           target.connectionPoints.isEmpty &&
           !target.locked &&
-          !base.isShapeOnLockedLayer(target)) {
+          !base.isShapeTreeOnLockedLayer(targetShapeId)) {
         base = base.updateShapeById(
           targetShapeId,
           (t) => t.copyWith(
@@ -778,6 +791,18 @@ class VsdxPage {
     // Rebuild the connects list: drop this connector's row for the affected
     // end, then append a fresh glue row (whole-shape or a fixed point).
     final fixedIdx = targetShapeId != null ? connectionPointIndex : null;
+    int? beginTarget;
+    int? endTarget;
+    for (final c in base.connects) {
+      if (c.fromSheetId != id) continue;
+      if (c.isBegin) beginTarget = c.toSheetId;
+      if (c.isEnd) endTarget = c.toSheetId;
+    }
+    if (begin) {
+      beginTarget = targetShapeId;
+    } else {
+      endTarget = targetShapeId;
+    }
     final nextConnects = <VsdxConnect>[
       for (final c in base.connects)
         if (!(c.fromSheetId == id && (begin ? c.isBegin : c.isEnd))) c,
@@ -804,9 +829,36 @@ class VsdxPage {
             : _elbowRoute(ax, ay, bx, by);
     final geometry = _bakeRoute(control, curved: s.curved, rounded: s.rounded);
     final next = base
-        .updateShapeById(id, (sh) => sh.reshapeAsPolyline(geometry))
+        .updateShapeById(
+          id,
+          (sh) => _withGlueTriggers(
+            sh.reshapeAsPolyline(geometry),
+            beginTarget: beginTarget,
+            endTarget: endTarget,
+          ),
+        )
         .copyWith(connects: nextConnects);
     return next.rerouteConnectors(movedShapeIds: <int>{id});
+  }
+
+  /// Keep BegTrigger / EndTrigger XFTRIGGER formulas aligned with Connect rows.
+  static VsdxShape _withGlueTriggers(
+    VsdxShape connector, {
+    int? beginTarget,
+    int? endTarget,
+  }) {
+    final formulas = Map<String, String>.from(connector.formulas);
+    if (beginTarget != null) {
+      formulas['BegTrigger'] = '_XFTRIGGER(Sheet.$beginTarget!EventXFMod)';
+    } else {
+      formulas.remove('BegTrigger');
+    }
+    if (endTarget != null) {
+      formulas['EndTrigger'] = '_XFTRIGGER(Sheet.$endTarget!EventXFMod)';
+    } else {
+      formulas.remove('EndTrigger');
+    }
+    return connector.copyWith(formulas: formulas);
   }
 
   /// Remove connector [id]'s interior bend points, resetting it to the plain
@@ -964,6 +1016,19 @@ class VsdxPage {
     return false;
   }
 
+  /// True when [shapeId] or any ancestor sits on a locked layer.
+  /// Children of a locked-layer group are not editable even with no membership.
+  bool isShapeTreeOnLockedLayer(int shapeId) {
+    int? id = shapeId;
+    while (id != null) {
+      final s = findShapeById(id);
+      if (s == null) return false;
+      if (isShapeOnLockedLayer(s)) return true;
+      id = findParentId(id);
+    }
+    return false;
+  }
+
   /// Ensure [id] has an explicit Connection section (materialise the default
   /// 5 points when empty). No-op for missing / 1-D / locked shapes.
   VsdxPage materializeConnectionPoints(int id) {
@@ -971,7 +1036,7 @@ class VsdxPage {
     if (s == null ||
         s.is1D ||
         s.locked ||
-        isShapeOnLockedLayer(s) ||
+        isShapeTreeOnLockedLayer(id) ||
         s.connectionPoints.isNotEmpty) {
       return this;
     }
@@ -1026,7 +1091,9 @@ class VsdxPage {
       xFormula: built.xFormula,
       yFormula: built.yFormula,
     );
-    return updateShapeById(id, (t) => t.copyWith(connectionPoints: pts));
+    // Glued connectors pin to fixed ToPart indices — refresh their endpoints.
+    return updateShapeById(id, (t) => t.copyWith(connectionPoints: pts))
+        .rerouteConnectors(movedShapeIds: <int>{id});
   }
 
   /// Remove connection point [index] on [id], remapping any connectors pinned
@@ -1103,11 +1170,39 @@ class VsdxPage {
       if (s == null || !s.is1D) continue;
       final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
       final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
-      final control = s.waypoints.isNotEmpty
-          ? <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)]
-          : straight
-              ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
-              : next._autoRoute(ax, ay, bx, by, excludeIds: <int>{id});
+      // Nested connectors store Begin/End in the parent-local frame; obstacle
+      // avoidance uses page AABBs — convert at the edges like [rerouteConnectors].
+      final parentId = next.findParentId(id);
+      Offset2D toPage(double x, double y) {
+        final local = Offset2D(x, y);
+        if (parentId == null) return local;
+        return next.localToPageDeep(parentId, local);
+      }
+
+      Offset2D toLocal(Offset2D page) {
+        if (parentId == null) return page;
+        return next.pageToLocalDeep(parentId, page);
+      }
+
+      final List<Offset2D> control;
+      if (s.waypoints.isNotEmpty) {
+        control = <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)];
+      } else if (straight) {
+        control = <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+      } else {
+        final beginPage = toPage(ax, ay);
+        final endPage = toPage(bx, by);
+        control = <Offset2D>[
+          for (final p in next._autoRoute(
+            beginPage.x,
+            beginPage.y,
+            endPage.x,
+            endPage.y,
+            excludeIds: <int>{id},
+          ))
+            toLocal(p),
+        ];
+      }
       final geometry = _bakeRoute(control, curved: curved, rounded: s.rounded);
       next = next.updateShapeById(
         id,
@@ -1223,19 +1318,19 @@ class VsdxPage {
 
   /// Inflated AABBs of every 2-D shape on the page that should deflect
   /// auto-routed connectors. Skips 1-D shapes, excluded ids, tiny stubs, and
-  /// shapes on invisible layers.
+  /// shapes on invisible layers (including children of hidden-layer hosts).
   List<RouteAabb> _obstacleAabbs(Set<int> excludeIds) {
-    final visible = layers.isEmpty ? null : visibleLayerIds;
     final out = <RouteAabb>[];
     void walk(List<VsdxShape> list) {
       for (final s in list) {
+        // Match paint: a hidden-layer host hides its whole subtree.
+        if (!isShapeVisible(s)) continue;
         if (s.children.isNotEmpty && !s.collapsed) {
           walk(s.children);
           continue;
         }
         if (excludeIds.contains(s.id) || s.is1D) continue;
         if (s.width < 0.05 || s.height < 0.05) continue;
-        if (visible != null && !s.isOnAnyLayer(visible)) continue;
         final aabb = shapePageAabb(s.id);
         if (aabb != null) {
           out.add(RouteAabb(
@@ -1504,51 +1599,73 @@ class VsdxPage {
     ]);
   }
 
-  /// Ungroup the top-level group [groupId], promoting its children back to the
-  /// page with page-absolute coordinates. Returns `this` when [groupId] is not
-  /// a top-level shape with children.
+  /// Ungroup [groupId], promoting its children into the group's parent frame
+  /// (page when top-level, or the enclosing group/container when nested).
+  /// Returns `this` when [groupId] is missing or has no children.
   VsdxPage ungroup(int groupId) {
-    final idx = shapes.indexWhere((s) => s.id == groupId);
-    if (idx < 0 || shapes[idx].children.isEmpty) return this;
-    final g = shapes[idx];
-    final cosA = math.cos(g.angleRad);
-    final sinA = math.sin(g.angleRad);
-    final fx = g.flipX ? -1.0 : 1.0;
-    final fy = g.flipY ? -1.0 : 1.0;
-    (double, double) toPage(double lx, double ly) {
-      final rx = (lx - g.width / 2) * fx;
-      final ry = (ly - g.height / 2) * fy;
-      return (
-        g.pinX + rx * cosA - ry * sinA,
-        g.pinY + rx * sinA + ry * cosA,
-      );
-    }
+    final g = findShapeById(groupId);
+    if (g == null || g.children.isEmpty) return this;
+    final parentId = findParentId(groupId);
+    if (parentId == null) {
+      final idx = shapes.indexWhere((s) => s.id == groupId);
+      if (idx < 0) return this;
+      final cosA = math.cos(g.angleRad);
+      final sinA = math.sin(g.angleRad);
+      final fx = g.flipX ? -1.0 : 1.0;
+      final fy = g.flipY ? -1.0 : 1.0;
+      final ox = g.effectiveLocPinX;
+      final oy = g.effectiveLocPinY;
+      (double, double) toPage(double lx, double ly) {
+        final rx = (lx - ox) * fx;
+        final ry = (ly - oy) * fy;
+        return (
+          g.pinX + rx * cosA - ry * sinA,
+          g.pinY + rx * sinA + ry * cosA,
+        );
+      }
 
-    return copyWith(shapes: <VsdxShape>[
-      ...shapes.sublist(0, idx),
-      for (final c in g.children) _childToPage(c, toPage, g.angleRad),
-      ...shapes.sublist(idx + 1),
-    ]);
+      return copyWith(shapes: <VsdxShape>[
+        ...shapes.sublist(0, idx),
+        for (final c in g.children)
+          _childToPage(c, toPage, g.angleRad).copyWith(
+            flipX: c.flipX ^ g.flipX,
+            flipY: c.flipY ^ g.flipY,
+          ),
+        ...shapes.sublist(idx + 1),
+      ]);
+    }
+    // Nested group: promote children one level into the parent’s local frame.
+    final promoted = <VsdxShape>[
+      for (final c in g.children) _promoteChildToPage(c, g),
+    ];
+    return updateShapeById(
+      parentId,
+      (p) => p.copyWith(
+        children: <VsdxShape>[
+          for (final c in p.children)
+            if (c.id != groupId) c,
+          ...promoted,
+        ],
+      ),
+    );
   }
 
   /// Rotation-aware page-inch AABB of [s] as (left, bottom, right, top).
+  /// Uses [localToPage] so non-centre LocPin / flip match paint bounds.
   static (double, double, double, double) _aabb(VsdxShape s) {
-    final hw = s.width / 2, hh = s.height / 2;
-    if (s.angleRad == 0) {
-      return (s.pinX - hw, s.pinY - hh, s.pinX + hw, s.pinY + hh);
-    }
-    final c = math.cos(s.angleRad), sn = math.sin(s.angleRad);
-    var minX = double.infinity, minY = double.infinity;
-    var maxX = -double.infinity, maxY = -double.infinity;
-    for (final ox in <double>[-hw, hw]) {
-      for (final oy in <double>[-hh, hh]) {
-        final x = s.pinX + ox * c - oy * sn;
-        final y = s.pinY + ox * sn + oy * c;
-        minX = math.min(minX, x);
-        maxX = math.max(maxX, x);
-        minY = math.min(minY, y);
-        maxY = math.max(maxY, y);
-      }
+    final corners = <Offset2D>[
+      localToPage(s, const Offset2D(0, 0)),
+      localToPage(s, Offset2D(s.width, 0)),
+      localToPage(s, Offset2D(s.width, s.height)),
+      localToPage(s, Offset2D(0, s.height)),
+    ];
+    var minX = corners.first.x, maxX = corners.first.x;
+    var minY = corners.first.y, maxY = corners.first.y;
+    for (final c in corners.skip(1)) {
+      if (c.x < minX) minX = c.x;
+      if (c.x > maxX) maxX = c.x;
+      if (c.y < minY) minY = c.y;
+      if (c.y > maxY) maxY = c.y;
     }
     return (minX, minY, maxX, maxY);
   }
@@ -1565,13 +1682,7 @@ class VsdxPage {
     if (!honourDontMoveChildren ||
         !s.dontMoveChildren ||
         s.children.isEmpty) {
-      final shifted = _shiftShape(s, dx, dy);
-      if (s.waypoints.isEmpty) return shifted;
-      return shifted.copyWith(
-        waypoints: <Offset2D>[
-          for (final w in s.waypoints) Offset2D(w.x + dx, w.y + dy),
-        ],
-      );
+      return _shiftShape(s, dx, dy);
     }
     final movedParent = _shiftShape(s, dx, dy);
     final kids = <VsdxShape>[
@@ -1581,15 +1692,25 @@ class VsdxPage {
     return movedParent.copyWith(children: kids);
   }
 
-  /// Translate a shape's pin and (for 1-D shapes) its begin/end by (dx, dy).
-  static VsdxShape _shiftShape(VsdxShape s, double dx, double dy) => s.copyWith(
-        pinX: s.pinX + dx,
-        pinY: s.pinY + dy,
-        beginX: s.beginX == null ? null : s.beginX! + dx,
-        beginY: s.beginY == null ? null : s.beginY! + dy,
-        endX: s.endX == null ? null : s.endX! + dx,
-        endY: s.endY == null ? null : s.endY! + dy,
+  /// Translate a shape's pin, 1-D begin/end, and waypoints by (dx, dy).
+  static VsdxShape _shiftShape(VsdxShape s, double dx, double dy) {
+    var r = s.copyWith(
+      pinX: s.pinX + dx,
+      pinY: s.pinY + dy,
+      beginX: s.beginX == null ? null : s.beginX! + dx,
+      beginY: s.beginY == null ? null : s.beginY! + dy,
+      endX: s.endX == null ? null : s.endX! + dx,
+      endY: s.endY == null ? null : s.endY! + dy,
+    );
+    if (s.waypoints.isNotEmpty) {
+      r = r.copyWith(
+        waypoints: <Offset2D>[
+          for (final w in s.waypoints) Offset2D(w.x + dx, w.y + dy),
+        ],
       );
+    }
+    return r;
+  }
 
   /// Convert a group child (local coords) back to page coords via [toPage],
   /// folding the group's rotation into the child's own angle.
@@ -1608,6 +1729,14 @@ class VsdxPage {
       final (ex, ey) = toPage(c.endX!, c.endY!);
       r = r.copyWith(endX: ex, endY: ey);
     }
+    if (c.waypoints.isNotEmpty) {
+      final wps = <Offset2D>[];
+      for (final w in c.waypoints) {
+        final (x, y) = toPage(w.x, w.y);
+        wps.add(Offset2D(x, y));
+      }
+      r = r.copyWith(waypoints: wps);
+    }
     return r;
   }
 
@@ -1617,25 +1746,36 @@ class VsdxPage {
     final sinA = math.sin(parent.angleRad);
     final fx = parent.flipX ? -1.0 : 1.0;
     final fy = parent.flipY ? -1.0 : 1.0;
+    final ox = parent.effectiveLocPinX;
+    final oy = parent.effectiveLocPinY;
     (double, double) toPage(double lx, double ly) {
-      final rx = (lx - parent.width / 2) * fx;
-      final ry = (ly - parent.height / 2) * fy;
+      final rx = (lx - ox) * fx;
+      final ry = (ly - oy) * fy;
       return (
         parent.pinX + rx * cosA - ry * sinA,
         parent.pinY + rx * sinA + ry * cosA,
       );
     }
 
-    return _childToPage(child, toPage, parent.angleRad);
+    // Bake parent flips into the child so chirality survives ungroup / eject.
+    final promoted = _childToPage(child, toPage, parent.angleRad);
+    return promoted.copyWith(
+      flipX: child.flipX ^ parent.flipX,
+      flipY: child.flipY ^ parent.flipY,
+    );
   }
 
   /// Convert a page-absolute shape into [parent]'s local coordinate system.
   static VsdxShape _demotePageToChild(VsdxShape pageShape, VsdxShape parent) {
     final pin = pageToLocal(parent, Offset2D(pageShape.pinX, pageShape.pinY));
+    // Inverse of [_promoteChildToPage] flip bake so dontMoveChildren / reparent
+    // round-trips do not toggle chirality each move.
     var r = pageShape.copyWith(
       pinX: pin.x,
       pinY: pin.y,
       angleRad: pageShape.angleRad - parent.angleRad,
+      flipX: pageShape.flipX ^ parent.flipX,
+      flipY: pageShape.flipY ^ parent.flipY,
     );
     if (pageShape.beginX != null && pageShape.beginY != null) {
       final b =
@@ -1843,8 +1983,9 @@ class VsdxPage {
       pageShape = child;
       without = removeShapeById(childId, pruneConnects: false);
     } else {
-      final oldParent = findShapeById(oldParentId)!;
-      pageShape = _promoteChildToPage(child, oldParent);
+      // Walk all ancestors so nested parents (lanes / inner groups) keep the
+      // on-page pin — shallow promote treats parent.pin as page inches.
+      pageShape = _promoteToPageDeep(childId);
       without = removeShapeById(childId, pruneConnects: false);
     }
 
@@ -1853,7 +1994,7 @@ class VsdxPage {
     }
     final parent = without.findShapeById(newParentId);
     if (parent == null) return without.addShape(pageShape);
-    final local = _demotePageToChild(pageShape, parent);
+    final local = without._demoteFromPageDeep(pageShape, newParentId);
     return without.updateShapeById(
       newParentId,
       (p) => p.copyWith(
@@ -1864,6 +2005,120 @@ class VsdxPage {
       ),
     );
   }
+
+  /// Materialize [shapeId] as a top-level shape (page pin / angle / flip).
+  /// Children keep their coordinates in the root's local frame.
+  VsdxShape shapeAsPageRoot(int shapeId) {
+    final s = findShapeById(shapeId);
+    if (s == null) {
+      throw ArgumentError.value(shapeId, 'shapeId', 'not on page');
+    }
+    if (findParentId(shapeId) == null) return s;
+    return _promoteToPageDeep(shapeId);
+  }
+
+  /// Promote [childId] through every ancestor into true page-absolute coords,
+  /// baking ancestor reflection into [VsdxShape.flipX].
+  VsdxShape _promoteToPageDeep(int childId) {
+    final child = findShapeById(childId)!;
+    final parentId = findParentId(childId);
+    if (parentId == null) return child;
+
+    Offset2D map(double x, double y) =>
+        localToPageDeep(parentId, Offset2D(x, y));
+
+    final pin = map(child.pinX, child.pinY);
+    final baked = _pageOrientation(childId);
+    var r = child.copyWith(
+      pinX: pin.x,
+      pinY: pin.y,
+      angleRad: baked.angle,
+      flipX: baked.flipX,
+      flipY: false,
+    );
+    if (child.beginX != null && child.beginY != null) {
+      final b = map(child.beginX!, child.beginY!);
+      r = r.copyWith(beginX: b.x, beginY: b.y);
+    }
+    if (child.endX != null && child.endY != null) {
+      final e = map(child.endX!, child.endY!);
+      r = r.copyWith(endX: e.x, endY: e.y);
+    }
+    if (child.waypoints.isNotEmpty) {
+      r = r.copyWith(
+        waypoints: <Offset2D>[
+          for (final w in child.waypoints) map(w.x, w.y),
+        ],
+      );
+    }
+    return r;
+  }
+
+  /// Page heading + whether the local→page linear map reflects (det &lt; 0).
+  ({double angle, bool flipX}) _pageOrientation(int shapeId) {
+    final s = findShapeById(shapeId)!;
+    final lx = s.effectiveLocPinX;
+    final ly = s.effectiveLocPinY;
+    final origin = localToPageDeep(shapeId, Offset2D(lx, ly));
+    final right = localToPageDeep(shapeId, Offset2D(lx + 1, ly));
+    final up = localToPageDeep(shapeId, Offset2D(lx, ly + 1));
+    final rx = right.x - origin.x;
+    final ry = right.y - origin.y;
+    final ux = up.x - origin.x;
+    final uy = up.y - origin.y;
+    final reflected = (rx * uy - ry * ux) < 0;
+    final angle = math.atan2(-ux, uy);
+    return (angle: angle, flipX: reflected);
+  }
+
+  /// Demote a page-absolute [pageShape] into [parentId]'s local frame (deep).
+  VsdxShape _demoteFromPageDeep(VsdxShape pageShape, int parentId) {
+    Offset2D map(double x, double y) =>
+        pageToLocalDeep(parentId, Offset2D(x, y));
+
+    // Normalize flipY → flipX + π so we do not drop vertical mirrors (promote
+    // already bakes reflection as flipX; top-level flipVertical never promotes).
+    var src = pageShape;
+    if (src.flipY) {
+      src = src.copyWith(
+        flipX: !src.flipX,
+        flipY: false,
+        angleRad: src.angleRad + math.pi,
+      );
+    }
+
+    final parentOri = _pageOrientation(parentId);
+    final pin = map(src.pinX, src.pinY);
+    var r = src.copyWith(
+      pinX: pin.x,
+      pinY: pin.y,
+      angleRad: src.angleRad - parentOri.angle,
+      // Inverse of [_promoteToPageDeep] reflection bake.
+      flipX: src.flipX ^ parentOri.flipX,
+      flipY: false,
+    );
+    if (src.beginX != null && src.beginY != null) {
+      final b = map(src.beginX!, src.beginY!);
+      r = r.copyWith(beginX: b.x, beginY: b.y);
+    }
+    if (src.endX != null && src.endY != null) {
+      final e = map(src.endX!, src.endY!);
+      r = r.copyWith(endX: e.x, endY: e.y);
+    }
+    if (src.waypoints.isNotEmpty) {
+      r = r.copyWith(
+        waypoints: <Offset2D>[
+          for (final w in src.waypoints) map(w.x, w.y),
+        ],
+      );
+    }
+    return r;
+  }
+
+  /// Absolute page heading of [shapeId] (Visio CCW, 0 = local +Y).
+  double shapePageAngle(int shapeId) => _pageOrientation(shapeId).angle;
+
+  double _shapePageAngle(int shapeId) => shapePageAngle(shapeId);
 
   /// The smallest shape id greater than every id currently used on the page
   /// (including nested group children) — used when creating new shapes.

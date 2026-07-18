@@ -113,6 +113,7 @@ class EditorController extends ChangeNotifier {
   void selectPage(int index) {
     if (index < 0 || index >= pageCount || index == _currentPageIndex) return;
     _leaveConnectionPointEdit();
+    _leaveTextEditSession();
     _currentPageIndex = index;
     _selection.clear();
     // Keep Find matches across page-tab switches so Replace / Find Next still
@@ -154,6 +155,7 @@ class EditorController extends ChangeNotifier {
     final at = _currentPageIndex + 1;
     final undoPage = _currentPageIndex;
     final undoSel = Set<int>.of(_selection);
+    _leaveTextEditSession();
     _selection.clear();
     _currentPageIndex = at;
     // Snapshot the pre-add page index + selection so undo restores both.
@@ -176,6 +178,7 @@ class EditorController extends ChangeNotifier {
     final at = _currentPageIndex + 1;
     final undoPage = _currentPageIndex;
     final undoSel = Set<int>.of(_selection);
+    _leaveTextEditSession();
     _selection.clear();
     _currentPageIndex = at;
     applyEdit(
@@ -190,9 +193,21 @@ class EditorController extends ChangeNotifier {
     final doc = _document;
     if (doc == null || doc.pages.length <= 1) return;
     final i = _currentPageIndex;
+    final pageId = doc.pages[i].id;
     final undoSel = Set<int>.of(_selection);
+    _leaveTextEditSession();
     _selection.clear();
-    final next = doc.removePageAt(i);
+    // Session guides are keyed by page id; drop them so a later page that
+    // reuses this id does not inherit ghost ruler guides.
+    _pageGuides.remove(pageId);
+    var next = doc.removePageAt(i);
+    // Drop dangling BackPage refs so export does not write a missing id.
+    for (var pi = 0; pi < next.pages.length; pi++) {
+      final p = next.pages[pi];
+      if (p.backgroundPageId == pageId) {
+        next = next.replacePage(pi, p.copyWith(backgroundPageId: null));
+      }
+    }
     _currentPageIndex = i.clamp(0, next.pages.length - 1);
     applyEdit(next, undoPageIndex: i, undoSelection: undoSel);
   }
@@ -578,6 +593,9 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Cycle the selection to the next top-level shape (Tab).
+  ///
+  /// When the current selection is nested, Tab continues from its top-level
+  /// ancestor so the cycle does not jump back to the first page shape.
   void selectNextShape({bool reverse = false}) {
     final page = currentPage;
     if (page == null || page.shapes.isEmpty) return;
@@ -586,7 +604,17 @@ class EditorController extends ChangeNotifier {
         if (page.isShapeVisible(s)) s.id,
     ];
     if (ids.isEmpty) return;
-    final cur = singleSelectedId;
+    var cur = singleSelectedId;
+    if (cur != null && !ids.contains(cur)) {
+      var p = page.findParentId(cur);
+      while (p != null) {
+        if (ids.contains(p)) {
+          cur = p;
+          break;
+        }
+        p = page.findParentId(p);
+      }
+    }
     var idx = cur == null ? -1 : ids.indexOf(cur);
     if (idx < 0) {
       selectOnly(reverse ? ids.last : ids.first);
@@ -622,6 +650,21 @@ class EditorController extends ChangeNotifier {
         ],
       ),
     );
+    // Drop now-hidden shapes from the selection so delete/move/style cannot
+    // silently edit invisible geometry. Also refresh Find so Replace cannot
+    // target a stale hit on a just-hidden layer.
+    final page = currentPage;
+    if (page == null) return;
+    final before = _selection.length;
+    if (_selection.isNotEmpty) {
+      _selection.removeWhere((id) => !page.isShapeTreeVisible(id));
+    }
+    if (_findQuery.trim().isNotEmpty) {
+      _recomputeFindMatches();
+    }
+    if (_selection.length != before || _findQuery.trim().isNotEmpty) {
+      notifyListeners();
+    }
   }
 
   /// Toggle a layer's lock flag (draw.io: locked layers can't be edited).
@@ -736,17 +779,15 @@ class EditorController extends ChangeNotifier {
     );
   }
 
-  /// True when [shapeId] sits on a locked layer (and has membership).
+  /// True when [shapeId] or an ancestor sits on a locked layer.
   bool isOnLockedLayer(int shapeId) {
     final page = currentPage;
     if (page == null) return false;
-    final s = page.findShapeById(shapeId);
-    if (s == null) return false;
-    return page.isShapeOnLockedLayer(s);
+    return page.isShapeTreeOnLockedLayer(shapeId);
   }
 
   static bool _shapeOnLockedLayer(VsdxPage page, VsdxShape s) =>
-      page.isShapeOnLockedLayer(s);
+      page.isShapeTreeOnLockedLayer(s.id);
 
   // --- Undo / redo -----------------------------------------------------------
 
@@ -777,6 +818,8 @@ class EditorController extends ChangeNotifier {
     ));
     _redo.clear();
     _document = next;
+    // Drop ids removed with a parent / cut root so selection never ghosts.
+    _pruneSelection();
     _dirty = !identical(next, _cleanDocument);
     notifyListeners();
   }
@@ -851,6 +894,7 @@ class EditorController extends ChangeNotifier {
     if (_txnBase != null) cancelTransaction();
     if (_undo.isEmpty || _document == null) return;
     _leaveConnectionPointEdit();
+    _leaveTextEditSession();
     _redo.add(_HistoryEntry(
       _document!,
       _currentPageIndex,
@@ -872,6 +916,7 @@ class EditorController extends ChangeNotifier {
     if (_txnBase != null) cancelTransaction();
     if (_redo.isEmpty || _document == null) return;
     _leaveConnectionPointEdit();
+    _leaveTextEditSession();
     _undo.add(_HistoryEntry(
       _document!,
       _currentPageIndex,
@@ -997,6 +1042,9 @@ class EditorController extends ChangeNotifier {
     if (_selection.isEmpty) return;
     final page0 = currentPage;
     if (page0 == null) return;
+    if (containerId != null && !_containerAcceptsDrop(page0, containerId)) {
+      return;
+    }
     // Roots only — co-selecting group+child must not eject the child.
     final movable = _selectionRoots(page0, <int>[
       for (final id in _selection)
@@ -1209,6 +1257,10 @@ class EditorController extends ChangeNotifier {
       pageY,
       excludeIds: Set<int>.of(_selection),
     );
+    // Reject locked / hidden hosts without ejecting from the current parent.
+    if (dropId != null && !_containerAcceptsDrop(page, dropId)) {
+      return null;
+    }
     final movedIds = <int>{
       ..._subtreeIds(movable),
       if (dropId != null) ..._subtreeIds(<int>{dropId}),
@@ -1232,6 +1284,9 @@ class EditorController extends ChangeNotifier {
             if (parent != null && SwimlaneOps.isPool(parent)) {
               targetId = parentId;
             }
+          }
+          if (targetId != null && !_containerAcceptsDrop(next, targetId)) {
+            return p;
           }
         }
         for (final id in movable) {
@@ -1354,13 +1409,17 @@ class EditorController extends ChangeNotifier {
     final laneId = singleSelectedId;
     final poolId = selectedPoolId;
     if (page == null || laneId == null || poolId == null) return;
+    final doomed = _subtreeIds(<int>{laneId});
     final movedIds = _subtreeIds(<int>{poolId});
     updateCurrentPage((p) {
       final host = p.findShapeById(poolId);
       if (host == null) return p;
-      return p
-          .updateShapeById(poolId, (_) => SwimlaneOps.removeLane(host, laneId))
-          .rerouteConnectors(movedShapeIds: movedIds);
+      var next = p.updateShapeById(
+        poolId,
+        (_) => SwimlaneOps.removeLane(host, laneId),
+      );
+      next = _pruneConnectsReferencing(next, doomed);
+      return next.rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1488,13 +1547,20 @@ class EditorController extends ChangeNotifier {
         }
       }
     }
+    final doomed = <int>{
+      for (final c in TableOps.cellsOf(table))
+        if (TableOps.cellRow(c) == rowIndex) ..._subtreeIds(<int>{c.id}),
+    };
     final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
-      return p
-          .updateShapeById(tableId, (_) => TableOps.removeRow(host, rowIndex))
-          .rerouteConnectors(movedShapeIds: movedIds);
+      var next = p.updateShapeById(
+        tableId,
+        (_) => TableOps.removeRow(host, rowIndex),
+      );
+      next = _pruneConnectsReferencing(next, doomed);
+      return next.rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1521,14 +1587,20 @@ class EditorController extends ChangeNotifier {
         }
       }
     }
+    final doomed = <int>{
+      for (final c in TableOps.cellsOf(table))
+        if (TableOps.cellCol(c) == colIndex) ..._subtreeIds(<int>{c.id}),
+    };
     final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
-      return p
-          .updateShapeById(
-              tableId, (_) => TableOps.removeColumn(host, colIndex))
-          .rerouteConnectors(movedShapeIds: movedIds);
+      var next = p.updateShapeById(
+        tableId,
+        (_) => TableOps.removeColumn(host, colIndex),
+      );
+      next = _pruneConnectsReferencing(next, doomed);
+      return next.rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -2378,7 +2450,10 @@ class EditorController extends ChangeNotifier {
     }
     if (identical(next, page)) return;
     final undoSel = Set<int>.of(_selection);
-    _selection.removeAll(removed);
+    // Removing a parent also deletes descendants — clear those ids too.
+    _selection
+      ..removeAll(removed)
+      ..removeAll(_subtreeIds(removed));
     applyEdit(
       doc.replacePage(_currentPageIndex, next),
       undoSelection: undoSel,
@@ -2546,19 +2621,10 @@ class EditorController extends ChangeNotifier {
     unawaited(_writeSystemClipboard(_clipboard, _clipboardConnects));
   }
 
-  /// Shape tree ready for top-level paste: page pin + page absolute angle when
-  /// [id] is nested (children stay in the root's local frame).
-  static VsdxShape _clipboardRoot(VsdxPage page, int id) {
-    final s = page.findShapeById(id)!;
-    if (page.findParentId(id) == null) return s;
-    final pin = page.shapePinPage(id);
-    final lx = s.effectiveLocPinX;
-    final ly = s.effectiveLocPinY;
-    final origin = page.localToPageDeep(id, Offset2D(lx, ly));
-    final up = page.localToPageDeep(id, Offset2D(lx, ly + 1));
-    final pageAngle = math.atan2(-(up.x - origin.x), up.y - origin.y);
-    return s.copyWith(pinX: pin.x, pinY: pin.y, angleRad: pageAngle);
-  }
+  /// Shape tree ready for top-level paste: page pin / angle / flip when [id]
+  /// is nested (children stay in the root's local frame).
+  static VsdxShape _clipboardRoot(VsdxPage page, int id) =>
+      page.shapeAsPageRoot(id);
 
   Future<void> _writeSystemClipboard(
     List<VsdxShape> shapes,
@@ -2571,7 +2637,10 @@ class EditorController extends ChangeNotifier {
         // envelope cannot wipe pictures from the in-app clipboard.
         _preferMemoryClipboard = true;
         _lastSystemEnvelope = null;
-        // Fall back to joined labels so external apps still get something.
+        // Do not write caption labels when any shape has an image: Cmd+V →
+        // pasteFromSystem would treat that plain text as foreign and replace
+        // the in-memory picture clipboard with a text box.
+        if (shapes.any((s) => s.hasImage)) return;
         final labels = <String>[
           for (final s in shapes)
             if ((s.text ?? '').trim().isNotEmpty) s.text!.trim(),
@@ -2613,6 +2682,8 @@ class EditorController extends ChangeNotifier {
       }
       // External plain text always wins over an image-only memory clipboard
       // (_preferMemory only guards our own shape envelopes, not foreign text).
+      // Image copies no longer write caption labels to the pasteboard, so this
+      // path is not hit by our own labeled-picture Cmd+C.
       final trimmed = text.trim();
       if (trimmed.isEmpty || ShapeClipboardCodec.looksLikeEnvelope(text)) {
         return false;
@@ -2670,8 +2741,7 @@ class EditorController extends ChangeNotifier {
       next = next.removeShapeById(id);
     }
     if (identical(next, page)) return;
-    _selection
-      ..removeAll(cuttable);
+    _selection.removeAll(subtree);
     applyEdit(
       doc.replacePage(_currentPageIndex, next),
       undoSelection: originalSel,
@@ -2788,16 +2858,32 @@ class EditorController extends ChangeNotifier {
       var nextId = next.nextFreeShapeId();
       // Paste / duplicate clones are always unlocked so the user can edit them
       // (draw.io clears lock on the copy; the original stays locked).
+      // Remap ids at the original pin, then translate so 1-D Begin/End /
+      // waypoints move with the pin (withRemappedIds alone only shifts Pin*).
+      final remapped = remintImages(s).withRemappedIds(
+        () => nextId++,
+        idMap: idMap,
+      );
       final cloned = _withTreeUnlocked(
-        remintImages(s).withRemappedIds(
-          () => nextId++,
-          pinX: s.pinX + dx,
-          pinY: s.pinY + dy,
-          idMap: idMap,
+        VsdxPage.translateShape(
+          remapped,
+          dx,
+          dy,
+          honourDontMoveChildren: false,
         ),
       );
       next = next.addShape(cloned);
       newIds.add(cloned.id);
+    }
+    // Re-rewrite Sheet.n! refs now that idMap covers every pasted root
+    // (connector cloned before its targets would otherwise keep old XFTRIGGERs).
+    if (idMap.isNotEmpty && newIds.isNotEmpty) {
+      for (final id in newIds) {
+        next = next.updateShapeById(
+          id,
+          (sh) => VsdxShape.rewriteSheetRefsInTree(sh, idMap),
+        );
+      }
     }
     if (connects.isNotEmpty) {
       final remapped = <VsdxConnect>[
@@ -2833,31 +2919,22 @@ class EditorController extends ChangeNotifier {
   // --- Align / distribute ----------------------------------------------------
 
   /// Axis-aligned bounding box of [s] in page inches as (left, bottom, right,
-  /// top), accounting for rotation.
+  /// top), honouring LocPin, rotation and flip (same corners as shapePageAabb).
   static (double, double, double, double) _bounds(VsdxShape s) {
-    if (s.angleRad == 0) {
-      return (
-        s.pinX - s.width / 2,
-        s.pinY - s.height / 2,
-        s.pinX + s.width / 2,
-        s.pinY + s.height / 2,
-      );
-    }
-    final c = math.cos(s.angleRad);
-    final sn = math.sin(s.angleRad);
-    final hw = s.width / 2;
-    final hh = s.height / 2;
+    final corners = <Offset2D>[
+      const Offset2D(0, 0),
+      Offset2D(s.width, 0),
+      Offset2D(s.width, s.height),
+      Offset2D(0, s.height),
+    ];
     var minX = double.infinity, minY = double.infinity;
     var maxX = -double.infinity, maxY = -double.infinity;
-    for (final ox in <double>[-hw, hw]) {
-      for (final oy in <double>[-hh, hh]) {
-        final x = s.pinX + ox * c - oy * sn;
-        final y = s.pinY + ox * sn + oy * c;
-        minX = math.min(minX, x);
-        maxX = math.max(maxX, x);
-        minY = math.min(minY, y);
-        maxY = math.max(maxY, y);
-      }
+    for (final local in corners) {
+      final p = VsdxPage.localToPage(s, local);
+      minX = math.min(minX, p.x);
+      maxX = math.max(maxX, p.x);
+      minY = math.min(minY, p.y);
+      maxY = math.max(maxY, p.y);
     }
     return (minX, minY, maxX, maxY);
   }
@@ -2931,16 +3008,25 @@ class EditorController extends ChangeNotifier {
     });
   }
 
+  /// Page AABBs for align/distribute, skipping 1-D hairline spans.
+  static Map<int, (double, double, double, double)> _alignBounds2D(
+    VsdxPage page,
+    List<int> ids,
+  ) {
+    return <int, (double, double, double, double)>{
+      for (final id in ids)
+        if (page.findShapeById(id)?.is1D != true)
+          if (_pageBounds(page, id) case final b?) id: b,
+    };
+  }
+
   void alignLeft() {
     if (_selection.length == 1) {
       _alignToPage((_, b) => (0.0 - b.$1, 0.0));
       return;
     }
     _align((page, ids) {
-      final bounds = <int, (double, double, double, double)>{
-        for (final id in ids)
-          if (_pageBounds(page, id) case final b?) id: b,
-      };
+      final bounds = _alignBounds2D(page, ids);
       if (bounds.length < 2) return const {};
       final target = bounds.values.map((b) => b.$1).reduce(math.min);
       return {
@@ -2955,10 +3041,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _align((page, ids) {
-      final bounds = <int, (double, double, double, double)>{
-        for (final id in ids)
-          if (_pageBounds(page, id) case final b?) id: b,
-      };
+      final bounds = _alignBounds2D(page, ids);
       if (bounds.length < 2) return const {};
       final target = bounds.values.map((b) => b.$3).reduce(math.max);
       return {
@@ -2973,10 +3056,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _align((page, ids) {
-      final bounds = <int, (double, double, double, double)>{
-        for (final id in ids)
-          if (_pageBounds(page, id) case final b?) id: b,
-      };
+      final bounds = _alignBounds2D(page, ids);
       if (bounds.length < 2) return const {};
       final l = bounds.values.map((b) => b.$1).reduce(math.min);
       final r = bounds.values.map((b) => b.$3).reduce(math.max);
@@ -2994,10 +3074,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _align((page, ids) {
-      final bounds = <int, (double, double, double, double)>{
-        for (final id in ids)
-          if (_pageBounds(page, id) case final b?) id: b,
-      };
+      final bounds = _alignBounds2D(page, ids);
       if (bounds.length < 2) return const {};
       final target = bounds.values.map((b) => b.$4).reduce(math.max);
       return {
@@ -3012,10 +3089,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _align((page, ids) {
-      final bounds = <int, (double, double, double, double)>{
-        for (final id in ids)
-          if (_pageBounds(page, id) case final b?) id: b,
-      };
+      final bounds = _alignBounds2D(page, ids);
       if (bounds.length < 2) return const {};
       final target = bounds.values.map((b) => b.$2).reduce(math.min);
       return {
@@ -3032,10 +3106,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     _align((page, ids) {
-      final bounds = <int, (double, double, double, double)>{
-        for (final id in ids)
-          if (_pageBounds(page, id) case final b?) id: b,
-      };
+      final bounds = _alignBounds2D(page, ids);
       if (bounds.length < 2) return const {};
       final bot = bounds.values.map((b) => b.$2).reduce(math.min);
       final top = bounds.values.map((b) => b.$4).reduce(math.max);
@@ -3050,10 +3121,7 @@ class EditorController extends ChangeNotifier {
   /// Equalise gaps between axis-aligned bounds (draw.io Distribute).
   void distributeHorizontally() => _align((page, ids) {
         if (ids.length < 3) return const {};
-        final bounds = <int, (double, double, double, double)>{
-          for (final id in ids)
-            if (_pageBounds(page, id) case final b?) id: b,
-        };
+        final bounds = _alignBounds2D(page, ids);
         if (bounds.length < 3) return const {};
         final sorted = bounds.keys.toList()
           ..sort((a, b) => bounds[a]!.$1.compareTo(bounds[b]!.$1));
@@ -3081,10 +3149,7 @@ class EditorController extends ChangeNotifier {
   /// Equalise gaps between axis-aligned bounds (draw.io Distribute).
   void distributeVertically() => _align((page, ids) {
         if (ids.length < 3) return const {};
-        final bounds = <int, (double, double, double, double)>{
-          for (final id in ids)
-            if (_pageBounds(page, id) case final b?) id: b,
-        };
+        final bounds = _alignBounds2D(page, ids);
         if (bounds.length < 3) return const {};
         final sorted = bounds.keys.toList()
           ..sort((a, b) => bounds[a]!.$2.compareTo(bounds[b]!.$2));
@@ -3340,11 +3405,13 @@ class EditorController extends ChangeNotifier {
   /// Position / size / rotation of the single selection for the Arrange panel.
   /// `x`/`y` are the top-left of the **page AABB** in inches from the page's
   /// top-left (Y-down); `w`/`h` remain the shape's local width/height;
-  /// `angleDeg` is Visio CCW degrees.
+  /// `angleDeg` is the **page** heading in Visio CCW degrees (matches the
+  /// rotate handle under nested / rotated parents).
   ({double x, double y, double w, double h, double angleDeg})? get selectedGeometry {
     final s = singleSelected;
     final page = currentPage;
     if (s == null || page == null) return null;
+    final angleDeg = page.shapePageAngle(s.id) * 180 / math.pi;
     final aabb = page.shapePageAabb(s.id);
     if (aabb == null) {
       return (
@@ -3352,7 +3419,7 @@ class EditorController extends ChangeNotifier {
         y: page.heightInches - (s.pinY + s.height / 2),
         w: s.width,
         h: s.height,
-        angleDeg: s.angleRad * 180 / math.pi,
+        angleDeg: angleDeg,
       );
     }
     return (
@@ -3360,7 +3427,7 @@ class EditorController extends ChangeNotifier {
       y: page.heightInches - aabb.top,
       w: s.width,
       h: s.height,
-      angleDeg: s.angleRad * 180 / math.pi,
+      angleDeg: angleDeg,
     );
   }
 
@@ -3411,13 +3478,26 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final before = page.shapePageAabb(s.id);
-    resizeShape(s.id, pinX: s.pinX, pinY: s.pinY, width: w, height: s.height);
-    if (before == null) return;
-    final after = currentPage?.shapePageAabb(s.id);
-    if (after == null) return;
-    final dx = before.left - after.left;
-    final dy = before.top - after.top;
-    if (dx != 0 || dy != 0) moveSelectionBy(dx, dy);
+    beginTransaction();
+    resizeShape(
+      s.id,
+      pinX: s.pinX,
+      pinY: s.pinY,
+      width: w,
+      height: s.height,
+      transient: true,
+    );
+    if (before != null) {
+      final after = currentPage?.shapePageAabb(s.id);
+      if (after != null) {
+        final dx = before.left - after.left;
+        final dy = before.top - after.top;
+        if (dx != 0 || dy != 0) {
+          moveSelectionBy(dx, dy, transient: true);
+        }
+      }
+    }
+    commitTransaction();
   }
 
   /// Resize the single selection to [h] inches tall, keeping its page-AABB
@@ -3429,20 +3509,59 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final before = page.shapePageAabb(s.id);
-    resizeShape(s.id, pinX: s.pinX, pinY: s.pinY, width: s.width, height: h);
-    if (before == null) return;
-    final after = currentPage?.shapePageAabb(s.id);
-    if (after == null) return;
-    final dx = before.left - after.left;
-    final dy = before.top - after.top;
-    if (dx != 0 || dy != 0) moveSelectionBy(dx, dy);
+    beginTransaction();
+    resizeShape(
+      s.id,
+      pinX: s.pinX,
+      pinY: s.pinY,
+      width: s.width,
+      height: h,
+      transient: true,
+    );
+    if (before != null) {
+      final after = currentPage?.shapePageAabb(s.id);
+      if (after != null) {
+        final dx = before.left - after.left;
+        final dy = before.top - after.top;
+        if (dx != 0 || dy != 0) {
+          moveSelectionBy(dx, dy, transient: true);
+        }
+      }
+    }
+    commitTransaction();
   }
 
-  /// Set the single selection's rotation from a value in degrees.
+  /// Set the single selection's **page** heading from a value in degrees
+  /// (Arrange panel). Nested shapes convert page→parent-local like the canvas
+  /// rotate handle. [VsdxShape.flipY] adds π to the page heading of local +Y,
+  /// so the stored [VsdxShape.angleRad] is compensated accordingly.
   void setSelectedAngleDegrees(double deg) {
     final s = singleSelected;
-    if (s == null || s.locked || isOnLockedLayer(s.id)) return;
-    rotateShape(s.id, deg * math.pi / 180);
+    final page = currentPage;
+    if (s == null || page == null || s.locked || isOnLockedLayer(s.id)) {
+      return;
+    }
+    final pageAngle = deg * math.pi / 180;
+    final parentId = page.findParentId(s.id);
+    double localAngle;
+    if (parentId == null) {
+      localAngle = pageAngle;
+    } else {
+      final pin = page.shapePinPage(s.id);
+      final tipPage = Offset2D(
+        pin.x - math.sin(pageAngle),
+        pin.y + math.cos(pageAngle),
+      );
+      final tipLocal = page.pageToLocalDeep(parentId, tipPage);
+      final pinLocal = page.pageToLocalDeep(parentId, pin);
+      localAngle = math.atan2(
+        -(tipLocal.x - pinLocal.x),
+        tipLocal.y - pinLocal.y,
+      );
+    }
+    // flipY reflects local +Y → page −Y, which reads as +π in shapePageAngle.
+    if (s.flipY) localAngle -= math.pi;
+    rotateShape(s.id, localAngle);
   }
 
   /// Rotate every selected shape 90° about its own pin (drawio Ctrl+R). Pass
@@ -3465,8 +3584,34 @@ class EditorController extends ChangeNotifier {
       var next = page;
       var rotated = false;
       for (final id in roots) {
-        next = next.updateShapeById(
-            id, (s) => s.copyWith(angleRad: s.angleRad + delta));
+        final s = next.findShapeById(id);
+        if (s == null) continue;
+        final parentId = next.findParentId(id);
+        if (parentId == null) {
+          next = next.updateShapeById(
+            id,
+            (sh) => sh.copyWith(angleRad: sh.angleRad + delta),
+          );
+        } else {
+          // Page-space delta then parent-local writeback so a flipped
+          // ancestor does not reverse clockwise / CCW.
+          final pageAngle = next.shapePageAngle(id) + delta;
+          final pin = next.shapePinPage(id);
+          final tipPage = Offset2D(
+            pin.x - math.sin(pageAngle),
+            pin.y + math.cos(pageAngle),
+          );
+          final tipLocal = next.pageToLocalDeep(parentId, tipPage);
+          final pinLocal = next.pageToLocalDeep(parentId, pin);
+          final localAngle = math.atan2(
+            -(tipLocal.x - pinLocal.x),
+            tipLocal.y - pinLocal.y,
+          );
+          next = next.updateShapeById(
+            id,
+            (sh) => sh.copyWith(angleRad: localAngle),
+          );
+        }
         rotated = true;
       }
       return rotated
@@ -3593,10 +3738,10 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Remember the first selection's fill / line so new shapes inherit it
-  /// (drawio's `currentVertexStyle`). Soft-edges on 1-D are ignored so a
-  /// connector never seeds SoftEdges onto later boxes.
+  /// (drawio's `currentVertexStyle`). Prefers a 2-D shape so Soft Edges from a
+  /// box are not skipped when a connector leads the selection.
   void _rememberStyle() {
-    final s = _firstSelected;
+    final s = _firstSelected2D ?? _firstSelected;
     if (s == null) return;
     _memoFill = s.is1D ? null : s.fill;
     final line = s.line;
@@ -4082,6 +4227,20 @@ class EditorController extends ChangeNotifier {
     _selectedConnectionPointIndex = null;
   }
 
+  void _leaveTextEditSession() {
+    _textEditShapeId = null;
+    _textEditSelection = null;
+  }
+
+  /// Whether [containerId] may receive a drop / explicit reparent.
+  static bool _containerAcceptsDrop(VsdxPage page, int containerId) {
+    final host = page.findShapeById(containerId);
+    if (host == null || host.locked) return false;
+    if (!page.isShapeTreeVisible(containerId)) return false;
+    if (page.isShapeTreeOnLockedLayer(containerId)) return false;
+    return true;
+  }
+
   /// Enter draw.io-style connection-point edit mode. Materialises the default
   /// 5 points when the shape has none yet (one undo step).
   void beginEditConnectionPoints() {
@@ -4247,55 +4406,128 @@ class EditorController extends ChangeNotifier {
   /// connector arrowheads — same rules as [_withMemoStyle]. Effects
   /// (shadow / glow / reflection) are included for 2-D shapes when the
   /// clipboard came from a 2-D source.
+  ///
+  /// Theme-bound fill/line/text installs [VsdxTheme.office] when the document
+  /// has no theme yet (same as [setFillThemeSlot]) so New Document → Paste
+  /// Style still resolves accent colours.
   void pasteStyle() {
     final clip = _styleClipboard;
-    if (clip == null) return;
-    _updateSelectedShapes((s) {
-      var line = clip.line;
-      if (!s.is1D && (line.beginArrow != 0 || line.endArrow != 0)) {
-        line = line.copyWith(beginArrow: 0, endArrow: 0);
-      }
-      if (s.is1D && line.softEdgesInches > 0) {
-        line = line.copyWith(softEdgesInches: 0);
-      }
-      // A no-line memo must not make connectors invisible.
-      if (s.is1D && line.pattern == 0) {
-        line = line.copyWith(pattern: 1);
-      }
-      var next = s.is1D
-          ? s.copyWith(line: line)
-          : s.copyWith(
-              fill: clip.includeFill ? clip.fill : s.fill,
-              line: line,
-              shadow: clip.includeEffects ? clip.shadow : s.shadow,
-              glow: clip.includeEffects ? clip.glow : s.glow,
-              reflection:
-                  clip.includeEffects ? clip.reflection : s.reflection,
-            );
-      if (clip.char != null || clip.para != null) {
-        var runs = next.richText.runs;
-        if (runs.isEmpty) {
-          final t = next.text;
-          if (t != null && t.isNotEmpty) {
-            runs = <VsdxTextRun>[VsdxTextRun(text: t)];
-          }
-        }
-        if (runs.isNotEmpty) {
-          next = next.copyWith(
-            richText: next.richText.copyWith(
-              runs: <VsdxTextRun>[
-                for (final r in runs)
-                  r.copyWith(
-                    charStyle: clip.char ?? r.charStyle,
-                    paraStyle: clip.para ?? r.paraStyle,
-                  ),
-              ],
-            ),
+    final doc = _document;
+    final page0 = currentPage;
+    if (clip == null || doc == null || page0 == null || _selection.isEmpty) {
+      return;
+    }
+    final needsTheme = _styleClipboardNeedsTheme(clip);
+    var nextDoc =
+        needsTheme && doc.theme.isEmpty ? doc.copyWith(theme: VsdxTheme.office) : doc;
+    var nextPage = nextDoc.pages[_currentPageIndex];
+    var changed = !identical(nextDoc, doc);
+    for (final id in _selection) {
+      final s = nextPage.findShapeById(id);
+      if (s == null || s.locked || isOnLockedLayer(id)) continue;
+      final updated = _pasteStyleOnto(s, clip);
+      if (identical(updated, s)) continue;
+      nextPage = nextPage.updateShapeById(id, (_) => updated);
+      changed = true;
+    }
+    if (!changed) return;
+    applyEdit(nextDoc.replacePage(_currentPageIndex, nextPage));
+    _rememberStyle();
+  }
+
+  static bool _styleClipboardNeedsTheme(
+    ({
+      VsdxFill fill,
+      VsdxLine line,
+      VsdxCharStyle? char,
+      VsdxParaStyle? para,
+      VsdxShadow shadow,
+      VsdxGlow glow,
+      VsdxReflection reflection,
+      bool includeFill,
+      bool includeEffects,
+    }) clip,
+  ) {
+    if (clip.includeFill && clip.fill.themeForegroundIndex != null) return true;
+    if (clip.line.themeColorIndex != null) return true;
+    if (clip.char?.themeColorIndex != null) return true;
+    if (clip.includeEffects &&
+        (clip.shadow.themeColorIndex != null ||
+            clip.glow.themeColorIndex != null)) {
+      return true;
+    }
+    return false;
+  }
+
+  static VsdxShape _pasteStyleOnto(
+    VsdxShape s,
+    ({
+      VsdxFill fill,
+      VsdxLine line,
+      VsdxCharStyle? char,
+      VsdxParaStyle? para,
+      VsdxShadow shadow,
+      VsdxGlow glow,
+      VsdxReflection reflection,
+      bool includeFill,
+      bool includeEffects,
+    }) clip,
+  ) {
+    var line = clip.line;
+    if (!s.is1D && (line.beginArrow != 0 || line.endArrow != 0)) {
+      line = line.copyWith(beginArrow: 0, endArrow: 0);
+    }
+    if (s.is1D && line.softEdgesInches > 0) {
+      line = line.copyWith(softEdgesInches: 0);
+    }
+    // 1-D sources have no Soft Edges — do not wipe Soft Edges on 2-D targets.
+    if (!clip.includeEffects && !s.is1D) {
+      line = line.copyWith(softEdgesInches: s.line.softEdgesInches);
+    }
+    // A no-line memo must not make connectors invisible.
+    if (s.is1D && line.pattern == 0) {
+      line = line.copyWith(pattern: 1);
+    }
+    var next = s.is1D
+        ? s.copyWith(line: line)
+        : s.copyWith(
+            fill: clip.includeFill ? clip.fill : s.fill,
+            line: line,
+            shadow: clip.includeEffects ? clip.shadow : s.shadow,
+            glow: clip.includeEffects ? clip.glow : s.glow,
+            reflection: clip.includeEffects ? clip.reflection : s.reflection,
           );
+    if (clip.char != null || clip.para != null) {
+      var runs = next.richText.runs;
+      if (runs.isEmpty) {
+        final t = next.text;
+        if (t != null && t.isNotEmpty) {
+          runs = <VsdxTextRun>[VsdxTextRun(text: t)];
+        } else {
+          runs = <VsdxTextRun>[
+            VsdxTextRun(
+              text: '',
+              charStyle: clip.char ?? const VsdxCharStyle(),
+              paraStyle: clip.para ?? const VsdxParaStyle(),
+            ),
+          ];
         }
       }
-      return next;
-    }, rememberStyle: true);
+      if (runs.isNotEmpty) {
+        next = next.copyWith(
+          richText: next.richText.copyWith(
+            runs: <VsdxTextRun>[
+              for (final r in runs)
+                r.copyWith(
+                  charStyle: clip.char ?? r.charStyle,
+                  paraStyle: clip.para ?? r.paraStyle,
+                ),
+            ],
+          ),
+        );
+      }
+    }
+    return next;
   }
 
   // --- Shape data (drawio "Edit Data", Cmd+M) --------------------------------
@@ -4371,15 +4603,16 @@ class EditorController extends ChangeNotifier {
     return false;
   }
 
-  /// Whether the selection contains an unlocked top-level group to ungroup.
+  /// Whether the selection contains an unlocked group to ungroup (top-level or
+  /// nested — matches [ungroupSelection]).
   bool get canUngroup {
     final page = currentPage;
     if (page == null) return false;
-    for (final s in page.shapes) {
-      if (_selection.contains(s.id) &&
-          s.children.isNotEmpty &&
-          !s.locked &&
-          !isOnLockedLayer(s.id)) {
+    for (final id in _selection) {
+      if (page.findShapeById(id) case final s?
+          when s.children.isNotEmpty &&
+              !s.locked &&
+              !isOnLockedLayer(id)) {
         return true;
       }
     }
@@ -4413,20 +4646,33 @@ class EditorController extends ChangeNotifier {
     );
   }
 
-  /// Ungroup every selected unlocked top-level group, selecting the children.
+  /// Ungroup every selected unlocked group (top-level or nested), selecting
+  /// the children.
   void ungroupSelection() {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null) return;
     final groups = <VsdxShape>[
-      for (final s in page.shapes)
-        if (_selection.contains(s.id) &&
-            s.children.isNotEmpty &&
-            !s.locked &&
-            !isOnLockedLayer(s.id))
+      for (final id in _selection)
+        if (page.findShapeById(id) case final s?
+            when s.children.isNotEmpty &&
+                !s.locked &&
+                !isOnLockedLayer(id))
           s,
     ];
     if (groups.isEmpty) return;
+    // Deepest first so nested groups ungroup before their parents.
+    int depth(int id) {
+      var d = 0;
+      var p = page.findParentId(id);
+      while (p != null) {
+        d++;
+        p = page.findParentId(p);
+      }
+      return d;
+    }
+
+    groups.sort((a, b) => depth(b.id).compareTo(depth(a.id)));
     final childIds = <int>{
       for (final g in groups)
         for (final c in g.children) c.id,
@@ -5174,12 +5420,33 @@ class EditorController extends ChangeNotifier {
       (p) {
         var next = p.updateShapeById(
           id,
-          (sh) => sh.resizeTo(
-            pinX: pinX,
-            pinY: pinY,
-            width: width,
-            height: height,
-          ),
+          (sh) {
+            final sx = sh.width == 0 ? 1.0 : width / sh.width;
+            final sy = sh.height == 0 ? 1.0 : height / sh.height;
+            final resized = sh.resizeTo(
+              pinX: pinX,
+              pinY: pinY,
+              width: width,
+              height: height,
+            );
+            // Groups: scale children with the box (draw.io). Skip pools/lanes
+            // (they reflow) and pure pin moves (sx≈sy≈1).
+            if (sh.shapeKind != VsdxShapeKind.group ||
+                sh.children.isEmpty ||
+                ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
+              return resized;
+            }
+            final oldOx = sh.effectiveLocPinX;
+            final oldOy = sh.effectiveLocPinY;
+            final newOx = resized.effectiveLocPinX;
+            final newOy = resized.effectiveLocPinY;
+            return resized.copyWith(
+              children: <VsdxShape>[
+                for (final c in sh.children)
+                  _scaleGroupChild(c, sx, sy, oldOx, oldOy, newOx, newOy),
+              ],
+            );
+          },
         );
         // Pool resize: equal-tile lanes into the new bounds.
         if (reflowPool) {
@@ -5199,6 +5466,63 @@ class EditorController extends ChangeNotifier {
             .rerouteConnectors(movedShapeIds: movedIds);
       },
       transient: transient,
+    );
+  }
+
+  /// Scale a group child: map offsets from [oldOx],[oldOy] into the resized
+  /// parent's LocPin frame ([newOx],[newOy]).
+  static VsdxShape _scaleGroupChild(
+    VsdxShape c,
+    double sx,
+    double sy,
+    double oldOx,
+    double oldOy,
+    double newOx,
+    double newOy,
+  ) {
+    final npx = newOx + (c.pinX - oldOx) * sx;
+    final npy = newOy + (c.pinY - oldOy) * sy;
+    if (c.is1D) {
+      Offset2D? map(double? x, double? y) {
+        if (x == null || y == null) return null;
+        return Offset2D(newOx + (x - oldOx) * sx, newOy + (y - oldOy) * sy);
+      }
+
+      final b = map(c.beginX, c.beginY);
+      final e = map(c.endX, c.endY);
+      return c.copyWith(
+        pinX: npx,
+        pinY: npy,
+        beginX: b?.x,
+        beginY: b?.y,
+        endX: e?.x,
+        endY: e?.y,
+        waypoints: <Offset2D>[
+          for (final w in c.waypoints)
+            Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
+        ],
+      );
+    }
+    final scaled = c.resizeTo(
+      pinX: npx,
+      pinY: npy,
+      width: c.width * sx,
+      height: c.height * sy,
+    );
+    if (c.children.isEmpty) return scaled;
+    return scaled.copyWith(
+      children: <VsdxShape>[
+        for (final k in c.children)
+          _scaleGroupChild(
+            k,
+            sx,
+            sy,
+            c.effectiveLocPinX,
+            c.effectiveLocPinY,
+            scaled.effectiveLocPinX,
+            scaled.effectiveLocPinY,
+          ),
+      ],
     );
   }
 
@@ -5229,6 +5553,18 @@ class EditorController extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  /// Drop `<Connect>` rows that reference any id in [ids] (deleted subtrees).
+  static VsdxPage _pruneConnectsReferencing(VsdxPage page, Set<int> ids) {
+    if (ids.isEmpty || page.connects.isEmpty) return page;
+    final next = <VsdxConnect>[
+      for (final c in page.connects)
+        if (!ids.contains(c.fromSheetId) && !ids.contains(c.toSheetId)) c,
+    ];
+    return next.length == page.connects.length
+        ? page
+        : page.copyWith(connects: next);
   }
 
   static VsdxShape _translated(VsdxShape s, double dx, double dy) =>
@@ -5362,7 +5698,11 @@ class EditorController extends ChangeNotifier {
     final needle = _findMatchCase ? q : q.toLowerCase();
     final matches = <({int pageIndex, int shapeId})>[];
     for (var pi = 0; pi < doc.pages.length; pi++) {
+      final page = doc.pages[pi];
       void walk(VsdxShape s) {
+        // Match paint / hit-test: skip hidden layers; do not descend into
+        // folded containers (children are not visible until unfold).
+        if (!page.isShapeVisible(s)) return;
         final text = _shapeLabel(s);
         final hayText = _findMatchCase ? text : text.toLowerCase();
         final hayName = _findMatchCase ? s.name : s.name.toLowerCase();
@@ -5370,12 +5710,13 @@ class EditorController extends ChangeNotifier {
             _haystackMatches(hayName, needle)) {
           matches.add((pageIndex: pi, shapeId: s.id));
         }
+        if (s.collapsed) return;
         for (final c in s.children) {
           walk(c);
         }
       }
 
-      for (final s in doc.pages[pi].shapes) {
+      for (final s in page.shapes) {
         walk(s);
       }
     }
@@ -5464,7 +5805,9 @@ class EditorController extends ChangeNotifier {
     final hitPage = doc.pages[hit.pageIndex];
     final shape = hitPage.findShapeById(hit.shapeId);
     if (shape == null) return;
-    if (shape.locked || _shapeOnLockedLayer(hitPage, shape)) {
+    if (shape.locked ||
+        _shapeOnLockedLayer(hitPage, shape) ||
+        !hitPage.isShapeTreeVisible(hit.shapeId)) {
       _advanceFindIndexSilently();
       return;
     }
@@ -5512,8 +5855,9 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Replace every occurrence of the find query in labels across **all pages**
-  /// (one undo step). Shape names are left alone. Locked shapes and shapes on
-  /// locked layers are skipped.
+  /// (one undo step). Shape names are left alone. Locked shapes, shapes on
+  /// locked layers, hidden-layer shapes, and children of folded containers are
+  /// skipped (same scope as Find matches).
   void replaceAllFind(String replacement) {
     final doc = _document;
     final q = _findQuery.trim();
@@ -5523,17 +5867,8 @@ class EditorController extends ChangeNotifier {
     for (var pi = 0; pi < nextDoc.pages.length; pi++) {
       final page = nextDoc.pages[pi];
       var pageChanged = false;
-      bool onLockedLayer(VsdxShape s) {
-        if (s.layerMemberIds.isEmpty) return false;
-        for (final id in s.layerMemberIds) {
-          for (final l in page.layers) {
-            if (l.id == id && l.locked) return true;
-          }
-        }
-        return false;
-      }
-
       VsdxShape transform(VsdxShape s) {
+        if (!page.isShapeVisible(s)) return s;
         final text = _shapeLabel(s);
         final nextText = replaceAllMatch(
           text,
@@ -5543,18 +5878,18 @@ class EditorController extends ChangeNotifier {
           wholeWord: _findWholeWord,
         );
         var next = s;
-        if (nextText != text && !s.locked && !onLockedLayer(s)) {
+        if (nextText != text &&
+            !s.locked &&
+            !page.isShapeTreeOnLockedLayer(s.id)) {
           next = _withLabelText(s, nextText);
           pageChanged = true;
         }
-        if (next.children.isNotEmpty) {
-          next = next.copyWith(
-            children: <VsdxShape>[
-              for (final c in next.children) transform(c),
-            ],
-          );
-        }
-        return next;
+        if (next.collapsed || next.children.isEmpty) return next;
+        return next.copyWith(
+          children: <VsdxShape>[
+            for (final c in next.children) transform(c),
+          ],
+        );
       }
 
       final shapes = <VsdxShape>[

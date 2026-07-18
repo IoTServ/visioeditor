@@ -553,16 +553,29 @@ abstract final class TableOps {
         }
       }
     }
-    final parts = <String>[];
-    void takeText(VsdxShape s) {
-      final t = s.richText.runs.isNotEmpty
-          ? s.richText.plainText
-          : (s.text ?? '');
-      final trimmed = t.trim();
-      if (trimmed.isNotEmpty) parts.add(trimmed);
+    // Concatenate rich runs (preserve bold/colour) with a single space between
+    // non-empty cells. Covered cells are cleared so unmerge does not duplicate.
+    final mergedRuns = <VsdxTextRun>[];
+    void takeRuns(VsdxShape s) {
+      final runs = s.richText.runs;
+      if (runs.isNotEmpty) {
+        final plain = s.richText.plainText.trim();
+        if (plain.isEmpty) return;
+        if (mergedRuns.isNotEmpty) {
+          mergedRuns.add(const VsdxTextRun(text: ' '));
+        }
+        mergedRuns.addAll(runs);
+        return;
+      }
+      final t = (s.text ?? '').trim();
+      if (t.isEmpty) return;
+      if (mergedRuns.isNotEmpty) {
+        mergedRuns.add(const VsdxTextRun(text: ' '));
+      }
+      mergedRuns.add(VsdxTextRun(text: t));
     }
 
-    takeText(master);
+    takeRuns(master);
     final nextCells = <VsdxShape>[];
     for (final c in cellsOf(table)) {
       final r = cellRow(c)!;
@@ -587,29 +600,36 @@ abstract final class TableOps {
           ),
         );
       } else {
-        takeText(c);
+        takeRuns(c);
         nextCells.add(
           c.copyWith(
+            text: '',
+            richText: VsdxRichText.empty,
             userCells: cellUserCells(row: r, col: cc, covered: true),
           ),
         );
       }
     }
-    // Apply combined text to master.
-    final combined = parts.join(' ');
     final idx = nextCells.indexWhere((c) => c.id == master.id);
-    if (idx >= 0 && combined.isNotEmpty) {
+    if (idx >= 0 && mergedRuns.isNotEmpty) {
       final m = nextCells[idx];
+      final centered = <VsdxTextRun>[
+        for (final r in mergedRuns)
+          r.text.trim().isEmpty
+              ? r
+              : r.copyWith(
+                  paraStyle: r.paraStyle.copyWith(
+                    horizontalAlign: VsdxHorzAlign.center,
+                  ),
+                ),
+      ];
+      final combined = VsdxRichText(runs: centered).plainText;
       nextCells[idx] = m.copyWith(
         text: combined,
-        richText: VsdxRichText(runs: <VsdxTextRun>[
-          VsdxTextRun(
-            text: combined,
-            paraStyle: const VsdxParaStyle(
-              horizontalAlign: VsdxHorzAlign.center,
-            ),
-          ),
-        ]),
+        richText: VsdxRichText(
+          runs: centered,
+          textBlock: m.richText.textBlock,
+        ),
         userCells: cellUserCells(
           row: row,
           col: col,

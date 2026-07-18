@@ -508,8 +508,17 @@ class VsdxShape {
     }
 
     final cloned = assignIds(this, px: pinX, py: pinY);
-    return _rewriteSheetRefsInTree(cloned, map);
+    return rewriteSheetRefsInTree(cloned, map);
   }
+
+  /// Rewrite `Sheet.n!` formulas / collapsed-glue payloads in [s] via [idMap].
+  /// Used after multi-root paste so cross-shape XFTRIGGER refs resolve once
+  /// every clone id is known.
+  static VsdxShape rewriteSheetRefsInTree(
+    VsdxShape s,
+    Map<int, int> idMap,
+  ) =>
+      _rewriteSheetRefsInTree(s, idMap);
 
   static VsdxShape _rewriteSheetRefsInTree(
     VsdxShape s,
@@ -529,6 +538,23 @@ class VsdxShape {
       }
       if (changed) formulas = next;
     }
+    List<VsdxUserCell>? userCells;
+    if (s.userCells.isNotEmpty) {
+      final next = <VsdxUserCell>[];
+      var changed = false;
+      for (final c in s.userCells) {
+        if (c.name == userCollapsedGlue && c.value != null) {
+          final rewritten = _remapCollapsedGlueValue(c.value!, idMap);
+          next.add(rewritten == c.value
+              ? c
+              : VsdxUserCell(name: c.name, value: rewritten));
+          if (rewritten != c.value) changed = true;
+        } else {
+          next.add(c);
+        }
+      }
+      if (changed) userCells = next;
+    }
     var childrenChanged = false;
     for (var i = 0; i < newChildren.length; i++) {
       if (!identical(newChildren[i], s.children[i])) {
@@ -536,11 +562,50 @@ class VsdxShape {
         break;
       }
     }
-    if (formulas == null && !childrenChanged) return s;
+    if (formulas == null && userCells == null && !childrenChanged) return s;
     return s.copyWith(
       formulas: formulas,
+      userCells: userCells,
       children: childrenChanged ? newChildren : null,
     );
+  }
+
+  /// Remap `fromSheetId` / `toSheetId` inside a [userCollapsedGlue] payload.
+  /// Rows whose either end is outside [idMap] are dropped so a cloned host
+  /// cannot resurrect glue onto shapes that were not copied.
+  static String _remapCollapsedGlueValue(String raw, Map<int, int> idMap) {
+    if (raw.isEmpty) return raw;
+    if (idMap.isEmpty) return '';
+    final out = <String>[];
+    var changed = false;
+    for (final line in raw.split('\n')) {
+      if (line.isEmpty) continue;
+      final p = line.split('\t');
+      if (p.length < 5) {
+        changed = true;
+        continue;
+      }
+      final fromId = int.tryParse(p[0]);
+      final toId = int.tryParse(p[3]);
+      if (fromId == null || toId == null) {
+        changed = true;
+        continue;
+      }
+      final nf = idMap[fromId];
+      final nt = idMap[toId];
+      if (nf == null || nt == null) {
+        changed = true;
+        continue;
+      }
+      if (nf != fromId || nt != toId) changed = true;
+      p[0] = '$nf';
+      p[3] = '$nt';
+      out.add(p.join('\t'));
+    }
+    if (!changed && out.length == raw.split('\n').where((l) => l.isNotEmpty).length) {
+      return raw;
+    }
+    return out.join('\n');
   }
 
   /// User-cell names that carry drawio-style connector route state across

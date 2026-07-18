@@ -24,6 +24,9 @@ Future<Uint8List?> renderPageToPng(
   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
   final layerIds = visibleLayerIdsOverride ??
       (page.layers.isEmpty ? null : page.printableLayerIds);
+  final underlayLayerIds = underlayPage == null || underlayPage.layers.isEmpty
+      ? null
+      : underlayPage.printableLayerIds;
   VsdxPainter(
     page: page,
     underlayPage: underlayPage,
@@ -31,8 +34,9 @@ Future<Uint8List?> renderPageToPng(
     images: images,
     pxPerInch: pxPerInch,
     backgroundColor: const Color(0xFFFFFFFF),
-    respectLayerVisibility: layerIds != null,
+    respectLayerVisibility: layerIds != null || underlayLayerIds != null,
     visibleLayerIdsOverride: layerIds,
+    underlayVisibleLayerIdsOverride: underlayLayerIds,
   ).paint(canvas, Size(w, h));
   final picture = recorder.endRecording();
   final image = await picture.toImage(w.ceil(), h.ceil());
