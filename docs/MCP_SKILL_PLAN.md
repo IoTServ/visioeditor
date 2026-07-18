@@ -337,7 +337,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 写盘 → L1 亚秒级自动重载；`snapshot` 回传合法 PNG；无 token 拒连、默认关闭；
 `flutter test` 554/554 无回归。
 > **L3 已于 M5 落地**：`applyOps` 经 `EditorController.applyEdit` 提交为单步可撤销编辑。
-> 后续：`select` 工具、「Agent 预览」并入设置页 + l10n（当前菜单文案为英文占位）。
+> **`select` 已落地**（桥 `select` + MCP `select`，未知 id 丢弃并回报）。
+> 后续：「Agent 预览」并入设置页 + l10n（当前菜单文案为英文占位）。
 
 ---
 
@@ -351,7 +352,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       `tools/list`/`tools/call`，newline-delimited JSON-RPC 2.0）。
 - [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_shapes/search_shapes`
       （后端调 agent 库；`list_shapes` 双模式，返回结构化 id/text/坐标供 Agent 定位）。
-- [x] 实时类工具：`open_in_app/live_apply_ops/snapshot/get_app_state`（`BridgeClient` 连应用桥）。
+- [x] 实时类工具：`open_in_app/live_apply_ops/select/snapshot/get_app_state`
+      （`BridgeClient` 连应用桥；`select` 按 id 高亮选中）。
 - [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
@@ -638,4 +640,7 @@ visioeditor/
   CLI `--lang rust` + MCP enum 加 `rust`；`code_import_test` +2。
 - 2026-07-18 — **M5 续（import-iac 增 Terraform）**：`iac_import.dart` 增 HCL 子集解析
   （resource/module/data、depends_on + 引用边、注释剥离、云厂商着色），自动侦测优先于 YAML。
+- 2026-07-18 — **打磨（select 选中工具）**：应用桥新增 `select`（按 id 高亮/清空选中，
+  未知 id 丢弃并回报 `unknown`，推送 `selectionChanged`）；MCP 直播工具 `select`；
+  `agent_bridge_test`+1、`mcp_server_test`+1。工具总数 **24**。
   仍待：发布二进制/`npx`、l10n 菜单文案。

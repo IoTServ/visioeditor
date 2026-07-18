@@ -66,7 +66,7 @@ dart compile exe bin/vsdxtool_mcp.dart -o vsdxtool-mcp
 If using the **MCP server** instead of the CLI, register it once (see
 `references/live-preview.md`) and call its tools (`create_diagram`,
 `apply_ops`, `export`, `validate`, `explain`, `search_shapes`, and the live
-tools `open_in_app` / `live_apply_ops` / `snapshot` / `get_app_state`).
+tools `open_in_app` / `live_apply_ops` / `select` / `snapshot` / `get_app_state`).
 
 ## Workflow
 
@@ -113,7 +113,8 @@ VSDXTOOL patch -i diagram.vsdx --ops ops.json     # file
 
 Get current shape ids with `list_shapes` (MCP; JSON of id/text/x/y/w/h, file or
 live) or `explain` (`VSDXTOOL explain -i file.vsdx`). Reference shapes as
-`"shape:<id>"` or the raw id.
+`"shape:<id>"` or the raw id. With live preview on, `select({ ids })`
+highlights those shapes in the editor (empty list clears).
 
 **Convenience single-step tools** (MCP) avoid hand-building op arrays:
 `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,

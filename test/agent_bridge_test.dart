@@ -89,6 +89,27 @@ void main() {
     expect(texts, containsAll(<String>['A', 'B']));
   });
 
+  test('select highlights shapes and clears with an empty list', () async {
+    final listed = await call('listShapes');
+    final shapes = (listed['result'] as Map)['shapes'] as List;
+    final idA = shapes.firstWhere((s) => s['text'] == 'A')['id'] as int;
+    final idB = shapes.firstWhere((s) => s['text'] == 'B')['id'] as int;
+
+    final r = await call('select', <String, dynamic>{
+      'ids': <dynamic>[idA, idB, 99999],
+    });
+    expect(r['ok'], isTrue);
+    final state = r['result'] as Map;
+    expect(state['selection'], containsAll(<int>[idA, idB]));
+    expect(state['unknown'], contains(99999));
+    expect(workspace.active!.selection, containsAll(<int>[idA, idB]));
+
+    final cleared = await call('select', <String, dynamic>{'ids': <dynamic>[]});
+    expect(cleared['ok'], isTrue);
+    expect((cleared['result'] as Map)['selection'], isEmpty);
+    expect(workspace.active!.selection, isEmpty);
+  });
+
   test('applyOps edits the in-memory model (instant, no disk write)', () async {
     final before = File(file.path).statSync().modified;
     final r = await call('applyOps', <String, dynamic>{

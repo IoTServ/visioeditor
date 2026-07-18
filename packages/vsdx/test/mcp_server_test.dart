@@ -82,6 +82,29 @@ void main() {
         ]));
     // Live tools excluded in this configuration.
     expect(names, isNot(contains('snapshot')));
+    expect(names, isNot(contains('select')));
+  });
+
+  test('tools/list includes live select when enabled', () async {
+    final live = McpServer(name: 'visioeditor', version: '0.1.0');
+    registerVsdxMcpTools(live, includeLiveTools: true);
+    final r = await live.handle(<String, dynamic>{
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'tools/list',
+    });
+    final names = <String>[
+      for (final t in (r!['result']['tools'] as List)) t['name'] as String,
+    ];
+    expect(
+        names,
+        containsAll(<String>[
+          'select',
+          'open_in_app',
+          'live_apply_ops',
+          'snapshot',
+          'get_app_state',
+        ]));
   });
 
   test('create_diagram builds + validates a .vsdx', () async {

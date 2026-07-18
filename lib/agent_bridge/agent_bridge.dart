@@ -7,8 +7,10 @@
 /// * **L2** — a loopback (127.0.0.1) WebSocket control channel. A handshake
 ///   file (`~/.visioeditor/agent-bridge.json`, `0600`) publishes the random
 ///   port + one-time token; clients call `open` / `reload` / `applyOps` /
-///   `snapshot` / `getState` / `save` and receive change events. `applyOps`
-///   edits the in-memory model (instant repaint, no disk write).
+///   `select` / `snapshot` / `getState` / `save` and receive change events.
+///   `applyOps` edits the in-memory model (instant repaint, no disk write);
+///   `select` updates the editor selection so the user can see what the Agent
+///   is targeting.
 ///
 /// Disabled by default; toggled from the app's "Agent live preview" menu item.
 /// See `docs/MCP_SKILL_PLAN.md` (M2).
@@ -143,6 +145,8 @@ class AgentBridge {
           'page': page,
           'shapes': listShapes(doc, pageIndex: page),
         };
+      case 'select':
+        return _select(params['ids']);
       case 'open':
         final path = params['path']?.toString();
         if (path == null) throw ArgumentError('open: missing path');
@@ -164,6 +168,35 @@ class AgentBridge {
       default:
         throw ArgumentError('unknown method: $method');
     }
+  }
+
+  /// Set the editor selection to [idsRaw] (shape ids on the active page).
+  /// Unknown / off-page ids are dropped. An empty list clears the selection.
+  Map<String, dynamic> _select(Object? idsRaw) {
+    final c = workspace.active;
+    final doc = c?.document;
+    if (c == null || doc == null) throw StateError('no active document');
+    final page = doc.pages[c.currentPageIndex];
+    final known = page.shapes.map((s) => s.id).toSet();
+    final requested = <int>[
+      for (final v in (idsRaw as List?) ?? const <dynamic>[])
+        if (v is num) v.toInt() else if (v is String) int.tryParse(v) ?? -1,
+    ].where((id) => id >= 0).toList();
+    final selected = <int>[for (final id in requested) if (known.contains(id)) id];
+    final unknown = <int>[
+      for (final id in requested)
+        if (!known.contains(id)) id,
+    ];
+    c.setSelection(selected);
+    _emit('selectionChanged', <String, dynamic>{
+      'selection': selected,
+      if (unknown.isNotEmpty) 'unknown': unknown,
+    });
+    final state = _state();
+    return <String, dynamic>{
+      ...state,
+      if (unknown.isNotEmpty) 'unknown': unknown,
+    };
   }
 
   // --- Operations ------------------------------------------------------------

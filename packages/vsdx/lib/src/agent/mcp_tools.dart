@@ -3,7 +3,7 @@
 /// **File tools** (no app needed): `create_diagram`, `apply_ops`, `export`,
 /// `validate`, `explain`, `search_shapes`.
 /// **Live tools** (drive the running editor via the bridge): `open_in_app`,
-/// `live_apply_ops`, `snapshot`, `get_app_state`.
+/// `live_apply_ops`, `select`, `snapshot`, `get_app_state`.
 ///
 /// Split out from the `bin/` entry so it can be unit-tested. See
 /// `docs/MCP_SKILL_PLAN.md` (M3).
@@ -687,6 +687,31 @@ void _registerLiveTools(McpServer server) {
       final state =
           await c.call('applyOps', <String, dynamic>{'ops': _asList(args['ops'])});
       return <McpContent>[McpContent.text('Applied. ${jsonEncode(state)}')];
+    }),
+  ));
+
+  server.addTool(McpTool(
+    name: 'select',
+    description: 'Select shapes in the running editor by id (highlights them '
+        'for the user). Pass an empty list to clear. Use list_shapes / '
+        'get_app_state first to discover ids. Requires Agent live preview.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'ids': <String, dynamic>{
+          'type': 'array',
+          'items': <String, dynamic>{'type': 'integer'},
+          'description': 'Shape ids on the active page (empty = clear).',
+        },
+      },
+      'required': <String>['ids'],
+    },
+    handler: (args) async => withBridge((c) async {
+      final ids = (args['ids'] as List?) ?? const <dynamic>[];
+      final state = await c.call('select', <String, dynamic>{'ids': ids});
+      return <McpContent>[
+        McpContent.text(const JsonEncoder.withIndent('  ').convert(state)),
+      ];
     }),
   ));
 
