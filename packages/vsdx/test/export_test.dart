@@ -151,4 +151,76 @@ void main() {
     expect(svg, contains('#00ff00'));
     expect(svg, isNot(contains('#ff00ff')));
   });
+
+  test('SVG stroke-linecap follows LineCap', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(cap: LineCap.square, weightInches: 0.05),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('stroke-linecap="square"'));
+  });
+
+  test('SVG fill-opacity multiplies colour ARGB alpha', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            foreground: VsdxColor(0x8000FF00), // 50% green
+            foregroundTransparency: 0.0,
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('fill-opacity="0.502"'));
+  });
+
+  test('SVG omits children of collapsed containers', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final hostId = doc.pages.first.nextFreeShapeId();
+    final childId = hostId + 1;
+    final child = VsdxShapeFactory.rectangle(
+      id: childId,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 0.5,
+    ).copyWith(
+      fill: const VsdxFill(foreground: VsdxColor(0xFF00ABCD)),
+      richText: const VsdxRichText(runs: [VsdxTextRun(text: 'SecretChild')]),
+    );
+    final host = VsdxShapeFactory.container(
+      id: hostId,
+      pinX: 3,
+      pinY: 3,
+      width: 3,
+      height: 2,
+    ).copyWith(children: <VsdxShape>[child]).fold();
+    doc = doc.replacePage(0, doc.pages.first.addShape(host));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, isNot(contains('SecretChild')));
+    expect(svg, isNot(contains('#00abcd')));
+  });
 }

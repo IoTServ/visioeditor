@@ -432,6 +432,13 @@ class VsdxWriter {
         changed = true;
       }
     }
+    // Drop Layer rows that no longer exist in the edited model (delete layer).
+    final keep = <int>{for (final l in ep.layers) l.id};
+    for (final entry in rows.entries.toList()) {
+      if (keep.contains(entry.key)) continue;
+      section.children.remove(entry.value);
+      changed = true;
+    }
     return changed;
   }
 
@@ -1727,7 +1734,12 @@ class VsdxWriter {
         baseTheme: base.fill.themeForegroundIndex,
         editedColor: edited.fill.foreground,
         editedTheme: edited.fill.themeForegroundIndex);
-    changed |= _patchColor(el, 'FillBkgnd', base.fill.background, edited.fill.background);
+    // Pattern / theme FillBkgnd — same QuickStyle cell Visio uses for THEMEVAL.
+    changed |= _patchColorOrTheme(el, 'FillBkgnd', 'QuickStyleFillColor',
+        baseColor: base.fill.background,
+        baseTheme: base.fill.themeBackgroundIndex,
+        editedColor: edited.fill.background,
+        editedTheme: edited.fill.themeBackgroundIndex);
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
@@ -1822,7 +1834,37 @@ class VsdxWriter {
         _patchIntAttr(el, 'FillStyle', base.fillStyleId, edited.fillStyleId);
     changed |=
         _patchIntAttr(el, 'TextStyle', base.textStyleId, edited.textStyleId);
+    // Theme / QuickStyle matrix cells (parser reads them; fresh write emits
+    // them — patch must too or edit→save drops ThemeIndex).
+    changed |= _patchOptionalIntCell(
+        el, 'ThemeIndex', base.themeIndex, edited.themeIndex);
+    changed |= _patchOptionalIntCell(el, 'QuickStyleFillMatrix',
+        base.quickStyleFillMatrix, edited.quickStyleFillMatrix);
+    changed |= _patchOptionalIntCell(el, 'QuickStyleLineMatrix',
+        base.quickStyleLineMatrix, edited.quickStyleLineMatrix);
+    changed |= _patchOptionalIntCell(el, 'QuickStyleEffectsMatrix',
+        base.quickStyleEffectsMatrix, edited.quickStyleEffectsMatrix);
+    changed |= _patchOptionalIntCell(el, 'QuickStyleFontMatrix',
+        base.quickStyleFontMatrix, edited.quickStyleFontMatrix);
     return changed;
+  }
+
+  /// Patch a top-level ShapeSheet int cell that may be absent (`null`).
+  bool _patchOptionalIntCell(
+    XmlElement shape,
+    String cell,
+    int? base,
+    int? edited,
+  ) {
+    if (base == edited) return false;
+    if (edited == null) {
+      final existing = _findCell(shape, cell);
+      if (existing == null) return false;
+      existing.parent?.children.remove(existing);
+      return true;
+    }
+    _writeValue(_ensureCell(shape, cell), edited.toString());
+    return true;
   }
 
   /// Set / clear an integer XML attribute on [el]. Returns true when mutated.
@@ -2447,32 +2489,19 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'Font'), c.fontFamily!);
     }
     _writeValue(_ensureCell(row, 'Strikethru'), c.strikethrough ? '1' : '0');
-    if (c.doubleUnderline) {
-      _writeValue(_ensureCell(row, 'DblUnderline'), '1');
-    }
-    if (c.doubleStrikethrough) {
-      _writeValue(_ensureCell(row, 'DoubleStrikethrough'), '1');
-    }
-    if (c.overline) {
-      _writeValue(_ensureCell(row, 'Overline'), '1');
-    }
-    if (c.letterSpacingInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
-    }
-    if (c.position != VsdxTextPosition.normal) {
-      _writeValue(
-          _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
-    }
-    if (c.textCase != VsdxTextCase.normal) {
-      _writeValue(
-          _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
-    }
-    if ((c.fontScale - 1.0).abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
-    }
-    if (c.transparency > _epsilon) {
-      _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
-    }
+    // Always write these managed cells so clearing a style (e.g. DblUnderline
+    // true→false) on the patch path actually removes the effect from XML.
+    _writeValue(_ensureCell(row, 'DblUnderline'), c.doubleUnderline ? '1' : '0');
+    _writeValue(_ensureCell(row, 'DoubleStrikethrough'),
+        c.doubleStrikethrough ? '1' : '0');
+    _writeValue(_ensureCell(row, 'Overline'), c.overline ? '1' : '0');
+    _writeValue(_ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
+    _writeValue(
+        _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
+    _writeValue(
+        _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
+    _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
+    _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'AsianFont'), c.asianFont!);
     }
@@ -2489,49 +2518,32 @@ class VsdxWriter {
   }
 
   void _writeParaRow(XmlElement row, VsdxParaStyle p) {
+    // Always write managed Paragraph cells so clearing a style on the patch
+    // path (Bullet 1→0, SpBefore .2→0, …) actually updates the XML row.
     _writeValue(
       _ensureCell(row, 'HorzAlign'),
       _alignToInt(p.horizontalAlign).toString(),
     );
-    if (p.indentFirstInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'IndFirst'), _fmt(p.indentFirstInches));
-    }
-    if (p.indentLeftInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'IndLeft'), _fmt(p.indentLeftInches));
-    }
-    if (p.indentRightInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'IndRight'), _fmt(p.indentRightInches));
-    }
-    if (p.spaceBeforeInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'SpBefore'), _fmt(p.spaceBeforeInches));
-    }
-    if (p.spaceAfterInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'SpAfter'), _fmt(p.spaceAfterInches));
-    }
-    final spLine = _spLineValue(p);
-    if (spLine != null) {
-      _writeValue(_ensureCell(row, 'SpLine'), _fmt(spLine));
-    }
-    if (p.bullet != 0) {
-      _writeValue(_ensureCell(row, 'Bullet'), p.bullet.toString());
-    }
-    if (p.bulletStr != null && p.bulletStr!.isNotEmpty) {
-      _writeValue(_ensureCell(row, 'BulletStr'), p.bulletStr!);
-    }
-    if (p.bulletFont != null && p.bulletFont!.isNotEmpty) {
-      _writeValue(_ensureCell(row, 'BulletFont'), p.bulletFont!);
-    }
+    _writeValue(_ensureCell(row, 'IndFirst'), _fmt(p.indentFirstInches));
+    _writeValue(_ensureCell(row, 'IndLeft'), _fmt(p.indentLeftInches));
+    _writeValue(_ensureCell(row, 'IndRight'), _fmt(p.indentRightInches));
+    _writeValue(_ensureCell(row, 'SpBefore'), _fmt(p.spaceBeforeInches));
+    _writeValue(_ensureCell(row, 'SpAfter'), _fmt(p.spaceAfterInches));
+    // Visio default single spacing is SpLine = -1 (percentage); omit→inherit
+    // would leave a stale absolute value after the user resets spacing.
+    _writeValue(_ensureCell(row, 'SpLine'), _fmt(_spLineValue(p) ?? -1));
+    _writeValue(_ensureCell(row, 'Bullet'), p.bullet.toString());
+    _writeValue(_ensureCell(row, 'BulletStr'), p.bulletStr ?? '');
+    _writeValue(_ensureCell(row, 'BulletFont'), p.bulletFont ?? '');
     if (p.bulletFontSizeInches != null) {
       _writeValue(
           _ensureCell(row, 'BulletFontSize'), _fmt(p.bulletFontSizeInches!));
+    } else {
+      _writeValue(_ensureCell(row, 'BulletFontSize'), '0');
     }
-    if (p.textPosAfterBulletInches.abs() > _epsilon) {
-      _writeValue(_ensureCell(row, 'TextPosAfterBullet'),
-          _fmt(p.textPosAfterBulletInches));
-    }
-    if (p.flags != 0) {
-      _writeValue(_ensureCell(row, 'Flags'), p.flags.toString());
-    }
+    _writeValue(_ensureCell(row, 'TextPosAfterBullet'),
+        _fmt(p.textPosAfterBulletInches));
+    _writeValue(_ensureCell(row, 'Flags'), p.flags.toString());
   }
 
   /// Encode [VsdxParaStyle] line spacing back to Visio's `SpLine` cell.
@@ -3233,6 +3245,7 @@ class VsdxWriter {
   bool _patchShadow(XmlElement el, VsdxShadow base, VsdxShadow edited) {
     if (base.enabled == edited.enabled &&
         base.color?.value == edited.color?.value &&
+        base.themeColorIndex == edited.themeColorIndex &&
         (base.offsetXInches - edited.offsetXInches).abs() <= _epsilon &&
         (base.offsetYInches - edited.offsetYInches).abs() <= _epsilon &&
         (base.blurInches - edited.blurInches).abs() <= _epsilon &&
@@ -3245,9 +3258,15 @@ class VsdxWriter {
     changed |= _patchInt(
         el, 'ShdwPattern', base.enabled ? 1 : 0, edited.enabled ? 1 : 0);
     if (edited.enabled) {
-      if (edited.color != null) {
-        changed |= _patchColor(el, 'ShadowForegnd', base.color, edited.color);
-      }
+      changed |= _patchColorOrTheme(
+        el,
+        'ShadowForegnd',
+        'QuickStyleShadowColor',
+        baseColor: base.color,
+        baseTheme: base.themeColorIndex,
+        editedColor: edited.color,
+        editedTheme: edited.themeColorIndex,
+      );
       changed |= _patchLength(
           el, 'ShadowOffsetX', base.offsetXInches, edited.offsetXInches);
       changed |= _patchLength(
@@ -3263,6 +3282,7 @@ class VsdxWriter {
   bool _patchGlow(XmlElement el, VsdxGlow base, VsdxGlow edited) {
     if (base.enabled == edited.enabled &&
         base.color?.value == edited.color?.value &&
+        base.themeColorIndex == edited.themeColorIndex &&
         (base.sizeInches - edited.sizeInches).abs() <= _epsilon &&
         (base.transparency - edited.transparency).abs() <= _epsilon) {
       return false;
@@ -3277,9 +3297,15 @@ class VsdxWriter {
     }
     changed |=
         _patchLength(el, 'GlowSize', base.sizeInches, edited.sizeInches);
-    if (edited.color != null) {
-      changed |= _patchColor(el, 'GlowColor', base.color, edited.color);
-    }
+    changed |= _patchColorOrTheme(
+      el,
+      'GlowColor',
+      'QuickStyleEffectColor',
+      baseColor: base.color,
+      baseTheme: base.themeColorIndex,
+      editedColor: edited.color,
+      editedTheme: edited.themeColorIndex,
+    );
     changed |= _patchRatio(
         el, 'GlowColorTrans', base.transparency, edited.transparency);
     return changed;
@@ -3490,6 +3516,11 @@ class VsdxWriter {
       _writeValue(_ensureCell(el, 'TextBkgnd'), '0');
       changed = true;
     }
+    changed |= _patchRatio(
+        el,
+        'TextBkgndTrans',
+        base.backgroundTransparency,
+        edited.backgroundTransparency);
     changed |= _patchLength(
         el, 'LeftMargin', base.marginLeftInches, edited.marginLeftInches);
     changed |= _patchLength(
@@ -3558,6 +3589,9 @@ class VsdxWriter {
     if (b.hideText) children.add(_cell('HideText', '1'));
     if (b.backgroundColor != null) {
       children.add(_cell('TextBkgnd', _hex(b.backgroundColor!)));
+    }
+    if (b.backgroundTransparency > _epsilon) {
+      children.add(_cell('TextBkgndTrans', _fmt(b.backgroundTransparency)));
     }
     if (b.textDirection != 0) {
       children.add(_cell('TextDirection', b.textDirection.toString()));
@@ -4171,6 +4205,12 @@ class VsdxWriter {
     } else if (s.fill.themeBackgroundIndex != null) {
       children.add(_cell('FillBkgnd', '0',
           formula: s.formulas['FillBkgnd'] ?? 'THEMEVAL()'));
+      // When only the background is theme-bound, emit QuickStyleFillColor so
+      // parseFill can recover themeBackgroundIndex (libvisio / Visio).
+      if (s.fill.themeForegroundIndex == null) {
+        children.add(_cell(
+            'QuickStyleFillColor', s.fill.themeBackgroundIndex!.toString()));
+      }
     } else if (s.formulas.containsKey('FillBkgnd')) {
       children.add(_cell('FillBkgnd', '0', formula: s.formulas['FillBkgnd']));
     }
@@ -4237,6 +4277,11 @@ class VsdxWriter {
       children.add(_cell('ShdwPattern', '1'));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+      } else if (s.shadow.themeColorIndex != null) {
+        // Match Fill/Line theme binding: THEMEVAL() + QuickStyle slot.
+        children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
       }
       children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
@@ -4252,6 +4297,10 @@ class VsdxWriter {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
       if (s.glow.color != null) {
         children.add(_cell('GlowColor', _hex(s.glow.color!)));
+      } else if (s.glow.themeColorIndex != null) {
+        children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
@@ -4653,14 +4702,15 @@ class VsdxWriter {
     'SoftEdgesSize', 'CompoundType',
     'LineGradientEnabled', 'LineGradientDir', 'LineGradientAngle',
     'QuickStyleLineColor', 'LayerMember',
-    'ShadowPattern', 'ShdwPattern', 'ShadowForegnd', 'ShadowOffsetX',
-    'ShadowOffsetY', 'ShadowBlur', 'ShadowForegndTrans',
-    'GlowSize', 'GlowColor', 'GlowColorTrans',
+    'ShadowPattern', 'ShdwPattern', 'ShadowForegnd', 'QuickStyleShadowColor',
+    'ShadowOffsetX', 'ShadowOffsetY', 'ShadowBlur', 'ShadowForegndTrans',
+    'GlowSize', 'GlowColor', 'QuickStyleEffectColor', 'GlowColorTrans',
     'ReflectionSize', 'ReflectionDist', 'ReflectionTransparency',
     'ReflectionBlur',
     'TxtPinX', 'TxtPinY', 'TxtWidth', 'TxtHeight', 'TxtLocPinX', 'TxtLocPinY',
     'TxtAngle', 'VerticalAlign', 'LeftMargin', 'RightMargin', 'TopMargin',
-    'BottomMargin', 'HideText', 'TextBkgnd', 'TextDirection', 'DefaultTabStop',
+    'BottomMargin', 'HideText', 'TextBkgnd', 'TextBkgndTrans', 'TextDirection',
+    'DefaultTabStop',
     'LockMoveX', 'LockMoveY', 'LockWidth', 'LockHeight', 'LockAspect',
     'LockRotate', 'LockDelete', 'LockTextEdit',
     'LockGroup', 'LockCalcWH', 'LockFormat', 'LockBegin', 'LockEnd',

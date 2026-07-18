@@ -488,6 +488,7 @@ class VsdxTextBlock {
     this.marginBottomInches = 0.04,
     this.hideText = false,
     this.backgroundColor,
+    this.backgroundTransparency = 0.0,
     this.textDirection = 0,
     this.defaultTabStopInches = 0.5,
   });
@@ -528,6 +529,10 @@ class VsdxTextBlock {
   /// (Visio palette indices 0 / 255, or a missing cell).
   final VsdxColor? backgroundColor;
 
+  /// `TextBkgndTrans` — 0 = opaque, 1 = invisible (multiplied with the
+  /// colour's own ARGB alpha, same as Fill*/Line*Trans).
+  final double backgroundTransparency;
+
   /// `TextDirection` — 0 = horizontal LTR (libvisio default), 1 = vertical.
   final int textDirection;
 
@@ -552,6 +557,7 @@ class VsdxTextBlock {
     double? marginBottomInches,
     bool? hideText,
     VsdxColor? backgroundColor,
+    double? backgroundTransparency,
     int? textDirection,
     double? defaultTabStopInches,
   }) =>
@@ -570,6 +576,8 @@ class VsdxTextBlock {
         marginBottomInches: marginBottomInches ?? this.marginBottomInches,
         hideText: hideText ?? this.hideText,
         backgroundColor: backgroundColor ?? this.backgroundColor,
+        backgroundTransparency:
+            backgroundTransparency ?? this.backgroundTransparency,
         textDirection: textDirection ?? this.textDirection,
         defaultTabStopInches:
             defaultTabStopInches ?? this.defaultTabStopInches,

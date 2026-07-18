@@ -1560,6 +1560,51 @@ void main() {
     expect(after.richText.runs.first.charStyle.underline, isTrue);
   });
 
+  test('shadow / glow theme QuickStyle slots round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            themeColorIndex: ThemeSlot.accent1,
+            offsetXInches: 0.1,
+            offsetYInches: 0.1,
+          ),
+          glow: const VsdxGlow(
+            themeColorIndex: ThemeSlot.accent2,
+            sizeInches: 0.06,
+          ),
+        ),
+      ),
+    );
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="QuickStyleShadowColor"'), isTrue);
+    expect(pageXml.contains('N="QuickStyleEffectColor"'), isTrue);
+    expect(pageXml.contains('THEMEVAL()'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.shadow.enabled, isTrue);
+    expect(after.shadow.themeColorIndex, ThemeSlot.accent1);
+    expect(after.shadow.color, isNull);
+    expect(after.glow.enabled, isTrue);
+    expect(after.glow.themeColorIndex, ThemeSlot.accent2);
+    expect(after.glow.color, isNull);
+  });
+
   test('HideText / TextBkgnd / Rounding / Glow round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

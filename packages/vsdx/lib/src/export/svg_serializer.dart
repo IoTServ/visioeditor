@@ -13,13 +13,16 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../model/document.dart';
+import '../model/effects.dart';
 import '../model/fill.dart';
 import '../model/geometry.dart';
 import '../model/image.dart';
 import '../model/line.dart';
 import '../model/page.dart';
 import '../model/rich_text.dart';
+import '../model/rounding.dart';
 import '../model/shape.dart';
+import '../model/table.dart';
 import '../model/theme.dart';
 import '../utils/color.dart';
 
@@ -154,6 +157,8 @@ class VsdxToSvgSerializer {
     buf.writeln('$indent<rect x="0" y="0" '
         'width="${_n(w)}" '
         'height="${_n(h)}" fill="$fill"/>');
+    // Arrow markers are emitted per-path so BeginArrowSize / EndArrowSize
+    // can scale markerWidth (shared fixed markers ignored size).
     // Visio→SVG: translate(0, height) then scale(px, -px)
     buf.writeln(
       '$indent<g transform="translate(0 ${_n(h)}) '
@@ -232,33 +237,302 @@ class VsdxToSvgSerializer {
     if (shape.hasImage) {
       _writeImage(buf, shape, indent: '$indent  ');
     } else {
+      var wroteGeom = false;
+      var geomIndex = 0;
       for (final geom in shape.geometries) {
         if (geom.noShow) continue;
-        final d = _geometryToD(geom, shape.width, shape.height);
+        final d = _geometryToD(
+          geom,
+          shape.width,
+          shape.height,
+          roundingInches: shape.line.roundingInches,
+        );
         if (d.isEmpty) continue;
-        final fillAttr = !geom.noFill
-            ? _fillAttr(shape.fill, theme)
-            : 'fill="none"';
-        final strokeAttr = !geom.noLine
-            ? _strokeAttr(shape.line, theme)
-            : 'stroke="none"';
-        buf.writeln(
-          '$indent  <path d="$d" $fillAttr $strokeAttr/>',
+        wroteGeom = true;
+        _writePath(
+          buf,
+          shape,
+          theme,
+          d: d,
+          noFill: geom.noFill,
+          noLine: geom.noLine,
+          paintId: '${shape.id}-$geomIndex',
+          indent: '$indent  ',
+        );
+        geomIndex++;
+      }
+      // Canvas paints geometry-less 1-D connectors via BeginX/Y→EndX/Y;
+      // SVG must do the same or connectors vanish in PDF/SVG export.
+      if (!wroteGeom &&
+          shape.is1D &&
+          shape.beginX != null &&
+          shape.beginY != null &&
+          shape.endX != null &&
+          shape.endY != null) {
+        final a = _pageToLocal(shape, shape.beginX!, shape.beginY!);
+        final b = _pageToLocal(shape, shape.endX!, shape.endY!);
+        final d = 'M ${_n(a.x)} ${_n(a.y)} L ${_n(b.x)} ${_n(b.y)}';
+        _writePath(
+          buf,
+          shape,
+          theme,
+          d: d,
+          noFill: true,
+          noLine: false,
+          paintId: '${shape.id}-0',
+          indent: '$indent  ',
         );
       }
     }
 
-    if (!shape.richText.isEmpty || (shape.text?.isNotEmpty ?? false)) {
+    // Match canvas name-fallback: 2-D shapes with a meaningful (non Sheet.N)
+    // name paint that label when richText/text are empty.
+    final hasLabel = !shape.richText.isEmpty ||
+        (shape.text?.isNotEmpty ?? false) ||
+        _meaningfulNameLabel(shape) != null;
+    if (hasLabel) {
       _writeText(buf, shape, theme, indent: '$indent  ');
     }
 
-    for (final child in shape.children) {
-      _writeShape(buf, child, theme, page, visibleLayers, indent: '$indent  ');
+    // Match canvas: collapsed hosts hide children; covered table cells skip.
+    if (!shape.collapsed) {
+      for (final child in shape.children) {
+        if (TableOps.isCovered(child)) continue;
+        _writeShape(
+            buf, child, theme, page, visibleLayers, indent: '$indent  ');
+      }
     }
     buf.writeln('$indent</g>');
   }
 
-  String _geometryToD(VsdxGeometry g, double w, double h) {
+  void _writePath(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme, {
+    required String d,
+    required bool noFill,
+    required bool noLine,
+    required String paintId,
+    required String indent,
+  }) {
+    final defs = StringBuffer();
+    final fillAttr = !noFill
+        ? _fillAttr(shape.fill, theme, paintId, defs)
+        : 'fill="none"';
+    final strokeAttr = !noLine
+        ? _strokeAttr(shape.line, theme, paintId, defs)
+        : 'stroke="none"';
+    final filterAttr = _effectsFilterAttr(shape, theme, paintId, defs);
+    if (defs.isNotEmpty) {
+      buf.writeln('$indent<defs>$defs</defs>');
+    }
+    _writeReflection(buf, shape, theme, d: d, noFill: noFill, paintId: paintId, indent: indent);
+    // Soft outer glow (canvas strokes a blurred path before fill).
+    final glow = shape.glow;
+    if (glow.enabled && glow.sizeInches > 0) {
+      final gc = _resolveColor(glow.color, glow.themeColorIndex, theme) ??
+          const VsdxColor(0xFF3399FF);
+      final ga = _combinedOpacity(gc, glow.transparency);
+      if (ga > 0) {
+        final gid = 'glow-$paintId';
+        buf.writeln(
+          '$indent<defs><filter id="$gid" x="-50%" y="-50%" '
+          'width="200%" height="200%">'
+          '<feGaussianBlur stdDeviation="${_n(glow.sizeInches)}" '
+          'result="blur"/>'
+          '<feFlood flood-color="${_hex(gc)}" flood-opacity="${_n(ga)}" '
+          'result="color"/>'
+          '<feComposite in="color" in2="blur" operator="in" result="glow"/>'
+          '<feMerge><feMergeNode in="glow"/></feMerge>'
+          '</filter></defs>',
+        );
+        buf.writeln(
+          '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
+          'stroke-width="${_n(math.max(glow.sizeInches * 2, 0.02))}" '
+          'stroke-opacity="${_n(ga)}" filter="url(#$gid)"/>',
+        );
+      }
+    }
+    final filter = filterAttr == null ? '' : ' filter="$filterAttr"';
+    final compound = !noLine && shape.line.compoundType > 0;
+    if (compound) {
+      // Match canvas BlendMode.clear double-rail: mask punches a transparent
+      // gap so fill / page background shows through (not a hard-coded white).
+      final weight =
+          shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+      final gap = weight * 0.38;
+      final mid = 'cmp-$paintId';
+      buf.writeln(
+        '$indent<defs><mask id="$mid" maskUnits="userSpaceOnUse">'
+        '<path d="$d" fill="none" stroke="white" '
+        'stroke-width="${_n(weight)}" stroke-linecap="round" '
+        'stroke-linejoin="round"/>'
+        '<path d="$d" fill="none" stroke="black" '
+        'stroke-width="${_n(gap)}" stroke-linecap="round" '
+        'stroke-linejoin="round"/>'
+        '</mask></defs>',
+      );
+      if (!noFill && fillAttr != 'fill="none"') {
+        buf.writeln('$indent<path d="$d" $fillAttr stroke="none"$filter/>');
+      }
+      buf.writeln(
+        '$indent<path d="$d" fill="none" $strokeAttr '
+        'mask="url(#$mid)"$filter/>',
+      );
+    } else {
+      buf.writeln('$indent<path d="$d" $fillAttr $strokeAttr$filter/>');
+    }
+  }
+
+  void _writeReflection(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme, {
+    required String d,
+    required bool noFill,
+    required String paintId,
+    required String indent,
+  }) {
+    final refl = shape.reflection;
+    if (!refl.enabled || refl.sizeInches <= 0 || noFill) return;
+    if (!shape.fill.hasFill) return;
+    final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
+    if (alpha <= 0) return;
+    // Approximate canvas reflection: mirror below the shape box, clipped by
+    // ReflectionSize, optional blur. Uses shape height as bounds proxy.
+    final h = shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs();
+    final clipH = h * refl.sizeInches.clamp(0.01, 1.0);
+    final dist = refl.distanceInches;
+    final fid = 'refl-$paintId';
+    final cid = 'refl-clip-$paintId';
+    final c = _resolveColor(
+            shape.fill.foreground, shape.fill.themeForegroundIndex, theme) ??
+        const VsdxColor(0xFF888888);
+    final a =
+        _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
+    buf.writeln(
+      '$indent<defs>'
+      '<clipPath id="$cid">'
+      '<rect x="${_n(-shape.width)}" y="${_n(-dist - clipH)}" '
+      'width="${_n(shape.width * 3)}" height="${_n(clipH + refl.blurInches)}"/>'
+      '</clipPath>'
+      '${refl.blurInches > 0 ? '<filter id="$fid" x="-20%" y="-20%" '
+          'width="140%" height="140%">'
+          '<feGaussianBlur stdDeviation="${_n(math.max(refl.blurInches, 0.001))}"/>'
+          '</filter>' : ''}'
+      '</defs>',
+    );
+    final filter = refl.blurInches > 0 ? ' filter="url(#$fid)"' : '';
+    buf.writeln(
+      '$indent<g clip-path="url(#$cid)" '
+      'transform="translate(0 ${_n(-dist)}) scale(1 -1)">'
+      '<path d="$d" fill="${_hex(c)}" fill-opacity="${_n(a)}" '
+      'stroke="none"$filter/>'
+      '</g>',
+    );
+  }
+
+  /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
+  Offset2D _pageToLocal(VsdxShape shape, double pageX, double pageY) {
+    var x = pageX - shape.pinX;
+    var y = pageY - shape.pinY;
+    if (shape.angleRad != 0) {
+      final cosA = math.cos(-shape.angleRad);
+      final sinA = math.sin(-shape.angleRad);
+      final rx = x * cosA - y * sinA;
+      final ry = x * sinA + y * cosA;
+      x = rx;
+      y = ry;
+    }
+    if (shape.flipX) x = -x;
+    if (shape.flipY) y = -y;
+    return Offset2D(x + shape.effectiveLocPinX, y + shape.effectiveLocPinY);
+  }
+
+  String? _effectsFilterAttr(
+    VsdxShape shape,
+    VsdxTheme theme,
+    String paintId,
+    StringBuffer defs,
+  ) {
+    final shadow = shape.shadow;
+    final soft =
+        (!shape.is1D && shape.line.softEdgesInches > 0) ? shape.line.softEdgesInches : 0.0;
+    final shadowOn = shadow.enabled;
+    if (!shadowOn && soft <= 0) return null;
+
+    final id = 'fx-$paintId';
+    final parts = StringBuffer();
+    if (shadowOn) {
+      final base = _resolveColor(shadow.color, shadow.themeColorIndex, theme) ??
+          const VsdxColor(0x99000000);
+      final alpha = _combinedOpacity(base, shadow.transparency);
+      if (alpha > 0) {
+        // User space is Visio Y-up (after the page scale), so +offsetY is up.
+        parts.write(
+          '<feDropShadow dx="${_n(shadow.offsetXInches)}" '
+          'dy="${_n(shadow.offsetYInches)}" '
+          'stdDeviation="${_n(math.max(shadow.blurInches, 0.001))}" '
+          'flood-color="${_hex(base)}" flood-opacity="${_n(alpha)}" '
+          'result="shadow"/>',
+        );
+      }
+    }
+    if (soft > 0) {
+      parts.write(
+        '<feGaussianBlur in="SourceGraphic" '
+        'stdDeviation="${_n(soft)}" result="soft"/>',
+      );
+    }
+    if (parts.isEmpty) return null;
+    // Merge shadow (if any) under the (possibly softened) graphic.
+    if (shadowOn && soft > 0) {
+      parts.write(
+        '<feMerge>'
+        '<feMergeNode in="shadow"/>'
+        '<feMergeNode in="soft"/>'
+        '</feMerge>',
+      );
+    } else if (shadowOn) {
+      parts.write(
+        '<feMerge>'
+        '<feMergeNode in="shadow"/>'
+        '<feMergeNode in="SourceGraphic"/>'
+        '</feMerge>',
+      );
+    }
+    defs.write(
+      '<filter id="$id" x="-50%" y="-50%" width="200%" height="200%">'
+      '$parts</filter>',
+    );
+    return 'url(#$id)';
+  }
+
+  String _geometryToD(
+    VsdxGeometry g,
+    double w,
+    double h, {
+    double roundingInches = 0,
+  }) {
+    if (roundingInches > 1e-12) {
+      final poly = _polylineVertices(g, w, h);
+      if (poly != null && poly.points.length >= 3) {
+        final filleted = filletPolyline(
+          poly.points,
+          roundingInches,
+          closed: poly.closed,
+        );
+        if (filleted.isNotEmpty) {
+          final out = StringBuffer('M ${_n(filleted.first.x)} ${_n(filleted.first.y)} ');
+          for (var i = 1; i < filleted.length; i++) {
+            out.write('L ${_n(filleted[i].x)} ${_n(filleted[i].y)} ');
+          }
+          if (poly.closed) out.write('Z');
+          return out.toString().trim();
+        }
+      }
+    }
+
     final out = StringBuffer();
     double cx = 0, cy = 0;
     var started = false;
@@ -443,20 +717,220 @@ class VsdxToSvgSerializer {
     return out.toString().trim();
   }
 
-  String _fillAttr(VsdxFill fill, VsdxTheme theme) {
-    if (!fill.hasFill) return 'fill="none"';
-    final c = _resolveColor(fill.foreground, fill.themeForegroundIndex, theme);
-    final alpha = (1 - fill.foregroundTransparency).clamp(0.0, 1.0);
-    final hex = c == null ? '#ffffff' : _hex(c);
-    return 'fill="$hex" fill-opacity="${_n(alpha)}"';
+  /// Pure Move/Line polyline vertices, or `null` when curves / multi-contour.
+  ({List<Offset2D> points, bool closed})? _polylineVertices(
+    VsdxGeometry geometry,
+    double w,
+    double h,
+  ) {
+    final pts = <Offset2D>[];
+    var started = false;
+    for (final cmd in geometry.commands) {
+      switch (cmd) {
+        case MoveTo(:final x, :final y):
+          if (started && pts.isNotEmpty) return null;
+          pts
+            ..clear()
+            ..add(Offset2D(x, y));
+          started = true;
+        case RelMoveTo(:final fx, :final fy):
+          if (started && pts.isNotEmpty) return null;
+          pts
+            ..clear()
+            ..add(Offset2D(fx * w, fy * h));
+          started = true;
+        case LineTo(:final x, :final y):
+          if (!started) {
+            pts.add(const Offset2D(0, 0));
+            started = true;
+          }
+          pts.add(Offset2D(x, y));
+        case RelLineTo(:final fx, :final fy):
+          if (!started) {
+            pts.add(const Offset2D(0, 0));
+            started = true;
+          }
+          pts.add(Offset2D(fx * w, fy * h));
+        default:
+          return null;
+      }
+    }
+    if (pts.length < 2) return null;
+    var closed = false;
+    if (pts.length >= 3) {
+      final a = pts.first, b = pts.last;
+      if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) {
+        closed = true;
+        pts.removeLast();
+      }
+    }
+    return (points: pts, closed: closed);
   }
 
-  String _strokeAttr(VsdxLine line, VsdxTheme theme) {
+  String _fillAttr(
+    VsdxFill fill,
+    VsdxTheme theme,
+    String paintId,
+    StringBuffer defs,
+  ) {
+    if (!fill.hasFill) return 'fill="none"';
+
+    if (fill.hasGradient) {
+      final g = fill.gradient!;
+      final id = 'grad-$paintId';
+      final stops = StringBuffer();
+      for (final s in g.stops) {
+        final c = _resolveColor(s.color, s.themeColorIndex, theme) ??
+            const VsdxColor(0xFFFFFFFF);
+        final op = _combinedOpacity(c, s.transparency);
+        stops.write(
+          '<stop offset="${_n(s.position.clamp(0.0, 1.0))}" '
+          'stop-color="${_hex(c)}" stop-opacity="${_n(op)}"/>',
+        );
+      }
+      // Match canvas: linear along angle; radial/rect/path → radial.
+      if (g.type == VsdxGradientType.linear) {
+        final dx = math.cos(g.angleRad);
+        final dy = math.sin(g.angleRad);
+        defs.write(
+          '<linearGradient id="$id" gradientUnits="objectBoundingBox" '
+          'x1="${_n(0.5 - dx * 0.5)}" y1="${_n(0.5 - dy * 0.5)}" '
+          'x2="${_n(0.5 + dx * 0.5)}" y2="${_n(0.5 + dy * 0.5)}">'
+          '$stops</linearGradient>',
+        );
+      } else {
+        defs.write(
+          '<radialGradient id="$id" gradientUnits="objectBoundingBox" '
+          'cx="0.5" cy="0.5" r="0.6">$stops</radialGradient>',
+        );
+      }
+      return 'fill="url(#$id)"';
+    }
+
+    final fg = _resolveColor(fill.foreground, fill.themeForegroundIndex, theme);
+    final fgAlpha = _combinedOpacity(fg, fill.foregroundTransparency);
+    final fgHex = fg == null ? '#ffffff' : _hex(fg);
+
+    if (fill.pattern > 1) {
+      final bg =
+          _resolveColor(fill.background, fill.themeBackgroundIndex, theme);
+      final bgAlpha =
+          bg == null ? 0.0 : _combinedOpacity(bg, fill.backgroundTransparency);
+      final bgHex = bg == null ? '#ffffff' : _hex(bg);
+      final id = 'pat-$paintId';
+      const tile = 0.12;
+      defs.write(
+        '<pattern id="$id" patternUnits="userSpaceOnUse" '
+        'width="${_n(tile)}" height="${_n(tile)}">'
+        '<rect width="${_n(tile)}" height="${_n(tile)}" '
+        'fill="$bgHex" fill-opacity="${_n(bgAlpha)}"/>'
+        '${_hatchPath(fill.pattern, tile, color: fgHex, opacity: fgAlpha)}'
+        '</pattern>',
+      );
+      return 'fill="url(#$id)"';
+    }
+
+    return 'fill="$fgHex" fill-opacity="${_n(fgAlpha)}"';
+  }
+
+  /// SVG hatch tile approximating Visio FillPattern 2–16 (matches canvas
+  /// [PatternFillBuilder] coverage).
+  String _hatchPath(
+    int pattern,
+    double tile, {
+    String color = '#000000',
+    double opacity = 1,
+  }) {
+    final sw = tile * 0.08;
+    final common =
+        'stroke="$color" stroke-opacity="${_n(opacity)}" stroke-width="${_n(sw)}" '
+        'fill="none"';
+    final fillDot =
+        'fill="$color" fill-opacity="${_n(opacity)}" stroke="none"';
+    final t = _n(tile);
+    final h = _n(tile / 2);
+    final q = _n(tile / 4);
+    final t34 = _n(tile * 0.75);
+    return switch (pattern) {
+      2 => '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>',
+      3 => '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
+      5 => '<line x1="0" y1="0" x2="$t" y2="$t" $common/>',
+      6 => '<line x1="0" y1="$t" x2="$t" y2="0" $common/>'
+          '<line x1="0" y1="0" x2="$t" y2="$t" $common/>',
+      7 => '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
+          '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
+      8 => // dots
+        '<circle cx="$q" cy="$q" r="${_n(tile * 0.08)}" $fillDot/>'
+        '<circle cx="$t34" cy="$t34" r="${_n(tile * 0.08)}" $fillDot/>',
+      9 => // dense dots
+        () {
+          final b = StringBuffer();
+          for (var y = tile * 0.15; y < tile; y += tile * 0.25) {
+            for (var x = tile * 0.15; x < tile; x += tile * 0.25) {
+              b.write(
+                '<circle cx="${_n(x)}" cy="${_n(y)}" '
+                'r="${_n(tile * 0.05)}" $fillDot/>',
+              );
+            }
+          }
+          return b.toString();
+        }(),
+      10 => // brick
+        '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
+        '<line x1="$h" y1="0" x2="$h" y2="$h" $common/>'
+        '<line x1="0" y1="$h" x2="0" y2="$t" $common/>',
+      11 => // shingles
+        '<line x1="0" y1="0" x2="$h" y2="$h" $common/>'
+        '<line x1="$h" y1="$h" x2="$t" y2="0" $common/>'
+        '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>',
+      12 => // wide diagonal forward
+        '<line x1="0" y1="$t" x2="$t" y2="0" $common/>'
+        '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.75)}" '
+        'x2="${_n(tile * 0.75)}" y2="${_n(-tile * 0.25)}" $common/>',
+      13 => // wide diagonal back
+        '<line x1="0" y1="0" x2="$t" y2="$t" $common/>'
+        '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.25)}" '
+        'x2="${_n(tile * 0.75)}" y2="${_n(tile * 1.25)}" $common/>',
+      14 => // grid
+        () {
+          final b = StringBuffer();
+          for (var i = 0.0; i <= tile + 1e-9; i += tile / 4) {
+            final v = _n(i);
+            b.write('<line x1="$v" y1="0" x2="$v" y2="$t" $common/>');
+            b.write('<line x1="0" y1="$v" x2="$t" y2="$v" $common/>');
+          }
+          return b.toString();
+        }(),
+      15 => // wave horizontal
+        '<path d="M 0 $h Q $q ${_n(tile * 0.25)} $h $h '
+        'Q $t34 ${_n(tile * 0.75)} $t $h" $common/>',
+      16 => // trellis
+        '<line x1="0" y1="0" x2="$t" y2="$t" $common/>'
+        '<line x1="$t" y1="0" x2="0" y2="$t" $common/>'
+        '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
+        '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
+      _ => // 4 and unknowns: forward diagonal
+        '<line x1="0" y1="$t" x2="$t" y2="0" $common/>',
+    };
+  }
+
+  String _strokeAttr(
+    VsdxLine line,
+    VsdxTheme theme,
+    String paintId,
+    StringBuffer defs,
+  ) {
     if (!line.hasLine) return 'stroke="none"';
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
-    final alpha = (1 - line.transparency).clamp(0.0, 1.0);
+    final alpha = _combinedOpacity(c, line.transparency);
     final hex = c == null ? '#000000' : _hex(c);
     final dash = _dashAttr(line.pattern);
+    // Match canvas [_flutterCap]: Visio LineCap → SVG stroke-linecap.
+    final linecap = switch (line.cap) {
+      LineCap.round => 'round',
+      LineCap.square => 'square',
+      LineCap.extended => 'butt',
+    };
     // NB: no `fill` here — the caller always emits a `fill` attribute (a colour
     // or `fill="none"`) alongside this, so repeating it would produce an
     // invalid element with a duplicate `fill` attribute.
@@ -467,9 +941,118 @@ class VsdxToSvgSerializer {
     // here: that would treat 0.01 as viewport pixels, collapsing stroke-only
     // shapes (connectors) to an invisible hairline.
     final weight = line.weightInches > 0 ? line.weightInches : 0.01;
-    return 'stroke="$hex" stroke-opacity="${_n(alpha)}" '
-        'stroke-width="${_n(weight)}" '
-        '${dash.isEmpty ? '' : 'stroke-dasharray="$dash"'}';
+    // Visio Rounding fillets corners; when we cannot rewrite the path, round
+    // joins approximate the soft elbow look (canvas uses filletPolyline).
+    final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
+    final markers = StringBuffer();
+    if (line.hasBeginArrow) {
+      final mid = 'arrow-start-$paintId';
+      final mw = _arrowMarkerSize(line.beginArrowSizeInches);
+      final body = _arrowMarkerBody(line.beginArrow, tipAtEnd: false);
+      defs.write(
+        '<marker id="$mid" viewBox="0 0 10 10" refX="0" refY="5" '
+        'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" orient="auto">'
+        '$body</marker>',
+      );
+      markers.write(' marker-start="url(#$mid)"');
+    }
+    if (line.hasEndArrow) {
+      final mid = 'arrow-end-$paintId';
+      final mw = _arrowMarkerSize(line.endArrowSizeInches);
+      final body = _arrowMarkerBody(line.endArrow, tipAtEnd: true);
+      defs.write(
+        '<marker id="$mid" viewBox="0 0 10 10" refX="10" refY="5" '
+        'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" '
+        'orient="auto-start-reverse">'
+        '$body</marker>',
+      );
+      markers.write(' marker-end="url(#$mid)"');
+    }
+    // Keep LineColorTrans as stroke-opacity even for gradients (canvas multiplies
+    // line.transparency onto the stroke paint before applying the shader).
+    var strokePaint = 'stroke="$hex" stroke-opacity="${_n(alpha)}"';
+    if (line.hasGradient) {
+      final g = line.gradient!;
+      final id = 'lg-$paintId';
+      final stops = StringBuffer();
+      for (final s in g.stops) {
+        final sc = _resolveColor(s.color, s.themeColorIndex, theme) ??
+            const VsdxColor(0xFF000000);
+        final op = _combinedOpacity(sc, s.transparency);
+        stops.write(
+          '<stop offset="${_n(s.position.clamp(0.0, 1.0))}" '
+          'stop-color="${_hex(sc)}" stop-opacity="${_n(op)}"/>',
+        );
+      }
+      final dx = math.cos(g.angleRad);
+      final dy = math.sin(g.angleRad);
+      defs.write(
+        '<linearGradient id="$id" gradientUnits="objectBoundingBox" '
+        'x1="${_n(0.5 - dx * 0.5)}" y1="${_n(0.5 - dy * 0.5)}" '
+        'x2="${_n(0.5 + dx * 0.5)}" y2="${_n(0.5 + dy * 0.5)}">'
+        '$stops</linearGradient>',
+      );
+      strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
+    }
+    return '$strokePaint '
+        'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
+        'stroke-linejoin="$linejoin"'
+        '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}'
+        '$markers';
+  }
+
+  /// SVG marker path for common Visio BeginArrow/EndArrow ids (subset of
+  /// canvas [arrow_library]). Tip points to the end (right) when [tipAtEnd].
+  String _arrowMarkerBody(int arrowId, {required bool tipAtEnd}) {
+    // Work in tip-at-right space, then mirror for start markers.
+    final (d, filled) = switch (arrowId) {
+      1 || 3 || 6 || 26 => ('M 0 1 L 10 5 L 0 9', false), // open triangle
+      10 || 34 => (
+          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
+          true,
+        ), // filled circle
+      14 => (
+          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
+          false,
+        ), // open circle
+      11 => ('M 1 5 L 5 1 L 9 5 L 5 9 Z', false), // open diamond
+      15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
+      16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
+      7 || 8 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth
+      _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
+    };
+    final pathD = tipAtEnd ? d : _mirrorArrowD(d);
+    if (filled) {
+      return '<path d="$pathD" fill="context-stroke" stroke="none"/>';
+    }
+    return '<path d="$pathD" fill="none" stroke="context-stroke" '
+        'stroke-width="1.2" stroke-linejoin="round"/>';
+  }
+
+  /// Rough mirror of simple marker paths about x=5 (for start arrows).
+  String _mirrorArrowD(String d) {
+    // Dedicated mirrors for the small set of templates above.
+    return switch (d) {
+      'M 0 1 L 10 5 L 0 9' => 'M 10 1 L 0 5 L 10 9',
+      'M 0 1 L 10 5 L 0 9 Z' => 'M 10 1 L 0 5 L 10 9 Z',
+      'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
+      'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
+      'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
+      _ => d, // circles are symmetric
+    };
+  }
+
+  /// Visio arrow size (inches) → SVG markerWidth; 0.125" maps to 6 (legacy).
+  double _arrowMarkerSize(double sizeInches) {
+    final s = sizeInches <= 0 ? 0.125 : sizeInches;
+    return (s / 0.125 * 6.0).clamp(3.0, 18.0);
+  }
+
+  /// Combine Visio `*Trans` (0..1) with the colour's own ARGB alpha
+  /// (libvisio / `#RRGGBBAA` colours carry opacity in the colour cell).
+  double _combinedOpacity(VsdxColor? c, double transparency) {
+    final colourA = c == null ? 1.0 : c.alpha / 255.0;
+    return (colourA * (1 - transparency)).clamp(0.0, 1.0);
   }
 
   String _dashAttr(int linePattern) {
@@ -512,6 +1095,16 @@ class VsdxToSvgSerializer {
     );
   }
 
+  static final RegExp _autoShapeName = RegExp(r'^Sheet\.\d+$');
+
+  /// Meaningful 2-D shape name used as a label when text/richText are empty
+  /// (matches canvas [_paintRichText] name fallback).
+  String? _meaningfulNameLabel(VsdxShape shape) {
+    if (shape.is1D) return null;
+    if (shape.name.isEmpty || _autoShapeName.hasMatch(shape.name)) return null;
+    return shape.name;
+  }
+
   void _writeText(
     StringBuffer buf,
     VsdxShape shape,
@@ -521,63 +1114,240 @@ class VsdxToSvgSerializer {
     final block = shape.richText.textBlock;
     // Match libvisio: HideText suppresses the label entirely.
     if (block.hideText) return;
-    // The text block is pinned by its local pin (TxtLocPin); its centre — where
-    // we anchor the middle-aligned label — is pin - locPin + size/2.
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
+    final pinX = block.pinXInches ?? shape.width / 2;
+    final pinY = block.pinYInches ?? shape.height / 2;
     final lpx = block.locPinXInches ?? tw / 2;
     final lpy = block.locPinYInches ?? th / 2;
-    final cx = (block.pinXInches ?? shape.width / 2) - lpx + tw / 2;
-    final cy = (block.pinYInches ?? shape.height / 2) - lpy + th / 2;
-    // libvisio emits fo:background-color when TextBkgnd is filled.
+    final ml = block.marginLeftInches;
+    final mr = block.marginRightInches;
+    final mt = block.marginTopInches;
+    final mb = block.marginBottomInches;
+
+    final fallback =
+        shape.text?.isNotEmpty == true ? shape.text! : _meaningfulNameLabel(shape);
+    final runs = shape.richText.runs.isNotEmpty
+        ? shape.richText.runs
+        : <VsdxTextRun>[VsdxTextRun(text: fallback ?? '')];
+    if (runs.every((r) => r.text.isEmpty) && (fallback == null || fallback.isEmpty)) {
+      return;
+    }
+
+    // Match canvas: rotate about TxtPin, then offset by −TxtLocPin so the
+    // block's lower-left is the local origin (not the text centroid).
+    final xf = StringBuffer(
+      'translate(${_n(pinX)} ${_n(pinY)})',
+    );
+    if (block.angleRad != 0) {
+      xf.write(' rotate(${_n(block.angleRad * 180 / math.pi)})');
+    }
+    xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
+
+    // TextBkgnd in block-local coords (lower-left origin, Y-up).
     if (block.backgroundColor != null) {
-      final left = cx - tw / 2;
-      final bottom = cy - th / 2;
+      final bgOp = _combinedOpacity(
+        block.backgroundColor,
+        block.backgroundTransparency,
+      );
       buf.writeln(
-        '$indent<rect x="${_n(left)}" y="${_n(bottom)}" '
-        'width="${_n(tw)}" height="${_n(th)}" '
-        'fill="${_hex(block.backgroundColor!)}" stroke="none"/>',
+        '$indent<g transform="$xf">'
+        '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
+        'fill="${_hex(block.backgroundColor!)}" '
+        'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
       );
     }
-    final run = shape.richText.runs.isNotEmpty
-        ? shape.richText.runs.first
-        : VsdxTextRun(text: shape.text ?? shape.name);
-    final color =
-        _resolveColor(run.charStyle.color, run.charStyle.themeColorIndex, theme) ??
-            const VsdxColor(0xFF222222);
-    final fs = math.max(run.charStyle.fontSizeInches, 0.04);
-    final fontFamily = run.charStyle.fontFamily ?? 'sans-serif';
-    final weight = run.charStyle.style.bold ? 'bold' : 'normal';
-    final italic = run.charStyle.style.italic ? 'italic' : 'normal';
-    final raw = shape.richText.isEmpty
-        ? (shape.text ?? shape.name)
-        : shape.richText.plainText;
-    // SVG <text> ignores literal newlines, so lay out each line as its own
-    // <tspan>, vertically centred about the text pin (matches Visio/the app).
-    final lines = raw.split('\n');
-    final lineHeight = fs * 1.2;
-    final firstDy = -(lines.length - 1) / 2 * lineHeight;
-    // Honour Paragraph HorzAlign (canvas + PDF must agree). Older SVG always
-    // used middle, which made left-aligned labels look centred in PDF export.
-    final align = run.paraStyle.horizontalAlign;
-    final (anchor, tx) = switch (align) {
-      VsdxHorzAlign.left || VsdxHorzAlign.justify => ('start', cx - tw / 2),
-      VsdxHorzAlign.right => ('end', cx + tw / 2),
-      VsdxHorzAlign.center => ('middle', cx),
-    };
-    final tspans = StringBuffer();
-    for (var i = 0; i < lines.length; i++) {
-      tspans.write('<tspan x="0" y="${_n(firstDy + i * lineHeight)}">'
-          '${_esc(lines[i])}</tspan>');
+
+    // Split into paragraphs (Visio `\n` / `<pp>`). Each keeps its own
+    // HorzAlign / Ind* / Sp* / Bullet* (canvas [_paintParagraphBlock]).
+    final paras = _splitSvgParagraphs(runs);
+    final layouts = <({
+      VsdxParaStyle style,
+      List<(String text, VsdxTextRun run)> segs,
+      double lineH,
+      double yTop,
+    })>[];
+    var cursor = 0.0;
+    for (final p in paras) {
+      cursor += p.style.spaceBeforeInches;
+      final lineH = _svgParaLineHeight(p.segs, p.style);
+      layouts.add((style: p.style, segs: p.segs, lineH: lineH, yTop: cursor));
+      cursor += lineH + p.style.spaceAfterInches;
     }
-    // Flip Y for the text so glyphs read upright.
-    buf.writeln(
-      '$indent<g transform="translate(${_n(tx)} ${_n(cy)}) scale(1 -1)">'
-      '<text text-anchor="$anchor" dominant-baseline="middle" '
-      'font-family="${_esc(fontFamily)}" font-size="${_n(fs)}" '
+    final textH = math.max(cursor, 0.04);
+    final yCenter = switch (block.verticalAlign) {
+      VsdxVertAlign.top => th - mt - textH / 2,
+      VsdxVertAlign.bottom => mb + textH / 2,
+      VsdxVertAlign.middle => th / 2,
+    };
+
+    // Text glyphs: block-local → upright (scale 1,-1). One <text> per
+    // paragraph so HorzAlign / indent can differ across lines.
+    final textXf = StringBuffer('$xf');
+    textXf.write(' translate(0 ${_n(yCenter)})');
+    if (block.textDirection == 1) {
+      textXf.write(' rotate(-90)');
+    }
+    textXf.write(' scale(1 -1)');
+    buf.writeln('$indent<g transform="$textXf">');
+    for (final layout in layouts) {
+      final style = layout.style;
+      final indentL = style.indentLeftInches;
+      final indentF = style.indentFirstInches;
+      final hasBullet = style.bullet != 0;
+      final bulletGap = hasBullet
+          ? math.max(style.textPosAfterBulletInches, layout.lineH * 0.6)
+          : 0.0;
+      final (anchor, xBody) = switch (style.horizontalAlign) {
+        VsdxHorzAlign.left || VsdxHorzAlign.justify => (
+            'start',
+            ml + indentL + indentF + bulletGap,
+          ),
+        VsdxHorzAlign.right => ('end', tw - mr - style.indentRightInches),
+        VsdxHorzAlign.center => ('middle', tw / 2),
+      };
+      // y relative to cluster centre (Y-down after scale).
+      final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
+      final body = StringBuffer();
+      if (hasBullet && style.horizontalAlign != VsdxHorzAlign.center) {
+        final glyph = _svgBulletGlyph(style);
+        final bFs = style.bulletFontSizeInches != null &&
+                style.bulletFontSizeInches! > 0
+            ? style.bulletFontSizeInches!
+            : layout.lineH / 1.2;
+        final bx = ml + indentL + indentF;
+        body.write(
+          '<tspan x="${_n(bx)}" text-anchor="start" '
+          'font-size="${_n(bFs)}" '
+          '${style.bulletFont != null ? 'font-family="${_esc(style.bulletFont!)}" ' : ''}'
+          'fill="#222222">${_esc(glyph)}</tspan>',
+        );
+      }
+      for (var si = 0; si < layout.segs.length; si++) {
+        final (raw, run) = layout.segs[si];
+        final text = _applyTextCase(raw, run.charStyle.textCase);
+        final attrs = _charStyleSvgAttrs(run.charStyle, theme);
+        if (si == 0) {
+          body.write(
+            '<tspan x="${_n(xBody)}" $attrs>${_esc(text)}</tspan>',
+          );
+        } else {
+          body.write('<tspan $attrs>${_esc(text)}</tspan>');
+        }
+      }
+      buf.writeln(
+        '$indent  <text text-anchor="$anchor" dominant-baseline="middle" '
+        'y="${_n(yRel)}">$body</text>',
+      );
+    }
+    buf.writeln('$indent</g>');
+  }
+
+  List<({VsdxParaStyle style, List<(String text, VsdxTextRun run)> segs})>
+      _splitSvgParagraphs(List<VsdxTextRun> runs) {
+    final out =
+        <({VsdxParaStyle style, List<(String text, VsdxTextRun run)> segs})>[];
+    var segs = <(String, VsdxTextRun)>[];
+    var style = VsdxParaStyle.defaults;
+    void flush() {
+      out.add((style: style, segs: segs));
+      segs = <(String, VsdxTextRun)>[];
+    }
+
+    for (final run in runs) {
+      final parts = run.text.split('\n');
+      for (var i = 0; i < parts.length; i++) {
+        if (i > 0) flush();
+        style = run.paraStyle;
+        segs.add((parts[i], run));
+      }
+    }
+    if (segs.isNotEmpty || out.isEmpty) flush();
+    return out;
+  }
+
+  double _svgParaLineHeight(
+    List<(String, VsdxTextRun)> segs,
+    VsdxParaStyle style,
+  ) {
+    var fs = 0.04;
+    for (final (_, run) in segs) {
+      fs = math.max(fs, run.charStyle.fontSizeInches);
+    }
+    if (style.lineSpacingAbsoluteInches > 1e-9) {
+      return math.max(style.lineSpacingAbsoluteInches, fs);
+    }
+    final mult = style.lineSpacingSolid ? 1.0 : style.lineSpacing;
+    return fs * 1.2 * (mult <= 0 ? 1.0 : mult);
+  }
+
+  String _svgBulletGlyph(VsdxParaStyle style) {
+    final custom = style.bulletStr;
+    if (custom != null && custom.isNotEmpty) return custom;
+    return switch (style.bullet) {
+      2 => '○',
+      3 => '■',
+      4 => '□',
+      5 => '◆',
+      6 => '–',
+      7 => '✓',
+      _ => '•',
+    };
+  }
+
+  String _applyTextCase(String text, VsdxTextCase c) => switch (c) {
+        VsdxTextCase.allCaps => text.toUpperCase(),
+        VsdxTextCase.initialCaps => text.isEmpty
+            ? text
+            : '${text[0].toUpperCase()}${text.substring(1)}',
+        VsdxTextCase.normal => text,
+      };
+
+  String _charStyleSvgAttrs(VsdxCharStyle c, VsdxTheme theme) {
+    final color = _resolveColor(c.color, c.themeColorIndex, theme) ??
+        const VsdxColor(0xFF222222);
+    final op = _combinedOpacity(color, c.transparency);
+    var fs = math.max(c.fontSizeInches, 0.04);
+    // FontScale is a width scale in Visio; approximate with font-size * scale
+    // when ≠ 1 (SVG lacks a direct scaleX on tspan without a nested transform).
+    if ((c.fontScale - 1.0).abs() > 1e-6) {
+      fs *= c.fontScale.clamp(0.1, 4.0);
+    }
+    switch (c.position) {
+      case VsdxTextPosition.superscript:
+      case VsdxTextPosition.subscript:
+        fs *= 0.7;
+      case VsdxTextPosition.normal:
+        break;
+    }
+    final family = c.fontFamily ?? 'sans-serif';
+    final weight = c.style.bold ? 'bold' : 'normal';
+    final italic = c.style.italic ? 'italic' : 'normal';
+    final deco = <String>[
+      if (c.underline || c.doubleUnderline) 'underline',
+      if (c.strikethrough || c.doubleStrikethrough) 'line-through',
+      if (c.overline) 'overline',
+    ];
+    final attrs = StringBuffer(
+      'font-family="${_esc(family)}" font-size="${_n(fs)}" '
       'font-weight="$weight" font-style="$italic" '
-      'fill="${_hex(color)}">$tspans</text></g>',
+      'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
+    if (deco.isNotEmpty) {
+      attrs.write(' text-decoration="${deco.join(' ')}"');
+    }
+    if (c.letterSpacingInches.abs() > 1e-9) {
+      attrs.write(' letter-spacing="${_n(c.letterSpacingInches)}"');
+    }
+    switch (c.position) {
+      case VsdxTextPosition.superscript:
+        attrs.write(' baseline-shift="super"');
+      case VsdxTextPosition.subscript:
+        attrs.write(' baseline-shift="sub"');
+      case VsdxTextPosition.normal:
+        break;
+    }
+    return attrs.toString();
   }
 
   VsdxColor? _resolveColor(VsdxColor? raw, int? themeIdx, VsdxTheme theme) {

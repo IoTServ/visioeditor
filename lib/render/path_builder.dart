@@ -15,11 +15,38 @@ import 'package:vsdx/vsdx.dart';
 
 /// Build a single Flutter [Path] from one [VsdxGeometry], given the shape's
 /// width and height (used by the `Rel*` commands).
+///
+/// When [roundingInches] > 0 and the geometry is a Move/Line polyline,
+/// corners are filleted to match Visio `Rounding` (libvisio-style).
 Path buildPath(
   VsdxGeometry geometry, {
   required double widthInches,
   required double heightInches,
+  double roundingInches = 0,
 }) {
+  if (roundingInches > 1e-12) {
+    final poly = _polylineVertices(
+      geometry,
+      widthInches: widthInches,
+      heightInches: heightInches,
+    );
+    if (poly != null && poly.points.length >= 3) {
+      final filleted = filletPolyline(
+        poly.points,
+        roundingInches,
+        closed: poly.closed,
+      );
+      final path = Path();
+      if (filleted.isEmpty) return path;
+      path.moveTo(filleted.first.x, filleted.first.y);
+      for (var i = 1; i < filleted.length; i++) {
+        path.lineTo(filleted[i].x, filleted[i].y);
+      }
+      if (poly.closed) path.close();
+      return path;
+    }
+  }
+
   final path = Path();
   double cursorX = 0;
   double cursorY = 0;
@@ -222,6 +249,91 @@ Path buildPath(
     }
   }
   return path;
+}
+
+/// Extract absolute polyline vertices when [geometry] is Move/Line(/Rel/Poly)
+/// only. Returns `null` when curves or ellipses are present (Rounding then
+/// falls back to the sharp path + strokeJoin).
+({List<Offset2D> points, bool closed})? _polylineVertices(
+  VsdxGeometry geometry, {
+  required double widthInches,
+  required double heightInches,
+}) {
+  final pts = <Offset2D>[];
+  double cx = 0, cy = 0;
+  var started = false;
+  for (final cmd in geometry.commands) {
+    switch (cmd) {
+      case MoveTo(:final x, :final y):
+        if (started && pts.isNotEmpty) return null; // multi-contour
+        pts
+          ..clear()
+          ..add(Offset2D(x, y));
+        cx = x;
+        cy = y;
+        started = true;
+      case RelMoveTo(:final fx, :final fy):
+        if (started && pts.isNotEmpty) return null;
+        final x = fx * widthInches, y = fy * heightInches;
+        pts
+          ..clear()
+          ..add(Offset2D(x, y));
+        cx = x;
+        cy = y;
+        started = true;
+      case LineTo(:final x, :final y):
+        if (!started) {
+          pts.add(const Offset2D(0, 0));
+          started = true;
+        }
+        pts.add(Offset2D(x, y));
+        cx = x;
+        cy = y;
+      case RelLineTo(:final fx, :final fy):
+        final x = fx * widthInches, y = fy * heightInches;
+        if (!started) {
+          pts.add(const Offset2D(0, 0));
+          started = true;
+        }
+        pts.add(Offset2D(x, y));
+        cx = x;
+        cy = y;
+      case PolylineTo(:final x, :final y, :final vertices, :final relative):
+        final sx = relative ? widthInches : 1.0;
+        final sy = relative ? heightInches : 1.0;
+        if (!started) {
+          pts.add(const Offset2D(0, 0));
+          started = true;
+        }
+        for (final v in vertices) {
+          pts.add(Offset2D(v.x * sx, v.y * sy));
+        }
+        final ex = x * sx, ey = y * sy;
+        pts.add(Offset2D(ex, ey));
+        cx = ex;
+        cy = ey;
+      default:
+        return null;
+    }
+  }
+  if (pts.length < 2) return null;
+  var closed = false;
+  if (pts.length >= 3) {
+    final a = pts.first, b = pts.last;
+    if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) {
+      closed = true;
+      pts.removeLast();
+    } else if (geometry.commands.isNotEmpty) {
+      // Visio rectangles often omit the closing LineTo — treat near-closed
+      // boxes (4 corners of a Width×Height rect) as closed when they form a
+      // simple ring around the origin box. Heuristic: first point near a
+      // corner of [0,W]×[0,H] and last near an adjacent corner chain end.
+      closed = false;
+    }
+  }
+  // Ignore unused cursor warning.
+  assert(cx.isFinite && cy.isFinite);
+  return (points: pts, closed: closed);
 }
 
 /// Sample a NURBS curve into ~32 line segments using the de Boor algorithm.

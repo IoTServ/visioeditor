@@ -355,8 +355,9 @@ class VsdxPainter extends CustomPainter {
         geom,
         widthInches: shape.width,
         heightInches: shape.height,
+        roundingInches: shape.line.roundingInches,
       );
-      _drawShadow(canvas, shape, path);
+      _drawShadow(canvas, shape, path, geom: geom);
       _drawGlow(canvas, shape, path);
       _drawReflection(canvas, shape, path);
       // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
@@ -478,8 +479,22 @@ class VsdxPainter extends CustomPainter {
         path.lineTo(local.dx, local.dy);
       }
     }
+    // Match [_paintGeometries]: LineGradient + CompoundType on connectors
+    // that only carry BeginX/EndX (no Geometry section).
+    if (shape.line.hasGradient) {
+      final shader =
+          _buildGradientShader(shape.line.gradient!, path.getBounds());
+      if (shader != null) stroke.shader = shader;
+    }
     final dashes = dashPatternFor(shape.line.pattern);
-    canvas.drawPath(dashes == null ? path : dashedPath(path, dashes), stroke);
+    final strokeP = dashes == null ? path : dashedPath(path, dashes);
+    _drawCompoundStroke(
+      canvas,
+      strokeP,
+      stroke,
+      shape.line.compoundType,
+      shape.line.weightInches,
+    );
   }
 
   /// Inverse of the XForm we apply in [_paintShape], i.e. map a page-inch
@@ -516,19 +531,23 @@ class VsdxPainter extends CustomPainter {
       }
     }
     if (fill.pattern > 1) {
-      final fg = _colourOrTheme(
+      final fgRaw = _colourOrTheme(
               fill.foreground, fill.themeForegroundIndex) ??
           fallbackFill;
+      final fgT = fill.foregroundTransparency.clamp(0.0, 1.0);
+      final fg = fgRaw.withValues(alpha: fgRaw.a * (1.0 - fgT));
       final hatch = patternBuilder.paintFor(
         fill.pattern,
         foreground: fg,
       );
       if (hatch != null) {
         // Draw background colour first (the hatch tiles are mostly
-        // transparent) — Visio's bkgnd cell fills the gaps.
-        final bg = _colourOrTheme(
+        // transparent) — Visio's FillBkgnd / FillBkgndTrans fill the gaps.
+        final bgRaw = _colourOrTheme(
             fill.background, fill.themeBackgroundIndex);
-        if (bg != null) {
+        if (bgRaw != null) {
+          final bgT = fill.backgroundTransparency.clamp(0.0, 1.0);
+          final bg = bgRaw.withValues(alpha: bgRaw.a * (1.0 - bgT));
           canvas.drawPath(path, Paint()..color = bg);
         }
         canvas.drawPath(path, hatch);
@@ -651,19 +670,38 @@ class VsdxPainter extends CustomPainter {
     );
   }
 
-  void _drawShadow(Canvas canvas, VsdxShape shape, Path path) {
+  void _drawShadow(
+    Canvas canvas,
+    VsdxShape shape,
+    Path path, {
+    VsdxGeometry? geom,
+  }) {
     final shadow = shape.shadow;
     if (!shadow.enabled) return;
     final base = _colourOrTheme(shadow.color, shadow.themeColorIndex) ??
         const Color(0x99000000);
     final alpha = (1 - shadow.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
+    // Connectors / line-only geometry: stroke the shadow (Visio ShadowPattern
+    // on open paths). Filled shapes keep a filled drop shadow.
+    final lineOnly = shape.is1D ||
+        (geom?.noFill ?? false) ||
+        !shape.fill.hasFill;
     final paint = Paint()
       ..color = base.withValues(alpha: base.a * alpha)
       ..maskFilter = MaskFilter.blur(
         BlurStyle.normal,
         math.max(shadow.blurInches, 0.001),
-      );
+      )
+      ..style = lineOnly ? PaintingStyle.stroke : PaintingStyle.fill;
+    if (lineOnly) {
+      paint
+        ..strokeWidth = math.max(shape.line.weightInches, 0.01)
+        ..strokeCap = _flutterCap(shape)
+        ..strokeJoin = shape.line.roundingInches > 0
+            ? StrokeJoin.round
+            : StrokeJoin.miter;
+    }
     canvas.save();
     // Visio Y increases up; we're already in inverted Y when this runs.
     canvas.translate(shadow.offsetXInches, -shadow.offsetYInches);
@@ -927,7 +965,10 @@ class VsdxPainter extends CustomPainter {
       ..color = out
       ..style = PaintingStyle.stroke
       ..strokeWidth = math.max(shape.line.weightInches, 1 / pxPerInch)
-      ..strokeCap = _flutterCap(shape);
+      ..strokeCap = _flutterCap(shape)
+      ..strokeJoin = shape.line.roundingInches > 0
+          ? StrokeJoin.round
+          : StrokeJoin.miter;
   }
 
   Color? _colourOrTheme(VsdxColor? raw, int? themeIndex) {
@@ -1217,20 +1258,36 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
     // TextBkgnd — solid fill behind the text block (libvisio fo:background-color).
     if (block.backgroundColor != null) {
+      final bg = Color(block.backgroundColor!.value);
+      final t = block.backgroundTransparency.clamp(0.0, 1.0);
       canvas.drawRect(
         Rect.fromLTWH(0, 0, tw, th),
-        Paint()..color = Color(block.backgroundColor!.value),
+        Paint()..color = bg.withValues(alpha: bg.a * (1.0 - t)),
       );
     }
     canvas.translate(0, th); // to the block's upper-left corner (Y still up)
     canvas.scale(1 / s, -1 / s); // → pixel space, Y-down upright text frame
 
-    final twPx = tw * s;
-    final thPx = th * s;
-    final mlPx = block.marginLeftInches * s;
-    final mrPx = block.marginRightInches * s;
-    final mtPx = block.marginTopInches * s;
-    final mbPx = block.marginBottomInches * s;
+    var twPx = tw * s;
+    var thPx = th * s;
+    var mlPx = block.marginLeftInches * s;
+    var mrPx = block.marginRightInches * s;
+    var mtPx = block.marginTopInches * s;
+    var mbPx = block.marginBottomInches * s;
+    // TextDirection=1 (libvisio vertical): rotate so lines flow top→bottom.
+    if (block.textDirection == 1) {
+      canvas.translate(twPx / 2, thPx / 2);
+      canvas.rotate(-math.pi / 2);
+      canvas.translate(-thPx / 2, -twPx / 2);
+      final swapW = twPx;
+      twPx = thPx;
+      thPx = swapW;
+      final oldMl = mlPx, oldMr = mrPx, oldMt = mtPx, oldMb = mbPx;
+      mlPx = oldMt;
+      mrPx = oldMb;
+      mtPx = oldMr;
+      mbPx = oldMl;
+    }
     final maxW = math.max(0.0, twPx - mlPx - mrPx);
 
     // Curved Text: place glyphs along a quadratic arc inside the text block.

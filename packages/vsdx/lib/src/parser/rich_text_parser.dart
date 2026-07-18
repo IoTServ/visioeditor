@@ -464,6 +464,9 @@ class RichTextParser {
           readLengthInches(shape, 'BottomMargin') ?? inherit.marginBottomInches,
       hideText: hideInt == null ? inherit.hideText : hideInt != 0,
       backgroundColor: _readTextBkgnd(shape) ?? inherit.backgroundColor,
+      backgroundTransparency:
+          (_cellDouble(shape, 'TextBkgndTrans') ?? inherit.backgroundTransparency)
+              .clamp(0.0, 1.0),
       textDirection: _cellInt(shape, 'TextDirection') ?? inherit.textDirection,
       defaultTabStopInches: readLengthInches(shape, 'DefaultTabStop') ??
           inherit.defaultTabStopInches,
