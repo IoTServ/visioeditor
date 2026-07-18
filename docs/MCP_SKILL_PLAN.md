@@ -406,7 +406,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       FK（行内 REFERENCES + 表级/CONSTRAINT FOREIGN KEY），每表一框（列 + PK/FK 标记）+ 外键边；
       单测 `sql_import_test` 4 例。
 - [x] 导入器：**`import-code`**（代码依赖图）—— `lib/src/agent/code_import.dart`，
-      CLI `import-code` + MCP `import_code`；支持 **Dart / Python / JS-TS**（自动侦测语言），
+      CLI `import-code` + MCP `import_code`；支持 **Dart / Python / JS-TS / Go**（自动侦测语言；
+      Go 为包级图，经 `go.mod` 模块前缀识别项目内包依赖），
       扫描项目、提取 import/from/require/export-from、解析为**仅项目内**模块依赖边
       （Dart `package:`→lib/、Python 相对导入 + `__init__` 包、JS 相对 + `index` 解析），
       每模块一框 + 依赖边；单测 `code_import_test` 7 例（提取器 + 三语言临时目录集成）。
@@ -419,7 +420,7 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       边 + 具名 volumes 圆柱）与 **Kubernetes**（多文档 YAML，按 kind 着色/选形；Service→workload
       标签选择器、Ingress→Service backend、workload→ConfigMap/Secret/PVC 卷与 envFrom 边）；
       单测 `iac_import_test` 3 例。
-- [ ] 导入器：Go/Rust 依赖图、Terraform（HCL）后续。
+- [ ] 导入器：Rust 依赖图、Terraform（HCL）后续。
 - [x] **L3 协同编辑**：应用桥 `applyOps` 改为经 `EditorController.applyEdit(next)` 提交——
       Agent 编辑成为**单步可撤销**、**保留用户 undo 历史与选中**（复用既有 `applyOps` 引擎逻辑，
       含 `rerouteConnectors`）；不落盘、即时重绘。桥测试新增 L3 撤销用例（共 8 例）。
@@ -625,4 +626,7 @@ visioeditor/
 - 2026-07-18 — **打磨（list_shapes 形状发现）**：`inspect.listShapes` 结构化列举（id/text/连接器/坐标）；
   MCP `list_shapes`（双模式：文件解析 / 桥 `listShapes`）+ 应用桥新增 `listShapes` 方法。工具总数 **23**。
   `mcp_server_test`+1、`agent_bridge_test`+1。`dart test` **545**、`flutter test` **556** 全绿。
-  仍待：Go/Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案（需补 37 语言表）。
+- 2026-07-18 — **M5 续（import-code 增 Go）**：`code_import.dart` 增 Go 包级依赖图
+  （`go.mod` 模块前缀→项目内包，包=目录，单/块 import + 别名），CLI `--lang go` + MCP enum 加 `go`；
+  `code_import_test` +2（Go 提取器 + go.mod 临时工程）。`dart test` **547**、`flutter test` 556 全绿。
+  仍待：Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案。

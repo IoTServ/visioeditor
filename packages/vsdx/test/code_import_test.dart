@@ -42,6 +42,24 @@ import './side-effect';
 ''', 'js');
       expect(imps, containsAll(<String>['react', './a', './b', '../c', './side-effect']));
     });
+
+    test('go single + block imports (with alias)', () {
+      final imps = extractImports('''
+package main
+import (
+  "fmt"
+  m "example.com/x/y"
+  _ "example.com/x/z"
+)
+import "solo/pkg"
+''', 'go');
+      expect(imps, containsAll(<String>[
+        'fmt',
+        'example.com/x/y',
+        'example.com/x/z',
+        'solo/pkg',
+      ]));
+    });
   });
 
   group('codeToSpec (temp project)', () {
@@ -90,6 +108,21 @@ import './side-effect';
       expect(edge('src/index', 'src/a'), isTrue);
       expect(edge('src/index', 'src/dir/index'), isTrue); // ./dir → dir/index
       expect(spec.edges.every((e) => !e.to.contains('react')), isTrue);
+    });
+
+    test('go: package nodes + intra-module edges via go.mod', () {
+      write('go.mod', 'module example.com/proj\n\ngo 1.21\n');
+      write('main.go', 'package main\nimport (\n  "fmt"\n  "example.com/proj/pkg/foo"\n)\nvar _ = fmt.Println');
+      write('pkg/foo/foo.go', 'package foo\nimport "example.com/proj/pkg/bar"');
+      write('pkg/bar/bar.go', 'package bar');
+      final spec = codeToSpec(tmp.path, language: 'go');
+      final ids = spec.nodes.map((n) => n.id).toSet();
+      expect(ids, containsAll(<String>['pkg:.', 'pkg:pkg/foo', 'pkg:pkg/bar']));
+      bool edge(String a, String b) => spec.edges.any((e) => e.from == a && e.to == b);
+      expect(edge('pkg:.', 'pkg:pkg/foo'), isTrue);
+      expect(edge('pkg:pkg/foo', 'pkg:pkg/bar'), isTrue);
+      // stdlib "fmt" produced no edge.
+      expect(spec.edges.every((e) => !e.to.contains('fmt')), isTrue);
     });
 
     test('builds a valid round-trip .vsdx and auto-detects language', () {

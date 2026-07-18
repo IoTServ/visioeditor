@@ -17,12 +17,14 @@ import 'diagram_spec.dart';
 const _skipDirs = <String>{
   '.git', 'node_modules', 'build', '.dart_tool', '.pub-cache', 'dist',
   '__pycache__', '.venv', 'venv', '.idea', '.vscode', 'coverage', '.next',
+  'vendor', 'target',
 };
 
 const _langExts = <String, List<String>>{
   'dart': <String>['.dart'],
   'python': <String>['.py'],
   'js': <String>['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'],
+  'go': <String>['.go'],
 };
 
 /// Build an import-graph [DiagramSpec] for the project at [root].
@@ -31,6 +33,7 @@ const _langExts = <String, List<String>>{
 /// [maxFiles] source files are included.
 DiagramSpec codeToSpec(String root, {String? language, int maxFiles = 300}) {
   final lang = language ?? _detectLanguage(root);
+  if (lang == 'go') return _goToSpec(root, maxFiles);
   final exts = _langExts[lang] ?? const <String>['.dart'];
   final files = _scan(root, exts, maxFiles);
 
@@ -95,6 +98,93 @@ DiagramSpec codeToSpec(String root, {String? language, int maxFiles = 300}) {
 List<int> codeToVsdx(String root, {String? language, int maxFiles = 300}) =>
     codeToSpec(root, language: language, maxFiles: maxFiles).build();
 
+// --- Go (package-based) ----------------------------------------------------
+
+/// Go is package-based: a package is a directory. Nodes are packages; edges are
+/// intra-module imports resolved via the `go.mod` module path.
+DiagramSpec _goToSpec(String root, int maxFiles) {
+  final module = _goModulePath(root);
+  final files = _scan(root, const <String>['.go'], maxFiles)
+      .where((f) => !f.endsWith('_test.go'))
+      .toList();
+
+  final pkgDirs = <String>{};
+  final filesByPkg = <String, List<String>>{};
+  for (final f in files) {
+    final dir = p.posix.dirname(_rel(root, f));
+    final pkg = dir.isEmpty ? '.' : dir;
+    pkgDirs.add(pkg);
+    filesByPkg.putIfAbsent(pkg, () => <String>[]).add(f);
+  }
+
+  final nodes = <NodeSpec>[
+    for (final pkg in pkgDirs.toList()..sort())
+      NodeSpec(
+        id: 'pkg:$pkg',
+        stencil: 'rounded',
+        text: pkg == '.'
+            ? (module.isEmpty ? 'main' : p.posix.basename(module))
+            : p.posix.basename(pkg),
+        fill: '#DAE8FC',
+        line: '#6C8EBF',
+      ),
+  ];
+
+  final edges = <EdgeSpec>[];
+  final seen = <String>{};
+  if (module.isNotEmpty) {
+    for (final entry in filesByPkg.entries) {
+      final srcPkg = entry.key;
+      for (final f in entry.value) {
+        String content;
+        try {
+          content = File(f).readAsStringSync();
+        } catch (_) {
+          continue;
+        }
+        for (final imp in extractImports(content, 'go')) {
+          final target = _goResolve(imp, module);
+          if (target == null || target == srcPkg || !pkgDirs.contains(target)) {
+            continue;
+          }
+          if (seen.add('$srcPkg\u0000$target')) {
+            edges.add(EdgeSpec(from: 'pkg:$srcPkg', to: 'pkg:$target', arrow: true));
+          }
+        }
+      }
+    }
+  }
+
+  return DiagramSpec(
+    title: 'Go packages '
+        '(${module.isEmpty ? p.basename(p.normalize(root)) : p.posix.basename(module)})',
+    direction: 'LR',
+    spacing: 0.7,
+    nodes: nodes,
+    edges: edges,
+  );
+}
+
+String _goModulePath(String root) {
+  final f = File(p.join(root, 'go.mod'));
+  if (!f.existsSync()) return '';
+  for (final line in f.readAsLinesSync()) {
+    final m = RegExp(r'^\s*module\s+(\S+)').firstMatch(line);
+    if (m != null) return m.group(1)!;
+  }
+  return '';
+}
+
+/// Resolve a Go import path to a project package dir (posix), or `null` for an
+/// external / stdlib import.
+String? _goResolve(String importPath, String module) {
+  if (importPath == module) return '.';
+  final prefix = '$module/';
+  if (!importPath.startsWith(prefix)) return null;
+  final sub = importPath.substring(prefix.length);
+  return sub.isEmpty ? '.' : sub;
+}
+
 // --- import extraction (testable, pure) ------------------------------------
 
 final _dartImportRe =
@@ -112,6 +202,19 @@ final _jsRequireRe = RegExp(r'''require\(\s*['"]([^'"]+)['"]\s*\)''');
 List<String> extractImports(String content, String language) {
   final out = <String>[];
   switch (language) {
+    case 'go':
+      // import ( "a" \n alias "b" )
+      for (final m in RegExp(r'import\s*\(([^)]*)\)', dotAll: true).allMatches(content)) {
+        for (final q in RegExp('"([^"]+)"').allMatches(m.group(1)!)) {
+          out.add(q.group(1)!);
+        }
+      }
+      // import "single"  (optional alias/dot/underscore)
+      for (final m in RegExp(r'^\s*import\s+(?:[A-Za-z0-9_.]+\s+)?"([^"]+)"',
+              multiLine: true)
+          .allMatches(content)) {
+        out.add(m.group(1)!);
+      }
     case 'python':
       for (final m in _pyImportRe.allMatches(content)) {
         out.add(m.group(1)!);
