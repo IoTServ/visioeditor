@@ -414,7 +414,12 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       CLI `import-openapi` + MCP `import_openapi`；操作按 HTTP 方法着色、schema 节点、`$ref` 引用边
       （operation→schema、schema→schema），支持 `components/schemas` 与 Swagger `definitions`；
       单测 `openapi_import_test` 3 例（YAML/JSON + 往返）。新增 `yaml` 依赖。
-- [ ] 导入器：Go/Rust 依赖图、IaC（Terraform/K8s/compose）后续。
+- [x] 导入器：**`import-iac`**（IaC → 架构图）—— `lib/src/agent/iac_import.dart`，
+      CLI `import-iac` + MCP `import_iac`；自动侦测 **docker-compose**（services + depends_on/links
+      边 + 具名 volumes 圆柱）与 **Kubernetes**（多文档 YAML，按 kind 着色/选形；Service→workload
+      标签选择器、Ingress→Service backend、workload→ConfigMap/Secret/PVC 卷与 envFrom 边）；
+      单测 `iac_import_test` 3 例。
+- [ ] 导入器：Go/Rust 依赖图、Terraform（HCL）后续。
 - [x] **L3 协同编辑**：应用桥 `applyOps` 改为经 `EditorController.applyEdit(next)` 提交——
       Agent 编辑成为**单步可撤销**、**保留用户 undo 历史与选中**（复用既有 `applyOps` 引擎逻辑，
       含 `rerouteConnectors`）；不落盘、即时重绘。桥测试新增 L3 撤销用例（共 8 例）。
@@ -436,8 +441,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       Cloud Storage 建图校验干净。应用 `flutter test` 555 无回归（下沉透明）。
 
 **M5 导入/导出矩阵（现状）**：入 = Diagram Spec · Edit Ops · Mermaid · SQL DDL ·
-Code（Dart/Py/JS-TS）· OpenAPI/Swagger（JSON/YAML）；出 = `.vsdx` · SVG · Mermaid ·
-Markdown（explain）· PNG（应用 snapshot）。
+Code（Dart/Py/JS-TS）· OpenAPI/Swagger（JSON/YAML）· IaC（docker-compose / Kubernetes）；
+出 = `.vsdx` · SVG · Mermaid · Markdown（explain）· PNG（应用 snapshot）。
 **形状词汇**：全量 ~600 图形（core + 全部专业库）经 `resolveStencilShape` 对 Agent 可用。
 
 ### M6 —— 打磨  `LATER`
@@ -609,4 +614,9 @@ visioeditor/
 - 2026-07-18 — **M5 续（import-openapi）**：新增 `lib/src/agent/openapi_import.dart`
   （OpenAPI 3 / Swagger 2，JSON+YAML → API 图：操作按方法着色 + schema 节点 + `$ref` 边），
   CLI `import-openapi` + MCP `import_openapi`，新增 `yaml` 依赖；单测 `openapi_import_test` 3 例。
-  `dart test` **537**、`flutter test` 555 全绿。仍待：Go/Rust 依赖图、IaC、发布二进制/`npx`、l10n。
+  `dart test` **537**、`flutter test` 555 全绿。
+- 2026-07-18 — **M5 续（import-iac / IaC 架构图）**：新增 `lib/src/agent/iac_import.dart`
+  （docker-compose + Kubernetes 自动侦测；compose 服务/依赖/具名卷；k8s 按 kind 着色 +
+  Service 选择器/Ingress backend/workload→CM·Secret·PVC 边），CLI `import-iac` + MCP `import_iac`；
+  单测 `iac_import_test` 3 例。`dart test` **540**、`flutter test` 555 全绿。
+  仍待：Go/Rust 依赖图、Terraform、发布二进制/`npx`、l10n 菜单文案。

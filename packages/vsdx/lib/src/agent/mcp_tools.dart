@@ -19,6 +19,7 @@ import 'bridge_client.dart';
 import 'code_import.dart';
 import 'diagram_spec.dart';
 import 'edit_ops.dart';
+import 'iac_import.dart';
 import 'inspect.dart';
 import 'mcp_server.dart';
 import 'mermaid_export.dart';
@@ -189,6 +190,46 @@ void _registerFileTools(McpServer server) {
       final out = StringBuffer()
         ..writeln('Imported ${_abs(path)}')
         ..writeln('${spec.nodes.length} modules, ${spec.edges.length} imports')
+        ..writeln(_validationSummary(bytes));
+      if (args['open'] == true) {
+        try {
+          final client = await BridgeClient.connect();
+          await client.call('open', <String, dynamic>{'path': _abs(path)});
+          await client.close();
+          out.writeln('Opened in the running editor (live preview).');
+        } catch (e) {
+          out.writeln('Note: could not open in app ($e).');
+        }
+      }
+      return <McpContent>[McpContent.text(out.toString().trimRight())];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'import_iac',
+    description: 'Convert docker-compose or Kubernetes YAML to an architecture '
+        'diagram .vsdx (auto-detected; services/workloads + dependency edges, '
+        'volumes/PVCs, Service/Ingress links). Set open=true to open it.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'yaml': <String, dynamic>{
+          'type': 'string',
+          'description': 'docker-compose or Kubernetes YAML source.',
+        },
+        'path': <String, dynamic>{'type': 'string'},
+        'open': <String, dynamic>{'type': 'boolean'},
+      },
+      'required': <String>['yaml', 'path'],
+    },
+    handler: (args) async {
+      final spec = iacToSpec('${args['yaml']}');
+      final bytes = spec.build();
+      final path = args['path'] as String;
+      File(path).writeAsBytesSync(bytes);
+      final out = StringBuffer()
+        ..writeln('Imported ${_abs(path)}')
+        ..writeln('${spec.nodes.length} resources, ${spec.edges.length} links')
         ..writeln(_validationSummary(bytes));
       if (args['open'] == true) {
         try {

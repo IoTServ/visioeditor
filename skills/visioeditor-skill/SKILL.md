@@ -134,6 +134,10 @@ spec:
   `VSDXTOOL import-openapi -i openapi.yaml -o api.vsdx`
   (MCP: `import_openapi({ spec, path, open })`). Operations coloured by HTTP
   method + schema boxes + `$ref` edges.
+- **IaC** (docker-compose / Kubernetes YAML) → architecture diagram:
+  `VSDXTOOL import-iac -i docker-compose.yml -o infra.vsdx`
+  (MCP: `import_iac({ yaml, path, open })`). Auto-detected: compose services +
+  `depends_on`/volumes; k8s resources by kind + Service/Ingress/volume edges.
 
 Both produce a normal `.vsdx` you can then refine with Edit Ops and preview
 live. (Code / IaC / OpenAPI importers are planned — see `docs/MCP_SKILL_PLAN.md`.)
