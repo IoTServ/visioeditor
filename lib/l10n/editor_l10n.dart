@@ -144,6 +144,11 @@ class EditorL10n {
   String get toolText => _t('toolText');
   String get moreShapes => _t('moreShapes');
   String get searchShapes => _t('searchShapes');
+  String get imageMaterials => _t('imageMaterials');
+  String get searchImages => _t('searchImages');
+  String get thirdPartyIcons => _t('thirdPartyIcons');
+  String get searchIcons => _t('searchIcons');
+  String get iconLicenseHint => _t('iconLicenseHint');
   String categoriesCount(int n) =>
       _t('categoriesCount').replaceAll('{n}', '$n');
   String get expandAll => _t('expandAll');
@@ -343,6 +348,25 @@ class EditorL10n {
     if (query.isEmpty) return true;
     if (englishName.toLowerCase().contains(query)) return true;
     return stencil(englishName).toLowerCase().contains(query);
+  }
+
+  /// Localized image-material group name; falls back to English [name].
+  String imageMaterialGroup(String name) {
+    final key = 'ig_$name';
+    return kEditorL10nTables[locale.languageCode]?[key] ?? _en[key] ?? name;
+  }
+
+  /// Localized image-material name; falls back to English [name].
+  String imageMaterial(String name) {
+    final key = 'im_${_stencilKey(name)}';
+    return kEditorL10nTables[locale.languageCode]?[key] ?? _en[key] ?? name;
+  }
+
+  /// True if [englishName] or its translation matches [query] (lowercase).
+  bool imageMaterialMatches(String englishName, String query) {
+    if (query.isEmpty) return true;
+    if (englishName.toLowerCase().contains(query)) return true;
+    return imageMaterial(englishName).toLowerCase().contains(query);
   }
 
   static String _stencilKey(String name) =>

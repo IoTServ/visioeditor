@@ -16,7 +16,9 @@ import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_workspace.dart';
+import 'editor/image_materials.dart';
 import 'editor/layers_panel.dart';
+import 'editor/third_party_icons.dart';
 import 'editor/outline_panel.dart';
 import 'editor/page_canvas.dart';
 import 'editor/ruler.dart';
@@ -123,6 +125,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _showStencils = false;
   /// Once the user toggles the shapes sidebar, stop re-seeding from width.
   bool _stencilsUserAdjusted = false;
+  bool _showImageMaterials = false;
+  bool _showThirdPartyIcons = false;
   bool _showFind = false;
   bool _findShowReplace = false;
   bool _showOutline = false;
@@ -267,11 +271,114 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  void _closeLibrarySidebars({bool keepStencils = false}) {
+    if (!keepStencils) _showStencils = false;
+    _showImageMaterials = false;
+    _showThirdPartyIcons = false;
+  }
+
   void _toggleStencils() {
     setState(() {
       _stencilsUserAdjusted = true;
-      _showStencils = !_showStencils;
+      final open = !_showStencils;
+      _closeLibrarySidebars(keepStencils: true);
+      _showStencils = open;
     });
+  }
+
+  void _toggleImageMaterials() {
+    setState(() {
+      final open = !_showImageMaterials;
+      _closeLibrarySidebars();
+      if (open) {
+        _stencilsUserAdjusted = true;
+        _showImageMaterials = true;
+      }
+    });
+  }
+
+  void _toggleThirdPartyIcons() {
+    setState(() {
+      final open = !_showThirdPartyIcons;
+      _closeLibrarySidebars();
+      if (open) {
+        _stencilsUserAdjusted = true;
+        _showThirdPartyIcons = true;
+      }
+    });
+  }
+
+  /// Insert a built-in clipart asset as a picture shape (capped size).
+  Future<void> _insertImageMaterial(
+    ImageMaterial material, {
+    Offset? pagePt,
+  }) async {
+    final c = _c;
+    if (c == null || !c.hasDocument) return;
+    try {
+      final data = await rootBundle.load(material.assetPath);
+      final bytes = data.buffer.asUint8List();
+      if (bytes.isEmpty) return;
+      var size = await _imageSizeInches(bytes);
+      size = _clampImageMaterialSize(size.$1, size.$2);
+      if (!mounted) return;
+      c.insertImage(
+        bytes,
+        fileExtension: material.fileExtension,
+        widthInches: size.$1,
+        heightInches: size.$2,
+        cx: pagePt?.dx,
+        cy: pagePt?.dy,
+      );
+      _snack(EditorL10n.of(context).insertedNamed(
+        EditorL10n.of(context).imageMaterial(material.name),
+      ));
+    } catch (_) {
+      if (mounted) {
+        _snack(EditorL10n.of(context).insertImageFailed);
+      }
+    }
+  }
+
+  /// Keep material inserts small even if a future asset is larger than 64×64.
+  (double, double) _clampImageMaterialSize(double? w, double? h) {
+    var width = w ?? kImageMaterialMaxInches;
+    var height = h ?? kImageMaterialMaxInches;
+    if (width <= 0) width = kImageMaterialMaxInches;
+    if (height <= 0) height = kImageMaterialMaxInches;
+    final maxEdge = math.max(width, height);
+    if (maxEdge > kImageMaterialMaxInches) {
+      final s = kImageMaterialMaxInches / maxEdge;
+      width *= s;
+      height *= s;
+    }
+    return (width, height);
+  }
+
+  /// Rasterise a third-party [IconData] and insert it as a picture shape.
+  Future<void> _insertThirdPartyIcon(
+    ThirdPartyIcon entry, {
+    Offset? pagePt,
+  }) async {
+    final c = _c;
+    if (c == null || !c.hasDocument) return;
+    try {
+      final bytes = await rasterizeThirdPartyIcon(entry.icon);
+      if (bytes.isEmpty || !mounted) return;
+      c.insertImage(
+        bytes,
+        fileExtension: 'png',
+        widthInches: kThirdPartyIconMaxInches,
+        heightInches: kThirdPartyIconMaxInches,
+        cx: pagePt?.dx,
+        cy: pagePt?.dy,
+      );
+      _snack(EditorL10n.of(context).insertedNamed(entry.name));
+    } catch (_) {
+      if (mounted) {
+        _snack(EditorL10n.of(context).insertImageFailed);
+      }
+    }
   }
 
   /// Handle calls pushed from the native side (currently only `openFiles`).
@@ -892,7 +999,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 key: const ValueKey<String>('stencil-panel'),
                 workspace: _workspace,
               )
-            : null,
+            : _showImageMaterials
+                ? _ImageMaterialsPanel(
+                    key: const ValueKey<String>('image-materials-panel'),
+                    onInsert: _insertImageMaterial,
+                  )
+                : _showThirdPartyIcons
+                    ? _ThirdPartyIconsPanel(
+                        key: const ValueKey<String>('third-party-icons-panel'),
+                        onInsert: _insertThirdPartyIcon,
+                      )
+                    : null,
         builder: (context, stencilChild) {
           final cur = _workspace.active;
           final l10n = AppLocalizations.of(context);
@@ -1307,6 +1424,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
             controller: c,
             showStencils: _showStencils,
             onToggleStencils: _toggleStencils,
+            showImageMaterials: _showImageMaterials,
+            onToggleImageMaterials: _toggleImageMaterials,
+            showThirdPartyIcons: _showThirdPartyIcons,
+            onToggleThirdPartyIcons: _toggleThirdPartyIcons,
           ),
           const VerticalDivider(width: 1),
           // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
@@ -1334,6 +1455,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       : const Color(0xFFECEFF3),
                   presentationMode: _presentationMode,
                   onExitPresentation: _exitPresentation,
+                  onImageMaterialDropped: _insertImageMaterial,
+                  onThirdPartyIconDropped: _insertThirdPartyIcon,
                 ),
               ),
               if (!_presentationMode && _showRulers)
@@ -1629,11 +1752,19 @@ class _ToolStrip extends StatelessWidget {
     required this.controller,
     required this.showStencils,
     required this.onToggleStencils,
+    required this.showImageMaterials,
+    required this.onToggleImageMaterials,
+    required this.showThirdPartyIcons,
+    required this.onToggleThirdPartyIcons,
   });
 
   final EditorController controller;
   final bool showStencils;
   final VoidCallback onToggleStencils;
+  final bool showImageMaterials;
+  final VoidCallback onToggleImageMaterials;
+  final bool showThirdPartyIcons;
+  final VoidCallback onToggleThirdPartyIcons;
 
   @override
   Widget build(BuildContext context) {
@@ -1649,6 +1780,27 @@ class _ToolStrip extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: IconButton(
             onPressed: () => controller.setTool(t),
+            icon: Icon(icon),
+            tooltip: tip,
+            color: active ? cs.onPrimaryContainer : null,
+          ),
+        ),
+      );
+    }
+
+    Widget libraryToggle({
+      required bool active,
+      required VoidCallback onPressed,
+      required IconData icon,
+      required String tip,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        child: Material(
+          color: active ? cs.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: IconButton(
+            onPressed: onPressed,
             icon: Icon(icon),
             tooltip: tip,
             color: active ? cs.onPrimaryContainer : null,
@@ -1675,19 +1827,23 @@ class _ToolStrip extends StatelessWidget {
             const Divider(height: 1, indent: 10, endIndent: 10),
             // Unified shapes entry: the "more shapes" library toggle lives with
             // the drawing tools (drawio keeps the shapes sidebar on the left).
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
-              child: Material(
-                color:
-                    showStencils ? cs.primaryContainer : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-                child: IconButton(
-                  onPressed: onToggleStencils,
-                  icon: const Icon(Icons.category_outlined),
-                  tooltip: el.moreShapes,
-                  color: showStencils ? cs.onPrimaryContainer : null,
-                ),
-              ),
+            libraryToggle(
+              active: showStencils,
+              onPressed: onToggleStencils,
+              icon: Icons.category_outlined,
+              tip: el.moreShapes,
+            ),
+            libraryToggle(
+              active: showImageMaterials,
+              onPressed: onToggleImageMaterials,
+              icon: Icons.collections_outlined,
+              tip: el.imageMaterials,
+            ),
+            libraryToggle(
+              active: showThirdPartyIcons,
+              onPressed: onToggleThirdPartyIcons,
+              icon: Icons.auto_awesome_mosaic_outlined,
+              tip: el.thirdPartyIcons,
             ),
           ],
         ),
@@ -1974,6 +2130,460 @@ class _StencilPanelState extends State<_StencilPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 3),
             child: Text(
               s.name,
+              style: const TextStyle(fontSize: 8.5),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Left-hand image-materials palette: search + grouped clipart thumbnails.
+/// Click inserts at the page centre; drag drops at the cursor.
+class _ImageMaterialsPanel extends StatefulWidget {
+  const _ImageMaterialsPanel({
+    super.key,
+    required this.onInsert,
+  });
+
+  final Future<void> Function(ImageMaterial material, {Offset? pagePt}) onInsert;
+
+  @override
+  State<_ImageMaterialsPanel> createState() => _ImageMaterialsPanelState();
+}
+
+class _ImageMaterialsPanelState extends State<_ImageMaterialsPanel> {
+  final ScrollController _scroll = ScrollController();
+  String _query = '';
+  final Set<String> _collapsed = <String>{};
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _toggleGroup(String name) => setState(() {
+        if (!_collapsed.remove(name)) _collapsed.add(name);
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
+    final q = _query.trim().toLowerCase();
+    final searching = q.isNotEmpty;
+    final groups = <({ImageMaterialGroup group, List<ImageMaterial> matches})>[];
+    for (final group in kImageMaterialGroups) {
+      final matches = searching
+          ? group.items
+              .where((m) => el.imageMaterialMatches(m.name, q))
+              .toList()
+          : group.items;
+      if (matches.isEmpty) continue;
+      groups.add((group: group, matches: matches));
+    }
+    return SizedBox(
+      width: 184,
+      child: ColoredBox(
+        color: scheme.surface,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: TextField(
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: el.searchImages,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                style: const TextStyle(fontSize: 13),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 8, 4),
+              child: Text(
+                el.categoriesCount(kImageMaterialGroups.length),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            Expanded(
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  primary: false,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final entry in groups)
+                        _buildGroup(
+                          scheme,
+                          entry.group,
+                          entry.matches,
+                          searching,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroup(
+    ColorScheme scheme,
+    ImageMaterialGroup group,
+    List<ImageMaterial> matches,
+    bool searching,
+  ) {
+    final collapsed = !searching && _collapsed.contains(group.name);
+    final text = Theme.of(context).textTheme;
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: searching ? null : () => _toggleGroup(group.name),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
+            child: Row(
+              children: [
+                Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 16),
+                const SizedBox(width: 2),
+                Flexible(
+                  child: Text(
+                    el.imageMaterialGroup(group.name),
+                    style: text.labelLarge,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${matches.length}',
+                  style: text.labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (!collapsed)
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final m in matches) _draggableTile(scheme, m),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _draggableTile(ColorScheme scheme, ImageMaterial m) {
+    final el = EditorL10n.of(context);
+    return Tooltip(
+      message: el.imageMaterial(m.name),
+      child: Draggable<ImageMaterial>(
+        data: m,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(opacity: 0.85, child: _tile(scheme, m, elevated: true)),
+        ),
+        childWhenDragging: Opacity(opacity: 0.4, child: _tile(scheme, m)),
+        child: InkWell(
+          onTap: () => widget.onInsert(m),
+          borderRadius: BorderRadius.circular(8),
+          child: _tile(scheme, m),
+        ),
+      ),
+    );
+  }
+
+  Widget _tile(ColorScheme scheme, ImageMaterial m, {bool elevated = false}) {
+    final el = EditorL10n.of(context);
+    return Container(
+      width: 72,
+      height: 62,
+      decoration: BoxDecoration(
+        color: elevated
+            ? scheme.surfaceContainerHighest
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 36,
+            height: 32,
+            child: Image.asset(
+              m.assetPath,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Text(
+              el.imageMaterial(m.name),
+              style: const TextStyle(fontSize: 8.5),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Left-hand third-party icon palette: search + provider groups.
+/// Click inserts at the page centre; drag drops at the cursor.
+class _ThirdPartyIconsPanel extends StatefulWidget {
+  const _ThirdPartyIconsPanel({
+    super.key,
+    required this.onInsert,
+  });
+
+  final Future<void> Function(ThirdPartyIcon icon, {Offset? pagePt}) onInsert;
+
+  @override
+  State<_ThirdPartyIconsPanel> createState() => _ThirdPartyIconsPanelState();
+}
+
+class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
+  final ScrollController _scroll = ScrollController();
+  String _query = '';
+  final Set<String> _collapsed = <String>{};
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _toggleGroup(String id) => setState(() {
+        if (!_collapsed.remove(id)) _collapsed.add(id);
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
+    final q = _query.trim().toLowerCase();
+    final searching = q.isNotEmpty;
+    final groups =
+        <({ThirdPartyIconProvider provider, List<ThirdPartyIcon> matches})>[];
+    for (final provider in kThirdPartyIconProviders) {
+      final matches = searching
+          ? provider.icons
+              .where((i) => thirdPartyIconMatches(i, q))
+              .toList()
+          : provider.icons;
+      if (matches.isEmpty) continue;
+      groups.add((provider: provider, matches: matches));
+    }
+    return SizedBox(
+      width: 184,
+      child: ColoredBox(
+        color: scheme.surface,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: TextField(
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: el.searchIcons,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                style: const TextStyle(fontSize: 13),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 8, 2),
+              child: Text(
+                el.categoriesCount(kThirdPartyIconProviders.length),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 8, 4),
+              child: Text(
+                el.iconLicenseHint,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+              ),
+            ),
+            Expanded(
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  primary: false,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final entry in groups)
+                        _buildGroup(
+                          scheme,
+                          entry.provider,
+                          entry.matches,
+                          searching,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroup(
+    ColorScheme scheme,
+    ThirdPartyIconProvider provider,
+    List<ThirdPartyIcon> matches,
+    bool searching,
+  ) {
+    final collapsed = !searching && _collapsed.contains(provider.id);
+    final text = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: searching ? null : () => _toggleGroup(provider.id),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
+            child: Row(
+              children: [
+                Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 16),
+                const SizedBox(width: 2),
+                Flexible(
+                  child: Text(
+                    provider.name,
+                    style: text.labelLarge,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  provider.license,
+                  style: text.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 9,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${matches.length}',
+                  style: text.labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (!collapsed)
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final icon in matches) _draggableTile(scheme, icon),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _draggableTile(ColorScheme scheme, ThirdPartyIcon entry) {
+    return Tooltip(
+      message: '${entry.name} · ${entry.id}',
+      child: Draggable<ThirdPartyIcon>(
+        data: entry,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(
+            opacity: 0.85,
+            child: _tile(scheme, entry, elevated: true),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: 0.4, child: _tile(scheme, entry)),
+        child: InkWell(
+          onTap: () => widget.onInsert(entry),
+          borderRadius: BorderRadius.circular(8),
+          child: _tile(scheme, entry),
+        ),
+      ),
+    );
+  }
+
+  Widget _tile(ColorScheme scheme, ThirdPartyIcon entry,
+      {bool elevated = false}) {
+    return Container(
+      width: 72,
+      height: 62,
+      decoration: BoxDecoration(
+        color: elevated
+            ? scheme.surfaceContainerHighest
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(entry.icon, size: 28, color: scheme.onSurfaceVariant),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Text(
+              entry.name,
               style: const TextStyle(fontSize: 8.5),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

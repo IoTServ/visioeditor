@@ -15,9 +15,11 @@ import 'canvas_camera.dart';
 import 'edit_data_dialog.dart';
 import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
+import 'image_materials.dart';
 import '../l10n/editor_l10n.dart';
 import 'snap_guides.dart';
 import 'stencils.dart';
+import 'third_party_icons.dart';
 
 /// Interactive editing canvas for the controller's current page.
 ///
@@ -37,6 +39,8 @@ class PageCanvas extends StatefulWidget {
     this.pageColor = Colors.white,
     this.presentationMode = false,
     this.onExitPresentation,
+    this.onImageMaterialDropped,
+    this.onThirdPartyIconDropped,
   });
 
   final EditorController controller;
@@ -58,6 +62,14 @@ class PageCanvas extends StatefulWidget {
   /// Called when the user presses Escape in [presentationMode] (after any
   /// in-progress drag / connection-point edit is cancelled).
   final VoidCallback? onExitPresentation;
+
+  /// Insert a built-in image material at the drop point (page inches).
+  final Future<void> Function(ImageMaterial material, {Offset? pagePt})?
+      onImageMaterialDropped;
+
+  /// Insert a third-party icon at the drop point (page inches).
+  final Future<void> Function(ThirdPartyIcon icon, {Offset? pagePt})?
+      onThirdPartyIconDropped;
 
   @override
   State<PageCanvas> createState() => _PageCanvasState();
@@ -465,6 +477,26 @@ class _PageCanvasState extends State<PageCanvas> {
     if (box == null) return;
     final p = _pageInchesAt(box.globalToLocal(details.offset));
     _c.addShapeFromBuilderAt(details.data.build, p.dx, p.dy);
+  }
+
+  /// A clipart tile dropped from the image-materials palette.
+  void _onImageMaterialDropped(DragTargetDetails<ImageMaterial> details) {
+    final handler = widget.onImageMaterialDropped;
+    if (handler == null) return;
+    final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final p = _pageInchesAt(box.globalToLocal(details.offset));
+    unawaited(handler(details.data, pagePt: p));
+  }
+
+  /// An icon tile dropped from the third-party icons palette.
+  void _onThirdPartyIconDropped(DragTargetDetails<ThirdPartyIcon> details) {
+    final handler = widget.onThirdPartyIconDropped;
+    if (handler == null) return;
+    final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final p = _pageInchesAt(box.globalToLocal(details.offset));
+    unawaited(handler(details.data, pagePt: p));
   }
 
   VsdxShape? _singleSelectedShape() {
@@ -2684,7 +2716,13 @@ class _PageCanvasState extends State<PageCanvas> {
                 ];
               }
             }
-            return DragTarget<Stencil>(
+            return DragTarget<ThirdPartyIcon>(
+              onAcceptWithDetails: _onThirdPartyIconDropped,
+              builder: (context, iconCandidate, iconRejected) =>
+                  DragTarget<ImageMaterial>(
+              onAcceptWithDetails: _onImageMaterialDropped,
+              builder: (context, imageCandidate, imageRejected) =>
+                  DragTarget<Stencil>(
               onAcceptWithDetails: _onStencilDropped,
               builder: (context, candidate, rejected) => Focus(
               autofocus: true,
@@ -2829,6 +2867,8 @@ class _PageCanvasState extends State<PageCanvas> {
                   ),
                 ),
               ),
+            ),
+            ),
             ),
             ),
             ),

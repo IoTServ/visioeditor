@@ -34,6 +34,8 @@ dependencies:
   logging: ^1.2.0
   meta: ^1.15.0
   pdf: ^3.12.0
+  flutter_lucide: ^1.11.0
+  phosphor_flutter: ^2.1.0
 
 dev_dependencies:
   flutter_test:
@@ -48,3 +50,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/examples/
+    - assets/materials/
