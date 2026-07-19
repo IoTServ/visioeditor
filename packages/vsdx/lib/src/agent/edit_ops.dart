@@ -140,7 +140,10 @@ ApplyResult applyOps(
             }
             if (lineHex != null) {
               if (lineHex.trim().toLowerCase() == 'none') {
-                next = next.copyWith(line: next.line.copyWith(pattern: 0));
+                // Match UI setNoLine: clear dash pattern and any line gradient.
+                next = next.copyWith(
+                  line: next.line.copyWith(pattern: 0, gradient: null),
+                );
               } else {
                 final c = parseColorOrNull(lineHex);
                 if (c != null) {

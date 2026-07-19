@@ -782,6 +782,47 @@ void main() {
     expect(sh.color, isNull);
   });
 
+  test('SVG skips reflection fill on NoFill geometry', () {
+    final geom = VsdxShapeFactory.rectangle(
+      id: 14,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).geometries.first.copyWith(noFill: true);
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 14,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          geometries: <VsdxGeometry>[geom],
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            transparency: 0.5,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Stroke-only mirror may still exist; filled mirror fill="#…" without
+    // stroke-only path should not invent a filled reflection plate.
+    expect(svg.contains('scale(1 -1)'), isTrue);
+    expect(
+      RegExp(r'scale\(1 -1\)[\s\S]*?fill="none"').hasMatch(svg),
+      isTrue,
+      reason: 'NoFill geometry reflection must not paint a solid fill',
+    );
+  });
+
   test('SVG reflection emits fade mask matching canvas', () {
     final page = VsdxPage(
       id: 0,

@@ -304,6 +304,71 @@ void main() {
       expect(style.fontSizeInches, closeTo(14 / 72.0, 1e-9));
     });
 
+    test('set_text preserves theme text colour slot', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final styled = VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 2,
+        pinY: 2,
+        width: 1.5,
+        height: 0.8,
+      ).copyWith(
+        text: 'Old',
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'Old',
+            charStyle: VsdxCharStyle(
+              fontSizeInches: 12 / 72.0,
+            ).withThemeColor(ThemeSlot.accent1),
+          ),
+        ]),
+      );
+      doc = doc.replacePage(0, doc.pages.first.addShape(styled));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'set_text', 'id': id, 'text': 'New'},
+      ]);
+      final style = r.document.pages.first.findShapeById(id)!.richText.runs.single.charStyle;
+      expect(style.color, isNull);
+      expect(style.themeColorIndex, ThemeSlot.accent1);
+    });
+
+    test('set_style line none clears line gradient', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final shaped = VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 1,
+      ).copyWith(
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.02,
+          gradient: VsdxGradient(
+            stops: <VsdxGradientStop>[
+              VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+            ],
+          ),
+        ),
+      );
+      doc = doc.replacePage(0, doc.pages.first.addShape(shaped));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'line': 'none',
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.line.hasLine, isFalse);
+      expect(after.line.gradient, isNull);
+    });
+
     test('resize_shape scales group children with the box', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

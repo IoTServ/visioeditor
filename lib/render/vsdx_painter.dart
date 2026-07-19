@@ -366,7 +366,13 @@ class VsdxPainter extends CustomPainter {
       );
       _drawShadow(canvas, shape, path, geom: geom);
       _drawGlow(canvas, shape, path);
-      _drawReflection(canvas, shape, path);
+      _drawReflection(
+        canvas,
+        shape,
+        path,
+        noFill: geom.noFill,
+        noLine: geom.noLine,
+      );
       // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
       // offscreen layer. Skip 1D connectors — jumps / arrows stay crisp.
       final soft = shape.line.softEdgesInches;
@@ -669,11 +675,22 @@ class VsdxPainter extends CustomPainter {
     }
   }
 
-  void _drawReflection(Canvas canvas, VsdxShape shape, Path path) {
+  void _drawReflection(
+    Canvas canvas,
+    VsdxShape shape,
+    Path path, {
+    bool noFill = false,
+    bool noLine = false,
+  }) {
     final refl = shape.reflection;
     if (!refl.enabled || refl.sizeInches <= 0) return;
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
+    // Match SVG / main paint: honour Geometry NoFill / NoLine so stencil
+    // divider paths do not get a phantom filled mirror.
+    final paintFill = !noFill && shape.fill.hasFill;
+    final paintStroke = !noLine && shape.line.hasLine;
+    if (!paintFill && !paintStroke) return;
 
     final bounds = path.getBounds();
     if (bounds.isEmpty) return;
@@ -703,11 +720,11 @@ class VsdxPainter extends CustomPainter {
       Paint()..color = Color.fromRGBO(255, 255, 255, alpha),
     );
 
-    if (shape.fill.hasFill) {
+    if (paintFill) {
       _drawFill(canvas, shape, path);
     }
-    final stroke = _resolveStrokePaint(shape);
-    if (stroke != null && shape.line.hasLine) {
+    final stroke = paintStroke ? _resolveStrokePaint(shape) : null;
+    if (stroke != null) {
       if (shape.line.hasGradient) {
         final shader = _buildGradientShader(
           shape.line.gradient!,

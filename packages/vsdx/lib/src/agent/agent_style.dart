@@ -65,7 +65,7 @@ VsdxShape withLabel(
   }
   final prev =
       s.richText.runs.isNotEmpty ? s.richText.runs.first.charStyle : null;
-  final color = parseColorOrNull(colorHex) ?? prev?.color ?? kInk;
+  final parsed = parseColorOrNull(colorHex);
   final fontSize = pt != null
       ? pt / 72.0
       : (prev?.fontSizeInches ?? 11 / 72.0);
@@ -74,17 +74,31 @@ VsdxShape withLabel(
       : bold == false
           ? VsdxFontStyle.regular
           : (prev?.style ?? VsdxFontStyle.regular);
-  final style = (prev ??
-          VsdxCharStyle(
-            fontSizeInches: fontSize,
-            color: color,
-            style: fontStyle,
-          ))
-      .copyWith(
-        fontSizeInches: fontSize,
-        color: color,
-        style: fontStyle,
-      );
+  // Preserve theme-bound text (color=null + themeColorIndex) unless the op
+  // supplies an explicit colour — injecting kInk would paint solid ink and
+  // writer would drop THEMEVAL on save.
+  late final VsdxCharStyle style;
+  if (prev != null) {
+    var next = prev.copyWith(
+      fontSizeInches: fontSize,
+      style: fontStyle,
+    );
+    if (parsed != null) {
+      next = next.withSolidColor(parsed);
+    }
+    style = next;
+  } else if (parsed != null) {
+    style = VsdxCharStyle(
+      fontSizeInches: fontSize,
+      style: fontStyle,
+    ).withSolidColor(parsed);
+  } else {
+    style = VsdxCharStyle(
+      fontSizeInches: fontSize,
+      color: kInk,
+      style: fontStyle,
+    );
+  }
   return s.copyWith(
     text: text,
     richText: VsdxRichText(runs: <VsdxTextRun>[
