@@ -1483,6 +1483,10 @@ class VsdxPainter extends CustomPainter {
       canvas.translate(local.dx, local.dy);
       if (block.angleRad != 0) canvas.rotate(block.angleRad);
       canvas.scale(1 / s, -1 / s);
+      // Match SVG / pinned text blocks: TextDirection=1 rotates the label.
+      if (block.textDirection == 1) {
+        canvas.rotate(-math.pi / 2);
+      }
       final tp = TextPainter(
         text: TextSpan(children: spans),
         textAlign: align,

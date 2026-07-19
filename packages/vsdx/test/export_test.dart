@@ -513,9 +513,32 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('markerUnits="userSpaceOnUse"'));
+    expect(svg, contains('overflow="visible"'));
     expect(svg, contains('markerWidth="0.125"'));
     expect(svg.contains('markerWidth="6"'), isFalse,
         reason: 'legacy strokeWidth-scaled marker sizes must not return');
+  });
+
+  test('SVG spear arrow markerWidth scales by canvas reach', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 28,
+                endArrowSizeInches: 0.125,
+                weightInches: 0.01,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // canvas spear reach ≈ 1.4 → markerWidth = 0.125 * 1.4 = 0.175
+    expect(svg, contains('markerWidth="0.175"'));
   });
 
   test('SVG font-family includes AsianFont after Latin face', () {

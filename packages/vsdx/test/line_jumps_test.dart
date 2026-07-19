@@ -32,6 +32,21 @@ void main() {
     expect(jumped.length, greaterThan(plain.length));
   });
 
+  test('polylineWithJumpsSvg keeps hops on short dense segments', () {
+    // Curved connectors bake ~0.08" LineTo segments; default r=0.07 used to
+    // drop every hop because half > 0.5. Crossing must be strictly interior
+    // to a short segment (not on a vertex).
+    final route = <Offset2D>[
+      for (var x = 0.0; x <= 4.0 + 1e-9; x += 0.08) Offset2D(x, 1),
+    ];
+    final unders = <List<Offset2D>>[
+      <Offset2D>[const Offset2D(2.04, 0), const Offset2D(2.04, 2)],
+    ];
+    final jumped = polylineWithJumpsSvg(route, unders, 0.07);
+    expect(jumped.contains(' A '), isTrue,
+        reason: 'short segments must shrink hop radius, not skip jumps');
+  });
+
   test('SVG export emits arc jumps for crossing connectors', () {
     final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
     final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);

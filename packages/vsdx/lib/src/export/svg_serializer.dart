@@ -1333,12 +1333,20 @@ class VsdxToSvgSerializer {
     final markers = StringBuffer();
     if (line.hasBeginArrow) {
       final mid = 'arrow-start-$paintId';
-      final mw = _arrowMarkerSize(line.beginArrowSizeInches);
-      final body = _arrowMarkerBody(line.beginArrow, tipAtEnd: false);
-      // userSpaceOnUse: marker size is absolute page inches (matches canvas
-      // scale(sizeInches)), not multiplied by stroke-width.
+      final mw = _arrowMarkerSize(
+        line.beginArrowSizeInches,
+        line.beginArrow,
+      );
+      final body = _arrowMarkerBody(
+        line.beginArrow,
+        tipAtEnd: false,
+        lineWeightInches: weight,
+        markerSizeInches: mw,
+      );
+      // userSpaceOnUse: absolute page inches. overflow=visible keeps fletching
+      // / tip strokes outside viewBox (arrow 9, open tips).
       defs.write(
-        '<marker id="$mid" markerUnits="userSpaceOnUse" '
+        '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
         'viewBox="0 0 10 10" refX="0" refY="5" '
         'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" orient="auto">'
         '$body</marker>',
@@ -1347,10 +1355,15 @@ class VsdxToSvgSerializer {
     }
     if (line.hasEndArrow) {
       final mid = 'arrow-end-$paintId';
-      final mw = _arrowMarkerSize(line.endArrowSizeInches);
-      final body = _arrowMarkerBody(line.endArrow, tipAtEnd: true);
+      final mw = _arrowMarkerSize(line.endArrowSizeInches, line.endArrow);
+      final body = _arrowMarkerBody(
+        line.endArrow,
+        tipAtEnd: true,
+        lineWeightInches: weight,
+        markerSizeInches: mw,
+      );
       defs.write(
-        '<marker id="$mid" markerUnits="userSpaceOnUse" '
+        '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
         'viewBox="0 0 10 10" refX="10" refY="5" '
         'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" '
         'orient="auto-start-reverse">'
@@ -1402,7 +1415,12 @@ class VsdxToSvgSerializer {
 
   /// SVG marker path for common Visio BeginArrow/EndArrow ids (subset of
   /// canvas [arrow_library]). Tip points to the end (right) when [tipAtEnd].
-  String _arrowMarkerBody(int arrowId, {required bool tipAtEnd}) {
+  String _arrowMarkerBody(
+    int arrowId, {
+    required bool tipAtEnd,
+    double lineWeightInches = 0.01,
+    double markerSizeInches = 0.125,
+  }) {
     // Work in tip-at-right space, then mirror for start markers.
     // filled / open choices mirror lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
@@ -1461,8 +1479,13 @@ class VsdxToSvgSerializer {
     if (filled) {
       return '<path d="$pathD" fill="context-stroke" stroke="none"/>';
     }
+    // Match canvas: strokeWidth = lineWeight / sizeInches in local arrow
+    // space. viewBox 0–10 maps to markerSizeInches → stroke in viewBox units.
+    final sw = markerSizeInches > 1e-9
+        ? (10.0 * lineWeightInches / markerSizeInches).clamp(0.4, 4.0)
+        : 1.2;
     return '<path d="$pathD" fill="none" stroke="context-stroke" '
-        'stroke-width="1.2" stroke-linejoin="round"/>';
+        'stroke-width="${_n(sw)}" stroke-linejoin="round"/>';
   }
 
   /// Rough mirror of simple marker paths about x=5 (for start arrows).
@@ -1502,11 +1525,28 @@ class VsdxToSvgSerializer {
   }
 
   /// Visio BeginArrowSize / EndArrowSize (inches) → SVG markerWidth under
-  /// `markerUnits="userSpaceOnUse"`. viewBox is 0–10 with tip span ≈ 10, so
-  /// markerWidth == sizeInches matches canvas `scale(sizeInches)`.
-  double _arrowMarkerSize(double sizeInches) {
+  /// `markerUnits="userSpaceOnUse"`.
+  ///
+  /// Canvas draws `scale(sizeInches)` over a local path whose tip→base reach
+  /// varies by id (spear ≈ 1.4, chevron ≈ 0.55). SVG templates span viewBox
+  /// 0–10, so markerWidth = sizeInches × canvasReach matches visual length.
+  double _arrowMarkerSize(double sizeInches, int arrowId) {
     final s = sizeInches <= 0 ? 0.125 : sizeInches;
-    return s.clamp(0.02, 1.0);
+    return (s * _arrowCanvasReach(arrowId)).clamp(0.02, 1.5);
+  }
+
+  /// Tip→base extent in canvas `arrow_library` local units (tip at origin).
+  double _arrowCanvasReach(int arrowId) {
+    return switch (arrowId) {
+      9 => 1.2,
+      23 || 24 => 1.1,
+      28 => 1.4,
+      29 || 30 => 1.2,
+      31 || 32 => 0.55,
+      33 => 0.85,
+      35 => 1.5,
+      _ => 1.0,
+    };
   }
 
   /// Combine Visio `*Trans` (0..1) with the colour's own ARGB alpha

@@ -122,13 +122,20 @@ String polylineWithJumpsSvg(
     }
     ts.sort();
 
-    final half = r / len;
+    // Dense curved polylines bake short LineTo segments (often < 2r). Shrink
+    // the hop so it still fits instead of silently dropping the jump.
+    final hopR = math.min(r, len * 0.45);
+    if (hopR < 1e-6) {
+      buf.write(' L ${format(b.x)} ${format(b.y)}');
+      continue;
+    }
+    final half = hopR / len;
     var cursor = 0.0;
     final ux = sdx / len;
     final uy = sdy / len;
     // Left-hand perpendicular (CCW), matching arc sweep.
-    final px = -uy * r;
-    final py = ux * r;
+    final px = -uy * hopR;
+    final py = ux * hopR;
     for (final t in ts) {
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
@@ -148,7 +155,8 @@ String polylineWithJumpsSvg(
           );
         case LineJumpRenderStyle.arc:
           buf.write(
-            ' A ${format(r)} ${format(r)} 0 0 0 ${format(outX)} ${format(outY)}',
+            ' A ${format(hopR)} ${format(hopR)} 0 0 0 '
+            '${format(outX)} ${format(outY)}',
           );
       }
       cursor = t + half;

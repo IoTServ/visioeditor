@@ -7,6 +7,7 @@
 /// [Offset] / [Path] for the canvas painter.
 library;
 
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:vsdx/vsdx.dart' as vsdx;
@@ -81,11 +82,18 @@ Path polylineWithJumps(
     }
     ts.sort();
 
-    final half = r / len;
+    // Dense curved polylines bake short LineTo segments (often < 2r). Shrink
+    // the hop so it still fits instead of silently dropping the jump.
+    final hopR = math.min(r, len * 0.45);
+    if (hopR < 1e-6) {
+      path.lineTo(b.dx, b.dy);
+      continue;
+    }
+    final half = hopR / len;
     var cursor = 0.0;
     final ux = seg.dx / len;
     final uy = seg.dy / len;
-    final perp = Offset(-uy * r, ux * r);
+    final perp = Offset(-uy * hopR, ux * hopR);
     for (final t in ts) {
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
@@ -101,7 +109,11 @@ Path polylineWithJumps(
             ..lineTo(outP.dx + perp.dx, outP.dy + perp.dy)
             ..lineTo(outP.dx, outP.dy);
         case vsdx.LineJumpRenderStyle.arc:
-          path.arcToPoint(outP, radius: Radius.circular(r), clockwise: false);
+          path.arcToPoint(
+            outP,
+            radius: Radius.circular(hopR),
+            clockwise: false,
+          );
       }
       cursor = t + half;
     }
