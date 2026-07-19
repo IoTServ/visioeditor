@@ -58,6 +58,7 @@ class VsdxPainter extends CustomPainter {
     this.noShapesOnPageMessage = 'No shapes parsed yet',
     this.drawLineJumps = true,
     this.lineJumpRadiusInches = 0.07,
+    this.drawEditorChrome = true,
   }) : super(repaint: imageCache);
 
   final VsdxPage? page;
@@ -123,6 +124,10 @@ class VsdxPainter extends CustomPainter {
 
   /// Jump arc radius, in page inches.
   final double lineJumpRadiusInches;
+
+  /// When `true` (editor canvas), paint foldable/annotative chrome (dashed
+  /// kind hint + collapse chevron). Export PNG/SVG should pass `false`.
+  final bool drawEditorChrome;
 
   // Per-paint cache (filled at the top of [paint]): every connector's
   // page-space polyline in z-order, plus a shape-id → z-index lookup. Used so a
@@ -327,8 +332,10 @@ class VsdxPainter extends CustomPainter {
     // children already skip any placeholder; text is painted below.
 
     // Editor chrome (dashed kind hint / fold chevron) is only for foldable
-    // containers & callouts — never for plain Visio/Edraw groups.
-    if (shape.shapeKind.isFoldable || shape.shapeKind.isAnnotative) {
+    // containers & callouts — never for plain Visio/Edraw groups. Skip on
+    // PNG/export so raster matches SVG.
+    if (drawEditorChrome &&
+        (shape.shapeKind.isFoldable || shape.shapeKind.isAnnotative)) {
       _paintKindHint(canvas, shape, w, h);
     }
 
@@ -346,7 +353,7 @@ class VsdxPainter extends CustomPainter {
       }
     }
 
-    if (shape.shapeKind.isFoldable) {
+    if (drawEditorChrome && shape.shapeKind.isFoldable) {
       _paintCollapseChevron(canvas, shape, w, h);
     }
 
@@ -1962,10 +1969,12 @@ class VsdxPainter extends CustomPainter {
       final availFirst = math.max(0.0, maxW - (firstX - mlPx) - indentR);
       final needsPos = para.runs
           .any((r) => r.charStyle.position != VsdxTextPosition.normal);
-      // Per-line wrap when super/sub needs dy, or IndFirst must not indent
-      // every wrapped line (Visio first-line-only).
-      final needsLineWrap =
-          needsPos || (!hasBullet && indentF.abs() > 1e-9);
+      // Per-line wrap when: super/sub needs dy; IndFirst is first-line-only;
+      // or a bullet must stay on the first line (not vertically centred on
+      // the whole paragraph block).
+      final needsLineWrap = needsPos ||
+          hasBullet ||
+          (!hasBullet && indentF.abs() > 1e-9);
       late final TextPainter? tp;
       late final double rowW;
       late final double rowTextH;
@@ -2471,7 +2480,8 @@ class VsdxPainter extends CustomPainter {
       old.underlayVisibleLayerIdsOverride != underlayVisibleLayerIdsOverride ||
       old.fontFallback != fontFallback ||
       old.drawLineJumps != drawLineJumps ||
-      old.lineJumpRadiusInches != lineJumpRadiusInches;
+      old.lineJumpRadiusInches != lineJumpRadiusInches ||
+      old.drawEditorChrome != drawEditorChrome;
 }
 
 class _LineEndpoints {

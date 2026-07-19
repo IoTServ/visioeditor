@@ -548,16 +548,7 @@ class VsdxToSvgSerializer {
       paintId: paintId,
       indent: indent,
     );
-    _writeReflection(
-      buf,
-      shape,
-      theme,
-      d: d,
-      noFill: noFill,
-      noLine: noLine,
-      paintId: paintId,
-      indent: indent,
-    );
+    // Match canvas order: shadow → glow → reflection → body.
     // Soft outer glow (canvas strokes a blurred path before fill).
     final glow = shape.glow;
     if (glow.enabled && glow.sizeInches > 0) {
@@ -598,6 +589,16 @@ class VsdxToSvgSerializer {
         }
       }
     }
+    _writeReflection(
+      buf,
+      shape,
+      theme,
+      d: d,
+      noFill: noFill,
+      noLine: noLine,
+      paintId: paintId,
+      indent: indent,
+    );
     final filter = softFilter == null ? '' : ' filter="$softFilter"';
     final compound = !noLine && shape.line.compoundType > 0;
     if (compound) {
@@ -1725,7 +1726,8 @@ class VsdxToSvgSerializer {
           bg == null ? 0.0 : _combinedOpacity(bg, fill.backgroundTransparency);
       final bgHex = bg == null ? '#ffffff' : _hex(bg);
       final id = 'pat-$paintId';
-      const tile = 0.12;
+      // Match canvas PatternFillBuilder: 32px tile × scale 0.04 → 1.28".
+      const tile = 1.28;
       defs.write(
         '<pattern id="$id" patternUnits="userSpaceOnUse" '
         'width="${_n(tile)}" height="${_n(tile)}">'
@@ -1748,7 +1750,8 @@ class VsdxToSvgSerializer {
     String color = '#000000',
     double opacity = 1,
   }) {
-    final sw = tile * 0.08;
+    // Canvas hatch stroke is 2px on a 32px tile at scale 0.04 → 0.08".
+    final sw = 0.08;
     final common =
         'stroke="$color" stroke-opacity="${_n(opacity)}" stroke-width="${_n(sw)}" '
         'fill="none"';
@@ -1989,9 +1992,11 @@ class VsdxToSvgSerializer {
           'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0',
           false,
         ), // small open circle
-      11 => ('M 1 5 L 5 1 L 9 5 L 5 9 Z', false), // open diamond
-      15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
-      16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
+      // Diamond tip at x=10 (canvas tip at origin); open diamond id 11.
+      11 => ('M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z', false),
+      // Square right edge at tip (canvas Rect ends at x=0).
+      15 => ('M 0 1 H 10 V 9 H 0 Z', true),
+      16 => ('M 0 1 H 10 V 9 H 0 Z', false),
       7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth
       // Filled chevron (31): canvas tip(0,0) wings(±0.5) notch(-0.4);
       // mapped into viewBox with reach 0.55 (overflow visible).
@@ -2041,8 +2046,9 @@ class VsdxToSvgSerializer {
     }
     // Match canvas: strokeWidth = lineWeight / sizeInches in local arrow
     // space. viewBox 0–10 maps to markerSizeInches → stroke in viewBox units.
+    // No upper clamp — thick lines must keep proportional open-arrow strokes.
     final sw = markerSizeInches > 1e-9
-        ? (10.0 * lineWeightInches / markerSizeInches).clamp(0.4, 4.0)
+        ? math.max(0.4, 10.0 * lineWeightInches / markerSizeInches)
         : 1.2;
     return '<path d="$pathD" fill="none" $strokePaint '
         'stroke-width="${_n(sw)}" stroke-linejoin="round"/>';
@@ -2060,8 +2066,8 @@ class VsdxToSvgSerializer {
       'M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z' =>
           'M 10 -4.091 L 0 5 L 10 14.091 L 7.273 5 Z',
       'M 0 -4.091 L 10 5 L 0 14.091' => 'M 10 -4.091 L 0 5 L 10 14.091',
-      'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
-      'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
+      'M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z' => 'M 10 5 L 5 1.5 L 0 5 L 5 8.5 Z',
+      'M 0 1 H 10 V 9 H 0 Z' => d, // square tip-edge at both ends via orient
       'M 5 1 V 9' => d,
       'M 7 1 V 9' => 'M 3 1 V 9',
       'M 7 1 V 9 M 4.5 1 V 9' => 'M 3 1 V 9 M 5.5 1 V 9',
@@ -2592,6 +2598,7 @@ class VsdxToSvgSerializer {
       final indentL = style.indentLeftInches;
       final indentF = style.indentFirstInches;
       final textBandX = layout.textBandX;
+      final bandRight = layoutW - layoutMr - style.indentRightInches;
       final (anchor, xBody) = switch (style.horizontalAlign) {
         VsdxHorzAlign.left || VsdxHorzAlign.justify => (
             'start',
@@ -2599,12 +2606,11 @@ class VsdxToSvgSerializer {
           ),
         VsdxHorzAlign.right => (
             'end',
-            layoutW - layoutMr - style.indentRightInches,
+            bandRight,
           ),
         VsdxHorzAlign.center => (
             'middle',
-            textBandX +
-                (layoutW - layoutMr - style.indentRightInches - textBandX) / 2,
+            textBandX + (bandRight - textBandX) / 2,
           ),
       };
       // y relative to cluster centre (Y-down after scale).
@@ -2649,9 +2655,24 @@ class VsdxToSvgSerializer {
       final yText = pdfCompat ? yRel + layout.lineH * 0.35 : yRel;
       final baseline =
           pdfCompat ? '' : ' dominant-baseline="middle"';
+      // Approximate Visio Justify: stretch spacing to the text band width.
+      var justifyAttr = '';
+      if (style.horizontalAlign == VsdxHorzAlign.justify &&
+          !layout.showBullet) {
+        final bandW = math.max(0.04, bandRight - textBandX);
+        var natural = 0.0;
+        for (final (raw, run) in layout.segs) {
+          natural += _estSvgTextWidth(raw, run.charStyle);
+        }
+        if (natural > 1e-6 && natural < bandW * 0.98) {
+          justifyAttr =
+              ' textLength="${_n(bandW)}" lengthAdjust="spacing"';
+        }
+      }
       // Preserve consecutive spaces (canvas TextPainter does; SVG defaults fold).
       buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="$anchor"$baseline '
+        '$indent  <text xml:space="preserve" text-anchor="$anchor"$baseline'
+        '$justifyAttr '
         'y="${_n(yText)}">$body</text>',
       );
     }

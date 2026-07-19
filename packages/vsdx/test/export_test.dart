@@ -686,6 +686,114 @@ void main() {
     );
   });
 
+  test('SVG open-arrow stroke scales with thick LineWeight', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 8,
+                weightInches: 0.1,
+                endArrowSizeInches: 0.125,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // viewBox stroke = 10 * 0.1 / markerWidth; markerWidth = 0.125 * reach(1)
+    // → 10*0.1/0.125 = 8 (must not be clamped to 4).
+    expect(svg, contains('stroke-width="8"'));
+  });
+
+  test('SVG diamond/square arrow tips sit at the line end', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    page = page.addShape(
+      VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+            line: const VsdxLine(endArrow: 11, weightInches: 0.03),
+          ),
+    );
+    page = page.addShape(
+      VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 2, bx: 3, by: 2).copyWith(
+            line: const VsdxLine(endArrow: 15, weightInches: 0.03),
+          ),
+    );
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z'));
+    expect(svg, contains('M 0 1 H 10 V 9 H 0 Z'));
+  });
+
+  test('SVG hatch tile matches canvas 1.28 inch period', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            pattern: 2,
+            foreground: VsdxColor(0xFF000000),
+            background: VsdxColor(0xFFFFFFFF),
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('width="1.28" height="1.28"'));
+  });
+
+  test('SVG Justify uses textLength spacing on short lines', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 0.8,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A B',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.14,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.justify,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('lengthAdjust="spacing"'));
+    expect(svg, contains('textLength="'));
+  });
+
   test('SVG open-stealth arrow (id 8) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

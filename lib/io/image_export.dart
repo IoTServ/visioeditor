@@ -52,6 +52,8 @@ Future<Uint8List?> renderPageToPng(
       underlayVisibleLayerIdsOverride: underlayLayerIds,
       drawLineJumps: drawLineJumps,
       lineJumpRadiusInches: lineJumpRadiusInches,
+      // Match SVG export: no fold chevrons / kind-hint dashed frames.
+      drawEditorChrome: false,
     ).paint(canvas, Size(w, h));
     final picture = recorder.endRecording();
     final image = await picture.toImage(w.ceil(), h.ceil());
