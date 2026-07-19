@@ -3722,23 +3722,42 @@ class VsdxWriter {
       }
       return changed;
     }
-    // Re-enable after Size=0: model defaults match so _patchLength would skip.
-    if (!base.enabled ||
+    // Re-enable after Size=0: force Size/Color/Trans so stale GlowColor cannot
+    // resurrect over a default (null-colour) model — same rule as Shadow.
+    final reenable = !base.enabled;
+    if (reenable ||
         (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
       _writeValue(_ensureCell(el, 'GlowSize'), _fmt(edited.sizeInches));
       changed = true;
     }
-    changed |= _patchColorOrTheme(
-      el,
-      'GlowColor',
-      'QuickStyleEffectColor',
-      baseColor: base.color,
-      baseTheme: base.themeColorIndex,
-      editedColor: edited.color,
-      editedTheme: edited.themeColorIndex,
-    );
-    changed |= _patchRatio(
-        el, 'GlowColorTrans', base.transparency, edited.transparency);
+    if (reenable ||
+        edited.color != null ||
+        edited.themeColorIndex != null ||
+        base.color != null ||
+        base.themeColorIndex != null) {
+      if (edited.color == null && edited.themeColorIndex == null) {
+        if (_removeNamedCells(
+            el, const ['GlowColor', 'QuickStyleEffectColor'])) {
+          changed = true;
+        }
+      } else {
+        changed |= _patchColorOrTheme(
+          el,
+          'GlowColor',
+          'QuickStyleEffectColor',
+          baseColor: reenable ? null : base.color,
+          baseTheme: reenable ? null : base.themeColorIndex,
+          editedColor: edited.color,
+          editedTheme: edited.themeColorIndex,
+        );
+      }
+    }
+    if (reenable ||
+        (base.transparency - edited.transparency).abs() > _epsilon) {
+      _writeValue(
+          _ensureCell(el, 'GlowColorTrans'), _fmt(edited.transparency));
+      changed = true;
+    }
     return changed;
   }
 

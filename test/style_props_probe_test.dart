@@ -640,6 +640,89 @@ void main() {
     expect(refl.transparency, closeTo(0.6, 1e-6));
   });
 
+  test('glow disable then enable does not resurrect stale colour', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            sizeInches: 0.08,
+            color: VsdxColor(0xFFFF0000),
+            transparency: 0.3,
+          ),
+        ),
+      ),
+    );
+    var bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(glow: VsdxGlow.disabled),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    doc = parser.parse(bytes);
+    expect(doc.pages.first.findShapeById(id)!.glow.enabled, isFalse);
+
+    // Re-enable with default (null colour) — stale red must not resurrect.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          glow: const VsdxGlow(enabled: true, transparency: 0.6),
+        ),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    doc = parser.parse(bytes);
+    final g = doc.pages.first.findShapeById(id)!.glow;
+    expect(g.enabled, isTrue);
+    expect(g.sizeInches, closeTo(0.05, 1e-6));
+    expect(g.transparency, closeTo(0.6, 1e-6));
+    expect(g.color, isNull);
+  });
+
+  test('SVG soft edges with fully transparent shadow omits shadow merge', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 13,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          line: const VsdxLine(softEdgesInches: 0.08),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            transparency: 1.0,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('feGaussianBlur'), isTrue);
+    expect(svg.contains('feDropShadow'), isFalse);
+    expect(svg.contains('feMergeNode in="shadow"'), isFalse);
+  });
+
   test('shadow disable then enable does not resurrect stale offset/colour', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

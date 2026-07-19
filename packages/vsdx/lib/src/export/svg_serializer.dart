@@ -565,8 +565,10 @@ class VsdxToSvgSerializer {
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
     // Approximate canvas reflection: mirror below the shape box, clipped by
-    // ReflectionSize, optional blur. Uses shape height as bounds proxy.
-    final h = shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs();
+    // ReflectionSize, optional blur. Prefer path Y-extent (matches canvas
+    // path.getBounds().height) over XForm Height for non-full-box geometry.
+    final fallbackH = shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs();
+    final h = _approxPathHeightFromD(d, fallbackH);
     final clipH = h * refl.sizeInches.clamp(0.01, 1.0);
     final dist = refl.distanceInches;
     final fid = 'refl-$paintId';
@@ -655,6 +657,62 @@ class VsdxToSvgSerializer {
     );
   }
 
+  /// Height of an absolute SVG path `d` from its Y coordinates, or [fallback].
+  /// Used so ReflectionSize tracks painted geometry like canvas path bounds.
+  double _approxPathHeightFromD(String d, double fallback) {
+    final tokens = RegExp(
+      r'[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
+    ).allMatches(d).map((m) => m.group(0)!).toList();
+    var minY = double.infinity;
+    var maxY = double.negativeInfinity;
+    void consider(double y) {
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+
+    String? cmd;
+    final nums = <double>[];
+    void flush() {
+      if (cmd == null || nums.isEmpty) {
+        nums.clear();
+        return;
+      }
+      switch (cmd) {
+        case 'M':
+        case 'L':
+        case 'C':
+        case 'Q':
+          for (var i = 1; i < nums.length; i += 2) {
+            consider(nums[i]);
+          }
+        case 'A':
+          for (var i = 6; i < nums.length; i += 7) {
+            consider(nums[i]);
+          }
+        default:
+          break;
+      }
+      nums.clear();
+    }
+
+    for (final t in tokens) {
+      if (RegExp(r'^[A-Za-z]$').hasMatch(t)) {
+        flush();
+        cmd = t.toUpperCase();
+        if (cmd == 'Z') {
+          cmd = null;
+        }
+      } else {
+        final v = double.tryParse(t);
+        if (v != null) nums.add(v);
+      }
+    }
+    flush();
+    if (!minY.isFinite || !maxY.isFinite) return fallback;
+    final span = maxY - minY;
+    return span < 1e-9 ? fallback : span;
+  }
+
   /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
   Offset2D _pageToLocal(VsdxShape shape, double pageX, double pageY) {
     var x = pageX - shape.pinX;
@@ -686,6 +744,7 @@ class VsdxToSvgSerializer {
 
     final id = 'fx-$paintId';
     final parts = StringBuffer();
+    var shadowDrawn = false;
     if (shadowOn) {
       final base = _resolveColor(shadow.color, shadow.themeColorIndex, theme) ??
           const VsdxColor(0x99000000);
@@ -699,6 +758,7 @@ class VsdxToSvgSerializer {
           'flood-color="${_hex(base)}" flood-opacity="${_n(alpha)}" '
           'result="shadow"/>',
         );
+        shadowDrawn = true;
       }
     }
     if (soft > 0) {
@@ -708,15 +768,16 @@ class VsdxToSvgSerializer {
       );
     }
     if (parts.isEmpty) return null;
-    // Merge shadow (if any) under the (possibly softened) graphic.
-    if (shadowOn && soft > 0) {
+    // Merge only results that were actually emitted — a fully transparent
+    // shadow must not leave feMergeNode in="shadow" with no feDropShadow.
+    if (shadowDrawn && soft > 0) {
       parts.write(
         '<feMerge>'
         '<feMergeNode in="shadow"/>'
         '<feMergeNode in="soft"/>'
         '</feMerge>',
       );
-    } else if (shadowOn) {
+    } else if (shadowDrawn) {
       parts.write(
         '<feMerge>'
         '<feMergeNode in="shadow"/>'
