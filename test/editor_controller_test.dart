@@ -1950,4 +1950,120 @@ void main() {
     }
     expect(delta, closeTo(math.pi / 2, 1e-6));
   });
+
+  test('resize pool scales content inside lanes', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => SwimlaneOps.assemblePool(
+        poolId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 4,
+        height: 3,
+        laneCount: 2,
+      ),
+      4,
+      4,
+    );
+    final poolId = c.selection.single;
+    final lane = SwimlaneOps.lanesOf(c.currentPage!.findShapeById(poolId)!).first;
+    final nested = VsdxShapeFactory.rectangle(
+      id: c.currentPage!.nextFreeShapeId(),
+      pinX: lane.width / 2,
+      pinY: lane.height / 2,
+      width: 0.8,
+      height: 0.4,
+    );
+    c.updateCurrentPage((p) {
+      final host = p.findShapeById(poolId)!;
+      final lanes = SwimlaneOps.lanesOf(host);
+      final first = lanes.first.copyWith(children: <VsdxShape>[nested]);
+      return p.updateShapeById(
+        poolId,
+        (_) => host.copyWith(
+          children: <VsdxShape>[
+            first,
+            ...lanes.skip(1),
+            ...SwimlaneOps.nonLaneChildren(host),
+          ],
+        ),
+      );
+    });
+    final pinBefore = c.currentPage!.shapePinPage(nested.id);
+    final pool = c.currentPage!.findShapeById(poolId)!;
+    c.resizeShape(
+      poolId,
+      pinX: pool.pinX,
+      pinY: pool.pinY,
+      width: pool.width,
+      height: pool.height * 2,
+    );
+    final pinAfter = c.currentPage!.shapePinPage(nested.id);
+    // Doubling pool height doubles lane height; content centre moves with it.
+    expect(pinAfter.y, isNot(closeTo(pinBefore.y, 0.05)));
+    final laneAfter =
+        SwimlaneOps.lanesOf(c.currentPage!.findShapeById(poolId)!).first;
+    expect(
+      c.currentPage!.findShapeById(nested.id)!.height,
+      closeTo(0.4 * (laneAfter.height / (3 / 2)), 0.15),
+    );
+  });
+
+  test('resize table frame reflows cells to fill the new box', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 4,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.selection.single;
+    final cell0 = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!).first;
+    final w0 = cell0.width;
+    c.resizeShape(
+      tableId,
+      pinX: 3,
+      pinY: 4,
+      width: 6,
+      height: 2,
+    );
+    final cell1 = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!).first;
+    expect(cell1.width, closeTo(w0 * 1.5, 0.05));
+  });
+
+  test('group Same Size scales freehand ink without collapsing to a line', () {
+    final c = EditorController()..newDocument();
+    c.createFreehand(<Offset2D>[
+      const Offset2D(1, 1),
+      const Offset2D(1.5, 1.4),
+      const Offset2D(2, 1.1),
+      const Offset2D(2.5, 1.5),
+    ]);
+    final inkId = c.selection.single;
+    final cmds0 =
+        c.currentPage!.findShapeById(inkId)!.geometries.first.commands.length;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(4, 1, 5, 2);
+    c.setSelection(<int>{inkId, c.currentPage!.shapes.last.id});
+    c.groupSelection();
+    final gid = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(6, 1, 10, 5); // 4×4 ref
+    final ref = c.currentPage!.shapes.lastWhere((s) => s.id != gid).id;
+    c.setSelection(<int>{ref, gid});
+    c.matchSelectionSize();
+    final ink = c.currentPage!.findShapeById(inkId)!;
+    expect(ink.isInk, isTrue);
+    expect(ink.geometries.first.commands.length, cmds0);
+    expect(ink.objType, 1);
+  });
 }

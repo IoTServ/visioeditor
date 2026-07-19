@@ -13,6 +13,7 @@ import '../utils/color.dart';
 import 'fill.dart';
 import 'geometry.dart';
 import 'line.dart';
+import 'page.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
 import 'user_property.dart';
@@ -177,18 +178,13 @@ abstract final class SwimlaneOps {
       for (var i = 0; i < n; i++) {
         final lane = lanes[i];
         laidOut.add(
-          lane.copyWith(
+          _laneWithFrame(
+            lane,
             pinX: w / 2,
             pinY: i * laneH + laneH / 2,
             width: w,
             height: laneH,
-            geometries: laneGeometry(
-              width: w,
-              height: laneH,
-              horizontal: true,
-            ),
-            userCells: _mergeLaneCells(lane.userCells, horizontal: true),
-            shapeKind: VsdxShapeKind.swimlane,
+            horizontal: true,
           ),
         );
       }
@@ -197,18 +193,13 @@ abstract final class SwimlaneOps {
       for (var i = 0; i < n; i++) {
         final lane = lanes[i];
         laidOut.add(
-          lane.copyWith(
+          _laneWithFrame(
+            lane,
             pinX: i * laneW + laneW / 2,
             pinY: h / 2,
             width: laneW,
             height: h,
-            geometries: laneGeometry(
-              width: laneW,
-              height: h,
-              horizontal: false,
-            ),
-            userCells: _mergeLaneCells(lane.userCells, horizontal: false),
-            shapeKind: VsdxShapeKind.swimlane,
+            horizontal: false,
           ),
         );
       }
@@ -241,18 +232,13 @@ abstract final class SwimlaneOps {
         final lane = lanes[i];
         final lh = heights[i];
         laidOut.add(
-          lane.copyWith(
+          _laneWithFrame(
+            lane,
             pinX: w / 2,
             pinY: y + lh / 2,
             width: w,
             height: lh,
-            geometries: laneGeometry(
-              width: w,
-              height: lh,
-              horizontal: true,
-            ),
-            userCells: _mergeLaneCells(lane.userCells, horizontal: true),
-            shapeKind: VsdxShapeKind.swimlane,
+            horizontal: true,
           ),
         );
         y += lh;
@@ -277,18 +263,13 @@ abstract final class SwimlaneOps {
       final lane = lanes[i];
       final lw = widths[i];
       laidOut.add(
-        lane.copyWith(
+        _laneWithFrame(
+          lane,
           pinX: x + lw / 2,
           pinY: h / 2,
           width: lw,
           height: h,
-          geometries: laneGeometry(
-            width: lw,
-            height: h,
-            horizontal: false,
-          ),
-          userCells: _mergeLaneCells(lane.userCells, horizontal: false),
-          shapeKind: VsdxShapeKind.swimlane,
+          horizontal: false,
         ),
       );
       x += lw;
@@ -382,6 +363,54 @@ abstract final class SwimlaneOps {
       children: lanes,
     );
     return layoutLanes(pool);
+  }
+
+  /// Resize a lane frame and proportionally map nested content.
+  static VsdxShape _laneWithFrame(
+    VsdxShape lane, {
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    required bool horizontal,
+  }) {
+    final oldW = lane.width.abs() <= 1e-12 ? width : lane.width.abs();
+    final oldH = lane.height.abs() <= 1e-12 ? height : lane.height.abs();
+    final sx = width / oldW;
+    final sy = height / oldH;
+    final oldOx = lane.effectiveLocPinX;
+    final oldOy = lane.effectiveLocPinY;
+    final framed = lane.copyWith(
+      pinX: pinX,
+      pinY: pinY,
+      width: width,
+      height: height,
+      geometries: laneGeometry(
+        width: width,
+        height: height,
+        horizontal: horizontal,
+      ),
+      userCells: _mergeLaneCells(lane.userCells, horizontal: horizontal),
+      shapeKind: VsdxShapeKind.swimlane,
+    );
+    if (lane.children.isEmpty ||
+        ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
+      return framed;
+    }
+    return framed.copyWith(
+      children: <VsdxShape>[
+        for (final c in lane.children)
+          VsdxPage.scaleChildInFrame(
+            c,
+            sx,
+            sy,
+            oldOx,
+            oldOy,
+            framed.effectiveLocPinX,
+            framed.effectiveLocPinY,
+          ),
+      ],
+    );
   }
 
   static List<VsdxUserCell> _ensurePoolCell(List<VsdxUserCell> cells) {

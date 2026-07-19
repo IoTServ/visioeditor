@@ -11,6 +11,8 @@
 /// known. This keeps the parser pure (no shape context required).
 library;
 
+import 'dart:math' as math;
+
 import 'package:meta/meta.dart';
 
 @immutable
@@ -738,13 +740,22 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         :final angle,
         :final eccentricity,
       ):
+      // Non-uniform scale stretches the ellipse axes: update major-axis
+      // angle and a/b eccentricity so Visio/Edraw match the new box.
+      final cosA = math.cos(angle);
+      final sinA = math.sin(angle);
+      final majorScale =
+          math.sqrt(sx * sx * cosA * cosA + sy * sy * sinA * sinA);
+      final minorScale =
+          math.sqrt(sx * sx * sinA * sinA + sy * sy * cosA * cosA);
+      final eccScale = minorScale < 1e-12 ? 1.0 : majorScale / minorScale;
       return EllipticalArcTo(
         x: x * sx,
         y: y * sy,
         controlX: controlX * sx,
         controlY: controlY * sy,
-        angle: angle,
-        eccentricity: eccentricity,
+        angle: math.atan2(sy * sinA, sx * cosA),
+        eccentricity: eccentricity * eccScale,
       );
     case EllipseCmd(
         :final cx,

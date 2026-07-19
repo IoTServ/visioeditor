@@ -11,6 +11,7 @@ import '../utils/color.dart';
 import 'fill.dart';
 import 'geometry.dart';
 import 'line.dart';
+import 'page.dart';
 import 'rich_text.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
@@ -359,18 +360,16 @@ abstract final class TableOps {
         final pinX = x0 + cellW / 2;
         final pinY = h - yTop - cellH / 2;
         laidOut.add(
-          existing.copyWith(
+          _cellWithFrame(
+            existing,
             pinX: pinX,
             pinY: pinY,
             width: cellW,
             height: cellH,
-            geometries: _rectGeometry(cellW, cellH),
-            userCells: cellUserCells(
-              row: r,
-              col: c,
-              rowSpan: rs,
-              colSpan: cs,
-            ),
+            row: r,
+            col: c,
+            rowSpan: rs,
+            colSpan: cs,
           ),
         );
       }
@@ -900,5 +899,56 @@ abstract final class TableOps {
       return List<double>.filled(f.length, 1.0 / f.length);
     }
     return <double>[for (final v in f) v / sum];
+  }
+
+  /// Place a cell in its tiled frame and scale nested content with the cell.
+  static VsdxShape _cellWithFrame(
+    VsdxShape cell, {
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    required int row,
+    required int col,
+    required int rowSpan,
+    required int colSpan,
+  }) {
+    final oldW = cell.width.abs() <= 1e-12 ? width : cell.width.abs();
+    final oldH = cell.height.abs() <= 1e-12 ? height : cell.height.abs();
+    final sx = width / oldW;
+    final sy = height / oldH;
+    final oldOx = cell.effectiveLocPinX;
+    final oldOy = cell.effectiveLocPinY;
+    final framed = cell.copyWith(
+      pinX: pinX,
+      pinY: pinY,
+      width: width,
+      height: height,
+      geometries: _rectGeometry(width, height),
+      userCells: cellUserCells(
+        row: row,
+        col: col,
+        rowSpan: rowSpan,
+        colSpan: colSpan,
+      ),
+    );
+    if (cell.children.isEmpty ||
+        ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
+      return framed;
+    }
+    return framed.copyWith(
+      children: <VsdxShape>[
+        for (final c in cell.children)
+          VsdxPage.scaleChildInFrame(
+            c,
+            sx,
+            sy,
+            oldOx,
+            oldOy,
+            framed.effectiveLocPinX,
+            framed.effectiveLocPinY,
+          ),
+      ],
+    );
   }
 }

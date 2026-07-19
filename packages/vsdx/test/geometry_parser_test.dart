@@ -75,6 +75,26 @@ void main() {
           RelCubBezTo(fx: 1, fy: 0.5, fx1: 0.9, fy1: 0, fx2: 1, fy2: 0.2);
       expect(identical(scalePathCommand(rel, 2, 3), rel), isTrue);
     });
+
+    test('scalePathCommand updates EllipticalArcTo eccentricity under non-uniform scale',
+        () {
+      final scaled = scalePathCommand(
+        const EllipticalArcTo(
+          x: 2,
+          y: 1,
+          controlX: 1,
+          controlY: 0.5,
+          angle: 0,
+          eccentricity: 1,
+        ),
+        2,
+        1,
+      ) as EllipticalArcTo;
+      expect(scaled.x, 4);
+      expect(scaled.y, 1);
+      expect(scaled.eccentricity, closeTo(2, 1e-9));
+      expect(scaled.angle, closeTo(0, 1e-9));
+    });
   });
 
   group('quadratic Bézier rows (QuadBezTo / RelQuadBezTo)', () {

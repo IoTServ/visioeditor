@@ -194,7 +194,7 @@ ApplyResult applyOps(
           log.add('resize_shape: shape $id not found');
           break;
         }
-        if (resizing.is1D &&
+        if (resizing.isGlueableConnector &&
             resizing.beginX != null &&
             resizing.beginY != null &&
             resizing.endX != null &&
@@ -253,6 +253,12 @@ ApplyResult applyOps(
               width: w,
               height: h,
             );
+            if (SwimlaneOps.isPool(s)) {
+              return SwimlaneOps.layoutLanes(resized);
+            }
+            if (TableOps.isTable(s)) {
+              return TableOps.layoutCells(resized);
+            }
             if (s.children.isEmpty ||
                 ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
               return resized;
@@ -261,7 +267,7 @@ ApplyResult applyOps(
             return resized.copyWith(
               children: <VsdxShape>[
                 for (final c in s.children)
-                  _scaleGroupChild(
+                  VsdxPage.scaleChildInFrame(
                     c,
                     sx,
                     sy,
@@ -319,63 +325,6 @@ void _addSubtreeIds(VsdxPage page, int id, Set<int> out) {
   }
 }
 
-/// Scale a group child about the parent's LocPin frame (matches editor).
-VsdxShape _scaleGroupChild(
-  VsdxShape c,
-  double sx,
-  double sy,
-  double oldOx,
-  double oldOy,
-  double newOx,
-  double newOy,
-) {
-  final npx = newOx + (c.pinX - oldOx) * sx;
-  final npy = newOy + (c.pinY - oldOy) * sy;
-  if (c.is1D) {
-    Offset2D? map(double? x, double? y) {
-      if (x == null || y == null) return null;
-      return Offset2D(newOx + (x - oldOx) * sx, newOy + (y - oldOy) * sy);
-    }
-
-    final b = map(c.beginX, c.beginY);
-    final e = map(c.endX, c.endY);
-    final wps = <Offset2D>[
-      for (final w in c.waypoints)
-        Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
-    ];
-    if (b == null || e == null) {
-      return c.copyWith(pinX: npx, pinY: npy, waypoints: wps);
-    }
-    final control = <Offset2D>[b, ...wps, e];
-    final geometry = c.curved
-        ? VsdxPage.curveThrough(control)
-        : c.rounded
-            ? VsdxPage.roundCorners(control)
-            : control;
-    return c.copyWith(waypoints: wps).reshapeAsPolyline(geometry);
-  }
-  final scaled = c.resizeTo(
-    pinX: npx,
-    pinY: npy,
-    width: c.width * sx,
-    height: c.height * sy,
-  );
-  if (c.children.isEmpty) return scaled;
-  return scaled.copyWith(
-    children: <VsdxShape>[
-      for (final k in c.children)
-        _scaleGroupChild(
-          k,
-          sx,
-          sy,
-          c.effectiveLocPinX,
-          c.effectiveLocPinY,
-          scaled.effectiveLocPinX,
-          scaled.effectiveLocPinY,
-        ),
-    ],
-  );
-}
 
 /// Move [id] so its page pin lands at ([pageX],[pageY]). Nested shapes convert
 /// through the parent frame (matches editor [_nudgeShapeOnPage]).

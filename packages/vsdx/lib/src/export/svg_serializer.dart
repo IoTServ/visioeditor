@@ -241,7 +241,7 @@ class VsdxToSvgSerializer {
     final z = <int, int>{};
     void walk(List<VsdxShape> list) {
       for (final s in list) {
-        if (s.is1D) {
+        if (s.isGlueableConnector) {
           final route = page.drawnConnectorPagePolyline(s);
           if (route.length >= 2) {
             z[s.id] = routes.length;
@@ -261,7 +261,7 @@ class VsdxToSvgSerializer {
   /// connectors drawn beneath it. Returns `null` when jumps do not apply so
   /// authored / curved geometry from [_geometryToD] is kept.
   String? _connectorJumpD(VsdxPage page, VsdxShape shape) {
-    if (!_jumpsEnabled || !shape.is1D) return null;
+    if (!_jumpsEnabled || !shape.isGlueableConnector) return null;
     final z = _jumpZ[shape.id];
     if (z == null || z == 0) return null;
     final pageRoute = _jumpRoutes[z];
@@ -357,7 +357,7 @@ class VsdxToSvgSerializer {
       // Canvas paints geometry-less 1-D connectors via orthogonal routing
       // (perimeter glue + ObstacleRouter). Match that for SVG/PDF export.
       if (!wroteGeom &&
-          shape.is1D &&
+          shape.isGlueableConnector &&
           shape.beginX != null &&
           shape.beginY != null &&
           shape.endX != null &&

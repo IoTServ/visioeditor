@@ -3454,6 +3454,14 @@ class EditorController extends ChangeNotifier {
             }
           }
         }
+        final host = next.findShapeById(id);
+        if (host != null) {
+          if (SwimlaneOps.isPool(host)) {
+            next = next.updateShapeById(id, SwimlaneOps.layoutLanes);
+          } else if (TableOps.isTable(host)) {
+            next = next.updateShapeById(id, TableOps.layoutCells);
+          }
+        }
         changed = true;
       }
       return changed
@@ -5814,6 +5822,7 @@ class EditorController extends ChangeNotifier {
     if (s == null || s.locked || isOnLockedLayer(id)) return;
     final reflowPool = SwimlaneOps.isPool(s);
     final reflowLane = SwimlaneOps.isLane(s);
+    final reflowTable = TableOps.isTable(s);
     final lanePoolId = reflowLane ? page!.findParentId(id) : null;
     final movedIds = _subtreeIds(<int>{
       id,
@@ -5832,8 +5841,8 @@ class EditorController extends ChangeNotifier {
               width: width,
               height: height,
             );
-            // Groups: scale children with the box (draw.io). Skip pools/lanes
-            // (they reflow) and pure pin moves (sx≈sy≈1).
+            // Groups: scale children with the box (draw.io). Skip pools/lanes/
+            // tables (they reflow) and pure pin moves (sx≈sy≈1).
             if (sh.shapeKind != VsdxShapeKind.group ||
                 sh.children.isEmpty ||
                 ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
@@ -5863,6 +5872,8 @@ class EditorController extends ChangeNotifier {
               SwimlaneOps.layoutLanesPreservingSizes,
             );
           }
+        } else if (reflowTable) {
+          next = next.updateShapeById(id, TableOps.layoutCells);
         }
         return next
             .recalculateFormulas(changedShapeIds: movedIds)
@@ -5882,56 +5893,8 @@ class EditorController extends ChangeNotifier {
     double oldOy,
     double newOx,
     double newOy,
-  ) {
-    final npx = newOx + (c.pinX - oldOx) * sx;
-    final npy = newOy + (c.pinY - oldOy) * sy;
-    if (c.is1D) {
-      Offset2D? map(double? x, double? y) {
-        if (x == null || y == null) return null;
-        return Offset2D(newOx + (x - oldOx) * sx, newOy + (y - oldOy) * sy);
-      }
-
-      final b = map(c.beginX, c.beginY);
-      final e = map(c.endX, c.endY);
-      final wps = <Offset2D>[
-        for (final w in c.waypoints)
-          Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
-      ];
-      if (b == null || e == null) {
-        return c.copyWith(pinX: npx, pinY: npy, waypoints: wps);
-      }
-      final control = <Offset2D>[b, ...wps, e];
-      final geometry = c.curved
-          ? VsdxPage.curveThrough(control)
-          : c.rounded
-              ? VsdxPage.roundCorners(control)
-              : control;
-      return c
-          .copyWith(waypoints: wps)
-          .reshapeAsPolyline(geometry);
-    }
-    final scaled = c.resizeTo(
-      pinX: npx,
-      pinY: npy,
-      width: c.width * sx,
-      height: c.height * sy,
-    );
-    if (c.children.isEmpty) return scaled;
-    return scaled.copyWith(
-      children: <VsdxShape>[
-        for (final k in c.children)
-          _scaleGroupChild(
-            k,
-            sx,
-            sy,
-            c.effectiveLocPinX,
-            c.effectiveLocPinY,
-            scaled.effectiveLocPinX,
-            scaled.effectiveLocPinY,
-          ),
-      ],
-    );
-  }
+  ) =>
+      VsdxPage.scaleChildInFrame(c, sx, sy, oldOx, oldOy, newOx, newOy);
 
   /// Every id in the subtrees rooted at [rootIds] — a moved/edited shape plus
   /// any descendants. Connectors glue to leaf shapes, so scoping

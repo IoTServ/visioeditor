@@ -544,7 +544,7 @@ class VsdxPage {
     final updates = <int, Map<String, String>>{};
     void walk(List<VsdxShape> list) {
       for (final s in list) {
-        if (s.is1D && s.formulas.isNotEmpty) {
+        if (s.isGlueableConnector && s.formulas.isNotEmpty) {
           final formulas = Map<String, String>.of(s.formulas);
           var dirty = false;
           for (final key in keys) {
@@ -583,7 +583,7 @@ class VsdxPage {
     var next = this;
     void walk(List<VsdxShape> list) {
       for (final s in list) {
-        if (s.is1D &&
+        if (s.isGlueableConnector &&
             (connectorIds == null || connectorIds.contains(s.id))) {
           int? beginTarget;
           int? endTarget;
@@ -950,7 +950,7 @@ class VsdxPage {
   /// glued endpoints are re-derived by [rerouteConnectors].
   VsdxPage setConnectorWaypoints(int id, List<Offset2D> waypoints) {
     final s = findShapeById(id);
-    if (s == null || !s.is1D) return this;
+    if (s == null || !s.isGlueableConnector) return this;
     final control = connectorRoute(s.copyWith(waypoints: waypoints));
     final geometry = _bakeRoute(control, curved: s.curved, rounded: s.rounded);
     final next = updateShapeById(
@@ -979,7 +979,7 @@ class VsdxPage {
     required double y,
   }) {
     final s = findShapeById(id);
-    if (s == null || !s.is1D) return this;
+    if (s == null || !s.isGlueableConnector) return this;
 
     // Materialise the standard connection points on the target when pinning to
     // a fixed point and the shape has none yet (so the point round-trips).
@@ -1961,6 +1961,66 @@ class VsdxPage {
     final geometry =
         _bakeRoute(control, curved: s.curved, rounded: s.rounded);
     return s.reshapeAsPolyline(geometry);
+  }
+
+  /// Scale [child] about a parent's LocPin frame (group / lane / cell resize).
+  /// Glueable connectors rewrite Begin/End polylines; freehand ink and 2-D
+  /// shapes use [VsdxShape.resizeTo] so AABB-local geometry stays intact.
+  static VsdxShape scaleChildInFrame(
+    VsdxShape child,
+    double sx,
+    double sy,
+    double oldOx,
+    double oldOy,
+    double newOx,
+    double newOy,
+  ) {
+    final npx = newOx + (child.pinX - oldOx) * sx;
+    final npy = newOy + (child.pinY - oldOy) * sy;
+    if (child.isGlueableConnector) {
+      Offset2D? map(double? x, double? y) {
+        if (x == null || y == null) return null;
+        return Offset2D(newOx + (x - oldOx) * sx, newOy + (y - oldOy) * sy);
+      }
+
+      final b = map(child.beginX, child.beginY);
+      final e = map(child.endX, child.endY);
+      final wps = <Offset2D>[
+        for (final w in child.waypoints)
+          Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
+      ];
+      if (b == null || e == null) {
+        return child.copyWith(pinX: npx, pinY: npy, waypoints: wps);
+      }
+      final control = <Offset2D>[b, ...wps, e];
+      final geometry = child.curved
+          ? curveThrough(control)
+          : child.rounded
+              ? roundCorners(control)
+              : control;
+      return child.copyWith(waypoints: wps).reshapeAsPolyline(geometry);
+    }
+    final scaled = child.resizeTo(
+      pinX: npx,
+      pinY: npy,
+      width: child.width * sx,
+      height: child.height * sy,
+    );
+    if (child.children.isEmpty) return scaled;
+    return scaled.copyWith(
+      children: <VsdxShape>[
+        for (final k in child.children)
+          scaleChildInFrame(
+            k,
+            sx,
+            sy,
+            child.effectiveLocPinX,
+            child.effectiveLocPinY,
+            scaled.effectiveLocPinX,
+            scaled.effectiveLocPinY,
+          ),
+      ],
+    );
   }
 
   /// Translate [s] by ([dx],[dy]) in page inches. When [dontMoveChildren] is

@@ -770,7 +770,8 @@ class VsdxShape {
   /// [userCells] so the writer emits them. No-op for non-connectors with no
   /// route state. Safe to call repeatedly.
   VsdxShape persistRouteState() {
-    if (!is1D) return this;
+    // Freehand ink is 1-D but must not grow connector route User cells.
+    if (!isGlueableConnector) return this;
     final others = <VsdxUserCell>[
       for (final c in userCells)
         if (!_routeUserCellNames.contains(c.name)) c,
