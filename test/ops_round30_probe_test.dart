@@ -60,9 +60,10 @@ void main() {
 
   test('reparentSelectionInto group+child keeps child in group', () {
     final e = ctrl();
-    final box = container(e, 6, 4);
-    final a = rect(e, 2, 4);
-    final b = rect(e, 4, 4);
+    // Host on the right; keep children clear of its AABB so they stay top-level.
+    final box = container(e, 8, 4);
+    final a = rect(e, 1.5, 4);
+    final b = rect(e, 3, 4);
     e.setSelection([a, b]);
     e.groupSelection();
     final g = e.singleSelectedId!;
@@ -75,15 +76,15 @@ void main() {
 
   test('applyDropContainmentAt group+child keeps child in group', () {
     final e = ctrl();
-    final box = container(e, 6, 4);
-    final a = rect(e, 2, 4);
-    final b = rect(e, 4, 4);
+    final box = container(e, 8, 4);
+    final a = rect(e, 1.5, 4);
+    final b = rect(e, 3, 4);
     e.setSelection([a, b]);
     e.groupSelection();
     final g = e.singleSelectedId!;
     final child = e.currentPage!.findShapeById(g)!.children.first.id;
     e.setSelection([g, child]);
-    e.applyDropContainmentAt(6, 4, transient: false);
+    e.applyDropContainmentAt(8, 4, transient: false);
     expect(e.currentPage!.findParentId(g), box);
     expect(e.currentPage!.findParentId(child), g);
   });

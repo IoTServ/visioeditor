@@ -952,6 +952,28 @@ class VsdxToSvgSerializer {
             started = true;
           }
           pts.add(Offset2D(fx * w, fy * h));
+        case PolylineTo(
+            :final x,
+            :final y,
+            :final vertices,
+            :final relative,
+            :final vertsRelative,
+            :final vertsYRelative,
+          ):
+          // Align with path_builder / VsdxGeometry.polylineVertices so
+          // Line.Rounding fillets PolylineTo outlines in SVG/PDF too.
+          final vsx = vertsRelative ? w : 1.0;
+          final vsy = vertsYRelative ? h : 1.0;
+          final esx = relative ? w : 1.0;
+          final esy = relative ? h : 1.0;
+          if (!started) {
+            pts.add(const Offset2D(0, 0));
+            started = true;
+          }
+          for (final v in vertices) {
+            pts.add(Offset2D(v.x * vsx, v.y * vsy));
+          }
+          pts.add(Offset2D(x * esx, y * esy));
         default:
           return null;
       }

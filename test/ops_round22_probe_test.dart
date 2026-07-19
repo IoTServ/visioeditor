@@ -80,7 +80,8 @@ void main() {
       height: 3,
     );
     e.updateCurrentPage((p) => p.addShape(box));
-    final child = rect(e, 4, 4);
+    // Create outside the host so palette auto-containment does not nest first.
+    final child = rect(e, 1, 1);
     e.setSelection([child]);
     e.setSelectionLocked(true);
     e.applyDropContainmentAt(4, 4, transient: false);

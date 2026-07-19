@@ -252,6 +252,48 @@ void main() {
     );
   });
 
+  test('SVG Rounding fillets PolylineTo outlines like the canvas', () {
+    // Without PolylineTo support in SVG _polylineVertices, Rounding fell back
+    // to a sharp path (only stroke-linejoin=round). Filleting densifies corners.
+    final shape = VsdxShape(
+      id: 1,
+      name: 'Poly',
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      line: const VsdxLine(roundingInches: 0.25),
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            PolylineTo(
+              x: 0,
+              y: 0,
+              vertices: <Offset2D>[
+                Offset2D(2, 0),
+                Offset2D(2, 2),
+                Offset2D(0, 2),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[shape],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final d = RegExp(r'<path d="([^"]+)"').firstMatch(svg)?.group(1);
+    expect(d, isNotNull);
+    // Closed square → 4 corners; fillet inserts multiple samples per corner.
+    expect('L'.allMatches(d!).length, greaterThan(8));
+  });
+
   test('SVG geometry-less 1D uses elbow/obstacle route not a chord', () {
     final page = VsdxPage(
       id: 0,

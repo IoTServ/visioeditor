@@ -1311,8 +1311,20 @@ class EditorController extends ChangeNotifier {
               changed = true;
             }
           } else if (oldParent != null) {
-            next = next.reparentShape(id, null);
-            changed = true;
+            // Ancestors are excluded from [findDropContainerAt] so a host is
+            // never offered as its own drop target. That looks like "no hit"
+            // while the pointer is still inside the current parent — keep the
+            // nesting in that case; eject only after leaving the host.
+            final stillInside = next.containsShapePagePoint(
+                  oldParent,
+                  pageX,
+                  pageY,
+                ) &&
+                _containerAcceptsDrop(next, oldParent);
+            if (!stillInside) {
+              next = next.reparentShape(id, null);
+              changed = true;
+            }
           }
         }
         // When lanes land in a pool, reflow them to tile the pool.
@@ -1952,10 +1964,12 @@ class EditorController extends ChangeNotifier {
         left = sx - w / 2;
         bottom = sy - h / 2;
       }
+      final pinX = left + w / 2;
+      final pinY = bottom + h / 2;
       final box = VsdxShapeFactory.textBox(
         id: id,
-        pinX: left + w / 2,
-        pinY: bottom + h / 2,
+        pinX: pinX,
+        pinY: pinY,
         width: w,
         height: h,
       );
@@ -1968,6 +1982,8 @@ class EditorController extends ChangeNotifier {
         doc.replacePage(_currentPageIndex, page.addShape(box)),
         undoSelection: undoSel,
       );
+      // Match stencil drop: reparent into a container / lane under the pin.
+      applyDropContainmentAt(pinX, pinY, transient: false);
       return;
     }
 
@@ -2012,6 +2028,15 @@ class EditorController extends ChangeNotifier {
       doc.replacePage(_currentPageIndex, page.addShape(shape)),
       undoSelection: undoSel,
     );
+    // Match stencil drop: reparent into a container / lane under the pin
+    // (or line midpoint) so lane resize / collapse keeps the new shape.
+    final dropX = shape.is1D
+        ? ((shape.beginX ?? shape.pinX) + (shape.endX ?? shape.pinX)) / 2
+        : shape.pinX;
+    final dropY = shape.is1D
+        ? ((shape.beginY ?? shape.pinY) + (shape.endY ?? shape.pinY)) / 2
+        : shape.pinY;
+    applyDropContainmentAt(dropX, dropY, transient: false);
   }
 
   /// Create a connector line between two page points. When [beginTarget] /
@@ -2554,6 +2579,8 @@ class EditorController extends ChangeNotifier {
       doc.replacePage(_currentPageIndex, page.addShape(shape)),
       undoSelection: undoSel,
     );
+    // Same containment as canvas stencil drop / createShapeByDrag.
+    applyDropContainmentAt(snap(cx), snap(cy), transient: false);
   }
 
   /// Delete all selected shapes as a single undo step.

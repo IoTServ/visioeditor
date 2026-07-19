@@ -104,11 +104,30 @@ void main() {
     final laneAabb = e.currentPage!.shapePageAabb(lane.id)!;
     final cx = (laneAabb.left + laneAabb.right) / 2;
     final cy = (laneAabb.bottom + laneAabb.top) / 2;
+    // Palette drop at the lane centre auto-contains (addShapeFromBuilderAt).
     final child = rect(e, cx, cy);
-    e.setSelection([child]);
+    expect(e.currentPage!.findParentId(child), lane.id);
+    // Explicit drop from outside still prefers the lane over the pool.
+    final outsider = rect(e, 1, 1);
+    e.setSelection([outsider]);
     final drop = e.applyDropContainmentAt(cx, cy, transient: false);
     expect(drop, lane.id);
-    expect(e.currentPage!.findParentId(child), lane.id);
+    expect(e.currentPage!.findParentId(outsider), lane.id);
+  });
+
+  test('createShapeByDrag reparents into swimlane under pin', () {
+    final e = ctrl();
+    final poolId = pool(e);
+    final lane =
+        SwimlaneOps.lanesOf(e.currentPage!.findShapeById(poolId)!).first;
+    final laneAabb = e.currentPage!.shapePageAabb(lane.id)!;
+    final cx = (laneAabb.left + laneAabb.right) / 2;
+    final cy = (laneAabb.bottom + laneAabb.top) / 2;
+    e
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(cx - 0.4, cy - 0.3, cx + 0.4, cy + 0.3);
+    final id = e.singleSelectedId!;
+    expect(e.currentPage!.findParentId(id), lane.id);
   });
 
   test('resize pool reflows lane heights', () {

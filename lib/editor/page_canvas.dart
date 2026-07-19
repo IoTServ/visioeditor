@@ -563,8 +563,8 @@ class _PageCanvasState extends State<PageCanvas> {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final p = _pageInchesAt(box.globalToLocal(details.offset));
+    // Containment is applied inside [EditorController.addShapeFromBuilderAt].
     _c.addShapeFromBuilderAt(details.data.build, p.dx, p.dy);
-    _c.applyDropContainmentAt(p.dx, p.dy, transient: false);
   }
 
   /// A clipart tile dropped from the image-materials palette.
