@@ -314,6 +314,14 @@ class VsdxShape {
   /// True when the shape has an embedded picture reference.
   bool get hasImage => imagePartName != null;
 
+  /// Glueable dynamic connector (`ObjType` unset or `2`). Freehand ink is
+  /// also 1-D but uses `ObjType=1` (AABB-local geometry) and must not go
+  /// through waypoint / Begin–End reshape / glue paths.
+  bool get isGlueableConnector => is1D && (objType == null || objType == 2);
+
+  /// Freehand / scribble stroke (`ObjType=1`).
+  bool get isInk => is1D && objType == 1;
+
   /// The primary hyperlink to invoke on click (or `null` for none).
   /// Picks the first `isDefault == true`, falling back to row IX=0.
   VsdxHyperlink? get primaryHyperlink {

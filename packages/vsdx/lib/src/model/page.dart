@@ -1409,7 +1409,7 @@ class VsdxPage {
     var next = this;
     for (final id in ids) {
       final s = next.findShapeById(id);
-      if (s == null || !s.is1D) continue;
+      if (s == null || !s.isGlueableConnector) continue;
       final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
       final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
       // Nested connectors store Begin/End in the parent-local frame; obstacle
@@ -1466,7 +1466,7 @@ class VsdxPage {
     var next = this;
     for (final id in ids) {
       final s = next.findShapeById(id);
-      if (s == null || !s.is1D) continue;
+      if (s == null || !s.isGlueableConnector) continue;
       final control = connectorRoute(s);
       final geometry = _bakeRoute(control, curved: s.curved, rounded: rounded);
       next = next.updateShapeById(
@@ -2246,7 +2246,11 @@ class VsdxPage {
     var bestDepth = -1;
     void walk(List<VsdxShape> list, int depth) {
       for (final s in list) {
-        if (s.children.isNotEmpty) walk(s.children, depth + 1);
+        // Collapsed hosts keep children in the model at their old AABBs;
+        // do not drop into (or through) shapes hidden by fold.
+        if (s.children.isNotEmpty && !s.collapsed) {
+          walk(s.children, depth + 1);
+        }
         if (blocked.contains(s.id) || !isDropContainer(s)) continue;
         // Use page-space AABB so nested lanes / containers hit-test correctly.
         if (!containsShapePagePoint(s.id, x, y)) continue;

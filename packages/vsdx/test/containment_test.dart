@@ -202,6 +202,41 @@ void main() {
     });
   });
 
+  test('findDropContainerAt skips children of a collapsed host', () {
+    final outer = VsdxShapeFactory.container(
+      id: 1,
+      pinX: 4,
+      pinY: 4,
+      width: 5,
+      height: 4,
+    );
+    final inner = VsdxShapeFactory.container(
+      id: 2,
+      pinX: 4,
+      pinY: 3.5,
+      width: 2,
+      height: 1.5,
+    );
+    var page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 11,
+      heightInches: 8.5,
+      shapes: <VsdxShape>[outer, inner],
+    ).reparentShape(2, 1);
+    final pin = page.shapePinPage(2);
+    // Nested container wins while the host is expanded.
+    expect(page.findDropContainerAt(pin.x, pin.y, excludeIds: const {}), 2);
+    page = page.updateShapeById(1, (s) => s.fold());
+    expect(page.findShapeById(1)!.collapsed, isTrue);
+    // Hidden child's stale AABB must not win (host may shrink so the hit can
+    // be the folded header or null — never the invisible nested container).
+    expect(
+      page.findDropContainerAt(pin.x, pin.y, excludeIds: const {}),
+      isNot(2),
+    );
+  });
+
   group('findDropContainerAt', () {
     test('returns the container under the point', () {
       final box = VsdxShapeFactory.container(

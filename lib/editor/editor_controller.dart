@@ -550,15 +550,15 @@ class EditorController extends ChangeNotifier {
     ]);
   }
 
-  /// Select every 1-D shape on the page, including nested ones (draw.io
-  /// "Select Edges", Cmd+E).
+  /// Select every glueable connector on the page, including nested ones
+  /// (draw.io "Select Edges", Cmd+E). Freehand ink is skipped.
   void selectConnectors() {
     final page = currentPage;
     if (page == null) return;
     final ids = <int>[];
     void walk(VsdxShape s) {
       if (!page.isShapeVisible(s)) return;
-      if (s.is1D) ids.add(s.id);
+      if (s.isGlueableConnector) ids.add(s.id);
       if (s.collapsed) return;
       for (final c in s.children) {
         walk(c);
@@ -3800,7 +3800,7 @@ class EditorController extends ChangeNotifier {
       for (final id in roots) {
         final s = next.findShapeById(id);
         if (s == null) continue;
-        if (s.is1D) {
+        if (s.isGlueableConnector) {
           next = next.updateShapeById(
             id,
             (sh) => _rotate1DAboutPin(next, sh, delta),
@@ -3823,10 +3823,13 @@ class EditorController extends ChangeNotifier {
             );
             final tipLocal = next.pageToLocalDeep(parentId, tipPage);
             final pinLocal = next.pageToLocalDeep(parentId, pin);
-            final localAngle = math.atan2(
+            var localAngle = math.atan2(
               -(tipLocal.x - pinLocal.x),
               tipLocal.y - pinLocal.y,
             );
+            // Match [setSelectedAngleDegrees] / canvas rotate: flipY adds π
+            // to the page heading of local +Y.
+            if (s.flipY) localAngle -= math.pi;
             next = next.updateShapeById(
               id,
               (sh) => sh.copyWith(angleRad: localAngle),
@@ -3869,12 +3872,13 @@ class EditorController extends ChangeNotifier {
       for (final id in roots) {
         final s = next.findShapeById(id);
         if (s == null) continue;
-        if (s.is1D) {
+        if (s.isGlueableConnector) {
           next = next.updateShapeById(
             id,
             (sh) => _mirror1DAboutPin(next, sh, horizontal: horizontal),
           );
         } else {
+          // Boxes and freehand ink: flip flags (AABB-local geometry).
           next = next.updateShapeById(
             id,
             (sh) => horizontal
@@ -4363,13 +4367,13 @@ class EditorController extends ChangeNotifier {
 
   // --- Connector routing style (drawio straight / orthogonal edges) ----------
 
-  /// Whether the selection includes at least one connector (1-D shape).
+  /// Whether the selection includes at least one glueable connector.
   bool get hasConnectorSelected {
     final page = currentPage;
     if (page == null) return false;
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.is1D) return true;
+      if (s != null && s.isGlueableConnector) return true;
     }
     return false;
   }
@@ -4380,7 +4384,9 @@ class EditorController extends ChangeNotifier {
     if (page == null) return false;
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.is1D) return page.isConnectorStraight(id);
+      if (s != null && s.isGlueableConnector) {
+        return page.isConnectorStraight(id);
+      }
     }
     return false;
   }
@@ -4392,7 +4398,7 @@ class EditorController extends ChangeNotifier {
     if (page == null) return ConnectorRouteStyle.orthogonal;
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.is1D) {
+      if (s != null && s.isGlueableConnector) {
         if (s.curved) return ConnectorRouteStyle.curved;
         return s.straightRoute
             ? ConnectorRouteStyle.straight
@@ -4417,7 +4423,7 @@ class EditorController extends ChangeNotifier {
     final targets = <int>{
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
-            when s.is1D && !s.locked && !isOnLockedLayer(id))
+            when s.isGlueableConnector && !s.locked && !isOnLockedLayer(id))
           id,
     };
     if (targets.isEmpty) return;
@@ -4437,7 +4443,7 @@ class EditorController extends ChangeNotifier {
     if (page == null) return false;
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.is1D) return s.rounded;
+      if (s != null && s.isGlueableConnector) return s.rounded;
     }
     return false;
   }
@@ -4452,7 +4458,7 @@ class EditorController extends ChangeNotifier {
     final targets = <int>{
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
-            when s.is1D && !s.locked && !isOnLockedLayer(id))
+            when s.isGlueableConnector && !s.locked && !isOnLockedLayer(id))
           id,
     };
     if (targets.isEmpty) return;
@@ -4677,7 +4683,7 @@ class EditorController extends ChangeNotifier {
     for (final id in _selection) {
       final s = page.findShapeById(id);
       if (s != null &&
-          s.is1D &&
+          s.isGlueableConnector &&
           s.waypoints.isNotEmpty &&
           !s.locked &&
           !isOnLockedLayer(id)) {
@@ -4696,7 +4702,8 @@ class EditorController extends ChangeNotifier {
     final targets = <int>[
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
-            when s.waypoints.isNotEmpty &&
+            when s.isGlueableConnector &&
+                s.waypoints.isNotEmpty &&
                 !s.locked &&
                 !isOnLockedLayer(id))
           id,
@@ -5774,7 +5781,7 @@ class EditorController extends ChangeNotifier {
       (p) {
         final sh = p.findShapeById(id);
         if (sh == null) return p;
-        if (sh.is1D) {
+        if (sh.isGlueableConnector) {
           // Absolute local heading → delta from current (usually 0 after bake).
           final delta = angleRad - sh.angleRad;
           return p

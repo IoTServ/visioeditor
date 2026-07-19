@@ -566,9 +566,9 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _canConnectFrom(VsdxShape s) =>
       !s.is1D && !s.locked && !_c.isOnLockedLayer(s.id);
 
-  /// Connector eligible for endpoint / waypoint editing.
+  /// Connector eligible for endpoint / waypoint editing (not freehand ink).
   bool _canEditConnector(VsdxShape s) =>
-      s.is1D && !s.locked && !_c.isOnLockedLayer(s.id);
+      s.isGlueableConnector && !s.locked && !_c.isOnLockedLayer(s.id);
 
   Offset _pageToContent(double x, double y) => Offset(
         x * widget.pxPerInch,
@@ -578,10 +578,10 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset _pageToScreen(double x, double y) =>
       _offset + _pageToContent(x, y) * _scale;
 
-  /// The single selected connector (1-D shape), or null.
+  /// The single selected glueable connector, or null (excludes freehand ink).
   VsdxShape? _selectedConnector() {
     final s = _singleSelectedShape();
-    return (s != null && s.is1D) ? s : null;
+    return (s != null && s.isGlueableConnector) ? s : null;
   }
 
   /// Content-px positions of (rotate-line anchor at the shape's oriented top
@@ -1245,13 +1245,26 @@ class _PageCanvasState extends State<PageCanvas> {
         ),
       ),
     );
-    if (!s.is1D && pageAngle.abs() > 1e-9) {
-      // Visio CCW / Y-up → Flutter CW / Y-down.
-      editor = Transform.rotate(
-        angle: -pageAngle,
-        alignment: Alignment(locAlignX, locAlignY),
-        child: editor,
-      );
+    if (!s.is1D) {
+      // Match paint: scale(±1) about LocPin, then page heading.
+      final sx = s.flipX ? -1.0 : 1.0;
+      final sy = s.flipY ? -1.0 : 1.0;
+      final align = Alignment(locAlignX, locAlignY);
+      if (sx != 1.0 || sy != 1.0) {
+        editor = Transform(
+          alignment: align,
+          transform: Matrix4.diagonal3Values(sx, sy, 1),
+          child: editor,
+        );
+      }
+      if (pageAngle.abs() > 1e-9) {
+        // Visio CCW / Y-up → Flutter CW / Y-down.
+        editor = Transform.rotate(
+          angle: -pageAngle,
+          alignment: align,
+          child: editor,
+        );
+      }
     }
     return Positioned(
       left: left,

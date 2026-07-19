@@ -1889,4 +1889,65 @@ void main() {
       closeTo(childW0 * (4 / groupW0), 0.1),
     );
   });
+
+  test('freehand ink is not treated as a glueable connector', () {
+    final c = EditorController()..newDocument();
+    c.createFreehand(<Offset2D>[
+      const Offset2D(1, 1),
+      const Offset2D(2, 1.5),
+      const Offset2D(3, 1),
+    ]);
+    final ink = c.currentPage!.shapes.single;
+    expect(ink.isInk, isTrue);
+    expect(ink.isGlueableConnector, isFalse);
+    expect(c.hasConnectorSelected, isFalse);
+    final geomBefore = ink.geometries.first.commands.length;
+    c.setConnectorRouteStyle(ConnectorRouteStyle.straight);
+    expect(
+      c.currentPage!.findShapeById(ink.id)!.geometries.first.commands.length,
+      geomBefore,
+    );
+    c.rotateSelection90();
+    final after = c.currentPage!.findShapeById(ink.id)!;
+    // Ink uses AABB-local Angle (not Begin/End bake).
+    expect(after.angleRad.abs(), greaterThan(1e-6));
+    expect(after.objType, 1);
+  });
+
+  test('rotateSelection90 compensates flipY under a parent group', () {
+    final c = EditorController()..newDocument();
+    final parent = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 4,
+      width: 4,
+      height: 3,
+    ).copyWith(shapeKind: VsdxShapeKind.group);
+    final child = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 2,
+      pinY: 1.5,
+      width: 1,
+      height: 0.6,
+    ).copyWith(flipY: true);
+    c.updateCurrentPage(
+      (p) => p.copyWith(
+        shapes: <VsdxShape>[
+          parent.copyWith(children: <VsdxShape>[child]),
+        ],
+      ),
+    );
+    final before = c.currentPage!.shapePageAngle(2);
+    c.setSelection(<int>{2});
+    c.rotateSelection90(clockwise: false); // +90° page
+    final after = c.currentPage!.shapePageAngle(2);
+    var delta = after - before;
+    while (delta > math.pi) {
+      delta -= 2 * math.pi;
+    }
+    while (delta < -math.pi) {
+      delta += 2 * math.pi;
+    }
+    expect(delta, closeTo(math.pi / 2, 1e-6));
+  });
 }
