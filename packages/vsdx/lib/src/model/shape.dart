@@ -1573,6 +1573,9 @@ class VsdxShape {
       ..['Height'] = 'EndY-BeginY'
       ..['LocPinX'] = '(EndX-BeginX)/2'
       ..['LocPinY'] = '(EndY-BeginY)/2';
+    // Visio 1-D connectors express orientation via Begin/End, not Angle/Flip.
+    // Clearing residual Angle after reparent/ungroup avoids double-rotation
+    // when Geometry is Begin-local and Width = EndX−BeginX.
     return copyWith(
       pinX: (ax + bx) / 2,
       pinY: (ay + by) / 2,
@@ -1586,6 +1589,9 @@ class VsdxShape {
       beginY: ay,
       endX: bx,
       endY: by,
+      angleRad: 0,
+      flipX: false,
+      flipY: false,
       formulas: nextFormulas,
       connectorProps: props,
       geometries: <VsdxGeometry>[

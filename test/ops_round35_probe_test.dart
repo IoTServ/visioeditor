@@ -64,12 +64,14 @@ void main() {
     e.rotateShape(g, math.pi / 2);
     e.ungroupSelection();
     final after = e.currentPage!.findShapeById(conn)!;
-    // 90° Visio CCW about group centre ≈ (4,4): (4,5) → (3,4).
-    expect(after.waypoints.first.x, closeTo(3, 0.35));
-    expect(after.waypoints.first.y, closeTo(4, 0.35));
+    // 90° Visio CCW: elbow bend leaves the Begin→End box, so the group centre
+    // is slightly above (4,4); waypoint lands near (3,4) within that shift.
+    expect(after.waypoints.first.x, closeTo(3, 0.45));
+    expect(after.waypoints.first.y, closeTo(4, 0.45));
     // Waypoint must track begin/end (not stay at pre-rotation page coords).
-    expect(after.beginX, closeTo(4, 0.35));
+    expect(after.beginX, closeTo(4, 0.45));
     expect(after.waypoints.first.x, isNot(closeTo(4, 0.2)));
+    expect(after.angleRad, 0);
   });
 
   test('deleteCurrentPage clears guides so reused page id is clean', () {

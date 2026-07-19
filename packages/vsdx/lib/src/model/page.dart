@@ -1782,11 +1782,7 @@ class VsdxPage {
 
       return copyWith(shapes: <VsdxShape>[
         ...shapes.sublist(0, idx),
-        for (final c in g.children)
-          _childToPage(c, toPage, g.angleRad).copyWith(
-            flipX: c.flipX ^ g.flipX,
-            flipY: c.flipY ^ g.flipY,
-          ),
+        for (final c in g.children) _promoteChildToPage(c, g),
         ...shapes.sublist(idx + 1),
       ]);
     }
@@ -1809,21 +1805,76 @@ class VsdxPage {
   /// Rotation-aware page-inch AABB of [s] as (left, bottom, right, top).
   /// Uses [localToPage] so non-centre LocPin / flip match paint bounds.
   static (double, double, double, double) _aabb(VsdxShape s) {
-    final corners = <Offset2D>[
-      localToPage(s, const Offset2D(0, 0)),
-      localToPage(s, Offset2D(s.width, 0)),
-      localToPage(s, Offset2D(s.width, s.height)),
-      localToPage(s, Offset2D(0, s.height)),
-    ];
-    var minX = corners.first.x, maxX = corners.first.x;
-    var minY = corners.first.y, maxY = corners.first.y;
-    for (final c in corners.skip(1)) {
+    // Elbow / curved connectors often extend past the Begin→End Width×Height
+    // box; include baked geometry (or control polyline) so group frames fit.
+    final pts = _shapeExtentPoints(s);
+    var minX = pts.first.x, maxX = pts.first.x;
+    var minY = pts.first.y, maxY = pts.first.y;
+    for (final c in pts.skip(1)) {
       if (c.x < minX) minX = c.x;
       if (c.x > maxX) maxX = c.x;
       if (c.y < minY) minY = c.y;
       if (c.y > maxY) maxY = c.y;
     }
     return (minX, minY, maxX, maxY);
+  }
+
+  /// Parent-frame extent samples for [s]: geometry polyline for 1-D, else the
+  /// local Width×Height box corners (via [localToPage]).
+  static List<Offset2D> _shapeExtentPoints(VsdxShape s) {
+    if (s.is1D) {
+      for (final g in s.geometries) {
+        if (g.noShow) continue;
+        final local = <Offset2D>[];
+        var ok = true;
+        for (final c in g.commands) {
+          if (c is MoveTo) {
+            local.add(Offset2D(c.x, c.y));
+          } else if (c is LineTo) {
+            local.add(Offset2D(c.x, c.y));
+          } else {
+            ok = false;
+            break;
+          }
+        }
+        if (ok && local.length >= 2) {
+          return <Offset2D>[for (final p in local) localToPage(s, p)];
+        }
+      }
+      final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+      final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+      return <Offset2D>[
+        Offset2D(ax, ay),
+        ...s.waypoints,
+        Offset2D(bx, by),
+      ];
+    }
+    return <Offset2D>[
+      localToPage(s, const Offset2D(0, 0)),
+      localToPage(s, Offset2D(s.width, 0)),
+      localToPage(s, Offset2D(s.width, s.height)),
+      localToPage(s, Offset2D(0, s.height)),
+    ];
+  }
+
+  /// After Begin/End/waypoints were rewritten into a new coordinate frame,
+  /// rebuild 1-D geometry and clear Angle/Flip (Visio connector convention).
+  static VsdxShape _finalize1DCoords(VsdxShape s) {
+    if (!s.is1D ||
+        s.beginX == null ||
+        s.beginY == null ||
+        s.endX == null ||
+        s.endY == null) {
+      return s;
+    }
+    final control = <Offset2D>[
+      Offset2D(s.beginX!, s.beginY!),
+      ...s.waypoints,
+      Offset2D(s.endX!, s.endY!),
+    ];
+    final geometry =
+        _bakeRoute(control, curved: s.curved, rounded: s.rounded);
+    return s.reshapeAsPolyline(geometry);
   }
 
   /// Translate [s] by ([dx],[dy]) in page inches. When [dontMoveChildren] is
@@ -1869,7 +1920,8 @@ class VsdxPage {
   }
 
   /// Convert a group child (local coords) back to page coords via [toPage],
-  /// folding the group's rotation into the child's own angle.
+  /// folding the group's rotation into the child's own angle (2-D). 1-D
+  /// connectors map Begin/End/waypoints and [reshapeAsPolyline] instead.
   static VsdxShape _childToPage(
     VsdxShape c,
     (double, double) Function(double, double) toPage,
@@ -1893,6 +1945,7 @@ class VsdxPage {
       }
       r = r.copyWith(waypoints: wps);
     }
+    if (c.is1D) return _finalize1DCoords(r);
     return r;
   }
 
@@ -1914,7 +1967,9 @@ class VsdxPage {
     }
 
     // Bake parent flips into the child so chirality survives ungroup / eject.
+    // 1-D connectors already finalize Angle/Flip=0 via reshape — do not reapply.
     final promoted = _childToPage(child, toPage, parent.angleRad);
+    if (child.is1D) return promoted;
     return promoted.copyWith(
       flipX: child.flipX ^ parent.flipX,
       flipY: child.flipY ^ parent.flipY,
@@ -1950,6 +2005,7 @@ class VsdxPage {
         ],
       );
     }
+    if (pageShape.is1D) return _finalize1DCoords(r);
     return r;
   }
 
@@ -1998,19 +2054,33 @@ class VsdxPage {
     );
   }
 
-  /// Exact (unpadded) axis-aligned page-inch bbox of [shapeId]'s local
-  /// `[0..W]×[0..H]` box after composing ancestor XForms, or `null` if missing.
+  /// Exact (unpadded) axis-aligned page-inch bbox of [shapeId] after composing
+  /// ancestor XForms, or `null` if missing. 1-D shapes use their drawn
+  /// polyline so elbow/curve bends are included.
   ({double left, double bottom, double right, double top})? shapePageAabb(
     int shapeId,
   ) {
     final s = findShapeById(shapeId);
     if (s == null) return null;
-    final corners = <Offset2D>[
-      localToPageDeep(shapeId, const Offset2D(0, 0)),
-      localToPageDeep(shapeId, Offset2D(s.width, 0)),
-      localToPageDeep(shapeId, Offset2D(s.width, s.height)),
-      localToPageDeep(shapeId, Offset2D(0, s.height)),
-    ];
+    final List<Offset2D> corners;
+    if (s.is1D) {
+      final route = drawnConnectorPagePolyline(s);
+      corners = route.length >= 2
+          ? route
+          : <Offset2D>[
+              localToPageDeep(shapeId, const Offset2D(0, 0)),
+              localToPageDeep(shapeId, Offset2D(s.width, 0)),
+              localToPageDeep(shapeId, Offset2D(s.width, s.height)),
+              localToPageDeep(shapeId, Offset2D(0, s.height)),
+            ];
+    } else {
+      corners = <Offset2D>[
+        localToPageDeep(shapeId, const Offset2D(0, 0)),
+        localToPageDeep(shapeId, Offset2D(s.width, 0)),
+        localToPageDeep(shapeId, Offset2D(s.width, s.height)),
+        localToPageDeep(shapeId, Offset2D(0, s.height)),
+      ];
+    }
     var minX = corners.first.x, maxX = corners.first.x;
     var minY = corners.first.y, maxY = corners.first.y;
     for (final c in corners.skip(1)) {
@@ -2174,7 +2244,8 @@ class VsdxPage {
   }
 
   /// Promote [childId] through every ancestor into true page-absolute coords,
-  /// baking ancestor reflection into [VsdxShape.flipX].
+  /// baking ancestor reflection into [VsdxShape.flipX] (2-D). 1-D connectors
+  /// remap Begin/End and reshape so Angle stays 0.
   VsdxShape _promoteToPageDeep(int childId) {
     final child = findShapeById(childId)!;
     final parentId = findParentId(childId);
@@ -2207,6 +2278,7 @@ class VsdxPage {
         ],
       );
     }
+    if (child.is1D) return _finalize1DCoords(r);
     return r;
   }
 
@@ -2268,6 +2340,7 @@ class VsdxPage {
         ],
       );
     }
+    if (src.is1D) return _finalize1DCoords(r);
     return r;
   }
 

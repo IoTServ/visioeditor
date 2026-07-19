@@ -2986,18 +2986,51 @@ class EditorController extends ChangeNotifier {
   // --- Align / distribute ----------------------------------------------------
 
   /// Axis-aligned bounding box of [s] in page inches as (left, bottom, right,
-  /// top), honouring LocPin, rotation and flip (same corners as shapePageAabb).
+  /// top), honouring LocPin, rotation and flip. 1-D includes elbow/curve bends.
   static (double, double, double, double) _bounds(VsdxShape s) {
-    final corners = <Offset2D>[
-      const Offset2D(0, 0),
-      Offset2D(s.width, 0),
-      Offset2D(s.width, s.height),
-      Offset2D(0, s.height),
-    ];
+    final corners = <Offset2D>[];
+    if (s.is1D) {
+      for (final g in s.geometries) {
+        if (g.noShow) continue;
+        final local = <Offset2D>[];
+        var ok = true;
+        for (final c in g.commands) {
+          if (c is MoveTo) {
+            local.add(Offset2D(c.x, c.y));
+          } else if (c is LineTo) {
+            local.add(Offset2D(c.x, c.y));
+          } else {
+            ok = false;
+            break;
+          }
+        }
+        if (ok && local.length >= 2) {
+          for (final p in local) {
+            corners.add(VsdxPage.localToPage(s, p));
+          }
+          break;
+        }
+      }
+      if (corners.isEmpty) {
+        final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+        final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+        corners.addAll(<Offset2D>[
+          Offset2D(ax, ay),
+          ...s.waypoints,
+          Offset2D(bx, by),
+        ]);
+      }
+    } else {
+      corners.addAll(<Offset2D>[
+        const Offset2D(0, 0),
+        Offset2D(s.width, 0),
+        Offset2D(s.width, s.height),
+        Offset2D(0, s.height),
+      ].map((local) => VsdxPage.localToPage(s, local)));
+    }
     var minX = double.infinity, minY = double.infinity;
     var maxX = -double.infinity, maxY = -double.infinity;
-    for (final local in corners) {
-      final p = VsdxPage.localToPage(s, local);
+    for (final p in corners) {
       minX = math.min(minX, p.x);
       maxX = math.max(maxX, p.x);
       minY = math.min(minY, p.y);
