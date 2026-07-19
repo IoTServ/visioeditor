@@ -43,6 +43,24 @@ abstract final class ShapePerimeter {
     return localToPage(localHit);
   }
 
+  /// Flatten [outlineSegments] into an ordered vertex list (shape-local
+  /// inches). Used when a connector's Geometry contains curves (NURBS / Arc /
+  /// Spline / Bézier) so hit-test, line-jumps and labels follow the drawn
+  /// stroke instead of falling back to auto-route.
+  static List<Offset2D>? sampledPathVertices(VsdxShape shape) {
+    final segs = outlineSegments(shape);
+    if (segs.isEmpty) return null;
+    final pts = <Offset2D>[segs.first.$1];
+    for (final (a, b) in segs) {
+      final last = pts.last;
+      if ((last.x - a.x).abs() > 1e-9 || (last.y - a.y).abs() > 1e-9) {
+        pts.add(a);
+      }
+      pts.add(b);
+    }
+    return pts.length >= 2 ? pts : null;
+  }
+
   /// Nearest point on [shape]'s outline (local inches) to [local], or `null`
   /// when the outline is empty.
   static Offset2D? nearestLocal(VsdxShape shape, Offset2D local) {

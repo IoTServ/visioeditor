@@ -846,7 +846,8 @@ class VsdxPage {
 
   /// Drawn connector polyline in **page** inches: baked MoveTo/LineTo/
   /// PolylineTo geometry when present (including dense curved / rounded
-  /// samples), otherwise [autoRoutedConnectorPolyline]. Walks nested shapes
+  /// samples), otherwise a sampled outline of NURBS/Arc/Spline/Bézier
+  /// geometry, otherwise [autoRoutedConnectorPolyline]. Walks nested shapes
   /// correctly for SVG line-jump collection.
   List<Offset2D> drawnConnectorPagePolyline(VsdxShape s) {
     if (!s.isGlueableConnector) return const <Offset2D>[];
@@ -862,6 +863,13 @@ class VsdxPage {
             for (final p in local) localToPageDeep(s.id, p),
           ];
         }
+      }
+      // Imported Visio freeform / NURBS connectors: sample the true stroke.
+      final sampled = ShapePerimeter.sampledPathVertices(s);
+      if (sampled != null && sampled.length >= 2) {
+        return <Offset2D>[
+          for (final p in sampled) localToPageDeep(s.id, p),
+        ];
       }
     }
     return autoRoutedConnectorPolyline(s);

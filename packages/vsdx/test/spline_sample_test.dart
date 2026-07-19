@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -52,16 +54,29 @@ void main() {
   });
 
   group('sampleArcByBow', () {
-    test('positive bow bows left of the chord', () {
+    test('positive bow is a circular arc through the sagitta apex', () {
       final pts = sampleArcByBow(
         start: const Offset2D(0, 0),
         end: const Offset2D(2, 0),
         bow: 0.5,
-        steps: 4,
+        steps: 8,
       );
       expect(pts.last.x, closeTo(2, 1e-9));
-      // Mid sample should be above the chord (Visio +bow = left = +Y here).
-      expect(pts[1].y, greaterThan(0));
+      expect(pts.last.y, closeTo(0, 1e-9));
+      // Apex of +bow=0.5 on (0,0)→(2,0) is (1, 0.5).
+      var nearest = double.infinity;
+      for (final p in pts) {
+        final d = (p.x - 1) * (p.x - 1) + (p.y - 0.5) * (p.y - 0.5);
+        if (d < nearest) nearest = d;
+      }
+      expect(nearest, lessThan(0.02));
+      // Radius from Visio formula: (chord²+4s²)/(8s) = 1.25.
+      const r = 1.25;
+      const cx = 1.0, cy = -0.75;
+      for (final p in pts) {
+        final d = math.sqrt((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy));
+        expect(d, closeTo(r, 1e-3));
+      }
     });
   });
 }

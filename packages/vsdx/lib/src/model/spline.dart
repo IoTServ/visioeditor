@@ -94,8 +94,10 @@ List<Offset2D> sampleVisioSpline({
   return (samples: pts, end: end, nextIndex: j);
 }
 
-/// Sample an ArcTo chord+bow into polyline points (excludes [start], includes
-/// [end]). Used by perimeter glue and arrow-tangent extraction.
+/// Sample a Visio ArcTo (chord + bow / sagitta) as a **circular** arc.
+///
+/// Matches [path_builder] / SVG (`r = (chord² + 4·bow²) / (8·|bow|)`).
+/// Returns intermediate points (excludes [start]; includes [end]).
 List<Offset2D> sampleArcByBow({
   required Offset2D start,
   required Offset2D end,
@@ -103,25 +105,57 @@ List<Offset2D> sampleArcByBow({
   int steps = 10,
 }) {
   if (bow.abs() < 1e-12) return <Offset2D>[end];
-  final mx = (start.x + end.x) / 2;
-  final my = (start.y + end.y) / 2;
   final dx = end.x - start.x;
   final dy = end.y - start.y;
-  final length = math.sqrt(dx * dx + dy * dy);
-  if (length < 1e-12) return <Offset2D>[end];
-  final nx = -dy / length;
-  final ny = dx / length;
-  final ctrl = Offset2D(mx + nx * bow, my + ny * bow);
+  final chord = math.sqrt(dx * dx + dy * dy);
+  if (chord < 1e-12) return <Offset2D>[end];
+  final s = bow.abs();
+  final r = (chord * chord + 4 * s * s) / (8 * s);
+  final mx = (start.x + end.x) / 2;
+  final my = (start.y + end.y) / 2;
+  // Unit left-normal of the chord (Visio +bow lies on this side).
+  final nx = -dy / chord;
+  final ny = dx / chord;
+  final sign = bow > 0 ? 1.0 : -1.0;
+  // Apex at M + n·bow; centre is r from both ends, on the same side.
+  final dist = r - s;
+  final cx = mx - nx * sign * dist;
+  final cy = my - ny * sign * dist;
+  final apex = Offset2D(mx + nx * bow, my + ny * bow);
+
+  final a0 = math.atan2(start.y - cy, start.x - cx);
+  final a1 = math.atan2(end.y - cy, end.x - cx);
+  final aA = math.atan2(apex.y - cy, apex.x - cx);
+
+  // Pick the sweep a0→a1 that passes nearer the apex (handles major/minor).
+  var dPos = a1 - a0;
+  while (dPos <= 0) {
+    dPos += 2 * math.pi;
+  }
+  var dNeg = a1 - a0;
+  while (dNeg >= 0) {
+    dNeg -= 2 * math.pi;
+  }
+  double angDist(double a, double b) {
+    var d = (a - b).abs();
+    if (d > math.pi) d = 2 * math.pi - d;
+    return d;
+  }
+
+  final midPos = a0 + dPos / 2;
+  final midNeg = a0 + dNeg / 2;
+  final delta =
+      angDist(midPos, aA) <= angDist(midNeg, aA) ? dPos : dNeg;
+
   final out = <Offset2D>[];
   for (var i = 1; i <= steps; i++) {
     final t = i / steps;
-    final u = 1 - t;
-    out.add(
-      Offset2D(
-        u * u * start.x + 2 * u * t * ctrl.x + t * t * end.x,
-        u * u * start.y + 2 * u * t * ctrl.y + t * t * end.y,
-      ),
-    );
+    final a = a0 + delta * t;
+    out.add(Offset2D(cx + r * math.cos(a), cy + r * math.sin(a)));
+  }
+  // Snap the last sample to the exact endpoint.
+  if (out.isNotEmpty) {
+    out[out.length - 1] = end;
   }
   return out;
 }

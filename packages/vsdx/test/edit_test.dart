@@ -478,6 +478,48 @@ void main() {
         isTrue);
   });
 
+  test('drawnConnectorPagePolyline samples NURBS connector geometry', () {
+    // Imported Visio freeform connectors often use NURBSTo — must not fall
+    // back to the Begin→End auto-route chord.
+    final conn = VsdxShapeFactory.line(id: 12, ax: 0, ay: 0, bx: 3, by: 0)
+        .copyWith(
+      width: 3,
+      height: 1,
+      locPinXInches: 0,
+      locPinYInches: 0,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            NurbsTo(
+              x: 3,
+              y: 0,
+              controlPoints: const <Offset2D>[
+                Offset2D(1, 1),
+                Offset2D(2, 1),
+              ],
+              weights: const <double>[1, 1, 1, 1],
+              knots: const <double>[0, 0, 0, 1, 1, 1],
+              degree: 3,
+            ),
+          ],
+          noFill: true,
+        ),
+      ],
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 10,
+      heightInches: 10,
+      shapes: <VsdxShape>[conn],
+    );
+    final drawn = page.drawnConnectorPagePolyline(conn);
+    expect(drawn.length, greaterThan(3));
+    // Chord fallback is y≈0 everywhere; a real NURBS bulge has y>0.2.
+    expect(drawn.any((p) => p.y > 0.2), isTrue);
+  });
+
   test('autoRoutedConnectorPolyline skips freehand ink', () {
     final ink = VsdxShapeFactory.freehand(
       id: 9,

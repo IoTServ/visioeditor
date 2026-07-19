@@ -2144,16 +2144,9 @@ class EditorController extends ChangeNotifier {
         y: sby,
       );
     }
-    next = next.recalculateFormulas(
-      changedShapeIds: <int>{id, ?begin, ?end},
-    );
-    if (beginIdx == null || endIdx == null) {
-      next = next.rerouteConnectors(movedShapeIds: <int>{
-        id,
-        ?begin,
-        ?end,
-      });
-    }
+    next = next
+        .recalculateFormulas(changedShapeIds: <int>{id, ?begin, ?end})
+        .rerouteConnectors(movedShapeIds: <int>{id, ?begin, ?end});
     applyEdit(
       doc.replacePage(
         _currentPageIndex,
@@ -2260,12 +2253,14 @@ class EditorController extends ChangeNotifier {
           toPart: 3,
         ),
       ],
-    ).rerouteConnectors(movedShapeIds: <int>{connId, sourceId, targetId});
+    );
 
     // Glue each end to the facing fixed connection point so the edge meets the
-    // sides square-on (only meaningful for the default point set).
-    // Endpoint coords are page inches (connector is top-level).
-    if (source.connectionPoints.isEmpty) {
+    // sides square-on. Use effective (including default) points so a second
+    // directional connect still pins after Connection rows were materialised.
+    final srcPts = VsdxPage.effectiveConnectionPoints(source);
+    final tgtPts = VsdxPage.effectiveConnectionPoints(target);
+    if (srcPts.length >= 4 && dir >= 0 && dir < 4) {
       next = next.setConnectorEndpoint(
         connId,
         begin: true,
@@ -2275,16 +2270,24 @@ class EditorController extends ChangeNotifier {
         y: srcPin.y,
       );
     }
-    if (target.connectionPoints.isEmpty) {
+    final endDir = (dir + 2) % 4;
+    if (tgtPts.length >= 4) {
       next = next.setConnectorEndpoint(
         connId,
         begin: false,
         targetShapeId: targetId,
-        connectionPointIndex: (dir + 2) % 4,
+        connectionPointIndex: endDir,
         x: tgtPin.x,
         y: tgtPin.y,
       );
     }
+    next = next
+        .recalculateFormulas(
+          changedShapeIds: <int>{connId, sourceId, targetId},
+        )
+        .rerouteConnectors(
+          movedShapeIds: <int>{connId, sourceId, targetId},
+        );
 
     final undoSel = Set<int>.of(_selection);
     _selection
