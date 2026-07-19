@@ -392,8 +392,11 @@ class VsdxPainter extends CustomPainter {
           // A line gradient (LineGradientEnabled) paints the stroke with a
           // shader; without this the colour resolves to the black fallback.
           if (shape.line.hasGradient) {
-            final shader =
-                _buildGradientShader(shape.line.gradient!, path.getBounds());
+            final shader = _buildGradientShader(
+              shape.line.gradient!,
+              path.getBounds(),
+              fillTransparency: shape.line.transparency,
+            );
             if (shader != null) strokePaint.shader = shader;
           }
           var strokeSrc = path;
@@ -503,8 +506,11 @@ class VsdxPainter extends CustomPainter {
     // Match [_paintGeometries]: LineGradient + CompoundType on connectors
     // that only carry BeginX/EndX (no Geometry section).
     if (shape.line.hasGradient) {
-      final shader =
-          _buildGradientShader(shape.line.gradient!, path.getBounds());
+      final shader = _buildGradientShader(
+        shape.line.gradient!,
+        path.getBounds(),
+        fillTransparency: shape.line.transparency,
+      );
       if (shader != null) stroke.shader = shader;
     }
     final dashes = dashPatternFor(shape.line.pattern);
@@ -576,7 +582,11 @@ class VsdxPainter extends CustomPainter {
     if (fill.hasGradient) {
       final bounds = path.getBounds();
       if (bounds.isEmpty) return;
-      final shader = _buildGradientShader(fill.gradient!, bounds);
+      final shader = _buildGradientShader(
+        fill.gradient!,
+        bounds,
+        fillTransparency: fill.foregroundTransparency,
+      );
       if (shader != null) {
         canvas.drawPath(path, Paint()..shader = shader);
         return;
@@ -610,13 +620,19 @@ class VsdxPainter extends CustomPainter {
     if (solid != null) canvas.drawPath(path, solid);
   }
 
-  Shader? _buildGradientShader(VsdxGradient gradient, Rect bounds) {
+  Shader? _buildGradientShader(
+    VsdxGradient gradient,
+    Rect bounds, {
+    double fillTransparency = 0,
+  }) {
     if (gradient.stops.isEmpty) return null;
+    final fillAlpha = (1 - fillTransparency.clamp(0.0, 1.0));
     final colors = <Color>[];
     final stops = <double>[];
     for (final s in gradient.stops) {
       final base = _colourOrTheme(s.color, s.themeColorIndex) ?? fallbackFill;
-      colors.add(base.withValues(alpha: (1 - s.transparency).clamp(0.0, 1.0)));
+      final stopAlpha = (1 - s.transparency).clamp(0.0, 1.0) * fillAlpha;
+      colors.add(base.withValues(alpha: base.a * stopAlpha));
       stops.add(s.position);
     }
     if (colors.length == 1) {
@@ -657,19 +673,23 @@ class VsdxPainter extends CustomPainter {
     if (bounds.isEmpty) return;
 
     final clipHeight = bounds.height * refl.sizeInches.clamp(0.01, 1.0);
-    final pivotY = bounds.bottom + refl.distanceInches;
+    // In page-inch Y-up space, Rect.top is min Y = visual bottom of the shape.
+    final bottomY = bounds.top;
+    final dist = refl.distanceInches;
     final clip = Rect.fromLTWH(
       bounds.left - bounds.width,
-      pivotY,
+      bottomY - dist - clipHeight - refl.blurInches,
       bounds.width * 3,
-      clipHeight + refl.blurInches,
+      clipHeight + refl.blurInches + dist,
     );
 
     canvas.save();
     canvas.clipRect(clip);
-    canvas.translate(0, pivotY);
+    // Mirror about the visual bottom, then shift downward (matches SVG).
+    canvas.translate(0, -dist);
+    canvas.translate(0, bottomY);
     canvas.scale(1, -1);
-    canvas.translate(0, -pivotY);
+    canvas.translate(0, -bottomY);
 
     canvas.saveLayer(bounds.inflate(refl.blurInches * 2), Paint());
 
@@ -755,8 +775,8 @@ class VsdxPainter extends CustomPainter {
             : StrokeJoin.miter;
     }
     canvas.save();
-    // Visio Y increases up; we're already in inverted Y when this runs.
-    canvas.translate(shadow.offsetXInches, -shadow.offsetYInches);
+    // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
+    canvas.translate(shadow.offsetXInches, shadow.offsetYInches);
     canvas.drawPath(path, paint);
     canvas.restore();
   }
@@ -1156,11 +1176,12 @@ class VsdxPainter extends CustomPainter {
       _paintImagePlaceholder(canvas, bounds, src);
       return;
     }
-    // We're drawing inside an inverted-Y page-local coordinate frame.
-    // Flip Y again so the picture appears upright.
+    // Bitmap rows are Y-down; the page frame is Y-up. Flip once for upright
+    // display — but skip when FlipY already mirrored the parent XForm so the
+    // two scales do not cancel (LocPin-centred shapes).
     canvas.save();
     canvas.translate(bounds.center.dx, bounds.center.dy);
-    canvas.scale(1, -1);
+    canvas.scale(1, shape.flipY ? 1.0 : -1.0);
     final dst = Rect.fromCenter(
       center: Offset.zero,
       width: bounds.width,
@@ -1515,7 +1536,7 @@ class VsdxPainter extends CustomPainter {
 
     // Offsets measured from the block's upper-left corner (px).
     final ox = switch (align) {
-      TextAlign.center => (twPx - tp.width) / 2,
+      TextAlign.center => mlPx + (twPx - mlPx - mrPx - tp.width) / 2,
       TextAlign.right => twPx - mrPx - tp.width,
       _ => mlPx, // left / justify / start
     };

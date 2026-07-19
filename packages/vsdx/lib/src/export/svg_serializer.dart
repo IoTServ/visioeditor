@@ -1004,11 +1004,12 @@ class VsdxToSvgSerializer {
     if (fill.hasGradient) {
       final g = fill.gradient!;
       final id = 'grad-$paintId';
+      final fillAlpha = (1 - fill.foregroundTransparency.clamp(0.0, 1.0));
       final stops = StringBuffer();
       for (final s in g.stops) {
         final c = _resolveColor(s.color, s.themeColorIndex, theme) ??
             const VsdxColor(0xFFFFFFFF);
-        final op = _combinedOpacity(c, s.transparency);
+        final op = _combinedOpacity(c, s.transparency) * fillAlpha;
         stops.write(
           '<stop offset="${_n(s.position.clamp(0.0, 1.0))}" '
           'stop-color="${_hex(c)}" stop-opacity="${_n(op)}"/>',
@@ -1336,9 +1337,13 @@ class VsdxToSvgSerializer {
     }
     final href = 'data:$mime;base64,${base64Encode(bytes)}';
     // SVG <image> with preserveAspectRatio="none" stretches to fit; Visio
-    // already stores the picture at the shape's bounds.
+    // already stores the picture at the shape's bounds. Bitmap rows are
+    // Y-down — flip once for upright, unless FlipY already mirrored the
+    // parent XForm (same cancel-avoidance as the canvas painter).
+    final uprightY = shape.flipY ? 1.0 : -1.0;
     buf.writeln(
-      '$indent<g transform="translate(0 ${_n(shape.height)}) scale(1 -1)">'
+      '$indent<g transform="translate(0 ${_n(shape.height)}) '
+      'scale(1 ${_n(uprightY)})">'
       '<image href="$href" x="0" y="0" '
       'width="${_n(shape.width)}" height="${_n(shape.height)}" '
       'preserveAspectRatio="none"/></g>',
@@ -1612,7 +1617,7 @@ class VsdxToSvgSerializer {
             ml + indentL + indentF + bulletGap,
           ),
         VsdxHorzAlign.right => ('end', tw - mr - style.indentRightInches),
-        VsdxHorzAlign.center => ('middle', tw / 2),
+        VsdxHorzAlign.center => ('middle', ml + (tw - ml - mr) / 2),
       };
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;

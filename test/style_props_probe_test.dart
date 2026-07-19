@@ -683,6 +683,73 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('refl-clip-p0-6-0'), isTrue);
     expect(svg.contains('scale(1 -1)'), isTrue);
+    // Reflection lives below the shape (negative Y in shape-local Y-up).
+    expect(svg.contains('y="-0.6"'), isTrue);
+  });
+
+  test('SVG fill gradient multiplies FillForegndTrans into stop-opacity', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 7,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: VsdxFill(
+            foregroundTransparency: 0.5,
+            gradient: VsdxGradient(
+              stops: const <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('linearGradient'), isTrue);
+    // Opaque stops × (1 - 0.5) → stop-opacity 0.5.
+    expect(svg.contains('stop-opacity="0.5"'), isTrue);
+  });
+
+  test('SVG shadow dy keeps Visio +Y up (matches canvas)', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 8,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.1,
+            offsetYInches: 0.2,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('dy="0.2"'), isTrue);
+    expect(svg.contains('dy="-0.2"'), isFalse);
   });
 
   test('SVG uses meaningful shape name as label fallback', () {
