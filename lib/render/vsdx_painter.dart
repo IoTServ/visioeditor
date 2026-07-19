@@ -724,8 +724,31 @@ class VsdxPainter extends CustomPainter {
     final paintStroke = !noLine && shape.line.hasLine;
     if (!paintFill && !paintStroke) return;
 
-    final bounds = path.getBounds();
-    if (bounds.isEmpty) return;
+    var bounds = path.getBounds();
+    // Axis-aligned 1D lines yield zero-area bounds (height or width == 0);
+    // Flutter treats those as empty and would skip the mirror entirely.
+    if (bounds.width <= 0 && bounds.height <= 0) return;
+    final inflate = math.max(
+          shape.line.weightInches > 0 ? shape.line.weightInches : 0.01,
+          0.01,
+        ) *
+        0.5;
+    if (bounds.height <= 1e-9) {
+      bounds = Rect.fromLTRB(
+        bounds.left,
+        bounds.top - inflate,
+        bounds.right,
+        bounds.bottom + inflate,
+      );
+    }
+    if (bounds.width <= 1e-9) {
+      bounds = Rect.fromLTRB(
+        bounds.left - inflate,
+        bounds.top,
+        bounds.right + inflate,
+        bounds.bottom,
+      );
+    }
 
     final clipHeight = bounds.height * refl.sizeInches.clamp(0.01, 1.0);
     // In page-inch Y-up space, Rect.top is min Y = visual bottom of the shape.

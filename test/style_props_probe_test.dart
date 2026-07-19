@@ -584,6 +584,34 @@ void main() {
     );
   });
 
+  test('SVG reflection on horizontal 1D uses stroke-weight clip height', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(id: 9, ax: 1, ay: 2, bx: 4, by: 2).copyWith(
+          line: const VsdxLine(
+            color: VsdxColor(0xFF1565C0),
+            weightInches: 0.05,
+          ),
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.5,
+            distanceInches: 0.02,
+            blurInches: 0,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('scale(1 -1)'));
+    expect(svg, contains('refl-'));
+    // Path height ≈ 0; fallback clip uses weight 0.05 × size 0.5 = 0.025
+    expect(svg, contains('height="0.025"'));
+  });
+
   test('SVG reflection reuses hatch pattern fill', () {
     final page = VsdxPage(
       id: 0,

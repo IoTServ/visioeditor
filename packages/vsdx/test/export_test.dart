@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -435,6 +436,9 @@ void main() {
     expect(flippedMeta!.group(1), '',
         reason: 'FlipY metafile must not apply a second Y flip');
     expect(flipped, contains('scale(1 -1)')); // parent XForm FlipY
+    // FlipY must not translate(0, height) with positive sy (would land in [h,2h]).
+    expect(flipped, contains('translate(0 0)'));
+    expect(upright, contains('translate(0 2)'));
   });
 
   test('SVG print filter omits non-printable layers', () {
@@ -774,6 +778,159 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('<mask '));
     expect(svg, contains('stroke-linecap="butt"'));
+  });
+
+  test('SVG compound line keeps EndArrow outside the mask', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                weightInches: 0.08,
+                compoundType: 1,
+                endArrow: 2,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('<mask '));
+    expect(svg, contains('marker-end='));
+    // Masked rail must not carry markers; overlay path has stroke-opacity="0".
+    expect(
+      RegExp(r'mask="url\(#cmp-[^"]+\)"[^>]*marker-').hasMatch(svg),
+      isFalse,
+      reason: 'compound mask would clip arrowheads outside the stroke pipe',
+    );
+    expect(svg, contains('stroke-opacity="0"'));
+    expect(svg, contains('marker-end='));
+  });
+
+  test('SVG arrows 25/26 are wide triangles with 0.85 reach', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    for (final arrowId in <int>[25, 26]) {
+      page = page.addShape(
+        VsdxShapeFactory.line(
+          id: nextId++,
+          ax: 1,
+          ay: arrowId * 0.1,
+          bx: 3,
+          by: arrowId * 0.1,
+        ).copyWith(
+          line: VsdxLine(
+            endArrow: arrowId,
+            endArrowSizeInches: 0.2,
+            weightInches: 0.04,
+          ),
+        ),
+      );
+    }
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="context-stroke"'),
+      reason: 'arrow 25 is filled wide triangle',
+    );
+    expect(
+      svg,
+      contains(
+        'd="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="none" stroke="context-stroke"',
+      ),
+      reason: 'arrow 26 is open wide triangle',
+    );
+    // markerWidth = size * reach = 0.2 * 0.85 = 0.17
+    expect(svg, contains('markerWidth="0.17"'));
+  });
+
+  test('SVG bullet hanging indent matches canvas TextPosAfterBullet', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 1.5,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Item',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.15,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  bullet: 1,
+                  bulletStr: '•',
+                  indentLeftInches: 0.25,
+                  indentFirstInches: -0.15,
+                  textPosAfterBulletInches: 0.3,
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Bullet still drawn when centred (previously skipped for center).
+    expect(svg, contains('•'));
+    // Default TextBkgnd margin 0.04": bullet at IndLeft+IndFirst = 0.14
+    expect(svg, contains('x="0.14"'));
+    // Body hanging band: IndLeft + TextPosAfterBullet → centre of remainder.
+    // textBandX=0.59; xBody=0.59+(3-0.04-0.59)/2=1.775
+    expect(svg, contains('x="1.775"'));
+  });
+
+  test('SVG FlipY bitmap uses centre flip (stays in shape box)', () {
+    // 1×1 PNG
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    );
+    const part = '/visio/media/image1.png';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 2,
+          height: 1,
+          imagePartName: part,
+        ).copyWith(flipY: true),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(
+      svg,
+      contains(
+        'transform="translate(1 0.5) scale(1 1) translate(-1 -0.5)"',
+      ),
+      reason: 'FlipY bitmap must centre-scale, not translate(0,h)+scale(1,1)',
+    );
+    expect(svg.contains('translate(0 1) scale(1 1)'), isFalse);
   });
 
   test('SVG Initial Caps capitalises each word', () {

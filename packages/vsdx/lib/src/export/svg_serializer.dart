@@ -462,9 +462,10 @@ class VsdxToSvgSerializer {
     final fillAttr = !noFill
         ? _fillAttr(shape.fill, theme, paintId, defs)
         : 'fill="none"';
-    final strokeAttr = !noLine
+    final stroke = !noLine
         ? _strokeAttr(shape.line, theme, paintId, defs)
-        : 'stroke="none"';
+        : (paint: 'stroke="none"', markers: '');
+    final strokeAttr = '${stroke.paint}${stroke.markers}';
     final filterAttr = _effectsFilterAttr(shape, theme, paintId, defs);
     if (defs.isNotEmpty) {
       buf.writeln('$indent<defs>$defs</defs>');
@@ -543,10 +544,18 @@ class VsdxToSvgSerializer {
       if (!noFill && fillAttr != 'fill="none"') {
         buf.writeln('$indent<path d="$d" $fillAttr stroke="none"/>');
       }
+      // Mask only the stroke rail — markers sit outside the pipe and would
+      // be clipped (canvas paints arrows after compound in _paintLineEndings).
       buf.writeln(
-        '$indent<path d="$d" fill="none" $strokeAttr '
+        '$indent<path d="$d" fill="none" ${stroke.paint} '
         'mask="url(#$mid)"/>',
       );
+      if (stroke.markers.isNotEmpty) {
+        buf.writeln(
+          '$indent<path d="$d" fill="none" ${stroke.paint} '
+          'stroke-opacity="0"${stroke.markers}/>',
+        );
+      }
       if (filter.isNotEmpty) {
         buf.writeln('$indent</g>');
       }
@@ -576,7 +585,12 @@ class VsdxToSvgSerializer {
     // Approximate canvas reflection: mirror below the shape box, clipped by
     // ReflectionSize, optional blur. Prefer path Y-extent (matches canvas
     // path.getBounds().height) over XForm Height for non-full-box geometry.
-    final fallbackH = shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs();
+    // Axis-aligned 1D lines have ~0 path height / XForm Height — use stroke
+    // weight so ReflectionSize still yields a visible clip band.
+    final weightH =
+        shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+    final fallbackH =
+        shape.height.abs() < 1e-9 ? weightH : shape.height.abs();
     final h = _approxPathHeightFromD(d, fallbackH);
     final clipH = h * refl.sizeInches.clamp(0.01, 1.0);
     final dist = refl.distanceInches;
@@ -1300,13 +1314,15 @@ class VsdxToSvgSerializer {
     };
   }
 
-  String _strokeAttr(
+  /// Stroke paint attrs and arrow `marker-*` attrs separately so compound-line
+  /// masks can clip the rail without also clipping arrowheads.
+  ({String paint, String markers}) _strokeAttr(
     VsdxLine line,
     VsdxTheme theme,
     String paintId,
     StringBuffer defs,
   ) {
-    if (!line.hasLine) return 'stroke="none"';
+    if (!line.hasLine) return (paint: 'stroke="none"', markers: '');
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
     final alpha = _combinedOpacity(c, line.transparency);
     final hex = c == null ? '#000000' : _hex(c);
@@ -1406,11 +1422,11 @@ class VsdxToSvgSerializer {
       }
       strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
     }
-    return '$strokePaint '
+    final paint = '$strokePaint '
         'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
         'stroke-linejoin="$linejoin"'
-        '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}'
-        '$markers';
+        '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}';
+    return (paint: paint, markers: markers.toString());
   }
 
   /// SVG marker path for common Visio BeginArrow/EndArrow ids (subset of
@@ -1425,7 +1441,10 @@ class VsdxToSvgSerializer {
     // filled / open choices mirror lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
       3 => ('M 0 1 L 10 5 L 0 9', false), // open arrow (V stroke)
-      1 || 6 || 26 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
+      1 || 6 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
+      // Wide triangles (canvas reach 0.85, half-width 0.55).
+      25 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', true),
+      26 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', false),
       10 || 13 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           true,
@@ -1494,6 +1513,7 @@ class VsdxToSvgSerializer {
     return switch (d) {
       'M 0 1 L 10 5 L 0 9' => 'M 10 1 L 0 5 L 10 9',
       'M 0 1 L 10 5 L 0 9 Z' => 'M 10 1 L 0 5 L 10 9 Z',
+      'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
       'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
       'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
@@ -1539,6 +1559,7 @@ class VsdxToSvgSerializer {
   double _arrowCanvasReach(int arrowId) {
     return switch (arrowId) {
       9 => 1.2,
+      15 || 16 || 25 || 26 => 0.85,
       23 || 24 => 1.1,
       28 => 1.4,
       29 || 30 => 1.2,
@@ -1612,12 +1633,17 @@ class VsdxToSvgSerializer {
     final href = 'data:$mime;base64,${base64Encode(bytes)}';
     // SVG <image> with preserveAspectRatio="none" stretches to fit; Visio
     // already stores the picture at the shape's bounds. Bitmap rows are
-    // Y-down — flip once for upright, unless FlipY already mirrored the
-    // parent XForm (same cancel-avoidance as the canvas painter).
+    // Y-down — flip once about the shape centre for upright, unless FlipY
+    // already mirrored the parent XForm (same cancel-avoidance as canvas
+    // [_paintImage]). Centre-based scale keeps FlipY content in [0,h]
+    // (a bottom-left translate(0,h)+scale(1,1) would land in [h,2h]).
     final uprightY = shape.flipY ? 1.0 : -1.0;
+    final cx = shape.width / 2;
+    final cy = shape.height / 2;
     buf.writeln(
-      '$indent<g transform="translate(0 ${_n(shape.height)}) '
-      'scale(1 ${_n(uprightY)})">'
+      '$indent<g transform="translate(${_n(cx)} ${_n(cy)}) '
+      'scale(1 ${_n(uprightY)}) '
+      'translate(${_n(-cx)} ${_n(-cy)})">'
       '<image href="$href" x="0" y="0" '
       'width="${_n(shape.width)}" height="${_n(shape.height)}" '
       'preserveAspectRatio="none"/></g>',
@@ -1640,11 +1666,13 @@ class VsdxToSvgSerializer {
     final sx = shape.width / dw;
     // GDI metafiles are Y-down; flip once into page Y-up — unless FlipY
     // already mirrored the parent XForm (same cancel-avoidance as bitmaps /
-    // canvas [_paintImage]).
+    // canvas [_paintImage]). Only translate(0,h) when applying the GDI flip;
+    // FlipY + translate(0,h) + positive sy would place drawing in [h,2h].
     final gdiFlipY = !shape.flipY;
     final sy = shape.height / dh * (gdiFlipY ? -1.0 : 1.0);
+    final ty = gdiFlipY ? shape.height : 0.0;
     buf.writeln(
-      '$indent<g transform="translate(0 ${_n(shape.height)}) '
+      '$indent<g transform="translate(0 ${_n(ty)}) '
       'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );
@@ -1979,13 +2007,18 @@ class VsdxToSvgSerializer {
       final indentL = style.indentLeftInches;
       final indentF = style.indentFirstInches;
       final hasBullet = style.bullet != 0;
+      // Match canvas hanging indent: body at IndLeft + TextPosAfterBullet
+      // (default 0.18"); bullet sits on IndLeft + IndFirst.
       final bulletGap = hasBullet
-          ? math.max(style.textPosAfterBulletInches, layout.lineH * 0.6)
+          ? (style.textPosAfterBulletInches > 0
+              ? style.textPosAfterBulletInches
+              : 0.18)
           : 0.0;
+      final textBandX = layoutMl + indentL + (hasBullet ? bulletGap : indentF);
       final (anchor, xBody) = switch (style.horizontalAlign) {
         VsdxHorzAlign.left || VsdxHorzAlign.justify => (
             'start',
-            layoutMl + indentL + indentF + bulletGap,
+            textBandX,
           ),
         VsdxHorzAlign.right => (
             'end',
@@ -1993,13 +2026,14 @@ class VsdxToSvgSerializer {
           ),
         VsdxHorzAlign.center => (
             'middle',
-            layoutMl + (layoutW - layoutMl - layoutMr) / 2,
+            textBandX +
+                (layoutW - layoutMr - style.indentRightInches - textBandX) / 2,
           ),
       };
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
       final body = StringBuffer();
-      if (hasBullet && style.horizontalAlign != VsdxHorzAlign.center) {
+      if (hasBullet) {
         final glyph = _svgBulletGlyph(style);
         final bFs = style.bulletFontSizeInches != null &&
                 style.bulletFontSizeInches! > 0
