@@ -754,6 +754,20 @@ class VsdxWriter {
       raw('PageLineJumpDirY', (base.lineJumpDirY ?? -1).toString(),
           edited.lineJumpDirY.toString());
     }
+    if (edited.lineToLineXInches != null) {
+      len('LineToLineX', base.lineToLineXInches ?? 0, edited.lineToLineXInches!);
+    }
+    if (edited.lineToLineYInches != null) {
+      len('LineToLineY', base.lineToLineYInches ?? 0, edited.lineToLineYInches!);
+    }
+    if (edited.lineJumpFactorX != null) {
+      raw('LineJumpFactorX', _fmt(base.lineJumpFactorX ?? -1),
+          _fmt(edited.lineJumpFactorX!));
+    }
+    if (edited.lineJumpFactorY != null) {
+      raw('LineJumpFactorY', _fmt(base.lineJumpFactorY ?? -1),
+          _fmt(edited.lineJumpFactorY!));
+    }
     len('PageLeftMargin', base.marginLeftInches, edited.marginLeftInches);
     len('PageRightMargin', base.marginRightInches, edited.marginRightInches);
     len('PageTopMargin', base.marginTopInches, edited.marginTopInches);
@@ -1009,6 +1023,14 @@ class VsdxWriter {
           _cell('PageLineJumpDirX', s.lineJumpDirX.toString()),
         if (s.lineJumpDirY != null)
           _cell('PageLineJumpDirY', s.lineJumpDirY.toString()),
+        if (s.lineToLineXInches != null)
+          _cell('LineToLineX', _fmt(s.lineToLineXInches!)),
+        if (s.lineToLineYInches != null)
+          _cell('LineToLineY', _fmt(s.lineToLineYInches!)),
+        if (s.lineJumpFactorX != null)
+          _cell('LineJumpFactorX', _fmt(s.lineJumpFactorX!)),
+        if (s.lineJumpFactorY != null)
+          _cell('LineJumpFactorY', _fmt(s.lineJumpFactorY!)),
         _cell('PageLeftMargin', _fmt(s.marginLeftInches)),
         _cell('PageRightMargin', _fmt(s.marginRightInches)),
         _cell('PageTopMargin', _fmt(s.marginTopInches)),

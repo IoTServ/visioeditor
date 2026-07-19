@@ -286,8 +286,8 @@ class VsdxToSvgSerializer {
   }
 
   void _prepareLineJumps(VsdxPage page) {
-    _jumpsEnabled = drawLineJumps &&
-        lineJumpsEnabledForCode(page.pageSheet.lineJumpCode);
+    // UI toggle only — ConLineJumpCode Always can hop even when page is None.
+    _jumpsEnabled = drawLineJumps;
     if (!_jumpsEnabled) {
       _jumpRoutes = const <List<Offset2D>>[];
       _jumpZ = const <int, int>{};
@@ -318,7 +318,11 @@ class VsdxToSvgSerializer {
   /// authored / curved geometry from [_geometryToD] is kept.
   String? _connectorJumpD(VsdxPage page, VsdxShape shape) {
     if (!_jumpsEnabled || !shape.isGlueableConnector) return null;
-    if (!connectorLineJumpsEnabled(shape.connectorProps?.conLineJumpCode)) {
+    final sheet = page.pageSheet;
+    if (!connectorLineJumpsEnabled(
+      shape.connectorProps?.conLineJumpCode,
+      pageLineJumpCode: sheet.lineJumpCode,
+    )) {
       return null;
     }
     final z = _jumpZ[shape.id];
@@ -335,19 +339,31 @@ class VsdxToSvgSerializer {
         ],
     ];
     if (polylineCrossings(localRoute, unders).isEmpty) return null;
+    final rx = resolveLineJumpRadius(
+      uiRadius: lineJumpRadiusInches,
+      lineToLineInches: sheet.lineToLineXInches,
+      jumpFactor: sheet.lineJumpFactorX,
+    );
+    final ry = resolveLineJumpRadius(
+      uiRadius: lineJumpRadiusInches,
+      lineToLineInches: sheet.lineToLineYInches,
+      jumpFactor: sheet.lineJumpFactorY,
+    );
     return polylineWithJumpsSvg(
       localRoute,
       unders,
-      lineJumpRadiusInches,
+      rx,
+      radiusY: ry,
+      pageJumpCode: sheet.lineJumpCode,
       style: shape.connectorProps?.conLineJumpStyle,
-      pageStyle: page.pageSheet.lineJumpStyle,
+      pageStyle: sheet.lineJumpStyle,
       dirX: effectiveLineJumpDir(
         shape.connectorProps?.conLineJumpDirX,
-        page.pageSheet.lineJumpDirX,
+        sheet.lineJumpDirX,
       ),
       dirY: effectiveLineJumpDir(
         shape.connectorProps?.conLineJumpDirY,
-        page.pageSheet.lineJumpDirY,
+        sheet.lineJumpDirY,
       ),
       format: _n,
     );

@@ -218,8 +218,9 @@ class VsdxPainter extends CustomPainter {
     final viewportInches =
         Rect.fromLTWH(0, 0, target.widthInches, target.heightInches);
 
-    _lineJumpsActive = drawLineJumps &&
-        lineJumpsEnabledForCode(target.pageSheet.lineJumpCode);
+    // Build routes whenever the UI toggle is on — per-connector
+    // ConLineJumpCode (incl. Always over page None) decides who hops.
+    _lineJumpsActive = drawLineJumps;
     if (_lineJumpsActive) {
       _computeConnectorRoutes(target);
     } else {
@@ -488,7 +489,11 @@ class VsdxPainter extends CustomPainter {
   Path? _lineJumpsPath(VsdxShape shape, VsdxGeometry geom) {
     final k = _connZ[shape.id];
     if (k == null || k == 0) return null; // nothing drawn beneath it
-    if (!connectorLineJumpsEnabled(shape.connectorProps?.conLineJumpCode)) {
+    final sheet = (_paintTarget ?? page)?.pageSheet;
+    if (!connectorLineJumpsEnabled(
+      shape.connectorProps?.conLineJumpCode,
+      pageLineJumpCode: sheet?.lineJumpCode,
+    )) {
       return null;
     }
     // Prefer the shared page-space route (includes geometry-less / nested).
@@ -502,13 +507,24 @@ class VsdxPainter extends CustomPainter {
         <Offset>[for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg)],
     ];
     if (polylineCrossings(route, unders).isEmpty) return null;
-    final sheet = (_paintTarget ?? page)?.pageSheet;
     final pageStyle = sheet?.lineJumpStyle;
     final conStyle = shape.connectorProps?.conLineJumpStyle;
+    final rx = resolveLineJumpRadius(
+      uiRadius: lineJumpRadiusInches,
+      lineToLineInches: sheet?.lineToLineXInches,
+      jumpFactor: sheet?.lineJumpFactorX,
+    );
+    final ry = resolveLineJumpRadius(
+      uiRadius: lineJumpRadiusInches,
+      lineToLineInches: sheet?.lineToLineYInches,
+      jumpFactor: sheet?.lineJumpFactorY,
+    );
     return polylineWithJumps(
       route,
       unders,
-      lineJumpRadiusInches,
+      rx,
+      radiusY: ry,
+      pageJumpCode: sheet?.lineJumpCode,
       style: conStyle,
       pageStyle: pageStyle,
       dirX: effectiveLineJumpDir(
@@ -538,8 +554,10 @@ class VsdxPainter extends CustomPainter {
     ];
     Path path;
     final k = _connZ[shape.id];
+    final sheet = ctx?.pageSheet;
     final jumpOk = connectorLineJumpsEnabled(
       shape.connectorProps?.conLineJumpCode,
+      pageLineJumpCode: sheet?.lineJumpCode,
     );
     if (_lineJumpsActive && jumpOk && k != null && k > 0) {
       final unders = <List<Offset>>[
@@ -548,15 +566,26 @@ class VsdxPainter extends CustomPainter {
             for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg),
           ],
       ];
-      final sheet = ctx?.pageSheet;
       final pageStyle = sheet?.lineJumpStyle;
       final conStyle = shape.connectorProps?.conLineJumpStyle;
+      final rx = resolveLineJumpRadius(
+        uiRadius: lineJumpRadiusInches,
+        lineToLineInches: sheet?.lineToLineXInches,
+        jumpFactor: sheet?.lineJumpFactorX,
+      );
+      final ry = resolveLineJumpRadius(
+        uiRadius: lineJumpRadiusInches,
+        lineToLineInches: sheet?.lineToLineYInches,
+        jumpFactor: sheet?.lineJumpFactorY,
+      );
       path = polylineCrossings(localPts, unders).isEmpty
           ? _polylinePath(localPts)
           : polylineWithJumps(
               localPts,
               unders,
-              lineJumpRadiusInches,
+              rx,
+              radiusY: ry,
+              pageJumpCode: sheet?.lineJumpCode,
               style: conStyle,
               pageStyle: pageStyle,
               dirX: effectiveLineJumpDir(

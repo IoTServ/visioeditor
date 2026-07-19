@@ -56,6 +56,8 @@ Path polylineWithJumps(
   List<Offset> route,
   List<List<Offset>> unders,
   double r, {
+  double? radiusY,
+  int? pageJumpCode,
   int? style,
   int? pageStyle,
   int? dirX,
@@ -75,6 +77,13 @@ Path polylineWithJumps(
     final len = seg.distance;
     if (len < 1e-9) continue;
 
+    final horiz = seg.dx.abs() >= seg.dy.abs();
+    final segR = (!horiz && radiusY != null) ? radiusY : r;
+    if (!vsdx.lineJumpAppliesToSegment(pageJumpCode, seg.dx, seg.dy)) {
+      path.lineTo(b.dx, b.dy);
+      continue;
+    }
+
     final ts = <double>[];
     for (final poly in unders) {
       for (var j = 0; j + 1 < poly.length; j++) {
@@ -87,11 +96,11 @@ Path polylineWithJumps(
     // Dense curved polylines bake short LineTo segments (often < 2r). Shrink
     // the hop so it still fits. Segments shorter than ~half the intended
     // radius cannot host a meaningful Gap — skip (neighbours cover crossings).
-    if (len < r * 0.5) {
+    if (len < segR * 0.5) {
       path.lineTo(b.dx, b.dy);
       continue;
     }
-    final hopR = math.min(r, len * 0.45);
+    final hopR = math.min(segR, len * 0.45);
     if (hopR < 1e-6) {
       path.lineTo(b.dx, b.dy);
       continue;

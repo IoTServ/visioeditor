@@ -43,6 +43,10 @@ class VsdxPageSheet {
     this.lineJumpStyle,
     this.lineJumpDirX,
     this.lineJumpDirY,
+    this.lineToLineXInches,
+    this.lineToLineYInches,
+    this.lineJumpFactorX,
+    this.lineJumpFactorY,
     this.marginLeftInches = 0,
     this.marginRightInches = 0,
     this.marginTopInches = 0,
@@ -86,6 +90,15 @@ class VsdxPageSheet {
   final int? lineJumpDirX;
   final int? lineJumpDirY;
 
+  /// `LineToLineX` / `LineToLineY` — connector clearance (inches). Hop size is
+  /// typically `LineToLine* × LineJumpFactor*`.
+  final double? lineToLineXInches;
+  final double? lineToLineYInches;
+
+  /// `LineJumpFactorX` / `LineJumpFactorY` — hop size multiplier (often 0–1).
+  final double? lineJumpFactorX;
+  final double? lineJumpFactorY;
+
   final double marginLeftInches;
   final double marginRightInches;
   final double marginTopInches;
@@ -124,6 +137,10 @@ class VsdxPageSheet {
     int? lineJumpStyle,
     int? lineJumpDirX,
     int? lineJumpDirY,
+    double? lineToLineXInches,
+    double? lineToLineYInches,
+    double? lineJumpFactorX,
+    double? lineJumpFactorY,
     double? marginLeftInches,
     double? marginRightInches,
     double? marginTopInches,
@@ -156,6 +173,10 @@ class VsdxPageSheet {
         lineJumpStyle: lineJumpStyle ?? this.lineJumpStyle,
         lineJumpDirX: lineJumpDirX ?? this.lineJumpDirX,
         lineJumpDirY: lineJumpDirY ?? this.lineJumpDirY,
+        lineToLineXInches: lineToLineXInches ?? this.lineToLineXInches,
+        lineToLineYInches: lineToLineYInches ?? this.lineToLineYInches,
+        lineJumpFactorX: lineJumpFactorX ?? this.lineJumpFactorX,
+        lineJumpFactorY: lineJumpFactorY ?? this.lineJumpFactorY,
         marginLeftInches: marginLeftInches ?? this.marginLeftInches,
         marginRightInches: marginRightInches ?? this.marginRightInches,
         marginTopInches: marginTopInches ?? this.marginTopInches,
@@ -190,6 +211,10 @@ class VsdxPageSheet {
       other.lineJumpStyle == lineJumpStyle &&
       other.lineJumpDirX == lineJumpDirX &&
       other.lineJumpDirY == lineJumpDirY &&
+      other.lineToLineXInches == lineToLineXInches &&
+      other.lineToLineYInches == lineToLineYInches &&
+      other.lineJumpFactorX == lineJumpFactorX &&
+      other.lineJumpFactorY == lineJumpFactorY &&
       other.marginLeftInches == marginLeftInches &&
       other.marginRightInches == marginRightInches &&
       other.marginTopInches == marginTopInches &&
@@ -221,6 +246,10 @@ class VsdxPageSheet {
         lineJumpStyle,
         lineJumpDirX,
         lineJumpDirY,
+        lineToLineXInches,
+        lineToLineYInches,
+        lineJumpFactorX,
+        lineJumpFactorY,
         marginLeftInches,
         marginRightInches,
         marginTopInches,

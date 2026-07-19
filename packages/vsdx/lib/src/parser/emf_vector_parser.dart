@@ -2,9 +2,9 @@
 ///
 /// Prefer [extractEmfEmbeddedBitmap] when the file is a thin wrapper around a
 /// DIB. This parser covers the GDI path used by OLE `\x02OlePres000` previews
-/// and pure-vector ForeignData: pens/brushes, POLYBEZIER / POLYBEZIERTO /
-/// POLYBEZIER16 / POLYBEZIERTO16, POLYGON16 / POLYLINE16 / POLYPOLYGON16,
-/// rectangle/ellipse, and ExtTextOutW.
+/// and pure-vector ForeignData: pens/brushes, MOVETOEX / LINETO,
+/// POLYBEZIER / POLYBEZIERTO / POLYBEZIER16 / POLYBEZIERTO16, POLYGON16 /
+/// POLYLINE16 / POLYPOLYGON16, rectangle/ellipse, and ExtTextOutW.
 library;
 
 import 'dart:math' as math;
@@ -20,12 +20,14 @@ const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
 const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
+const int _emrMoveToEx = 27;
 const int _emrSelectObject = 37;
 const int _emrCreatePen = 38;
 const int _emrCreateBrushIndirect = 39;
 const int _emrDeleteObject = 40;
 const int _emrEllipse = 42;
 const int _emrRectangle = 43;
+const int _emrLineTo = 54;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
 const int _emrPolyBezier16 = 85;
@@ -204,6 +206,33 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     } else if (t == _emrDeleteObject && params + 4 <= recEnd) {
       final ih = bd.getUint32(params, Endian.little);
       if (ih < objects.length) objects[ih] = null;
+    } else if (t == _emrMoveToEx && params + 8 <= recEnd) {
+      curPt = MetafilePoint(
+        bd.getInt32(params, Endian.little).toDouble(),
+        bd.getInt32(params + 4, Endian.little).toDouble(),
+      );
+      ensurePts([curPt!]);
+    } else if (t == _emrLineTo && params + 8 <= recEnd) {
+      final end = MetafilePoint(
+        bd.getInt32(params, Endian.little).toDouble(),
+        bd.getInt32(params + 4, Endian.little).toDouble(),
+      );
+      if (curPt != null) {
+        ensurePts([curPt!, end]);
+        final stroke = penStyle != 5;
+        if (stroke) {
+          ops.add(MetafilePathOp(
+            points: <MetafilePoint>[curPt!, end],
+            closed: false,
+            fill: false,
+            stroke: true,
+            fillArgb: 0,
+            strokeArgb: penColor,
+            strokeWidth: penWidth,
+          ));
+        }
+      }
+      curPt = end;
     } else if (t == _emrPolyBezier && params + 20 <= recEnd) {
       // Bounds(16) + count(4) + POINTL: start + n×(c1,c2,end).
       final count = bd.getUint32(params + 16, Endian.little);

@@ -12,17 +12,71 @@ import '../model/geometry.dart';
 /// Default hop radius in inches (matches the canvas default closely).
 const double kDefaultLineJumpRadiusInches = 0.07;
 
-/// Whether a page's Visio `LineJumpCode` enables line jumps.
+/// Whether a page's Visio `LineJumpCode` enables line jumps at all.
 ///
 /// `0` (visPLOJumpNone) turns jumps off. Any other value or an unset code
-/// keeps the hop-over overlay (Visio / Edraw behaviour).
+/// keeps the hop-over overlay (Visio / Edraw behaviour). Per-segment
+/// horizontal/vertical filtering is [lineJumpAppliesToSegment].
 bool lineJumpsEnabledForCode(int? lineJumpCode) => lineJumpCode != 0;
 
-/// Whether a connector's `ConLineJumpCode` allows hops on this shape.
+/// Whether this connector should render hops.
 ///
-/// `4` (visLOJumpNeither) never jumps. `null` / `0` inherit the page setting
-/// (caller must still check [lineJumpsEnabledForCode]).
-bool connectorLineJumpsEnabled(int? conLineJumpCode) => conLineJumpCode != 4;
+/// Visio `ConLineJumpCode`:
+/// * `0` — follow page [pageLineJumpCode]
+/// * `1` — Never
+/// * `2` — Always (even when page is None)
+/// * `3` — Other connector jumps (this shape does not hop)
+/// * `4` — Neither connector jumps
+bool connectorLineJumpsEnabled(
+  int? conLineJumpCode, {
+  int? pageLineJumpCode,
+}) {
+  final c = conLineJumpCode ?? 0;
+  if (c == 1 || c == 3 || c == 4) return false;
+  if (c == 2) return true;
+  return lineJumpsEnabledForCode(pageLineJumpCode);
+}
+
+/// Whether a route segment should host hops for the page's `LineJumpCode`.
+///
+/// `1` = horizontal only, `2` = vertical only; other non-zero codes accept all.
+bool lineJumpAppliesToSegment(int? pageJumpCode, double sdx, double sdy) {
+  final horiz = sdx.abs() >= sdy.abs();
+  return switch (pageJumpCode) {
+    1 => horiz,
+    2 => !horiz,
+    _ => true,
+  };
+}
+
+/// Resolve hop radius from page `LineToLine*` × `LineJumpFactor*` (or default).
+double pageLineJumpRadius({
+  double? lineToLineInches,
+  double? jumpFactor,
+}) {
+  if (lineToLineInches != null &&
+      jumpFactor != null &&
+      lineToLineInches > 0 &&
+      jumpFactor > 0) {
+    return lineToLineInches * jumpFactor;
+  }
+  return kDefaultLineJumpRadiusInches;
+}
+
+/// Prefer page-derived radius when the UI still uses the engine default.
+double resolveLineJumpRadius({
+  required double uiRadius,
+  double? lineToLineInches,
+  double? jumpFactor,
+}) {
+  if ((uiRadius - kDefaultLineJumpRadiusInches).abs() < 1e-9) {
+    return pageLineJumpRadius(
+      lineToLineInches: lineToLineInches,
+      jumpFactor: jumpFactor,
+    );
+  }
+  return uiRadius;
+}
 
 /// Visio `LineJumpStyle` / `ConLineJumpStyle` → render mode.
 ///
@@ -124,6 +178,9 @@ List<Offset2D> polylineCrossings(
 /// SVG path `d` for [route] that hops over each crossing with a segment in
 /// [unders], with jump radius [r] (same units as the points).
 ///
+/// When [radiusY] is set, vertical segments use it instead of [r].
+/// [pageJumpCode] filters hops to horizontal (`1`) or vertical (`2`) only.
+///
 /// [style] is Visio `ConLineJumpStyle` or page `LineJumpStyle` (null → Arc).
 /// Arc uses `A r r 0 0 0` (sweep=0 = counter-clockwise), matching Flutter
 /// `arcToPoint(..., clockwise: false)`.
@@ -131,6 +188,8 @@ String polylineWithJumpsSvg(
   List<Offset2D> route,
   List<List<Offset2D>> unders,
   double r, {
+  double? radiusY,
+  int? pageJumpCode,
   int? style,
   int? pageStyle,
   int? dirX,
@@ -148,6 +207,13 @@ String polylineWithJumpsSvg(
     final len = math.sqrt(sdx * sdx + sdy * sdy);
     if (len < 1e-9) continue;
 
+    final horiz = sdx.abs() >= sdy.abs();
+    final segR = (!horiz && radiusY != null) ? radiusY : r;
+    if (!lineJumpAppliesToSegment(pageJumpCode, sdx, sdy)) {
+      buf.write(' L ${format(b.x)} ${format(b.y)}');
+      continue;
+    }
+
     final ts = <double>[];
     for (final poly in unders) {
       for (var j = 0; j + 1 < poly.length; j++) {
@@ -164,11 +230,11 @@ String polylineWithJumpsSvg(
     // Dense curved polylines bake short LineTo segments (often < 2r). Shrink
     // the hop so it still fits. Segments shorter than ~half the intended
     // radius cannot host a meaningful Gap — skip (neighbours cover crossings).
-    if (len < r * 0.5) {
+    if (len < segR * 0.5) {
       buf.write(' L ${format(b.x)} ${format(b.y)}');
       continue;
     }
-    final hopR = math.min(r, len * 0.45);
+    final hopR = math.min(segR, len * 0.45);
     if (hopR < 1e-6) {
       buf.write(' L ${format(b.x)} ${format(b.y)}');
       continue;

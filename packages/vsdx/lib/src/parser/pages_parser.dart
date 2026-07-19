@@ -217,6 +217,12 @@ class PagesParser {
       lineJumpStyle: i('LineJumpStyle'),
       lineJumpDirX: i('PageLineJumpDirX'),
       lineJumpDirY: i('PageLineJumpDirY'),
+      lineToLineXInches: readLengthInches(pageSheet, 'LineToLineX') ??
+          d('LineToLineX'),
+      lineToLineYInches: readLengthInches(pageSheet, 'LineToLineY') ??
+          d('LineToLineY'),
+      lineJumpFactorX: d('LineJumpFactorX'),
+      lineJumpFactorY: d('LineJumpFactorY'),
       marginLeftInches:
           readLengthInches(pageSheet, 'PageLeftMargin') ?? def.marginLeftInches,
       marginRightInches: readLengthInches(pageSheet, 'PageRightMargin') ??

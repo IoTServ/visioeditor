@@ -135,11 +135,82 @@ void main() {
     expect(effectiveLineJumpDir(0, 0), isNull);
   });
 
-  test('ConLineJumpCode Neither disables hops for that connector', () {
-    expect(connectorLineJumpsEnabled(null), isTrue);
-    expect(connectorLineJumpsEnabled(0), isTrue);
-    expect(connectorLineJumpsEnabled(3), isTrue);
-    expect(connectorLineJumpsEnabled(4), isFalse);
+  test('ConLineJumpCode Never/Other/Neither refuse hops; Always overrides page',
+      () {
+    expect(
+      connectorLineJumpsEnabled(null, pageLineJumpCode: 4),
+      isTrue,
+    );
+    expect(
+      connectorLineJumpsEnabled(0, pageLineJumpCode: 4),
+      isTrue,
+    );
+    expect(
+      connectorLineJumpsEnabled(1, pageLineJumpCode: 4),
+      isFalse,
+      reason: 'Never',
+    );
+    expect(
+      connectorLineJumpsEnabled(2, pageLineJumpCode: 0),
+      isTrue,
+      reason: 'Always over page None',
+    );
+    expect(
+      connectorLineJumpsEnabled(3, pageLineJumpCode: 4),
+      isFalse,
+      reason: 'Other — this connector does not hop',
+    );
+    expect(
+      connectorLineJumpsEnabled(4, pageLineJumpCode: 4),
+      isFalse,
+      reason: 'Neither',
+    );
+    expect(
+      connectorLineJumpsEnabled(0, pageLineJumpCode: 0),
+      isFalse,
+    );
+  });
+
+  test('LineJumpCode Horizontal skips vertical segment hops', () {
+    final route = <Offset2D>[const Offset2D(2, 0), const Offset2D(2, 4)];
+    final unders = <List<Offset2D>>[
+      <Offset2D>[const Offset2D(0, 2), const Offset2D(4, 2)],
+    ];
+    final d = polylineWithJumpsSvg(
+      route,
+      unders,
+      0.2,
+      pageJumpCode: 1,
+    );
+    expect(RegExp(r'\sA\s').hasMatch(d), isFalse,
+        reason: 'vertical segment must not hop when page is Horizontal');
+    expect(lineJumpAppliesToSegment(1, 0, 4), isFalse);
+    expect(lineJumpAppliesToSegment(1, 4, 0), isTrue);
+    expect(lineJumpAppliesToSegment(2, 0, 4), isTrue);
+  });
+
+  test('page LineToLine×Factor resolves hop radius', () {
+    expect(
+      pageLineJumpRadius(lineToLineInches: 0.125, jumpFactor: 0.8),
+      closeTo(0.1, 1e-9),
+    );
+    expect(
+      resolveLineJumpRadius(
+        uiRadius: 0.07,
+        lineToLineInches: 0.125,
+        jumpFactor: 0.8,
+      ),
+      closeTo(0.1, 1e-9),
+    );
+    expect(
+      resolveLineJumpRadius(
+        uiRadius: 0.2,
+        lineToLineInches: 0.125,
+        jumpFactor: 0.8,
+      ),
+      closeTo(0.2, 1e-9),
+      reason: 'UI override wins when not at engine default',
+    );
   });
 
   test('page PageLineJumpDirX Down flips hop when ConDir unset', () {

@@ -221,4 +221,62 @@ void main() {
     expect(paths.length, greaterThanOrEqualTo(2));
     expect(paths.last.points.length, greaterThan(3));
   });
+
+  test('EMF MOVETOEX + LINETO emit a stroked segment', () {
+    final out = BytesBuilder();
+    void u32(int v) {
+      final b = ByteData(4)..setUint32(0, v, Endian.little);
+      out.add(b.buffer.asUint8List());
+    }
+
+    void i32(int v) {
+      final b = ByteData(4)..setInt32(0, v, Endian.little);
+      out.add(b.buffer.asUint8List());
+    }
+
+    u32(1);
+    u32(88);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    out.add([0x20, 0x45, 0x4D, 0x46]);
+    while (out.length < 88) {
+      out.addByte(0);
+    }
+
+    // EMR_MOVETOEX = 27, size=16
+    u32(27);
+    u32(16);
+    i32(10);
+    i32(20);
+    // EMR_LINETO = 54, size=16
+    u32(54);
+    u32(16);
+    i32(90);
+    i32(80);
+
+    u32(14);
+    u32(20);
+    u32(0);
+    u32(16);
+    u32(20);
+
+    final drawing = parseMetafileDrawing(
+      Uint8List.fromList(out.toBytes()),
+      mimeType: 'image/x-emf',
+    );
+    expect(drawing, isNotNull);
+    final path = drawing!.ops.whereType<MetafilePathOp>().single;
+    expect(path.points.length, 2);
+    expect(path.points.first.x, 10);
+    expect(path.points.first.y, 20);
+    expect(path.points.last.x, 90);
+    expect(path.points.last.y, 80);
+    expect(path.stroke, isTrue);
+  });
 }
