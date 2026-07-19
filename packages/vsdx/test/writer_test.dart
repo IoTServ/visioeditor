@@ -4985,6 +4985,8 @@ void main() {
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.fill.themeForegroundIndex, 3);
     expect(after.line.themeColorIndex, 2);
+    expect(after.richText.runs.first.charStyle.themeColorIndex, 1,
+        reason: 'fresh Character emit must cache theme slot in Color V');
   });
 
   test('Visio XDyn/XCon/CanGlue Control round-trip', () {

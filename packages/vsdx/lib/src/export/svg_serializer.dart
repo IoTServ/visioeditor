@@ -1605,6 +1605,31 @@ class VsdxToSvgSerializer {
       }
     }
 
+    // CurvedText (editor User cell): arc layout matching canvas
+    // [_paintCurvedText]. Edge labels without TxtPin stay rectangular.
+    final isLooseEdge = shape.isGlueableConnector &&
+        block.pinXInches == null &&
+        block.pinYInches == null;
+    if (shape.curvedText && !isLooseEdge) {
+      _writeCurvedText(
+        buf,
+        shape: shape,
+        theme: theme,
+        runs: runs,
+        pinX: pinX,
+        pinY: pinY,
+        lpx: lpx,
+        lpy: lpy,
+        tw: tw,
+        th: th,
+        ml: ml,
+        mr: mr,
+        angleRad: block.angleRad,
+        indent: indent,
+      );
+      return;
+    }
+
     // Split into paragraphs (Visio `\n` / `<pp>`). Each keeps its own
     // HorzAlign / Ind* / Sp* / Bullet* (canvas [_paintParagraphBlock]).
     final paras = _splitSvgParagraphs(runs);
@@ -1743,13 +1768,88 @@ class VsdxToSvgSerializer {
     };
   }
 
+  /// Place glyphs along a quadratic arc (draw.io Curved Text / canvas path).
+  void _writeCurvedText(
+    StringBuffer buf, {
+    required VsdxShape shape,
+    required VsdxTheme theme,
+    required List<VsdxTextRun> runs,
+    required double pinX,
+    required double pinY,
+    required double lpx,
+    required double lpy,
+    required double tw,
+    required double th,
+    required double ml,
+    required double mr,
+    required double angleRad,
+    required String indent,
+  }) {
+    final plain = _applyTextCase(
+      runs.map((r) => r.text).join().replaceAll('\n', ' ').trim(),
+      runs.isNotEmpty ? runs.first.charStyle.textCase : VsdxTextCase.normal,
+    );
+    if (plain.isEmpty) return;
+
+    final midY = th * 0.58;
+    final bulge = math.min(th * 0.32, th * 0.45);
+    final x0 = ml;
+    final x1 = tw / 2;
+    final x2 = tw - mr;
+    final y0 = midY;
+    final y1 = midY - bulge;
+    final y2 = midY;
+    final pathId = 'curved-${shape.id}';
+    final style = runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
+    final attrs = _charStyleSvgAttrs(style, theme);
+
+    final xf = StringBuffer('translate(${_n(pinX)} ${_n(pinY)})');
+    if (angleRad != 0) {
+      xf.write(' rotate(${_n(angleRad * 180 / math.pi)})');
+    }
+    // Block lower-left → top-left + Y-down (same stack as rectangular text).
+    xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
+    xf.write(' translate(0 ${_n(th)}) scale(1 -1)');
+
+    buf.writeln('$indent<g transform="$xf">');
+    buf.writeln(
+      '$indent  <path id="$pathId" fill="none" stroke="none" '
+      'd="M ${_n(x0)} ${_n(y0)} Q ${_n(x1)} ${_n(y1)} ${_n(x2)} ${_n(y2)}"/>',
+    );
+    buf.writeln(
+      '$indent  <text $attrs>'
+      '<textPath href="#$pathId" startOffset="50%" '
+      'text-anchor="middle" dominant-baseline="middle">'
+      '${_esc(plain)}</textPath></text>',
+    );
+    buf.writeln('$indent</g>');
+  }
+
   String _applyTextCase(String text, VsdxTextCase c) => switch (c) {
         VsdxTextCase.allCaps => text.toUpperCase(),
-        VsdxTextCase.initialCaps => text.isEmpty
-            ? text
-            : '${text[0].toUpperCase()}${text.substring(1)}',
+        // Match canvas [_initialCaps]: uppercase the first letter of each word.
+        VsdxTextCase.initialCaps => _initialCaps(text),
         VsdxTextCase.normal => text,
       };
+
+  /// Visio `Case=2` (initial caps) — uppercase the first letter of each word.
+  static String _initialCaps(String text) {
+    final buf = StringBuffer();
+    var start = true;
+    for (final r in text.runes) {
+      final ch = String.fromCharCode(r);
+      if (ch == ' ' || ch == '\n' || ch == '\t') {
+        buf.write(ch);
+        start = true;
+      } else if (start) {
+        buf.write(ch.toUpperCase());
+        start = false;
+      } else {
+        buf.write(ch);
+      }
+    }
+    return buf.toString();
+  }
 
   String _charStyleSvgAttrs(VsdxCharStyle c, VsdxTheme theme) {
     final color = _resolveColor(c.color, c.themeColorIndex, theme) ??
@@ -1781,8 +1881,14 @@ class VsdxToSvgSerializer {
       'font-weight="$weight" font-style="$italic" '
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
+    if (c.style.smallCaps) {
+      attrs.write(' font-variant="small-caps"');
+    }
     if (deco.isNotEmpty) {
       attrs.write(' text-decoration="${deco.join(' ')}"');
+      if (c.doubleUnderline || c.doubleStrikethrough) {
+        attrs.write(' style="text-decoration-style:double"');
+      }
     }
     if (c.letterSpacingInches.abs() > 1e-9) {
       attrs.write(' letter-spacing="${_n(c.letterSpacingInches)}"');

@@ -1555,6 +1555,29 @@ class VsdxPainter extends CustomPainter {
       return;
     }
 
+    // Super/sub: TextPainter cannot baseline-shift InlineSpans, so paint runs
+    // sequentially with a dy that matches SVG baseline-shift≈super/sub.
+    final needsPosShift = hasRich &&
+        rich.runs.any((r) => r.charStyle.position != VsdxTextPosition.normal);
+    if (needsPosShift) {
+      _paintRunsWithPosShift(
+        canvas,
+        runs: rich.runs,
+        align: align,
+        verticalAlign: block.verticalAlign,
+        twPx: twPx,
+        thPx: thPx,
+        mlPx: mlPx,
+        mrPx: mrPx,
+        mtPx: mtPx,
+        mbPx: mbPx,
+        maxW: maxW,
+        scale: s,
+      );
+      canvas.restore();
+      return;
+    }
+
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
@@ -1579,6 +1602,60 @@ class VsdxPainter extends CustomPainter {
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
+  }
+
+  /// Single-line (or wrapped) paint with super/sub baseline offsets.
+  void _paintRunsWithPosShift(
+    Canvas canvas, {
+    required List<VsdxTextRun> runs,
+    required TextAlign align,
+    required VsdxVertAlign verticalAlign,
+    required double twPx,
+    required double thPx,
+    required double mlPx,
+    required double mrPx,
+    required double mtPx,
+    required double mbPx,
+    required double maxW,
+    required double scale,
+  }) {
+    final painters = <TextPainter>[];
+    final dys = <double>[];
+    var totalW = 0.0;
+    var maxH = 0.0;
+    for (final run in runs) {
+      final span = _runToSpan(run, scale);
+      final tp = TextPainter(
+        text: span,
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      )..layout(maxWidth: maxW);
+      painters.add(tp);
+      final base = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
+      dys.add(switch (run.charStyle.position) {
+        VsdxTextPosition.superscript => -base * 0.35,
+        VsdxTextPosition.subscript => base * 0.2,
+        VsdxTextPosition.normal => 0.0,
+      });
+      totalW += tp.width;
+      maxH = math.max(maxH, tp.height + dys.last.abs());
+    }
+    final ox = switch (align) {
+      TextAlign.center => mlPx + (twPx - mlPx - mrPx - totalW) / 2,
+      TextAlign.right => twPx - mrPx - totalW,
+      _ => mlPx,
+    };
+    var oy = switch (verticalAlign) {
+      VsdxVertAlign.top => mtPx,
+      VsdxVertAlign.bottom => thPx - mbPx - maxH,
+      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - maxH) / 2,
+    };
+    if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
+    var x = ox;
+    for (var i = 0; i < painters.length; i++) {
+      painters[i].paint(canvas, Offset(x, oy + dys[i]));
+      x += painters[i].width;
+    }
   }
 
   /// Lay out rich-text paragraphs with SpBefore/After, IndLeft/First, and
@@ -1778,8 +1855,9 @@ class VsdxPainter extends CustomPainter {
     final c = base.withValues(alpha: base.a * alpha);
     final pos = run.charStyle.position;
     final baseSize = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
+    // Match SVG `_charStyleSvgAttrs` (0.7) so canvas / export stay aligned.
     final scaledSize =
-        pos == VsdxTextPosition.normal ? baseSize : baseSize * 0.65;
+        pos == VsdxTextPosition.normal ? baseSize : baseSize * 0.7;
     // Flutter's TextStyle.height is a multiple of the font size and must be
     // positive — a non-positive value collapses the line advance so wrapped
     // lines overlap or stack upward (the bug this guards against). Visio's

@@ -10,6 +10,7 @@ import 'package:xml/xml.dart';
 import '../model/effects.dart';
 import '../model/fill.dart';
 import '../model/line.dart';
+import '../model/theme.dart';
 import '../utils/color.dart';
 import 'cell_helpers.dart' show findCell, readLengthInches;
 
@@ -265,9 +266,8 @@ class StyleParser {
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
-      // QuickStyle*Color defaults to 1 (lt1) when absent, but real-world
-      // Visio files almost always carry the cell explicitly.
-      final idx = _int(shape, quickStyleCell);
+      // Visio defaults QuickStyle*Color to 1 (lt1) when the cell is absent.
+      final idx = _int(shape, quickStyleCell) ?? ThemeSlot.lt1;
       return _ColorResolution(null, idx);
     }
     return _ColorResolution(VsdxColor.tryParse(v), null);
@@ -285,7 +285,7 @@ class StyleParser {
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
-      final idx = _intIn(row, quickStyleCell);
+      final idx = _intIn(row, quickStyleCell) ?? ThemeSlot.lt1;
       return _ColorResolution(null, idx);
     }
     // Visio GradientStopColor often stores a theme palette index as a bare

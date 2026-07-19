@@ -4904,7 +4904,13 @@ class VsdxWriter {
     if (c.color != null) {
       cells.add(_cell('Color', _hex(c.color!)));
     } else if (c.themeColorIndex != null) {
-      cells.add(_cell('Color', '0', formula: 'THEMEVAL()'));
+      // Match [_writeCharRow]: cache the theme slot in V so accent survives
+      // fresh emit → reopen (parser reads V when F=THEMEVAL()).
+      cells.add(_cell(
+        'Color',
+        c.themeColorIndex!.toString(),
+        formula: 'THEMEVAL()',
+      ));
     }
     // AsianFont (+ ComplexScriptFont) required for CJK in 万兴图示; Font
     // only when set or CJK. Match Edraw's 人才招聘 Character row shape.

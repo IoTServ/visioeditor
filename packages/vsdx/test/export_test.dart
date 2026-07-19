@@ -450,6 +450,98 @@ void main() {
     expect(svg, contains('stroke-linecap="square"'));
   });
 
+  test('SVG Initial Caps capitalises each word', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'hello world',
+                charStyle: VsdxCharStyle.defaults
+                    .copyWith(textCase: VsdxTextCase.initialCaps),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('Hello World'));
+  });
+
+  test('SVG emits small-caps and double text-decoration', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Aa',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  style: const VsdxFontStyle(smallCaps: true),
+                  doubleUnderline: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('font-variant="small-caps"'));
+    expect(svg, contains('text-decoration-style:double'));
+  });
+
+  test('SVG CurvedText uses textPath', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: [VsdxTextRun(text: 'Arc')],
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('textPath'));
+    expect(svg, contains('curved-$id'));
+    expect(svg, contains('Arc'));
+  });
+
   test('SVG fill-opacity multiplies colour ARGB alpha', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
