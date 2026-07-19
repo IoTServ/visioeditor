@@ -294,6 +294,41 @@ void main() {
     expect('L'.allMatches(d!).length, greaterThan(8));
   });
 
+  test('SVG Rounding fillets filled rects that omit closing LineTo', () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'OpenRect',
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      line: const VsdxLine(roundingInches: 0.25),
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(2, 0),
+            LineTo(2, 2),
+            LineTo(0, 2),
+            // No LineTo(0,0) — Visio rectangles often omit it.
+          ],
+        ),
+      ],
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[shape],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final d = RegExp(r'<path d="([^"]+)"').firstMatch(svg)?.group(1);
+    expect(d, isNotNull);
+    // All four corners filleted → more than an open-path's two interior bends.
+    expect('L'.allMatches(d!).length, greaterThan(8));
+  });
+
   test('SVG geometry-less 1D uses elbow/obstacle route not a chord', () {
     final page = VsdxPage(
       id: 0,

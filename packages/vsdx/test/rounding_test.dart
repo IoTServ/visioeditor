@@ -42,4 +42,27 @@ void main() {
     final out = filletPolyline(pts, 0.3, closed: true);
     expect(out.length, greaterThan(pts.length));
   });
+
+  test('polylineLooksClosed treats filled open rings as closed', () {
+    const pts = <Offset2D>[
+      Offset2D(0, 0),
+      Offset2D(2, 0),
+      Offset2D(2, 2),
+      Offset2D(0, 2),
+    ];
+    expect(polylineLooksClosed(pts, noFill: false), isTrue);
+    expect(polylineLooksClosed(pts, noFill: true), isFalse);
+    expect(
+      polylineLooksClosed(
+        const <Offset2D>[
+          Offset2D(0, 0),
+          Offset2D(2, 0),
+          Offset2D(2, 2),
+          Offset2D(0, 0),
+        ],
+        noFill: true,
+      ),
+      isTrue,
+    );
+  });
 }

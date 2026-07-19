@@ -822,8 +822,9 @@ class VsdxToSvgSerializer {
           final ry = math.sqrt(bx * bx + by * by);
           if (rx > 0 && ry > 0) {
             if (ay.abs() < 1e-9 && bx.abs() < 1e-9) {
+              // Keep path cursor / started in sync with other commands.
+              m(cx - rx, cy);
               out
-                ..write('M ${_n(cx - rx)} ${_n(cy)} ')
                 ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(rx * 2)} 0 ')
                 ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(-rx * 2)} 0 ');
             } else {
@@ -985,6 +986,8 @@ class VsdxToSvgSerializer {
       if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) {
         closed = true;
         pts.removeLast();
+      } else if (polylineLooksClosed(pts, noFill: geometry.noFill)) {
+        closed = true;
       }
     }
     return (points: pts, closed: closed);

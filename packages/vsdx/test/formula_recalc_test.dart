@@ -197,6 +197,32 @@ void main() {
       expect(grown.connectionPoints[1].yFormula, 'Height*0.5');
     });
 
+    test('scales absolute Connection/Controls without formulas on resize', () {
+      // VSD imports often store CP inches with no F= — must still track the box.
+      final box = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 2,
+      ).copyWith(
+        connectionPoints: const <VsdxConnectionPoint>[
+          VsdxConnectionPoint(2, 1, dirX: 1, dirY: 0), // right mid
+          VsdxConnectionPoint(1, 2, dirX: 0, dirY: 1), // top mid
+        ],
+        controls: const <VsdxControlRow>[
+          VsdxControlRow(name: 'Row_1', x: 0.5, y: 0.5),
+        ],
+      );
+      final grown = box.resizeTo(pinX: 3, pinY: 3, width: 4, height: 6);
+      expect(grown.connectionPoints[0].x, closeTo(4, 1e-9));
+      expect(grown.connectionPoints[0].y, closeTo(3, 1e-9));
+      expect(grown.connectionPoints[1].x, closeTo(2, 1e-9));
+      expect(grown.connectionPoints[1].y, closeTo(6, 1e-9));
+      expect(grown.controls.single.x, closeTo(1.0, 1e-9));
+      expect(grown.controls.single.y, closeTo(1.5, 1e-9));
+    });
+
     test('updates LocPin from Width/Height formulas', () {
       final box = VsdxShapeFactory.rectangle(
         id: 1,

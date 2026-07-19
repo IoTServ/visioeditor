@@ -916,6 +916,32 @@ class VsdxShape {
     final newLocPinY = locPinYInches == null
         ? null
         : (this.height == 0 ? locPinYInches : locPinYInches! * sy);
+    // Absolute Connection / Control cells (no Width*/Height* F=) scale with
+    // the box so VSD imports and hand-placed glue points stay proportional;
+    // formula-driven cells keep their V and are refreshed by recalc below.
+    bool hasF(String? f) => f != null && f.isNotEmpty;
+    final scaledCPs = ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)
+        ? connectionPoints
+        : <VsdxConnectionPoint>[
+            for (final p in connectionPoints)
+              p.copyWith(
+                x: hasF(p.xFormula) ? p.x : p.x * sx,
+                y: hasF(p.yFormula) ? p.y : p.y * sy,
+              ),
+          ];
+    final scaledControls = ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)
+        ? controls
+        : <VsdxControlRow>[
+            for (final r in controls)
+              r.copyWith(
+                x: hasF(r.xFormula) ? r.x : r.x * sx,
+                y: hasF(r.yFormula) ? r.y : r.y * sy,
+                dynX: hasF(r.dynXFormula) ? r.dynX : r.dynX * sx,
+                dynY: hasF(r.dynYFormula) ? r.dynY : r.dynY * sy,
+                conX: hasF(r.conXFormula) ? r.conX : r.conX * sx,
+                conY: hasF(r.conYFormula) ? r.conY : r.conY * sy,
+              ),
+          ];
     // Absolute text-block cells (no Width*/Height* formula) scale with the box
     // so custom TxtPin/TxtWidth placement stays proportional after resize.
     final block = richText.textBlock;
@@ -949,6 +975,8 @@ class VsdxShape {
       locPinXInches: newLocPinX,
       locPinYInches: newLocPinY,
       geometries: scaled,
+      connectionPoints: scaledCPs,
+      controls: scaledControls,
       richText: identical(scaledBlock, block)
           ? richText
           : richText.copyWith(textBlock: scaledBlock),

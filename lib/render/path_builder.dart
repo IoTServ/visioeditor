@@ -362,12 +362,9 @@ Path buildPath(
     if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) {
       closed = true;
       pts.removeLast();
-    } else if (geometry.commands.isNotEmpty) {
-      // Visio rectangles often omit the closing LineTo — treat near-closed
-      // boxes (4 corners of a Width×Height rect) as closed when they form a
-      // simple ring around the origin box. Heuristic: first point near a
-      // corner of [0,W]×[0,H] and last near an adjacent corner chain end.
-      closed = false;
+    } else if (polylineLooksClosed(pts, noFill: geometry.noFill)) {
+      // Filled outline without an explicit closing vertex.
+      closed = true;
     }
   }
   // Ignore unused cursor warning.
