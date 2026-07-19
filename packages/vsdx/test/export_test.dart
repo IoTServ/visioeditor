@@ -472,6 +472,113 @@ void main() {
     );
   });
 
+  test('SVG arrows 27/28/29/33 match canvas filled/open styles', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    for (final arrowId in <int>[27, 28, 29, 33]) {
+      page = page.addShape(
+        VsdxShapeFactory.line(
+          id: nextId++,
+          ax: 1,
+          ay: arrowId * 0.2,
+          bx: 3,
+          by: arrowId * 0.2,
+        ).copyWith(
+          line: VsdxLine(endArrow: arrowId, weightInches: 0.04),
+        ),
+      );
+    }
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+
+    // 27 hatched triangle is open (stroke-only) on canvas.
+    expect(
+      svg,
+      contains(
+        'd="M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7" '
+        'fill="none" stroke="context-stroke"',
+      ),
+      reason: 'arrow 27 must be open hatched triangle',
+    );
+    // 33 trident is open three-prong.
+    expect(
+      svg,
+      contains(
+        'd="M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9" '
+        'fill="none" stroke="context-stroke"',
+      ),
+      reason: 'arrow 33 must be open trident, not a filled dart',
+    );
+    // 29 is a double triangle — two closed tips, not a single dart.
+    expect(svg, contains('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z'));
+    // 28 spear is a filled thin triangle (not an open polyline).
+    expect(svg, contains('M 0 3.2 L 10 5 L 0 6.8 Z'));
+    expect(
+      svg.contains('M 0 5 L 8 5 M 8 2 L 12 5 L 8 8'),
+      isFalse,
+      reason: 'old open-spear path must not be used for arrow 28',
+    );
+  });
+
+  test('SVG radial LineGradient emits radialGradient', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                weightInches: 0.08,
+                gradient: VsdxGradient(
+                  type: VsdxGradientType.radial,
+                  stops: <VsdxGradientStop>[
+                    VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                    VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+                  ],
+                ),
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('<radialGradient id="lg-'));
+    expect(svg.contains('<linearGradient id="lg-'), isFalse,
+        reason: 'radial LineGradient must not fall back to linear');
+  });
+
+  test('SVG FillPattern > 16 falls back to solid like canvas', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFF1565C0),
+            pattern: 17,
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg.contains('url(#pat-'), isFalse,
+        reason: 'unsupported hatch ids must not invent a pattern tile');
+    expect(svg, contains('fill="#1565c0"'));
+  });
+
   test('SVG compound-line mask honours LineCap', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

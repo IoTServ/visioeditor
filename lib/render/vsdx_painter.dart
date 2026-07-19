@@ -397,14 +397,7 @@ class VsdxPainter extends CustomPainter {
         if (strokePaint != null) {
           // A line gradient (LineGradientEnabled) paints the stroke with a
           // shader; without this the colour resolves to the black fallback.
-          if (shape.line.hasGradient) {
-            final shader = _buildGradientShader(
-              shape.line.gradient!,
-              path.getBounds(),
-              fillTransparency: shape.line.transparency,
-            );
-            if (shader != null) strokePaint.shader = shader;
-          }
+          _applyLineGradient(strokePaint, shape, path.getBounds());
           var strokeSrc = path;
           if (shape.isGlueableConnector && _lineJumpsActive) {
             final jumped = _lineJumpsPath(shape, geom);
@@ -511,14 +504,7 @@ class VsdxPainter extends CustomPainter {
     }
     // Match [_paintGeometries]: LineGradient + CompoundType on connectors
     // that only carry BeginX/EndX (no Geometry section).
-    if (shape.line.hasGradient) {
-      final shader = _buildGradientShader(
-        shape.line.gradient!,
-        path.getBounds(),
-        fillTransparency: shape.line.transparency,
-      );
-      if (shader != null) stroke.shader = shader;
-    }
+    _applyLineGradient(stroke, shape, path.getBounds());
     final dashes = dashPatternFor(shape.line.pattern);
     final strokeP = dashes == null ? path : dashedPath(path, dashes);
     _drawCompoundStroke(
@@ -632,6 +618,24 @@ class VsdxPainter extends CustomPainter {
     if (solid != null) canvas.drawPath(path, solid);
   }
 
+  /// Apply [VsdxLine.gradient] to [paint] once.
+  ///
+  /// Shader stops already bake in [VsdxLine.transparency]; force the paint
+  /// colour opaque so Flutter does not multiply LineColorTrans a second time
+  /// (which made canvas strokes darker than SVG `stroke-opacity`).
+  void _applyLineGradient(Paint paint, VsdxShape shape, Rect bounds) {
+    if (!shape.line.hasGradient) return;
+    final shader = _buildGradientShader(
+      shape.line.gradient!,
+      bounds,
+      fillTransparency: shape.line.transparency,
+    );
+    if (shader == null) return;
+    paint
+      ..shader = shader
+      ..color = paint.color.withValues(alpha: 1.0);
+  }
+
   Shader? _buildGradientShader(
     VsdxGradient gradient,
     Rect bounds, {
@@ -735,14 +739,7 @@ class VsdxPainter extends CustomPainter {
     }
     final stroke = paintStroke ? _resolveStrokePaint(shape) : null;
     if (stroke != null) {
-      if (shape.line.hasGradient) {
-        final shader = _buildGradientShader(
-          shape.line.gradient!,
-          path.getBounds(),
-          fillTransparency: shape.line.transparency,
-        );
-        if (shader != null) stroke.shader = shader;
-      }
+      _applyLineGradient(stroke, shape, path.getBounds());
       canvas.drawPath(path, stroke);
     }
 
@@ -835,16 +832,9 @@ class VsdxPainter extends CustomPainter {
         (Paint()
           ..style = PaintingStyle.stroke
           ..color = fallbackStroke);
-    if (shape.line.hasGradient) {
-      final strokeBounds = Rect.fromPoints(endPoints.start, endPoints.end)
-          .inflate(math.max(shape.line.weightInches, 0.01));
-      final shader = _buildGradientShader(
-        shape.line.gradient!,
-        strokeBounds,
-        fillTransparency: shape.line.transparency,
-      );
-      if (shader != null) paint.shader = shader;
-    }
+    final strokeBounds = Rect.fromPoints(endPoints.start, endPoints.end)
+        .inflate(math.max(shape.line.weightInches, 0.01));
+    _applyLineGradient(paint, shape, strokeBounds);
 
     if (shape.line.hasBeginArrow) {
       _drawArrowAt(

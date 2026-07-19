@@ -1581,6 +1581,46 @@ void main() {
     expect(svg.contains('letter-spacing='), isTrue);
   });
 
+  test('SVG FontScale merges with Letterspace (no duplicate override)', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Wide',
+                charStyle: VsdxCharStyle(
+                  fontSizeInches: 0.2,
+                  fontScale: 2.0,
+                  letterSpacingInches: 0.05,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Combined ≈ 0.05 + 0.2*(2-1)*0.15 = 0.08
+    expect(svg, contains('letter-spacing="0.08"'));
+    expect(
+      RegExp(r'letter-spacing="').allMatches(svg).length,
+      1,
+      reason: 'raw Letterspace must not overwrite FontScale-merged spacing',
+    );
+    expect(svg.contains('letter-spacing="0.05"'), isFalse);
+  });
+
   test('setGlow toggles restore theme slot; setFillPattern(0) clears gradient',
       () {
     final e = EditorController()..newDocument();

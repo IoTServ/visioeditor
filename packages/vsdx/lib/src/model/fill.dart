@@ -1,8 +1,7 @@
 /// Shape-level fill description.
 ///
-/// M3 scope: solid foreground / background colours + transparencies + an
-/// integer `FillPattern` selector. Gradient stops and pattern definitions
-/// arrive in M6 (advanced graphics).
+/// Solid / theme colours, transparencies, `FillPattern` (canvas+SVG render
+/// hatch ids 2–16; other ids fall back to solid), and optional gradient stops.
 library;
 
 import 'package:meta/meta.dart';
@@ -33,8 +32,8 @@ class VsdxFill {
   final double foregroundTransparency;
   final double backgroundTransparency;
 
-  /// `0` = no fill. `1` = solid. `> 1` = pattern (rendered as solid until
-  /// M6).
+  /// `0` = no fill. `1` = solid. `2–16` = hatch (canvas + SVG). Other ids
+  /// fall back to solid foreground.
   final int pattern;
 
   /// Theme slot to use when [foreground] is `null`. See `lib/model/theme.dart`

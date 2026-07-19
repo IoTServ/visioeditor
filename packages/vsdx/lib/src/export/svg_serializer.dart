@@ -1186,7 +1186,9 @@ class VsdxToSvgSerializer {
     final fgAlpha = _combinedOpacity(fg, fill.foregroundTransparency);
     final fgHex = fg == null ? '#ffffff' : _hex(fg);
 
-    if (fill.pattern > 1) {
+    // Canvas [PatternFillBuilder] only tiles ids 2–16; unknown ids fall
+    // back to solid. Match that here (do not invent a hatch for pattern>16).
+    if (fill.pattern >= 2 && fill.pattern <= 16) {
       final bg =
           _resolveColor(fill.background, fill.themeBackgroundIndex, theme);
       final bgAlpha =
@@ -1284,7 +1286,7 @@ class VsdxToSvgSerializer {
         '<line x1="$t" y1="0" x2="0" y2="$t" $common/>'
         '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
         '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
-      _ => // 4 and unknowns: forward diagonal
+      _ => // 4: forward diagonal (caller only passes 2–16)
         '<line x1="0" y1="$t" x2="$t" y2="0" $common/>',
     };
   }
@@ -1343,8 +1345,8 @@ class VsdxToSvgSerializer {
       );
       markers.write(' marker-end="url(#$mid)"');
     }
-    // Keep LineColorTrans as stroke-opacity even for gradients (canvas multiplies
-    // line.transparency onto the stroke paint before applying the shader).
+    // Keep LineColorTrans as stroke-opacity even for gradients (canvas applies
+    // line.transparency once via the stroke paint / shader, not twice).
     var strokePaint = 'stroke="$hex" stroke-opacity="${_n(alpha)}"';
     if (line.hasGradient) {
       final g = line.gradient!;
@@ -1359,14 +1361,23 @@ class VsdxToSvgSerializer {
           'stop-color="${_hex(sc)}" stop-opacity="${_n(op)}"/>',
         );
       }
-      final dx = math.cos(g.angleRad);
-      final dy = math.sin(g.angleRad);
-      defs.write(
-        '<linearGradient id="$id" gradientUnits="objectBoundingBox" '
-        'x1="${_n(0.5 - dx * 0.5)}" y1="${_n(0.5 - dy * 0.5)}" '
-        'x2="${_n(0.5 + dx * 0.5)}" y2="${_n(0.5 + dy * 0.5)}">'
-        '$stops</linearGradient>',
-      );
+      // Match canvas / fill gradients: linear along angle; radial/rect/path
+      // → radialGradient so SVG does not flatten radial LineGradient to linear.
+      if (g.type == VsdxGradientType.linear) {
+        final dx = math.cos(g.angleRad);
+        final dy = math.sin(g.angleRad);
+        defs.write(
+          '<linearGradient id="$id" gradientUnits="objectBoundingBox" '
+          'x1="${_n(0.5 - dx * 0.5)}" y1="${_n(0.5 - dy * 0.5)}" '
+          'x2="${_n(0.5 + dx * 0.5)}" y2="${_n(0.5 + dy * 0.5)}">'
+          '$stops</linearGradient>',
+        );
+      } else {
+        defs.write(
+          '<radialGradient id="$id" gradientUnits="objectBoundingBox" '
+          'cx="0.5" cy="0.5" r="0.6">$stops</radialGradient>',
+        );
+      }
       strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
     }
     return '$strokePaint '
@@ -1380,6 +1391,7 @@ class VsdxToSvgSerializer {
   /// canvas [arrow_library]). Tip points to the end (right) when [tipAtEnd].
   String _arrowMarkerBody(int arrowId, {required bool tipAtEnd}) {
     // Work in tip-at-right space, then mirror for start markers.
+    // filled / open choices mirror lib/render/arrow_library.dart.
     // filled / open choices mirror lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
       3 => ('M 0 1 L 10 5 L 0 9', false), // open arrow (V stroke)
@@ -1395,15 +1407,21 @@ class VsdxToSvgSerializer {
       11 => ('M 1 5 L 5 1 L 9 5 L 5 9 Z', false), // open diamond
       15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
       16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
-      7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // filled stealth
+      7 || 12 || 31 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth / chevron
       8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
       17 => ('M 2 1 L 8 9', false), // backslash
       18 => ('M 5 1 V 9 M 1 5 H 9', false), // cross / plus
       19 => ('M 2 1 V 9 M 2 5 H 8', false), // crow's foot one
       20 => ('M 2 1 L 8 5 L 2 9 M 8 1 V 9', false), // crow's foot many
-      27 => ('M 0 1 L 10 5 L 0 9 Z M 3 3 L 3 7', true), // hatched triangle
-      28 => ('M 0 5 L 8 5 M 8 2 L 12 5 L 8 8', false), // spear
-      29 || 33 => ('M 0 2 L 8 5 L 0 8 Z', true), // filled dart / narrow
+      27 => ('M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7', false), // hatched triangle
+      28 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true), // spear (filled thin)
+      29 => ('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z', true), // double triangle
+      30 => (
+          'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
+          false,
+        ), // double open triangle
+      32 => ('M 0 1 L 10 5 L 0 9', false), // open chevron
+      33 => ('M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9', false), // trident
       _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
     };
     final pathD = tipAtEnd ? d : _mirrorArrowD(d);
@@ -1427,11 +1445,13 @@ class VsdxToSvgSerializer {
       'M 5 1 V 9 M 1 5 H 9' => d,
       'M 2 1 V 9 M 2 5 H 8' => 'M 8 1 V 9 M 8 5 H 2',
       'M 2 1 L 8 5 L 2 9 M 8 1 V 9' => 'M 8 1 L 2 5 L 8 9 M 2 1 V 9',
-      'M 0 1 L 10 5 L 0 9 Z M 3 3 L 3 7' =>
-        'M 10 1 L 0 5 L 10 9 Z M 7 3 L 7 7',
-      'M 0 5 L 8 5 M 8 2 L 12 5 L 8 8' =>
-        'M 12 5 L 4 5 M 4 2 L 0 5 L 4 8',
-      'M 0 2 L 8 5 L 0 8 Z' => 'M 10 2 L 2 5 L 10 8 Z',
+      'M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7' =>
+        'M 10 1 L 0 5 L 10 9 Z M 7 3 L 3 7',
+      'M 0 3.2 L 10 5 L 0 6.8 Z' => 'M 10 3.2 L 0 5 L 10 6.8 Z',
+      'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z' =>
+        'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
+      'M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9' =>
+        'M 0 5 L 8 1 M 0 5 L 10 5 M 0 5 L 8 9',
       _ => d, // circles are symmetric
     };
   }
@@ -2120,9 +2140,8 @@ class VsdxToSvgSerializer {
         attrs.write(' style="text-decoration-style:double"');
       }
     }
-    if (c.letterSpacingInches.abs() > 1e-9) {
-      attrs.write(' letter-spacing="${_n(c.letterSpacingInches)}"');
-    }
+    // letter-spacing already includes FontScale above — do not rewrite it
+    // with the raw Character Letterspace cell.
     switch (c.position) {
       case VsdxTextPosition.superscript:
         attrs.write(' baseline-shift="super"');
