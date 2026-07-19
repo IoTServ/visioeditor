@@ -1250,12 +1250,14 @@ class VsdxToSvgSerializer {
   /// canvas [arrow_library]). Tip points to the end (right) when [tipAtEnd].
   String _arrowMarkerBody(int arrowId, {required bool tipAtEnd}) {
     // Work in tip-at-right space, then mirror for start markers.
+    // filled / open choices mirror lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
-      1 || 3 || 6 || 26 => ('M 0 1 L 10 5 L 0 9', false), // open triangle
-      10 || 34 => (
+      3 => ('M 0 1 L 10 5 L 0 9', false), // open arrow (V stroke)
+      1 || 6 || 26 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
+      10 || 13 || 34 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           true,
-        ), // filled circle
+        ), // filled circle / ball
       14 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           false,
@@ -1263,7 +1265,8 @@ class VsdxToSvgSerializer {
       11 => ('M 1 5 L 5 1 L 9 5 L 5 9 Z', false), // open diamond
       15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
       16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
-      7 || 8 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth
+      7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // filled stealth
+      8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
       _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
     };
     final pathD = tipAtEnd ? d : _mirrorArrowD(d);
@@ -1894,7 +1897,16 @@ class VsdxToSvgSerializer {
     }
     if (deco.isNotEmpty) {
       attrs.write(' text-decoration="${deco.join(' ')}"');
-      if (c.doubleUnderline || c.doubleStrikethrough) {
+      // Match canvas: when double-under meets single-strike (or reverse),
+      // keep solid so one decoration is not promoted to double.
+      final under = c.underline || c.doubleUnderline;
+      final strike = c.strikethrough || c.doubleStrikethrough;
+      final underDbl = c.doubleUnderline;
+      final strikeDbl = c.doubleStrikethrough;
+      final useDouble = under && strike && underDbl != strikeDbl
+          ? false
+          : (underDbl || strikeDbl);
+      if (useDouble) {
         attrs.write(' style="text-decoration-style:double"');
       }
     }

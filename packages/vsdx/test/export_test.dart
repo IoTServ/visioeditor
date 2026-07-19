@@ -450,6 +450,28 @@ void main() {
     expect(svg, contains('stroke-linecap="square"'));
   });
 
+  test('SVG open-stealth arrow (id 8) is stroked not filled', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(endArrow: 8, weightInches: 0.04),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('marker-end='));
+    expect(
+      svg,
+      contains('fill="none" stroke="context-stroke"'),
+      reason: 'arrow 8 is open stealth on canvas; SVG must not fill it',
+    );
+  });
+
   test('SVG compound-line mask honours LineCap', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
