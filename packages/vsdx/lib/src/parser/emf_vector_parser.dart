@@ -25,6 +25,7 @@ const int _emrEllipse = 42;
 const int _emrRectangle = 43;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
+const int _emrPolyBezier16 = 85;
 const int _emrPolygon16 = 86;
 const int _emrPolyline16 = 87;
 const int _emrPolyPolygon16 = 91;
@@ -178,6 +179,27 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     } else if (t == _emrDeleteObject && params + 4 <= recEnd) {
       final ih = bd.getUint32(params, Endian.little);
       if (ih < objects.length) objects[ih] = null;
+    } else if (t == _emrPolyBezier16 && params + 20 <= recEnd) {
+      // Bounds(16) + count(4) + POINTS: start + n×(c1,c2,end).
+      final count = bd.getUint32(params + 16, Endian.little);
+      final pts = _readPoints16(bd, params + 20, recEnd, count);
+      if (pts.length >= 4) {
+        final dense = _densifyPolyBezier16(pts);
+        ensurePts(dense);
+        final stroke = penStyle != 5;
+        final fill = brushStyle == 0;
+        if (fill || stroke) {
+          ops.add(MetafilePathOp(
+            points: dense,
+            closed: fill,
+            fill: fill,
+            stroke: stroke,
+            fillArgb: fill ? brushColor : 0,
+            strokeArgb: stroke ? penColor : 0,
+            strokeWidth: penWidth,
+          ));
+        }
+      }
     } else if ((t == _emrPolygon16 || t == _emrPolyline16) &&
         params + 20 <= recEnd) {
       // Bounds(16) + count(4) + points
@@ -328,6 +350,35 @@ List<MetafilePoint> _readPoints16(
     p += 4;
   }
   return pts;
+}
+
+/// Densify EMR_POLYBEZIER16 control points into a polyline (cubic samples).
+List<MetafilePoint> _densifyPolyBezier16(
+  List<MetafilePoint> pts, {
+  int steps = 8,
+}) {
+  if (pts.length < 4) return pts;
+  final out = <MetafilePoint>[pts.first];
+  for (var i = 1; i + 2 < pts.length; i += 3) {
+    final p0 = out.last;
+    final p1 = pts[i];
+    final p2 = pts[i + 1];
+    final p3 = pts[i + 2];
+    for (var s = 1; s <= steps; s++) {
+      final t = s / steps;
+      final u = 1 - t;
+      final x = u * u * u * p0.x +
+          3 * u * u * t * p1.x +
+          3 * u * t * t * p2.x +
+          t * t * t * p3.x;
+      final y = u * u * u * p0.y +
+          3 * u * u * t * p1.y +
+          3 * u * t * t * p2.y +
+          t * t * t * p3.y;
+      out.add(MetafilePoint(x, y));
+    }
+  }
+  return out;
 }
 
 int _rgbToArgb(int colorRef) {

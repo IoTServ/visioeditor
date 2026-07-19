@@ -1819,6 +1819,46 @@ void main() {
     );
   });
 
+  test('SVG Foreign image is clipped to Geometry path', () {
+    final png = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    );
+    const part = '/visio/media/image1.png';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 2,
+          height: 1.5,
+          imagePartName: part,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.05,
+            offsetYInches: 0.05,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(
+      page,
+      images: ImageRegistry.empty.withImage(
+        VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+      ),
+    );
+    expect(svg, contains('clipPath id="img-clip-1"'));
+    expect(svg, contains('clip-path="url(#img-clip-1)"'));
+    // NoFill+NoLine picture still gets a filled silhouette shadow.
+    expect(svg, contains('fill-opacity='));
+    expect(svg, contains('translate(0.05 0.05)'));
+  });
+
   test('SVG FlipY bitmap uses centre flip (stays in shape box)', () {
     // 1×1 PNG
     final png = base64Decode(

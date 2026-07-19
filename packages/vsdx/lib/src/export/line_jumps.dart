@@ -38,6 +38,30 @@ enum LineJumpRenderStyle {
   }
 }
 
+/// Sign for the left-hand hop normal given Visio JumpDir cells.
+///
+/// `ConLineJumpDirX`: 0 default, 1 Up (+Y), 2 Down (−Y) on horizontal spans.
+/// `ConLineJumpDirY`: 0 default, 1 Left (−X), 2 Right (+X) on vertical spans.
+/// Default keeps the CCW (left-hand) hop used historically.
+double lineJumpHopSign({
+  required double sdx,
+  required double sdy,
+  int? dirX,
+  int? dirY,
+}) {
+  final horiz = sdx.abs() >= sdy.abs();
+  if (horiz) {
+    final d = dirX ?? 0;
+    if (d == 1) return sdx >= 0 ? 1.0 : -1.0;
+    if (d == 2) return sdx >= 0 ? -1.0 : 1.0;
+  } else {
+    final d = dirY ?? 0;
+    if (d == 1) return sdy >= 0 ? 1.0 : -1.0;
+    if (d == 2) return sdy >= 0 ? -1.0 : 1.0;
+  }
+  return 1.0;
+}
+
 /// Intersection of segments `a→b` and `c→d` when they *properly* cross
 /// (strictly interior to both segments), else `null`.
 Offset2D? segmentIntersection(
@@ -96,6 +120,8 @@ String polylineWithJumpsSvg(
   double r, {
   int? style,
   int? pageStyle,
+  int? dirX,
+  int? dirY,
   String Function(double) format = _defaultFormat,
 }) {
   if (route.isEmpty) return '';
@@ -138,9 +164,16 @@ String polylineWithJumpsSvg(
     var cursor = 0.0;
     final ux = sdx / len;
     final uy = sdy / len;
-    // Left-hand perpendicular (CCW), matching arc sweep.
-    final px = -uy * hopR;
-    final py = ux * hopR;
+    final hopSign = lineJumpHopSign(
+      sdx: sdx,
+      sdy: sdy,
+      dirX: dirX,
+      dirY: dirY,
+    );
+    // Left-hand perpendicular (CCW), optionally flipped by JumpDir.
+    final px = -uy * hopR * hopSign;
+    final py = ux * hopR * hopSign;
+    final sweep = hopSign < 0 ? 1 : 0;
     for (final t in ts) {
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
@@ -160,7 +193,7 @@ String polylineWithJumpsSvg(
           );
         case LineJumpRenderStyle.arc:
           buf.write(
-            ' A ${format(hopR)} ${format(hopR)} 0 0 0 '
+            ' A ${format(hopR)} ${format(hopR)} 0 0 $sweep '
             '${format(outX)} ${format(outY)}',
           );
       }

@@ -114,6 +114,20 @@ void main() {
     expect(small.contains('A 0.2 0.2'), isFalse);
   });
 
+  test('ConLineJumpDirX Down flips horizontal hop to −Y', () {
+    final route = <Offset2D>[const Offset2D(0, 1), const Offset2D(4, 1)];
+    final unders = <List<Offset2D>>[
+      <Offset2D>[const Offset2D(2, 0), const Offset2D(2, 2)],
+    ];
+    final up = polylineWithJumpsSvg(route, unders, 0.2, dirX: 1);
+    final down = polylineWithJumpsSvg(route, unders, 0.2, dirX: 2);
+    // Default/Up uses sweep=0; Down uses sweep=1 on the hop arc.
+    expect(up, contains('A 0.2000 0.2000 0 0 0 '));
+    expect(down, contains('A 0.2000 0.2000 0 0 1 '));
+    expect(lineJumpHopSign(sdx: 4, sdy: 0, dirX: 1), 1.0);
+    expect(lineJumpHopSign(sdx: 4, sdy: 0, dirX: 2), -1.0);
+  });
+
   test('SVG LineJumpStyle Gap omits arc and opens a break', () {
     final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
     final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);

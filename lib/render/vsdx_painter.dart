@@ -491,6 +491,8 @@ class VsdxPainter extends CustomPainter {
       lineJumpRadiusInches,
       style: conStyle,
       pageStyle: pageStyle,
+      dirX: shape.connectorProps?.conLineJumpDirX,
+      dirY: shape.connectorProps?.conLineJumpDirY,
     );
   }
 
@@ -527,6 +529,8 @@ class VsdxPainter extends CustomPainter {
               lineJumpRadiusInches,
               style: conStyle,
               pageStyle: pageStyle,
+              dirX: shape.connectorProps?.conLineJumpDirX,
+              dirY: shape.connectorProps?.conLineJumpDirY,
             );
     } else {
       path = _polylinePath(localPts);
@@ -729,10 +733,12 @@ class VsdxPainter extends CustomPainter {
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
     // Match SVG / main paint: honour Geometry NoFill / NoLine so stencil
-    // divider paths do not get a phantom filled mirror.
+    // divider paths do not get a phantom filled mirror. Foreign pictures
+    // still mirror the bitmap when fill/stroke are off.
     final paintFill = !noFill && shape.fill.hasFill;
     final paintStroke = !noLine && shape.line.hasLine;
-    if (!paintFill && !paintStroke) return;
+    final paintImage = shape.hasImage && !paintFill && !paintStroke;
+    if (!paintFill && !paintStroke && !paintImage) return;
 
     var bounds = path.getBounds();
     // Axis-aligned 1D lines yield zero-area bounds (height or width == 0);
@@ -806,6 +812,13 @@ class VsdxPainter extends CustomPainter {
       final strokeP = dashes == null ? path : dashedPath(path, dashes);
       canvas.drawPath(strokeP, stroke);
     }
+    if (paintImage) {
+      _paintImage(
+        canvas,
+        shape,
+        Rect.fromLTWH(0, 0, shape.width, shape.height),
+      );
+    }
 
     // Fade out farther below the shape (smaller Y in Y-up space).
     // Match SVG mask width (path AABB × 3) so horizontal blur fades evenly.
@@ -864,11 +877,18 @@ class VsdxPainter extends CustomPainter {
     if (alpha <= 0) return;
     // Connectors / line-only geometry: stroke the shadow (Visio ShadowPattern
     // on open paths). Filled shapes keep a filled drop shadow.
-    // Match SVG: NoFill+NoLine geometry (dividers) casts no shadow.
-    if ((geom?.noFill ?? false) && (geom?.noLine ?? false)) return;
-    final lineOnly = shape.is1D ||
-        (geom?.noFill ?? false) ||
-        !shape.fill.hasFill;
+    // Match SVG: NoFill+NoLine dividers cast no shadow — except Foreign
+    // pictures, which use the geometry as an image silhouette.
+    final imageSilhouette = shape.hasImage &&
+        (geom?.noFill ?? true) &&
+        ((geom?.noLine ?? true) || !shape.line.hasLine);
+    if ((geom?.noFill ?? false) &&
+        (geom?.noLine ?? false) &&
+        !imageSilhouette) {
+      return;
+    }
+    final lineOnly = !imageSilhouette &&
+        (shape.is1D || (geom?.noFill ?? false) || !shape.fill.hasFill);
     if (lineOnly && (geom?.noLine ?? false)) return;
     if (lineOnly && !shape.line.hasLine) return;
     final paint = Paint()
@@ -1315,10 +1335,27 @@ class VsdxPainter extends CustomPainter {
       _paintImagePlaceholder(canvas, bounds, src);
       return;
     }
+    // Clip to the first visible Geometry so rounded / irregular frames crop
+    // the bitmap (Visio Foreign picture behaviour).
+    Path? clipPath;
+    for (final geom in shape.geometries) {
+      if (geom.noShow) continue;
+      final p = buildPath(
+        geom,
+        widthInches: shape.width,
+        heightInches: shape.height,
+        roundingInches: shape.line.roundingInches,
+      );
+      if (!p.getBounds().isEmpty) {
+        clipPath = p;
+        break;
+      }
+    }
     // Bitmap rows are Y-down; the page frame is Y-up. Flip once for upright
     // display — but skip when FlipY already mirrored the parent XForm so the
     // two scales do not cancel (LocPin-centred shapes).
     canvas.save();
+    if (clipPath != null) canvas.clipPath(clipPath);
     canvas.translate(bounds.center.dx, bounds.center.dy);
     canvas.scale(1, shape.flipY ? 1.0 : -1.0);
     final dst = Rect.fromCenter(

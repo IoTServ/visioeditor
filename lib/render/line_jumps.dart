@@ -58,6 +58,8 @@ Path polylineWithJumps(
   double r, {
   int? style,
   int? pageStyle,
+  int? dirX,
+  int? dirY,
 }) {
   final path = Path();
   if (route.isEmpty) return path;
@@ -98,7 +100,13 @@ Path polylineWithJumps(
     var cursor = 0.0;
     final ux = seg.dx / len;
     final uy = seg.dy / len;
-    final perp = Offset(-uy * hopR, ux * hopR);
+    final hopSign = vsdx.lineJumpHopSign(
+      sdx: seg.dx,
+      sdy: seg.dy,
+      dirX: dirX,
+      dirY: dirY,
+    );
+    final perp = Offset(-uy * hopR * hopSign, ux * hopR * hopSign);
     for (final t in ts) {
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
@@ -117,7 +125,7 @@ Path polylineWithJumps(
           path.arcToPoint(
             outP,
             radius: Radius.circular(hopR),
-            clockwise: false,
+            clockwise: hopSign < 0,
           );
       }
       cursor = t + half;

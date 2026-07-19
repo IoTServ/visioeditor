@@ -338,6 +338,8 @@ class VsdxToSvgSerializer {
       lineJumpRadiusInches,
       style: shape.connectorProps?.conLineJumpStyle,
       pageStyle: page.pageSheet.lineJumpStyle,
+      dirX: shape.connectorProps?.conLineJumpDirX,
+      dirY: shape.connectorProps?.conLineJumpDirY,
       format: _n,
     );
   }
@@ -953,10 +955,12 @@ class VsdxToSvgSerializer {
         const VsdxColor(0x99000000);
     final alpha = _combinedOpacity(base, shadow.transparency);
     if (alpha <= 0) return;
+    // Foreign pictures (NoFill+NoLine) still cast a filled silhouette shadow.
+    final imageSilhouette = shape.hasImage && noFill && noLine;
     final lineOnly =
-        shape.is1D || noFill || !shape.fill.hasFill;
+        !imageSilhouette && (shape.is1D || noFill || !shape.fill.hasFill);
     if (lineOnly && noLine) return;
-    if (!lineOnly && noFill) return;
+    if (!lineOnly && noFill && !imageSilhouette) return;
     final hex = _hex(base);
     final dx = shadow.offsetXInches;
     final dy = shadow.offsetYInches;
@@ -1036,8 +1040,10 @@ class VsdxToSvgSerializer {
     if (!refl.enabled || refl.sizeInches <= 0) return;
     final hasFill = !noFill && shape.fill.hasFill;
     final hasStroke = !noLine && shape.line.hasLine;
-    // Match canvas: reflection paints fill and/or stroke under the mirror.
-    if (!hasFill && !hasStroke) return;
+    // Foreign pictures mirror a silhouette when fill/stroke are off (canvas
+    // paints the bitmap; SVG approximates with a filled frame).
+    final imageMirror = shape.hasImage && !hasFill && !hasStroke;
+    if (!hasFill && !hasStroke && !imageMirror) return;
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
     // Approximate canvas reflection: mirror about path min-Y (visual bottom
@@ -1067,7 +1073,10 @@ class VsdxToSvgSerializer {
     // solid foreground × FillForegndTrans × ReflectionTransparency.
     late final String fillPaint;
     late final double fillOp;
-    if (!hasFill) {
+    if (imageMirror) {
+      fillPaint = '#666666';
+      fillOp = alpha * 0.55;
+    } else if (!hasFill) {
       fillPaint = 'none';
       fillOp = 0;
     } else if (shape.fill.hasGradient) {
@@ -2355,6 +2364,29 @@ class VsdxToSvgSerializer {
       return;
     }
     final href = 'data:$mime;base64,${base64Encode(bytes)}';
+    // Clip to first Geometry so rounded / irregular frames crop the bitmap.
+    String? clipD;
+    for (final geom in shape.geometries) {
+      if (geom.noShow) continue;
+      final d = _geometryToD(
+        geom,
+        shape.width,
+        shape.height,
+        roundingInches: shape.line.roundingInches,
+      );
+      if (d.isNotEmpty) {
+        clipD = d;
+        break;
+      }
+    }
+    final clipId = clipD == null ? null : 'img-clip-${shape.id}';
+    if (clipId != null) {
+      buf.writeln(
+        '$indent<defs><clipPath id="$clipId">'
+        '<path d="$clipD"/></clipPath></defs>',
+      );
+      buf.writeln('$indent<g clip-path="url(#$clipId)">');
+    }
     // SVG <image> with preserveAspectRatio="none" stretches to fit; Visio
     // already stores the picture at the shape's bounds. Bitmap rows are
     // Y-down — flip once about the shape centre for upright, unless FlipY
@@ -2372,6 +2404,7 @@ class VsdxToSvgSerializer {
       'width="${_n(shape.width)}" height="${_n(shape.height)}" '
       'preserveAspectRatio="none"/></g>',
     );
+    if (clipId != null) buf.writeln('$indent</g>');
   }
 
   /// Replay a vector metafile into shape-local SVG (GDI Y-down → Y-up flip).
