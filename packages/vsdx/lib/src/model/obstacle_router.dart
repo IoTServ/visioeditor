@@ -118,8 +118,41 @@ class ObstacleRouter {
   static const double defaultClearance = 0.12;
 
   /// Outward stub length (inches) so the first/last segment meets the shape
-  /// edge perpendicularly (draw.io jetty).
-  static const double defaultJetty = 0.1;
+  /// edge perpendicularly (draw.io jetty). Long enough for default arrowheads
+  /// (size 0.125 × reach ≈ 0.125) so the tip does not fold into the prior leg.
+  static const double defaultJetty = 0.15;
+
+  /// Jetty long enough for the connector's largest arrow (tip→base reach).
+  static double jettyForLine({
+    required bool hasBeginArrow,
+    required int beginArrow,
+    required double beginArrowSizeInches,
+    required bool hasEndArrow,
+    required int endArrow,
+    required double endArrowSizeInches,
+  }) {
+    double reach(int id) => switch (id) {
+          9 => 1.2,
+          15 || 16 || 25 || 26 => 0.85,
+          23 || 24 => 1.1,
+          28 => 1.4,
+          29 || 30 => 1.2,
+          31 || 32 => 0.55,
+          33 => 0.85,
+          35 => 1.5,
+          _ => 1.0,
+        };
+    var need = defaultJetty;
+    if (hasBeginArrow) {
+      final s = beginArrowSizeInches <= 0 ? 0.125 : beginArrowSizeInches;
+      need = math.max(need, s * reach(beginArrow) + 0.02);
+    }
+    if (hasEndArrow) {
+      final s = endArrowSizeInches <= 0 ? 0.125 : endArrowSizeInches;
+      need = math.max(need, s * reach(endArrow) + 0.02);
+    }
+    return need.clamp(defaultJetty, 0.5);
+  }
 
   /// Orthogonal route from ([ax],[ay]) to ([bx],[by]) that avoids [obstacles].
   ///

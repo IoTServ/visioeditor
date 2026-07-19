@@ -777,6 +777,14 @@ class VsdxPage {
                   excludeIds: exclude,
                   beginSide: beginSide,
                   endSide: endSide,
+                  jetty: ObstacleRouter.jettyForLine(
+                    hasBeginArrow: connector.line.hasBeginArrow,
+                    beginArrow: connector.line.beginArrow,
+                    beginArrowSizeInches: connector.line.beginArrowSizeInches,
+                    hasEndArrow: connector.line.hasEndArrow,
+                    endArrow: connector.line.endArrow,
+                    endArrowSizeInches: connector.line.endArrowSizeInches,
+                  ),
                 );
       final geometry = _bakeRoute(control,
           curved: connector.curved, rounded: connector.rounded);
@@ -899,6 +907,14 @@ class VsdxPage {
     final endSide = endTarget != null
         ? _approachSide(endTarget, zx, zy, connect: endConnect)
         : null;
+    final jetty = ObstacleRouter.jettyForLine(
+      hasBeginArrow: connector.line.hasBeginArrow,
+      beginArrow: connector.line.beginArrow,
+      beginArrowSizeInches: connector.line.beginArrowSizeInches,
+      hasEndArrow: connector.line.hasEndArrow,
+      endArrow: connector.line.endArrow,
+      endArrowSizeInches: connector.line.endArrowSizeInches,
+    );
     return _autoRoute(
       ax,
       ay,
@@ -907,6 +923,7 @@ class VsdxPage {
       excludeIds: exclude,
       beginSide: beginSide,
       endSide: endSide,
+      jetty: jetty,
     );
   }
 
@@ -1670,6 +1687,7 @@ class VsdxPage {
     Set<int> excludeIds = const <int>{},
     RouteSide? beginSide,
     RouteSide? endSide,
+    double jetty = ObstacleRouter.defaultJetty,
   }) {
     final obstacles = _obstacleAabbs(excludeIds);
     return const ObstacleRouter().route(
@@ -1680,6 +1698,7 @@ class VsdxPage {
       obstacles: obstacles,
       beginSide: beginSide,
       endSide: endSide,
+      jetty: jetty,
     );
   }
 

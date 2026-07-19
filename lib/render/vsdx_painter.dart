@@ -318,11 +318,14 @@ class VsdxPainter extends CustomPainter {
     }
     canvas.translate(-localPinX, -localPinY);
 
+    // Picture frames keep Geometry (fill/stroke/effects). Paint geometry
+    // first so the outer half of the stroke stays visible around the bitmap.
+    if (shape.hasGeometry) {
+      _paintGeometries(canvas, shape);
+    }
     if (shape.hasImage) {
       _paintImage(canvas, shape, Rect.fromLTWH(0, 0, w, h));
-    } else if (shape.hasGeometry) {
-      _paintGeometries(canvas, shape);
-    } else if (shape.isGlueableConnector) {
+    } else if (!shape.hasGeometry && shape.isGlueableConnector) {
       _paint1DFallback(canvas, shape);
     }
     // Geometry-less 2-D leaves (e.g. Edraw "70% 隐性" text boxes that store

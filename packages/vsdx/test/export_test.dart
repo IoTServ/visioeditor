@@ -889,7 +889,7 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7" '
+        'd="M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7" '
         'fill="none" stroke="#000000"',
       ),
       reason: 'arrow 27 must be open hatched triangle',
@@ -1504,6 +1504,119 @@ void main() {
     // Body hanging band: IndLeft + TextPosAfterBullet → centre of remainder.
     // textBandX=0.59; xBody=0.59+(3-0.04-0.59)/2=1.775
     expect(svg, contains('x="1.775"'));
+  });
+
+  test('SVG absolute SpLine uses inches not max(fontSize)', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 2,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\nB',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.16,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  lineSpacingAbsoluteInches: 0.08,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Two lines with 0.08" advance → y delta 0.08 (not 0.16 from max(abs,fs)).
+    final ys = RegExp(r'<text[^>]*\sy="([-0-9.]+)"')
+        .allMatches(svg)
+        .map((m) => double.parse(m.group(1)!))
+        .toList();
+    expect(ys.length, greaterThanOrEqualTo(2));
+    expect((ys[1] - ys[0]).abs(), closeTo(0.08, 1e-6));
+  });
+
+  test('SVG pdfCompat reflection uses solid fill not missing pat url', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            pattern: 4,
+            foreground: VsdxColor(0xFF1565C0),
+          ),
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            distanceInches: 0.05,
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer(pdfCompat: true)
+        .serializePage(doc.pages.first);
+    expect(svg.contains('url(#pat-'), isFalse);
+    expect(svg, contains('fill="#1565c0"'));
+  });
+
+  test('SVG image shape still paints Geometry stroke/fill', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // Minimal 1×1 PNG.
+    final png = Uint8List.fromList(base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ));
+    final part = 'media/image1.png';
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+    ).copyWith(
+      imagePartName: part,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFFF00)),
+      line: const VsdxLine(
+        color: VsdxColor(0xFFFF0000),
+        weightInches: 0.04,
+      ),
+    );
+    doc = doc
+        .copyWith(images: images)
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final svg = VsdxToSvgSerializer().serializePage(
+      doc.pages.first,
+      images: doc.images,
+    );
+    expect(svg, contains('<image'));
+    expect(svg, contains('fill="#ffff00"'));
+    expect(svg, contains('stroke="#ff0000"'));
   });
 
   test('SVG relative SpLine line height does not multiply by extra 1.2', () {

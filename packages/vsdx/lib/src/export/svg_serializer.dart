@@ -349,84 +349,82 @@ class VsdxToSvgSerializer {
     }
     buf.writeln('$indent<g transform="${transforms.join(' ')}">');
 
+    // Picture frames keep Geometry (fill/stroke/effects); paint it first so
+    // the outer half of the stroke stays visible around the bitmap.
+    var wroteGeom = false;
+    var geomIndex = 0;
+    // Canvas [_paintLineEndings] draws arrows once from the first strokeable
+    // Geometry — do not attach markers/bake on every section.
+    var arrowsAttached = false;
+    final jumpD = _connectorJumpD(page, shape);
+    for (final geom in shape.geometries) {
+      if (geom.noShow) continue;
+      final d = _geometryToD(
+        geom,
+        shape.width,
+        shape.height,
+        roundingInches: shape.line.roundingInches,
+      );
+      if (d.isEmpty) continue;
+      // Match canvas: line jumps affect stroke only; fill keeps the raw
+      // geometry. Do not break — later Geometry sections still paint.
+      final strokeD = (jumpD != null && !geom.noLine) ? jumpD : null;
+      wroteGeom = true;
+      final attachArrows = !geom.noLine &&
+          !arrowsAttached &&
+          shape.line.hasLine &&
+          (shape.line.hasBeginArrow || shape.line.hasEndArrow);
+      _writePath(
+        buf,
+        shape,
+        theme,
+        d: d,
+        strokeD: strokeD,
+        noFill: geom.noFill,
+        noLine: geom.noLine,
+        attachArrows: attachArrows,
+        // paintIdScope is page- (and underlay-) scoped so multi-page SVG
+        // and shared BackPage composites do not collide defs ids.
+        paintId: '$paintIdScope-${shape.id}-$geomIndex',
+        indent: '$indent  ',
+      );
+      if (attachArrows) arrowsAttached = true;
+      geomIndex++;
+    }
     if (shape.hasImage) {
       _writeImage(buf, shape, indent: '$indent  ');
-    } else {
-      var wroteGeom = false;
-      var geomIndex = 0;
-      // Canvas [_paintLineEndings] draws arrows once from the first strokeable
-      // Geometry — do not attach markers/bake on every section.
-      var arrowsAttached = false;
-      final jumpD = _connectorJumpD(page, shape);
-      for (final geom in shape.geometries) {
-        if (geom.noShow) continue;
-        final d = _geometryToD(
-          geom,
-          shape.width,
-          shape.height,
-          roundingInches: shape.line.roundingInches,
-        );
-        if (d.isEmpty) continue;
-        // Match canvas: line jumps affect stroke only; fill keeps the raw
-        // geometry. Do not break — later Geometry sections still paint.
-        final strokeD =
-            (jumpD != null && !geom.noLine) ? jumpD : null;
-        wroteGeom = true;
-        final attachArrows = !geom.noLine &&
-            !arrowsAttached &&
-            shape.line.hasLine &&
-            (shape.line.hasBeginArrow || shape.line.hasEndArrow);
+    } else if (!wroteGeom &&
+        shape.isGlueableConnector &&
+        shape.beginX != null &&
+        shape.beginY != null &&
+        shape.endX != null &&
+        shape.endY != null) {
+      // Canvas paints geometry-less 1-D connectors via orthogonal routing.
+      final d = jumpD ?? () {
+        final route = page.autoRoutedConnectorPolyline(shape);
+        if (route.length < 2) return '';
+        final buf = StringBuffer();
+        for (var i = 0; i < route.length; i++) {
+          final local = page.pageToLocalDeep(shape.id, route[i]);
+          buf.write(i == 0
+              ? 'M ${_n(local.x)} ${_n(local.y)}'
+              : ' L ${_n(local.x)} ${_n(local.y)}');
+        }
+        return buf.toString();
+      }();
+      if (d.isNotEmpty) {
         _writePath(
           buf,
           shape,
           theme,
           d: d,
-          strokeD: strokeD,
-          noFill: geom.noFill,
-          noLine: geom.noLine,
-          attachArrows: attachArrows,
-          // paintIdScope is page- (and underlay-) scoped so multi-page SVG
-          // and shared BackPage composites do not collide defs ids.
-          paintId: '$paintIdScope-${shape.id}-$geomIndex',
+          noFill: true,
+          noLine: false,
+          attachArrows: shape.line.hasLine &&
+              (shape.line.hasBeginArrow || shape.line.hasEndArrow),
+          paintId: '$paintIdScope-${shape.id}-0',
           indent: '$indent  ',
         );
-        if (attachArrows) arrowsAttached = true;
-        geomIndex++;
-      }
-      // Canvas paints geometry-less 1-D connectors via orthogonal routing
-      // (perimeter glue + ObstacleRouter). Match that for SVG/PDF export.
-      if (!wroteGeom &&
-          shape.isGlueableConnector &&
-          shape.beginX != null &&
-          shape.beginY != null &&
-          shape.endX != null &&
-          shape.endY != null) {
-        final d = jumpD ?? () {
-          final route = page.autoRoutedConnectorPolyline(shape);
-          if (route.length < 2) return '';
-          final buf = StringBuffer();
-          for (var i = 0; i < route.length; i++) {
-            final local = page.pageToLocalDeep(shape.id, route[i]);
-            buf.write(i == 0
-                ? 'M ${_n(local.x)} ${_n(local.y)}'
-                : ' L ${_n(local.x)} ${_n(local.y)}');
-          }
-          return buf.toString();
-        }();
-        if (d.isNotEmpty) {
-          _writePath(
-            buf,
-            shape,
-            theme,
-            d: d,
-            noFill: true,
-            noLine: false,
-            attachArrows: shape.line.hasLine &&
-                (shape.line.hasBeginArrow || shape.line.hasEndArrow),
-            paintId: '$paintIdScope-${shape.id}-0',
-            indent: '$indent  ',
-          );
-        }
       }
     }
 
@@ -1025,12 +1023,15 @@ class VsdxToSvgSerializer {
     } else if (shape.fill.hasGradient) {
       fillPaint = 'url(#grad-$paintId)';
       fillOp = alpha;
-    } else if (shape.fill.pattern > 1) {
-      // Hatch defs already emitted by [_fillAttr] as pat-$paintId; reuse so
-      // the mirror matches canvas [_drawFill] (not a solid foreground).
+    } else if (shape.fill.pattern >= 2 &&
+        shape.fill.pattern <= 16 &&
+        !pdfCompat) {
+      // Hatch defs emitted by [_fillAttr] as pat-$paintId — only when a real
+      // <pattern> was created (not pdfCompat / pattern>16 solid fallback).
       fillPaint = 'url(#pat-$paintId)';
       fillOp = alpha;
     } else {
+      // Solid (incl. pdfCompat hatch flatten and unsupported pattern ids).
       final c = _resolveColor(shape.fill.foreground,
               shape.fill.themeForegroundIndex, theme) ??
           const VsdxColor(0xFF888888);
@@ -2022,7 +2023,8 @@ class VsdxToSvgSerializer {
         ), // optional many
       23 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', true), // swept filled
       24 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false), // swept open
-      27 => ('M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7', false), // hatched triangle
+      // Hatched triangle: canvas shadow (-0.3,-0.2)→(-0.7,0.2) → tip-end M 7 3 L 3 7.
+      27 => ('M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7', false),
       28 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true), // spear (filled thin)
       29 => ('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z', true), // double triangle
       30 => (
@@ -2083,8 +2085,8 @@ class VsdxToSvgSerializer {
       'M 0 2 L 10 5 L 0 8 L 2.5 5 Z' => 'M 10 2 L 0 5 L 10 8 L 7.5 5 Z',
       'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z' =>
         'M 10 1 L 0 5 L 10 9 Z M 12 0.5 L 10 1 L 10 9 L 12 9.5 Z',
-      'M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7' =>
-        'M 10 1 L 0 5 L 10 9 Z M 7 3 L 3 7',
+      'M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7' =>
+        'M 10 1 L 0 5 L 10 9 Z M 3 3 L 7 7',
       'M 0 3.2 L 10 5 L 0 6.8 Z' => 'M 10 3.2 L 0 5 L 10 6.8 Z',
       'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z' =>
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
@@ -2834,7 +2836,9 @@ class VsdxToSvgSerializer {
       fs = math.max(fs, run.charStyle.fontSizeInches);
     }
     if (style.lineSpacingAbsoluteInches > 1e-9) {
-      return math.max(style.lineSpacingAbsoluteInches, fs);
+      // Match canvas: absolute SpLine is the line advance in inches (may be
+      // smaller than the font size).
+      return style.lineSpacingAbsoluteInches;
     }
     // [lineSpacing] is already the Visio SpLine multiple (e.g. -1.2 → 1.2);
     // do not multiply by an extra 1.2 (that inflated relative spacing vs canvas).

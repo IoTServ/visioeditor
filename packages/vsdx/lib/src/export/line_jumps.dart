@@ -123,7 +123,12 @@ String polylineWithJumpsSvg(
     ts.sort();
 
     // Dense curved polylines bake short LineTo segments (often < 2r). Shrink
-    // the hop so it still fits instead of silently dropping the jump.
+    // the hop so it still fits. Segments shorter than ~half the intended
+    // radius cannot host a meaningful Gap — skip (neighbours cover crossings).
+    if (len < r * 0.5) {
+      buf.write(' L ${format(b.x)} ${format(b.y)}');
+      continue;
+    }
     final hopR = math.min(r, len * 0.45);
     if (hopR < 1e-6) {
       buf.write(' L ${format(b.x)} ${format(b.y)}');
