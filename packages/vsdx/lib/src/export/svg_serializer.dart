@@ -481,6 +481,8 @@ class VsdxToSvgSerializer {
       final ga = _combinedOpacity(gc, glow.transparency) * 0.6;
       if (ga > 0) {
         final gid = 'glow-$paintId';
+        // Opacity lives only on feFlood — putting it on stroke as well would
+        // square alpha vs canvas [_drawGlow] (which multiplies once).
         buf.writeln(
           '$indent<defs><filter id="$gid" x="-50%" y="-50%" '
           'width="200%" height="200%">'
@@ -495,7 +497,7 @@ class VsdxToSvgSerializer {
         buf.writeln(
           '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
           'stroke-width="${_n(math.max(glow.sizeInches * 2, 0.02))}" '
-          'stroke-opacity="${_n(ga)}" filter="url(#$gid)"/>',
+          'stroke-opacity="1" filter="url(#$gid)"/>',
         );
       }
     }
@@ -1551,17 +1553,26 @@ class VsdxToSvgSerializer {
       return;
     }
     final sx = shape.width / dw;
-    final sy = shape.height / dh;
+    // GDI metafiles are Y-down; flip once into page Y-up — unless FlipY
+    // already mirrored the parent XForm (same cancel-avoidance as bitmaps /
+    // canvas [_paintImage]).
+    final gdiFlipY = !shape.flipY;
+    final sy = shape.height / dh * (gdiFlipY ? -1.0 : 1.0);
     buf.writeln(
       '$indent<g transform="translate(0 ${_n(shape.height)}) '
-      'scale(${_n(sx)} ${_n(-sy)}) '
+      'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );
     for (final op in drawing.ops) {
       if (op is MetafilePathOp) {
         _writeMetafilePathOp(buf, op, indent: '$indent  ');
       } else if (op is MetafileTextOp) {
-        _writeMetafileTextOp(buf, op, indent: '$indent  ');
+        _writeMetafileTextOp(
+          buf,
+          op,
+          indent: '$indent  ',
+          unflipGlyphs: gdiFlipY,
+        );
       }
     }
     buf.writeln('$indent</g>');
@@ -1609,15 +1620,20 @@ class VsdxToSvgSerializer {
     StringBuffer buf,
     MetafileTextOp op, {
     required String indent,
+    bool unflipGlyphs = true,
   }) {
     if (op.text.isEmpty) return;
     final size = math.max(op.fontHeight.abs(), 1.0);
     final face = (op.face == null || op.face!.isEmpty)
         ? 'Arial'
         : _esc(op.face!);
-    // Parent group has scale(sy,-sy); un-flip glyphs so text stays upright.
+    // When the metafile group applies GDI→Y-up (scale … -sy), un-flip glyphs
+    // so text stays upright. Skip when FlipY already cancelled that flip.
+    final glyphXf = unflipGlyphs
+        ? 'translate(${_n(op.x)} ${_n(op.y)}) scale(1 -1)'
+        : 'translate(${_n(op.x)} ${_n(op.y)})';
     buf.writeln(
-      '$indent<g transform="translate(${_n(op.x)} ${_n(op.y)}) scale(1 -1)">'
+      '$indent<g transform="$glyphXf">'
       '<text x="0" y="0" fill="${_argbCss(op.argb)}" '
       'font-family="$face" font-size="${_n(size)}">'
       '${_esc(op.text)}</text></g>',

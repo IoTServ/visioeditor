@@ -398,6 +398,38 @@ void main() {
     expect(svg.toLowerCase().contains('flood-color="#3399ff"'), isFalse);
   });
 
+  test('SVG glow applies opacity once via flood-opacity', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            sizeInches: 0.06,
+            transparency: 0.5,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // canvas: alpha * 0.6 = 0.5 * 0.6 = 0.3 on the glow paint once.
+    expect(svg, contains('flood-opacity="0.3"'));
+    expect(
+      svg,
+      contains('stroke-opacity="1" filter="url(#glow-'),
+      reason: 'stroke must stay opaque so flood-opacity is not squared',
+    );
+  });
+
   test('TextBkgndTrans round-trips and exports with opacity', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

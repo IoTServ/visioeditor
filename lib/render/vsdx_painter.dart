@@ -375,16 +375,19 @@ class VsdxPainter extends CustomPainter {
       );
       // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
       // offscreen layer. Skip 1D connectors — jumps / arrows stay crisp.
+      // ImageFilter.blur sigma is in layer pixels (not page inches), so scale
+      // by pxPerInch to match SVG feGaussianBlur in the inch→px page group.
       final soft = shape.line.softEdgesInches;
       final useSoft = soft > 0 && !shape.is1D;
       if (useSoft) {
+        final sigma = _blurSigmaPx(soft);
         final bounds = path.getBounds().inflate(soft * 3);
         canvas.saveLayer(
           bounds,
           Paint()
             ..imageFilter = ui.ImageFilter.blur(
-              sigmaX: soft,
-              sigmaY: soft,
+              sigmaX: sigma,
+              sigmaY: sigma,
               tileMode: TileMode.decal,
             ),
         );
@@ -618,6 +621,12 @@ class VsdxPainter extends CustomPainter {
     if (solid != null) canvas.drawPath(path, solid);
   }
 
+  /// Convert a Visio length in page inches to a Flutter blur sigma in layer
+  /// pixels. [ImageFilter] / [MaskFilter] ignore the canvas CTM, while the
+  /// painter draws in inches under `scale(pxPerInch)`.
+  double _blurSigmaPx(double inches) =>
+      math.max(inches, 0.001) * pxPerInch;
+
   /// Apply [VsdxLine.gradient] to [paint] once.
   ///
   /// Shader stops already bake in [VsdxLine.transparency]; force the paint
@@ -719,7 +728,7 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(0, -bottomY);
 
     // Layer alpha applies ReflectionTransparency; optional ImageFilter.blur
-    // matches SVG feGaussianBlur on ReflectionBlur.
+    // matches SVG feGaussianBlur on ReflectionBlur (sigma in layer pixels).
     final blur = refl.blurInches;
     canvas.saveLayer(
       bounds.inflate(math.max(blur, 0) * 3 + 0.01),
@@ -727,8 +736,8 @@ class VsdxPainter extends CustomPainter {
         ..color = Color.fromRGBO(255, 255, 255, alpha)
         ..imageFilter = blur > 0
             ? ui.ImageFilter.blur(
-                sigmaX: blur,
-                sigmaY: blur,
+                sigmaX: _blurSigmaPx(blur),
+                sigmaY: _blurSigmaPx(blur),
                 tileMode: TileMode.decal,
               )
             : null,
@@ -740,7 +749,10 @@ class VsdxPainter extends CustomPainter {
     final stroke = paintStroke ? _resolveStrokePaint(shape) : null;
     if (stroke != null) {
       _applyLineGradient(stroke, shape, path.getBounds());
-      canvas.drawPath(path, stroke);
+      // Match SVG reflection: honour LinePattern dashes on the mirrored stroke.
+      final dashes = dashPatternFor(shape.line.pattern);
+      final strokeP = dashes == null ? path : dashedPath(path, dashes);
+      canvas.drawPath(strokeP, stroke);
     }
 
     // Fade out farther below the shape (smaller Y in Y-up space).
@@ -775,7 +787,7 @@ class VsdxPainter extends CustomPainter {
         ..color = base.withValues(alpha: base.a * alpha * 0.6)
         ..maskFilter = MaskFilter.blur(
           BlurStyle.normal,
-          math.max(glow.sizeInches, 0.001),
+          _blurSigmaPx(glow.sizeInches),
         ),
     );
   }
@@ -801,7 +813,7 @@ class VsdxPainter extends CustomPainter {
       ..color = base.withValues(alpha: base.a * alpha)
       ..maskFilter = MaskFilter.blur(
         BlurStyle.normal,
-        math.max(shadow.blurInches, 0.001),
+        _blurSigmaPx(shadow.blurInches),
       )
       ..style = lineOnly ? PaintingStyle.stroke : PaintingStyle.fill;
     if (lineOnly) {

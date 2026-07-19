@@ -393,6 +393,50 @@ void main() {
     expect(svg.contains('fill="#f2f2f2"'), isFalse);
   });
 
+  test('SVG vector metafile FlipY cancels GDI Y-flip like bitmaps', () {
+    final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
+        .readAsBytesSync();
+    const part = '/visio/media/thumb.wmf';
+    VsdxPage pageFor({required bool flipY}) => VsdxPage(
+          id: 0,
+          name: 'P',
+          widthInches: 4,
+          heightInches: 3,
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.picture(
+              id: 1,
+              pinX: 2,
+              pinY: 1.5,
+              width: 3,
+              height: 2,
+              imagePartName: part,
+            ).copyWith(flipY: flipY),
+          ],
+        );
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: wmf, mimeType: 'image/x-wmf'),
+    );
+    final upright = VsdxToSvgSerializer().serializePage(
+      pageFor(flipY: false),
+      images: images,
+    );
+    final flipped = VsdxToSvgSerializer().serializePage(
+      pageFor(flipY: true),
+      images: images,
+    );
+    // Metafile group uses width/height ÷ drawing size (not page 96 / FlipY 1).
+    final metaScale = RegExp(r'scale\(0\.[0-9]+ (-?)0\.[0-9]+\)');
+    final uprightMeta = metaScale.firstMatch(upright);
+    final flippedMeta = metaScale.firstMatch(flipped);
+    expect(uprightMeta, isNotNull);
+    expect(uprightMeta!.group(1), '-',
+        reason: 'default metafile must flip GDI Y-down into page Y-up');
+    expect(flippedMeta, isNotNull);
+    expect(flippedMeta!.group(1), '',
+        reason: 'FlipY metafile must not apply a second Y flip');
+    expect(flipped, contains('scale(1 -1)')); // parent XForm FlipY
+  });
+
   test('SVG print filter omits non-printable layers', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
