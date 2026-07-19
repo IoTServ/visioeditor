@@ -1883,6 +1883,58 @@ void main() {
     expect(rels, contains('../media/image_edraw.png'));
   });
 
+  test('resizing a picture patches ImgWidth/ImgHeight cached V=', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part = '/visio/media/image_resize.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+    final out1 = writer.write(originalBytes: blank, edited: doc);
+
+    // Incremental patch path: reopen baseline then resize.
+    doc = parser.parse(out1);
+    page = doc.pages.first;
+    final resized = page.findShapeById(id)!.copyWith(width: 2.5, height: 1.5);
+    doc = doc.replacePage(0, page.updateShapeById(id, (_) => resized));
+    final out2 = writer.write(originalBytes: out1, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out2)
+          .findFile('visio/pages/page1.xml')!
+          .content as List<int>,
+    );
+    String? cellV(String name) {
+      final m = RegExp(
+        'Cell[^>]*N="$name"[^>]*V="([^"]*)"|Cell[^>]*V="([^"]*)"[^>]*N="$name"',
+      ).firstMatch(pageXml);
+      return m?.group(1) ?? m?.group(2);
+    }
+
+    // Cached V= must track the new size (Edraw ignores F=Width*1 alone).
+    expect(cellV('ImgWidth'), '2.5');
+    expect(cellV('ImgHeight'), '1.5');
+    expect(cellV('Width'), '2.5');
+    expect(cellV('Height'), '1.5');
+  });
+
   test('replaceImage embeds the new media part on save', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

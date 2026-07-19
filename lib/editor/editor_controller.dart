@@ -5593,13 +5593,6 @@ class EditorController extends ChangeNotifier {
   static VsdxShape _translated(VsdxShape s, double dx, double dy) =>
       VsdxPage.translateShape(s, dx, dy);
 
-  static VsdxShape _translatedHonouringDontMoveChildren(
-    VsdxShape s,
-    double dx,
-    double dy,
-  ) =>
-      VsdxPage.translateShape(s, dx, dy);
-
   // --- Reveal / find (drawio Ctrl+F, "Zoom to selection") --------------------
 
   /// Monotonic counter the canvas watches to know a reveal was requested.

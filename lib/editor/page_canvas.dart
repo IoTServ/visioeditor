@@ -639,21 +639,6 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // --- Hover-to-connect (drawio HoverIcons) ----------------------------------
 
-  /// The top-most *top-level* shape whose bounds contain [viewportPos], or null.
-  int? _topLevelAt(Offset viewportPos) {
-    final page = _page;
-    if (page == null) return null;
-    final pt = _contentToPageInches(_viewportToContent(viewportPos));
-    final bounds = buildShapeBounds(page);
-    int? best;
-    for (final s in page.shapes) {
-      if (!page.isShapeVisible(s)) continue;
-      final r = bounds[s.id];
-      if (r != null && r.contains(pt)) best = s.id;
-    }
-    return best;
-  }
-
   /// Whether hover-connect affordances should be offered right now.
   bool get _connectAffordanceActive =>
       !widget.presentationMode &&

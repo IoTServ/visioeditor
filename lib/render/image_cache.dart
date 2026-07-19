@@ -10,6 +10,8 @@
 /// metafile replay ([parseMetafileDrawing] → [rasterizeMetafileDrawing]).
 library;
 
+import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -28,6 +30,10 @@ class VsdxImageCache extends ChangeNotifier {
     }
     _ready.clear();
     _pending.clear();
+    for (final c in _waiters.values) {
+      if (!c.isCompleted) c.complete();
+    }
+    _waiters.clear();
   }
 
   /// Already-decoded entries, by part name.
@@ -35,6 +41,9 @@ class VsdxImageCache extends ChangeNotifier {
 
   /// Part names whose decode is in flight (avoids duplicate work).
   final Set<String> _pending = <String>{};
+
+  /// Completers awaited by [warmUp] / [decode] for in-flight part names.
+  final Map<String, Completer<void>> _waiters = <String, Completer<void>>{};
 
   /// Monotonic counter bumped on every successful decode — lets the page
   /// picture cache know when to invalidate without comparing image handles.
@@ -47,17 +56,50 @@ class VsdxImageCache extends ChangeNotifier {
     final cached = _ready[src.partName];
     if (cached != null) return cached;
     if (_pending.contains(src.partName)) return null;
-    if (src.isFlutterDecodable) {
-      _pending.add(src.partName);
-      _decodeRaster(src, src.bytes);
-      return null;
-    }
-    _pending.add(src.partName);
-    _decodeMetafile(src);
+    unawaited(decode(src));
     return null;
   }
 
-  Future<void> _decodeMetafile(VsdxImage src) async {
+  /// Awaitable decode used by PNG export / snapshots so embedded pictures
+  /// are ready before the first (and only) paint pass.
+  Future<ui.Image?> decode(VsdxImage src) async {
+    final cached = _ready[src.partName];
+    if (cached != null) return cached;
+    final existing = _waiters[src.partName];
+    if (existing != null) {
+      await existing.future;
+      return _ready[src.partName];
+    }
+    final waiter = Completer<void>();
+    _waiters[src.partName] = waiter;
+    _pending.add(src.partName);
+    try {
+      if (src.isFlutterDecodable) {
+        await _decodeRaster(src, src.bytes, clearPending: false);
+      } else {
+        await _decodeMetafile(src, managePending: false);
+      }
+    } finally {
+      _pending.remove(src.partName);
+      _waiters.remove(src.partName);
+      if (!waiter.isCompleted) waiter.complete();
+    }
+    return _ready[src.partName];
+  }
+
+  /// Decode every image in [images] (best-effort; failures leave placeholders).
+  Future<void> warmUp(ImageRegistry images) async {
+    if (images.all.isEmpty) return;
+    await Future.wait(<Future<void>>[
+      for (final src in images.all) decode(src),
+    ]);
+  }
+
+  Future<void> _decodeMetafile(
+    VsdxImage src, {
+    bool managePending = true,
+  }) async {
+    if (managePending) _pending.add(src.partName);
     try {
       // 1) Wrapped DIB inside EMF (or OLE→EMF).
       final raster = extractMetafileRaster(
@@ -83,7 +125,7 @@ class VsdxImageCache extends ChangeNotifier {
     } catch (_) {
       // Leave pending cleared in finally; painter keeps the placeholder.
     } finally {
-      _pending.remove(src.partName);
+      if (managePending) _pending.remove(src.partName);
     }
   }
 

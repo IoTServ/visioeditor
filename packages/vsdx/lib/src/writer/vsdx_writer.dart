@@ -1781,6 +1781,11 @@ class VsdxWriter {
     );
     // Older exports omitted LocPin; Edraw then pins at (0,0). Back-fill on save.
     changed |= _ensureLocPinPresent(el, edited);
+    // Picture shapes need Img* cells; keep cached V= in sync with Width/Height
+    // so hosts that ignore F= (notably Edraw) still show the resized bitmap.
+    if (edited.hasImage) {
+      changed |= _syncImageSizeCells(el, edited);
+    }
     changed |= _ensureLineFillBasics(el, edited);
     changed |= _patchAngle(el, 'Angle', base.angleRad, edited.angleRad);
     changed |= _patchNullableLength(el, 'BeginX', base.beginX, edited.beginX,
@@ -4016,6 +4021,35 @@ class VsdxWriter {
   }
 
   /// Write LocPinX/Y when absent so Edraw/libvisio don't default to (0,0).
+  /// Ensure Foreign/Image shapes carry ImgOffset*/ImgWidth/ImgHeight and that
+  /// the cached `V=` matches the shape size (Edraw often ignores `F=`).
+  bool _syncImageSizeCells(XmlElement el, VsdxShape s) {
+    var changed = false;
+    for (final name in <String>['ImgOffsetX', 'ImgOffsetY']) {
+      if (!_hasCell(el, name)) {
+        _ensureCell(el, name).setAttribute('V', '0');
+        changed = true;
+      }
+    }
+    for (final entry in <(String, double, String)>[
+      ('ImgWidth', s.width, 'Width*1'),
+      ('ImgHeight', s.height, 'Height*1'),
+    ]) {
+      final cell = _ensureCell(el, entry.$1);
+      final next = _fmt(entry.$2);
+      if (cell.getAttribute('V') != next) {
+        cell.setAttribute('V', next);
+        changed = true;
+      }
+      final f = cell.getAttribute('F') ?? '';
+      if (f.isEmpty) {
+        cell.setAttribute('F', entry.$3);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   bool _ensureLocPinPresent(XmlElement el, VsdxShape s) {
     var changed = false;
     if (!_hasCell(el, 'LocPinX')) {

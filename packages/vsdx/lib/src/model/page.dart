@@ -2118,8 +2118,6 @@ class VsdxPage {
   /// Absolute page heading of [shapeId] (Visio CCW, 0 = local +Y).
   double shapePageAngle(int shapeId) => _pageOrientation(shapeId).angle;
 
-  double _shapePageAngle(int shapeId) => shapePageAngle(shapeId);
-
   /// The smallest shape id greater than every id currently used on the page
   /// (including nested group children) — used when creating new shapes.
   int nextFreeShapeId() {
