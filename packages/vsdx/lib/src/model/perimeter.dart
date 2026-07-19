@@ -355,6 +355,8 @@ abstract final class ShapePerimeter {
             for (final p in samples) {
               emit(p.x, p.y);
             }
+            cx = x * esx;
+            cy = y * esy;
           case InfiniteLineCmd(
               :final x,
               :final y,

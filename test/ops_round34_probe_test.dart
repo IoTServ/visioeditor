@@ -77,6 +77,51 @@ void main() {
     expect(p.beginY! - c.beginY!, closeTo(p.pinY - c.pinY, 1e-6));
   });
 
+  test('pasteAt centres NURBS connector on stroke AABB not Begin→End chord', () {
+    final e = ctrl();
+    final id = e.currentPage!.nextFreeShapeId();
+    // Bowed NURBS: Begin→End chord mid is Y=2, but the stroke peaks near Y≈3.
+    // LocPin/Pin are intentionally out of sync with factory F= (Begin-origin
+    // override); paste recalculates the full XForm so the stroke AABB stays put.
+    final conn = VsdxShapeFactory.line(id: id, ax: 1, ay: 2, bx: 4, by: 2)
+        .copyWith(
+      width: 3,
+      height: 1.2,
+      locPinXInches: 0,
+      locPinYInches: 0,
+      pinX: 1,
+      pinY: 2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            NurbsTo(
+              x: 3,
+              y: 0,
+              controlPoints: <Offset2D>[
+                Offset2D(1, 1),
+                Offset2D(2, 1),
+              ],
+              weights: <double>[1, 1, 1, 1],
+              // Clamped degree-3 knot vector (cps=4 → 8 knots).
+              knots: <double>[0, 0, 0, 0, 1, 1, 1, 1],
+              degree: 3,
+            ),
+          ],
+        ),
+      ],
+    );
+    e.updateCurrentPage((p) => p.addShape(conn));
+    e.setSelection([id]);
+    e.copySelection();
+    e.pasteAt(cx: 6, cy: 5);
+    final pasted = e.currentPage!.findShapeById(e.singleSelectedId!)!;
+    final aabb = e.currentPage!.shapePageAabb(pasted.id)!;
+    expect((aabb.left + aabb.right) / 2, closeTo(6, 0.2));
+    expect((aabb.bottom + aabb.top) / 2, closeTo(5, 0.2));
+  });
+
   test('pasteAt offsets connector waypoints with pin', () {
     final e = ctrl();
     e.createConnector(2, 4, 6, 4);

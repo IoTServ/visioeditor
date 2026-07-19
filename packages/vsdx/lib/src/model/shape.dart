@@ -942,6 +942,17 @@ class VsdxShape {
                 conY: hasF(r.conYFormula) ? r.conY : r.conY * sy,
               ),
           ];
+    // Absolute Scratch.X/Y (common VSD intermediate points) scale with the box;
+    // A–D often hold angles / flags and stay put when formula-less.
+    final scaledScratch = ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)
+        ? scratch
+        : <VsdxScratchRow>[
+            for (final r in scratch)
+              r.copyWith(
+                x: hasF(r.xFormula) ? r.x : r.x * sx,
+                y: hasF(r.yFormula) ? r.y : r.y * sy,
+              ),
+          ];
     // Absolute text-block cells (no Width*/Height* formula) scale with the box
     // so custom TxtPin/TxtWidth placement stays proportional after resize.
     final block = richText.textBlock;
@@ -977,6 +988,7 @@ class VsdxShape {
       geometries: scaled,
       connectionPoints: scaledCPs,
       controls: scaledControls,
+      scratch: scaledScratch,
       richText: identical(scaledBlock, block)
           ? richText
           : richText.copyWith(textBlock: scaledBlock),
@@ -1425,12 +1437,44 @@ class VsdxShape {
 
     double? nextLocX = locPinXInches;
     double? nextLocY = locPinYInches;
+    var nextPinX = pinX;
+    var nextPinY = pinY;
+    var nextWidth = width;
+    var nextHeight = height;
+
+    // XForm cache cells that commonly carry F= (1-D Begin-origin connectors,
+    // Guard'd sizes, …). Width/Height first so LocPin Width*0.5 sees them;
+    // Pin after LocPin so midpoint formulas stay consistent with Begin/End.
+    void applyXForm(String cell, void Function(double v) set) {
+      final f = formulas[cell];
+      if (f == null) return;
+      final v = eval(f);
+      if (v == null) return;
+      set(v);
+    }
+
+    applyXForm('Width', (v) {
+      if ((nextWidth - v).abs() > 1e-12) {
+        nextWidth = v;
+        locals['Width'] = v;
+        changed = true;
+      }
+    });
+    applyXForm('Height', (v) {
+      if ((nextHeight - v).abs() > 1e-12) {
+        nextHeight = v;
+        locals['Height'] = v;
+        changed = true;
+      }
+    });
+
     final locXF = formulas['LocPinX'];
     final locYF = formulas['LocPinY'];
     if (locXF != null) {
       final v = eval(locXF);
       if (v != null && (nextLocX == null || (nextLocX - v).abs() > 1e-12)) {
         nextLocX = v;
+        locals['LocPinX'] = v;
         changed = true;
       }
     }
@@ -1438,9 +1482,25 @@ class VsdxShape {
       final v = eval(locYF);
       if (v != null && (nextLocY == null || (nextLocY - v).abs() > 1e-12)) {
         nextLocY = v;
+        locals['LocPinY'] = v;
         changed = true;
       }
     }
+
+    applyXForm('PinX', (v) {
+      if ((nextPinX - v).abs() > 1e-12) {
+        nextPinX = v;
+        locals['PinX'] = v;
+        changed = true;
+      }
+    });
+    applyXForm('PinY', (v) {
+      if ((nextPinY - v).abs() > 1e-12) {
+        nextPinY = v;
+        locals['PinY'] = v;
+        changed = true;
+      }
+    });
 
     // Scratch: Width/Height pass, then up to two passes with Scratch.* bound
     // so rows that reference earlier Scratch cells can settle.
@@ -1554,6 +1614,10 @@ class VsdxShape {
 
     if (!changed) return syncSetAtRefFromControls();
     return copyWith(
+      pinX: nextPinX,
+      pinY: nextPinY,
+      width: nextWidth,
+      height: nextHeight,
       connectionPoints: nextPts,
       locPinXInches: nextLocX,
       locPinYInches: nextLocY,

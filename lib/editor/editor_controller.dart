@@ -3128,25 +3128,27 @@ class EditorController extends ChangeNotifier {
   static (double, double, double, double) _bounds(VsdxShape s) {
     final corners = <Offset2D>[];
     if (s.is1D) {
+      // Align with [VsdxPage._shapeExtentPoints] / [buildShapeBounds]: expand
+      // PolylineTo first, then sample NURBS/Arc/Spline strokes.
       for (final g in s.geometries) {
         if (g.noShow) continue;
-        final local = <Offset2D>[];
-        var ok = true;
-        for (final c in g.commands) {
-          if (c is MoveTo) {
-            local.add(Offset2D(c.x, c.y));
-          } else if (c is LineTo) {
-            local.add(Offset2D(c.x, c.y));
-          } else {
-            ok = false;
-            break;
-          }
-        }
-        if (ok && local.length >= 2) {
-          for (final p in local) {
+        final verts = g.polylineVertices(
+          widthInches: s.width,
+          heightInches: s.height,
+        );
+        if (verts != null && verts.length >= 2) {
+          for (final p in verts) {
             corners.add(VsdxPage.localToPage(s, p));
           }
           break;
+        }
+      }
+      if (corners.isEmpty) {
+        final sampled = ShapePerimeter.sampledPathVertices(s);
+        if (sampled != null && sampled.length >= 2) {
+          for (final p in sampled) {
+            corners.add(VsdxPage.localToPage(s, p));
+          }
         }
       }
       if (corners.isEmpty) {

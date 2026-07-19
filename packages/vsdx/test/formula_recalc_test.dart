@@ -223,6 +223,25 @@ void main() {
       expect(grown.controls.single.y, closeTo(1.5, 1e-9));
     });
 
+    test('scales absolute Scratch.X/Y without formulas on resize', () {
+      final box = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 2,
+      ).copyWith(
+        scratch: const <VsdxScratchRow>[
+          VsdxScratchRow(ix: 0, x: 1, y: 0.5, a: 0.25),
+        ],
+      );
+      final grown = box.resizeTo(pinX: 3, pinY: 3, width: 4, height: 6);
+      expect(grown.scratch.single.x, closeTo(2, 1e-9));
+      expect(grown.scratch.single.y, closeTo(1.5, 1e-9));
+      // A is not a length axis — left unchanged when formula-less.
+      expect(grown.scratch.single.a, closeTo(0.25, 1e-9));
+    });
+
     test('updates LocPin from Width/Height formulas', () {
       final box = VsdxShapeFactory.rectangle(
         id: 1,
@@ -242,6 +261,28 @@ void main() {
       expect(grown.locPinXInches, closeTo(3, 1e-9));
       expect(grown.locPinYInches, closeTo(2, 1e-9));
       expect(grown.formulas['LocPinX'], 'Width*0.5');
+    });
+
+    test('syncs Pin/Width/Height with LocPin for Begin-origin connectors', () {
+      // LocPin-only refresh would slide Geometry relative to Begin/End.
+      final line = VsdxShapeFactory.line(id: 1, ax: 1, ay: 2, bx: 4, by: 2)
+          .copyWith(
+        pinX: 1,
+        pinY: 2,
+        locPinXInches: 0,
+        locPinYInches: 0,
+      );
+      final synced = line.recalculateLocalFormulas();
+      expect(synced.width, closeTo(3, 1e-9));
+      expect(synced.height, closeTo(0, 1e-9));
+      expect(synced.locPinXInches, closeTo(1.5, 1e-9));
+      expect(synced.locPinYInches, closeTo(0, 1e-9));
+      expect(synced.pinX, closeTo(2.5, 1e-9));
+      expect(synced.pinY, closeTo(2, 1e-9));
+      // Begin-local (0,0) still maps to Begin on the page.
+      final origin = VsdxPage.localToPage(synced, const Offset2D(0, 0));
+      expect(origin.x, closeTo(1, 1e-9));
+      expect(origin.y, closeTo(2, 1e-9));
     });
 
     test('updates Scratch and User numeric formulas', () {
