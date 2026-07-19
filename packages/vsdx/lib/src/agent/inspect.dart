@@ -23,9 +23,9 @@ List<ValidationIssue> validateDocument(VsdxDocument doc) {
     final page = doc.pages[pi];
     final label = 'page ${pi + 1} "${page.name}"';
 
-    // Duplicate top-level shape ids.
+    // Duplicate shape ids anywhere in the tree (including group children).
     final seen = <int>{};
-    for (final s in page.shapes) {
+    for (final s in _flattenShapes(page.shapes)) {
       if (!seen.add(s.id)) {
         issues.add(ValidationIssue('error', '$label: duplicate shape id ${s.id}'));
       }

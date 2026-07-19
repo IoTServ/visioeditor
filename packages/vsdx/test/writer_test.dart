@@ -2008,10 +2008,49 @@ void main() {
     final out2 = writer.write(originalBytes: out1, edited: doc);
     final archive = ZipDecoder().decodeBytes(out2);
     expect(archive.findFile('visio/media/image_b.png'), isNotNull);
+    // Orphan media from the replaced picture must be pruned.
+    expect(archive.findFile('visio/media/image_a.png'), isNull);
     final reopened = parser.parse(out2);
     final s = reopened.pages.first.findShapeById(id)!;
     expect(s.imagePartName, endsWith('image_b.png'));
     expect(reopened.images.findByPart(s.imagePartName!)!.bytes, equals(bytesB));
+  });
+
+  test('deleting a picture prunes its media part on save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part = '/visio/media/image_gone.png';
+    final bytes = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 3, 3, 3, 3]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: bytes, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+    final out1 = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      ZipDecoder().decodeBytes(out1).findFile('visio/media/image_gone.png'),
+      isNotNull,
+    );
+
+    doc = parser.parse(out1);
+    doc = doc.replacePage(0, doc.pages.first.removeShapeById(id));
+    final out2 = writer.write(originalBytes: out1, edited: doc);
+    expect(
+      ZipDecoder().decodeBytes(out2).findFile('visio/media/image_gone.png'),
+      isNull,
+    );
   });
 
   test('connector endpoint reconnect / detach round-trips', () {

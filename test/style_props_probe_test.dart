@@ -100,8 +100,8 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('stroke-linejoin="round"'), isTrue);
-    expect(svg.contains('marker-end="url(#arrow-end-1-0)"'), isTrue);
-    expect(svg.contains('id="arrow-end-1-0"'), isTrue);
+    expect(svg.contains('marker-end="url(#arrow-end-p0-1-0)"'), isTrue);
+    expect(svg.contains('id="arrow-end-p0-1-0"'), isTrue);
   });
 
   test('SVG fillets rectangle corners when Rounding set', () {
@@ -215,7 +215,7 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('linearGradient'), isTrue);
-    expect(svg.contains('fill="url(#grad-1-0)"'), isTrue);
+    expect(svg.contains('fill="url(#grad-p0-1-0)"'), isTrue);
   });
 
   test('SVG emits pattern fill for FillPattern>1', () {
@@ -240,8 +240,8 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('<pattern id="pat-2-0"'), isTrue);
-    expect(svg.contains('fill="url(#pat-2-0)"'), isTrue);
+    expect(svg.contains('<pattern id="pat-p0-2-0"'), isTrue);
+    expect(svg.contains('fill="url(#pat-p0-2-0)"'), isTrue);
   });
 
   test('SVG emits shadow filter and vertical TextDirection', () {
@@ -329,7 +329,7 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('feGaussianBlur'), isTrue);
-    expect(svg.contains('filter="url(#fx-4-0)"'), isTrue);
+    expect(svg.contains('filter="url(#fx-p0-4-0)"'), isTrue);
   });
 
   test('SVG exports CompoundType as transparent mask gap', () {
@@ -354,7 +354,7 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('mask="url(#cmp-5-0)"'), isTrue);
+    expect(svg.contains('mask="url(#cmp-p0-5-0)"'), isTrue);
     expect(svg.contains('stroke="black"'), isTrue); // gap punch in mask
     expect(svg.contains('stroke="#ffffff"'), isFalse);
   });
@@ -565,7 +565,7 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('stroke="url(#lg-8-0)"'), isTrue);
+    expect(svg.contains('stroke="url(#lg-p0-8-0)"'), isTrue);
     expect(svg.contains('stroke-opacity="0.6"'), isTrue);
   });
 
@@ -592,7 +592,7 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('<circle '), isTrue);
-    expect(svg.contains('id="pat-9-0"'), isTrue);
+    expect(svg.contains('id="pat-p0-9-0"'), isTrue);
   });
 
   test('SVG arrow marker respects open-triangle id', () {
@@ -681,7 +681,7 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('refl-clip-6-0'), isTrue);
+    expect(svg.contains('refl-clip-p0-6-0'), isTrue);
     expect(svg.contains('scale(1 -1)'), isTrue);
   });
 

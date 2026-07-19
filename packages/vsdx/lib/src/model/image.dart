@@ -159,4 +159,11 @@ class ImageRegistry {
           image.partName: image,
         }),
       );
+
+  /// Return a copy without [partName] (no-op when absent).
+  ImageRegistry withoutImage(String partName) {
+    if (!_byPartName.containsKey(partName)) return this;
+    final next = Map<String, VsdxImage>.of(_byPartName)..remove(partName);
+    return ImageRegistry(Map<String, VsdxImage>.unmodifiable(next));
+  }
 }

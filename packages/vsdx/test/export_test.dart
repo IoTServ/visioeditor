@@ -18,6 +18,55 @@ void main() {
     expect(svg.length, greaterThan(100));
   });
 
+  test('multi-page SVG paint ids are page-scoped (no def collisions)', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final p0 = doc.pages.first;
+    const fill = VsdxFill(
+      foreground: VsdxColor(0xFF1565C0),
+      gradient: VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFF1565C0)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF90CAF9)),
+        ],
+      ),
+    );
+    final a = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(fill: fill);
+    doc = doc.replacePage(0, p0.addShape(a));
+    final p1Id = doc.nextPageId();
+    final p1 = VsdxPage(
+      id: p1Id,
+      name: 'Page-2',
+      widthInches: p0.widthInches,
+      heightInches: p0.heightInches,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(fill: fill),
+      ],
+    );
+    doc = doc.copyWith(pages: <VsdxPage>[...doc.pages, p1]);
+    final svg = VsdxToSvgSerializer().serializeDocument(doc);
+    expect(svg, contains('id="grad-p${p0.id}-1-0"'));
+    expect(svg, contains('id="grad-p$p1Id-1-0"'));
+    expect(
+      RegExp(r'id="grad-1-0"').hasMatch(svg),
+      isFalse,
+      reason: 'unscoped grad ids must not appear in multi-page SVG',
+    );
+  });
+
   test('serializes a single page to SVG', () {
     final doc = parser.parse(_fixture('test1.vsdx'));
     final svg = VsdxToSvgSerializer().serializePage(

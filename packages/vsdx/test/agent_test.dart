@@ -152,6 +152,34 @@ void main() {
       expect(issues.any((i) => i.severity == 'error'), isTrue);
     });
 
+    test('validate flags duplicate ids nested under a group', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      var page = doc.pages.first;
+      final a = VsdxShapeFactory.rectangle(
+          id: 1, pinX: 2, pinY: 2, width: 1, height: 1);
+      final b = VsdxShapeFactory.rectangle(
+          id: 2, pinX: 4, pinY: 2, width: 1, height: 1);
+      // Illegally reuse id 2 as a nested sibling under a group shell.
+      final group = VsdxShape(
+        id: 10,
+        name: 'Group.10',
+        pinX: 3,
+        pinY: 2,
+        width: 3,
+        height: 1.2,
+        children: <VsdxShape>[a, b, b.copyWith(pinX: 5)],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+      );
+      doc = doc.replacePage(0, page.copyWith(shapes: <VsdxShape>[group]));
+      final issues = validateDocument(doc);
+      expect(
+        issues.any((i) => i.message.contains('duplicate shape id 2')),
+        isTrue,
+      );
+    });
+
     test('explain lists shapes and connections', () {
       final md = explainDocument(built());
       expect(md, contains('# Flow'));

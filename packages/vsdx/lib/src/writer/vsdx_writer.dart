@@ -239,12 +239,66 @@ class VsdxWriter {
       markCtDirty: () => ctDirty = true,
     );
 
+    // Drop media parts no longer referenced by any page/master shape so
+    // replaceImage / delete-picture do not leave orphaned zip entries.
+    _pruneUnreferencedMedia(
+      pkg: pkg,
+      edited: edited,
+      removed: removed,
+      patched: patched,
+    );
+
     if (ctDirty && ctXml != null) {
       patched['[Content_Types].xml'] =
           Uint8List.fromList(utf8.encode(ctXml.toXmlString()));
     }
 
     return _rezip(originalBytes, patched, removed);
+  }
+
+  /// Mark unreferenced `visio/media/*` parts for removal. Returns whether any
+  /// were queued. Masters are scanned so shared stencil media is kept.
+  bool _pruneUnreferencedMedia({
+    required VsdxPackage pkg,
+    required VsdxDocument edited,
+    required Set<String> removed,
+    required Map<String, Uint8List> patched,
+  }) {
+    final referenced = <String>{};
+    void consider(String? part) {
+      if (part == null || part.isEmpty) return;
+      referenced.add(_noSlash(part));
+    }
+
+    void walk(VsdxShape s) {
+      consider(s.imagePartName);
+      for (final c in s.children) {
+        walk(c);
+      }
+    }
+
+    for (final page in edited.pages) {
+      for (final s in page.shapes) {
+        walk(s);
+      }
+    }
+    for (final m in edited.masters.all) {
+      walk(m.prototype);
+    }
+
+    var any = false;
+    final candidates = <String>{
+      for (final name in pkg.allPartNames)
+        if (_noSlash(name).startsWith('visio/media/')) _noSlash(name),
+      for (final name in patched.keys)
+        if (name.startsWith('visio/media/')) name,
+    };
+    for (final media in candidates) {
+      if (referenced.contains(media)) continue;
+      if (removed.add(media)) any = true;
+      patched.remove(media);
+    }
+    return any;
   }
 
   /// Inject a minimal `docProps/core.xml` when the package omits it so Save

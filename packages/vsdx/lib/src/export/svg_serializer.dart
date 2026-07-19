@@ -11,6 +11,7 @@ library;
 
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import '../model/document.dart';
 import '../model/effects.dart';
@@ -24,6 +25,7 @@ import '../model/rounding.dart';
 import '../model/shape.dart';
 import '../model/table.dart';
 import '../model/theme.dart';
+import '../parser/metafile.dart';
 import '../utils/color.dart';
 
 /// Which layer flags the SVG serializer honours when filtering shapes.
@@ -256,7 +258,8 @@ class VsdxToSvgSerializer {
           d: d,
           noFill: geom.noFill,
           noLine: geom.noLine,
-          paintId: '${shape.id}-$geomIndex',
+          // Page-scoped so multi-page document SVG does not collide defs ids.
+          paintId: 'p${page.id}-${shape.id}-$geomIndex',
           indent: '$indent  ',
         );
         geomIndex++;
@@ -279,7 +282,7 @@ class VsdxToSvgSerializer {
           d: d,
           noFill: true,
           noLine: false,
-          paintId: '${shape.id}-0',
+          paintId: 'p${page.id}-${shape.id}-0',
           indent: '$indent  ',
         );
       }
@@ -1073,18 +1076,31 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final src = _images.findByPart(shape.imagePartName ?? '');
-    if (!embedImages || src == null || !src.isFlutterDecodable) {
-      // Fall back to a placeholder rectangle.
-      buf.writeln(
-        '$indent<rect x="0" y="0" width="${_n(shape.width)}" '
-        'height="${_n(shape.height)}" fill="#f2f2f2" '
-        'stroke="#b0b0b0" stroke-width="0.01"/>',
-      );
+    if (!embedImages || src == null) {
+      _writeImagePlaceholder(buf, shape, indent: indent);
       return;
     }
-    final href =
-        'data:${src.mimeType.isEmpty ? "image/png" : src.mimeType};base64,'
-        '${base64Encode(src.bytes)}';
+    String? mime;
+    List<int>? bytes;
+    if (src.isFlutterDecodable) {
+      mime = src.mimeType.isEmpty ? 'image/png' : src.mimeType;
+      bytes = src.bytes;
+    } else {
+      // EMF/WMF/OLE with an embedded DIB — same extract path the canvas uses.
+      final raster = extractMetafileRaster(
+        Uint8List.fromList(src.bytes),
+        mimeType: src.mimeType,
+      );
+      if (raster != null) {
+        mime = 'image/bmp';
+        bytes = raster;
+      }
+    }
+    if (mime == null || bytes == null) {
+      _writeImagePlaceholder(buf, shape, indent: indent);
+      return;
+    }
+    final href = 'data:$mime;base64,${base64Encode(bytes)}';
     // SVG <image> with preserveAspectRatio="none" stretches to fit; Visio
     // already stores the picture at the shape's bounds.
     buf.writeln(
@@ -1092,6 +1108,18 @@ class VsdxToSvgSerializer {
       '<image href="$href" x="0" y="0" '
       'width="${_n(shape.width)}" height="${_n(shape.height)}" '
       'preserveAspectRatio="none"/></g>',
+    );
+  }
+
+  void _writeImagePlaceholder(
+    StringBuffer buf,
+    VsdxShape shape, {
+    required String indent,
+  }) {
+    buf.writeln(
+      '$indent<rect x="0" y="0" width="${_n(shape.width)}" '
+      'height="${_n(shape.height)}" fill="#f2f2f2" '
+      'stroke="#b0b0b0" stroke-width="0.01"/>',
     );
   }
 
