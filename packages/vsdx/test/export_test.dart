@@ -150,6 +150,75 @@ void main() {
     expect(svg, contains('text-anchor="middle"'));
   });
 
+  test('SVG wraps long labels to TxtWidth and preserves spaces', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final shape = VsdxShapeFactory.rectangle(
+      id: page.nextFreeShapeId(),
+      pinX: 2,
+      pinY: 5,
+      width: 1.2,
+      height: 1.5,
+    ).copyWith(
+      richText: VsdxRichText(runs: [
+        VsdxTextRun(
+          text: 'word1 word2 word3 word4 word5',
+          charStyle: const VsdxCharStyle(fontSizeInches: 0.18),
+          paraStyle: const VsdxParaStyle(horizontalAlign: VsdxHorzAlign.left),
+        ),
+      ]),
+    );
+    final spaced = VsdxShapeFactory.rectangle(
+      id: page.nextFreeShapeId() + 1,
+      pinX: 5,
+      pinY: 5,
+      width: 2,
+      height: 0.6,
+    ).copyWith(
+      richText: VsdxRichText(runs: [
+        const VsdxTextRun(text: 'a    b'),
+      ]),
+    );
+    doc = doc.replacePage(0, page.addShape(shape).addShape(spaced));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('xml:space="preserve"'));
+    expect(svg, contains('a    b'));
+    // Narrow box + long label → more than one <text> for the wrapped shape.
+    final textTags = RegExp(r'<text\b').allMatches(svg).length;
+    expect(textTags, greaterThanOrEqualTo(3));
+  });
+
+  test('SVG gradient stroke arrows use tip stop colour (not context-stroke)', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final line = VsdxShapeFactory.line(
+      id: page.nextFreeShapeId(),
+      ax: 1,
+      ay: 1,
+      bx: 4,
+      by: 1,
+    ).copyWith(
+      line: const VsdxLine(
+        weightInches: 0.03,
+        beginArrow: 4,
+        endArrow: 4,
+        gradient: VsdxGradient(
+          stops: <VsdxGradientStop>[
+            VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+            VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, page.addShape(line));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, isNot(contains('context-stroke')));
+    expect(svg, contains('#ff0000'));
+    expect(svg, contains('#0000ff'));
+  });
+
   test('SVG composites BackPage underlay and skips background pages', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

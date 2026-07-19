@@ -272,6 +272,8 @@ class AgentBridge {
       theme: doc.theme,
       images: doc.images,
       underlayPage: doc.backgroundFor(page),
+      drawLineJumps: c!.showLineJumps,
+      lineJumpRadiusInches: c.lineJumpRadiusInches,
     );
     if (png == null) throw StateError('render failed');
     return base64Encode(png);

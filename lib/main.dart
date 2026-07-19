@@ -707,6 +707,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
         theme: doc.theme,
         images: doc.images,
         underlayPage: doc.backgroundFor(page),
+        drawLineJumps: c.showLineJumps,
+        lineJumpRadiusInches: c.lineJumpRadiusInches,
       );
       if (bytes == null) {
         if (!mounted) return;

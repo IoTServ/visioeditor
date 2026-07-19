@@ -22,6 +22,8 @@ Future<Uint8List?> renderPageToPng(
   VsdxPage? underlayPage,
   Set<int>? visibleLayerIdsOverride,
   double pxPerInch = 150.0,
+  bool drawLineJumps = true,
+  double lineJumpRadiusInches = 0.07,
 }) async {
   final w = (page.widthInches <= 0 ? 8.5 : page.widthInches) * pxPerInch;
   final h = (page.heightInches <= 0 ? 11.0 : page.heightInches) * pxPerInch;
@@ -48,6 +50,8 @@ Future<Uint8List?> renderPageToPng(
       respectLayerVisibility: layerIds != null || underlayLayerIds != null,
       visibleLayerIdsOverride: layerIds,
       underlayVisibleLayerIdsOverride: underlayLayerIds,
+      drawLineJumps: drawLineJumps,
+      lineJumpRadiusInches: lineJumpRadiusInches,
     ).paint(canvas, Size(w, h));
     final picture = recorder.endRecording();
     final image = await picture.toImage(w.ceil(), h.ceil());

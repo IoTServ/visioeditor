@@ -117,6 +117,7 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '<svg xmlns="http://www.w3.org/2000/svg" '
       'version="1.1" '
+      'xml:space="preserve" '
       'width="${_n(maxW)}" '
       'height="${_n(totalH)}" '
       'viewBox="0 0 ${_n(maxW)} ${_n(totalH)}">',
@@ -156,6 +157,7 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '<svg xmlns="http://www.w3.org/2000/svg" '
       'version="1.1" '
+      'xml:space="preserve" '
       'width="${_n(w)}" '
       'height="${_n(h)}" '
       'viewBox="0 0 ${_n(w)} ${_n(h)}">',
@@ -662,6 +664,29 @@ class VsdxToSvgSerializer {
     }
   }
 
+  /// Tip colour for arrowheads: solid stroke, or gradient end-stop near the tip.
+  ({String hex, double opacity}) _arrowTipPaint(
+    VsdxLine line,
+    VsdxTheme theme, {
+    required bool atEnd,
+    required String fallbackHex,
+  }) {
+    if (!line.hasGradient || line.gradient!.stops.isEmpty) {
+      final c = _resolveColor(line.color, line.themeColorIndex, theme);
+      final op = _combinedOpacity(c, line.transparency);
+      return (hex: fallbackHex, opacity: op);
+    }
+    final stops = line.gradient!.stops;
+    final s = atEnd ? stops.last : stops.first;
+    final sc = _resolveColor(s.color, s.themeColorIndex, theme) ??
+        const VsdxColor(0xFF000000);
+    // LineColorTrans multiplies the whole stroke; stop transparency too.
+    final op = (_combinedOpacity(sc, s.transparency) *
+            (1.0 - line.transparency.clamp(0.0, 1.0)))
+        .clamp(0.0, 1.0);
+    return (hex: _hex(sc), opacity: op);
+  }
+
   /// Geometry arrows for backends that ignore SVG `<marker>` (PDF).
   void _writeBakedArrows(
     StringBuffer buf,
@@ -675,7 +700,6 @@ class VsdxToSvgSerializer {
     final tips = _pathTipTangents(pathD);
     if (tips == null) return;
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
-    final alpha = _combinedOpacity(c, line.transparency);
     final hex = c == null ? '#000000' : _hex(c);
     final weight = line.weightInches > 0 ? line.weightInches : 0.01;
     void emit({
@@ -683,19 +707,21 @@ class VsdxToSvgSerializer {
       required Offset2D from,
       required int arrowId,
       required double sizeInches,
+      required bool atEnd,
     }) {
       final dx = tip.x - from.x;
       final dy = tip.y - from.y;
       if (dx.abs() < 1e-12 && dy.abs() < 1e-12) return;
       final deg = math.atan2(dy, dx) * 180 / math.pi;
       final mw = _arrowMarkerSize(sizeInches, arrowId);
+      final paint = _arrowTipPaint(line, theme, atEnd: atEnd, fallbackHex: hex);
       final body = _arrowMarkerBody(
         arrowId,
         tipAtEnd: true,
         lineWeightInches: weight,
         markerSizeInches: mw,
-        colorHex: hex,
-        opacity: alpha,
+        colorHex: paint.hex,
+        opacity: paint.opacity,
       );
       // Marker viewBox tip at (10,5); scale so 10 units → mw inches.
       buf.writeln(
@@ -711,6 +737,7 @@ class VsdxToSvgSerializer {
         from: tips.beginFrom,
         arrowId: line.beginArrow,
         sizeInches: line.beginArrowSizeInches,
+        atEnd: false,
       );
     }
     if (line.hasEndArrow) {
@@ -719,6 +746,7 @@ class VsdxToSvgSerializer {
         from: tips.endFrom,
         arrowId: line.endArrow,
         sizeInches: line.endArrowSizeInches,
+        atEnd: true,
       );
     }
   }
@@ -1802,11 +1830,11 @@ class VsdxToSvgSerializer {
     final markers = StringBuffer();
     // PDF backends ignore <marker>; callers bake geometry via [_bakeArrows].
     if (!_bakeArrows) {
-      // Solid colours bake alpha into the marker (context-stroke ignores
-      // host stroke-opacity). Gradients still use context-stroke.
-      final markerColor = line.hasGradient ? null : hex;
-      final markerOp = line.hasGradient ? 1.0 : alpha;
+      // Prefer explicit tip colours over context-stroke: many viewers (and
+      // PDF) ignore context-stroke, and gradient strokes would otherwise
+      // leave arrowheads unpainted or wrong.
       if (line.hasBeginArrow) {
+        final tip = _arrowTipPaint(line, theme, atEnd: false, fallbackHex: hex);
         final mid = 'arrow-start-$paintId';
         final mw = _arrowMarkerSize(
           line.beginArrowSizeInches,
@@ -1817,8 +1845,8 @@ class VsdxToSvgSerializer {
           tipAtEnd: false,
           lineWeightInches: weight,
           markerSizeInches: mw,
-          colorHex: markerColor,
-          opacity: markerOp,
+          colorHex: tip.hex,
+          opacity: tip.opacity,
         );
         defs.write(
           '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
@@ -1829,6 +1857,7 @@ class VsdxToSvgSerializer {
         markers.write(' marker-start="url(#$mid)"');
       }
       if (line.hasEndArrow) {
+        final tip = _arrowTipPaint(line, theme, atEnd: true, fallbackHex: hex);
         final mid = 'arrow-end-$paintId';
         final mw = _arrowMarkerSize(line.endArrowSizeInches, line.endArrow);
         final body = _arrowMarkerBody(
@@ -1836,8 +1865,8 @@ class VsdxToSvgSerializer {
           tipAtEnd: true,
           lineWeightInches: weight,
           markerSizeInches: mw,
-          colorHex: markerColor,
-          opacity: markerOp,
+          colorHex: tip.hex,
+          opacity: tip.opacity,
         );
         defs.write(
           '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
@@ -2400,20 +2429,6 @@ class VsdxToSvgSerializer {
     // Split into paragraphs (Visio `\n` / `<pp>`). Each keeps its own
     // HorzAlign / Ind* / Sp* / Bullet* (canvas [_paintParagraphBlock]).
     final paras = _splitSvgParagraphs(runs);
-    final layouts = <({
-      VsdxParaStyle style,
-      List<(String text, VsdxTextRun run)> segs,
-      double lineH,
-      double yTop,
-    })>[];
-    var cursor = 0.0;
-    for (final p in paras) {
-      cursor += p.style.spaceBeforeInches;
-      final lineH = _svgParaLineHeight(p.segs, p.style);
-      layouts.add((style: p.style, segs: p.segs, lineH: lineH, yTop: cursor));
-      cursor += lineH + p.style.spaceAfterInches;
-    }
-    final textH = math.max(cursor, 0.04);
     // TextDirection=1: match canvas — rotate into a vertical band, then lay
     // out in the swapped width×height frame (margins remapped likewise).
     var layoutW = tw;
@@ -2431,6 +2446,44 @@ class VsdxToSvgSerializer {
       layoutMt = mr;
       layoutMb = ml;
     }
+    final layouts = <({
+      VsdxParaStyle style,
+      List<(String text, VsdxTextRun run)> segs,
+      double lineH,
+      double yTop,
+      bool showBullet,
+    })>[];
+    var cursor = 0.0;
+    for (final p in paras) {
+      cursor += p.style.spaceBeforeInches;
+      final lineH = _svgParaLineHeight(p.segs, p.style);
+      final indentL = p.style.indentLeftInches;
+      final indentF = p.style.indentFirstInches;
+      final hasBullet = p.style.bullet != 0;
+      final bulletGap = hasBullet
+          ? (p.style.textPosAfterBulletInches > 0
+              ? p.style.textPosAfterBulletInches
+              : 0.18)
+          : 0.0;
+      final textBandX = layoutMl + indentL + (hasBullet ? bulletGap : indentF);
+      final avail = math.max(
+        0.04,
+        layoutW - layoutMr - p.style.indentRightInches - textBandX,
+      );
+      final wrapped = _wrapSvgSegs(p.segs, avail);
+      for (var li = 0; li < wrapped.length; li++) {
+        layouts.add((
+          style: p.style,
+          segs: wrapped[li],
+          lineH: lineH,
+          yTop: cursor,
+          showBullet: hasBullet && li == 0,
+        ));
+        cursor += lineH;
+      }
+      cursor += p.style.spaceAfterInches;
+    }
+    final textH = math.max(cursor, 0.04);
     final yCenter = switch (block.verticalAlign) {
       VsdxVertAlign.top => layoutH - layoutMt - textH / 2,
       VsdxVertAlign.bottom => layoutMb + textH / 2,
@@ -2440,7 +2493,7 @@ class VsdxToSvgSerializer {
     };
 
     // Text glyphs: block-local → upright (scale 1,-1). One <text> per
-    // paragraph so HorzAlign / indent can differ across lines.
+    // wrapped line so HorzAlign / indent can differ across lines.
     final textXf = StringBuffer('$xf');
     if (vertical) {
       textXf.write(
@@ -2482,7 +2535,7 @@ class VsdxToSvgSerializer {
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
       final body = StringBuffer();
-      if (hasBullet) {
+      if (layout.showBullet) {
         final glyph = _svgBulletGlyph(style);
         final bFs = style.bulletFontSizeInches != null &&
                 style.bulletFontSizeInches! > 0
@@ -2510,12 +2563,104 @@ class VsdxToSvgSerializer {
       final yText = pdfCompat ? yRel + layout.lineH * 0.35 : yRel;
       final baseline =
           pdfCompat ? '' : ' dominant-baseline="middle"';
+      // Preserve consecutive spaces (canvas TextPainter does; SVG defaults fold).
       buf.writeln(
-        '$indent  <text text-anchor="$anchor"$baseline '
+        '$indent  <text xml:space="preserve" text-anchor="$anchor"$baseline '
         'y="${_n(yText)}">$body</text>',
       );
     }
     buf.writeln('$indent</g>');
+  }
+
+  /// Greedy wrap of rich-text segments to [maxWidth] inches (canvas maxWidth).
+  List<List<(String text, VsdxTextRun run)>> _wrapSvgSegs(
+    List<(String text, VsdxTextRun run)> segs,
+    double maxWidth,
+  ) {
+    if (segs.isEmpty) return [<(String, VsdxTextRun)>[]];
+    final lines = <List<(String, VsdxTextRun)>>[];
+    var cur = <(String, VsdxTextRun)>[];
+    var curW = 0.0;
+
+    void flush() {
+      if (cur.isEmpty) return;
+      lines.add(cur);
+      cur = <(String, VsdxTextRun)>[];
+      curW = 0.0;
+    }
+
+    void append(String unit, VsdxTextRun run, double uw) {
+      // Merge with the previous piece when the run matches so a wrapped line
+      // still emits contiguous text (tests / search / copy-paste).
+      if (cur.isNotEmpty && identical(cur.last.$2, run)) {
+        cur[cur.length - 1] = (cur.last.$1 + unit, run);
+      } else {
+        cur.add((unit, run));
+      }
+      curW += uw;
+    }
+
+    for (final (text, run) in segs) {
+      final fs = math.max(run.charStyle.fontSizeInches, 0.04);
+      for (final unit in _svgWrapUnits(text)) {
+        final uw = _estSvgTextWidth(unit, fs);
+        final isBlank = unit.trim().isEmpty;
+        if (curW > 1e-9 && curW + uw > maxWidth && !isBlank) {
+          flush();
+        }
+        if (cur.isEmpty && isBlank) continue;
+        if (uw > maxWidth && unit.length > 1 && !isBlank) {
+          // Hard-break oversized tokens (code units; good enough for Latin/CJK).
+          for (var i = 0; i < unit.length; i++) {
+            final ch = unit[i];
+            final cw = _estSvgTextWidth(ch, fs);
+            if (curW > 1e-9 && curW + cw > maxWidth) flush();
+            append(ch, run, cw);
+          }
+          continue;
+        }
+        append(unit, run, uw);
+      }
+    }
+    flush();
+    return lines.isEmpty ? [segs] : lines;
+  }
+
+  /// Split [text] into wrap units (whitespace runs and word runs).
+  List<String> _svgWrapUnits(String text) {
+    final out = <String>[];
+    final buf = StringBuffer();
+    bool? inSpace;
+    void flush() {
+      if (buf.isEmpty) return;
+      out.add(buf.toString());
+      buf.clear();
+    }
+
+    for (final r in text.runes) {
+      final ch = String.fromCharCode(r);
+      final sp = ch == ' ' || ch == '\t';
+      if (inSpace != null && inSpace != sp) flush();
+      inSpace = sp;
+      buf.write(ch);
+    }
+    flush();
+    return out;
+  }
+
+  /// Approximate advance width for SVG layout (no font metrics in pure Dart).
+  double _estSvgTextWidth(String text, double fontSizeInches) {
+    var w = 0.0;
+    for (final r in text.runes) {
+      if (r == 0x20 || r == 0x09) {
+        w += fontSizeInches * 0.33;
+      } else if (r >= 0x2E80) {
+        w += fontSizeInches; // CJK / wide ideographs
+      } else {
+        w += fontSizeInches * 0.55;
+      }
+    }
+    return w;
   }
 
   List<({VsdxParaStyle style, List<(String text, VsdxTextRun run)> segs})>

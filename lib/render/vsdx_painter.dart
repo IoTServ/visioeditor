@@ -1828,59 +1828,28 @@ class VsdxPainter extends CustomPainter {
         0.0,
         maxW - (textX - mlPx) - indentR,
       );
-      // Super/sub needs per-run dy (TextPainter cannot baseline-shift spans).
-      final needsPos = para.runs
-          .any((r) => r.charStyle.position != VsdxTextPosition.normal);
       late final TextPainter tp;
       late final double rowW;
       late final double rowTextH;
       List<TextPainter>? posPainters;
       List<double>? posDys;
-      if (needsPos) {
-        posPainters = <TextPainter>[];
-        posDys = <double>[];
-        var w = 0.0;
-        var h = 0.0;
-        for (final r in para.runs) {
-          final p = TextPainter(
-            text: _runToSpan(r, scale),
-            textDirection: TextDirection.ltr,
-            maxLines: 1,
-          )..layout(maxWidth: avail);
-          posPainters.add(p);
-          final base = math.max(r.charStyle.fontSizeInches, 0.04) * scale;
-          final dy = switch (r.charStyle.position) {
-            VsdxTextPosition.superscript => -base * 0.35,
-            VsdxTextPosition.subscript => base * 0.2,
-            VsdxTextPosition.normal => 0.0,
-          };
-          posDys.add(dy);
-          w += p.width;
-          h = math.max(h, p.height + dy.abs());
-        }
-        // Placeholder painter for the non-pos paint branch.
-        tp = TextPainter(
-          text: const TextSpan(text: ''),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        rowW = w;
-        rowTextH = h;
-      } else {
-        tp = TextPainter(
-          text: TextSpan(
-            children: <TextSpan>[
-              for (final r in para.runs) _runToSpan(r, scale),
-            ],
-          ),
-          textAlign: pAlign,
-          textDirection: TextDirection.ltr,
-          maxLines: null,
-        )..layout(maxWidth: avail);
-        rowW = tp.width;
-        rowTextH = tp.height;
-        posPainters = null;
-        posDys = null;
-      }
+      // Always wrap with maxWidth. Super/subscript use _runToSpan (0.7× size +
+      // OpenType features); the old per-run dy path forced maxLines:1 and
+      // prevented wrapping on long annotated paragraphs.
+      tp = TextPainter(
+        text: TextSpan(
+          children: <TextSpan>[
+            for (final r in para.runs) _runToSpan(r, scale),
+          ],
+        ),
+        textAlign: pAlign,
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      )..layout(maxWidth: avail);
+      rowW = tp.width;
+      rowTextH = tp.height;
+      posPainters = null;
+      posDys = null;
 
       painters.add(tp);
       bulletPainters.add(bulletTp);
