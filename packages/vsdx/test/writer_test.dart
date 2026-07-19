@@ -1504,6 +1504,30 @@ void main() {
     expect(p.backgroundColor?.value, 0xFFF2F2F2);
   });
 
+  test('clearing PageColor via withoutBackgroundColor round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(backgroundColor: const VsdxColor(0xFFF2F2F2)),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    expect(parser.parse(mid).pages.first.backgroundColor?.value, 0xFFF2F2F2);
+
+    // copyWith(backgroundColor: null) must NOT clear — use the explicit API.
+    final stuck = parser.parse(mid).pages.first;
+    expect(
+      stuck.copyWith(backgroundColor: null).backgroundColor?.value,
+      0xFFF2F2F2,
+    );
+
+    doc = parser.parse(mid);
+    doc = doc.replacePage(0, doc.pages.first.withoutBackgroundColor());
+    final out = writer.write(originalBytes: mid, edited: doc);
+    expect(parser.parse(out).pages.first.backgroundColor, isNull,
+        reason: 'writer must drop PageColor cell on clear');
+  });
+
   test('Background / BackPage attributes round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

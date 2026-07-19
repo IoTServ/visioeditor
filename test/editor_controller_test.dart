@@ -1065,6 +1065,9 @@ void main() {
     c.setSelection(<int>{id});
 
     c.setGlow(true);
+    expect(c.selectedHasGlow, isTrue);
+    expect(c.selectedGlow!.color?.value, 0xFFFFC107,
+        reason: 'enable writes amber so SVG/canvas share an authored colour');
     c.updateGlow(
       color: const VsdxColor(0xFFFFC107),
       sizeInches: 0.1,

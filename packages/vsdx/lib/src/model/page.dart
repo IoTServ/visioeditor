@@ -331,6 +331,11 @@ class VsdxPage {
   /// (plain `null` would mean "leave unchanged").
   static const Object keepBackgroundPageId = Object();
 
+  /// Drop [backgroundColor] (inherit default white). Prefer this over
+  /// [copyWith] with `backgroundColor: null`, which cannot clear the field.
+  VsdxPage withoutBackgroundColor() =>
+      copyWith(clearBackgroundColor: true);
+
   VsdxPage copyWith({
     int? id,
     String? name,
@@ -340,6 +345,7 @@ class VsdxPage {
     List<VsdxLayer>? layers,
     List<VsdxConnect>? connects,
     VsdxColor? backgroundColor,
+    bool clearBackgroundColor = false,
     bool? isBackgroundPage,
     Object? backgroundPageId = keepBackgroundPageId,
     VsdxPageSheet? pageSheet,
@@ -355,7 +361,9 @@ class VsdxPage {
       shapes: shapes ?? this.shapes,
       layers: layers ?? this.layers,
       connects: connects ?? this.connects,
-      backgroundColor: backgroundColor ?? this.backgroundColor,
+      backgroundColor: clearBackgroundColor
+          ? null
+          : (backgroundColor ?? this.backgroundColor),
       isBackgroundPage: isBackgroundPage ?? this.isBackgroundPage,
       backgroundPageId: identical(backgroundPageId, keepBackgroundPageId)
           ? this.backgroundPageId

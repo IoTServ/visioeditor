@@ -297,6 +297,14 @@ class EditorController extends ChangeNotifier {
     });
   }
 
+  /// Clear the page `PageColor` so reopen inherits the default white fill.
+  void clearBackgroundColor() {
+    updateCurrentPage((page) {
+      if (page.backgroundColor == null) return page;
+      return page.withoutBackgroundColor();
+    });
+  }
+
   /// Mark / unmark the current page as a Visio background page (`Background="1"`).
   /// When marking, clears any BackPage reference on this page (a page cannot be
   /// both a background and a consumer of another).
@@ -5758,10 +5766,17 @@ class EditorController extends ChangeNotifier {
             return s.copyWith(glow: VsdxGlow.disabled);
           }
           final prev = s.glow;
+          // Persist amber when enabling a fresh glow so SVG/canvas share the
+          // same authored colour (not just a renderer fallback).
           return s.copyWith(
             glow: prev.enabled
                 ? prev
-                : const VsdxGlow(enabled: true, transparency: 0.6),
+                : prev.copyWith(
+                    enabled: true,
+                    transparency: 0.6,
+                    sizeInches: prev.sizeInches <= 0 ? 0.05 : prev.sizeInches,
+                    color: prev.color ?? const VsdxColor(0xFFFFC107),
+                  ),
           );
         },
       );

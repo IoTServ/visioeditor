@@ -308,6 +308,60 @@ void main() {
         .hasMatch(svg), isTrue);
   });
 
+  test('SVG loose edge label paints page/white plate without TextBkgnd', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      backgroundColor: const VsdxColor(0xFFEEEEEE),
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(id: 9, ax: 1, ay: 2, bx: 5, by: 2).copyWith(
+          text: 'Go',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Go',
+                charStyle: VsdxCharStyle(fontSizeInches: 0.14),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('width="4"'), isFalse);
+    expect(svg.toLowerCase().contains('fill="#eeeeee"'), isTrue);
+    expect(
+      RegExp(r'rx="0\.02"[^>]*width="0\.\d+"|width="0\.\d+"[^>]*rx="0\.02"')
+          .hasMatch(svg),
+      isTrue,
+    );
+  });
+
+  test('SVG default glow colour matches canvas amber fallback', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(enabled: true, sizeInches: 0.06),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.toLowerCase().contains('flood-color="#ffc107"'), isTrue);
+    expect(svg.toLowerCase().contains('flood-color="#3399ff"'), isFalse);
+  });
+
   test('TextBkgndTrans round-trips and exports with opacity', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

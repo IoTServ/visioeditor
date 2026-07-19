@@ -603,10 +603,21 @@ class VsdxWriter {
           _ensurePageSheetCell(sheet, 'PageHeight'), _fmt(ep.heightInches));
       changed = true;
     }
-    if (needColor && ep.backgroundColor != null) {
-      _writeValue(
-          _ensurePageSheetCell(sheet, 'PageColor'), _hex(ep.backgroundColor!));
-      changed = true;
+    if (needColor) {
+      if (ep.backgroundColor != null) {
+        _writeValue(_ensurePageSheetCell(sheet, 'PageColor'),
+            _hex(ep.backgroundColor!));
+        changed = true;
+      } else {
+        // Cleared PageColor — remove the cell so reopen inherits default white
+        // (same model as null [VsdxPage.backgroundColor]).
+        for (final el in sheet.childElements.toList()) {
+          if (el.name.local == 'Cell' && el.getAttribute('N') == 'PageColor') {
+            el.parent?.children.remove(el);
+            changed = true;
+          }
+        }
+      }
     }
     if (needSheet) {
       changed |= _patchPageSheetCells(sheet, bp.pageSheet, ep.pageSheet);

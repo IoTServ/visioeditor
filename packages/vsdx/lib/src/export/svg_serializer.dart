@@ -466,9 +466,10 @@ class VsdxToSvgSerializer {
     // Soft outer glow (canvas strokes a blurred path before fill).
     final glow = shape.glow;
     if (glow.enabled && glow.sizeInches > 0) {
+      // Match canvas [_drawGlow]: amber fallback + soft 0.6 alpha scale.
       final gc = _resolveColor(glow.color, glow.themeColorIndex, theme) ??
-          const VsdxColor(0xFF3399FF);
-      final ga = _combinedOpacity(gc, glow.transparency);
+          const VsdxColor(0xFFFFC107);
+      final ga = _combinedOpacity(gc, glow.transparency) * 0.6;
       if (ga > 0) {
         final gid = 'glow-$paintId';
         buf.writeln(
@@ -1580,40 +1581,49 @@ class VsdxToSvgSerializer {
 
     // TextBkgnd. Loose edge labels (no TxtPin) get a tight plate around the
     // glyphs — matching canvas — instead of the connector's Width×Height box.
+    // Canvas always paints a plate for loose edges (page/white when no
+    // TextBkgnd) so labels stay readable over the stroke.
     final looseEdge = shape.isGlueableConnector &&
         block.pinXInches == null &&
         block.pinYInches == null;
-    if (block.backgroundColor != null) {
+    if (looseEdge) {
+      final plate = block.backgroundColor ??
+          page.backgroundColor ??
+          VsdxColor.white;
+      final bgOp = block.backgroundColor != null
+          ? _combinedOpacity(
+              block.backgroundColor,
+              block.backgroundTransparency,
+            )
+          : 1.0;
+      final plain = runs.map((r) => r.text).join();
+      final fs = runs
+          .map((r) => r.charStyle.fontSizeInches)
+          .fold<double>(0.14, math.max);
+      final estW = math.max(plain.length * fs * 0.55, fs);
+      final estH = fs * 1.4;
+      const pad = 0.03;
+      final angle = block.angleRad != 0
+          ? ' rotate(${_n(block.angleRad * 180 / math.pi)})'
+          : '';
+      buf.writeln(
+        '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle">'
+        '<rect x="${_n(-estW / 2 - pad)}" y="${_n(-estH / 2 - pad)}" '
+        'width="${_n(estW + 2 * pad)}" height="${_n(estH + 2 * pad)}" '
+        'rx="0.02" fill="${_hex(plate)}" '
+        'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
+      );
+    } else if (block.backgroundColor != null) {
       final bgOp = _combinedOpacity(
         block.backgroundColor,
         block.backgroundTransparency,
       );
-      if (looseEdge) {
-        final plain = runs.map((r) => r.text).join();
-        final fs = runs
-            .map((r) => r.charStyle.fontSizeInches)
-            .fold<double>(0.14, math.max);
-        final estW = math.max(plain.length * fs * 0.55, fs);
-        final estH = fs * 1.4;
-        const pad = 0.03;
-        final angle = block.angleRad != 0
-            ? ' rotate(${_n(block.angleRad * 180 / math.pi)})'
-            : '';
-        buf.writeln(
-          '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle">'
-          '<rect x="${_n(-estW / 2 - pad)}" y="${_n(-estH / 2 - pad)}" '
-          'width="${_n(estW + 2 * pad)}" height="${_n(estH + 2 * pad)}" '
-          'rx="0.02" fill="${_hex(block.backgroundColor!)}" '
-          'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
-        );
-      } else {
-        buf.writeln(
-          '$indent<g transform="$xf">'
-          '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
-          'fill="${_hex(block.backgroundColor!)}" '
-          'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
-        );
-      }
+      buf.writeln(
+        '$indent<g transform="$xf">'
+        '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
+        'fill="${_hex(block.backgroundColor!)}" '
+        'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
+      );
     }
 
     // CurvedText (editor User cell): arc layout matching canvas
