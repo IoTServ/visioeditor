@@ -14,7 +14,9 @@ import 'pdf_font_loader_stub.dart'
 ///
 /// Shapes with a primary external hyperlink get a [pw.UrlLink] annotation over
 /// their page AABB so the link survives beyond SVG `<a>` (which `SvgImage`
-/// does not promote to PDF annotations). Overlays honour the same print-layer,
+/// does not promote to PDF annotations). In-document jumps (`#Page-N` /
+/// page names) become [pw.Link] → named destinations registered via
+/// [pw.Anchor] on each exported sheet. Overlays honour the same print-layer,
 /// collapsed-host, and covered-cell filters as [VsdxToSvgSerializer].
 ///
 /// Falls back to an empty document when there are no pages to export.
@@ -51,6 +53,7 @@ Future<Uint8List> exportDocumentToPdf(
       if (!p.isBackgroundPage) p,
   ];
   final exportPages = pages.isEmpty ? doc.pages : pages;
+  final destNames = _pdfPageDestNames(exportPages);
 
   pw.Font? fontLookup(String family, String style, String weight) => unicode;
 
@@ -65,7 +68,18 @@ Future<Uint8List> exportDocumentToPdf(
       images: doc.images,
       underlayPage: doc.backgroundFor(page),
     );
-    final links = _pdfHyperlinkOverlays(page);
+    final links = _pdfHyperlinkOverlays(page, destNames: destNames);
+    final anchors = <pw.Widget>[
+      for (final name in destNames[page] ?? const <String>[])
+        pw.Positioned(
+          left: 0,
+          top: 0,
+          child: pw.Anchor(
+            name: name,
+            child: pw.SizedBox(width: 1, height: 1),
+          ),
+        ),
+    ];
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat(wPt, hPt),
@@ -82,6 +96,7 @@ Future<Uint8List> exportDocumentToPdf(
                 height: hPt,
                 customFontLookup: unicode == null ? null : fontLookup,
               ),
+              ...anchors,
               ...links,
             ],
           ),
@@ -92,11 +107,41 @@ Future<Uint8List> exportDocumentToPdf(
   return pdf.save();
 }
 
-/// Transparent [pw.UrlLink] boxes over shapes that have a clickable primary
-/// hyperlink. Visio/PDF share a bottom-left, Y-up page frame in inches/points.
-List<pw.Widget> _pdfHyperlinkOverlays(VsdxPage page) {
+/// Named destinations for each exported page (`Page-2`, `#Page-2`, …).
+Map<VsdxPage, List<String>> _pdfPageDestNames(List<VsdxPage> pages) {
+  final out = <VsdxPage, List<String>>{};
+  for (var i = 0; i < pages.length; i++) {
+    final page = pages[i];
+    final names = <String>{};
+    void add(String? raw) {
+      final t = raw?.trim();
+      if (t == null || t.isEmpty) return;
+      names.add(t);
+      if (t.startsWith('#')) {
+        names.add(t.substring(1));
+      } else {
+        names.add('#$t');
+      }
+    }
+
+    add(page.name);
+    add('Page-${i + 1}');
+    out[page] = names.toList(growable: false);
+  }
+  return out;
+}
+
+/// Transparent link boxes over shapes that have a clickable primary hyperlink.
+/// Visio/PDF share a bottom-left, Y-up page frame in inches/points.
+List<pw.Widget> _pdfHyperlinkOverlays(
+  VsdxPage page, {
+  required Map<VsdxPage, List<String>> destNames,
+}) {
   final printable =
       page.layers.isEmpty ? null : page.printableLayerIds;
+  final namedDests = <String>{
+    for (final names in destNames.values) ...names,
+  };
   final out = <pw.Widget>[];
 
   void walk(VsdxShape shape) {
@@ -110,7 +155,7 @@ List<pw.Widget> _pdfHyperlinkOverlays(VsdxPage page) {
     final h = shape.primaryHyperlink;
     if (h != null && !h.invisible) {
       final target = h.effectiveTarget?.trim();
-      if (target != null && target.isNotEmpty && _isExternalPdfUrl(target)) {
+      if (target != null && target.isNotEmpty) {
         final aabb = page.shapePageAabb(shape.id);
         if (aabb != null) {
           final left = aabb.left * PdfPageFormat.inch;
@@ -118,16 +163,25 @@ List<pw.Widget> _pdfHyperlinkOverlays(VsdxPage page) {
           final width = (aabb.right - aabb.left) * PdfPageFormat.inch;
           final height = (aabb.top - aabb.bottom) * PdfPageFormat.inch;
           if (width > 0.5 && height > 0.5) {
-            out.add(
-              pw.Positioned(
-                left: left,
-                bottom: bottom,
-                child: pw.UrlLink(
-                  destination: target,
-                  child: pw.SizedBox(width: width, height: height),
+            final child = pw.SizedBox(width: width, height: height);
+            final pw.Widget? widget;
+            if (_isExternalPdfUrl(target)) {
+              widget = pw.UrlLink(destination: target, child: child);
+            } else {
+              final dest = _resolveInternalPdfDest(target, namedDests);
+              widget = dest == null
+                  ? null
+                  : pw.Link(destination: dest, child: child);
+            }
+            if (widget != null) {
+              out.add(
+                pw.Positioned(
+                  left: left,
+                  bottom: bottom,
+                  child: widget,
                 ),
-              ),
-            );
+              );
+            }
           }
         }
       }
@@ -152,4 +206,17 @@ bool _isExternalPdfUrl(String target) {
       t.startsWith('https://') ||
       t.startsWith('mailto:') ||
       t.startsWith('file:');
+}
+
+/// Map Visio `#Page-2` / `Page-2` onto a registered named destination.
+String? _resolveInternalPdfDest(String target, Set<String> namedDests) {
+  if (_isExternalPdfUrl(target)) return null;
+  final t = target.trim();
+  if (t.isEmpty) return null;
+  if (namedDests.contains(t)) return t;
+  if (t.startsWith('#') && namedDests.contains(t.substring(1))) {
+    return t.substring(1);
+  }
+  if (!t.startsWith('#') && namedDests.contains('#$t')) return t;
+  return null;
 }

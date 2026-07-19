@@ -120,6 +120,57 @@ void main() {
     expect(body.contains('https://example.com/docs'), isTrue);
   });
 
+  test('PDF export emits named destinations for in-document page links',
+      () async {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final parser = const DocumentParser();
+    var doc = parser.parse(blank);
+    final p1 = doc.pages.first;
+    final p2Id = doc.nextPageId();
+    doc = doc.insertPage(
+      1,
+      VsdxPage(
+        id: p2Id,
+        name: 'Page-2',
+        widthInches: p1.widthInches,
+        heightInches: p1.heightInches,
+        shapes: const <VsdxShape>[],
+      ),
+    );
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      hyperlinks: const <VsdxHyperlink>[
+        VsdxHyperlink(
+          id: 0,
+          subAddress: '#Page-2',
+          description: 'Next',
+          isDefault: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+
+    final bytes = await exportDocumentToPdf(doc);
+    final body = latin1.decode(bytes, allowInvalid: true);
+    expect(body.contains('/URI'), isFalse,
+        reason: 'page jump must not be forced into a URI annotation');
+    // Named destination / GoTo link for the internal jump.
+    expect(
+      body.contains('/Dest') ||
+          body.contains('/GoTo') ||
+          body.contains('Page-2'),
+      isTrue,
+      reason: 'expected named destination or GoTo for #Page-2',
+    );
+  });
+
   test('PDF hyperlink overlays skip covered table cells', () async {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

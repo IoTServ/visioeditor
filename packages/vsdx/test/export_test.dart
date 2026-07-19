@@ -2027,4 +2027,148 @@ void main() {
     expect(svg, isNot(contains('SecretChild')));
     expect(svg, isNot(contains('#00abcd')));
   });
+
+  test('SVG ArcTo samples polyline so gradient bounds stay on the minor arc',
+      () {
+    // Shallow ArcTo: chord 2", bow 0.15". Old A-bounds used mid±r (~r≈3.4)
+    // and pushed linear-gradient far outside the stroke.
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 6,
+      heightInches: 4,
+      shapes: <VsdxShape>[
+        VsdxShape(
+          id: 1,
+          name: 'Sheet.1',
+          pinX: 3,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          line: const VsdxLine(pattern: 0),
+          fill: const VsdxFill(
+            gradient: VsdxGradient(
+              type: VsdxGradientType.linear,
+              angleRad: 1.57079632679, // vertical → y1/y2 from path bounds
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0.35),
+                ArcTo(x: 2, y: 0.35, bow: 0.15),
+                LineTo(2, 0.2),
+                LineTo(0, 0.2),
+                LineTo(0, 0.35),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains(RegExp(r'[\s"]A\s')), isFalse,
+        reason: 'ArcTo should be sampled to L like canvas');
+    expect(svg, contains('L '));
+    // Path samples must stay near the chord+bow (not mid±r ≈ ±3).
+    final d = RegExp(r'\bd="([^"]+)"').firstMatch(svg)?.group(1) ?? '';
+    final ys = RegExp(r'(?:M|L)\s+[-\d.]+(?:e[-+]?\d+)?\s+([-\d.]+)')
+        .allMatches(d)
+        .map((m) => double.parse(m.group(1)!))
+        .toList();
+    expect(ys, isNotEmpty);
+    expect(ys.reduce((a, b) => a < b ? a : b), greaterThan(0.15));
+    expect(ys.reduce((a, b) => a > b ? a : b), lessThan(0.6));
+  });
+
+  test('SVG bullet overlapping body band is pushed left like canvas', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Item',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.2,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  bullet: 1,
+                  bulletStr: 'WWW',
+                  indentLeftInches: 0.1,
+                  indentFirstInches: 0.0,
+                  // Small gap → wide bullet overlaps body band start.
+                  textPosAfterBulletInches: 0.08,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Unpushed bullet would sit at margin+IndLeft = 0.14; push moves it left.
+    expect(svg.contains('x="0.14"'), isFalse);
+    expect(svg, contains('WWW'));
+    final xs = RegExp(r'x="([0-9.]+)"')
+        .allMatches(svg)
+        .map((m) => double.parse(m.group(1)!))
+        .toList();
+    expect(xs.any((x) => x < 0.14), isTrue,
+        reason: 'overlapping bullet must be pushed left of 0.14');
+  });
+
+  test('SVG Justify with bullet still stretches body via textLength', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 0.8,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A B',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.14,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  bullet: 1,
+                  bulletStr: '•',
+                  horizontalAlign: VsdxHorzAlign.justify,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('lengthAdjust="spacing"'));
+    expect(svg, contains('textLength="'));
+    expect(svg, contains('•'));
+  });
 }

@@ -858,9 +858,23 @@ class VsdxToSvgSerializer {
           }
         case 'A':
           for (var i = 0; i + 6 < nums.length; i += 7) {
+            final rx = nums[i].abs();
+            final ry = nums[i + 1].abs();
+            final large = nums[i + 3].round() != 0;
+            final sweep = nums[i + 4].round() != 0;
             final x = rel ? cx + nums[i + 5] : nums[i + 5];
             final y = rel ? cy + nums[i + 6] : nums[i + 6];
-            push(x, y);
+            // Near-end samples give tip tangents (canvas ArcTo steps: 8).
+            for (final p in _sampleSvgArc(
+              Offset2D(cx, cy),
+              Offset2D(x, y),
+              rx: rx,
+              ry: ry,
+              largeArc: large,
+              sweep: sweep,
+            )) {
+              push(p.x, p.y);
+            }
           }
         default:
           break;
@@ -1206,15 +1220,23 @@ class VsdxToSvgSerializer {
           for (var i = 0; i + 6 < nums.length; i += 7) {
             final rx = nums[i].abs();
             final ry = nums[i + 1].abs();
+            final large = nums[i + 3].round() != 0;
+            final sweep = nums[i + 4].round() != 0;
             final x = rel ? cx + nums[i + 5] : nums[i + 5];
             final y = rel ? cy + nums[i + 6] : nums[i + 6];
             consider(cx, cy);
-            // Chord midpoint ± radii covers full/half ellipse extrema without
-            // double-counting radii at both endpoints (which inflated width).
-            final mx = (cx + x) / 2;
-            final my = (cy + y) / 2;
-            consider(mx - rx, my - ry);
-            consider(mx + rx, my + ry);
+            // Sample the arc (circular when rx≈ry) so minor arcs are not
+            // inflated to a full-ellipse AABB via chord-mid ± radii.
+            for (final p in _sampleSvgArc(
+              Offset2D(cx, cy),
+              Offset2D(x, y),
+              rx: rx,
+              ry: ry,
+              largeArc: large,
+              sweep: sweep,
+            )) {
+              consider(p.x, p.y);
+            }
             cx = x;
             cy = y;
             consider(cx, cy);
@@ -1264,6 +1286,115 @@ class VsdxToSvgSerializer {
       h = half * 2;
     }
     return (minX: minX, minY: minY, width: w, height: h);
+  }
+
+  /// Sample an SVG elliptical `A` arc (excludes [start], includes [end]).
+  ///
+  /// Circular arcs reuse [sampleArcByBow]; general ellipses use the W3C
+  /// endpoint→centre parameterisation so bounds/tip tangents stay tight.
+  static List<Offset2D> _sampleSvgArc(
+    Offset2D start,
+    Offset2D end, {
+    required double rx,
+    required double ry,
+    required bool largeArc,
+    required bool sweep,
+    int steps = 8,
+  }) {
+    if (rx < 1e-12 || ry < 1e-12) return <Offset2D>[end];
+    final dx = end.x - start.x;
+    final dy = end.y - start.y;
+    final chord = math.sqrt(dx * dx + dy * dy);
+    if (chord < 1e-12) return <Offset2D>[end];
+
+    // Circular ArcTo path: recover Visio bow and sample like canvas.
+    if ((rx - ry).abs() <= 1e-9 * math.max(rx, ry)) {
+      final r = rx;
+      final half = chord * 0.5;
+      if (half > r + 1e-9) {
+        // Radii too small for the chord — fall back to the chord.
+        return <Offset2D>[end];
+      }
+      final h = math.sqrt(math.max(0.0, r * r - half * half));
+      final s = largeArc ? r + h : r - h;
+      if (s < 1e-12) return <Offset2D>[end];
+      // Visio: sweep=1 ⇔ bow < 0.
+      final bow = (sweep ? -1.0 : 1.0) * s;
+      return sampleArcByBow(
+        start: start,
+        end: end,
+        bow: bow,
+        steps: steps,
+      );
+    }
+
+    // Elliptical: endpoint-to-centre (SVG / PDF).
+    var rax = rx.abs();
+    var ray = ry.abs();
+    final x1 = start.x;
+    final y1 = start.y;
+    final x2 = end.x;
+    final y2 = end.y;
+    // φ = 0 (Visio emits axis-aligned A); keep general form for robustness.
+    const phi = 0.0;
+    final cosPhi = math.cos(phi);
+    final sinPhi = math.sin(phi);
+    final dx2 = (x1 - x2) / 2;
+    final dy2 = (y1 - y2) / 2;
+    final x1p = cosPhi * dx2 + sinPhi * dy2;
+    final y1p = -sinPhi * dx2 + cosPhi * dy2;
+    var lam = (x1p * x1p) / (rax * rax) + (y1p * y1p) / (ray * ray);
+    if (lam > 1) {
+      final s = math.sqrt(lam);
+      rax *= s;
+      ray *= s;
+    }
+    final rxSq = rax * rax;
+    final rySq = ray * ray;
+    final x1pSq = x1p * x1p;
+    final y1pSq = y1p * y1p;
+    var num = rxSq * rySq - rxSq * y1pSq - rySq * x1pSq;
+    var den = rxSq * y1pSq + rySq * x1pSq;
+    if (den <= 0) return <Offset2D>[end];
+    num = math.max(0.0, num);
+    var coef = math.sqrt(num / den);
+    if (largeArc == sweep) coef = -coef;
+    final cxp = coef * (rax * y1p) / ray;
+    final cyp = coef * -(ray * x1p) / rax;
+    final cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+    final cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+
+    double angle(double ux, double uy, double vx, double vy) {
+      final dot = ux * vx + uy * vy;
+      final len = math.sqrt(ux * ux + uy * uy) * math.sqrt(vx * vx + vy * vy);
+      if (len < 1e-18) return 0.0;
+      var ang = math.acos((dot / len).clamp(-1.0, 1.0));
+      if (ux * vy - uy * vx < 0) ang = -ang;
+      return ang;
+    }
+
+    final theta1 = angle(1, 0, (x1p - cxp) / rax, (y1p - cyp) / ray);
+    var dTheta = angle(
+      (x1p - cxp) / rax,
+      (y1p - cyp) / ray,
+      (-x1p - cxp) / rax,
+      (-y1p - cyp) / ray,
+    );
+    if (!sweep && dTheta > 0) dTheta -= 2 * math.pi;
+    if (sweep && dTheta < 0) dTheta += 2 * math.pi;
+
+    final out = <Offset2D>[];
+    for (var i = 1; i <= steps; i++) {
+      final t = i / steps;
+      final a = theta1 + dTheta * t;
+      final cosA = math.cos(a);
+      final sinA = math.sin(a);
+      final x = cosPhi * rax * cosA - sinPhi * ray * sinA + cx;
+      final y = sinPhi * rax * cosA + cosPhi * ray * sinA + cy;
+      out.add(Offset2D(x, y));
+    }
+    if (out.isNotEmpty) out[out.length - 1] = end;
+    return out;
   }
 
   /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
@@ -1401,19 +1532,20 @@ class VsdxToSvgSerializer {
           cy = fy * h;
         case ArcTo(:final x, :final y, :final bow):
           if (!started) m(0, 0);
+          // Sample like canvas / EllipticalArcTo so path bounds, reflection
+          // axes, and PDF-baked arrow tangents use the true minor arc (not
+          // chord-mid ± r which inflates like a full circle).
           if (bow == 0) {
             l(x, y);
           } else {
-            final dx = x - cx;
-            final dy = y - cy;
-            final chord = math.sqrt(dx * dx + dy * dy);
-            final r = (chord * chord + 4 * bow * bow) / (8 * bow.abs());
-            final large = (4 * bow.abs() > chord) ? 1 : 0;
-            final sweep = bow < 0 ? 1 : 0;
-            out.write(
-                'A ${_n(r)} ${_n(r)} 0 $large $sweep ${_n(x)} ${_n(y)} ');
-            cx = x;
-            cy = y;
+            for (final p in sampleArcByBow(
+              start: Offset2D(cx, cy),
+              end: Offset2D(x, y),
+              bow: bow,
+              steps: 8,
+            )) {
+              l(p.x, p.y);
+            }
           }
         case RelArcTo(:final fx, :final fy, :final fbow):
           if (!started) m(0, 0);
@@ -1423,16 +1555,14 @@ class VsdxToSvgSerializer {
           if (bow == 0) {
             l(x, y);
           } else {
-            final dx = x - cx;
-            final dy = y - cy;
-            final chord = math.sqrt(dx * dx + dy * dy);
-            final r = (chord * chord + 4 * bow * bow) / (8 * bow.abs());
-            final large = (4 * bow.abs() > chord) ? 1 : 0;
-            final sweep = bow < 0 ? 1 : 0;
-            out.write(
-                'A ${_n(r)} ${_n(r)} 0 $large $sweep ${_n(x)} ${_n(y)} ');
-            cx = x;
-            cy = y;
+            for (final p in sampleArcByBow(
+              start: Offset2D(cx, cy),
+              end: Offset2D(x, y),
+              bow: bow,
+              steps: 8,
+            )) {
+              l(p.x, p.y);
+            }
           }
         case EllipticalArcTo(
             :final x,
@@ -2617,32 +2747,46 @@ class VsdxToSvgSerializer {
       };
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
-      final body = StringBuffer();
+      // package:pdf ignores dominant-baseline — shift by font size (not SpLine
+      // lineH) so absolute line spacing does not push glyphs off-band.
+      var bodyFont = 0.14;
+      for (final (_, run) in layout.segs) {
+        if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
+          bodyFont = run.charStyle.fontSizeInches;
+          break;
+        }
+      }
+      final yText = pdfCompat ? yRel + bodyFont * 0.35 : yRel;
+      final baseline =
+          pdfCompat ? '' : ' dominant-baseline="middle"';
+
       if (layout.showBullet) {
         final glyph = _svgBulletGlyph(style);
         // Match canvas: BulletFontSize, else first non-empty run size.
-        var bFs = 0.14;
+        var bFs = bodyFont;
         if (style.bulletFontSizeInches != null &&
             style.bulletFontSizeInches! > 0) {
           bFs = style.bulletFontSizeInches!;
-        } else {
-          for (final (_, run) in layout.segs) {
-            if (run.text.isNotEmpty) {
-              bFs = run.charStyle.fontSizeInches > 0
-                  ? run.charStyle.fontSizeInches
-                  : 0.14;
-              break;
-            }
-          }
         }
-        final bx = layoutMl + indentL + indentF;
-        body.write(
-          '<tspan x="${_n(bx)}" text-anchor="start" '
-          'font-size="${_n(bFs)}" '
+        var bx = layoutMl + indentL + indentF;
+        // Canvas: when the bullet overlaps the body band start, push it left.
+        final bulletW = _estSvgTextWidth(
+          glyph,
+          VsdxCharStyle.defaults.copyWith(fontSizeInches: bFs),
+        );
+        if (bx > textBandX - bulletW) {
+          bx = textBandX - bulletW - 0.04;
+        }
+        buf.writeln(
+          '$indent  <text xml:space="preserve" text-anchor="start"$baseline '
+          'y="${_n(yText)}">'
+          '<tspan x="${_n(bx)}" font-size="${_n(bFs)}" '
           '${style.bulletFont != null ? 'font-family="${_esc(style.bulletFont!)}" ' : ''}'
-          'fill="#222222">${_esc(glyph)}</tspan>',
+          'fill="#222222">${_esc(glyph)}</tspan></text>',
         );
       }
+
+      final body = StringBuffer();
       for (var si = 0; si < layout.segs.length; si++) {
         final (raw, run) = layout.segs[si];
         _writeStyledTspans(
@@ -2653,14 +2797,9 @@ class VsdxToSvgSerializer {
           xAttr: si == 0 ? 'x="${_n(xBody)}"' : null,
         );
       }
-      // package:pdf ignores dominant-baseline — shift y so alphabetic ≈ middle.
-      final yText = pdfCompat ? yRel + layout.lineH * 0.35 : yRel;
-      final baseline =
-          pdfCompat ? '' : ' dominant-baseline="middle"';
-      // Approximate Visio Justify: stretch spacing to the text band width.
+      // Approximate Visio Justify on the body band only (bullet is separate).
       var justifyAttr = '';
-      if (style.horizontalAlign == VsdxHorzAlign.justify &&
-          !layout.showBullet) {
+      if (style.horizontalAlign == VsdxHorzAlign.justify) {
         final bandW = math.max(0.04, bandRight - textBandX);
         var natural = 0.0;
         for (final (raw, run) in layout.segs) {
