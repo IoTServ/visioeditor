@@ -265,14 +265,22 @@ abstract final class ShapePerimeter {
             _sampleEllipse(out, ell, close: true);
             has = false;
             subStart = null;
-          case PolylineTo(:final x, :final y, :final vertices, :final relative):
+          case PolylineTo(
+              :final x,
+              :final y,
+              :final vertices,
+              :final relative,
+              :final vertsRelative,
+            ):
             if (!has) move(0, 0);
-            final sx = relative ? w : 1.0;
-            final sy = relative ? h : 1.0;
+            final vsx = (relative || vertsRelative) ? w : 1.0;
+            final vsy = (relative || vertsRelative) ? h : 1.0;
+            final esx = relative ? w : 1.0;
+            final esy = relative ? h : 1.0;
             for (final v in vertices) {
-              emit(v.x * sx, v.y * sy);
+              emit(v.x * vsx, v.y * vsy);
             }
-            emit(x * sx, y * sy);
+            emit(x * esx, y * esy);
           case SplineStart(:final x, :final y, :final relative):
             final px = relative ? x * w : x;
             final py = relative ? y * h : y;
@@ -294,15 +302,18 @@ abstract final class ShapePerimeter {
               :final knots,
               :final degree,
               :final relative,
+              :final cpRelative,
             ):
             if (!has) move(0, 0);
-            final sx = relative ? w : 1.0;
-            final sy = relative ? h : 1.0;
+            final csx = (relative || cpRelative) ? w : 1.0;
+            final csy = (relative || cpRelative) ? h : 1.0;
+            final esx = relative ? w : 1.0;
+            final esy = relative ? h : 1.0;
             final samples = sampleNurbs(
               start: Offset2D(cx, cy),
-              end: Offset2D(x * sx, y * sy),
+              end: Offset2D(x * esx, y * esy),
               controlPoints: <Offset2D>[
-                for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+                for (final p in controlPoints) Offset2D(p.x * csx, p.y * csy),
               ],
               weights: weights,
               knots: knots,
@@ -311,8 +322,24 @@ abstract final class ShapePerimeter {
             for (final p in samples) {
               emit(p.x, p.y);
             }
-          case InfiniteLineCmd():
-            break;
+          case InfiniteLineCmd(
+              :final x,
+              :final y,
+              :final a,
+              :final b,
+              :final relative,
+            ):
+            final sx = relative ? w : 1.0;
+            final sy = relative ? h : 1.0;
+            final px = x * sx, py = y * sy, qx = a * sx, qy = b * sy;
+            final dx = qx - px;
+            final dy = qy - py;
+            final len = math.sqrt(dx * dx + dy * dy);
+            if (len < 1e-12) break;
+            final ux = dx / len, uy = dy / len;
+            final reach = 100 * math.sqrt(w * w + h * h);
+            move(px - ux * reach, py - uy * reach);
+            emit(px + ux * reach, py + uy * reach);
         }
       }
       // Close open subpaths that look closed (common for polygons).

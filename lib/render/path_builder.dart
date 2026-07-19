@@ -189,16 +189,24 @@ Path buildPath(
         ):
         _ellipseFromPoints(path, cx, cy, aX, aY, bX, bY);
       // Ellipse closes its own sub-path; cursor stays where it was.
-      case PolylineTo(:final x, :final y, :final vertices, :final relative):
+      case PolylineTo(
+          :final x,
+          :final y,
+          :final vertices,
+          :final relative,
+          :final vertsRelative,
+        ):
         if (!hasStart) start(0, 0);
-        final sx = relative ? widthInches : 1.0;
-        final sy = relative ? heightInches : 1.0;
+        final vsx = (relative || vertsRelative) ? widthInches : 1.0;
+        final vsy = (relative || vertsRelative) ? heightInches : 1.0;
+        final esx = relative ? widthInches : 1.0;
+        final esy = relative ? heightInches : 1.0;
         for (final v in vertices) {
-          path.lineTo(v.x * sx, v.y * sy);
+          path.lineTo(v.x * vsx, v.y * vsy);
         }
-        path.lineTo(x * sx, y * sy);
-        cursorX = x * sx;
-        cursorY = y * sy;
+        path.lineTo(x * esx, y * esy);
+        cursorX = x * esx;
+        cursorY = y * esy;
       case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
         final sx = relative ? widthInches : 1.0;
         final sy = relative ? heightInches : 1.0;
@@ -241,15 +249,18 @@ Path buildPath(
           :final knots,
           :final degree,
           :final relative,
+          :final cpRelative,
         ):
         if (!hasStart) start(0, 0);
-        final sx = relative ? widthInches : 1.0;
-        final sy = relative ? heightInches : 1.0;
+        final csx = (relative || cpRelative) ? widthInches : 1.0;
+        final csy = (relative || cpRelative) ? heightInches : 1.0;
+        final esx = relative ? widthInches : 1.0;
+        final esy = relative ? heightInches : 1.0;
         final samples = sampleNurbs(
           start: Offset2D(cursorX, cursorY),
-          end: Offset2D(x * sx, y * sy),
+          end: Offset2D(x * esx, y * esy),
           controlPoints: <Offset2D>[
-            for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+            for (final p in controlPoints) Offset2D(p.x * csx, p.y * csy),
           ],
           weights: weights,
           knots: knots,
@@ -258,8 +269,8 @@ Path buildPath(
         for (final p in samples) {
           path.lineTo(p.x, p.y);
         }
-        cursorX = x * sx;
-        cursorY = y * sy;
+        cursorX = x * esx;
+        cursorY = y * esy;
     }
   }
   return path;
@@ -312,17 +323,25 @@ Path buildPath(
         pts.add(Offset2D(x, y));
         cx = x;
         cy = y;
-      case PolylineTo(:final x, :final y, :final vertices, :final relative):
-        final sx = relative ? widthInches : 1.0;
-        final sy = relative ? heightInches : 1.0;
+      case PolylineTo(
+          :final x,
+          :final y,
+          :final vertices,
+          :final relative,
+          :final vertsRelative,
+        ):
+        final vsx = (relative || vertsRelative) ? widthInches : 1.0;
+        final vsy = (relative || vertsRelative) ? heightInches : 1.0;
+        final esx = relative ? widthInches : 1.0;
+        final esy = relative ? heightInches : 1.0;
         if (!started) {
           pts.add(const Offset2D(0, 0));
           started = true;
         }
         for (final v in vertices) {
-          pts.add(Offset2D(v.x * sx, v.y * sy));
+          pts.add(Offset2D(v.x * vsx, v.y * vsy));
         }
-        final ex = x * sx, ey = y * sy;
+        final ex = x * esx, ey = y * esy;
         pts.add(Offset2D(ex, ey));
         cx = ex;
         cy = ey;

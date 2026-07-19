@@ -4644,16 +4644,29 @@ class VsdBinaryParser {
           bX: bX * s,
           bY: bY * s,
         ),
-      PolylineTo(:final x, :final y, :final vertices, :final relative) =>
+      PolylineTo(
+        :final x,
+        :final y,
+        :final vertices,
+        :final relative,
+        :final vertsRelative,
+      ) =>
         relative
             ? c
-            : PolylineTo(
-                x: x * s,
-                y: y * s,
-                vertices: [
-                  for (final v in vertices) Offset2D(v.x * s, v.y * s),
-                ],
-              ),
+            : vertsRelative
+                ? PolylineTo(
+                    x: x * s,
+                    y: y * s,
+                    vertices: vertices,
+                    vertsRelative: true,
+                  )
+                : PolylineTo(
+                    x: x * s,
+                    y: y * s,
+                    vertices: [
+                      for (final v in vertices) Offset2D(v.x * s, v.y * s),
+                    ],
+                  ),
       InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative) =>
         relative
             ? c
@@ -4696,20 +4709,31 @@ class VsdBinaryParser {
         :final weights,
         :final knots,
         :final degree,
-        :final relative
+        :final relative,
+        :final cpRelative,
       ) =>
         relative
             ? c
-            : NurbsTo(
-                x: x * s,
-                y: y * s,
-                controlPoints: [
-                  for (final p in controlPoints) Offset2D(p.x * s, p.y * s),
-                ],
-                weights: weights,
-                knots: knots,
-                degree: degree,
-              ),
+            : cpRelative
+                ? NurbsTo(
+                    x: x * s,
+                    y: y * s,
+                    controlPoints: controlPoints,
+                    weights: weights,
+                    knots: knots,
+                    degree: degree,
+                    cpRelative: true,
+                  )
+                : NurbsTo(
+                    x: x * s,
+                    y: y * s,
+                    controlPoints: [
+                      for (final p in controlPoints) Offset2D(p.x * s, p.y * s),
+                    ],
+                    weights: weights,
+                    knots: knots,
+                    degree: degree,
+                  ),
       _ => c,
     };
   }

@@ -2,13 +2,23 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
+import 'package:vsdx/src/parser/geometry_parser.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:xml/xml.dart';
 
 void main() {
   const parser = DocumentParser();
   const writer = VsdxWriter();
+  const gp = GeometryParser();
 
   Uint8List blankBytes() => writer.emptyDocument();
+
+  VsdxGeometry parseGeom(String rows) {
+    final shape = XmlDocument.parse(
+      '<Shape><Section N="Geometry" IX="0">$rows</Section></Shape>',
+    ).rootElement;
+    return gp.parse(shape).single;
+  }
 
   group('POLYLINE / NURBS writer flags', () {
     test('absolute PolylineTo writes POLYLINE(1,1,…)', () {
@@ -75,6 +85,41 @@ void main() {
           .readPartXml('/visio/pages/page1.xml')!
           .toXmlString();
       expect(pageXml, contains('POLYLINE(0,0'));
+    });
+
+    test('NURBSTo with formula xType=0 sets cpRelative', () {
+      final g = parseGeom(
+        '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+        '<Row IX="2" T="NURBSTo">'
+        '<Cell N="X" V="3"/><Cell N="Y" V="0"/>'
+        '<Cell N="A" V="0"/><Cell N="B" V="1"/>'
+        '<Cell N="C" V="0"/><Cell N="D" V="1"/>'
+        '<Cell N="E" V="NURBS(1, 3, 0, 0, 0.5, 0.5, 0, 1)"/>'
+        '</Row>',
+      );
+      final nurbs = g.commands.whereType<NurbsTo>().single;
+      expect(nurbs.relative, isFalse);
+      expect(nurbs.cpRelative, isTrue);
+      expect(nurbs.x, closeTo(3, 1e-9));
+      expect(nurbs.controlPoints.first.x, closeTo(0.5, 1e-9));
+      // A/B/C/D assembled onto knot/weight vectors.
+      expect(nurbs.weights.first, closeTo(1, 1e-9));
+      expect(nurbs.weights.last, closeTo(1, 1e-9));
+      expect(nurbs.knots.first, closeTo(0, 1e-9));
+      expect(nurbs.knots.last, closeTo(1, 1e-9));
+    });
+
+    test('PolylineTo with POLYLINE(0,0,…) sets vertsRelative', () {
+      final g = parseGeom(
+        '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+        '<Row IX="2" T="PolylineTo"><Cell N="X" V="2"/><Cell N="Y" V="0"/>'
+        '<Cell N="A" V="POLYLINE(0, 0, 0.5, 0.5)"/></Row>',
+      );
+      final poly = g.commands.whereType<PolylineTo>().single;
+      expect(poly.relative, isFalse);
+      expect(poly.vertsRelative, isTrue);
+      expect(poly.x, closeTo(2, 1e-9));
+      expect(poly.vertices.first.x, closeTo(0.5, 1e-9));
     });
 
     test('NURBSTo writes xType/yType flags, not endpoint as flags', () {

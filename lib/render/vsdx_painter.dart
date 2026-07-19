@@ -890,53 +890,103 @@ class VsdxPainter extends CustomPainter {
               penDown = true;
             }
             addVertex(Offset(fx * w, fy * h));
-          case CubBezTo(:final x, :final y):
+          case CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
+            // Near-end control gives a better end-arrow tangent than the chord.
+            addVertex(Offset(x1, y1));
+            addVertex(Offset(x2, y2));
             addVertex(Offset(x, y));
-          case RelCubBezTo(:final fx, :final fy):
+          case RelCubBezTo(
+              :final fx,
+              :final fy,
+              :final fx1,
+              :final fy1,
+              :final fx2,
+              :final fy2,
+            ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
+            addVertex(Offset(fx1 * w, fy1 * h));
+            addVertex(Offset(fx2 * w, fy2 * h));
             addVertex(Offset(fx * w, fy * h));
-          case QuadBezTo(:final x, :final y):
+          case QuadBezTo(:final x, :final y, :final x1, :final y1):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
+            addVertex(Offset(x1, y1));
             addVertex(Offset(x, y));
-          case RelQuadBezTo(:final fx, :final fy):
+          case RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
+            addVertex(Offset(fx1 * w, fy1 * h));
             addVertex(Offset(fx * w, fy * h));
-          case EllipticalArcTo(:final x, :final y):
+          case EllipticalArcTo(
+              :final x,
+              :final y,
+              :final controlX,
+              :final controlY,
+              :final angle,
+              :final eccentricity,
+            ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(x, y));
-          case RelEllipticalArcTo(:final fx, :final fy):
+            final arc = sampleEllipticalArc(
+              start: Offset2D(cursor.dx, cursor.dy),
+              end: Offset2D(x, y),
+              control: Offset2D(controlX, controlY),
+              angle: angle,
+              eccentricity: eccentricity,
+              steps: 8,
+            );
+            for (final p in arc) {
+              addVertex(Offset(p.x, p.y));
+            }
+          case RelEllipticalArcTo(
+              :final fx,
+              :final fy,
+              :final fcx,
+              :final fcy,
+              :final angle,
+              :final eccentricity,
+            ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(fx * w, fy * h));
+            final arc = sampleEllipticalArc(
+              start: Offset2D(cursor.dx, cursor.dy),
+              end: Offset2D(fx * w, fy * h),
+              control: Offset2D(fcx * w, fcy * h),
+              angle: angle,
+              eccentricity: eccentricity,
+              steps: 8,
+            );
+            for (final p in arc) {
+              addVertex(Offset(p.x, p.y));
+            }
           case final PolylineTo poly:
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            final sx = poly.relative ? w : 1.0;
-            final sy = poly.relative ? h : 1.0;
+            final vsx = (poly.relative || poly.vertsRelative) ? w : 1.0;
+            final vsy = (poly.relative || poly.vertsRelative) ? h : 1.0;
+            final esx = poly.relative ? w : 1.0;
+            final esy = poly.relative ? h : 1.0;
             for (final v in poly.vertices) {
-              addVertex(Offset(v.x * sx, v.y * sy));
+              addVertex(Offset(v.x * vsx, v.y * vsy));
             }
-            addVertex(Offset(poly.x * sx, poly.y * sy));
+            addVertex(Offset(poly.x * esx, poly.y * esy));
           case SplineStart(:final x, :final y, :final relative):
             if (!penDown) {
               addVertex(cursor);
@@ -949,12 +999,38 @@ class VsdxPainter extends CustomPainter {
               penDown = true;
             }
             addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
-          case NurbsTo(:final x, :final y, :final relative):
+          case NurbsTo(
+              :final x,
+              :final y,
+              :final controlPoints,
+              :final weights,
+              :final knots,
+              :final degree,
+              :final relative,
+              :final cpRelative,
+            ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
+            final csx = (relative || cpRelative) ? w : 1.0;
+            final csy = (relative || cpRelative) ? h : 1.0;
+            final esx = relative ? w : 1.0;
+            final esy = relative ? h : 1.0;
+            final samples = sampleNurbs(
+              start: Offset2D(cursor.dx, cursor.dy),
+              end: Offset2D(x * esx, y * esy),
+              controlPoints: <Offset2D>[
+                for (final p in controlPoints) Offset2D(p.x * csx, p.y * csy),
+              ],
+              weights: weights,
+              knots: knots,
+              degree: degree,
+              samples: 8,
+            );
+            for (final p in samples) {
+              addVertex(Offset(p.x, p.y));
+            }
           case EllipseCmd():
           // Closed primitive — no meaningful "tip" for arrows; skip it
           // and let the next geometry contribute endpoints.

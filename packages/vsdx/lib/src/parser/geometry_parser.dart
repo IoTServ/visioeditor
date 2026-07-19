@@ -304,17 +304,23 @@ class GeometryParser {
           bY: readLengthInches(row, 'D') ?? 0,
         );
       case 'PolylineTo':
+        final poly = _parsePolylineFull(_cellValue(row, 'A'));
+        // Formula flags scale interior verts only; X/Y stay local inches
+        // (libvisio collectPolylineTo).
+        final vertsRel = poly.xType == 0 || poly.yType == 0;
         return PolylineTo(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
-          vertices: _parsePolylineFormula(_cellValue(row, 'A')),
+          vertices: poly.vertices,
+          vertsRelative: vertsRel,
         );
       case 'RelPolylineTo':
         return PolylineTo(
           x: _rawDouble(row, 'X') ?? 0,
           y: _rawDouble(row, 'Y') ?? 0,
-          vertices: _parsePolylineFormula(_cellValue(row, 'A')),
+          vertices: _parsePolylineFull(_cellValue(row, 'A')).vertices,
           relative: true,
+          vertsRelative: true,
         );
       case 'InfiniteLine':
         return InfiniteLineCmd(
@@ -364,26 +370,9 @@ class GeometryParser {
           relative: true,
         );
       case 'NURBSTo':
-        final nurbs = _parseNurbsFull(_cellValue(row, 'E'));
-        return NurbsTo(
-          x: readLengthInches(row, 'X') ?? 0,
-          y: readLengthInches(row, 'Y') ?? 0,
-          controlPoints: nurbs.controlPoints,
-          weights: nurbs.weights,
-          knots: nurbs.knots,
-          degree: nurbs.degree,
-        );
+        return _nurbsFromRow(row, relativeRow: false);
       case 'RelNURBSTo':
-        final nurbs = _parseNurbsFull(_cellValue(row, 'E'));
-        return NurbsTo(
-          x: _rawDouble(row, 'X') ?? 0,
-          y: _rawDouble(row, 'Y') ?? 0,
-          controlPoints: nurbs.controlPoints,
-          weights: nurbs.weights,
-          knots: nurbs.knots,
-          degree: nurbs.degree,
-          relative: true,
-        );
+        return _nurbsFromRow(row, relativeRow: true);
       default:
         // Drop silently-but-noisily for now; the path will fall back to its
         // bounding box.
@@ -392,30 +381,75 @@ class GeometryParser {
     }
   }
 
-  /// Parse a `POLYLINE(flag, flag, x0, y0, x1, y1, ...)` formula into the
-  /// inner vertex list. Returns an empty list if the formula is missing or
-  /// malformed.
-  List<Offset2D> _parsePolylineFormula(String? raw) {
+  /// Parse `POLYLINE(xType, yType, x0, y0, …)` into vertices + flags.
+  _PolylineArgs _parsePolylineFull(String? raw) {
     final nums = _extractFormulaArgs(raw, 'POLYLINE');
-    if (nums.length < 4) return const <Offset2D>[];
-    // First two numbers are flags; treat the rest as (x, y) pairs.
+    if (nums.length < 4) return _PolylineArgs.empty;
+    final xType = nums[0].toInt();
+    final yType = nums[1].toInt();
     final out = <Offset2D>[];
     for (var i = 2; i + 1 < nums.length; i += 2) {
       out.add(Offset2D(nums[i], nums[i + 1]));
     }
-    return List.unmodifiable(out);
+    return _PolylineArgs(
+      vertices: List.unmodifiable(out),
+      xType: xType,
+      yType: yType,
+    );
+  }
+
+  /// Build [NurbsTo] from a Geometry row, assembling A/B/C/D with E like
+  /// libvisio `collectNURBSTo`.
+  NurbsTo _nurbsFromRow(XmlElement row, {required bool relativeRow}) {
+    final parsed = _parseNurbsFull(_cellValue(row, 'E'));
+    final cpRelative = parsed.xType == 0 || parsed.yType == 0;
+    final relative = relativeRow;
+    // RelNURBSTo: endpoint is fractional. NURBSTo: endpoint is local inches
+    // even when the formula's CPs are percentage (libvisio scales only CPs).
+    final x = relative
+        ? (_rawDouble(row, 'X') ?? 0)
+        : (readLengthInches(row, 'X') ?? 0);
+    final y = relative
+        ? (_rawDouble(row, 'Y') ?? 0)
+        : (readLengthInches(row, 'Y') ?? 0);
+    final knotFirst = _rawDouble(row, 'C');
+    final knotSecondLast = _rawDouble(row, 'A');
+    final weightFirst = _rawDouble(row, 'D');
+    final weightLast = _rawDouble(row, 'B');
+    final knots = <double>[
+      if (knotFirst != null) knotFirst,
+      ...parsed.knots,
+      if (knotSecondLast != null) knotSecondLast,
+      if (parsed.knotLast != null) parsed.knotLast!,
+    ];
+    final weights = <double>[
+      if (weightFirst != null) weightFirst,
+      ...parsed.weights,
+      if (weightLast != null) weightLast,
+    ];
+    return NurbsTo(
+      x: x,
+      y: y,
+      controlPoints: parsed.controlPoints,
+      weights: List.unmodifiable(weights),
+      knots: List.unmodifiable(knots),
+      degree: parsed.degree,
+      relative: relative,
+      cpRelative: cpRelative || relative,
+    );
   }
 
   /// Parse `NURBS(knotLast, degree, xType, yType, x1, y1, knot1, weight1, …)`.
   ///
-  /// [xType]/[yType] are 0 = % of Width/Height or 1 = local inches; scaling
-  /// is applied by the row type (`RelNURBSTo` → [NurbsTo.relative]) at paint
-  /// time. Args 2–3 are flags (not the endpoint — that lives on X/Y cells).
+  /// Returns interior CPs / per-CP knots & weights from E only; callers
+  /// prepend/append A/B/C/D (libvisio). Args 2–3 are flags, not the endpoint.
   _NurbsArgs _parseNurbsFull(String? raw) {
     final nums = _extractFormulaArgs(raw, 'NURBS');
     if (nums.length < 4) return _NurbsArgs.empty;
     final knotLast = nums[0];
     final degree = nums[1].toInt().clamp(1, 7);
+    final xType = nums[2].toInt();
+    final yType = nums[3].toInt();
     final points = <Offset2D>[];
     final weights = <double>[];
     final knots = <double>[];
@@ -424,12 +458,14 @@ class GeometryParser {
       knots.add(nums[i + 2]);
       weights.add(nums[i + 3]);
     }
-    if (knots.isNotEmpty) knots.add(knotLast);
     return _NurbsArgs(
       controlPoints: List.unmodifiable(points),
       weights: List.unmodifiable(weights),
       knots: List.unmodifiable(knots),
       degree: degree,
+      xType: xType,
+      yType: yType,
+      knotLast: knotLast,
     );
   }
 
@@ -480,12 +516,33 @@ class GeometryParser {
   }
 }
 
+class _PolylineArgs {
+  const _PolylineArgs({
+    required this.vertices,
+    required this.xType,
+    required this.yType,
+  });
+
+  static const _PolylineArgs empty = _PolylineArgs(
+    vertices: <Offset2D>[],
+    xType: 1,
+    yType: 1,
+  );
+
+  final List<Offset2D> vertices;
+  final int xType;
+  final int yType;
+}
+
 class _NurbsArgs {
   const _NurbsArgs({
     required this.controlPoints,
     required this.weights,
     required this.knots,
     required this.degree,
+    this.xType = 1,
+    this.yType = 1,
+    this.knotLast,
   });
 
   static const _NurbsArgs empty = _NurbsArgs(
@@ -499,4 +556,7 @@ class _NurbsArgs {
   final List<double> weights;
   final List<double> knots;
   final int degree;
+  final int xType;
+  final int yType;
+  final double? knotLast;
 }

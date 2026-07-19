@@ -1,13 +1,18 @@
 /// Shared NURBS sampling (rational de Boor) for perimeter, SVG, and paint.
+///
+/// Knot/weight assembly follows libvisio `collectNURBSTo`: full control
+/// polygon is pen-start + interior CPs + endpoint; weights may be the full
+/// `[D, …, B]` vector; knots `[C, …, A, knotLast]` are padded to
+/// `cps.length + degree + 1` and normalized to `[0,1]`.
 library;
 
 import 'geometry.dart';
 
 /// Sample a NURBS from [start] through [controlPoints] to [end].
 ///
-/// Returns intermediate points (excludes [start]; includes [end]-ish last
-/// sample). Falls back to the control polygon when there are too few points
-/// for [degree].
+/// Returns intermediate points (excludes [start]; last sample ≈ [end]).
+/// Falls back to the control polygon when there are too few points for
+/// [degree].
 List<Offset2D> sampleNurbs({
   required Offset2D start,
   required Offset2D end,
@@ -18,26 +23,68 @@ List<Offset2D> sampleNurbs({
   int samples = 32,
 }) {
   final cps = <Offset2D>[start, ...controlPoints, end];
-  final wts = <double>[
-    1.0,
-    ...List<double>.generate(
-      controlPoints.length,
-      (i) => i < weights.length ? weights[i] : 1.0,
-    ),
-    1.0,
-  ];
+  final wts = _resolveWeights(cps.length, controlPoints.length, weights);
   final n = cps.length - 1;
   if (n < degree) {
     return <Offset2D>[for (var i = 1; i <= n; i++) cps[i]];
   }
-  final fullKnots =
-      knots.length == n + degree + 2 ? knots : clampedNurbsKnots(n, degree);
+  final fullKnots = _resolveKnots(cps.length, degree, knots);
   final tMin = fullKnots[degree];
   final tMax = fullKnots[n + 1];
   final out = <Offset2D>[];
   for (var s = 1; s <= samples; s++) {
     final t = tMin + (tMax - tMin) * s / samples;
     out.add(deBoorNurbs(cps, wts, fullKnots, degree, t));
+  }
+  return out;
+}
+
+List<double> _resolveWeights(
+  int cpsLength,
+  int interiorLength,
+  List<double> weights,
+) {
+  if (weights.length == cpsLength) {
+    return weights;
+  }
+  if (weights.length == interiorLength + 2 && interiorLength + 2 == cpsLength) {
+    return weights;
+  }
+  if (weights.length == interiorLength) {
+    return <double>[
+      1.0,
+      ...weights,
+      1.0,
+    ];
+  }
+  return List<double>.filled(cpsLength, 1.0);
+}
+
+/// Pad / normalize a Visio knot vector to `cpsLength + degree + 1` entries
+/// in `[0, 1]`, matching libvisio.
+List<double> _resolveKnots(int cpsLength, int degree, List<double> knots) {
+  final need = cpsLength + degree + 1;
+  if (knots.isEmpty) {
+    return clampedNurbsKnots(cpsLength - 1, degree);
+  }
+  final out = List<double>.of(knots);
+  // Ensure non-decreasing.
+  for (var i = 1; i < out.length; i++) {
+    if (out[i] < out[i - 1]) out[i] = out[i - 1];
+  }
+  while (out.length < need) {
+    out.add(out.last);
+  }
+  if (out.length > need) {
+    out.removeRange(need, out.length);
+  }
+  final first = out.first;
+  final span = out.last - first;
+  if (span.abs() < 1e-18) {
+    return clampedNurbsKnots(cpsLength - 1, degree);
+  }
+  for (var i = 0; i < out.length; i++) {
+    out[i] = (out[i] - first) / span;
   }
   return out;
 }

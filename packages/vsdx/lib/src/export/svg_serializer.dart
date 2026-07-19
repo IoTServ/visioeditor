@@ -837,13 +837,21 @@ class VsdxToSvgSerializer {
               }
             }
           }
-        case PolylineTo(:final x, :final y, :final vertices, :final relative):
-          final sx = relative ? w : 1.0;
-          final sy = relative ? h : 1.0;
+        case PolylineTo(
+            :final x,
+            :final y,
+            :final vertices,
+            :final relative,
+            :final vertsRelative,
+          ):
+          final vsx = (relative || vertsRelative) ? w : 1.0;
+          final vsy = (relative || vertsRelative) ? h : 1.0;
+          final esx = relative ? w : 1.0;
+          final esy = relative ? h : 1.0;
           for (final v in vertices) {
-            l(v.x * sx, v.y * sy);
+            l(v.x * vsx, v.y * vsy);
           }
-          l(x * sx, y * sy);
+          l(x * esx, y * esy);
         case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
           final sx = relative ? w : 1.0;
           final sy = relative ? h : 1.0;
@@ -874,14 +882,17 @@ class VsdxToSvgSerializer {
             :final knots,
             :final degree,
             :final relative,
+            :final cpRelative,
           ):
-          final sx = relative ? w : 1.0;
-          final sy = relative ? h : 1.0;
+          final csx = (relative || cpRelative) ? w : 1.0;
+          final csy = (relative || cpRelative) ? h : 1.0;
+          final esx = relative ? w : 1.0;
+          final esy = relative ? h : 1.0;
           final samples = sampleNurbs(
             start: Offset2D(cx, cy),
-            end: Offset2D(x * sx, y * sy),
+            end: Offset2D(x * esx, y * esy),
             controlPoints: <Offset2D>[
-              for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+              for (final p in controlPoints) Offset2D(p.x * csx, p.y * csy),
             ],
             weights: weights,
             knots: knots,
