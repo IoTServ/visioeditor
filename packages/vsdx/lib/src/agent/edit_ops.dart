@@ -120,11 +120,25 @@ ApplyResult applyOps(
           }
           page = page.updateShapeById(id, (s) {
             var next = s;
-            if (fillHex != null) next = next.copyWith(fill: fillFromHex(fillHex));
+            if (fillHex != null) {
+              if (fillHex.trim().toLowerCase() == 'none') {
+                next = next.copyWith(fill: const VsdxFill(pattern: 0));
+              } else {
+                final c = parseColorOrNull(fillHex);
+                if (c != null) {
+                  next = next.copyWith(fill: next.fill.withSolidForeground(c));
+                }
+              }
+            }
             if (lineHex != null) {
-              next = next.copyWith(
-                  line: lineFromHex(lineHex,
-                      endArrow: s.is1D ? s.line.endArrow : 0));
+              if (lineHex.trim().toLowerCase() == 'none') {
+                next = next.copyWith(line: next.line.copyWith(pattern: 0));
+              } else {
+                final c = parseColorOrNull(lineHex);
+                if (c != null) {
+                  next = next.copyWith(line: next.line.withSolidColor(c));
+                }
+              }
             }
             return next;
           });
@@ -160,7 +174,9 @@ ApplyResult applyOps(
         }
         // [x],[y] are page inches (same space as listShapes / shapePinPage).
         page = _moveShapeToPagePin(page, id, x, y);
-        movedForReroute.add(id);
+        // Include descendants so glue on group children re-routes (editor
+        // nudge uses the same subtree set).
+        _addSubtreeIds(page, id, movedForReroute);
       case 'resize_shape':
       case 'resize':
         final id = _resolveId(op['id']);
@@ -230,7 +246,7 @@ ApplyResult applyOps(
               height: h,
             ),
           );
-          movedForReroute.add(id);
+          _addSubtreeIds(page, id, movedForReroute);
         }
       case 'delete_shape':
       case 'delete':
@@ -254,6 +270,23 @@ ApplyResult applyOps(
     page = page.rerouteConnectors(movedShapeIds: movedForReroute);
   }
   return ApplyResult(doc.replacePage(idx, page), created, log);
+}
+
+/// Add [id] and every descendant shape id into [out] (group move / resize).
+void _addSubtreeIds(VsdxPage page, int id, Set<int> out) {
+  void walk(VsdxShape s) {
+    out.add(s.id);
+    for (final c in s.children) {
+      walk(c);
+    }
+  }
+
+  final s = page.findShapeById(id);
+  if (s != null) {
+    walk(s);
+  } else {
+    out.add(id);
+  }
 }
 
 /// Move [id] so its page pin lands at ([pageX],[pageY]). Nested shapes convert

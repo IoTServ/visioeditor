@@ -61,4 +61,63 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(RegExp(r'\sA\s').hasMatch(svg), isFalse);
   });
+
+  test('drawnConnectorPagePolyline keeps dense curved geometry', () {
+    final r1 = VsdxShapeFactory.rectangle(
+        id: 1, pinX: 1, pinY: 1, width: 1, height: 1);
+    final r2 = VsdxShapeFactory.rectangle(
+        id: 2, pinX: 5, pinY: 4, width: 1, height: 1);
+    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 1, bx: 5, by: 4);
+    var page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[r1, r2, conn],
+      connects: const [
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'BeginX', toSheetId: 1, toCell: 'PinX'),
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'EndX', toSheetId: 2, toCell: 'PinX'),
+      ],
+    ).rerouteConnectors();
+    page = page.setConnectorStyle({3}, straight: false, curved: true);
+    final curved = page.findShapeById(3)!;
+    final geomPts = curved.geometries.first.commands
+        .where((c) => c is MoveTo || c is LineTo)
+        .length;
+    expect(geomPts, greaterThan(4));
+    final drawn = page.drawnConnectorPagePolyline(curved);
+    expect(drawn.length, geomPts);
+  });
+
+  test('SVG export keeps curved stroke when there is no crossing', () {
+    final r1 = VsdxShapeFactory.rectangle(
+        id: 1, pinX: 1, pinY: 1, width: 1, height: 1);
+    final r2 = VsdxShapeFactory.rectangle(
+        id: 2, pinX: 5, pinY: 4, width: 1, height: 1);
+    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 1, bx: 5, by: 4);
+    var page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[r1, r2, conn],
+      connects: const [
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'BeginX', toSheetId: 1, toCell: 'PinX'),
+        VsdxConnect(
+            fromSheetId: 3, fromCell: 'EndX', toSheetId: 2, toCell: 'PinX'),
+      ],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4),
+    ).rerouteConnectors();
+    page = page.setConnectorStyle({3}, straight: false, curved: true);
+    final geomCount =
+        page.findShapeById(3)!.geometries.first.commands.length;
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Elbow fallback is a few L segments; dense curve has many more.
+    final lCount = RegExp(r'\sL\s').allMatches(svg).length;
+    expect(lCount, greaterThanOrEqualTo(geomCount - 1));
+    expect(RegExp(r'\sA\s').hasMatch(svg), isFalse);
+  });
 }

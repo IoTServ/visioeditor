@@ -1923,11 +1923,15 @@ class _PageCanvasState extends State<PageCanvas> {
     return t;
   }
 
-  /// [VsdxPage.connectorRoute] in **page** inches (nested connectors store
-  /// Begin/End in parent-local space).
+  /// Drawn / obstacle-aware connector polyline in **page** inches (matches
+  /// canvas paint and SVG export via [VsdxPage.drawnConnectorPagePolyline]).
   List<Offset2D> _connectorRoutePage(VsdxShape conn) {
-    final route = VsdxPage.connectorRoute(conn);
     final page = _page;
+    if (page != null) {
+      final drawn = page.drawnConnectorPagePolyline(conn);
+      if (drawn.length >= 2) return drawn;
+    }
+    final route = VsdxPage.connectorRoute(conn);
     if (page == null || route.isEmpty) return route;
     final parentId = page.findParentId(conn.id);
     if (parentId == null) return route;
@@ -1936,14 +1940,34 @@ class _PageCanvasState extends State<PageCanvas> {
     ];
   }
 
-  /// Arc-length midpoint of [conn]'s route in **page** inches.
+  /// Arc-length midpoint of [conn]'s drawn route in **page** inches.
   Offset2D _connectorMidpointPage(VsdxShape conn) {
-    final mid = VsdxPage.connectorMidpoint(conn);
-    final page = _page;
-    if (page == null) return mid;
-    final parentId = page.findParentId(conn.id);
-    if (parentId == null) return mid;
-    return page.localToPageDeep(parentId, mid);
+    final route = _connectorRoutePage(conn);
+    if (route.isEmpty) {
+      final page = _page;
+      if (page != null) return page.shapePinPage(conn.id);
+      return Offset2D(conn.pinX, conn.pinY);
+    }
+    if (route.length == 1) return route.first;
+    var total = 0.0;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i].x - route[i + 1].x;
+      final dy = route[i].y - route[i + 1].y;
+      total += math.sqrt(dx * dx + dy * dy);
+    }
+    if (total <= 0) return route.first;
+    var remaining = total / 2;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      final len = math.sqrt(dx * dx + dy * dy);
+      if (len >= remaining) {
+        final t = len == 0 ? 0.0 : remaining / len;
+        return Offset2D(route[i].x + dx * t, route[i].y + dy * t);
+      }
+      remaining -= len;
+    }
+    return route.last;
   }
 
   /// Index of [s]'s effective connection point nearest [viewportPos] within the

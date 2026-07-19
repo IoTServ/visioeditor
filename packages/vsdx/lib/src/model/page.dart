@@ -773,11 +773,12 @@ class VsdxPage {
   }
 
   /// Drawn connector polyline in **page** inches: baked MoveTo/LineTo geometry
-  /// when present, otherwise [autoRoutedConnectorPolyline]. Walks nested
-  /// shapes correctly for SVG line-jump collection.
+  /// when present (including dense curved / rounded samples), otherwise
+  /// [autoRoutedConnectorPolyline]. Walks nested shapes correctly for SVG
+  /// line-jump collection.
   List<Offset2D> drawnConnectorPagePolyline(VsdxShape s) {
     if (!s.is1D) return const <Offset2D>[];
-    if (s.hasGeometry && !s.curved && !s.rounded) {
+    if (s.hasGeometry) {
       final local = <Offset2D>[];
       for (final g in s.geometries) {
         if (g.noShow) continue;

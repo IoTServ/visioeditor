@@ -94,6 +94,43 @@ void main() {
       expect(s.fill.foreground?.value, 0xFFF8CECC);
     });
 
+    test('set_style line color preserves begin/end arrows', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final line = VsdxShapeFactory.line(
+        id: id,
+        ax: 1,
+        ay: 1,
+        bx: 3,
+        by: 1,
+      ).copyWith(
+        line: const VsdxLine(
+          color: VsdxColor(0xFF333333),
+          weightInches: 0.02,
+          beginArrow: 1,
+          endArrow: 4,
+          beginArrowSizeInches: 0.15,
+          endArrowSizeInches: 0.2,
+        ),
+      );
+      doc = doc.replacePage(0, doc.pages.first.addShape(line));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'line': '#FF0000',
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.line.color?.value, 0xFFFF0000);
+      expect(after.line.beginArrow, 1);
+      expect(after.line.endArrow, 4);
+      expect(after.line.beginArrowSizeInches, closeTo(0.15, 1e-9));
+      expect(after.line.endArrowSizeInches, closeTo(0.2, 1e-9));
+      expect(after.line.weightInches, closeTo(0.02, 1e-9));
+    });
+
     test('delete_shape removes the shape and prunes its connects', () {
       final doc = built();
       final victim = doc.pages.single.shapes.firstWhere((s) => s.text == 'OK?');
@@ -317,6 +354,67 @@ void main() {
       final local = r.document.pages.first.findShapeById(2)!;
       expect(local.pinX, closeTo(child.pinX + 1, 1e-6));
       expect(local.pinY, closeTo(child.pinY + 0.5, 1e-6));
+    });
+
+    test('move_shape on group re-routes connectors glued to children', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final childA = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 0.75,
+        pinY: 0.5,
+        width: 1,
+        height: 0.6,
+      );
+      final childB = VsdxShapeFactory.rectangle(
+        id: 3,
+        pinX: 2.25,
+        pinY: 0.5,
+        width: 1,
+        height: 0.6,
+      );
+      final group = VsdxShape(
+        id: 1,
+        name: 'Group.1',
+        pinX: 3,
+        pinY: 4,
+        width: 3.5,
+        height: 1.5,
+        children: <VsdxShape>[childA, childB],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+      );
+      final outside = VsdxShapeFactory.rectangle(
+        id: 4,
+        pinX: 7,
+        pinY: 4,
+        width: 1,
+        height: 0.6,
+      );
+      final conn = VsdxShapeFactory.line(id: 5, ax: 3, ay: 4, bx: 7, by: 4);
+      var page = doc.pages.first.copyWith(
+        shapes: <VsdxShape>[group, outside, conn],
+        connects: const [
+          VsdxConnect(
+              fromSheetId: 5, fromCell: 'BeginX', toSheetId: 3, toCell: 'PinX'),
+          VsdxConnect(
+              fromSheetId: 5, fromCell: 'EndX', toSheetId: 4, toCell: 'PinX'),
+        ],
+      ).rerouteConnectors();
+      doc = doc.replacePage(0, page);
+      final beforeBegin = page.findShapeById(5)!.beginX!;
+      final groupPin = page.shapePinPage(1);
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'move_shape',
+          'id': 1,
+          'x': groupPin.x + 1.5,
+          'y': groupPin.y,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(5)!;
+      expect(after.beginX, closeTo(beforeBegin + 1.5, 0.35),
+          reason: 'begin should follow the glued group child');
     });
 
     test('move_shape does not re-route unrelated glued connectors', () {

@@ -258,26 +258,24 @@ class VsdxToSvgSerializer {
   }
 
   /// Shape-local stroke `d` with line jumps when this 1-D shape crosses
-  /// connectors drawn beneath it. Returns `null` when jumps do not apply.
+  /// connectors drawn beneath it. Returns `null` when jumps do not apply so
+  /// authored / curved geometry from [_geometryToD] is kept.
   String? _connectorJumpD(VsdxPage page, VsdxShape shape) {
     if (!_jumpsEnabled || !shape.is1D) return null;
     final z = _jumpZ[shape.id];
-    if (z == null) return null;
+    if (z == null || z == 0) return null;
     final pageRoute = _jumpRoutes[z];
     final localRoute = <Offset2D>[
       for (final p in pageRoute) page.pageToLocalDeep(shape.id, p),
     ];
     if (localRoute.length < 2) return null;
-    if (z == 0) return polylineSvg(localRoute, format: _n);
     final unders = <List<Offset2D>>[
       for (var i = 0; i < z; i++)
         <Offset2D>[
           for (final p in _jumpRoutes[i]) page.pageToLocalDeep(shape.id, p),
         ],
     ];
-    if (polylineCrossings(localRoute, unders).isEmpty) {
-      return polylineSvg(localRoute, format: _n);
-    }
+    if (polylineCrossings(localRoute, unders).isEmpty) return null;
     return polylineWithJumpsSvg(
       localRoute,
       unders,
