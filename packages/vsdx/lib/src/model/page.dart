@@ -844,29 +844,20 @@ class VsdxPage {
     return _autoRoute(ax, ay, zx, zy, excludeIds: exclude);
   }
 
-  /// Drawn connector polyline in **page** inches: baked MoveTo/LineTo geometry
-  /// when present (including dense curved / rounded samples), otherwise
-  /// [autoRoutedConnectorPolyline]. Walks nested shapes correctly for SVG
-  /// line-jump collection.
+  /// Drawn connector polyline in **page** inches: baked MoveTo/LineTo/
+  /// PolylineTo geometry when present (including dense curved / rounded
+  /// samples), otherwise [autoRoutedConnectorPolyline]. Walks nested shapes
+  /// correctly for SVG line-jump collection.
   List<Offset2D> drawnConnectorPagePolyline(VsdxShape s) {
     if (!s.isGlueableConnector) return const <Offset2D>[];
     if (s.hasGeometry) {
-      final local = <Offset2D>[];
       for (final g in s.geometries) {
         if (g.noShow) continue;
-        local.clear();
-        var ok = true;
-        for (final c in g.commands) {
-          if (c is MoveTo) {
-            local.add(Offset2D(c.x, c.y));
-          } else if (c is LineTo) {
-            local.add(Offset2D(c.x, c.y));
-          } else {
-            ok = false;
-            break;
-          }
-        }
-        if (ok && local.length >= 2) {
+        final local = g.polylineVertices(
+          widthInches: s.width,
+          heightInches: s.height,
+        );
+        if (local != null && local.length >= 2) {
           return <Offset2D>[
             for (final p in local) localToPageDeep(s.id, p),
           ];
@@ -897,29 +888,19 @@ class VsdxPage {
     return _elbowRoute(ax, ay, bx, by);
   }
 
-  /// Recover a page-space polyline from a 1-D shape's first geometry section
-  /// (MoveTo / LineTo only). Returns `null` when geometry is missing or not a
-  /// simple polyline.
+  /// Recover a parent/page-space polyline from a 1-D shape's first geometry
+  /// section (MoveTo / LineTo / PolylineTo). Returns `null` when geometry is
+  /// missing or not a simple polyline.
   ///
-  /// Maps local → page via `pin − LocPin` (Visio Begin-origin connectors:
-  /// local (0,0) is Begin). Avoids the old AABB `pin − size/2` assumption.
+  /// Uses [localToPage] so Angle / Flip match paint and bend handles.
   static List<Offset2D>? _polylineFromGeometry(VsdxShape s) {
     if (s.geometries.isEmpty) return null;
-    final cmds = s.geometries.first.commands;
-    if (cmds.length < 2) return null;
-    final ox = s.pinX - s.effectiveLocPinX;
-    final oy = s.pinY - s.effectiveLocPinY;
-    final pts = <Offset2D>[];
-    for (final c in cmds) {
-      if (c is MoveTo) {
-        pts.add(Offset2D(c.x + ox, c.y + oy));
-      } else if (c is LineTo) {
-        pts.add(Offset2D(c.x + ox, c.y + oy));
-      } else {
-        return null;
-      }
-    }
-    return pts.length >= 2 ? pts : null;
+    final local = s.geometries.first.polylineVertices(
+      widthInches: s.width,
+      heightInches: s.height,
+    );
+    if (local == null || local.length < 2) return null;
+    return <Offset2D>[for (final p in local) localToPage(s, p)];
   }
 
   /// The point half-way along connector [s]'s drawn route (by arc length), in
@@ -1906,19 +1887,11 @@ class VsdxPage {
     if (s.is1D) {
       for (final g in s.geometries) {
         if (g.noShow) continue;
-        final local = <Offset2D>[];
-        var ok = true;
-        for (final c in g.commands) {
-          if (c is MoveTo) {
-            local.add(Offset2D(c.x, c.y));
-          } else if (c is LineTo) {
-            local.add(Offset2D(c.x, c.y));
-          } else {
-            ok = false;
-            break;
-          }
-        }
-        if (ok && local.length >= 2) {
+        final local = g.polylineVertices(
+          widthInches: s.width,
+          heightInches: s.height,
+        );
+        if (local != null && local.length >= 2) {
           return <Offset2D>[for (final p in local) localToPage(s, p)];
         }
       }

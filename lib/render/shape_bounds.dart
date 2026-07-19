@@ -54,20 +54,14 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
     // Elbow / curve bends often sit outside the Begin→End Width×Height box.
     for (final g in s.geometries) {
       if (g.noShow) continue;
-      final pts = <Offset>[];
-      var ok = true;
-      for (final c in g.commands) {
-        if (c is MoveTo) {
-          pts.add(local.apply(c.x, c.y));
-        } else if (c is LineTo) {
-          pts.add(local.apply(c.x, c.y));
-        } else {
-          ok = false;
-          break;
-        }
-      }
-      if (ok && pts.length >= 2) {
-        corners.addAll(pts);
+      final verts = g.polylineVertices(
+        widthInches: s.width,
+        heightInches: s.height,
+      );
+      if (verts != null && verts.length >= 2) {
+        corners.addAll(<Offset>[
+          for (final p in verts) local.apply(p.x, p.y),
+        ]);
         break;
       }
     }

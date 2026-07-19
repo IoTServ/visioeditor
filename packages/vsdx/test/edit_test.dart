@@ -444,6 +444,40 @@ void main() {
     expect(flipped.endY, closeTo(1, 1e-9));
   });
 
+  test('drawnConnectorPagePolyline expands PolylineTo elbow geometry', () {
+    final conn = VsdxShapeFactory.line(id: 11, ax: 1, ay: 1, bx: 4, by: 3)
+        .copyWith(
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            PolylineTo(
+              x: 3,
+              y: 2,
+              vertices: const <Offset2D>[
+                Offset2D(3, 0),
+                Offset2D(3, 2),
+              ],
+            ),
+          ],
+          noFill: true,
+        ),
+      ],
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 10,
+      heightInches: 10,
+      shapes: <VsdxShape>[conn],
+    );
+    final drawn = page.drawnConnectorPagePolyline(conn);
+    expect(drawn.length, greaterThanOrEqualTo(3));
+    // Must not collapse to the Begin→End chord (auto-route fallback).
+    expect(drawn.any((p) => (p.x - 4).abs() < 0.2 && (p.y - 1).abs() < 0.2),
+        isTrue);
+  });
+
   test('autoRoutedConnectorPolyline skips freehand ink', () {
     final ink = VsdxShapeFactory.freehand(
       id: 9,

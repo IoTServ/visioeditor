@@ -405,6 +405,41 @@ void main() {
     expect(after.endX, closeTo(before.beginX!, 1e-6));
   });
 
+  test('resize with corner LocPin keeps page AABB after pin+nudge', () {
+    final c = EditorController()..newDocument();
+    final box = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(locPinXInches: 0, locPinYInches: 0);
+    c.updateCurrentPage((p) => p.copyWith(shapes: <VsdxShape>[box]));
+    c.setSelection(<int>{1});
+    final before = c.currentPage!.shapePageAabb(1)!;
+    // Canvas-handle path: resize about Pin, then nudge AABB left/bottom.
+    c.resizeShape(
+      1,
+      pinX: box.pinX,
+      pinY: box.pinY,
+      width: 4,
+      height: 2,
+      transient: true,
+    );
+    final mid = c.currentPage!.shapePageAabb(1)!;
+    c.moveSelectionBy(before.left - mid.left, before.bottom - mid.bottom,
+        transient: true);
+    final after = c.currentPage!.shapePageAabb(1)!;
+    expect(after.left, closeTo(before.left, 1e-6));
+    expect(after.bottom, closeTo(before.bottom, 1e-6));
+    expect(after.right - after.left, closeTo(4, 1e-6));
+    expect(after.top - after.bottom, closeTo(2, 1e-6));
+    // Pin stays at the corner LocPin (left/bottom), not the AABB centre.
+    final pin = c.currentPage!.shapePinPage(1);
+    expect(pin.x, closeTo(after.left, 1e-6));
+    expect(pin.y, closeTo(after.bottom, 1e-6));
+  });
+
   test('rotateShape on glued connector is not undone by reroute', () {
     final c = EditorController()..newDocument();
     c

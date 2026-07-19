@@ -924,6 +924,39 @@ class VsdxGeometry {
         deleted: deleted ?? this.deleted,
       );
 
+  /// Flatten MoveTo / LineTo / PolylineTo (and Rel* variants) into shape-local
+  /// vertices. Returns `null` when any other command is present (arcs, beziers).
+  List<Offset2D>? polylineVertices({
+    required double widthInches,
+    required double heightInches,
+  }) {
+    final w = widthInches;
+    final h = heightInches;
+    final pts = <Offset2D>[];
+    for (final c in commands) {
+      switch (c) {
+        case MoveTo(:final x, :final y):
+          pts.add(Offset2D(x, y));
+        case LineTo(:final x, :final y):
+          pts.add(Offset2D(x, y));
+        case RelMoveTo(:final fx, :final fy):
+          pts.add(Offset2D(fx * w, fy * h));
+        case RelLineTo(:final fx, :final fy):
+          pts.add(Offset2D(fx * w, fy * h));
+        case PolylineTo(:final x, :final y, :final vertices, :final relative):
+          final sx = relative ? w : 1.0;
+          final sy = relative ? h : 1.0;
+          for (final v in vertices) {
+            pts.add(Offset2D(v.x * sx, v.y * sy));
+          }
+          pts.add(Offset2D(x * sx, y * sy));
+        default:
+          return null;
+      }
+    }
+    return pts.length >= 2 ? pts : null;
+  }
+
   @override
   String toString() =>
       'VsdxGeometry(${commands.length} cmd'

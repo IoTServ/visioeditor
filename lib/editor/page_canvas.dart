@@ -469,9 +469,16 @@ class _PageCanvasState extends State<PageCanvas> {
           (page.localToPageDeep(s.id, a), page.localToPageDeep(s.id, b)),
       ];
     }
+    // Begin/End live in the parent (or page) frame for 1-D shapes.
     final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
     final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
-    return <(Offset2D, Offset2D)>[(Offset2D(ax, ay), Offset2D(bx, by))];
+    final parentId = page.findParentId(s.id);
+    Offset2D toPage(double x, double y) {
+      if (parentId == null) return Offset2D(x, y);
+      return page.localToPageDeep(parentId, Offset2D(x, y));
+    }
+
+    return <(Offset2D, Offset2D)>[(toPage(ax, ay), toPage(bx, by))];
   }
 
   static double _dist2PointToSeg(
@@ -550,12 +557,14 @@ class _PageCanvasState extends State<PageCanvas> {
   final GlobalKey _canvasBoxKey = GlobalKey();
 
   /// A stencil dropped from the shapes palette (drawio drag-and-drop): create
-  /// it centred on the drop point.
+  /// it centred on the drop point, then reparent into a container / lane when
+  /// the drop lands inside one (same as canvas drag-drop containment).
   void _onStencilDropped(DragTargetDetails<Stencil> details) {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final p = _pageInchesAt(box.globalToLocal(details.offset));
     _c.addShapeFromBuilderAt(details.data.build, p.dx, p.dy);
+    _c.applyDropContainmentAt(p.dx, p.dy, transient: false);
   }
 
   /// A clipart tile dropped from the image-materials palette.
@@ -1809,24 +1818,27 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
 
-    // Pin is stored in the parent-local frame for nested shapes.
-    var pinX = (nl + nr) / 2;
-    var pinY = (nb + nt) / 2;
-    final parentId = page.findParentId(id);
-    if (parentId != null) {
-      final local = page.pageToLocalDeep(parentId, Offset2D(pinX, pinY));
-      pinX = local.x;
-      pinY = local.y;
-    }
-
+    // Keep LocPin-relative Pin (not AABB centre) — non-centre LocPin shapes
+    // would jump if we wrote the box midpoint as Pin. Match Arrange
+    // [setSelectedWidth]: resize about current Pin, then nudge AABB.
+    final newW = math.max(nr - nl, 0.05);
+    final newH = math.max(nt - nb, 0.05);
     _c.resizeShape(
       id,
-      pinX: pinX,
-      pinY: pinY,
-      width: math.max(nr - nl, 0.05),
-      height: math.max(nt - nb, 0.05),
+      pinX: s0.pinX,
+      pinY: s0.pinY,
+      width: newW,
+      height: newH,
       transient: true,
     );
+    final after = _c.currentPage?.shapePageAabb(id);
+    if (after != null) {
+      final dx = nl - after.left;
+      final dy = nb - after.bottom;
+      if (dx.abs() > 1e-9 || dy.abs() > 1e-9) {
+        _c.moveSelectionBy(dx, dy, transient: true);
+      }
+    }
   }
 
   // --- Smart alignment guides (drawio-style) ---------------------------------

@@ -2144,16 +2144,15 @@ class EditorController extends ChangeNotifier {
         y: sby,
       );
     }
+    next = next.recalculateFormulas(
+      changedShapeIds: <int>{id, ?begin, ?end},
+    );
     if (beginIdx == null || endIdx == null) {
-      next = next
-          .recalculateFormulas(
-            changedShapeIds: <int>{id, ?begin, ?end},
-          )
-          .rerouteConnectors(movedShapeIds: <int>{
-            id,
-            ?begin,
-            ?end,
-          });
+      next = next.rerouteConnectors(movedShapeIds: <int>{
+        id,
+        ?begin,
+        ?end,
+      });
     }
     applyEdit(
       doc.replacePage(
