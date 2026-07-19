@@ -382,4 +382,51 @@ void main() {
     expect(stroke.geometries.single.commands.length, 3); // MoveTo + 2×LineTo
     expect(stroke.geometries.single.commands.first, isA<MoveTo>());
   });
+
+  test('freehand resizeTo and flip sync Begin/End with geometry tips', () {
+    final stroke = VsdxShapeFactory.freehand(
+      id: 8,
+      points: const <Offset2D>[
+        Offset2D(1, 1),
+        Offset2D(2, 2),
+        Offset2D(3, 1),
+      ],
+    );
+    final resized = stroke.resizeTo(
+      pinX: stroke.pinX,
+      pinY: stroke.pinY,
+      width: stroke.width * 2,
+      height: stroke.height * 2,
+    );
+    expect(resized.beginX, closeTo(0, 1e-9));
+    expect(resized.beginY, closeTo(0.5, 1e-9));
+    expect(resized.endX, closeTo(4, 1e-9));
+    expect(resized.endY, closeTo(0.5, 1e-9));
+
+    final flipped = stroke.copyWith(flipX: true).syncInkEndpoints();
+    // Horizontal flip about pin (x=2): tip (1,1) → (3,1), (3,1) → (1,1).
+    expect(flipped.beginX, closeTo(3, 1e-9));
+    expect(flipped.beginY, closeTo(1, 1e-9));
+    expect(flipped.endX, closeTo(1, 1e-9));
+    expect(flipped.endY, closeTo(1, 1e-9));
+  });
+
+  test('autoRoutedConnectorPolyline skips freehand ink', () {
+    final ink = VsdxShapeFactory.freehand(
+      id: 9,
+      points: const <Offset2D>[
+        Offset2D(1, 1),
+        Offset2D(2, 2),
+      ],
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 10,
+      heightInches: 10,
+      shapes: <VsdxShape>[ink],
+    );
+    expect(page.autoRoutedConnectorPolyline(ink), isEmpty);
+    expect(page.drawnConnectorPagePolyline(ink), isEmpty);
+  });
 }

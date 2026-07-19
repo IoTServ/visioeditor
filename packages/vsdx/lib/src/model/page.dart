@@ -764,7 +764,7 @@ class VsdxPage {
   ///
   /// Used by SVG/PDF export so dynamic connectors match on-screen routing.
   List<Offset2D> autoRoutedConnectorPolyline(VsdxShape connector) {
-    if (!connector.is1D) return const <Offset2D>[];
+    if (!connector.isGlueableConnector) return const <Offset2D>[];
     final rawBx = connector.beginX;
     final rawBy = connector.beginY;
     final rawEx = connector.endX;
@@ -839,7 +839,7 @@ class VsdxPage {
   /// [autoRoutedConnectorPolyline]. Walks nested shapes correctly for SVG
   /// line-jump collection.
   List<Offset2D> drawnConnectorPagePolyline(VsdxShape s) {
-    if (!s.is1D) return const <Offset2D>[];
+    if (!s.isGlueableConnector) return const <Offset2D>[];
     if (s.hasGeometry) {
       final local = <Offset2D>[];
       for (final g in s.geometries) {

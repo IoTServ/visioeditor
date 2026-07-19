@@ -81,6 +81,35 @@ void main() {
       expect(r.createdIds, hasLength(1));
     });
 
+    test('add_connector refuses 1-D from/to targets', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final box = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 1,
+        height: 1,
+      );
+      final ink = VsdxShapeFactory.freehand(
+        id: 2,
+        points: const <Offset2D>[
+          Offset2D(4, 2),
+          Offset2D(5, 3),
+        ],
+      );
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(shapes: <VsdxShape>[box, ink]),
+      );
+      final before = doc.pages.single.shapes.length;
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'add_connector', 'from': 1, 'to': 2},
+      ]);
+      expect(r.document.pages.single.shapes.length, before);
+      expect(r.log.any((m) => m.contains('2-D')), isTrue);
+    });
+
     test('set_style + set_text mutate the target shape', () {
       final doc = built();
       final target = doc.pages.single.shapes.firstWhere((s) => s.text == 'Do work');

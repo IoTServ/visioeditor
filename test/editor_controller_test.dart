@@ -1912,6 +1912,16 @@ void main() {
     // Ink uses AABB-local Angle (not Begin/End bake).
     expect(after.angleRad.abs(), greaterThan(1e-6));
     expect(after.objType, 1);
+    // Begin/End follow the transformed stroke tips (CW −90° about pin).
+    final begin = VsdxPage.localToPage(
+      after,
+      Offset2D(
+        (after.geometries.first.commands.first as MoveTo).x,
+        (after.geometries.first.commands.first as MoveTo).y,
+      ),
+    );
+    expect(after.beginX, closeTo(begin.x, 1e-6));
+    expect(after.beginY, closeTo(begin.y, 1e-6));
   });
 
   test('rotateSelection90 compensates flipY under a parent group', () {

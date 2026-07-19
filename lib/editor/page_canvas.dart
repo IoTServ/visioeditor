@@ -526,8 +526,10 @@ class _PageCanvasState extends State<PageCanvas> {
   VsdxShape? _resizableSelection() {
     if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
+    // Glueable connectors use endpoint handles; freehand ink uses box resize
+    // (AABB geometry) like 2-D shapes.
     if (s == null ||
-        s.is1D ||
+        s.isGlueableConnector ||
         s.angleRad != 0 ||
         s.locked ||
         _c.isOnLockedLayer(s.id)) {
@@ -556,7 +558,10 @@ class _PageCanvasState extends State<PageCanvas> {
   VsdxShape? _rotatableSelection() {
     if (_c.editingConnectionPoints) return null;
     final s = _singleSelectedShape();
-    if (s == null || s.is1D || s.locked || _c.isOnLockedLayer(s.id)) {
+    if (s == null ||
+        s.isGlueableConnector ||
+        s.locked ||
+        _c.isOnLockedLayer(s.id)) {
       return null;
     }
     return s;

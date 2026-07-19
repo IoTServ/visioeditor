@@ -3818,7 +3818,9 @@ class EditorController extends ChangeNotifier {
           if (parentId == null) {
             next = next.updateShapeById(
               id,
-              (sh) => sh.copyWith(angleRad: sh.angleRad + delta),
+              (sh) => sh
+                  .copyWith(angleRad: sh.angleRad + delta)
+                  .syncInkEndpoints(),
             );
           } else {
             // Page-space delta then parent-local writeback so a flipped
@@ -3840,7 +3842,8 @@ class EditorController extends ChangeNotifier {
             if (s.flipY) localAngle -= math.pi;
             next = next.updateShapeById(
               id,
-              (sh) => sh.copyWith(angleRad: localAngle),
+              (sh) =>
+                  sh.copyWith(angleRad: localAngle).syncInkEndpoints(),
             );
           }
         }
@@ -3887,11 +3890,13 @@ class EditorController extends ChangeNotifier {
           );
         } else {
           // Boxes and freehand ink: flip flags (AABB-local geometry).
+          // Ink also refreshes Begin/End so exported endpoints match paint.
           next = next.updateShapeById(
             id,
-            (sh) => horizontal
-                ? sh.copyWith(flipX: !sh.flipX)
-                : sh.copyWith(flipY: !sh.flipY),
+            (sh) => (horizontal
+                    ? sh.copyWith(flipX: !sh.flipX)
+                    : sh.copyWith(flipY: !sh.flipY))
+                .syncInkEndpoints(),
           );
         }
         flipped = true;
@@ -5798,7 +5803,10 @@ class EditorController extends ChangeNotifier {
               .rerouteConnectors(movedShapeIds: movedIds);
         }
         return p
-            .updateShapeById(id, (s) => s.copyWith(angleRad: angleRad))
+            .updateShapeById(
+              id,
+              (s) => s.copyWith(angleRad: angleRad).syncInkEndpoints(),
+            )
             .recalculateFormulas(changedShapeIds: movedIds)
             .rerouteConnectors(movedShapeIds: movedIds);
       },

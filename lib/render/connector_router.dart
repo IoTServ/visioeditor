@@ -53,7 +53,7 @@ class ConnectorRouter {
   /// Compute a routed path for [connector]. Returns `null` when the shape
   /// is not a 1-D connector or is missing endpoints.
   RoutedConnector? route(VsdxShape connector, {VsdxPage? page}) {
-    if (!connector.is1D) return null;
+    if (!connector.isGlueableConnector) return null;
     final bx = connector.beginX;
     final by = connector.beginY;
     final ex = connector.endX;

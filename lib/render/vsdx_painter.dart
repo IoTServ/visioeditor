@@ -317,7 +317,7 @@ class VsdxPainter extends CustomPainter {
       _paintImage(canvas, shape, Rect.fromLTWH(0, 0, w, h));
     } else if (shape.hasGeometry) {
       _paintGeometries(canvas, shape);
-    } else if (shape.is1D) {
+    } else if (shape.isGlueableConnector) {
       _paint1DFallback(canvas, shape);
     }
     // Geometry-less 2-D leaves (e.g. Edraw "70% 隐性" text boxes that store
@@ -816,7 +816,9 @@ class VsdxPainter extends CustomPainter {
     }
     // Geometry-less connector: fall back to the auto-router (which now attaches
     // on the target's perimeter, see ConnectorRouter).
-    if (shape.is1D && shape.beginX != null && shape.endX != null) {
+    if (shape.isGlueableConnector &&
+        shape.beginX != null &&
+        shape.endX != null) {
       final routed = router.route(shape, page: _paintTarget ?? page);
       if (routed != null) {
         final pts = routed.points
@@ -1225,9 +1227,10 @@ class VsdxPainter extends CustomPainter {
         hasRich ? null : (shape.text?.isNotEmpty == true ? shape.text! : nameFallback);
     if (!hasRich && (label == null || label.isEmpty)) return;
 
-    // Connectors (1-D) show their label as an edge label centred on the drawn
-    // route's midpoint, not the bounding-box centre (drawio-style).
-    final isEdgeLabel = shape.is1D;
+    // Glueable connectors show their label as an edge label centred on the
+    // drawn route's midpoint, not the bounding-box centre (drawio-style).
+    // Freehand ink keeps ordinary AABB text placement.
+    final isEdgeLabel = shape.isGlueableConnector;
 
     final block = rich.textBlock;
     // Match Visio / libvisio: HideText suppresses the painted label.

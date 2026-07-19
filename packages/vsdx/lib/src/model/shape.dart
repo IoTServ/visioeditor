@@ -322,6 +322,47 @@ class VsdxShape {
   /// Freehand / scribble stroke (`ObjType=1`).
   bool get isInk => is1D && objType == 1;
 
+  /// Refresh Begin/End from the first and last ink geometry vertices after
+  /// Pin / Size / Angle / Flip changes. Begin/End stay in the same parent
+  /// (or page) frame as [pinX]/[pinY] so Visio/Edraw selection matches paint.
+  VsdxShape syncInkEndpoints() {
+    if (!isInk) return this;
+    Offset2D? first;
+    Offset2D? last;
+    for (final g in geometries) {
+      if (g.noShow) continue;
+      for (final c in g.commands) {
+        if (c is MoveTo) {
+          first ??= Offset2D(c.x, c.y);
+          last = Offset2D(c.x, c.y);
+        } else if (c is LineTo) {
+          last = Offset2D(c.x, c.y);
+          first ??= last;
+        }
+      }
+      if (first != null && last != null) break;
+    }
+    if (first == null || last == null) return this;
+    Offset2D toParent(Offset2D local) {
+      var dx = local.x - effectiveLocPinX;
+      var dy = local.y - effectiveLocPinY;
+      if (flipX) dx = -dx;
+      if (flipY) dy = -dy;
+      if (angleRad != 0) {
+        final cosA = math.cos(angleRad), sinA = math.sin(angleRad);
+        final rx = dx * cosA - dy * sinA;
+        final ry = dx * sinA + dy * cosA;
+        dx = rx;
+        dy = ry;
+      }
+      return Offset2D(pinX + dx, pinY + dy);
+    }
+
+    final b = toParent(first);
+    final e = toParent(last);
+    return copyWith(beginX: b.x, beginY: b.y, endX: e.x, endY: e.y);
+  }
+
   /// The primary hyperlink to invoke on click (or `null` for none).
   /// Picks the first `isDefault == true`, falling back to row IX=0.
   VsdxHyperlink? get primaryHyperlink {
@@ -883,7 +924,7 @@ class VsdxShape {
       locPinXInches: newLocPinX,
       locPinYInches: newLocPinY,
       geometries: scaled,
-    ).recalculateLocalFormulas();
+    ).recalculateLocalFormulas().syncInkEndpoints();
   }
 
   /// Look up a Transform / 1-D endpoint cell for cross-sheet `Sheet.n!Cell`

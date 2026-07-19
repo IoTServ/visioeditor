@@ -87,6 +87,13 @@ ApplyResult applyOps(
           log.add('add_connector: unresolved from=${op['from']} to=${op['to']}');
           break;
         }
+        if (a.is1D || b.is1D) {
+          log.add(
+            'add_connector: from/to must be 2-D shapes '
+            '(got 1-D from=${a.id} to=${b.id})',
+          );
+          break;
+        }
         final id = page.nextFreeShapeId();
         final link = buildConnector(
           id: id,

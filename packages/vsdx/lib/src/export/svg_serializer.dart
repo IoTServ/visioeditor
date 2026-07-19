@@ -1419,7 +1419,7 @@ class VsdxToSvgSerializer {
     // inverse so nested connectors land correctly.
     late final double pinX;
     late final double pinY;
-    if (shape.is1D &&
+    if (shape.isGlueableConnector &&
         block.pinXInches == null &&
         block.pinYInches == null) {
       final route = page.drawnConnectorPagePolyline(shape);
