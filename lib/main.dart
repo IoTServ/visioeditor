@@ -27,6 +27,7 @@ import 'l10n/app_localizations.dart';
 import 'l10n/editor_l10n.dart';
 import 'render/arrow_library.dart';
 import 'render/path_builder.dart';
+import 'render/pattern_fill.dart';
 import 'io/document_io.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
@@ -36,6 +37,8 @@ import 'settings/settings_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Hatch tiles for Visio FillPattern 2–16 (canvas + PNG share VsdxPainter).
+  await PatternFillBuilder.warmUpShared();
   final settings = await AppSettings.load();
   runApp(VisioEditorApp(settings: settings));
 }

@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:vsdx/vsdx.dart';
 
 import '../render/image_cache.dart';
+import '../render/pattern_fill.dart';
 import '../render/vsdx_painter.dart';
 
 /// Rasterise a single [page] to PNG bytes at [pxPerInch] using the same
@@ -27,6 +28,7 @@ Future<Uint8List?> renderPageToPng(
   final cache = VsdxImageCache();
   try {
     await cache.warmUp(images);
+    await PatternFillBuilder.warmUpShared();
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
     final layerIds = visibleLayerIdsOverride ??
@@ -40,6 +42,7 @@ Future<Uint8List?> renderPageToPng(
       theme: theme,
       images: images,
       imageCache: cache,
+      patternBuilder: PatternFillBuilder.shared,
       pxPerInch: pxPerInch,
       backgroundColor: const Color(0xFFFFFFFF),
       respectLayerVisibility: layerIds != null || underlayLayerIds != null,

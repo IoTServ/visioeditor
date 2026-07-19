@@ -9,6 +9,57 @@ import 'package:vsdx/vsdx.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('warmUpShared enables hatch when painter has empty builder', () async {
+    await PatternFillBuilder.warmUpShared();
+    expect(PatternFillBuilder.shared.hasTiles, isTrue);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+    ).copyWith(
+      fill: const VsdxFill(
+        pattern: 2,
+        foreground: VsdxColor(0xFF000000),
+        background: VsdxColor(0xFFFFFFFF),
+      ),
+      line: const VsdxLine(pattern: 0),
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 4,
+      heightInches: 4,
+      shapes: <VsdxShape>[shape],
+    );
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    // Explicit empty builder — must still resolve via PatternFillBuilder.shared.
+    VsdxPainter(
+      page: page,
+      patternBuilder: PatternFillBuilder.empty,
+      pxPerInch: 40,
+      backgroundColor: const ui.Color(0xFFFFFFFF),
+    ).paint(canvas, const ui.Size(160, 160));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(160, 160);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    image.dispose();
+    expect(bytes, isNotNull);
+    // Horizontal hatch (pattern 2): scan the shape AABB for black ink.
+    final rgba = bytes!.buffer.asUint8List();
+    var dark = 0;
+    for (var y = 40; y < 120; y++) {
+      for (var x = 40; x < 120; x++) {
+        final i = (y * 160 + x) * 4;
+        if (rgba[i] < 40 && rgba[i + 1] < 40 && rgba[i + 2] < 40) dark++;
+      }
+    }
+    expect(dark, greaterThan(50),
+        reason: 'shared hatch tiles must paint FillPattern=2 on canvas');
+  });
+
   test('pattern fill respects FillBkgndTrans on canvas', () async {
     final patterns = await PatternFillBuilder.warmUp();
     final shape = VsdxShapeFactory.rectangle(

@@ -9,6 +9,7 @@ import 'package:vsdx/vsdx.dart';
 
 import '../io/document_io.dart';
 import '../render/image_cache.dart';
+import '../render/pattern_fill.dart';
 import '../render/shape_bounds.dart';
 import '../render/vsdx_painter.dart';
 import 'canvas_camera.dart';
@@ -3000,6 +3001,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       theme: doc.theme,
                                       images: doc.images,
                                       imageCache: _imageCache,
+                                      patternBuilder: PatternFillBuilder.shared,
                                       pxPerInch: widget.pxPerInch,
                                       drawLineJumps: _c.showLineJumps,
                                       lineJumpRadiusInches:

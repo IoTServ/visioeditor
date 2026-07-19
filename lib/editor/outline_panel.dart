@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:vsdx/vsdx.dart';
 
+import '../render/pattern_fill.dart';
 import '../render/vsdx_painter.dart';
 import 'canvas_camera.dart';
 import 'editor_controller.dart';
@@ -157,6 +158,7 @@ class _OutlinePagePainter extends CustomPainter {
       page: page,
       theme: theme,
       images: images,
+      patternBuilder: PatternFillBuilder.shared,
       pxPerInch: pxPerInch,
       backgroundColor: Colors.white,
     ).paint(canvas, Size(contentW, contentH));

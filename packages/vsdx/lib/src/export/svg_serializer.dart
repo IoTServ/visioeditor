@@ -498,14 +498,22 @@ class VsdxToSvgSerializer {
           shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
       final gap = weight * 0.38;
       final mid = 'cmp-$paintId';
+      // Honour LineCap / Rounding on the mask paths (same mapping as
+      // [_strokeAttr]) so square/butt ends are not forced to round.
+      final linecap = switch (shape.line.cap) {
+        LineCap.round => 'round',
+        LineCap.square => 'square',
+        LineCap.extended => 'butt',
+      };
+      final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
       buf.writeln(
         '$indent<defs><mask id="$mid" maskUnits="userSpaceOnUse">'
         '<path d="$d" fill="none" stroke="white" '
-        'stroke-width="${_n(weight)}" stroke-linecap="round" '
-        'stroke-linejoin="round"/>'
+        'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
+        'stroke-linejoin="$linejoin"/>'
         '<path d="$d" fill="none" stroke="black" '
-        'stroke-width="${_n(gap)}" stroke-linecap="round" '
-        'stroke-linejoin="round"/>'
+        'stroke-width="${_n(gap)}" stroke-linecap="$linecap" '
+        'stroke-linejoin="$linejoin"/>'
         '</mask></defs>',
       );
       if (!noFill && fillAttr != 'fill="none"') {

@@ -450,6 +450,28 @@ void main() {
     expect(svg, contains('stroke-linecap="square"'));
   });
 
+  test('SVG compound-line mask honours LineCap', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                cap: LineCap.extended,
+                weightInches: 0.08,
+                compoundType: 1,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('<mask '));
+    expect(svg, contains('stroke-linecap="butt"'));
+  });
+
   test('SVG Initial Caps capitalises each word', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

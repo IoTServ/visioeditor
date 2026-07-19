@@ -598,7 +598,13 @@ class VsdxPainter extends CustomPainter {
           fallbackFill;
       final fgT = fill.foregroundTransparency.clamp(0.0, 1.0);
       final fg = fgRaw.withValues(alpha: fgRaw.a * (1.0 - fgT));
-      final hatch = patternBuilder.paintFor(
+      // Prefer an explicit builder; otherwise the process-wide warm-up from
+      // [PatternFillBuilder.warmUpShared] (so hatch works without every call
+      // site threading the dependency).
+      final patterns = patternBuilder.hasTiles
+          ? patternBuilder
+          : PatternFillBuilder.shared;
+      final hatch = patterns.paintFor(
         fill.pattern,
         foreground: fg,
       );
@@ -1680,6 +1686,9 @@ class VsdxPainter extends CustomPainter {
     final textOriginsX = <double>[];
     final bulletPainters = <TextPainter?>[];
     final bulletOriginsX = <double>[];
+    final paraPosPainters = <List<TextPainter>?>[];
+    final paraPosDys = <List<double>?>[];
+    final paraRowTextH = <double>[];
     var totalH = 0.0;
 
     for (final para in paras) {
@@ -1744,24 +1753,69 @@ class VsdxPainter extends CustomPainter {
         0.0,
         maxW - (textX - mlPx) - indentR,
       );
-      final tp = TextPainter(
-        text: TextSpan(
-          children: <TextSpan>[
-            for (final r in para.runs) _runToSpan(r, scale),
-          ],
-        ),
-        textAlign: pAlign,
-        textDirection: TextDirection.ltr,
-        maxLines: null,
-      )..layout(maxWidth: avail);
+      // Super/sub needs per-run dy (TextPainter cannot baseline-shift spans).
+      final needsPos = para.runs
+          .any((r) => r.charStyle.position != VsdxTextPosition.normal);
+      late final TextPainter tp;
+      late final double rowW;
+      late final double rowTextH;
+      List<TextPainter>? posPainters;
+      List<double>? posDys;
+      if (needsPos) {
+        posPainters = <TextPainter>[];
+        posDys = <double>[];
+        var w = 0.0;
+        var h = 0.0;
+        for (final r in para.runs) {
+          final p = TextPainter(
+            text: _runToSpan(r, scale),
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+          )..layout(maxWidth: avail);
+          posPainters.add(p);
+          final base = math.max(r.charStyle.fontSizeInches, 0.04) * scale;
+          final dy = switch (r.charStyle.position) {
+            VsdxTextPosition.superscript => -base * 0.35,
+            VsdxTextPosition.subscript => base * 0.2,
+            VsdxTextPosition.normal => 0.0,
+          };
+          posDys.add(dy);
+          w += p.width;
+          h = math.max(h, p.height + dy.abs());
+        }
+        // Placeholder painter for the non-pos paint branch.
+        tp = TextPainter(
+          text: const TextSpan(text: ''),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        rowW = w;
+        rowTextH = h;
+      } else {
+        tp = TextPainter(
+          text: TextSpan(
+            children: <TextSpan>[
+              for (final r in para.runs) _runToSpan(r, scale),
+            ],
+          ),
+          textAlign: pAlign,
+          textDirection: TextDirection.ltr,
+          maxLines: null,
+        )..layout(maxWidth: avail);
+        rowW = tp.width;
+        rowTextH = tp.height;
+        posPainters = null;
+        posDys = null;
+      }
 
       painters.add(tp);
       bulletPainters.add(bulletTp);
       bulletOriginsX.add(bulletX);
+      paraPosPainters.add(posPainters);
+      paraPosDys.add(posDys);
       // Horizontal align still applies within the remaining text band.
       final alignedX = switch (pAlign) {
-        TextAlign.center => textX + (avail - tp.width) / 2,
-        TextAlign.right => textX + avail - tp.width,
+        TextAlign.center => textX + (avail - rowW) / 2,
+        TextAlign.right => textX + avail - rowW,
         _ => textX,
       };
       textOriginsX.add(alignedX);
@@ -1770,7 +1824,8 @@ class VsdxPainter extends CustomPainter {
       final a = style.spaceAfterInches * scale;
       beforePx.add(b);
       afterPx.add(a);
-      final rowH = math.max(tp.height, bulletTp?.height ?? 0);
+      final rowH = math.max(rowTextH, bulletTp?.height ?? 0);
+      paraRowTextH.add(rowTextH);
       totalH += b + rowH + a;
     }
 
@@ -1786,13 +1841,24 @@ class VsdxPainter extends CustomPainter {
       final tp = painters[i];
       final bulletTp = bulletPainters[i];
       y += beforePx[i];
-      final rowH = math.max(tp.height, bulletTp?.height ?? 0);
+      final textH = paraRowTextH[i];
+      final rowH = math.max(textH, bulletTp?.height ?? 0);
       if (bulletTp != null) {
         final by = y + (rowH - bulletTp.height) / 2;
         bulletTp.paint(canvas, Offset(bulletOriginsX[i], by));
       }
-      final ty = y + (rowH - tp.height) / 2;
-      tp.paint(canvas, Offset(textOriginsX[i], ty));
+      final ty = y + (rowH - textH) / 2;
+      final posPs = paraPosPainters[i];
+      final posDy = paraPosDys[i];
+      if (posPs != null && posDy != null) {
+        var x = textOriginsX[i];
+        for (var j = 0; j < posPs.length; j++) {
+          posPs[j].paint(canvas, Offset(x, ty + posDy[j]));
+          x += posPs[j].width;
+        }
+      } else {
+        tp.paint(canvas, Offset(textOriginsX[i], ty));
+      }
       y += rowH + afterPx[i];
     }
   }
@@ -1910,10 +1976,22 @@ class VsdxPainter extends CustomPainter {
             TextDecoration.lineThrough,
           if (run.charStyle.overline) TextDecoration.overline,
         ]),
-        decorationStyle: run.charStyle.doubleUnderline ||
-                run.charStyle.doubleStrikethrough
-            ? TextDecorationStyle.double
-            : TextDecorationStyle.solid,
+        // Flutter applies one decorationStyle to every line. When double-under
+        // meets single-strike (or the reverse), prefer solid so a single
+        // decoration is not promoted to double.
+        decorationStyle: () {
+          final under = run.charStyle.underline || run.charStyle.doubleUnderline;
+          final strike = run.charStyle.strikethrough ||
+              run.charStyle.doubleStrikethrough;
+          final underDbl = run.charStyle.doubleUnderline;
+          final strikeDbl = run.charStyle.doubleStrikethrough;
+          if (under && strike && underDbl != strikeDbl) {
+            return TextDecorationStyle.solid;
+          }
+          return underDbl || strikeDbl
+              ? TextDecorationStyle.double
+              : TextDecorationStyle.solid;
+        }(),
         letterSpacing: () {
           final base = run.charStyle.letterSpacingInches == 0
               ? 0.0

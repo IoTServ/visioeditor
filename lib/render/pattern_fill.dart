@@ -58,6 +58,18 @@ class PatternFillBuilder {
     return PatternFillBuilder._(tiles);
   }
 
+  /// Process-wide builder used by [VsdxPainter] when no explicit
+  /// [PatternFillBuilder] is passed. [warmUpShared] installs it before
+  /// [runApp] so hatch fills paint on the canvas / PNG export.
+  static PatternFillBuilder shared = empty;
+
+  /// Warm tiles and install them as [shared]. Idempotent.
+  static Future<PatternFillBuilder> warmUpShared() async {
+    if (shared._tiles.isNotEmpty) return shared;
+    shared = await warmUp();
+    return shared;
+  }
+
   /// Synchronous variant suitable for tests / non-Flutter contexts.
   /// Returns an empty builder; [shaderFor] always returns `null`.
   static const PatternFillBuilder empty =
@@ -65,6 +77,9 @@ class PatternFillBuilder {
   static const PatternFillBuilder _kEmpty =
       PatternFillBuilder._empty();
   const PatternFillBuilder._empty() : _tiles = const <int, ui.Image>{};
+
+  /// Whether any hatch tiles are available.
+  bool get hasTiles => _tiles.isNotEmpty;
 
   ui.Image? tileFor(int pattern) => _tiles[pattern];
 
