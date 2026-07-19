@@ -132,4 +132,38 @@ void main() {
     expect(after.x, closeTo(before.x, 1e-6));
     expect(after.y, closeTo(before.y, 1e-6));
   });
+
+  test('layoutLanesPreservingSizes scales pool-level non-lane children', () {
+    var pool = SwimlaneOps.assemblePool(
+      poolId: 1,
+      pinX: 4,
+      pinY: 4,
+      width: 4,
+      height: 2,
+      laneCount: 2,
+      horizontal: true,
+    );
+    final badge = VsdxShapeFactory.rectangle(
+      id: 99,
+      pinX: 2,
+      pinY: 1,
+      width: 0.5,
+      height: 0.4,
+    );
+    pool = pool.copyWith(children: <VsdxShape>[...pool.children, badge]);
+    // Grow the bottom lane so the pool height doubles.
+    final lanes = SwimlaneOps.lanesOf(pool);
+    pool = pool.copyWith(
+      children: <VsdxShape>[
+        lanes.first.copyWith(height: 3),
+        lanes.last,
+        badge,
+      ],
+    );
+    final laid = SwimlaneOps.layoutLanesPreservingSizes(pool);
+    expect(laid.height, closeTo(4.0, 1e-6)); // 3 + 1
+    final scaled = SwimlaneOps.nonLaneChildren(laid).single;
+    expect(scaled.pinY, closeTo(1 * (4 / 2), 0.15));
+    expect(scaled.height, closeTo(0.4 * (4 / 2), 0.15));
+  });
 }

@@ -1890,6 +1890,55 @@ void main() {
     );
   });
 
+  test('alignLeft includes freehand ink AABB with 2-D shapes', () {
+    final c = EditorController()..newDocument();
+    c.createFreehand(<Offset2D>[
+      const Offset2D(3, 1),
+      const Offset2D(4, 1.5),
+      const Offset2D(5, 1),
+    ]);
+    final inkId = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final boxId = c.selection.single;
+    c.setSelection(<int>{inkId, boxId});
+    c.alignLeft();
+    final ink = c.currentPage!.findShapeById(inkId)!;
+    final box = c.currentPage!.findShapeById(boxId)!;
+    final inkLeft = c.currentPage!.shapePageAabb(inkId)!.left;
+    final boxLeft = box.pinX - box.width / 2;
+    expect(inkLeft, closeTo(boxLeft, 0.05));
+    expect(ink.isInk, isTrue);
+  });
+
+  test('selectVertices includes freehand ink', () {
+    final c = EditorController()..newDocument();
+    c.createFreehand(<Offset2D>[
+      const Offset2D(1, 1),
+      const Offset2D(2, 1.5),
+      const Offset2D(3, 1),
+    ]);
+    final inkId = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(4, 1, 5, 2);
+    final boxId = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(6, 1, 7, 2);
+    final box2 = c.selection.single;
+    c.createConnector(4.5, 1.5, 6.5, 1.5, beginTarget: boxId, endTarget: box2);
+    c.selectVertices();
+    expect(c.selection, containsAll(<int>[inkId, boxId, box2]));
+    expect(
+      c.selection.any(
+        (id) => c.currentPage!.findShapeById(id)!.isGlueableConnector,
+      ),
+      isFalse,
+    );
+  });
+
   test('freehand ink is not treated as a glueable connector', () {
     final c = EditorController()..newDocument();
     c.createFreehand(<Offset2D>[

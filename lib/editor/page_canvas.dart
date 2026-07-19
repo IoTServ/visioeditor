@@ -1250,8 +1250,9 @@ class _PageCanvasState extends State<PageCanvas> {
         ),
       ),
     );
-    if (!s.is1D) {
-      // Match paint: scale(±1) about LocPin, then page heading.
+    // Boxes and freehand ink: match paint flip/rotate about LocPin.
+    // Glueable connectors keep an axis-aligned edge-label editor.
+    if (!s.isGlueableConnector) {
       final sx = s.flipX ? -1.0 : 1.0;
       final sy = s.flipY ? -1.0 : 1.0;
       final align = Alignment(locAlignX, locAlignY);

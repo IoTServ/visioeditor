@@ -571,15 +571,15 @@ class EditorController extends ChangeNotifier {
     setSelection(ids);
   }
 
-  /// Select every 2-D shape on the page, including nested ones (draw.io
-  /// "Select Vertices", Cmd+Shift+I).
+  /// Select every non-connector shape on the page, including nested ones and
+  /// freehand ink (draw.io "Select Vertices", Cmd+Shift+I).
   void selectVertices() {
     final page = currentPage;
     if (page == null) return;
     final ids = <int>[];
     void walk(VsdxShape s) {
       if (!page.isShapeVisible(s)) return;
-      if (!s.is1D) ids.add(s.id);
+      if (!s.isGlueableConnector) ids.add(s.id);
       if (s.collapsed) return;
       for (final c in s.children) {
         walk(c);
@@ -1759,13 +1759,16 @@ class EditorController extends ChangeNotifier {
         for (final c in next.connects) {
           if (coveredIds.contains(c.toSheetId)) {
             affected.add(c.fromSheetId);
+            // Fixed connection-point indices on covered cells rarely exist on
+            // the merge master — fall back to whole-shape glue.
+            final fixedCp = c.toPart != null && c.toPart! >= 100;
             remapped.add(VsdxConnect(
               fromSheetId: c.fromSheetId,
               fromCell: c.fromCell,
               fromPart: c.fromPart,
               toSheetId: masterId,
-              toCell: c.toCell,
-              toPart: c.toPart,
+              toCell: fixedCp ? 'PinX' : c.toCell,
+              toPart: fixedCp ? 3 : c.toPart,
             ));
           } else {
             remapped.add(c);
@@ -2030,15 +2033,24 @@ class EditorController extends ChangeNotifier {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null) return;
+    // Only 2-D shapes are valid glue targets (match canvas / agent guards).
+    bool glueableTarget(int? id) {
+      if (id == null) return false;
+      final t = page.findShapeById(id);
+      return t != null && !t.is1D;
+    }
+
+    final begin = glueableTarget(beginTarget) ? beginTarget : null;
+    final end = glueableTarget(endTarget) ? endTarget : null;
     final id = page.nextFreeShapeId();
     var sax = ax, say = ay, sbx = bx, sby = by;
-    if (beginTarget != null && page.findShapeById(beginTarget) != null) {
-      final pin = page.shapePinPage(beginTarget);
+    if (begin != null) {
+      final pin = page.shapePinPage(begin);
       sax = pin.x;
       say = pin.y;
     }
-    if (endTarget != null && page.findShapeById(endTarget) != null) {
-      final pin = page.shapePinPage(endTarget);
+    if (end != null) {
+      final pin = page.shapePinPage(end);
       sbx = pin.x;
       sby = pin.y;
     }
@@ -2062,45 +2074,45 @@ class EditorController extends ChangeNotifier {
       line: baseLine,
     );
     // Prefixed XFTRIGGER formulas so 万兴图示 re-glues when targets move.
-    if (beginTarget != null || endTarget != null) {
+    if (begin != null || end != null) {
       final formulas = Map<String, String>.from(connector.formulas);
       final props = connector.connectorProps ?? const VsdxConnectorProps();
-      if (beginTarget != null) {
-        formulas['BegTrigger'] = '_XFTRIGGER(Sheet.$beginTarget!EventXFMod)';
+      if (begin != null) {
+        formulas['BegTrigger'] = '_XFTRIGGER(Sheet.$begin!EventXFMod)';
       }
-      if (endTarget != null) {
-        formulas['EndTrigger'] = '_XFTRIGGER(Sheet.$endTarget!EventXFMod)';
+      if (end != null) {
+        formulas['EndTrigger'] = '_XFTRIGGER(Sheet.$end!EventXFMod)';
       }
       connector = connector.copyWith(
         formulas: formulas,
         connectorProps: props.copyWith(
-          begTrigger: beginTarget != null ? '2' : props.begTrigger,
-          endTrigger: endTarget != null ? '2' : props.endTrigger,
+          begTrigger: begin != null ? '2' : props.begTrigger,
+          endTrigger: end != null ? '2' : props.endTrigger,
         ),
       );
     }
     // Prefer explicit CP indices (drawio blue points). Otherwise use whole-shape
     // glue (ToPart=3) so the endpoint attaches anywhere on the geometry
     // perimeter aimed at the opposite end — not only the four mid-edge points.
-    final beginIdx = beginConnectionPointIndex;
-    final endIdx = endConnectionPointIndex;
+    final beginIdx = begin != null ? beginConnectionPointIndex : null;
+    final endIdx = end != null ? endConnectionPointIndex : null;
     final connects = <VsdxConnect>[
       ...page.connects,
-      if (beginTarget != null)
+      if (begin != null)
         VsdxConnect(
           fromSheetId: id,
           fromCell: 'BeginX',
           fromPart: 9,
-          toSheetId: beginTarget,
+          toSheetId: begin,
           toCell: beginIdx != null ? 'Connections.X${beginIdx + 1}' : 'PinX',
           toPart: beginIdx != null ? 100 + beginIdx : 3,
         ),
-      if (endTarget != null)
+      if (end != null)
         VsdxConnect(
           fromSheetId: id,
           fromCell: 'EndX',
           fromPart: 12,
-          toSheetId: endTarget,
+          toSheetId: end,
           toCell: endIdx != null ? 'Connections.X${endIdx + 1}' : 'PinX',
           toPart: endIdx != null ? 100 + endIdx : 3,
         ),
@@ -2112,21 +2124,21 @@ class EditorController extends ChangeNotifier {
     _tool = EditorTool.select;
     var next = page.addShape(connector).copyWith(connects: connects);
     // Materialise Connection rows on targets so fixed-point glue round-trips.
-    if (beginTarget != null && beginIdx != null) {
+    if (begin != null && beginIdx != null) {
       next = next.setConnectorEndpoint(
         id,
         begin: true,
-        targetShapeId: beginTarget,
+        targetShapeId: begin,
         connectionPointIndex: beginIdx,
         x: sax,
         y: say,
       );
     }
-    if (endTarget != null && endIdx != null) {
+    if (end != null && endIdx != null) {
       next = next.setConnectorEndpoint(
         id,
         begin: false,
-        targetShapeId: endTarget,
+        targetShapeId: end,
         connectionPointIndex: endIdx,
         x: sbx,
         y: sby,
@@ -3061,7 +3073,8 @@ class EditorController extends ChangeNotifier {
     if (pastedIds.isNotEmpty) {
       next = next
           .syncGlueTriggers(connectorIds: pastedIds)
-          .recalculateFormulas(changedShapeIds: pastedIds);
+          .recalculateFormulas(changedShapeIds: pastedIds)
+          .rerouteConnectors(movedShapeIds: pastedIds);
     }
     final undoSel = Set<int>.of(_selection);
     _selection
@@ -3198,14 +3211,15 @@ class EditorController extends ChangeNotifier {
     });
   }
 
-  /// Page AABBs for align/distribute, skipping 1-D hairline spans.
+  /// Page AABBs for align/distribute, skipping glueable connector hairlines.
+  /// Freehand ink keeps a real AABB and participates like 2-D shapes.
   static Map<int, (double, double, double, double)> _alignBounds2D(
     VsdxPage page,
     List<int> ids,
   ) {
     return <int, (double, double, double, double)>{
       for (final id in ids)
-        if (page.findShapeById(id)?.is1D != true)
+        if (page.findShapeById(id)?.isGlueableConnector != true)
           if (_pageBounds(page, id) case final b?) id: b,
     };
   }
@@ -3953,7 +3967,10 @@ class EditorController extends ChangeNotifier {
 
   /// Fold residual Angle/Flip into Begin/End geometry (Visio 1-D convention).
   static VsdxShape _bake1DXformIfNeeded(VsdxPage page, VsdxShape s) {
-    if (!s.is1D || (s.angleRad == 0 && !s.flipX && !s.flipY)) return s;
+    if (!s.isGlueableConnector ||
+        (s.angleRad == 0 && !s.flipX && !s.flipY)) {
+      return s;
+    }
     final drawn = page.drawnConnectorPagePolyline(s);
     if (drawn.length < 2) {
       return s.copyWith(angleRad: 0, flipX: false, flipY: false);
@@ -3985,7 +4002,7 @@ class EditorController extends ChangeNotifier {
     VsdxShape s,
     double deltaRad,
   ) {
-    if (!s.is1D) return s;
+    if (!s.isGlueableConnector) return s;
     final base = _bake1DXformIfNeeded(page, s);
     if (deltaRad.abs() < 1e-12) return base;
     final pin = _pinPageOf(page, base);
@@ -4008,7 +4025,7 @@ class EditorController extends ChangeNotifier {
     VsdxShape s, {
     required bool horizontal,
   }) {
-    if (!s.is1D) return s;
+    if (!s.isGlueableConnector) return s;
     final base = _bake1DXformIfNeeded(page, s);
     final pin = _pinPageOf(page, base);
     final route = _connectorControlPage(page, base);
@@ -5910,9 +5927,33 @@ class EditorController extends ChangeNotifier {
             );
           },
         );
-        // Pool resize: equal-tile lanes into the new bounds.
+        // Pool resize: scale pool-level (non-lane) content with the frame,
+        // then equal-tile lanes into the new bounds.
         if (reflowPool) {
-          next = next.updateShapeById(id, SwimlaneOps.layoutLanes);
+          final resized = next.findShapeById(id)!;
+          final sx = s.width == 0 ? 1.0 : resized.width / s.width;
+          final sy = s.height == 0 ? 1.0 : resized.height / s.height;
+          next = next.updateShapeById(id, (sh) {
+            var host = sh;
+            if ((sx - 1).abs() > 1e-12 || (sy - 1).abs() > 1e-12) {
+              host = sh.copyWith(
+                children: <VsdxShape>[
+                  ...SwimlaneOps.lanesOf(sh),
+                  for (final c in SwimlaneOps.nonLaneChildren(sh))
+                    VsdxPage.scaleChildInFrame(
+                      c,
+                      sx,
+                      sy,
+                      s.effectiveLocPinX,
+                      s.effectiveLocPinY,
+                      sh.effectiveLocPinX,
+                      sh.effectiveLocPinY,
+                    ),
+                ],
+              );
+            }
+            return SwimlaneOps.layoutLanes(host);
+          });
         } else if (reflowLane && lanePoolId != null) {
           // Lane resize: keep sibling sizes, grow/shrink the pool.
           final host = next.findShapeById(lanePoolId);

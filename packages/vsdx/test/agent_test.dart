@@ -461,6 +461,25 @@ void main() {
       );
     });
 
+    test('syncGlueTriggers clears orphan BeginX PAR when triggers already null',
+        () {
+      final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 1, bx: 3, by: 1)
+          .copyWith(formulas: <String, String>{
+        'BeginX': 'PAR(PNT(Sheet.1!Connections.X1,Sheet.1!Connections.Y1))',
+        'Width': 'EndX-BeginX',
+      });
+      var page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 8,
+        heightInches: 11,
+        shapes: <VsdxShape>[conn],
+      );
+      page = page.syncGlueTriggers(connectorIds: {3});
+      expect(page.findShapeById(3)!.formulas.containsKey('BeginX'), isFalse);
+      expect(page.findShapeById(3)!.formulas['Width'], 'EndX-BeginX');
+    });
+
     test('move_shape recalculates dependent Sheet.n! LocPin formulas', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

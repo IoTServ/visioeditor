@@ -220,9 +220,13 @@ abstract final class SwimlaneOps {
     final lanes = lanesOf(pool);
     if (lanes.isEmpty) return pool;
     final horizontal = isHorizontal(lanes.first);
+    final oldOx = pool.effectiveLocPinX;
+    final oldOy = pool.effectiveLocPinY;
+    final oldW = pool.width.abs();
+    final oldH = pool.height.abs();
     final laidOut = <VsdxShape>[];
     if (horizontal) {
-      final w = pool.width.abs();
+      final w = oldW;
       final heights = <double>[
         for (final l in lanes) math.max(l.height.abs(), minLaneSize),
       ];
@@ -243,17 +247,23 @@ abstract final class SwimlaneOps {
         );
         y += lh;
       }
+      final newH = totalH <= 0 ? pool.height : totalH;
       final top = pool.pinY + pool.height / 2;
-      return pool.copyWith(
+      final next = pool.copyWith(
         width: w,
-        height: totalH <= 0 ? pool.height : totalH,
-        pinY: top - (totalH <= 0 ? pool.height : totalH) / 2,
-        children: <VsdxShape>[...laidOut, ...nonLaneChildren(pool)],
+        height: newH,
+        pinY: top - newH / 2,
         userCells: _ensurePoolCell(pool.userCells),
         shapeKind: VsdxShapeKind.container,
       );
+      return next.copyWith(
+        children: <VsdxShape>[
+          ...laidOut,
+          ..._scaledNonLaneChildren(pool, next, oldW, oldH, oldOx, oldOy),
+        ],
+      );
     }
-    final h = pool.height.abs();
+    final h = oldH;
     final widths = <double>[
       for (final l in lanes) math.max(l.width.abs(), minLaneSize),
     ];
@@ -274,15 +284,49 @@ abstract final class SwimlaneOps {
       );
       x += lw;
     }
+    final newW = totalW <= 0 ? pool.width : totalW;
     final left = pool.pinX - pool.width / 2;
-    return pool.copyWith(
-      width: totalW <= 0 ? pool.width : totalW,
+    final next = pool.copyWith(
+      width: newW,
       height: h,
-      pinX: left + (totalW <= 0 ? pool.width : totalW) / 2,
-      children: <VsdxShape>[...laidOut, ...nonLaneChildren(pool)],
+      pinX: left + newW / 2,
       userCells: _ensurePoolCell(pool.userCells),
       shapeKind: VsdxShapeKind.container,
     );
+    return next.copyWith(
+      children: <VsdxShape>[
+        ...laidOut,
+        ..._scaledNonLaneChildren(pool, next, oldW, oldH, oldOx, oldOy),
+      ],
+    );
+  }
+
+  /// Scale pool-level (non-lane) content when the pool frame changes size.
+  static List<VsdxShape> _scaledNonLaneChildren(
+    VsdxShape oldPool,
+    VsdxShape newPool,
+    double oldW,
+    double oldH,
+    double oldOx,
+    double oldOy,
+  ) {
+    final sx = oldW == 0 ? 1.0 : newPool.width.abs() / oldW;
+    final sy = oldH == 0 ? 1.0 : newPool.height.abs() / oldH;
+    if ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12) {
+      return nonLaneChildren(oldPool);
+    }
+    return <VsdxShape>[
+      for (final c in nonLaneChildren(oldPool))
+        VsdxPage.scaleChildInFrame(
+          c,
+          sx,
+          sy,
+          oldOx,
+          oldOy,
+          newPool.effectiveLocPinX,
+          newPool.effectiveLocPinY,
+        ),
+    ];
   }
 
   /// Append [newLane] under [pool] and reflow.

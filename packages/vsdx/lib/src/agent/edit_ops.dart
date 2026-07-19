@@ -127,7 +127,8 @@ ApplyResult applyOps(
           }
           page = page.updateShapeById(id, (s) {
             var next = s;
-            if (fillHex != null) {
+            // Match UI setFillColor: 1-D strokes never take a fill.
+            if (fillHex != null && !s.is1D) {
               if (fillHex.trim().toLowerCase() == 'none') {
                 next = next.copyWith(fill: const VsdxFill(pattern: 0));
               } else {

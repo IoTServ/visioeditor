@@ -599,8 +599,9 @@ class VsdxPage {
             beginTarget: beginTarget,
             endTarget: endTarget,
           );
-          if (synced.formulas['BegTrigger'] != s.formulas['BegTrigger'] ||
-              synced.formulas['EndTrigger'] != s.formulas['EndTrigger']) {
+          // Compare the full formulas map — Begin/End PAR(PNT)/Sheet.n! may
+          // change even when BegTrigger/EndTrigger are already absent.
+          if (!_sameStringMap(synced.formulas, s.formulas)) {
             next = next.updateShapeById(s.id, (_) => synced);
           }
         }
@@ -610,6 +611,15 @@ class VsdxPage {
 
     walk(shapes);
     return next;
+  }
+
+  static bool _sameStringMap(Map<String, String> a, Map<String, String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
   }
 
   static (List<VsdxShape>, bool) _removeInList(List<VsdxShape> list, int id) {
@@ -1851,21 +1861,6 @@ class VsdxPage {
     if (parentId == null) {
       final idx = shapes.indexWhere((s) => s.id == groupId);
       if (idx < 0) return this;
-      final cosA = math.cos(g.angleRad);
-      final sinA = math.sin(g.angleRad);
-      final fx = g.flipX ? -1.0 : 1.0;
-      final fy = g.flipY ? -1.0 : 1.0;
-      final ox = g.effectiveLocPinX;
-      final oy = g.effectiveLocPinY;
-      (double, double) toPage(double lx, double ly) {
-        final rx = (lx - ox) * fx;
-        final ry = (ly - oy) * fy;
-        return (
-          g.pinX + rx * cosA - ry * sinA,
-          g.pinY + rx * sinA + ry * cosA,
-        );
-      }
-
       return copyWith(shapes: <VsdxShape>[
         ...shapes.sublist(0, idx),
         for (final c in g.children) _promoteChildToPage(c, g),
@@ -2118,10 +2113,12 @@ class VsdxPage {
     // Freehand ink keeps AABB geometry like 2-D and needs the flip bake.
     final promoted = _childToPage(child, toPage, parent.angleRad);
     if (child.isGlueableConnector) return promoted;
-    return promoted.copyWith(
-      flipX: child.flipX ^ parent.flipX,
-      flipY: child.flipY ^ parent.flipY,
-    );
+    return promoted
+        .copyWith(
+          flipX: child.flipX ^ parent.flipX,
+          flipY: child.flipY ^ parent.flipY,
+        )
+        .syncInkEndpoints();
   }
 
   /// Convert a page-absolute shape into [parent]'s local coordinate system.
@@ -2154,7 +2151,7 @@ class VsdxPage {
       );
     }
     if (pageShape.isGlueableConnector) return _finalize1DCoords(r);
-    return r;
+    return r.syncInkEndpoints();
   }
 
   /// Map a point in [shapeId]'s local coordinates to page inches, walking up
@@ -2431,7 +2428,7 @@ class VsdxPage {
       );
     }
     if (child.isGlueableConnector) return _finalize1DCoords(r);
-    return r;
+    return r.syncInkEndpoints();
   }
 
   /// Page heading + whether the local→page linear map reflects (det &lt; 0).
