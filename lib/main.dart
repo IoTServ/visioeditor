@@ -1885,43 +1885,54 @@ class _ToolStrip extends StatelessWidget {
       );
     }
 
+    // Tall windows pin library toggles to the bottom; short windows scroll
+    // so the strip never overflows (extra palette buttons add ~150px).
     return ColoredBox(
       color: cs.surface,
       child: SizedBox(
         width: 56,
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            tool(EditorTool.select, Icons.near_me_outlined, el.toolSelect),
-            tool(EditorTool.rectangle, Icons.crop_square, el.toolRectangle),
-            tool(EditorTool.ellipse, Icons.circle_outlined, el.toolEllipse),
-            tool(EditorTool.line, Icons.horizontal_rule, el.toolLine),
-            tool(EditorTool.connector, Icons.timeline, el.toolConnector),
-            tool(EditorTool.freehand, Icons.gesture, el.toolFreehand),
-            tool(EditorTool.text, Icons.text_fields, el.toolText),
-            const Spacer(),
-            const Divider(height: 1, indent: 10, endIndent: 10),
-            // Unified shapes entry: the "more shapes" library toggle lives with
-            // the drawing tools (drawio keeps the shapes sidebar on the left).
-            libraryToggle(
-              active: showStencils,
-              onPressed: onToggleStencils,
-              icon: Icons.category_outlined,
-              tip: el.moreShapes,
-            ),
-            libraryToggle(
-              active: showImageMaterials,
-              onPressed: onToggleImageMaterials,
-              icon: Icons.collections_outlined,
-              tip: el.imageMaterials,
-            ),
-            libraryToggle(
-              active: showThirdPartyIcons,
-              onPressed: onToggleThirdPartyIcons,
-              icon: Icons.auto_awesome_mosaic_outlined,
-              tip: el.thirdPartyIcons,
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      tool(EditorTool.select, Icons.near_me_outlined, el.toolSelect),
+                      tool(EditorTool.rectangle, Icons.crop_square, el.toolRectangle),
+                      tool(EditorTool.ellipse, Icons.circle_outlined, el.toolEllipse),
+                      tool(EditorTool.line, Icons.horizontal_rule, el.toolLine),
+                      tool(EditorTool.connector, Icons.timeline, el.toolConnector),
+                      tool(EditorTool.freehand, Icons.gesture, el.toolFreehand),
+                      tool(EditorTool.text, Icons.text_fields, el.toolText),
+                      const Spacer(),
+                      const Divider(height: 1, indent: 10, endIndent: 10),
+                      libraryToggle(
+                        active: showStencils,
+                        onPressed: onToggleStencils,
+                        icon: Icons.category_outlined,
+                        tip: el.moreShapes,
+                      ),
+                      libraryToggle(
+                        active: showImageMaterials,
+                        onPressed: onToggleImageMaterials,
+                        icon: Icons.collections_outlined,
+                        tip: el.imageMaterials,
+                      ),
+                      libraryToggle(
+                        active: showThirdPartyIcons,
+                        onPressed: onToggleThirdPartyIcons,
+                        icon: Icons.auto_awesome_mosaic_outlined,
+                        tip: el.thirdPartyIcons,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
