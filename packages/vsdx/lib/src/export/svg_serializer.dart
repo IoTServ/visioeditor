@@ -354,6 +354,9 @@ class VsdxToSvgSerializer {
     } else {
       var wroteGeom = false;
       var geomIndex = 0;
+      // Canvas [_paintLineEndings] draws arrows once from the first strokeable
+      // Geometry — do not attach markers/bake on every section.
+      var arrowsAttached = false;
       final jumpD = _connectorJumpD(page, shape);
       for (final geom in shape.geometries) {
         if (geom.noShow) continue;
@@ -369,6 +372,10 @@ class VsdxToSvgSerializer {
         final strokeD =
             (jumpD != null && !geom.noLine) ? jumpD : null;
         wroteGeom = true;
+        final attachArrows = !geom.noLine &&
+            !arrowsAttached &&
+            shape.line.hasLine &&
+            (shape.line.hasBeginArrow || shape.line.hasEndArrow);
         _writePath(
           buf,
           shape,
@@ -377,11 +384,13 @@ class VsdxToSvgSerializer {
           strokeD: strokeD,
           noFill: geom.noFill,
           noLine: geom.noLine,
+          attachArrows: attachArrows,
           // paintIdScope is page- (and underlay-) scoped so multi-page SVG
           // and shared BackPage composites do not collide defs ids.
           paintId: '$paintIdScope-${shape.id}-$geomIndex',
           indent: '$indent  ',
         );
+        if (attachArrows) arrowsAttached = true;
         geomIndex++;
       }
       // Canvas paints geometry-less 1-D connectors via orthogonal routing
@@ -412,6 +421,8 @@ class VsdxToSvgSerializer {
             d: d,
             noFill: true,
             noLine: false,
+            attachArrows: shape.line.hasLine &&
+                (shape.line.hasBeginArrow || shape.line.hasEndArrow),
             paintId: '$paintIdScope-${shape.id}-0',
             indent: '$indent  ',
           );
@@ -477,6 +488,7 @@ class VsdxToSvgSerializer {
     String? strokeD,
     required bool noFill,
     required bool noLine,
+    bool attachArrows = true,
     required String paintId,
     required String indent,
   }) {
@@ -504,6 +516,7 @@ class VsdxToSvgSerializer {
             paintId,
             defs,
             bounds: strokeBounds,
+            includeMarkers: attachArrows && !_bakeArrows,
           )
         : (paint: 'stroke="none"', markers: '');
     final sD = strokeD ?? d;
@@ -622,8 +635,8 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$sD" fill="none" ${stroke.paint} '
-          'stroke-opacity="0"${stroke.markers}/>',
+          '$indent<path d="$sD" fill="none" '
+          '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
     } else if (strokeD != null && strokeD != d) {
@@ -644,8 +657,8 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$sD" fill="none" ${stroke.paint} '
-          'stroke-opacity="0"${stroke.markers}/>',
+          '$indent<path d="$sD" fill="none" '
+          '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
     } else {
@@ -654,12 +667,12 @@ class VsdxToSvgSerializer {
       );
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$d" fill="none" ${stroke.paint} '
-          'stroke-opacity="0"${stroke.markers}/>',
+          '$indent<path d="$d" fill="none" '
+          '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
     }
-    if (_bakeArrows && !noLine && shape.line.hasLine) {
+    if (_bakeArrows && attachArrows && !noLine && shape.line.hasLine) {
       _writeBakedArrows(
         buf,
         shape,
@@ -668,6 +681,19 @@ class VsdxToSvgSerializer {
         indent: indent,
       );
     }
+  }
+
+  /// Invisible stroke carrier for SVG `<marker>` — HTML keeps the *first*
+  /// duplicate attribute, so a trailing `stroke-opacity="0"` after
+  /// [stroke.paint]'s opacity would be ignored and the rail would double-draw.
+  String _markerCarrierStroke(String paint) {
+    if (RegExp(r'stroke-opacity="[^"]*"').hasMatch(paint)) {
+      return paint.replaceAll(
+        RegExp(r'stroke-opacity="[^"]*"'),
+        'stroke-opacity="0"',
+      );
+    }
+    return '$paint stroke-opacity="0"';
   }
 
   /// Tip colour for arrowheads: solid stroke, or gradient end-stop near the tip.
@@ -804,14 +830,24 @@ class VsdxToSvgSerializer {
           }
         case 'C':
           for (var i = 0; i + 5 < nums.length; i += 6) {
+            // Near-end controls give tip tangents (canvas CubBezTo).
+            final x1 = rel ? cx + nums[i] : nums[i];
+            final y1 = rel ? cy + nums[i + 1] : nums[i + 1];
+            final x2 = rel ? cx + nums[i + 2] : nums[i + 2];
+            final y2 = rel ? cy + nums[i + 3] : nums[i + 3];
             final x = rel ? cx + nums[i + 4] : nums[i + 4];
             final y = rel ? cy + nums[i + 5] : nums[i + 5];
+            push(x1, y1);
+            push(x2, y2);
             push(x, y);
           }
         case 'Q':
           for (var i = 0; i + 3 < nums.length; i += 4) {
+            final x1 = rel ? cx + nums[i] : nums[i];
+            final y1 = rel ? cy + nums[i + 1] : nums[i + 1];
             final x = rel ? cx + nums[i + 2] : nums[i + 2];
             final y = rel ? cy + nums[i + 3] : nums[i + 3];
+            push(x1, y1);
             push(x, y);
           }
         case 'A':
@@ -1783,6 +1819,7 @@ class VsdxToSvgSerializer {
     String paintId,
     StringBuffer defs, {
     required ({double minX, double minY, double width, double height}) bounds,
+    bool includeMarkers = true,
   }) {
     if (!line.hasLine) return (paint: 'stroke="none"', markers: '');
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
@@ -1848,7 +1885,7 @@ class VsdxToSvgSerializer {
     }
     final markers = StringBuffer();
     // PDF backends ignore <marker>; callers bake geometry via [_bakeArrows].
-    if (!_bakeArrows) {
+    if (!_bakeArrows && includeMarkers) {
       // Prefer explicit tip colours over context-stroke: many viewers (and
       // PDF) ignore context-stroke, and gradient strokes would otherwise
       // leave arrowheads unpainted or wrong.
@@ -1946,8 +1983,9 @@ class VsdxToSvgSerializer {
       15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
       16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
       7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth
-      // Filled chevron (31): short fat `>` — not stealth.
-      31 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z', true),
+      // Filled chevron (31): canvas tip(0,0) wings(±0.5) notch(-0.4);
+      // mapped into viewBox with reach 0.55 (overflow visible).
+      31 => ('M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z', true),
       8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
       9 => (
           'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z',
@@ -1976,7 +2014,7 @@ class VsdxToSvgSerializer {
           'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
           false,
         ), // double open triangle
-      32 => ('M 0 1 L 10 5 L 0 9', false), // open chevron
+      32 => ('M 0 -4.091 L 10 5 L 0 14.091', false), // open chevron
       33 => ('M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9', false), // trident
       35 => ('M 0 2 L 10 5 L 0 8 L 2.5 5 Z', true), // long filled arrow
       _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
@@ -2009,8 +2047,9 @@ class VsdxToSvgSerializer {
       'M 0 2.5 L 10 5 L 0 7.5 Z' => 'M 10 2.5 L 0 5 L 10 7.5 Z',
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
-      'M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z' =>
-          'M 10 0.5 L 0 5 L 10 9.5 L 7.3 5 Z',
+      'M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z' =>
+          'M 10 -4.091 L 0 5 L 10 14.091 L 7.273 5 Z',
+      'M 0 -4.091 L 10 5 L 0 14.091' => 'M 10 -4.091 L 0 5 L 10 14.091',
       'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
       'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
       'M 5 1 V 9' => d,
@@ -2679,14 +2718,21 @@ class VsdxToSvgSerializer {
     }
     var w = 0.0;
     var n = 0;
+    final smallCaps = style.style.smallCaps;
     for (final r in text.runes) {
       n++;
+      // Match canvas / SVG synthetic small-caps (lowercase → 0.78× capitals).
+      final chFs = smallCaps &&
+              r >= 0x61 &&
+              r <= 0x7a
+          ? fs * 0.78
+          : fs;
       if (r == 0x20 || r == 0x09) {
-        w += fs * 0.33;
+        w += chFs * 0.33;
       } else if (r >= 0x2E80) {
-        w += fs; // CJK / wide ideographs
+        w += chFs; // CJK / wide ideographs
       } else {
-        w += fs * 0.55;
+        w += chFs * 0.55;
       }
     }
     var tracking = style.letterSpacingInches;

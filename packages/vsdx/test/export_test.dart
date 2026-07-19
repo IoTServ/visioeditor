@@ -1042,10 +1042,65 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains('d="M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z" fill="#000000"'),
+      contains('d="M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z" fill="#000000"'),
     );
     expect(svg.contains('L 2 5 Z'), isFalse,
         reason: 'must not reuse stealth template for chevron 31');
+  });
+
+  test('SVG marker carrier path has single stroke-opacity=0', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 4,
+                weightInches: 0.04,
+                transparency: 0.25,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    final carrier = RegExp(
+      r'<path d="[^"]+" fill="none" [^>]*marker-end=',
+    ).firstMatch(svg);
+    expect(carrier, isNotNull);
+    final attrs = carrier!.group(0)!;
+    expect(attrs, contains('stroke-opacity="0"'));
+    expect(
+      RegExp(r'stroke-opacity=').allMatches(attrs).length,
+      1,
+      reason: 'duplicate stroke-opacity makes HTML keep the opaque first value',
+    );
+  });
+
+  test('SVG attaches EndArrow once across multi-geometry shapes', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 4, by: 1)
+        .copyWith(
+      line: const VsdxLine(endArrow: 4, weightInches: 0.03),
+      geometries: <VsdxGeometry>[
+        const VsdxGeometry(
+          commands: <VsdxPathCommand>[MoveTo(0, 0), LineTo(3, 0)],
+          noFill: true,
+        ),
+        const VsdxGeometry(
+          commands: <VsdxPathCommand>[MoveTo(0, 0.2), LineTo(3, 0.2)],
+          noFill: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(RegExp(r'marker-end=').allMatches(svg).length, 1);
   });
 
   test('SVG ball arrow 10 is larger than circle-dot 13', () {

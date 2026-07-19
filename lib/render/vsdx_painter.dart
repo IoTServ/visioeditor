@@ -954,7 +954,7 @@ class VsdxPainter extends CustomPainter {
     return _geometryEndpoints(shape);
   }
 
-  /// Walk the shape's first non-empty Geometry section and recover the
+  /// Walk the shape's first strokeable Geometry section and recover the
   /// begin / end vertices (plus their tangent neighbours) so [_paintLineEndings]
   /// can render arrow heads on path-defined connectors and polylines.
   _LineEndpoints? _geometryEndpoints(VsdxShape shape) {
@@ -962,7 +962,8 @@ class VsdxPainter extends CustomPainter {
     final w = shape.width;
     final h = shape.height;
     for (final geom in shape.geometries) {
-      if (geom.commands.isEmpty) continue;
+      // Match SVG: NoShow / NoLine sections do not contribute stroke or arrows.
+      if (geom.noShow || geom.noLine || geom.commands.isEmpty) continue;
       final vertices = <Offset>[];
       Offset cursor = Offset.zero;
       var penDown = false;
@@ -1767,6 +1768,18 @@ class VsdxPainter extends CustomPainter {
             flush();
           }
           if (cur.isEmpty && isBlank) continue;
+          // Hard-break oversized tokens (CJK / long words) like SVG wrap.
+          if (piece.tp.width > maxW && unit.length > 1 && !isBlank) {
+            for (final r in unit.runes) {
+              final ch = String.fromCharCode(r);
+              final p = _posShiftPiece(ch, run, scale);
+              if (curW > 1e-9 && curW + p.tp.width > maxW) flush();
+              cur.add(p);
+              curW += p.tp.width;
+              curH = math.max(curH, p.tp.height + p.dy.abs());
+            }
+            continue;
+          }
           cur.add(piece);
           curW += piece.tp.width;
           curH = math.max(curH, piece.tp.height + piece.dy.abs());
