@@ -86,22 +86,35 @@ bool _overlaps(VsdxShape a, VsdxShape b) {
 
 /// A compact, machine-readable listing of a page's shapes — the ids/labels an
 /// Agent needs before editing (via `apply_ops` / the convenience tools).
+///
+/// Walks nested group children so members remain visible after Group. Each
+/// entry may include `parentId` when the shape is nested.
 List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
   if (doc.pages.isEmpty) return const <Map<String, dynamic>>[];
   final page = doc.pages[pageIndex.clamp(0, doc.pages.length - 1)];
   double r(double v) => double.parse(v.toStringAsFixed(3));
-  return <Map<String, dynamic>>[
-    for (final s in page.shapes)
-      <String, dynamic>{
+  final out = <Map<String, dynamic>>[];
+
+  void walk(Iterable<VsdxShape> shapes, int? parentId) {
+    for (final s in shapes) {
+      final pin = page.shapePinPage(s.id);
+      out.add(<String, dynamic>{
         'id': s.id,
         'text': (s.text ?? s.richText.plainText).trim().replaceAll('\n', ' '),
         'connector': s.is1D,
-        'x': r(s.pinX),
-        'y': r(s.pinY),
+        'group': s.children.isNotEmpty,
+        'x': r(pin.x),
+        'y': r(pin.y),
         'w': r(s.width),
         'h': r(s.height),
-      },
-  ];
+        if (parentId != null) 'parentId': parentId,
+      });
+      if (s.children.isNotEmpty) walk(s.children, s.id);
+    }
+  }
+
+  walk(page.shapes, null);
+  return out;
 }
 
 /// Reverse a document into structured Markdown (components + relations),
@@ -112,8 +125,16 @@ String explainDocument(VsdxDocument doc) {
   b.writeln();
   for (var pi = 0; pi < doc.pages.length; pi++) {
     final page = doc.pages[pi];
-    final nodes = <VsdxShape>[for (final s in page.shapes) if (!s.is1D) s];
-    final edges = <VsdxShape>[for (final s in page.shapes) if (s.is1D) s];
+    final all = <VsdxShape>[..._flattenShapes(page.shapes)];
+    // Leaf 2-D shapes (skip group shells) + top-level connectors.
+    final nodes = <VsdxShape>[
+      for (final s in all)
+        if (!s.is1D && s.children.isEmpty) s,
+    ];
+    final edges = <VsdxShape>[
+      for (final s in all)
+        if (s.is1D) s,
+    ];
     b.writeln('## Page ${pi + 1}: ${page.name}');
     b.writeln();
     b.writeln('- Size: ${page.widthInches.toStringAsFixed(2)} × '
@@ -156,6 +177,13 @@ String explainDocument(VsdxDocument doc) {
 String _text(VsdxShape s) {
   final t = s.text ?? s.richText.plainText;
   return t.trim().replaceAll('\n', ' ');
+}
+
+Iterable<VsdxShape> _flattenShapes(Iterable<VsdxShape> roots) sync* {
+  for (final s in roots) {
+    yield s;
+    if (s.children.isNotEmpty) yield* _flattenShapes(s.children);
+  }
 }
 
 String _ref(VsdxPage page, int? id) {

@@ -2568,6 +2568,9 @@ class EditorController extends ChangeNotifier {
   ImageRegistry _clipboardImages = ImageRegistry.empty;
   /// Successive plain pastes offset further so copies do not stack.
   int _pasteGeneration = 0;
+  /// Bumped on every copy/cut so a stale async [Clipboard.setData] cannot
+  /// overwrite a newer in-app or external clipboard write.
+  int _clipboardWriteSerial = 0;
   /// Last envelope we wrote to the system clipboard (trimmed). Used so
   /// [syncClipboardFromSystem] does not replace a richer in-memory clipboard
   /// (Connect rows / images) with our own stripped system encode.
@@ -2619,11 +2622,13 @@ class EditorController extends ChangeNotifier {
     _pasteGeneration = 0;
     _preferMemoryClipboard = true;
     _lastSystemEnvelope = null;
+    final writeSerial = ++_clipboardWriteSerial;
     notifyListeners();
     unawaited(_writeSystemClipboard(
       _clipboard,
       _clipboardConnects,
       images: _clipboardImages,
+      writeSerial: writeSerial,
     ));
   }
 
@@ -2636,6 +2641,7 @@ class EditorController extends ChangeNotifier {
     List<VsdxShape> shapes,
     List<VsdxConnect> connects, {
     ImageRegistry images = ImageRegistry.empty,
+    required int writeSerial,
   }) async {
     try {
       final envelope = ShapeClipboardCodec.encode(
@@ -2643,6 +2649,8 @@ class EditorController extends ChangeNotifier {
         connects: connects,
         images: images,
       );
+      // A newer copy/cut superseded this write — do not touch the pasteboard.
+      if (writeSerial != _clipboardWriteSerial) return;
       if (envelope.isEmpty) {
         // Empty after encode — keep preferring memory so a stale system
         // envelope cannot wipe the in-app clipboard.
@@ -2651,6 +2659,7 @@ class EditorController extends ChangeNotifier {
         return;
       }
       await Clipboard.setData(ClipboardData(text: envelope));
+      if (writeSerial != _clipboardWriteSerial) return;
       _lastSystemEnvelope = envelope.trim();
       _preferMemoryClipboard = false;
     } catch (_) {
@@ -2674,6 +2683,8 @@ class EditorController extends ChangeNotifier {
         if (_lastSystemEnvelope != null && trimmed == _lastSystemEnvelope) {
           return false;
         }
+        // Invalidate any in-flight system write from a prior copy/cut.
+        _clipboardWriteSerial++;
         _clipboard = payload.shapes;
         _clipboardConnects = payload.connects;
         _clipboardImages = payload.images;
@@ -2688,6 +2699,7 @@ class EditorController extends ChangeNotifier {
       if (trimmed.isEmpty || ShapeClipboardCodec.looksLikeEnvelope(text)) {
         return false;
       }
+      _clipboardWriteSerial++;
       _clipboard = <VsdxShape>[
         VsdxShapeFactory.textBox(
           id: 1,
@@ -2736,10 +2748,12 @@ class EditorController extends ChangeNotifier {
     _pasteGeneration = 0;
     _preferMemoryClipboard = true;
     _lastSystemEnvelope = null;
+    final writeSerial = ++_clipboardWriteSerial;
     unawaited(_writeSystemClipboard(
       _clipboard,
       _clipboardConnects,
       images: _clipboardImages,
+      writeSerial: writeSerial,
     ));
 
     var next = page;
