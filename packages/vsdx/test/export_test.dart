@@ -2133,6 +2133,146 @@ void main() {
         reason: 'overlapping bullet must be pushed left of 0.14');
   });
 
+  test('SVG loose edge label centres glyphs on the route midpoint', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 4,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(id: 1, ax: 1, ay: 2, bx: 5, by: 2).copyWith(
+              richText: VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'Label',
+                    charStyle: VsdxCharStyle.defaults.copyWith(
+                      fontSizeInches: 0.16,
+                    ),
+                    paraStyle: const VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.left,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Midpoint of 1→5 at x=3 in page space → local pin on the 1D shape.
+    expect(svg, contains('text-anchor="middle"'));
+    expect(svg, contains('Label'));
+    // Must not flow left-aligned into the long connector Width box.
+    expect(svg.contains('text-anchor="start"'), isFalse);
+  });
+
+  test('SVG VertAlign middle clamps overflow to top like canvas', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 0.5,
+        ).copyWith(
+          richText: VsdxRichText(
+            textBlock: const VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.middle,
+              marginTopInches: 0.04,
+              marginBottomInches: 0.04,
+            ),
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\nB\nC\nD',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Overflow → same translate as top: layoutH - mt - textH/2.
+    // If still centred on the short band, y would sit near height/2.
+    expect(svg, contains('translate(0'));
+    // Top-clamped cluster sits lower in Y-up than a naive middle centre.
+    final m = RegExp(r'translate\(0 ([-\d.]+)\) scale\(1 -1\)')
+        .firstMatch(svg);
+    expect(m, isNotNull);
+    final yc = double.parse(m!.group(1)!);
+    expect(yc, lessThan(0.25),
+        reason: 'overflowing middle must clamp toward top margin');
+  });
+
+  test('SVG pdfCompat uses dy for super/sub not baseline-shift', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'x',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.2,
+                  position: VsdxTextPosition.superscript,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg =
+        VsdxToSvgSerializer(pdfCompat: true).serializePage(doc.pages.first);
+    expect(svg.contains('baseline-shift'), isFalse);
+    expect(svg, contains('dy="-0.07"')); // 0.2 * 0.35
+  });
+
+  test('SVG CurvedText stays rectangular on glueable connectors', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 4,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(id: 1, ax: 1, ay: 1, bx: 4, by: 3)
+            .withCurvedText(true)
+            .copyWith(
+              richText: VsdxRichText(
+                textBlock: const VsdxTextBlock(
+                  pinXInches: 0.5,
+                  pinYInches: 0.1,
+                  widthInches: 1.2,
+                  heightInches: 0.4,
+                ),
+                runs: const <VsdxTextRun>[VsdxTextRun(text: 'Arc')],
+              ),
+            ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('<textPath'), isFalse);
+    expect(svg, contains('Arc'));
+  });
+
   test('multi-page SVG exposes fragment ids for in-document hyperlinks', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

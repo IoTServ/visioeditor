@@ -903,10 +903,7 @@ class VsdxPainter extends CustomPainter {
         (Paint()
           ..style = PaintingStyle.stroke
           ..color = fallbackStroke);
-    final strokeBounds = Rect.fromPoints(endPoints.start, endPoints.end)
-        .inflate(math.max(shape.line.weightInches, 0.01));
-    _applyLineGradient(paint, shape, strokeBounds);
-
+    // Arrows use tip stop colours (SVG/PDF parity) — not the full line shader.
     if (shape.line.hasBeginArrow) {
       _drawArrowAt(
         canvas,
@@ -918,6 +915,7 @@ class VsdxPainter extends CustomPainter {
         shape.line.beginArrow,
         shape.line.beginArrowSizeInches,
         paint,
+        tipColor: _arrowTipColor(shape, atEnd: false, fallback: paint.color),
       );
     }
     if (shape.line.hasEndArrow) {
@@ -931,8 +929,24 @@ class VsdxPainter extends CustomPainter {
         shape.line.endArrow,
         shape.line.endArrowSizeInches,
         paint,
+        tipColor: _arrowTipColor(shape, atEnd: true, fallback: paint.color),
       );
     }
+  }
+
+  /// Solid tip colour for arrowheads (gradient end-stop nearest the tip).
+  Color _arrowTipColor(
+    VsdxShape shape, {
+    required bool atEnd,
+    required Color fallback,
+  }) {
+    final line = shape.line;
+    if (!line.hasGradient || line.gradient!.stops.isEmpty) return fallback;
+    final s = atEnd ? line.gradient!.stops.last : line.gradient!.stops.first;
+    final base = _colourOrTheme(s.color, s.themeColorIndex) ?? fallback;
+    final stopA = (1 - s.transparency).clamp(0.0, 1.0);
+    final lineA = (1 - line.transparency.clamp(0.0, 1.0));
+    return base.withValues(alpha: base.a * stopA * lineA);
   }
 
   _LineEndpoints? _lineEndPoints(VsdxShape shape) {
@@ -1219,17 +1233,18 @@ class VsdxPainter extends CustomPainter {
     double angle,
     int arrowId,
     double sizeInches,
-    Paint linePaint,
-  ) {
+    Paint linePaint, {
+    Color? tipColor,
+  }) {
     final desc = arrowDescriptor(arrowId);
     if (desc == null) return;
     canvas.save();
     canvas.translate(tip.dx, tip.dy);
     canvas.rotate(angle);
     canvas.scale(sizeInches, sizeInches);
+    // Solid tip colour only — line gradients stay on the stroke (SVG/PDF).
     final paint = Paint()
-      ..color = linePaint.color
-      ..shader = linePaint.shader
+      ..color = tipColor ?? linePaint.color
       ..style = desc.filled ? PaintingStyle.fill : PaintingStyle.stroke
       ..strokeWidth = math.max(linePaint.strokeWidth / sizeInches, 0.05);
     canvas.drawPath(desc.path, paint);

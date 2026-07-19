@@ -2538,6 +2538,92 @@ class VsdxToSvgSerializer {
     return shape.name;
   }
 
+  /// Centre a tight plate + glyphs on a connector midpoint (canvas loose edge).
+  void _writeLooseEdgeLabel(
+    StringBuffer buf, {
+    required VsdxShape shape,
+    required VsdxTheme theme,
+    required VsdxPage page,
+    required List<VsdxTextRun> runs,
+    required double pinX,
+    required double pinY,
+    required double angleRad,
+    required int textDirection,
+    required VsdxColor? backgroundColor,
+    required double backgroundTransparency,
+    required String indent,
+  }) {
+    final paras = _splitSvgParagraphs(runs);
+    final lines = <({
+      List<(String text, VsdxTextRun run)> segs,
+      double lineH,
+      double width,
+    })>[];
+    var totalH = 0.0;
+    var maxW = 0.0;
+    for (final p in paras) {
+      final lineH = _svgParaLineHeight(p.segs, p.style);
+      // Natural width — no wrap into the connector's Width×Height box.
+      var w = 0.0;
+      for (final (raw, run) in p.segs) {
+        w += _estSvgTextWidth(raw, run.charStyle);
+      }
+      lines.add((segs: p.segs, lineH: lineH, width: w));
+      totalH += lineH;
+      if (w > maxW) maxW = w;
+    }
+    if (lines.isEmpty) return;
+    totalH = math.max(totalH, 0.04);
+    maxW = math.max(maxW, 0.04);
+
+    final plate = backgroundColor ?? page.backgroundColor ?? VsdxColor.white;
+    final bgOp = backgroundColor != null
+        ? _combinedOpacity(backgroundColor, backgroundTransparency)
+        : 1.0;
+    const pad = 0.03;
+    final angle =
+        angleRad != 0 ? ' rotate(${_n(angleRad * 180 / math.pi)})' : '';
+    final dirRot = textDirection == 1 ? ' rotate(-90)' : '';
+    buf.writeln(
+      '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle$dirRot">'
+      '<rect x="${_n(-maxW / 2 - pad)}" y="${_n(-totalH / 2 - pad)}" '
+      'width="${_n(maxW + 2 * pad)}" height="${_n(totalH + 2 * pad)}" '
+      'rx="0.02" fill="${_hex(plate)}" '
+      'fill-opacity="${_n(bgOp)}" stroke="none"/>'
+      '<g transform="scale(1 -1)">',
+    );
+    var yTop = -totalH / 2;
+    for (final line in lines) {
+      var bodyFont = 0.14;
+      for (final (_, run) in line.segs) {
+        if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
+          bodyFont = run.charStyle.fontSizeInches;
+          break;
+        }
+      }
+      final yRel = yTop + line.lineH / 2;
+      final yText = pdfCompat ? yRel + bodyFont * 0.35 : yRel;
+      final baseline = pdfCompat ? '' : ' dominant-baseline="middle"';
+      final body = StringBuffer();
+      for (var si = 0; si < line.segs.length; si++) {
+        final (raw, run) = line.segs[si];
+        _writeStyledTspans(
+          body,
+          raw: raw,
+          style: run.charStyle,
+          theme: theme,
+          xAttr: si == 0 ? 'x="0"' : null,
+        );
+      }
+      buf.writeln(
+        '$indent  <text xml:space="preserve" text-anchor="middle"$baseline '
+        'y="${_n(yText)}">$body</text>',
+      );
+      yTop += line.lineH;
+    }
+    buf.writeln('$indent</g></g>');
+  }
+
   void _writeText(
     StringBuffer buf,
     VsdxShape shape,
@@ -2596,41 +2682,29 @@ class VsdxToSvgSerializer {
     }
     xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
 
-    // TextBkgnd. Loose edge labels (no TxtPin) get a tight plate around the
-    // glyphs — matching canvas — instead of the connector's Width×Height box.
-    // Canvas always paints a plate for loose edges (page/white when no
-    // TextBkgnd) so labels stay readable over the stroke.
+    // Loose edge labels (no TxtPin): canvas centres a tight plate + glyphs on
+    // the route midpoint and returns — do not flow into Width×Height.
     final looseEdge = shape.isGlueableConnector &&
         block.pinXInches == null &&
         block.pinYInches == null;
     if (looseEdge) {
-      final plate = block.backgroundColor ??
-          page.backgroundColor ??
-          VsdxColor.white;
-      final bgOp = block.backgroundColor != null
-          ? _combinedOpacity(
-              block.backgroundColor,
-              block.backgroundTransparency,
-            )
-          : 1.0;
-      final plain = runs.map((r) => r.text).join();
-      final fs = runs
-          .map((r) => r.charStyle.fontSizeInches)
-          .fold<double>(0.14, math.max);
-      final estW = math.max(plain.length * fs * 0.55, fs);
-      final estH = fs * 1.4;
-      const pad = 0.03;
-      final angle = block.angleRad != 0
-          ? ' rotate(${_n(block.angleRad * 180 / math.pi)})'
-          : '';
-      buf.writeln(
-        '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle">'
-        '<rect x="${_n(-estW / 2 - pad)}" y="${_n(-estH / 2 - pad)}" '
-        'width="${_n(estW + 2 * pad)}" height="${_n(estH + 2 * pad)}" '
-        'rx="0.02" fill="${_hex(plate)}" '
-        'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
+      _writeLooseEdgeLabel(
+        buf,
+        shape: shape,
+        theme: theme,
+        page: page,
+        runs: runs,
+        pinX: pinX,
+        pinY: pinY,
+        angleRad: block.angleRad,
+        textDirection: block.textDirection,
+        backgroundColor: block.backgroundColor,
+        backgroundTransparency: block.backgroundTransparency,
+        indent: indent,
       );
-    } else if (block.backgroundColor != null) {
+      return;
+    }
+    if (block.backgroundColor != null) {
       final bgOp = _combinedOpacity(
         block.backgroundColor,
         block.backgroundTransparency,
@@ -2643,13 +2717,9 @@ class VsdxToSvgSerializer {
       );
     }
 
-    // CurvedText (editor User cell): arc layout matching canvas
-    // [_paintCurvedText]. Edge labels without TxtPin stay rectangular.
-    final isLooseEdge = shape.isGlueableConnector &&
-        block.pinXInches == null &&
-        block.pinYInches == null;
+    // CurvedText: canvas disables arc layout for every glueable connector.
     // package:pdf ignores <textPath> — fall through to rectangular layout.
-    if (shape.curvedText && !isLooseEdge && !pdfCompat) {
+    if (shape.curvedText && !shape.isGlueableConnector && !pdfCompat) {
       _writeCurvedText(
         buf,
         shape: shape,
@@ -2744,12 +2814,15 @@ class VsdxToSvgSerializer {
       cursor += p.style.spaceAfterInches;
     }
     final textH = math.max(cursor, 0.04);
+    final contentBand = layoutH - layoutMt - layoutMb;
     final yCenter = switch (block.verticalAlign) {
       VsdxVertAlign.top => layoutH - layoutMt - textH / 2,
       VsdxVertAlign.bottom => layoutMb + textH / 2,
-      // Content-band centre (honours Top/Bottom margins), matching canvas.
-      VsdxVertAlign.middle =>
-        layoutMb + (layoutH - layoutMt - layoutMb) / 2,
+      // Content-band centre; when taller than the band, clamp like canvas
+      // (grow downward from the top margin).
+      VsdxVertAlign.middle => textH > contentBand + 1e-9
+          ? layoutH - layoutMt - textH / 2
+          : layoutMb + contentBand / 2,
     };
 
     // Text glyphs: block-local → upright (scale 1,-1). One <text> per
@@ -3265,11 +3338,21 @@ class VsdxToSvgSerializer {
     }
     // letter-spacing already includes FontScale above — do not rewrite it
     // with the raw Character Letterspace cell.
+    // package:pdf ignores baseline-shift — use canvas-matching dy offsets.
+    final baseFs = math.max(c.fontSizeInches, 0.04);
     switch (c.position) {
       case VsdxTextPosition.superscript:
-        attrs.write(' baseline-shift="super"');
+        if (pdfCompat) {
+          attrs.write(' dy="${_n(-baseFs * 0.35)}"');
+        } else {
+          attrs.write(' baseline-shift="super"');
+        }
       case VsdxTextPosition.subscript:
-        attrs.write(' baseline-shift="sub"');
+        if (pdfCompat) {
+          attrs.write(' dy="${_n(baseFs * 0.2)}"');
+        } else {
+          attrs.write(' baseline-shift="sub"');
+        }
       case VsdxTextPosition.normal:
         break;
     }
