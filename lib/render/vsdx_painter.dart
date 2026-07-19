@@ -17,7 +17,14 @@ import 'dart:ui' as ui show FontFeature, Gradient, ImageFilter;
 
 import 'package:flutter/material.dart';
 
-import 'package:vsdx/vsdx.dart';
+import 'package:vsdx/vsdx.dart'
+    hide
+        kDefaultLineJumpRadiusInches,
+        lineJumpsEnabledForCode,
+        polylineCrossings,
+        polylineSvg,
+        polylineWithJumpsSvg,
+        segmentIntersection;
 import 'arrow_library.dart';
 import 'connector_router.dart';
 import 'dash_path.dart';
@@ -222,33 +229,27 @@ class VsdxPainter extends CustomPainter {
     return out;
   }
 
-  /// Cache every top-level connector's page-space polyline (z-ordered) so a
-  /// connector can hop over the ones drawn beneath it (line jumps).
+  /// Cache every connector's page-space polyline (z-ordered, including nested
+  /// and geometry-less) so a connector can hop over ones drawn beneath it.
   void _computeConnectorRoutes(VsdxPage p) {
     final routes = <List<Offset>>[];
     final z = <int, int>{};
-    for (final s in p.shapes) {
-      if (!s.is1D || !s.hasGeometry) continue;
-      final pts = _connectorPagePolyline(s);
-      if (pts.length < 2) continue;
-      z[s.id] = routes.length;
-      routes.add(pts);
-    }
-    _connRoutesPage = routes;
-    _connZ = z;
-  }
-
-  /// The connector [s]'s drawn polyline in page inches (its first pure
-  /// MoveTo/LineTo geometry, mapped through the shape's XForm), or empty.
-  List<Offset> _connectorPagePolyline(VsdxShape s) {
-    for (final g in s.geometries) {
-      if (g.noShow) continue;
-      final local = _polylineLocalPoints(g);
-      if (local.length >= 2) {
-        return <Offset>[for (final pt in local) _localToPageOffset(s, pt)];
+    void walk(List<VsdxShape> list) {
+      for (final s in list) {
+        if (s.is1D) {
+          final pts = p.drawnConnectorPagePolyline(s);
+          if (pts.length >= 2) {
+            z[s.id] = routes.length;
+            routes.add(<Offset>[for (final pt in pts) Offset(pt.x, pt.y)]);
+          }
+        }
+        if (!s.collapsed) walk(s.children);
       }
     }
-    return const <Offset>[];
+
+    walk(p.shapes);
+    _connRoutesPage = routes;
+    _connZ = z;
   }
 
   /// Local MoveTo/LineTo vertices of [g], or empty if it holds any other
@@ -450,7 +451,11 @@ class VsdxPainter extends CustomPainter {
   Path? _lineJumpsPath(VsdxShape shape, VsdxGeometry geom) {
     final k = _connZ[shape.id];
     if (k == null || k == 0) return null; // nothing drawn beneath it
-    final route = _polylineLocalPoints(geom);
+    // Prefer the shared page-space route (includes geometry-less / nested).
+    final pageRoute = _connRoutesPage[k];
+    final route = pageRoute.isNotEmpty
+        ? <Offset>[for (final pg in pageRoute) _pageToLocal(shape, pg)]
+        : _polylineLocalPoints(geom);
     if (route.length < 2) return null;
     final unders = <List<Offset>>[
       for (var i = 0; i < k; i++)
@@ -469,15 +474,24 @@ class VsdxPainter extends CustomPainter {
     final routed = router.route(shape, page: page);
     if (routed == null) return;
 
-    final path = Path();
     final pts = routed.points.toList(growable: false);
-    for (var i = 0; i < pts.length; i++) {
-      final local = _pageToLocal(shape, pts[i]);
-      if (i == 0) {
-        path.moveTo(local.dx, local.dy);
-      } else {
-        path.lineTo(local.dx, local.dy);
-      }
+    final localPts = <Offset>[
+      for (final p in pts) _pageToLocal(shape, p),
+    ];
+    Path path;
+    final k = _connZ[shape.id];
+    if (_lineJumpsActive && k != null && k > 0) {
+      final unders = <List<Offset>>[
+        for (var i = 0; i < k; i++)
+          <Offset>[
+            for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg),
+          ],
+      ];
+      path = polylineCrossings(localPts, unders).isEmpty
+          ? _polylinePath(localPts)
+          : polylineWithJumps(localPts, unders, lineJumpRadiusInches);
+    } else {
+      path = _polylinePath(localPts);
     }
     // Match [_paintGeometries]: LineGradient + CompoundType on connectors
     // that only carry BeginX/EndX (no Geometry section).
@@ -495,6 +509,18 @@ class VsdxPainter extends CustomPainter {
       shape.line.compoundType,
       shape.line.weightInches,
     );
+  }
+
+  Path _polylinePath(List<Offset> pts) {
+    final path = Path();
+    for (var i = 0; i < pts.length; i++) {
+      if (i == 0) {
+        path.moveTo(pts[i].dx, pts[i].dy);
+      } else {
+        path.lineTo(pts[i].dx, pts[i].dy);
+      }
+    }
+    return path;
   }
 
   /// Inverse of the XForm we apply in [_paintShape], i.e. map a page-inch

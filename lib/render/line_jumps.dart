@@ -3,12 +3,13 @@
 /// instead of forming an ambiguous "+". This is a pure, render-only overlay —
 /// it never touches the model or the round-trip geometry.
 ///
-/// All coordinates are plain [Offset]s; the caller just has to express [route]
-/// and [unders] in the *same* coordinate space (the painter uses the current
-/// connector's shape-local inches).
+/// Geometry lives in `package:vsdx` ([Offset2D]); this file adapts to Flutter
+/// [Offset] / [Path] for the canvas painter.
 library;
 
 import 'dart:ui';
+
+import 'package:vsdx/vsdx.dart' as vsdx;
 
 /// Whether a page's Visio `LineJumpCode` (Page Layout section) enables line
 /// jumps at all. `0` (visPLOJumpNone) means the file explicitly turns jumps
@@ -16,36 +17,33 @@ import 'dart:ui';
 /// Visio and 万兴图示/Edraw render such pages. Any other value (1 horizontal,
 /// 2 vertical, 3 last-routed, 4/5 by z-order) or an unset code keeps the
 /// hop-over overlay.
-bool lineJumpsEnabledForCode(int? lineJumpCode) => lineJumpCode != 0;
+bool lineJumpsEnabledForCode(int? lineJumpCode) =>
+    vsdx.lineJumpsEnabledForCode(lineJumpCode);
 
 /// Intersection of segments `a→b` and `c→d` when they *properly* cross
 /// (strictly interior to both segments), else `null`.
 Offset? segmentIntersection(Offset a, Offset b, Offset c, Offset d) {
-  final r = b - a;
-  final s = d - c;
-  final denom = r.dx * s.dy - r.dy * s.dx;
-  if (denom.abs() < 1e-9) return null; // parallel or collinear
-  final ac = c - a;
-  final t = (ac.dx * s.dy - ac.dy * s.dx) / denom;
-  final u = (ac.dx * r.dy - ac.dy * r.dx) / denom;
-  const eps = 1e-6;
-  if (t <= eps || t >= 1 - eps || u <= eps || u >= 1 - eps) return null;
-  return a + r * t;
+  final p = vsdx.segmentIntersection(
+    vsdx.Offset2D(a.dx, a.dy),
+    vsdx.Offset2D(b.dx, b.dy),
+    vsdx.Offset2D(c.dx, c.dy),
+    vsdx.Offset2D(d.dx, d.dy),
+  );
+  if (p == null) return null;
+  return Offset(p.x, p.y);
 }
 
 /// Every point where polyline [route] properly crosses a segment of any
 /// polyline in [unders]. Exposed for testing.
 List<Offset> polylineCrossings(List<Offset> route, List<List<Offset>> unders) {
-  final out = <Offset>[];
-  for (var i = 0; i + 1 < route.length; i++) {
-    for (final poly in unders) {
-      for (var j = 0; j + 1 < poly.length; j++) {
-        final p = segmentIntersection(route[i], route[i + 1], poly[j], poly[j + 1]);
-        if (p != null) out.add(p);
-      }
-    }
-  }
-  return out;
+  final pts = vsdx.polylineCrossings(
+    <vsdx.Offset2D>[for (final o in route) vsdx.Offset2D(o.dx, o.dy)],
+    <List<vsdx.Offset2D>>[
+      for (final poly in unders)
+        <vsdx.Offset2D>[for (final o in poly) vsdx.Offset2D(o.dx, o.dy)],
+    ],
+  );
+  return <Offset>[for (final p in pts) Offset(p.x, p.y)];
 }
 
 /// A stroke [Path] for polyline [route] that arcs over each crossing with a
@@ -62,7 +60,6 @@ Path polylineWithJumps(List<Offset> route, List<List<Offset>> unders, double r) 
     final len = seg.distance;
     if (len < 1e-9) continue;
 
-    // Crossing positions along this segment (param 0..1), sorted along a→b.
     final ts = <double>[];
     for (final poly in unders) {
       for (var j = 0; j + 1 < poly.length; j++) {
@@ -72,16 +69,14 @@ Path polylineWithJumps(List<Offset> route, List<List<Offset>> unders, double r) 
     }
     ts.sort();
 
-    final half = r / len; // half the jump's chord, in segment-param units
+    final half = r / len;
     var cursor = 0.0;
     for (final t in ts) {
-      // Skip jumps that would overlap the previous one or spill past an end.
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
       final inP = a + seg * (t - half);
       final outP = a + seg * (t + half);
       path.lineTo(inP.dx, inP.dy);
-      // Semicircle (chord = 2r, radius = r) bulging to one consistent side.
       path.arcToPoint(outP, radius: Radius.circular(r), clockwise: false);
       cursor = t + half;
     }

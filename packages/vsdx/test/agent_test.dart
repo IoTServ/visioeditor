@@ -137,6 +137,32 @@ void main() {
       expect(r.log.every((l) => l.contains('not found')), isTrue);
     });
 
+    test('resize_shape scales 1D Begin→End without glue undo', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final line = VsdxShapeFactory.line(
+        id: id,
+        ax: 1,
+        ay: 1,
+        bx: 3,
+        by: 1,
+      );
+      doc = doc.replacePage(0, doc.pages.first.addShape(line));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'resize_shape',
+          'id': id,
+          'w': 4,
+          'h': line.height,
+        },
+      ]);
+      final resized = r.document.pages.first.findShapeById(id)!;
+      expect(resized.beginX, closeTo(1, 1e-9));
+      expect(resized.endX, closeTo(5, 1e-9));
+      expect(resized.width, closeTo(4, 1e-9));
+    });
+
     test('move_shape translates Begin/End with the pin', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

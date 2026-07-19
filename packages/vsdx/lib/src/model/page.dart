@@ -656,18 +656,42 @@ class VsdxPage {
   /// Page-inch polyline for a geometry-less 1-D connector as the canvas paints
   /// it: perimeter glue (when [connects] exist) + [ObstacleRouter] avoidance.
   ///
+  /// Nested connectors store Begin/End in the *parent* local frame — those are
+  /// lifted to page inches before routing.
+  ///
   /// Used by SVG/PDF export so dynamic connectors match on-screen routing.
   List<Offset2D> autoRoutedConnectorPolyline(VsdxShape connector) {
     if (!connector.is1D) return const <Offset2D>[];
-    final bx = connector.beginX;
-    final by = connector.beginY;
-    final ex = connector.endX;
-    final ey = connector.endY;
-    if (bx == null || by == null || ex == null || ey == null) {
+    final rawBx = connector.beginX;
+    final rawBy = connector.beginY;
+    final rawEx = connector.endX;
+    final rawEy = connector.endY;
+    if (rawBx == null || rawBy == null || rawEx == null || rawEy == null) {
       return const <Offset2D>[];
     }
+
+    // Nested Begin/End live in the parent frame (see [rerouteConnectors]).
+    final parentId = findParentId(connector.id);
+    Offset2D toPage(double x, double y) {
+      if (parentId == null) return Offset2D(x, y);
+      return localToPageDeep(parentId, Offset2D(x, y));
+    }
+
+    final begin = toPage(rawBx, rawBy);
+    final end = toPage(rawEx, rawEy);
+    final bx = begin.x;
+    final by = begin.y;
+    final ex = end.x;
+    final ey = end.y;
+
     if (connector.waypoints.isNotEmpty) {
-      return connectorRoute(connector);
+      final wps = parentId == null
+          ? connector.waypoints
+          : <Offset2D>[
+              for (final w in connector.waypoints)
+                localToPageDeep(parentId, w),
+            ];
+      return <Offset2D>[Offset2D(bx, by), ...wps, Offset2D(ex, ey)];
     }
     if (connector.straightRoute) {
       return <Offset2D>[Offset2D(bx, by), Offset2D(ex, ey)];
@@ -693,6 +717,37 @@ class VsdxPage {
       }
     }
     return _autoRoute(ax, ay, zx, zy, excludeIds: exclude);
+  }
+
+  /// Drawn connector polyline in **page** inches: baked MoveTo/LineTo geometry
+  /// when present, otherwise [autoRoutedConnectorPolyline]. Walks nested
+  /// shapes correctly for SVG line-jump collection.
+  List<Offset2D> drawnConnectorPagePolyline(VsdxShape s) {
+    if (!s.is1D) return const <Offset2D>[];
+    if (s.hasGeometry && !s.curved && !s.rounded) {
+      final local = <Offset2D>[];
+      for (final g in s.geometries) {
+        if (g.noShow) continue;
+        local.clear();
+        var ok = true;
+        for (final c in g.commands) {
+          if (c is MoveTo) {
+            local.add(Offset2D(c.x, c.y));
+          } else if (c is LineTo) {
+            local.add(Offset2D(c.x, c.y));
+          } else {
+            ok = false;
+            break;
+          }
+        }
+        if (ok && local.length >= 2) {
+          return <Offset2D>[
+            for (final p in local) localToPageDeep(s.id, p),
+          ];
+        }
+      }
+    }
+    return autoRoutedConnectorPolyline(s);
   }
 
   /// The drawn route of connector [s] in page inches: begin → waypoints → end,

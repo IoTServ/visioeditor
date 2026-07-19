@@ -172,13 +172,63 @@ ApplyResult applyOps(
           log.add('resize_shape: needs id,w,h');
           break;
         }
-        if (page.findShapeById(id) == null) {
+        final resizing = page.findShapeById(id);
+        if (resizing == null) {
           log.add('resize_shape: shape $id not found');
           break;
         }
-        page = page.updateShapeById(
-            id, (s) => s.resizeTo(pinX: s.pinX, pinY: s.pinY, width: w, height: h));
-        reroute = true;
+        if (resizing.is1D &&
+            resizing.beginX != null &&
+            resizing.beginY != null &&
+            resizing.endX != null &&
+            resizing.endY != null) {
+          // Scale Begin→End (and waypoints) to the requested Width/Height.
+          // Do not mark reroute — glue re-bake would undo an unglued resize.
+          final ax = resizing.beginX!;
+          final ay = resizing.beginY!;
+          final bx = resizing.endX!;
+          final by = resizing.endY!;
+          final sx = resizing.width.abs() < 1e-12 ? 1.0 : w / resizing.width;
+          final sy = resizing.height.abs() < 1e-12 ? 1.0 : h / resizing.height;
+          final newEx = ax + (bx - ax) * sx;
+          final newEy = ay + (by - ay) * sy;
+          final newWps = <Offset2D>[
+            for (final p in resizing.waypoints)
+              Offset2D(ax + (p.x - ax) * sx, ay + (p.y - ay) * sy),
+          ];
+          final poly = <Offset2D>[
+            Offset2D(ax, ay),
+            ...newWps,
+            Offset2D(newEx, newEy),
+          ];
+          page = page.updateShapeById(
+            id,
+            (s) => s
+                .copyWith(
+                  beginX: ax,
+                  beginY: ay,
+                  endX: newEx,
+                  endY: newEy,
+                  pinX: (ax + newEx) / 2,
+                  pinY: (ay + newEy) / 2,
+                  width: newEx - ax,
+                  height: newEy - ay,
+                  waypoints: newWps,
+                )
+                .reshapeAsPolyline(poly),
+          );
+        } else {
+          page = page.updateShapeById(
+            id,
+            (s) => s.resizeTo(
+              pinX: s.pinX,
+              pinY: s.pinY,
+              width: w,
+              height: h,
+            ),
+          );
+          reroute = true;
+        }
       case 'delete_shape':
       case 'delete':
         final id = _resolveId(op['id']);

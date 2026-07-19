@@ -28,6 +28,7 @@ import '../model/theme.dart';
 import '../parser/metafile.dart';
 import '../parser/metafile_drawing.dart';
 import '../utils/color.dart';
+import 'line_jumps.dart';
 
 /// Which layer flags the SVG serializer honours when filtering shapes.
 enum SvgLayerFilter {
@@ -67,6 +68,11 @@ class VsdxToSvgSerializer {
 
   /// Current image registry, swapped in by [serializePage] / [serializeDocument].
   ImageRegistry _images = ImageRegistry.empty;
+
+  /// Line-jump state for the page currently being serialised.
+  bool _jumpsEnabled = false;
+  List<List<Offset2D>> _jumpRoutes = const <List<Offset2D>>[];
+  Map<int, int> _jumpZ = const <int, int>{};
 
   /// Serialize the entire document into a single multi-page SVG with each
   /// page wrapped in a `<g class="page-N">` translated downward. Use
@@ -167,6 +173,7 @@ class VsdxToSvgSerializer {
       '$indent<g transform="translate(0 ${_n(h)}) '
       'scale(${_n(pxPerInch)} ${_n(-pxPerInch)})">',
     );
+    _prepareLineJumps(page);
     final underlay = underlayPage;
     if (underlay != null && underlay.shapes.isNotEmpty) {
       final clipId = 'underlay-clip-${page.id}';
@@ -220,6 +227,62 @@ class VsdxToSvgSerializer {
         : page.visibleLayerIds;
   }
 
+  void _prepareLineJumps(VsdxPage page) {
+    _jumpsEnabled = lineJumpsEnabledForCode(page.pageSheet.lineJumpCode);
+    if (!_jumpsEnabled) {
+      _jumpRoutes = const <List<Offset2D>>[];
+      _jumpZ = const <int, int>{};
+      return;
+    }
+    final routes = <List<Offset2D>>[];
+    final z = <int, int>{};
+    void walk(List<VsdxShape> list) {
+      for (final s in list) {
+        if (s.is1D) {
+          final route = page.drawnConnectorPagePolyline(s);
+          if (route.length >= 2) {
+            z[s.id] = routes.length;
+            routes.add(route);
+          }
+        }
+        if (!s.collapsed) walk(s.children);
+      }
+    }
+
+    walk(page.shapes);
+    _jumpRoutes = routes;
+    _jumpZ = z;
+  }
+
+  /// Shape-local stroke `d` with line jumps when this 1-D shape crosses
+  /// connectors drawn beneath it. Returns `null` when jumps do not apply.
+  String? _connectorJumpD(VsdxPage page, VsdxShape shape) {
+    if (!_jumpsEnabled || !shape.is1D) return null;
+    final z = _jumpZ[shape.id];
+    if (z == null) return null;
+    final pageRoute = _jumpRoutes[z];
+    final localRoute = <Offset2D>[
+      for (final p in pageRoute) page.pageToLocalDeep(shape.id, p),
+    ];
+    if (localRoute.length < 2) return null;
+    if (z == 0) return polylineSvg(localRoute, format: _n);
+    final unders = <List<Offset2D>>[
+      for (var i = 0; i < z; i++)
+        <Offset2D>[
+          for (final p in _jumpRoutes[i]) page.pageToLocalDeep(shape.id, p),
+        ],
+    ];
+    if (polylineCrossings(localRoute, unders).isEmpty) {
+      return polylineSvg(localRoute, format: _n);
+    }
+    return polylineWithJumpsSvg(
+      localRoute,
+      unders,
+      kDefaultLineJumpRadiusInches,
+      format: _n,
+    );
+  }
+
   void _writeShape(
     StringBuffer buf,
     VsdxShape shape,
@@ -256,15 +319,20 @@ class VsdxToSvgSerializer {
     } else {
       var wroteGeom = false;
       var geomIndex = 0;
+      final jumpD = _connectorJumpD(page, shape);
       for (final geom in shape.geometries) {
         if (geom.noShow) continue;
-        final d = _geometryToD(
+        var d = _geometryToD(
           geom,
           shape.width,
           shape.height,
           roundingInches: shape.line.roundingInches,
         );
         if (d.isEmpty) continue;
+        // Prefer jump-aware stroke for 1-D connectors (first stroked geom).
+        if (jumpD != null && !geom.noLine) {
+          d = jumpD;
+        }
         wroteGeom = true;
         _writePath(
           buf,
@@ -279,6 +347,7 @@ class VsdxToSvgSerializer {
           indent: '$indent  ',
         );
         geomIndex++;
+        if (jumpD != null && !geom.noLine) break;
       }
       // Canvas paints geometry-less 1-D connectors via orthogonal routing
       // (perimeter glue + ObstacleRouter). Match that for SVG/PDF export.
@@ -288,20 +357,24 @@ class VsdxToSvgSerializer {
           shape.beginY != null &&
           shape.endX != null &&
           shape.endY != null) {
-        final route = page.autoRoutedConnectorPolyline(shape);
-        if (route.length >= 2) {
-          final d = StringBuffer();
+        final d = jumpD ?? () {
+          final route = page.autoRoutedConnectorPolyline(shape);
+          if (route.length < 2) return '';
+          final buf = StringBuffer();
           for (var i = 0; i < route.length; i++) {
-            final local = _pageToLocal(shape, route[i].x, route[i].y);
-            d.write(i == 0
+            final local = page.pageToLocalDeep(shape.id, route[i]);
+            buf.write(i == 0
                 ? 'M ${_n(local.x)} ${_n(local.y)}'
                 : ' L ${_n(local.x)} ${_n(local.y)}');
           }
+          return buf.toString();
+        }();
+        if (d.isNotEmpty) {
           _writePath(
             buf,
             shape,
             theme,
-            d: d.toString(),
+            d: d,
             noFill: true,
             noLine: false,
             paintId: '$paintIdScope-${shape.id}-0',
