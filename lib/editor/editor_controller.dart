@@ -1063,7 +1063,9 @@ class EditorController extends ChangeNotifier {
       for (final id in movable) {
         next = next.reparentShape(id, containerId);
       }
-      return next.rerouteConnectors(movedShapeIds: movedIds);
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
   }
 
@@ -1136,7 +1138,9 @@ class EditorController extends ChangeNotifier {
         }
         out = out.updateShapeById(id, _withoutCollapsedGlue);
       }
-      return out.rerouteConnectors(movedShapeIds: movedIds);
+      return out
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     final page = currentPage;
     final s = page?.findShapeById(id);
@@ -1323,7 +1327,9 @@ class EditorController extends ChangeNotifier {
           }
         }
         return changed
-            ? next.rerouteConnectors(movedShapeIds: movedIds)
+            ? next
+                .recalculateFormulas(changedShapeIds: movedIds)
+                .rerouteConnectors(movedShapeIds: movedIds)
             : p;
       },
       transient: transient,
@@ -1404,6 +1410,7 @@ class EditorController extends ChangeNotifier {
       if (host == null) return p;
       return p
           .updateShapeById(poolId, (_) => SwimlaneOps.addLane(host, newLane))
+          .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
@@ -1429,7 +1436,9 @@ class EditorController extends ChangeNotifier {
         (_) => SwimlaneOps.removeLane(host, laneId),
       );
       next = _pruneConnectsReferencing(next, doomed);
-      return next.rerouteConnectors(movedShapeIds: movedIds);
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1509,6 +1518,7 @@ class EditorController extends ChangeNotifier {
       return p
           .updateShapeById(
               tableId, (_) => TableOps.addRow(host, startId: startId))
+          .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
@@ -1530,6 +1540,7 @@ class EditorController extends ChangeNotifier {
       return p
           .updateShapeById(
               tableId, (_) => TableOps.addColumn(host, startId: startId))
+          .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
@@ -1570,7 +1581,9 @@ class EditorController extends ChangeNotifier {
         (_) => TableOps.removeRow(host, rowIndex),
       );
       next = _pruneConnectsReferencing(next, doomed);
-      return next.rerouteConnectors(movedShapeIds: movedIds);
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1610,7 +1623,9 @@ class EditorController extends ChangeNotifier {
         (_) => TableOps.removeColumn(host, colIndex),
       );
       next = _pruneConnectsReferencing(next, doomed);
-      return next.rerouteConnectors(movedShapeIds: movedIds);
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
       ..clear()
@@ -1761,7 +1776,9 @@ class EditorController extends ChangeNotifier {
           next = next.syncGlueTriggers(connectorIds: affected);
         }
       }
-      return next.rerouteConnectors(movedShapeIds: movedIds);
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
     });
     // Select the master cell after merge.
     final table = currentPage?.findShapeById(tableId);
@@ -1799,6 +1816,7 @@ class EditorController extends ChangeNotifier {
             tableId,
             (_) => TableOps.unmergeCells(host, row: row, col: col),
           )
+          .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds);
     });
     _selection
@@ -1815,14 +1833,18 @@ class EditorController extends ChangeNotifier {
     bool transient = false,
   }) {
     if (_isStructureLocked(tableId)) return;
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage(
       (p) {
         final host = p.findShapeById(tableId);
         if (host == null || !TableOps.isTable(host)) return p;
-        return p.updateShapeById(
-          tableId,
-          (_) => TableOps.resizeColumnBoundary(host, afterCol, deltaInches),
-        );
+        return p
+            .updateShapeById(
+              tableId,
+              (_) => TableOps.resizeColumnBoundary(host, afterCol, deltaInches),
+            )
+            .recalculateFormulas(changedShapeIds: movedIds)
+            .rerouteConnectors(movedShapeIds: movedIds);
       },
       transient: transient,
     );
@@ -1836,14 +1858,18 @@ class EditorController extends ChangeNotifier {
     bool transient = false,
   }) {
     if (_isStructureLocked(tableId)) return;
+    final movedIds = _subtreeIds(<int>{tableId});
     updateCurrentPage(
       (p) {
         final host = p.findShapeById(tableId);
         if (host == null || !TableOps.isTable(host)) return p;
-        return p.updateShapeById(
-          tableId,
-          (_) => TableOps.resizeRowBoundary(host, afterRow, deltaPageY),
-        );
+        return p
+            .updateShapeById(
+              tableId,
+              (_) => TableOps.resizeRowBoundary(host, afterRow, deltaPageY),
+            )
+            .recalculateFormulas(changedShapeIds: movedIds)
+            .rerouteConnectors(movedShapeIds: movedIds);
       },
       transient: transient,
     );
@@ -3018,6 +3044,25 @@ class EditorController extends ChangeNotifier {
         ]);
       }
     }
+    // Align XFTRIGGER with remapped Connect rows (or clear dangling triggers
+    // when a connector was pasted without its glue targets).
+    final pastedIds = <int>{};
+    void collectIds(VsdxShape s) {
+      pastedIds.add(s.id);
+      for (final c in s.children) {
+        collectIds(c);
+      }
+    }
+
+    for (final id in newIds) {
+      final s = next.findShapeById(id);
+      if (s != null) collectIds(s);
+    }
+    if (pastedIds.isNotEmpty) {
+      next = next
+          .syncGlueTriggers(connectorIds: pastedIds)
+          .recalculateFormulas(changedShapeIds: pastedIds);
+    }
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
@@ -3372,12 +3417,32 @@ class EditorController extends ChangeNotifier {
         final beforeAabb = next.shapePageAabb(id);
         next = next.updateShapeById(
           id,
-          (sh) => sh.resizeTo(
-            pinX: sh.pinX,
-            pinY: sh.pinY,
-            width: nw,
-            height: nh,
-          ),
+          (sh) {
+            final sx = sh.width == 0 ? 1.0 : nw / sh.width;
+            final sy = sh.height == 0 ? 1.0 : nh / sh.height;
+            final resized = sh.resizeTo(
+              pinX: sh.pinX,
+              pinY: sh.pinY,
+              width: nw,
+              height: nh,
+            );
+            // Match [resizeShape]: scale group children with the box.
+            if (sh.shapeKind != VsdxShapeKind.group ||
+                sh.children.isEmpty ||
+                ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
+              return resized;
+            }
+            final oldOx = sh.effectiveLocPinX;
+            final oldOy = sh.effectiveLocPinY;
+            final newOx = resized.effectiveLocPinX;
+            final newOy = resized.effectiveLocPinY;
+            return resized.copyWith(
+              children: <VsdxShape>[
+                for (final c in sh.children)
+                  _scaleGroupChild(c, sx, sy, oldOx, oldOy, newOx, newOy),
+              ],
+            );
+          },
         );
         if (beforeAabb != null) {
           final afterAabb = next.shapePageAabb(id);
@@ -3392,7 +3457,9 @@ class EditorController extends ChangeNotifier {
         changed = true;
       }
       return changed
-          ? next.rerouteConnectors(movedShapeIds: movedIds)
+          ? next
+              .recalculateFormulas(changedShapeIds: movedIds)
+              .rerouteConnectors(movedShapeIds: movedIds)
           : page;
     });
   }
@@ -4918,8 +4985,12 @@ class EditorController extends ChangeNotifier {
     };
     if (ids.length < 2) return;
     final gid = page.nextFreeShapeId();
-    final next = page.group(ids, groupId: gid);
+    final movedIds = <int>{..._subtreeIds(ids), gid};
+    var next = page.group(ids, groupId: gid);
     if (identical(next, page)) return;
+    next = next
+        .recalculateFormulas(changedShapeIds: movedIds)
+        .rerouteConnectors(movedShapeIds: movedIds);
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
@@ -4961,11 +5032,15 @@ class EditorController extends ChangeNotifier {
       for (final g in groups)
         for (final c in g.children) c.id,
     };
+    final movedIds = _subtreeIds(<int>[for (final g in groups) g.id]);
     var next = page;
     for (final g in groups) {
       next = next.ungroup(g.id);
     }
     if (identical(next, page)) return;
+    next = next
+        .recalculateFormulas(changedShapeIds: movedIds)
+        .rerouteConnectors(movedShapeIds: movedIds);
     final groupIds = <int>{for (final g in groups) g.id};
     final keep = <int>{
       for (final id in _selection)

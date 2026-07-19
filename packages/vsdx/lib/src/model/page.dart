@@ -934,8 +934,9 @@ class VsdxPage {
     return math.sqrt(dx * dx + dy * dy);
   }
 
-  /// Set the interior [waypoints] of connector [id] (page inches) and rebuild
-  /// its geometry; glued endpoints are re-derived by [rerouteConnectors].
+  /// Set the interior [waypoints] of connector [id] in **parent-local** inches
+  /// (page inches when the connector is top-level) and rebuild its geometry;
+  /// glued endpoints are re-derived by [rerouteConnectors].
   VsdxPage setConnectorWaypoints(int id, List<Offset2D> waypoints) {
     final s = findShapeById(id);
     if (s == null || !s.is1D) return this;

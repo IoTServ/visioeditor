@@ -12,6 +12,10 @@ import 'pdf_font_loader_stub.dart'
 /// composited as underlays through [VsdxDocument.backgroundFor]; non-printable
 /// layers are omitted.
 ///
+/// Shapes with a primary external hyperlink get a [pw.UrlLink] annotation over
+/// their page AABB so the link survives beyond SVG `<a>` (which `SvgImage`
+/// does not promote to PDF annotations).
+///
 /// Falls back to an empty document when there are no pages to export.
 ///
 /// When a Unicode system font is available it is registered for SVG text so
@@ -52,6 +56,7 @@ Future<Uint8List> exportDocumentToPdf(VsdxDocument doc) async {
       images: doc.images,
       underlayPage: doc.backgroundFor(page),
     );
+    final links = _pdfHyperlinkOverlays(page);
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat(wPt, hPt),
@@ -59,16 +64,70 @@ Future<Uint8List> exportDocumentToPdf(VsdxDocument doc) async {
         build: (_) => pw.SizedBox(
           width: wPt,
           height: hPt,
-          child: pw.SvgImage(
-            svg: svg,
-            fit: pw.BoxFit.fill,
-            width: wPt,
-            height: hPt,
-            customFontLookup: unicode == null ? null : fontLookup,
+          child: pw.Stack(
+            children: <pw.Widget>[
+              pw.SvgImage(
+                svg: svg,
+                fit: pw.BoxFit.fill,
+                width: wPt,
+                height: hPt,
+                customFontLookup: unicode == null ? null : fontLookup,
+              ),
+              ...links,
+            ],
           ),
         ),
       ),
     );
   }
   return pdf.save();
+}
+
+/// Transparent [pw.UrlLink] boxes over shapes that have a clickable primary
+/// hyperlink. Visio/PDF share a bottom-left, Y-up page frame in inches/points.
+List<pw.Widget> _pdfHyperlinkOverlays(VsdxPage page) {
+  final out = <pw.Widget>[];
+  void walk(VsdxShape shape) {
+    final h = shape.primaryHyperlink;
+    if (h != null && !h.invisible) {
+      final target = h.effectiveTarget?.trim();
+      if (target != null && target.isNotEmpty && _isExternalPdfUrl(target)) {
+        final aabb = page.shapePageAabb(shape.id);
+        if (aabb != null) {
+          final left = aabb.left * PdfPageFormat.inch;
+          final bottom = aabb.bottom * PdfPageFormat.inch;
+          final width = (aabb.right - aabb.left) * PdfPageFormat.inch;
+          final height = (aabb.top - aabb.bottom) * PdfPageFormat.inch;
+          if (width > 0.5 && height > 0.5) {
+            out.add(
+              pw.Positioned(
+                left: left,
+                bottom: bottom,
+                child: pw.UrlLink(
+                  destination: target,
+                  child: pw.SizedBox(width: width, height: height),
+                ),
+              ),
+            );
+          }
+        }
+      }
+    }
+    for (final c in shape.children) {
+      walk(c);
+    }
+  }
+
+  for (final s in page.shapes) {
+    walk(s);
+  }
+  return out;
+}
+
+bool _isExternalPdfUrl(String target) {
+  final t = target.toLowerCase();
+  return t.startsWith('http://') ||
+      t.startsWith('https://') ||
+      t.startsWith('mailto:') ||
+      t.startsWith('file:');
 }

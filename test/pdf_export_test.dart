@@ -89,4 +89,34 @@ void main() {
     final body = latin1.decode(bytes, allowInvalid: true);
     expect(RegExp(r'/Type\s*/Page[^s]').allMatches(body).length, 1);
   });
+
+  test('PDF export emits URI link annotations for primary hyperlinks', () async {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final parser = const DocumentParser();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final rect = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      hyperlinks: const <VsdxHyperlink>[
+        VsdxHyperlink(
+          id: 0,
+          address: 'https://example.com/docs',
+          description: 'Docs',
+          isDefault: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(rect));
+
+    final bytes = await exportDocumentToPdf(doc);
+    final body = latin1.decode(bytes, allowInvalid: true);
+    expect(body.contains('/URI'), isTrue);
+    expect(body.contains('https://example.com/docs'), isTrue);
+  });
 }

@@ -64,7 +64,7 @@ void main() {
     expect(e.currentPage!.findShapeById(target)!.width, closeTo(2, 1e-6));
   });
 
-  test('matchSelectionSize group+child co-selection does not resize child', () {
+  test('matchSelectionSize group+child co-selection scales via group only', () {
     final e = ctrl();
     final a = rect(e, 2, 4, w: 2, h: 1);
     final b = rect(e, 5, 4, w: 1, h: 0.5);
@@ -72,12 +72,18 @@ void main() {
     e.setSelection([a, b]);
     e.groupSelection();
     final g = e.singleSelectedId!;
+    final groupW0 = e.currentPage!.findShapeById(g)!.width;
     final child = e.currentPage!.findShapeById(g)!.children.first.id;
     final childW = e.currentPage!.findShapeById(child)!.width;
+    // Co-selecting group+child must not double-apply Same Size to the child;
+    // the child scales with the group frame (same as resize handles).
     e.setSelection([c, g, child]);
     e.matchSelectionSize();
     expect(e.currentPage!.findShapeById(g)!.width, closeTo(1.5, 1e-6));
-    expect(e.currentPage!.findShapeById(child)!.width, closeTo(childW, 1e-6));
+    expect(
+      e.currentPage!.findShapeById(child)!.width,
+      closeTo(childW * (1.5 / groupW0), 1e-3),
+    );
   });
 
   test('reconnectEndpoint to nested child glues Connects', () {

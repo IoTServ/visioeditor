@@ -1780,4 +1780,113 @@ void main() {
     expect(c.document!.pages, isNotEmpty);
     expect(c.document!.pages.first.shapes, isNotEmpty);
   });
+
+  test('duplicate connector alone clears dangling XFTRIGGER', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 3, 2, 4);
+    final a = c.currentPage!.shapes.last.id;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 3, 6, 4);
+    final b = c.currentPage!.shapes.last.id;
+    c.createConnector(1.5, 3.5, 5.5, 3.5, beginTarget: a, endTarget: b);
+    final conn = c.currentPage!.shapes.lastWhere((s) => s.is1D).id;
+    expect(
+      c.currentPage!.findShapeById(conn)!.formulas['BegTrigger'],
+      contains('Sheet.$a!'),
+    );
+    c
+      ..setSelection(<int>{conn})
+      ..duplicateSelection();
+    final copy = c.currentPage!.shapes.lastWhere((s) => s.is1D && s.id != conn);
+    expect(copy.formulas.containsKey('BegTrigger'), isFalse);
+    expect(copy.formulas.containsKey('EndTrigger'), isFalse);
+    expect(
+      c.currentPage!.connects.any((e) => e.fromSheetId == copy.id),
+      isFalse,
+    );
+  });
+
+  test('resizeTableColumn reroutes glued connectors with the cell', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 4,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.selection.single;
+    final cells = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!);
+    // Right-hand cell: its centre shifts when the shared divider moves.
+    final cell = cells.firstWhere(
+      (x) => TableOps.cellRow(x) == 0 && TableOps.cellCol(x) == 1,
+    );
+    final pinBefore = c.currentPage!.shapePinPage(cell.id);
+    // Box above the cell so perimeter glue sits on the top edge near the
+    // cell centre (outer vertical edges stay fixed when fractions redistribute).
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(
+        pinBefore.x - 0.4,
+        pinBefore.y + 1.5,
+        pinBefore.x + 0.4,
+        pinBefore.y + 2.2,
+      );
+    final box =
+        c.currentPage!.shapes.lastWhere((s) => !s.is1D && s.id != tableId).id;
+    c.createConnector(
+      pinBefore.x,
+      pinBefore.y,
+      pinBefore.x,
+      pinBefore.y + 1.8,
+      beginTarget: cell.id,
+      endTarget: box,
+    );
+    final conn = c.currentPage!.shapes.lastWhere((s) => s.is1D).id;
+    final beginBefore = c.currentPage!.findShapeById(conn)!.beginX!;
+    c.resizeTableColumn(tableId, 0, 0.5);
+    final pinAfter = c.currentPage!.shapePinPage(cell.id);
+    final beginAfter = c.currentPage!.findShapeById(conn)!.beginX!;
+    // Growing col0 shrinks col1 toward the right edge → centre moves right.
+    expect(pinAfter.x, greaterThan(pinBefore.x + 0.1));
+    expect(beginAfter, isNot(closeTo(beginBefore, 0.05)));
+    expect(beginAfter, closeTo(pinAfter.x, 0.35));
+  });
+
+  test('matchSelectionSize scales group children', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(2.2, 1, 3.2, 2);
+    c.selectAll();
+    c.groupSelection();
+    final gid = c.selection.single;
+    final group0 = c.currentPage!.findShapeById(gid)!;
+    final childW0 = group0.children.first.width;
+    final groupW0 = group0.width;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 1, 9, 5); // 4×4 reference
+    final ref = c.currentPage!.shapes.lastWhere((s) => s.id != gid).id;
+    c.setSelection(<int>{ref, gid});
+    c.matchSelectionSize();
+    final group = c.currentPage!.findShapeById(gid)!;
+    expect(group.width, closeTo(4, 1e-6));
+    expect(group.height, closeTo(4, 1e-6));
+    expect(
+      group.children.first.width,
+      closeTo(childW0 * (4 / groupW0), 0.1),
+    );
+  });
 }
