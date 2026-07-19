@@ -20,6 +20,285 @@ sealed class VsdxPathCommand {
   const VsdxPathCommand();
 }
 
+bool _sameOffsets(List<Offset2D> a, List<Offset2D> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+bool _sameDoubles(List<double> a, List<double> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// Structural equality for geometry commands. Prefer this over [Object.toString]
+/// — some commands (e.g. [PolylineTo]) omit vertex data from their debug string.
+bool pathCommandsEqual(VsdxPathCommand a, VsdxPathCommand b) {
+  if (identical(a, b)) return true;
+  return switch ((a, b)) {
+    (MoveTo(:final x, :final y), MoveTo(x: final ox, y: final oy)) =>
+      x == ox && y == oy,
+    (LineTo(:final x, :final y), LineTo(x: final ox, y: final oy)) =>
+      x == ox && y == oy,
+    (RelMoveTo(:final fx, :final fy), RelMoveTo(fx: final ox, fy: final oy)) =>
+      fx == ox && fy == oy,
+    (RelLineTo(:final fx, :final fy), RelLineTo(fx: final ox, fy: final oy)) =>
+      fx == ox && fy == oy,
+    (
+      CubBezTo(
+        :final x,
+        :final y,
+        :final x1,
+        :final y1,
+        :final x2,
+        :final y2,
+      ),
+      CubBezTo(
+        x: final ox,
+        y: final oy,
+        x1: final ox1,
+        y1: final oy1,
+        x2: final ox2,
+        y2: final oy2,
+      ),
+    ) =>
+      x == ox &&
+          y == oy &&
+          x1 == ox1 &&
+          y1 == oy1 &&
+          x2 == ox2 &&
+          y2 == oy2,
+    (
+      RelCubBezTo(
+        :final fx,
+        :final fy,
+        :final fx1,
+        :final fy1,
+        :final fx2,
+        :final fy2,
+      ),
+      RelCubBezTo(
+        fx: final ox,
+        fy: final oy,
+        fx1: final ox1,
+        fy1: final oy1,
+        fx2: final ox2,
+        fy2: final oy2,
+      ),
+    ) =>
+      fx == ox &&
+          fy == oy &&
+          fx1 == ox1 &&
+          fy1 == oy1 &&
+          fx2 == ox2 &&
+          fy2 == oy2,
+    (
+      QuadBezTo(:final x, :final y, :final x1, :final y1),
+      QuadBezTo(x: final ox, y: final oy, x1: final ox1, y1: final oy1),
+    ) =>
+      x == ox && y == oy && x1 == ox1 && y1 == oy1,
+    (
+      RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1),
+      RelQuadBezTo(fx: final ox, fy: final oy, fx1: final ox1, fy1: final oy1),
+    ) =>
+      fx == ox && fy == oy && fx1 == ox1 && fy1 == oy1,
+    (
+      ArcTo(:final x, :final y, :final bow),
+      ArcTo(x: final ox, y: final oy, bow: final ob),
+    ) =>
+      x == ox && y == oy && bow == ob,
+    (
+      RelArcTo(:final fx, :final fy, :final fbow),
+      RelArcTo(fx: final ox, fy: final oy, fbow: final ob),
+    ) =>
+      fx == ox && fy == oy && fbow == ob,
+    (
+      EllipticalArcTo(
+        :final x,
+        :final y,
+        :final controlX,
+        :final controlY,
+        :final angle,
+        :final eccentricity,
+      ),
+      EllipticalArcTo(
+        x: final ox,
+        y: final oy,
+        controlX: final ocx,
+        controlY: final ocy,
+        angle: final oa,
+        eccentricity: final oe,
+      ),
+    ) =>
+      x == ox &&
+          y == oy &&
+          controlX == ocx &&
+          controlY == ocy &&
+          angle == oa &&
+          eccentricity == oe,
+    (
+      RelEllipticalArcTo(
+        :final fx,
+        :final fy,
+        :final fcx,
+        :final fcy,
+        :final angle,
+        :final eccentricity,
+      ),
+      RelEllipticalArcTo(
+        fx: final ox,
+        fy: final oy,
+        fcx: final ocx,
+        fcy: final ocy,
+        angle: final oa,
+        eccentricity: final oe,
+      ),
+    ) =>
+      fx == ox &&
+          fy == oy &&
+          fcx == ocx &&
+          fcy == ocy &&
+          angle == oa &&
+          eccentricity == oe,
+    (
+      EllipseCmd(
+        :final cx,
+        :final cy,
+        :final aX,
+        :final aY,
+        :final bX,
+        :final bY,
+      ),
+      EllipseCmd(
+        cx: final ocx,
+        cy: final ocy,
+        aX: final oax,
+        aY: final oay,
+        bX: final obx,
+        bY: final oby,
+      ),
+    ) =>
+      cx == ocx &&
+          cy == ocy &&
+          aX == oax &&
+          aY == oay &&
+          bX == obx &&
+          bY == oby,
+    (
+      PolylineTo(
+        :final x,
+        :final y,
+        :final vertices,
+        :final relative,
+        :final vertsRelative,
+        :final vertsYRelative,
+      ),
+      PolylineTo(
+        x: final ox,
+        y: final oy,
+        vertices: final ov,
+        relative: final or,
+        vertsRelative: final ovr,
+        vertsYRelative: final ovyr,
+      ),
+    ) =>
+      x == ox &&
+          y == oy &&
+          relative == or &&
+          vertsRelative == ovr &&
+          vertsYRelative == ovyr &&
+          _sameOffsets(vertices, ov),
+    (
+      InfiniteLineCmd(
+        :final x,
+        :final y,
+        :final a,
+        :final b,
+        :final relative,
+      ),
+      InfiniteLineCmd(
+        x: final ox,
+        y: final oy,
+        a: final oa,
+        b: final ob,
+        relative: final or,
+      ),
+    ) =>
+      x == ox && y == oy && a == oa && b == ob && relative == or,
+    (
+      SplineStart(
+        :final x,
+        :final y,
+        :final a,
+        :final b,
+        :final c,
+        :final degree,
+        :final relative,
+      ),
+      SplineStart(
+        x: final ox,
+        y: final oy,
+        a: final oa,
+        b: final ob,
+        c: final oc,
+        degree: final od,
+        relative: final or,
+      ),
+    ) =>
+      x == ox &&
+          y == oy &&
+          a == oa &&
+          b == ob &&
+          c == oc &&
+          degree == od &&
+          relative == or,
+    (
+      SplineKnot(:final x, :final y, :final knot, :final relative),
+      SplineKnot(x: final ox, y: final oy, knot: final ok, relative: final or),
+    ) =>
+      x == ox && y == oy && knot == ok && relative == or,
+    (
+      NurbsTo(
+        :final x,
+        :final y,
+        :final controlPoints,
+        :final weights,
+        :final knots,
+        :final degree,
+        :final relative,
+        :final cpRelative,
+        :final cpYRelative,
+      ),
+      NurbsTo(
+        x: final ox,
+        y: final oy,
+        controlPoints: final ocp,
+        weights: final ow,
+        knots: final ok,
+        degree: final od,
+        relative: final or,
+        cpRelative: final ocr,
+        cpYRelative: final ocyr,
+      ),
+    ) =>
+      x == ox &&
+          y == oy &&
+          degree == od &&
+          relative == or &&
+          cpRelative == ocr &&
+          cpYRelative == ocyr &&
+          _sameOffsets(controlPoints, ocp) &&
+          _sameDoubles(weights, ow) &&
+          _sameDoubles(knots, ok),
+    _ => false,
+  };
+}
+
 @immutable
 class MoveTo extends VsdxPathCommand {
   const MoveTo(this.x, this.y);
@@ -289,7 +568,8 @@ class PolylineTo extends VsdxPathCommand {
 
   @override
   String toString() =>
-      '${relative ? 'Rel' : ''}PolylineTo($x, $y, ${vertices.length} verts)';
+      '${relative ? 'Rel' : ''}PolylineTo($x, $y, '
+      'verts=$vertices, xRel=$vertsRelative, yRel=$vertsYRelative)';
 }
 
 /// `InfiniteLine` — a straight line passing through (`x`, `y`) with the
@@ -349,7 +629,8 @@ class SplineStart extends VsdxPathCommand {
 
   @override
   String toString() =>
-      '${relative ? 'Rel' : ''}SplineStart($x, $y, degree=$degree)';
+      '${relative ? 'Rel' : ''}SplineStart($x, $y, a=$a, b=$b, c=$c, '
+      'degree=$degree)';
 }
 
 /// `SplineKnot` — subsequent control point / knot in a spline that began
@@ -426,7 +707,9 @@ class NurbsTo extends VsdxPathCommand {
 
   @override
   String toString() =>
-      '${relative ? 'Rel' : ''}NurbsTo($x, $y, ${controlPoints.length} cps, deg=$degree)';
+      '${relative ? 'Rel' : ''}NurbsTo($x, $y, cps=$controlPoints, '
+      'w=$weights, k=$knots, deg=$degree, '
+      'xRel=$cpRelative, yRel=$cpYRelative)';
 }
 
 /// A tiny 2D point value object, kept local to the geometry layer so the

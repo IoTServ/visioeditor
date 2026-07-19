@@ -3339,7 +3339,8 @@ class VsdxWriter {
         return false;
       }
       for (var j = 0; j < ga.commands.length; j++) {
-        if (ga.commands[j].toString() != gb.commands[j].toString()) {
+        // Structural compare — PolylineTo/NurbsTo toString omits vertex data.
+        if (!pathCommandsEqual(ga.commands[j], gb.commands[j])) {
           return false;
         }
         final fa = ga.formulasAt(j);

@@ -54,6 +54,86 @@ void main() {
       expect(pageXml, isNot(contains('POLYLINE(0,0,')));
     });
 
+    test('resize RelPolylineTo inch verts survives write (not skipped as equal)',
+        () {
+      final blank = blankBytes();
+      final doc = parser.parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final shape = VsdxShape(
+        id: id,
+        name: 'R',
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 2,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            commands: <VsdxPathCommand>[
+              RelMoveTo(0, 0),
+              PolylineTo(
+                x: 1,
+                y: 0,
+                vertices: <Offset2D>[
+                  Offset2D(0.5, 0.5),
+                  Offset2D(1, 0),
+                ],
+                relative: true,
+              ),
+            ],
+          ),
+        ],
+      );
+      // Persist once so the next write has a base geometry to compare against.
+      final saved = writer.write(
+        originalBytes: blank,
+        edited: doc.replacePage(0, doc.pages.first.addShape(shape)),
+      );
+      final loaded = parser.parse(saved);
+      final sid = loaded.pages.first.shapes.first.id;
+      final resized = loaded.replacePage(
+        0,
+        loaded.pages.first.updateShapeById(
+          sid,
+          (s) => s.resizeTo(pinX: 3, pinY: 3, width: 4, height: 4),
+        ),
+      );
+      // Double size: Rel endpoint stays fractional; inch verts scale ×2.
+      final polyBefore = resized.pages.first
+          .findShapeById(sid)!
+          .geometries
+          .first
+          .commands
+          .whereType<PolylineTo>()
+          .single;
+      expect(polyBefore.vertices.first.x, closeTo(1.0, 1e-9));
+      expect(polyBefore.vertices.first.y, closeTo(1.0, 1e-9));
+
+      // Regression: old toString equality skipped this patch (same endpoint /
+      // vert count), leaving the package with unscaled inch verts.
+      final out = writer.write(originalBytes: saved, edited: resized);
+      final round = parser.parse(out);
+      final poly = round.pages.first.shapes.first.geometries.first.commands
+          .whereType<PolylineTo>()
+          .single;
+      expect(poly.relative, isTrue);
+      expect(poly.vertsRelative, isFalse);
+      expect(poly.vertices.first.x, closeTo(1.0, 1e-6));
+      expect(poly.vertices.first.y, closeTo(1.0, 1e-6));
+      expect(poly.vertices[1].x, closeTo(2.0, 1e-6));
+    });
+
+    test('pathCommandsEqual detects PolylineTo vertex changes', () {
+      const a = PolylineTo(
+        x: 1,
+        y: 0,
+        vertices: <Offset2D>[Offset2D(0.5, 0.5)],
+        relative: true,
+      );
+      final b = scalePathCommand(a, 2, 3) as PolylineTo;
+      expect(pathCommandsEqual(a, b), isFalse);
+      expect(pathCommandsEqual(a, a), isTrue);
+    });
+
     test('RelPolylineTo with inch verts writes POLYLINE(1,1,…)', () {
       final blank = blankBytes();
       final doc = parser.parse(blank);
