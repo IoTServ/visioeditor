@@ -5837,11 +5837,18 @@ class EditorController extends ChangeNotifier {
         if (sh == null) return p;
         if (sh.isGlueableConnector) {
           // Absolute local heading → delta from current (usually 0 after bake).
+          // Exclude this connector from reroute so glue does not undo the turn
+          // (same as [rotateSelection90]).
           final delta = angleRad - sh.angleRad;
           return p
               .updateShapeById(id, (s) => _rotate1DAboutPin(p, s, delta))
               .recalculateFormulas(changedShapeIds: movedIds)
-              .rerouteConnectors(movedShapeIds: movedIds);
+              .rerouteConnectors(
+                movedShapeIds: <int>{
+                  for (final mid in movedIds)
+                    if (mid != id) mid,
+                },
+              );
         }
         return p
             .updateShapeById(
@@ -5990,9 +5997,18 @@ class EditorController extends ChangeNotifier {
         } else if (reflowTable) {
           next = next.updateShapeById(id, TableOps.layoutCells);
         }
+        // Direct Begin→End bake on a glueable connector must not be undone by
+        // re-gluing that same connector (Arrange size / handles).
+        final skipRerouteSelf =
+            s.isGlueableConnector ? <int>{id} : const <int>{};
         return next
             .recalculateFormulas(changedShapeIds: movedIds)
-            .rerouteConnectors(movedShapeIds: movedIds);
+            .rerouteConnectors(
+              movedShapeIds: <int>{
+                for (final mid in movedIds)
+                  if (!skipRerouteSelf.contains(mid)) mid,
+              },
+            );
       },
       transient: transient,
     );

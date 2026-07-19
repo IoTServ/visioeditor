@@ -916,6 +916,31 @@ class VsdxShape {
     final newLocPinY = locPinYInches == null
         ? null
         : (this.height == 0 ? locPinYInches : locPinYInches! * sy);
+    // Absolute text-block cells (no Width*/Height* formula) scale with the box
+    // so custom TxtPin/TxtWidth placement stays proportional after resize.
+    final block = richText.textBlock;
+    final scaledBlock = ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)
+        ? block
+        : block.copyWith(
+            pinXInches: block.pinXInches == null
+                ? null
+                : block.pinXInches! * sx,
+            pinYInches: block.pinYInches == null
+                ? null
+                : block.pinYInches! * sy,
+            locPinXInches: block.locPinXInches == null
+                ? null
+                : block.locPinXInches! * sx,
+            locPinYInches: block.locPinYInches == null
+                ? null
+                : block.locPinYInches! * sy,
+            widthInches: block.widthInches == null
+                ? null
+                : block.widthInches! * sx,
+            heightInches: block.heightInches == null
+                ? null
+                : block.heightInches! * sy,
+          );
     return copyWith(
       pinX: pinX,
       pinY: pinY,
@@ -924,6 +949,9 @@ class VsdxShape {
       locPinXInches: newLocPinX,
       locPinYInches: newLocPinY,
       geometries: scaled,
+      richText: identical(scaledBlock, block)
+          ? richText
+          : richText.copyWith(textBlock: scaledBlock),
     ).recalculateLocalFormulas().syncInkEndpoints();
   }
 
@@ -1508,12 +1536,14 @@ class VsdxShape {
     ).syncSetAtRefFromControls();
   }
 
-  /// Pull `TxtPinX` / `TxtPinY` cache values from SETATREF formulas
-  /// (sole or composite, e.g. `SETATREF(User.DeltaX)+Width*0.5`).
+  /// Pull `TxtPin*` / `TxtWidth` / `TxtHeight` cache values from formulas
+  /// (SETATREF or Width*/Height* expressions).
   VsdxShape syncSetAtRefFromControls() {
     final fx = formulas['TxtPinX'];
     final fy = formulas['TxtPinY'];
-    if (fx == null && fy == null) return this;
+    final fw = formulas['TxtWidth'];
+    final fh = formulas['TxtHeight'];
+    if (fx == null && fy == null && fw == null && fh == null) return this;
 
     final locals = <String, double>{
       'Width': width,
@@ -1546,6 +1576,8 @@ class VsdxShape {
     final block = richText.textBlock;
     var txtPinX = block.pinXInches;
     var txtPinY = block.pinYInches;
+    var txtW = block.widthInches;
+    var txtH = block.heightInches;
     var touched = false;
     final rx = resolve(fx, forY: false);
     if (rx != null && (txtPinX == null || (txtPinX - rx).abs() > 1e-12)) {
@@ -1557,10 +1589,25 @@ class VsdxShape {
       txtPinY = ry;
       touched = true;
     }
+    final rw = resolve(fw, forY: false);
+    if (rw != null && (txtW == null || (txtW - rw).abs() > 1e-12)) {
+      txtW = rw;
+      touched = true;
+    }
+    final rh = resolve(fh, forY: true);
+    if (rh != null && (txtH == null || (txtH - rh).abs() > 1e-12)) {
+      txtH = rh;
+      touched = true;
+    }
     if (!touched) return this;
     return copyWith(
       richText: richText.copyWith(
-        textBlock: block.copyWith(pinXInches: txtPinX, pinYInches: txtPinY),
+        textBlock: block.copyWith(
+          pinXInches: txtPinX,
+          pinYInches: txtPinY,
+          widthInches: txtW,
+          heightInches: txtH,
+        ),
       ),
     );
   }

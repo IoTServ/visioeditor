@@ -364,6 +364,39 @@ void main() {
     expect(doc.pages.first.shapes.first.pinX, page0.shapes.first.pinX);
   });
 
+  test('resizeTo scales absolute text block and evaluates TxtWidth formula', () {
+    final box = VsdxShapeFactory.rectangle(
+      id: 20,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      formulas: const <String, String>{
+        'TxtWidth': 'Width*1',
+        'TxtHeight': 'Height*1',
+      },
+      richText: const VsdxRichText(
+        textBlock: VsdxTextBlock(
+          pinXInches: 1,
+          pinYInches: 0.5,
+          widthInches: 2,
+          heightInches: 1,
+        ),
+        runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+      ),
+    );
+    final resized = box.resizeTo(
+      pinX: 3,
+      pinY: 2,
+      width: 4,
+      height: 2,
+    );
+    expect(resized.richText.textBlock.widthInches, closeTo(4, 1e-9));
+    expect(resized.richText.textBlock.heightInches, closeTo(2, 1e-9));
+    expect(resized.richText.textBlock.pinXInches, closeTo(2, 1e-9));
+  });
+
   test('freehand factory builds a 1-D ink polyline (not a connector)', () {
     final stroke = VsdxShapeFactory.freehand(
       id: 7,

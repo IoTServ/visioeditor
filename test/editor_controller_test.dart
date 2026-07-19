@@ -405,6 +405,51 @@ void main() {
     expect(after.endX, closeTo(before.beginX!, 1e-6));
   });
 
+  test('rotateShape on glued connector is not undone by reroute', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 3.5, 2, 4.5);
+    final a = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 3.5, 6, 4.5);
+    final b = c.selection.single;
+    c.createConnector(1.5, 4, 5.5, 4, beginTarget: a, endTarget: b);
+    final connId = c.selection.single;
+    c.setSelection(<int>{connId});
+    c.setSelectedAngleDegrees(90); // via rotateShape
+    final after = c.currentPage!.findShapeById(connId)!;
+    expect(after.beginX, closeTo(after.endX!, 0.35));
+    expect((after.beginY! - after.endY!).abs(), greaterThan(1.5));
+  });
+
+  test('resizeShape on glued connector is not undone by reroute', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 3.5, 2, 4.5);
+    final a = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 3.5, 6, 4.5);
+    final b = c.selection.single;
+    c.createConnector(1.5, 4, 5.5, 4, beginTarget: a, endTarget: b);
+    final connId = c.selection.single;
+    final before = c.currentPage!.findShapeById(connId)!;
+    final pinX = before.pinX;
+    final pinY = before.pinY;
+    c.resizeShape(
+      connId,
+      pinX: pinX,
+      pinY: pinY,
+      width: before.width * 0.5,
+      height: before.height,
+    );
+    final after = c.currentPage!.findShapeById(connId)!;
+    expect(after.width.abs(), closeTo(before.width.abs() * 0.5, 0.25));
+  });
+
   test('rotateSelection90 on glued connector is not undone by reroute', () {
     final c = EditorController()..newDocument();
     c

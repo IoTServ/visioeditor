@@ -437,57 +437,41 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// True when [pt] (page inches) is within stroke hit distance of [s]'s path.
   bool _hit1DStroke(VsdxPage page, VsdxShape s, Offset pt) {
-    final poly = _strokePagePolyline(page, s);
-    if (poly.length < 2) return true;
+    final segs = _strokePageSegments(page, s);
+    if (segs.isEmpty) return true;
     final half = math.max(s.line.weightInches.abs() / 2, 0.01);
     final screenPad = 5.0 / math.max(widget.pxPerInch * _scale, 1e-6);
     final tol = half + screenPad;
     final tol2 = tol * tol;
-    for (var i = 0; i < poly.length - 1; i++) {
-      if (_dist2PointToSeg(
-            pt.dx,
-            pt.dy,
-            poly[i].x,
-            poly[i].y,
-            poly[i + 1].x,
-            poly[i + 1].y,
-          ) <=
-          tol2) {
+    for (final (a, b) in segs) {
+      if (_dist2PointToSeg(pt.dx, pt.dy, a.x, a.y, b.x, b.y) <= tol2) {
         return true;
       }
     }
     return false;
   }
 
-  /// Page-inch stroke polyline for hit-testing (glueable route or ink geometry).
-  List<Offset2D> _strokePagePolyline(VsdxPage page, VsdxShape s) {
+  /// Page-inch stroke segments for hit-testing / marquee (glueable route,
+  /// sampled outline for arcs/beziers, else Begin→End).
+  List<(Offset2D, Offset2D)> _strokePageSegments(VsdxPage page, VsdxShape s) {
     if (s.isGlueableConnector) {
       final drawn = page.drawnConnectorPagePolyline(s);
-      if (drawn.length >= 2) return drawn;
-    }
-    for (final g in s.geometries) {
-      if (g.noShow) continue;
-      final local = <Offset2D>[];
-      var ok = true;
-      for (final c in g.commands) {
-        if (c is MoveTo) {
-          local.add(Offset2D(c.x, c.y));
-        } else if (c is LineTo) {
-          local.add(Offset2D(c.x, c.y));
-        } else {
-          ok = false;
-          break;
-        }
-      }
-      if (ok && local.length >= 2) {
-        return <Offset2D>[
-          for (final p in local) page.localToPageDeep(s.id, p),
+      if (drawn.length >= 2) {
+        return <(Offset2D, Offset2D)>[
+          for (var i = 0; i < drawn.length - 1; i++) (drawn[i], drawn[i + 1]),
         ];
       }
     }
+    final localSegs = ShapePerimeter.outlineSegments(s);
+    if (localSegs.isNotEmpty) {
+      return <(Offset2D, Offset2D)>[
+        for (final (a, b) in localSegs)
+          (page.localToPageDeep(s.id, a), page.localToPageDeep(s.id, b)),
+      ];
+    }
     final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
     final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
-    return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+    return <(Offset2D, Offset2D)>[(Offset2D(ax, ay), Offset2D(bx, by))];
   }
 
   static double _dist2PointToSeg(
@@ -2551,21 +2535,70 @@ class _PageCanvasState extends State<PageCanvas> {
     final top = math.max(a.dy, b.dy);
     // Ignore accidental micro-drags (treat as a click that cleared already).
     if ((r - l) < 0.02 && (top - bottom) < 0.02) return;
+    final marquee = Rect.fromLTRB(l, bottom, r, top);
     final bounds = buildShapeBounds(page);
     final topLevel = <int>{
       for (final sh in page.shapes)
         if (page.isShapeVisible(sh)) sh.id,
     };
-    final ids = <int>[
-      for (final entry in bounds.entries)
-        if (topLevel.contains(entry.key) &&
-            entry.value.left <= r &&
-            entry.value.right >= l &&
-            entry.value.top <= top &&
-            entry.value.bottom >= bottom)
-          entry.key,
-    ];
+    final ids = <int>[];
+    for (final entry in bounds.entries) {
+      if (!topLevel.contains(entry.key)) continue;
+      final box = entry.value;
+      // Page inches are Y-up; [Rect.top]/[Rect.bottom] store minY/maxY.
+      if (box.left > r ||
+          box.right < l ||
+          box.top > top ||
+          box.bottom < bottom) {
+        continue;
+      }
+      final sh = page.findShapeById(entry.key);
+      if (sh == null) continue;
+      // 1-D: require the stroke (not the diagonal AABB) to meet the marquee.
+      if (sh.is1D) {
+        final segs = _strokePageSegments(page, sh);
+        var hit = false;
+        for (final (p0, p1) in segs) {
+          if (_segIntersectsRect(p0, p1, marquee)) {
+            hit = true;
+            break;
+          }
+        }
+        if (!hit) continue;
+      }
+      ids.add(entry.key);
+    }
     _c.setSelection(ids);
+  }
+
+  /// True when segment [a]→[b] intersects or lies inside axis-aligned [r].
+  static bool _segIntersectsRect(Offset2D a, Offset2D b, Rect r) {
+    bool inside(Offset2D p) =>
+        p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+    if (inside(a) || inside(b)) return true;
+    // Cohen-style: clip against each edge of the rect.
+    bool crosses(
+      double x1,
+      double y1,
+      double x2,
+      double y2,
+      double x3,
+      double y3,
+      double x4,
+      double y4,
+    ) {
+      final d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+      if (d.abs() < 1e-18) return false;
+      final t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d;
+      final u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
+      return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+    }
+
+    final x1 = a.x, y1 = a.y, x2 = b.x, y2 = b.y;
+    return crosses(x1, y1, x2, y2, r.left, r.top, r.right, r.top) ||
+        crosses(x1, y1, x2, y2, r.right, r.top, r.right, r.bottom) ||
+        crosses(x1, y1, x2, y2, r.right, r.bottom, r.left, r.bottom) ||
+        crosses(x1, y1, x2, y2, r.left, r.bottom, r.left, r.top);
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
