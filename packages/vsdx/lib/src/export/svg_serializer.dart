@@ -53,6 +53,7 @@ class VsdxToSvgSerializer {
     this.layerFilter = SvgLayerFilter.visible,
     this.skipBackgroundPages = true,
     this.lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
+    this.bakeArrowMarkers = false,
   });
 
   final double pxPerInch;
@@ -73,6 +74,10 @@ class VsdxToSvgSerializer {
   /// Arc radius for connector line jumps (matches canvas
   /// [VsdxPainter.lineJumpRadiusInches]).
   final double lineJumpRadiusInches;
+
+  /// When `true`, emit arrowheads as transformed `<path>` geometry instead of
+  /// SVG `<marker>` (needed for PDF via `package:pdf`, which ignores markers).
+  final bool bakeArrowMarkers;
 
   /// Current image registry, swapped in by [serializePage] / [serializeDocument].
   ImageRegistry _images = ImageRegistry.empty;
@@ -624,6 +629,167 @@ class VsdxToSvgSerializer {
         );
       }
     }
+    if (bakeArrowMarkers && !noLine && shape.line.hasLine) {
+      _writeBakedArrows(
+        buf,
+        shape,
+        theme,
+        pathD: sD,
+        indent: indent,
+      );
+    }
+  }
+
+  /// Geometry arrows for backends that ignore SVG `<marker>` (PDF).
+  void _writeBakedArrows(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme, {
+    required String pathD,
+    required String indent,
+  }) {
+    final line = shape.line;
+    if (!line.hasBeginArrow && !line.hasEndArrow) return;
+    final tips = _pathTipTangents(pathD);
+    if (tips == null) return;
+    final c = _resolveColor(line.color, line.themeColorIndex, theme);
+    final alpha = _combinedOpacity(c, line.transparency);
+    final hex = c == null ? '#000000' : _hex(c);
+    final weight = line.weightInches > 0 ? line.weightInches : 0.01;
+    void emit({
+      required Offset2D tip,
+      required Offset2D from,
+      required int arrowId,
+      required double sizeInches,
+    }) {
+      final dx = tip.x - from.x;
+      final dy = tip.y - from.y;
+      if (dx.abs() < 1e-12 && dy.abs() < 1e-12) return;
+      final deg = math.atan2(dy, dx) * 180 / math.pi;
+      final mw = _arrowMarkerSize(sizeInches, arrowId);
+      final body = _arrowMarkerBody(
+        arrowId,
+        tipAtEnd: true,
+        lineWeightInches: weight,
+        markerSizeInches: mw,
+        colorHex: hex,
+        opacity: alpha,
+      );
+      // Marker viewBox tip at (10,5); scale so 10 units → mw inches.
+      buf.writeln(
+        '$indent<g transform="translate(${_n(tip.x)} ${_n(tip.y)}) '
+        'rotate(${_n(deg)}) scale(${_n(mw / 10)}) translate(-10 -5)">'
+        '$body</g>',
+      );
+    }
+
+    if (line.hasBeginArrow) {
+      emit(
+        tip: tips.begin,
+        from: tips.beginFrom,
+        arrowId: line.beginArrow,
+        sizeInches: line.beginArrowSizeInches,
+      );
+    }
+    if (line.hasEndArrow) {
+      emit(
+        tip: tips.end,
+        from: tips.endFrom,
+        arrowId: line.endArrow,
+        sizeInches: line.endArrowSizeInches,
+      );
+    }
+  }
+
+  /// First/last vertices and their inward neighbours from an absolute-ish path.
+  ({
+    Offset2D begin,
+    Offset2D beginFrom,
+    Offset2D end,
+    Offset2D endFrom,
+  })? _pathTipTangents(String d) {
+    final pts = <Offset2D>[];
+    final tokens = RegExp(
+      r'[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
+    ).allMatches(d).map((m) => m.group(0)!).toList();
+    var cx = 0.0;
+    var cy = 0.0;
+    String? cmd;
+    final nums = <double>[];
+    void push(double x, double y) {
+      final p = Offset2D(x, y);
+      if (pts.isEmpty || pts.last.x != x || pts.last.y != y) pts.add(p);
+      cx = x;
+      cy = y;
+    }
+
+    void flush() {
+      if (cmd == null) {
+        nums.clear();
+        return;
+      }
+      final rel = cmd == cmd!.toLowerCase();
+      final op = cmd!.toUpperCase();
+      switch (op) {
+        case 'M':
+        case 'L':
+          for (var i = 0; i + 1 < nums.length; i += 2) {
+            final x = rel ? cx + nums[i] : nums[i];
+            final y = rel ? cy + nums[i + 1] : nums[i + 1];
+            push(x, y);
+          }
+        case 'H':
+          for (final v in nums) {
+            push(rel ? cx + v : v, cy);
+          }
+        case 'V':
+          for (final v in nums) {
+            push(cx, rel ? cy + v : v);
+          }
+        case 'C':
+          for (var i = 0; i + 5 < nums.length; i += 6) {
+            final x = rel ? cx + nums[i + 4] : nums[i + 4];
+            final y = rel ? cy + nums[i + 5] : nums[i + 5];
+            push(x, y);
+          }
+        case 'Q':
+          for (var i = 0; i + 3 < nums.length; i += 4) {
+            final x = rel ? cx + nums[i + 2] : nums[i + 2];
+            final y = rel ? cy + nums[i + 3] : nums[i + 3];
+            push(x, y);
+          }
+        case 'A':
+          for (var i = 0; i + 6 < nums.length; i += 7) {
+            final x = rel ? cx + nums[i + 5] : nums[i + 5];
+            final y = rel ? cy + nums[i + 6] : nums[i + 6];
+            push(x, y);
+          }
+        default:
+          break;
+      }
+      nums.clear();
+    }
+
+    for (final t in tokens) {
+      if (RegExp(r'^[A-Za-z]$').hasMatch(t)) {
+        flush();
+        cmd = t;
+        if (t.toUpperCase() == 'Z') {
+          cmd = null;
+        }
+      } else {
+        final v = double.tryParse(t);
+        if (v != null) nums.add(v);
+      }
+    }
+    flush();
+    if (pts.length < 2) return null;
+    return (
+      begin: pts.first,
+      beginFrom: pts[1],
+      end: pts.last,
+      endFrom: pts[pts.length - 2],
+    );
   }
 
   /// Canvas-matching drop shadow: blurred fill (2D) or stroke (1D / NoFill),
@@ -710,10 +876,18 @@ class VsdxToSvgSerializer {
         shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
     final fallbackH =
         shape.height.abs() < 1e-9 ? weightH : shape.height.abs();
-    final extent = _approxPathYExtentFromD(d, fallbackH);
-    final h = extent.height;
-    final bottomY = extent.minY;
+    final fallbackW =
+        shape.width.abs() < 1e-9 ? weightH : shape.width.abs();
+    final bounds = _approxPathBoundsFromD(
+      d,
+      fallbackW: fallbackW,
+      fallbackH: fallbackH,
+    );
+    final h = bounds.height;
+    final bottomY = bounds.minY;
     final clipH = h * refl.sizeInches.clamp(0.01, 1.0);
+    final clipX = bounds.minX - bounds.width;
+    final clipW = bounds.width * 3;
     final dist = refl.distanceInches;
     final fid = 'refl-$paintId';
     final cid = 'refl-clip-$paintId';
@@ -773,8 +947,8 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
-      '<rect x="${_n(-shape.width)}" y="${_n(clipY)}" '
-      'width="${_n(shape.width * 3)}" height="${_n(clipH + refl.blurInches)}"/>'
+      '<rect x="${_n(clipX)}" y="${_n(clipY)}" '
+      'width="${_n(clipW)}" height="${_n(clipH + refl.blurInches)}"/>'
       '</clipPath>'
       '<linearGradient id="$fadeId" gradientUnits="userSpaceOnUse" '
       'x1="0" y1="${_n(nearY)}" x2="0" y2="${_n(farY)}">'
@@ -782,8 +956,8 @@ class VsdxToSvgSerializer {
       '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>'
       '</linearGradient>'
       '<mask id="$maskId" maskUnits="userSpaceOnUse">'
-      '<rect x="${_n(-shape.width)}" y="${_n(farY)}" '
-      'width="${_n(shape.width * 3)}" height="${_n(clipH + refl.blurInches)}" '
+      '<rect x="${_n(clipX)}" y="${_n(farY)}" '
+      'width="${_n(clipW)}" height="${_n(clipH + refl.blurInches)}" '
       'fill="url(#$fadeId)"/>'
       '</mask>'
       '${refl.blurInches > 0 ? '<filter id="$fid" x="-20%" y="-20%" '
@@ -804,20 +978,8 @@ class VsdxToSvgSerializer {
     );
   }
 
-  /// Y extent of an absolute SVG path `d` (minY + height), for reflection.
-  ({double minY, double height}) _approxPathYExtentFromD(
-    String d,
-    double fallbackHeight,
-  ) {
-    final b = _approxPathBoundsFromD(
-      d,
-      fallbackW: 1.0,
-      fallbackH: fallbackHeight,
-    );
-    return (minY: b.minY, height: b.height);
-  }
-
   /// Axis-aligned bounds of path `d` in shape-local inches (for gradients).
+  /// Tracks the current point so relative commands (`a`/`l`/…) expand correctly.
   ({double minX, double minY, double width, double height})
       _approxPathBoundsFromD(
     String d, {
@@ -831,6 +993,10 @@ class VsdxToSvgSerializer {
     var maxX = double.negativeInfinity;
     var minY = double.infinity;
     var maxY = double.negativeInfinity;
+    var cx = 0.0;
+    var cy = 0.0;
+    var subX = 0.0;
+    var subY = 0.0;
     void consider(double x, double y) {
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
@@ -841,30 +1007,82 @@ class VsdxToSvgSerializer {
     String? cmd;
     final nums = <double>[];
     void flush() {
-      if (cmd == null || nums.isEmpty) {
+      if (cmd == null) {
         nums.clear();
         return;
       }
-      switch (cmd) {
+      final rel = cmd == cmd!.toLowerCase();
+      final op = cmd!.toUpperCase();
+      switch (op) {
         case 'M':
         case 'L':
-        case 'C':
-        case 'Q':
           for (var i = 0; i + 1 < nums.length; i += 2) {
-            consider(nums[i], nums[i + 1]);
-          }
-        case 'A':
-          for (var i = 5; i + 1 < nums.length; i += 7) {
-            consider(nums[i], nums[i + 1]);
+            final x = rel ? cx + nums[i] : nums[i];
+            final y = rel ? cy + nums[i + 1] : nums[i + 1];
+            cx = x;
+            cy = y;
+            if (op == 'M' && i == 0) {
+              subX = cx;
+              subY = cy;
+            }
+            consider(cx, cy);
           }
         case 'H':
-          for (final x in nums) {
-            if (minY.isFinite) consider(x, minY);
+          for (final v in nums) {
+            cx = rel ? cx + v : v;
+            consider(cx, cy);
           }
         case 'V':
-          for (final y in nums) {
-            if (minX.isFinite) consider(minX, y);
+          for (final v in nums) {
+            cy = rel ? cy + v : v;
+            consider(cx, cy);
           }
+        case 'C':
+          for (var i = 0; i + 5 < nums.length; i += 6) {
+            final x1 = rel ? cx + nums[i] : nums[i];
+            final y1 = rel ? cy + nums[i + 1] : nums[i + 1];
+            final x2 = rel ? cx + nums[i + 2] : nums[i + 2];
+            final y2 = rel ? cy + nums[i + 3] : nums[i + 3];
+            final x = rel ? cx + nums[i + 4] : nums[i + 4];
+            final y = rel ? cy + nums[i + 5] : nums[i + 5];
+            consider(x1, y1);
+            consider(x2, y2);
+            cx = x;
+            cy = y;
+            consider(cx, cy);
+          }
+        case 'Q':
+          for (var i = 0; i + 3 < nums.length; i += 4) {
+            final x1 = rel ? cx + nums[i] : nums[i];
+            final y1 = rel ? cy + nums[i + 1] : nums[i + 1];
+            final x = rel ? cx + nums[i + 2] : nums[i + 2];
+            final y = rel ? cy + nums[i + 3] : nums[i + 3];
+            consider(x1, y1);
+            cx = x;
+            cy = y;
+            consider(cx, cy);
+          }
+        case 'A':
+          for (var i = 0; i + 6 < nums.length; i += 7) {
+            final rx = nums[i].abs();
+            final ry = nums[i + 1].abs();
+            final x = rel ? cx + nums[i + 5] : nums[i + 5];
+            final y = rel ? cy + nums[i + 6] : nums[i + 6];
+            consider(cx, cy);
+            // Chord midpoint ± radii covers full/half ellipse extrema without
+            // double-counting radii at both endpoints (which inflated width).
+            final mx = (cx + x) / 2;
+            final my = (cy + y) / 2;
+            consider(mx - rx, my - ry);
+            consider(mx + rx, my + ry);
+            cx = x;
+            cy = y;
+            consider(cx, cy);
+          }
+        case 'Z':
+          cx = subX;
+          cy = subY;
+          consider(cx, cy);
         default:
           break;
       }
@@ -874,8 +1092,9 @@ class VsdxToSvgSerializer {
     for (final t in tokens) {
       if (RegExp(r'^[A-Za-z]$').hasMatch(t)) {
         flush();
-        cmd = t.toUpperCase();
-        if (cmd == 'Z') {
+        cmd = t;
+        if (t.toUpperCase() == 'Z') {
+          flush();
           cmd = null;
         }
       } else {
@@ -1110,11 +1329,16 @@ class VsdxToSvgSerializer {
           final ry = math.sqrt(bx * bx + by * by);
           if (rx > 0 && ry > 0) {
             if (ay.abs() < 1e-9 && bx.abs() < 1e-9) {
-              // Keep path cursor / started in sync with other commands.
+              // Absolute arcs so bounds / gradient sampling see real extents
+              // (relative `a` endpoints were mis-read as absolute coords).
               m(cx - rx, cy);
               out
-                ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(rx * 2)} 0 ')
-                ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(-rx * 2)} 0 ');
+                ..write(
+                  'A ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(cx + rx)} ${_n(cy)} ',
+                )
+                ..write(
+                  'A ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(cx - rx)} ${_n(cy)} ',
+                );
             } else {
               // Rotated ellipse: dense polyline.
               const steps = 64;
@@ -1470,47 +1694,6 @@ class VsdxToSvgSerializer {
     // Visio Rounding fillets corners; when we cannot rewrite the path, round
     // joins approximate the soft elbow look (canvas uses filletPolyline).
     final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
-    final markers = StringBuffer();
-    if (line.hasBeginArrow) {
-      final mid = 'arrow-start-$paintId';
-      final mw = _arrowMarkerSize(
-        line.beginArrowSizeInches,
-        line.beginArrow,
-      );
-      final body = _arrowMarkerBody(
-        line.beginArrow,
-        tipAtEnd: false,
-        lineWeightInches: weight,
-        markerSizeInches: mw,
-      );
-      // userSpaceOnUse: absolute page inches. overflow=visible keeps fletching
-      // / tip strokes outside viewBox (arrow 9, open tips).
-      defs.write(
-        '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
-        'viewBox="0 0 10 10" refX="0" refY="5" '
-        'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" orient="auto">'
-        '$body</marker>',
-      );
-      markers.write(' marker-start="url(#$mid)"');
-    }
-    if (line.hasEndArrow) {
-      final mid = 'arrow-end-$paintId';
-      final mw = _arrowMarkerSize(line.endArrowSizeInches, line.endArrow);
-      final body = _arrowMarkerBody(
-        line.endArrow,
-        tipAtEnd: true,
-        lineWeightInches: weight,
-        markerSizeInches: mw,
-      );
-      defs.write(
-        '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
-        'viewBox="0 0 10 10" refX="10" refY="5" '
-        'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" '
-        'orient="auto-start-reverse">'
-        '$body</marker>',
-      );
-      markers.write(' marker-end="url(#$mid)"');
-    }
     // Keep LineColorTrans as stroke-opacity even for gradients (canvas applies
     // line.transparency once via the stroke paint / shader, not twice).
     var strokePaint = 'stroke="$hex" stroke-opacity="${_n(alpha)}"';
@@ -1549,6 +1732,56 @@ class VsdxToSvgSerializer {
       }
       strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
     }
+    final markers = StringBuffer();
+    // PDF backends ignore <marker>; callers bake geometry via [bakeArrowMarkers].
+    if (!bakeArrowMarkers) {
+      // Solid colours bake alpha into the marker (context-stroke ignores
+      // host stroke-opacity). Gradients still use context-stroke.
+      final markerColor = line.hasGradient ? null : hex;
+      final markerOp = line.hasGradient ? 1.0 : alpha;
+      if (line.hasBeginArrow) {
+        final mid = 'arrow-start-$paintId';
+        final mw = _arrowMarkerSize(
+          line.beginArrowSizeInches,
+          line.beginArrow,
+        );
+        final body = _arrowMarkerBody(
+          line.beginArrow,
+          tipAtEnd: false,
+          lineWeightInches: weight,
+          markerSizeInches: mw,
+          colorHex: markerColor,
+          opacity: markerOp,
+        );
+        defs.write(
+          '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
+          'viewBox="0 0 10 10" refX="0" refY="5" '
+          'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" orient="auto">'
+          '$body</marker>',
+        );
+        markers.write(' marker-start="url(#$mid)"');
+      }
+      if (line.hasEndArrow) {
+        final mid = 'arrow-end-$paintId';
+        final mw = _arrowMarkerSize(line.endArrowSizeInches, line.endArrow);
+        final body = _arrowMarkerBody(
+          line.endArrow,
+          tipAtEnd: true,
+          lineWeightInches: weight,
+          markerSizeInches: mw,
+          colorHex: markerColor,
+          opacity: markerOp,
+        );
+        defs.write(
+          '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
+          'viewBox="0 0 10 10" refX="10" refY="5" '
+          'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" '
+          'orient="auto-start-reverse">'
+          '$body</marker>',
+        );
+        markers.write(' marker-end="url(#$mid)"');
+      }
+    }
     final paint = '$strokePaint '
         'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
         'stroke-linejoin="$linejoin"'
@@ -1563,6 +1796,8 @@ class VsdxToSvgSerializer {
     required bool tipAtEnd,
     double lineWeightInches = 0.01,
     double markerSizeInches = 0.125,
+    String? colorHex,
+    double opacity = 1.0,
   }) {
     // Work in tip-at-right space, then mirror for start markers.
     // filled / open choices mirror lib/render/arrow_library.dart.
@@ -1632,15 +1867,21 @@ class VsdxToSvgSerializer {
       _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
     };
     final pathD = tipAtEnd ? d : _mirrorArrowD(d);
+    final fillPaint = colorHex == null
+        ? 'fill="context-stroke"'
+        : 'fill="$colorHex" fill-opacity="${_n(opacity)}"';
+    final strokePaint = colorHex == null
+        ? 'stroke="context-stroke"'
+        : 'stroke="$colorHex" stroke-opacity="${_n(opacity)}"';
     if (filled) {
-      return '<path d="$pathD" fill="context-stroke" stroke="none"/>';
+      return '<path d="$pathD" $fillPaint stroke="none"/>';
     }
     // Match canvas: strokeWidth = lineWeight / sizeInches in local arrow
     // space. viewBox 0–10 maps to markerSizeInches → stroke in viewBox units.
     final sw = markerSizeInches > 1e-9
         ? (10.0 * lineWeightInches / markerSizeInches).clamp(0.4, 4.0)
         : 1.2;
-    return '<path d="$pathD" fill="none" stroke="context-stroke" '
+    return '<path d="$pathD" fill="none" $strokePaint '
         'stroke-width="${_n(sw)}" stroke-linejoin="round"/>';
   }
 

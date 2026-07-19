@@ -1216,7 +1216,9 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('fill="none" stroke="context-stroke"'), isTrue);
+    // Open triangle: stroked, not filled (explicit colour carries LineColorTrans).
+    expect(svg.contains('fill="none" stroke="#000000"'), isTrue);
+    expect(svg.contains('M 0 1 L 10 5 L 0 9 Z'), isTrue);
   });
 
   test('SVG TxtAngle rotates about TxtPin not text centroid', () {

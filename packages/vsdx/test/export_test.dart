@@ -599,7 +599,7 @@ void main() {
     expect(svg, contains('marker-end='));
     expect(
       svg,
-      contains('fill="none" stroke="context-stroke"'),
+      contains('fill="none" stroke="#000000"'),
       reason: 'arrow 8 is open stealth on canvas; SVG must not fill it',
     );
   });
@@ -645,7 +645,7 @@ void main() {
       svg,
       contains(
         'd="M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0" '
-        'fill="none" stroke="context-stroke"',
+        'fill="none" stroke="#000000"',
       ),
       reason: 'arrow 34 is a small open circle on canvas',
     );
@@ -678,7 +678,7 @@ void main() {
       svg,
       contains(
         'd="M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7" '
-        'fill="none" stroke="context-stroke"',
+        'fill="none" stroke="#000000"',
       ),
       reason: 'arrow 27 must be open hatched triangle',
     );
@@ -687,7 +687,7 @@ void main() {
       svg,
       contains(
         'd="M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9" '
-        'fill="none" stroke="context-stroke"',
+        'fill="none" stroke="#000000"',
       ),
       reason: 'arrow 33 must be open trident, not a filled dart',
     );
@@ -729,6 +729,90 @@ void main() {
     expect(svg.contains('<linearGradient id="lg-'), isFalse,
         reason: 'radial LineGradient must not fall back to linear');
     expect(svg, contains('gradientUnits="userSpaceOnUse"'));
+  });
+
+  test('SVG ellipse gradient bounds use absolute arcs (not relative a)', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.ellipse(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            gradient: VsdxGradient(
+              type: VsdxGradientType.linear,
+              angleRad: 0,
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('A 1 0.5 0 1 0 2 0.5'));
+    expect(svg.contains(' a 1 '), isFalse);
+    // Centre (1, 0.5), r=max(2,1)*0.6=1.2 → x1=-0.2 x2=2.2
+    expect(svg, contains('x1="-0.2"'));
+    expect(svg, contains('x2="2.2"'));
+  });
+
+  test('SVG bakeArrowMarkers emits path geometry without <marker>', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 2,
+                weightInches: 0.04,
+                transparency: 0.5,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer(bakeArrowMarkers: true)
+        .serializePage(doc.pages.first);
+    expect(svg.contains('<marker '), isFalse);
+    expect(svg.contains('marker-end='), isFalse);
+    expect(svg, contains('translate(2 0)'));
+    expect(svg, contains('fill-opacity="0.5"'));
+  });
+
+  test('SVG marker arrows honour LineColorTrans opacity', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 2,
+                weightInches: 0.04,
+                transparency: 0.4,
+                color: VsdxColor(0xFF1565C0),
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('fill="#1565c0" fill-opacity="0.6"'));
+    expect(svg.contains('fill="context-stroke"'), isFalse);
   });
 
   test('SVG fill gradient uses userSpaceOnUse like canvas inches', () {
@@ -784,7 +868,7 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains('d="M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z" fill="context-stroke"'),
+      contains('d="M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z" fill="#000000"'),
     );
     expect(svg.contains('L 2 5 Z'), isFalse,
         reason: 'must not reuse stealth template for chevron 31');
@@ -919,13 +1003,13 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="context-stroke"'),
+      contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="#000000"'),
       reason: 'arrow 25 is filled wide triangle',
     );
     expect(
       svg,
       contains(
-        'd="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="none" stroke="context-stroke"',
+        'd="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="none" stroke="#000000"',
       ),
       reason: 'arrow 26 is open wide triangle',
     );
@@ -1038,13 +1122,13 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="context-stroke"'),
+      contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="#000000"'),
       reason: 'arrow 5 is filled narrow triangle',
     );
     expect(
       svg,
       contains(
-        'd="M 0 2.5 L 10 5 L 0 7.5 Z" fill="none" stroke="context-stroke"',
+        'd="M 0 2.5 L 10 5 L 0 7.5 Z" fill="none" stroke="#000000"',
       ),
       reason: 'arrow 6 is open narrow triangle',
     );
