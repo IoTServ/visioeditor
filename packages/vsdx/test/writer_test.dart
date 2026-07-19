@@ -2010,6 +2010,12 @@ void main() {
     expect(archive.findFile('visio/media/image_b.png'), isNotNull);
     // Orphan media from the replaced picture must be pruned.
     expect(archive.findFile('visio/media/image_a.png'), isNull);
+    // Page rels must not keep a dangling Relationship to the pruned part.
+    final relsEntry = archive.findFile('visio/pages/_rels/page1.xml.rels');
+    expect(relsEntry, isNotNull);
+    final relsXml = utf8.decode(relsEntry!.content as List<int>);
+    expect(relsXml, isNot(contains('image_a.png')));
+    expect(relsXml, contains('image_b.png'));
     final reopened = parser.parse(out2);
     final s = reopened.pages.first.findShapeById(id)!;
     expect(s.imagePartName, endsWith('image_b.png'));

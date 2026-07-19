@@ -180,6 +180,45 @@ void main() {
       );
     });
 
+    test('validate flags missing backgroundPageId', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final page = doc.pages.first;
+      doc = doc.replacePage(
+        0,
+        page.copyWith(backgroundPageId: 999),
+      );
+      final issues = validateDocument(doc);
+      expect(
+        issues.any((i) => i.message.contains('backgroundPageId 999')),
+        isTrue,
+      );
+    });
+
+    test('removePageAt clears dangling backgroundPageId', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final fg = doc.pages.first;
+      final bgId = doc.nextPageId();
+      doc = doc.insertPage(
+        1,
+        VsdxPage(
+          id: bgId,
+          name: 'Background-1',
+          widthInches: fg.widthInches,
+          heightInches: fg.heightInches,
+          shapes: const <VsdxShape>[],
+          isBackgroundPage: true,
+        ),
+      );
+      doc = doc.replacePage(0, fg.copyWith(backgroundPageId: bgId));
+      expect(doc.pages.first.backgroundPageId, bgId);
+      doc = doc.removePageAt(1);
+      expect(doc.pages, hasLength(1));
+      expect(doc.pages.first.backgroundPageId, isNull);
+      expect(validateDocument(doc).where((i) => i.severity == 'error'), isEmpty);
+    });
+
     test('explain lists shapes and connections', () {
       final md = explainDocument(built());
       expect(md, contains('# Flow'));

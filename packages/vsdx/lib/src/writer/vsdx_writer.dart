@@ -287,6 +287,7 @@ class VsdxWriter {
     }
 
     var any = false;
+    final pruned = <String>{};
     final candidates = <String>{
       for (final name in pkg.allPartNames)
         if (_noSlash(name).startsWith('visio/media/')) _noSlash(name),
@@ -297,8 +298,78 @@ class VsdxWriter {
       if (referenced.contains(media)) continue;
       if (removed.add(media)) any = true;
       patched.remove(media);
+      pruned.add(media);
+    }
+    if (pruned.isNotEmpty) {
+      _pruneDanglingImageRelationships(
+        pkg: pkg,
+        patched: patched,
+        prunedMedia: pruned,
+      );
     }
     return any;
+  }
+
+  /// Drop image Relationships whose Target points at a media part just pruned,
+  /// so page/master `.rels` do not keep dangling `../media/…` entries.
+  void _pruneDanglingImageRelationships({
+    required VsdxPackage pkg,
+    required Map<String, Uint8List> patched,
+    required Set<String> prunedMedia,
+  }) {
+    final relParts = <String>{
+      for (final name in pkg.allPartNames)
+        if (_noSlash(name).endsWith('.rels')) _noSlash(name),
+      for (final name in patched.keys)
+        if (name.endsWith('.rels')) name,
+    };
+    for (final relsNoSlash in relParts) {
+      XmlDocument? relsXml;
+      if (patched.containsKey(relsNoSlash)) {
+        relsXml = XmlDocument.parse(utf8.decode(patched[relsNoSlash]!));
+      } else {
+        relsXml = pkg.readPartXml('/$relsNoSlash');
+      }
+      if (relsXml == null) continue;
+
+      // Owner part for relative Target resolution: …/_rels/foo.xml.rels → …/foo.xml
+      final ownerPart = _ownerPartForRels(relsNoSlash);
+      var dirty = false;
+      final doomed = <XmlElement>[];
+      for (final rel in relsXml.rootElement.childElements) {
+        if (rel.name.local != 'Relationship') continue;
+        if (rel.getAttribute('Type') != _imageRelType) continue;
+        final target = rel.getAttribute('Target');
+        if (target == null) continue;
+        final abs = _noSlash(_absoluteMediaPart('/$ownerPart', target));
+        if (!prunedMedia.contains(abs)) continue;
+        doomed.add(rel);
+      }
+      for (final el in doomed) {
+        el.parent?.children.remove(el);
+        dirty = true;
+      }
+      if (dirty) {
+        patched[relsNoSlash] =
+            Uint8List.fromList(utf8.encode(relsXml.toXmlString()));
+      }
+    }
+  }
+
+  /// Map `visio/pages/_rels/page1.xml.rels` → `visio/pages/page1.xml`.
+  static String _ownerPartForRels(String relsNoSlash) {
+    final marker = '/_rels/';
+    final idx = relsNoSlash.indexOf(marker);
+    if (idx < 0) {
+      // Package root `_rels/.rels` — absolute targets only.
+      return '';
+    }
+    final dir = relsNoSlash.substring(0, idx);
+    var base = relsNoSlash.substring(idx + marker.length);
+    if (base.endsWith('.rels')) {
+      base = base.substring(0, base.length - '.rels'.length);
+    }
+    return dir.isEmpty ? base : '$dir/$base';
   }
 
   /// Inject a minimal `docProps/core.xml` when the package omits it so Save

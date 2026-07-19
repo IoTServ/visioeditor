@@ -2290,6 +2290,7 @@ class EditorController extends ChangeNotifier {
     }
 
     final minted = _mintImage(doc, bytes, fileExtension);
+    final oldPart = shape.imagePartName;
     final next = page.updateShapeById(
       shapeId,
       (s) => s.copyWith(
@@ -2303,13 +2304,48 @@ class EditorController extends ChangeNotifier {
       ..clear()
       ..add(shapeId);
     _tool = EditorTool.select;
+    var images = doc.images.withImage(minted);
+    // Drop the old part from the in-memory registry when nothing else uses it
+    // (zip prune on save handles the package; this keeps warmUp lean).
+    if (oldPart != null &&
+        oldPart.isNotEmpty &&
+        !_anyShapeUsesImage(doc, oldPart, exceptShapeId: shapeId)) {
+      images = images.withoutImage(oldPart);
+    }
     applyEdit(
-      doc.copyWith(images: doc.images.withImage(minted)).replacePage(
+      doc.copyWith(images: images).replacePage(
             _currentPageIndex,
             next,
           ),
       undoSelection: undoSel,
     );
+  }
+
+  /// True when any shape (any page / nested) still references [partName].
+  bool _anyShapeUsesImage(
+    VsdxDocument doc,
+    String partName, {
+    int? exceptShapeId,
+  }) {
+    String norm(String p) => p.startsWith('/') ? p.substring(1) : p;
+    final want = norm(partName);
+    bool walk(VsdxShape s) {
+      if (exceptShapeId == null || s.id != exceptShapeId) {
+        final p = s.imagePartName;
+        if (p != null && p.isNotEmpty && norm(p) == want) return true;
+      }
+      for (final c in s.children) {
+        if (walk(c)) return true;
+      }
+      return false;
+    }
+
+    for (final page in doc.pages) {
+      for (final s in page.shapes) {
+        if (walk(s)) return true;
+      }
+    }
+    return false;
   }
 
   /// True when the single selection is an unlocked, visible picture shape.

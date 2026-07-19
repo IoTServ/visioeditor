@@ -179,6 +179,9 @@ class VsdxToSvgSerializer {
       );
       buf.writeln('$indent    <g clip-path="url(#$clipId)">');
       final underLayers = _layerIds(underlay);
+      // Scope underlay paint ids by foreground page so a shared BackPage
+      // composited into multiple sheets does not collide SVG defs.
+      final underPaintScope = 'p${page.id}-u${underlay.id}';
       for (final shape in underlay.shapes) {
         _writeShape(
           buf,
@@ -186,6 +189,7 @@ class VsdxToSvgSerializer {
           theme,
           underlay,
           underLayers,
+          paintIdScope: underPaintScope,
           indent: '$indent      ',
         );
       }
@@ -193,8 +197,17 @@ class VsdxToSvgSerializer {
       buf.writeln('$indent  </g>');
     }
     final layers = _layerIds(page);
+    final paintScope = 'p${page.id}';
     for (final shape in page.shapes) {
-      _writeShape(buf, shape, theme, page, layers, indent: '$indent  ');
+      _writeShape(
+        buf,
+        shape,
+        theme,
+        page,
+        layers,
+        paintIdScope: paintScope,
+        indent: '$indent  ',
+      );
     }
     buf.writeln('$indent</g>');
   }
@@ -212,6 +225,7 @@ class VsdxToSvgSerializer {
     VsdxTheme theme,
     VsdxPage page,
     Set<int>? visibleLayers, {
+    required String paintIdScope,
     required String indent,
   }) {
     if (visibleLayers != null &&
@@ -258,8 +272,9 @@ class VsdxToSvgSerializer {
           d: d,
           noFill: geom.noFill,
           noLine: geom.noLine,
-          // Page-scoped so multi-page document SVG does not collide defs ids.
-          paintId: 'p${page.id}-${shape.id}-$geomIndex',
+          // paintIdScope is page- (and underlay-) scoped so multi-page SVG
+          // and shared BackPage composites do not collide defs ids.
+          paintId: '$paintIdScope-${shape.id}-$geomIndex',
           indent: '$indent  ',
         );
         geomIndex++;
@@ -282,7 +297,7 @@ class VsdxToSvgSerializer {
           d: d,
           noFill: true,
           noLine: false,
-          paintId: 'p${page.id}-${shape.id}-0',
+          paintId: '$paintIdScope-${shape.id}-0',
           indent: '$indent  ',
         );
       }
@@ -302,7 +317,14 @@ class VsdxToSvgSerializer {
       for (final child in shape.children) {
         if (TableOps.isCovered(child)) continue;
         _writeShape(
-            buf, child, theme, page, visibleLayers, indent: '$indent  ');
+          buf,
+          child,
+          theme,
+          page,
+          visibleLayers,
+          paintIdScope: paintIdScope,
+          indent: '$indent  ',
+        );
       }
     }
     buf.writeln('$indent</g>');

@@ -31,6 +31,15 @@ List<ValidationIssue> validateDocument(VsdxDocument doc) {
       }
     }
 
+    // Dangling BackPage (underlay id no longer in the document).
+    final bgId = page.backgroundPageId;
+    if (bgId != null && doc.pageById(bgId) == null) {
+      issues.add(ValidationIssue(
+        'error',
+        '$label: backgroundPageId $bgId is missing',
+      ));
+    }
+
     // Dangling connects (reference a shape that no longer exists).
     for (final c in page.connects) {
       if (page.findShapeById(c.fromSheetId) == null) {

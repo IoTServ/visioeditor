@@ -125,9 +125,19 @@ class VsdxDocument {
   }
 
   /// Remove the page at [index]. Out-of-range indices return `this`.
+  ///
+  /// Also clears any remaining page's [VsdxPage.backgroundPageId] that pointed
+  /// at the removed page so export / writer do not keep a dangling BackPage.
   VsdxDocument removePageAt(int index) {
     if (index < 0 || index >= pages.length) return this;
-    final newPages = List<VsdxPage>.of(pages)..removeAt(index);
+    final removedId = pages[index].id;
+    final newPages = <VsdxPage>[
+      for (var i = 0; i < pages.length; i++)
+        if (i != index)
+          pages[i].backgroundPageId == removedId
+              ? pages[i].copyWith(backgroundPageId: null)
+              : pages[i],
+    ];
     return copyWith(pages: newPages);
   }
 

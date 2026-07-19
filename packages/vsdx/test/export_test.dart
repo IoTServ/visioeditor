@@ -161,6 +161,66 @@ void main() {
     expect(svg, isNot(contains('page-2')));
   });
 
+  test('shared BackPage underlay paint ids are foreground-scoped', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final p0 = doc.pages.first;
+    const fill = VsdxFill(
+      foreground: VsdxColor(0xFF1565C0),
+      gradient: VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFF1565C0)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF90CAF9)),
+        ],
+      ),
+    );
+    final bgId = doc.nextPageId();
+    final bgShape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(fill: fill);
+    doc = doc.insertPage(
+      1,
+      VsdxPage(
+        id: bgId,
+        name: 'Background-1',
+        widthInches: p0.widthInches,
+        heightInches: p0.heightInches,
+        shapes: <VsdxShape>[bgShape],
+        isBackgroundPage: true,
+      ),
+    );
+    final p1Id = doc.nextPageId();
+    doc = doc
+        .replacePage(
+          0,
+          p0.copyWith(backgroundPageId: bgId, shapes: const <VsdxShape>[]),
+        )
+        .insertPage(
+          2,
+          VsdxPage(
+            id: p1Id,
+            name: 'Page-2',
+            widthInches: p0.widthInches,
+            heightInches: p0.heightInches,
+            backgroundPageId: bgId,
+            shapes: const <VsdxShape>[],
+          ),
+        );
+    final svg = VsdxToSvgSerializer().serializeDocument(doc);
+    expect(svg, contains('id="grad-p${p0.id}-u$bgId-1-0"'));
+    expect(svg, contains('id="grad-p$p1Id-u$bgId-1-0"'));
+    expect(
+      RegExp('id="grad-p$bgId-1-0"').hasMatch(svg),
+      isFalse,
+      reason: 'underlay must not use bare background page paint scope',
+    );
+  });
+
   test('SVG print filter omits non-printable layers', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
