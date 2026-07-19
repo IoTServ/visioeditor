@@ -170,6 +170,12 @@ void main() {
         .toSet();
     expect(e.isCollapsed(box.id), isTrue);
     expect(gluedAfter.contains(childId), isFalse);
+    final folded = e.currentPage!.findShapeById(connBefore.id)!;
+    expect(folded.formulas.containsKey('BegTrigger'), isFalse);
+    expect(folded.formulas['EndTrigger'], contains('Sheet.$other!'));
+    e.toggleCollapsed(box.id); // unfold
+    final unfolded = e.currentPage!.findShapeById(connBefore.id)!;
+    expect(unfolded.formulas['BegTrigger'], contains('Sheet.$childId!'));
   });
 
   test('reparentSelectionInto into self-descendant is no-op', () {

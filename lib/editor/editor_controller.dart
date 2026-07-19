@@ -1098,12 +1098,18 @@ class EditorController extends ChangeNotifier {
               if (hidden.contains(c.toSheetId)) c,
           ];
           if (detached.isNotEmpty) {
+            final affected = <int>{
+              for (final c in detached) c.fromSheetId,
+            };
             out = out.copyWith(
               connects: <VsdxConnect>[
                 for (final c in out.connects)
                   if (!hidden.contains(c.toSheetId)) c,
               ],
             );
+            // Clear XFTRIGGERs that still name hidden children.
+            out = out.clearStaleGlueTriggers(hidden);
+            out = out.syncGlueTriggers(connectorIds: affected);
             out = out.updateShapeById(
               id,
               (shape) => _withCollapsedGlue(shape, detached),
@@ -1120,9 +1126,13 @@ class EditorController extends ChangeNotifier {
               c,
         ];
         if (detached.isNotEmpty) {
+          final affected = <int>{
+            for (final c in detached) c.fromSheetId,
+          };
           out = out.copyWith(
             connects: <VsdxConnect>[...out.connects, ...detached],
           );
+          out = out.syncGlueTriggers(connectorIds: affected);
         }
         out = out.updateShapeById(id, _withoutCollapsedGlue);
       }
@@ -1727,23 +1737,29 @@ class EditorController extends ChangeNotifier {
         ),
       );
       // Glue aimed at covered cells must follow the master (cells stay in the
-      // model but are skipped by hit-test / paint).
+      // model but are skipped by hit-test / paint). Sync XFTRIGGER formulas too.
       if (masterId != null && coveredIds.isNotEmpty && next.connects.isNotEmpty) {
-        final remapped = <VsdxConnect>[
-          for (final c in next.connects)
-            if (coveredIds.contains(c.toSheetId))
-              VsdxConnect(
-                fromSheetId: c.fromSheetId,
-                fromCell: c.fromCell,
-                fromPart: c.fromPart,
-                toSheetId: masterId,
-                toCell: c.toCell,
-                toPart: c.toPart,
-              )
-            else
-              c,
-        ];
+        final affected = <int>{};
+        final remapped = <VsdxConnect>[];
+        for (final c in next.connects) {
+          if (coveredIds.contains(c.toSheetId)) {
+            affected.add(c.fromSheetId);
+            remapped.add(VsdxConnect(
+              fromSheetId: c.fromSheetId,
+              fromCell: c.fromCell,
+              fromPart: c.fromPart,
+              toSheetId: masterId,
+              toCell: c.toCell,
+              toPart: c.toPart,
+            ));
+          } else {
+            remapped.add(c);
+          }
+        }
         next = next.copyWith(connects: remapped);
+        if (affected.isNotEmpty) {
+          next = next.syncGlueTriggers(connectorIds: affected);
+        }
       }
       return next.rerouteConnectors(movedShapeIds: movedIds);
     });
@@ -5860,17 +5876,10 @@ class EditorController extends ChangeNotifier {
     return out;
   }
 
-  /// Drop `<Connect>` rows that reference any id in [ids] (deleted subtrees).
-  static VsdxPage _pruneConnectsReferencing(VsdxPage page, Set<int> ids) {
-    if (ids.isEmpty || page.connects.isEmpty) return page;
-    final next = <VsdxConnect>[
-      for (final c in page.connects)
-        if (!ids.contains(c.fromSheetId) && !ids.contains(c.toSheetId)) c,
-    ];
-    return next.length == page.connects.length
-        ? page
-        : page.copyWith(connects: next);
-  }
+  /// Drop `<Connect>` rows that reference any id in [ids] and clear matching
+  /// BegTrigger / EndTrigger XFTRIGGER cells.
+  static VsdxPage _pruneConnectsReferencing(VsdxPage page, Set<int> ids) =>
+      page.pruneConnectsReferencing(ids);
 
   static VsdxShape _translated(VsdxShape s, double dx, double dy) =>
       VsdxPage.translateShape(s, dx, dy);

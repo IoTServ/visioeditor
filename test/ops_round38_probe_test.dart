@@ -162,6 +162,7 @@ void main() {
         .firstWhere((c) => TableOps.cellRow(c) == 0);
     final outside = rect(e, 1, 4);
     e.createConnector(1, 4, 4, 4, beginTarget: outside, endTarget: cell.id);
+    final connId = e.currentPage!.shapes.lastWhere((s) => s.is1D).id;
     e.setSelection([cell.id]);
     e.removeRowFromSelectedTable();
     expect(e.currentPage!.findShapeById(cell.id), isNull);
@@ -169,6 +170,9 @@ void main() {
       e.currentPage!.connects.any((c) => c.toSheetId == cell.id),
       isFalse,
     );
+    final after = e.currentPage!.findShapeById(connId)!;
+    expect(after.formulas.containsKey('EndTrigger'), isFalse);
+    expect(after.formulas['BegTrigger'], contains('Sheet.$outside!'));
   });
 
   test('layoutLanes keeps pool-level content above lanes', () {

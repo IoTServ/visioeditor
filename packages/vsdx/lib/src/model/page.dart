@@ -509,12 +509,26 @@ class VsdxPage {
     );
     // Drop stale BegTrigger/EndTrigger XFTRIGGERs that still name deleted
     // sheets (Connect rows are gone; formulas would otherwise dangle).
-    next = next._clearStaleGlueTriggers(removedIds);
+    next = next.clearStaleGlueTriggers(removedIds);
     return next;
   }
 
+  /// Drop `<Connect>` rows that reference any id in [ids], then clear matching
+  /// BegTrigger / EndTrigger XFTRIGGER cells (table row/col delete, lane remove).
+  VsdxPage pruneConnectsReferencing(Set<int> ids) {
+    if (ids.isEmpty) return this;
+    final nextConnects = <VsdxConnect>[
+      for (final c in connects)
+        if (!ids.contains(c.fromSheetId) && !ids.contains(c.toSheetId)) c,
+    ];
+    final next = nextConnects.length == connects.length
+        ? this
+        : copyWith(connects: nextConnects);
+    return next.clearStaleGlueTriggers(ids);
+  }
+
   /// Remove BegTrigger / EndTrigger cells that reference any id in [removedIds].
-  VsdxPage _clearStaleGlueTriggers(Set<int> removedIds) {
+  VsdxPage clearStaleGlueTriggers(Set<int> removedIds) {
     if (removedIds.isEmpty) return this;
     final updates = <int, Map<String, String>>{};
     void walk(List<VsdxShape> list) {
@@ -547,6 +561,43 @@ class VsdxPage {
         (sh) => sh.copyWith(formulas: e.value),
       );
     }
+    return next;
+  }
+
+  /// Align BegTrigger / EndTrigger on connectors with the current Connect rows.
+  /// When [connectorIds] is null, every 1-D shape with glue formulas or Connect
+  /// rows is synced (merge remap, fold/unfold restore).
+  VsdxPage syncGlueTriggers({Set<int>? connectorIds}) {
+    final index = connectIndex;
+    var next = this;
+    void walk(List<VsdxShape> list) {
+      for (final s in list) {
+        if (s.is1D &&
+            (connectorIds == null || connectorIds.contains(s.id))) {
+          int? beginTarget;
+          int? endTarget;
+          for (final c in index.forConnector(s.id)) {
+            if (c.isBegin) {
+              beginTarget = c.toSheetId;
+            } else if (c.isEnd) {
+              endTarget = c.toSheetId;
+            }
+          }
+          final synced = _withGlueTriggers(
+            s,
+            beginTarget: beginTarget,
+            endTarget: endTarget,
+          );
+          if (synced.formulas['BegTrigger'] != s.formulas['BegTrigger'] ||
+              synced.formulas['EndTrigger'] != s.formulas['EndTrigger']) {
+            next = next.updateShapeById(s.id, (_) => synced);
+          }
+        }
+        if (s.children.isNotEmpty) walk(s.children);
+      }
+    }
+
+    walk(shapes);
     return next;
   }
 

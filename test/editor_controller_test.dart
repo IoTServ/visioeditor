@@ -653,6 +653,14 @@ void main() {
     final beginGlue = c.currentPage!.connects
         .firstWhere((e) => e.fromSheetId == conn && e.isBegin);
     expect(beginGlue.toSheetId, master.id);
+    expect(
+      c.currentPage!.findShapeById(conn)!.formulas['BegTrigger'],
+      contains('Sheet.${master.id}!'),
+    );
+    expect(
+      c.currentPage!.findShapeById(conn)!.formulas['BegTrigger'],
+      isNot(contains('Sheet.${covered.id}!')),
+    );
   });
 
   test('replaceFind and replaceAllFind update labels', () {

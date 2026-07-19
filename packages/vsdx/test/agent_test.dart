@@ -357,6 +357,81 @@ void main() {
       expect(r.document.pages.first.connects, hasLength(1));
     });
 
+    test('pruneConnectsReferencing clears EndTrigger for deleted targets', () {
+      final a = VsdxShapeFactory.rectangle(
+          id: 1, pinX: 2, pinY: 2, width: 1, height: 1);
+      final b = VsdxShapeFactory.rectangle(
+          id: 2, pinX: 5, pinY: 2, width: 1, height: 1);
+      final conn = VsdxShapeFactory.line(id: 3, ax: 2, ay: 2, bx: 5, by: 2)
+          .copyWith(formulas: <String, String>{
+        'BegTrigger': '_XFTRIGGER(Sheet.1!EventXFMod)',
+        'EndTrigger': '_XFTRIGGER(Sheet.2!EventXFMod)',
+      });
+      var page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 8,
+        heightInches: 11,
+        shapes: <VsdxShape>[a, b, conn],
+        connects: const [
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'BeginX',
+            fromPart: 9,
+            toSheetId: 1,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'EndX',
+            fromPart: 12,
+            toSheetId: 2,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+        ],
+      );
+      page = page.pruneConnectsReferencing({2});
+      expect(page.connects, hasLength(1));
+      final after = page.findShapeById(3)!;
+      expect(after.formulas.containsKey('EndTrigger'), isFalse);
+      expect(after.formulas['BegTrigger'], contains('Sheet.1!'));
+    });
+
+    test('syncGlueTriggers rewrites BegTrigger after Connect remap', () {
+      final a = VsdxShapeFactory.rectangle(
+          id: 1, pinX: 2, pinY: 2, width: 1, height: 1);
+      final b = VsdxShapeFactory.rectangle(
+          id: 2, pinX: 5, pinY: 2, width: 1, height: 1);
+      final conn = VsdxShapeFactory.line(id: 3, ax: 2, ay: 2, bx: 5, by: 2)
+          .copyWith(formulas: <String, String>{
+        'BegTrigger': '_XFTRIGGER(Sheet.1!EventXFMod)',
+      });
+      var page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 8,
+        heightInches: 11,
+        shapes: <VsdxShape>[a, b, conn],
+        connects: const [
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'BeginX',
+            fromPart: 9,
+            toSheetId: 2,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+        ],
+      );
+      page = page.syncGlueTriggers(connectorIds: {3});
+      expect(
+        page.findShapeById(3)!.formulas['BegTrigger'],
+        contains('Sheet.2!'),
+      );
+    });
+
     test('move_shape translates Begin/End with the pin', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);
