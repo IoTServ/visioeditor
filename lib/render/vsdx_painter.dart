@@ -192,8 +192,14 @@ class VsdxPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// Page whose shapes are currently being painted (foreground or underlay).
+  /// Used by [_pageToLocal] so nested inverse XForms resolve against the
+  /// correct shape tree.
+  VsdxPage? _paintTarget;
+
   /// Paint [target]'s top-level shapes in the current (page-inch, Y-up) canvas.
   void _paintPageShapes(Canvas canvas, VsdxPage target) {
+    _paintTarget = target;
     final isUnderlay =
         underlayPage != null && identical(target, underlayPage);
     final visibleLayers = !respectLayerVisibility
@@ -471,7 +477,8 @@ class VsdxPainter extends CustomPainter {
   void _paint1DFallback(Canvas canvas, VsdxShape shape) {
     final stroke = _resolveStrokePaint(shape);
     if (stroke == null) return;
-    final routed = router.route(shape, page: page);
+    final ctx = _paintTarget ?? page;
+    final routed = router.route(shape, page: ctx);
     if (routed == null) return;
 
     final pts = routed.points.toList(growable: false);
@@ -523,26 +530,45 @@ class VsdxPainter extends CustomPainter {
     return path;
   }
 
-  /// Inverse of the XForm we apply in [_paintShape], i.e. map a page-inch
-  /// point back into the shape's local frame
-  /// (`(0..width) × (0..height)`).
-  ///
-  /// Forward transform: `T(pin) · R · S(±1) · T(-LocPin)`.
-  /// Inverse:           `T(LocPin) · S(±1) · R(-angle) · T(-pin)`.
+  /// Map a page-inch point into [shape]'s local frame, composing ancestor
+  /// XForms when the shape is nested (matches SVG `pageToLocalDeep`).
   Offset _pageToLocal(VsdxShape shape, Offset pagePoint) {
-    var x = pagePoint.dx - shape.pinX;
-    var y = pagePoint.dy - shape.pinY;
-    if (shape.angleRad != 0) {
-      final cosA = math.cos(-shape.angleRad);
-      final sinA = math.sin(-shape.angleRad);
-      final rx = x * cosA - y * sinA;
-      final ry = x * sinA + y * cosA;
-      x = rx;
-      y = ry;
+    final ctx = _paintTarget ?? page;
+    if (ctx == null) {
+      return Offset(
+        pagePoint.dx - shape.pinX + shape.effectiveLocPinX,
+        pagePoint.dy - shape.pinY + shape.effectiveLocPinY,
+      );
     }
-    if (shape.flipX) x = -x;
-    if (shape.flipY) y = -y;
-    return Offset(x + shape.effectiveLocPinX, y + shape.effectiveLocPinY);
+    final local = ctx.pageToLocalDeep(
+      shape.id,
+      Offset2D(pagePoint.dx, pagePoint.dy),
+    );
+    return Offset(local.x, local.y);
+  }
+
+  static Offset2D _polylineMidpoint(List<Offset2D> route) {
+    if (route.isEmpty) return const Offset2D(0, 0);
+    if (route.length == 1) return route.first;
+    var total = 0.0;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      total += math.sqrt(dx * dx + dy * dy);
+    }
+    if (total <= 0) return route.first;
+    var remaining = total / 2;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      final len = math.sqrt(dx * dx + dy * dy);
+      if (len >= remaining) {
+        final t = len == 0 ? 0.0 : remaining / len;
+        return Offset2D(route[i].x + dx * t, route[i].y + dy * t);
+      }
+      remaining -= len;
+    }
+    return route.last;
   }
 
   void _drawFill(Canvas canvas, VsdxShape shape, Path path) {
@@ -791,7 +817,7 @@ class VsdxPainter extends CustomPainter {
     // Geometry-less connector: fall back to the auto-router (which now attaches
     // on the target's perimeter, see ConnectorRouter).
     if (shape.is1D && shape.beginX != null && shape.endX != null) {
-      final routed = router.route(shape, page: page);
+      final routed = router.route(shape, page: _paintTarget ?? page);
       if (routed != null) {
         final pts = routed.points
             .map((p) => _pageToLocal(shape, p))
@@ -1236,9 +1262,19 @@ class VsdxPainter extends CustomPainter {
         : TextAlign.center;
 
     // Connector edge label with no explicit text pin: centre it on the drawn
-    // route midpoint (no text box).
+    // route midpoint (no text box). Prefer page-space drawn polyline so
+    // geometry-less / nested connectors match SVG export.
     if (isEdgeLabel && block.pinXInches == null && block.pinYInches == null) {
-      final mid = VsdxPage.connectorMidpoint(shape);
+      final ctx = _paintTarget ?? page;
+      final Offset2D mid;
+      if (ctx != null) {
+        final route = ctx.drawnConnectorPagePolyline(shape);
+        mid = route.length >= 2
+            ? _polylineMidpoint(route)
+            : VsdxPage.connectorMidpoint(shape);
+      } else {
+        mid = VsdxPage.connectorMidpoint(shape);
+      }
       final local = _pageToLocal(shape, Offset(mid.x, mid.y));
       canvas.save();
       canvas.translate(local.dx, local.dy);

@@ -503,10 +503,51 @@ class VsdxPage {
             !removedIds.contains(c.toSheetId))
           c,
     ];
-    return copyWith(
+    var next = copyWith(
       shapes: newShapes,
       connects: nextConnects.length == connects.length ? connects : nextConnects,
     );
+    // Drop stale BegTrigger/EndTrigger XFTRIGGERs that still name deleted
+    // sheets (Connect rows are gone; formulas would otherwise dangle).
+    next = next._clearStaleGlueTriggers(removedIds);
+    return next;
+  }
+
+  /// Remove BegTrigger / EndTrigger cells that reference any id in [removedIds].
+  VsdxPage _clearStaleGlueTriggers(Set<int> removedIds) {
+    if (removedIds.isEmpty) return this;
+    final updates = <int, Map<String, String>>{};
+    void walk(List<VsdxShape> list) {
+      for (final s in list) {
+        if (s.is1D && s.formulas.isNotEmpty) {
+          final formulas = Map<String, String>.of(s.formulas);
+          var dirty = false;
+          for (final key in const <String>['BegTrigger', 'EndTrigger']) {
+            final v = formulas[key];
+            if (v == null) continue;
+            for (final rid in removedIds) {
+              if (v.contains('Sheet.$rid!')) {
+                formulas.remove(key);
+                dirty = true;
+                break;
+              }
+            }
+          }
+          if (dirty) updates[s.id] = formulas;
+        }
+        if (s.children.isNotEmpty) walk(s.children);
+      }
+    }
+
+    walk(shapes);
+    var next = this;
+    for (final e in updates.entries) {
+      next = next.updateShapeById(
+        e.key,
+        (sh) => sh.copyWith(formulas: e.value),
+      );
+    }
+    return next;
   }
 
   static (List<VsdxShape>, bool) _removeInList(List<VsdxShape> list, int id) {

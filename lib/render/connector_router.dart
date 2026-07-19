@@ -1,10 +1,9 @@
 /// Auto-routing for 1-D connector shapes that lack an explicit Geometry
 /// section.
 ///
-/// Visio / draw.io draw connectors with an autorouting engine that produces
-/// orthogonal "Manhattan" paths between the connector's begin/end shapes,
-/// skirting other shapes on the page. When a [VsdxPage] is supplied we reuse
-/// [ObstacleRouter] so paint-time fallback matches the editor's baked routes.
+/// When a [VsdxPage] is supplied, delegates to
+/// [VsdxPage.autoRoutedConnectorPolyline] so paint-time fallback matches
+/// SVG/PDF export (nested Begin/End lift, fixed glue points, ObstacleRouter).
 /// Without a page we fall back to a simple two-corner elbow.
 library;
 
@@ -53,10 +52,6 @@ class ConnectorRouter {
 
   /// Compute a routed path for [connector]. Returns `null` when the shape
   /// is not a 1-D connector or is missing endpoints.
-  ///
-  /// [page] is consulted for `<Connect>` glue records and for other shapes as
-  /// obstacles. When [page] is `null` we fall back to the raw `BeginX/EndX`
-  /// cells and a plain elbow.
   RoutedConnector? route(VsdxShape connector, {VsdxPage? page}) {
     if (!connector.is1D) return null;
     final bx = connector.beginX;
@@ -65,98 +60,25 @@ class ConnectorRouter {
     final ey = connector.endY;
     if (bx == null || by == null || ex == null || ey == null) return null;
 
-    var begin = Offset(bx, by);
-    var end = Offset(ex, ey);
-    final exclude = <int>{connector.id};
-
-    // Attach glued endpoints on the target's perimeter (aimed at the opposite
-    // end), so a connector stops at the shape's edge instead of driving into
-    // its centre.
     if (page != null) {
-      final rawBegin = Offset(bx, by);
-      final rawEnd = Offset(ex, ey);
-      for (final c in page.connectIndex.forConnector(connector.id)) {
-        final target = page.findShapeById(c.toSheetId);
-        if (target == null) continue;
-        exclude.add(target.id);
-        final lc = c.fromCell.toLowerCase();
-        final isBegin = c.fromPart == 9 || lc.contains('beginx');
-        final isEnd = c.fromPart == 12 || lc.contains('endx');
-        if (isBegin) begin = _perimeterAttach(target, rawEnd, page: page);
-        if (isEnd) end = _perimeterAttach(target, rawBegin, page: page);
+      final poly = page.autoRoutedConnectorPolyline(connector);
+      if (poly.length >= 2) {
+        return RoutedConnector(
+          begin: Offset(poly.first.x, poly.first.y),
+          end: Offset(poly.last.x, poly.last.y),
+          waypoints: <Offset>[
+            for (final p in poly.skip(1).take(poly.length - 2))
+              Offset(p.x, p.y),
+          ],
+        );
       }
     }
 
-    final List<Offset> waypoints;
-    if (page != null) {
-      final obstacles = <RouteAabb>[];
-      void walk(List<VsdxShape> list) {
-        for (final s in list) {
-          if (s.children.isNotEmpty) {
-            walk(s.children);
-            continue;
-          }
-          if (exclude.contains(s.id) || s.is1D) continue;
-          if (s.width < 0.05 || s.height < 0.05) continue;
-          final aabb = page.shapePageAabb(s.id);
-          if (aabb != null) {
-            obstacles.add(RouteAabb(
-              aabb.left - ObstacleRouter.defaultClearance,
-              aabb.bottom - ObstacleRouter.defaultClearance,
-              aabb.right + ObstacleRouter.defaultClearance,
-              aabb.top + ObstacleRouter.defaultClearance,
-            ));
-          } else {
-            obstacles.add(RouteAabb.fromCenter(
-              pinX: s.pinX,
-              pinY: s.pinY,
-              width: s.width,
-              height: s.height,
-              pad: ObstacleRouter.defaultClearance,
-            ));
-          }
-        }
-      }
-
-      walk(page.shapes);
-      final poly = const ObstacleRouter().route(
-        begin.dx,
-        begin.dy,
-        end.dx,
-        end.dy,
-        obstacles: obstacles,
-      );
-      waypoints = <Offset>[
-        for (final p in poly.skip(1).take(poly.length - 2)) Offset(p.x, p.y),
-      ];
-    } else {
-      waypoints = _orthogonalRoute(begin, end);
-    }
+    // No page context: plain elbow between raw Begin/End cells.
+    final begin = Offset(bx, by);
+    final end = Offset(ex, ey);
+    final waypoints = _orthogonalRoute(begin, end);
     return RoutedConnector(begin: begin, end: end, waypoints: waypoints);
-  }
-
-  /// The point on [target]'s **drawn outline** along the ray from its pin
-  /// toward [aim] — i.e. where a line coming from [aim] first meets the shape
-  /// body (not the selection AABB). Falls back to the Width×Height box when
-  /// geometry is missing.
-  static Offset _perimeterAttach(
-    VsdxShape target,
-    Offset aim, {
-    VsdxPage? page,
-  }) {
-    if (page != null) {
-      final p = page.perimeterAttach(target.id, aim.dx, aim.dy);
-      return Offset(p.x, p.y);
-    }
-    final hit = ShapePerimeter.attachToward(
-      target,
-      pinPage: Offset2D(target.pinX, target.pinY),
-      towardX: aim.dx,
-      towardY: aim.dy,
-      localToPage: (local) => VsdxPage.localToPage(target, local),
-      pageToLocal: (pagePt) => VsdxPage.pageToLocal(target, pagePt),
-    );
-    return Offset(hit.x, hit.y);
   }
 
   /// Two-corner orthogonal path used when no page/obstacles are available.
@@ -168,16 +90,10 @@ class ConnectorRouter {
       return const <Offset>[];
     }
     if (dx >= dy) {
-      final midX = a.dx + (b.dx - a.dx) / 2;
-      return <Offset>[
-        Offset(midX, a.dy),
-        Offset(midX, b.dy),
-      ];
+      final mx = (a.dx + b.dx) / 2;
+      return <Offset>[Offset(mx, a.dy), Offset(mx, b.dy)];
     }
-    final midY = a.dy + (b.dy - a.dy) / 2;
-    return <Offset>[
-      Offset(a.dx, midY),
-      Offset(b.dx, midY),
-    ];
+    final my = (a.dy + b.dy) / 2;
+    return <Offset>[Offset(a.dx, my), Offset(b.dx, my)];
   }
 }

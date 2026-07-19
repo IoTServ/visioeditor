@@ -56,7 +56,10 @@ VsdxShape withLabel(
   String? colorHex,
   double pt = 11,
 }) {
-  if (text.isEmpty) return s;
+  if (text.isEmpty) {
+    // Clear label (set_text "" must round-trip as empty, not no-op).
+    return s.copyWith(text: '', richText: VsdxRichText.empty);
+  }
   final color = parseColorOrNull(colorHex) ?? kInk;
   final style = VsdxCharStyle(
     fontSizeInches: pt / 72.0,

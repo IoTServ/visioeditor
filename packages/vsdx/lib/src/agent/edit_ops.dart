@@ -180,14 +180,19 @@ ApplyResult applyOps(
             resizing.beginY != null &&
             resizing.endX != null &&
             resizing.endY != null) {
-          // Scale Begin→End (and waypoints) to the requested Width/Height.
+          // Scale Begin→End by |w|/|h| so a positive length never flips a
+          // right-to-left connector (Visio Width = EndX-BeginX may be negative).
           // Do not mark reroute — glue re-bake would undo an unglued resize.
           final ax = resizing.beginX!;
           final ay = resizing.beginY!;
           final bx = resizing.endX!;
           final by = resizing.endY!;
-          final sx = resizing.width.abs() < 1e-12 ? 1.0 : w / resizing.width;
-          final sy = resizing.height.abs() < 1e-12 ? 1.0 : h / resizing.height;
+          final sx = resizing.width.abs() < 1e-12
+              ? 1.0
+              : w.abs() / resizing.width.abs();
+          final sy = resizing.height.abs() < 1e-12
+              ? 1.0
+              : h.abs() / resizing.height.abs();
           final newEx = ax + (bx - ax) * sx;
           final newEy = ay + (by - ay) * sy;
           final newWps = <Offset2D>[

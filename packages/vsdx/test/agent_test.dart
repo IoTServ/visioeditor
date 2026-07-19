@@ -164,6 +164,89 @@ void main() {
       expect(resized.width, closeTo(4, 1e-9));
     });
 
+    test('resize_shape preserves direction of right-to-left 1D', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      // End left of Begin → negative Width.
+      final line = VsdxShapeFactory.line(
+        id: id,
+        ax: 5,
+        ay: 2,
+        bx: 3,
+        by: 2,
+      );
+      expect(line.width, lessThan(0));
+      doc = doc.replacePage(0, doc.pages.first.addShape(line));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'resize_shape',
+          'id': id,
+          'w': 4,
+          'h': 0,
+        },
+      ]);
+      final resized = r.document.pages.first.findShapeById(id)!;
+      expect(resized.beginX, closeTo(5, 1e-9));
+      expect(resized.endX, closeTo(1, 1e-9)); // still leftward
+      expect(resized.width, closeTo(-4, 1e-9));
+    });
+
+    test('set_text empty clears the label', () {
+      final doc = built();
+      final id = doc.pages.single.shapes.first.id;
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'set_text', 'id': id, 'text': ''},
+      ]);
+      final s = r.document.pages.single.findShapeById(id)!;
+      expect(s.text, isEmpty);
+      expect(s.richText.isEmpty, isTrue);
+    });
+
+    test('delete_shape clears stale EndTrigger on remaining connectors', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      var page = doc.pages.first;
+      final a = VsdxShapeFactory.rectangle(
+          id: 1, pinX: 2, pinY: 2, width: 1, height: 1);
+      final b = VsdxShapeFactory.rectangle(
+          id: 2, pinX: 5, pinY: 2, width: 1, height: 1);
+      final conn = VsdxShapeFactory.line(id: 3, ax: 2, ay: 2, bx: 5, by: 2)
+          .copyWith(formulas: <String, String>{
+        'BegTrigger': '_XFTRIGGER(Sheet.1!EventXFMod)',
+        'EndTrigger': '_XFTRIGGER(Sheet.2!EventXFMod)',
+      });
+      page = page.copyWith(
+        shapes: <VsdxShape>[a, b, conn],
+        connects: <VsdxConnect>[
+          const VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'BeginX',
+            fromPart: 9,
+            toSheetId: 1,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+          const VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'EndX',
+            fromPart: 12,
+            toSheetId: 2,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+        ],
+      );
+      doc = doc.replacePage(0, page);
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'delete_shape', 'id': 2},
+      ]);
+      final after = r.document.pages.first.findShapeById(3)!;
+      expect(after.formulas.containsKey('EndTrigger'), isFalse);
+      expect(after.formulas['BegTrigger'], contains('Sheet.1!'));
+      expect(r.document.pages.first.connects, hasLength(1));
+    });
+
     test('move_shape translates Begin/End with the pin', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);
@@ -237,7 +320,11 @@ void main() {
     });
 
     test('move_shape does not re-route unrelated glued connectors', () {
-      final bytes = File('test/fixtures/test4_connectors.vsdx').readAsBytesSync();
+        final bytes = File(
+          File('test/fixtures/test4_connectors.vsdx').existsSync()
+              ? 'test/fixtures/test4_connectors.vsdx'
+              : 'packages/vsdx/test/fixtures/test4_connectors.vsdx',
+        ).readAsBytesSync();
       final doc = const DocumentParser().parse(bytes);
       final page = doc.pages.first;
       String sig(VsdxShape s) {
