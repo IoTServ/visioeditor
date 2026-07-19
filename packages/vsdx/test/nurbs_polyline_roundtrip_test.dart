@@ -54,6 +54,48 @@ void main() {
       expect(pageXml, isNot(contains('POLYLINE(0,0,')));
     });
 
+    test('RelPolylineTo with inch verts writes POLYLINE(1,1,…)', () {
+      final blank = blankBytes();
+      final doc = parser.parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final shape = VsdxShape(
+        id: id,
+        name: 'R',
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 2,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            commands: <VsdxPathCommand>[
+              RelMoveTo(0, 0),
+              PolylineTo(
+                x: 1,
+                y: 0,
+                vertices: <Offset2D>[Offset2D(0.5, 0.5)],
+                relative: true,
+                // Formula xType/yType = 1 (local inches), not forced by Rel*.
+              ),
+            ],
+          ),
+        ],
+      );
+      final edited = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final out = writer.write(originalBytes: blank, edited: edited);
+      final pageXml = VsdxPackage.open(out)
+          .readPartXml('/visio/pages/page1.xml')!
+          .toXmlString();
+      expect(pageXml, contains('RelPolylineTo'));
+      expect(pageXml, contains('POLYLINE(1,1'));
+      final round = parser.parse(out);
+      final poly = round.pages.first.shapes.first.geometries.first.commands
+          .whereType<PolylineTo>()
+          .single;
+      expect(poly.relative, isTrue);
+      expect(poly.vertsRelative, isFalse);
+      expect(poly.vertsYRelative, isFalse);
+    });
+
     test('relative PolylineTo writes POLYLINE(0,0,…)', () {
       final blank = blankBytes();
       final doc = parser.parse(blank);
@@ -74,6 +116,7 @@ void main() {
                 y: 0,
                 vertices: <Offset2D>[Offset2D(0.5, 0.5)],
                 relative: true,
+                vertsRelative: true,
               ),
             ],
           ),

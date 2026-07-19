@@ -230,11 +230,47 @@ void main() {
       );
       final poly = g.commands.whereType<PolylineTo>().single;
       expect(poly.relative, isTrue);
-        expect(poly.vertices.first.x, 0.5);
+      // POLYLINE(1,1,…) → local-inch verts even on a Rel* row.
+      expect(poly.vertsRelative, isFalse);
+      expect(poly.vertsYRelative, isFalse);
+      expect(poly.vertices.first.x, 0.5);
       final nurbs = g.commands.whereType<NurbsTo>().single;
       expect(nurbs.relative, isTrue);
+      expect(nurbs.cpRelative, isTrue); // NURBS(…,0,0,…)
+      expect(nurbs.cpYRelative, isTrue);
       final inf = g.commands.whereType<InfiniteLineCmd>().single;
       expect(inf.relative, isTrue);
+    });
+
+    test('RelPolylineTo honors POLYLINE(0,0,…) percent verts', () {
+      final g = parseGeom(
+        '<Row IX="1" T="RelMoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+        '<Row IX="2" T="RelPolylineTo"><Cell N="X" V="1"/><Cell N="Y" V="0"/>'
+        '<Cell N="A" V="POLYLINE(0, 0, 0.5, 0.5)"/></Row>',
+      );
+      final poly = g.commands.whereType<PolylineTo>().single;
+      expect(poly.relative, isTrue);
+      expect(poly.vertsRelative, isTrue);
+      expect(poly.vertsYRelative, isTrue);
+      final verts = g.polylineVertices(widthInches: 4, heightInches: 2)!;
+      expect(verts[1].x, closeTo(2.0, 1e-9));
+      expect(verts[1].y, closeTo(1.0, 1e-9));
+    });
+
+    test('RelPolylineTo with POLYLINE(1,1,…) keeps local-inch verts', () {
+      final g = parseGeom(
+        '<Row IX="1" T="RelMoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+        '<Row IX="2" T="RelPolylineTo"><Cell N="X" V="1"/><Cell N="Y" V="0"/>'
+        '<Cell N="A" V="POLYLINE(1, 1, 0.5, 0.5)"/></Row>',
+      );
+      final poly = g.commands.whereType<PolylineTo>().single;
+      expect(poly.vertsRelative, isFalse);
+      final verts = g.polylineVertices(widthInches: 4, heightInches: 2)!;
+      // Must NOT scale 0.5 by Width (that would be 2.0).
+      expect(verts[1].x, closeTo(0.5, 1e-9));
+      expect(verts[1].y, closeTo(0.5, 1e-9));
+      // Rel* endpoint still scales.
+      expect(verts.last.x, closeTo(4.0, 1e-9));
     });
   });
 

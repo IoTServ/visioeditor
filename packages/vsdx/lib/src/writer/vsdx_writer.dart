@@ -3236,15 +3236,15 @@ class VsdxWriter {
       switch (cmd) {
         PolylineTo(
           :final vertices,
-          :final relative,
           :final vertsRelative,
           :final vertsYRelative,
         ) =>
           {
             // POLYLINE(xType,yType,…): 0 = % of Width/Height, 1 = local inches.
             'A': () {
-              final xt = (relative || vertsRelative) ? 0 : 1;
-              final yt = (relative || vertsYRelative) ? 0 : 1;
+              // Rel* only affects the endpoint row type; formula flags are independent.
+              final xt = vertsRelative ? 0 : 1;
+              final yt = vertsYRelative ? 0 : 1;
               final buf = StringBuffer('POLYLINE($xt,$yt');
               for (final v in vertices) {
                 buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
@@ -3258,7 +3258,6 @@ class VsdxWriter {
           :final weights,
           :final knots,
           :final degree,
-          :final relative,
           :final cpRelative,
           :final cpYRelative,
         ) =>
@@ -3268,8 +3267,8 @@ class VsdxWriter {
               weights: weights,
               knots: knots,
               degree: degree,
-              xType: (relative || cpRelative) ? 0 : 1,
-              yType: (relative || cpYRelative) ? 0 : 1,
+              xType: cpRelative ? 0 : 1,
+              yType: cpYRelative ? 0 : 1,
             ),
           },
         _ => null,
@@ -5644,8 +5643,9 @@ class VsdxWriter {
           :final vertsYRelative,
         ):
         // POLYLINE(xType,yType,…): 0 = % of Width/Height, 1 = local inches.
-        final xt = (relative || vertsRelative) ? 0 : 1;
-        final yt = (relative || vertsYRelative) ? 0 : 1;
+        // Rel* only affects the endpoint; formula flags are independent.
+        final xt = vertsRelative ? 0 : 1;
+        final yt = vertsYRelative ? 0 : 1;
         final buf = StringBuffer('POLYLINE($xt,$yt');
         for (final v in vertices) {
           buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
@@ -5704,8 +5704,8 @@ class VsdxWriter {
             weights: weights,
             knots: knots,
             degree: degree,
-            xType: (relative || cpRelative) ? 0 : 1,
-            yType: (relative || cpYRelative) ? 0 : 1,
+            xType: cpRelative ? 0 : 1,
+            yType: cpYRelative ? 0 : 1,
           ),
         }, formulas: formulas);
     }

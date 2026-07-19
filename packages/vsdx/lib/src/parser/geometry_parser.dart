@@ -315,13 +315,16 @@ class GeometryParser {
           vertsYRelative: poly.yType == 0,
         );
       case 'RelPolylineTo':
+        final poly = _parsePolylineFull(_cellValue(row, 'A'));
+        // Rel* only makes the X/Y endpoint fractional; POLYLINE xType/yType
+        // still control whether interior verts are % or local inches.
         return PolylineTo(
           x: _rawDouble(row, 'X') ?? 0,
           y: _rawDouble(row, 'Y') ?? 0,
-          vertices: _parsePolylineFull(_cellValue(row, 'A')).vertices,
+          vertices: poly.vertices,
           relative: true,
-          vertsRelative: true,
-          vertsYRelative: true,
+          vertsRelative: poly.xType == 0,
+          vertsYRelative: poly.yType == 0,
         );
       case 'InfiniteLine':
         return InfiniteLineCmd(
@@ -435,8 +438,9 @@ class GeometryParser {
       knots: List.unmodifiable(knots),
       degree: parsed.degree,
       relative: relative,
-      cpRelative: relative || parsed.xType == 0,
-      cpYRelative: relative || parsed.yType == 0,
+      // RelNURBSTo endpoint is fractional; CP scaling follows formula flags only.
+      cpRelative: parsed.xType == 0,
+      cpYRelative: parsed.yType == 0,
     );
   }
 

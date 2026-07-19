@@ -273,15 +273,14 @@ class PolylineTo extends VsdxPathCommand {
   final double y;
 
   /// Interior vertices from `POLYLINE(...)`. Excludes pen start and [x]/[y].
-  /// X is a fraction of Width when [relative] or [vertsRelative]; Y is a
-  /// fraction of Height when [relative] or [vertsYRelative].
+  /// X is a fraction of Width when [vertsRelative]; Y is a fraction of Height
+  /// when [vertsYRelative]. Independent of [relative] (Rel* only affects X/Y).
   final List<Offset2D> vertices;
 
-  /// `true` when the row was `RelPolylineTo` (endpoint + verts are fractions).
+  /// `true` when the row was `RelPolylineTo` (endpoint X/Y are fractions).
   final bool relative;
 
   /// `true` when `POLYLINE` xType is 0 (X verts are % of Width).
-  /// Endpoint stays shape-local unless [relative] is set (libvisio).
   final bool vertsRelative;
 
   /// `true` when `POLYLINE` yType is 0 (Y verts are % of Height).
@@ -414,11 +413,11 @@ class NurbsTo extends VsdxPathCommand {
 
   final int degree;
 
-  /// `true` when the row was `RelNURBSTo` (endpoint + CPs are fractions).
+  /// `true` when the row was `RelNURBSTo` (endpoint X/Y are fractions).
   final bool relative;
 
   /// `true` when the NURBS formula has xType == 0 (CP X is % of Width).
-  /// Endpoint stays shape-local unless [relative] is set.
+  /// Independent of [relative] (Rel* only affects the endpoint).
   final bool cpRelative;
 
   /// `true` when the NURBS formula has yType == 0 (CP Y is % of Height).
@@ -912,27 +911,22 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         :final vertsRelative,
         :final vertsYRelative,
       ):
-      if (relative) return c;
-      // Formula-% axes stay fractional; scale only local-inch components.
-      if (vertsRelative && vertsYRelative) {
-        return PolylineTo(
-          x: x * sx,
-          y: y * sy,
-          vertices: vertices,
-          vertsRelative: true,
-          vertsYRelative: true,
-        );
-      }
+      // Rel* endpoint stays fractional; formula-% axes stay fractional;
+      // scale only local-inch components.
+      final scaledVerts = (vertsRelative && vertsYRelative)
+          ? vertices
+          : <Offset2D>[
+              for (final v in vertices)
+                Offset2D(
+                  vertsRelative ? v.x : v.x * sx,
+                  vertsYRelative ? v.y : v.y * sy,
+                ),
+            ];
       return PolylineTo(
-        x: x * sx,
-        y: y * sy,
-        vertices: <Offset2D>[
-          for (final v in vertices)
-            Offset2D(
-              vertsRelative ? v.x : v.x * sx,
-              vertsYRelative ? v.y : v.y * sy,
-            ),
-        ],
+        x: relative ? x : x * sx,
+        y: relative ? y : y * sy,
+        vertices: scaledVerts,
+        relative: relative,
         vertsRelative: vertsRelative,
         vertsYRelative: vertsYRelative,
       );
@@ -970,33 +964,24 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         :final cpRelative,
         :final cpYRelative,
       ):
-      if (relative) return c;
-      // Formula-% axes stay fractional; scale local-inch components only.
-      if (cpRelative && cpYRelative) {
-        return NurbsTo(
-          x: x * sx,
-          y: y * sy,
-          controlPoints: controlPoints,
-          weights: weights,
-          knots: knots,
-          degree: degree,
-          cpRelative: true,
-          cpYRelative: true,
-        );
-      }
+      // Rel* endpoint stays fractional; formula-% CPs stay fractional.
+      final scaledCps = (cpRelative && cpYRelative)
+          ? controlPoints
+          : <Offset2D>[
+              for (final p in controlPoints)
+                Offset2D(
+                  cpRelative ? p.x : p.x * sx,
+                  cpYRelative ? p.y : p.y * sy,
+                ),
+            ];
       return NurbsTo(
-        x: x * sx,
-        y: y * sy,
-        controlPoints: <Offset2D>[
-          for (final p in controlPoints)
-            Offset2D(
-              cpRelative ? p.x : p.x * sx,
-              cpYRelative ? p.y : p.y * sy,
-            ),
-        ],
+        x: relative ? x : x * sx,
+        y: relative ? y : y * sy,
+        controlPoints: scaledCps,
         weights: weights,
         knots: knots,
         degree: degree,
+        relative: relative,
         cpRelative: cpRelative,
         cpYRelative: cpYRelative,
       );
@@ -1126,8 +1111,8 @@ class VsdxGeometry {
             :final vertsRelative,
             :final vertsYRelative,
           ):
-          final vsx = (relative || vertsRelative) ? w : 1.0;
-          final vsy = (relative || vertsYRelative) ? h : 1.0;
+          final vsx = vertsRelative ? w : 1.0;
+          final vsy = vertsYRelative ? h : 1.0;
           final esx = relative ? w : 1.0;
           final esy = relative ? h : 1.0;
           for (final v in vertices) {
