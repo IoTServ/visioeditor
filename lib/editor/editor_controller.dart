@@ -4853,25 +4853,36 @@ class EditorController extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Character style for the Format → Text panel / Cmd+B/I/U.
+  ///
+  /// Returns Visio defaults when the shape has no Character runs yet (plain
+  /// `text` fallback, empty label, or mid-inline-edit before commit) so the
+  /// panel stays visible like draw.io — applying a style seeds the run.
   VsdxCharStyle? get selectedCharStyle {
     final page = currentPage;
     if (page == null) return null;
     final editId = _textEditShapeId;
     if (editId != null) {
       final s = page.findShapeById(editId);
-      if (s != null && s.richText.runs.isNotEmpty) {
-        final sel = _textEditSelection;
-        final collapsed = sel == null || sel.start == sel.end;
-        final idx = collapsed
-            ? (sel?.start ?? 0)
-            : math.min(sel.start, sel.end);
-        return charStyleAt(s.richText, idx) ?? s.richText.runs.first.charStyle;
+      if (s != null) {
+        if (s.richText.runs.isNotEmpty) {
+          final sel = _textEditSelection;
+          final collapsed = sel == null || sel.start == sel.end;
+          final idx = collapsed
+              ? (sel?.start ?? 0)
+              : math.min(sel.start, sel.end);
+          return charStyleAt(s.richText, idx) ?? s.richText.runs.first.charStyle;
+        }
+        return VsdxCharStyle.defaults;
       }
     }
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.richText.runs.isNotEmpty) {
-        return s.richText.runs.first.charStyle;
+      if (s != null) {
+        if (s.richText.runs.isNotEmpty) {
+          return s.richText.runs.first.charStyle;
+        }
+        return VsdxCharStyle.defaults;
       }
     }
     return null;
@@ -4882,8 +4893,11 @@ class EditorController extends ChangeNotifier {
     if (page == null) return null;
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.richText.runs.isNotEmpty) {
-        return s.richText.runs.first.paraStyle.horizontalAlign;
+      if (s != null) {
+        if (s.richText.runs.isNotEmpty) {
+          return s.richText.runs.first.paraStyle.horizontalAlign;
+        }
+        return VsdxParaStyle.defaults.horizontalAlign;
       }
     }
     return null;
@@ -5064,20 +5078,29 @@ class EditorController extends ChangeNotifier {
       _updateText(para: (p) => p.copyWith(horizontalAlign: align));
 
   /// First selected (or in-edit) paragraph style — for Format Text spacing.
+  ///
+  /// Falls back to Visio paragraph defaults when no Paragraph runs exist yet
+  /// (same visibility contract as [selectedCharStyle]).
   VsdxParaStyle? get selectedParaStyle {
     final page = currentPage;
     if (page == null) return null;
     final editId = _textEditShapeId;
     if (editId != null) {
       final s = page.findShapeById(editId);
-      if (s != null && s.richText.runs.isNotEmpty) {
-        return s.richText.runs.first.paraStyle;
+      if (s != null) {
+        if (s.richText.runs.isNotEmpty) {
+          return s.richText.runs.first.paraStyle;
+        }
+        return VsdxParaStyle.defaults;
       }
     }
     for (final id in _selection) {
       final s = page.findShapeById(id);
-      if (s != null && s.richText.runs.isNotEmpty) {
-        return s.richText.runs.first.paraStyle;
+      if (s != null) {
+        if (s.richText.runs.isNotEmpty) {
+          return s.richText.runs.first.paraStyle;
+        }
+        return VsdxParaStyle.defaults;
       }
     }
     return null;

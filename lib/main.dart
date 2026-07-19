@@ -3051,6 +3051,14 @@ class _PropertyPanel extends StatelessWidget {
               ],
             ),
           ],
+          // Text sits with Style (fill/line) like draw.io's Format → Text tab —
+          // not buried under shadow/glow. Shown for any selection; empty runs
+          // still expose defaults and seed Character/Paragraph on first edit.
+          if (controller.selectedCharStyle != null) ...[
+            const SizedBox(height: 16),
+            _section(context, EditorL10n.of(context).panelText),
+            _textControls(context),
+          ],
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelShadow),
           Row(
@@ -3117,11 +3125,6 @@ class _PropertyPanel extends StatelessWidget {
                   controller.updateSoftEdges(v, transient: true),
               onEnd: controller.commitTransaction,
             ),
-          if (controller.selectedCharStyle != null) ...[
-            const SizedBox(height: 16),
-            _section(context, EditorL10n.of(context).panelText),
-            _textControls(context),
-          ],
           if (controller.canReplaceSelectedImage) ...[
             const SizedBox(height: 16),
             _imageSection(context),
@@ -3788,7 +3791,12 @@ class _PropertyPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        // Narrow Format panel (~200px content): wrap instead of a rigid Row
+        // so font-size + B/I/U/S do not overflow on the right.
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 0,
+          runSpacing: 4,
           children: [
             DropdownButton<int>(
               value: curPt,
@@ -3801,7 +3809,6 @@ class _PropertyPanel extends StatelessWidget {
                 if (p != null) controller.setTextSizeInches(p / 72.0);
               },
             ),
-            const Spacer(),
             IconButton(
               onPressed: () => controller.setBold(!cs.style.bold),
               isSelected: cs.style.bold,

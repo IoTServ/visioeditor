@@ -53,6 +53,40 @@ void main() {
     expect(run.charStyle.style.bold, isTrue);
   });
 
+  test('selectedCharStyle exposes defaults when shape has no Character runs',
+      () {
+    final e = ctrl();
+    // Fresh stencil shape: painted via empty label / plain text, no rich runs.
+    rect(e, 2, 4);
+    expect(e.currentPage!.shapes.first.richText.runs, isEmpty);
+    expect(e.selectedCharStyle, isNotNull);
+    expect(e.selectedParaStyle, isNotNull);
+    expect(e.selectedAlign, VsdxHorzAlign.left);
+
+    // textBox keeps label in `text` without seeding Character runs — Format
+    // Text must still appear (draw.io always shows the Text panel).
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.textBox(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 2,
+        height: 0.5,
+        text: 'hello',
+      ),
+      4,
+      4,
+    );
+    final box = e.singleSelectedId!;
+    expect(e.currentPage!.findShapeById(box)!.richText.runs, isEmpty);
+    expect(e.selectedCharStyle, isNotNull);
+    e.setBold(true);
+    expect(
+      e.currentPage!.findShapeById(box)!.richText.runs.first.charStyle.style.bold,
+      isTrue,
+    );
+  });
+
   test('setTextThemeSlot is one undo when theme missing', () {
     final e = ctrl();
     final a = rect(e, 2, 4, text: 'hi');
