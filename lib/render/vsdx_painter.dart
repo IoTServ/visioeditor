@@ -708,12 +708,15 @@ class VsdxPainter extends CustomPainter {
       );
     }
 
+    // Fade out farther below the shape (smaller Y in Y-up space).
+    final fadeNear = bottomY - dist;
+    final fadeFar = fadeNear - clipHeight;
     canvas.drawRect(
-      Rect.fromLTWH(bounds.left, pivotY, bounds.width, clipHeight),
+      Rect.fromLTRB(bounds.left, fadeFar, bounds.right, fadeNear),
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(bounds.left, pivotY),
-          Offset(bounds.left, pivotY + clipHeight),
+          Offset(bounds.left, fadeNear),
+          Offset(bounds.left, fadeFar),
           const [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
         )
         ..blendMode = BlendMode.dstIn,
