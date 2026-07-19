@@ -1685,7 +1685,8 @@ class VsdxPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// Single-line (or wrapped) paint with super/sub baseline offsets.
+  /// Wrapped paint with super/sub baseline offsets (no OpenType pos features —
+  /// those would double-lift when combined with [dy]).
   void _paintRunsWithPosShift(
     Canvas canvas, {
     required List<VsdxTextRun> runs,
@@ -1700,43 +1701,134 @@ class VsdxPainter extends CustomPainter {
     required double maxW,
     required double scale,
   }) {
-    final painters = <TextPainter>[];
-    final dys = <double>[];
-    var totalW = 0.0;
-    var maxH = 0.0;
-    for (final run in runs) {
-      final span = _runToSpan(run, scale);
-      final tp = TextPainter(
-        text: span,
-        textDirection: TextDirection.ltr,
-        maxLines: null,
-      )..layout(maxWidth: maxW);
-      painters.add(tp);
-      final base = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
-      dys.add(switch (run.charStyle.position) {
-        VsdxTextPosition.superscript => -base * 0.35,
-        VsdxTextPosition.subscript => base * 0.2,
-        VsdxTextPosition.normal => 0.0,
-      });
-      totalW += tp.width;
-      maxH = math.max(maxH, tp.height + dys.last.abs());
+    final lines = _wrapPosShiftLines(runs, maxW, scale);
+    var totalH = 0.0;
+    for (final line in lines) {
+      totalH += line.height;
     }
-    final ox = switch (align) {
-      TextAlign.center => mlPx + (twPx - mlPx - mrPx - totalW) / 2,
-      TextAlign.right => twPx - mrPx - totalW,
-      _ => mlPx,
-    };
     var oy = switch (verticalAlign) {
       VsdxVertAlign.top => mtPx,
-      VsdxVertAlign.bottom => thPx - mbPx - maxH,
-      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - maxH) / 2,
+      VsdxVertAlign.bottom => thPx - mbPx - totalH,
+      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - totalH) / 2,
     };
     if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
-    var x = ox;
-    for (var i = 0; i < painters.length; i++) {
-      painters[i].paint(canvas, Offset(x, oy + dys[i]));
-      x += painters[i].width;
+    var y = oy;
+    for (final line in lines) {
+      final ox = switch (align) {
+        TextAlign.center => mlPx + (twPx - mlPx - mrPx - line.width) / 2,
+        TextAlign.right => twPx - mrPx - line.width,
+        _ => mlPx,
+      };
+      var x = ox;
+      for (final piece in line.pieces) {
+        piece.tp.paint(canvas, Offset(x, y + piece.dy));
+        x += piece.tp.width;
+      }
+      y += line.height;
     }
+  }
+
+  /// Greedy wrap of rich runs for baseline-shifted painting.
+  List<
+      ({
+        List<({TextPainter tp, double dy})> pieces,
+        double width,
+        double height,
+      })> _wrapPosShiftLines(
+    List<VsdxTextRun> runs,
+    double maxW,
+    double scale,
+  ) {
+    final lines = <({
+      List<({TextPainter tp, double dy})> pieces,
+      double width,
+      double height,
+    })>[];
+    var cur = <({TextPainter tp, double dy})>[];
+    var curW = 0.0;
+    var curH = 0.0;
+
+    void flush() {
+      if (cur.isEmpty) return;
+      lines.add((pieces: cur, width: curW, height: math.max(curH, 1.0)));
+      cur = <({TextPainter tp, double dy})>[];
+      curW = 0.0;
+      curH = 0.0;
+    }
+
+    for (final run in runs) {
+      final parts = run.text.split('\n');
+      for (var pi = 0; pi < parts.length; pi++) {
+        if (pi > 0) flush();
+        for (final unit in _canvasWrapUnits(parts[pi])) {
+          final piece = _posShiftPiece(unit, run, scale);
+          final isBlank = unit.trim().isEmpty;
+          if (curW > 1e-9 && curW + piece.tp.width > maxW && !isBlank) {
+            flush();
+          }
+          if (cur.isEmpty && isBlank) continue;
+          cur.add(piece);
+          curW += piece.tp.width;
+          curH = math.max(curH, piece.tp.height + piece.dy.abs());
+        }
+      }
+    }
+    flush();
+    if (lines.isEmpty) {
+      final empty = _posShiftPiece('', runs.isEmpty ? const VsdxTextRun(text: '') : runs.first, scale);
+      return [
+        (
+          pieces: [empty],
+          width: 0.0,
+          height: empty.tp.height,
+        )
+      ];
+    }
+    return lines;
+  }
+
+  ({TextPainter tp, double dy}) _posShiftPiece(
+    String text,
+    VsdxTextRun run,
+    double scale,
+  ) {
+    final tp = TextPainter(
+      text: _runToSpan(
+        run.copyWith(text: text),
+        scale,
+        openTypePos: false,
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final base = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
+    final dy = switch (run.charStyle.position) {
+      VsdxTextPosition.superscript => -base * 0.35,
+      VsdxTextPosition.subscript => base * 0.2,
+      VsdxTextPosition.normal => 0.0,
+    };
+    return (tp: tp, dy: dy);
+  }
+
+  List<String> _canvasWrapUnits(String text) {
+    final out = <String>[];
+    final buf = StringBuffer();
+    bool? inSpace;
+    void flush() {
+      if (buf.isEmpty) return;
+      out.add(buf.toString());
+      buf.clear();
+    }
+
+    for (final r in text.runes) {
+      final ch = String.fromCharCode(r);
+      final sp = ch == ' ' || ch == '\t';
+      if (inSpace != null && inSpace != sp) flush();
+      inSpace = sp;
+      buf.write(ch);
+    }
+    flush();
+    return out;
   }
 
   /// Lay out rich-text paragraphs with SpBefore/After, IndLeft/First, and
@@ -1828,14 +1920,47 @@ class VsdxPainter extends CustomPainter {
         0.0,
         maxW - (textX - mlPx) - indentR,
       );
-      late final TextPainter tp;
+      final needsPos = para.runs
+          .any((r) => r.charStyle.position != VsdxTextPosition.normal);
+      late final TextPainter? tp;
       late final double rowW;
       late final double rowTextH;
       List<TextPainter>? posPainters;
       List<double>? posDys;
-      // Always wrap with maxWidth. Super/subscript use _runToSpan (0.7× size +
-      // OpenType features); the old per-run dy path forced maxLines:1 and
-      // prevented wrapping on long annotated paragraphs.
+      if (needsPos) {
+        // Baseline dy + wrap (OpenType pos features off — dy is authoritative).
+        final lines = _wrapPosShiftLines(para.runs, avail, scale);
+        // Emit one layout row per wrapped line so Sp*/bullet stay correct.
+        final b = style.spaceBeforeInches * scale;
+        final a = style.spaceAfterInches * scale;
+        for (var li = 0; li < lines.length; li++) {
+          final line = lines[li];
+          final pieces = line.pieces;
+          painters.add(TextPainter(
+            text: const TextSpan(text: ''),
+            textDirection: TextDirection.ltr,
+          )..layout());
+          bulletPainters.add(li == 0 ? bulletTp : null);
+          bulletOriginsX.add(bulletX);
+          paraPosPainters.add([for (final p in pieces) p.tp]);
+          paraPosDys.add([for (final p in pieces) p.dy]);
+          final alignedX = switch (pAlign) {
+            TextAlign.center => textX + (avail - line.width) / 2,
+            TextAlign.right => textX + avail - line.width,
+            _ => textX,
+          };
+          textOriginsX.add(alignedX);
+          beforePx.add(li == 0 ? b : 0.0);
+          afterPx.add(li == lines.length - 1 ? a : 0.0);
+          final rowH = math.max(
+            line.height,
+            li == 0 ? (bulletTp?.height ?? 0) : 0.0,
+          );
+          paraRowTextH.add(line.height);
+          totalH += beforePx.last + rowH + afterPx.last;
+        }
+        continue;
+      }
       tp = TextPainter(
         text: TextSpan(
           children: <TextSpan>[
@@ -1958,7 +2083,14 @@ class VsdxPainter extends CustomPainter {
   /// to the pixel units the caller lays the text out in (see [_paintRichText] —
   /// text must be shaped at real pixel sizes, not the canvas's inches-scale, or
   /// glyph advances quantise to zero and wrapping breaks).
-  TextSpan _runToSpan(VsdxTextRun run, double scale) {
+  ///
+  /// When painting with an explicit baseline [dy], pass [openTypePos] `false`
+  /// so `sups`/`subs` features do not stack on top of the dy shift.
+  TextSpan _runToSpan(
+    VsdxTextRun run,
+    double scale, {
+    bool openTypePos = true,
+  }) {
     final base = _colourOrTheme(run.charStyle.color, run.charStyle.themeColorIndex) ??
         Colors.black87;
     final alpha = (1 - run.charStyle.transparency).clamp(0.0, 1.0);
@@ -1986,9 +2118,9 @@ class VsdxPainter extends CustomPainter {
       lineHeight = null;
     }
     final features = <ui.FontFeature>[
-      if (pos == VsdxTextPosition.superscript)
+      if (openTypePos && pos == VsdxTextPosition.superscript)
         const ui.FontFeature.enable('sups'),
-      if (pos == VsdxTextPosition.subscript)
+      if (openTypePos && pos == VsdxTextPosition.subscript)
         const ui.FontFeature.enable('subs'),
       // Prefer synthetic small-caps below — OpenType `smcp` is missing on
       // many desktop fonts so relying on it left canvas looking like SVG's

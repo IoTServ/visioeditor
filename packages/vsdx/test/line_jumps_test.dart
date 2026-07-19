@@ -77,6 +77,23 @@ void main() {
     expect(RegExp(r'\sA\s').hasMatch(svg), isFalse);
   });
 
+  test('SVG export honours drawLineJumps=false UI toggle', () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4),
+    );
+    final on = VsdxToSvgSerializer().serializePage(page);
+    final off = VsdxToSvgSerializer(drawLineJumps: false).serializePage(page);
+    expect(RegExp(r'\sA\s').hasMatch(on), isTrue);
+    expect(RegExp(r'\sA\s').hasMatch(off), isFalse);
+  });
+
   test('SVG export honours custom lineJumpRadiusInches', () {
     final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
     final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);

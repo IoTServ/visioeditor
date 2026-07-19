@@ -189,6 +189,41 @@ void main() {
     expect(textTags, greaterThanOrEqualTo(3));
   });
 
+  test('SVG horizontal line gradient centres on path not shape height', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    // 1D line: local path is along X at y≈locPin; shape.height is the span.
+    final line = VsdxShapeFactory.line(
+      id: page.nextFreeShapeId(),
+      ax: 1,
+      ay: 2,
+      bx: 5,
+      by: 2,
+    ).copyWith(
+      line: const VsdxLine(
+        weightInches: 0.04,
+        gradient: VsdxGradient(
+          stops: <VsdxGradientStop>[
+            VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+            VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, page.addShape(line));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Degenerate height must not place gradient centre at shape.height/2.
+    final y1 = RegExp(r'linearGradient[^>]*y1="([^"]+)"').firstMatch(svg);
+    final y2 = RegExp(r'linearGradient[^>]*y2="([^"]+)"').firstMatch(svg);
+    expect(y1, isNotNull);
+    expect(y2, isNotNull);
+    final midY =
+        (double.parse(y1!.group(1)!) + double.parse(y2!.group(1)!)) / 2;
+    // Path is near local mid-Y of the stroke; allow tiny inflate (±0.025).
+    expect(midY.abs(), lessThan(0.05));
+  });
+
   test('SVG gradient stroke arrows use tip stop colour (not context-stroke)', () {
     final blank = const VsdxWriter().emptyDocument();
     var doc = parser.parse(blank);

@@ -23,6 +23,7 @@ import 'pdf_font_loader_stub.dart'
 /// CJK / non-Latin labels do not hit Helvetica's Latin-1 encoder.
 Future<Uint8List> exportDocumentToPdf(
   VsdxDocument doc, {
+  bool drawLineJumps = true,
   double lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
 }) async {
   final unicode = await loadPdfUnicodeFont();
@@ -39,6 +40,7 @@ Future<Uint8List> exportDocumentToPdf(
     pxPerInch: 72.0,
     layerFilter: SvgLayerFilter.print,
     skipBackgroundPages: true,
+    drawLineJumps: drawLineJumps,
     lineJumpRadiusInches: lineJumpRadiusInches,
     // package:pdf SvgImage ignores markers/filters/patterns/textPath/baseline.
     pdfCompat: true,

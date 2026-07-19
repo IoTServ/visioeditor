@@ -52,6 +52,7 @@ class VsdxToSvgSerializer {
     this.embedImages = true,
     this.layerFilter = SvgLayerFilter.visible,
     this.skipBackgroundPages = true,
+    this.drawLineJumps = true,
     this.lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
     this.bakeArrowMarkers = false,
     this.pdfCompat = false,
@@ -71,6 +72,10 @@ class VsdxToSvgSerializer {
   /// When serialising a whole document, omit pages marked `Background="1"`
   /// (they are composited via [VsdxDocument.backgroundFor] instead).
   final bool skipBackgroundPages;
+
+  /// UI / canvas toggle — when `false`, skip jump arcs even if the page
+  /// `LineJumpCode` allows them (matches [VsdxPainter.drawLineJumps]).
+  final bool drawLineJumps;
 
   /// Arc radius for connector line jumps (matches canvas
   /// [VsdxPainter.lineJumpRadiusInches]).
@@ -253,7 +258,8 @@ class VsdxToSvgSerializer {
   }
 
   void _prepareLineJumps(VsdxPage page) {
-    _jumpsEnabled = lineJumpsEnabledForCode(page.pageSheet.lineJumpCode);
+    _jumpsEnabled = drawLineJumps &&
+        lineJumpsEnabledForCode(page.pageSheet.lineJumpCode);
     if (!_jumpsEnabled) {
       _jumpRoutes = const <List<Offset2D>>[];
       _jumpZ = const <int, int>{};
@@ -1194,8 +1200,21 @@ class VsdxToSvgSerializer {
     }
     var w = maxX - minX;
     var h = maxY - minY;
-    if (w < 1e-9) w = fallbackW;
-    if (h < 1e-9) h = fallbackH;
+    // Degenerate axes (horizontal/vertical strokes): inflate symmetrically
+    // about the path centre. Using shape size as a one-sided fallback shifted
+    // gradient centres away from the stroke (canvas uses path bounds).
+    if (w < 1e-9) {
+      final half = math.max(1e-3, math.min(fallbackW, 0.05)) * 0.5;
+      final cx = (minX + maxX) * 0.5;
+      minX = cx - half;
+      w = half * 2;
+    }
+    if (h < 1e-9) {
+      final half = math.max(1e-3, math.min(fallbackH, 0.05)) * 0.5;
+      final cy = (minY + maxY) * 0.5;
+      minY = cy - half;
+      h = half * 2;
+    }
     return (minX: minX, minY: minY, width: w, height: h);
   }
 
@@ -2601,9 +2620,8 @@ class VsdxToSvgSerializer {
     }
 
     for (final (text, run) in segs) {
-      final fs = math.max(run.charStyle.fontSizeInches, 0.04);
       for (final unit in _svgWrapUnits(text)) {
-        final uw = _estSvgTextWidth(unit, fs);
+        final uw = _estSvgTextWidth(unit, run.charStyle);
         final isBlank = unit.trim().isEmpty;
         if (curW > 1e-9 && curW + uw > maxWidth && !isBlank) {
           flush();
@@ -2613,7 +2631,7 @@ class VsdxToSvgSerializer {
           // Hard-break oversized tokens (code units; good enough for Latin/CJK).
           for (var i = 0; i < unit.length; i++) {
             final ch = unit[i];
-            final cw = _estSvgTextWidth(ch, fs);
+            final cw = _estSvgTextWidth(ch, run.charStyle);
             if (curW > 1e-9 && curW + cw > maxWidth) flush();
             append(ch, run, cw);
           }
@@ -2649,16 +2667,36 @@ class VsdxToSvgSerializer {
   }
 
   /// Approximate advance width for SVG layout (no font metrics in pure Dart).
-  double _estSvgTextWidth(String text, double fontSizeInches) {
+  /// Matches canvas: FontScale/letter-spacing tracking and 0.7× super/sub size.
+  double _estSvgTextWidth(String text, VsdxCharStyle style) {
+    var fs = math.max(style.fontSizeInches, 0.04);
+    switch (style.position) {
+      case VsdxTextPosition.superscript:
+      case VsdxTextPosition.subscript:
+        fs *= 0.7;
+      case VsdxTextPosition.normal:
+        break;
+    }
     var w = 0.0;
+    var n = 0;
     for (final r in text.runes) {
+      n++;
       if (r == 0x20 || r == 0x09) {
-        w += fontSizeInches * 0.33;
+        w += fs * 0.33;
       } else if (r >= 0x2E80) {
-        w += fontSizeInches; // CJK / wide ideographs
+        w += fs; // CJK / wide ideographs
       } else {
-        w += fontSizeInches * 0.55;
+        w += fs * 0.55;
       }
+    }
+    var tracking = style.letterSpacingInches;
+    final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
+    if ((scale - 1.0).abs() > 1e-6) {
+      tracking += fs * (scale - 1.0) * 0.15;
+    }
+    // Flutter letterSpacing applies between glyphs ≈ (n-1) gaps.
+    if (n > 1 && tracking.abs() > 1e-12) {
+      w += tracking * (n - 1);
     }
     return w;
   }
