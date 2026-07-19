@@ -7,6 +7,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'elliptical_arc.dart';
 import 'geometry.dart';
 import 'shape.dart';
 
@@ -219,16 +220,20 @@ abstract final class ShapePerimeter {
               :final y,
               :final controlX,
               :final controlY,
+              :final angle,
+              :final eccentricity,
             ):
             if (!has) move(0, 0);
-            final bezX = 2 * controlX - 0.5 * cx - 0.5 * x;
-            final bezY = 2 * controlY - 0.5 * cy - 0.5 * y;
-            _sampleQuad(
-              out,
-              Offset2D(cx, cy),
-              Offset2D(bezX, bezY),
-              Offset2D(x, y),
+            final samples = sampleEllipticalArc(
+              start: Offset2D(cx, cy),
+              end: Offset2D(x, y),
+              control: Offset2D(controlX, controlY),
+              angle: angle,
+              eccentricity: eccentricity,
             );
+            for (final p in samples) {
+              emit(p.x, p.y);
+            }
             cx = x;
             cy = y;
           case RelEllipticalArcTo(
@@ -236,18 +241,21 @@ abstract final class ShapePerimeter {
               :final fy,
               :final fcx,
               :final fcy,
+              :final angle,
+              :final eccentricity,
             ):
             if (!has) move(0, 0);
             final ex = fx * w, ey = fy * h;
-            final cX = fcx * w, cY = fcy * h;
-            final bezX = 2 * cX - 0.5 * cx - 0.5 * ex;
-            final bezY = 2 * cY - 0.5 * cy - 0.5 * ey;
-            _sampleQuad(
-              out,
-              Offset2D(cx, cy),
-              Offset2D(bezX, bezY),
-              Offset2D(ex, ey),
+            final samples = sampleEllipticalArc(
+              start: Offset2D(cx, cy),
+              end: Offset2D(ex, ey),
+              control: Offset2D(fcx * w, fcy * h),
+              angle: angle,
+              eccentricity: eccentricity,
             );
+            for (final p in samples) {
+              emit(p.x, p.y);
+            }
             cx = ex;
             cy = ey;
           case final EllipseCmd ell:

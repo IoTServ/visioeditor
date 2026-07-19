@@ -140,15 +140,20 @@ Path buildPath(
           :final y,
           :final controlX,
           :final controlY,
+          :final angle,
+          :final eccentricity,
         ):
-        // Approximate by a quadratic Bezier that *passes through* the
-        // control point at parameter t = 0.5. Solving B(0.5) gives:
-        //   P_ctrl = 2·M − 0.5·P0 − 0.5·P2
-        // where M is the on-curve midpoint Visio gives us as (A,B).
         if (!hasStart) start(0, 0);
-        final bezX = 2 * controlX - 0.5 * cursorX - 0.5 * x;
-        final bezY = 2 * controlY - 0.5 * cursorY - 0.5 * y;
-        path.quadraticBezierTo(bezX, bezY, x, y);
+        final samples = sampleEllipticalArc(
+          start: Offset2D(cursorX, cursorY),
+          end: Offset2D(x, y),
+          control: Offset2D(controlX, controlY),
+          angle: angle,
+          eccentricity: eccentricity,
+        );
+        for (final p in samples) {
+          path.lineTo(p.x, p.y);
+        }
         cursorX = x;
         cursorY = y;
       case RelEllipticalArcTo(
@@ -156,15 +161,22 @@ Path buildPath(
           :final fy,
           :final fcx,
           :final fcy,
+          :final angle,
+          :final eccentricity,
         ):
         if (!hasStart) start(0, 0);
         final ex = fx * widthInches;
         final ey = fy * heightInches;
-        final cX = fcx * widthInches;
-        final cY = fcy * heightInches;
-        final bezX = 2 * cX - 0.5 * cursorX - 0.5 * ex;
-        final bezY = 2 * cY - 0.5 * cursorY - 0.5 * ey;
-        path.quadraticBezierTo(bezX, bezY, ex, ey);
+        final samples = sampleEllipticalArc(
+          start: Offset2D(cursorX, cursorY),
+          end: Offset2D(ex, ey),
+          control: Offset2D(fcx * widthInches, fcy * heightInches),
+          angle: angle,
+          eccentricity: eccentricity,
+        );
+        for (final p in samples) {
+          path.lineTo(p.x, p.y);
+        }
         cursorX = ex;
         cursorY = ey;
       case EllipseCmd(
@@ -477,11 +489,8 @@ void _arcByBow(
   );
 }
 
-/// Visio Ellipse row: centre `(cx,cy)`, axis end-point A and conjugate
-/// end-point B. For the M3 minimum we assume **axis-aligned** ellipses
-/// (the by-far common case): semi-axes derived from |A - centre| and
-/// |B - centre|. Rotated ellipses get an approximation; full rotation
-/// support arrives with EllipticalArcTo in the next M3 pass.
+/// Visio Ellipse row: centre `(cx,cy)`, axis end-point A and conjugate B.
+/// Samples a rotated ellipse when A/B are not axis-aligned.
 void _ellipseFromPoints(
   Path path,
   double cx,
@@ -491,12 +500,31 @@ void _ellipseFromPoints(
   double bX,
   double bY,
 ) {
-  final rx = math.sqrt(math.pow(aX - cx, 2) + math.pow(aY - cy, 2));
-  final ry = math.sqrt(math.pow(bX - cx, 2) + math.pow(bY - cy, 2));
+  final ax = aX - cx, ay = aY - cy;
+  final bx = bX - cx, by = bY - cy;
+  final rx = math.sqrt(ax * ax + ay * ay);
+  final ry = math.sqrt(bx * bx + by * by);
   if (rx == 0 || ry == 0) return;
-  path.addOval(Rect.fromCenter(
-    center: Offset(cx, cy),
-    width: 2 * rx,
-    height: 2 * ry,
-  ));
+  // Axis-aligned fast path.
+  if (ay.abs() < 1e-9 && bx.abs() < 1e-9) {
+    path.addOval(Rect.fromCenter(
+      center: Offset(cx, cy),
+      width: 2 * rx,
+      height: 2 * ry,
+    ));
+    return;
+  }
+  const steps = 64;
+  for (var i = 0; i <= steps; i++) {
+    final t = 2 * math.pi * i / steps;
+    final cosT = math.cos(t), sinT = math.sin(t);
+    final x = cx + ax * cosT + bx * sinT;
+    final y = cy + ay * cosT + by * sinT;
+    if (i == 0) {
+      path.moveTo(x, y);
+    } else {
+      path.lineTo(x, y);
+    }
+  }
+  path.close();
 }

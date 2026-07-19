@@ -25,6 +25,7 @@ export 'src/model/custom_property.dart';
 export 'src/model/document.dart';
 export 'src/model/document_settings.dart';
 export 'src/model/effects.dart';
+export 'src/model/elliptical_arc.dart';
 export 'src/model/fill.dart';
 export 'src/model/geometry.dart';
 export 'src/model/hyperlink.dart';

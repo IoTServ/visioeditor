@@ -15,6 +15,7 @@ import 'dart:typed_data';
 
 import '../model/document.dart';
 import '../model/effects.dart';
+import '../model/elliptical_arc.dart';
 import '../model/fill.dart';
 import '../model/geometry.dart';
 import '../model/image.dart';
@@ -768,25 +769,39 @@ class VsdxToSvgSerializer {
             :final y,
             :final controlX,
             :final controlY,
+            :final angle,
+            :final eccentricity,
           ):
-          final bx = 2 * controlX - 0.5 * cx - 0.5 * x;
-          final by = 2 * controlY - 0.5 * cy - 0.5 * y;
-          out.write('Q ${_n(bx)} ${_n(by)} ${_n(x)} ${_n(y)} ');
-          cx = x;
-          cy = y;
+          final samples = sampleEllipticalArc(
+            start: Offset2D(cx, cy),
+            end: Offset2D(x, y),
+            control: Offset2D(controlX, controlY),
+            angle: angle,
+            eccentricity: eccentricity,
+          );
+          for (final p in samples) {
+            l(p.x, p.y);
+          }
         case RelEllipticalArcTo(
             :final fx,
             :final fy,
             :final fcx,
             :final fcy,
+            :final angle,
+            :final eccentricity,
           ):
           final ex = fx * w;
           final ey = fy * h;
-          final bx = 2 * (fcx * w) - 0.5 * cx - 0.5 * ex;
-          final by = 2 * (fcy * h) - 0.5 * cy - 0.5 * ey;
-          out.write('Q ${_n(bx)} ${_n(by)} ${_n(ex)} ${_n(ey)} ');
-          cx = ex;
-          cy = ey;
+          final samples = sampleEllipticalArc(
+            start: Offset2D(cx, cy),
+            end: Offset2D(ex, ey),
+            control: Offset2D(fcx * w, fcy * h),
+            angle: angle,
+            eccentricity: eccentricity,
+          );
+          for (final p in samples) {
+            l(p.x, p.y);
+          }
         case EllipseCmd(
             :final cx,
             :final cy,
@@ -795,14 +810,31 @@ class VsdxToSvgSerializer {
             :final bX,
             :final bY,
           ):
-          final rx = math.sqrt((aX - cx) * (aX - cx) + (aY - cy) * (aY - cy));
-          final ry = math.sqrt((bX - cx) * (bX - cx) + (bY - cy) * (bY - cy));
+          final ax = aX - cx, ay = aY - cy;
+          final bx = bX - cx, by = bY - cy;
+          final rx = math.sqrt(ax * ax + ay * ay);
+          final ry = math.sqrt(bx * bx + by * by);
           if (rx > 0 && ry > 0) {
-            // SVG has no `ellipse` inside `d`; approximate with two arcs.
-            out
-              ..write('M ${_n(cx - rx)} ${_n(cy)} ')
-              ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(rx * 2)} 0 ')
-              ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(-rx * 2)} 0 ');
+            if (ay.abs() < 1e-9 && bx.abs() < 1e-9) {
+              out
+                ..write('M ${_n(cx - rx)} ${_n(cy)} ')
+                ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(rx * 2)} 0 ')
+                ..write('a ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(-rx * 2)} 0 ');
+            } else {
+              // Rotated ellipse: dense polyline.
+              const steps = 64;
+              for (var i = 0; i <= steps; i++) {
+                final t = 2 * math.pi * i / steps;
+                final cosT = math.cos(t), sinT = math.sin(t);
+                final x = cx + ax * cosT + bx * sinT;
+                final y = cy + ay * cosT + by * sinT;
+                if (i == 0) {
+                  m(x, y);
+                } else {
+                  l(x, y);
+                }
+              }
+            }
           }
         case PolylineTo(:final x, :final y, :final vertices, :final relative):
           final sx = relative ? w : 1.0;
@@ -837,14 +869,26 @@ class VsdxToSvgSerializer {
             :final x,
             :final y,
             :final controlPoints,
+            :final weights,
+            :final knots,
+            :final degree,
             :final relative,
           ):
           final sx = relative ? w : 1.0;
           final sy = relative ? h : 1.0;
-          for (final p in controlPoints) {
-            l(p.x * sx, p.y * sy);
+          final samples = _sampleNurbs(
+            start: Offset2D(cx, cy),
+            end: Offset2D(x * sx, y * sy),
+            controlPoints: <Offset2D>[
+              for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+            ],
+            weights: weights,
+            knots: knots,
+            degree: degree,
+          );
+          for (final p in samples) {
+            l(p.x, p.y);
           }
-          l(x * sx, y * sy);
       }
     }
     return out.toString().trim();
@@ -1689,4 +1733,91 @@ class VsdxToSvgSerializer {
         .replaceFirst(RegExp(r'0+$'), '')
         .replaceFirst(RegExp(r'\.$'), '');
   }
+}
+
+/// Sample a NURBS into line segments (de Boor), matching canvas path_builder.
+List<Offset2D> _sampleNurbs({
+  required Offset2D start,
+  required Offset2D end,
+  required List<Offset2D> controlPoints,
+  required List<double> weights,
+  required List<double> knots,
+  required int degree,
+}) {
+  final cps = <Offset2D>[start, ...controlPoints, end];
+  final wts = <double>[
+    1.0,
+    ...List<double>.generate(
+      controlPoints.length,
+      (i) => i < weights.length ? weights[i] : 1.0,
+    ),
+    1.0,
+  ];
+  final n = cps.length - 1;
+  if (n < degree) {
+    return <Offset2D>[for (var i = 1; i <= n; i++) cps[i]];
+  }
+  final fullKnots = knots.length == n + degree + 2
+      ? knots
+      : _clampedNurbsKnots(n, degree);
+  const samples = 32;
+  final tMin = fullKnots[degree];
+  final tMax = fullKnots[n + 1];
+  final out = <Offset2D>[];
+  for (var s = 1; s <= samples; s++) {
+    final t = tMin + (tMax - tMin) * s / samples;
+    out.add(_deBoorNurbs(cps, wts, fullKnots, degree, t));
+  }
+  return out;
+}
+
+List<double> _clampedNurbsKnots(int n, int degree) {
+  final size = n + degree + 2;
+  final out = List<double>.filled(size, 0);
+  final interior = n - degree;
+  for (var i = 0; i <= degree; i++) {
+    out[i] = 0;
+    out[size - 1 - i] = 1;
+  }
+  for (var i = 1; i <= interior; i++) {
+    out[degree + i] = i / (interior + 1);
+  }
+  return out;
+}
+
+Offset2D _deBoorNurbs(
+  List<Offset2D> cps,
+  List<double> wts,
+  List<double> knots,
+  int degree,
+  double t,
+) {
+  final n = cps.length - 1;
+  var k = degree;
+  while (k < n && t >= knots[k + 1]) {
+    k++;
+  }
+  final wx = <double>[];
+  final wy = <double>[];
+  final w = <double>[];
+  for (var j = 0; j <= degree; j++) {
+    final idx = k - degree + j;
+    final wj = wts[idx];
+    wx.add(cps[idx].x * wj);
+    wy.add(cps[idx].y * wj);
+    w.add(wj);
+  }
+  for (var r = 1; r <= degree; r++) {
+    for (var j = degree; j >= r; j--) {
+      final idx = k - degree + j;
+      final denom = knots[idx + degree - r + 1] - knots[idx];
+      final alpha = denom == 0 ? 0.0 : (t - knots[idx]) / denom;
+      wx[j] = (1 - alpha) * wx[j - 1] + alpha * wx[j];
+      wy[j] = (1 - alpha) * wy[j - 1] + alpha * wy[j];
+      w[j] = (1 - alpha) * w[j - 1] + alpha * w[j];
+    }
+  }
+  final ww = w[degree];
+  if (ww == 0) return Offset2D(wx[degree], wy[degree]);
+  return Offset2D(wx[degree] / ww, wy[degree] / ww);
 }

@@ -3078,8 +3078,14 @@ class VsdxWriter {
           final oldV = oldVals[name]!;
           final newV = newVals[name]!;
           if ((oldV - newV).abs() <= _epsilon) continue;
-          final keep = _formulaFitsScale(
+          var keep = _formulaFitsScale(
               cell.getAttribute('F'), oldV, newV, sx: sx, sy: sy);
+          // C (angle) / D (eccentricity) are not Width/Height scales — keeping
+          // a constant F= would undo resized V in Visio/Edraw.
+          if ((ce is EllipticalArcTo || ce is RelEllipticalArcTo) &&
+              (name == 'C' || name == 'D')) {
+            keep = false;
+          }
           _writeValue(cell, _fmt(newV), preserveFormula: keep);
         }
         // Formula-bearing A/E payloads (POLYLINE / NURBS) — only when the

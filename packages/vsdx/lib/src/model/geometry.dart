@@ -178,10 +178,8 @@ class RelArcTo extends VsdxPathCommand {
 ///   * `angle` = ellipse major-axis rotation (radians, CCW from page X)
 ///   * `eccentricity` = major/minor axis ratio (≥ 1)
 ///
-/// The render pipeline approximates this with a quadratic Bezier through the
-/// control point — good enough for the vast majority of stencil shapes
-/// (rounded rectangles, callouts, end-caps). A true elliptical arc plotter
-/// arrives with the NURBS work in a follow-up M3 iteration.
+/// Render / SVG / perimeter sample a true ellipse from [angle] and
+/// [eccentricity] (see `elliptical_arc.dart`), not a quadratic Bézier.
 @immutable
 class EllipticalArcTo extends VsdxPathCommand {
   const EllipticalArcTo({
@@ -726,8 +724,30 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
       return QuadBezTo(x: x * sx, y: y * sy, x1: x1 * sx, y1: y1 * sy);
     case RelQuadBezTo():
       return c;
-    case RelEllipticalArcTo():
-      return c;
+    case RelEllipticalArcTo(
+        :final fx,
+        :final fy,
+        :final fcx,
+        :final fcy,
+        :final angle,
+        :final eccentricity,
+      ):
+      // Fractions stay; angle/ecc are absolute and must track non-uniform scale.
+      final cosA = math.cos(angle);
+      final sinA = math.sin(angle);
+      final majorScale =
+          math.sqrt(sx * sx * cosA * cosA + sy * sy * sinA * sinA);
+      final minorScale =
+          math.sqrt(sx * sx * sinA * sinA + sy * sy * cosA * cosA);
+      final eccScale = minorScale < 1e-12 ? 1.0 : majorScale / minorScale;
+      return RelEllipticalArcTo(
+        fx: fx,
+        fy: fy,
+        fcx: fcx,
+        fcy: fcy,
+        angle: math.atan2(sy * sinA, sx * cosA),
+        eccentricity: eccentricity * eccScale,
+      );
     case ArcTo(:final x, :final y, :final bow):
       return ArcTo(x: x * sx, y: y * sy, bow: bow * (sx + sy) / 2);
     case RelArcTo():

@@ -95,6 +95,25 @@ void main() {
       expect(scaled.eccentricity, closeTo(2, 1e-9));
       expect(scaled.angle, closeTo(0, 1e-9));
     });
+
+    test('scalePathCommand updates RelEllipticalArcTo angle/ecc only', () {
+      final scaled = scalePathCommand(
+        const RelEllipticalArcTo(
+          fx: 1,
+          fy: 0.5,
+          fcx: 0.5,
+          fcy: 1,
+          angle: 0,
+          eccentricity: 1,
+        ),
+        2,
+        1,
+      ) as RelEllipticalArcTo;
+      expect(scaled.fx, 1);
+      expect(scaled.fy, 0.5);
+      expect(scaled.eccentricity, closeTo(2, 1e-9));
+      expect(scaled.angle, closeTo(0, 1e-9));
+    });
   });
 
   group('quadratic Bézier rows (QuadBezTo / RelQuadBezTo)', () {
