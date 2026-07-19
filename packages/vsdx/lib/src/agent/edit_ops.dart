@@ -155,9 +155,12 @@ ApplyResult applyOps(
         }
         page = page.updateShapeById(
             id,
-            (s) => withLabel(s, (op['text'] ?? '').toString(),
-                bold: op['bold'] == true,
-                colorHex: (op['textColor'] ?? op['fontColor'])?.toString()));
+            (s) => withLabel(
+                  s,
+                  (op['text'] ?? '').toString(),
+                  bold: op.containsKey('bold') ? op['bold'] == true : null,
+                  colorHex: (op['textColor'] ?? op['fontColor'])?.toString(),
+                ));
       case 'move_shape':
       case 'move':
         final id = _resolveId(op['id']);
@@ -236,16 +239,40 @@ ApplyResult applyOps(
                 )
                 .reshapeAsPolyline(poly),
           );
+          // Glued connectors must re-attach; unglued keep the scaled ends.
+          if (page.connects.any((c) => c.fromSheetId == id)) {
+            movedForReroute.add(id);
+          }
         } else {
-          page = page.updateShapeById(
-            id,
-            (s) => s.resizeTo(
+          page = page.updateShapeById(id, (s) {
+            final sx = s.width == 0 ? 1.0 : w / s.width;
+            final sy = s.height == 0 ? 1.0 : h / s.height;
+            final resized = s.resizeTo(
               pinX: s.pinX,
               pinY: s.pinY,
               width: w,
               height: h,
-            ),
-          );
+            );
+            if (s.children.isEmpty ||
+                ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
+              return resized;
+            }
+            // Match the editor: scale group children with the box.
+            return resized.copyWith(
+              children: <VsdxShape>[
+                for (final c in s.children)
+                  _scaleGroupChild(
+                    c,
+                    sx,
+                    sy,
+                    s.effectiveLocPinX,
+                    s.effectiveLocPinY,
+                    resized.effectiveLocPinX,
+                    resized.effectiveLocPinY,
+                  ),
+              ],
+            );
+          });
           _addSubtreeIds(page, id, movedForReroute);
         }
       case 'delete_shape':
@@ -287,6 +314,64 @@ void _addSubtreeIds(VsdxPage page, int id, Set<int> out) {
   } else {
     out.add(id);
   }
+}
+
+/// Scale a group child about the parent's LocPin frame (matches editor).
+VsdxShape _scaleGroupChild(
+  VsdxShape c,
+  double sx,
+  double sy,
+  double oldOx,
+  double oldOy,
+  double newOx,
+  double newOy,
+) {
+  final npx = newOx + (c.pinX - oldOx) * sx;
+  final npy = newOy + (c.pinY - oldOy) * sy;
+  if (c.is1D) {
+    Offset2D? map(double? x, double? y) {
+      if (x == null || y == null) return null;
+      return Offset2D(newOx + (x - oldOx) * sx, newOy + (y - oldOy) * sy);
+    }
+
+    final b = map(c.beginX, c.beginY);
+    final e = map(c.endX, c.endY);
+    final wps = <Offset2D>[
+      for (final w in c.waypoints)
+        Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
+    ];
+    if (b == null || e == null) {
+      return c.copyWith(pinX: npx, pinY: npy, waypoints: wps);
+    }
+    final control = <Offset2D>[b, ...wps, e];
+    final geometry = c.curved
+        ? VsdxPage.curveThrough(control)
+        : c.rounded
+            ? VsdxPage.roundCorners(control)
+            : control;
+    return c.copyWith(waypoints: wps).reshapeAsPolyline(geometry);
+  }
+  final scaled = c.resizeTo(
+    pinX: npx,
+    pinY: npy,
+    width: c.width * sx,
+    height: c.height * sy,
+  );
+  if (c.children.isEmpty) return scaled;
+  return scaled.copyWith(
+    children: <VsdxShape>[
+      for (final k in c.children)
+        _scaleGroupChild(
+          k,
+          sx,
+          sy,
+          c.effectiveLocPinX,
+          c.effectiveLocPinY,
+          scaled.effectiveLocPinX,
+          scaled.effectiveLocPinY,
+        ),
+    ],
+  );
 }
 
 /// Move [id] so its page pin lands at ([pageX],[pageY]). Nested shapes convert

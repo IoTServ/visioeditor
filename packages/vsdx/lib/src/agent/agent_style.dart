@@ -49,27 +49,52 @@ VsdxLine lineFromHex(String? hex, {double weightInches = 0.012, int endArrow = 0
 }
 
 /// Attach a single-run label to [s] (plain text cache + styled rich run).
+///
+/// When [bold] / [colorHex] / [pt] are omitted, an existing first-run style is
+/// preserved so `set_text` does not wipe bold / colour / size.
 VsdxShape withLabel(
   VsdxShape s,
   String text, {
-  bool bold = false,
+  bool? bold,
   String? colorHex,
-  double pt = 11,
+  double? pt,
 }) {
   if (text.isEmpty) {
     // Clear label (set_text "" must round-trip as empty, not no-op).
     return s.copyWith(text: '', richText: VsdxRichText.empty);
   }
-  final color = parseColorOrNull(colorHex) ?? kInk;
-  final style = VsdxCharStyle(
-    fontSizeInches: pt / 72.0,
-    color: color,
-    style: bold ? VsdxFontStyle.boldStyle : VsdxFontStyle.regular,
-  );
+  final prev =
+      s.richText.runs.isNotEmpty ? s.richText.runs.first.charStyle : null;
+  final color = parseColorOrNull(colorHex) ?? prev?.color ?? kInk;
+  final fontSize = pt != null
+      ? pt / 72.0
+      : (prev?.fontSizeInches ?? 11 / 72.0);
+  final fontStyle = bold == true
+      ? VsdxFontStyle.boldStyle
+      : bold == false
+          ? VsdxFontStyle.regular
+          : (prev?.style ?? VsdxFontStyle.regular);
+  final style = (prev ??
+          VsdxCharStyle(
+            fontSizeInches: fontSize,
+            color: color,
+            style: fontStyle,
+          ))
+      .copyWith(
+        fontSizeInches: fontSize,
+        color: color,
+        style: fontStyle,
+      );
   return s.copyWith(
     text: text,
     richText: VsdxRichText(runs: <VsdxTextRun>[
-      VsdxTextRun(text: text, charStyle: style),
+      VsdxTextRun(
+        text: text,
+        charStyle: style,
+        paraStyle: s.richText.runs.isNotEmpty
+            ? s.richText.runs.first.paraStyle
+            : VsdxParaStyle.defaults,
+      ),
     ]),
   );
 }

@@ -2506,10 +2506,11 @@ class EditorController extends ChangeNotifier {
         (target.locked || isOnLockedLayer(id))) {
       return; // locked shapes / layers can't be deleted
     }
+    final doomed = _subtreeIds(<int>{id});
     final next = page.removeShapeById(id);
     if (identical(next, page)) return;
     final undoSel = Set<int>.of(_selection);
-    _selection.remove(id);
+    _selection.removeAll(doomed);
     applyEdit(
       doc.replacePage(_currentPageIndex, next),
       undoSelection: undoSel,
@@ -5579,18 +5580,22 @@ class EditorController extends ChangeNotifier {
 
       final b = map(c.beginX, c.beginY);
       final e = map(c.endX, c.endY);
-      return c.copyWith(
-        pinX: npx,
-        pinY: npy,
-        beginX: b?.x,
-        beginY: b?.y,
-        endX: e?.x,
-        endY: e?.y,
-        waypoints: <Offset2D>[
-          for (final w in c.waypoints)
-            Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
-        ],
-      );
+      final wps = <Offset2D>[
+        for (final w in c.waypoints)
+          Offset2D(newOx + (w.x - oldOx) * sx, newOy + (w.y - oldOy) * sy),
+      ];
+      if (b == null || e == null) {
+        return c.copyWith(pinX: npx, pinY: npy, waypoints: wps);
+      }
+      final control = <Offset2D>[b, ...wps, e];
+      final geometry = c.curved
+          ? VsdxPage.curveThrough(control)
+          : c.rounded
+              ? VsdxPage.roundCorners(control)
+              : control;
+      return c
+          .copyWith(waypoints: wps)
+          .reshapeAsPolyline(geometry);
     }
     final scaled = c.resizeTo(
       pinX: npx,

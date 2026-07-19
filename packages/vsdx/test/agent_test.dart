@@ -240,6 +240,79 @@ void main() {
       expect(s.richText.isEmpty, isTrue);
     });
 
+    test('set_text preserves existing bold and colour', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final styled = VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 2,
+        pinY: 2,
+        width: 1.5,
+        height: 0.8,
+      ).copyWith(
+        text: 'Old',
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'Old',
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 14 / 72.0,
+              color: VsdxColor(0xFFCC0000),
+              style: VsdxFontStyle.boldStyle,
+            ),
+          ),
+        ]),
+      );
+      doc = doc.replacePage(0, doc.pages.first.addShape(styled));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'set_text', 'id': id, 'text': 'New'},
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.text, 'New');
+      final style = after.richText.runs.single.charStyle;
+      expect(style.style.bold, isTrue);
+      expect(style.color?.value, 0xFFCC0000);
+      expect(style.fontSizeInches, closeTo(14 / 72.0, 1e-9));
+    });
+
+    test('resize_shape scales group children with the box', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final child = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 1,
+        pinY: 0.5,
+        width: 1,
+        height: 0.5,
+      );
+      final group = VsdxShape(
+        id: 1,
+        name: 'Group.1',
+        pinX: 3,
+        pinY: 4,
+        width: 2,
+        height: 1,
+        shapeKind: VsdxShapeKind.group,
+        children: <VsdxShape>[child],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+      );
+      doc = doc.replacePage(0, doc.pages.first.copyWith(shapes: <VsdxShape>[group]));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'resize_shape',
+          'id': 1,
+          'w': 4,
+          'h': 2,
+        },
+      ]);
+      final afterChild = r.document.pages.first.findShapeById(2)!;
+      expect(afterChild.width, closeTo(2, 1e-6));
+      expect(afterChild.height, closeTo(1, 1e-6));
+      expect(afterChild.pinX, closeTo(2, 1e-6));
+      expect(afterChild.pinY, closeTo(1, 1e-6));
+    });
+
     test('delete_shape clears stale EndTrigger on remaining connectors', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

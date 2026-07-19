@@ -1078,14 +1078,19 @@ class VsdxPage {
 
   /// Page position of [connect]'s fixed connection point on [shape], or `null`
   /// when the connect isn't pinned to a valid point.
+  ///
+  /// Uses [effectiveConnectionPoints] so glue to a locked / unmaterialised
+  /// default blue point still resolves (UI snaps via the same set; locked
+  /// targets intentionally skip materialising `connectionPoints`).
   Offset2D? _fixedPoint(VsdxShape? shape, VsdxConnect? connect) {
     if (shape == null) return null;
     final idx = fixedConnectionIndex(connect);
-    if (idx == null || idx < 0 || idx >= shape.connectionPoints.length) {
+    final pts = effectiveConnectionPoints(shape);
+    if (idx == null || idx < 0 || idx >= pts.length) {
       return null;
     }
     // Nested Group children need ancestor composition.
-    return localToPageDeep(shape.id, shape.connectionPoints[idx].offset);
+    return localToPageDeep(shape.id, pts[idx].offset);
   }
 
   /// Standard default connection points (drawio-style) for a [width]×[height]

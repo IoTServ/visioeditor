@@ -107,6 +107,57 @@ void main() {
     expect(connector.endY, inInclusiveRange(2.5, 3.5));
   });
 
+  test('rerouteConnectors honours fixed points on locked shapes', () {
+    // Locked targets skip materialising connectionPoints, but glue still
+    // writes ToPart=100+k against effective (default) blue points.
+    final locked = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 5,
+      width: 2,
+      height: 2,
+    ).copyWith(locked: true);
+    final free = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 7,
+      pinY: 5,
+      width: 1,
+      height: 1,
+    );
+    final conn = VsdxShapeFactory.line(id: 3, ax: 2, ay: 5, bx: 7, by: 5);
+    var page = VsdxPage(
+      id: 0,
+      name: 'P1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: [locked, free, conn],
+    );
+    page = page.setConnectorEndpoint(
+      3,
+      begin: true,
+      targetShapeId: 1,
+      connectionPointIndex: 1, // right middle
+      x: 3,
+      y: 5,
+    );
+    page = page.setConnectorEndpoint(
+      3,
+      begin: false,
+      targetShapeId: 2,
+      x: 7,
+      y: 5,
+    );
+    expect(page.findShapeById(1)!.connectionPoints, isEmpty);
+    expect(page.findShapeById(1)!.locked, isTrue);
+    final begin = page.connects.firstWhere((c) => c.fromSheetId == 3 && c.isBegin);
+    expect(begin.toPart, 101);
+    page = page.rerouteConnectors();
+    final after = page.findShapeById(3)!;
+    // Locked 2×2 at (2,5): right-middle default point → page (3,5).
+    expect(after.beginX, closeTo(3, 1e-6));
+    expect(after.beginY, closeTo(5, 1e-6));
+  });
+
   test('a glued connector routes as an elbow between offset shapes', () {
     final r1 = VsdxShapeFactory.rectangle(
         id: 1, pinX: 1, pinY: 1, width: 1, height: 1);

@@ -822,7 +822,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (conn != null &&
         _canEditConnector(conn) &&
         conn.waypoints.isNotEmpty) {
-      final route = _connectorRoutePage(conn);
+      final route = _connectorControlRoutePage(conn);
       for (var r = 1; r < route.length - 1; r++) {
         if ((_pageToScreen(route[r].x, route[r].y) - _doubleTapPos)
                 .distanceSquared <=
@@ -1931,7 +1931,15 @@ class _PageCanvasState extends State<PageCanvas> {
       final drawn = page.drawnConnectorPagePolyline(conn);
       if (drawn.length >= 2) return drawn;
     }
+    return _connectorControlRoutePage(conn);
+  }
+
+  /// Control polyline (waypoints / elbow) in **page** inches for bend handles.
+  /// Curved / rounded connectors keep the sparse control path — not the dense
+  /// baked sample — so drag indices match [setConnectorWaypoints].
+  List<Offset2D> _connectorControlRoutePage(VsdxShape conn) {
     final route = VsdxPage.connectorRoute(conn);
+    final page = _page;
     if (page == null || route.isEmpty) return route;
     final parentId = page.findParentId(conn.id);
     if (parentId == null) return route;
@@ -2087,17 +2095,20 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _tryStartWaypointDrag(Offset localPos) {
     final conn = _selectedConnector();
     if (conn == null || !_canEditConnector(conn)) return false;
-    // Hit-test in page space; promote stores parent-local waypoints.
-    final pageRoute = _connectorRoutePage(conn);
-    final localRoute = VsdxPage.connectorRoute(conn);
+    // Hit-test control polyline (not dense curved samples); promote stores
+    // parent-local waypoints from the same control path.
+    final pageRoute = _connectorControlRoutePage(conn);
+    final page = _page;
     void promote() {
-      if (conn.waypoints.isEmpty && localRoute.length > 2) {
-        _c.setConnectorWaypoints(
-          conn.id,
-          localRoute.sublist(1, localRoute.length - 1),
-          transient: true,
-        );
-      }
+      if (conn.waypoints.isNotEmpty || pageRoute.length <= 2) return;
+      final parentId = page?.findParentId(conn.id);
+      final localInterior = <Offset2D>[
+        for (final p in pageRoute.sublist(1, pageRoute.length - 1))
+          parentId == null || page == null
+              ? p
+              : page.pageToLocalDeep(parentId, p),
+      ];
+      _c.setConnectorWaypoints(conn.id, localInterior, transient: true);
     }
 
     // Existing interior vertices → move that bend point.
@@ -2725,7 +2736,7 @@ class _PageCanvasState extends State<PageCanvas> {
             var midpointHandles = const <Offset>[];
             var endpointHandles = const <Offset>[];
             if (connector != null && _canEditConnector(connector)) {
-              final route = _connectorRoutePage(connector);
+              final route = _connectorControlRoutePage(connector);
               waypointHandles = <Offset>[
                 for (var r = 1; r < route.length - 1; r++)
                   _pageToContent(route[r].x, route[r].y),

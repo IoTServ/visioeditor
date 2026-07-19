@@ -1118,6 +1118,17 @@ void main() {
     expect(c.selection.contains(ids.first), isFalse);
   });
 
+  test('deleteShapeById clears nested children from selection', () {
+    final c = newDocWithTwoRects()..selectAll();
+    c.groupSelection();
+    final group = c.currentPage!.shapes.single;
+    final childIds = <int>[for (final ch in group.children) ch.id];
+    c.setSelection(<int>{group.id, ...childIds});
+    c.deleteShapeById(group.id);
+    expect(c.currentPage!.shapes, isEmpty);
+    expect(c.selection, isEmpty);
+  });
+
   test('shape data: set / edit / dedupe, exposed and undoable', () {
     final c = EditorController()..newDocument();
     c
