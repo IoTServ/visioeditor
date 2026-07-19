@@ -110,6 +110,44 @@ void main() {
       expect(r.log.any((m) => m.contains('2-D')), isTrue);
     });
 
+    test('add_connector line none hides the stroke', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.rectangle(
+              id: 1,
+              pinX: 2,
+              pinY: 3,
+              width: 1,
+              height: 1,
+            ),
+            VsdxShapeFactory.rectangle(
+              id: 2,
+              pinX: 6,
+              pinY: 3,
+              width: 1,
+              height: 1,
+            ),
+          ],
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'add_connector',
+          'from': 1,
+          'to': 2,
+          'line': 'none',
+        },
+      ]);
+      expect(r.createdIds, hasLength(1));
+      final c = r.document.pages.single.findShapeById(r.createdIds.single)!;
+      expect(c.line.hasLine, isFalse);
+      expect(c.line.pattern, 0);
+    });
+
     test('set_style + set_text mutate the target shape', () {
       final doc = built();
       final target = doc.pages.single.shapes.firstWhere((s) => s.text == 'Do work');

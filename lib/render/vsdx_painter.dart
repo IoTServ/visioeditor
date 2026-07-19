@@ -714,10 +714,20 @@ class VsdxPainter extends CustomPainter {
     canvas.scale(1, -1);
     canvas.translate(0, -bottomY);
 
-    // Layer alpha applies ReflectionTransparency to solid / gradient / hatch.
+    // Layer alpha applies ReflectionTransparency; optional ImageFilter.blur
+    // matches SVG feGaussianBlur on ReflectionBlur.
+    final blur = refl.blurInches;
     canvas.saveLayer(
-      bounds.inflate(refl.blurInches * 2),
-      Paint()..color = Color.fromRGBO(255, 255, 255, alpha),
+      bounds.inflate(math.max(blur, 0) * 3 + 0.01),
+      Paint()
+        ..color = Color.fromRGBO(255, 255, 255, alpha)
+        ..imageFilter = blur > 0
+            ? ui.ImageFilter.blur(
+                sigmaX: blur,
+                sigmaY: blur,
+                tileMode: TileMode.decal,
+              )
+            : null,
     );
 
     if (paintFill) {

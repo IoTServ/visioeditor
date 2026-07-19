@@ -1800,20 +1800,41 @@ class VsdxToSvgSerializer {
       cursor += lineH + p.style.spaceAfterInches;
     }
     final textH = math.max(cursor, 0.04);
+    // TextDirection=1: match canvas — rotate into a vertical band, then lay
+    // out in the swapped width×height frame (margins remapped likewise).
+    var layoutW = tw;
+    var layoutH = th;
+    var layoutMl = ml;
+    var layoutMr = mr;
+    var layoutMt = mt;
+    var layoutMb = mb;
+    final vertical = block.textDirection == 1;
+    if (vertical) {
+      layoutW = th;
+      layoutH = tw;
+      layoutMl = mt;
+      layoutMr = mb;
+      layoutMt = mr;
+      layoutMb = ml;
+    }
     final yCenter = switch (block.verticalAlign) {
-      VsdxVertAlign.top => th - mt - textH / 2,
-      VsdxVertAlign.bottom => mb + textH / 2,
+      VsdxVertAlign.top => layoutH - layoutMt - textH / 2,
+      VsdxVertAlign.bottom => layoutMb + textH / 2,
       // Content-band centre (honours Top/Bottom margins), matching canvas.
-      VsdxVertAlign.middle => mb + (th - mt - mb) / 2,
+      VsdxVertAlign.middle =>
+        layoutMb + (layoutH - layoutMt - layoutMb) / 2,
     };
 
     // Text glyphs: block-local → upright (scale 1,-1). One <text> per
     // paragraph so HorzAlign / indent can differ across lines.
     final textXf = StringBuffer('$xf');
-    textXf.write(' translate(0 ${_n(yCenter)})');
-    if (block.textDirection == 1) {
-      textXf.write(' rotate(-90)');
+    if (vertical) {
+      textXf.write(
+        ' translate(${_n(tw / 2)} ${_n(th / 2)}) rotate(-90) '
+        'translate(${_n(-th / 2)} ${_n(-tw / 2)})',
+      );
     }
+    textXf.write(' translate(0 ${_n(yCenter)})');
     textXf.write(' scale(1 -1)');
     buf.writeln('$indent<g transform="$textXf">');
     for (final layout in layouts) {
@@ -1827,10 +1848,16 @@ class VsdxToSvgSerializer {
       final (anchor, xBody) = switch (style.horizontalAlign) {
         VsdxHorzAlign.left || VsdxHorzAlign.justify => (
             'start',
-            ml + indentL + indentF + bulletGap,
+            layoutMl + indentL + indentF + bulletGap,
           ),
-        VsdxHorzAlign.right => ('end', tw - mr - style.indentRightInches),
-        VsdxHorzAlign.center => ('middle', ml + (tw - ml - mr) / 2),
+        VsdxHorzAlign.right => (
+            'end',
+            layoutW - layoutMr - style.indentRightInches,
+          ),
+        VsdxHorzAlign.center => (
+            'middle',
+            layoutMl + (layoutW - layoutMl - layoutMr) / 2,
+          ),
       };
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
@@ -1841,7 +1868,7 @@ class VsdxToSvgSerializer {
                 style.bulletFontSizeInches! > 0
             ? style.bulletFontSizeInches!
             : layout.lineH / 1.2;
-        final bx = ml + indentL + indentF;
+        final bx = layoutMl + indentL + indentF;
         body.write(
           '<tspan x="${_n(bx)}" text-anchor="start" '
           'font-size="${_n(bFs)}" '

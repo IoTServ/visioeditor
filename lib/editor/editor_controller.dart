@@ -4452,10 +4452,14 @@ class EditorController extends ChangeNotifier {
   void setFillPattern(int pattern) => _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
+          // pattern=0 is NoFill — clear gradient like [setNoFill] so writer
+          // does not leave FillGradientEnabled=1 with an invisible solid.
           return s.copyWith(
             fill: s.fill.copyWith(
               pattern: pattern,
-              gradient: pattern > 1 ? null : VsdxFill.keepGradient,
+              gradient: pattern == 0 || pattern > 1
+                  ? null
+                  : VsdxFill.keepGradient,
             ),
           );
         },
@@ -5773,19 +5777,28 @@ class EditorController extends ChangeNotifier {
         (s) {
           if (s.is1D) return s;
           if (!enabled) {
-            return s.copyWith(glow: VsdxGlow.disabled);
+            // Keep colour / theme / size in the model so a UI toggle-off
+            // restores them; writer still emits GlowSize=0 when disabled.
+            return s.copyWith(glow: s.glow.copyWith(enabled: false));
           }
           final prev = s.glow;
-          // Persist amber when enabling a fresh glow so SVG/canvas share the
-          // same authored colour (not just a renderer fallback).
+          if (prev.enabled) return s;
+          final hasAuthored =
+              prev.color != null || prev.themeColorIndex != null;
+          // Persist amber only for a brand-new solid glow so SVG/canvas share
+          // the same authored colour. Theme-bound / prior solid glows restore.
           return s.copyWith(
-            glow: prev.enabled
-                ? prev
+            glow: hasAuthored
+                ? prev.copyWith(
+                    enabled: true,
+                    sizeInches:
+                        prev.sizeInches <= 0 ? 0.05 : prev.sizeInches,
+                  )
                 : prev.copyWith(
                     enabled: true,
                     transparency: 0.6,
-                    sizeInches: prev.sizeInches <= 0 ? 0.05 : prev.sizeInches,
-                    color: prev.color ?? const VsdxColor(0xFFFFC107),
+                    sizeInches: 0.05,
+                    color: const VsdxColor(0xFFFFC107),
                   ),
           );
         },
@@ -5807,7 +5820,8 @@ class EditorController extends ChangeNotifier {
     _updateSelectedShapes(
       (s) {
         if (s.is1D) return s;
-        final base = s.glow.enabled ? s.glow : const VsdxGlow();
+        // Prefer the shape's glow (may be disabled but still hold theme/size).
+        final base = s.glow;
         final next = color != null
             ? base.withSolidColor(color).copyWith(
                   sizeInches: sizeInches,
@@ -5815,8 +5829,10 @@ class EditorController extends ChangeNotifier {
                   enabled: true,
                 )
             : base.copyWith(
-                sizeInches: sizeInches,
-                transparency: transparency,
+                sizeInches: sizeInches ??
+                    (base.sizeInches <= 0 ? 0.05 : base.sizeInches),
+                transparency: transparency ??
+                    (base.transparency >= 1 ? 0.6 : base.transparency),
                 enabled: true,
               );
         return s.copyWith(glow: next);
@@ -5830,13 +5846,19 @@ class EditorController extends ChangeNotifier {
         (s) {
           if (s.is1D) return s;
           if (!enabled) {
-            return s.copyWith(reflection: VsdxReflection.disabled);
+            // Keep size/dist/blur so toggle-off restores them (writer emits
+            // ReflectionSize=0 while disabled).
+            return s.copyWith(
+              reflection: s.reflection.copyWith(enabled: false),
+            );
           }
           final prev = s.reflection;
+          if (prev.enabled) return s;
           return s.copyWith(
-            reflection: prev.enabled
-                ? prev
-                : const VsdxReflection(enabled: true, transparency: 0.6),
+            reflection: prev.copyWith(
+              enabled: true,
+              sizeInches: prev.sizeInches <= 0 ? 0.3 : prev.sizeInches,
+            ),
           );
         },
       );
@@ -5858,14 +5880,15 @@ class EditorController extends ChangeNotifier {
     _updateSelectedShapes(
       (s) {
         if (s.is1D) return s;
-        final base =
-            s.reflection.enabled ? s.reflection : const VsdxReflection();
+        final base = s.reflection;
         return s.copyWith(
           reflection: base.copyWith(
-            sizeInches: sizeInches,
+            sizeInches: sizeInches ??
+                (base.sizeInches <= 0 ? 0.3 : base.sizeInches),
             distanceInches: distanceInches,
             blurInches: blurInches,
-            transparency: transparency,
+            transparency: transparency ??
+                (base.transparency >= 1 ? 0.6 : base.transparency),
             enabled: true,
           ),
         );

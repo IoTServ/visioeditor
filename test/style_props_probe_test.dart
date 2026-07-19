@@ -304,6 +304,13 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('feDropShadow'), isTrue);
     expect(svg.contains('rotate(-90)'), isTrue);
+    // Swapped layout frame (canvas parity): rotate about centre then
+    // translate into the height×width band — not a bare rotate(-90).
+    expect(
+      svg.contains('translate(1 0.5) rotate(-90) translate(-0.5 -1)'),
+      isTrue,
+      reason: 'TextDirection=1 must swap layout box like canvas/curved text',
+    );
   });
 
   test('SVG edge-label TextBkgnd uses tight plate not connector box', () {
@@ -1445,5 +1452,118 @@ void main() {
     final after = parser.parse(out).pages.first;
     expect(after.layers.map((l) => l.id).toList(), <int>[0]);
     expect(after.layers.single.name, 'A');
+  });
+
+  test('setGlow toggles restore theme slot; setFillPattern(0) clears gradient',
+      () {
+    final e = EditorController()..newDocument();
+    addTearDown(e.dispose);
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 2,
+        height: 1,
+        fill: VsdxFill(
+          pattern: 1,
+          foreground: const VsdxColor(0xFFFF0000),
+          gradient: VsdxGradient(
+            stops: const <VsdxGradientStop>[
+              VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+            ],
+          ),
+        ),
+      ).copyWith(
+        glow: const VsdxGlow(
+          enabled: true,
+          themeColorIndex: ThemeSlot.accent1,
+          sizeInches: 0.08,
+          transparency: 0.4,
+        ),
+      ),
+      3,
+      3,
+    );
+    final id = e.singleSelectedId!;
+    e.setGlow(false);
+    expect(e.currentPage!.findShapeById(id)!.glow.enabled, isFalse);
+    expect(
+      e.currentPage!.findShapeById(id)!.glow.themeColorIndex,
+      ThemeSlot.accent1,
+    );
+    e.setGlow(true);
+    final glow = e.currentPage!.findShapeById(id)!.glow;
+    expect(glow.enabled, isTrue);
+    expect(glow.themeColorIndex, ThemeSlot.accent1);
+    expect(glow.sizeInches, closeTo(0.08, 1e-6));
+    expect(glow.color, isNull);
+
+    e.setFillPattern(0);
+    final fill = e.currentPage!.findShapeById(id)!.fill;
+    expect(fill.pattern, 0);
+    expect(fill.gradient, isNull);
+  });
+
+  test('glued connector jetty round-trips through export → reopen', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final src = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 8,
+      width: 1.5,
+      height: 1,
+    );
+    final oval = VsdxShapeFactory.ellipse(
+      id: 2,
+      pinX: 4,
+      pinY: 3,
+      width: 3,
+      height: 2,
+    );
+    final conn = VsdxShapeFactory.line(id: 3, ax: 4, ay: 8, bx: 4, by: 3);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .copyWith(
+            shapes: <VsdxShape>[src, oval, conn],
+            connects: const <VsdxConnect>[
+              VsdxConnect(
+                fromSheetId: 3,
+                fromCell: 'BeginX',
+                fromPart: 9,
+                toSheetId: 1,
+                toCell: 'PinX',
+                toPart: 3,
+              ),
+              VsdxConnect(
+                fromSheetId: 3,
+                fromCell: 'EndX',
+                fromPart: 12,
+                toSheetId: 2,
+                toCell: 'PinX',
+                toPart: 3,
+              ),
+            ],
+          )
+          .rerouteConnectors(),
+    );
+    final before = VsdxPage.connectorRoute(doc.pages.first.findShapeById(3)!);
+    final tip = before.last;
+    final prev = before[before.length - 2];
+    expect(prev.x, closeTo(tip.x, 1e-6));
+    expect(prev.y, greaterThan(tip.y + 1e-3));
+
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final afterDoc = parser.parse(out);
+    final afterRoute =
+        VsdxPage.connectorRoute(afterDoc.pages.first.findShapeById(3)!);
+    final aTip = afterRoute.last;
+    final aPrev = afterRoute[afterRoute.length - 2];
+    expect(aPrev.x, closeTo(aTip.x, 1e-6));
+    expect(aPrev.y, greaterThan(aTip.y + 1e-3));
+    expect(afterDoc.pages.first.connects, hasLength(2));
   });
 }

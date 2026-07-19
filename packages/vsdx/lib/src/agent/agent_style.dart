@@ -133,15 +133,18 @@ VsdxShape withLabel(
   final bp = page != null && page.findShapeById(b.id) != null
       ? page.shapePinPage(b.id)
       : Offset2D(b.pinX, b.pinY);
+  final hideLine = lineHex != null && lineHex.trim().toLowerCase() == 'none';
   final base = VsdxShapeFactory.line(
     id: id,
     ax: ap.x,
     ay: ap.y,
     bx: bp.x,
     by: bp.y,
+    // Honour line:"none" like add_shape / set_style (pattern=0).
     line: VsdxLine(
       color: parseColorOrNull(lineHex) ?? kDefaultEdgeLine,
       weightInches: 0.012,
+      pattern: hideLine ? 0 : 1,
       endArrow: arrow ? 4 : 0,
     ),
   ).copyWith(
