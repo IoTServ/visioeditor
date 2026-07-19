@@ -89,8 +89,11 @@ List<Offset2D> sampleVisioSpline({
     knots: knots,
     samples: samples,
   );
-  final end =
-      pts.isNotEmpty ? pts.last : Offset2D(headLocal.x, headLocal.y);
+  // Authored endpoint (last knot, or SplineStart when there are none) — not
+  // the last dense sample, so callers can rest the pen exactly.
+  final end = knots.isEmpty
+      ? Offset2D(headLocal.x, headLocal.y)
+      : Offset2D(knots.last.x, knots.last.y);
   return (samples: pts, end: end, nextIndex: j);
 }
 

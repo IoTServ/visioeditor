@@ -50,6 +50,27 @@ void main() {
       );
       expect(r.nextIndex, 3);
       expect(r.end.x, closeTo(2, 1e-5));
+      expect(r.end.y, closeTo(1, 1e-5));
+    });
+  });
+
+  group('sampleNurbs', () {
+    test('last sample snaps to the authored endpoint', () {
+      final pts = sampleNurbs(
+        start: const Offset2D(0, 0),
+        end: const Offset2D(3, 0),
+        controlPoints: const <Offset2D>[
+          Offset2D(1, 1),
+          Offset2D(2, 1),
+        ],
+        weights: const <double>[1, 1, 1, 1],
+        knots: const <double>[0, 0, 0, 0, 1, 1, 1, 1],
+        degree: 3,
+        samples: 16,
+      );
+      expect(pts, isNotEmpty);
+      expect(pts.last.x, closeTo(3, 1e-12));
+      expect(pts.last.y, closeTo(0, 1e-12));
     });
   });
 

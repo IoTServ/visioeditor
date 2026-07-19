@@ -36,6 +36,9 @@ List<Offset2D> sampleNurbs({
     final t = tMin + (tMax - tMin) * s / samples;
     out.add(deBoorNurbs(cps, wts, fullKnots, degree, t));
   }
+  // de Boor at tMax is numerically ≈ end; snap so pen / arrows / glue land
+  // on the authored endpoint rather than a float residual.
+  if (out.isNotEmpty) out[out.length - 1] = end;
   return out;
 }
 

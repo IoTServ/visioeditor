@@ -1044,9 +1044,10 @@ class VsdxPainter extends CustomPainter {
             final csy = cpYRelative ? h : 1.0;
             final esx = relative ? w : 1.0;
             final esy = relative ? h : 1.0;
+            final end = Offset(x * esx, y * esy);
             final samples = sampleNurbs(
               start: Offset2D(cursor.dx, cursor.dy),
-              end: Offset2D(x * esx, y * esy),
+              end: Offset2D(end.dx, end.dy),
               controlPoints: <Offset2D>[
                 for (final p in controlPoints) Offset2D(p.x * csx, p.y * csy),
               ],
@@ -1058,6 +1059,8 @@ class VsdxPainter extends CustomPainter {
             for (final p in samples) {
               addVertex(Offset(p.x, p.y));
             }
+            // Exact NurbsTo endpoint (samples are dense approximations).
+            addVertex(end);
           case EllipseCmd():
           // Closed primitive — no meaningful "tip" for arrows; skip it
           // and let the next geometry contribute endpoints.

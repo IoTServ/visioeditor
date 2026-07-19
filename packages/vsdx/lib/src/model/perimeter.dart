@@ -323,6 +323,14 @@ abstract final class ShapePerimeter {
             for (final p in spline.samples) {
               emit(p.x, p.y);
             }
+            // Match path_builder / painter: pen rests on the exact spline end.
+            if ((cx - spline.end.x).abs() > 1e-9 ||
+                (cy - spline.end.y).abs() > 1e-9) {
+              emit(spline.end.x, spline.end.y);
+            } else {
+              cx = spline.end.x;
+              cy = spline.end.y;
+            }
             i = spline.nextIndex - 1;
           case SplineKnot():
             break;

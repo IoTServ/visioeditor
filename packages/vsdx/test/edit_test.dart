@@ -518,6 +518,10 @@ void main() {
     expect(drawn.length, greaterThan(3));
     // Chord fallback is y≈0 everywhere; a real NURBS bulge has y>0.2.
     expect(drawn.any((p) => p.y > 0.2), isTrue);
+    // Authored NurbsTo endpoint in page space (not a float residual).
+    final tip = VsdxPage.localToPage(conn, const Offset2D(3, 0));
+    expect(drawn.last.x, closeTo(tip.x, 1e-9));
+    expect(drawn.last.y, closeTo(tip.y, 1e-9));
   });
 
   test('autoRoutedConnectorPolyline skips freehand ink', () {
