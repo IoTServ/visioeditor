@@ -5759,7 +5759,7 @@ class EditorController extends ChangeNotifier {
           return s.copyWith(
             glow: prev.enabled
                 ? prev
-                : prev.copyWith(enabled: true, transparency: 0.6),
+                : const VsdxGlow(enabled: true, transparency: 0.6),
           );
         },
       );
@@ -5805,7 +5805,7 @@ class EditorController extends ChangeNotifier {
           return s.copyWith(
             reflection: prev.enabled
                 ? prev
-                : prev.copyWith(enabled: true, transparency: 0.6),
+                : const VsdxReflection(enabled: true, transparency: 0.6),
           );
         },
       );

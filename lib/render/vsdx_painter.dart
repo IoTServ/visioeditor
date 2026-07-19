@@ -691,21 +691,26 @@ class VsdxPainter extends CustomPainter {
     canvas.scale(1, -1);
     canvas.translate(0, -bottomY);
 
-    canvas.saveLayer(bounds.inflate(refl.blurInches * 2), Paint());
+    // Layer alpha applies ReflectionTransparency to solid / gradient / hatch.
+    canvas.saveLayer(
+      bounds.inflate(refl.blurInches * 2),
+      Paint()..color = Color.fromRGBO(255, 255, 255, alpha),
+    );
 
-    final fill = _resolveFillPaint(shape);
-    if (fill != null) {
-      canvas.drawPath(
-        path,
-        fill..color = fill.color.withValues(alpha: fill.color.a * alpha),
-      );
+    if (shape.fill.hasFill) {
+      _drawFill(canvas, shape, path);
     }
     final stroke = _resolveStrokePaint(shape);
     if (stroke != null && shape.line.hasLine) {
-      canvas.drawPath(
-        path,
-        stroke..color = stroke.color.withValues(alpha: stroke.color.a * alpha),
-      );
+      if (shape.line.hasGradient) {
+        final shader = _buildGradientShader(
+          shape.line.gradient!,
+          path.getBounds(),
+          fillTransparency: shape.line.transparency,
+        );
+        if (shader != null) stroke.shader = shader;
+      }
+      canvas.drawPath(path, stroke);
     }
 
     // Fade out farther below the shape (smaller Y in Y-up space).
@@ -797,6 +802,16 @@ class VsdxPainter extends CustomPainter {
         (Paint()
           ..style = PaintingStyle.stroke
           ..color = fallbackStroke);
+    if (shape.line.hasGradient) {
+      final strokeBounds = Rect.fromPoints(endPoints.start, endPoints.end)
+          .inflate(math.max(shape.line.weightInches, 0.01));
+      final shader = _buildGradientShader(
+        shape.line.gradient!,
+        strokeBounds,
+        fillTransparency: shape.line.transparency,
+      );
+      if (shader != null) paint.shader = shader;
+    }
 
     if (shape.line.hasBeginArrow) {
       _drawArrowAt(
@@ -1119,6 +1134,7 @@ class VsdxPainter extends CustomPainter {
     canvas.scale(sizeInches, sizeInches);
     final paint = Paint()
       ..color = linePaint.color
+      ..shader = linePaint.shader
       ..style = desc.filled ? PaintingStyle.fill : PaintingStyle.stroke
       ..strokeWidth = math.max(linePaint.strokeWidth / sizeInches, 0.05);
     canvas.drawPath(desc.path, paint);
@@ -1546,9 +1562,10 @@ class VsdxPainter extends CustomPainter {
     var oy = switch (block.verticalAlign) {
       VsdxVertAlign.top => mtPx,
       VsdxVertAlign.bottom => thPx - mbPx - tp.height,
-      VsdxVertAlign.middle => (thPx - tp.height) / 2,
+      VsdxVertAlign.middle =>
+        mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
     };
-    // Text taller than the box grows downward from the top (Visio / drawio).
+    // Text taller than the content band grows downward from the top margin.
     if (block.verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
 
     tp.paint(canvas, Offset(ox, oy));
@@ -1674,7 +1691,7 @@ class VsdxPainter extends CustomPainter {
     var oy = switch (verticalAlign) {
       VsdxVertAlign.top => mtPx,
       VsdxVertAlign.bottom => thPx - mbPx - totalH,
-      VsdxVertAlign.middle => (thPx - totalH) / 2,
+      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - totalH) / 2,
     };
     if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
 

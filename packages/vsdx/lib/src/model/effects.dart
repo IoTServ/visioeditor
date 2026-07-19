@@ -85,7 +85,10 @@ class VsdxGlow {
   final double transparency;
   final bool enabled;
 
-  static const VsdxGlow disabled = VsdxGlow(enabled: false, transparency: 1);
+  /// Size is 0 so a disable→enable patch cannot treat XML `GlowSize=0` as
+  /// already matching the default 0.05" model value.
+  static const VsdxGlow disabled =
+      VsdxGlow(enabled: false, sizeInches: 0, transparency: 1);
 
   /// Sentinel for [copyWith] so callers can clear [color] to `null`.
   static const Object keepColor = Object();
@@ -123,8 +126,10 @@ class VsdxReflection {
   final double blurInches;
   final bool enabled;
 
+  /// Size is 0 so a disable→enable patch cannot treat XML `ReflectionSize=0`
+  /// as already matching the default 0.3" model value.
   static const VsdxReflection disabled =
-      VsdxReflection(enabled: false, transparency: 1);
+      VsdxReflection(enabled: false, sizeInches: 0, transparency: 1);
 
   VsdxReflection copyWith({
     double? sizeInches,

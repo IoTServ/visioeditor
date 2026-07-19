@@ -1973,12 +1973,15 @@ class VsdxWriter {
         baseTheme: base.fill.themeForegroundIndex,
         editedColor: edited.fill.foreground,
         editedTheme: edited.fill.themeForegroundIndex);
-    // Pattern / theme FillBkgnd — same QuickStyle cell Visio uses for THEMEVAL.
+    // Pattern / theme FillBkgnd. Only touch QuickStyleFillColor when the
+    // foreground is not theme-bound (same rule as fresh shape emission) so a
+    // theme FillBkgnd patch cannot overwrite FillForegnd's slot.
     changed |= _patchColorOrTheme(el, 'FillBkgnd', 'QuickStyleFillColor',
         baseColor: base.fill.background,
         baseTheme: base.fill.themeBackgroundIndex,
         editedColor: edited.fill.background,
-        editedTheme: edited.fill.themeBackgroundIndex);
+        editedTheme: edited.fill.themeBackgroundIndex,
+        writeQuickStyle: edited.fill.themeForegroundIndex == null);
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
@@ -3378,6 +3381,7 @@ class VsdxWriter {
     required int? baseTheme,
     required VsdxColor? editedColor,
     required int? editedTheme,
+    bool writeQuickStyle = true,
   }) {
     if (baseColor?.value == editedColor?.value && baseTheme == editedTheme) {
       return false;
@@ -3392,7 +3396,10 @@ class VsdxWriter {
       final c = _ensureCell(shape, cell);
       _writeValue(c, '0', preserveFormula: true);
       c.setAttribute('F', 'THEMEVAL()');
-      _writeValue(_ensureCell(shape, quickStyleCell), editedTheme.toString());
+      if (writeQuickStyle) {
+        _writeValue(
+            _ensureCell(shape, quickStyleCell), editedTheme.toString());
+      }
       return true;
     }
     return false;
@@ -3627,8 +3634,12 @@ class VsdxWriter {
       }
       return changed;
     }
-    changed |=
-        _patchLength(el, 'GlowSize', base.sizeInches, edited.sizeInches);
+    // Re-enable after Size=0: model defaults match so _patchLength would skip.
+    if (!base.enabled ||
+        (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
+      _writeValue(_ensureCell(el, 'GlowSize'), _fmt(edited.sizeInches));
+      changed = true;
+    }
     changed |= _patchColorOrTheme(
       el,
       'GlowColor',
@@ -3660,8 +3671,12 @@ class VsdxWriter {
       }
       return changed;
     }
-    changed |= _patchLength(
-        el, 'ReflectionSize', base.sizeInches, edited.sizeInches);
+    // Re-enable after Size=0: force Size so reopen does not stay disabled.
+    if (!base.enabled ||
+        (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
+      _writeValue(_ensureCell(el, 'ReflectionSize'), _fmt(edited.sizeInches));
+      changed = true;
+    }
     changed |= _patchLength(
         el, 'ReflectionDist', base.distanceInches, edited.distanceInches);
     changed |= _patchRatio(

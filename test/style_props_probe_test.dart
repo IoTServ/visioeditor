@@ -359,6 +359,97 @@ void main() {
     expect(svg.contains('stroke="#ffffff"'), isFalse);
   });
 
+  test('reflection disable then enable round-trips ReflectionSize', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            transparency: 0.5,
+          ),
+        ),
+      ),
+    );
+    var bytes = writer.write(originalBytes: blank, edited: doc);
+    // Off → Size=0 in XML.
+    doc = parser.parse(bytes);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(reflection: VsdxReflection.disabled),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    doc = parser.parse(bytes);
+    expect(doc.pages.first.findShapeById(id)!.reflection.enabled, isFalse);
+
+    // On again with defaults — must rewrite Size so reopen stays enabled.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          reflection: const VsdxReflection(enabled: true, transparency: 0.6),
+        ),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    doc = parser.parse(bytes);
+    final refl = doc.pages.first.findShapeById(id)!.reflection;
+    expect(refl.enabled, isTrue);
+    expect(refl.sizeInches, greaterThan(0));
+  });
+
+  test('SVG VerticalAlign middle honours unequal top/bottom margins', () {
+    VsdxShape labeled(VsdxVertAlign v, double mt, double mb) =>
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 2,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: const <VsdxTextRun>[VsdxTextRun(text: 'T')],
+            textBlock: VsdxTextBlock(
+              verticalAlign: v,
+              marginTopInches: mt,
+              marginBottomInches: mb,
+            ),
+          ),
+        );
+    String anchorY(VsdxShape s) {
+      final svg = VsdxToSvgSerializer().serializePage(
+        VsdxPage(
+          id: 0,
+          name: 'P',
+          widthInches: 8,
+          heightInches: 11,
+          shapes: <VsdxShape>[s],
+        ),
+      );
+      final re = RegExp(r'translate\(([^ ]+) ([^)]+)\) scale\(1 -1\)');
+      return re.firstMatch(svg)!.group(2)!;
+    }
+
+    final equal = anchorY(labeled(VsdxVertAlign.middle, 0.1, 0.1));
+    final heavyTop = anchorY(labeled(VsdxVertAlign.middle, 0.4, 0.1));
+    // Larger top margin shifts the content-band centre downward (smaller Y).
+    expect(double.parse(heavyTop), lessThan(double.parse(equal)));
+  });
+
   test('SVG honours VerticalAlign top vs bottom', () {
     VsdxShape labeled(int id, VsdxVertAlign v) =>
         VsdxShapeFactory.rectangle(

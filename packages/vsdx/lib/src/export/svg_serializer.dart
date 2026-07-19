@@ -541,11 +541,21 @@ class VsdxToSvgSerializer {
     final dist = refl.distanceInches;
     final fid = 'refl-$paintId';
     final cid = 'refl-clip-$paintId';
-    final c = _resolveColor(
-            shape.fill.foreground, shape.fill.themeForegroundIndex, theme) ??
-        const VsdxColor(0xFF888888);
-    final a =
-        _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
+    // Reuse the shape's gradient def (grad-$paintId) when present; otherwise
+    // solid foreground × FillForegndTrans × ReflectionTransparency.
+    final String fillPaint;
+    final double fillOp;
+    if (shape.fill.hasGradient) {
+      fillPaint = 'url(#grad-$paintId)';
+      fillOp = alpha;
+    } else {
+      final c = _resolveColor(shape.fill.foreground,
+              shape.fill.themeForegroundIndex, theme) ??
+          const VsdxColor(0xFF888888);
+      fillPaint = _hex(c);
+      fillOp =
+          _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
+    }
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
@@ -562,7 +572,7 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '$indent<g clip-path="url(#$cid)" '
       'transform="translate(0 ${_n(-dist)}) scale(1 -1)">'
-      '<path d="$d" fill="${_hex(c)}" fill-opacity="${_n(a)}" '
+      '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
       'stroke="none"$filter/>'
       '</g>',
     );
@@ -1591,7 +1601,8 @@ class VsdxToSvgSerializer {
     final yCenter = switch (block.verticalAlign) {
       VsdxVertAlign.top => th - mt - textH / 2,
       VsdxVertAlign.bottom => mb + textH / 2,
-      VsdxVertAlign.middle => th / 2,
+      // Content-band centre (honours Top/Bottom margins), matching canvas.
+      VsdxVertAlign.middle => mb + (th - mt - mb) / 2,
     };
 
     // Text glyphs: block-local → upright (scale 1,-1). One <text> per
