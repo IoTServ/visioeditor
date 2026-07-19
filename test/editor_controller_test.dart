@@ -340,6 +340,41 @@ void main() {
     expect(moved.pinX - moved.width / 2, closeTo(0, 1e-9));
   });
 
+  test('rotateSelection90 on 1D rewrites Begin/End and keeps Angle 0', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 3, 5, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    final before = c.currentPage!.findShapeById(id)!;
+    expect(before.beginY, closeTo(before.endY!, 1e-6));
+    c.rotateSelection90(clockwise: false); // +90° CCW about pin
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.angleRad, 0);
+    expect(after.flipX, isFalse);
+    // Horizontal → vertical about pin (3,3): ends near x=3.
+    expect(after.beginX, closeTo(3, 0.15));
+    expect(after.endX, closeTo(3, 0.15));
+    expect((after.beginY! - after.endY!).abs(), greaterThan(1.5));
+  });
+
+  test('flipHorizontal on 1D mirrors Begin/End without FlipX', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.line)
+      ..createShapeByDrag(1, 3, 5, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    final before = c.currentPage!.findShapeById(id)!;
+    c.flipHorizontal();
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.flipX, isFalse);
+    expect(after.angleRad, 0);
+    expect(after.beginX, closeTo(before.endX!, 1e-6));
+    expect(after.endX, closeTo(before.beginX!, 1e-6));
+  });
+
   test('one-step z-order moves the selection forward and backward', () {
     final c = newDocWithTwoRects();
     final ids = <int>[for (final s in c.currentPage!.shapes) s.id];
@@ -574,6 +609,50 @@ void main() {
           .where(TableOps.isCovered),
       isEmpty,
     );
+  });
+
+  test('mergeSelectedCells remaps glue from covered cells to master', () {
+    final c = EditorController()..newDocument();
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 4,
+        height: 3,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.selection.single;
+    final cells = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!);
+    final master = cells.firstWhere(
+        (x) => TableOps.cellRow(x) == 0 && TableOps.cellCol(x) == 0);
+    final covered = cells.firstWhere(
+        (x) => TableOps.cellRow(x) == 0 && TableOps.cellCol(x) == 1);
+    final pin = c.currentPage!.shapePinPage(covered.id);
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(7, 3, 8, 4);
+    final box = c.currentPage!.shapes.lastWhere((s) => !s.is1D && s.id != tableId).id;
+    c.createConnector(pin.x, pin.y, 7.5, 3.5,
+        beginTarget: covered.id, endTarget: box);
+    final conn = c.currentPage!.shapes.lastWhere((s) => s.is1D).id;
+    expect(
+      c.currentPage!.connects
+          .any((e) => e.fromSheetId == conn && e.toSheetId == covered.id),
+      isTrue,
+    );
+    c
+      ..selectOnly(master.id)
+      ..toggleSelection(covered.id);
+    c.mergeSelectedCells();
+    expect(TableOps.isCovered(c.currentPage!.findShapeById(covered.id)!), isTrue);
+    final beginGlue = c.currentPage!.connects
+        .firstWhere((e) => e.fromSheetId == conn && e.isBegin);
+    expect(beginGlue.toSheetId, master.id);
   });
 
   test('replaceFind and replaceAllFind update labels', () {

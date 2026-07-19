@@ -42,21 +42,53 @@ Map<int, Rect> buildShapeBounds(VsdxPage page) {
 
 void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
   // shape-local → parent-local: translate(pinX,pinY) · rotate · flip ·
-  // translate(-w/2, -h/2)
+  // translate(-LocPin)
   final local = parent
       .translate(s.pinX, s.pinY)
       .rotate(s.angleRad)
       .scale(s.flipX ? -1 : 1, s.flipY ? -1 : 1)
       .translate(-s.effectiveLocPinX, -s.effectiveLocPinY);
-  // Project the unit shape rect [0..w] × [0..h] (plus a small pad) through
-  // `local` and track the AABB.
-  final pad = math.max(s.width, s.height) * 0.05;
-  final corners = <Offset>[
-    local.apply(-pad / 2, -pad / 2),
-    local.apply(s.width + pad / 2, -pad / 2),
-    local.apply(s.width + pad / 2, s.height + pad / 2),
-    local.apply(-pad / 2, s.height + pad / 2),
-  ];
+  final pad = math.max(s.width.abs(), s.height.abs()) * 0.05;
+  final corners = <Offset>[];
+  if (s.is1D) {
+    // Elbow / curve bends often sit outside the Begin→End Width×Height box.
+    for (final g in s.geometries) {
+      if (g.noShow) continue;
+      final pts = <Offset>[];
+      var ok = true;
+      for (final c in g.commands) {
+        if (c is MoveTo) {
+          pts.add(local.apply(c.x, c.y));
+        } else if (c is LineTo) {
+          pts.add(local.apply(c.x, c.y));
+        } else {
+          ok = false;
+          break;
+        }
+      }
+      if (ok && pts.length >= 2) {
+        corners.addAll(pts);
+        break;
+      }
+    }
+    if (corners.isEmpty) {
+      // Begin/End/waypoints live in the parent frame for 1-D shapes.
+      final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+      final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+      corners.add(parent.apply(ax, ay));
+      for (final w in s.waypoints) {
+        corners.add(parent.apply(w.x, w.y));
+      }
+      corners.add(parent.apply(bx, by));
+    }
+  } else {
+    corners.addAll(<Offset>[
+      local.apply(-pad / 2, -pad / 2),
+      local.apply(s.width + pad / 2, -pad / 2),
+      local.apply(s.width + pad / 2, s.height + pad / 2),
+      local.apply(-pad / 2, s.height + pad / 2),
+    ]);
+  }
   var minX = corners.first.dx, maxX = corners.first.dx;
   var minY = corners.first.dy, maxY = corners.first.dy;
   for (final c in corners.skip(1)) {
@@ -64,6 +96,12 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
     if (c.dx > maxX) maxX = c.dx;
     if (c.dy < minY) minY = c.dy;
     if (c.dy > maxY) maxY = c.dy;
+  }
+  if (s.is1D && pad > 0) {
+    minX -= pad / 2;
+    maxX += pad / 2;
+    minY -= pad / 2;
+    maxY += pad / 2;
   }
   out[s.id] = Rect.fromLTRB(minX, minY, maxX, maxY);
   for (final c in s.children) {

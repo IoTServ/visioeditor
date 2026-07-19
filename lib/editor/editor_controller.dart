@@ -1702,21 +1702,50 @@ class EditorController extends ChangeNotifier {
       if (col > maxC) maxC = col;
     }
     final movedIds = _subtreeIds(<int>{tableId});
+    int? masterId;
+    final coveredIds = <int>{};
+    for (final c in cells) {
+      final r = TableOps.cellRow(c)!;
+      final col = TableOps.cellCol(c)!;
+      if (r == minR && col == minC) {
+        masterId = c.id;
+      } else {
+        coveredIds.add(c.id);
+      }
+    }
     updateCurrentPage((p) {
       final host = p.findShapeById(tableId);
       if (host == null) return p;
-      return p
-          .updateShapeById(
-            tableId,
-            (_) => TableOps.mergeCells(
-              host,
-              row: minR,
-              col: minC,
-              rowSpan: maxR - minR + 1,
-              colSpan: maxC - minC + 1,
-            ),
-          )
-          .rerouteConnectors(movedShapeIds: movedIds);
+      var next = p.updateShapeById(
+        tableId,
+        (_) => TableOps.mergeCells(
+          host,
+          row: minR,
+          col: minC,
+          rowSpan: maxR - minR + 1,
+          colSpan: maxC - minC + 1,
+        ),
+      );
+      // Glue aimed at covered cells must follow the master (cells stay in the
+      // model but are skipped by hit-test / paint).
+      if (masterId != null && coveredIds.isNotEmpty && next.connects.isNotEmpty) {
+        final remapped = <VsdxConnect>[
+          for (final c in next.connects)
+            if (coveredIds.contains(c.toSheetId))
+              VsdxConnect(
+                fromSheetId: c.fromSheetId,
+                fromCell: c.fromCell,
+                fromPart: c.fromPart,
+                toSheetId: masterId,
+                toCell: c.toCell,
+                toPart: c.toPart,
+              )
+            else
+              c,
+        ];
+        next = next.copyWith(connects: remapped);
+      }
+      return next.rerouteConnectors(movedShapeIds: movedIds);
     });
     // Select the master cell after merge.
     final table = currentPage?.findShapeById(tableId);
@@ -3635,6 +3664,8 @@ class EditorController extends ChangeNotifier {
   /// (Arrange panel). Nested shapes convert page→parent-local like the canvas
   /// rotate handle. [VsdxShape.flipY] adds π to the page heading of local +Y,
   /// so the stored [VsdxShape.angleRad] is compensated accordingly.
+  ///
+  /// 1-D connectors rewrite Begin/End geometry (Angle stays 0).
   void setSelectedAngleDegrees(double deg) {
     final s = singleSelected;
     final page = currentPage;
@@ -3686,31 +3717,38 @@ class EditorController extends ChangeNotifier {
       for (final id in roots) {
         final s = next.findShapeById(id);
         if (s == null) continue;
-        final parentId = next.findParentId(id);
-        if (parentId == null) {
+        if (s.is1D) {
           next = next.updateShapeById(
             id,
-            (sh) => sh.copyWith(angleRad: sh.angleRad + delta),
+            (sh) => _rotate1DAboutPin(next, sh, delta),
           );
         } else {
-          // Page-space delta then parent-local writeback so a flipped
-          // ancestor does not reverse clockwise / CCW.
-          final pageAngle = next.shapePageAngle(id) + delta;
-          final pin = next.shapePinPage(id);
-          final tipPage = Offset2D(
-            pin.x - math.sin(pageAngle),
-            pin.y + math.cos(pageAngle),
-          );
-          final tipLocal = next.pageToLocalDeep(parentId, tipPage);
-          final pinLocal = next.pageToLocalDeep(parentId, pin);
-          final localAngle = math.atan2(
-            -(tipLocal.x - pinLocal.x),
-            tipLocal.y - pinLocal.y,
-          );
-          next = next.updateShapeById(
-            id,
-            (sh) => sh.copyWith(angleRad: localAngle),
-          );
+          final parentId = next.findParentId(id);
+          if (parentId == null) {
+            next = next.updateShapeById(
+              id,
+              (sh) => sh.copyWith(angleRad: sh.angleRad + delta),
+            );
+          } else {
+            // Page-space delta then parent-local writeback so a flipped
+            // ancestor does not reverse clockwise / CCW.
+            final pageAngle = next.shapePageAngle(id) + delta;
+            final pin = next.shapePinPage(id);
+            final tipPage = Offset2D(
+              pin.x - math.sin(pageAngle),
+              pin.y + math.cos(pageAngle),
+            );
+            final tipLocal = next.pageToLocalDeep(parentId, tipPage);
+            final pinLocal = next.pageToLocalDeep(parentId, pin);
+            final localAngle = math.atan2(
+              -(tipLocal.x - pinLocal.x),
+              tipLocal.y - pinLocal.y,
+            );
+            next = next.updateShapeById(
+              id,
+              (sh) => sh.copyWith(angleRad: localAngle),
+            );
+          }
         }
         rotated = true;
       }
@@ -3722,13 +3760,13 @@ class EditorController extends ChangeNotifier {
 
   /// Mirror the selected shapes horizontally (`FlipX`). Locked shapes skip.
   /// Reroutes glued connectors so endpoints follow mirrored connection points.
-  void flipHorizontal() => _flipSelection((s) => s.copyWith(flipX: !s.flipX));
+  void flipHorizontal() => _flipSelection(horizontal: true);
 
   /// Mirror the selected shapes vertically (`FlipY`). Locked shapes skip.
   /// Reroutes glued connectors so endpoints follow mirrored connection points.
-  void flipVertical() => _flipSelection((s) => s.copyWith(flipY: !s.flipY));
+  void flipVertical() => _flipSelection(horizontal: false);
 
-  void _flipSelection(VsdxShape Function(VsdxShape) flip) {
+  void _flipSelection({required bool horizontal}) {
     if (_selection.isEmpty) return;
     final page0 = currentPage;
     if (page0 == null) return;
@@ -3744,13 +3782,139 @@ class EditorController extends ChangeNotifier {
       var next = page;
       var flipped = false;
       for (final id in roots) {
-        next = next.updateShapeById(id, flip);
+        final s = next.findShapeById(id);
+        if (s == null) continue;
+        if (s.is1D) {
+          next = next.updateShapeById(
+            id,
+            (sh) => _mirror1DAboutPin(next, sh, horizontal: horizontal),
+          );
+        } else {
+          next = next.updateShapeById(
+            id,
+            (sh) => horizontal
+                ? sh.copyWith(flipX: !sh.flipX)
+                : sh.copyWith(flipY: !sh.flipY),
+          );
+        }
         flipped = true;
       }
       return flipped
           ? next.rerouteConnectors(movedShapeIds: movedIds)
           : page;
     });
+  }
+
+  /// Control polyline of [conn] in **page** inches (waypoints / elbow).
+  static List<Offset2D> _connectorControlPage(VsdxPage page, VsdxShape conn) {
+    final route = VsdxPage.connectorRoute(conn);
+    final parentId = page.findParentId(conn.id);
+    if (parentId == null) return route;
+    return <Offset2D>[
+      for (final p in route) page.localToPageDeep(parentId, p),
+    ];
+  }
+
+  /// Page-inch pin of [s] using [s]'s own pin (not a stale page lookup).
+  static Offset2D _pinPageOf(VsdxPage page, VsdxShape s) {
+    final parentId = page.findParentId(s.id);
+    final local = Offset2D(s.pinX, s.pinY);
+    if (parentId == null) return local;
+    return page.localToPageDeep(parentId, local);
+  }
+
+  /// Write a page-space control polyline back onto [s] (parent-local reshape).
+  static VsdxShape _applyPageControlTo1D(
+    VsdxPage page,
+    VsdxShape s,
+    List<Offset2D> pagePoly,
+  ) {
+    if (pagePoly.length < 2) return s;
+    final parentId = page.findParentId(s.id);
+    final local = parentId == null
+        ? pagePoly
+        : <Offset2D>[
+            for (final p in pagePoly) page.pageToLocalDeep(parentId, p),
+          ];
+    final wps = local.length > 2
+        ? local.sublist(1, local.length - 1)
+        : const <Offset2D>[];
+    final geometry = s.curved
+        ? VsdxPage.curveThrough(local)
+        : s.rounded
+            ? VsdxPage.roundCorners(local)
+            : local;
+    return s.copyWith(waypoints: wps).reshapeAsPolyline(geometry);
+  }
+
+  /// Fold residual Angle/Flip into Begin/End geometry (Visio 1-D convention).
+  static VsdxShape _bake1DXformIfNeeded(VsdxPage page, VsdxShape s) {
+    if (!s.is1D || (s.angleRad == 0 && !s.flipX && !s.flipY)) return s;
+    final drawn = page.drawnConnectorPagePolyline(s);
+    if (drawn.length < 2) {
+      return s.copyWith(angleRad: 0, flipX: false, flipY: false);
+    }
+    final parentId = page.findParentId(s.id);
+    final local = parentId == null
+        ? drawn
+        : <Offset2D>[
+            for (final p in drawn) page.pageToLocalDeep(parentId, p),
+          ];
+    // Visual path is already sampled; keep it sharp so we do not re-spline.
+    return s
+        .copyWith(
+          angleRad: 0,
+          flipX: false,
+          flipY: false,
+          curved: false,
+          rounded: false,
+          waypoints: local.length > 2
+              ? local.sublist(1, local.length - 1)
+              : const <Offset2D>[],
+        )
+        .reshapeAsPolyline(local);
+  }
+
+  /// Rotate a 1-D connector's control polyline about its page pin (CCW).
+  static VsdxShape _rotate1DAboutPin(
+    VsdxPage page,
+    VsdxShape s,
+    double deltaRad,
+  ) {
+    if (!s.is1D) return s;
+    final base = _bake1DXformIfNeeded(page, s);
+    if (deltaRad.abs() < 1e-12) return base;
+    final pin = _pinPageOf(page, base);
+    final cosA = math.cos(deltaRad);
+    final sinA = math.sin(deltaRad);
+    final route = _connectorControlPage(page, base);
+    final rotated = <Offset2D>[
+      for (final p in route)
+        Offset2D(
+          pin.x + (p.x - pin.x) * cosA - (p.y - pin.y) * sinA,
+          pin.y + (p.x - pin.x) * sinA + (p.y - pin.y) * cosA,
+        ),
+    ];
+    return _applyPageControlTo1D(page, base, rotated);
+  }
+
+  /// Mirror a 1-D connector's control polyline about its page pin.
+  static VsdxShape _mirror1DAboutPin(
+    VsdxPage page,
+    VsdxShape s, {
+    required bool horizontal,
+  }) {
+    if (!s.is1D) return s;
+    final base = _bake1DXformIfNeeded(page, s);
+    final pin = _pinPageOf(page, base);
+    final route = _connectorControlPage(page, base);
+    final mirrored = <Offset2D>[
+      for (final p in route)
+        horizontal
+            ? Offset2D(2 * pin.x - p.x, p.y)
+            : Offset2D(p.x, 2 * pin.y - p.y),
+    ];
+    return _applyPageControlTo1D(page, base, mirrored);
   }
 
   // --- Rounded corners (drawio "Rounded" + arc size) -------------------------
@@ -5504,16 +5668,30 @@ class EditorController extends ChangeNotifier {
       );
 
   /// Rotate a single shape about its pin (radians, Visio CCW convention).
+  /// 1-D connectors rotate Begin/End geometry; [angleRad] is treated as a
+  /// delta from the current heading when the shape already has Angle 0.
   void rotateShape(int id, double angleRad, {bool transient = false}) {
     final page = currentPage;
     final s = page?.findShapeById(id);
     if (s == null || s.locked || isOnLockedLayer(id)) return;
     final movedIds = _subtreeIds(<int>{id});
     updateCurrentPage(
-      (p) => p
-          .updateShapeById(id, (sh) => sh.copyWith(angleRad: angleRad))
-          .recalculateFormulas(changedShapeIds: movedIds)
-          .rerouteConnectors(movedShapeIds: movedIds),
+      (p) {
+        final sh = p.findShapeById(id);
+        if (sh == null) return p;
+        if (sh.is1D) {
+          // Absolute local heading → delta from current (usually 0 after bake).
+          final delta = angleRad - sh.angleRad;
+          return p
+              .updateShapeById(id, (s) => _rotate1DAboutPin(p, s, delta))
+              .recalculateFormulas(changedShapeIds: movedIds)
+              .rerouteConnectors(movedShapeIds: movedIds);
+        }
+        return p
+            .updateShapeById(id, (s) => s.copyWith(angleRad: angleRad))
+            .recalculateFormulas(changedShapeIds: movedIds)
+            .rerouteConnectors(movedShapeIds: movedIds);
+      },
       transient: transient,
     );
   }
