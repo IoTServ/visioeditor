@@ -265,22 +265,28 @@ class PolylineTo extends VsdxPathCommand {
     required this.vertices,
     this.relative = false,
     this.vertsRelative = false,
-  });
+    bool? vertsYRelative,
+  }) : vertsYRelative = vertsYRelative ?? vertsRelative;
 
   /// End point of the polyline (after the last interior vertex).
   final double x;
   final double y;
 
   /// Interior vertices from `POLYLINE(...)`. Excludes pen start and [x]/[y].
-  /// Fractions of width/height when [relative] or [vertsRelative].
+  /// X is a fraction of Width when [relative] or [vertsRelative]; Y is a
+  /// fraction of Height when [relative] or [vertsYRelative].
   final List<Offset2D> vertices;
 
   /// `true` when the row was `RelPolylineTo` (endpoint + verts are fractions).
   final bool relative;
 
-  /// `true` when `POLYLINE` xType/yType is 0 (verts are % of Width/Height).
+  /// `true` when `POLYLINE` xType is 0 (X verts are % of Width).
   /// Endpoint stays shape-local unless [relative] is set (libvisio).
   final bool vertsRelative;
+
+  /// `true` when `POLYLINE` yType is 0 (Y verts are % of Height).
+  /// Defaults to [vertsRelative] when omitted (symmetric formulas).
+  final bool vertsYRelative;
 
   @override
   String toString() =>
@@ -387,7 +393,8 @@ class NurbsTo extends VsdxPathCommand {
     this.degree = 3,
     this.relative = false,
     this.cpRelative = false,
-  });
+    bool? cpYRelative,
+  }) : cpYRelative = cpYRelative ?? cpRelative;
 
   /// Final endpoint of the NURBS arc (X/Y cells).
   final double x;
@@ -410,9 +417,13 @@ class NurbsTo extends VsdxPathCommand {
   /// `true` when the row was `RelNURBSTo` (endpoint + CPs are fractions).
   final bool relative;
 
-  /// `true` when the NURBS formula has xType/yType == 0 (CPs are % of
-  /// Width/Height). Endpoint stays shape-local unless [relative] is set.
+  /// `true` when the NURBS formula has xType == 0 (CP X is % of Width).
+  /// Endpoint stays shape-local unless [relative] is set.
   final bool cpRelative;
+
+  /// `true` when the NURBS formula has yType == 0 (CP Y is % of Height).
+  /// Defaults to [cpRelative] when omitted (symmetric formulas).
+  final bool cpYRelative;
 
   @override
   String toString() =>
@@ -675,6 +686,7 @@ VsdxPathCommand applyPathCommandFormulas(
         :final vertices,
         :final relative,
         :final vertsRelative,
+        :final vertsYRelative,
       ):
       if (relative) return cmd;
       final nx = cell('X');
@@ -688,6 +700,7 @@ VsdxPathCommand applyPathCommandFormulas(
         vertices: vertices,
         relative: relative,
         vertsRelative: vertsRelative,
+        vertsYRelative: vertsYRelative,
       );
     case RelEllipticalArcTo(
         :final fx,
@@ -767,6 +780,7 @@ VsdxPathCommand applyPathCommandFormulas(
         :final degree,
         :final relative,
         :final cpRelative,
+        :final cpYRelative,
       ):
       if (relative) return cmd;
       final nx = cell('X');
@@ -781,6 +795,7 @@ VsdxPathCommand applyPathCommandFormulas(
         degree: degree,
         relative: relative,
         cpRelative: cpRelative,
+        cpYRelative: cpYRelative,
       );
   }
 }
@@ -895,23 +910,31 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         :final vertices,
         :final relative,
         :final vertsRelative,
+        :final vertsYRelative,
       ):
       if (relative) return c;
-      // Formula-% verts stay fractional; only the local-inch endpoint scales.
-      if (vertsRelative) {
+      // Formula-% axes stay fractional; scale only local-inch components.
+      if (vertsRelative && vertsYRelative) {
         return PolylineTo(
           x: x * sx,
           y: y * sy,
           vertices: vertices,
           vertsRelative: true,
+          vertsYRelative: true,
         );
       }
       return PolylineTo(
         x: x * sx,
         y: y * sy,
         vertices: <Offset2D>[
-          for (final v in vertices) Offset2D(v.x * sx, v.y * sy),
+          for (final v in vertices)
+            Offset2D(
+              vertsRelative ? v.x : v.x * sx,
+              vertsYRelative ? v.y : v.y * sy,
+            ),
         ],
+        vertsRelative: vertsRelative,
+        vertsYRelative: vertsYRelative,
       );
     case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
       if (relative) return c;
@@ -945,11 +968,11 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
         :final degree,
         :final relative,
         :final cpRelative,
+        :final cpYRelative,
       ):
       if (relative) return c;
-      // Formula-% CPs stay fractional; scale local-inch endpoint (and CPs
-      // only when they are already in inches).
-      if (cpRelative) {
+      // Formula-% axes stay fractional; scale local-inch components only.
+      if (cpRelative && cpYRelative) {
         return NurbsTo(
           x: x * sx,
           y: y * sy,
@@ -958,17 +981,24 @@ VsdxPathCommand scalePathCommand(VsdxPathCommand c, double sx, double sy) {
           knots: knots,
           degree: degree,
           cpRelative: true,
+          cpYRelative: true,
         );
       }
       return NurbsTo(
         x: x * sx,
         y: y * sy,
         controlPoints: <Offset2D>[
-          for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+          for (final p in controlPoints)
+            Offset2D(
+              cpRelative ? p.x : p.x * sx,
+              cpYRelative ? p.y : p.y * sy,
+            ),
         ],
         weights: weights,
         knots: knots,
         degree: degree,
+        cpRelative: cpRelative,
+        cpYRelative: cpYRelative,
       );
   }
 }
@@ -1094,9 +1124,10 @@ class VsdxGeometry {
             :final vertices,
             :final relative,
             :final vertsRelative,
+            :final vertsYRelative,
           ):
           final vsx = (relative || vertsRelative) ? w : 1.0;
-          final vsy = (relative || vertsRelative) ? h : 1.0;
+          final vsy = (relative || vertsYRelative) ? h : 1.0;
           final esx = relative ? w : 1.0;
           final esy = relative ? h : 1.0;
           for (final v in vertices) {

@@ -66,6 +66,15 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
       }
     }
     if (corners.isEmpty) {
+      // NURBS / Arc / Spline connectors: sample the drawn stroke.
+      final sampled = ShapePerimeter.sampledPathVertices(s);
+      if (sampled != null && sampled.length >= 2) {
+        corners.addAll(<Offset>[
+          for (final p in sampled) local.apply(p.x, p.y),
+        ]);
+      }
+    }
+    if (corners.isEmpty) {
       // Begin/End/waypoints live in the parent frame for 1-D shapes.
       final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
       final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;

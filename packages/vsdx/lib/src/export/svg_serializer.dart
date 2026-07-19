@@ -848,9 +848,10 @@ class VsdxToSvgSerializer {
             :final vertices,
             :final relative,
             :final vertsRelative,
+            :final vertsYRelative,
           ):
           final vsx = (relative || vertsRelative) ? w : 1.0;
-          final vsy = (relative || vertsRelative) ? h : 1.0;
+          final vsy = (relative || vertsYRelative) ? h : 1.0;
           final esx = relative ? w : 1.0;
           final esy = relative ? h : 1.0;
           for (final v in vertices) {
@@ -893,9 +894,10 @@ class VsdxToSvgSerializer {
             :final degree,
             :final relative,
             :final cpRelative,
+            :final cpYRelative,
           ):
           final csx = (relative || cpRelative) ? w : 1.0;
-          final csy = (relative || cpRelative) ? h : 1.0;
+          final csy = (relative || cpYRelative) ? h : 1.0;
           final esx = relative ? w : 1.0;
           final esy = relative ? h : 1.0;
           final samples = sampleNurbs(

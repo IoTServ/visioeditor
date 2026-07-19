@@ -300,10 +300,11 @@ abstract final class ShapePerimeter {
               :final vertices,
               :final relative,
               :final vertsRelative,
+              :final vertsYRelative,
             ):
             if (!has) move(0, 0);
             final vsx = (relative || vertsRelative) ? w : 1.0;
-            final vsy = (relative || vertsRelative) ? h : 1.0;
+            final vsy = (relative || vertsYRelative) ? h : 1.0;
             final esx = relative ? w : 1.0;
             final esy = relative ? h : 1.0;
             for (final v in vertices) {
@@ -334,10 +335,11 @@ abstract final class ShapePerimeter {
               :final degree,
               :final relative,
               :final cpRelative,
+              :final cpYRelative,
             ):
             if (!has) move(0, 0);
             final csx = (relative || cpRelative) ? w : 1.0;
-            final csy = (relative || cpRelative) ? h : 1.0;
+            final csy = (relative || cpYRelative) ? h : 1.0;
             final esx = relative ? w : 1.0;
             final esy = relative ? h : 1.0;
             final samples = sampleNurbs(
@@ -406,20 +408,32 @@ abstract final class ShapePerimeter {
     final dx = toward.x - from.x;
     final dy = toward.y - from.y;
     if (dx == 0 && dy == 0) return from;
-    final hw = s.width / 2;
-    final hh = s.height / 2;
-    // from is typically LocPin ≈ (w/2,h/2); express ray in centre-relative form
-    final ox = from.x;
-    final oy = from.y;
-    final cx = s.width / 2;
-    final cy = s.height / 2;
-    final rdx = toward.x - cx;
-    final rdy = toward.y - cy;
-    if (rdx == 0 && rdy == 0) return Offset2D(ox, oy);
-    final sx = rdx == 0 ? double.infinity : hw / rdx.abs();
-    final sy = rdy == 0 ? double.infinity : hh / rdy.abs();
-    final t = math.min(sx, sy);
-    return Offset2D(cx + rdx * t, cy + rdy * t);
+    final w = s.width;
+    final h = s.height;
+    // Ray from LocPin ([from]) against the local Width×Height box — not the
+    // geometric centre, which drifts when LocPin is corner-anchored.
+    var bestT = double.infinity;
+    Offset2D? hit;
+    void consider(double t, double x, double y) {
+      if (t < 1e-12 || t >= bestT) return;
+      if (x < -1e-9 || x > w + 1e-9 || y < -1e-9 || y > h + 1e-9) return;
+      bestT = t;
+      hit = Offset2D(x.clamp(0.0, w), y.clamp(0.0, h));
+    }
+
+    if (dx.abs() > 1e-15) {
+      final t0 = (0 - from.x) / dx;
+      consider(t0, 0, from.y + t0 * dy);
+      final t1 = (w - from.x) / dx;
+      consider(t1, w, from.y + t1 * dy);
+    }
+    if (dy.abs() > 1e-15) {
+      final t0 = (0 - from.y) / dy;
+      consider(t0, from.x + t0 * dx, 0);
+      final t1 = (h - from.y) / dy;
+      consider(t1, from.x + t1 * dx, h);
+    }
+    return hit ?? from;
   }
 }
 

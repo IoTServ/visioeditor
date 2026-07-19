@@ -833,11 +833,14 @@ class VsdxPage {
       }
     }
     // Two-pass like [rerouteConnectors]: resolve both fixed ends first, then
-    // aim perimeter attach at the opposite reference (not the stale Begin/End).
-    final refEx = endFixed?.x ?? ex;
-    final refEy = endFixed?.y ?? ey;
-    final refBx = beginFixed?.x ?? bx;
-    final refBy = beginFixed?.y ?? by;
+    // aim perimeter attach at the opposite Pin/fixed ref (not stale Begin/End).
+    final beginPin =
+        beginTarget != null ? shapePinPage(beginTarget.id) : null;
+    final endPin = endTarget != null ? shapePinPage(endTarget.id) : null;
+    final refEx = endFixed?.x ?? endPin?.x ?? ex;
+    final refEy = endFixed?.y ?? endPin?.y ?? ey;
+    final refBx = beginFixed?.x ?? beginPin?.x ?? bx;
+    final refBy = beginFixed?.y ?? beginPin?.y ?? by;
     if (beginFixed != null) {
       ax = beginFixed.x;
       ay = beginFixed.y;
@@ -1179,15 +1182,15 @@ class VsdxPage {
   ///
   /// Hover arrows sit on the page AABB; default CP indices are shape-local
   /// top/right/bottom/left. After a 90° rotate, page-north is no longer CP0.
+  /// Considers every effective CP except centre-like (dirX=dirY=0) points.
   int connectionIndexForPageDir(int shapeId, int dir) {
     final s = findShapeById(shapeId);
     if (s == null) return dir;
     final pts = effectiveConnectionPoints(s);
-    if (pts.length < 4) {
-      return dir.clamp(0, math.max(0, pts.length - 1));
-    }
+    if (pts.isEmpty) return dir;
+    if (pts.length == 1) return 0;
     final aabb = shapePageAabb(shapeId);
-    if (aabb == null) return dir % 4;
+    if (aabb == null) return dir.clamp(0, pts.length - 1);
     final cx = (aabb.left + aabb.right) / 2;
     final cy = (aabb.bottom + aabb.top) / 2;
     final target = switch (dir % 4) {
@@ -1198,13 +1201,30 @@ class VsdxPage {
     };
     var best = 0;
     var bestD = double.infinity;
-    for (var i = 0; i < 4; i++) {
-      final p = localToPageDeep(shapeId, pts[i].offset);
+    var sawSide = false;
+    for (var i = 0; i < pts.length; i++) {
+      final cp = pts[i];
+      // Skip centre / non-directional points when sides exist.
+      if (cp.dirX == 0 && cp.dirY == 0 && pts.length > 1) continue;
+      sawSide = true;
+      final p = localToPageDeep(shapeId, cp.offset);
       final d = (p.x - target.x) * (p.x - target.x) +
           (p.y - target.y) * (p.y - target.y);
       if (d < bestD) {
         bestD = d;
         best = i;
+      }
+    }
+    if (!sawSide) {
+      // All points were centre-like — fall back to nearest of all.
+      for (var i = 0; i < pts.length; i++) {
+        final p = localToPageDeep(shapeId, pts[i].offset);
+        final d = (p.x - target.x) * (p.x - target.x) +
+            (p.y - target.y) * (p.y - target.y);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
       }
     }
     return best;
@@ -1447,67 +1467,28 @@ class VsdxPage {
   ///   * `straight` = a single direct segment,
   ///   * otherwise an orthogonal elbow,
   ///   * `curved` = a smooth spline through the same control points.
-  /// Recomputed from each connector's current begin/end (respecting explicit
-  /// waypoints) and remembered on the shape so later re-routes keep the choice.
+  ///
+  /// Flags are stored on each shape, then [rerouteConnectors] rebuilds
+  /// geometry from glue (fixed CP / perimeter) so endpoints are not baked
+  /// from stale Pin-centred Begin/End.
   VsdxPage setConnectorStyle(
     Set<int> ids, {
     required bool straight,
     bool curved = false,
   }) {
     var next = this;
+    final changed = <int>{};
     for (final id in ids) {
       final s = next.findShapeById(id);
       if (s == null || !s.isGlueableConnector) continue;
-      final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
-      final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
-      // Nested connectors store Begin/End in the parent-local frame; obstacle
-      // avoidance uses page AABBs — convert at the edges like [rerouteConnectors].
-      final parentId = next.findParentId(id);
-      Offset2D toPage(double x, double y) {
-        final local = Offset2D(x, y);
-        if (parentId == null) return local;
-        return next.localToPageDeep(parentId, local);
-      }
-
-      Offset2D toLocal(Offset2D page) {
-        if (parentId == null) return page;
-        return next.pageToLocalDeep(parentId, page);
-      }
-
-      final List<Offset2D> control;
-      if (s.waypoints.isNotEmpty) {
-        control = <Offset2D>[Offset2D(ax, ay), ...s.waypoints, Offset2D(bx, by)];
-      } else if (straight) {
-        control = <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
-      } else {
-        final beginPage = toPage(ax, ay);
-        final endPage = toPage(bx, by);
-        // Match [rerouteConnectors]: glued targets must not act as obstacles
-        // (endpoint sits inside their inflated AABB).
-        final exclude = <int>{id};
-        for (final c in next.connectIndex.forConnector(id)) {
-          exclude.add(c.toSheetId);
-        }
-        control = <Offset2D>[
-          for (final p in next._autoRoute(
-            beginPage.x,
-            beginPage.y,
-            endPage.x,
-            endPage.y,
-            excludeIds: exclude,
-          ))
-            toLocal(p),
-        ];
-      }
-      final geometry = _bakeRoute(control, curved: curved, rounded: s.rounded);
       next = next.updateShapeById(
         id,
-        (sh) => sh
-            .copyWith(straightRoute: straight, curved: curved)
-            .reshapeAsPolyline(geometry),
+        (sh) => sh.copyWith(straightRoute: straight, curved: curved),
       );
+      changed.add(id);
     }
-    return next;
+    if (changed.isEmpty) return next;
+    return next.rerouteConnectors(movedShapeIds: changed);
   }
 
   /// Toggle drawio-style **rounded corners** on the given connectors, re-baking
@@ -1518,17 +1499,20 @@ class VsdxPage {
   /// superseded by a [VsdxShape.curved] connector (already smooth).
   VsdxPage setConnectorRounded(Set<int> ids, bool rounded) {
     var next = this;
+    final changed = <int>{};
     for (final id in ids) {
       final s = next.findShapeById(id);
       if (s == null || !s.isGlueableConnector) continue;
-      final control = connectorRoute(s);
-      final geometry = _bakeRoute(control, curved: s.curved, rounded: rounded);
       next = next.updateShapeById(
         id,
-        (sh) => sh.copyWith(rounded: rounded).reshapeAsPolyline(geometry),
+        (sh) => sh.copyWith(rounded: rounded),
       );
+      changed.add(id);
     }
-    return next;
+    if (changed.isEmpty) return next;
+    // Rebuild from glue / obstacles so toggling rounded off does not collapse
+    // an elbow that was only recoverable while [VsdxShape.rounded] was true.
+    return next.rerouteConnectors(movedShapeIds: changed);
   }
 
   /// Point on [s]'s **drawn outline** (Geometry) along the ray from its pin
@@ -1957,6 +1941,11 @@ class VsdxPage {
         if (local != null && local.length >= 2) {
           return <Offset2D>[for (final p in local) localToPage(s, p)];
         }
+      }
+      // NURBS / Arc / Spline connectors: sample the drawn stroke.
+      final sampled = ShapePerimeter.sampledPathVertices(s);
+      if (sampled != null && sampled.length >= 2) {
+        return <Offset2D>[for (final p in sampled) localToPage(s, p)];
       }
       final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
       final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;

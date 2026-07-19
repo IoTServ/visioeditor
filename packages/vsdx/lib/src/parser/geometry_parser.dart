@@ -305,14 +305,14 @@ class GeometryParser {
         );
       case 'PolylineTo':
         final poly = _parsePolylineFull(_cellValue(row, 'A'));
-        // Formula flags scale interior verts only; X/Y stay local inches
+        // Formula flags scale interior verts per axis; X/Y stay local inches
         // (libvisio collectPolylineTo).
-        final vertsRel = poly.xType == 0 || poly.yType == 0;
         return PolylineTo(
           x: readLengthInches(row, 'X') ?? 0,
           y: readLengthInches(row, 'Y') ?? 0,
           vertices: poly.vertices,
-          vertsRelative: vertsRel,
+          vertsRelative: poly.xType == 0,
+          vertsYRelative: poly.yType == 0,
         );
       case 'RelPolylineTo':
         return PolylineTo(
@@ -321,6 +321,7 @@ class GeometryParser {
           vertices: _parsePolylineFull(_cellValue(row, 'A')).vertices,
           relative: true,
           vertsRelative: true,
+          vertsYRelative: true,
         );
       case 'InfiniteLine':
         return InfiniteLineCmd(
@@ -402,7 +403,6 @@ class GeometryParser {
   /// libvisio `collectNURBSTo`.
   NurbsTo _nurbsFromRow(XmlElement row, {required bool relativeRow}) {
     final parsed = _parseNurbsFull(_cellValue(row, 'E'));
-    final cpRelative = parsed.xType == 0 || parsed.yType == 0;
     final relative = relativeRow;
     // RelNURBSTo: endpoint is fractional. NURBSTo: endpoint is local inches
     // even when the formula's CPs are percentage (libvisio scales only CPs).
@@ -435,7 +435,8 @@ class GeometryParser {
       knots: List.unmodifiable(knots),
       degree: parsed.degree,
       relative: relative,
-      cpRelative: cpRelative || relative,
+      cpRelative: relative || parsed.xType == 0,
+      cpYRelative: relative || parsed.yType == 0,
     );
   }
 

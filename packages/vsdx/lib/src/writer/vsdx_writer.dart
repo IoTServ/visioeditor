@@ -3234,11 +3234,18 @@ class VsdxWriter {
 
   Map<String, String>? _commandFormulaCells(VsdxPathCommand cmd) =>
       switch (cmd) {
-        PolylineTo(:final vertices, :final relative, :final vertsRelative) => {
+        PolylineTo(
+          :final vertices,
+          :final relative,
+          :final vertsRelative,
+          :final vertsYRelative,
+        ) =>
+          {
             // POLYLINE(xType,yType,…): 0 = % of Width/Height, 1 = local inches.
             'A': () {
-              final pct = relative || vertsRelative;
-              final buf = StringBuffer(pct ? 'POLYLINE(0,0' : 'POLYLINE(1,1');
+              final xt = (relative || vertsRelative) ? 0 : 1;
+              final yt = (relative || vertsYRelative) ? 0 : 1;
+              final buf = StringBuffer('POLYLINE($xt,$yt');
               for (final v in vertices) {
                 buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
               }
@@ -3253,6 +3260,7 @@ class VsdxWriter {
           :final degree,
           :final relative,
           :final cpRelative,
+          :final cpYRelative,
         ) =>
           {
             'E': _nurbsEFormula(
@@ -3260,7 +3268,8 @@ class VsdxWriter {
               weights: weights,
               knots: knots,
               degree: degree,
-              xyType: (relative || cpRelative) ? 0 : 1,
+              xType: (relative || cpRelative) ? 0 : 1,
+              yType: (relative || cpYRelative) ? 0 : 1,
             ),
           },
         _ => null,
@@ -3273,12 +3282,13 @@ class VsdxWriter {
     required List<double> weights,
     required List<double> knots,
     required int degree,
-    required int xyType,
+    required int xType,
+    required int yType,
   }) {
     final knotLast = knots.isNotEmpty ? knots.last : 1.0;
     final fullW = weights.length == controlPoints.length + 2;
     final fullK = knots.length >= controlPoints.length + 3;
-    final buf = StringBuffer('NURBS(${_fmt(knotLast)},$degree,$xyType,$xyType');
+    final buf = StringBuffer('NURBS(${_fmt(knotLast)},$degree,$xType,$yType');
     for (var i = 0; i < controlPoints.length; i++) {
       final p = controlPoints[i];
       final knot = fullK
@@ -5631,10 +5641,12 @@ class VsdxWriter {
           :final vertices,
           :final relative,
           :final vertsRelative,
+          :final vertsYRelative,
         ):
         // POLYLINE(xType,yType,…): 0 = % of Width/Height, 1 = local inches.
-        final pct = relative || vertsRelative;
-        final buf = StringBuffer(pct ? 'POLYLINE(0,0' : 'POLYLINE(1,1');
+        final xt = (relative || vertsRelative) ? 0 : 1;
+        final yt = (relative || vertsYRelative) ? 0 : 1;
+        final buf = StringBuffer('POLYLINE($xt,$yt');
         for (final v in vertices) {
           buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
         }
@@ -5678,6 +5690,7 @@ class VsdxWriter {
           :final degree,
           :final relative,
           :final cpRelative,
+          :final cpYRelative,
         ):
         return _rowFormula(relative ? 'RelNURBSTo' : 'NURBSTo', ix, {
           'X': _fmt(x),
@@ -5691,7 +5704,8 @@ class VsdxWriter {
             weights: weights,
             knots: knots,
             degree: degree,
-            xyType: (relative || cpRelative) ? 0 : 1,
+            xType: (relative || cpRelative) ? 0 : 1,
+            yType: (relative || cpYRelative) ? 0 : 1,
           ),
         }, formulas: formulas);
     }

@@ -153,9 +153,18 @@ class _ShapeDraft {
   int foreignType = 0;
   int foreignFormat = 0;
   /// ShapeData polyline blobs keyed by chunk id (libvisio `m_polylineData`).
-  final polylineData = <int, List<Offset2D>>{};
+  final polylineData =
+      <int, ({List<Offset2D> points, bool xRel, bool yRel})>{};
   /// ShapeData NURBS blobs keyed by chunk id.
-  final nurbsData = <int, ({List<Offset2D> cps, List<double> knots, List<double> weights, int degree})>{};
+  final nurbsData = <int,
+      ({
+        List<Offset2D> cps,
+        List<double> knots,
+        List<double> weights,
+        int degree,
+        bool xRel,
+        bool yRel,
+      })>{};
   /// Pending PolylineTo that references ShapeData by id.
   final pendingPolylineDataIds = <int, ({double x, double y, int dataId})>{};
   /// Pending NURBSTo that references ShapeData by id.
@@ -1195,14 +1204,16 @@ class VsdBinaryParser {
 
   void _resolvePendingShapeData(_ShapeDraft d) {
     for (final e in d.pendingPolylineDataIds.entries) {
-      final pts = d.polylineData[e.value.dataId];
-      if (pts == null || pts.isEmpty) continue;
+      final blob = d.polylineData[e.value.dataId];
+      if (blob == null || blob.points.isEmpty) continue;
       for (final g in d.geometries) {
         if (g.byId.containsKey(e.key)) {
           g.byId[e.key] = PolylineTo(
             x: e.value.x,
             y: e.value.y,
-            vertices: pts,
+            vertices: blob.points,
+            vertsRelative: blob.xRel,
+            vertsYRelative: blob.yRel,
           );
           break;
         }
@@ -1221,6 +1232,8 @@ class VsdBinaryParser {
             knots: n.knots,
             weights: n.weights,
             degree: n.degree,
+            cpRelative: n.xRel,
+            cpYRelative: n.yRel,
           );
           break;
         }
@@ -2656,9 +2669,18 @@ class VsdBinaryParser {
         final dataId = input.readU32();
         final s = _shape;
         if (s == null) return;
-        final pts = s.polylineData[dataId];
-        if (pts != null && pts.isNotEmpty) {
-          _addGeomCmd(_header.id, PolylineTo(x: x, y: y, vertices: pts));
+        final blob = s.polylineData[dataId];
+        if (blob != null && blob.points.isNotEmpty) {
+          _addGeomCmd(
+            _header.id,
+            PolylineTo(
+              x: x,
+              y: y,
+              vertices: blob.points,
+              vertsRelative: blob.xRel,
+              vertsYRelative: blob.yRel,
+            ),
+          );
         } else {
           s.pendingPolylineDataIds[_header.id] = (x: x, y: y, dataId: dataId);
           _addGeomCmd(_header.id, LineTo(x, y)); // placeholder until flush
@@ -2685,11 +2707,15 @@ class VsdBinaryParser {
         inputPos = input.offset;
       }
       final points = <Offset2D>[];
+      var xRel = false;
+      var yRel = false;
       if (cellRef == 2) {
         input.skip(1);
-        input.readU16(); // xType
+        final xType = input.readU16();
         input.skip(1);
-        input.readU16(); // yType
+        final yType = input.readU16();
+        xRel = xType == 0;
+        yRel = yType == 0;
         var flag = input.readU8();
         var blockBytesRead = 6 + (input.offset - inputPos);
         inputPos = input.offset;
@@ -2709,7 +2735,13 @@ class VsdBinaryParser {
       } else {
         _addGeomCmd(
           _header.id,
-          PolylineTo(x: x, y: y, vertices: points),
+          PolylineTo(
+            x: x,
+            y: y,
+            vertices: points,
+            vertsRelative: xRel,
+            vertsYRelative: yRel,
+          ),
         );
       }
     } catch (_) {
@@ -2746,6 +2778,8 @@ class VsdBinaryParser {
               knots: n.knots,
               weights: n.weights,
               degree: n.degree,
+              cpRelative: n.xRel,
+              cpYRelative: n.yRel,
             ),
           );
         } else {
@@ -2760,6 +2794,8 @@ class VsdBinaryParser {
       final controlPoints = <Offset2D>[];
       final weights = <double>[weightPrev];
       var degree = 3;
+      var xRel = false;
+      var yRel = false;
       try {
         // Seek formula cell 6 similarly to libvisio (best-effort).
         var cellRef = 0;
@@ -2781,8 +2817,10 @@ class VsdBinaryParser {
           if (paramType == 0x8a) {
             final lastKnot = input.readF64();
             degree = input.readU16();
-            input.readU8(); // xType
-            input.readU8(); // yType
+            final xType = input.readU8();
+            final yType = input.readU8();
+            xRel = xType == 0;
+            yRel = yType == 0;
             var repetitions = input.readU32();
             while (repetitions > 0 && input.remaining >= 32) {
               final cx = input.readF64();
@@ -2812,6 +2850,8 @@ class VsdBinaryParser {
             knots: knotVector,
             weights: weights,
             degree: degree,
+            cpRelative: xRel,
+            cpYRelative: yRel,
           ),
         );
       }
@@ -2874,8 +2914,8 @@ class VsdBinaryParser {
       final dataType = input.readU8();
       input.skip(15);
       if (dataType == 0x80) {
-        input.readU8(); // xType
-        input.readU8(); // yType
+        final xType = input.readU8();
+        final yType = input.readU8();
         var pointCount = input.readU32();
         final maxPts = input.remaining ~/ 16;
         if (pointCount > maxPts) pointCount = maxPts;
@@ -2883,12 +2923,16 @@ class VsdBinaryParser {
         for (var i = 0; i < pointCount; i++) {
           points.add(Offset2D(input.readF64(), input.readF64()));
         }
-        s.polylineData[_header.id] = points;
+        s.polylineData[_header.id] = (
+          points: points,
+          xRel: xType == 0,
+          yRel: yType == 0,
+        );
       } else if (dataType == 0x82) {
         final lastKnot = input.readF64();
         final degree = input.readU16();
-        input.readU8(); // xType
-        input.readU8(); // yType
+        final xType = input.readU8();
+        final yType = input.readU8();
         var pointCount = input.readU32();
         final maxPts = input.remaining ~/ 32;
         if (pointCount > maxPts) pointCount = maxPts;
@@ -2906,6 +2950,8 @@ class VsdBinaryParser {
           knots: knots,
           weights: weights,
           degree: degree,
+          xRel: xType == 0,
+          yRel: yType == 0,
         );
       }
     } catch (_) {}
@@ -4650,22 +4696,30 @@ class VsdBinaryParser {
         :final vertices,
         :final relative,
         :final vertsRelative,
+        :final vertsYRelative,
       ) =>
         relative
             ? c
-            : vertsRelative
+            : (vertsRelative && vertsYRelative)
                 ? PolylineTo(
                     x: x * s,
                     y: y * s,
                     vertices: vertices,
                     vertsRelative: true,
+                    vertsYRelative: true,
                   )
                 : PolylineTo(
                     x: x * s,
                     y: y * s,
                     vertices: [
-                      for (final v in vertices) Offset2D(v.x * s, v.y * s),
+                      for (final v in vertices)
+                        Offset2D(
+                          vertsRelative ? v.x : v.x * s,
+                          vertsYRelative ? v.y : v.y * s,
+                        ),
                     ],
+                    vertsRelative: vertsRelative,
+                    vertsYRelative: vertsYRelative,
                   ),
       InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative) =>
         relative
@@ -4711,10 +4765,11 @@ class VsdBinaryParser {
         :final degree,
         :final relative,
         :final cpRelative,
+        :final cpYRelative,
       ) =>
         relative
             ? c
-            : cpRelative
+            : (cpRelative && cpYRelative)
                 ? NurbsTo(
                     x: x * s,
                     y: y * s,
@@ -4723,16 +4778,23 @@ class VsdBinaryParser {
                     knots: knots,
                     degree: degree,
                     cpRelative: true,
+                    cpYRelative: true,
                   )
                 : NurbsTo(
                     x: x * s,
                     y: y * s,
                     controlPoints: [
-                      for (final p in controlPoints) Offset2D(p.x * s, p.y * s),
+                      for (final p in controlPoints)
+                        Offset2D(
+                          cpRelative ? p.x : p.x * s,
+                          cpYRelative ? p.y : p.y * s,
+                        ),
                     ],
                     weights: weights,
                     knots: knots,
                     degree: degree,
+                    cpRelative: cpRelative,
+                    cpYRelative: cpYRelative,
                   ),
       _ => c,
     };

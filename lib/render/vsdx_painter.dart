@@ -998,7 +998,7 @@ class VsdxPainter extends CustomPainter {
               penDown = true;
             }
             final vsx = (poly.relative || poly.vertsRelative) ? w : 1.0;
-            final vsy = (poly.relative || poly.vertsRelative) ? h : 1.0;
+            final vsy = (poly.relative || poly.vertsYRelative) ? h : 1.0;
             final esx = poly.relative ? w : 1.0;
             final esy = poly.relative ? h : 1.0;
             for (final v in poly.vertices) {
@@ -1034,13 +1034,14 @@ class VsdxPainter extends CustomPainter {
               :final degree,
               :final relative,
               :final cpRelative,
+              :final cpYRelative,
             ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
             final csx = (relative || cpRelative) ? w : 1.0;
-            final csy = (relative || cpRelative) ? h : 1.0;
+            final csy = (relative || cpYRelative) ? h : 1.0;
             final esx = relative ? w : 1.0;
             final esy = relative ? h : 1.0;
             final samples = sampleNurbs(

@@ -197,10 +197,11 @@ Path buildPath(
           :final vertices,
           :final relative,
           :final vertsRelative,
+          :final vertsYRelative,
         ):
         if (!hasStart) start(0, 0);
         final vsx = (relative || vertsRelative) ? widthInches : 1.0;
-        final vsy = (relative || vertsRelative) ? heightInches : 1.0;
+        final vsy = (relative || vertsYRelative) ? heightInches : 1.0;
         final esx = relative ? widthInches : 1.0;
         final esy = relative ? heightInches : 1.0;
         for (final v in vertices) {
@@ -253,10 +254,11 @@ Path buildPath(
           :final degree,
           :final relative,
           :final cpRelative,
+          :final cpYRelative,
         ):
         if (!hasStart) start(0, 0);
         final csx = (relative || cpRelative) ? widthInches : 1.0;
-        final csy = (relative || cpRelative) ? heightInches : 1.0;
+        final csy = (relative || cpYRelative) ? heightInches : 1.0;
         final esx = relative ? widthInches : 1.0;
         final esy = relative ? heightInches : 1.0;
         final samples = sampleNurbs(
@@ -332,9 +334,10 @@ Path buildPath(
           :final vertices,
           :final relative,
           :final vertsRelative,
+          :final vertsYRelative,
         ):
         final vsx = (relative || vertsRelative) ? widthInches : 1.0;
-        final vsy = (relative || vertsRelative) ? heightInches : 1.0;
+        final vsy = (relative || vertsYRelative) ? heightInches : 1.0;
         final esx = relative ? widthInches : 1.0;
         final esy = relative ? heightInches : 1.0;
         if (!started) {

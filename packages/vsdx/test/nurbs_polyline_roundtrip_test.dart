@@ -100,6 +100,7 @@ void main() {
       final nurbs = g.commands.whereType<NurbsTo>().single;
       expect(nurbs.relative, isFalse);
       expect(nurbs.cpRelative, isTrue);
+      expect(nurbs.cpYRelative, isTrue);
       expect(nurbs.x, closeTo(3, 1e-9));
       expect(nurbs.controlPoints.first.x, closeTo(0.5, 1e-9));
       // A/B/C/D assembled onto knot/weight vectors.
@@ -118,8 +119,24 @@ void main() {
       final poly = g.commands.whereType<PolylineTo>().single;
       expect(poly.relative, isFalse);
       expect(poly.vertsRelative, isTrue);
+      expect(poly.vertsYRelative, isTrue);
       expect(poly.x, closeTo(2, 1e-9));
       expect(poly.vertices.first.x, closeTo(0.5, 1e-9));
+    });
+
+    test('PolylineTo preserves asymmetric POLYLINE(0,1,…) per axis', () {
+      final g = parseGeom(
+        '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+        '<Row IX="2" T="PolylineTo"><Cell N="X" V="4"/><Cell N="Y" V="1"/>'
+        '<Cell N="A" V="POLYLINE(0, 1, 0.5, 0.75)"/></Row>',
+      );
+      final poly = g.commands.whereType<PolylineTo>().single;
+      expect(poly.vertsRelative, isTrue);
+      expect(poly.vertsYRelative, isFalse);
+      final verts = g.polylineVertices(widthInches: 4, heightInches: 2)!;
+      // MoveTo(0,0) then POLYLINE interior: X = 0.5 * Width, Y local inches.
+      expect(verts[1].x, closeTo(2.0, 1e-9));
+      expect(verts[1].y, closeTo(0.75, 1e-9));
     });
 
     test('NURBSTo writes xType/yType flags, not endpoint as flags', () {
