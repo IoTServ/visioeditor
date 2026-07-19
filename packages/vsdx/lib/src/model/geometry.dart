@@ -252,11 +252,9 @@ class EllipseCmd extends VsdxPathCommand {
 
 /// `PolylineTo` — Visio packs the polyline data inside a `POLYLINE(...)`
 /// formula on the `A` cell:
-///   `POLYLINE(0, 2, x0,y0, x1,y1, …, xN,yN)`
-/// The first two integers are flags (`degree`, `useRelative`); the rest are
-/// vertex coordinates in shape-local inches (already pre-resolved by Visio,
-/// so we read them as-is). The `X`/`Y` cells give the polyline's end
-/// point, used as the cursor advance after the last vertex.
+///   `POLYLINE(xType, yType, x0,y0, x1,y1, …, xN,yN)`
+/// [xType]/[yType] are 0 = % of Width/Height or 1 = local inches. The
+/// `X`/`Y` cells give the polyline's end point (cursor advance).
 ///
 /// MS-VSDX §"PolylineTo Row".
 @immutable
@@ -676,12 +674,31 @@ VsdxPathCommand applyPathCommandFormulas(
         vertices: vertices,
         relative: relative,
       );
+    case RelEllipticalArcTo(
+        :final fx,
+        :final fy,
+        :final fcx,
+        :final fcy,
+        :final angle,
+        :final eccentricity,
+      ):
+      // Fractional X/Y/A/B stay as-is; C (angle) / D (ecc) often carry F=.
+      final nc = cell('C');
+      final nd = cell('D');
+      if (nc == null && nd == null) return cmd;
+      return RelEllipticalArcTo(
+        fx: fx,
+        fy: fy,
+        fcx: fcx,
+        fcy: fcy,
+        angle: nc ?? angle,
+        eccentricity: nd ?? eccentricity,
+      );
     case RelMoveTo():
     case RelLineTo():
     case RelCubBezTo():
     case RelQuadBezTo():
     case RelArcTo():
-    case RelEllipticalArcTo():
     case SplineStart():
     case SplineKnot():
     case NurbsTo():

@@ -9,6 +9,7 @@ import 'dart:math' as math;
 
 import 'elliptical_arc.dart';
 import 'geometry.dart';
+import 'nurbs.dart';
 import 'shape.dart';
 
 /// Ray / nearest-point queries against a shape's Geometry outline.
@@ -103,7 +104,8 @@ abstract final class ShapePerimeter {
   }
 
   /// Flatten visible Geometry into line segments in shape-local inches.
-  /// Curves are sampled; `EllipseCmd` is omitted here (handled analytically).
+  /// Curves are sampled; axis-aligned `EllipseCmd` also has an analytical
+  /// ray path in [rayIntersectLocal].
   static List<(Offset2D, Offset2D)> outlineSegments(VsdxShape shape) {
     final w = shape.width;
     final h = shape.height;
@@ -288,15 +290,27 @@ abstract final class ShapePerimeter {
               :final x,
               :final y,
               :final controlPoints,
+              :final weights,
+              :final knots,
+              :final degree,
               :final relative,
             ):
             if (!has) move(0, 0);
             final sx = relative ? w : 1.0;
             final sy = relative ? h : 1.0;
-            for (final p in controlPoints) {
-              emit(p.x * sx, p.y * sy);
+            final samples = sampleNurbs(
+              start: Offset2D(cx, cy),
+              end: Offset2D(x * sx, y * sy),
+              controlPoints: <Offset2D>[
+                for (final p in controlPoints) Offset2D(p.x * sx, p.y * sy),
+              ],
+              weights: weights,
+              knots: knots,
+              degree: degree,
+            );
+            for (final p in samples) {
+              emit(p.x, p.y);
             }
-            emit(x * sx, y * sy);
           case InfiniteLineCmd():
             break;
         }
@@ -390,30 +404,29 @@ double? _raySegmentT(
   double dy,
   EllipseCmd e,
 ) {
-  final rx = (e.aX - e.cx).abs();
-  final ry = (e.bY - e.cy).abs();
-  // Only handle axis-aligned ellipses (stencil default). Rotated → skip.
-  final axLen = math.sqrt(
-    (e.aX - e.cx) * (e.aX - e.cx) + (e.aY - e.cy) * (e.aY - e.cy),
-  );
-  final bxLen = math.sqrt(
-    (e.bX - e.cx) * (e.bX - e.cx) + (e.bY - e.cy) * (e.bY - e.cy),
-  );
-  final axisAligned = (e.aY - e.cy).abs() < 1e-9 && (e.bX - e.cx).abs() < 1e-9;
-  if (!axisAligned || rx < 1e-12 || ry < 1e-12) {
-    // Degenerate / rotated: approximate via sampled outline in caller.
-    if (axLen < 1e-12 || bxLen < 1e-12) return null;
-    return null;
-  }
+  // Conjugate-diameter form: P(θ) = C + A·cosθ + B·sinθ.
+  // Solve (from − C + t·D) against the quadratic form of that ellipse.
+  final ax = e.aX - e.cx, ay = e.aY - e.cy;
+  final bx = e.bX - e.cx, by = e.bY - e.cy;
+  // Inverse of [A B]: map local offset → (u,v) on unit circle u²+v²=1.
+  final det = ax * by - ay * bx;
+  if (det.abs() < 1e-18) return null;
+  final inv = 1.0 / det;
+  // M maps page-local offset → unit-circle coords:
+  //   u =  ( by·ox - bx·oy) / det
+  //   v =  (-ay·ox + ax·oy) / det
+  double mapU(double ox, double oy) => (by * ox - bx * oy) * inv;
+  double mapV(double ox, double oy) => (-ay * ox + ax * oy) * inv;
 
-  // Transform to unit circle: ((x-cx)/rx)^2 + ((y-cy)/ry)^2 = 1
-  final fx = (from.x - e.cx) / rx;
-  final fy = (from.y - e.cy) / ry;
-  final ddx = dx / rx;
-  final ddy = dy / ry;
-  final a = ddx * ddx + ddy * ddy;
-  final b = 2 * (fx * ddx + fy * ddy);
-  final c = fx * fx + fy * fy - 1;
+  final ox = from.x - e.cx;
+  final oy = from.y - e.cy;
+  final fu = mapU(ox, oy);
+  final fv = mapV(ox, oy);
+  final du = mapU(dx, dy);
+  final dv = mapV(dx, dy);
+  final a = du * du + dv * dv;
+  final b = 2 * (fu * du + fv * dv);
+  final c = fu * fu + fv * fv - 1;
   final disc = b * b - 4 * a * c;
   if (disc < 0 || a.abs() < 1e-18) return null;
   final sq = math.sqrt(disc);
@@ -507,23 +520,16 @@ void _sampleEllipse(
   bool close = true,
   int steps = 32,
 }) {
-  final rx = math.sqrt(
-    (e.aX - e.cx) * (e.aX - e.cx) + (e.aY - e.cy) * (e.aY - e.cy),
-  );
-  final ry = math.sqrt(
-    (e.bX - e.cx) * (e.bX - e.cx) + (e.bY - e.cy) * (e.bY - e.cy),
-  );
-  if (rx < 1e-12 || ry < 1e-12) return;
-  // Angle of major axis.
-  final ang = math.atan2(e.aY - e.cy, e.aX - e.cx);
-  final cosA = math.cos(ang);
-  final sinA = math.sin(ang);
+  // Match path_builder / SVG: conjugate diameters (handles non-orthogonal A/B
+  // after non-uniform scale of a rotated ellipse).
+  final ax = e.aX - e.cx, ay = e.aY - e.cy;
+  final bx = e.bX - e.cx, by = e.bY - e.cy;
+  if (ax * ax + ay * ay < 1e-24 || bx * bx + by * by < 1e-24) return;
   Offset2D pt(double th) {
-    final lx = rx * math.cos(th);
-    final ly = ry * math.sin(th);
+    final cosT = math.cos(th), sinT = math.sin(th);
     return Offset2D(
-      e.cx + lx * cosA - ly * sinA,
-      e.cy + lx * sinA + ly * cosA,
+      e.cx + ax * cosT + bx * sinT,
+      e.cy + ay * cosT + by * sinT,
     );
   }
 

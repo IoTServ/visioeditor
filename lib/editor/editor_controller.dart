@@ -4110,11 +4110,15 @@ class EditorController extends ChangeNotifier {
     if (s.locked || isOnLockedLayer(s.id)) return;
     final geom =
         VsdxShapeFactory.roundedRectGeometry(s.width, s.height, radiusInches);
+    final movedIds = _subtreeIds(<int>{s.id});
     updateCurrentPage(
-      (page) => page.updateShapeById(
-        s.id,
-        (sh) => sh.copyWith(geometries: <VsdxGeometry>[geom]),
-      ),
+      (page) => page
+          .updateShapeById(
+            s.id,
+            (sh) => sh.copyWith(geometries: <VsdxGeometry>[geom]),
+          )
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds),
       transient: transient,
     );
   }

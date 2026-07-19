@@ -406,9 +406,11 @@ class GeometryParser {
     return List.unmodifiable(out);
   }
 
-  /// Parse an `NURBS(knotLast, degree, xLast, yLast, x1, y1, knot1, weight1,
-  /// ...)` formula. Extracts control points, weights, knots and degree —
-  /// adequate for a full de Boor evaluation in the path builder.
+  /// Parse `NURBS(knotLast, degree, xType, yType, x1, y1, knot1, weight1, …)`.
+  ///
+  /// [xType]/[yType] are 0 = % of Width/Height or 1 = local inches; scaling
+  /// is applied by the row type (`RelNURBSTo` → [NurbsTo.relative]) at paint
+  /// time. Args 2–3 are flags (not the endpoint — that lives on X/Y cells).
   _NurbsArgs _parseNurbsFull(String? raw) {
     final nums = _extractFormulaArgs(raw, 'NURBS');
     if (nums.length < 4) return _NurbsArgs.empty;

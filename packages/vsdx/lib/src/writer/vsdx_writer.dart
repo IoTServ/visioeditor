@@ -3214,15 +3214,31 @@ class VsdxWriter {
           {'X': x, 'Y': y, 'A': a, 'B': b, 'C': c, 'D': degree.toDouble()},
         SplineKnot(:final x, :final y, :final knot) =>
           {'X': x, 'Y': y, 'A': knot},
-        NurbsTo(:final x, :final y) => {'X': x, 'Y': y},
+        NurbsTo(
+          :final x,
+          :final y,
+          :final weights,
+          :final knots,
+        ) =>
+          {
+            'X': x,
+            'Y': y,
+            // MS-VSDX NURBSTo: A=2nd-to-last knot, B=last weight,
+            // C=first knot, D=first weight.
+            'A': knots.length >= 2 ? knots[knots.length - 2] : 0.0,
+            'B': weights.isNotEmpty ? weights.last : 1.0,
+            'C': knots.isNotEmpty ? knots.first : 0.0,
+            'D': weights.isNotEmpty ? weights.first : 1.0,
+          },
       };
 
   Map<String, String>? _commandFormulaCells(VsdxPathCommand cmd) =>
       switch (cmd) {
         PolylineTo(:final vertices, :final relative) => {
+            // POLYLINE(xType,yType,…): 0 = % of Width/Height, 1 = local inches.
             'A': () {
               final buf =
-                  StringBuffer(relative ? 'POLYLINE(0,1' : 'POLYLINE(0,0');
+                  StringBuffer(relative ? 'POLYLINE(0,0' : 'POLYLINE(1,1');
               for (final v in vertices) {
                 buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
               }
@@ -3231,18 +3247,19 @@ class VsdxWriter {
             }(),
           },
         NurbsTo(
-          :final x,
-          :final y,
           :final controlPoints,
           :final weights,
           :final knots,
           :final degree,
+          :final relative,
         ) =>
           {
             'E': () {
+              // NURBS(knotLast, degree, xType, yType, x1,y1,k1,w1,…).
               final knotLast = knots.isNotEmpty ? knots.last : 1.0;
+              final xyType = relative ? 0 : 1;
               final buf = StringBuffer(
-                  'NURBS(${_fmt(knotLast)},$degree,${_fmt(x)},${_fmt(y)}');
+                  'NURBS(${_fmt(knotLast)},$degree,$xyType,$xyType');
               for (var i = 0; i < controlPoints.length; i++) {
                 final p = controlPoints[i];
                 final knot = i < knots.length ? knots[i] : (i + 1).toDouble();
@@ -5590,7 +5607,8 @@ class VsdxWriter {
           'D': eccentricity,
         }, formulas: formulas);
       case PolylineTo(:final x, :final y, :final vertices, :final relative):
-        final buf = StringBuffer(relative ? 'POLYLINE(0,1' : 'POLYLINE(0,0');
+        // POLYLINE(xType,yType,…): 0 = % of Width/Height, 1 = local inches.
+        final buf = StringBuffer(relative ? 'POLYLINE(0,0' : 'POLYLINE(1,1');
         for (final v in vertices) {
           buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
         }
@@ -5634,9 +5652,11 @@ class VsdxWriter {
           :final degree,
           :final relative,
         ):
+        // NURBS(knotLast, degree, xType, yType, x1,y1,k1,w1,…).
         final knotLast = knots.isNotEmpty ? knots.last : 1.0;
+        final xyType = relative ? 0 : 1;
         final buf = StringBuffer(
-            'NURBS(${_fmt(knotLast)},$degree,${_fmt(x)},${_fmt(y)}');
+            'NURBS(${_fmt(knotLast)},$degree,$xyType,$xyType');
         for (var i = 0; i < controlPoints.length; i++) {
           final p = controlPoints[i];
           final knot = i < knots.length ? knots[i] : (i + 1).toDouble();
@@ -5647,6 +5667,10 @@ class VsdxWriter {
         return _rowFormula(relative ? 'RelNURBSTo' : 'NURBSTo', ix, {
           'X': _fmt(x),
           'Y': _fmt(y),
+          'A': _fmt(knots.length >= 2 ? knots[knots.length - 2] : 0.0),
+          'B': _fmt(weights.isNotEmpty ? weights.last : 1.0),
+          'C': _fmt(knots.isNotEmpty ? knots.first : 0.0),
+          'D': _fmt(weights.isNotEmpty ? weights.first : 1.0),
           'E': buf.toString(),
         }, formulas: formulas);
     }

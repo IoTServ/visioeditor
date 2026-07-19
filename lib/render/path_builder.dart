@@ -245,8 +245,7 @@ Path buildPath(
         if (!hasStart) start(0, 0);
         final sx = relative ? widthInches : 1.0;
         final sy = relative ? heightInches : 1.0;
-        _emitNurbs(
-          path,
+        final samples = sampleNurbs(
           start: Offset2D(cursorX, cursorY),
           end: Offset2D(x * sx, y * sy),
           controlPoints: <Offset2D>[
@@ -256,6 +255,9 @@ Path buildPath(
           knots: knots,
           degree: degree,
         );
+        for (final p in samples) {
+          path.lineTo(p.x, p.y);
+        }
         cursorX = x * sx;
         cursorY = y * sy;
     }
@@ -346,107 +348,6 @@ Path buildPath(
   // Ignore unused cursor warning.
   assert(cx.isFinite && cy.isFinite);
   return (points: pts, closed: closed);
-}
-
-/// Sample a NURBS curve into ~32 line segments using the de Boor algorithm.
-/// When the knot vector is empty we synthesise a clamped uniform one so
-/// the curve still passes through its endpoints.
-void _emitNurbs(
-  Path path, {
-  required Offset2D start,
-  required Offset2D end,
-  required List<Offset2D> controlPoints,
-  required List<double> weights,
-  required List<double> knots,
-  required int degree,
-}) {
-  // Construct the full control polygon: start + interior + end.
-  final cps = <Offset2D>[start, ...controlPoints, end];
-  final wts = <double>[
-    1.0,
-    ...List<double>.generate(
-      controlPoints.length,
-      (i) => i < weights.length ? weights[i] : 1.0,
-    ),
-    1.0,
-  ];
-  final n = cps.length - 1;
-  if (n < degree) {
-    // Not enough control points — fall back to chord polyline.
-    for (var i = 1; i <= n; i++) {
-      path.lineTo(cps[i].x, cps[i].y);
-    }
-    return;
-  }
-  // Build a clamped uniform knot vector if not supplied.
-  final fullKnots = knots.length == n + degree + 2
-      ? knots
-      : _clampedKnots(n, degree);
-
-  const samples = 32;
-  final tMin = fullKnots[degree];
-  final tMax = fullKnots[n + 1];
-  for (var s = 1; s <= samples; s++) {
-    final t = tMin + (tMax - tMin) * s / samples;
-    final pt = _deBoor(cps, wts, fullKnots, degree, t);
-    path.lineTo(pt.x, pt.y);
-  }
-}
-
-/// Build a clamped uniform knot vector with `n + degree + 2` entries:
-/// `[0, …, 0, t1, t2, …, tn-degree, 1, …, 1]`.
-List<double> _clampedKnots(int n, int degree) {
-  final size = n + degree + 2;
-  final out = List<double>.filled(size, 0);
-  final interior = n - degree;
-  for (var i = 0; i <= degree; i++) {
-    out[i] = 0;
-    out[size - 1 - i] = 1;
-  }
-  for (var i = 1; i <= interior; i++) {
-    out[degree + i] = i / (interior + 1);
-  }
-  return out;
-}
-
-/// Evaluate the NURBS at parameter [t] via rational de Boor recursion.
-Offset2D _deBoor(
-  List<Offset2D> cps,
-  List<double> wts,
-  List<double> knots,
-  int degree,
-  double t,
-) {
-  final n = cps.length - 1;
-  // Find knot span k such that knots[k] <= t < knots[k+1].
-  var k = degree;
-  while (k < n && t >= knots[k + 1]) {
-    k++;
-  }
-  // Rational de Boor: build (w*x, w*y, w) and iterate.
-  final wx = <double>[];
-  final wy = <double>[];
-  final w = <double>[];
-  for (var j = 0; j <= degree; j++) {
-    final idx = k - degree + j;
-    final wj = wts[idx];
-    wx.add(cps[idx].x * wj);
-    wy.add(cps[idx].y * wj);
-    w.add(wj);
-  }
-  for (var r = 1; r <= degree; r++) {
-    for (var j = degree; j >= r; j--) {
-      final idx = k - degree + j;
-      final denom = knots[idx + degree - r + 1] - knots[idx];
-      final alpha = denom == 0 ? 0.0 : (t - knots[idx]) / denom;
-      wx[j] = (1 - alpha) * wx[j - 1] + alpha * wx[j];
-      wy[j] = (1 - alpha) * wy[j - 1] + alpha * wy[j];
-      w[j] = (1 - alpha) * w[j - 1] + alpha * w[j];
-    }
-  }
-  final ww = w[degree];
-  if (ww == 0) return Offset2D(wx[degree], wy[degree]);
-  return Offset2D(wx[degree] / ww, wy[degree] / ww);
 }
 
 /// Visio ArcTo: arc from `(x0,y0)` to `(x1,y1)` whose **apex** lies `bow`
