@@ -150,11 +150,18 @@ ApplyResult applyOps(
           log.add('move_shape: needs id,x,y');
           break;
         }
-        if (page.findShapeById(id) == null) {
+        final moving = page.findShapeById(id);
+        if (moving == null) {
           log.add('move_shape: shape $id not found');
           break;
         }
-        page = page.updateShapeById(id, (s) => s.copyWith(pinX: x, pinY: y));
+        // Translate pin + Begin/End/waypoints together (not pin alone).
+        final dx = x - moving.pinX;
+        final dy = y - moving.pinY;
+        page = page.updateShapeById(
+          id,
+          (s) => VsdxPage.translateShape(s, dx, dy),
+        );
         reroute = true;
       case 'resize_shape':
       case 'resize':

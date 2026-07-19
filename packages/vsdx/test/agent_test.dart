@@ -136,6 +136,35 @@ void main() {
       expect(r.log, hasLength(3));
       expect(r.log.every((l) => l.contains('not found')), isTrue);
     });
+
+    test('move_shape translates Begin/End with the pin', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final line = VsdxShapeFactory.line(
+        id: id,
+        ax: 1,
+        ay: 1,
+        bx: 3,
+        by: 2,
+      );
+      doc = doc.replacePage(0, doc.pages.first.addShape(line));
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'move_shape',
+          'id': id,
+          'x': line.pinX + 2,
+          'y': line.pinY + 1,
+        },
+      ]);
+      final moved = r.document.pages.first.findShapeById(id)!;
+      expect(moved.pinX, closeTo(line.pinX + 2, 1e-9));
+      expect(moved.pinY, closeTo(line.pinY + 1, 1e-9));
+      expect(moved.beginX, closeTo(3, 1e-9));
+      expect(moved.beginY, closeTo(2, 1e-9));
+      expect(moved.endX, closeTo(5, 1e-9));
+      expect(moved.endY, closeTo(3, 1e-9));
+    });
   });
 
   group('inspect', () {

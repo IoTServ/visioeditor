@@ -653,6 +653,48 @@ class VsdxPage {
     return next;
   }
 
+  /// Page-inch polyline for a geometry-less 1-D connector as the canvas paints
+  /// it: perimeter glue (when [connects] exist) + [ObstacleRouter] avoidance.
+  ///
+  /// Used by SVG/PDF export so dynamic connectors match on-screen routing.
+  List<Offset2D> autoRoutedConnectorPolyline(VsdxShape connector) {
+    if (!connector.is1D) return const <Offset2D>[];
+    final bx = connector.beginX;
+    final by = connector.beginY;
+    final ex = connector.endX;
+    final ey = connector.endY;
+    if (bx == null || by == null || ex == null || ey == null) {
+      return const <Offset2D>[];
+    }
+    if (connector.waypoints.isNotEmpty) {
+      return connectorRoute(connector);
+    }
+    if (connector.straightRoute) {
+      return <Offset2D>[Offset2D(bx, by), Offset2D(ex, ey)];
+    }
+
+    var ax = bx;
+    var ay = by;
+    var zx = ex;
+    var zy = ey;
+    final exclude = <int>{connector.id};
+    for (final c in connectIndex.forConnector(connector.id)) {
+      final target = findShapeById(c.toSheetId);
+      if (target == null) continue;
+      exclude.add(target.id);
+      if (c.isBegin) {
+        final hit = perimeterAttach(target.id, ex, ey);
+        ax = hit.x;
+        ay = hit.y;
+      } else if (c.isEnd) {
+        final hit = perimeterAttach(target.id, bx, by);
+        zx = hit.x;
+        zy = hit.y;
+      }
+    }
+    return _autoRoute(ax, ay, zx, zy, excludeIds: exclude);
+  }
+
   /// The drawn route of connector [s] in page inches: begin → waypoints → end,
   /// or the straight / elbow route when it has no explicit waypoints.
   ///

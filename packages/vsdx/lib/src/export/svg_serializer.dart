@@ -26,6 +26,7 @@ import '../model/shape.dart';
 import '../model/table.dart';
 import '../model/theme.dart';
 import '../parser/metafile.dart';
+import '../parser/metafile_drawing.dart';
 import '../utils/color.dart';
 
 /// Which layer flags the SVG serializer honours when filtering shapes.
@@ -279,27 +280,34 @@ class VsdxToSvgSerializer {
         );
         geomIndex++;
       }
-      // Canvas paints geometry-less 1-D connectors via BeginX/Y→EndX/Y;
-      // SVG must do the same or connectors vanish in PDF/SVG export.
+      // Canvas paints geometry-less 1-D connectors via orthogonal routing
+      // (perimeter glue + ObstacleRouter). Match that for SVG/PDF export.
       if (!wroteGeom &&
           shape.is1D &&
           shape.beginX != null &&
           shape.beginY != null &&
           shape.endX != null &&
           shape.endY != null) {
-        final a = _pageToLocal(shape, shape.beginX!, shape.beginY!);
-        final b = _pageToLocal(shape, shape.endX!, shape.endY!);
-        final d = 'M ${_n(a.x)} ${_n(a.y)} L ${_n(b.x)} ${_n(b.y)}';
-        _writePath(
-          buf,
-          shape,
-          theme,
-          d: d,
-          noFill: true,
-          noLine: false,
-          paintId: '$paintIdScope-${shape.id}-0',
-          indent: '$indent  ',
-        );
+        final route = page.autoRoutedConnectorPolyline(shape);
+        if (route.length >= 2) {
+          final d = StringBuffer();
+          for (var i = 0; i < route.length; i++) {
+            final local = _pageToLocal(shape, route[i].x, route[i].y);
+            d.write(i == 0
+                ? 'M ${_n(local.x)} ${_n(local.y)}'
+                : ' L ${_n(local.x)} ${_n(local.y)}');
+          }
+          _writePath(
+            buf,
+            shape,
+            theme,
+            d: d.toString(),
+            noFill: true,
+            noLine: false,
+            paintId: '$paintIdScope-${shape.id}-0',
+            indent: '$indent  ',
+          );
+        }
       }
     }
 
@@ -309,7 +317,7 @@ class VsdxToSvgSerializer {
         (shape.text?.isNotEmpty ?? false) ||
         _meaningfulNameLabel(shape) != null;
     if (hasLabel) {
-      _writeText(buf, shape, theme, indent: '$indent  ');
+      _writeText(buf, shape, theme, page, indent: '$indent  ');
     }
 
     // Match canvas: collapsed hosts hide children; covered table cells skip.
@@ -1116,6 +1124,17 @@ class VsdxToSvgSerializer {
       if (raster != null) {
         mime = 'image/bmp';
         bytes = raster;
+      } else {
+        // Pure-vector metafile: emit SVG paths (no Flutter rasterizer).
+        final drawing = parseMetafileDrawing(
+          Uint8List.fromList(src.bytes),
+          mimeType: src.mimeType,
+          partName: src.partName,
+        );
+        if (drawing != null && !drawing.isEmpty) {
+          _writeMetafileDrawing(buf, shape, drawing, indent: indent);
+          return;
+        }
       }
     }
     if (mime == null || bytes == null) {
@@ -1131,6 +1150,134 @@ class VsdxToSvgSerializer {
       'width="${_n(shape.width)}" height="${_n(shape.height)}" '
       'preserveAspectRatio="none"/></g>',
     );
+  }
+
+  /// Replay a vector metafile into shape-local SVG (GDI Y-down → Y-up flip).
+  void _writeMetafileDrawing(
+    StringBuffer buf,
+    VsdxShape shape,
+    MetafileDrawing drawing, {
+    required String indent,
+  }) {
+    final dw = drawing.width;
+    final dh = drawing.height;
+    if (dw <= 0 || dh <= 0) {
+      _writeImagePlaceholder(buf, shape, indent: indent);
+      return;
+    }
+    final sx = shape.width / dw;
+    final sy = shape.height / dh;
+    buf.writeln(
+      '$indent<g transform="translate(0 ${_n(shape.height)}) '
+      'scale(${_n(sx)} ${_n(-sy)}) '
+      'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
+    );
+    for (final op in drawing.ops) {
+      if (op is MetafilePathOp) {
+        _writeMetafilePathOp(buf, op, indent: '$indent  ');
+      } else if (op is MetafileTextOp) {
+        _writeMetafileTextOp(buf, op, indent: '$indent  ');
+      }
+    }
+    buf.writeln('$indent</g>');
+  }
+
+  void _writeMetafilePathOp(
+    StringBuffer buf,
+    MetafilePathOp op, {
+    required String indent,
+  }) {
+    if (op.points.isEmpty) return;
+    final fill = op.fill ? _argbCss(op.fillArgb) : 'none';
+    final stroke = op.stroke ? _argbCss(op.strokeArgb) : 'none';
+    final sw = op.stroke ? ' stroke-width="${_n(math.max(op.strokeWidth, 0.5))}"' : '';
+    if (op.isEllipse && op.points.length >= 2) {
+      var minX = op.points.first.x, maxX = op.points.first.x;
+      var minY = op.points.first.y, maxY = op.points.first.y;
+      for (final p in op.points) {
+        minX = math.min(minX, p.x);
+        maxX = math.max(maxX, p.x);
+        minY = math.min(minY, p.y);
+        maxY = math.max(maxY, p.y);
+      }
+      final cx = (minX + maxX) / 2;
+      final cy = (minY + maxY) / 2;
+      final rx = (maxX - minX) / 2;
+      final ry = (maxY - minY) / 2;
+      buf.writeln(
+        '$indent<ellipse cx="${_n(cx)}" cy="${_n(cy)}" '
+        'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"$sw/>',
+      );
+      return;
+    }
+    final d = StringBuffer('M ${_n(op.points.first.x)} ${_n(op.points.first.y)}');
+    for (var i = 1; i < op.points.length; i++) {
+      d.write(' L ${_n(op.points[i].x)} ${_n(op.points[i].y)}');
+    }
+    if (op.closed) d.write(' Z');
+    buf.writeln(
+      '$indent<path d="$d" fill="$fill" stroke="$stroke"$sw/>',
+    );
+  }
+
+  void _writeMetafileTextOp(
+    StringBuffer buf,
+    MetafileTextOp op, {
+    required String indent,
+  }) {
+    if (op.text.isEmpty) return;
+    final size = math.max(op.fontHeight.abs(), 1.0);
+    final face = (op.face == null || op.face!.isEmpty)
+        ? 'Arial'
+        : _esc(op.face!);
+    // Parent group has scale(sy,-sy); un-flip glyphs so text stays upright.
+    buf.writeln(
+      '$indent<g transform="translate(${_n(op.x)} ${_n(op.y)}) scale(1 -1)">'
+      '<text x="0" y="0" fill="${_argbCss(op.argb)}" '
+      'font-family="$face" font-size="${_n(size)}">'
+      '${_esc(op.text)}</text></g>',
+    );
+  }
+
+  static Offset2D _polylineMidpoint(List<Offset2D> route) {
+    if (route.isEmpty) return const Offset2D(0, 0);
+    if (route.length == 1) return route.first;
+    var total = 0.0;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      total += math.sqrt(dx * dx + dy * dy);
+    }
+    if (total <= 0) return route.first;
+    var remaining = total / 2;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      final len = math.sqrt(dx * dx + dy * dy);
+      if (len >= remaining) {
+        final t = len == 0 ? 0.0 : remaining / len;
+        return Offset2D(
+          route[i].x + dx * t,
+          route[i].y + dy * t,
+        );
+      }
+      remaining -= len;
+    }
+    return route.last;
+  }
+
+  /// `#RRGGBB` plus optional `fill-opacity`/`stroke` alpha via rgba when needed.
+  String _argbCss(int argb) {
+    final a = (argb >> 24) & 0xFF;
+    final r = (argb >> 16) & 0xFF;
+    final g = (argb >> 8) & 0xFF;
+    final b = argb & 0xFF;
+    if (a >= 255) {
+      return '#${r.toRadixString(16).padLeft(2, '0')}'
+          '${g.toRadixString(16).padLeft(2, '0')}'
+          '${b.toRadixString(16).padLeft(2, '0')}';
+    }
+    return 'rgba($r,$g,$b,${(a / 255.0).toStringAsFixed(3)})';
   }
 
   void _writeImagePlaceholder(
@@ -1158,7 +1305,8 @@ class VsdxToSvgSerializer {
   void _writeText(
     StringBuffer buf,
     VsdxShape shape,
-    VsdxTheme theme, {
+    VsdxTheme theme,
+    VsdxPage page, {
     required String indent,
   }) {
     final block = shape.richText.textBlock;
@@ -1166,8 +1314,27 @@ class VsdxToSvgSerializer {
     if (block.hideText) return;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
-    final pinX = block.pinXInches ?? shape.width / 2;
-    final pinY = block.pinYInches ?? shape.height / 2;
+    // 1-D edge labels without TxtPin: sit on the drawn route midpoint
+    // (same as canvas [_paintRichText]). Prefer auto-routed polyline when
+    // Geometry is absent so the label tracks the exported path.
+    late final double pinX;
+    late final double pinY;
+    if (shape.is1D &&
+        block.pinXInches == null &&
+        block.pinYInches == null) {
+      final route = (!shape.hasGeometry && shape.waypoints.isEmpty)
+          ? page.autoRoutedConnectorPolyline(shape)
+          : VsdxPage.connectorRoute(shape);
+      final mid = route.length >= 2
+          ? _polylineMidpoint(route)
+          : VsdxPage.connectorMidpoint(shape);
+      final local = _pageToLocal(shape, mid.x, mid.y);
+      pinX = local.x;
+      pinY = local.y;
+    } else {
+      pinX = block.pinXInches ?? shape.width / 2;
+      pinY = block.pinYInches ?? shape.height / 2;
+    }
     final lpx = block.locPinXInches ?? tw / 2;
     final lpy = block.locPinYInches ?? th / 2;
     final ml = block.marginLeftInches;

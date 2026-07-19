@@ -221,6 +221,70 @@ void main() {
     );
   });
 
+  test('SVG geometry-less 1D uses elbow/obstacle route not a chord', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 10,
+          pinX: 2.5,
+          pinY: 3.5,
+          width: 1,
+          height: 1,
+        ),
+        VsdxShapeFactory.line(
+          id: 1,
+          ax: 1,
+          ay: 2,
+          bx: 4,
+          by: 5,
+        ).copyWith(geometries: const <VsdxGeometry>[]),
+      ],
+    );
+    final route = page.autoRoutedConnectorPolyline(page.findShapeById(1)!);
+    expect(route.length, greaterThan(2), reason: 'expect elbow/avoidance');
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Chord would be a single L; routed path has multiple L segments.
+    expect(RegExp(r'<path d="M[^"]* L[^"]* L').hasMatch(svg), isTrue);
+  });
+
+  test('SVG embeds vector WMF as paths not only a placeholder', () {
+    final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
+        .readAsBytesSync();
+    const part = '/visio/media/thumb.wmf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 3,
+          height: 2,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final doc = VsdxDocument(
+      pages: <VsdxPage>[page],
+      images: ImageRegistry.empty.withImage(
+        VsdxImage(partName: part, bytes: wmf, mimeType: 'image/x-wmf'),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(
+      page,
+      images: doc.images,
+    );
+    expect(svg.contains('<path '), isTrue);
+    expect(svg.contains('fill="#f2f2f2"'), isFalse);
+  });
+
   test('SVG print filter omits non-printable layers', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
