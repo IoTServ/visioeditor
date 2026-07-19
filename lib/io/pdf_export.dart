@@ -16,8 +16,10 @@ import 'pdf_font_loader_stub.dart'
 /// their page AABB so the link survives beyond SVG `<a>` (which `SvgImage`
 /// does not promote to PDF annotations). In-document jumps (`#Page-N` /
 /// page names) become [pw.Link] → named destinations registered via
-/// [pw.Anchor] on each exported sheet. Overlays honour the same print-layer,
-/// collapsed-host, and covered-cell filters as [VsdxToSvgSerializer].
+/// [pw.Anchor] on each exported sheet. Underlay (BackPage) hyperlinks are
+/// included. Degenerate 1D AABBs are inflated to a minimum hit thickness.
+/// Overlays honour the same print-layer, collapsed-host, and covered-cell
+/// filters as [VsdxToSvgSerializer].
 ///
 /// Falls back to an empty document when there are no pages to export.
 ///
@@ -62,13 +64,24 @@ Future<Uint8List> exportDocumentToPdf(
     final hIn = page.heightInches <= 0 ? 11.0 : page.heightInches;
     final wPt = wIn * PdfPageFormat.inch;
     final hPt = hIn * PdfPageFormat.inch;
+    final underlay = doc.backgroundFor(page);
     final svg = serializer.serializePage(
       page,
       theme: doc.theme,
       images: doc.images,
-      underlayPage: doc.backgroundFor(page),
+      underlayPage: underlay,
     );
-    final links = _pdfHyperlinkOverlays(page, destNames: destNames);
+    final links = <pw.Widget>[
+      ..._pdfHyperlinkOverlays(page, destNames: destNames),
+      if (underlay != null)
+        ..._pdfHyperlinkOverlays(
+          underlay,
+          destNames: destNames,
+          // Clip underlay hits to the foreground page box.
+          clipWidthInches: wIn,
+          clipHeightInches: hIn,
+        ),
+    ];
     final anchors = <pw.Widget>[
       for (final name in destNames[page] ?? const <String>[])
         pw.Positioned(
@@ -131,11 +144,16 @@ Map<VsdxPage, List<String>> _pdfPageDestNames(List<VsdxPage> pages) {
   return out;
 }
 
+/// Minimum PDF hit-box thickness for flat 1D AABBs (~8 pt).
+const double _kMinPdfLinkThicknessPt = 8.0;
+
 /// Transparent link boxes over shapes that have a clickable primary hyperlink.
 /// Visio/PDF share a bottom-left, Y-up page frame in inches/points.
 List<pw.Widget> _pdfHyperlinkOverlays(
   VsdxPage page, {
   required Map<VsdxPage, List<String>> destNames,
+  double? clipWidthInches,
+  double? clipHeightInches,
 }) {
   final printable =
       page.layers.isEmpty ? null : page.printableLayerIds;
@@ -158,11 +176,47 @@ List<pw.Widget> _pdfHyperlinkOverlays(
       if (target != null && target.isNotEmpty) {
         final aabb = page.shapePageAabb(shape.id);
         if (aabb != null) {
-          final left = aabb.left * PdfPageFormat.inch;
-          final bottom = aabb.bottom * PdfPageFormat.inch;
-          final width = (aabb.right - aabb.left) * PdfPageFormat.inch;
-          final height = (aabb.top - aabb.bottom) * PdfPageFormat.inch;
-          if (width > 0.5 && height > 0.5) {
+          var left = aabb.left * PdfPageFormat.inch;
+          var bottom = aabb.bottom * PdfPageFormat.inch;
+          var width = (aabb.right - aabb.left) * PdfPageFormat.inch;
+          var height = (aabb.top - aabb.bottom) * PdfPageFormat.inch;
+          // 1D / flat AABBs: expand to a clickable stroke thickness.
+          final weightPt = (shape.line.weightInches > 0
+                  ? shape.line.weightInches
+                  : 0.04) *
+              PdfPageFormat.inch;
+          final minT = weightPt > _kMinPdfLinkThicknessPt
+              ? weightPt
+              : _kMinPdfLinkThicknessPt;
+          if (width < minT) {
+            final pad = (minT - width) * 0.5;
+            left -= pad;
+            width = minT;
+          }
+          if (height < minT) {
+            final pad = (minT - height) * 0.5;
+            bottom -= pad;
+            height = minT;
+          }
+          var clippedOut = false;
+          if (clipWidthInches != null && clipHeightInches != null) {
+            final maxW = clipWidthInches * PdfPageFormat.inch;
+            final maxH = clipHeightInches * PdfPageFormat.inch;
+            if (left + width <= 0 ||
+                bottom + height <= 0 ||
+                left >= maxW ||
+                bottom >= maxH) {
+              clippedOut = true;
+            } else {
+              final r = left + width;
+              final t = bottom + height;
+              left = left.clamp(0.0, maxW);
+              bottom = bottom.clamp(0.0, maxH);
+              width = r.clamp(0.0, maxW) - left;
+              height = t.clamp(0.0, maxH) - bottom;
+            }
+          }
+          if (!clippedOut && width > 0.5 && height > 0.5) {
             final child = pw.SizedBox(width: width, height: height);
             final pw.Widget? widget;
             if (_isExternalPdfUrl(target)) {

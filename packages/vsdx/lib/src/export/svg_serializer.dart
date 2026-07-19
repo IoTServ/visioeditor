@@ -131,8 +131,17 @@ class VsdxToSvgSerializer {
     var offsetY = 0.0;
     for (var i = 0; i < exportPages.length; i++) {
       final p = exportPages[i];
+      // ids match Visio `#Page-N` / page-name hyperlinks (SVG fragment targets).
+      final ids = _svgPageFragmentIds(p, index1: i + 1);
       buf.writeln(
-          '  <g class="page page-${i + 1}" transform="translate(0,${_n(offsetY)})">');
+        '  <g class="page page-${i + 1}"${ids.isEmpty ? '' : ' id="${_esc(ids.first)}"'} '
+        'transform="translate(0,${_n(offsetY)})">',
+      );
+      for (var j = 1; j < ids.length; j++) {
+        buf.writeln(
+          '    <g id="${_esc(ids[j])}"></g>',
+        );
+      }
       _writePageBody(
         buf,
         p,
@@ -159,14 +168,19 @@ class VsdxToSvgSerializer {
     if (includeXmlHeader) buf.writeln('<?xml version="1.0" encoding="UTF-8"?>');
     final w = page.widthInches * pxPerInch;
     final h = page.heightInches * pxPerInch;
+    final fragIds = _svgPageFragmentIds(page, index1: 1);
     buf.writeln(
       '<svg xmlns="http://www.w3.org/2000/svg" '
       'version="1.1" '
       'xml:space="preserve" '
       'width="${_n(w)}" '
       'height="${_n(h)}" '
-      'viewBox="0 0 ${_n(w)} ${_n(h)}">',
+      'viewBox="0 0 ${_n(w)} ${_n(h)}"'
+      '${fragIds.isEmpty ? '' : ' id="${_esc(fragIds.first)}"'}>',
     );
+    for (var j = 1; j < fragIds.length; j++) {
+      buf.writeln('  <g id="${_esc(fragIds[j])}"></g>');
+    }
     _writePageBody(
       buf,
       page,
@@ -176,6 +190,20 @@ class VsdxToSvgSerializer {
     );
     buf.writeln('</svg>');
     return buf.toString();
+  }
+
+  /// Fragment ids for in-document hyperlinks (`#Page-2`, page name, …).
+  List<String> _svgPageFragmentIds(VsdxPage page, {required int index1}) {
+    final names = <String>{};
+    void add(String? raw) {
+      final t = raw?.trim();
+      if (t == null || t.isEmpty) return;
+      names.add(t.startsWith('#') ? t.substring(1) : t);
+    }
+
+    add(page.name);
+    add('Page-$index1');
+    return names.toList(growable: false);
   }
 
   void _writePageBody(
@@ -499,32 +527,35 @@ class VsdxToSvgSerializer {
   }) {
     final defs = StringBuffer();
     // Gradients use userSpaceOnUse with path bounds (canvas inches), not OBB.
+    final linePad = math.max(
+      0.01,
+      shape.line.weightInches > 0 ? shape.line.weightInches : 0.01,
+    );
     final fillBounds = _approxPathBoundsFromD(
       d,
       fallbackW: shape.width.abs() < 1e-9 ? 1.0 : shape.width.abs(),
       fallbackH: shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs(),
+      degeneratePad: linePad,
     );
     final fillAttr = !noFill
         ? _fillAttr(shape.fill, theme, paintId, defs, bounds: fillBounds)
         : 'fill="none"';
-    final strokeBounds = strokeD == null
-        ? fillBounds
-        : _approxPathBoundsFromD(
-            strokeD,
-            fallbackW: fillBounds.width,
-            fallbackH: fillBounds.height,
-          );
+    // Line gradients follow the unjumped geometry (canvas path bounds).
+    // Jump hops must not shift the gradient centre.
     final stroke = !noLine
         ? _strokeAttr(
             shape.line,
             theme,
             paintId,
             defs,
-            bounds: strokeBounds,
+            bounds: fillBounds,
             includeMarkers: attachArrows && !_bakeArrows,
           )
         : (paint: 'stroke="none"', markers: '');
     final sD = strokeD ?? d;
+    // Gap jumps insert mid-path `M` subpaths; SVG markers would repeat on
+    // every subpath. Hang markers (and baked tips) on the continuous [d].
+    final markerD = d;
     // SoftEdges only — shadow is painted separately (fill-only / stroke-only
     // like canvas [_drawShadow]). Markers stay outside soft blur.
     final softFilter = _softEdgesFilterAttr(
@@ -641,7 +672,7 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$sD" fill="none" '
+          '$indent<path d="$markerD" fill="none" '
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
@@ -663,7 +694,7 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$sD" fill="none" '
+          '$indent<path d="$markerD" fill="none" '
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
@@ -673,7 +704,7 @@ class VsdxToSvgSerializer {
       );
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$d" fill="none" '
+          '$indent<path d="$markerD" fill="none" '
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
@@ -683,7 +714,7 @@ class VsdxToSvgSerializer {
         buf,
         shape,
         theme,
-        pathD: sD,
+        pathD: markerD,
         indent: indent,
       );
     }
@@ -937,6 +968,10 @@ class VsdxToSvgSerializer {
         d,
         fallbackW: shape.width.abs() < 1e-9 ? 1.0 : shape.width.abs(),
         fallbackH: shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs(),
+        degeneratePad: math.max(
+          0.01,
+          shape.line.weightInches > 0 ? shape.line.weightInches : 0.01,
+        ),
       );
       final region = _filterRegionAttr(bounds, blur * 3);
       buf.writeln(
@@ -1018,6 +1053,7 @@ class VsdxToSvgSerializer {
       d,
       fallbackW: fallbackW,
       fallbackH: fallbackH,
+      degeneratePad: weightH,
     );
     final h = bounds.height;
     final bottomY = bounds.minY;
@@ -1139,6 +1175,8 @@ class VsdxToSvgSerializer {
     String d, {
     required double fallbackW,
     required double fallbackH,
+    /// Half-extent for zero-area axes (line weight), matching canvas reflection.
+    double? degeneratePad,
   }) {
     final tokens = RegExp(
       r'[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
@@ -1271,16 +1309,17 @@ class VsdxToSvgSerializer {
     var w = maxX - minX;
     var h = maxY - minY;
     // Degenerate axes (horizontal/vertical strokes): inflate symmetrically
-    // about the path centre. Using shape size as a one-sided fallback shifted
-    // gradient centres away from the stroke (canvas uses path bounds).
+    // about the path centre. Prefer [degeneratePad] (line weight) like canvas
+    // reflection; fall back to a small clamp so shape length is not reused.
+    final pad = math.max(0.01, degeneratePad ?? 0.01);
     if (w < 1e-9) {
-      final half = math.max(1e-3, math.min(fallbackW, 0.05)) * 0.5;
+      final half = pad * 0.5;
       final cx = (minX + maxX) * 0.5;
       minX = cx - half;
       w = half * 2;
     }
     if (h < 1e-9) {
-      final half = math.max(1e-3, math.min(fallbackH, 0.05)) * 0.5;
+      final half = pad * 0.5;
       final cy = (minY + maxY) * 0.5;
       minY = cy - half;
       h = half * 2;

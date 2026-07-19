@@ -2133,6 +2133,70 @@ void main() {
         reason: 'overlapping bullet must be pushed left of 0.14');
   });
 
+  test('multi-page SVG exposes fragment ids for in-document hyperlinks', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final p0 = doc.pages.first;
+    final p1Id = doc.nextPageId();
+    doc = doc.insertPage(
+      1,
+      VsdxPage(
+        id: p1Id,
+        name: 'Page-2',
+        widthInches: p0.widthInches,
+        heightInches: p0.heightInches,
+        shapes: const <VsdxShape>[],
+      ),
+    );
+    final linked = VsdxShapeFactory.rectangle(
+      id: p0.nextFreeShapeId(),
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 0.8,
+    ).copyWith(
+      hyperlinks: const <VsdxHyperlink>[
+        VsdxHyperlink(
+          id: 0,
+          subAddress: '#Page-2',
+          isDefault: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(linked));
+    final svg = VsdxToSvgSerializer().serializeDocument(doc);
+    expect(svg, contains('href="#Page-2"'));
+    expect(svg, contains('id="Page-2"'));
+  });
+
+  test('SVG Gap jumps do not put markers on broken subpaths', () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3).copyWith(
+          line: const VsdxLine(endArrow: 2, weightInches: 0.04),
+        );
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4, lineJumpStyle: 2),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('marker-end='));
+    // Stroke may Gap-break with mid-path M; marker carrier must stay continuous.
+    final carrier = RegExp(
+      r'<path d="([^"]+)" fill="none"[^>]*marker-end=',
+    ).firstMatch(svg);
+    expect(carrier, isNotNull);
+    expect(
+      RegExp(r'L [^"]* M ').hasMatch(carrier!.group(1)!),
+      isFalse,
+      reason: 'marker carrier must not include Gap M breaks',
+    );
+  });
+
   test('SVG Justify with bullet still stretches body via textLength', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

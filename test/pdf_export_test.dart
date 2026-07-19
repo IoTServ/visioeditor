@@ -120,6 +120,35 @@ void main() {
     expect(body.contains('https://example.com/docs'), isTrue);
   });
 
+  test('PDF export keeps hyperlink hit-box on flat 1D connectors', () async {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final parser = const DocumentParser();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final line = VsdxShapeFactory.line(
+      id: id,
+      ax: 1,
+      ay: 3,
+      bx: 5,
+      by: 3,
+    ).copyWith(
+      line: const VsdxLine(weightInches: 0.03),
+      hyperlinks: const <VsdxHyperlink>[
+        VsdxHyperlink(
+          id: 0,
+          address: 'https://example.com/line',
+          isDefault: true,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(line));
+    final bytes = await exportDocumentToPdf(doc);
+    final body = latin1.decode(bytes, allowInvalid: true);
+    expect(body.contains('/URI'), isTrue);
+    expect(body.contains('https://example.com/line'), isTrue);
+  });
+
   test('PDF export emits named destinations for in-document page links',
       () async {
     final writer = VsdxWriter();
@@ -169,6 +198,49 @@ void main() {
       isTrue,
       reason: 'expected named destination or GoTo for #Page-2',
     );
+  });
+
+  test('PDF export includes BackPage underlay hyperlinks', () async {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final parser = const DocumentParser();
+    var doc = parser.parse(blank);
+    final fg = doc.pages.first;
+    final bgId = doc.nextPageId();
+    final bgShape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFCCCC)),
+      hyperlinks: const <VsdxHyperlink>[
+        VsdxHyperlink(
+          id: 0,
+          address: 'https://underlay.example/',
+          isDefault: true,
+        ),
+      ],
+    );
+    doc = doc.insertPage(
+      1,
+      VsdxPage(
+        id: bgId,
+        name: 'Background-1',
+        widthInches: fg.widthInches,
+        heightInches: fg.heightInches,
+        shapes: <VsdxShape>[bgShape],
+        isBackgroundPage: true,
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      fg.copyWith(backgroundPageId: bgId),
+    );
+    final bytes = await exportDocumentToPdf(doc);
+    final body = latin1.decode(bytes, allowInvalid: true);
+    expect(body.contains('https://underlay.example/'), isTrue);
   });
 
   test('PDF hyperlink overlays skip covered table cells', () async {
