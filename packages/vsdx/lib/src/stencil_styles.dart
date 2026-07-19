@@ -686,10 +686,10 @@ VsdxShape applyStencilStyle(
 
   if (shape.is1D) {
     if (lineColor != null && line.hasLine) {
-      line = line.copyWith(
-        color: lineColor,
-        weightInches: lineWeightInches,
-      );
+      // Match 2-D: clear themeColorIndex so stencil solid colour sticks.
+      line = line
+          .withSolidColor(lineColor)
+          .copyWith(weightInches: lineWeightInches);
     }
     return identical(line, shape.line) ? shape : shape.copyWith(line: line);
   }

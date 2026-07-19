@@ -581,6 +581,11 @@ class VsdxToSvgSerializer {
     } else if (shape.fill.hasGradient) {
       fillPaint = 'url(#grad-$paintId)';
       fillOp = alpha;
+    } else if (shape.fill.pattern > 1) {
+      // Hatch defs already emitted by [_fillAttr] as pat-$paintId; reuse so
+      // the mirror matches canvas [_drawFill] (not a solid foreground).
+      fillPaint = 'url(#pat-$paintId)';
+      fillOp = alpha;
     } else {
       final c = _resolveColor(shape.fill.foreground,
               shape.fill.themeForegroundIndex, theme) ??

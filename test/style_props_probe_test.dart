@@ -34,6 +34,35 @@ void main() {
     expect(after.fill.pattern, 2);
   });
 
+  test('dual theme FillForegnd+FillBkgnd round-trips distinct slots', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(
+            pattern: 2,
+            themeForegroundIndex: ThemeSlot.accent1,
+            themeBackgroundIndex: ThemeSlot.accent2,
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.themeForegroundIndex, ThemeSlot.accent1);
+    expect(after.fill.themeBackgroundIndex, ThemeSlot.accent2,
+        reason: 'FillBkgnd must keep AccentColor2 via named THEMEVAL');
+    expect(after.fill.pattern, 2);
+  });
+
   test('patch ThemeIndex / QuickStyle matrices on existing shape', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -513,6 +542,42 @@ void main() {
       RegExp(r'scale\(1 -1\)[^>]*>[\s\S]*?stroke="#c00000"', caseSensitive: false)
           .hasMatch(svg),
       isTrue,
+    );
+  });
+
+  test('SVG reflection reuses hatch pattern fill', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 11,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(
+            pattern: 2,
+            foreground: VsdxColor(0xFF000000),
+            background: VsdxColor(0xFFFFFF00),
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            transparency: 0.5,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('id="pat-'), isTrue);
+    expect(
+      RegExp(r'scale\(1 -1\)[\s\S]*?fill="url\(#pat-').hasMatch(svg),
+      isTrue,
+      reason: 'mirrored fill must reuse hatch, not solid foreground',
     );
   });
 

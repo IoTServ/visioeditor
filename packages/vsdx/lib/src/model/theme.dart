@@ -31,6 +31,76 @@ abstract final class ThemeSlot {
   static const int accent6 = 9;
   static const int hyperlink = 10;
   static const int followedHyperlink = 11;
+
+  /// Visio `THEMEVAL("…")` colour-name argument for [slot], or `null` when
+  /// the slot should use bare `THEMEVAL()` + `QuickStyle*Color`.
+  ///
+  /// Used when FillForegnd and FillBkgnd need different theme slots — they
+  /// share one `QuickStyleFillColor` cell, so the background cell carries an
+  /// explicit name (MS-Visio THEMEVAL function docs).
+  static String? themeValName(int slot) => switch (slot) {
+        dk1 => 'Dark',
+        lt1 => 'Light',
+        accent1 => 'AccentColor',
+        accent2 => 'AccentColor2',
+        accent3 => 'AccentColor3',
+        accent4 => 'AccentColor4',
+        accent5 => 'AccentColor5',
+        accent6 => 'AccentColor6',
+        hyperlink => 'Hyperlink',
+        followedHyperlink => 'FollowedHyperlink',
+        // dk2 / lt2 have no stable THEMEVAL string in classic docs; callers
+        // fall back to QuickStyleFillColor when only one theme fill is set.
+        _ => null,
+      };
+
+  /// Inverse of [themeValName] (case-insensitive). Also accepts Visio's
+  /// 1-based scheme integers (`1`=Dark … `8`=Accent6) from THEMEVAL docs.
+  static int? fromThemeValArg(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final unquoted = (s.startsWith('"') && s.endsWith('"') && s.length >= 2)
+        ? s.substring(1, s.length - 1)
+        : s;
+    final lower = unquoted.toLowerCase();
+    switch (lower) {
+      case 'dark':
+        return dk1;
+      case 'light':
+        return lt1;
+      case 'accentcolor':
+      case 'accentcolor1':
+        return accent1;
+      case 'accentcolor2':
+        return accent2;
+      case 'accentcolor3':
+        return accent3;
+      case 'accentcolor4':
+        return accent4;
+      case 'accentcolor5':
+        return accent5;
+      case 'accentcolor6':
+        return accent6;
+      case 'hyperlink':
+        return hyperlink;
+      case 'followedhyperlink':
+        return followedHyperlink;
+    }
+    final n = int.tryParse(unquoted);
+    if (n == null) return null;
+    // THEMEVAL integer args: 1=Dark, 2=Light, 3=Accent1 … 8=Accent6.
+    return switch (n) {
+      1 => dk1,
+      2 => lt1,
+      3 => accent1,
+      4 => accent2,
+      5 => accent3,
+      6 => accent4,
+      7 => accent5,
+      8 => accent6,
+      _ => null,
+    };
+  }
 }
 
 @immutable

@@ -159,5 +159,25 @@ void main() {
       }
       expect(checked, greaterThan(100));
     });
+
+    test('applyStencilStyle on 1D clears line themeColorIndex', () {
+      final connector = VsdxShapeFactory.line(
+        id: 1,
+        ax: 0,
+        ay: 0,
+        bx: 2,
+        by: 1,
+        line: const VsdxLine(
+          themeColorIndex: ThemeSlot.accent3,
+          weightInches: 0.02,
+        ),
+      );
+      final styled = applyStencilStyle(
+        connector,
+        colors: resolveStencilColors(name: 'Connector', group: 'General')!,
+      );
+      expect(styled.line.color, isNotNull);
+      expect(styled.line.themeColorIndex, isNull);
+    });
   });
 }

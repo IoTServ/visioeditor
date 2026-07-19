@@ -1986,13 +1986,21 @@ class VsdxWriter {
         editedTheme: edited.fill.themeForegroundIndex);
     // Pattern / theme FillBkgnd. Only touch QuickStyleFillColor when the
     // foreground is not theme-bound (same rule as fresh shape emission) so a
-    // theme FillBkgnd patch cannot overwrite FillForegnd's slot.
+    // theme FillBkgnd patch cannot overwrite FillForegnd's slot. When both
+    // slots differ, write THEMEVAL("AccentColorN") instead of bare THEMEVAL().
     changed |= _patchColorOrTheme(el, 'FillBkgnd', 'QuickStyleFillColor',
         baseColor: base.fill.background,
         baseTheme: base.fill.themeBackgroundIndex,
         editedColor: edited.fill.background,
         editedTheme: edited.fill.themeBackgroundIndex,
-        writeQuickStyle: edited.fill.themeForegroundIndex == null);
+        writeQuickStyle: edited.fill.themeForegroundIndex == null,
+        themeValFormula: () {
+          final bg = edited.fill.themeBackgroundIndex;
+          final fg = edited.fill.themeForegroundIndex;
+          if (bg == null || fg == null || fg == bg) return null;
+          final name = ThemeSlot.themeValName(bg);
+          return name == null ? null : 'THEMEVAL("$name")';
+        }());
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
@@ -3393,20 +3401,33 @@ class VsdxWriter {
     required VsdxColor? editedColor,
     required int? editedTheme,
     bool writeQuickStyle = true,
+    String? themeValFormula,
   }) {
-    if (baseColor?.value == editedColor?.value && baseTheme == editedTheme) {
-      return false;
-    }
     if (editedColor != null) {
       // Explicit colour: _writeValue drops any inherited THEMEVAL formula so
       // the chosen colour is honoured (the parser then ignores QuickStyle*).
+      if (baseTheme == null &&
+          editedTheme == null &&
+          baseColor?.value == editedColor.value) {
+        return false;
+      }
       _writeValue(_ensureCell(shape, cell), _hex(editedColor));
       return true;
     }
     if (editedTheme != null) {
+      final wantF = themeValFormula ?? 'THEMEVAL()';
+      final curF = _cellFormula(shape, cell);
+      final formulaOk = curF == wantF ||
+          (themeValFormula == null &&
+              (curF == null ||
+                  RegExp(r'^THEMEVAL\s*\(\s*\)$', caseSensitive: false)
+                      .hasMatch(curF)));
+      if (baseTheme == editedTheme && baseColor == null && formulaOk) {
+        return false;
+      }
       final c = _ensureCell(shape, cell);
       _writeValue(c, '0', preserveFormula: true);
-      c.setAttribute('F', 'THEMEVAL()');
+      c.setAttribute('F', wantF);
       if (writeQuickStyle) {
         _writeValue(
             _ensureCell(shape, quickStyleCell), editedTheme.toString());
@@ -3414,6 +3435,15 @@ class VsdxWriter {
       return true;
     }
     return false;
+  }
+
+  static String? _cellFormula(XmlElement shape, String cell) {
+    for (final el in shape.childElements) {
+      if (el.name.local == 'Cell' && el.getAttribute('N') == cell) {
+        return el.getAttribute('F');
+      }
+    }
+    return null;
   }
 
   bool _patchInt(XmlElement shape, String cell, int base, int value) {
@@ -4590,13 +4620,21 @@ class VsdxWriter {
       children.add(_cell('FillBkgnd', _hex(s.fill.background!),
           formula: s.formulas['FillBkgnd']));
     } else if (s.fill.themeBackgroundIndex != null) {
-      children.add(_cell('FillBkgnd', '0',
-          formula: s.formulas['FillBkgnd'] ?? 'THEMEVAL()'));
+      final bgSlot = s.fill.themeBackgroundIndex!;
+      final fgSlot = s.fill.themeForegroundIndex;
+      // When fg and bg use different theme slots they cannot share one
+      // QuickStyleFillColor — emit THEMEVAL("AccentColorN") for the bg cell.
+      final named = (fgSlot != null && fgSlot != bgSlot)
+          ? ThemeSlot.themeValName(bgSlot)
+          : null;
+      final bgFormula = s.formulas['FillBkgnd'] ??
+          (named != null ? 'THEMEVAL("$named")' : 'THEMEVAL()');
+      children.add(_cell('FillBkgnd', '0', formula: bgFormula));
       // When only the background is theme-bound, emit QuickStyleFillColor so
       // parseFill can recover themeBackgroundIndex (libvisio / Visio).
-      if (s.fill.themeForegroundIndex == null) {
-        children.add(_cell(
-            'QuickStyleFillColor', s.fill.themeBackgroundIndex!.toString()));
+      if (fgSlot == null) {
+        children.add(
+            _cell('QuickStyleFillColor', bgSlot.toString()));
       }
     } else if (s.formulas.containsKey('FillBkgnd')) {
       children.add(_cell('FillBkgnd', '0', formula: s.formulas['FillBkgnd']));

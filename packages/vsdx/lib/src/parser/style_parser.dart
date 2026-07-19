@@ -266,11 +266,26 @@ class StyleParser {
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
+      // Prefer an explicit THEMEVAL("AccentColor2") / THEMEVAL(3) argument so
+      // FillBkgnd can differ from FillForegnd's QuickStyleFillColor slot.
+      final named = _themeValArgSlot(f.isNotEmpty ? f : v);
+      if (named != null) return _ColorResolution(null, named);
       // Visio defaults QuickStyle*Color to 1 (lt1) when the cell is absent.
       final idx = _int(shape, quickStyleCell) ?? ThemeSlot.lt1;
       return _ColorResolution(null, idx);
     }
     return _ColorResolution(VsdxColor.tryParse(v), null);
+  }
+
+  /// Extract a theme slot from `THEMEVAL("AccentColor2")` / `THEMEVAL(3)`.
+  /// Bare `THEMEVAL()` returns `null` (caller uses QuickStyle*Color).
+  static int? _themeValArgSlot(String formula) {
+    final m = RegExp(
+      r'THEMEVAL\s*\(\s*([^),]+)\s*[,)]',
+      caseSensitive: false,
+    ).firstMatch(formula);
+    if (m == null) return null;
+    return ThemeSlot.fromThemeValArg(m.group(1)!);
   }
 
   /// Like [_resolveColor] but reads cells directly from a `<Row>` element
