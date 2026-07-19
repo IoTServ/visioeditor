@@ -1681,6 +1681,61 @@ void main() {
     expect(after.glow.color?.value, 0xFFFF0000);
   });
 
+  test('clearing TextBkgnd via withoutBackgroundColor round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Plate')],
+            textBlock: VsdxTextBlock(
+              backgroundColor: VsdxColor(0xFFFFFF00),
+            ),
+          ),
+        ),
+      ),
+    );
+    final withBg = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser.parse(withBg).pages.first.findShapeById(id)!.richText.textBlock
+          .backgroundColor?.value,
+      0xFFFFFF00,
+    );
+    // copyWith(backgroundColor: null) must NOT clear — use the explicit API.
+    final stuck = parser.parse(withBg).pages.first.findShapeById(id)!;
+    expect(
+      stuck.richText.textBlock.copyWith(backgroundColor: null).backgroundColor,
+      isNotNull,
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.withoutBackgroundColor(),
+          ),
+        ),
+      ),
+    );
+    final cleared = parser
+        .parse(writer.write(originalBytes: withBg, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(cleared.richText.textBlock.backgroundColor, isNull,
+        reason: 'writer must emit TextBkgnd=0 and parser treat it as clear');
+  });
+
   test('style-only edit preserves existing <cp> markers in Text', () {
     final bytes = _fixture('workflow.vsdx');
     final doc = parser.parse(bytes);

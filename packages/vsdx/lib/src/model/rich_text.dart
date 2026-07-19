@@ -542,6 +542,10 @@ class VsdxTextBlock {
 
   static const VsdxTextBlock defaults = VsdxTextBlock();
 
+  /// Drop [backgroundColor] (transparent TextBkgnd). Prefer this over
+  /// [copyWith] with `backgroundColor: null`, which cannot clear the field.
+  VsdxTextBlock withoutBackgroundColor() => copyWith(clearBackgroundColor: true);
+
   VsdxTextBlock copyWith({
     double? pinXInches,
     double? pinYInches,
@@ -557,6 +561,7 @@ class VsdxTextBlock {
     double? marginBottomInches,
     bool? hideText,
     VsdxColor? backgroundColor,
+    bool clearBackgroundColor = false,
     double? backgroundTransparency,
     int? textDirection,
     double? defaultTabStopInches,
@@ -575,7 +580,9 @@ class VsdxTextBlock {
         marginTopInches: marginTopInches ?? this.marginTopInches,
         marginBottomInches: marginBottomInches ?? this.marginBottomInches,
         hideText: hideText ?? this.hideText,
-        backgroundColor: backgroundColor ?? this.backgroundColor,
+        backgroundColor: clearBackgroundColor
+            ? null
+            : (backgroundColor ?? this.backgroundColor),
         backgroundTransparency:
             backgroundTransparency ?? this.backgroundTransparency,
         textDirection: textDirection ?? this.textDirection,
