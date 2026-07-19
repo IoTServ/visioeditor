@@ -55,6 +55,41 @@ void main() {
     );
   });
 
+  test('pasteStyle theme FillBkgnd installs Office theme on empty doc', () {
+    final e = ctrl();
+    final src = rect(e, 2, 4);
+    e.setSelection([src]);
+    // Hatch with theme background only (no theme foreground) — common import.
+    final page = e.currentPage!;
+    e.applyEdit(
+      e.document!.replacePage(
+        e.currentPageIndex,
+        page.updateShapeById(
+          src,
+          (s) => s.copyWith(
+            fill: const VsdxFill(
+              pattern: 2,
+              foreground: VsdxColor(0xFF000000),
+              themeBackgroundIndex: ThemeSlot.accent2,
+            ),
+          ),
+        ),
+      ),
+    );
+    e.setSelection([src]);
+    e.copyStyle();
+    e.newDocument(widthInches: 11, heightInches: 8.5);
+    expect(e.documentTheme.isEmpty, isTrue);
+    final dst = rect(e, 3, 3);
+    e.setSelection([dst]);
+    e.pasteStyle();
+    expect(e.documentTheme.isEmpty, isFalse);
+    expect(
+      e.currentPage!.findShapeById(dst)!.fill.themeBackgroundIndex,
+      ThemeSlot.accent2,
+    );
+  });
+
   test('selectNextShape from nested child advances top-level sibling', () {
     final e = ctrl();
     final a = rect(e, 2, 4);

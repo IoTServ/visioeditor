@@ -4928,7 +4928,11 @@ class EditorController extends ChangeNotifier {
       bool includeEffects,
     }) clip,
   ) {
-    if (clip.includeFill && clip.fill.themeForegroundIndex != null) return true;
+    if (clip.includeFill &&
+        (clip.fill.themeForegroundIndex != null ||
+            clip.fill.themeBackgroundIndex != null)) {
+      return true;
+    }
     if (clip.line.themeColorIndex != null) return true;
     if (clip.char?.themeColorIndex != null) return true;
     if (clip.includeEffects &&
@@ -5743,16 +5747,22 @@ class EditorController extends ChangeNotifier {
       (s) {
         if (s.is1D) return s;
         final base = s.shadow.enabled ? s.shadow : const VsdxShadow();
-        return s.copyWith(
-          shadow: base.copyWith(
-            color: color ?? base.color,
-            offsetXInches: offsetXInches,
-            offsetYInches: offsetYInches,
-            blurInches: blurInches,
-            transparency: transparency,
-            enabled: true,
-          ),
-        );
+        final next = color != null
+            ? base.withSolidColor(color).copyWith(
+                  offsetXInches: offsetXInches,
+                  offsetYInches: offsetYInches,
+                  blurInches: blurInches,
+                  transparency: transparency,
+                  enabled: true,
+                )
+            : base.copyWith(
+                offsetXInches: offsetXInches,
+                offsetYInches: offsetYInches,
+                blurInches: blurInches,
+                transparency: transparency,
+                enabled: true,
+              );
+        return s.copyWith(shadow: next);
       },
       transient: transient,
     );
@@ -5798,14 +5808,18 @@ class EditorController extends ChangeNotifier {
       (s) {
         if (s.is1D) return s;
         final base = s.glow.enabled ? s.glow : const VsdxGlow();
-        return s.copyWith(
-          glow: base.copyWith(
-            color: color ?? base.color,
-            sizeInches: sizeInches,
-            transparency: transparency,
-            enabled: true,
-          ),
-        );
+        final next = color != null
+            ? base.withSolidColor(color).copyWith(
+                  sizeInches: sizeInches,
+                  transparency: transparency,
+                  enabled: true,
+                )
+            : base.copyWith(
+                sizeInches: sizeInches,
+                transparency: transparency,
+                enabled: true,
+              );
+        return s.copyWith(glow: next);
       },
       transient: transient,
     );

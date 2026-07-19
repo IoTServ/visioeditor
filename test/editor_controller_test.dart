@@ -1068,6 +1068,25 @@ void main() {
     expect(c.selectedHasGlow, isTrue);
     expect(c.selectedGlow!.color?.value, 0xFFFFC107,
         reason: 'enable writes amber so SVG/canvas share an authored colour');
+    // Theme glow → solid colour must drop the theme slot in-session.
+    c.applyEdit(
+      c.document!.replacePage(
+        c.currentPageIndex,
+        c.currentPage!.updateShapeById(
+          id,
+          (s) => s.copyWith(
+            glow: const VsdxGlow(
+              enabled: true,
+              themeColorIndex: ThemeSlot.accent1,
+              sizeInches: 0.05,
+            ),
+          ),
+        ),
+      ),
+    );
+    c.setSelection(<int>{id});
+    c.updateGlow(color: const VsdxColor(0xFFFFC107));
+    expect(c.selectedGlow!.themeColorIndex, isNull);
     c.updateGlow(
       color: const VsdxColor(0xFFFFC107),
       sizeInches: 0.1,

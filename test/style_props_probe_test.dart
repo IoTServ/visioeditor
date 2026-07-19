@@ -444,6 +444,78 @@ void main() {
     expect(svg.contains('stroke="#ffffff"'), isFalse);
   });
 
+  test('SVG compound+shadow applies filter once on wrapper', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 7,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          line: const VsdxLine(
+            compoundType: 1,
+            weightInches: 0.06,
+            color: VsdxColor.black,
+          ),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.1,
+            offsetYInches: 0.1,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('mask="url(#cmp-'), isTrue);
+    expect(svg.contains('<g filter="url(#fx-'), isTrue);
+    // Must not hang filter on both fill and stroke paths.
+    expect(
+      RegExp(r'<path[^>]*filter="url\(#fx-').allMatches(svg).length,
+      0,
+    );
+  });
+
+  test('SVG reflection includes stroke matching canvas', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 8,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          line: const VsdxLine(
+            color: VsdxColor(0xFFC00000),
+            weightInches: 0.04,
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            transparency: 0.5,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('scale(1 -1)'), isTrue);
+    expect(
+      RegExp(r'scale\(1 -1\)[^>]*>[\s\S]*?stroke="#c00000"', caseSensitive: false)
+          .hasMatch(svg),
+      isTrue,
+    );
+  });
+
   test('reflection disable then enable round-trips ReflectionSize', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

@@ -698,10 +698,9 @@ VsdxShape applyStencilStyle(
     fill = fill.withSolidForeground(fillColor);
   }
   if (lineColor != null && line.hasLine) {
-    line = line.copyWith(
-      color: lineColor,
-      weightInches: lineWeightInches,
-    );
+    line = line
+        .withSolidColor(lineColor)
+        .copyWith(weightInches: lineWeightInches);
   }
   if (identical(fill, shape.fill) && identical(line, shape.line)) {
     return shape;

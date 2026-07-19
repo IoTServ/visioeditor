@@ -48,9 +48,16 @@ class VsdxShadow {
   /// Sentinel for [copyWith] so callers can clear [color] to `null`.
   static const Object keepColor = Object();
 
+  /// Solid shadow colour, clearing any theme-slot binding.
+  VsdxShadow withSolidColor(VsdxColor color) => copyWith(
+        color: color,
+        clearThemeColorIndex: true,
+      );
+
   VsdxShadow copyWith({
     Object? color = keepColor,
     int? themeColorIndex,
+    bool clearThemeColorIndex = false,
     double? offsetXInches,
     double? offsetYInches,
     double? blurInches,
@@ -59,7 +66,9 @@ class VsdxShadow {
   }) =>
       VsdxShadow(
         color: identical(color, keepColor) ? this.color : color as VsdxColor?,
-        themeColorIndex: themeColorIndex ?? this.themeColorIndex,
+        themeColorIndex: clearThemeColorIndex
+            ? null
+            : (themeColorIndex ?? this.themeColorIndex),
         offsetXInches: offsetXInches ?? this.offsetXInches,
         offsetYInches: offsetYInches ?? this.offsetYInches,
         blurInches: blurInches ?? this.blurInches,
@@ -93,16 +102,25 @@ class VsdxGlow {
   /// Sentinel for [copyWith] so callers can clear [color] to `null`.
   static const Object keepColor = Object();
 
+  /// Solid glow colour, clearing any theme-slot binding.
+  VsdxGlow withSolidColor(VsdxColor color) => copyWith(
+        color: color,
+        clearThemeColorIndex: true,
+      );
+
   VsdxGlow copyWith({
     Object? color = keepColor,
     int? themeColorIndex,
+    bool clearThemeColorIndex = false,
     double? sizeInches,
     double? transparency,
     bool? enabled,
   }) =>
       VsdxGlow(
         color: identical(color, keepColor) ? this.color : color as VsdxColor?,
-        themeColorIndex: themeColorIndex ?? this.themeColorIndex,
+        themeColorIndex: clearThemeColorIndex
+            ? null
+            : (themeColorIndex ?? this.themeColorIndex),
         sizeInches: sizeInches ?? this.sizeInches,
         transparency: transparency ?? this.transparency,
         enabled: enabled ?? this.enabled,

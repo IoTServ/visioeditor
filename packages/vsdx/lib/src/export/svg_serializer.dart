@@ -462,7 +462,16 @@ class VsdxToSvgSerializer {
     if (defs.isNotEmpty) {
       buf.writeln('$indent<defs>$defs</defs>');
     }
-    _writeReflection(buf, shape, theme, d: d, noFill: noFill, paintId: paintId, indent: indent);
+    _writeReflection(
+      buf,
+      shape,
+      theme,
+      d: d,
+      noFill: noFill,
+      noLine: noLine,
+      paintId: paintId,
+      indent: indent,
+    );
     // Soft outer glow (canvas strokes a blurred path before fill).
     final glow = shape.glow;
     if (glow.enabled && glow.sizeInches > 0) {
@@ -517,13 +526,21 @@ class VsdxToSvgSerializer {
         'stroke-linejoin="$linejoin"/>'
         '</mask></defs>',
       );
+      // Apply shadow/softEdges once on a wrapper — fill+stroke each with
+      // filter would double the drop-shadow (canvas paints effects once).
+      if (filter.isNotEmpty) {
+        buf.writeln('$indent<g$filter>');
+      }
       if (!noFill && fillAttr != 'fill="none"') {
-        buf.writeln('$indent<path d="$d" $fillAttr stroke="none"$filter/>');
+        buf.writeln('$indent<path d="$d" $fillAttr stroke="none"/>');
       }
       buf.writeln(
         '$indent<path d="$d" fill="none" $strokeAttr '
-        'mask="url(#$mid)"$filter/>',
+        'mask="url(#$mid)"/>',
       );
+      if (filter.isNotEmpty) {
+        buf.writeln('$indent</g>');
+      }
     } else {
       buf.writeln('$indent<path d="$d" $fillAttr $strokeAttr$filter/>');
     }
@@ -535,12 +552,16 @@ class VsdxToSvgSerializer {
     VsdxTheme theme, {
     required String d,
     required bool noFill,
+    required bool noLine,
     required String paintId,
     required String indent,
   }) {
     final refl = shape.reflection;
-    if (!refl.enabled || refl.sizeInches <= 0 || noFill) return;
-    if (!shape.fill.hasFill) return;
+    if (!refl.enabled || refl.sizeInches <= 0) return;
+    final hasFill = !noFill && shape.fill.hasFill;
+    final hasStroke = !noLine && shape.line.hasLine;
+    // Match canvas: reflection paints fill and/or stroke under the mirror.
+    if (!hasFill && !hasStroke) return;
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
     // Approximate canvas reflection: mirror below the shape box, clipped by
@@ -552,9 +573,12 @@ class VsdxToSvgSerializer {
     final cid = 'refl-clip-$paintId';
     // Reuse the shape's gradient def (grad-$paintId) when present; otherwise
     // solid foreground × FillForegndTrans × ReflectionTransparency.
-    final String fillPaint;
-    final double fillOp;
-    if (shape.fill.hasGradient) {
+    late final String fillPaint;
+    late final double fillOp;
+    if (!hasFill) {
+      fillPaint = 'none';
+      fillOp = 0;
+    } else if (shape.fill.hasGradient) {
       fillPaint = 'url(#grad-$paintId)';
       fillOp = alpha;
     } else {
@@ -564,6 +588,29 @@ class VsdxToSvgSerializer {
       fillPaint = _hex(c);
       fillOp =
           _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
+    }
+    // Stroke without arrow markers (canvas reflection draws the path stroke).
+    var strokeAttrs = 'stroke="none"';
+    if (hasStroke) {
+      final line = shape.line;
+      final c = _resolveColor(line.color, line.themeColorIndex, theme);
+      final strokeAlpha = _combinedOpacity(c, line.transparency) * alpha;
+      final hex = c == null ? '#000000' : _hex(c);
+      final weight = line.weightInches > 0 ? line.weightInches : 0.01;
+      final linecap = switch (line.cap) {
+        LineCap.round => 'round',
+        LineCap.square => 'square',
+        LineCap.extended => 'butt',
+      };
+      final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
+      final dash = _dashAttr(line.pattern);
+      final strokePaint = line.hasGradient
+          ? 'stroke="url(#lg-$paintId)"'
+          : 'stroke="$hex"';
+      strokeAttrs = '$strokePaint stroke-opacity="${_n(strokeAlpha)}" '
+          'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
+          'stroke-linejoin="$linejoin"'
+          '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}';
     }
     buf.writeln(
       '$indent<defs>'
@@ -582,7 +629,7 @@ class VsdxToSvgSerializer {
       '$indent<g clip-path="url(#$cid)" '
       'transform="translate(0 ${_n(-dist)}) scale(1 -1)">'
       '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
-      'stroke="none"$filter/>'
+      '$strokeAttrs$filter/>'
       '</g>',
     );
   }
