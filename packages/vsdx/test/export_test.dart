@@ -1005,6 +1005,47 @@ void main() {
     expect(svg, contains('height="0.68"'));
   });
 
+  test('SVG Foreign ImgOffset/ImgWidth crop and Transparency', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final png = Uint8List.fromList(base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ));
+    const part = 'media/image_crop.png';
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 2,
+    ).copyWith(
+      imagePartName: part,
+      imgOffsetXInches: 0.25,
+      imgOffsetYInches: 0.5,
+      imgWidthInches: 1.0,
+      imgHeightInches: 1.5,
+      imageTransparency: 0.4,
+    );
+    doc = doc
+        .copyWith(images: images)
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final svg = VsdxToSvgSerializer().serializePage(
+      doc.pages.first,
+      images: doc.images,
+    );
+    expect(svg, contains('x="0.25"'));
+    expect(svg, contains('y="0.5"'));
+    expect(svg, contains('width="1"'));
+    expect(svg, contains('height="1.5"'));
+    expect(svg, contains('opacity="0.6"'));
+    expect(svg, contains('img-box-$id'));
+  });
+
   test('SVG SoftEdges also feathers Foreign bitmaps', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

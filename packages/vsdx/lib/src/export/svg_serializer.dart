@@ -318,6 +318,9 @@ class VsdxToSvgSerializer {
   /// authored / curved geometry from [_geometryToD] is kept.
   String? _connectorJumpD(VsdxPage page, VsdxShape shape) {
     if (!_jumpsEnabled || !shape.isGlueableConnector) return null;
+    if (!connectorLineJumpsEnabled(shape.connectorProps?.conLineJumpCode)) {
+      return null;
+    }
     final z = _jumpZ[shape.id];
     if (z == null || z == 0) return null;
     final pageRoute = _jumpRoutes[z];
@@ -961,8 +964,10 @@ class VsdxToSvgSerializer {
         const VsdxColor(0x99000000);
     final alpha = _combinedOpacity(base, shadow.transparency);
     if (alpha <= 0) return;
-    // Foreign pictures (NoFill+NoLine) still cast a filled silhouette shadow.
-    final imageSilhouette = shape.hasImage && noFill && noLine;
+    // Foreign pictures still cast a filled silhouette shadow (match canvas:
+    // NoFill + (NoLine or pattern-less stroke)).
+    final imageSilhouette =
+        shape.hasImage && noFill && (noLine || !shape.line.hasLine);
     final lineOnly =
         !imageSilhouette && (shape.is1D || noFill || !shape.fill.hasFill);
     if (lineOnly && noLine) return;
@@ -2340,6 +2345,7 @@ class VsdxToSvgSerializer {
     }
     String? mime;
     List<int>? bytes;
+    MetafileDrawing? vectorDrawing;
     if (src.isFlutterDecodable) {
       mime = src.mimeType.isEmpty ? 'image/png' : src.mimeType;
       bytes = src.bytes;
@@ -2360,17 +2366,54 @@ class VsdxToSvgSerializer {
           partName: src.partName,
         );
         if (drawing != null && !drawing.isEmpty) {
-          _writeMetafileDrawing(buf, shape, drawing, indent: indent);
-          return;
+          vectorDrawing = drawing;
         }
       }
     }
-    if (mime == null || bytes == null) {
+    if (vectorDrawing == null && (mime == null || bytes == null)) {
       _writeImagePlaceholder(buf, shape, indent: indent);
       return;
     }
-    final href = 'data:$mime;base64,${base64Encode(bytes)}';
-    // Clip to first Geometry so rounded / irregular frames crop the bitmap.
+    // Clip + SoftEdges wrap both bitmaps and vector metafiles (canvas does).
+    final nest = _writeImageDecorationsOpen(buf, shape, indent: indent);
+    if (vectorDrawing != null) {
+      _writeMetafileDrawing(buf, shape, vectorDrawing, indent: '$indent  ');
+    } else {
+      final href = 'data:$mime;base64,${base64Encode(bytes!)}';
+      final ox = shape.imgOffsetXInches;
+      final oy = shape.imgOffsetYInches;
+      final iw = shape.effectiveImgWidth;
+      final ih = shape.effectiveImgHeight;
+      // Bitmap rows are Y-down — flip about the image rect centre (not the
+      // shape centre) so ImgOffset* pan stays correct under FlipY.
+      final uprightY = shape.flipY ? 1.0 : -1.0;
+      final cx = ox + iw / 2;
+      final cy = oy + ih / 2;
+      final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+      final opacityAttr =
+          opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
+      buf.writeln(
+        '$indent  <g transform="translate(${_n(cx)} ${_n(cy)}) '
+        'scale(1 ${_n(uprightY)}) '
+        'translate(${_n(-cx)} ${_n(-cy)})">'
+        '<image href="$href" x="${_n(ox)}" y="${_n(oy)}" '
+        'width="${_n(iw)}" height="${_n(ih)}" '
+        'preserveAspectRatio="none"$opacityAttr/></g>',
+      );
+    }
+    _writeImageDecorationsClose(buf, indent: indent, geomClipped: nest);
+  }
+
+  /// Open clipPath + SoftEdges groups for a Foreign image (bitmap or metafile).
+  ///
+  /// Nests geometry clip ∩ shape-box clip so ImgOffset overflow is cropped
+  /// the same way as canvas (`clipPath` then `clipRect(bounds)`).
+  /// Returns whether a geometry clip group was opened.
+  bool _writeImageDecorationsOpen(
+    StringBuffer buf,
+    VsdxShape shape, {
+    required String indent,
+  }) {
     String? clipD;
     for (final geom in shape.geometries) {
       if (geom.noShow) continue;
@@ -2385,24 +2428,21 @@ class VsdxToSvgSerializer {
         break;
       }
     }
-    final clipId = clipD == null ? null : 'img-clip-${shape.id}';
-    if (clipId != null) {
+    final boxId = 'img-box-${shape.id}';
+    buf.writeln(
+      '$indent<defs><clipPath id="$boxId">'
+      '<rect x="0" y="0" width="${_n(shape.width)}" '
+      'height="${_n(shape.height)}"/></clipPath></defs>',
+    );
+    buf.writeln('$indent<g clip-path="url(#$boxId)">');
+    if (clipD != null) {
+      final geomId = 'img-clip-${shape.id}';
       buf.writeln(
-        '$indent<defs><clipPath id="$clipId">'
+        '$indent  <defs><clipPath id="$geomId">'
         '<path d="$clipD"/></clipPath></defs>',
       );
-      buf.writeln('$indent<g clip-path="url(#$clipId)">');
+      buf.writeln('$indent  <g clip-path="url(#$geomId)">');
     }
-    // SVG <image> with preserveAspectRatio="none" stretches to fit; Visio
-    // already stores the picture at the shape's bounds. Bitmap rows are
-    // Y-down — flip once about the shape centre for upright, unless FlipY
-    // already mirrored the parent XForm (same cancel-avoidance as canvas
-    // [_paintImage]). Centre-based scale keeps FlipY content in [0,h]
-    // (a bottom-left translate(0,h)+scale(1,1) would land in [h,2h]).
-    final uprightY = shape.flipY ? 1.0 : -1.0;
-    final cx = shape.width / 2;
-    final cy = shape.height / 2;
-    // SoftEdges feathers Foreign bitmaps like canvas [_paintShape].
     final softDefs = StringBuffer();
     final softFilter = _softEdgesFilterAttr(
       shape,
@@ -2416,18 +2456,21 @@ class VsdxToSvgSerializer {
       ),
     );
     if (softDefs.isNotEmpty) {
-      buf.writeln('$indent<defs>$softDefs</defs>');
+      buf.writeln('$indent  <defs>$softDefs</defs>');
     }
     final softAttr = softFilter == null ? '' : ' filter="$softFilter"';
-    buf.writeln(
-      '$indent<g$softAttr transform="translate(${_n(cx)} ${_n(cy)}) '
-      'scale(1 ${_n(uprightY)}) '
-      'translate(${_n(-cx)} ${_n(-cy)})">'
-      '<image href="$href" x="0" y="0" '
-      'width="${_n(shape.width)}" height="${_n(shape.height)}" '
-      'preserveAspectRatio="none"/></g>',
-    );
-    if (clipId != null) buf.writeln('$indent</g>');
+    buf.writeln('$indent  <g$softAttr>');
+    return clipD != null;
+  }
+
+  void _writeImageDecorationsClose(
+    StringBuffer buf, {
+    required String indent,
+    required bool geomClipped,
+  }) {
+    buf.writeln('$indent  </g>'); // soft
+    if (geomClipped) buf.writeln('$indent  </g>');
+    buf.writeln('$indent</g>'); // box clip
   }
 
   /// Replay a vector metafile into shape-local SVG (GDI Y-down → Y-up flip).
@@ -2443,16 +2486,22 @@ class VsdxToSvgSerializer {
       _writeImagePlaceholder(buf, shape, indent: indent);
       return;
     }
-    final sx = shape.width / dw;
+    final ox = shape.imgOffsetXInches;
+    final oy = shape.imgOffsetYInches;
+    final iw = shape.effectiveImgWidth;
+    final ih = shape.effectiveImgHeight;
+    final sx = iw / dw;
     // GDI metafiles are Y-down; flip once into page Y-up — unless FlipY
     // already mirrored the parent XForm (same cancel-avoidance as bitmaps /
-    // canvas [_paintImage]). Only translate(0,h) when applying the GDI flip;
-    // FlipY + translate(0,h) + positive sy would place drawing in [h,2h].
+    // canvas [_paintImage]). Map into the ImgOffset*/ImgWidth/Height rect.
     final gdiFlipY = !shape.flipY;
-    final sy = shape.height / dh * (gdiFlipY ? -1.0 : 1.0);
-    final ty = gdiFlipY ? shape.height : 0.0;
+    final sy = ih / dh * (gdiFlipY ? -1.0 : 1.0);
+    final ty = gdiFlipY ? oy + ih : oy;
+    final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+    final opacityAttr =
+        opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
     buf.writeln(
-      '$indent<g transform="translate(0 ${_n(ty)}) '
+      '$indent<g$opacityAttr transform="translate(${_n(ox)} ${_n(ty)}) '
       'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );

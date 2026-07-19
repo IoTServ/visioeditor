@@ -488,6 +488,9 @@ class VsdxPainter extends CustomPainter {
   Path? _lineJumpsPath(VsdxShape shape, VsdxGeometry geom) {
     final k = _connZ[shape.id];
     if (k == null || k == 0) return null; // nothing drawn beneath it
+    if (!connectorLineJumpsEnabled(shape.connectorProps?.conLineJumpCode)) {
+      return null;
+    }
     // Prefer the shared page-space route (includes geometry-less / nested).
     final pageRoute = _connRoutesPage[k];
     final route = pageRoute.isNotEmpty
@@ -535,7 +538,10 @@ class VsdxPainter extends CustomPainter {
     ];
     Path path;
     final k = _connZ[shape.id];
-    if (_lineJumpsActive && k != null && k > 0) {
+    final jumpOk = connectorLineJumpsEnabled(
+      shape.connectorProps?.conLineJumpCode,
+    );
+    if (_lineJumpsActive && jumpOk && k != null && k > 0) {
       final unders = <List<Offset>>[
         for (var i = 0; i < k; i++)
           <Offset>[
@@ -1381,17 +1387,26 @@ class VsdxPainter extends CustomPainter {
         break;
       }
     }
-    // Bitmap rows are Y-down; the page frame is Y-up. Flip once for upright
-    // display — but skip when FlipY already mirrored the parent XForm so the
-    // two scales do not cancel (LocPin-centred shapes).
+    // ImgOffset*/ImgWidth/ImgHeight place the bitmap inside the Foreign frame;
+    // overflow is clipped to the shape box (+ geometry).
+    final imgRect = Rect.fromLTWH(
+      shape.imgOffsetXInches,
+      shape.imgOffsetYInches,
+      shape.effectiveImgWidth,
+      shape.effectiveImgHeight,
+    );
+    final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+    // Bitmap rows are Y-down; the page frame is Y-up. Flip once about the
+    // image rect centre — skip when FlipY already mirrored the parent XForm.
     canvas.save();
     if (clipPath != null) canvas.clipPath(clipPath);
-    canvas.translate(bounds.center.dx, bounds.center.dy);
+    canvas.clipRect(bounds);
+    canvas.translate(imgRect.center.dx, imgRect.center.dy);
     canvas.scale(1, shape.flipY ? 1.0 : -1.0);
     final dst = Rect.fromCenter(
       center: Offset.zero,
-      width: bounds.width,
-      height: bounds.height,
+      width: imgRect.width,
+      height: imgRect.height,
     );
     final srcRect = Rect.fromLTWH(
       0,
@@ -1403,7 +1418,9 @@ class VsdxPainter extends CustomPainter {
       image,
       srcRect,
       dst,
-      Paint()..filterQuality = FilterQuality.medium,
+      Paint()
+        ..filterQuality = FilterQuality.medium
+        ..color = Color.fromRGBO(255, 255, 255, opacity),
     );
     canvas.restore();
   }

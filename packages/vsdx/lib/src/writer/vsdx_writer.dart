@@ -4417,37 +4417,44 @@ class VsdxWriter {
   /// Write LocPinX/Y when absent so Edraw/libvisio don't default to (0,0).
   /// Ensure Foreign/Image shapes carry ImgOffset*/ImgWidth/ImgHeight and that
   /// the cached `V=` matches the shape size when the formula is the default
-  /// full-frame mapping (Edraw often ignores `F=`). Custom crop formulas
-  /// (`ImgWidth` ≠ `Width*1`, etc.) are left untouched for round-trip.
+  /// full-frame mapping (Edraw often ignores `F=`). Custom crop formulas keep
+  /// their `F=` but refresh `V=` from the model so pan/crop edits persist.
   bool _syncImageSizeCells(XmlElement el, VsdxShape s) {
     var changed = false;
-    for (final name in <String>['ImgOffsetX', 'ImgOffsetY']) {
-      if (!_hasCell(el, name)) {
-        _ensureCell(el, name).setAttribute('V', '0');
-        changed = true;
-      }
-    }
-    for (final entry in <(String, double, String)>[
-      ('ImgWidth', s.width, 'Width*1'),
-      ('ImgHeight', s.height, 'Height*1'),
+    for (final entry in <(String, double)>[
+      ('ImgOffsetX', s.imgOffsetXInches),
+      ('ImgOffsetY', s.imgOffsetYInches),
     ]) {
       final cell = _ensureCell(el, entry.$1);
-      final f = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
-      final defaultF = entry.$3.replaceAll(' ', '');
-      final isDefaultMapping = f.isEmpty || f == defaultF;
-      if (!isDefaultMapping) {
-        // Preserve Visio crop / pan formulas and their cached V=.
-        continue;
-      }
       final next = _fmt(entry.$2);
       if (cell.getAttribute('V') != next) {
         cell.setAttribute('V', next);
         changed = true;
       }
-      if ((cell.getAttribute('F') ?? '').isEmpty) {
+    }
+    for (final entry in <(String, double, String, double)>[
+      ('ImgWidth', s.effectiveImgWidth, 'Width*1', s.width),
+      ('ImgHeight', s.effectiveImgHeight, 'Height*1', s.height),
+    ]) {
+      final cell = _ensureCell(el, entry.$1);
+      final f = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
+      final defaultF = entry.$3.replaceAll(' ', '');
+      final isDefaultMapping = f.isEmpty || f == defaultF;
+      final next = _fmt(isDefaultMapping ? entry.$4 : entry.$2);
+      if (cell.getAttribute('V') != next) {
+        cell.setAttribute('V', next);
+        changed = true;
+      }
+      if (isDefaultMapping && (cell.getAttribute('F') ?? '').isEmpty) {
         cell.setAttribute('F', entry.$3);
         changed = true;
       }
+    }
+    final tCell = _ensureCell(el, 'Transparency');
+    final tNext = _fmt(s.imageTransparency.clamp(0.0, 1.0));
+    if (tCell.getAttribute('V') != tNext) {
+      tCell.setAttribute('V', tNext);
+      changed = true;
     }
     return changed;
   }
@@ -5304,10 +5311,26 @@ class VsdxWriter {
       _cell('Angle', _fmt(s.angleRad)),
       // MS-VSDX §2.2.6 Image — Edraw / Visio use these to place the bitmap
       // inside the Foreign shape. Without them many hosts show an empty box.
-      _cell('ImgOffsetX', '0'),
-      _cell('ImgOffsetY', '0'),
-      _cell('ImgWidth', _fmt(s.width), formula: 'Width*1'),
-      _cell('ImgHeight', _fmt(s.height), formula: 'Height*1'),
+      _cell('ImgOffsetX', _fmt(s.imgOffsetXInches)),
+      _cell('ImgOffsetY', _fmt(s.imgOffsetYInches)),
+      _cell(
+        'ImgWidth',
+        _fmt(s.effectiveImgWidth),
+        formula: s.imgWidthInches == null ||
+                (s.imgWidthInches! - s.width).abs() <= _epsilon
+            ? 'Width*1'
+            : null,
+      ),
+      _cell(
+        'ImgHeight',
+        _fmt(s.effectiveImgHeight),
+        formula: s.imgHeightInches == null ||
+                (s.imgHeightInches! - s.height).abs() <= _epsilon
+            ? 'Height*1'
+            : null,
+      ),
+      if (s.imageTransparency > _epsilon)
+        _cell('Transparency', _fmt(s.imageTransparency)),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),

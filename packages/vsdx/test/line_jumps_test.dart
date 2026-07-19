@@ -135,6 +135,13 @@ void main() {
     expect(effectiveLineJumpDir(0, 0), isNull);
   });
 
+  test('ConLineJumpCode Neither disables hops for that connector', () {
+    expect(connectorLineJumpsEnabled(null), isTrue);
+    expect(connectorLineJumpsEnabled(0), isTrue);
+    expect(connectorLineJumpsEnabled(3), isTrue);
+    expect(connectorLineJumpsEnabled(4), isFalse);
+  });
+
   test('page PageLineJumpDirX Down flips hop when ConDir unset', () {
     final route = <Offset2D>[const Offset2D(0, 1), const Offset2D(4, 1)];
     final unders = <List<Offset2D>>[

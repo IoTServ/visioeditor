@@ -57,6 +57,11 @@ class VsdxShape {
     this.flipY = false,
     this.locked = false,
     this.imagePartName,
+    this.imgOffsetXInches = 0,
+    this.imgOffsetYInches = 0,
+    this.imgWidthInches,
+    this.imgHeightInches,
+    this.imageTransparency = 0,
     this.foreignType,
     this.foreignCompressionType,
     this.objType,
@@ -209,6 +214,25 @@ class VsdxShape {
   /// picture. Renderers resolve the actual bytes via
   /// [VsdxDocument.images.findByPart].
   final String? imagePartName;
+
+  /// Image Properties `ImgOffsetX` / `ImgOffsetY` — placement of the bitmap
+  /// inside the Foreign shape (local inches, Y-up). Default `(0, 0)`.
+  final double imgOffsetXInches;
+  final double imgOffsetYInches;
+
+  /// Image Properties `ImgWidth` / `ImgHeight`. `null` ⇒ fill the shape
+  /// (`Width` / `Height`). Crop/pan use values that differ from the frame.
+  final double? imgWidthInches;
+  final double? imgHeightInches;
+
+  /// Image Properties `Transparency` (0 = opaque … 1 = invisible).
+  final double imageTransparency;
+
+  /// Effective image width inside the Foreign frame.
+  double get effectiveImgWidth => imgWidthInches ?? width;
+
+  /// Effective image height inside the Foreign frame.
+  double get effectiveImgHeight => imgHeightInches ?? height;
 
   /// `<ForeignData ForeignType="…">` — `Bitmap` / `EnhMetaFile` / `MetaFile` /
   /// `Object`. Inferred from MIME/extension when null on write.
@@ -422,6 +446,11 @@ class VsdxShape {
     bool? flipY,
     bool? locked,
     String? imagePartName,
+    double? imgOffsetXInches,
+    double? imgOffsetYInches,
+    double? imgWidthInches,
+    double? imgHeightInches,
+    double? imageTransparency,
     String? foreignType,
     String? foreignCompressionType,
     int? objType,
@@ -490,6 +519,11 @@ class VsdxShape {
       flipY: flipY ?? this.flipY,
       locked: locked ?? this.locked,
       imagePartName: imagePartName ?? this.imagePartName,
+      imgOffsetXInches: imgOffsetXInches ?? this.imgOffsetXInches,
+      imgOffsetYInches: imgOffsetYInches ?? this.imgOffsetYInches,
+      imgWidthInches: imgWidthInches ?? this.imgWidthInches,
+      imgHeightInches: imgHeightInches ?? this.imgHeightInches,
+      imageTransparency: imageTransparency ?? this.imageTransparency,
       foreignType: foreignType ?? this.foreignType,
       foreignCompressionType:
           foreignCompressionType ?? this.foreignCompressionType,

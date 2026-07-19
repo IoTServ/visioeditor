@@ -303,6 +303,26 @@ class PageParser {
     final foreignType = foreignMeta.$1 ?? proto?.foreignType;
     final foreignCompressionType =
         foreignMeta.$2 ?? proto?.foreignCompressionType;
+    // Image Properties (MS-VSDX §2.2.6) — top-level cells on Foreign shapes.
+    final imgOffsetX = readLengthInches(shapeEl, 'ImgOffsetX') ??
+        _double(shapeEl, 'ImgOffsetX') ??
+        proto?.imgOffsetXInches ??
+        0.0;
+    final imgOffsetY = readLengthInches(shapeEl, 'ImgOffsetY') ??
+        _double(shapeEl, 'ImgOffsetY') ??
+        proto?.imgOffsetYInches ??
+        0.0;
+    final imgWidth = readLengthInches(shapeEl, 'ImgWidth') ??
+        _double(shapeEl, 'ImgWidth') ??
+        proto?.imgWidthInches;
+    final imgHeight = readLengthInches(shapeEl, 'ImgHeight') ??
+        _double(shapeEl, 'ImgHeight') ??
+        proto?.imgHeightInches;
+    // Top-level Image `Transparency` (not Character-row Transparency).
+    final imageTransparency = (_double(shapeEl, 'Transparency') ??
+            proto?.imageTransparency ??
+            0.0)
+        .clamp(0.0, 1.0);
     final ownConnPts = _readConnectionPoints(shapeEl);
     final connectionPoints = ownConnPts.isEmpty && proto != null
         ? proto.connectionPoints
@@ -381,6 +401,11 @@ class PageParser {
       flipY: flipY,
       locked: locked,
       imagePartName: imagePartName,
+      imgOffsetXInches: imgOffsetX,
+      imgOffsetYInches: imgOffsetY,
+      imgWidthInches: imgWidth,
+      imgHeightInches: imgHeight,
+      imageTransparency: imageTransparency,
       foreignType: foreignType,
       foreignCompressionType: foreignCompressionType,
       objType: _int(shapeEl, 'ObjType') ?? proto?.objType,

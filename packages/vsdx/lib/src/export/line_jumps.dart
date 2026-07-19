@@ -18,6 +18,12 @@ const double kDefaultLineJumpRadiusInches = 0.07;
 /// keeps the hop-over overlay (Visio / Edraw behaviour).
 bool lineJumpsEnabledForCode(int? lineJumpCode) => lineJumpCode != 0;
 
+/// Whether a connector's `ConLineJumpCode` allows hops on this shape.
+///
+/// `4` (visLOJumpNeither) never jumps. `null` / `0` inherit the page setting
+/// (caller must still check [lineJumpsEnabledForCode]).
+bool connectorLineJumpsEnabled(int? conLineJumpCode) => conLineJumpCode != 4;
+
 /// Visio `LineJumpStyle` / `ConLineJumpStyle` → render mode.
 ///
 /// Page: 0/1 = Arc, 2 = Gap, 3 = Square (higher values ≈ Arc).
