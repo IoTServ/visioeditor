@@ -767,6 +767,76 @@ void main() {
     expect(svg, contains('x2="2.2"'));
   });
 
+  test('SVG SoftEdges filter uses userSpaceOnUse region not ±50% OBB', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 1,
+          width: 3,
+          height: 0.2,
+        ).copyWith(
+          line: const VsdxLine(softEdgesInches: 0.08),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('filterUnits="userSpaceOnUse"'));
+    expect(svg.contains('x="-50%"'), isFalse);
+    // pad = 0.08*3 = 0.24; height 0.2 → filter height 0.68
+    expect(svg, contains('height="0.68"'));
+  });
+
+  test('SVG pdfCompat flattens pattern, baseline, and glow for package:pdf', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    page = page.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 1,
+      ).copyWith(
+        fill: const VsdxFill(
+          foreground: VsdxColor(0xFF1565C0),
+          pattern: 4,
+        ),
+        glow: const VsdxGlow(
+          enabled: true,
+          sizeInches: 0.1,
+          transparency: 0.2,
+        ),
+        richText: const VsdxRichText(
+          runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+        ),
+      ),
+    );
+    page = page.addShape(
+      VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 4, bx: 3, by: 4).copyWith(
+            line: const VsdxLine(endArrow: 2, weightInches: 0.04),
+          ),
+    );
+    doc = doc.replacePage(0, page);
+    final svg =
+        VsdxToSvgSerializer(pdfCompat: true).serializePage(doc.pages.first);
+    expect(svg.contains('<pattern '), isFalse);
+    expect(svg, contains('fill="#1565c0"'));
+    expect(svg.contains('feGaussianBlur'), isFalse);
+    expect(svg.contains('dominant-baseline'), isFalse);
+    expect(svg.contains('<marker '), isFalse);
+    expect(svg, contains('translate(2 0)')); // baked end arrow in local coords
+  });
+
   test('SVG bakeArrowMarkers emits path geometry without <marker>', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

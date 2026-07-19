@@ -54,6 +54,7 @@ class VsdxToSvgSerializer {
     this.skipBackgroundPages = true,
     this.lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
     this.bakeArrowMarkers = false,
+    this.pdfCompat = false,
   });
 
   final double pxPerInch;
@@ -78,6 +79,12 @@ class VsdxToSvgSerializer {
   /// When `true`, emit arrowheads as transformed `<path>` geometry instead of
   /// SVG `<marker>` (needed for PDF via `package:pdf`, which ignores markers).
   final bool bakeArrowMarkers;
+
+  /// Approximate features that `package:pdf` SvgImage cannot render: no SVG
+  /// filters/patterns/`textPath`/`dominant-baseline`. Implies [bakeArrowMarkers].
+  final bool pdfCompat;
+
+  bool get _bakeArrows => bakeArrowMarkers || pdfCompat;
 
   /// Current image registry, swapped in by [serializePage] / [serializeDocument].
   ImageRegistry _images = ImageRegistry.empty;
@@ -494,7 +501,12 @@ class VsdxToSvgSerializer {
     final sD = strokeD ?? d;
     // SoftEdges only — shadow is painted separately (fill-only / stroke-only
     // like canvas [_drawShadow]). Markers stay outside soft blur.
-    final softFilter = _softEdgesFilterAttr(shape, paintId, defs);
+    final softFilter = _softEdgesFilterAttr(
+      shape,
+      paintId,
+      defs,
+      bounds: fillBounds,
+    );
     if (defs.isNotEmpty) {
       buf.writeln('$indent<defs>$defs</defs>');
     }
@@ -526,26 +538,36 @@ class VsdxToSvgSerializer {
           const VsdxColor(0xFFFFC107);
       final ga = _combinedOpacity(gc, glow.transparency) * 0.6;
       if (ga > 0) {
-        final gid = 'glow-$paintId';
-        // Opacity lives only on feFlood — putting it on stroke as well would
-        // square alpha vs canvas [_drawGlow] (which multiplies once).
-        buf.writeln(
-          '$indent<defs><filter id="$gid" x="-50%" y="-50%" '
-          'width="200%" height="200%">'
-          '<feGaussianBlur stdDeviation="${_n(glow.sizeInches)}" '
-          'result="blur"/>'
-          '<feFlood flood-color="${_hex(gc)}" flood-opacity="${_n(ga)}" '
-          'result="color"/>'
-          '<feComposite in="color" in2="blur" operator="in" result="glow"/>'
-          '<feMerge><feMergeNode in="glow"/></feMerge>'
-          '</filter></defs>',
-        );
-        // Glow follows raw geometry (canvas); jumps apply only to the stroke.
-        buf.writeln(
-          '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
-          'stroke-width="${_n(math.max(glow.sizeInches * 2, 0.02))}" '
-          'stroke-opacity="1" filter="url(#$gid)"/>',
-        );
+        final sw = math.max(glow.sizeInches * 2, 0.02);
+        if (pdfCompat) {
+          // package:pdf ignores filters — approximate with a soft stroke.
+          buf.writeln(
+            '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
+            'stroke-width="${_n(sw)}" stroke-opacity="${_n(ga)}"/>',
+          );
+        } else {
+          final gid = 'glow-$paintId';
+          final pad = glow.sizeInches * 3;
+          final region = _filterRegionAttr(fillBounds, pad);
+          // Opacity lives only on feFlood — putting it on stroke as well would
+          // square alpha vs canvas [_drawGlow] (which multiplies once).
+          buf.writeln(
+            '$indent<defs><filter id="$gid" $region>'
+            '<feGaussianBlur stdDeviation="${_n(glow.sizeInches)}" '
+            'result="blur"/>'
+            '<feFlood flood-color="${_hex(gc)}" flood-opacity="${_n(ga)}" '
+            'result="color"/>'
+            '<feComposite in="color" in2="blur" operator="in" result="glow"/>'
+            '<feMerge><feMergeNode in="glow"/></feMerge>'
+            '</filter></defs>',
+          );
+          // Glow follows raw geometry (canvas); jumps apply only to the stroke.
+          buf.writeln(
+            '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
+            'stroke-width="${_n(sw)}" '
+            'stroke-opacity="1" filter="url(#$gid)"/>',
+          );
+        }
       }
     }
     final filter = softFilter == null ? '' : ' filter="$softFilter"';
@@ -629,7 +651,7 @@ class VsdxToSvgSerializer {
         );
       }
     }
-    if (bakeArrowMarkers && !noLine && shape.line.hasLine) {
+    if (_bakeArrows && !noLine && shape.line.hasLine) {
       _writeBakedArrows(
         buf,
         shape,
@@ -814,17 +836,26 @@ class VsdxToSvgSerializer {
         shape.is1D || noFill || !shape.fill.hasFill;
     if (lineOnly && noLine) return;
     if (!lineOnly && noFill) return;
-    final sid = 'shadow-$paintId';
-    final blur = math.max(shadow.blurInches, 0.001);
-    buf.writeln(
-      '$indent<defs><filter id="$sid" x="-50%" y="-50%" '
-      'width="200%" height="200%">'
-      '<feGaussianBlur stdDeviation="${_n(blur)}"/>'
-      '</filter></defs>',
-    );
     final hex = _hex(base);
     final dx = shadow.offsetXInches;
     final dy = shadow.offsetYInches;
+    final blur = math.max(shadow.blurInches, 0.001);
+    var filterAttr = '';
+    if (!pdfCompat) {
+      final sid = 'shadow-$paintId';
+      final bounds = _approxPathBoundsFromD(
+        d,
+        fallbackW: shape.width.abs() < 1e-9 ? 1.0 : shape.width.abs(),
+        fallbackH: shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs(),
+      );
+      final region = _filterRegionAttr(bounds, blur * 3);
+      buf.writeln(
+        '$indent<defs><filter id="$sid" $region>'
+        '<feGaussianBlur stdDeviation="${_n(blur)}"/>'
+        '</filter></defs>',
+      );
+      filterAttr = ' filter="url(#$sid)"';
+    }
     if (lineOnly) {
       final weight =
           shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
@@ -839,16 +870,28 @@ class VsdxToSvgSerializer {
         '$indent<path d="$d" fill="none" stroke="$hex" '
         'stroke-opacity="${_n(alpha)}" stroke-width="${_n(weight)}" '
         'stroke-linecap="$linecap" stroke-linejoin="$linejoin" '
-        'transform="translate(${_n(dx)} ${_n(dy)})" '
-        'filter="url(#$sid)"/>',
+        'transform="translate(${_n(dx)} ${_n(dy)})"$filterAttr/>',
       );
     } else {
       buf.writeln(
         '$indent<path d="$d" fill="$hex" fill-opacity="${_n(alpha)}" '
-        'stroke="none" transform="translate(${_n(dx)} ${_n(dy)})" '
-        'filter="url(#$sid)"/>',
+        'stroke="none" transform="translate(${_n(dx)} ${_n(dy)})"'
+        '$filterAttr/>',
       );
     }
+  }
+
+  /// Filter region in shape-local inches (canvas inflate(blur×3) parity).
+  /// Percent-based OBB regions clip soft blurs on short/flat shapes.
+  String _filterRegionAttr(
+    ({double minX, double minY, double width, double height}) bounds,
+    double pad,
+  ) {
+    final p = math.max(pad, 0.01);
+    return 'filterUnits="userSpaceOnUse" '
+        'x="${_n(bounds.minX - p)}" y="${_n(bounds.minY - p)}" '
+        'width="${_n(bounds.width + 2 * p)}" '
+        'height="${_n(bounds.height + 2 * p)}"';
   }
 
   void _writeReflection(
@@ -944,6 +987,22 @@ class VsdxToSvgSerializer {
     final nearY = bottomY - dist;
     final farY = nearY - clipH;
     final clipY = bottomY - dist - clipH - refl.blurInches;
+    if (pdfCompat) {
+      // package:pdf ignores mask/filter — emit a simple faded mirror.
+      buf.writeln(
+        '$indent<g transform="translate(0 ${_n(-dist)}) '
+        'translate(0 ${_n(bottomY)}) scale(1 -1) '
+        'translate(0 ${_n(-bottomY)})">'
+        '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp * 0.55)}" '
+        '$strokeAttrs/>'
+        '</g>',
+      );
+      return;
+    }
+    final blurPad = math.max(refl.blurInches, 0.001) * 3;
+    final blurRegion = refl.blurInches > 0
+        ? _filterRegionAttr(bounds, blurPad)
+        : '';
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
@@ -960,8 +1019,7 @@ class VsdxToSvgSerializer {
       'width="${_n(clipW)}" height="${_n(clipH + refl.blurInches)}" '
       'fill="url(#$fadeId)"/>'
       '</mask>'
-      '${refl.blurInches > 0 ? '<filter id="$fid" x="-20%" y="-20%" '
-          'width="140%" height="140%">'
+      '${refl.blurInches > 0 ? '<filter id="$fid" $blurRegion>'
           '<feGaussianBlur stdDeviation="${_n(math.max(refl.blurInches, 0.001))}"/>'
           '</filter>' : ''}'
       '</defs>',
@@ -1134,16 +1192,20 @@ class VsdxToSvgSerializer {
   String? _softEdgesFilterAttr(
     VsdxShape shape,
     String paintId,
-    StringBuffer defs,
-  ) {
+    StringBuffer defs, {
+    required ({double minX, double minY, double width, double height}) bounds,
+  }) {
+    // package:pdf ignores filters — SoftEdges would silently vanish.
+    if (pdfCompat) return null;
     final soft =
         (!shape.is1D && shape.line.softEdgesInches > 0)
             ? shape.line.softEdgesInches
             : 0.0;
     if (soft <= 0) return null;
     final id = 'fx-$paintId';
+    final region = _filterRegionAttr(bounds, soft * 3);
     defs.write(
-      '<filter id="$id" x="-50%" y="-50%" width="200%" height="200%">'
+      '<filter id="$id" $region>'
       '<feGaussianBlur in="SourceGraphic" '
       'stdDeviation="${_n(soft)}" result="soft"/>'
       '</filter>',
@@ -1559,6 +1621,11 @@ class VsdxToSvgSerializer {
     // Canvas [PatternFillBuilder] only tiles ids 2–16; unknown ids fall
     // back to solid. Match that here (do not invent a hatch for pattern>16).
     if (fill.pattern >= 2 && fill.pattern <= 16) {
+      // package:pdf only resolves url(#…) for gradients — hatch patterns
+      // become hollow without this solid fallback.
+      if (pdfCompat) {
+        return 'fill="$fgHex" fill-opacity="${_n(fgAlpha)}"';
+      }
       final bg =
           _resolveColor(fill.background, fill.themeBackgroundIndex, theme);
       final bgAlpha =
@@ -1733,8 +1800,8 @@ class VsdxToSvgSerializer {
       strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
     }
     final markers = StringBuffer();
-    // PDF backends ignore <marker>; callers bake geometry via [bakeArrowMarkers].
-    if (!bakeArrowMarkers) {
+    // PDF backends ignore <marker>; callers bake geometry via [_bakeArrows].
+    if (!_bakeArrows) {
       // Solid colours bake alpha into the marker (context-stroke ignores
       // host stroke-opacity). Gradients still use context-stroke.
       final markerColor = line.hasGradient ? null : hex;
@@ -2306,7 +2373,8 @@ class VsdxToSvgSerializer {
     final isLooseEdge = shape.isGlueableConnector &&
         block.pinXInches == null &&
         block.pinYInches == null;
-    if (shape.curvedText && !isLooseEdge) {
+    // package:pdf ignores <textPath> — fall through to rectangular layout.
+    if (shape.curvedText && !isLooseEdge && !pdfCompat) {
       _writeCurvedText(
         buf,
         shape: shape,
@@ -2438,9 +2506,13 @@ class VsdxToSvgSerializer {
           xAttr: si == 0 ? 'x="${_n(xBody)}"' : null,
         );
       }
+      // package:pdf ignores dominant-baseline — shift y so alphabetic ≈ middle.
+      final yText = pdfCompat ? yRel + layout.lineH * 0.35 : yRel;
+      final baseline =
+          pdfCompat ? '' : ' dominant-baseline="middle"';
       buf.writeln(
-        '$indent  <text text-anchor="$anchor" dominant-baseline="middle" '
-        'y="${_n(yRel)}">$body</text>',
+        '$indent  <text text-anchor="$anchor"$baseline '
+        'y="${_n(yText)}">$body</text>',
       );
     }
     buf.writeln('$indent</g>');

@@ -40,8 +40,8 @@ Future<Uint8List> exportDocumentToPdf(
     layerFilter: SvgLayerFilter.print,
     skipBackgroundPages: true,
     lineJumpRadiusInches: lineJumpRadiusInches,
-    // package:pdf's SvgImage ignores <marker>; bake arrowheads as paths.
-    bakeArrowMarkers: true,
+    // package:pdf SvgImage ignores markers/filters/patterns/textPath/baseline.
+    pdfCompat: true,
   );
 
   final pages = <VsdxPage>[
