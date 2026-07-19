@@ -262,7 +262,26 @@ ApplyResult applyOps(
               height: h,
             );
             if (SwimlaneOps.isPool(s)) {
-              return SwimlaneOps.layoutLanes(resized);
+              // Match editor resizeShape: scale pool-level content, then tile.
+              var host = resized;
+              if ((sx - 1).abs() > 1e-12 || (sy - 1).abs() > 1e-12) {
+                host = resized.copyWith(
+                  children: <VsdxShape>[
+                    ...SwimlaneOps.lanesOf(s),
+                    for (final c in SwimlaneOps.nonLaneChildren(s))
+                      VsdxPage.scaleChildInFrame(
+                        c,
+                        sx,
+                        sy,
+                        s.effectiveLocPinX,
+                        s.effectiveLocPinY,
+                        resized.effectiveLocPinX,
+                        resized.effectiveLocPinY,
+                      ),
+                  ],
+                );
+              }
+              return SwimlaneOps.layoutLanes(host);
             }
             if (TableOps.isTable(s)) {
               return TableOps.layoutCells(resized);

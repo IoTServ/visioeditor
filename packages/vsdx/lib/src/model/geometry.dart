@@ -309,13 +309,11 @@ class InfiniteLineCmd extends VsdxPathCommand {
       '${relative ? 'Rel' : ''}InfiniteLine(p=($x,$y), q=($a,$b))';
 }
 
-/// `SplineStart` — anchor point for a B-spline that follows via
+/// `SplineStart` — second control point of a B-spline that continues via
 /// [SplineKnot] rows. MS-VSDX §"SplineStart Row".
 ///
-/// Visio stores spline control points and knots inline; for the first cut
-/// we approximate the curve as a chord polyline (the same fallback all
-/// minor open-source readers use). Real cubic-spline reconstruction lives
-/// behind a feature flag in the path builder.
+/// The preceding geometry row supplies the first control point (pen).
+/// Sampling assembles a NURBS like libvisio (`sampleVisioSpline`).
 @immutable
 class SplineStart extends VsdxPathCommand {
   const SplineStart({
@@ -330,16 +328,16 @@ class SplineStart extends VsdxPathCommand {
   final double x;
   final double y;
 
-  /// Second knot value (`A` cell — the first interior knot).
+  /// Second knot (`A` cell).
   final double a;
 
-  /// Initial knot count (`B` cell — usually `degree + 1`).
+  /// First knot (`B` cell).
   final double b;
 
-  /// Spline weight (`C` cell — left at 1 for unit-weight splines).
+  /// Last knot (`C` cell).
   final double c;
 
-  /// Spline degree (typically 3 for cubic). Defaults to 3.
+  /// Spline degree (`D` cell, typically 3).
   final int degree;
 
   final bool relative;
@@ -349,8 +347,8 @@ class SplineStart extends VsdxPathCommand {
       '${relative ? 'Rel' : ''}SplineStart($x, $y, degree=$degree)';
 }
 
-/// `SplineKnot` — subsequent control point in a spline that began with
-/// [SplineStart]. Interpreted as a polyline vertex by the path builder.
+/// `SplineKnot` — subsequent control point / knot in a spline that began
+/// with [SplineStart].
 @immutable
 class SplineKnot extends VsdxPathCommand {
   const SplineKnot({
@@ -716,9 +714,50 @@ VsdxPathCommand applyPathCommandFormulas(
     case RelCubBezTo():
     case RelQuadBezTo():
     case RelArcTo():
-    case SplineStart():
-    case SplineKnot():
       return cmd;
+    case SplineStart(
+        :final x,
+        :final y,
+        :final a,
+        :final b,
+        :final c,
+        :final degree,
+        :final relative,
+      ):
+      if (relative) return cmd;
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      final nb = cell('B');
+      final nc = cell('C');
+      final nd = cell('D');
+      if (nx == null &&
+          ny == null &&
+          na == null &&
+          nb == null &&
+          nc == null &&
+          nd == null) {
+        return cmd;
+      }
+      return SplineStart(
+        x: nx ?? x,
+        y: ny ?? y,
+        a: na ?? a,
+        b: nb ?? b,
+        c: nc ?? c,
+        degree: nd?.toInt() ?? degree,
+      );
+    case SplineKnot(:final x, :final y, :final knot, :final relative):
+      if (relative) return cmd;
+      final nx = cell('X');
+      final ny = cell('Y');
+      final na = cell('A');
+      if (nx == null && ny == null && na == null) return cmd;
+      return SplineKnot(
+        x: nx ?? x,
+        y: ny ?? y,
+        knot: na ?? knot,
+      );
     case NurbsTo(
         :final x,
         :final y,

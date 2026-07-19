@@ -3443,7 +3443,28 @@ class EditorController extends ChangeNotifier {
               width: nw,
               height: nh,
             );
-            // Match [resizeShape]: scale group children with the box.
+            // Match [resizeShape]: groups scale all children; pools scale
+            // non-lane content here (lanes reflow via layoutLanes below).
+            if (SwimlaneOps.isPool(sh)) {
+              if ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12) {
+                return resized;
+              }
+              return resized.copyWith(
+                children: <VsdxShape>[
+                  ...SwimlaneOps.lanesOf(sh),
+                  for (final c in SwimlaneOps.nonLaneChildren(sh))
+                    VsdxPage.scaleChildInFrame(
+                      c,
+                      sx,
+                      sy,
+                      sh.effectiveLocPinX,
+                      sh.effectiveLocPinY,
+                      resized.effectiveLocPinX,
+                      resized.effectiveLocPinY,
+                    ),
+                ],
+              );
+            }
             if (sh.shapeKind != VsdxShapeKind.group ||
                 sh.children.isEmpty ||
                 ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {

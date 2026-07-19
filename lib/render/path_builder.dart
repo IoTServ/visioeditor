@@ -59,7 +59,9 @@ Path buildPath(
     hasStart = true;
   }
 
-  for (final cmd in geometry.commands) {
+  final cmds = geometry.commands;
+  for (var i = 0; i < cmds.length; i++) {
+    final cmd = cmds[i];
     switch (cmd) {
       case MoveTo(:final x, :final y):
         start(x, y);
@@ -224,23 +226,24 @@ Path buildPath(
         path.lineTo(px + ux * reach, py + uy * reach);
         cursorX = px + ux * reach;
         cursorY = py + uy * reach;
-      case SplineStart(:final x, :final y, :final relative):
-        final px = relative ? x * widthInches : x;
-        final py = relative ? y * heightInches : y;
-        if (!hasStart) {
-          start(px, py);
-        } else {
-          path.lineTo(px, py);
-          cursorX = px;
-          cursorY = py;
+      case SplineStart():
+        if (!hasStart) start(0, 0);
+        final spline = consumeSplineSequence(
+          cmds,
+          i,
+          pen: Offset2D(cursorX, cursorY),
+          width: widthInches,
+          height: heightInches,
+        );
+        for (final p in spline.samples) {
+          path.lineTo(p.x, p.y);
         }
-      case SplineKnot(:final x, :final y, :final relative):
-        final px = relative ? x * widthInches : x;
-        final py = relative ? y * heightInches : y;
-        if (!hasStart) start(px, py);
-        path.lineTo(px, py);
-        cursorX = px;
-        cursorY = py;
+        cursorX = spline.end.x;
+        cursorY = spline.end.y;
+        i = spline.nextIndex - 1;
+      case SplineKnot():
+        // Consumed with the preceding SplineStart.
+        break;
       case NurbsTo(
           :final x,
           :final y,

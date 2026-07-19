@@ -858,7 +858,9 @@ class VsdxPainter extends CustomPainter {
         cursor = p;
       }
 
-      for (final cmd in geom.commands) {
+      final cmds = geom.commands;
+      for (var i = 0; i < cmds.length; i++) {
+        final cmd = cmds[i];
         switch (cmd) {
           case MoveTo(:final x, :final y):
             cursor = Offset(x, y);
@@ -878,18 +880,34 @@ class VsdxPainter extends CustomPainter {
               penDown = true;
             }
             addVertex(Offset(fx * w, fy * h));
-          case ArcTo(:final x, :final y):
+          case ArcTo(:final x, :final y, :final bow):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(x, y));
-          case RelArcTo(:final fx, :final fy):
+            for (final p in sampleArcByBow(
+              start: Offset2D(cursor.dx, cursor.dy),
+              end: Offset2D(x, y),
+              bow: bow,
+              steps: 8,
+            )) {
+              addVertex(Offset(p.x, p.y));
+            }
+          case RelArcTo(:final fx, :final fy, :final fbow):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(fx * w, fy * h));
+            final ex = fx * w, ey = fy * h;
+            final bow = fbow * (w + h) / 2;
+            for (final p in sampleArcByBow(
+              start: Offset2D(cursor.dx, cursor.dy),
+              end: Offset2D(ex, ey),
+              bow: bow,
+              steps: 8,
+            )) {
+              addVertex(Offset(p.x, p.y));
+            }
           case CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2):
             if (!penDown) {
               addVertex(cursor);
@@ -987,18 +1005,26 @@ class VsdxPainter extends CustomPainter {
               addVertex(Offset(v.x * vsx, v.y * vsy));
             }
             addVertex(Offset(poly.x * esx, poly.y * esy));
-          case SplineStart(:final x, :final y, :final relative):
+          case SplineStart():
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
             }
-            addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
-          case SplineKnot(:final x, :final y, :final relative):
-            if (!penDown) {
-              addVertex(cursor);
-              penDown = true;
+            final spline = consumeSplineSequence(
+              cmds,
+              i,
+              pen: Offset2D(cursor.dx, cursor.dy),
+              width: w,
+              height: h,
+              samples: 8,
+            );
+            for (final p in spline.samples) {
+              addVertex(Offset(p.x, p.y));
             }
-            addVertex(Offset(relative ? x * w : x, relative ? y * h : y));
+            cursor = Offset(spline.end.x, spline.end.y);
+            i = spline.nextIndex - 1;
+          case SplineKnot():
+            break;
           case NurbsTo(
               :final x,
               :final y,

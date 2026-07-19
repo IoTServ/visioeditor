@@ -22,6 +22,7 @@ import '../model/image.dart';
 import '../model/line.dart';
 import '../model/nurbs.dart';
 import '../model/page.dart';
+import '../model/spline.dart';
 import '../model/rich_text.dart';
 import '../model/rounding.dart';
 import '../model/shape.dart';
@@ -685,7 +686,9 @@ class VsdxToSvgSerializer {
       cy = y;
     }
 
-    for (final cmd in g.commands) {
+    final cmds = g.commands;
+    for (var i = 0; i < cmds.length; i++) {
+      final cmd = cmds[i];
       switch (cmd) {
         case MoveTo(:final x, :final y):
           m(x, y);
@@ -864,16 +867,21 @@ class VsdxToSvgSerializer {
           final reach = 100 * math.sqrt(w * w + h * h);
           m(px - ux * reach, py - uy * reach);
           l(px + ux * reach, py + uy * reach);
-        case SplineStart(:final x, :final y, :final relative):
-          final px = relative ? x * w : x;
-          final py = relative ? y * h : y;
-          if (!started) {
-            m(px, py);
-          } else {
-            l(px, py);
+        case SplineStart():
+          if (!started) m(0, 0);
+          final spline = consumeSplineSequence(
+            cmds,
+            i,
+            pen: Offset2D(cx, cy),
+            width: w,
+            height: h,
+          );
+          for (final p in spline.samples) {
+            l(p.x, p.y);
           }
-        case SplineKnot(:final x, :final y, :final relative):
-          l(relative ? x * w : x, relative ? y * h : y);
+          i = spline.nextIndex - 1;
+        case SplineKnot():
+          break;
         case NurbsTo(
             :final x,
             :final y,

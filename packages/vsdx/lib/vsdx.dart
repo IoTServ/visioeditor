@@ -29,6 +29,7 @@ export 'src/model/elliptical_arc.dart';
 export 'src/model/fill.dart';
 export 'src/model/geometry.dart';
 export 'src/model/nurbs.dart';
+export 'src/model/spline.dart';
 export 'src/model/hyperlink.dart';
 export 'src/model/image.dart';
 export 'src/model/layer.dart';

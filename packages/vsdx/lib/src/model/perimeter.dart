@@ -11,6 +11,7 @@ import 'elliptical_arc.dart';
 import 'geometry.dart';
 import 'nurbs.dart';
 import 'shape.dart';
+import 'spline.dart';
 
 /// Ray / nearest-point queries against a shape's Geometry outline.
 abstract final class ShapePerimeter {
@@ -135,7 +136,9 @@ abstract final class ShapePerimeter {
         subStart = Offset2D(x, y);
       }
 
-      for (final cmd in g.commands) {
+      final cmds = g.commands;
+      for (var i = 0; i < cmds.length; i++) {
+        final cmd = cmds[i];
         switch (cmd) {
           case MoveTo(:final x, :final y):
             move(x, y);
@@ -207,16 +210,24 @@ abstract final class ShapePerimeter {
             cy = ey;
           case ArcTo(:final x, :final y, :final bow):
             if (!has) move(0, 0);
-            _sampleArcByBow(out, Offset2D(cx, cy), Offset2D(x, y), bow);
-            cx = x;
-            cy = y;
+            for (final p in sampleArcByBow(
+              start: Offset2D(cx, cy),
+              end: Offset2D(x, y),
+              bow: bow,
+            )) {
+              emit(p.x, p.y);
+            }
           case RelArcTo(:final fx, :final fy, :final fbow):
             if (!has) move(0, 0);
             final ex = fx * w, ey = fy * h;
             final bow = fbow * (w + h) / 2;
-            _sampleArcByBow(out, Offset2D(cx, cy), Offset2D(ex, ey), bow);
-            cx = ex;
-            cy = ey;
+            for (final p in sampleArcByBow(
+              start: Offset2D(cx, cy),
+              end: Offset2D(ex, ey),
+              bow: bow,
+            )) {
+              emit(p.x, p.y);
+            }
           case EllipticalArcTo(
               :final x,
               :final y,
@@ -281,19 +292,21 @@ abstract final class ShapePerimeter {
               emit(v.x * vsx, v.y * vsy);
             }
             emit(x * esx, y * esy);
-          case SplineStart(:final x, :final y, :final relative):
-            final px = relative ? x * w : x;
-            final py = relative ? y * h : y;
-            if (!has) {
-              move(px, py);
-            } else {
-              emit(px, py);
+          case SplineStart():
+            if (!has) move(0, 0);
+            final spline = consumeSplineSequence(
+              cmds,
+              i,
+              pen: Offset2D(cx, cy),
+              width: w,
+              height: h,
+            );
+            for (final p in spline.samples) {
+              emit(p.x, p.y);
             }
-          case SplineKnot(:final x, :final y, :final relative):
-            final px = relative ? x * w : x;
-            final py = relative ? y * h : y;
-            if (!has) move(px, py);
-            emit(px, py);
+            i = spline.nextIndex - 1;
+          case SplineKnot():
+            break;
           case NurbsTo(
               :final x,
               :final y,
@@ -516,29 +529,6 @@ void _sampleQuad(
     out.add((prev, p));
     prev = p;
   }
-}
-
-void _sampleArcByBow(
-  List<(Offset2D, Offset2D)> out,
-  Offset2D p0,
-  Offset2D p1,
-  double bow, {
-  int steps = 10,
-}) {
-  if (bow.abs() < 1e-12) {
-    out.add((p0, p1));
-    return;
-  }
-  final mx = (p0.x + p1.x) / 2;
-  final my = (p0.y + p1.y) / 2;
-  final dx = p1.x - p0.x;
-  final dy = p1.y - p0.y;
-  final len = math.sqrt(dx * dx + dy * dy);
-  if (len < 1e-12) return;
-  final nx = -dy / len;
-  final ny = dx / len;
-  final ctrl = Offset2D(mx + nx * bow, my + ny * bow);
-  _sampleQuad(out, p0, ctrl, p1, steps: steps);
 }
 
 void _sampleEllipse(
