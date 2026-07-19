@@ -1635,7 +1635,10 @@ class VsdxToSvgSerializer {
         th: th,
         ml: ml,
         mr: mr,
+        mt: mt,
+        mb: mb,
         angleRad: block.angleRad,
+        textDirection: block.textDirection,
         indent: indent,
       );
       return;
@@ -1779,7 +1782,7 @@ class VsdxToSvgSerializer {
     };
   }
 
-  /// Place glyphs along a quadratic arc (draw.io Curved Text / canvas path).
+  /// Place glyphs along a quadratic arc (draw.io CurvedText / canvas path).
   void _writeCurvedText(
     StringBuffer buf, {
     required VsdxShape shape,
@@ -1793,7 +1796,10 @@ class VsdxToSvgSerializer {
     required double th,
     required double ml,
     required double mr,
+    required double mt,
+    required double mb,
     required double angleRad,
+    required int textDirection,
     required String indent,
   }) {
     final plain = _applyTextCase(
@@ -1802,11 +1808,25 @@ class VsdxToSvgSerializer {
     );
     if (plain.isEmpty) return;
 
-    final midY = th * 0.58;
-    final bulge = math.min(th * 0.32, th * 0.45);
-    final x0 = ml;
-    final x1 = tw / 2;
-    final x2 = tw - mr;
+    // Match canvas: TextDirection=1 rotates into a vertical band, then the
+    // arc is laid out in the swapped width×height frame.
+    var arcW = tw;
+    var arcH = th;
+    var arcMl = ml;
+    var arcMr = mr;
+    final vertical = textDirection == 1;
+    if (vertical) {
+      arcW = th;
+      arcH = tw;
+      arcMl = mt;
+      arcMr = mb;
+    }
+
+    final midY = arcH * 0.58;
+    final bulge = math.min(arcH * 0.32, arcH * 0.45);
+    final x0 = arcMl;
+    final x1 = arcW / 2;
+    final x2 = arcW - arcMr;
     final y0 = midY;
     final y1 = midY - bulge;
     final y2 = midY;
@@ -1821,6 +1841,12 @@ class VsdxToSvgSerializer {
     // Block lower-left → top-left + Y-down (same stack as rectangular text).
     xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
     xf.write(' translate(0 ${_n(th)}) scale(1 -1)');
+    if (vertical) {
+      xf.write(
+        ' translate(${_n(tw / 2)} ${_n(th / 2)}) rotate(-90) '
+        'translate(${_n(-th / 2)} ${_n(-tw / 2)})',
+      );
+    }
 
     buf.writeln('$indent<g transform="$xf">');
     buf.writeln(

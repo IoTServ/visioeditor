@@ -586,6 +586,34 @@ void main() {
     expect(svg, contains('Arc'));
   });
 
+  test('SVG CurvedText honours TextDirection vertical like canvas', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 2,
+        ).withCurvedText(true).copyWith(
+              richText: VsdxRichText(
+                textBlock: const VsdxTextBlock(textDirection: 1),
+                runs: const [VsdxTextRun(text: 'Vert')],
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('textPath'));
+    expect(svg, contains('rotate(-90)'));
+    expect(svg, contains('Vert'));
+  });
+
   test('SVG fill-opacity multiplies colour ARGB alpha', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
