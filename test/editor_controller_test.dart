@@ -340,6 +340,36 @@ void main() {
     expect(moved.pinX - moved.width / 2, closeTo(0, 1e-9));
   });
 
+  test('rotateSelection90 recalculates dependent Angle formulas', () {
+    final c = EditorController()..newDocument();
+    final a = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    );
+    final b = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      locPinXInches: 1,
+      formulas: const <String, String>{
+        'LocPinX': 'Sheet.1!Angle+1',
+      },
+    );
+    c.updateCurrentPage((p) => p.copyWith(shapes: <VsdxShape>[a, b]));
+    c.setSelection(<int>{1});
+    c.rotateSelection90(); // Angle → -π/2
+    expect(
+      c.currentPage!.findShapeById(2)!.locPinXInches,
+      closeTo(1 - math.pi / 2, 1e-6),
+    );
+  });
+
   test('rotateSelection90 on 1D rewrites Begin/End and keeps Angle 0', () {
     final c = EditorController()..newDocument();
     c

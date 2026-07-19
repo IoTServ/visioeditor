@@ -77,6 +77,37 @@ void main() {
     expect(svg, contains('<svg'));
   });
 
+  test('SVG export wraps shapes with primary hyperlinks', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final linked = VsdxShapeFactory.rectangle(
+      id: page.nextFreeShapeId(),
+      pinX: 2,
+      pinY: 3,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      hyperlinks: const <VsdxHyperlink>[
+        VsdxHyperlink(
+          id: 0,
+          description: 'Docs',
+          address: 'https://example.com/x',
+          newWindow: true,
+          isDefault: true,
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(
+      page.addShape(linked),
+      theme: doc.theme,
+    );
+    expect(svg, contains('href="https://example.com/x"'));
+    expect(svg, contains('target="_blank"'));
+    expect(svg, contains('title="Docs"'));
+    expect(svg, contains('</a>'));
+  });
+
   test('SVG text-anchor follows Paragraph HorzAlign', () {
     final blank = const VsdxWriter().emptyDocument();
     var doc = parser.parse(blank);

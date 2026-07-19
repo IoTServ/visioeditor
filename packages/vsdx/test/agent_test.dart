@@ -432,6 +432,41 @@ void main() {
       );
     });
 
+    test('move_shape recalculates dependent Sheet.n! LocPin formulas', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final a = VsdxShapeFactory.rectangle(
+        id: 10,
+        pinX: 3,
+        pinY: 1,
+        width: 2,
+        height: 1,
+      );
+      final b = VsdxShapeFactory.rectangle(
+        id: 20,
+        pinX: 1,
+        pinY: 1,
+        width: 2,
+        height: 2,
+      ).copyWith(
+        locPinXInches: 1.5,
+        formulas: const <String, String>{
+          'LocPinX': 'Sheet.10!PinX*0.5',
+        },
+      );
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(shapes: <VsdxShape>[a, b]),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'move_shape', 'id': 10, 'x': 5, 'y': 1},
+      ]);
+      expect(
+        r.document.pages.first.findShapeById(20)!.locPinXInches,
+        closeTo(2.5, 1e-6),
+      );
+    });
+
     test('move_shape translates Begin/End with the pin', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

@@ -313,6 +313,10 @@ class VsdxToSvgSerializer {
       'translate(${_n(-shape.effectiveLocPinX)} '
       '${_n(-shape.effectiveLocPinY)})',
     );
+    final link = _svgHyperlinkAttrs(shape);
+    if (link != null) {
+      buf.writeln('$indent<a $link>');
+    }
     buf.writeln('$indent<g transform="${transforms.join(' ')}">');
 
     if (shape.hasImage) {
@@ -410,6 +414,28 @@ class VsdxToSvgSerializer {
       }
     }
     buf.writeln('$indent</g>');
+    if (link != null) {
+      buf.writeln('$indent</a>');
+    }
+  }
+
+  /// SVG `<a>` attribute string for [shape]'s primary hyperlink, or `null`.
+  String? _svgHyperlinkAttrs(VsdxShape shape) {
+    final h = shape.primaryHyperlink;
+    if (h == null || h.invisible) return null;
+    final target = h.effectiveTarget?.trim();
+    if (target == null || target.isEmpty) return null;
+    final attrs = StringBuffer('href="${_esc(target)}"');
+    if (h.newWindow || h.frame == '_blank') {
+      attrs.write(' target="_blank"');
+    } else if (h.frame != null && h.frame!.trim().isNotEmpty) {
+      attrs.write(' target="${_esc(h.frame!.trim())}"');
+    }
+    final desc = h.description?.trim();
+    if (desc != null && desc.isNotEmpty) {
+      attrs.write(' title="${_esc(desc)}"');
+    }
+    return attrs.toString();
   }
 
   void _writePath(

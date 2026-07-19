@@ -3769,7 +3769,9 @@ class EditorController extends ChangeNotifier {
         rotated = true;
       }
       return rotated
-          ? next.rerouteConnectors(movedShapeIds: movedIds)
+          ? next
+              .recalculateFormulas(changedShapeIds: movedIds)
+              .rerouteConnectors(movedShapeIds: movedIds)
           : page;
     });
   }
@@ -3816,7 +3818,9 @@ class EditorController extends ChangeNotifier {
         flipped = true;
       }
       return flipped
-          ? next.rerouteConnectors(movedShapeIds: movedIds)
+          ? next
+              .recalculateFormulas(changedShapeIds: movedIds)
+              .rerouteConnectors(movedShapeIds: movedIds)
           : page;
     });
   }

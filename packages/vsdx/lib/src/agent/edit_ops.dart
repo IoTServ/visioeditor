@@ -294,7 +294,10 @@ ApplyResult applyOps(
   }
 
   if (movedForReroute.isNotEmpty) {
-    page = page.rerouteConnectors(movedShapeIds: movedForReroute);
+    // Match the editor: refresh Sheet.n! / Width* caches before glue re-route.
+    page = page
+        .recalculateFormulas(changedShapeIds: movedForReroute)
+        .rerouteConnectors(movedShapeIds: movedForReroute);
   }
   return ApplyResult(doc.replacePage(idx, page), created, log);
 }
