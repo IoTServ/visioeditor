@@ -104,7 +104,7 @@ class VsdxWriter {
       final imageRels = _prepareImageParts(
         pkg: pkg,
         edited: edited,
-        rebuiltImageShapes: _newImageShapes(bp, ep),
+        rebuiltImageShapes: _imageShapesNeedingRels(bp, ep),
         pagePart: part,
         patched: patched,
         ctXml: ctXml,
@@ -912,22 +912,42 @@ class VsdxWriter {
     return out;
   }
 
-  /// Picture shapes present in [edited] but not in [baseline] (matched by id) —
-  /// i.e. the ones the writer will build fresh and therefore needs to wire a
-  /// `<ForeignData>` relationship for.
-  List<VsdxShape> _newImageShapes(VsdxPage baseline, VsdxPage edited) {
-    final baseIds = <int>{};
-    void collectIds(VsdxShape s) {
-      baseIds.add(s.id);
+  /// Picture shapes the writer will emit fresh `<ForeignData>` for: newly
+  /// inserted ids, reparented pictures, or pictures whose media part changed
+  /// ([replaceImage]).
+  List<VsdxShape> _imageShapesNeedingRels(VsdxPage baseline, VsdxPage edited) {
+    final baseParent = <int, int?>{};
+    final baseImagePart = <int, String?>{};
+    void mapBase(VsdxShape s, int? parent) {
+      baseParent[s.id] = parent;
+      baseImagePart[s.id] = s.imagePartName;
       for (final c in s.children) {
-        collectIds(c);
+        mapBase(c, s.id);
       }
     }
 
     for (final s in baseline.shapes) {
-      collectIds(s);
+      mapBase(s, null);
     }
-    return [for (final s in _imageShapes(edited)) if (!baseIds.contains(s.id)) s];
+
+    final out = <VsdxShape>[];
+    void walk(VsdxShape s, int? parent) {
+      if (s.hasImage) {
+        final isNew = !baseParent.containsKey(s.id);
+        final reparented = !isNew && baseParent[s.id] != parent;
+        final partChanged =
+            !isNew && baseImagePart[s.id] != s.imagePartName;
+        if (isNew || reparented || partChanged) out.add(s);
+      }
+      for (final c in s.children) {
+        walk(c, s.id);
+      }
+    }
+
+    for (final s in edited.shapes) {
+      walk(s, null);
+    }
+    return out;
   }
 
   /// For the picture shapes in [rebuiltImageShapes] (which the writer is about
@@ -961,25 +981,55 @@ class VsdxWriter {
           );
     }
 
-    var nextRId = _maxRelId(relsXml) + 1;
+    // Reuse existing image relationships so rebuild/replaceImage don't mint
+    // duplicate rIds for media already linked from this page.
     final relByPart = <String, String>{};
+    for (final rel in relsXml.rootElement.childElements) {
+      if (rel.name.local != 'Relationship') continue;
+      if (rel.getAttribute('Type') != _imageRelType) continue;
+      final id = rel.getAttribute('Id');
+      final target = rel.getAttribute('Target');
+      if (id == null || target == null) continue;
+      final abs = _absoluteMediaPart(pagePart, target);
+      relByPart[abs] = id;
+      // Also index without a leading slash — packages mix both forms.
+      if (abs.startsWith('/')) {
+        relByPart[abs.substring(1)] = id;
+      } else {
+        relByPart['/$abs'] = id;
+      }
+    }
+
+    var nextRId = _maxRelId(relsXml) + 1;
+    var relsDirty = false;
     for (final s in rebuiltImageShapes) {
       final part = s.imagePartName;
-      if (part == null || relByPart.containsKey(part)) continue;
-      final rId = 'rId$nextRId';
-      nextRId++;
-      relByPart[part] = rId;
-      relsXml.rootElement.children.add(XmlElement(XmlName('Relationship'), [
-        XmlAttribute(XmlName('Id'), rId),
-        XmlAttribute(XmlName('Type'), _imageRelType),
-        XmlAttribute(XmlName('Target'), _mediaTargetFrom(pagePart, part)),
-      ]));
+      if (part == null) continue;
+      if (!relByPart.containsKey(part)) {
+        final rId = 'rId$nextRId';
+        nextRId++;
+        relByPart[part] = rId;
+        if (part.startsWith('/')) {
+          relByPart[part.substring(1)] = rId;
+        } else {
+          relByPart['/$part'] = rId;
+        }
+        relsXml.rootElement.children.add(XmlElement(XmlName('Relationship'), [
+          XmlAttribute(XmlName('Id'), rId),
+          XmlAttribute(XmlName('Type'), _imageRelType),
+          XmlAttribute(XmlName('Target'), _mediaTargetFrom(pagePart, part)),
+        ]));
+        relsDirty = true;
+      }
 
       // Embed the bytes when this media part is not already in the package.
       final mediaNoSlash = _noSlash(part);
       if (!patched.containsKey(mediaNoSlash) &&
-          pkg.readPartBytes(part) == null) {
-        final img = edited.images.findByPart(part);
+          pkg.readPartBytes(part) == null &&
+          pkg.readPartBytes('/$mediaNoSlash') == null) {
+        final img = edited.images.findByPart(part) ??
+            edited.images.findByPart('/$mediaNoSlash') ??
+            edited.images.findByPart(mediaNoSlash);
         if (img != null) {
           patched[mediaNoSlash] = Uint8List.fromList(img.bytes);
           if (ctXml != null &&
@@ -990,9 +1040,26 @@ class VsdxWriter {
       }
     }
 
-    patched[relsNoSlash] =
-        Uint8List.fromList(utf8.encode(relsXml.toXmlString()));
+    if (relsDirty || !patched.containsKey(relsNoSlash)) {
+      patched[relsNoSlash] =
+          Uint8List.fromList(utf8.encode(relsXml.toXmlString()));
+    }
     return relByPart;
+  }
+
+  /// Resolve a page-relative media target (`../media/image1.png`) to an
+  /// absolute part name (`/visio/media/image1.png`).
+  static String _absoluteMediaPart(String pagePart, String target) {
+    final t = target.trim();
+    if (t.startsWith('/')) return t;
+    if (t.startsWith('../media/')) {
+      return '/visio/media/${t.substring('../media/'.length)}';
+    }
+    if (t.startsWith('media/')) return '/visio/$t';
+    if (t.startsWith('visio/media/')) return '/$t';
+    // Fall back: treat as a file under visio/media.
+    final name = t.contains('/') ? t.substring(t.lastIndexOf('/') + 1) : t;
+    return '/visio/media/$name';
   }
 
   /// Relationship target from a page part (e.g. `/visio/pages/page1.xml`) to a
@@ -1445,10 +1512,23 @@ class VsdxWriter {
       mapParents(s, null);
     }
 
-    // A shape must be rebuilt (fresh element) when it is new or has changed
-    // parent (grouped / ungrouped). Others are patched in place.
-    bool needsRebuild(int id) =>
-        !origParent.containsKey(id) || origParent[id] != editedParent[id];
+    // A shape must be rebuilt (fresh element) when it is new, has changed
+    // parent (grouped / ungrouped), or its embedded media part changed
+    // (replaceImage). Others are patched in place.
+    bool needsRebuild(int id) {
+      if (!origParent.containsKey(id) || origParent[id] != editedParent[id]) {
+        return true;
+      }
+      final base = baseline.findShapeById(id);
+      final ed = edited.findShapeById(id);
+      if (base != null &&
+          ed != null &&
+          (base.imagePartName != ed.imagePartName ||
+              base.hasImage != ed.hasImage)) {
+        return true;
+      }
+      return false;
+    }
 
     // Snapshot unmodelled Cell/Section clones *before* removing rebuilt
     // elements so EventDblClick / ObjType / QuickStyle* survive grouping.
@@ -4746,17 +4826,22 @@ class VsdxWriter {
   /// `<ForeignData>` element pointing (via [imageRels]) at the embedded media
   /// relationship. Round-trips back through [PageParser._resolveForeignDataPart].
   XmlElement _buildPictureElement(VsdxShape s, Map<String, String> imageRels) {
-    final rId = imageRels[s.imagePartName];
+    final part = s.imagePartName;
+    final rId = part == null
+        ? null
+        : (imageRels[part] ??
+            imageRels[_noSlash(part)] ??
+            imageRels['/${_noSlash(part)}']);
     final foreignType = s.foreignType ??
         VsdxImage.foreignTypeFor(
           mimeType: '',
-          partName: s.imagePartName ?? '',
+          partName: part ?? '',
         );
     final compression = s.foreignCompressionType ??
         (foreignType == 'Bitmap'
             ? VsdxImage.compressionTypeFor(
                 mimeType: '',
-                partName: s.imagePartName ?? '',
+                partName: part ?? '',
               )
             : null);
     final children = <XmlNode>[
@@ -4767,6 +4852,12 @@ class VsdxWriter {
       _cell('LocPinX', _fmt(s.width / 2), formula: 'Width*0.5'),
       _cell('LocPinY', _fmt(s.height / 2), formula: 'Height*0.5'),
       _cell('Angle', _fmt(s.angleRad)),
+      // MS-VSDX §2.2.6 Image — Edraw / Visio use these to place the bitmap
+      // inside the Foreign shape. Without them many hosts show an empty box.
+      _cell('ImgOffsetX', '0'),
+      _cell('ImgOffsetY', '0'),
+      _cell('ImgWidth', _fmt(s.width), formula: 'Width*1'),
+      _cell('ImgHeight', _fmt(s.height), formula: 'Height*1'),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),
@@ -4801,12 +4892,31 @@ class VsdxWriter {
       }
       children.add(textEl);
     }
-    // Emit frame Geometry when present so import→synth→reopen keeps hit-test
-    // / selection bounds (Foreign shapes previously dropped all path rows).
+    // Emit frame Geometry (required by Edraw/Visio for Foreign hit-testing).
+    // Fall back to a Width×Height rectangle when the model has none.
     var gIx = 0;
+    var emittedGeom = false;
     for (final g in s.geometries) {
       if (!_canRebuild(g)) continue;
       final section = _buildGeometrySection(g, gIx++);
+      if (section != null) {
+        children.add(section);
+        emittedGeom = true;
+      }
+    }
+    if (!emittedGeom) {
+      final frame = VsdxGeometry(
+        noFill: true,
+        noLine: true,
+        commands: <VsdxPathCommand>[
+          const MoveTo(0, 0),
+          LineTo(s.width, 0),
+          LineTo(s.width, s.height),
+          LineTo(0, s.height),
+          const LineTo(0, 0),
+        ],
+      );
+      final section = _buildGeometrySection(frame, 0);
       if (section != null) children.add(section);
     }
     if (s.hyperlinks.isNotEmpty) {

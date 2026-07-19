@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import '../utils/color.dart';
 import 'fill.dart';
 import 'geometry.dart';
+import 'image.dart';
 import 'line.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
@@ -161,9 +162,9 @@ abstract final class VsdxShapeFactory {
 
   /// Embedded-picture shape (drawio's "Insert > Image"): a borderless,
   /// fill-less box whose content is the media part [imagePartName]
-  /// (e.g. `/visio/media/image7.png`). Carries no geometry — the renderer
-  /// paints the decoded image to fill the shape's box, and the writer emits it
-  /// as a Visio `Type="Foreign"` shape with a `<ForeignData>` relationship.
+  /// (e.g. `/visio/media/image7.png`). Includes a rectangular geometry frame
+  /// for hit-testing / Edraw-Visio import, and the writer emits MS-VSDX
+  /// `ImgOffset*` / `ImgWidth` / `ImgHeight` plus `<ForeignData>`.
   static VsdxShape picture({
     required int id,
     required double pinX,
@@ -173,14 +174,33 @@ abstract final class VsdxShapeFactory {
     required String imagePartName,
     String? name,
   }) {
+    final w = width.abs();
+    final h = height.abs();
     return VsdxShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
       pinY: pinY,
-      width: width.abs(),
-      height: height.abs(),
+      width: w,
+      height: h,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          // Frame matches the image box; NoFill/NoLine so only the bitmap shows.
+          noFill: true,
+          noLine: true,
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(w, 0),
+            LineTo(w, h),
+            LineTo(0, h),
+            const LineTo(0, 0),
+          ],
+        ),
+      ],
       imagePartName: imagePartName,
+      foreignType: VsdxImage.foreignTypeFor(mimeType: '', partName: imagePartName),
+      foreignCompressionType:
+          VsdxImage.compressionTypeFor(mimeType: '', partName: imagePartName),
       fill: const VsdxFill(pattern: 0),
       line: const VsdxLine(pattern: 0),
     );

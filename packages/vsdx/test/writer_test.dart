@@ -1835,6 +1835,100 @@ void main() {
         equals(payload));
   });
 
+  test('picture Foreign XML has ImgWidth/ImgHeight for Edraw/Visio', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part = '/visio/media/image_edraw.png';
+    // Minimal valid-looking PNG header bytes (content is irrelevant to XML).
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1.25,
+      height: 0.75,
+      imagePartName: part,
+    );
+    expect(pic.geometries, isNotEmpty);
+    final edited = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final archive = ZipDecoder().decodeBytes(out);
+    final pageXml = utf8.decode(
+      archive.findFile('visio/pages/page1.xml')!.content as List<int>,
+    );
+    expect(pageXml, contains('Type="Foreign"'));
+    expect(pageXml, contains('N="ImgOffsetX"'));
+    expect(pageXml, contains('N="ImgOffsetY"'));
+    expect(pageXml, contains('N="ImgWidth"'));
+    expect(pageXml, contains('N="ImgHeight"'));
+    expect(pageXml, contains('ForeignData'));
+    expect(pageXml, contains('CompressionType="PNG"'));
+    expect(pageXml, contains('Section N="Geometry"'));
+    expect(archive.findFile('visio/media/image_edraw.png'), isNotNull);
+    final rels = utf8.decode(
+      archive.findFile('visio/pages/_rels/page1.xml.rels')!.content as List<int>,
+    );
+    expect(rels, contains('relationships/image'));
+    expect(rels, contains('../media/image_edraw.png'));
+  });
+
+  test('replaceImage embeds the new media part on save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part1 = '/visio/media/image_a.png';
+    const part2 = '/visio/media/image_b.png';
+    final bytesA = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 1, 1, 1, 1]);
+    final bytesB = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 2, 2, 2, 2]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+      imagePartName: part1,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part1, bytes: bytesA, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+    final out1 = writer.write(originalBytes: blank, edited: doc);
+
+    // Swap media on the same shape id (editor replaceImage).
+    final replaced = pic.copyWith(imagePartName: part2);
+    doc = parser.parse(out1);
+    page = doc.pages.first;
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part2, bytes: bytesB, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.updateShapeById(id, (_) => replaced));
+    final out2 = writer.write(originalBytes: out1, edited: doc);
+    final archive = ZipDecoder().decodeBytes(out2);
+    expect(archive.findFile('visio/media/image_b.png'), isNotNull);
+    final reopened = parser.parse(out2);
+    final s = reopened.pages.first.findShapeById(id)!;
+    expect(s.imagePartName, endsWith('image_b.png'));
+    expect(reopened.images.findByPart(s.imagePartName!)!.bytes, equals(bytesB));
+  });
+
   test('connector endpoint reconnect / detach round-trips', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
