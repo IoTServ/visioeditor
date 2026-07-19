@@ -1,21 +1,58 @@
 import 'package:vsdx/vsdx.dart';
 
+import 'stencil_styles.dart';
+
+export 'stencil_styles.dart';
+
 /// A palette entry: a named builder that produces a shape at a given page-inch
 /// centre. The shapes panel renders a **live geometry thumbnail** (built via
 /// `lib/render/path_builder.dart`), so no icon is needed — the preview always
 /// matches what actually drops on the canvas.
 class Stencil {
-  const Stencil(this.name, this.build);
+  Stencil(
+    this.name,
+    VsdxShape Function(int id, double cx, double cy) build, {
+    this.colors,
+    this.group,
+  }) : _rawBuild = build;
 
   final String name;
-  final VsdxShape Function(int id, double cx, double cy) build;
+
+  /// Optional explicit colours; otherwise resolved from [name] / [group].
+  final StencilColors? colors;
+
+  /// Owning library name (Flowchart, AWS, …) used for group palette lookup.
+  final String? group;
+
+  final VsdxShape Function(int id, double cx, double cy) _rawBuild;
+
+  /// Build a shape at ([cx],[cy]) with the stencil's default fill/line applied.
+  VsdxShape build(int id, double cx, double cy) {
+    final raw = _rawBuild(id, cx, cy);
+    final resolved = resolveStencilColors(
+      explicit: colors,
+      name: name,
+      group: group,
+    );
+    return applyStencilStyle(raw, colors: resolved);
+  }
+
+  Stencil withGroup(String groupName) => Stencil(
+        name,
+        _rawBuild,
+        colors: colors,
+        group: groupName,
+      );
 }
 
 /// A named group of stencils — drawio's shape-library sections (General,
 /// Flowchart, Arrows …). The panel renders one collapsible header per group.
 class StencilGroup {
-  const StencilGroup(this.name, this.stencils,
-      {this.expandAtWidth = double.infinity});
+  StencilGroup(this.name, List<Stencil> stencils,
+      {this.expandAtWidth = double.infinity})
+      : stencils = List<Stencil>.unmodifiable(
+          stencils.map((s) => s.group == name ? s : s.withGroup(name)),
+        );
 
   final String name;
   final List<Stencil> stencils;

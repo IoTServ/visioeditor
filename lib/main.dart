@@ -2205,11 +2205,7 @@ class _StencilPanelState extends State<_StencilPanel> {
             width: 52,
             height: 32,
             child: CustomPaint(
-              painter: _StencilThumbPainter(
-                s,
-                scheme.primaryContainer,
-                scheme.onSurfaceVariant,
-              ),
+              painter: _StencilThumbPainter(s),
             ),
           ),
           const SizedBox(height: 2),
@@ -2686,11 +2682,19 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
 /// Cached geometry for a stencil thumbnail (shape build is relatively expensive
 /// when hundreds of tiles are in the palette).
 class _ThumbGeom {
-  _ThumbGeom(this.width, this.height, this.paths);
+  _ThumbGeom(
+    this.width,
+    this.height,
+    this.paths,
+    this.fillColor,
+    this.strokeColor,
+  );
 
   final double width;
   final double height;
   final List<({Path path, bool fill, bool line})> paths;
+  final Color fillColor;
+  final Color strokeColor;
 }
 
 /// Paints a stencil's real geometry into a thumbnail box. Builds the shape once
@@ -2701,15 +2705,18 @@ class _ThumbGeom {
 /// Records a [ui.Picture] per (stencil, colours, size) so scrolling the shapes
 /// panel only blits pictures instead of rebuilding paths every frame.
 class _StencilThumbPainter extends CustomPainter {
-  _StencilThumbPainter(this.stencil, this.fillColor, this.strokeColor);
+  _StencilThumbPainter(this.stencil);
 
   final Stencil stencil;
-  final Color fillColor;
-  final Color strokeColor;
 
   static final Map<Stencil, _ThumbGeom> _geomCache = <Stencil, _ThumbGeom>{};
-  static final Map<(Stencil, int, int, int, int), ui.Picture> _pictureCache =
-      <(Stencil, int, int, int, int), ui.Picture>{};
+  static final Map<(Stencil, int, int), ui.Picture> _pictureCache =
+      <(Stencil, int, int), ui.Picture>{};
+
+  static Color _flutterColor(VsdxColor? c, {required Color fallback}) {
+    if (c == null) return fallback;
+    return Color(c.value);
+  }
 
   _ThumbGeom _geom() {
     final hit = _geomCache[stencil];
@@ -2717,28 +2724,28 @@ class _StencilThumbPainter extends CustomPainter {
     final shape = stencil.build(0, 0, 0);
     final w = shape.width;
     final h = shape.height;
+    final fillColor = shape.fill.hasFill
+        ? _flutterColor(shape.fill.foreground, fallback: const Color(0xFFDAE8FC))
+        : const Color(0x00000000);
+    final strokeColor = shape.line.hasLine
+        ? _flutterColor(shape.line.color, fallback: const Color(0xFF6C8EBF))
+        : const Color(0x00000000);
     final paths = <({Path path, bool fill, bool line})>[];
     if (w > 0 && h > 0) {
       for (final g in shape.geometries) {
         if (g.noShow) continue;
         paths.add((
           path: buildPath(g, widthInches: w, heightInches: h),
-          fill: !g.noFill,
-          line: !g.noLine,
+          fill: !g.noFill && shape.fill.hasFill,
+          line: !g.noLine && shape.line.hasLine,
         ));
       }
     }
-    return _geomCache[stencil] = _ThumbGeom(w, h, paths);
+    return _geomCache[stencil] = _ThumbGeom(w, h, paths, fillColor, strokeColor);
   }
 
   ui.Picture _picture(Size size) {
-    final key = (
-      stencil,
-      fillColor.toARGB32(),
-      strokeColor.toARGB32(),
-      size.width.round(),
-      size.height.round(),
-    );
+    final key = (stencil, size.width.round(), size.height.round());
     final hit = _pictureCache[key];
     if (hit != null) return hit;
     final recorder = ui.PictureRecorder();
@@ -2759,10 +2766,10 @@ class _StencilThumbPainter extends CustomPainter {
         canvas.translate(dx, size.height - dy);
         canvas.scale(s, -s);
         final fill = Paint()
-          ..color = fillColor
+          ..color = geom.fillColor
           ..style = PaintingStyle.fill;
         final line = Paint()
-          ..color = strokeColor
+          ..color = geom.strokeColor
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2 / s
           ..strokeJoin = StrokeJoin.round
@@ -2785,9 +2792,7 @@ class _StencilThumbPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _StencilThumbPainter old) =>
-      old.stencil != stencil ||
-      old.fillColor != fillColor ||
-      old.strokeColor != strokeColor;
+      old.stencil != stencil;
 }
 
 /// Right-hand inspector for the current selection (fill / line / delete).
