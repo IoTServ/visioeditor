@@ -1140,6 +1140,13 @@ void main() {
         closeTo(0.12, 1e-9));
     c.setSoftEdges(false);
     expect(c.selectedHasSoftEdges, isFalse);
+    expect(c.currentPage!.findShapeById(id)!.line.softEdgesInches, 0);
+    // Re-enable restores the last non-zero radius (not the 0.05 default).
+    c.setSoftEdges(true);
+    expect(c.currentPage!.findShapeById(id)!.line.softEdgesInches,
+        closeTo(0.12, 1e-9));
+    c.setSoftEdges(false);
+    expect(c.selectedHasSoftEdges, isFalse);
 
     c.setLineSpacing(1.5);
     expect(c.selectedParaStyle?.lineSpacing, closeTo(1.5, 1e-9));

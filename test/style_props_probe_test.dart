@@ -277,6 +277,37 @@ void main() {
     expect(svg.contains('rotate(-90)'), isTrue);
   });
 
+  test('SVG edge-label TextBkgnd uses tight plate not connector box', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(id: 9, ax: 1, ay: 2, bx: 5, by: 2).copyWith(
+          text: 'Go',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Go',
+                charStyle: VsdxCharStyle(fontSizeInches: 0.14),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              backgroundColor: VsdxColor(0xFFFFFF00),
+            ),
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Tight plate (~chars × font), not the 4"-wide connector Width box.
+    expect(svg.contains('width="4"'), isFalse);
+    expect(svg.toLowerCase().contains('fill="#ffff00"'), isTrue);
+    expect(RegExp(r'rx="0\.02"[^>]*width="0\.\d+"|width="0\.\d+"[^>]*rx="0\.02"')
+        .hasMatch(svg), isTrue);
+  });
+
   test('TextBkgndTrans round-trips and exports with opacity', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

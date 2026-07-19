@@ -1567,18 +1567,42 @@ class VsdxToSvgSerializer {
     }
     xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
 
-    // TextBkgnd in block-local coords (lower-left origin, Y-up).
+    // TextBkgnd. Loose edge labels (no TxtPin) get a tight plate around the
+    // glyphs — matching canvas — instead of the connector's Width×Height box.
+    final looseEdge = shape.isGlueableConnector &&
+        block.pinXInches == null &&
+        block.pinYInches == null;
     if (block.backgroundColor != null) {
       final bgOp = _combinedOpacity(
         block.backgroundColor,
         block.backgroundTransparency,
       );
-      buf.writeln(
-        '$indent<g transform="$xf">'
-        '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
-        'fill="${_hex(block.backgroundColor!)}" '
-        'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
-      );
+      if (looseEdge) {
+        final plain = runs.map((r) => r.text).join();
+        final fs = runs
+            .map((r) => r.charStyle.fontSizeInches)
+            .fold<double>(0.14, math.max);
+        final estW = math.max(plain.length * fs * 0.55, fs);
+        final estH = fs * 1.4;
+        const pad = 0.03;
+        final angle = block.angleRad != 0
+            ? ' rotate(${_n(block.angleRad * 180 / math.pi)})'
+            : '';
+        buf.writeln(
+          '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle">'
+          '<rect x="${_n(-estW / 2 - pad)}" y="${_n(-estH / 2 - pad)}" '
+          'width="${_n(estW + 2 * pad)}" height="${_n(estH + 2 * pad)}" '
+          'rx="0.02" fill="${_hex(block.backgroundColor!)}" '
+          'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
+        );
+      } else {
+        buf.writeln(
+          '$indent<g transform="$xf">'
+          '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
+          'fill="${_hex(block.backgroundColor!)}" '
+          'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
+        );
+      }
     }
 
     // Split into paragraphs (Visio `\n` / `<pp>`). Each keeps its own

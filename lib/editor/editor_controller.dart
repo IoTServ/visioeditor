@@ -78,6 +78,8 @@ class EditorController extends ChangeNotifier {
   // shape, inherited by newly-created shapes. Reset per document.
   VsdxFill? _memoFill;
   VsdxLine? _memoLine;
+  /// Last non-zero SoftEdgesSize so toggle off→on restores the user's radius.
+  double _memoSoftEdgesInches = 0.05;
 
   // Monotonic counter for minting fresh `/visio/media/imageN.ext` part names on
   // image insert. Lives outside the document snapshot so it keeps climbing
@@ -5855,31 +5857,33 @@ class EditorController extends ChangeNotifier {
         (s) {
           if (s.is1D) return s;
           final cur = s.line.softEdgesInches;
-          return s.copyWith(
-            line: s.line.copyWith(
-              softEdgesInches: enabled
-                  ? (cur > 0 ? cur : 0.05)
-                  : 0.0,
-            ),
-          );
+          if (!enabled) {
+            if (cur > 0) _memoSoftEdgesInches = cur;
+            return s.copyWith(line: s.line.copyWith(softEdgesInches: 0));
+          }
+          final size = cur > 0
+              ? cur
+              : (_memoSoftEdgesInches > 0 ? _memoSoftEdgesInches : 0.05);
+          return s.copyWith(line: s.line.copyWith(softEdgesInches: size));
         },
         rememberStyle: true,
       );
 
   /// Update Soft Edges blur radius (inches).
-  void updateSoftEdges(double sizeInches, {bool transient = false}) =>
-      _updateSelectedShapes(
-        (s) {
-          if (s.is1D) return s;
-          return s.copyWith(
-            line: s.line.copyWith(
-              softEdgesInches: sizeInches.clamp(0.0, 0.25),
-            ),
-          );
-        },
-        transient: transient,
-        rememberStyle: true,
-      );
+  void updateSoftEdges(double sizeInches, {bool transient = false}) {
+    final clamped = sizeInches.clamp(0.0, 0.25);
+    if (clamped > 0) _memoSoftEdgesInches = clamped;
+    _updateSelectedShapes(
+      (s) {
+        if (s.is1D) return s;
+        return s.copyWith(
+          line: s.line.copyWith(softEdgesInches: clamped),
+        );
+      },
+      transient: transient,
+      rememberStyle: true,
+    );
+  }
 
   /// Rotate a single shape about its pin (radians, Visio CCW convention).
   /// 1-D connectors rotate Begin/End geometry; [angleRad] is treated as a
@@ -6616,6 +6620,7 @@ class EditorController extends ChangeNotifier {
     _clearFindState();
     _memoFill = null;
     _memoLine = null;
+    _memoSoftEdgesInches = 0.05;
     _imageSeq = 0;
     // Page guides are keyed by page id; empty docs reuse id 0, so clear on
     // every fresh document load or the previous file's guides leak through.

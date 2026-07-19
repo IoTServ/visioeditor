@@ -1439,13 +1439,22 @@ class VsdxPainter extends CustomPainter {
       final oy = -tp.height / 2;
       if (tp.width > 0) {
         final pad = 0.03 * s;
+        // Prefer authored TextBkgnd (matches SVG / Visio); else page/white.
+        final Color plate;
+        if (block.backgroundColor != null) {
+          final bg = Color(block.backgroundColor!.value);
+          final t = block.backgroundTransparency.clamp(0.0, 1.0);
+          plate = bg.withValues(alpha: bg.a * (1.0 - t));
+        } else {
+          plate = _edgeLabelBackground();
+        }
         canvas.drawRRect(
           RRect.fromRectAndRadius(
             Rect.fromLTWH(
                 ox - pad, oy - pad, tp.width + pad * 2, tp.height + pad * 2),
             Radius.circular(0.02 * s),
           ),
-          Paint()..color = _edgeLabelBackground(),
+          Paint()..color = plate,
         );
       }
       tp.paint(canvas, Offset(ox, oy));
