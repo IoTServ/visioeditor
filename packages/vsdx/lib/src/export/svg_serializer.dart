@@ -288,6 +288,8 @@ class VsdxToSvgSerializer {
       localRoute,
       unders,
       lineJumpRadiusInches,
+      style: shape.connectorProps?.conLineJumpStyle,
+      pageStyle: page.pageSheet.lineJumpStyle,
       format: _n,
     );
   }
@@ -1333,8 +1335,11 @@ class VsdxToSvgSerializer {
       final mid = 'arrow-start-$paintId';
       final mw = _arrowMarkerSize(line.beginArrowSizeInches);
       final body = _arrowMarkerBody(line.beginArrow, tipAtEnd: false);
+      // userSpaceOnUse: marker size is absolute page inches (matches canvas
+      // scale(sizeInches)), not multiplied by stroke-width.
       defs.write(
-        '<marker id="$mid" viewBox="0 0 10 10" refX="0" refY="5" '
+        '<marker id="$mid" markerUnits="userSpaceOnUse" '
+        'viewBox="0 0 10 10" refX="0" refY="5" '
         'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" orient="auto">'
         '$body</marker>',
       );
@@ -1345,7 +1350,8 @@ class VsdxToSvgSerializer {
       final mw = _arrowMarkerSize(line.endArrowSizeInches);
       final body = _arrowMarkerBody(line.endArrow, tipAtEnd: true);
       defs.write(
-        '<marker id="$mid" viewBox="0 0 10 10" refX="10" refY="5" '
+        '<marker id="$mid" markerUnits="userSpaceOnUse" '
+        'viewBox="0 0 10 10" refX="10" refY="5" '
         'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" '
         'orient="auto-start-reverse">'
         '$body</marker>',
@@ -1495,10 +1501,12 @@ class VsdxToSvgSerializer {
     };
   }
 
-  /// Visio arrow size (inches) → SVG markerWidth; 0.125" maps to 6 (legacy).
+  /// Visio BeginArrowSize / EndArrowSize (inches) → SVG markerWidth under
+  /// `markerUnits="userSpaceOnUse"`. viewBox is 0–10 with tip span ≈ 10, so
+  /// markerWidth == sizeInches matches canvas `scale(sizeInches)`.
   double _arrowMarkerSize(double sizeInches) {
     final s = sizeInches <= 0 ? 0.125 : sizeInches;
-    return (s / 0.125 * 6.0).clamp(3.0, 18.0);
+    return s.clamp(0.02, 1.0);
   }
 
   /// Combine Visio `*Trans` (0..1) with the colour's own ARGB alpha
@@ -2161,7 +2169,8 @@ class VsdxToSvgSerializer {
     if ((c.fontScale - 1.0).abs() > 1e-6) {
       letterSpacing += fs * (c.fontScale.clamp(0.1, 4.0) - 1.0) * 0.15;
     }
-    final family = c.fontFamily ?? 'sans-serif';
+    // Match canvas fontFallback: Latin face then AsianFont for CJK glyphs.
+    final family = _svgFontFamily(c.fontFamily, c.asianFont);
     final weight = c.style.bold ? 'bold' : 'normal';
     final italic = c.style.italic ? 'italic' : 'normal';
     final deco = <String>[
@@ -2170,7 +2179,7 @@ class VsdxToSvgSerializer {
       if (c.overline) 'overline',
     ];
     final attrs = StringBuffer(
-      'font-family="${_esc(family)}" font-size="${_n(fs)}" '
+      'font-family="$family" font-size="${_n(fs)}" '
       'font-weight="$weight" font-style="$italic" '
       '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
@@ -2210,6 +2219,23 @@ class VsdxToSvgSerializer {
     if (raw != null) return raw;
     if (themeIdx == null) return null;
     return theme.resolve(themeIdx);
+  }
+
+  /// CSS font-family list: Latin face, then AsianFont (CJK), then sans-serif.
+  String _svgFontFamily(String? latin, String? asian) {
+    final parts = <String>[];
+    void add(String? name) {
+      if (name == null || name.isEmpty) return;
+      final quoted = name.contains(RegExp(r'''[\s,"']'''))
+          ? "'${_esc(name.replaceAll("'", ''))}'"
+          : _esc(name);
+      if (!parts.contains(quoted)) parts.add(quoted);
+    }
+
+    add(latin);
+    add(asian);
+    parts.add('sans-serif');
+    return parts.join(', ');
   }
 
   String _hex(VsdxColor c) {

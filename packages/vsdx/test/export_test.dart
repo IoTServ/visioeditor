@@ -494,6 +494,67 @@ void main() {
     expect(svg, contains('stroke-linecap="square"'));
   });
 
+  test('SVG arrow markers use userSpaceOnUse absolute inches', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 4,
+                endArrowSizeInches: 0.125,
+                weightInches: 0.05,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('markerUnits="userSpaceOnUse"'));
+    expect(svg, contains('markerWidth="0.125"'));
+    expect(svg.contains('markerWidth="6"'), isFalse,
+        reason: 'legacy strokeWidth-scaled marker sizes must not return');
+  });
+
+  test('SVG font-family includes AsianFont after Latin face', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '订单',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  asianFont: 'Microsoft YaHei',
+                  fontSizeInches: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains("font-family=\"Arial, 'Microsoft YaHei', sans-serif\""),
+    );
+  });
+
   test('SVG open-stealth arrow (id 8) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

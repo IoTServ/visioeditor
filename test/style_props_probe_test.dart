@@ -1013,8 +1013,10 @@ void main() {
         ],
       ),
     );
-    expect(small.contains('markerWidth="6"'), isTrue);
-    expect(large.contains('markerWidth="12"'), isTrue);
+    expect(small.contains('markerUnits="userSpaceOnUse"'), isTrue);
+    expect(small.contains('markerWidth="0.125"'), isTrue);
+    expect(large.contains('markerWidth="0.25"'), isTrue,
+        reason: 'arrow size is absolute inches, not strokeWidth-scaled');
   });
 
   test('patch clears DblUnderline when reset to false', () {

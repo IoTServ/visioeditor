@@ -82,6 +82,36 @@ void main() {
     expect(small.contains('A 0.2 0.2'), isFalse);
   });
 
+  test('SVG LineJumpStyle Gap omits arc and opens a break', () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4, lineJumpStyle: 2),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(RegExp(r'\sA\s').hasMatch(svg), isFalse,
+        reason: 'Gap style must not emit arc hops');
+    // Gap inserts an M after the approach L (break in the stroke).
+    expect(RegExp(r'L [^"]+ M ').hasMatch(svg), isTrue);
+  });
+
+  test('SVG LineJumpStyle Square emits rectangular hop', () {
+    final route = <Offset2D>[const Offset2D(0, 1), const Offset2D(4, 1)];
+    final unders = <List<Offset2D>>[
+      <Offset2D>[const Offset2D(2, 0), const Offset2D(2, 2)],
+    ];
+    final d = polylineWithJumpsSvg(route, unders, 0.2, style: 3);
+    expect(d.contains(' A '), isFalse);
+    // in → up → across → down (three L segments after approach)
+    expect(RegExp(r'L [\d.]+ [\d.]+ L [\d.]+ [\d.]+ L [\d.]+ [\d.]+')
+        .hasMatch(d), isTrue);
+  });
+
   test('drawnConnectorPagePolyline keeps dense curved geometry', () {
     final r1 = VsdxShapeFactory.rectangle(
         id: 1, pinX: 1, pinY: 1, width: 1, height: 1);

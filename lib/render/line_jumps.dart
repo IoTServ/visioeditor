@@ -1,5 +1,5 @@
 /// Line jumps (drawio's "Line jumps"): where one connector crosses another,
-/// draw a small arc so the upper connector visibly hops over the lower one
+/// draw a small hop so the upper connector visibly jumps over the lower one
 /// instead of forming an ambiguous "+". This is a pure, render-only overlay —
 /// it never touches the model or the round-trip geometry.
 ///
@@ -46,12 +46,24 @@ List<Offset> polylineCrossings(List<Offset> route, List<List<Offset>> unders) {
   return <Offset>[for (final p in pts) Offset(p.x, p.y)];
 }
 
-/// A stroke [Path] for polyline [route] that arcs over each crossing with a
-/// segment in [unders], with jump radius [r] (same units as the points). When
-/// nothing crosses, the result is just the plain polyline.
-Path polylineWithJumps(List<Offset> route, List<List<Offset>> unders, double r) {
+/// A stroke [Path] for polyline [route] that hops over each crossing with a
+/// segment in [unders], with jump radius [r] (same units as the points).
+///
+/// [style] / [pageStyle] follow Visio `ConLineJumpStyle` / `LineJumpStyle`
+/// (Arc / Gap / Square). When nothing crosses, the result is the plain polyline.
+Path polylineWithJumps(
+  List<Offset> route,
+  List<List<Offset>> unders,
+  double r, {
+  int? style,
+  int? pageStyle,
+}) {
   final path = Path();
   if (route.isEmpty) return path;
+  final mode = vsdx.LineJumpRenderStyle.resolve(
+    conStyle: style,
+    pageStyle: pageStyle,
+  );
   path.moveTo(route.first.dx, route.first.dy);
   for (var i = 0; i + 1 < route.length; i++) {
     final a = route[i];
@@ -71,13 +83,26 @@ Path polylineWithJumps(List<Offset> route, List<List<Offset>> unders, double r) 
 
     final half = r / len;
     var cursor = 0.0;
+    final ux = seg.dx / len;
+    final uy = seg.dy / len;
+    final perp = Offset(-uy * r, ux * r);
     for (final t in ts) {
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
       final inP = a + seg * (t - half);
       final outP = a + seg * (t + half);
       path.lineTo(inP.dx, inP.dy);
-      path.arcToPoint(outP, radius: Radius.circular(r), clockwise: false);
+      switch (mode) {
+        case vsdx.LineJumpRenderStyle.gap:
+          path.moveTo(outP.dx, outP.dy);
+        case vsdx.LineJumpRenderStyle.square:
+          path
+            ..lineTo(inP.dx + perp.dx, inP.dy + perp.dy)
+            ..lineTo(outP.dx + perp.dx, outP.dy + perp.dy)
+            ..lineTo(outP.dx, outP.dy);
+        case vsdx.LineJumpRenderStyle.arc:
+          path.arcToPoint(outP, radius: Radius.circular(r), clockwise: false);
+      }
       cursor = t + half;
     }
     path.lineTo(b.dx, b.dy);

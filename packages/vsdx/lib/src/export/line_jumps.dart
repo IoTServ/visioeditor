@@ -1,7 +1,7 @@
 /// Line jumps for SVG/PDF export (and shared with the Flutter canvas).
 ///
-/// Where one connector crosses another, draw a small semicircle so the upper
-/// connector hops over the lower one instead of forming an ambiguous "+".
+/// Where one connector crosses another, draw a small hop so the upper
+/// connector jumps over the lower one instead of forming an ambiguous "+".
 /// Render-only — never mutates model geometry.
 library;
 
@@ -17,6 +17,26 @@ const double kDefaultLineJumpRadiusInches = 0.07;
 /// `0` (visPLOJumpNone) turns jumps off. Any other value or an unset code
 /// keeps the hop-over overlay (Visio / Edraw behaviour).
 bool lineJumpsEnabledForCode(int? lineJumpCode) => lineJumpCode != 0;
+
+/// Visio `LineJumpStyle` / `ConLineJumpStyle` → render mode.
+///
+/// Page: 0/1 = Arc, 2 = Gap, 3 = Square (higher values ≈ Arc).
+/// Shape `ConLineJumpStyle`: 0 = page default, 1 = Arc, 2 = Gap, 3 = Square.
+enum LineJumpRenderStyle {
+  arc,
+  gap,
+  square;
+
+  /// Resolve [conStyle] (shape) over [pageStyle] (page layout).
+  static LineJumpRenderStyle resolve({int? conStyle, int? pageStyle}) {
+    final raw = (conStyle != null && conStyle != 0) ? conStyle : pageStyle;
+    return switch (raw) {
+      2 => LineJumpRenderStyle.gap,
+      3 => LineJumpRenderStyle.square,
+      _ => LineJumpRenderStyle.arc,
+    };
+  }
+}
 
 /// Intersection of segments `a→b` and `c→d` when they *properly* cross
 /// (strictly interior to both segments), else `null`.
@@ -64,18 +84,22 @@ List<Offset2D> polylineCrossings(
   return out;
 }
 
-/// SVG path `d` for [route] that arcs over each crossing with a segment in
+/// SVG path `d` for [route] that hops over each crossing with a segment in
 /// [unders], with jump radius [r] (same units as the points).
 ///
-/// Semicircle uses `A r r 0 0 0` (sweep=0 = counter-clockwise), matching
-/// Flutter `arcToPoint(..., clockwise: false)`.
+/// [style] is Visio `ConLineJumpStyle` or page `LineJumpStyle` (null → Arc).
+/// Arc uses `A r r 0 0 0` (sweep=0 = counter-clockwise), matching Flutter
+/// `arcToPoint(..., clockwise: false)`.
 String polylineWithJumpsSvg(
   List<Offset2D> route,
   List<List<Offset2D>> unders,
   double r, {
+  int? style,
+  int? pageStyle,
   String Function(double) format = _defaultFormat,
 }) {
   if (route.isEmpty) return '';
+  final mode = LineJumpRenderStyle.resolve(conStyle: style, pageStyle: pageStyle);
   final buf = StringBuffer('M ${format(route.first.x)} ${format(route.first.y)}');
   for (var i = 0; i + 1 < route.length; i++) {
     final a = route[i];
@@ -100,6 +124,11 @@ String polylineWithJumpsSvg(
 
     final half = r / len;
     var cursor = 0.0;
+    final ux = sdx / len;
+    final uy = sdy / len;
+    // Left-hand perpendicular (CCW), matching arc sweep.
+    final px = -uy * r;
+    final py = ux * r;
     for (final t in ts) {
       if (t - half <= cursor + 1e-6) continue;
       if (t + half >= 1 - 1e-6) break;
@@ -108,9 +137,20 @@ String polylineWithJumpsSvg(
       final outX = a.x + sdx * (t + half);
       final outY = a.y + sdy * (t + half);
       buf.write(' L ${format(inX)} ${format(inY)}');
-      buf.write(
-        ' A ${format(r)} ${format(r)} 0 0 0 ${format(outX)} ${format(outY)}',
-      );
+      switch (mode) {
+        case LineJumpRenderStyle.gap:
+          buf.write(' M ${format(outX)} ${format(outY)}');
+        case LineJumpRenderStyle.square:
+          buf.write(
+            ' L ${format(inX + px)} ${format(inY + py)}'
+            ' L ${format(outX + px)} ${format(outY + py)}'
+            ' L ${format(outX)} ${format(outY)}',
+          );
+        case LineJumpRenderStyle.arc:
+          buf.write(
+            ' A ${format(r)} ${format(r)} 0 0 0 ${format(outX)} ${format(outY)}',
+          );
+      }
       cursor = t + half;
     }
     buf.write(' L ${format(b.x)} ${format(b.y)}');

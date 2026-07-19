@@ -473,7 +473,15 @@ class VsdxPainter extends CustomPainter {
         <Offset>[for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg)],
     ];
     if (polylineCrossings(route, unders).isEmpty) return null;
-    return polylineWithJumps(route, unders, lineJumpRadiusInches);
+    final pageStyle = (_paintTarget ?? page)?.pageSheet.lineJumpStyle;
+    final conStyle = shape.connectorProps?.conLineJumpStyle;
+    return polylineWithJumps(
+      route,
+      unders,
+      lineJumpRadiusInches,
+      style: conStyle,
+      pageStyle: pageStyle,
+    );
   }
 
   /// 1-D shape with no explicit Geometry section — route an orthogonal
@@ -499,14 +507,25 @@ class VsdxPainter extends CustomPainter {
             for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg),
           ],
       ];
+      final pageStyle = ctx?.pageSheet.lineJumpStyle;
+      final conStyle = shape.connectorProps?.conLineJumpStyle;
       path = polylineCrossings(localPts, unders).isEmpty
           ? _polylinePath(localPts)
-          : polylineWithJumps(localPts, unders, lineJumpRadiusInches);
+          : polylineWithJumps(
+              localPts,
+              unders,
+              lineJumpRadiusInches,
+              style: conStyle,
+              pageStyle: pageStyle,
+            );
     } else {
       path = _polylinePath(localPts);
     }
-    // Match [_paintGeometries]: LineGradient + CompoundType on connectors
-    // that only carry BeginX/EndX (no Geometry section).
+    // Match [_paintGeometries]: effects then LineGradient + CompoundType on
+    // connectors that only carry BeginX/EndX (no Geometry section).
+    _drawShadow(canvas, shape, path);
+    _drawGlow(canvas, shape, path);
+    _drawReflection(canvas, shape, path, noFill: true, noLine: false);
     _applyLineGradient(stroke, shape, path.getBounds());
     final dashes = dashPatternFor(shape.line.pattern);
     final strokeP = dashes == null ? path : dashedPath(path, dashes);
