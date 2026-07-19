@@ -171,6 +171,61 @@ void main() {
     );
   });
 
+  test('LineJumpCode 5 reverses peer z-order; Neither peers are skipped', () {
+    expect(
+      lineJumpPeerIndices(k: 1, routeCount: 3, pageJumpCode: 4),
+      <int>[0],
+    );
+    expect(
+      lineJumpPeerIndices(k: 0, routeCount: 3, pageJumpCode: 5),
+      <int>[1, 2],
+    );
+    expect(
+      lineJumpShapeMayHopAtZ(k: 0, routeCount: 3, pageJumpCode: 5),
+      isTrue,
+    );
+    expect(
+      lineJumpShapeMayHopAtZ(k: 0, routeCount: 3, pageJumpCode: 4),
+      isFalse,
+    );
+    expect(
+      lineJumpPeerIndices(
+        k: 1,
+        routeCount: 2,
+        pageJumpCode: 4,
+        peerConCodes: <int?>[4, 0],
+      ),
+      isEmpty,
+      reason: 'Neither peer suppresses the crossing',
+    );
+    expect(
+      lineJumpPeerIndices(
+        k: 0,
+        routeCount: 2,
+        pageJumpCode: 4,
+        selfConCode: 0,
+        peerConCodes: <int?>[0, 3],
+      ),
+      <int>[1],
+      reason: 'Other peer forces lower z to hop',
+    );
+  });
+
+  test('SVG LineJumpCode 5 emits hops on first-drawn connector', () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 5),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(RegExp(r'\sA\s').hasMatch(svg), isTrue);
+  });
+
   test('LineJumpCode Horizontal skips vertical segment hops', () {
     final route = <Offset2D>[const Offset2D(2, 0), const Offset2D(2, 4)];
     final unders = <List<Offset2D>>[

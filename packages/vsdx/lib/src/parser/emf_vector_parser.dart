@@ -3,8 +3,8 @@
 /// Prefer [extractEmfEmbeddedBitmap] when the file is a thin wrapper around a
 /// DIB. This parser covers the GDI path used by OLE `\x02OlePres000` previews
 /// and pure-vector ForeignData: pens/brushes, MOVETOEX / LINETO,
-/// POLYBEZIER / POLYBEZIERTO / POLYBEZIER16 / POLYBEZIERTO16, POLYGON16 /
-/// POLYLINE16 / POLYPOLYGON16, rectangle/ellipse, and ExtTextOutW.
+/// POLYBEZIER* / POLYLINE* / POLYGON* (32-bit and 16-bit, incl. *TO),
+/// POLYPOLYGON16, rectangle/ellipse, and ExtTextOutW.
 library;
 
 import 'dart:math' as math;
@@ -14,6 +14,8 @@ import 'metafile_drawing.dart';
 
 const int _emrHeader = 1;
 const int _emrPolyBezier = 2;
+const int _emrPolygon = 3;
+const int _emrPolyline = 4;
 const int _emrPolyBezierTo = 5;
 const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
@@ -28,12 +30,14 @@ const int _emrDeleteObject = 40;
 const int _emrEllipse = 42;
 const int _emrRectangle = 43;
 const int _emrLineTo = 54;
+const int _emrPolylineTo = 59;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
 const int _emrPolyBezier16 = 85;
 const int _emrPolygon16 = 86;
 const int _emrPolyline16 = 87;
 const int _emrPolyBezierTo16 = 88;
+const int _emrPolylineTo16 = 89;
 const int _emrPolyPolygon16 = 91;
 
 bool looksLikeEmf(Uint8List b) =>
@@ -116,6 +120,25 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       ops.add(MetafilePathOp(
         points: dense,
         closed: fill,
+        fill: fill,
+        stroke: stroke,
+        fillArgb: fill ? brushColor : 0,
+        strokeArgb: stroke ? penColor : 0,
+        strokeWidth: penWidth,
+      ));
+    }
+  }
+
+  void emitPolyline(List<MetafilePoint> pts, {required bool closed}) {
+    if (pts.length < 2) return;
+    ensurePts(pts);
+    curPt = pts.last;
+    final fill = closed && brushStyle == 0;
+    final stroke = penStyle != 5;
+    if (fill || stroke) {
+      ops.add(MetafilePathOp(
+        points: pts,
+        closed: closed,
         fill: fill,
         stroke: stroke,
         fillArgb: fill ? brushColor : 0,
@@ -257,28 +280,29 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       if (curPt != null && ctrl.length >= 3) {
         emitBezier(<MetafilePoint>[curPt!, ...ctrl]);
       }
+    } else if ((t == _emrPolygon || t == _emrPolyline) &&
+        params + 20 <= recEnd) {
+      // Bounds(16) + count(4) + POINTL
+      final count = bd.getUint32(params + 16, Endian.little);
+      final pts = _readPoints32(bd, params + 20, recEnd, count);
+      emitPolyline(pts, closed: t == _emrPolygon);
     } else if ((t == _emrPolygon16 || t == _emrPolyline16) &&
         params + 20 <= recEnd) {
-      // Bounds(16) + count(4) + points
+      // Bounds(16) + count(4) + POINTS
       final count = bd.getInt32(params + 16, Endian.little);
       final pts = _readPoints16(bd, params + 20, recEnd, count);
-      if (pts.length >= 2) {
-        ensurePts(pts);
-        curPt = pts.last;
-        final closed = t == _emrPolygon16;
-        final fill = closed && brushStyle == 0;
-        final stroke = penStyle != 5;
-        if (fill || stroke) {
-          ops.add(MetafilePathOp(
-            points: pts,
-            closed: closed,
-            fill: fill,
-            stroke: stroke,
-            fillArgb: fill ? brushColor : 0,
-            strokeArgb: stroke ? penColor : 0,
-            strokeWidth: penWidth,
-          ));
-        }
+      emitPolyline(pts, closed: t == _emrPolygon16);
+    } else if (t == _emrPolylineTo && params + 20 <= recEnd) {
+      final count = bd.getUint32(params + 16, Endian.little);
+      final pts = _readPoints32(bd, params + 20, recEnd, count);
+      if (curPt != null && pts.isNotEmpty) {
+        emitPolyline(<MetafilePoint>[curPt!, ...pts], closed: false);
+      }
+    } else if (t == _emrPolylineTo16 && params + 20 <= recEnd) {
+      final count = bd.getUint32(params + 16, Endian.little);
+      final pts = _readPoints16(bd, params + 20, recEnd, count);
+      if (curPt != null && pts.isNotEmpty) {
+        emitPolyline(<MetafilePoint>[curPt!, ...pts], closed: false);
       }
     } else if (t == _emrPolyPolygon16 && params + 20 <= recEnd) {
       final nPolys = bd.getUint32(params + 16, Endian.little);

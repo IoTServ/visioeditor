@@ -222,6 +222,86 @@ void main() {
     expect(paths.last.points.length, greaterThan(3));
   });
 
+  test('EMF POLYLINE (32-bit) and POLYLINETO16 continue from MoveTo', () {
+    final out = BytesBuilder();
+    void u32(int v) {
+      final b = ByteData(4)..setUint32(0, v, Endian.little);
+      out.add(b.buffer.asUint8List());
+    }
+
+    void i32(int v) {
+      final b = ByteData(4)..setInt32(0, v, Endian.little);
+      out.add(b.buffer.asUint8List());
+    }
+
+    void i16(int v) {
+      final b = ByteData(2)..setInt16(0, v, Endian.little);
+      out.add(b.buffer.asUint8List());
+    }
+
+    u32(1);
+    u32(88);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    out.add([0x20, 0x45, 0x4D, 0x46]);
+    while (out.length < 88) {
+      out.addByte(0);
+    }
+
+    // EMR_POLYLINE = 4, count=2 → size 8+16+4+2*8 = 44
+    u32(4);
+    u32(44);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    u32(2);
+    i32(0);
+    i32(0);
+    i32(50);
+    i32(50);
+
+    // EMR_MOVETOEX then POLYLINETO16 → size 8+16+4+2*4 = 36
+    u32(27);
+    u32(16);
+    i32(50);
+    i32(50);
+    u32(89);
+    u32(36);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    u32(2);
+    i16(75);
+    i16(25);
+    i16(100);
+    i16(0);
+
+    u32(14);
+    u32(20);
+    u32(0);
+    u32(16);
+    u32(20);
+
+    final drawing = parseMetafileDrawing(
+      Uint8List.fromList(out.toBytes()),
+      mimeType: 'image/x-emf',
+    );
+    expect(drawing, isNotNull);
+    final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+    expect(paths.length, greaterThanOrEqualTo(2));
+    expect(paths.first.points.length, 2);
+    expect(paths.last.points.first.x, 50);
+    expect(paths.last.points.length, 3);
+  });
+
   test('EMF MOVETOEX + LINETO emit a stroked segment', () {
     final out = BytesBuilder();
     void u32(int v) {

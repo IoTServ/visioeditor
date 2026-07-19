@@ -133,6 +133,7 @@ class VsdxPainter extends CustomPainter {
   // page-space polyline in z-order, plus a shape-id → z-index lookup. Used so a
   // connector can hop over the connectors drawn beneath it.
   List<List<Offset>> _connRoutesPage = const <List<Offset>>[];
+  List<int?> _connJumpCodes = const <int?>[];
   Map<int, int> _connZ = const <int, int>{};
 
   /// Whether line jumps are active for the page being painted — combines the
@@ -225,6 +226,7 @@ class VsdxPainter extends CustomPainter {
       _computeConnectorRoutes(target);
     } else {
       _connRoutesPage = const <List<Offset>>[];
+      _connJumpCodes = const <int?>[];
       _connZ = const <int, int>{};
     }
 
@@ -245,6 +247,7 @@ class VsdxPainter extends CustomPainter {
   /// and geometry-less) so a connector can hop over ones drawn beneath it.
   void _computeConnectorRoutes(VsdxPage p) {
     final routes = <List<Offset>>[];
+    final codes = <int?>[];
     final z = <int, int>{};
     void walk(List<VsdxShape> list) {
       for (final s in list) {
@@ -253,6 +256,7 @@ class VsdxPainter extends CustomPainter {
           if (pts.length >= 2) {
             z[s.id] = routes.length;
             routes.add(<Offset>[for (final pt in pts) Offset(pt.x, pt.y)]);
+            codes.add(s.connectorProps?.conLineJumpCode);
           }
         }
         if (!s.collapsed) walk(s.children);
@@ -261,6 +265,7 @@ class VsdxPainter extends CustomPainter {
 
     walk(p.shapes);
     _connRoutesPage = routes;
+    _connJumpCodes = codes;
     _connZ = z;
   }
 
@@ -488,11 +493,19 @@ class VsdxPainter extends CustomPainter {
   /// crosses nothing (draw the plain path).
   Path? _lineJumpsPath(VsdxShape shape, VsdxGeometry geom) {
     final k = _connZ[shape.id];
-    if (k == null || k == 0) return null; // nothing drawn beneath it
+    if (k == null) return null;
     final sheet = (_paintTarget ?? page)?.pageSheet;
+    final pageCode = sheet?.lineJumpCode;
+    if (!lineJumpShapeMayHopAtZ(
+      k: k,
+      routeCount: _connRoutesPage.length,
+      pageJumpCode: pageCode,
+    )) {
+      return null;
+    }
     if (!connectorLineJumpsEnabled(
       shape.connectorProps?.conLineJumpCode,
-      pageLineJumpCode: sheet?.lineJumpCode,
+      pageLineJumpCode: pageCode,
     )) {
       return null;
     }
@@ -502,8 +515,16 @@ class VsdxPainter extends CustomPainter {
         ? <Offset>[for (final pg in pageRoute) _pageToLocal(shape, pg)]
         : _polylineLocalPoints(geom);
     if (route.length < 2) return null;
+    final peerIdx = lineJumpPeerIndices(
+      k: k,
+      routeCount: _connRoutesPage.length,
+      pageJumpCode: pageCode,
+      selfConCode: shape.connectorProps?.conLineJumpCode,
+      peerConCodes: _connJumpCodes,
+    );
+    if (peerIdx.isEmpty) return null;
     final unders = <List<Offset>>[
-      for (var i = 0; i < k; i++)
+      for (final i in peerIdx)
         <Offset>[for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg)],
     ];
     if (polylineCrossings(route, unders).isEmpty) return null;
@@ -524,7 +545,7 @@ class VsdxPainter extends CustomPainter {
       unders,
       rx,
       radiusY: ry,
-      pageJumpCode: sheet?.lineJumpCode,
+      pageJumpCode: pageCode,
       style: conStyle,
       pageStyle: pageStyle,
       dirX: effectiveLineJumpDir(
@@ -555,13 +576,27 @@ class VsdxPainter extends CustomPainter {
     Path path;
     final k = _connZ[shape.id];
     final sheet = ctx?.pageSheet;
-    final jumpOk = connectorLineJumpsEnabled(
-      shape.connectorProps?.conLineJumpCode,
-      pageLineJumpCode: sheet?.lineJumpCode,
-    );
-    if (_lineJumpsActive && jumpOk && k != null && k > 0) {
+    final pageCode = sheet?.lineJumpCode;
+    final jumpOk = k != null &&
+        lineJumpShapeMayHopAtZ(
+          k: k,
+          routeCount: _connRoutesPage.length,
+          pageJumpCode: pageCode,
+        ) &&
+        connectorLineJumpsEnabled(
+          shape.connectorProps?.conLineJumpCode,
+          pageLineJumpCode: pageCode,
+        );
+    if (_lineJumpsActive && jumpOk) {
+      final peerIdx = lineJumpPeerIndices(
+        k: k,
+        routeCount: _connRoutesPage.length,
+        pageJumpCode: pageCode,
+        selfConCode: shape.connectorProps?.conLineJumpCode,
+        peerConCodes: _connJumpCodes,
+      );
       final unders = <List<Offset>>[
-        for (var i = 0; i < k; i++)
+        for (final i in peerIdx)
           <Offset>[
             for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg),
           ],
@@ -578,14 +613,14 @@ class VsdxPainter extends CustomPainter {
         lineToLineInches: sheet?.lineToLineYInches,
         jumpFactor: sheet?.lineJumpFactorY,
       );
-      path = polylineCrossings(localPts, unders).isEmpty
+      path = unders.isEmpty || polylineCrossings(localPts, unders).isEmpty
           ? _polylinePath(localPts)
           : polylineWithJumps(
               localPts,
               unders,
               rx,
               radiusY: ry,
-              pageJumpCode: sheet?.lineJumpCode,
+              pageJumpCode: pageCode,
               style: conStyle,
               pageStyle: pageStyle,
               dirX: effectiveLineJumpDir(

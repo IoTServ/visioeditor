@@ -97,6 +97,7 @@ class VsdxToSvgSerializer {
   /// Line-jump state for the page currently being serialised.
   bool _jumpsEnabled = false;
   List<List<Offset2D>> _jumpRoutes = const <List<Offset2D>>[];
+  List<int?> _jumpCodes = const <int?>[];
   Map<int, int> _jumpZ = const <int, int>{};
 
   /// Serialize the entire document into a single multi-page SVG with each
@@ -290,10 +291,12 @@ class VsdxToSvgSerializer {
     _jumpsEnabled = drawLineJumps;
     if (!_jumpsEnabled) {
       _jumpRoutes = const <List<Offset2D>>[];
+      _jumpCodes = const <int?>[];
       _jumpZ = const <int, int>{};
       return;
     }
     final routes = <List<Offset2D>>[];
+    final codes = <int?>[];
     final z = <int, int>{};
     void walk(List<VsdxShape> list) {
       for (final s in list) {
@@ -302,6 +305,7 @@ class VsdxToSvgSerializer {
           if (route.length >= 2) {
             z[s.id] = routes.length;
             routes.add(route);
+            codes.add(s.connectorProps?.conLineJumpCode);
           }
         }
         if (!s.collapsed) walk(s.children);
@@ -310,6 +314,7 @@ class VsdxToSvgSerializer {
 
     walk(page.shapes);
     _jumpRoutes = routes;
+    _jumpCodes = codes;
     _jumpZ = z;
   }
 
@@ -319,21 +324,37 @@ class VsdxToSvgSerializer {
   String? _connectorJumpD(VsdxPage page, VsdxShape shape) {
     if (!_jumpsEnabled || !shape.isGlueableConnector) return null;
     final sheet = page.pageSheet;
-    if (!connectorLineJumpsEnabled(
-      shape.connectorProps?.conLineJumpCode,
-      pageLineJumpCode: sheet.lineJumpCode,
+    final pageCode = sheet.lineJumpCode;
+    final z = _jumpZ[shape.id];
+    if (z == null) return null;
+    if (!lineJumpShapeMayHopAtZ(
+      k: z,
+      routeCount: _jumpRoutes.length,
+      pageJumpCode: pageCode,
     )) {
       return null;
     }
-    final z = _jumpZ[shape.id];
-    if (z == null || z == 0) return null;
+    if (!connectorLineJumpsEnabled(
+      shape.connectorProps?.conLineJumpCode,
+      pageLineJumpCode: pageCode,
+    )) {
+      return null;
+    }
     final pageRoute = _jumpRoutes[z];
     final localRoute = <Offset2D>[
       for (final p in pageRoute) page.pageToLocalDeep(shape.id, p),
     ];
     if (localRoute.length < 2) return null;
+    final peerIdx = lineJumpPeerIndices(
+      k: z,
+      routeCount: _jumpRoutes.length,
+      pageJumpCode: pageCode,
+      selfConCode: shape.connectorProps?.conLineJumpCode,
+      peerConCodes: _jumpCodes,
+    );
+    if (peerIdx.isEmpty) return null;
     final unders = <List<Offset2D>>[
-      for (var i = 0; i < z; i++)
+      for (final i in peerIdx)
         <Offset2D>[
           for (final p in _jumpRoutes[i]) page.pageToLocalDeep(shape.id, p),
         ],
@@ -354,7 +375,7 @@ class VsdxToSvgSerializer {
       unders,
       rx,
       radiusY: ry,
-      pageJumpCode: sheet.lineJumpCode,
+      pageJumpCode: pageCode,
       style: shape.connectorProps?.conLineJumpStyle,
       pageStyle: sheet.lineJumpStyle,
       dirX: effectiveLineJumpDir(

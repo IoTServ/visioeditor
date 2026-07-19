@@ -49,6 +49,65 @@ bool lineJumpAppliesToSegment(int? pageJumpCode, double sdx, double sdy) {
   };
 }
 
+/// `LineJumpCode` 5 = first displayed (bottom of z-order) hops over later ones.
+bool lineJumpsReverseDisplayOrder(int? pageJumpCode) => pageJumpCode == 5;
+
+/// Whether connector at z-index [k] can be a hopper given [routeCount] peers.
+bool lineJumpShapeMayHopAtZ({
+  required int k,
+  required int routeCount,
+  required int? pageJumpCode,
+}) {
+  if (routeCount < 2) return false;
+  if (lineJumpsReverseDisplayOrder(pageJumpCode)) {
+    return k < routeCount - 1;
+  }
+  return k > 0;
+}
+
+/// Peer route indices that [k] should hop over.
+///
+/// Normal (`4` / unset): hop over lower z (`i < k`).
+/// Reverse (`5`): hop over higher z (`i > k`).
+///
+/// [peerConCodes] (parallel to routes) applies Visio ConLineJumpCode peers:
+/// * peer `4` (Neither) — never hop that crossing
+/// * peer `3` (Other) — force hop even when z-order would not (they refuse)
+/// * self + peer both `3` — no hop (symmetric Other)
+List<int> lineJumpPeerIndices({
+  required int k,
+  required int routeCount,
+  required int? pageJumpCode,
+  int? selfConCode,
+  List<int?>? peerConCodes,
+}) {
+  final peers = <int>[];
+  if (lineJumpsReverseDisplayOrder(pageJumpCode)) {
+    for (var i = k + 1; i < routeCount; i++) {
+      peers.add(i);
+    }
+  } else {
+    for (var i = 0; i < k; i++) {
+      peers.add(i);
+    }
+  }
+  final self = selfConCode ?? 0;
+  if (peerConCodes != null) {
+    for (var i = 0; i < routeCount && i < peerConCodes.length; i++) {
+      if (i == k) continue;
+      final peer = peerConCodes[i] ?? 0;
+      if (peer == 3 && self != 3 && !peers.contains(i)) {
+        peers.add(i);
+      }
+    }
+    peers.removeWhere((i) {
+      if (i < 0 || i >= peerConCodes.length) return false;
+      return (peerConCodes[i] ?? 0) == 4;
+    });
+  }
+  return peers;
+}
+
 /// Resolve hop radius from page `LineToLine*` × `LineJumpFactor*` (or default).
 double pageLineJumpRadius({
   double? lineToLineInches,
