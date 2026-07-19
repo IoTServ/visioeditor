@@ -1935,14 +1935,21 @@ class VsdxWriter {
     }
     changed |= _ensureLineFillBasics(el, edited);
     changed |= _patchAngle(el, 'Angle', base.angleRad, edited.angleRad);
+    // Honour the *edited* model for Begin/End F= — baseline XML PAR(PNT…)
+    // must not survive after glue detach / reconnect cleared those formulas.
     changed |= _patchNullableLength(el, 'BeginX', base.beginX, edited.beginX,
-        preserveFormula: _cellHasParametricFormula(el, 'BeginX'));
+        preserveFormula: _isParametricFormula(edited.formulas['BeginX']));
     changed |= _patchNullableLength(el, 'BeginY', base.beginY, edited.beginY,
-        preserveFormula: _cellHasParametricFormula(el, 'BeginY'));
+        preserveFormula: _isParametricFormula(edited.formulas['BeginY']));
     changed |= _patchNullableLength(el, 'EndX', base.endX, edited.endX,
-        preserveFormula: _cellHasParametricFormula(el, 'EndX'));
+        preserveFormula: _isParametricFormula(edited.formulas['EndX']));
     changed |= _patchNullableLength(el, 'EndY', base.endY, edited.endY,
-        preserveFormula: _cellHasParametricFormula(el, 'EndY'));
+        preserveFormula: _isParametricFormula(edited.formulas['EndY']));
+    // Values may be unchanged after detach; still strip stale F= from XML.
+    changed |= _syncCellFormulaAttr(el, 'BeginX', edited.formulas['BeginX']);
+    changed |= _syncCellFormulaAttr(el, 'BeginY', edited.formulas['BeginY']);
+    changed |= _syncCellFormulaAttr(el, 'EndX', edited.formulas['EndX']);
+    changed |= _syncCellFormulaAttr(el, 'EndY', edited.formulas['EndY']);
     changed |= _patchBool(el, 'FlipX', base.flipX, edited.flipX);
     changed |= _patchBool(el, 'FlipY', base.flipY, edited.flipY);
     // Group behaviour (libvisio IsTextEditTarget / DontMoveChildren / …).
@@ -2111,6 +2118,7 @@ class VsdxWriter {
   }
 
   /// Write / update ShapeSheet `F=` for XForm / trigger cells from the model.
+  /// Also clears `F=` (and inert trigger `V`) for keys removed from [edited].
   bool _patchFormulas(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_mapEqual(base.formulas, edited.formulas)) return false;
     var changed = false;
@@ -2119,6 +2127,46 @@ class VsdxWriter {
       if (prev == entry.value) continue;
       final cell = _ensureCell(el, entry.key);
       cell.setAttribute('F', entry.value);
+      changed = true;
+    }
+    for (final key in base.formulas.keys) {
+      if (edited.formulas.containsKey(key)) continue;
+      changed |= _clearCellFormulaAttr(el, key, zeroTriggerValue: true);
+    }
+    return changed;
+  }
+
+  /// Align a cell's `F=` with the model formula (or strip it when absent).
+  bool _syncCellFormulaAttr(XmlElement el, String cellName, String? formula) {
+    if (formula != null && formula.isNotEmpty) {
+      final cell = _ensureCell(el, cellName);
+      if (cell.getAttribute('F') == formula) return false;
+      cell.setAttribute('F', formula);
+      return true;
+    }
+    return _clearCellFormulaAttr(el, cellName);
+  }
+
+  bool _clearCellFormulaAttr(
+    XmlElement el,
+    String cellName, {
+    bool zeroTriggerValue = false,
+  }) {
+    final cell = _findCell(el, cellName);
+    if (cell == null) return false;
+    var changed = false;
+    if (cell.getAttribute('F') != null) {
+      cell.removeAttribute('F');
+      changed = true;
+    }
+    if (cell.getAttribute('E') != null) {
+      cell.removeAttribute('E');
+      changed = true;
+    }
+    if (zeroTriggerValue &&
+        (cellName == 'BegTrigger' || cellName == 'EndTrigger') &&
+        cell.getAttribute('V') != '0') {
+      cell.setAttribute('V', '0');
       changed = true;
     }
     return changed;

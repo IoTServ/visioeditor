@@ -14,7 +14,8 @@ import 'pdf_font_loader_stub.dart'
 ///
 /// Shapes with a primary external hyperlink get a [pw.UrlLink] annotation over
 /// their page AABB so the link survives beyond SVG `<a>` (which `SvgImage`
-/// does not promote to PDF annotations).
+/// does not promote to PDF annotations). Overlays honour the same print-layer,
+/// collapsed-host, and covered-cell filters as [VsdxToSvgSerializer].
 ///
 /// Falls back to an empty document when there are no pages to export.
 ///
@@ -86,8 +87,18 @@ Future<Uint8List> exportDocumentToPdf(VsdxDocument doc) async {
 /// Transparent [pw.UrlLink] boxes over shapes that have a clickable primary
 /// hyperlink. Visio/PDF share a bottom-left, Y-up page frame in inches/points.
 List<pw.Widget> _pdfHyperlinkOverlays(VsdxPage page) {
+  final printable =
+      page.layers.isEmpty ? null : page.printableLayerIds;
   final out = <pw.Widget>[];
+
   void walk(VsdxShape shape) {
+    if (printable != null &&
+        shape.layerMemberIds.isNotEmpty &&
+        !shape.isOnAnyLayer(printable)) {
+      return;
+    }
+    if (TableOps.isCovered(shape)) return;
+
     final h = shape.primaryHyperlink;
     if (h != null && !h.invisible) {
       final target = h.effectiveTarget?.trim();
@@ -113,8 +124,11 @@ List<pw.Widget> _pdfHyperlinkOverlays(VsdxPage page) {
         }
       }
     }
-    for (final c in shape.children) {
-      walk(c);
+
+    if (!shape.collapsed) {
+      for (final c in shape.children) {
+        walk(c);
+      }
     }
   }
 

@@ -1573,6 +1573,15 @@ class VsdxShape {
       ..['Height'] = 'EndY-BeginY'
       ..['LocPinX'] = '(EndX-BeginX)/2'
       ..['LocPinY'] = '(EndY-BeginY)/2';
+    // Baked Begin/End values replace dynamic glue formulas; leaving PAR(PNT…)
+    // or Sheet.n! refs would make Visio/Edraw snap the endpoint back on open.
+    for (final key in const <String>['BeginX', 'BeginY', 'EndX', 'EndY']) {
+      final f = nextFormulas[key];
+      if (f == null) continue;
+      if (f.toUpperCase().contains('PAR(PNT') || f.contains('Sheet.')) {
+        nextFormulas.remove(key);
+      }
+    }
     // Visio 1-D connectors express orientation via Begin/End, not Angle/Flip.
     // Clearing residual Angle after reparent/ungroup avoids double-rotation
     // when Geometry is Begin-local and Width = EndX−BeginX.

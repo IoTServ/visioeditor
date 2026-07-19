@@ -527,16 +527,27 @@ class VsdxPage {
     return next.clearStaleGlueTriggers(ids);
   }
 
-  /// Remove BegTrigger / EndTrigger cells that reference any id in [removedIds].
+  /// Remove glue formulas that reference any id in [removedIds].
+  ///
+  /// Clears `BegTrigger` / `EndTrigger` and Begin/End `PAR(PNT(Sheet.n!…))`
+  /// cells so save/reopen cannot resurrect a deleted glue target.
   VsdxPage clearStaleGlueTriggers(Set<int> removedIds) {
     if (removedIds.isEmpty) return this;
+    const keys = <String>[
+      'BegTrigger',
+      'EndTrigger',
+      'BeginX',
+      'BeginY',
+      'EndX',
+      'EndY',
+    ];
     final updates = <int, Map<String, String>>{};
     void walk(List<VsdxShape> list) {
       for (final s in list) {
         if (s.is1D && s.formulas.isNotEmpty) {
           final formulas = Map<String, String>.of(s.formulas);
           var dirty = false;
-          for (final key in const <String>['BegTrigger', 'EndTrigger']) {
+          for (final key in keys) {
             final v = formulas[key];
             if (v == null) continue;
             for (final rid in removedIds) {
@@ -1045,6 +1056,8 @@ class VsdxPage {
   }
 
   /// Keep BegTrigger / EndTrigger XFTRIGGER formulas aligned with Connect rows.
+  /// Also drops Begin/End `PAR(PNT…)` / `Sheet.n!` formulas that no longer
+  /// match the glued target (detach or reconnect to a different shape).
   static VsdxShape _withGlueTriggers(
     VsdxShape connector, {
     int? beginTarget,
@@ -1061,7 +1074,28 @@ class VsdxPage {
     } else {
       formulas.remove('EndTrigger');
     }
+    _syncEndpointGlueFormulas(formulas, 'BeginX', 'BeginY', beginTarget);
+    _syncEndpointGlueFormulas(formulas, 'EndX', 'EndY', endTarget);
     return connector.copyWith(formulas: formulas);
+  }
+
+  /// Strip Begin/End glue formulas that conflict with [targetSheetId].
+  static void _syncEndpointGlueFormulas(
+    Map<String, String> formulas,
+    String xKey,
+    String yKey,
+    int? targetSheetId,
+  ) {
+    for (final key in <String>[xKey, yKey]) {
+      final f = formulas[key];
+      if (f == null) continue;
+      final isGlue = f.toUpperCase().contains('PAR(PNT') || f.contains('Sheet.');
+      if (!isGlue) continue;
+      if (targetSheetId == null ||
+          (f.contains('Sheet.') && !f.contains('Sheet.$targetSheetId!'))) {
+        formulas.remove(key);
+      }
+    }
   }
 
   /// Remove connector [id]'s interior bend points, resetting it to the plain

@@ -119,4 +119,42 @@ void main() {
     expect(body.contains('/URI'), isTrue);
     expect(body.contains('https://example.com/docs'), isTrue);
   });
+
+  test('PDF hyperlink overlays skip covered table cells', () async {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final parser = const DocumentParser();
+    var doc = parser.parse(blank);
+    final table = TableOps.assembleTable(
+      tableId: 1,
+      pinX: 3,
+      pinY: 4,
+      width: 4,
+      height: 2,
+      rows: 1,
+      cols: 2,
+    );
+    final merged = TableOps.mergeCells(table, row: 0, col: 0, rowSpan: 1, colSpan: 2);
+    final covered = TableOps.cellsOf(merged).firstWhere(TableOps.isCovered);
+    final withLink = merged.copyWith(
+      children: <VsdxShape>[
+        for (final c in merged.children)
+          c.id == covered.id
+              ? c.copyWith(
+                  hyperlinks: const <VsdxHyperlink>[
+                    VsdxHyperlink(
+                      id: 0,
+                      address: 'https://hidden.example/',
+                      isDefault: true,
+                    ),
+                  ],
+                )
+              : c,
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(withLink));
+    final bytes = await exportDocumentToPdf(doc);
+    final body = latin1.decode(bytes, allowInvalid: true);
+    expect(body.contains('https://hidden.example/'), isFalse);
+  });
 }

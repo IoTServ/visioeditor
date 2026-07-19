@@ -5221,6 +5221,95 @@ void main() {
     expect(after.connectorProps?.glueType, src.connectorProps?.glueType);
   });
 
+  test('detach clears PAR(PNT) and XFTRIGGER from saved page XML', () {
+    final bytes = _fixture('workflow.vsdx');
+    final doc = parser.parse(bytes);
+    final page0 = doc.pages.first;
+    final connector = page0.shapes.firstWhere(
+      (s) =>
+          s.is1D &&
+          (s.formulas['BeginX']?.contains('PAR(PNT') ?? false) &&
+          s.formulas.containsKey('BegTrigger'),
+    );
+    final beginGlue = page0.connects.firstWhere(
+      (c) => c.fromSheetId == connector.id && c.isBegin,
+    );
+    final editedPage = page0.setConnectorEndpoint(
+      connector.id,
+      begin: true,
+      targetShapeId: null,
+      x: connector.beginX ?? connector.pinX,
+      y: connector.beginY ?? connector.pinY,
+    );
+    final editedConn = editedPage.findShapeById(connector.id)!;
+    expect(editedConn.formulas.containsKey('BegTrigger'), isFalse);
+    expect(editedConn.formulas['BeginX'] ?? '', isNot(contains('PAR(PNT')));
+
+    final saved = writer.write(
+      originalBytes: bytes,
+      edited: doc.replacePage(0, editedPage),
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(connector.id)!;
+    expect(after.formulas.containsKey('BegTrigger'), isFalse);
+    expect(after.formulas['BeginX'] ?? '', isNot(contains('PAR(PNT')));
+    expect(
+      after.formulas.values
+          .any((f) => f.contains('Sheet.${beginGlue.toSheetId}!')),
+      isFalse,
+    );
+  });
+
+  test('delete glue target clears EndTrigger F= on save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final a = VsdxShapeFactory.rectangle(
+      id: 1, pinX: 1, pinY: 2, width: 1, height: 1,
+    );
+    final b = VsdxShapeFactory.rectangle(
+      id: 2, pinX: 4, pinY: 2, width: 1, height: 1,
+    );
+    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 2, bx: 4, by: 2).copyWith(
+      formulas: const <String, String>{
+        'BegTrigger': '_XFTRIGGER(Sheet.1!EventXFMod)',
+        'EndTrigger': '_XFTRIGGER(Sheet.2!EventXFMod)',
+        'BeginX': 'PAR(PNT(Sheet.1!Connections.X1,Sheet.1!Connections.Y1))',
+        'EndX': 'PAR(PNT(Sheet.2!Connections.X1,Sheet.2!Connections.Y1))',
+      },
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        shapes: <VsdxShape>[a, b, conn],
+        connects: const <VsdxConnect>[
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'BeginX',
+            fromPart: 9,
+            toSheetId: 1,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'EndX',
+            fromPart: 12,
+            toSheetId: 2,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+        ],
+      ),
+    );
+    final withGlue = writer.write(originalBytes: blank, edited: doc);
+    var mid = parser.parse(withGlue);
+    mid = mid.replacePage(0, mid.pages.first.removeShapeById(2));
+    final saved = writer.write(originalBytes: withGlue, edited: mid);
+    final after = parser.parse(saved).pages.first.findShapeById(3)!;
+    expect(after.formulas.containsKey('EndTrigger'), isFalse);
+    expect(after.formulas['EndX'] ?? '', isNot(contains('Sheet.2!')));
+    expect(after.formulas['BegTrigger'], contains('Sheet.1!'));
+  });
+
   test('ShdwPattern alias round-trips with ShadowPattern', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);
