@@ -3638,25 +3638,72 @@ class VsdxWriter {
     changed |= _patchInt(
         el, 'ShdwPattern', base.enabled ? 1 : 0, edited.enabled ? 1 : 0);
     if (edited.enabled) {
-      changed |= _patchColorOrTheme(
-        el,
-        'ShadowForegnd',
-        'QuickStyleShadowColor',
-        baseColor: base.color,
-        baseTheme: base.themeColorIndex,
-        editedColor: edited.color,
-        editedTheme: edited.themeColorIndex,
-      );
-      changed |= _patchLength(
-          el, 'ShadowOffsetX', base.offsetXInches, edited.offsetXInches);
-      changed |= _patchLength(
-          el, 'ShadowOffsetY', base.offsetYInches, edited.offsetYInches);
-      changed |=
-          _patchLength(el, 'ShadowBlur', base.blurInches, edited.blurInches);
-      changed |= _patchRatio(
-          el, 'ShadowForegndTrans', base.transparency, edited.transparency);
+      // Re-enable after Pattern=0: model defaults match so _patchLength /
+      // _patchColorOrTheme would skip and leave stale Offset/Foregnd in XML.
+      final reenable = !base.enabled;
+      if (reenable ||
+          edited.color != null ||
+          edited.themeColorIndex != null ||
+          base.color != null ||
+          base.themeColorIndex != null) {
+        if (edited.color == null && edited.themeColorIndex == null) {
+          // Default shadow has no authored colour — drop stale cells so reopen
+          // does not resurrect a previous solid / theme Foregnd.
+          if (_removeNamedCells(el, const ['ShadowForegnd', 'QuickStyleShadowColor'])) {
+            changed = true;
+          }
+        } else {
+          changed |= _patchColorOrTheme(
+            el,
+            'ShadowForegnd',
+            'QuickStyleShadowColor',
+            baseColor: reenable ? null : base.color,
+            baseTheme: reenable ? null : base.themeColorIndex,
+            editedColor: edited.color,
+            editedTheme: edited.themeColorIndex,
+          );
+        }
+      }
+      if (reenable ||
+          (base.offsetXInches - edited.offsetXInches).abs() > _epsilon) {
+        _writeValue(
+            _ensureCell(el, 'ShadowOffsetX'), _fmt(edited.offsetXInches));
+        changed = true;
+      }
+      if (reenable ||
+          (base.offsetYInches - edited.offsetYInches).abs() > _epsilon) {
+        _writeValue(
+            _ensureCell(el, 'ShadowOffsetY'), _fmt(edited.offsetYInches));
+        changed = true;
+      }
+      if (reenable ||
+          (base.blurInches - edited.blurInches).abs() > _epsilon) {
+        _writeValue(_ensureCell(el, 'ShadowBlur'), _fmt(edited.blurInches));
+        changed = true;
+      }
+      if (reenable ||
+          (base.transparency - edited.transparency).abs() > _epsilon) {
+        _writeValue(
+            _ensureCell(el, 'ShadowForegndTrans'), _fmt(edited.transparency));
+        changed = true;
+      }
     }
     return changed;
+  }
+
+  /// Remove shape-level `<Cell N="…">` entries. Returns true if any removed.
+  bool _removeNamedCells(XmlElement shape, List<String> names) {
+    final want = names.toSet();
+    var any = false;
+    for (final el in shape.childElements.toList()) {
+      if (el.name.local != 'Cell') continue;
+      final n = el.getAttribute('N');
+      if (n != null && want.contains(n)) {
+        el.parent?.children.remove(el);
+        any = true;
+      }
+    }
+    return any;
   }
 
   bool _patchGlow(XmlElement el, VsdxGlow base, VsdxGlow edited) {
@@ -3712,18 +3759,31 @@ class VsdxWriter {
       }
       return changed;
     }
-    // Re-enable after Size=0: force Size so reopen does not stay disabled.
-    if (!base.enabled ||
+    // Re-enable after Size=0: force Size/Dist/Blur/Trans so stale XML cells
+    // cannot resurrect prior custom values over the new model defaults.
+    final reenable = !base.enabled;
+    if (reenable ||
         (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
       _writeValue(_ensureCell(el, 'ReflectionSize'), _fmt(edited.sizeInches));
       changed = true;
     }
-    changed |= _patchLength(
-        el, 'ReflectionDist', base.distanceInches, edited.distanceInches);
-    changed |= _patchRatio(
-        el, 'ReflectionTransparency', base.transparency, edited.transparency);
-    changed |= _patchLength(
-        el, 'ReflectionBlur', base.blurInches, edited.blurInches);
+    if (reenable ||
+        (base.distanceInches - edited.distanceInches).abs() > _epsilon) {
+      _writeValue(
+          _ensureCell(el, 'ReflectionDist'), _fmt(edited.distanceInches));
+      changed = true;
+    }
+    if (reenable ||
+        (base.transparency - edited.transparency).abs() > _epsilon) {
+      _writeValue(_ensureCell(el, 'ReflectionTransparency'),
+          _fmt(edited.transparency));
+      changed = true;
+    }
+    if (reenable ||
+        (base.blurInches - edited.blurInches).abs() > _epsilon) {
+      _writeValue(_ensureCell(el, 'ReflectionBlur'), _fmt(edited.blurInches));
+      changed = true;
+    }
     return changed;
   }
 

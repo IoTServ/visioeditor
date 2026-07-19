@@ -598,6 +598,8 @@ void main() {
           reflection: const VsdxReflection(
             enabled: true,
             sizeInches: 0.4,
+            distanceInches: 0.12,
+            blurInches: 0.07,
             transparency: 0.5,
           ),
         ),
@@ -617,7 +619,8 @@ void main() {
     doc = parser.parse(bytes);
     expect(doc.pages.first.findShapeById(id)!.reflection.enabled, isFalse);
 
-    // On again with defaults — must rewrite Size so reopen stays enabled.
+    // On again with defaults — must rewrite Size/Dist/Blur so reopen does not
+    // resurrect the previous custom Dist/Blur over model defaults.
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
@@ -632,6 +635,95 @@ void main() {
     final refl = doc.pages.first.findShapeById(id)!.reflection;
     expect(refl.enabled, isTrue);
     expect(refl.sizeInches, greaterThan(0));
+    expect(refl.distanceInches, closeTo(0.0, 1e-6));
+    expect(refl.blurInches, closeTo(0.02, 1e-6));
+    expect(refl.transparency, closeTo(0.6, 1e-6));
+  });
+
+  test('shadow disable then enable does not resurrect stale offset/colour', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.2,
+            offsetYInches: 0.15,
+            blurInches: 0.08,
+            color: VsdxColor(0xFF0000FF),
+            transparency: 0.25,
+          ),
+        ),
+      ),
+    );
+    var bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(shadow: VsdxShadow.disabled),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    doc = parser.parse(bytes);
+    expect(doc.pages.first.findShapeById(id)!.shadow.enabled, isFalse);
+
+    // Re-enable with model defaults (ox=0.05, no colour).
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          shadow: const VsdxShadow(enabled: true, transparency: 0.4),
+        ),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    doc = parser.parse(bytes);
+    final sh = doc.pages.first.findShapeById(id)!.shadow;
+    expect(sh.enabled, isTrue);
+    expect(sh.offsetXInches, closeTo(0.05, 1e-6));
+    expect(sh.offsetYInches, closeTo(0.05, 1e-6));
+    expect(sh.blurInches, closeTo(0.04, 1e-6));
+    expect(sh.transparency, closeTo(0.4, 1e-6));
+    expect(sh.color, isNull);
+  });
+
+  test('SVG reflection emits fade mask matching canvas', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 12,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            transparency: 0.5,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('refl-fade-'), isTrue);
+    expect(svg.contains('mask="url(#refl-mask-'), isTrue);
   });
 
   test('SVG VerticalAlign middle honours unequal top/bottom margins', () {

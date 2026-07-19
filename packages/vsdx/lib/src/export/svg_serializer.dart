@@ -617,12 +617,28 @@ class VsdxToSvgSerializer {
           'stroke-linejoin="$linejoin"'
           '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}';
     }
+    // Fade mask matches canvas BlendMode.dstIn: opaque near the shape bottom,
+    // transparent at the far edge of ReflectionSize.
+    final fadeId = 'refl-fade-$paintId';
+    final maskId = 'refl-mask-$paintId';
+    final nearY = -dist;
+    final farY = -dist - clipH;
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
       '<rect x="${_n(-shape.width)}" y="${_n(-dist - clipH)}" '
       'width="${_n(shape.width * 3)}" height="${_n(clipH + refl.blurInches)}"/>'
       '</clipPath>'
+      '<linearGradient id="$fadeId" gradientUnits="userSpaceOnUse" '
+      'x1="0" y1="${_n(nearY)}" x2="0" y2="${_n(farY)}">'
+      '<stop offset="0" stop-color="#ffffff" stop-opacity="1"/>'
+      '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>'
+      '</linearGradient>'
+      '<mask id="$maskId" maskUnits="userSpaceOnUse">'
+      '<rect x="${_n(-shape.width)}" y="${_n(farY)}" '
+      'width="${_n(shape.width * 3)}" height="${_n(clipH + refl.blurInches)}" '
+      'fill="url(#$fadeId)"/>'
+      '</mask>'
       '${refl.blurInches > 0 ? '<filter id="$fid" x="-20%" y="-20%" '
           'width="140%" height="140%">'
           '<feGaussianBlur stdDeviation="${_n(math.max(refl.blurInches, 0.001))}"/>'
@@ -631,7 +647,7 @@ class VsdxToSvgSerializer {
     );
     final filter = refl.blurInches > 0 ? ' filter="url(#$fid)"' : '';
     buf.writeln(
-      '$indent<g clip-path="url(#$cid)" '
+      '$indent<g clip-path="url(#$cid)" mask="url(#$maskId)" '
       'transform="translate(0 ${_n(-dist)}) scale(1 -1)">'
       '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
       '$strokeAttrs$filter/>'
