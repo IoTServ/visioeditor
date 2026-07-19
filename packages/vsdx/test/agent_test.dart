@@ -110,6 +110,32 @@ void main() {
       final page = const DocumentParser().parse(out).pages.single;
       expect(page.shapes.any((s) => s.text == 'Extra'), isTrue);
     });
+
+    test('rejects trailing-digit node labels as shape ids', () {
+      final doc = built();
+      final first = doc.pages.single.shapes.first;
+      final originalText = first.text;
+      final r = applyOps(doc, _ops('''
+        { "ops": [ { "op": "set_text", "id": "db1", "text": "HACKED" } ] }'''));
+      expect(r.log, isNotEmpty);
+      expect(r.log.first, contains('invalid id'));
+      expect(
+        r.document.pages.single.findShapeById(first.id)!.text,
+        originalText,
+      );
+    });
+
+    test('logs when target shape id is missing', () {
+      final doc = built();
+      final r = applyOps(doc, _ops('''
+        { "ops": [
+          { "op": "set_text", "id": 99999, "text": "Nope" },
+          { "op": "move_shape", "id": 99999, "x": 1, "y": 2 },
+          { "op": "delete_shape", "id": 99999 }
+        ] }'''));
+      expect(r.log, hasLength(3));
+      expect(r.log.every((l) => l.contains('not found')), isTrue);
+    });
   });
 
   group('inspect', () {

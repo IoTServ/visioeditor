@@ -871,6 +871,39 @@ void main() {
     expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a, c]);
   });
 
+  test('in-group child z-order round-trips through the patch writer', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final a = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: a, pinX: 2, pinY: 2, width: 1, height: 1));
+    final b = page.nextFreeShapeId();
+    page = page.addShape(VsdxShapeFactory.rectangle(
+        id: b, pinX: 3.5, pinY: 2, width: 1, height: 1));
+    final gid = page.nextFreeShapeId();
+    page = page.group(<int>{a, b}, groupId: gid);
+    final bytes1 =
+        writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
+    final r1 = parser.parse(bytes1);
+    final group = r1.pages.first.findShapeById(gid)!;
+    expect(group.children.map((s) => s.id).toList(), [a, b]);
+
+    // Bring the first child forward inside the group: [a,b] -> [b,a].
+    final edited =
+        r1.replacePage(0, r1.pages.first.bringForward(a));
+    expect(
+      edited.pages.first.findShapeById(gid)!.children.map((s) => s.id).toList(),
+      [b, a],
+    );
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    expect(
+      r2.pages.first.findShapeById(gid)!.children.map((s) => s.id).toList(),
+      [b, a],
+    );
+  });
+
   test('grouping then ungrouping shapes round-trips', () {
     // Two existing rectangles.
     final blank = writer.emptyDocument();

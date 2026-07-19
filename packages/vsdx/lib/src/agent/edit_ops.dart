@@ -104,9 +104,17 @@ ApplyResult applyOps(
         reroute = true;
       case 'set_style':
         final ids = _resolveIds(op['ids'] ?? op['id']);
+        if (ids.isEmpty) {
+          log.add('set_style: missing or invalid id=${op['ids'] ?? op['id']}');
+          break;
+        }
         final fillHex = op['fill']?.toString();
         final lineHex = (op['line'] ?? op['stroke'])?.toString();
         for (final id in ids) {
+          if (page.findShapeById(id) == null) {
+            log.add('set_style: shape $id not found');
+            continue;
+          }
           page = page.updateShapeById(id, (s) {
             var next = s;
             if (fillHex != null) next = next.copyWith(fill: fillFromHex(fillHex));
@@ -121,7 +129,11 @@ ApplyResult applyOps(
       case 'set_text':
         final id = _resolveId(op['id']);
         if (id == null) {
-          log.add('set_text: missing id');
+          log.add('set_text: missing or invalid id=${op['id']}');
+          break;
+        }
+        if (page.findShapeById(id) == null) {
+          log.add('set_text: shape $id not found');
           break;
         }
         page = page.updateShapeById(
@@ -138,6 +150,10 @@ ApplyResult applyOps(
           log.add('move_shape: needs id,x,y');
           break;
         }
+        if (page.findShapeById(id) == null) {
+          log.add('move_shape: shape $id not found');
+          break;
+        }
         page = page.updateShapeById(id, (s) => s.copyWith(pinX: x, pinY: y));
         reroute = true;
       case 'resize_shape':
@@ -149,6 +165,10 @@ ApplyResult applyOps(
           log.add('resize_shape: needs id,w,h');
           break;
         }
+        if (page.findShapeById(id) == null) {
+          log.add('resize_shape: shape $id not found');
+          break;
+        }
         page = page.updateShapeById(
             id, (s) => s.resizeTo(pinX: s.pinX, pinY: s.pinY, width: w, height: h));
         reroute = true;
@@ -156,7 +176,11 @@ ApplyResult applyOps(
       case 'delete':
         final id = _resolveId(op['id']);
         if (id == null) {
-          log.add('delete_shape: missing id');
+          log.add('delete_shape: missing or invalid id=${op['id']}');
+          break;
+        }
+        if (page.findShapeById(id) == null) {
+          log.add('delete_shape: shape $id not found');
           break;
         }
         page = page.removeShapeById(id);
@@ -187,12 +211,24 @@ Uint8List applyOpsBytes(Uint8List original, String opsJson, {int pageIndex = 0})
 
 double? _d(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));
 
+/// Resolve a shape id from an op field.
+///
+/// Accepts integers, numeric strings (`"12"`), and explicit prefixes
+/// (`shape:12`, `Sheet.12`). Rejects bare labels with trailing digits
+/// (`"db1"`, `"cache2"`) so Diagram Spec node ids are never mistaken for
+/// Visio shape ids.
 int? _resolveId(Object? v) {
   if (v == null) return null;
   if (v is int) return v;
   if (v is num) return v.toInt();
-  final m = RegExp(r'(\d+)\s*$').firstMatch('$v');
-  return m == null ? null : int.parse(m.group(1)!);
+  final s = '$v'.trim();
+  if (s.isEmpty) return null;
+  final asInt = int.tryParse(s);
+  if (asInt != null) return asInt;
+  final prefixed =
+      RegExp(r'^(?:shape:|Sheet\.)(\d+)$', caseSensitive: false).firstMatch(s);
+  if (prefixed != null) return int.parse(prefixed.group(1)!);
+  return null;
 }
 
 List<int> _resolveIds(Object? v) {

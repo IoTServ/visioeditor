@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
+import 'package:visioeditor/editor/shape_clipboard.dart';
 import 'package:vsdx/vsdx.dart';
 
 void main() {
@@ -130,8 +131,10 @@ void main() {
     e.setShapeText(img, 'caption');
     e.copySelection();
     await Future<void>.delayed(Duration.zero);
-    // Labeled image must not push caption plain text onto the pasteboard.
-    expect(stored, isNull);
+    // Labeled image writes a media-bearing envelope (not plain caption text).
+    expect(stored, isNotNull);
+    expect(stored!, startsWith(ShapeClipboardCodec.prefix));
+    expect(stored!.contains('caption'), isFalse);
     await e.pasteFromSystem(cx: 6, cy: 4);
     expect(e.currentPage!.findShapeById(e.singleSelectedId!)!.hasImage, isTrue);
   });

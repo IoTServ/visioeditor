@@ -1604,9 +1604,10 @@ class VsdxWriter {
       insertWalk(s, null);
     }
 
-    // 4) Reorder <Shape> elements to match the model's z-order (top level).
+    // 4) Reorder <Shape> elements to match the model's z-order at every nesting
+    //    level (top-level page shapes and children inside groups/containers).
     final topShapes = shapesEl;
-    if (topShapes != null && _reorderShapes(topShapes, edited.shapes)) {
+    if (topShapes != null && _reorderShapesTree(topShapes, edited.shapes)) {
       changed = true;
     }
 
@@ -1619,8 +1620,29 @@ class VsdxWriter {
     return changed;
   }
 
-  /// Reorder the direct `<Shape>` children of [shapesEl] to match [order]
-  /// (top-level model z-order). Returns whether the order actually changed.
+  /// Reorder `<Shape>` children of [shapesEl] to match [order], then recurse
+  /// into each group's nested `<Shapes>` so in-group z-order survives save.
+  bool _reorderShapesTree(XmlElement shapesEl, List<VsdxShape> order) {
+    var changed = _reorderShapes(shapesEl, order);
+    final byId = <int, XmlElement>{};
+    for (final el in shapesEl.childElements) {
+      if (el.name.local != 'Shape') continue;
+      final id = int.tryParse(el.getAttribute('ID') ?? '');
+      if (id != null) byId[id] = el;
+    }
+    for (final s in order) {
+      if (s.children.isEmpty) continue;
+      final el = byId[s.id];
+      if (el == null) continue;
+      final nested = _firstChild(el, 'Shapes');
+      if (nested == null) continue;
+      changed |= _reorderShapesTree(nested, s.children);
+    }
+    return changed;
+  }
+
+  /// Reorder the direct `<Shape>` children of [shapesEl] to match [order].
+  /// Returns whether the order actually changed.
   bool _reorderShapes(XmlElement shapesEl, List<VsdxShape> order) {
     final byId = <int, XmlElement>{};
     final shapeEls = <XmlElement>[];

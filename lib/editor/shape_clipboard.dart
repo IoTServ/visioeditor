@@ -2,15 +2,19 @@ import 'dart:convert';
 
 import 'package:vsdx/vsdx.dart';
 
-/// Decoded system-clipboard payload (shapes + optional Connect rows).
+/// Decoded system-clipboard payload (shapes + optional Connect rows + media).
 class ShapeClipboardPayload {
   const ShapeClipboardPayload({
     required this.shapes,
     this.connects = const <VsdxConnect>[],
+    this.images = ImageRegistry.empty,
   });
 
   final List<VsdxShape> shapes;
   final List<VsdxConnect> connects;
+
+  /// Embedded picture bytes referenced by [shapes] (may be empty).
+  final ImageRegistry images;
 }
 
 /// Codec for the system clipboard: a tiny one-page `.vsdx` payload carrying
@@ -24,20 +28,34 @@ abstract final class ShapeClipboardCodec {
   static final DocumentParser _parser = DocumentParser();
   static final VsdxWriter _writer = VsdxWriter();
 
-  /// Pack [shapes] (and optional [connects]) into a clipboard envelope string.
+  /// Pack [shapes] (and optional [connects] / [images]) into a clipboard
+  /// envelope string. Picture media referenced by the shape tree is embedded
+  /// so cross-instance paste does not leave dangling `imagePartName`s.
   static String encode(
     List<VsdxShape> shapes, {
     List<VsdxConnect> connects = const <VsdxConnect>[],
+    ImageRegistry images = ImageRegistry.empty,
   }) {
     if (shapes.isEmpty) return '';
     final blank = _writer.emptyDocument();
     var doc = _parser.parse(blank);
     var page = doc.pages.first;
     final idMap = <int, int>{};
+    var registry = ImageRegistry.empty;
+
+    void collectMedia(VsdxShape s) {
+      final part = s.imagePartName;
+      if (part != null) {
+        final img = images.findByPart(part);
+        if (img != null) registry = registry.withImage(img);
+      }
+      for (final c in s.children) {
+        collectMedia(c);
+      }
+    }
+
     for (final s in shapes) {
-      // Image media parts are session-local — skip them for the system clip
-      // (in-memory clipboard still holds the original with the image).
-      if (s.hasImage) continue;
+      collectMedia(s);
       var nextId = page.nextFreeShapeId();
       page = page.addShape(
         s.withRemappedIds(() => nextId++, idMap: idMap),
@@ -62,7 +80,7 @@ abstract final class ShapeClipboardCodec {
         page = page.copyWith(connects: remapped);
       }
     }
-    doc = doc.replacePage(0, page);
+    doc = doc.copyWith(images: registry).replacePage(0, page);
     final bytes = _writer.write(originalBytes: blank, edited: doc);
     return prefix + base64Encode(bytes);
   }
@@ -70,7 +88,8 @@ abstract final class ShapeClipboardCodec {
   /// Decode an envelope into shapes, or `null` if [text] is not ours.
   static List<VsdxShape>? decode(String text) => decodeEnvelope(text)?.shapes;
 
-  /// Decode an envelope into shapes + Connect rows, or `null` if not ours.
+  /// Decode an envelope into shapes + Connect rows + media, or `null` if not
+  /// ours.
   static ShapeClipboardPayload? decodeEnvelope(String text) {
     final trimmed = text.trim();
     if (!trimmed.startsWith(prefix)) return null;
@@ -84,6 +103,7 @@ abstract final class ShapeClipboardCodec {
       return ShapeClipboardPayload(
         shapes: page.shapes,
         connects: page.connects,
+        images: doc.images,
       );
     } catch (_) {
       return null;

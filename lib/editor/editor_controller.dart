@@ -2565,6 +2565,7 @@ class EditorController extends ChangeNotifier {
 
   List<VsdxShape> _clipboard = const <VsdxShape>[];
   List<VsdxConnect> _clipboardConnects = const <VsdxConnect>[];
+  ImageRegistry _clipboardImages = ImageRegistry.empty;
   /// Successive plain pastes offset further so copies do not stack.
   int _pasteGeneration = 0;
   /// Last envelope we wrote to the system clipboard (trimmed). Used so
@@ -2614,11 +2615,16 @@ class EditorController extends ChangeNotifier {
       for (final c in page.connects)
         if (subtree.contains(c.fromSheetId) && subtree.contains(c.toSheetId)) c,
     ];
+    _clipboardImages = _document?.images ?? ImageRegistry.empty;
     _pasteGeneration = 0;
     _preferMemoryClipboard = true;
     _lastSystemEnvelope = null;
     notifyListeners();
-    unawaited(_writeSystemClipboard(_clipboard, _clipboardConnects));
+    unawaited(_writeSystemClipboard(
+      _clipboard,
+      _clipboardConnects,
+      images: _clipboardImages,
+    ));
   }
 
   /// Shape tree ready for top-level paste: page pin / angle / flip when [id]
@@ -2628,25 +2634,20 @@ class EditorController extends ChangeNotifier {
 
   Future<void> _writeSystemClipboard(
     List<VsdxShape> shapes,
-    List<VsdxConnect> connects,
-  ) async {
+    List<VsdxConnect> connects, {
+    ImageRegistry images = ImageRegistry.empty,
+  }) async {
     try {
-      final envelope = ShapeClipboardCodec.encode(shapes, connects: connects);
+      final envelope = ShapeClipboardCodec.encode(
+        shapes,
+        connects: connects,
+        images: images,
+      );
       if (envelope.isEmpty) {
-        // Image-only (or empty) — keep preferring memory so a stale system
-        // envelope cannot wipe pictures from the in-app clipboard.
+        // Empty after encode — keep preferring memory so a stale system
+        // envelope cannot wipe the in-app clipboard.
         _preferMemoryClipboard = true;
         _lastSystemEnvelope = null;
-        // Do not write caption labels when any shape has an image: Cmd+V →
-        // pasteFromSystem would treat that plain text as foreign and replace
-        // the in-memory picture clipboard with a text box.
-        if (shapes.any((s) => s.hasImage)) return;
-        final labels = <String>[
-          for (final s in shapes)
-            if ((s.text ?? '').trim().isNotEmpty) s.text!.trim(),
-        ];
-        if (labels.isEmpty) return;
-        await Clipboard.setData(ClipboardData(text: labels.join('\n')));
         return;
       }
       await Clipboard.setData(ClipboardData(text: envelope));
@@ -2675,6 +2676,7 @@ class EditorController extends ChangeNotifier {
         }
         _clipboard = payload.shapes;
         _clipboardConnects = payload.connects;
+        _clipboardImages = payload.images;
         _pasteGeneration = 0;
         _preferMemoryClipboard = false;
         notifyListeners();
@@ -2682,8 +2684,6 @@ class EditorController extends ChangeNotifier {
       }
       // External plain text always wins over an image-only memory clipboard
       // (_preferMemory only guards our own shape envelopes, not foreign text).
-      // Image copies no longer write caption labels to the pasteboard, so this
-      // path is not hit by our own labeled-picture Cmd+C.
       final trimmed = text.trim();
       if (trimmed.isEmpty || ShapeClipboardCodec.looksLikeEnvelope(text)) {
         return false;
@@ -2699,6 +2699,7 @@ class EditorController extends ChangeNotifier {
         ),
       ];
       _clipboardConnects = const <VsdxConnect>[];
+      _clipboardImages = ImageRegistry.empty;
       _pasteGeneration = 0;
       _preferMemoryClipboard = false;
       notifyListeners();
@@ -2731,10 +2732,15 @@ class EditorController extends ChangeNotifier {
       for (final c in page.connects)
         if (subtree.contains(c.fromSheetId) && subtree.contains(c.toSheetId)) c,
     ];
+    _clipboardImages = doc.images;
     _pasteGeneration = 0;
     _preferMemoryClipboard = true;
     _lastSystemEnvelope = null;
-    unawaited(_writeSystemClipboard(_clipboard, _clipboardConnects));
+    unawaited(_writeSystemClipboard(
+      _clipboard,
+      _clipboardConnects,
+      images: _clipboardImages,
+    ));
 
     var next = page;
     for (final id in cuttable) {
@@ -2790,6 +2796,7 @@ class EditorController extends ChangeNotifier {
       dx: dx,
       dy: dy,
       connects: _clipboardConnects,
+      images: _clipboardImages,
     );
   }
 
@@ -2827,11 +2834,20 @@ class EditorController extends ChangeNotifier {
     required double dx,
     required double dy,
     List<VsdxConnect> connects = const <VsdxConnect>[],
+    ImageRegistry? images,
   }) {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null || shapes.isEmpty) return;
     var nextDoc = doc;
+    // Merge clipboard / system-envelope media before reminting parts so
+    // cross-instance paste can resolve ForeignData references.
+    final extra = images ?? _clipboardImages;
+    for (final img in extra.all) {
+      if (nextDoc.images.findByPart(img.partName) == null) {
+        nextDoc = nextDoc.copyWith(images: nextDoc.images.withImage(img));
+      }
+    }
     var next = page;
     final newIds = <int>{};
     final idMap = <int, int>{};

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
@@ -31,6 +33,56 @@ void main() {
     expect(decoded[0].text, 'Hello');
     expect(decoded[0].width, closeTo(1.5, 1e-6));
     expect(decoded[1].geometries, isNotEmpty);
+  });
+
+  test('ShapeClipboardCodec embeds picture media for cross-instance paste', () {
+    const part = '/visio/media/image_clip.png';
+    final bytes = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    );
+    final rect = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 4,
+      pinY: 2,
+      width: 1,
+      height: 1,
+    );
+    final group = VsdxShape(
+      id: 3,
+      name: 'Group.3',
+      pinX: 3,
+      pinY: 2,
+      width: 3,
+      height: 1.2,
+      children: <VsdxShape>[pic, rect],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    );
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: bytes, mimeType: 'image/png'),
+    );
+    final envelope = ShapeClipboardCodec.encode(
+      <VsdxShape>[group],
+      images: images,
+    );
+    expect(envelope, isNotEmpty);
+    final payload = ShapeClipboardCodec.decodeEnvelope(envelope)!;
+    expect(payload.shapes, hasLength(1));
+    final pastedGroup = payload.shapes.single;
+    final pastedPic =
+        pastedGroup.children.firstWhere((s) => s.hasImage);
+    expect(pastedPic.imagePartName, isNotNull);
+    final media = payload.images.findByPart(pastedPic.imagePartName!);
+    expect(media, isNotNull);
+    expect(media!.bytes, equals(bytes));
   });
 
   test('system clipboard paste restores shapes across sync', () async {
