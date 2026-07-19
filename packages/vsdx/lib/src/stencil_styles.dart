@@ -31,6 +31,12 @@ const StencilColors kStencilSecondary =
     StencilColors('#E1D5E7', '#9673A6');
 const StencilColors kStencilContainer =
     StencilColors('#F5F5F5', '#6C8EBF');
+const StencilColors kStencilTeal =
+    StencilColors('#D5F5F0', '#2E8B7A');
+const StencilColors kStencilPink =
+    StencilColors('#FCE4EC', '#C2185B');
+const StencilColors kStencilSky =
+    StencilColors('#E3F2FD', '#5B9BD5');
 
 /// Soft brand-ish colours for cloud / vendor libraries.
 const StencilColors kStencilAws =
@@ -75,9 +81,9 @@ const Map<String, StencilColors> kStencilGroupColors = <String, StencilColors>{
   'Oracle': kStencilOracle,
 };
 
-/// Per-stencil overrides (mainly Flowchart / General semantics).
+/// Exact-name overrides (highest priority after explicit [Stencil.colors]).
 const Map<String, StencilColors> kStencilNameColors = <String, StencilColors>{
-  // Flowchart roles
+  // --- Flowchart ---
   'Decision': kStencilWarning,
   'Terminator': kStencilSuccess,
   'Start': kStencilSuccess,
@@ -95,14 +101,18 @@ const Map<String, StencilColors> kStencilNameColors = <String, StencilColors>{
   'Sequential Data': kStencilSuccess,
   'Internal Storage': kStencilSuccess,
   'Tape': kStencilAccent,
+  'Tape Data': kStencilAccent,
   'Merge': kStencilWarning,
   'Extract': kStencilWarning,
   'Collate': kStencilNeutral,
   'Sort': kStencilNeutral,
   'Or': kStencilNeutral,
+  'And': kStencilNeutral,
+  'Sum': kStencilNeutral,
   'Summing Junction': kStencilNeutral,
   'Loop Limit': kStencilWarning,
   'Off-Page Ref': kStencilNeutral,
+  'Off Page Connector': kStencilNeutral,
   'On-Page Ref': kStencilNeutral,
   'Annotation': kStencilWarning,
   'Card': kStencilAccent,
@@ -110,19 +120,111 @@ const Map<String, StencilColors> kStencilNameColors = <String, StencilColors>{
   'Transfer': kStencilPrimary,
   'Predefined Process': kStencilPrimary,
   'Parallel Mode': kStencilSecondary,
-  // General
+  'Process': kStencilPrimary,
+  'Process Bar': kStencilPrimary,
+
+  // --- General / Basic / Containers ---
   'Diamond': kStencilWarning,
   'Cylinder': kStencilSuccess,
-  'Cloud': StencilColors('#E3F2FD', '#5B9BD5'),
+  'Cylinder Stack': kStencilSuccess,
+  'Cloud': kStencilSky,
+  'Cloud Rectangle': kStencilSky,
   'Note': kStencilWarning,
   'Actor': kStencilNeutral,
+  'User': kStencilNeutral,
   'Data Storage': kStencilSuccess,
+  'Data Store': kStencilSuccess,
   'Container': kStencilContainer,
   'Horizontal Container': kStencilContainer,
   'List': kStencilContainer,
+  'List Item': kStencilContainer,
+  'Vertical List': kStencilContainer,
   'Table': kStencilContainer,
+  'Table 2×2': kStencilContainer,
   'Callout': kStencilWarning,
-  // BPMN
+  'Oval Callout': kStencilWarning,
+  'Rectangular Callout': kStencilWarning,
+  'Rounded Rectangular Callout': kStencilWarning,
+  'Loud Callout': kStencilAccent,
+  'Cloud Callout': kStencilSky,
+  'Cube': kStencilTeal,
+  'Isometric Cube': kStencilTeal,
+  'Isometric Square': kStencilTeal,
+  'Parallelepiped': kStencilTeal,
+  'Layered Rectangle': kStencilContainer,
+  'Double Rectangle': kStencilPrimary,
+  'Double Rounded Rectangle': kStencilPrimary,
+  'Double Ellipse': kStencilPrimary,
+  'Double Square': kStencilPrimary,
+  'Double Circle': kStencilPrimary,
+  'Frame': kStencilNeutral,
+  'Frame Corner': kStencilNeutral,
+  'No Symbol': kStencilDanger,
+  'Star': kStencilWarning,
+  '4 Point Star': kStencilWarning,
+  '6 Point Star': kStencilWarning,
+  '8 Point Star': kStencilWarning,
+  'Heart': kStencilPink,
+  'Lightning': kStencilWarning,
+  'Flash': kStencilWarning,
+  'Sun': kStencilAccent,
+  'Moon': kStencilSecondary,
+  'Drop': kStencilSky,
+  'Wave': kStencilSky,
+  'Banner': kStencilAccent,
+  'Pyramid': kStencilAccent,
+  'Cone': kStencilAccent,
+  'Pie': kStencilSecondary,
+  'Donut': kStencilSecondary,
+  'Smiley': kStencilSuccess,
+  'Neutral Smiley': kStencilWarning,
+  'Sad Smiley': kStencilDanger,
+  'Tick': kStencilSuccess,
+  'X': kStencilDanger,
+  'Cross': kStencilDanger,
+  'Plaque': kStencilSecondary,
+  'Corner': kStencilNeutral,
+  'Tee': kStencilNeutral,
+  'Switch': kStencilWarning,
+
+  // --- UML ---
+  'Use Case': kStencilSuccess,
+  'Class': kStencilPrimary,
+  'Object': kStencilPrimary,
+  'Block': kStencilPrimary,
+  'Interface': kStencilSecondary,
+  'Provided Interface': kStencilSuccess,
+  'Required Interface': kStencilAccent,
+  'Package': kStencilSecondary,
+  'Module': kStencilSecondary,
+  'Component': kStencilTeal,
+  'Boundary': kStencilSky,
+  'Control': kStencilAccent,
+  'Entity': kStencilSuccess,
+  'Node': kStencilTeal,
+  'Lifeline': kStencilNeutral,
+  'Actor Lifeline': kStencilNeutral,
+  'Boundary Lifeline': kStencilSky,
+  'Entity Lifeline': kStencilSuccess,
+  'Control Lifeline': kStencilAccent,
+  'Activation Bar': kStencilPrimary,
+  'Destruction': kStencilDanger,
+  'Fork / Join': kStencilWarning,
+  'End': kStencilDanger,
+
+  // --- ER ---
+  'Entity (Rounded)': kStencilSuccess,
+  'Weak Entity': kStencilWarning,
+  'Attribute': kStencilSky,
+  'Key Attribute': kStencilAccent,
+  'Weak Key Attribute': kStencilWarning,
+  'Multivalue Attribute': kStencilSecondary,
+  'Derived Attribute': kStencilNeutral,
+  'Relationship': kStencilPrimary,
+  'Identifying Relationship': kStencilWarning,
+  'Associative Entity': kStencilTeal,
+
+  // --- BPMN ---
   'Task': kStencilPrimary,
   'User Task': kStencilPrimary,
   'Service Task': kStencilPrimary,
@@ -141,22 +243,395 @@ const Map<String, StencilColors> kStencilNameColors = <String, StencilColors>{
   'Intermediate Event': kStencilAccent,
   'Message Intermediate': kStencilAccent,
   'Timer Intermediate': kStencilAccent,
+  'Cancel Intermediate': kStencilDanger,
+  'Link Intermediate': kStencilSecondary,
+  'Compensation Intermediate': kStencilDanger,
+  'Multiple Intermediate': kStencilSecondary,
+  'Rule Intermediate': kStencilSecondary,
   'End Event': kStencilDanger,
   'Terminate': kStencilDanger,
   'Compensation': kStencilDanger,
+  'Loop Marker': kStencilSecondary,
+  'Multiple Instances': kStencilSecondary,
+  'Ad Hoc': kStencilAccent,
   'Data Object': kStencilSecondary,
-  'Data Store': kStencilSuccess,
   'Message': kStencilAccent,
   'Pool': kStencilContainer,
   'Horizontal Lane': kStencilContainer,
   'Vertical Lane': kStencilContainer,
   'Vertical Pool': kStencilContainer,
   'Conversation': kStencilSecondary,
-  // Misc
-  'End': kStencilDanger,
-  'Error': kStencilDanger,
-  'Event': kStencilSuccess,
+
+  // --- Network ---
+  'Server': kStencilTeal,
+  'Router': kStencilPrimary,
+  'Firewall': kStencilDanger,
+  'Monitor': kStencilNeutral,
+  'Laptop': kStencilPrimary,
+  'Mobile': kStencilPrimary,
+  'Printer': kStencilNeutral,
+  'Wireless': kStencilSky,
+  'Hub': kStencilAccent,
+  'PC': kStencilPrimary,
+  'Tablet': kStencilPrimary,
+  'Phone': kStencilPrimary,
+  'Modem': kStencilAccent,
+  'Storage': kStencilSuccess,
+  'Load Balancer': kStencilWarning,
+  'Security Camera': kStencilDanger,
+
+  // --- Mockup ---
+  'Button': kStencilPrimary,
+  'Checkbox': kStencilSuccess,
+  'Radio Button': kStencilSuccess,
+  'Text Field': kStencilNeutral,
+  'Combo Box': kStencilNeutral,
+  'Window': kStencilContainer,
+  'Progress Bar': kStencilSuccess,
+  'Slider': kStencilPrimary,
+  'Tab Bar': kStencilSecondary,
+  'Menu Bar': kStencilNeutral,
+  'Toggle': kStencilTeal,
+  'Search Box': kStencilSky,
+  'Star Rating': kStencilWarning,
+  'Help Icon': kStencilPrimary,
+  'Information Icon': kStencilSky,
+  'Loading Circle': kStencilAccent,
+  'Horizontal Splitter': kStencilNeutral,
+  'Dropdown Menu': kStencilNeutral,
+
+  // --- Electrical ---
+  'Resistor': kStencilAccent,
+  'Capacitor': kStencilSky,
+  'Inductor': kStencilSecondary,
+  'Diode': kStencilPrimary,
+  'LED': kStencilSuccess,
+  'Ground': kStencilNeutral,
+  'Battery': kStencilAccent,
+  'Transformer': kStencilWarning,
+  'AC Source': kStencilWarning,
+  'DC Source': kStencilAccent,
+  'Electrical Switch': kStencilPrimary,
+  'Fuse': kStencilDanger,
+  'Inverter': kStencilTeal,
+  'Potentiometer': kStencilAccent,
+  'Circuit Breaker': kStencilDanger,
+  'Crystal': kStencilSecondary,
+  'Lamp': kStencilWarning,
+  'AND Gate': kStencilPrimary,
+  'OR Gate': kStencilPrimary,
+  'NAND Gate': kStencilSecondary,
+  'NOR Gate': kStencilSecondary,
+  'XOR Gate': kStencilAccent,
+  'XNOR Gate': kStencilAccent,
+  'Buffer': kStencilTeal,
+
+  // --- Signs ---
+  'Warning': kStencilWarning,
+  'No Entry': kStencilDanger,
+  'Mandatory': kStencilPrimary,
+  'Exit': kStencilSuccess,
+  'Radiation': kStencilWarning,
+  'First Aid': kStencilSuccess,
+  'High Voltage': kStencilWarning,
+  'Fragile': kStencilAccent,
+  'No Smoking': kStencilDanger,
+  'Biohazard': kStencilDanger,
+  'Pedestrian Crossing': kStencilPrimary,
+  'Keep Dry': kStencilSky,
+  'Slip Hazard': kStencilWarning,
+  'Fire Extinguisher': kStencilDanger,
+
+  // --- Floorplan ---
+  'Wall': kStencilNeutral,
+  'Door': kStencilAccent,
+  'Double Door': kStencilAccent,
+  'Sliding Door': kStencilAccent,
+  'Window Opening': kStencilSky,
+  'Chair': kStencilSecondary,
+  'Desk': kStencilTeal,
+  'Bed': kStencilPrimary,
+  'Sofa': kStencilSecondary,
+  'Sink': kStencilSky,
+  'Toilet': kStencilSky,
+  'Stairs': kStencilNeutral,
+  'Elevator': kStencilPrimary,
+  'Escalator': kStencilPrimary,
+  'Plant': kStencilSuccess,
+  'Refrigerator': kStencilSky,
+  'Bathtub': kStencilSky,
+  'Shower': kStencilSky,
+  'Closet': kStencilNeutral,
+  'Bookshelf': kStencilAccent,
+  'Fireplace': kStencilDanger,
+  'Kitchen Island': kStencilAccent,
+  'Parking Space': kStencilPrimary,
+  'TV Stand': kStencilNeutral,
+  'File Cabinet': kStencilTeal,
+  'Column': kStencilNeutral,
+  'Copier': kStencilNeutral,
+
+  // --- EIP ---
+  'Message Channel': kStencilPrimary,
+  'Dead Letter Channel': kStencilDanger,
+  'Invalid Message Channel': kStencilDanger,
+  'Datatype Channel': kStencilTeal,
+  'Aggregator': kStencilSuccess,
+  'Splitter': kStencilWarning,
+  'Content Based Router': kStencilWarning,
+  'Message Filter': kStencilAccent,
+  'Message Translator': kStencilSecondary,
+  'Content Enricher': kStencilSuccess,
+  'Messaging Gateway': kStencilWarning,
+  'Channel Adapter': kStencilPrimary,
+  'Wire Tap': kStencilAccent,
+  'Recipient List': kStencilSecondary,
+  'Competing Consumers': kStencilAccent,
+  'Event Driven Consumer': kStencilAccent,
+  'Messaging Bridge': kStencilTeal,
+  'Process Manager': kStencilPrimary,
+  'Claim Check': kStencilSecondary,
+  'Resequencer': kStencilWarning,
+  'Composed Message Processor': kStencilPrimary,
+  'Content Filter': kStencilAccent,
+  'Control Bus': kStencilNeutral,
+  'Detour': kStencilWarning,
+  'Durable Subscriber': kStencilSuccess,
+  'Dynamic Router': kStencilWarning,
+  'Envelope Wrapper': kStencilSecondary,
+  'Message Dispatcher': kStencilPrimary,
+  'Message Store': kStencilSuccess,
+  'Normalizer': kStencilTeal,
+  'Polling Consumer': kStencilAccent,
+  'Routing Slip': kStencilWarning,
+  'Selective Consumer': kStencilAccent,
+  'Service Activator': kStencilPrimary,
+  'Smart Proxy': kStencilTeal,
+  'Transactional Client': kStencilSuccess,
+  'Channel Purger': kStencilDanger,
+  'Test Message': kStencilNeutral,
+
+  // --- Misc ---
+  'Autosize Title': kStencilPrimary,
+  'Unordered List': kStencilNeutral,
+  'Ordered List': kStencilNeutral,
+  'Label 1': kStencilAccent,
+  'Label 2': kStencilSecondary,
+  'Waypoint': kStencilPrimary,
+  'Image': kStencilNeutral,
 };
+
+/// Keyword heuristics for names not listed in [kStencilNameColors]
+/// (esp. cloud vendor catalogues).
+StencilColors? _heuristicColors(String name) {
+  final n = name.toLowerCase();
+
+  // Security / danger first (before generic "key").
+  if (_any(n, const [
+    'firewall',
+    'waf',
+    'security',
+    'guard',
+    'bastion',
+    'armor',
+    'vault',
+    'kms',
+    'secrets',
+    'certificate',
+    'iam',
+    'cognito',
+    'app id',
+    'key protect',
+    'destruction',
+    'dead letter',
+    'invalid message',
+    'biohazard',
+    'radiation',
+    'no smoking',
+    'no entry',
+    'fire extinguisher',
+    'high voltage',
+    'fuse',
+    'circuit breaker',
+  ])) {
+    return kStencilDanger;
+  }
+
+  // Data stores / databases.
+  if (_any(n, const [
+    'database',
+    'dynamodb',
+    'rds',
+    'sql',
+    'aurora',
+    'cosmos',
+    'bigquery',
+    'bigtable',
+    'spanner',
+    'firestore',
+    'cloudant',
+    'db2',
+    'polardb',
+    'tablestore',
+    'analyticdb',
+    'hologres',
+    'redshift',
+    'synapse',
+    'exadata',
+    'mysql',
+    'storage',
+    's3',
+    'blob',
+    'oss',
+    'efs',
+    'nas',
+    'block volume',
+    'object storage',
+    'file storage',
+    'data store',
+    'data object',
+    'entity',
+    'cache',
+    'redis',
+    'memorystore',
+    'elasticache',
+  ])) {
+    return kStencilSuccess;
+  }
+
+  // Queues / async / gateways (warning).
+  if (_any(n, const [
+    'queue',
+    'sqs',
+    'sns',
+    'mq',
+    'rocketmq',
+    'pubsub',
+    'pub/sub',
+    'event hub',
+    'eventbridge',
+    'event grid',
+    'kinesis',
+    'streaming',
+    'gateway',
+    'load balanc',
+    'elb',
+    'slb',
+    'alb',
+    'nlb',
+    'router',
+    'decision',
+    'delay',
+    'warning',
+    'fragile',
+    'slip',
+  ])) {
+    return kStencilWarning;
+  }
+
+  // Compute / functions (accent).
+  if (_any(n, const [
+    'lambda',
+    'function',
+    'fargate',
+    'ec2',
+    'ecs',
+    'eks',
+    'aks',
+    'gke',
+    'oke',
+    'ack',
+    'iks',
+    'roks',
+    'compute',
+    'virtual machine',
+    'app service',
+    'app engine',
+    'cloud run',
+    'code engine',
+    'manual',
+    'message',
+    'notification',
+    'timer',
+  ])) {
+    return kStencilAccent;
+  }
+
+  // Network / connectivity (sky).
+  if (_any(n, const [
+    'vpc',
+    'vnet',
+    'virtual network',
+    'vpn',
+    'cdn',
+    'cloudfront',
+    'front door',
+    'dns',
+    'route 53',
+    'direct connect',
+    'direct link',
+    'fastconnect',
+    'transit',
+    'wireless',
+    'wifi',
+    'modem',
+    'switch',
+    'hub',
+    'bridge',
+    'cloud',
+  ])) {
+    return kStencilSky;
+  }
+
+  // Packages / notes / documents (secondary).
+  if (_any(n, const [
+    'note',
+    'document',
+    'package',
+    'module',
+    'interface',
+    'component',
+    'class',
+    'annotation',
+    'script',
+    'rule',
+  ])) {
+    return kStencilSecondary;
+  }
+
+  // Start / success / health.
+  if (_any(n, const [
+    'start',
+    'first aid',
+    'exit',
+    'tick',
+    'smiley',
+    'progress',
+    'checkbox',
+  ])) {
+    return kStencilSuccess;
+  }
+
+  // End / error / cross.
+  if (_any(n, const [
+    'end event',
+    'terminate',
+    'error',
+    'cancel',
+    'sad smiley',
+  ])) {
+    return kStencilDanger;
+  }
+
+  return null;
+}
+
+bool _any(String haystack, List<String> needles) {
+  for (final n in needles) {
+    if (haystack.contains(n)) return true;
+  }
+  return false;
+}
 
 VsdxColor? _parseHex(String? hex) {
   if (hex == null) return null;
@@ -182,6 +657,8 @@ StencilColors? resolveStencilColors({
   if (name != null) {
     final byName = kStencilNameColors[name];
     if (byName != null) return byName;
+    final heuristic = _heuristicColors(name);
+    if (heuristic != null) return heuristic;
   }
   if (group != null) return kStencilGroupColors[group] ?? kStencilPrimary;
   return kStencilPrimary;
