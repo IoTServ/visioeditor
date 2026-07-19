@@ -73,6 +73,41 @@ void main() {
         );
       }
     });
+
+    test('endSide north forces a vertical last segment (jetty)', () {
+      // Without a jetty, H-first would end with a horizontal stub along y=by.
+      final route = router.route(
+        0,
+        3,
+        2,
+        1,
+        obstacles: const <RouteAabb>[],
+        endSide: RouteSide.north,
+      );
+      expect(route.length, greaterThanOrEqualTo(2));
+      final tip = route.last;
+      final prev = route[route.length - 2];
+      expect(tip, const Offset2D(2, 1));
+      // Last segment must be vertical into the north edge.
+      expect(prev.x, closeTo(tip.x, 1e-9));
+      expect(prev.y, greaterThan(tip.y));
+    });
+
+    test('beginSide east forces a horizontal first segment (jetty)', () {
+      final route = router.route(
+        1,
+        1,
+        4,
+        3,
+        obstacles: const <RouteAabb>[],
+        beginSide: RouteSide.east,
+      );
+      final a = route.first;
+      final next = route[1];
+      expect(a, const Offset2D(1, 1));
+      expect(next.y, closeTo(a.y, 1e-9));
+      expect(next.x, greaterThan(a.x));
+    });
   });
 
   group('VsdxPage.rerouteConnectors obstacle avoidance', () {

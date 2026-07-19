@@ -2,18 +2,58 @@
 /// obstacle avoidance).
 ///
 /// Algorithm:
-///   1. Try the two classic elbow routes (horizontal-first / vertical-first).
-///   2. If either is clear of [obstacles], return the shorter one.
-///   3. Otherwise build a Hanan grid from the endpoints + obstacle edges and
+///   1. Optionally offset glued endpoints outward along their approach side
+///      (jetty stubs) so the first/last segment is perpendicular to the shape
+///      edge — matching draw.io OrthConnector / port-constraint behaviour.
+///   2. Try the two classic elbow routes (horizontal-first / vertical-first).
+///   3. If either is clear of [obstacles], return the shorter one.
+///   4. Otherwise build a Hanan grid from the endpoints + obstacle edges and
 ///      run Dijkstra for a shortest axis-aligned path that never enters an
 ///      obstacle AABB. Collapse collinear vertices before returning.
-///   4. If the grid search fails (degenerate / fully blocked), fall back to
+///   5. If the grid search fails (degenerate / fully blocked), fall back to
 ///      the plain elbow so callers always get a usable route.
 library;
 
 import 'dart:math' as math;
 
 import 'geometry.dart';
+
+/// Cardinal side of a shape that a connector approaches / leaves from.
+///
+/// Page inches use Visio Y-up: [north] is +Y (top edge), [south] is −Y.
+enum RouteSide {
+  north,
+  south,
+  east,
+  west;
+
+  /// Dominant cardinal direction of the vector ([dx], [dy]).
+  static RouteSide? fromVector(double dx, double dy) {
+    if (dx.abs() < 1e-12 && dy.abs() < 1e-12) return null;
+    if (dy.abs() >= dx.abs()) {
+      return dy >= 0 ? RouteSide.north : RouteSide.south;
+    }
+    return dx >= 0 ? RouteSide.east : RouteSide.west;
+  }
+
+  /// Outward unit step in page inches (Y up).
+  (double, double) get outward {
+    switch (this) {
+      case RouteSide.north:
+        return (0, 1);
+      case RouteSide.south:
+        return (0, -1);
+      case RouteSide.east:
+        return (1, 0);
+      case RouteSide.west:
+        return (-1, 0);
+    }
+  }
+
+  /// Whether the terminal segment along this side is vertical (N/S).
+  bool get isVertical =>
+      this == RouteSide.north || this == RouteSide.south;
+}
 
 /// Axis-aligned box in page inches (Y up). Used as an inflated obstacle.
 class RouteAabb {
@@ -77,7 +117,15 @@ class ObstacleRouter {
   /// draw.io-ish gutter so the line does not hug shape edges.
   static const double defaultClearance = 0.12;
 
+  /// Outward stub length (inches) so the first/last segment meets the shape
+  /// edge perpendicularly (draw.io jetty).
+  static const double defaultJetty = 0.1;
+
   /// Orthogonal route from ([ax],[ay]) to ([bx],[by]) that avoids [obstacles].
+  ///
+  /// When [beginSide] / [endSide] are set (glued ends), a short outward jetty
+  /// is inserted so the terminal segment is perpendicular to that side —
+  /// arrows then point into the shape instead of sliding along its edge.
   ///
   /// Always returns at least the two endpoints. Interior waypoints are the
   /// bend corners (same convention as [VsdxPage]'s elbow helper: full polyline
@@ -88,7 +136,81 @@ class ObstacleRouter {
     double bx,
     double by, {
     required List<RouteAabb> obstacles,
+    RouteSide? beginSide,
+    RouteSide? endSide,
+    double jetty = defaultJetty,
   }) {
+    if ((ax - bx).abs() < 1e-9 && (ay - by).abs() < 1e-9) {
+      return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+    }
+
+    final sep = math.sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
+    // Shrink / drop jetties when endpoints are too close (draw.io tooShort).
+    var j = jetty;
+    if (sep < 2 * j) {
+      j = sep * 0.25;
+    }
+    if (j < 1e-6) {
+      beginSide = null;
+      endSide = null;
+    }
+
+    final (sax, say) = beginSide != null
+        ? _jettyPoint(ax, ay, beginSide, j)
+        : (ax, ay);
+    final (sbx, sby) = endSide != null
+        ? _jettyPoint(bx, by, endSide, j)
+        : (bx, by);
+
+    final mid = _routeCore(sax, say, sbx, sby, obstacles);
+
+    // Stitch real endpoints around the routed jetty corridor.
+    final out = <Offset2D>[Offset2D(ax, ay)];
+    if (beginSide != null &&
+        ((sax - ax).abs() > 1e-9 || (say - ay).abs() > 1e-9)) {
+      out.add(Offset2D(sax, say));
+    }
+    for (final p in mid) {
+      final last = out.last;
+      if ((p.x - last.x).abs() < 1e-9 && (p.y - last.y).abs() < 1e-9) {
+        continue;
+      }
+      out.add(p);
+    }
+    if (endSide != null &&
+        ((sbx - bx).abs() > 1e-9 || (sby - by).abs() > 1e-9)) {
+      final last = out.last;
+      if ((last.x - sbx).abs() > 1e-9 || (last.y - sby).abs() > 1e-9) {
+        out.add(Offset2D(sbx, sby));
+      }
+      out.add(Offset2D(bx, by));
+    } else {
+      final last = out.last;
+      if ((last.x - bx).abs() > 1e-9 || (last.y - by).abs() > 1e-9) {
+        out.add(Offset2D(bx, by));
+      }
+    }
+    return _simplifyOrthogonal(out);
+  }
+
+  static (double, double) _jettyPoint(
+    double x,
+    double y,
+    RouteSide side,
+    double jetty,
+  ) {
+    final (dx, dy) = side.outward;
+    return (x + dx * jetty, y + dy * jetty);
+  }
+
+  /// Core elbow / Hanan route between (possibly jettied) points.
+  List<Offset2D> _routeCore(
+    double ax,
+    double ay,
+    double bx,
+    double by,
+    List<RouteAabb> obstacles,
+  ) {
     if ((ax - bx).abs() < 1e-9 && (ay - by).abs() < 1e-9) {
       return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
     }

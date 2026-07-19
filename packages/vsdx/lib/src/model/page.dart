@@ -737,6 +737,22 @@ class VsdxPage {
           : endShape != null
               ? _perimeterPoint(endShape, refBx, refBy)
               : (refEx, refEy);
+      final beginSide = beginShape != null
+          ? next._approachSide(
+              beginShape,
+              ax,
+              ay,
+              connect: beginConnect,
+            )
+          : null;
+      final endSide = endShape != null
+          ? next._approachSide(
+              endShape,
+              bx,
+              by,
+              connect: endConnect,
+            )
+          : null;
       final exclude = <int>{
         cid,
         if (beginShape != null) beginShape.id,
@@ -753,7 +769,15 @@ class VsdxPage {
             ]
           : connector.straightRoute
               ? <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)]
-              : next._autoRoute(ax, ay, bx, by, excludeIds: exclude);
+              : next._autoRoute(
+                  ax,
+                  ay,
+                  bx,
+                  by,
+                  excludeIds: exclude,
+                  beginSide: beginSide,
+                  endSide: endSide,
+                );
       final geometry = _bakeRoute(control,
           curved: connector.curved, rounded: connector.rounded);
       final localGeom = <Offset2D>[for (final p in geometry) pageToConn(p)];
@@ -827,6 +851,8 @@ class VsdxPage {
     Offset2D? endFixed;
     VsdxShape? beginTarget;
     VsdxShape? endTarget;
+    VsdxConnect? beginConnect;
+    VsdxConnect? endConnect;
     for (final c in connectIndex.forConnector(connector.id)) {
       final target = findShapeById(c.toSheetId);
       if (target == null) continue;
@@ -835,9 +861,11 @@ class VsdxPage {
       if (c.isBegin) {
         beginTarget = target;
         beginFixed = fixed;
+        beginConnect = c;
       } else if (c.isEnd) {
         endTarget = target;
         endFixed = fixed;
+        endConnect = c;
       }
     }
     // Two-pass like [rerouteConnectors]: resolve both fixed ends first, then
@@ -865,7 +893,21 @@ class VsdxPage {
       zx = hit.x;
       zy = hit.y;
     }
-    return _autoRoute(ax, ay, zx, zy, excludeIds: exclude);
+    final beginSide = beginTarget != null
+        ? _approachSide(beginTarget, ax, ay, connect: beginConnect)
+        : null;
+    final endSide = endTarget != null
+        ? _approachSide(endTarget, zx, zy, connect: endConnect)
+        : null;
+    return _autoRoute(
+      ax,
+      ay,
+      zx,
+      zy,
+      excludeIds: exclude,
+      beginSide: beginSide,
+      endSide: endSide,
+    );
   }
 
   /// Drawn connector polyline in **page** inches: baked MoveTo/LineTo/
@@ -1584,15 +1626,50 @@ class VsdxPage {
     ];
   }
 
+  /// Cardinal approach side for a glued endpoint on [shape] at page ([x],[y]).
+  ///
+  /// Fixed connection points use page-space `DirX`/`DirY`; whole-shape glue
+  /// uses the dominant pin→attach vector (draw.io OrthConnector side pick).
+  RouteSide? _approachSide(
+    VsdxShape shape,
+    double x,
+    double y, {
+    VsdxConnect? connect,
+  }) {
+    final idx = fixedConnectionIndex(connect);
+    if (idx != null) {
+      final pts = effectiveConnectionPoints(shape);
+      if (idx >= 0 && idx < pts.length) {
+        final cp = pts[idx];
+        if (cp.dirX != 0 || cp.dirY != 0) {
+          final pin = Offset2D(shape.effectiveLocPinX, shape.effectiveLocPinY);
+          final a = localToPageDeep(shape.id, pin);
+          final b = localToPageDeep(
+            shape.id,
+            Offset2D(pin.x + cp.dirX, pin.y + cp.dirY),
+          );
+          return RouteSide.fromVector(b.x - a.x, b.y - a.y);
+        }
+      }
+    }
+    final pin = shapePinPage(shape.id);
+    return RouteSide.fromVector(x - pin.x, y - pin.y);
+  }
+
   /// Obstacle-avoiding orthogonal route on this page. [excludeIds] are shapes
   /// that must not block the path (typically the connector and its begin/end
   /// targets). Falls back to [_elbowRoute] when avoidance finds nothing better.
+  ///
+  /// [beginSide] / [endSide] force perpendicular jetty stubs at glued ends
+  /// (draw.io-style) so arrows do not slide along the target edge.
   List<Offset2D> _autoRoute(
     double ax,
     double ay,
     double bx,
     double by, {
     Set<int> excludeIds = const <int>{},
+    RouteSide? beginSide,
+    RouteSide? endSide,
   }) {
     final obstacles = _obstacleAabbs(excludeIds);
     return const ObstacleRouter().route(
@@ -1601,6 +1678,8 @@ class VsdxPage {
       bx,
       by,
       obstacles: obstacles,
+      beginSide: beginSide,
+      endSide: endSide,
     );
   }
 

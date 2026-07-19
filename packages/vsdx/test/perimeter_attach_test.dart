@@ -129,5 +129,60 @@ void main() {
       expect(c.beginX, closeTo(3.5, 1e-6));
       expect(c.beginY, closeTo(3.5, 1e-6));
     });
+
+    test('rerouteConnectors approaches oval top with a vertical last segment', () {
+      // Source above target oval: without jetty, H-first ends with a horizontal
+      // stub along the oval's top — arrow slides parallel to the edge.
+      final source = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4,
+        pinY: 8,
+        width: 1.5,
+        height: 1,
+      );
+      final oval = VsdxShapeFactory.ellipse(
+        id: 2,
+        pinX: 4,
+        pinY: 3,
+        width: 3,
+        height: 2,
+      );
+      final conn = VsdxShapeFactory.line(id: 3, ax: 4, ay: 8, bx: 4, by: 3);
+      final page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 10,
+        heightInches: 10,
+        shapes: <VsdxShape>[source, oval, conn],
+        connects: const <VsdxConnect>[
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'BeginX',
+            fromPart: 9,
+            toSheetId: 1,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'EndX',
+            fromPart: 12,
+            toSheetId: 2,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+        ],
+      ).rerouteConnectors();
+
+      final route = VsdxPage.connectorRoute(page.findShapeById(3)!);
+      expect(route.length, greaterThanOrEqualTo(2));
+      final tip = route.last;
+      final prev = route[route.length - 2];
+      // Attach on oval top → last segment vertical (same X, prev above tip).
+      expect(prev.x, closeTo(tip.x, 1e-6));
+      expect(prev.y, greaterThan(tip.y + 1e-3));
+      // Tip should sit on the oval top, not float at the pin.
+      expect(tip.y, closeTo(4.0, 0.05));
+    });
   });
 }
