@@ -1975,7 +1975,9 @@ class VsdxPainter extends CustomPainter {
         const ui.FontFeature.enable('sups'),
       if (pos == VsdxTextPosition.subscript)
         const ui.FontFeature.enable('subs'),
-      if (run.charStyle.style.smallCaps) const ui.FontFeature.enable('smcp'),
+      // Prefer synthetic small-caps below — OpenType `smcp` is missing on
+      // many desktop fonts so relying on it left canvas looking like SVG's
+      // CSS `font-variant: small-caps` was ignored.
     ];
     final font = fontFallback.resolve(
       run.charStyle.fontFamily,
@@ -1987,55 +1989,95 @@ class VsdxPainter extends CustomPainter {
       VsdxTextCase.normal => run.text,
     };
     final widthScale = run.charStyle.fontScale <= 0 ? 1.0 : run.charStyle.fontScale;
-    return TextSpan(
-      text: rawText,
-      style: TextStyle(
-        color: c,
-        fontFamily: font.family,
-        fontFamilyFallback:
-            font.familyFallback.isEmpty ? null : font.familyFallback,
-        fontSize: scaledSize,
-        fontStyle: run.charStyle.style.italic ? FontStyle.italic : FontStyle.normal,
-        fontWeight:
-            run.charStyle.style.bold ? FontWeight.bold : FontWeight.normal,
-        decoration: TextDecoration.combine([
-          if (run.charStyle.underline || run.charStyle.doubleUnderline)
-            TextDecoration.underline,
-          if (run.charStyle.strikethrough || run.charStyle.doubleStrikethrough)
-            TextDecoration.lineThrough,
-          if (run.charStyle.overline) TextDecoration.overline,
-        ]),
-        // Flutter applies one decorationStyle to every line. When double-under
-        // meets single-strike (or the reverse), prefer solid so a single
-        // decoration is not promoted to double.
-        decorationStyle: () {
-          final under = run.charStyle.underline || run.charStyle.doubleUnderline;
-          final strike = run.charStyle.strikethrough ||
-              run.charStyle.doubleStrikethrough;
-          final underDbl = run.charStyle.doubleUnderline;
-          final strikeDbl = run.charStyle.doubleStrikethrough;
-          if (under && strike && underDbl != strikeDbl) {
-            return TextDecorationStyle.solid;
-          }
-          return underDbl || strikeDbl
-              ? TextDecorationStyle.double
-              : TextDecorationStyle.solid;
-        }(),
-        letterSpacing: () {
-          final base = run.charStyle.letterSpacingInches == 0
-              ? 0.0
-              : run.charStyle.letterSpacingInches * scale;
-          // Approximate FontScale as extra tracking (true glyph width scale
-          // isn't available on TextStyle without a transform).
-          if ((widthScale - 1.0).abs() < 1e-6) {
-            return base == 0 ? null : base;
-          }
-          return base + scaledSize * (widthScale - 1.0) * 0.15;
-        }(),
-        height: lineHeight,
-        fontFeatures: features.isEmpty ? null : features,
-      ),
+    final style = TextStyle(
+      color: c,
+      fontFamily: font.family,
+      fontFamilyFallback:
+          font.familyFallback.isEmpty ? null : font.familyFallback,
+      fontSize: scaledSize,
+      fontStyle: run.charStyle.style.italic ? FontStyle.italic : FontStyle.normal,
+      fontWeight:
+          run.charStyle.style.bold ? FontWeight.bold : FontWeight.normal,
+      decoration: TextDecoration.combine([
+        if (run.charStyle.underline || run.charStyle.doubleUnderline)
+          TextDecoration.underline,
+        if (run.charStyle.strikethrough || run.charStyle.doubleStrikethrough)
+          TextDecoration.lineThrough,
+        if (run.charStyle.overline) TextDecoration.overline,
+      ]),
+      // Flutter applies one decorationStyle to every line. When double-under
+      // meets single-strike (or the reverse), prefer solid so a single
+      // decoration is not promoted to double.
+      decorationStyle: () {
+        final under = run.charStyle.underline || run.charStyle.doubleUnderline;
+        final strike = run.charStyle.strikethrough ||
+            run.charStyle.doubleStrikethrough;
+        final underDbl = run.charStyle.doubleUnderline;
+        final strikeDbl = run.charStyle.doubleStrikethrough;
+        if (under && strike && underDbl != strikeDbl) {
+          return TextDecorationStyle.solid;
+        }
+        return underDbl || strikeDbl
+            ? TextDecorationStyle.double
+            : TextDecorationStyle.solid;
+      }(),
+      letterSpacing: () {
+        final base = run.charStyle.letterSpacingInches == 0
+            ? 0.0
+            : run.charStyle.letterSpacingInches * scale;
+        // Approximate FontScale as extra tracking (true glyph width scale
+        // isn't available on TextStyle without a transform).
+        if ((widthScale - 1.0).abs() < 1e-6) {
+          return base == 0 ? null : base;
+        }
+        return base + scaledSize * (widthScale - 1.0) * 0.15;
+      }(),
+      height: lineHeight,
+      fontFeatures: features.isEmpty ? null : features,
     );
+    if (run.charStyle.style.smallCaps) {
+      return TextSpan(
+        style: style,
+        children: _syntheticSmallCapsChildren(rawText, style),
+      );
+    }
+    return TextSpan(text: rawText, style: style);
+  }
+
+  /// Approximate CSS/Visio small-caps when the font lacks OpenType `smcp`:
+  /// lowercase letters become slightly smaller capitals.
+  List<InlineSpan> _syntheticSmallCapsChildren(String text, TextStyle base) {
+    final full = base.fontSize ?? 12.0;
+    final small = full * 0.78;
+    final out = <InlineSpan>[];
+    final buf = StringBuffer();
+    bool? bufLower;
+    void flush() {
+      if (buf.isEmpty || bufLower == null) return;
+      final chunk = buf.toString();
+      buf.clear();
+      if (bufLower!) {
+        out.add(TextSpan(
+          text: chunk.toUpperCase(),
+          style: base.copyWith(fontSize: small),
+        ));
+      } else {
+        out.add(TextSpan(text: chunk, style: base));
+      }
+      bufLower = null;
+    }
+
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      final upper = ch.toUpperCase();
+      final lower = ch.toLowerCase();
+      final isLower = ch == lower && ch != upper;
+      if (bufLower != null && bufLower != isLower) flush();
+      bufLower = isLower;
+      buf.write(ch);
+    }
+    flush();
+    return out;
   }
 
   /// Place [plain] glyphs along a quadratic arc bowing upward inside the text

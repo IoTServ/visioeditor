@@ -62,6 +62,26 @@ void main() {
     expect(RegExp(r'\sA\s').hasMatch(svg), isFalse);
   });
 
+  test('SVG export honours custom lineJumpRadiusInches', () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4),
+    );
+    final small = VsdxToSvgSerializer(lineJumpRadiusInches: 0.05)
+        .serializePage(page);
+    final large = VsdxToSvgSerializer(lineJumpRadiusInches: 0.2)
+        .serializePage(page);
+    expect(small, contains('A 0.05 0.05'));
+    expect(large, contains('A 0.2 0.2'));
+    expect(small.contains('A 0.2 0.2'), isFalse);
+  });
+
   test('drawnConnectorPagePolyline keeps dense curved geometry', () {
     final r1 = VsdxShapeFactory.rectangle(
         id: 1, pinX: 1, pinY: 1, width: 1, height: 1);

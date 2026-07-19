@@ -21,7 +21,10 @@ import 'pdf_font_loader_stub.dart'
 ///
 /// When a Unicode system font is available it is registered for SVG text so
 /// CJK / non-Latin labels do not hit Helvetica's Latin-1 encoder.
-Future<Uint8List> exportDocumentToPdf(VsdxDocument doc) async {
+Future<Uint8List> exportDocumentToPdf(
+  VsdxDocument doc, {
+  double lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
+}) async {
   final unicode = await loadPdfUnicodeFont();
   final theme = unicode == null
       ? null
@@ -36,6 +39,7 @@ Future<Uint8List> exportDocumentToPdf(VsdxDocument doc) async {
     pxPerInch: 72.0,
     layerFilter: SvgLayerFilter.print,
     skipBackgroundPages: true,
+    lineJumpRadiusInches: lineJumpRadiusInches,
   );
 
   final pages = <VsdxPage>[

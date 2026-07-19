@@ -516,6 +516,53 @@ void main() {
     );
   });
 
+  test('SVG arrows 21/22/34 match canvas ER / small-circle styles', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    for (final arrowId in <int>[21, 22, 34]) {
+      page = page.addShape(
+        VsdxShapeFactory.line(
+          id: nextId++,
+          ax: 1,
+          ay: arrowId * 0.15,
+          bx: 3,
+          by: arrowId * 0.15,
+        ).copyWith(
+          line: VsdxLine(endArrow: arrowId, weightInches: 0.04),
+        ),
+      );
+    }
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains(
+        'd="M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+        'M 7 1 V 9" fill="none"',
+      ),
+      reason: 'arrow 21 is open circle + hash, not a filled triangle',
+    );
+    expect(
+      svg,
+      contains(
+        'd="M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+        'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9" fill="none"',
+      ),
+      reason: 'arrow 22 is optional-many crow foot',
+    );
+    expect(
+      svg,
+      contains(
+        'd="M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0" '
+        'fill="none" stroke="context-stroke"',
+      ),
+      reason: 'arrow 34 is a small open circle on canvas',
+    );
+  });
+
   test('SVG arrows 27/28/29/33 match canvas filled/open styles', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

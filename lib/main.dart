@@ -679,6 +679,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     try {
       final svg = VsdxToSvgSerializer(
         layerFilter: SvgLayerFilter.print,
+        lineJumpRadiusInches: c.lineJumpRadiusInches,
       ).serializeDocument(doc);
       await writeBytesToFile(path, Uint8List.fromList(utf8.encode(svg)));
       if (!mounted) return;
@@ -802,7 +803,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
     );
     if (path == null) return;
     try {
-      final bytes = await exportDocumentToPdf(doc);
+      final bytes = await exportDocumentToPdf(
+        doc,
+        lineJumpRadiusInches: c.lineJumpRadiusInches,
+      );
       await writeBytesToFile(path, bytes);
       if (!mounted) return;
       _snack(el.exportedPdf(path));

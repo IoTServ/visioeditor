@@ -52,6 +52,7 @@ class VsdxToSvgSerializer {
     this.embedImages = true,
     this.layerFilter = SvgLayerFilter.visible,
     this.skipBackgroundPages = true,
+    this.lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
   });
 
   final double pxPerInch;
@@ -68,6 +69,10 @@ class VsdxToSvgSerializer {
   /// When serialising a whole document, omit pages marked `Background="1"`
   /// (they are composited via [VsdxDocument.backgroundFor] instead).
   final bool skipBackgroundPages;
+
+  /// Arc radius for connector line jumps (matches canvas
+  /// [VsdxPainter.lineJumpRadiusInches]).
+  final double lineJumpRadiusInches;
 
   /// Current image registry, swapped in by [serializePage] / [serializeDocument].
   ImageRegistry _images = ImageRegistry.empty;
@@ -282,7 +287,7 @@ class VsdxToSvgSerializer {
     return polylineWithJumpsSvg(
       localRoute,
       unders,
-      kDefaultLineJumpRadiusInches,
+      lineJumpRadiusInches,
       format: _n,
     );
   }
@@ -1394,11 +1399,10 @@ class VsdxToSvgSerializer {
   String _arrowMarkerBody(int arrowId, {required bool tipAtEnd}) {
     // Work in tip-at-right space, then mirror for start markers.
     // filled / open choices mirror lib/render/arrow_library.dart.
-    // filled / open choices mirror lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
       3 => ('M 0 1 L 10 5 L 0 9', false), // open arrow (V stroke)
       1 || 6 || 26 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
-      10 || 13 || 34 => (
+      10 || 13 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           true,
         ), // filled circle / ball
@@ -1406,15 +1410,35 @@ class VsdxToSvgSerializer {
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           false,
         ), // open circle
+      34 => (
+          'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0',
+          false,
+        ), // small open circle
       11 => ('M 1 5 L 5 1 L 9 5 L 5 9 Z', false), // open diamond
       15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
       16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
       7 || 12 || 31 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth / chevron
       8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
-      17 => ('M 2 1 L 8 9', false), // backslash
-      18 => ('M 5 1 V 9 M 1 5 H 9', false), // cross / plus
-      19 => ('M 2 1 V 9 M 2 5 H 8', false), // crow's foot one
-      20 => ('M 2 1 L 8 5 L 2 9 M 8 1 V 9', false), // crow's foot many
+      9 => (
+          'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z',
+          true,
+        ), // fletched
+      17 => ('M 5 1 V 9', false), // single hash (backslash/one)
+      18 => ('M 7 1 V 9 M 4.5 1 V 9', false), // double hash / exactly one
+      19 => ('M 7 1 V 9', false), // crow's foot one
+      20 => ('M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9', false), // crow's foot many
+      21 => (
+          'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+          'M 7 1 V 9',
+          false,
+        ), // optional one
+      22 => (
+          'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+          'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9',
+          false,
+        ), // optional many
+      23 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', true), // swept filled
+      24 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false), // swept open
       27 => ('M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7', false), // hatched triangle
       28 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true), // spear (filled thin)
       29 => ('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z', true), // double triangle
@@ -1424,6 +1448,7 @@ class VsdxToSvgSerializer {
         ), // double open triangle
       32 => ('M 0 1 L 10 5 L 0 9', false), // open chevron
       33 => ('M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9', false), // trident
+      35 => ('M 0 2 L 10 5 L 0 8 L 2.5 5 Z', true), // long filled arrow
       _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
     };
     final pathD = tipAtEnd ? d : _mirrorArrowD(d);
@@ -1443,10 +1468,21 @@ class VsdxToSvgSerializer {
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
       'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
       'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
-      'M 2 1 L 8 9' => 'M 8 1 L 2 9',
-      'M 5 1 V 9 M 1 5 H 9' => d,
-      'M 2 1 V 9 M 2 5 H 8' => 'M 8 1 V 9 M 8 5 H 2',
-      'M 2 1 L 8 5 L 2 9 M 8 1 V 9' => 'M 8 1 L 2 5 L 8 9 M 2 1 V 9',
+      'M 5 1 V 9' => d,
+      'M 7 1 V 9' => 'M 3 1 V 9',
+      'M 7 1 V 9 M 4.5 1 V 9' => 'M 3 1 V 9 M 5.5 1 V 9',
+      'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9' =>
+        'M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9',
+      'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 7 1 V 9' =>
+        'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 3 1 V 9',
+      'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+          'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9' =>
+        'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+            'M 6 5 L 10 1 M 6 5 L 10 5 M 6 5 L 10 9',
+      'M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z' => 'M 10 0.5 L 0 5 L 10 9.5 L 7.5 5 Z',
+      'M 0 2 L 10 5 L 0 8 L 2.5 5 Z' => 'M 10 2 L 0 5 L 10 8 L 7.5 5 Z',
+      'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z' =>
+        'M 10 1 L 0 5 L 10 9 Z M 12 0.5 L 10 1 L 10 9 L 12 9.5 Z',
       'M 0 1 L 10 5 L 0 9 Z M 3 3 L 7 7' =>
         'M 10 1 L 0 5 L 10 9 Z M 7 3 L 3 7',
       'M 0 3.2 L 10 5 L 0 6.8 Z' => 'M 10 3.2 L 0 5 L 10 6.8 Z',
@@ -1454,6 +1490,7 @@ class VsdxToSvgSerializer {
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
       'M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9' =>
         'M 0 5 L 8 1 M 0 5 L 10 5 M 0 5 L 8 9',
+      'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0' => d,
       _ => d, // circles are symmetric
     };
   }
