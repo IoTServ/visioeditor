@@ -5833,6 +5833,48 @@ class EditorController extends ChangeNotifier {
         var next = p.updateShapeById(
           id,
           (sh) {
+            // Glueable connectors: scale Begin→End like applyOps so Arrange /
+            // handles stay in sync with Visio Width=EndX−BeginX (not AABB-only).
+            if (sh.isGlueableConnector &&
+                sh.beginX != null &&
+                sh.beginY != null &&
+                sh.endX != null &&
+                sh.endY != null) {
+              final ax = sh.beginX!;
+              final ay = sh.beginY!;
+              final bx = sh.endX!;
+              final by = sh.endY!;
+              final sx = sh.width.abs() < 1e-12
+                  ? 1.0
+                  : width.abs() / sh.width.abs();
+              final sy = sh.height.abs() < 1e-12
+                  ? 1.0
+                  : height.abs() / sh.height.abs();
+              final newEx = ax + (bx - ax) * sx;
+              final newEy = ay + (by - ay) * sy;
+              final newWps = <Offset2D>[
+                for (final pt in sh.waypoints)
+                  Offset2D(ax + (pt.x - ax) * sx, ay + (pt.y - ay) * sy),
+              ];
+              final poly = <Offset2D>[
+                Offset2D(ax, ay),
+                ...newWps,
+                Offset2D(newEx, newEy),
+              ];
+              return sh
+                  .copyWith(
+                    beginX: ax,
+                    beginY: ay,
+                    endX: newEx,
+                    endY: newEy,
+                    pinX: (ax + newEx) / 2,
+                    pinY: (ay + newEy) / 2,
+                    width: newEx - ax,
+                    height: newEy - ay,
+                    waypoints: newWps,
+                  )
+                  .reshapeAsPolyline(poly);
+            }
             final sx = sh.width == 0 ? 1.0 : width / sh.width;
             final sy = sh.height == 0 ? 1.0 : height / sh.height;
             final resized = sh.resizeTo(

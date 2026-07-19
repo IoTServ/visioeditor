@@ -242,7 +242,7 @@ class VsdxPainter extends CustomPainter {
     final z = <int, int>{};
     void walk(List<VsdxShape> list) {
       for (final s in list) {
-        if (s.is1D) {
+        if (s.isGlueableConnector) {
           final pts = p.drawnConnectorPagePolyline(s);
           if (pts.length >= 2) {
             z[s.id] = routes.length;
@@ -397,7 +397,7 @@ class VsdxPainter extends CustomPainter {
             if (shader != null) strokePaint.shader = shader;
           }
           var strokeSrc = path;
-          if (shape.is1D && _lineJumpsActive) {
+          if (shape.isGlueableConnector && _lineJumpsActive) {
             final jumped = _lineJumpsPath(shape, geom);
             if (jumped != null) strokeSrc = jumped;
           }

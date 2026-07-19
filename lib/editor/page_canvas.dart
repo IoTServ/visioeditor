@@ -1134,7 +1134,7 @@ class _PageCanvasState extends State<PageCanvas> {
     var pageAngle = 0.0;
     var locAlignX = 0.0;
     var locAlignY = 0.0;
-    if (s.is1D) {
+    if (s.isGlueableConnector) {
       // Edge label: a compact editor centred on the connector's route midpoint.
       final mid = _connectorMidpointPage(s);
       final screen = _pageToScreen(mid.x, mid.y);

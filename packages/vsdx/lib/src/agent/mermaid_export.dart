@@ -29,12 +29,12 @@ String documentToMermaid(VsdxDocument doc, {int? pageIndex, bool fenced = false}
     final emitted = <int>{};
 
     for (final s in _walkShapes(page.shapes)) {
-      if (s.is1D || s.children.isNotEmpty) continue;
+      if (s.isGlueableConnector || s.isInk || s.children.isNotEmpty) continue;
       emitted.add(s.id);
       buf.writeln('  n${s.id}["${_escape(_label(s), fallback: 'n${s.id}')}"]');
     }
     for (final e in _walkShapes(page.shapes)) {
-      if (!e.is1D) continue;
+      if (!e.isGlueableConnector) continue;
       final ends = index.forConnector(e.id);
       final from =
           ends.where((c) => c.isBegin).map((c) => c.toSheetId).firstOrNull;

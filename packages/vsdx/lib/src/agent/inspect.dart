@@ -110,7 +110,8 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
       out.add(<String, dynamic>{
         'id': s.id,
         'text': (s.text ?? s.richText.plainText).trim().replaceAll('\n', ' '),
-        'connector': s.is1D,
+        'connector': s.isGlueableConnector,
+        if (s.isInk) 'ink': true,
         'group': s.children.isNotEmpty,
         'x': r(pin.x),
         'y': r(pin.y),
@@ -142,7 +143,7 @@ String explainDocument(VsdxDocument doc) {
     ];
     final edges = <VsdxShape>[
       for (final s in all)
-        if (s.is1D) s,
+        if (s.isGlueableConnector) s,
     ];
     b.writeln('## Page ${pi + 1}: ${page.name}');
     b.writeln();

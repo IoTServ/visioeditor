@@ -650,7 +650,7 @@ class VsdxPage {
     var next = this;
     for (final cid in connectorIds) {
       final connector = next.findShapeById(cid);
-      if (connector == null) continue;
+      if (connector == null || !connector.isGlueableConnector) continue;
       VsdxShape? beginShape;
       VsdxShape? endShape;
       VsdxConnect? beginConnect;
@@ -1944,9 +1944,10 @@ class VsdxPage {
   }
 
   /// After Begin/End/waypoints were rewritten into a new coordinate frame,
-  /// rebuild 1-D geometry and clear Angle/Flip (Visio connector convention).
+  /// rebuild glueable-connector geometry (Visio Begin-origin convention).
+  /// Freehand ink keeps AABB-local Geometry and must not go through this.
   static VsdxShape _finalize1DCoords(VsdxShape s) {
-    if (!s.is1D ||
+    if (!s.isGlueableConnector ||
         s.beginX == null ||
         s.beginY == null ||
         s.endX == null ||
@@ -2091,7 +2092,7 @@ class VsdxPage {
       }
       r = r.copyWith(waypoints: wps);
     }
-    if (c.is1D) return _finalize1DCoords(r);
+    if (c.isGlueableConnector) return _finalize1DCoords(r);
     return r;
   }
 
@@ -2113,9 +2114,10 @@ class VsdxPage {
     }
 
     // Bake parent flips into the child so chirality survives ungroup / eject.
-    // 1-D connectors already finalize Angle/Flip=0 via reshape — do not reapply.
+    // Glueable connectors already finalize Angle/Flip=0 via reshape — skip.
+    // Freehand ink keeps AABB geometry like 2-D and needs the flip bake.
     final promoted = _childToPage(child, toPage, parent.angleRad);
-    if (child.is1D) return promoted;
+    if (child.isGlueableConnector) return promoted;
     return promoted.copyWith(
       flipX: child.flipX ^ parent.flipX,
       flipY: child.flipY ^ parent.flipY,
@@ -2151,7 +2153,7 @@ class VsdxPage {
         ],
       );
     }
-    if (pageShape.is1D) return _finalize1DCoords(r);
+    if (pageShape.isGlueableConnector) return _finalize1DCoords(r);
     return r;
   }
 
@@ -2428,7 +2430,7 @@ class VsdxPage {
         ],
       );
     }
-    if (child.is1D) return _finalize1DCoords(r);
+    if (child.isGlueableConnector) return _finalize1DCoords(r);
     return r;
   }
 
@@ -2490,7 +2492,7 @@ class VsdxPage {
         ],
       );
     }
-    if (src.is1D) return _finalize1DCoords(r);
+    if (src.isGlueableConnector) return _finalize1DCoords(r);
     return r;
   }
 

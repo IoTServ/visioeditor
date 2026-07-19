@@ -178,6 +178,67 @@ void main() {
       expect(top.beginX, isNotNull);
       expect(top.endX, isNotNull);
     });
+
+    test('ungroup keeps freehand ink polyline (does not flatten to Begin→End)', () {
+      final ink = VsdxShapeFactory.freehand(
+        id: 2,
+        points: const <Offset2D>[
+          Offset2D(1, 1),
+          Offset2D(1.5, 2),
+          Offset2D(2.5, 1.2),
+          Offset2D(3, 2),
+        ],
+      );
+      expect(ink.isInk, isTrue);
+      expect(ink.isGlueableConnector, isFalse);
+      final cmdCount = ink.geometries.single.commands.length;
+      expect(cmdCount, greaterThan(2));
+      final group = VsdxShape(
+        id: 1,
+        name: 'Group.1',
+        pinX: 2,
+        pinY: 2,
+        width: 4,
+        height: 3,
+        shapeKind: VsdxShapeKind.group,
+        children: <VsdxShape>[ink],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+      );
+      var page = pageWith(<VsdxShape>[group]);
+      page = page.ungroup(1);
+      final top = page.findShapeById(2)!;
+      expect(top.isInk, isTrue);
+      expect(top.objType, 1);
+      expect(top.geometries.single.commands.length, cmdCount);
+      expect(top.geometries.single.commands.whereType<LineTo>().length, 3);
+    });
+
+    test('reparent freehand into container preserves ink geometry', () {
+      final box = VsdxShapeFactory.container(
+        id: 1,
+        pinX: 4,
+        pinY: 4,
+        width: 5,
+        height: 4,
+      );
+      final ink = VsdxShapeFactory.freehand(
+        id: 2,
+        points: const <Offset2D>[
+          Offset2D(2, 3),
+          Offset2D(2.8, 4.2),
+          Offset2D(3.5, 3.1),
+          Offset2D(4.2, 4),
+        ],
+      );
+      final cmdsBefore = ink.geometries.single.commands.length;
+      var page = pageWith(<VsdxShape>[box, ink]).reparentShape(2, 1);
+      final nested = page.findShapeById(2)!;
+      expect(page.findParentId(2), 1);
+      expect(nested.isInk, isTrue);
+      expect(nested.geometries.single.commands.length, cmdsBefore);
+      expect(nested.isGlueableConnector, isFalse);
+    });
   });
 
   group('group AABB', () {
