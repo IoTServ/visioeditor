@@ -337,23 +337,24 @@ class VsdxToSvgSerializer {
       final jumpD = _connectorJumpD(page, shape);
       for (final geom in shape.geometries) {
         if (geom.noShow) continue;
-        var d = _geometryToD(
+        final d = _geometryToD(
           geom,
           shape.width,
           shape.height,
           roundingInches: shape.line.roundingInches,
         );
         if (d.isEmpty) continue;
-        // Prefer jump-aware stroke for 1-D connectors (first stroked geom).
-        if (jumpD != null && !geom.noLine) {
-          d = jumpD;
-        }
+        // Match canvas: line jumps affect stroke only; fill keeps the raw
+        // geometry. Do not break — later Geometry sections still paint.
+        final strokeD =
+            (jumpD != null && !geom.noLine) ? jumpD : null;
         wroteGeom = true;
         _writePath(
           buf,
           shape,
           theme,
           d: d,
+          strokeD: strokeD,
           noFill: geom.noFill,
           noLine: geom.noLine,
           // paintIdScope is page- (and underlay-) scoped so multi-page SVG
@@ -362,7 +363,6 @@ class VsdxToSvgSerializer {
           indent: '$indent  ',
         );
         geomIndex++;
-        if (jumpD != null && !geom.noLine) break;
       }
       // Canvas paints geometry-less 1-D connectors via orthogonal routing
       // (perimeter glue + ObstacleRouter). Match that for SVG/PDF export.
@@ -453,6 +453,8 @@ class VsdxToSvgSerializer {
     VsdxShape shape,
     VsdxTheme theme, {
     required String d,
+    /// When set (line jumps), stroke uses this path; fill keeps [d].
+    String? strokeD,
     required bool noFill,
     required bool noLine,
     required String paintId,
@@ -465,11 +467,24 @@ class VsdxToSvgSerializer {
     final stroke = !noLine
         ? _strokeAttr(shape.line, theme, paintId, defs)
         : (paint: 'stroke="none"', markers: '');
-    final strokeAttr = '${stroke.paint}${stroke.markers}';
-    final filterAttr = _effectsFilterAttr(shape, theme, paintId, defs);
+    final sD = strokeD ?? d;
+    // SoftEdges only — shadow is painted separately (fill-only / stroke-only
+    // like canvas [_drawShadow]). Markers stay outside soft blur.
+    final softFilter = _softEdgesFilterAttr(shape, paintId, defs);
     if (defs.isNotEmpty) {
       buf.writeln('$indent<defs>$defs</defs>');
     }
+    _writeDropShadow(
+      buf,
+      shape,
+      theme,
+      d: d,
+      strokeD: sD,
+      noFill: noFill,
+      noLine: noLine,
+      paintId: paintId,
+      indent: indent,
+    );
     _writeReflection(
       buf,
       shape,
@@ -503,13 +518,13 @@ class VsdxToSvgSerializer {
           '</filter></defs>',
         );
         buf.writeln(
-          '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
+          '$indent<path d="$sD" fill="none" stroke="${_hex(gc)}" '
           'stroke-width="${_n(math.max(glow.sizeInches * 2, 0.02))}" '
           'stroke-opacity="1" filter="url(#$gid)"/>',
         );
       }
     }
-    final filter = filterAttr == null ? '' : ' filter="$filterAttr"';
+    final filter = softFilter == null ? '' : ' filter="$softFilter"';
     final compound = !noLine && shape.line.compoundType > 0;
     if (compound) {
       // Match canvas BlendMode.clear double-rail: mask punches a transparent
@@ -528,27 +543,60 @@ class VsdxToSvgSerializer {
       final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
       buf.writeln(
         '$indent<defs><mask id="$mid" maskUnits="userSpaceOnUse">'
-        '<path d="$d" fill="none" stroke="white" '
+        '<path d="$sD" fill="none" stroke="white" '
         'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
         'stroke-linejoin="$linejoin"/>'
-        '<path d="$d" fill="none" stroke="black" '
+        '<path d="$sD" fill="none" stroke="black" '
         'stroke-width="${_n(gap)}" stroke-linecap="$linecap" '
         'stroke-linejoin="$linejoin"/>'
         '</mask></defs>',
       );
-      // Apply shadow/softEdges once on a wrapper — fill+stroke each with
-      // filter would double the drop-shadow (canvas paints effects once).
+      // SoftEdges once on a wrapper — markers stay outside (canvas paints
+      // arrows after soft/shadow/glow in _paintLineEndings).
       if (filter.isNotEmpty) {
         buf.writeln('$indent<g$filter>');
       }
       if (!noFill && fillAttr != 'fill="none"') {
         buf.writeln('$indent<path d="$d" $fillAttr stroke="none"/>');
       }
-      // Mask only the stroke rail — markers sit outside the pipe and would
-      // be clipped (canvas paints arrows after compound in _paintLineEndings).
       buf.writeln(
-        '$indent<path d="$d" fill="none" ${stroke.paint} '
+        '$indent<path d="$sD" fill="none" ${stroke.paint} '
         'mask="url(#$mid)"/>',
+      );
+      if (filter.isNotEmpty) {
+        buf.writeln('$indent</g>');
+      }
+      if (stroke.markers.isNotEmpty) {
+        buf.writeln(
+          '$indent<path d="$sD" fill="none" ${stroke.paint} '
+          'stroke-opacity="0"${stroke.markers}/>',
+        );
+      }
+    } else if (strokeD != null && strokeD != d) {
+      // Distinct fill vs jump stroke paths (canvas parity).
+      if (filter.isNotEmpty) {
+        buf.writeln('$indent<g$filter>');
+      }
+      if (!noFill && fillAttr != 'fill="none"') {
+        buf.writeln('$indent<path d="$d" $fillAttr stroke="none"/>');
+      }
+      if (!noLine && stroke.paint != 'stroke="none"') {
+        buf.writeln(
+          '$indent<path d="$sD" fill="none" ${stroke.paint}/>',
+        );
+      }
+      if (filter.isNotEmpty) {
+        buf.writeln('$indent</g>');
+      }
+      if (stroke.markers.isNotEmpty) {
+        buf.writeln(
+          '$indent<path d="$sD" fill="none" ${stroke.paint} '
+          'stroke-opacity="0"${stroke.markers}/>',
+        );
+      }
+    } else {
+      buf.writeln(
+        '$indent<path d="$d" $fillAttr ${stroke.paint}$filter/>',
       );
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
@@ -556,11 +604,65 @@ class VsdxToSvgSerializer {
           'stroke-opacity="0"${stroke.markers}/>',
         );
       }
-      if (filter.isNotEmpty) {
-        buf.writeln('$indent</g>');
-      }
+    }
+  }
+
+  /// Canvas-matching drop shadow: blurred fill (2D) or stroke (1D / NoFill),
+  /// drawn before the sharp shape — not feDropShadow on fill+stroke+markers.
+  void _writeDropShadow(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme, {
+    required String d,
+    required String strokeD,
+    required bool noFill,
+    required bool noLine,
+    required String paintId,
+    required String indent,
+  }) {
+    final shadow = shape.shadow;
+    if (!shadow.enabled) return;
+    final base = _resolveColor(shadow.color, shadow.themeColorIndex, theme) ??
+        const VsdxColor(0x99000000);
+    final alpha = _combinedOpacity(base, shadow.transparency);
+    if (alpha <= 0) return;
+    final lineOnly =
+        shape.is1D || noFill || !shape.fill.hasFill;
+    if (lineOnly && noLine) return;
+    if (!lineOnly && noFill) return;
+    final sid = 'shadow-$paintId';
+    final blur = math.max(shadow.blurInches, 0.001);
+    buf.writeln(
+      '$indent<defs><filter id="$sid" x="-50%" y="-50%" '
+      'width="200%" height="200%">'
+      '<feGaussianBlur stdDeviation="${_n(blur)}"/>'
+      '</filter></defs>',
+    );
+    final hex = _hex(base);
+    final dx = shadow.offsetXInches;
+    final dy = shadow.offsetYInches;
+    if (lineOnly) {
+      final weight =
+          shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+      final linecap = switch (shape.line.cap) {
+        LineCap.round => 'round',
+        LineCap.square => 'square',
+        LineCap.extended => 'butt',
+      };
+      final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
+      buf.writeln(
+        '$indent<path d="$strokeD" fill="none" stroke="$hex" '
+        'stroke-opacity="${_n(alpha)}" stroke-width="${_n(weight)}" '
+        'stroke-linecap="$linecap" stroke-linejoin="$linejoin" '
+        'transform="translate(${_n(dx)} ${_n(dy)})" '
+        'filter="url(#$sid)"/>',
+      );
     } else {
-      buf.writeln('$indent<path d="$d" $fillAttr $strokeAttr$filter/>');
+      buf.writeln(
+        '$indent<path d="$d" fill="$hex" fill-opacity="${_n(alpha)}" '
+        'stroke="none" transform="translate(${_n(dx)} ${_n(dy)})" '
+        'filter="url(#$sid)"/>',
+      );
     }
   }
 
@@ -582,16 +684,16 @@ class VsdxToSvgSerializer {
     if (!hasFill && !hasStroke) return;
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
-    // Approximate canvas reflection: mirror below the shape box, clipped by
-    // ReflectionSize, optional blur. Prefer path Y-extent (matches canvas
-    // path.getBounds().height) over XForm Height for non-full-box geometry.
-    // Axis-aligned 1D lines have ~0 path height / XForm Height — use stroke
-    // weight so ReflectionSize still yields a visible clip band.
+    // Approximate canvas reflection: mirror about path min-Y (visual bottom
+    // in Y-up), clipped by ReflectionSize. Axis-aligned 1D lines have ~0 path
+    // height — use stroke weight so ReflectionSize still yields a band.
     final weightH =
         shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
     final fallbackH =
         shape.height.abs() < 1e-9 ? weightH : shape.height.abs();
-    final h = _approxPathHeightFromD(d, fallbackH);
+    final extent = _approxPathYExtentFromD(d, fallbackH);
+    final h = extent.height;
+    final bottomY = extent.minY;
     final clipH = h * refl.sizeInches.clamp(0.01, 1.0);
     final dist = refl.distanceInches;
     final fid = 'refl-$paintId';
@@ -646,12 +748,13 @@ class VsdxToSvgSerializer {
     // transparent at the far edge of ReflectionSize.
     final fadeId = 'refl-fade-$paintId';
     final maskId = 'refl-mask-$paintId';
-    final nearY = -dist;
-    final farY = -dist - clipH;
+    final nearY = bottomY - dist;
+    final farY = nearY - clipH;
+    final clipY = bottomY - dist - clipH - refl.blurInches;
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
-      '<rect x="${_n(-shape.width)}" y="${_n(-dist - clipH)}" '
+      '<rect x="${_n(-shape.width)}" y="${_n(clipY)}" '
       'width="${_n(shape.width * 3)}" height="${_n(clipH + refl.blurInches)}"/>'
       '</clipPath>'
       '<linearGradient id="$fadeId" gradientUnits="userSpaceOnUse" '
@@ -671,18 +774,22 @@ class VsdxToSvgSerializer {
       '</defs>',
     );
     final filter = refl.blurInches > 0 ? ' filter="url(#$fid)"' : '';
+    // Mirror about path min-Y (canvas bounds.top), then shift by Distance.
     buf.writeln(
       '$indent<g clip-path="url(#$cid)" mask="url(#$maskId)" '
-      'transform="translate(0 ${_n(-dist)}) scale(1 -1)">'
+      'transform="translate(0 ${_n(-dist)}) translate(0 ${_n(bottomY)}) '
+      'scale(1 -1) translate(0 ${_n(-bottomY)})">'
       '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
       '$strokeAttrs$filter/>'
       '</g>',
     );
   }
 
-  /// Height of an absolute SVG path `d` from its Y coordinates, or [fallback].
-  /// Used so ReflectionSize tracks painted geometry like canvas path bounds.
-  double _approxPathHeightFromD(String d, double fallback) {
+  /// Y extent of an absolute SVG path `d` (minY + height), for reflection.
+  ({double minY, double height}) _approxPathYExtentFromD(
+    String d,
+    double fallbackHeight,
+  ) {
     final tokens = RegExp(
       r'[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
     ).allMatches(d).map((m) => m.group(0)!).toList();
@@ -731,9 +838,14 @@ class VsdxToSvgSerializer {
       }
     }
     flush();
-    if (!minY.isFinite || !maxY.isFinite) return fallback;
+    if (!minY.isFinite || !maxY.isFinite) {
+      return (minY: 0.0, height: fallbackHeight);
+    }
     final span = maxY - minY;
-    return span < 1e-9 ? fallback : span;
+    if (span < 1e-9) {
+      return (minY: minY, height: fallbackHeight);
+    }
+    return (minY: minY, height: span);
   }
 
   /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
@@ -753,64 +865,23 @@ class VsdxToSvgSerializer {
     return Offset2D(x + shape.effectiveLocPinX, y + shape.effectiveLocPinY);
   }
 
-  String? _effectsFilterAttr(
+  /// SoftEdges blur only (shadow is [_writeDropShadow]). Skip 1D like canvas.
+  String? _softEdgesFilterAttr(
     VsdxShape shape,
-    VsdxTheme theme,
     String paintId,
     StringBuffer defs,
   ) {
-    final shadow = shape.shadow;
     final soft =
-        (!shape.is1D && shape.line.softEdgesInches > 0) ? shape.line.softEdgesInches : 0.0;
-    final shadowOn = shadow.enabled;
-    if (!shadowOn && soft <= 0) return null;
-
+        (!shape.is1D && shape.line.softEdgesInches > 0)
+            ? shape.line.softEdgesInches
+            : 0.0;
+    if (soft <= 0) return null;
     final id = 'fx-$paintId';
-    final parts = StringBuffer();
-    var shadowDrawn = false;
-    if (shadowOn) {
-      final base = _resolveColor(shadow.color, shadow.themeColorIndex, theme) ??
-          const VsdxColor(0x99000000);
-      final alpha = _combinedOpacity(base, shadow.transparency);
-      if (alpha > 0) {
-        // User space is Visio Y-up (after the page scale), so +offsetY is up.
-        parts.write(
-          '<feDropShadow dx="${_n(shadow.offsetXInches)}" '
-          'dy="${_n(shadow.offsetYInches)}" '
-          'stdDeviation="${_n(math.max(shadow.blurInches, 0.001))}" '
-          'flood-color="${_hex(base)}" flood-opacity="${_n(alpha)}" '
-          'result="shadow"/>',
-        );
-        shadowDrawn = true;
-      }
-    }
-    if (soft > 0) {
-      parts.write(
-        '<feGaussianBlur in="SourceGraphic" '
-        'stdDeviation="${_n(soft)}" result="soft"/>',
-      );
-    }
-    if (parts.isEmpty) return null;
-    // Merge only results that were actually emitted — a fully transparent
-    // shadow must not leave feMergeNode in="shadow" with no feDropShadow.
-    if (shadowDrawn && soft > 0) {
-      parts.write(
-        '<feMerge>'
-        '<feMergeNode in="shadow"/>'
-        '<feMergeNode in="soft"/>'
-        '</feMerge>',
-      );
-    } else if (shadowDrawn) {
-      parts.write(
-        '<feMerge>'
-        '<feMergeNode in="shadow"/>'
-        '<feMergeNode in="SourceGraphic"/>'
-        '</feMerge>',
-      );
-    }
     defs.write(
       '<filter id="$id" x="-50%" y="-50%" width="200%" height="200%">'
-      '$parts</filter>',
+      '<feGaussianBlur in="SourceGraphic" '
+      'stdDeviation="${_n(soft)}" result="soft"/>'
+      '</filter>',
     );
     return 'url(#$id)';
   }
@@ -1441,7 +1512,10 @@ class VsdxToSvgSerializer {
     // filled / open choices mirror lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
       3 => ('M 0 1 L 10 5 L 0 9', false), // open arrow (V stroke)
-      1 || 6 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
+      1 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
+      // Narrow triangles (canvas half-width 0.25).
+      5 => ('M 0 2.5 L 10 5 L 0 7.5 Z', true),
+      6 => ('M 0 2.5 L 10 5 L 0 7.5 Z', false),
       // Wide triangles (canvas reach 0.85, half-width 0.55).
       25 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', true),
       26 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', false),
@@ -1513,6 +1587,7 @@ class VsdxToSvgSerializer {
     return switch (d) {
       'M 0 1 L 10 5 L 0 9' => 'M 10 1 L 0 5 L 10 9',
       'M 0 1 L 10 5 L 0 9 Z' => 'M 10 1 L 0 5 L 10 9 Z',
+      'M 0 2.5 L 10 5 L 0 7.5 Z' => 'M 10 2.5 L 0 5 L 10 7.5 Z',
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
       'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
@@ -2101,8 +2176,10 @@ class VsdxToSvgSerializer {
     if (style.lineSpacingAbsoluteInches > 1e-9) {
       return math.max(style.lineSpacingAbsoluteInches, fs);
     }
+    // [lineSpacing] is already the Visio SpLine multiple (e.g. -1.2 → 1.2);
+    // do not multiply by an extra 1.2 (that inflated relative spacing vs canvas).
     final mult = style.lineSpacingSolid ? 1.0 : style.lineSpacing;
-    return fs * 1.2 * (mult <= 0 ? 1.0 : mult);
+    return fs * (mult <= 0 ? 1.0 : mult);
   }
 
   String _svgBulletGlyph(VsdxParaStyle style) {

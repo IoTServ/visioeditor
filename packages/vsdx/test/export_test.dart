@@ -897,6 +897,200 @@ void main() {
     expect(svg, contains('x="1.775"'));
   });
 
+  test('SVG relative SpLine line height does not multiply by extra 1.2', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 2,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\nB',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.2,
+                ),
+                paraStyle: const VsdxParaStyle(lineSpacing: 1.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Two paras at 0.2 * 1.5 = 0.3 each → second line centre offset uses 0.3
+    // (not 0.2*1.2*1.5=0.36). Cluster height 0.6; centres at ±0.15 from mid.
+    expect(svg, contains('y="-0.15"'));
+    expect(svg, contains('y="0.15"'));
+  });
+
+  test('SVG arrows 5/6 are narrow triangles', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    for (final arrowId in <int>[5, 6]) {
+      page = page.addShape(
+        VsdxShapeFactory.line(
+          id: nextId++,
+          ax: 1,
+          ay: arrowId * 0.1,
+          bx: 3,
+          by: arrowId * 0.1,
+        ).copyWith(
+          line: VsdxLine(endArrow: arrowId, weightInches: 0.04),
+        ),
+      );
+    }
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="context-stroke"'),
+      reason: 'arrow 5 is filled narrow triangle',
+    );
+    expect(
+      svg,
+      contains(
+        'd="M 0 2.5 L 10 5 L 0 7.5 Z" fill="none" stroke="context-stroke"',
+      ),
+      reason: 'arrow 6 is open narrow triangle',
+    );
+  });
+
+  test('SVG EndArrow markers stay outside SoftEdges filter', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          line: const VsdxLine(
+            softEdgesInches: 0.06,
+            endArrow: 2,
+            weightInches: 0.04,
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('marker-end='));
+    expect(svg, contains('filter="url(#fx-'));
+    // Soft-filtered path must not carry markers (would blur arrowheads).
+    expect(
+      RegExp(r'filter="url\(#fx-[^"]+\)"[^>]*marker-').hasMatch(svg),
+      isFalse,
+    );
+    expect(svg, contains('stroke-opacity="0"'));
+  });
+
+  test('SVG filled shape shadow is fill-only (no stroke in shadow source)', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          line: const VsdxLine(
+            color: VsdxColor(0xFF0000FF),
+            weightInches: 0.05,
+          ),
+        ).copyWith(
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000)),
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.12,
+            offsetYInches: 0.08,
+            blurInches: 0.04,
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('filter="url(#shadow-'));
+    expect(svg, contains('translate(0.12 0.08)'));
+    expect(svg.contains('feDropShadow'), isFalse);
+    // Shadow path is fill + stroke="none" (canvas filled drop shadow).
+    expect(
+      RegExp(
+        r'filter="url\(#shadow-[^"]+\)"[^>]*stroke="none"|'
+        r'stroke="none"[^>]*filter="url\(#shadow-',
+      ).hasMatch(svg),
+      isTrue,
+    );
+  });
+
+  test('SVG reflection mirrors about path min-Y not always y=0', () {
+    // Triangle sitting above y=0: minY > 0 → mirror axis is that minY.
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShape(
+          id: 1,
+          name: 'Sheet.1',
+          pinX: 2,
+          pinY: 1.5,
+          width: 2,
+          height: 2,
+          fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0)),
+          line: const VsdxLine(pattern: 0),
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            distanceInches: 0.05,
+            blurInches: 0,
+          ),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0.2, 0.3),
+                LineTo(1.8, 0.3),
+                LineTo(1.0, 1.5),
+                LineTo(0.2, 0.3),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(
+      svg,
+      contains(
+        'translate(0 -0.05) translate(0 0.3) scale(1 -1) translate(0 -0.3)',
+      ),
+      reason: 'reflection axis must be path minY (0.3), not shape y=0',
+    );
+  });
+
   test('SVG FlipY bitmap uses centre flip (stays in shape box)', () {
     // 1×1 PNG
     final png = base64Decode(

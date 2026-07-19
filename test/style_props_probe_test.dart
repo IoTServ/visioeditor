@@ -302,7 +302,10 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('feDropShadow'), isTrue);
+    // Fill-only blurred shadow path (canvas [_drawShadow]), not feDropShadow
+    // on the sharp fill+stroke graphic.
+    expect(svg.contains('filter="url(#shadow-'), isTrue);
+    expect(svg.contains('translate(0.1 0.1)'), isTrue);
     expect(svg.contains('rotate(-90)'), isTrue);
     // Swapped layout frame (canvas parity): rotate about centre then
     // translate into the height×width band — not a bare rotate(-90).
@@ -541,11 +544,12 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('mask="url(#cmp-'), isTrue);
-    expect(svg.contains('<g filter="url(#fx-'), isTrue);
-    // Must not hang filter on both fill and stroke paths.
+    // Shadow is a single fill-only path (not feDropShadow on fill+stroke).
+    expect(svg.contains('filter="url(#shadow-'), isTrue);
     expect(
-      RegExp(r'<path[^>]*filter="url\(#fx-').allMatches(svg).length,
-      0,
+      RegExp(r'filter="url\(#shadow-').allMatches(svg).length,
+      1,
+      reason: 'compound must not duplicate the shadow filter on fill and stroke',
     );
   });
 
@@ -786,8 +790,9 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('feGaussianBlur'), isTrue);
+    expect(svg.contains('filter="url(#shadow-'), isFalse,
+        reason: 'fully transparent shadow must not emit a shadow path');
     expect(svg.contains('feDropShadow'), isFalse);
-    expect(svg.contains('feMergeNode in="shadow"'), isFalse);
   });
 
   test('shadow disable then enable does not resurrect stale offset/colour', () {
@@ -1346,8 +1351,9 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('dy="0.2"'), isTrue);
-    expect(svg.contains('dy="-0.2"'), isFalse);
+    // +ShadowOffsetY is up in Visio Y-up; shadow path uses translate(dx dy).
+    expect(svg.contains('translate(0.1 0.2)'), isTrue);
+    expect(svg.contains('translate(0.1 -0.2)'), isFalse);
   });
 
   test('SVG uses meaningful shape name as label fallback', () {
