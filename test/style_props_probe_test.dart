@@ -1454,6 +1454,133 @@ void main() {
     expect(after.layers.single.name, 'A');
   });
 
+  test('setShadow toggles restore colour/offset; setLinePattern(0) clears gradient',
+      () {
+    final e = EditorController()..newDocument();
+    addTearDown(e.dispose);
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 2,
+        height: 1,
+      ).copyWith(
+        shadow: const VsdxShadow(
+          enabled: true,
+          color: VsdxColor(0xFF1565C0),
+          offsetXInches: 0.2,
+          offsetYInches: 0.15,
+          blurInches: 0.08,
+          transparency: 0.3,
+        ),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.02,
+          gradient: VsdxGradient(
+            stops: <VsdxGradientStop>[
+              VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+            ],
+          ),
+        ),
+      ),
+      3,
+      3,
+    );
+    final id = e.singleSelectedId!;
+    e.setShadow(false);
+    expect(e.currentPage!.findShapeById(id)!.shadow.enabled, isFalse);
+    expect(
+      e.currentPage!.findShapeById(id)!.shadow.color?.value,
+      0xFF1565C0,
+    );
+    e.setShadow(true);
+    final sh = e.currentPage!.findShapeById(id)!.shadow;
+    expect(sh.enabled, isTrue);
+    expect(sh.color?.value, 0xFF1565C0);
+    expect(sh.offsetXInches, closeTo(0.2, 1e-6));
+
+    e.setLinePattern(0);
+    final line = e.currentPage!.findShapeById(id)!.line;
+    expect(line.pattern, 0);
+    expect(line.gradient, isNull);
+  });
+
+  test('disabled glow colour survives save → reopen for re-enable', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            color: VsdxColor(0xFF00AA00),
+            sizeInches: 0.08,
+            transparency: 0.4,
+          ),
+        ),
+      ),
+    );
+    var bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(glow: s.glow.copyWith(enabled: false)),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    final after = parser.parse(bytes).pages.first.findShapeById(id)!;
+    expect(after.glow.enabled, isFalse);
+    expect(after.glow.color?.value, 0xFF00AA00,
+        reason: 'GlowColor cell must survive Size=0 for toggle restore');
+  });
+
+  test('SVG FontScale uses letter-spacing not font-size scale', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Wide',
+                charStyle: VsdxCharStyle(
+                  fontSizeInches: 0.2,
+                  fontScale: 2.0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('font-size="0.4"'), isFalse,
+        reason: 'FontScale must not inflate glyph height');
+    expect(svg.contains('font-size="0.2"'), isTrue);
+    expect(svg.contains('letter-spacing='), isTrue);
+  });
+
   test('setGlow toggles restore theme slot; setFillPattern(0) clears gradient',
       () {
     final e = EditorController()..newDocument();

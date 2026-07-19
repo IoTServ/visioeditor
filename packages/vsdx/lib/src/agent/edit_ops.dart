@@ -135,6 +135,10 @@ ApplyResult applyOps(
                 final c = parseColorOrNull(fillHex);
                 if (c != null) {
                   next = next.copyWith(fill: next.fill.withSolidForeground(c));
+                } else {
+                  log.add(
+                    'set_style: invalid fill color "$fillHex" on shape $id',
+                  );
                 }
               }
             }
@@ -148,6 +152,10 @@ ApplyResult applyOps(
                 final c = parseColorOrNull(lineHex);
                 if (c != null) {
                   next = next.copyWith(line: next.line.withSolidColor(c));
+                } else {
+                  log.add(
+                    'set_style: invalid line color "$lineHex" on shape $id',
+                  );
                 }
               }
             }

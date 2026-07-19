@@ -1397,6 +1397,13 @@ class VsdxToSvgSerializer {
       16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
       7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // filled stealth
       8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
+      17 => ('M 2 1 L 8 9', false), // backslash
+      18 => ('M 5 1 V 9 M 1 5 H 9', false), // cross / plus
+      19 => ('M 2 1 V 9 M 2 5 H 8', false), // crow's foot one
+      20 => ('M 2 1 L 8 5 L 2 9 M 8 1 V 9', false), // crow's foot many
+      27 => ('M 0 1 L 10 5 L 0 9 Z M 3 3 L 3 7', true), // hatched triangle
+      28 => ('M 0 5 L 8 5 M 8 2 L 12 5 L 8 8', false), // spear
+      29 || 33 => ('M 0 2 L 8 5 L 0 8 Z', true), // filled dart / narrow
       _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
     };
     final pathD = tipAtEnd ? d : _mirrorArrowD(d);
@@ -1416,6 +1423,15 @@ class VsdxToSvgSerializer {
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
       'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
       'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
+      'M 2 1 L 8 9' => 'M 8 1 L 2 9',
+      'M 5 1 V 9 M 1 5 H 9' => d,
+      'M 2 1 V 9 M 2 5 H 8' => 'M 8 1 V 9 M 8 5 H 2',
+      'M 2 1 L 8 5 L 2 9 M 8 1 V 9' => 'M 8 1 L 2 5 L 8 9 M 2 1 V 9',
+      'M 0 1 L 10 5 L 0 9 Z M 3 3 L 3 7' =>
+        'M 10 1 L 0 5 L 10 9 Z M 7 3 L 7 7',
+      'M 0 5 L 8 5 M 8 2 L 12 5 L 8 8' =>
+        'M 12 5 L 4 5 M 4 2 L 0 5 L 4 8',
+      'M 0 2 L 8 5 L 0 8 Z' => 'M 10 2 L 2 5 L 10 8 Z',
       _ => d, // circles are symmetric
     };
   }
@@ -2059,17 +2075,18 @@ class VsdxToSvgSerializer {
         const VsdxColor(0xFF222222);
     final op = _combinedOpacity(color, c.transparency);
     var fs = math.max(c.fontSizeInches, 0.04);
-    // FontScale is a width scale in Visio; approximate with font-size * scale
-    // when ≠ 1 (SVG lacks a direct scaleX on tspan without a nested transform).
-    if ((c.fontScale - 1.0).abs() > 1e-6) {
-      fs *= c.fontScale.clamp(0.1, 4.0);
-    }
     switch (c.position) {
       case VsdxTextPosition.superscript:
       case VsdxTextPosition.subscript:
         fs *= 0.7;
       case VsdxTextPosition.normal:
         break;
+    }
+    // FontScale is a *width* scale in Visio — do not multiply font-size (that
+    // also grows glyph height). Match canvas: approximate with letter-spacing.
+    var letterSpacing = c.letterSpacingInches;
+    if ((c.fontScale - 1.0).abs() > 1e-6) {
+      letterSpacing += fs * (c.fontScale.clamp(0.1, 4.0) - 1.0) * 0.15;
     }
     final family = c.fontFamily ?? 'sans-serif';
     final weight = c.style.bold ? 'bold' : 'normal';
@@ -2082,6 +2099,7 @@ class VsdxToSvgSerializer {
     final attrs = StringBuffer(
       'font-family="${_esc(family)}" font-size="${_n(fs)}" '
       'font-weight="$weight" font-style="$italic" '
+      '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
     if (c.style.smallCaps) {

@@ -110,6 +110,38 @@ void main() {
       expect(r.log.any((m) => m.contains('2-D')), isTrue);
     });
 
+    test('set_style logs invalid fill color instead of silent no-op', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 2,
+            pinY: 2,
+            width: 1,
+            height: 1,
+            fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000)),
+          ),
+        ),
+      );
+      final before = doc.pages.first.findShapeById(id)!.fill.foreground?.value;
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fill': 'not-a-color',
+        },
+      ]);
+      expect(
+        r.document.pages.first.findShapeById(id)!.fill.foreground?.value,
+        before,
+      );
+      expect(r.log.any((m) => m.contains('invalid fill')), isTrue);
+    });
+
     test('add_connector line none hides the stroke', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

@@ -4391,7 +4391,13 @@ class EditorController extends ChangeNotifier {
   /// Set the line dash pattern (Visio `LinePattern`: 1 = solid, 2 = dashed,
   /// 3 = dotted, 4 = dash-dot…). Re-enables the line if it was off.
   void setLinePattern(int pattern) => _updateSelectedShapes(
-        (s) => s.copyWith(line: s.line.copyWith(pattern: pattern)),
+        (s) => s.copyWith(
+          line: s.line.copyWith(
+            pattern: pattern,
+            // pattern=0 is NoLine — clear gradient like [setNoLine].
+            gradient: pattern == 0 ? null : VsdxLine.keepGradient,
+          ),
+        ),
         rememberStyle: true,
       );
 
@@ -5718,14 +5724,17 @@ class EditorController extends ChangeNotifier {
         (s) {
           if (s.is1D) return s;
           if (!enabled) {
-            return s.copyWith(shadow: VsdxShadow.disabled);
+            // Keep colour / offsets / blur so toggle-off restores them
+            // (writer still emits ShadowPattern=0 while disabled).
+            return s.copyWith(shadow: s.shadow.copyWith(enabled: false));
           }
-          // Re-enable keeping prior colour / offsets when already configured.
           final prev = s.shadow;
+          if (prev.enabled) return s;
           return s.copyWith(
-            shadow: prev.enabled
-                ? prev
-                : prev.copyWith(enabled: true, transparency: 0.4),
+            shadow: prev.copyWith(
+              enabled: true,
+              transparency: prev.transparency >= 1 ? 0.4 : prev.transparency,
+            ),
           );
         },
       );
@@ -5750,7 +5759,8 @@ class EditorController extends ChangeNotifier {
     _updateSelectedShapes(
       (s) {
         if (s.is1D) return s;
-        final base = s.shadow.enabled ? s.shadow : const VsdxShadow();
+        // Prefer the shape's shadow (may be disabled but still hold offsets).
+        final base = s.shadow;
         final next = color != null
             ? base.withSolidColor(color).copyWith(
                   offsetXInches: offsetXInches,

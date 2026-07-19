@@ -95,50 +95,86 @@ class StyleParser {
         _ => VsdxGradientType.linear,
       };
 
-  /// Glow* cells → [VsdxGlow]. Returns [VsdxGlow.disabled] when no glow
-  /// is configured (cell missing **and** defaults disabled, or size ≤ 0).
+  /// Glow* cells → [VsdxGlow].
+  ///
+  /// When `GlowSize` is 0/missing the glow is disabled, but companion cells
+  /// (`GlowColor` / theme / transparency) are still loaded so toggle-off →
+  /// save → reopen → toggle-on can restore them (writer only zeros Size).
   VsdxGlow parseGlow(
     XmlElement shape, {
     VsdxGlow defaults = VsdxGlow.disabled,
   }) {
-    final size = readLengthInches(shape, 'GlowSize') ??
-        (defaults.enabled ? defaults.sizeInches : null);
-    if (size == null || size <= 0) return VsdxGlow.disabled;
+    final sizeCell = readLengthInches(shape, 'GlowSize');
+    final size = sizeCell ?? (defaults.enabled ? defaults.sizeInches : null);
     final col = _resolveColor(shape, 'GlowColor', 'QuickStyleEffectColor');
+    final transparency =
+        (_double(shape, 'GlowColorTrans') ?? defaults.transparency)
+            .clamp(0.0, 1.0);
+    final enabled = size != null && size > 0;
+    if (!enabled) {
+      final hasCompanion = col.color != null ||
+          col.themeIndex != null ||
+          _double(shape, 'GlowColorTrans') != null;
+      if (!hasCompanion && !defaults.enabled) return VsdxGlow.disabled;
+      return VsdxGlow(
+        enabled: false,
+        color: col.color ?? defaults.color,
+        themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
+        sizeInches: 0,
+        transparency: transparency,
+      );
+    }
     return VsdxGlow(
       enabled: true,
       color: col.color ?? defaults.color,
       themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
       sizeInches: size,
-      transparency: (_double(shape, 'GlowColorTrans') ?? defaults.transparency)
-          .clamp(0.0, 1.0),
+      transparency: transparency,
     );
   }
 
-  /// Reflection* cells → [VsdxReflection]. Returns
-  /// [VsdxReflection.disabled] when size is zero/missing.
+  /// Reflection* cells → [VsdxReflection].
+  ///
+  /// Size ≤ 0 disables the effect, but Dist/Blur/Transparency companions are
+  /// retained for re-enable after a save round-trip.
   VsdxReflection parseReflection(
     XmlElement shape, {
     VsdxReflection defaults = VsdxReflection.disabled,
   }) {
-    final size = readLengthInches(shape, 'ReflectionSize') ??
-        (defaults.enabled ? defaults.sizeInches : null);
-    if (size == null || size <= 0) return VsdxReflection.disabled;
+    final sizeCell = readLengthInches(shape, 'ReflectionSize');
+    final size = sizeCell ?? (defaults.enabled ? defaults.sizeInches : null);
+    final dist = readLengthInches(shape, 'ReflectionDist');
+    final blur = readLengthInches(shape, 'ReflectionBlur');
+    final transparency =
+        (_double(shape, 'ReflectionTransparency') ?? defaults.transparency)
+            .clamp(0.0, 1.0);
+    final enabled = size != null && size > 0;
+    if (!enabled) {
+      final hasCompanion = dist != null ||
+          blur != null ||
+          _double(shape, 'ReflectionTransparency') != null;
+      if (!hasCompanion && !defaults.enabled) return VsdxReflection.disabled;
+      return VsdxReflection(
+        enabled: false,
+        sizeInches: 0,
+        distanceInches: dist ?? defaults.distanceInches,
+        blurInches: blur ?? defaults.blurInches,
+        transparency: transparency,
+      );
+    }
     return VsdxReflection(
       enabled: true,
       sizeInches: size,
-      distanceInches: readLengthInches(shape, 'ReflectionDist') ??
-          defaults.distanceInches,
-      transparency:
-          (_double(shape, 'ReflectionTransparency') ?? defaults.transparency)
-              .clamp(0.0, 1.0),
-      blurInches:
-          readLengthInches(shape, 'ReflectionBlur') ?? defaults.blurInches,
+      distanceInches: dist ?? defaults.distanceInches,
+      transparency: transparency,
+      blurInches: blur ?? defaults.blurInches,
     );
   }
 
-  /// Shadow* cells → [VsdxShadow]. Returns [VsdxShadow.disabled] when the
-  /// shape has no shadow.
+  /// Shadow* cells → [VsdxShadow].
+  ///
+  /// Pattern 0 disables the shadow, but colour / offset / blur companions are
+  /// retained for re-enable after a save round-trip.
   VsdxShadow parseShadow(
     XmlElement shape, {
     VsdxShadow defaults = VsdxShadow.disabled,
@@ -146,22 +182,40 @@ class StyleParser {
     final pat = _int(shape, 'ShadowPattern') ?? _int(shape, 'ShdwPattern');
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
-    if (!enabled) return VsdxShadow.disabled;
-
     final col = _resolveColor(shape, 'ShadowForegnd', 'QuickStyleShadowColor');
+    final ox = readLengthInches(shape, 'ShadowOffsetX');
+    final oy = readLengthInches(shape, 'ShadowOffsetY');
+    final blur = readLengthInches(shape, 'ShadowBlur');
+    final transparency =
+        (_double(shape, 'ShadowForegndTrans') ?? defaults.transparency)
+            .clamp(0.0, 1.0);
+    if (!enabled) {
+      final hasCompanion = col.color != null ||
+          col.themeIndex != null ||
+          ox != null ||
+          oy != null ||
+          blur != null ||
+          _double(shape, 'ShadowForegndTrans') != null;
+      if (!hasCompanion) return VsdxShadow.disabled;
+      return VsdxShadow(
+        enabled: false,
+        color: col.color ?? defaults.color,
+        themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
+        offsetXInches: ox ?? defaults.offsetXInches,
+        offsetYInches: oy ?? defaults.offsetYInches,
+        blurInches: blur ?? defaults.blurInches,
+        transparency: transparency,
+      );
+    }
+
     return VsdxShadow(
       enabled: true,
       color: col.color ?? defaults.color,
       themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
-      offsetXInches:
-          readLengthInches(shape, 'ShadowOffsetX') ?? defaults.offsetXInches,
-      offsetYInches:
-          readLengthInches(shape, 'ShadowOffsetY') ?? defaults.offsetYInches,
-      blurInches:
-          readLengthInches(shape, 'ShadowBlur') ?? defaults.blurInches,
-      transparency: (_double(shape, 'ShadowForegndTrans') ??
-              defaults.transparency)
-          .clamp(0.0, 1.0),
+      offsetXInches: ox ?? defaults.offsetXInches,
+      offsetYInches: oy ?? defaults.offsetYInches,
+      blurInches: blur ?? defaults.blurInches,
+      transparency: transparency,
     );
   }
 
