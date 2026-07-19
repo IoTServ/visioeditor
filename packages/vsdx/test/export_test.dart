@@ -728,6 +728,88 @@ void main() {
     expect(svg, contains('<radialGradient id="lg-'));
     expect(svg.contains('<linearGradient id="lg-'), isFalse,
         reason: 'radial LineGradient must not fall back to linear');
+    expect(svg, contains('gradientUnits="userSpaceOnUse"'));
+  });
+
+  test('SVG fill gradient uses userSpaceOnUse like canvas inches', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // Wide flat rect: OBB would squash a vertical angle; userSpace keeps it.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 3,
+          pinY: 2,
+          width: 4,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            gradient: VsdxGradient(
+              type: VsdxGradientType.linear,
+              angleRad: 1.5707963267948966, // π/2
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('gradientUnits="userSpaceOnUse"'));
+    // max(w,h)*0.6 = 2.4; centre (2, 0.5) → y1=-1.9 y2=2.9
+    expect(svg, contains('y1="-1.9"'));
+    expect(svg, contains('y2="2.9"'));
+    expect(svg.contains('objectBoundingBox'), isFalse);
+  });
+
+  test('SVG arrow 31 is filled chevron not stealth', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(endArrow: 31, weightInches: 0.04),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains('d="M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z" fill="context-stroke"'),
+    );
+    expect(svg.contains('L 2 5 Z'), isFalse,
+        reason: 'must not reuse stealth template for chevron 31');
+  });
+
+  test('SVG ball arrow 10 is larger than circle-dot 13', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    page = page.addShape(
+      VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+            line: const VsdxLine(endArrow: 10, weightInches: 0.04),
+          ),
+    );
+    page = page.addShape(
+      VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 2, bx: 3, by: 2).copyWith(
+            line: const VsdxLine(endArrow: 13, weightInches: 0.04),
+          ),
+    );
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('m -5,0 a 5,5 0 1,0 10,0'));
+    expect(svg, contains('m -4,0 a 4,4 0 1,0 8,0'));
   });
 
   test('SVG FillPattern > 16 falls back to solid like canvas', () {
@@ -1188,7 +1270,10 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg, contains('font-variant="small-caps"'));
+    // Synthetic small-caps (canvas parity): 'a' → smaller 'A', not CSS variant.
+    expect(svg.contains('font-variant="small-caps"'), isFalse);
+    expect(svg, contains('>A</tspan>'));
+    expect(svg, contains('font-size="')); // full + 0.78× sizes present
     expect(svg, contains('text-decoration-style:double'));
   });
 

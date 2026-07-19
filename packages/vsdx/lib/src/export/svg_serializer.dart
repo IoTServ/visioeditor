@@ -461,11 +461,30 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final defs = StringBuffer();
+    // Gradients use userSpaceOnUse with path bounds (canvas inches), not OBB.
+    final fillBounds = _approxPathBoundsFromD(
+      d,
+      fallbackW: shape.width.abs() < 1e-9 ? 1.0 : shape.width.abs(),
+      fallbackH: shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs(),
+    );
     final fillAttr = !noFill
-        ? _fillAttr(shape.fill, theme, paintId, defs)
+        ? _fillAttr(shape.fill, theme, paintId, defs, bounds: fillBounds)
         : 'fill="none"';
+    final strokeBounds = strokeD == null
+        ? fillBounds
+        : _approxPathBoundsFromD(
+            strokeD,
+            fallbackW: fillBounds.width,
+            fallbackH: fillBounds.height,
+          );
     final stroke = !noLine
-        ? _strokeAttr(shape.line, theme, paintId, defs)
+        ? _strokeAttr(
+            shape.line,
+            theme,
+            paintId,
+            defs,
+            bounds: strokeBounds,
+          )
         : (paint: 'stroke="none"', markers: '');
     final sD = strokeD ?? d;
     // SoftEdges only — shadow is painted separately (fill-only / stroke-only
@@ -479,7 +498,6 @@ class VsdxToSvgSerializer {
       shape,
       theme,
       d: d,
-      strokeD: sD,
       noFill: noFill,
       noLine: noLine,
       paintId: paintId,
@@ -517,8 +535,9 @@ class VsdxToSvgSerializer {
           '<feMerge><feMergeNode in="glow"/></feMerge>'
           '</filter></defs>',
         );
+        // Glow follows raw geometry (canvas); jumps apply only to the stroke.
         buf.writeln(
-          '$indent<path d="$sD" fill="none" stroke="${_hex(gc)}" '
+          '$indent<path d="$d" fill="none" stroke="${_hex(gc)}" '
           'stroke-width="${_n(math.max(glow.sizeInches * 2, 0.02))}" '
           'stroke-opacity="1" filter="url(#$gid)"/>',
         );
@@ -614,7 +633,6 @@ class VsdxToSvgSerializer {
     VsdxShape shape,
     VsdxTheme theme, {
     required String d,
-    required String strokeD,
     required bool noFill,
     required bool noLine,
     required String paintId,
@@ -650,8 +668,9 @@ class VsdxToSvgSerializer {
         LineCap.extended => 'butt',
       };
       final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
+      // Shadow uses raw geometry (canvas); jump arcs are stroke-only.
       buf.writeln(
-        '$indent<path d="$strokeD" fill="none" stroke="$hex" '
+        '$indent<path d="$d" fill="none" stroke="$hex" '
         'stroke-opacity="${_n(alpha)}" stroke-width="${_n(weight)}" '
         'stroke-linecap="$linecap" stroke-linejoin="$linejoin" '
         'transform="translate(${_n(dx)} ${_n(dy)})" '
@@ -790,12 +809,31 @@ class VsdxToSvgSerializer {
     String d,
     double fallbackHeight,
   ) {
+    final b = _approxPathBoundsFromD(
+      d,
+      fallbackW: 1.0,
+      fallbackH: fallbackHeight,
+    );
+    return (minY: b.minY, height: b.height);
+  }
+
+  /// Axis-aligned bounds of path `d` in shape-local inches (for gradients).
+  ({double minX, double minY, double width, double height})
+      _approxPathBoundsFromD(
+    String d, {
+    required double fallbackW,
+    required double fallbackH,
+  }) {
     final tokens = RegExp(
       r'[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
     ).allMatches(d).map((m) => m.group(0)!).toList();
+    var minX = double.infinity;
+    var maxX = double.negativeInfinity;
     var minY = double.infinity;
     var maxY = double.negativeInfinity;
-    void consider(double y) {
+    void consider(double x, double y) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     }
@@ -812,12 +850,20 @@ class VsdxToSvgSerializer {
         case 'L':
         case 'C':
         case 'Q':
-          for (var i = 1; i < nums.length; i += 2) {
-            consider(nums[i]);
+          for (var i = 0; i + 1 < nums.length; i += 2) {
+            consider(nums[i], nums[i + 1]);
           }
         case 'A':
-          for (var i = 6; i < nums.length; i += 7) {
-            consider(nums[i]);
+          for (var i = 5; i + 1 < nums.length; i += 7) {
+            consider(nums[i], nums[i + 1]);
+          }
+        case 'H':
+          for (final x in nums) {
+            if (minY.isFinite) consider(x, minY);
+          }
+        case 'V':
+          for (final y in nums) {
+            if (minX.isFinite) consider(minX, y);
           }
         default:
           break;
@@ -838,14 +884,14 @@ class VsdxToSvgSerializer {
       }
     }
     flush();
-    if (!minY.isFinite || !maxY.isFinite) {
-      return (minY: 0.0, height: fallbackHeight);
+    if (!minX.isFinite || !maxX.isFinite || !minY.isFinite || !maxY.isFinite) {
+      return (minX: 0.0, minY: 0.0, width: fallbackW, height: fallbackH);
     }
-    final span = maxY - minY;
-    if (span < 1e-9) {
-      return (minY: minY, height: fallbackHeight);
-    }
-    return (minY: minY, height: span);
+    var w = maxX - minX;
+    var h = maxY - minY;
+    if (w < 1e-9) w = fallbackW;
+    if (h < 1e-9) h = fallbackH;
+    return (minX: minX, minY: minY, width: w, height: h);
   }
 
   /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
@@ -1239,8 +1285,9 @@ class VsdxToSvgSerializer {
     VsdxFill fill,
     VsdxTheme theme,
     String paintId,
-    StringBuffer defs,
-  ) {
+    StringBuffer defs, {
+    required ({double minX, double minY, double width, double height}) bounds,
+  }) {
     if (!fill.hasFill) return 'fill="none"';
 
     if (fill.hasGradient) {
@@ -1257,20 +1304,25 @@ class VsdxToSvgSerializer {
           'stop-color="${_hex(c)}" stop-opacity="${_n(op)}"/>',
         );
       }
-      // Match canvas: linear along angle; radial/rect/path → radial.
+      // Match canvas [_buildGradientShader]: userSpaceOnUse inches, not OBB
+      // (OBB stretches angles on non-square shapes).
+      final cx = bounds.minX + bounds.width / 2;
+      final cy = bounds.minY + bounds.height / 2;
+      final r = math.max(bounds.width, bounds.height) * 0.6;
       if (g.type == VsdxGradientType.linear) {
-        final dx = math.cos(g.angleRad);
-        final dy = math.sin(g.angleRad);
+        final dx = math.cos(g.angleRad) * r;
+        final dy = math.sin(g.angleRad) * r;
         defs.write(
-          '<linearGradient id="$id" gradientUnits="objectBoundingBox" '
-          'x1="${_n(0.5 - dx * 0.5)}" y1="${_n(0.5 - dy * 0.5)}" '
-          'x2="${_n(0.5 + dx * 0.5)}" y2="${_n(0.5 + dy * 0.5)}">'
+          '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
+          'x1="${_n(cx - dx)}" y1="${_n(cy - dy)}" '
+          'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
       } else {
         defs.write(
-          '<radialGradient id="$id" gradientUnits="objectBoundingBox" '
-          'cx="0.5" cy="0.5" r="0.6">$stops</radialGradient>',
+          '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
+          'cx="${_n(cx)}" cy="${_n(cy)}" r="${_n(r)}">'
+          '$stops</radialGradient>',
         );
       }
       return 'fill="url(#$id)"';
@@ -1391,8 +1443,9 @@ class VsdxToSvgSerializer {
     VsdxLine line,
     VsdxTheme theme,
     String paintId,
-    StringBuffer defs,
-  ) {
+    StringBuffer defs, {
+    required ({double minX, double minY, double width, double height}) bounds,
+  }) {
     if (!line.hasLine) return (paint: 'stroke="none"', markers: '');
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
     final alpha = _combinedOpacity(c, line.transparency);
@@ -1474,21 +1527,24 @@ class VsdxToSvgSerializer {
           'stop-color="${_hex(sc)}" stop-opacity="${_n(op)}"/>',
         );
       }
-      // Match canvas / fill gradients: linear along angle; radial/rect/path
-      // → radialGradient so SVG does not flatten radial LineGradient to linear.
+      // Match canvas / fill gradients in userSpaceOnUse (not OBB).
+      final cx = bounds.minX + bounds.width / 2;
+      final cy = bounds.minY + bounds.height / 2;
+      final r = math.max(bounds.width, bounds.height) * 0.6;
       if (g.type == VsdxGradientType.linear) {
-        final dx = math.cos(g.angleRad);
-        final dy = math.sin(g.angleRad);
+        final dx = math.cos(g.angleRad) * r;
+        final dy = math.sin(g.angleRad) * r;
         defs.write(
-          '<linearGradient id="$id" gradientUnits="objectBoundingBox" '
-          'x1="${_n(0.5 - dx * 0.5)}" y1="${_n(0.5 - dy * 0.5)}" '
-          'x2="${_n(0.5 + dx * 0.5)}" y2="${_n(0.5 + dy * 0.5)}">'
+          '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
+          'x1="${_n(cx - dx)}" y1="${_n(cy - dy)}" '
+          'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
       } else {
         defs.write(
-          '<radialGradient id="$id" gradientUnits="objectBoundingBox" '
-          'cx="0.5" cy="0.5" r="0.6">$stops</radialGradient>',
+          '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
+          'cx="${_n(cx)}" cy="${_n(cy)}" r="${_n(r)}">'
+          '$stops</radialGradient>',
         );
       }
       strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
@@ -1519,10 +1575,15 @@ class VsdxToSvgSerializer {
       // Wide triangles (canvas reach 0.85, half-width 0.55).
       25 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', true),
       26 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', false),
-      10 || 13 => (
+      // Ball (10): canvas r=0.5 diameter≈size; circle-dot (13): r=0.4.
+      10 => (
+          'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
+          true,
+        ),
+      13 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           true,
-        ), // filled circle / ball
+        ),
       14 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
           false,
@@ -1534,7 +1595,9 @@ class VsdxToSvgSerializer {
       11 => ('M 1 5 L 5 1 L 9 5 L 5 9 Z', false), // open diamond
       15 => ('M 1 1 H 9 V 9 H 1 Z', true), // filled square
       16 => ('M 1 1 H 9 V 9 H 1 Z', false), // open square
-      7 || 12 || 31 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth / chevron
+      7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth
+      // Filled chevron (31): short fat `>` — not stealth.
+      31 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z', true),
       8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
       9 => (
           'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z',
@@ -1590,6 +1653,8 @@ class VsdxToSvgSerializer {
       'M 0 2.5 L 10 5 L 0 7.5 Z' => 'M 10 2.5 L 0 5 L 10 7.5 Z',
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
+      'M 0 0.5 L 10 5 L 0 9.5 L 2.7 5 Z' =>
+          'M 10 0.5 L 0 5 L 10 9.5 L 7.3 5 Z',
       'M 1 5 L 5 1 L 9 5 L 5 9 Z' => 'M 9 5 L 5 1 L 1 5 L 5 9 Z',
       'M 1 1 H 9 V 9 H 1 Z' => d, // square is symmetric
       'M 5 1 V 9' => d,
@@ -2124,15 +2189,13 @@ class VsdxToSvgSerializer {
       }
       for (var si = 0; si < layout.segs.length; si++) {
         final (raw, run) = layout.segs[si];
-        final text = _applyTextCase(raw, run.charStyle.textCase);
-        final attrs = _charStyleSvgAttrs(run.charStyle, theme);
-        if (si == 0) {
-          body.write(
-            '<tspan x="${_n(xBody)}" $attrs>${_esc(text)}</tspan>',
-          );
-        } else {
-          body.write('<tspan $attrs>${_esc(text)}</tspan>');
-        }
+        _writeStyledTspans(
+          body,
+          raw: raw,
+          style: run.charStyle,
+          theme: theme,
+          xAttr: si == 0 ? 'x="${_n(xBody)}"' : null,
+        );
       }
       buf.writeln(
         '$indent  <text text-anchor="$anchor" dominant-baseline="middle" '
@@ -2276,6 +2339,64 @@ class VsdxToSvgSerializer {
     buf.writeln('$indent</g>');
   }
 
+  /// Emit one or more `<tspan>`s for a run. Small-caps are synthesised like
+  /// canvas (lowercase → 0.78× capitals) — CSS `font-variant` is unreliable.
+  void _writeStyledTspans(
+    StringBuffer body, {
+    required String raw,
+    required VsdxCharStyle style,
+    required VsdxTheme theme,
+    String? xAttr,
+  }) {
+    final text = _applyTextCase(raw, style.textCase);
+    final x = xAttr == null ? '' : '$xAttr ';
+    if (!style.style.smallCaps || text.isEmpty) {
+      final attrs =
+          _charStyleSvgAttrs(style, theme, synthesizeSmallCaps: true);
+      body.write('<tspan $x$attrs>${_esc(text)}</tspan>');
+      return;
+    }
+    var fs = math.max(style.fontSizeInches, 0.04);
+    switch (style.position) {
+      case VsdxTextPosition.superscript:
+      case VsdxTextPosition.subscript:
+        fs *= 0.7;
+      case VsdxTextPosition.normal:
+        break;
+    }
+    final smallFs = fs * 0.78;
+    final buf = StringBuffer();
+    bool? bufLower;
+    var first = true;
+    void flush() {
+      if (buf.isEmpty || bufLower == null) return;
+      final chunk = buf.toString();
+      buf.clear();
+      final prefix = first ? x : '';
+      first = false;
+      final attrs = _charStyleSvgAttrs(
+        style,
+        theme,
+        synthesizeSmallCaps: true,
+        fontSizeOverride: bufLower! ? smallFs : null,
+      );
+      final glyph = bufLower! ? chunk.toUpperCase() : chunk;
+      body.write('<tspan $prefix$attrs>${_esc(glyph)}</tspan>');
+      bufLower = null;
+    }
+
+    for (final rune in text.runes) {
+      final ch = String.fromCharCode(rune);
+      final upper = ch.toUpperCase();
+      final lower = ch.toLowerCase();
+      final isLower = ch == lower && ch != upper;
+      if (bufLower != null && bufLower != isLower) flush();
+      bufLower = isLower;
+      buf.write(ch);
+    }
+    flush();
+  }
+
   String _applyTextCase(String text, VsdxTextCase c) => switch (c) {
         VsdxTextCase.allCaps => text.toUpperCase(),
         // Match canvas [_initialCaps]: uppercase the first letter of each word.
@@ -2302,7 +2423,12 @@ class VsdxToSvgSerializer {
     return buf.toString();
   }
 
-  String _charStyleSvgAttrs(VsdxCharStyle c, VsdxTheme theme) {
+  String _charStyleSvgAttrs(
+    VsdxCharStyle c,
+    VsdxTheme theme, {
+    bool synthesizeSmallCaps = false,
+    double? fontSizeOverride,
+  }) {
     final color = _resolveColor(c.color, c.themeColorIndex, theme) ??
         const VsdxColor(0xFF222222);
     final op = _combinedOpacity(color, c.transparency);
@@ -2314,6 +2440,7 @@ class VsdxToSvgSerializer {
       case VsdxTextPosition.normal:
         break;
     }
+    if (fontSizeOverride != null) fs = fontSizeOverride;
     // FontScale is a *width* scale in Visio — do not multiply font-size (that
     // also grows glyph height). Match canvas: approximate with letter-spacing.
     var letterSpacing = c.letterSpacingInches;
@@ -2335,7 +2462,9 @@ class VsdxToSvgSerializer {
       '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
-    if (c.style.smallCaps) {
+    // Prefer synthetic small-caps tspans (canvas parity). Keep CSS variant
+    // only for callers that have not synthesised (e.g. curved textPath).
+    if (c.style.smallCaps && !synthesizeSmallCaps) {
       attrs.write(' font-variant="small-caps"');
     }
     if (deco.isNotEmpty) {
