@@ -308,13 +308,16 @@ class _PageCanvasState extends State<PageCanvas> {
     const margin = 40.0;
     final sx = (viewport.width - margin * 2) / content.width;
     final sy = (viewport.height - margin * 2) / content.height;
-    final scale = (sx < sy ? sx : sy).clamp(widget.minScale, widget.maxScale).toDouble();
+    final scale =
+        (sx < sy ? sx : sy).clamp(widget.minScale, widget.maxScale).toDouble();
+    final offset = Offset(
+      (viewport.width - content.width * scale) / 2,
+      (viewport.height - content.height * scale) / 2,
+    );
+    if (_scale == scale && _offset == offset) return;
     setState(() {
       _scale = scale;
-      _offset = Offset(
-        (viewport.width - content.width * scale) / 2,
-        (viewport.height - content.height * scale) / 2,
-      );
+      _offset = offset;
     });
   }
 
@@ -2596,8 +2599,12 @@ class _PageCanvasState extends State<PageCanvas> {
                 _viewport!.width != viewport.width ||
                 _viewport!.height != viewport.height;
             final pageChanged = _fittedPageId != page.id;
-            if (_fitPending || resized || pageChanged) {
+            if (resized) {
               _viewport = viewport;
+            }
+            // Fit only on first layout / page change / explicit toolbar request.
+            // Re-fitting on every resize frame makes maximize/restore janky.
+            if (_fitPending || pageChanged) {
               _fitPending = false;
               _fittedPageId = page.id;
               WidgetsBinding.instance.addPostFrameCallback((_) {
