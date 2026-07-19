@@ -4472,11 +4472,18 @@ class VsdxWriter {
         changed = true;
       }
     }
-    final tCell = _ensureCell(el, 'Transparency');
-    final tNext = _fmt(s.imageTransparency.clamp(0.0, 1.0));
-    if (tCell.getAttribute('V') != tNext) {
-      tCell.setAttribute('V', tNext);
-      changed = true;
+    for (final entry in <(String, double)>[
+      ('Transparency', s.imageTransparency.clamp(0.0, 1.0)),
+      ('Blur', s.imageBlur.clamp(0.0, 1.0)),
+      ('Brightness', s.imageBrightness.clamp(0.0, 1.0)),
+      ('Contrast', s.imageContrast.clamp(0.0, 1.0)),
+    ]) {
+      final cell = _ensureCell(el, entry.$1);
+      final next = _fmt(entry.$2);
+      if (cell.getAttribute('V') != next) {
+        cell.setAttribute('V', next);
+        changed = true;
+      }
     }
     return changed;
   }
@@ -5353,6 +5360,11 @@ class VsdxWriter {
       ),
       if (s.imageTransparency > _epsilon)
         _cell('Transparency', _fmt(s.imageTransparency)),
+      if (s.imageBlur > _epsilon) _cell('Blur', _fmt(s.imageBlur)),
+      if ((s.imageBrightness - 0.5).abs() > _epsilon)
+        _cell('Brightness', _fmt(s.imageBrightness)),
+      if ((s.imageContrast - 0.5).abs() > _epsilon)
+        _cell('Contrast', _fmt(s.imageContrast)),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),

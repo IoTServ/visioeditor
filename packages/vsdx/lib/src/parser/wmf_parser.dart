@@ -31,6 +31,7 @@ const int _metaRectangle = 0x041B;
 const int _metaEllipse = 0x0418;
 const int _metaMoveTo = 0x0214;
 const int _metaLineTo = 0x0213;
+const int _metaPolyBezier = 0x1008;
 const int _metaExtTextOut = 0x0A32;
 const int _metaTextOut = 0x0521;
 const int _metaEscape = 0x0626;
@@ -232,6 +233,36 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             strokeArgb: penColor,
             strokeWidth: penWidth,
           ));
+        }
+      }
+    } else if (func == _metaPolyBezier && params + 2 <= recEnd) {
+      // Count (WORD) + POINTS: start + n×(c1,c2,end).
+      final count = bd.getUint16(params, Endian.little);
+      final pts = <MetafilePoint>[];
+      var p = params + 2;
+      for (var i = 0; i < count && p + 4 <= recEnd; i++) {
+        final x = bd.getInt16(p, Endian.little).toDouble();
+        final y = bd.getInt16(p + 2, Endian.little).toDouble();
+        pts.add(MetafilePoint(x, y));
+        p += 4;
+      }
+      if (pts.length >= 4) {
+        final dense = densifyPolyBezier(pts);
+        ensureBounds(dense);
+        if (penStyle != 5) {
+          ops.add(MetafilePathOp(
+            points: dense,
+            closed: false,
+            fill: false,
+            stroke: true,
+            fillArgb: 0,
+            strokeArgb: penColor,
+            strokeWidth: penWidth,
+          ));
+        }
+        if (dense.isNotEmpty) {
+          curX = dense.last.x;
+          curY = dense.last.y;
         }
       }
     } else if (func == _metaPolyPolygon && params + 2 <= recEnd) {

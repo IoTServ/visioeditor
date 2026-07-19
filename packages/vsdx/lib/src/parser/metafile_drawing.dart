@@ -88,3 +88,32 @@ class MetafileDrawing {
 
   bool get isEmpty => ops.isEmpty;
 }
+
+/// Densify cubic Bezier control points (start + n×(c1,c2,end)) into a polyline.
+List<MetafilePoint> densifyPolyBezier(
+  List<MetafilePoint> pts, {
+  int steps = 8,
+}) {
+  if (pts.length < 4) return pts;
+  final out = <MetafilePoint>[pts.first];
+  for (var i = 1; i + 2 < pts.length; i += 3) {
+    final p0 = out.last;
+    final p1 = pts[i];
+    final p2 = pts[i + 1];
+    final p3 = pts[i + 2];
+    for (var s = 1; s <= steps; s++) {
+      final t = s / steps;
+      final u = 1 - t;
+      final x = u * u * u * p0.x +
+          3 * u * u * t * p1.x +
+          3 * u * t * t * p2.x +
+          t * t * t * p3.x;
+      final y = u * u * u * p0.y +
+          3 * u * u * t * p1.y +
+          3 * u * t * t * p2.y +
+          t * t * t * p3.y;
+      out.add(MetafilePoint(x, y));
+    }
+  }
+  return out;
+}

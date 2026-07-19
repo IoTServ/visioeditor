@@ -327,16 +327,12 @@ class VsdxToSvgSerializer {
     final pageCode = sheet.lineJumpCode;
     final z = _jumpZ[shape.id];
     if (z == null) return null;
-    if (!lineJumpShapeMayHopAtZ(
+    if (!lineJumpShapeMayHop(
       k: z,
       routeCount: _jumpRoutes.length,
       pageJumpCode: pageCode,
-    )) {
-      return null;
-    }
-    if (!connectorLineJumpsEnabled(
-      shape.connectorProps?.conLineJumpCode,
-      pageLineJumpCode: pageCode,
+      selfConCode: shape.connectorProps?.conLineJumpCode,
+      peerConCodes: _jumpCodes,
     )) {
       return null;
     }
@@ -2429,8 +2425,9 @@ class VsdxToSvgSerializer {
       final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
       final opacityAttr =
           opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
+      final toneAttr = _imageToneFilterAttr(shape, buf, indent: '$indent  ');
       buf.writeln(
-        '$indent  <g transform="translate(${_n(cx)} ${_n(cy)}) '
+        '$indent  <g$toneAttr transform="translate(${_n(cx)} ${_n(cy)}) '
         'scale(1 ${_n(uprightY)}) '
         'translate(${_n(-cx)} ${_n(-cy)})">'
         '<image href="$href" x="${_n(ox)}" y="${_n(oy)}" '
@@ -2439,6 +2436,49 @@ class VsdxToSvgSerializer {
       );
     }
     _writeImageDecorationsClose(buf, indent: indent, geomClipped: nest);
+  }
+
+  /// Blur / Brightness / Contrast filter for Foreign bitmaps (skip in pdfCompat).
+  String _imageToneFilterAttr(
+    VsdxShape shape,
+    StringBuffer buf, {
+    required String indent,
+  }) {
+    if (pdfCompat) return '';
+    final blur = shape.imageBlur.clamp(0.0, 1.0);
+    final bright = shape.imageBrightness.clamp(0.0, 1.0);
+    final contrast = shape.imageContrast.clamp(0.0, 1.0);
+    if (blur <= 1e-6 &&
+        (bright - 0.5).abs() <= 1e-3 &&
+        (contrast - 0.5).abs() <= 1e-3) {
+      return '';
+    }
+    final id = 'img-tone-${shape.id}';
+    final c = 1.0 + (contrast - 0.5) * 2.0;
+    final b = (bright - 0.5) * 2.0;
+    final t = (1.0 - c) * 0.5 + b;
+    final sigma = 0.08 * blur;
+    final parts = StringBuffer();
+    if (blur > 1e-6) {
+      parts.write(
+        '<feGaussianBlur in="SourceGraphic" stdDeviation="${_n(sigma)}" '
+        'result="blur"/>',
+      );
+    }
+    final toneIn = blur > 1e-6 ? 'blur' : 'SourceGraphic';
+    if ((bright - 0.5).abs() > 1e-3 || (contrast - 0.5).abs() > 1e-3) {
+      parts.write(
+        '<feColorMatrix in="$toneIn" type="matrix" values="'
+        '${_n(c)} 0 0 0 ${_n(t)} '
+        '0 ${_n(c)} 0 0 ${_n(t)} '
+        '0 0 ${_n(c)} 0 ${_n(t)} '
+        '0 0 0 1 0"/>',
+      );
+    } else {
+      parts.write('<feMerge><feMergeNode in="blur"/></feMerge>');
+    }
+    buf.writeln('$indent<defs><filter id="$id">$parts</filter></defs>');
+    return ' filter="url(#$id)"';
   }
 
   /// Open clipPath + SoftEdges groups for a Foreign image (bitmap or metafile).

@@ -181,12 +181,33 @@ void main() {
       <int>[1, 2],
     );
     expect(
-      lineJumpShapeMayHopAtZ(k: 0, routeCount: 3, pageJumpCode: 5),
+      lineJumpShapeMayHop(k: 0, routeCount: 3, pageJumpCode: 5),
       isTrue,
     );
     expect(
-      lineJumpShapeMayHopAtZ(k: 0, routeCount: 3, pageJumpCode: 4),
+      lineJumpShapeMayHop(k: 0, routeCount: 3, pageJumpCode: 4),
       isFalse,
+    );
+    expect(
+      lineJumpShapeMayHop(
+        k: 0,
+        routeCount: 2,
+        pageJumpCode: 4,
+        peerConCodes: <int?>[0, 3],
+      ),
+      isTrue,
+      reason: 'Other peer must open the z-gate for lower connector',
+    );
+    expect(
+      lineJumpShapeMayHop(
+        k: 0,
+        routeCount: 2,
+        pageJumpCode: 0,
+        selfConCode: 2,
+        peerConCodes: <int?>[2, 0],
+      ),
+      isTrue,
+      reason: 'Always hops even when page is None and z=0',
     );
     expect(
       lineJumpPeerIndices(
@@ -209,6 +230,24 @@ void main() {
       <int>[1],
       reason: 'Other peer forces lower z to hop',
     );
+  });
+
+  test('SVG ConLineJumpCode Other on top forces lower connector to hop', () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1).copyWith(
+      connectorProps: const VsdxConnectorProps(conLineJumpCode: 3),
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(RegExp(r'\sA\s').hasMatch(svg), isTrue,
+        reason: 'lower connector must hop when peer is Other');
   });
 
   test('SVG LineJumpCode 5 emits hops on first-drawn connector', () {

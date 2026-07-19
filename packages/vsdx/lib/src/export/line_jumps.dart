@@ -52,17 +52,30 @@ bool lineJumpAppliesToSegment(int? pageJumpCode, double sdx, double sdy) {
 /// `LineJumpCode` 5 = first displayed (bottom of z-order) hops over later ones.
 bool lineJumpsReverseDisplayOrder(int? pageJumpCode) => pageJumpCode == 5;
 
-/// Whether connector at z-index [k] can be a hopper given [routeCount] peers.
-bool lineJumpShapeMayHopAtZ({
+/// Whether connector at z-index [k] has any peers to hop over.
+///
+/// Prefer this over a bare z-order gate — `ConLineJumpCode` Other/Always can
+/// force hops even when [k] is first (or last) in paint order.
+bool lineJumpShapeMayHop({
   required int k,
   required int routeCount,
   required int? pageJumpCode,
+  int? selfConCode,
+  List<int?>? peerConCodes,
 }) {
-  if (routeCount < 2) return false;
-  if (lineJumpsReverseDisplayOrder(pageJumpCode)) {
-    return k < routeCount - 1;
+  if (!connectorLineJumpsEnabled(
+    selfConCode,
+    pageLineJumpCode: pageJumpCode,
+  )) {
+    return false;
   }
-  return k > 0;
+  return lineJumpPeerIndices(
+    k: k,
+    routeCount: routeCount,
+    pageJumpCode: pageJumpCode,
+    selfConCode: selfConCode,
+    peerConCodes: peerConCodes,
+  ).isNotEmpty;
 }
 
 /// Peer route indices that [k] should hop over.
@@ -73,6 +86,7 @@ bool lineJumpShapeMayHopAtZ({
 /// [peerConCodes] (parallel to routes) applies Visio ConLineJumpCode peers:
 /// * peer `4` (Neither) — never hop that crossing
 /// * peer `3` (Other) — force hop even when z-order would not (they refuse)
+/// * self `2` (Always) — hop over every other non-Neither peer
 /// * self + peer both `3` — no hop (symmetric Other)
 List<int> lineJumpPeerIndices({
   required int k,
@@ -82,6 +96,18 @@ List<int> lineJumpPeerIndices({
   List<int?>? peerConCodes,
 }) {
   final peers = <int>[];
+  final self = selfConCode ?? 0;
+  if (self == 2) {
+    // Always — ignore page z-order; hop every other non-Neither connector.
+    for (var i = 0; i < routeCount; i++) {
+      if (i == k) continue;
+      final peer = (peerConCodes != null && i < peerConCodes.length)
+          ? (peerConCodes[i] ?? 0)
+          : 0;
+      if (peer != 4) peers.add(i);
+    }
+    return peers;
+  }
   if (lineJumpsReverseDisplayOrder(pageJumpCode)) {
     for (var i = k + 1; i < routeCount; i++) {
       peers.add(i);
@@ -91,7 +117,6 @@ List<int> lineJumpPeerIndices({
       peers.add(i);
     }
   }
-  final self = selfConCode ?? 0;
   if (peerConCodes != null) {
     for (var i = 0; i < routeCount && i < peerConCodes.length; i++) {
       if (i == k) continue;

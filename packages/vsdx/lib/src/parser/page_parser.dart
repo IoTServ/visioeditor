@@ -323,6 +323,14 @@ class PageParser {
             proto?.imageTransparency ??
             0.0)
         .clamp(0.0, 1.0);
+    final imageBlur =
+        (_double(shapeEl, 'Blur') ?? proto?.imageBlur ?? 0.0).clamp(0.0, 1.0);
+    final imageBrightness =
+        (_double(shapeEl, 'Brightness') ?? proto?.imageBrightness ?? 0.5)
+            .clamp(0.0, 1.0);
+    final imageContrast =
+        (_double(shapeEl, 'Contrast') ?? proto?.imageContrast ?? 0.5)
+            .clamp(0.0, 1.0);
     final ownConnPts = _readConnectionPoints(shapeEl);
     final connectionPoints = ownConnPts.isEmpty && proto != null
         ? proto.connectionPoints
@@ -406,6 +414,9 @@ class PageParser {
       imgWidthInches: imgWidth,
       imgHeightInches: imgHeight,
       imageTransparency: imageTransparency,
+      imageBlur: imageBlur,
+      imageBrightness: imageBrightness,
+      imageContrast: imageContrast,
       foreignType: foreignType,
       foreignCompressionType: foreignCompressionType,
       objType: _int(shapeEl, 'ObjType') ?? proto?.objType,

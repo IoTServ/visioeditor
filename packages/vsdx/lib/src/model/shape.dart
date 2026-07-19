@@ -62,6 +62,9 @@ class VsdxShape {
     this.imgWidthInches,
     this.imgHeightInches,
     this.imageTransparency = 0,
+    this.imageBlur = 0,
+    this.imageBrightness = 0.5,
+    this.imageContrast = 0.5,
     this.foreignType,
     this.foreignCompressionType,
     this.objType,
@@ -227,6 +230,15 @@ class VsdxShape {
 
   /// Image Properties `Transparency` (0 = opaque … 1 = invisible).
   final double imageTransparency;
+
+  /// Image Properties `Blur` (0 = sharp … 1 = max soften). Default `0`.
+  final double imageBlur;
+
+  /// Image Properties `Brightness` (0…1, default `0.5` = unchanged).
+  final double imageBrightness;
+
+  /// Image Properties `Contrast` (0…1, default `0.5` = unchanged).
+  final double imageContrast;
 
   /// Effective image width inside the Foreign frame.
   double get effectiveImgWidth => imgWidthInches ?? width;
@@ -451,6 +463,9 @@ class VsdxShape {
     double? imgWidthInches,
     double? imgHeightInches,
     double? imageTransparency,
+    double? imageBlur,
+    double? imageBrightness,
+    double? imageContrast,
     String? foreignType,
     String? foreignCompressionType,
     int? objType,
@@ -524,6 +539,9 @@ class VsdxShape {
       imgWidthInches: imgWidthInches ?? this.imgWidthInches,
       imgHeightInches: imgHeightInches ?? this.imgHeightInches,
       imageTransparency: imageTransparency ?? this.imageTransparency,
+      imageBlur: imageBlur ?? this.imageBlur,
+      imageBrightness: imageBrightness ?? this.imageBrightness,
+      imageContrast: imageContrast ?? this.imageContrast,
       foreignType: foreignType ?? this.foreignType,
       foreignCompressionType:
           foreignCompressionType ?? this.foreignCompressionType,

@@ -17,6 +17,8 @@ const int _emrPolyBezier = 2;
 const int _emrPolygon = 3;
 const int _emrPolyline = 4;
 const int _emrPolyBezierTo = 5;
+const int _emrPolyPolyline = 7;
+const int _emrPolyPolygon = 8;
 const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
@@ -111,7 +113,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
 
   void emitBezier(List<MetafilePoint> ctrl) {
     if (ctrl.length < 4) return;
-    final dense = _densifyPolyBezier(ctrl);
+    final dense = densifyPolyBezier(ctrl);
     ensurePts(dense);
     curPt = dense.last;
     final stroke = penStyle != 5;
@@ -304,6 +306,22 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       if (curPt != null && pts.isNotEmpty) {
         emitPolyline(<MetafilePoint>[curPt!, ...pts], closed: false);
       }
+    } else if ((t == _emrPolyPolygon || t == _emrPolyPolyline) &&
+        params + 24 <= recEnd) {
+      // Bounds(16) + nPolys(4) + nPts(4) + counts[nPolys] + POINTL…
+      final nPolys = bd.getUint32(params + 16, Endian.little);
+      var p = params + 24;
+      final counts = <int>[];
+      for (var i = 0; i < nPolys && p + 4 <= recEnd; i++) {
+        counts.add(bd.getUint32(p, Endian.little));
+        p += 4;
+      }
+      final closed = t == _emrPolyPolygon;
+      for (final c in counts) {
+        final pts = _readPoints32(bd, p, recEnd, c);
+        p += c * 8;
+        emitPolyline(pts, closed: closed);
+      }
     } else if (t == _emrPolyPolygon16 && params + 20 <= recEnd) {
       final nPolys = bd.getUint32(params + 16, Endian.little);
       var p = params + 20;
@@ -315,23 +333,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       for (final c in counts) {
         final pts = _readPoints16(bd, p, recEnd, c);
         p += c * 4;
-        if (pts.length >= 2) {
-          ensurePts(pts);
-          curPt = pts.last;
-          final fill = brushStyle == 0;
-          final stroke = penStyle != 5;
-          if (fill || stroke) {
-            ops.add(MetafilePathOp(
-              points: pts,
-              closed: true,
-              fill: fill,
-              stroke: stroke,
-              fillArgb: fill ? brushColor : 0,
-              strokeArgb: stroke ? penColor : 0,
-              strokeWidth: penWidth,
-            ));
-          }
-        }
+        emitPolyline(pts, closed: true);
       }
     } else if ((t == _emrRectangle || t == _emrEllipse) &&
         params + 16 <= recEnd) {
@@ -453,35 +455,6 @@ List<MetafilePoint> _readPoints32(
     p += 8;
   }
   return pts;
-}
-
-/// Densify POLYBEZIER* control points into a polyline (cubic samples).
-List<MetafilePoint> _densifyPolyBezier(
-  List<MetafilePoint> pts, {
-  int steps = 8,
-}) {
-  if (pts.length < 4) return pts;
-  final out = <MetafilePoint>[pts.first];
-  for (var i = 1; i + 2 < pts.length; i += 3) {
-    final p0 = out.last;
-    final p1 = pts[i];
-    final p2 = pts[i + 1];
-    final p3 = pts[i + 2];
-    for (var s = 1; s <= steps; s++) {
-      final t = s / steps;
-      final u = 1 - t;
-      final x = u * u * u * p0.x +
-          3 * u * u * t * p1.x +
-          3 * u * t * t * p2.x +
-          t * t * t * p3.x;
-      final y = u * u * u * p0.y +
-          3 * u * u * t * p1.y +
-          3 * u * t * t * p2.y +
-          t * t * t * p3.y;
-      out.add(MetafilePoint(x, y));
-    }
-  }
-  return out;
 }
 
 int _rgbToArgb(int colorRef) {

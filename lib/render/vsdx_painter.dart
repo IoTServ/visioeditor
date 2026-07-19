@@ -496,16 +496,12 @@ class VsdxPainter extends CustomPainter {
     if (k == null) return null;
     final sheet = (_paintTarget ?? page)?.pageSheet;
     final pageCode = sheet?.lineJumpCode;
-    if (!lineJumpShapeMayHopAtZ(
+    if (!lineJumpShapeMayHop(
       k: k,
       routeCount: _connRoutesPage.length,
       pageJumpCode: pageCode,
-    )) {
-      return null;
-    }
-    if (!connectorLineJumpsEnabled(
-      shape.connectorProps?.conLineJumpCode,
-      pageLineJumpCode: pageCode,
+      selfConCode: shape.connectorProps?.conLineJumpCode,
+      peerConCodes: _connJumpCodes,
     )) {
       return null;
     }
@@ -578,14 +574,12 @@ class VsdxPainter extends CustomPainter {
     final sheet = ctx?.pageSheet;
     final pageCode = sheet?.lineJumpCode;
     final jumpOk = k != null &&
-        lineJumpShapeMayHopAtZ(
+        lineJumpShapeMayHop(
           k: k,
           routeCount: _connRoutesPage.length,
           pageJumpCode: pageCode,
-        ) &&
-        connectorLineJumpsEnabled(
-          shape.connectorProps?.conLineJumpCode,
-          pageLineJumpCode: pageCode,
+          selfConCode: shape.connectorProps?.conLineJumpCode,
+          peerConCodes: _connJumpCodes,
         );
     if (_lineJumpsActive && jumpOk) {
       final peerIdx = lineJumpPeerIndices(
@@ -1460,11 +1454,40 @@ class VsdxPainter extends CustomPainter {
       shape.effectiveImgHeight,
     );
     final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+    final blur = shape.imageBlur.clamp(0.0, 1.0);
+    final bright = shape.imageBrightness.clamp(0.0, 1.0);
+    final contrast = shape.imageContrast.clamp(0.0, 1.0);
+    final needsTone =
+        blur > 1e-6 || (bright - 0.5).abs() > 1e-3 || (contrast - 0.5).abs() > 1e-3;
     // Bitmap rows are Y-down; the page frame is Y-up. Flip once about the
     // image rect centre — skip when FlipY already mirrored the parent XForm.
     canvas.save();
     if (clipPath != null) canvas.clipPath(clipPath);
     canvas.clipRect(bounds);
+    if (needsTone) {
+      // Blur sigma in layer pixels; Brightness/Contrast are Visio 0…1 with 0.5
+      // = unchanged (same mapping as Image Properties in ShapeSheet).
+      final c = 1.0 + (contrast - 0.5) * 2.0;
+      final b = (bright - 0.5) * 2.0;
+      final t = (1.0 - c) * 0.5 + b;
+      canvas.saveLayer(
+        imgRect.inflate(blur > 0 ? 0.08 * blur * 3 : 0.01),
+        Paint()
+          ..imageFilter = blur > 1e-6
+              ? ui.ImageFilter.blur(
+                  sigmaX: _blurSigmaPx(0.08 * blur),
+                  sigmaY: _blurSigmaPx(0.08 * blur),
+                  tileMode: TileMode.decal,
+                )
+              : null
+          ..colorFilter = ColorFilter.matrix(<double>[
+            c, 0, 0, 0, t * 255,
+            0, c, 0, 0, t * 255,
+            0, 0, c, 0, t * 255,
+            0, 0, 0, 1, 0,
+          ]),
+      );
+    }
     canvas.translate(imgRect.center.dx, imgRect.center.dy);
     canvas.scale(1, shape.flipY ? 1.0 : -1.0);
     final dst = Rect.fromCenter(
@@ -1486,6 +1509,7 @@ class VsdxPainter extends CustomPainter {
         ..filterQuality = FilterQuality.medium
         ..color = Color.fromRGBO(255, 255, 255, opacity),
     );
+    if (needsTone) canvas.restore();
     canvas.restore();
   }
 
