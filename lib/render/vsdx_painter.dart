@@ -324,7 +324,23 @@ class VsdxPainter extends CustomPainter {
       _paintGeometries(canvas, shape);
     }
     if (shape.hasImage) {
+      // SoftEdges also feathers Foreign bitmaps (geometry soft is per-path).
+      final soft = shape.line.softEdgesInches;
+      final softImage = soft > 0 && !shape.is1D;
+      if (softImage) {
+        final sigma = _blurSigmaPx(soft);
+        canvas.saveLayer(
+          Rect.fromLTWH(0, 0, w, h).inflate(soft * 3),
+          Paint()
+            ..imageFilter = ui.ImageFilter.blur(
+              sigmaX: sigma,
+              sigmaY: sigma,
+              tileMode: TileMode.decal,
+            ),
+        );
+      }
       _paintImage(canvas, shape, Rect.fromLTWH(0, 0, w, h));
+      if (softImage) canvas.restore();
     } else if (!shape.hasGeometry && shape.isGlueableConnector) {
       _paint1DFallback(canvas, shape);
     }
@@ -483,7 +499,8 @@ class VsdxPainter extends CustomPainter {
         <Offset>[for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg)],
     ];
     if (polylineCrossings(route, unders).isEmpty) return null;
-    final pageStyle = (_paintTarget ?? page)?.pageSheet.lineJumpStyle;
+    final sheet = (_paintTarget ?? page)?.pageSheet;
+    final pageStyle = sheet?.lineJumpStyle;
     final conStyle = shape.connectorProps?.conLineJumpStyle;
     return polylineWithJumps(
       route,
@@ -491,8 +508,14 @@ class VsdxPainter extends CustomPainter {
       lineJumpRadiusInches,
       style: conStyle,
       pageStyle: pageStyle,
-      dirX: shape.connectorProps?.conLineJumpDirX,
-      dirY: shape.connectorProps?.conLineJumpDirY,
+      dirX: effectiveLineJumpDir(
+        shape.connectorProps?.conLineJumpDirX,
+        sheet?.lineJumpDirX,
+      ),
+      dirY: effectiveLineJumpDir(
+        shape.connectorProps?.conLineJumpDirY,
+        sheet?.lineJumpDirY,
+      ),
     );
   }
 
@@ -519,7 +542,8 @@ class VsdxPainter extends CustomPainter {
             for (final pg in _connRoutesPage[i]) _pageToLocal(shape, pg),
           ],
       ];
-      final pageStyle = ctx?.pageSheet.lineJumpStyle;
+      final sheet = ctx?.pageSheet;
+      final pageStyle = sheet?.lineJumpStyle;
       final conStyle = shape.connectorProps?.conLineJumpStyle;
       path = polylineCrossings(localPts, unders).isEmpty
           ? _polylinePath(localPts)
@@ -529,8 +553,14 @@ class VsdxPainter extends CustomPainter {
               lineJumpRadiusInches,
               style: conStyle,
               pageStyle: pageStyle,
-              dirX: shape.connectorProps?.conLineJumpDirX,
-              dirY: shape.connectorProps?.conLineJumpDirY,
+              dirX: effectiveLineJumpDir(
+                shape.connectorProps?.conLineJumpDirX,
+                sheet?.lineJumpDirX,
+              ),
+              dirY: effectiveLineJumpDir(
+                shape.connectorProps?.conLineJumpDirY,
+                sheet?.lineJumpDirY,
+              ),
             );
     } else {
       path = _polylinePath(localPts);
@@ -2261,7 +2291,10 @@ class VsdxPainter extends CustomPainter {
       VsdxTextCase.initialCaps => _initialCaps(run.text),
       VsdxTextCase.normal => run.text,
     };
-    final widthScale = run.charStyle.fontScale <= 0 ? 1.0 : run.charStyle.fontScale;
+    // Match SVG export: clamp FontScale so extreme sheet values stay readable.
+    final widthScale = run.charStyle.fontScale <= 0
+        ? 1.0
+        : run.charStyle.fontScale.clamp(0.1, 4.0);
     final style = TextStyle(
       color: c,
       fontFamily: font.family,

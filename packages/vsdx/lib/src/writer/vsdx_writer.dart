@@ -746,6 +746,14 @@ class VsdxWriter {
       raw('LineJumpStyle', (base.lineJumpStyle ?? -1).toString(),
           edited.lineJumpStyle.toString());
     }
+    if (edited.lineJumpDirX != null) {
+      raw('PageLineJumpDirX', (base.lineJumpDirX ?? -1).toString(),
+          edited.lineJumpDirX.toString());
+    }
+    if (edited.lineJumpDirY != null) {
+      raw('PageLineJumpDirY', (base.lineJumpDirY ?? -1).toString(),
+          edited.lineJumpDirY.toString());
+    }
     len('PageLeftMargin', base.marginLeftInches, edited.marginLeftInches);
     len('PageRightMargin', base.marginRightInches, edited.marginRightInches);
     len('PageTopMargin', base.marginTopInches, edited.marginTopInches);
@@ -997,6 +1005,10 @@ class VsdxWriter {
           _cell('LineJumpCode', s.lineJumpCode.toString()),
         if (s.lineJumpStyle != null)
           _cell('LineJumpStyle', s.lineJumpStyle.toString()),
+        if (s.lineJumpDirX != null)
+          _cell('PageLineJumpDirX', s.lineJumpDirX.toString()),
+        if (s.lineJumpDirY != null)
+          _cell('PageLineJumpDirY', s.lineJumpDirY.toString()),
         _cell('PageLeftMargin', _fmt(s.marginLeftInches)),
         _cell('PageRightMargin', _fmt(s.marginRightInches)),
         _cell('PageTopMargin', _fmt(s.marginTopInches)),

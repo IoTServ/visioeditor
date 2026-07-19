@@ -2,8 +2,9 @@
 ///
 /// Prefer [extractEmfEmbeddedBitmap] when the file is a thin wrapper around a
 /// DIB. This parser covers the GDI path used by OLE `\x02OlePres000` previews
-/// and pure-vector ForeignData: pens/brushes, POLYGON16 / POLYLINE16 /
-/// POLYPOLYGON16, rectangle/ellipse, and ExtTextOutW.
+/// and pure-vector ForeignData: pens/brushes, POLYBEZIER / POLYBEZIERTO /
+/// POLYBEZIER16 / POLYBEZIERTO16, POLYGON16 / POLYLINE16 / POLYPOLYGON16,
+/// rectangle/ellipse, and ExtTextOutW.
 library;
 
 import 'dart:math' as math;
@@ -12,6 +13,8 @@ import 'dart:typed_data';
 import 'metafile_drawing.dart';
 
 const int _emrHeader = 1;
+const int _emrPolyBezier = 2;
+const int _emrPolyBezierTo = 5;
 const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
@@ -28,6 +31,7 @@ const int _emrExtTextOutW = 84;
 const int _emrPolyBezier16 = 85;
 const int _emrPolygon16 = 86;
 const int _emrPolyline16 = 87;
+const int _emrPolyBezierTo16 = 88;
 const int _emrPolyPolygon16 = 91;
 
 bool looksLikeEmf(Uint8List b) =>
@@ -87,6 +91,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   String? fontFace;
   var fontHeight = 12.0;
   final ops = <Object>[];
+  MetafilePoint? curPt;
 
   void ensurePts(Iterable<MetafilePoint> pts) {
     for (final p in pts) {
@@ -95,6 +100,26 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       minY = math.min(minY, p.y);
       maxY = math.max(maxY, p.y);
       haveBounds = true;
+    }
+  }
+
+  void emitBezier(List<MetafilePoint> ctrl) {
+    if (ctrl.length < 4) return;
+    final dense = _densifyPolyBezier(ctrl);
+    ensurePts(dense);
+    curPt = dense.last;
+    final stroke = penStyle != 5;
+    final fill = brushStyle == 0;
+    if (fill || stroke) {
+      ops.add(MetafilePathOp(
+        points: dense,
+        closed: fill,
+        fill: fill,
+        stroke: stroke,
+        fillArgb: fill ? brushColor : 0,
+        strokeArgb: stroke ? penColor : 0,
+        strokeWidth: penWidth,
+      ));
     }
   }
 
@@ -179,26 +204,29 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     } else if (t == _emrDeleteObject && params + 4 <= recEnd) {
       final ih = bd.getUint32(params, Endian.little);
       if (ih < objects.length) objects[ih] = null;
+    } else if (t == _emrPolyBezier && params + 20 <= recEnd) {
+      // Bounds(16) + count(4) + POINTL: start + n×(c1,c2,end).
+      final count = bd.getUint32(params + 16, Endian.little);
+      final pts = _readPoints32(bd, params + 20, recEnd, count);
+      emitBezier(pts);
+    } else if (t == _emrPolyBezierTo && params + 20 <= recEnd) {
+      // Bounds(16) + count(4) + POINTL: n×(c1,c2,end); starts at current pt.
+      final count = bd.getUint32(params + 16, Endian.little);
+      final ctrl = _readPoints32(bd, params + 20, recEnd, count);
+      if (curPt != null && ctrl.length >= 3) {
+        emitBezier(<MetafilePoint>[curPt!, ...ctrl]);
+      }
     } else if (t == _emrPolyBezier16 && params + 20 <= recEnd) {
       // Bounds(16) + count(4) + POINTS: start + n×(c1,c2,end).
       final count = bd.getUint32(params + 16, Endian.little);
       final pts = _readPoints16(bd, params + 20, recEnd, count);
-      if (pts.length >= 4) {
-        final dense = _densifyPolyBezier16(pts);
-        ensurePts(dense);
-        final stroke = penStyle != 5;
-        final fill = brushStyle == 0;
-        if (fill || stroke) {
-          ops.add(MetafilePathOp(
-            points: dense,
-            closed: fill,
-            fill: fill,
-            stroke: stroke,
-            fillArgb: fill ? brushColor : 0,
-            strokeArgb: stroke ? penColor : 0,
-            strokeWidth: penWidth,
-          ));
-        }
+      emitBezier(pts);
+    } else if (t == _emrPolyBezierTo16 && params + 20 <= recEnd) {
+      // Bounds(16) + count(4) + POINTS: n×(c1,c2,end); starts at current pt.
+      final count = bd.getUint32(params + 16, Endian.little);
+      final ctrl = _readPoints16(bd, params + 20, recEnd, count);
+      if (curPt != null && ctrl.length >= 3) {
+        emitBezier(<MetafilePoint>[curPt!, ...ctrl]);
       }
     } else if ((t == _emrPolygon16 || t == _emrPolyline16) &&
         params + 20 <= recEnd) {
@@ -207,6 +235,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final pts = _readPoints16(bd, params + 20, recEnd, count);
       if (pts.length >= 2) {
         ensurePts(pts);
+        curPt = pts.last;
         final closed = t == _emrPolygon16;
         final fill = closed && brushStyle == 0;
         final stroke = penStyle != 5;
@@ -235,6 +264,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         p += c * 4;
         if (pts.length >= 2) {
           ensurePts(pts);
+          curPt = pts.last;
           final fill = brushStyle == 0;
           final stroke = penStyle != 5;
           if (fill || stroke) {
@@ -263,6 +293,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         MetafilePoint(left, bottom),
       ];
       ensurePts(pts);
+      curPt = MetafilePoint(right, bottom);
       final fill = brushStyle == 0;
       final stroke = penStyle != 5;
       if (fill || stroke) {
@@ -297,7 +328,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           }
           final text = String.fromCharCodes(codes).replaceAll('\u0000', '');
           if (text.trim().isNotEmpty) {
-            ensurePts([MetafilePoint(x, y)]);
+            final pt = MetafilePoint(x, y);
+            ensurePts([pt]);
+            curPt = pt;
             ops.add(MetafileTextOp(
               text: text,
               x: x,
@@ -352,8 +385,25 @@ List<MetafilePoint> _readPoints16(
   return pts;
 }
 
-/// Densify EMR_POLYBEZIER16 control points into a polyline (cubic samples).
-List<MetafilePoint> _densifyPolyBezier16(
+List<MetafilePoint> _readPoints32(
+  ByteData bd,
+  int start,
+  int recEnd,
+  int count,
+) {
+  final pts = <MetafilePoint>[];
+  var p = start;
+  for (var i = 0; i < count && p + 8 <= recEnd; i++) {
+    final x = bd.getInt32(p, Endian.little).toDouble();
+    final y = bd.getInt32(p + 4, Endian.little).toDouble();
+    pts.add(MetafilePoint(x, y));
+    p += 8;
+  }
+  return pts;
+}
+
+/// Densify POLYBEZIER* control points into a polyline (cubic samples).
+List<MetafilePoint> _densifyPolyBezier(
   List<MetafilePoint> pts, {
   int steps = 8,
 }) {

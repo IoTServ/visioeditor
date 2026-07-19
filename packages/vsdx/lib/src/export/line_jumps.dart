@@ -38,11 +38,18 @@ enum LineJumpRenderStyle {
   }
 }
 
+/// Resolve shape `ConLineJumpDir*` over page `PageLineJumpDir*` (0 = inherit).
+int? effectiveLineJumpDir(int? conDir, int? pageDir) {
+  if (conDir != null && conDir != 0) return conDir;
+  if (pageDir != null && pageDir != 0) return pageDir;
+  return null;
+}
+
 /// Sign for the left-hand hop normal given Visio JumpDir cells.
 ///
-/// `ConLineJumpDirX`: 0 default, 1 Up (+Y), 2 Down (−Y) on horizontal spans.
-/// `ConLineJumpDirY`: 0 default, 1 Left (−X), 2 Right (+X) on vertical spans.
-/// Default keeps the CCW (left-hand) hop used historically.
+/// `ConLineJumpDirX` / `PageLineJumpDirX`: 0 default, 1 Up (+Y), 2 Down (−Y)
+/// on horizontal spans. `*DirY`: 0 default, 1 Left (−X), 2 Right (+X) on
+/// vertical spans. Default keeps the CCW (left-hand) hop used historically.
 double lineJumpHopSign({
   required double sdx,
   required double sdy,

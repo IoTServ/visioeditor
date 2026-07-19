@@ -1005,6 +1005,40 @@ void main() {
     expect(svg, contains('height="0.68"'));
   });
 
+  test('SVG SoftEdges also feathers Foreign bitmaps', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final png = Uint8List.fromList(base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ));
+    const part = 'media/image1.png';
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1.5,
+    ).copyWith(
+      imagePartName: part,
+      line: const VsdxLine(softEdgesInches: 0.05),
+    );
+    doc = doc
+        .copyWith(images: images)
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final svg = VsdxToSvgSerializer().serializePage(
+      doc.pages.first,
+      images: doc.images,
+    );
+    expect(svg, contains('id="fx-img-$id"'));
+    expect(svg, contains('filter="url(#fx-img-$id)"'));
+    expect(svg, contains('<image'));
+  });
+
   test('SVG pdfCompat flattens pattern, baseline, and glow for package:pdf', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

@@ -338,8 +338,14 @@ class VsdxToSvgSerializer {
       lineJumpRadiusInches,
       style: shape.connectorProps?.conLineJumpStyle,
       pageStyle: page.pageSheet.lineJumpStyle,
-      dirX: shape.connectorProps?.conLineJumpDirX,
-      dirY: shape.connectorProps?.conLineJumpDirY,
+      dirX: effectiveLineJumpDir(
+        shape.connectorProps?.conLineJumpDirX,
+        page.pageSheet.lineJumpDirX,
+      ),
+      dirY: effectiveLineJumpDir(
+        shape.connectorProps?.conLineJumpDirY,
+        page.pageSheet.lineJumpDirY,
+      ),
       format: _n,
     );
   }
@@ -2396,8 +2402,25 @@ class VsdxToSvgSerializer {
     final uprightY = shape.flipY ? 1.0 : -1.0;
     final cx = shape.width / 2;
     final cy = shape.height / 2;
+    // SoftEdges feathers Foreign bitmaps like canvas [_paintShape].
+    final softDefs = StringBuffer();
+    final softFilter = _softEdgesFilterAttr(
+      shape,
+      'img-${shape.id}',
+      softDefs,
+      bounds: (
+        minX: 0,
+        minY: 0,
+        width: shape.width,
+        height: shape.height,
+      ),
+    );
+    if (softDefs.isNotEmpty) {
+      buf.writeln('$indent<defs>$softDefs</defs>');
+    }
+    final softAttr = softFilter == null ? '' : ' filter="$softFilter"';
     buf.writeln(
-      '$indent<g transform="translate(${_n(cx)} ${_n(cy)}) '
+      '$indent<g$softAttr transform="translate(${_n(cx)} ${_n(cy)}) '
       'scale(1 ${_n(uprightY)}) '
       'translate(${_n(-cx)} ${_n(-cy)})">'
       '<image href="$href" x="0" y="0" '

@@ -215,6 +215,8 @@ class PagesParser {
       pageShapeSplit: b('PageShapeSplit', def.pageShapeSplit),
       lineJumpCode: i('LineJumpCode'),
       lineJumpStyle: i('LineJumpStyle'),
+      lineJumpDirX: i('PageLineJumpDirX'),
+      lineJumpDirY: i('PageLineJumpDirY'),
       marginLeftInches:
           readLengthInches(pageSheet, 'PageLeftMargin') ?? def.marginLeftInches,
       marginRightInches: readLengthInches(pageSheet, 'PageRightMargin') ??

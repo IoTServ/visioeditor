@@ -41,6 +41,8 @@ class VsdxPageSheet {
     this.pageShapeSplit = true,
     this.lineJumpCode,
     this.lineJumpStyle,
+    this.lineJumpDirX,
+    this.lineJumpDirY,
     this.marginLeftInches = 0,
     this.marginRightInches = 0,
     this.marginTopInches = 0,
@@ -78,6 +80,12 @@ class VsdxPageSheet {
   final int? lineJumpCode;
   final int? lineJumpStyle;
 
+  /// `PageLineJumpDirX` / `PageLineJumpDirY` — page default hop direction
+  /// (0 default/CCW, 1 Up/Left, 2 Down/Right). Used when a connector's
+  /// `ConLineJumpDir*` is 0 / unset.
+  final int? lineJumpDirX;
+  final int? lineJumpDirY;
+
   final double marginLeftInches;
   final double marginRightInches;
   final double marginTopInches;
@@ -114,6 +122,8 @@ class VsdxPageSheet {
     bool? pageShapeSplit,
     int? lineJumpCode,
     int? lineJumpStyle,
+    int? lineJumpDirX,
+    int? lineJumpDirY,
     double? marginLeftInches,
     double? marginRightInches,
     double? marginTopInches,
@@ -144,6 +154,8 @@ class VsdxPageSheet {
         pageShapeSplit: pageShapeSplit ?? this.pageShapeSplit,
         lineJumpCode: lineJumpCode ?? this.lineJumpCode,
         lineJumpStyle: lineJumpStyle ?? this.lineJumpStyle,
+        lineJumpDirX: lineJumpDirX ?? this.lineJumpDirX,
+        lineJumpDirY: lineJumpDirY ?? this.lineJumpDirY,
         marginLeftInches: marginLeftInches ?? this.marginLeftInches,
         marginRightInches: marginRightInches ?? this.marginRightInches,
         marginTopInches: marginTopInches ?? this.marginTopInches,
@@ -176,6 +188,8 @@ class VsdxPageSheet {
       other.pageShapeSplit == pageShapeSplit &&
       other.lineJumpCode == lineJumpCode &&
       other.lineJumpStyle == lineJumpStyle &&
+      other.lineJumpDirX == lineJumpDirX &&
+      other.lineJumpDirY == lineJumpDirY &&
       other.marginLeftInches == marginLeftInches &&
       other.marginRightInches == marginRightInches &&
       other.marginTopInches == marginTopInches &&
@@ -205,6 +219,8 @@ class VsdxPageSheet {
         pageShapeSplit,
         lineJumpCode,
         lineJumpStyle,
+        lineJumpDirX,
+        lineJumpDirY,
         marginLeftInches,
         marginRightInches,
         marginTopInches,
