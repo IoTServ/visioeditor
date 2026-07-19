@@ -1811,6 +1811,12 @@ void main() {
       ),
       reason: 'reflection axis must be path minY (0.3), not shape y=0',
     );
+    // Path height 1.2 × size 0.4 = 0.48; clip must add Distance 0.05 (canvas).
+    expect(
+      svg,
+      contains('height="0.53"'),
+      reason: 'reflection clip height = size band + Distance',
+    );
   });
 
   test('SVG FlipY bitmap uses centre flip (stays in shape box)', () {

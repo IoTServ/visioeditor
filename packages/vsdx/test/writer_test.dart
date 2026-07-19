@@ -1995,6 +1995,74 @@ void main() {
     expect(rels, contains('../media/image_edraw.png'));
   });
 
+  test('custom ImgWidth crop formula is preserved on rewrite', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part = '/visio/media/image_crop.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+    final out1 = writer.write(originalBytes: blank, edited: doc);
+
+    // Patch a non-default crop formula into the saved XML, then rewrite.
+    final archive = ZipDecoder().decodeBytes(out1);
+    var pageXml = utf8.decode(
+      archive.findFile('visio/pages/page1.xml')!.content as List<int>,
+    );
+    expect(pageXml, contains('<Cell N="ImgWidth" V="2" F="Width*1"/>'));
+    pageXml = pageXml.replaceFirst(
+      '<Cell N="ImgWidth" V="2" F="Width*1"/>',
+      '<Cell N="ImgWidth" V="1" F="Width*0.5"/>',
+    );
+    final rebuilt = Archive();
+    for (final f in archive.files) {
+      if (f.name == 'visio/pages/page1.xml') {
+        final bytes = utf8.encode(pageXml);
+        rebuilt.addFile(ArchiveFile(f.name, bytes.length, bytes));
+      } else if (f.isFile) {
+        rebuilt.addFile(
+          ArchiveFile(f.name, f.size, f.content as List<int>),
+        );
+      }
+    }
+    final patchedBytes = Uint8List.fromList(ZipEncoder().encode(rebuilt)!);
+    doc = parser.parse(patchedBytes);
+    final touched = doc.pages.first.findShapeById(id)!;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(id, (_) => touched),
+    );
+    final out2 = writer.write(originalBytes: patchedBytes, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out2)
+          .findFile('visio/pages/page1.xml')!
+          .content as List<int>,
+    );
+    expect(
+      outXml,
+      contains('<Cell N="ImgWidth" V="1" F="Width*0.5"/>'),
+      reason: 'custom crop formula/V must survive rewrite',
+    );
+  });
+
   test('resizing a picture patches ImgWidth/ImgHeight cached V=', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

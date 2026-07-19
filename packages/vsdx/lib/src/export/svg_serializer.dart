@@ -1138,8 +1138,10 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
+      // Include ReflectionDist like canvas so blur toward the body is not cut.
       '<rect x="${_n(clipX)}" y="${_n(clipY)}" '
-      'width="${_n(clipW)}" height="${_n(clipH + refl.blurInches)}"/>'
+      'width="${_n(clipW)}" '
+      'height="${_n(clipH + refl.blurInches + dist)}"/>'
       '</clipPath>'
       '<linearGradient id="$fadeId" gradientUnits="userSpaceOnUse" '
       'x1="0" y1="${_n(nearY)}" x2="0" y2="${_n(farY)}">'
@@ -2462,6 +2464,13 @@ class VsdxToSvgSerializer {
     final face = (op.face == null || op.face!.isEmpty)
         ? 'Arial'
         : _esc(op.face!);
+    // TA_CENTER = 6, TA_RIGHT = 2 (low bits) — match canvas [_paintText].
+    final alignBits = op.align & 0x07;
+    final anchor = switch (alignBits) {
+      6 => 'middle',
+      2 => 'end',
+      _ => 'start',
+    };
     // When the metafile group applies GDI→Y-up (scale … -sy), un-flip glyphs
     // so text stays upright. Skip when FlipY already cancelled that flip.
     final glyphXf = unflipGlyphs
@@ -2469,7 +2478,7 @@ class VsdxToSvgSerializer {
         : 'translate(${_n(op.x)} ${_n(op.y)})';
     buf.writeln(
       '$indent<g transform="$glyphXf">'
-      '<text x="0" y="0" fill="${_argbCss(op.argb)}" '
+      '<text x="0" y="0" text-anchor="$anchor" fill="${_argbCss(op.argb)}" '
       'font-family="$face" font-size="${_n(size)}">'
       '${_esc(op.text)}</text></g>',
     );

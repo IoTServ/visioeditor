@@ -4404,7 +4404,9 @@ class VsdxWriter {
 
   /// Write LocPinX/Y when absent so Edraw/libvisio don't default to (0,0).
   /// Ensure Foreign/Image shapes carry ImgOffset*/ImgWidth/ImgHeight and that
-  /// the cached `V=` matches the shape size (Edraw often ignores `F=`).
+  /// the cached `V=` matches the shape size when the formula is the default
+  /// full-frame mapping (Edraw often ignores `F=`). Custom crop formulas
+  /// (`ImgWidth` ≠ `Width*1`, etc.) are left untouched for round-trip.
   bool _syncImageSizeCells(XmlElement el, VsdxShape s) {
     var changed = false;
     for (final name in <String>['ImgOffsetX', 'ImgOffsetY']) {
@@ -4418,13 +4420,19 @@ class VsdxWriter {
       ('ImgHeight', s.height, 'Height*1'),
     ]) {
       final cell = _ensureCell(el, entry.$1);
+      final f = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
+      final defaultF = entry.$3.replaceAll(' ', '');
+      final isDefaultMapping = f.isEmpty || f == defaultF;
+      if (!isDefaultMapping) {
+        // Preserve Visio crop / pan formulas and their cached V=.
+        continue;
+      }
       final next = _fmt(entry.$2);
       if (cell.getAttribute('V') != next) {
         cell.setAttribute('V', next);
         changed = true;
       }
-      final f = cell.getAttribute('F') ?? '';
-      if (f.isEmpty) {
+      if ((cell.getAttribute('F') ?? '').isEmpty) {
         cell.setAttribute('F', entry.$3);
         changed = true;
       }

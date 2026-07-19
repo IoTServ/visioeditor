@@ -808,10 +808,16 @@ class VsdxPainter extends CustomPainter {
     }
 
     // Fade out farther below the shape (smaller Y in Y-up space).
+    // Match SVG mask width (path AABB × 3) so horizontal blur fades evenly.
     final fadeNear = bottomY - dist;
     final fadeFar = fadeNear - clipHeight;
     canvas.drawRect(
-      Rect.fromLTRB(bounds.left, fadeFar, bounds.right, fadeNear),
+      Rect.fromLTRB(
+        bounds.left - bounds.width,
+        fadeFar,
+        bounds.right + bounds.width,
+        fadeNear,
+      ),
       Paint()
         ..shader = ui.Gradient.linear(
           Offset(bounds.left, fadeNear),
@@ -858,9 +864,13 @@ class VsdxPainter extends CustomPainter {
     if (alpha <= 0) return;
     // Connectors / line-only geometry: stroke the shadow (Visio ShadowPattern
     // on open paths). Filled shapes keep a filled drop shadow.
+    // Match SVG: NoFill+NoLine geometry (dividers) casts no shadow.
+    if ((geom?.noFill ?? false) && (geom?.noLine ?? false)) return;
     final lineOnly = shape.is1D ||
         (geom?.noFill ?? false) ||
         !shape.fill.hasFill;
+    if (lineOnly && (geom?.noLine ?? false)) return;
+    if (lineOnly && !shape.line.hasLine) return;
     final paint = Paint()
       ..color = base.withValues(alpha: base.a * alpha)
       ..maskFilter = MaskFilter.blur(
