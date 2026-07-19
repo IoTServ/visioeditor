@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:test/test.dart';
 import 'package:vsdx/agent.dart';
@@ -190,6 +191,93 @@ void main() {
       expect(moved.beginY, closeTo(2, 1e-9));
       expect(moved.endX, closeTo(5, 1e-9));
       expect(moved.endY, closeTo(3, 1e-9));
+    });
+
+    test('move_shape uses page pins for nested group children', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      var page = doc.pages.first;
+      final child = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 1,
+        pinY: 0.5,
+        width: 1,
+        height: 0.5,
+      );
+      final group = VsdxShape(
+        id: 1,
+        name: 'Group.1',
+        pinX: 3,
+        pinY: 4,
+        width: 3,
+        height: 2,
+        children: <VsdxShape>[child],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+      );
+      doc = doc.replacePage(0, page.copyWith(shapes: <VsdxShape>[group]));
+      page = doc.pages.first;
+      final beforePage = page.shapePinPage(2);
+      // listShapes-style target: move page pin by (+1, +0.5).
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'move_shape',
+          'id': 2,
+          'x': beforePage.x + 1,
+          'y': beforePage.y + 0.5,
+        },
+      ]);
+      final afterPage = r.document.pages.first.shapePinPage(2);
+      expect(afterPage.x, closeTo(beforePage.x + 1, 1e-6));
+      expect(afterPage.y, closeTo(beforePage.y + 0.5, 1e-6));
+      // Parent-local pin should have moved, not jumped to absolute page coords.
+      final local = r.document.pages.first.findShapeById(2)!;
+      expect(local.pinX, closeTo(child.pinX + 1, 1e-6));
+      expect(local.pinY, closeTo(child.pinY + 0.5, 1e-6));
+    });
+
+    test('move_shape does not re-route unrelated glued connectors', () {
+      final bytes = File('test/fixtures/test4_connectors.vsdx').readAsBytesSync();
+      final doc = const DocumentParser().parse(bytes);
+      final page = doc.pages.first;
+      String sig(VsdxShape s) {
+        final g = s.geometries.isNotEmpty ? s.geometries.first : null;
+        return '${s.beginX},${s.beginY}->${s.endX},${s.endY}|${g?.commands.length}';
+      }
+
+      final before = <int, String>{
+        for (final s in page.shapes)
+          if (s.is1D) s.id: sig(s),
+      };
+      final connected = <int>{
+        for (final c in page.connects) c.fromSheetId,
+        for (final c in page.connects) c.toSheetId,
+      };
+      int? victim;
+      for (final s in page.shapes) {
+        if (!s.is1D && !connected.contains(s.id) && s.children.isEmpty) {
+          victim = s.id;
+          break;
+        }
+      }
+      if (victim == null) return;
+      final pin = page.shapePinPage(victim);
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'move_shape',
+          'id': victim,
+          'x': pin.x + 0.5,
+          'y': pin.y,
+        },
+      ]);
+      final afterPage = r.document.pages.first;
+      final drifted = <int>[
+        for (final e in before.entries)
+          if (afterPage.findShapeById(e.key) case final VsdxShape s)
+            if (sig(s) != e.value) e.key,
+      ];
+      expect(drifted, isEmpty,
+          reason: 'unrelated move changed connectors $drifted');
     });
   });
 

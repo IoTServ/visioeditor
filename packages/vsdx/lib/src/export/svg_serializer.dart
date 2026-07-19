@@ -173,9 +173,11 @@ class VsdxToSvgSerializer {
       '$indent<g transform="translate(0 ${_n(h)}) '
       'scale(${_n(pxPerInch)} ${_n(-pxPerInch)})">',
     );
-    _prepareLineJumps(page);
     final underlay = underlayPage;
     if (underlay != null && underlay.shapes.isNotEmpty) {
+      // Jump state is per painted page — prepare underlay routes before drawing
+      // so bare shape ids do not collide with the foreground sheet.
+      _prepareLineJumps(underlay);
       final clipId = 'underlay-clip-${page.id}';
       buf.writeln('$indent  <g class="underlay">');
       // Clip to the foreground page box (page inches, Y-up after transform).
@@ -204,6 +206,7 @@ class VsdxToSvgSerializer {
       buf.writeln('$indent    </g>');
       buf.writeln('$indent  </g>');
     }
+    _prepareLineJumps(page);
     final layers = _layerIds(page);
     final paintScope = 'p${page.id}';
     for (final shape in page.shapes) {
@@ -1388,20 +1391,18 @@ class VsdxToSvgSerializer {
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
     // 1-D edge labels without TxtPin: sit on the drawn route midpoint
-    // (same as canvas [_paintRichText]). Prefer auto-routed polyline when
-    // Geometry is absent so the label tracks the exported path.
+    // (same as canvas [_paintRichText]). Always use page-space route + deep
+    // inverse so nested connectors land correctly.
     late final double pinX;
     late final double pinY;
     if (shape.is1D &&
         block.pinXInches == null &&
         block.pinYInches == null) {
-      final route = (!shape.hasGeometry && shape.waypoints.isEmpty)
-          ? page.autoRoutedConnectorPolyline(shape)
-          : VsdxPage.connectorRoute(shape);
+      final route = page.drawnConnectorPagePolyline(shape);
       final mid = route.length >= 2
           ? _polylineMidpoint(route)
-          : VsdxPage.connectorMidpoint(shape);
-      final local = _pageToLocal(shape, mid.x, mid.y);
+          : page.shapePinPage(shape.id);
+      final local = page.pageToLocalDeep(shape.id, mid);
       pinX = local.x;
       pinY = local.y;
     } else {

@@ -706,14 +706,26 @@ class VsdxPage {
       final target = findShapeById(c.toSheetId);
       if (target == null) continue;
       exclude.add(target.id);
+      // Match [rerouteConnectors]: honour fixed connection points first.
+      final fixed = _fixedPoint(target, c);
       if (c.isBegin) {
-        final hit = perimeterAttach(target.id, ex, ey);
-        ax = hit.x;
-        ay = hit.y;
+        if (fixed != null) {
+          ax = fixed.x;
+          ay = fixed.y;
+        } else {
+          final hit = perimeterAttach(target.id, ex, ey);
+          ax = hit.x;
+          ay = hit.y;
+        }
       } else if (c.isEnd) {
-        final hit = perimeterAttach(target.id, bx, by);
-        zx = hit.x;
-        zy = hit.y;
+        if (fixed != null) {
+          zx = fixed.x;
+          zy = fixed.y;
+        } else {
+          final hit = perimeterAttach(target.id, bx, by);
+          zx = hit.x;
+          zy = hit.y;
+        }
       }
     }
     return _autoRoute(ax, ay, zx, zy, excludeIds: exclude);

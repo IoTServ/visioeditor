@@ -48,7 +48,9 @@ ApplyResult applyOps(
   }
   final idx = pageIndex.clamp(0, doc.pages.length - 1);
   var page = doc.pages[idx];
-  var reroute = false;
+  // Only re-route connectors glued to these shapes (never the whole page —
+  // that scrambles unrelated authored routes).
+  final movedForReroute = <int>{};
 
   for (final op in ops) {
     final kind = (op['op'] ?? op['type'] ?? '').toString();
@@ -88,6 +90,7 @@ ApplyResult applyOps(
         final id = page.nextFreeShapeId();
         final link = buildConnector(
           id: id,
+          page: page,
           a: a,
           b: b,
           label: op['label']?.toString(),
@@ -101,7 +104,7 @@ ApplyResult applyOps(
             .addShape(link.connector)
             .copyWith(connects: <VsdxConnect>[...page.connects, ...link.connects]);
         created.add(id);
-        reroute = true;
+        movedForReroute.add(id);
       case 'set_style':
         final ids = _resolveIds(op['ids'] ?? op['id']);
         if (ids.isEmpty) {
@@ -155,14 +158,9 @@ ApplyResult applyOps(
           log.add('move_shape: shape $id not found');
           break;
         }
-        // Translate pin + Begin/End/waypoints together (not pin alone).
-        final dx = x - moving.pinX;
-        final dy = y - moving.pinY;
-        page = page.updateShapeById(
-          id,
-          (s) => VsdxPage.translateShape(s, dx, dy),
-        );
-        reroute = true;
+        // [x],[y] are page inches (same space as listShapes / shapePinPage).
+        page = _moveShapeToPagePin(page, id, x, y);
+        movedForReroute.add(id);
       case 'resize_shape':
       case 'resize':
         final id = _resolveId(op['id']);
@@ -227,7 +225,7 @@ ApplyResult applyOps(
               height: h,
             ),
           );
-          reroute = true;
+          movedForReroute.add(id);
         }
       case 'delete_shape':
       case 'delete':
@@ -240,15 +238,45 @@ ApplyResult applyOps(
           log.add('delete_shape: shape $id not found');
           break;
         }
+        // removeShapeById prunes Connect rows; no selective re-route needed.
         page = page.removeShapeById(id);
-        reroute = true;
       default:
         log.add('unknown op: "$kind"');
     }
   }
 
-  if (reroute) page = page.rerouteConnectors();
+  if (movedForReroute.isNotEmpty) {
+    page = page.rerouteConnectors(movedShapeIds: movedForReroute);
+  }
   return ApplyResult(doc.replacePage(idx, page), created, log);
+}
+
+/// Move [id] so its page pin lands at ([pageX],[pageY]). Nested shapes convert
+/// through the parent frame (matches editor [_nudgeShapeOnPage]).
+VsdxPage _moveShapeToPagePin(
+  VsdxPage page,
+  int id,
+  double pageX,
+  double pageY,
+) {
+  final s = page.findShapeById(id);
+  if (s == null) return page;
+  final parentId = page.findParentId(id);
+  if (parentId == null) {
+    return page.updateShapeById(
+      id,
+      (sh) => VsdxPage.translateShape(sh, pageX - sh.pinX, pageY - sh.pinY),
+    );
+  }
+  final local = page.pageToLocalDeep(parentId, Offset2D(pageX, pageY));
+  return page.updateShapeById(
+    id,
+    (sh) => VsdxPage.translateShape(
+      sh,
+      local.x - sh.pinX,
+      local.y - sh.pinY,
+    ),
+  );
 }
 
 /// Parse [opsJson] (an array, or an object with `ops:[...]`), apply to

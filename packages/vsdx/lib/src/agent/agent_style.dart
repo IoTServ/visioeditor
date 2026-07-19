@@ -78,16 +78,25 @@ VsdxShape withLabel(
   required int id,
   required VsdxShape a,
   required VsdxShape b,
+  VsdxPage? page,
   String? label,
   String? lineHex,
   bool arrow = true,
 }) {
+  // Prefer page pins when [page] is provided so nested group members glue
+  // correctly (stored pinX is parent-local). DiagramSpec builds off-page.
+  final ap = page != null && page.findShapeById(a.id) != null
+      ? page.shapePinPage(a.id)
+      : Offset2D(a.pinX, a.pinY);
+  final bp = page != null && page.findShapeById(b.id) != null
+      ? page.shapePinPage(b.id)
+      : Offset2D(b.pinX, b.pinY);
   final base = VsdxShapeFactory.line(
     id: id,
-    ax: a.pinX,
-    ay: a.pinY,
-    bx: b.pinX,
-    by: b.pinY,
+    ax: ap.x,
+    ay: ap.y,
+    bx: bp.x,
+    by: bp.y,
     line: VsdxLine(
       color: parseColorOrNull(lineHex) ?? kDefaultEdgeLine,
       weightInches: 0.012,
