@@ -1486,11 +1486,15 @@ class _PageCanvasState extends State<PageCanvas> {
         final dir = _connectArrowHitDir(s, d.localPosition);
         if (dir != null) {
           _connectSourceId = hover;
-          // Glue the begin end to the matching fixed connection point (drawio
-          // glues to the point you drag out of). Arrow direction 0/1/2/3 lines
-          // up with the default point indices top/right/bottom/left; only use
-          // it when the shape carries no custom points (so the index is valid).
-          _connectSourceConnIndex = s.connectionPoints.isEmpty ? dir : null;
+          // Glue begin to the side CP nearest the page-space arrow (N/E/S/W).
+          // After rotate/flip, page-north is not always local CP0.
+          final page = _c.currentPage;
+          final sidePts = page == null
+              ? const <VsdxConnectionPoint>[]
+              : VsdxPage.effectiveConnectionPoints(s);
+          _connectSourceConnIndex = page != null && sidePts.length >= 4
+              ? page.connectionIndexForPageDir(s.id, dir)
+              : null;
           _connectTargetId = null;
           _mode = _DragMode.connect;
           setState(() {

@@ -2256,27 +2256,29 @@ class EditorController extends ChangeNotifier {
     );
 
     // Glue each end to the facing fixed connection point so the edge meets the
-    // sides square-on. Use effective (including default) points so a second
-    // directional connect still pins after Connection rows were materialised.
+    // sides square-on. [dir] is page-space N/E/S/W (hover arrows); map to the
+    // nearest side CP after rotate/flip via [connectionIndexForPageDir].
     final srcPts = VsdxPage.effectiveConnectionPoints(source);
     final tgtPts = VsdxPage.effectiveConnectionPoints(target);
     if (srcPts.length >= 4 && dir >= 0 && dir < 4) {
+      final beginIdx = next.connectionIndexForPageDir(sourceId, dir);
       next = next.setConnectorEndpoint(
         connId,
         begin: true,
         targetShapeId: sourceId,
-        connectionPointIndex: dir,
+        connectionPointIndex: beginIdx,
         x: srcPin.x,
         y: srcPin.y,
       );
     }
     final endDir = (dir + 2) % 4;
     if (tgtPts.length >= 4) {
+      final endIdx = next.connectionIndexForPageDir(targetId, endDir);
       next = next.setConnectorEndpoint(
         connId,
         begin: false,
         targetShapeId: targetId,
-        connectionPointIndex: endDir,
+        connectionPointIndex: endIdx,
         x: tgtPin.x,
         y: tgtPin.y,
       );

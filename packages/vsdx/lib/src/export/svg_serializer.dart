@@ -736,6 +736,7 @@ class VsdxToSvgSerializer {
           cx = fx * w;
           cy = fy * h;
         case ArcTo(:final x, :final y, :final bow):
+          if (!started) m(0, 0);
           if (bow == 0) {
             l(x, y);
           } else {
@@ -751,6 +752,7 @@ class VsdxToSvgSerializer {
             cy = y;
           }
         case RelArcTo(:final fx, :final fy, :final fbow):
+          if (!started) m(0, 0);
           final x = fx * w;
           final y = fy * h;
           final bow = fbow * (w + h) / 2;

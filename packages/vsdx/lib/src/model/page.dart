@@ -815,31 +815,44 @@ class VsdxPage {
     var zx = ex;
     var zy = ey;
     final exclude = <int>{connector.id};
+    Offset2D? beginFixed;
+    Offset2D? endFixed;
+    VsdxShape? beginTarget;
+    VsdxShape? endTarget;
     for (final c in connectIndex.forConnector(connector.id)) {
       final target = findShapeById(c.toSheetId);
       if (target == null) continue;
       exclude.add(target.id);
-      // Match [rerouteConnectors]: honour fixed connection points first.
       final fixed = _fixedPoint(target, c);
       if (c.isBegin) {
-        if (fixed != null) {
-          ax = fixed.x;
-          ay = fixed.y;
-        } else {
-          final hit = perimeterAttach(target.id, ex, ey);
-          ax = hit.x;
-          ay = hit.y;
-        }
+        beginTarget = target;
+        beginFixed = fixed;
       } else if (c.isEnd) {
-        if (fixed != null) {
-          zx = fixed.x;
-          zy = fixed.y;
-        } else {
-          final hit = perimeterAttach(target.id, bx, by);
-          zx = hit.x;
-          zy = hit.y;
-        }
+        endTarget = target;
+        endFixed = fixed;
       }
+    }
+    // Two-pass like [rerouteConnectors]: resolve both fixed ends first, then
+    // aim perimeter attach at the opposite reference (not the stale Begin/End).
+    final refEx = endFixed?.x ?? ex;
+    final refEy = endFixed?.y ?? ey;
+    final refBx = beginFixed?.x ?? bx;
+    final refBy = beginFixed?.y ?? by;
+    if (beginFixed != null) {
+      ax = beginFixed.x;
+      ay = beginFixed.y;
+    } else if (beginTarget != null) {
+      final hit = perimeterAttach(beginTarget.id, refEx, refEy);
+      ax = hit.x;
+      ay = hit.y;
+    }
+    if (endFixed != null) {
+      zx = endFixed.x;
+      zy = endFixed.y;
+    } else if (endTarget != null) {
+      final hit = perimeterAttach(endTarget.id, refBx, refBy);
+      zx = hit.x;
+      zy = hit.y;
     }
     return _autoRoute(ax, ay, zx, zy, excludeIds: exclude);
   }
@@ -1161,6 +1174,42 @@ class VsdxPage {
           ? s.connectionPoints
           : defaultConnectionPoints(s.width, s.height);
 
+  /// Map a page-space cardinal direction (0=N, 1=E, 2=S, 3=W) to the nearest
+  /// side connection-point index on [shapeId], honouring rotate/flip.
+  ///
+  /// Hover arrows sit on the page AABB; default CP indices are shape-local
+  /// top/right/bottom/left. After a 90° rotate, page-north is no longer CP0.
+  int connectionIndexForPageDir(int shapeId, int dir) {
+    final s = findShapeById(shapeId);
+    if (s == null) return dir;
+    final pts = effectiveConnectionPoints(s);
+    if (pts.length < 4) {
+      return dir.clamp(0, math.max(0, pts.length - 1));
+    }
+    final aabb = shapePageAabb(shapeId);
+    if (aabb == null) return dir % 4;
+    final cx = (aabb.left + aabb.right) / 2;
+    final cy = (aabb.bottom + aabb.top) / 2;
+    final target = switch (dir % 4) {
+      0 => Offset2D(cx, aabb.top), // north (max Y)
+      1 => Offset2D(aabb.right, cy), // east
+      2 => Offset2D(cx, aabb.bottom), // south (min Y)
+      _ => Offset2D(aabb.left, cy), // west
+    };
+    var best = 0;
+    var bestD = double.infinity;
+    for (var i = 0; i < 4; i++) {
+      final p = localToPageDeep(shapeId, pts[i].offset);
+      final d = (p.x - target.x) * (p.x - target.x) +
+          (p.y - target.y) * (p.y - target.y);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   /// Page position of [connect]'s fixed connection point on [shape], or `null`
   /// when the connect isn't pinned to a valid point.
   ///
@@ -1433,13 +1482,19 @@ class VsdxPage {
       } else {
         final beginPage = toPage(ax, ay);
         final endPage = toPage(bx, by);
+        // Match [rerouteConnectors]: glued targets must not act as obstacles
+        // (endpoint sits inside their inflated AABB).
+        final exclude = <int>{id};
+        for (final c in next.connectIndex.forConnector(id)) {
+          exclude.add(c.toSheetId);
+        }
         control = <Offset2D>[
           for (final p in next._autoRoute(
             beginPage.x,
             beginPage.y,
             endPage.x,
             endPage.y,
-            excludeIds: <int>{id},
+            excludeIds: exclude,
           ))
             toLocal(p),
         ];
