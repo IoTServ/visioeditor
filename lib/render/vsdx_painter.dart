@@ -869,7 +869,14 @@ class VsdxPainter extends CustomPainter {
     canvas.save();
     // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
     canvas.translate(shadow.offsetXInches, shadow.offsetYInches);
-    canvas.drawPath(path, paint);
+    // Match main stroke / SVG: dashed LinePattern casts a dashed shadow.
+    final shadowPath = lineOnly
+        ? () {
+            final dashes = dashPatternFor(shape.line.pattern);
+            return dashes == null ? path : dashedPath(path, dashes);
+          }()
+        : path;
+    canvas.drawPath(shadowPath, paint);
     canvas.restore();
   }
 
@@ -1729,7 +1736,7 @@ class VsdxPainter extends CustomPainter {
     }
   }
 
-  /// Greedy wrap of rich runs for baseline-shifted painting.
+  /// Greedy wrap of rich runs for baseline-shifted / first-line-indent painting.
   List<
       ({
         List<({TextPainter tp, double dy})> pieces,
@@ -1738,8 +1745,10 @@ class VsdxPainter extends CustomPainter {
       })> _wrapPosShiftLines(
     List<VsdxTextRun> runs,
     double maxW,
-    double scale,
-  ) {
+    double scale, {
+    double? firstLineMaxW,
+    bool applyPosDy = true,
+  }) {
     final lines = <({
       List<({TextPainter tp, double dy})> pieces,
       double width,
@@ -1748,6 +1757,7 @@ class VsdxPainter extends CustomPainter {
     var cur = <({TextPainter tp, double dy})>[];
     var curW = 0.0;
     var curH = 0.0;
+    var lineMax = firstLineMaxW ?? maxW;
 
     void flush() {
       if (cur.isEmpty) return;
@@ -1755,6 +1765,7 @@ class VsdxPainter extends CustomPainter {
       cur = <({TextPainter tp, double dy})>[];
       curW = 0.0;
       curH = 0.0;
+      lineMax = maxW;
     }
 
     for (final run in runs) {
@@ -1762,18 +1773,28 @@ class VsdxPainter extends CustomPainter {
       for (var pi = 0; pi < parts.length; pi++) {
         if (pi > 0) flush();
         for (final unit in _canvasWrapUnits(parts[pi])) {
-          final piece = _posShiftPiece(unit, run, scale);
+          final piece = _posShiftPiece(
+            unit,
+            run,
+            scale,
+            applyPosDy: applyPosDy,
+          );
           final isBlank = unit.trim().isEmpty;
-          if (curW > 1e-9 && curW + piece.tp.width > maxW && !isBlank) {
+          if (curW > 1e-9 && curW + piece.tp.width > lineMax && !isBlank) {
             flush();
           }
           if (cur.isEmpty && isBlank) continue;
           // Hard-break oversized tokens (CJK / long words) like SVG wrap.
-          if (piece.tp.width > maxW && unit.length > 1 && !isBlank) {
+          if (piece.tp.width > lineMax && unit.length > 1 && !isBlank) {
             for (final r in unit.runes) {
               final ch = String.fromCharCode(r);
-              final p = _posShiftPiece(ch, run, scale);
-              if (curW > 1e-9 && curW + p.tp.width > maxW) flush();
+              final p = _posShiftPiece(
+                ch,
+                run,
+                scale,
+                applyPosDy: applyPosDy,
+              );
+              if (curW > 1e-9 && curW + p.tp.width > lineMax) flush();
               cur.add(p);
               curW += p.tp.width;
               curH = math.max(curH, p.tp.height + p.dy.abs());
@@ -1788,7 +1809,12 @@ class VsdxPainter extends CustomPainter {
     }
     flush();
     if (lines.isEmpty) {
-      final empty = _posShiftPiece('', runs.isEmpty ? const VsdxTextRun(text: '') : runs.first, scale);
+      final empty = _posShiftPiece(
+        '',
+        runs.isEmpty ? const VsdxTextRun(text: '') : runs.first,
+        scale,
+        applyPosDy: applyPosDy,
+      );
       return [
         (
           pieces: [empty],
@@ -1803,23 +1829,27 @@ class VsdxPainter extends CustomPainter {
   ({TextPainter tp, double dy}) _posShiftPiece(
     String text,
     VsdxTextRun run,
-    double scale,
-  ) {
+    double scale, {
+    bool applyPosDy = true,
+  }) {
     final tp = TextPainter(
       text: _runToSpan(
         run.copyWith(text: text),
         scale,
-        openTypePos: false,
+        // When applying explicit dy, disable OpenType pos to avoid double lift.
+        openTypePos: !applyPosDy,
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
     final base = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
-    final dy = switch (run.charStyle.position) {
-      VsdxTextPosition.superscript => -base * 0.35,
-      VsdxTextPosition.subscript => base * 0.2,
-      VsdxTextPosition.normal => 0.0,
-    };
+    final dy = !applyPosDy
+        ? 0.0
+        : switch (run.charStyle.position) {
+            VsdxTextPosition.superscript => -base * 0.35,
+            VsdxTextPosition.subscript => base * 0.2,
+            VsdxTextPosition.normal => 0.0,
+          };
     return (tp: tp, dy: dy);
   }
 
@@ -1923,32 +1953,41 @@ class VsdxPainter extends CustomPainter {
           bulletX = textX - bulletTp.width - 0.04 * scale;
         }
       } else {
-        // Without a bullet, IndFirst shifts the whole paragraph (good enough
-        // for single-line shape labels; multi-line first-line-only indent is
-        // a follow-up).
-        textX = mlPx + indentL + indentF;
+        // Body lines sit at IndLeft; IndFirst is applied only on line 0 below.
+        textX = mlPx + indentL;
       }
 
-      final avail = math.max(
-        0.0,
-        maxW - (textX - mlPx) - indentR,
-      );
+      final firstX = hasBullet ? textX : textX + indentF;
+      final availRest = math.max(0.0, maxW - (textX - mlPx) - indentR);
+      final availFirst = math.max(0.0, maxW - (firstX - mlPx) - indentR);
       final needsPos = para.runs
           .any((r) => r.charStyle.position != VsdxTextPosition.normal);
+      // Per-line wrap when super/sub needs dy, or IndFirst must not indent
+      // every wrapped line (Visio first-line-only).
+      final needsLineWrap =
+          needsPos || (!hasBullet && indentF.abs() > 1e-9);
       late final TextPainter? tp;
       late final double rowW;
       late final double rowTextH;
       List<TextPainter>? posPainters;
       List<double>? posDys;
-      if (needsPos) {
-        // Baseline dy + wrap (OpenType pos features off — dy is authoritative).
-        final lines = _wrapPosShiftLines(para.runs, avail, scale);
+      if (needsLineWrap) {
+        // Baseline dy + wrap (OpenType pos off when dy applies).
+        final lines = _wrapPosShiftLines(
+          para.runs,
+          availRest,
+          scale,
+          firstLineMaxW: availFirst,
+          applyPosDy: needsPos,
+        );
         // Emit one layout row per wrapped line so Sp*/bullet stay correct.
         final b = style.spaceBeforeInches * scale;
         final a = style.spaceAfterInches * scale;
         for (var li = 0; li < lines.length; li++) {
           final line = lines[li];
           final pieces = line.pieces;
+          final lineX = li == 0 ? firstX : textX;
+          final lineAvail = li == 0 ? availFirst : availRest;
           painters.add(TextPainter(
             text: const TextSpan(text: ''),
             textDirection: TextDirection.ltr,
@@ -1958,9 +1997,9 @@ class VsdxPainter extends CustomPainter {
           paraPosPainters.add([for (final p in pieces) p.tp]);
           paraPosDys.add([for (final p in pieces) p.dy]);
           final alignedX = switch (pAlign) {
-            TextAlign.center => textX + (avail - line.width) / 2,
-            TextAlign.right => textX + avail - line.width,
-            _ => textX,
+            TextAlign.center => lineX + (lineAvail - line.width) / 2,
+            TextAlign.right => lineX + lineAvail - line.width,
+            _ => lineX,
           };
           textOriginsX.add(alignedX);
           beforePx.add(li == 0 ? b : 0.0);
@@ -1983,7 +2022,7 @@ class VsdxPainter extends CustomPainter {
         textAlign: pAlign,
         textDirection: TextDirection.ltr,
         maxLines: null,
-      )..layout(maxWidth: avail);
+      )..layout(maxWidth: availRest);
       rowW = tp.width;
       rowTextH = tp.height;
       posPainters = null;
@@ -1996,8 +2035,8 @@ class VsdxPainter extends CustomPainter {
       paraPosDys.add(posDys);
       // Horizontal align still applies within the remaining text band.
       final alignedX = switch (pAlign) {
-        TextAlign.center => textX + (avail - rowW) / 2,
-        TextAlign.right => textX + avail - rowW,
+        TextAlign.center => textX + (availRest - rowW) / 2,
+        TextAlign.right => textX + availRest - rowW,
         _ => textX,
       };
       textOriginsX.add(alignedX);

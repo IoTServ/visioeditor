@@ -7,7 +7,9 @@ void main(List<String> args) {
   final out = args.length > 1 ? args[1] : '/tmp/workflow.svg';
   final bytes = Uint8List.fromList(File(path).readAsBytesSync());
   final doc = const DocumentParser().parse(bytes);
-  final svg = VsdxToSvgSerializer().serializeDocument(doc);
+  // Match editor Export SVG: print layers only (skip non-printable).
+  final svg = VsdxToSvgSerializer(layerFilter: SvgLayerFilter.print)
+      .serializeDocument(doc);
   File(out).writeAsStringSync(svg);
   stdout.writeln('wrote $out (${svg.length} bytes), pages=${doc.pages.length}');
 }

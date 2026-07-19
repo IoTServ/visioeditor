@@ -286,7 +286,9 @@ class _RenderCommand extends Command<int> {
   @override
   int run() {
     final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
-    final svg = VsdxToSvgSerializer().serializeDocument(doc);
+    // Match editor Export SVG: print layers only (skip non-printable).
+    final svg = VsdxToSvgSerializer(layerFilter: SvgLayerFilter.print)
+        .serializeDocument(doc);
     final out = argResults!['output'] as String;
     File(out).writeAsStringSync(svg);
     stdout.writeln('rendered $out (${svg.length} bytes, ${doc.pages.length} pages)');

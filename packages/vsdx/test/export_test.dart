@@ -1246,6 +1246,112 @@ void main() {
     expect(svg, contains('markerWidth="0.17"'));
   });
 
+  test('SVG bullet default size follows first run not SpLine', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 1.5,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Item',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.2,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  bullet: 1,
+                  // SpLine 2.0 would make lineH/1.2 ≈ 0.333 if wrongly used.
+                  lineSpacing: 2.0,
+                  indentLeftInches: 0.25,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('font-size="0.2"'));
+    expect(svg.contains('font-size="0.333'), isFalse);
+  });
+
+  test('SVG IndFirst applies only to the first wrapped line', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.4,
+          height: 2,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'alpha beta gamma delta',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches: 0.16,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  indentLeftInches: 0.1,
+                  indentFirstInches: 0.25,
+                  horizontalAlign: VsdxHorzAlign.left,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // margin 0.04 + IndLeft 0.1 + IndFirst 0.25 = 0.39 on first line
+    expect(svg, contains('x="0.39"'));
+    // Subsequent lines: margin + IndLeft only = 0.14
+    expect(svg, contains('x="0.14"'));
+  });
+
+  test('SVG 1D shadow honours LinePattern dash', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 4, by: 1).copyWith(
+              line: const VsdxLine(pattern: 2, weightInches: 0.04),
+              shadow: const VsdxShadow(
+                enabled: true,
+                offsetXInches: 0.05,
+                offsetYInches: 0.05,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('stroke-dasharray="0.10 0.05"'));
+    // Shadow path also dashed (not only the main stroke).
+    expect(
+      RegExp(r'stroke-dasharray="0\.10 0\.05"').allMatches(svg).length,
+      greaterThanOrEqualTo(2),
+    );
+  });
+
   test('SVG bullet hanging indent matches canvas TextPosAfterBullet', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
@@ -1611,9 +1717,10 @@ void main() {
             ),
       ),
     );
-    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    final page = doc.pages.first;
+    final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg, contains('textPath'));
-    expect(svg, contains('curved-$id'));
+    expect(svg, contains('curved-p${page.id}-$id'));
     expect(svg, contains('Arc'));
   });
 

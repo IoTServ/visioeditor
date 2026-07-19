@@ -436,7 +436,14 @@ class VsdxToSvgSerializer {
         (shape.text?.isNotEmpty ?? false) ||
         _meaningfulNameLabel(shape) != null;
     if (hasLabel) {
-      _writeText(buf, shape, theme, page, indent: '$indent  ');
+      _writeText(
+        buf,
+        shape,
+        theme,
+        page,
+        paintIdScope: paintIdScope,
+        indent: '$indent  ',
+      );
     }
 
     // Match canvas: collapsed hosts hide children; covered table cells skip.
@@ -935,11 +942,14 @@ class VsdxToSvgSerializer {
         LineCap.extended => 'butt',
       };
       final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
+      final dash = _dashAttr(shape.line.pattern);
       // Shadow uses raw geometry (canvas); jump arcs are stroke-only.
+      // Honour LinePattern like the main stroke / reflection.
       buf.writeln(
         '$indent<path d="$d" fill="none" stroke="$hex" '
         'stroke-opacity="${_n(alpha)}" stroke-width="${_n(weight)}" '
-        'stroke-linecap="$linecap" stroke-linejoin="$linejoin" '
+        'stroke-linecap="$linecap" stroke-linejoin="$linejoin"'
+        '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'} '
         'transform="translate(${_n(dx)} ${_n(dy)})"$filterAttr/>',
       );
     } else {
@@ -2356,6 +2366,7 @@ class VsdxToSvgSerializer {
     VsdxShape shape,
     VsdxTheme theme,
     VsdxPage page, {
+    required String paintIdScope,
     required String indent,
   }) {
     final block = shape.richText.textBlock;
@@ -2479,6 +2490,7 @@ class VsdxToSvgSerializer {
         mb: mb,
         angleRad: block.angleRad,
         textDirection: block.textDirection,
+        paintIdScope: paintIdScope,
         indent: indent,
       );
       return;
@@ -2510,6 +2522,7 @@ class VsdxToSvgSerializer {
       double lineH,
       double yTop,
       bool showBullet,
+      double textBandX,
     })>[];
     var cursor = 0.0;
     for (final p in paras) {
@@ -2523,12 +2536,23 @@ class VsdxToSvgSerializer {
               ? p.style.textPosAfterBulletInches
               : 0.18)
           : 0.0;
-      final textBandX = layoutMl + indentL + (hasBullet ? bulletGap : indentF);
-      final avail = math.max(
+      // IndFirst applies to the first line only (Visio); body lines use IndLeft.
+      final bodyBandX = layoutMl + indentL + (hasBullet ? bulletGap : 0.0);
+      final firstBandX =
+          hasBullet ? bodyBandX : layoutMl + indentL + indentF;
+      final availRest = math.max(
         0.04,
-        layoutW - layoutMr - p.style.indentRightInches - textBandX,
+        layoutW - layoutMr - p.style.indentRightInches - bodyBandX,
       );
-      final wrapped = _wrapSvgSegs(p.segs, avail);
+      final availFirst = math.max(
+        0.04,
+        layoutW - layoutMr - p.style.indentRightInches - firstBandX,
+      );
+      final wrapped = _wrapSvgSegs(
+        p.segs,
+        availRest,
+        firstLineMaxWidth: availFirst,
+      );
       for (var li = 0; li < wrapped.length; li++) {
         layouts.add((
           style: p.style,
@@ -2536,6 +2560,7 @@ class VsdxToSvgSerializer {
           lineH: lineH,
           yTop: cursor,
           showBullet: hasBullet && li == 0,
+          textBandX: li == 0 ? firstBandX : bodyBandX,
         ));
         cursor += lineH;
       }
@@ -2566,15 +2591,7 @@ class VsdxToSvgSerializer {
       final style = layout.style;
       final indentL = style.indentLeftInches;
       final indentF = style.indentFirstInches;
-      final hasBullet = style.bullet != 0;
-      // Match canvas hanging indent: body at IndLeft + TextPosAfterBullet
-      // (default 0.18"); bullet sits on IndLeft + IndFirst.
-      final bulletGap = hasBullet
-          ? (style.textPosAfterBulletInches > 0
-              ? style.textPosAfterBulletInches
-              : 0.18)
-          : 0.0;
-      final textBandX = layoutMl + indentL + (hasBullet ? bulletGap : indentF);
+      final textBandX = layout.textBandX;
       final (anchor, xBody) = switch (style.horizontalAlign) {
         VsdxHorzAlign.left || VsdxHorzAlign.justify => (
             'start',
@@ -2595,10 +2612,21 @@ class VsdxToSvgSerializer {
       final body = StringBuffer();
       if (layout.showBullet) {
         final glyph = _svgBulletGlyph(style);
-        final bFs = style.bulletFontSizeInches != null &&
-                style.bulletFontSizeInches! > 0
-            ? style.bulletFontSizeInches!
-            : layout.lineH / 1.2;
+        // Match canvas: BulletFontSize, else first non-empty run size.
+        var bFs = 0.14;
+        if (style.bulletFontSizeInches != null &&
+            style.bulletFontSizeInches! > 0) {
+          bFs = style.bulletFontSizeInches!;
+        } else {
+          for (final (_, run) in layout.segs) {
+            if (run.text.isNotEmpty) {
+              bFs = run.charStyle.fontSizeInches > 0
+                  ? run.charStyle.fontSizeInches
+                  : 0.14;
+              break;
+            }
+          }
+        }
         final bx = layoutMl + indentL + indentF;
         body.write(
           '<tspan x="${_n(bx)}" text-anchor="start" '
@@ -2631,20 +2659,26 @@ class VsdxToSvgSerializer {
   }
 
   /// Greedy wrap of rich-text segments to [maxWidth] inches (canvas maxWidth).
+  ///
+  /// When [firstLineMaxWidth] is set (IndFirst), only the first wrapped line
+  /// uses that narrower band; subsequent lines use [maxWidth].
   List<List<(String text, VsdxTextRun run)>> _wrapSvgSegs(
     List<(String text, VsdxTextRun run)> segs,
-    double maxWidth,
-  ) {
+    double maxWidth, {
+    double? firstLineMaxWidth,
+  }) {
     if (segs.isEmpty) return [<(String, VsdxTextRun)>[]];
     final lines = <List<(String, VsdxTextRun)>>[];
     var cur = <(String, VsdxTextRun)>[];
     var curW = 0.0;
+    var lineMax = firstLineMaxWidth ?? maxWidth;
 
     void flush() {
       if (cur.isEmpty) return;
       lines.add(cur);
       cur = <(String, VsdxTextRun)>[];
       curW = 0.0;
+      lineMax = maxWidth;
     }
 
     void append(String unit, VsdxTextRun run, double uw) {
@@ -2662,16 +2696,16 @@ class VsdxToSvgSerializer {
       for (final unit in _svgWrapUnits(text)) {
         final uw = _estSvgTextWidth(unit, run.charStyle);
         final isBlank = unit.trim().isEmpty;
-        if (curW > 1e-9 && curW + uw > maxWidth && !isBlank) {
+        if (curW > 1e-9 && curW + uw > lineMax && !isBlank) {
           flush();
         }
         if (cur.isEmpty && isBlank) continue;
-        if (uw > maxWidth && unit.length > 1 && !isBlank) {
+        if (uw > lineMax && unit.length > 1 && !isBlank) {
           // Hard-break oversized tokens (code units; good enough for Latin/CJK).
           for (var i = 0; i < unit.length; i++) {
             final ch = unit[i];
             final cw = _estSvgTextWidth(ch, run.charStyle);
-            if (curW > 1e-9 && curW + cw > maxWidth) flush();
+            if (curW > 1e-9 && curW + cw > lineMax) flush();
             append(ch, run, cw);
           }
           continue;
@@ -2819,6 +2853,7 @@ class VsdxToSvgSerializer {
     required double mb,
     required double angleRad,
     required int textDirection,
+    required String paintIdScope,
     required String indent,
   }) {
     final plain = _applyTextCase(
@@ -2849,7 +2884,8 @@ class VsdxToSvgSerializer {
     final y0 = midY;
     final y1 = midY - bulge;
     final y2 = midY;
-    final pathId = 'curved-${shape.id}';
+    // Page/underlay-scoped — same as gradient/marker paint ids.
+    final pathId = 'curved-$paintIdScope-${shape.id}';
     final style = runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
     final attrs = _charStyleSvgAttrs(style, theme);
 

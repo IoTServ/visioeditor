@@ -391,7 +391,9 @@ void _registerFileTools(McpServer server) {
             'use snapshot (app) or the editor Export menu for png/pdf');
       }
       final doc = const DocumentParser().parse(_read(path));
-      final svg = VsdxToSvgSerializer().serializeDocument(doc);
+      // Match editor Export SVG: print layers only (skip non-printable).
+      final svg = VsdxToSvgSerializer(layerFilter: SvgLayerFilter.print)
+          .serializeDocument(doc);
       final out = (args['out'] as String?) ??
           path.replaceAll(RegExp(r'\.vsdx$', caseSensitive: false), '.svg');
       File(out).writeAsStringSync(svg);
