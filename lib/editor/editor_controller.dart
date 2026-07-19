@@ -2145,11 +2145,15 @@ class EditorController extends ChangeNotifier {
       );
     }
     if (beginIdx == null || endIdx == null) {
-      next = next.rerouteConnectors(movedShapeIds: <int>{
-        id,
-        ?beginTarget,
-        ?endTarget,
-      });
+      next = next
+          .recalculateFormulas(
+            changedShapeIds: <int>{id, ?begin, ?end},
+          )
+          .rerouteConnectors(movedShapeIds: <int>{
+            id,
+            ?begin,
+            ?end,
+          });
     }
     applyEdit(
       doc.replacePage(
@@ -3816,6 +3820,12 @@ class EditorController extends ChangeNotifier {
     ]);
     if (roots.isEmpty) return;
     final movedIds = _subtreeIds(roots);
+    // Connectors we bake geometrically must not be re-glued by reroute
+    // (that would snap Begin/End back onto targets and undo the turn).
+    final bakedConnectors = <int>{
+      for (final id in roots)
+        if (page0.findShapeById(id)?.isGlueableConnector == true) id,
+    };
     updateCurrentPage((page) {
       var next = page;
       var rotated = false;
@@ -3866,7 +3876,12 @@ class EditorController extends ChangeNotifier {
       return rotated
           ? next
               .recalculateFormulas(changedShapeIds: movedIds)
-              .rerouteConnectors(movedShapeIds: movedIds)
+              .rerouteConnectors(
+                movedShapeIds: <int>{
+                  for (final id in movedIds)
+                    if (!bakedConnectors.contains(id)) id,
+                },
+              )
           : page;
     });
   }
@@ -3891,6 +3906,10 @@ class EditorController extends ChangeNotifier {
     ]);
     if (roots.isEmpty) return;
     final movedIds = _subtreeIds(roots);
+    final bakedConnectors = <int>{
+      for (final id in roots)
+        if (page0.findShapeById(id)?.isGlueableConnector == true) id,
+    };
     updateCurrentPage((page) {
       var next = page;
       var flipped = false;
@@ -3918,7 +3937,12 @@ class EditorController extends ChangeNotifier {
       return flipped
           ? next
               .recalculateFormulas(changedShapeIds: movedIds)
-              .rerouteConnectors(movedShapeIds: movedIds)
+              .rerouteConnectors(
+                movedShapeIds: <int>{
+                  for (final id in movedIds)
+                    if (!bakedConnectors.contains(id)) id,
+                },
+              )
           : page;
     });
   }

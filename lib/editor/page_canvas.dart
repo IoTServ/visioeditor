@@ -421,14 +421,95 @@ class _PageCanvasState extends State<PageCanvas> {
     // Prefer the top-most shape in draw order (parents before children,
     // siblings in list order), so we walk the flattened order and keep the
     // last hit. Skip shapes on hidden layers (match paint).
+    // 1-D strokes: AABB is only a coarse filter — require proximity to the
+    // polyline so diagonal connectors do not steal hits from shapes below.
     int? best;
     for (final id in _drawOrder(page)) {
       final s = page.findShapeById(id);
       if (s == null || !page.isShapeVisible(s)) continue;
       final r = bounds[id];
-      if (r != null && r.contains(pt)) best = id;
+      if (r == null || !r.contains(pt)) continue;
+      if (s.is1D && !_hit1DStroke(page, s, pt)) continue;
+      best = id;
     }
     return best;
+  }
+
+  /// True when [pt] (page inches) is within stroke hit distance of [s]'s path.
+  bool _hit1DStroke(VsdxPage page, VsdxShape s, Offset pt) {
+    final poly = _strokePagePolyline(page, s);
+    if (poly.length < 2) return true;
+    final half = math.max(s.line.weightInches.abs() / 2, 0.01);
+    final screenPad = 5.0 / math.max(widget.pxPerInch * _scale, 1e-6);
+    final tol = half + screenPad;
+    final tol2 = tol * tol;
+    for (var i = 0; i < poly.length - 1; i++) {
+      if (_dist2PointToSeg(
+            pt.dx,
+            pt.dy,
+            poly[i].x,
+            poly[i].y,
+            poly[i + 1].x,
+            poly[i + 1].y,
+          ) <=
+          tol2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Page-inch stroke polyline for hit-testing (glueable route or ink geometry).
+  List<Offset2D> _strokePagePolyline(VsdxPage page, VsdxShape s) {
+    if (s.isGlueableConnector) {
+      final drawn = page.drawnConnectorPagePolyline(s);
+      if (drawn.length >= 2) return drawn;
+    }
+    for (final g in s.geometries) {
+      if (g.noShow) continue;
+      final local = <Offset2D>[];
+      var ok = true;
+      for (final c in g.commands) {
+        if (c is MoveTo) {
+          local.add(Offset2D(c.x, c.y));
+        } else if (c is LineTo) {
+          local.add(Offset2D(c.x, c.y));
+        } else {
+          ok = false;
+          break;
+        }
+      }
+      if (ok && local.length >= 2) {
+        return <Offset2D>[
+          for (final p in local) page.localToPageDeep(s.id, p),
+        ];
+      }
+    }
+    final ax = s.beginX ?? s.pinX, ay = s.beginY ?? s.pinY;
+    final bx = s.endX ?? s.pinX, by = s.endY ?? s.pinY;
+    return <Offset2D>[Offset2D(ax, ay), Offset2D(bx, by)];
+  }
+
+  static double _dist2PointToSeg(
+    double px,
+    double py,
+    double ax,
+    double ay,
+    double bx,
+    double by,
+  ) {
+    final dx = bx - ax, dy = by - ay;
+    final len2 = dx * dx + dy * dy;
+    if (len2 < 1e-24) {
+      final ex = px - ax, ey = py - ay;
+      return ex * ex + ey * ey;
+    }
+    var t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    final qx = ax + t * dx, qy = ay + t * dy;
+    final ex = px - qx, ey = py - qy;
+    return ex * ex + ey * ey;
   }
 
   static List<int> _drawOrder(VsdxPage page) {
@@ -1933,13 +2014,22 @@ class _PageCanvasState extends State<PageCanvas> {
       _glueTargetAt(pos, excludeId: connId);
 
   /// Deepest visible 2-D shape under [pos] (nested children included).
+  /// Skips 1-D strokes entirely so a connector's AABB cannot block glue to a
+  /// shape underneath (create-by-drag / endpoint attach / hover-connect).
   int? _glueTargetAt(Offset pos, {int? excludeId}) {
-    final t = _hitTest(pos);
-    if (t == null || t == excludeId) return null;
     final page = _page;
-    final s = page?.findShapeById(t);
-    if (s == null || s.is1D || !page!.isShapeVisible(s)) return null;
-    return t;
+    if (page == null) return null;
+    final pt = _contentToPageInches(_viewportToContent(pos));
+    final bounds = buildShapeBounds(page);
+    int? best;
+    for (final id in _drawOrder(page)) {
+      if (id == excludeId) continue;
+      final s = page.findShapeById(id);
+      if (s == null || !page.isShapeVisible(s) || s.is1D) continue;
+      final r = bounds[id];
+      if (r != null && r.contains(pt)) best = id;
+    }
+    return best;
   }
 
   /// Drawn / obstacle-aware connector polyline in **page** inches (matches

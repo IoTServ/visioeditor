@@ -405,6 +405,49 @@ void main() {
     expect(after.endX, closeTo(before.beginX!, 1e-6));
   });
 
+  test('rotateSelection90 on glued connector is not undone by reroute', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 3.5, 2, 4.5);
+    final a = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 3.5, 6, 4.5);
+    final b = c.selection.single;
+    c.createConnector(1.5, 4, 5.5, 4, beginTarget: a, endTarget: b);
+    final connId = c.selection.single;
+    expect(c.currentPage!.connects.where((x) => x.fromSheetId == connId),
+        isNotEmpty);
+    c.setSelection(<int>{connId});
+    c.rotateSelection90(clockwise: false); // +90° CCW about pin
+    final after = c.currentPage!.findShapeById(connId)!;
+    // Must stay a vertical bake — reroute must not snap ends back onto A/B.
+    expect(after.beginX, closeTo(after.endX!, 0.35));
+    expect((after.beginY! - after.endY!).abs(), greaterThan(1.5));
+  });
+
+  test('flipHorizontal on glued connector is not undone by reroute', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 3.5, 2, 4.5);
+    final a = c.selection.single;
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 3.5, 6, 4.5);
+    final b = c.selection.single;
+    c.createConnector(1.5, 4, 5.5, 4, beginTarget: a, endTarget: b);
+    final connId = c.selection.single;
+    final before = c.currentPage!.findShapeById(connId)!;
+    c.setSelection(<int>{connId});
+    c.flipHorizontal();
+    final after = c.currentPage!.findShapeById(connId)!;
+    // Mirror swaps ends about pin; glue reroute must not restore A→B order.
+    expect(after.beginX, closeTo(before.endX!, 0.4));
+    expect(after.endX, closeTo(before.beginX!, 0.4));
+  });
+
   test('one-step z-order moves the selection forward and backward', () {
     final c = newDocWithTwoRects();
     final ids = <int>[for (final s in c.currentPage!.shapes) s.id];

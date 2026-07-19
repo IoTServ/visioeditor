@@ -2490,7 +2490,7 @@ class VsdxPage {
       );
     }
     if (src.isGlueableConnector) return _finalize1DCoords(r);
-    return r;
+    return r.syncInkEndpoints();
   }
 
   /// Absolute page heading of [shapeId] (Visio CCW, 0 = local +Y).
