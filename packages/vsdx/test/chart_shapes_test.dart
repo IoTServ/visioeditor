@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(37));
+    expect(kChartStencils, hasLength(44));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -153,6 +153,11 @@ void main() {
       'stepArea',
       'percentColumn',
       'packedBubble',
+      'sparkColumn',
+      'triangleBar',
+      'mirrorColumn',
+      'pareto',
+      'radialColumn',
     ]) {
       final chart = ChartOps.buildKind(
         kind,
@@ -221,6 +226,16 @@ void main() {
     expect(ChartOps.chartValues(t), hasLength(1));
     expect(ChartOps.chartValues(w), hasLength(1));
     expect(ChartOps.seriesChildren(w), isNotEmpty);
+  });
+
+  test('battery and trafficLight are single-value meters', () {
+    expect(ChartOps.isSingleValueKind('battery'), isTrue);
+    expect(ChartOps.isSingleValueKind('trafficLight'), isTrue);
+    final b = ChartOps.batteryChart(id: 5, pinX: 1, pinY: 1);
+    final t = ChartOps.trafficLightChart(id: 6, pinX: 2, pinY: 1);
+    expect(ChartOps.chartValues(b), hasLength(1));
+    expect(ChartOps.seriesChildren(b), hasLength(1));
+    expect(ChartOps.seriesChildren(t), hasLength(1));
   });
 
   test('parseSeriesPaste supports labeled pairs', () {

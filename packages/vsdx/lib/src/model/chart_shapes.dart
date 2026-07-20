@@ -45,6 +45,10 @@ abstract final class ChartOps {
       'histogram',
       'cylinder',
       'cone',
+      'sparkColumn',
+      'triangleBar',
+      'mirrorColumn',
+      'pareto',
       'stackedColumn',
       'stackedBar',
       'clusteredColumn',
@@ -61,6 +65,7 @@ abstract final class ChartOps {
       'pyramid',
       'waterfall',
       'radialBar',
+      'radialColumn',
       'compositionBar',
       'percentColumn',
       'treemap',
@@ -73,6 +78,8 @@ abstract final class ChartOps {
       'bullet',
       'thermometer',
       'waffle',
+      'battery',
+      'trafficLight',
     ]),
     ('Other', <String>['bubble']),
   ];
@@ -84,6 +91,10 @@ abstract final class ChartOps {
     'histogram': 'Histogram',
     'cylinder': 'Cylinder Chart',
     'cone': 'Cone Chart',
+    'sparkColumn': 'Spark Column',
+    'triangleBar': 'Triangle Bar',
+    'mirrorColumn': 'Mirror Column',
+    'pareto': 'Pareto Chart',
     'stackedColumn': 'Stacked Column',
     'stackedBar': 'Stacked Bar',
     'clusteredColumn': 'Clustered Column',
@@ -104,6 +115,7 @@ abstract final class ChartOps {
     'pyramid': 'Pyramid Chart',
     'radar': 'Radar Chart',
     'radialBar': 'Radial Bar',
+    'radialColumn': 'Radial Column',
     'compositionBar': 'Composition Bar',
     'percentColumn': 'Percent Column',
     'treemap': 'Treemap',
@@ -114,6 +126,8 @@ abstract final class ChartOps {
     'bullet': 'Bullet Chart',
     'thermometer': 'Thermometer',
     'waffle': 'Waffle Chart',
+    'battery': 'Battery Chart',
+    'trafficLight': 'Traffic Light',
     'waterfall': 'Waterfall',
     'bubble': 'Bubble Chart',
   };
@@ -402,7 +416,9 @@ abstract final class ChartOps {
       kind == 'ringProgress' ||
       kind == 'bullet' ||
       kind == 'thermometer' ||
-      kind == 'waffle';
+      kind == 'waffle' ||
+      kind == 'battery' ||
+      kind == 'trafficLight';
 
   static List<VsdxColor> padColors(List<VsdxColor> colors, int n) {
     if (n <= 0) return const <VsdxColor>[];
@@ -812,6 +828,42 @@ abstract final class ChartOps {
             height: height ?? 1.8,
             values: values,
             allocId: allocId);
+      case 'sparkColumn':
+        return sparkColumnChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.0,
+            height: height ?? 0.9,
+            values: values,
+            allocId: allocId);
+      case 'triangleBar':
+        return triangleBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'mirrorColumn':
+        return mirrorColumnChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'pareto':
+        return paretoChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
       case 'divergingBar':
         return divergingBarChart(
             id: id,
@@ -890,6 +942,24 @@ abstract final class ChartOps {
             pinX: pinX,
             pinY: pinY,
             width: width ?? 2.0,
+            height: height ?? 2.0,
+            values: values,
+            allocId: allocId);
+      case 'battery':
+        return batteryChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.2,
+            height: height ?? 0.9,
+            values: values,
+            allocId: allocId);
+      case 'trafficLight':
+        return trafficLightChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 0.8,
             height: height ?? 2.0,
             values: values,
             allocId: allocId);
@@ -994,6 +1064,15 @@ abstract final class ChartOps {
             allocId: allocId);
       case 'radialBar':
         return radialBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.0,
+            height: height ?? 2.0,
+            values: values,
+            allocId: allocId);
+      case 'radialColumn':
+        return radialColumnChart(
             id: id,
             pinX: pinX,
             pinY: pinY,
@@ -3607,6 +3686,434 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'waffle',
+      values: vals,
+    );
+  }
+
+  static VsdxShape sparkColumnChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.0,
+    double height = 0.9,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.3, 0.55, 0.4, 0.8, 0.65, 0.5, 0.7];
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final gap = w * 0.04;
+    final barW = (w - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < unit.length; i++) {
+      final bh = math.max(h * unit[i], 0.04);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: gap + barW / 2 + i * (barW + gap),
+        pinY: bh / 2,
+        width: barW,
+        height: bh,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'sparkColumn',
+      values: vals,
+    );
+  }
+
+  static VsdxShape triangleBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - h * 0.08;
+    final gap = plotH * 0.08;
+    final barH = (plotH - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final bw = math.max(plotW * unit[i], 0.06);
+      final cy = padB + gap + barH / 2 + i * (barH + gap);
+      final color = seriesColors[i % seriesColors.length];
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + bw / 2,
+        pinY: cy,
+        width: bw,
+        height: barH * 0.85,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(0, barH * 0.85),
+            LineTo(bw, barH * 0.425),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'triangleBar',
+      values: vals,
+    );
+  }
+
+  static VsdxShape mirrorColumnChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.4, -0.55, 0.7, -0.3, 0.5];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.08;
+    final padT = h * 0.08;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final midY = padB + plotH / 2;
+    final maxAbs = vals.map((v) => v.abs()).fold(0.0, math.max);
+    final scale = maxAbs > 0 ? (plotH / 2) / maxAbs : plotH / 2;
+    final gap = plotW * 0.08;
+    final barW = (plotW - gap * (vals.length + 1)) / vals.length;
+    final kids = <VsdxShape>[
+      _axesChild(id: next(), width: w, height: h),
+      _rectChild(
+        id: next(),
+        pinX: padL + plotW / 2,
+        pinY: midY,
+        width: plotW,
+        height: 0.02,
+        fill: const VsdxColor(0xFF888888),
+        chrome: true,
+      ),
+    ];
+    for (var i = 0; i < vals.length; i++) {
+      final v = vals[i];
+      final bh = math.max(v.abs() * scale, 0.04);
+      final cx = padL + gap + barW / 2 + i * (barW + gap);
+      final cy = v >= 0 ? midY + bh / 2 : midY - bh / 2;
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: cy,
+        width: barW * 0.85,
+        height: bh,
+        fill: v >= 0 ? seriesColors[0] : seriesColors[1],
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'mirrorColumn',
+      values: vals,
+    );
+  }
+
+  static VsdxShape paretoChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.9, 0.65, 0.45, 0.3, 0.2];
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.08;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.06;
+    final barW = (plotW - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    final sum = unit.fold<double>(0, (a, b) => a + b);
+    var running = 0.0;
+    final cumPts = <({double x, double y})>[];
+    for (var i = 0; i < unit.length; i++) {
+      final bh = plotH * unit[i];
+      final cx = padL + gap + barW / 2 + i * (barW + gap);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: padB + bh / 2,
+        width: barW,
+        height: bh,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+      running += unit[i];
+      final cy = padB + plotH * (sum > 0 ? running / sum : 0);
+      cumPts.add((x: cx, y: cy));
+    }
+    if (cumPts.length >= 2) {
+      var minX = cumPts.first.x, maxX = cumPts.first.x;
+      var minY = cumPts.first.y, maxY = cumPts.first.y;
+      for (final p in cumPts.skip(1)) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      final lw = math.max(maxX - minX, 0.04);
+      final lh = math.max(maxY - minY, 0.04);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: minX + lw / 2,
+        pinY: minY + lh / 2,
+        width: lw,
+        height: lh,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(cumPts.first.x - minX, cumPts.first.y - minY),
+              for (final p in cumPts.skip(1))
+                LineTo(p.x - minX, p.y - minY),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFE53935),
+          weightInches: 0.016,
+        ),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'pareto',
+      values: vals,
+    );
+  }
+
+  static VsdxShape radialColumnChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.0,
+    double height = 2.0,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final cx = w / 2;
+    final cy = h / 2;
+    final maxR = math.min(w, h) * 0.42;
+    final inner = maxR * 0.18;
+    final kids = <VsdxShape>[];
+    final n = unit.length;
+    final sweep = (2 * math.pi) / n;
+    var angle = math.pi / 2;
+    for (var i = 0; i < n; i++) {
+      final half = sweep * 0.35;
+      final a0 = angle + half;
+      final a1 = angle - half;
+      final outer = inner + (maxR - inner) * unit[i];
+      kids.add(_wedgeChild(
+        id: next(),
+        cx: cx,
+        cy: cy,
+        rx: outer,
+        ry: outer,
+        a0: a0,
+        a1: a1,
+        inner: inner / outer,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+      angle -= sweep;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'radialColumn',
+      values: vals,
+    );
+  }
+
+  static VsdxShape batteryChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.2,
+    double height = 0.9,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.72];
+    final level = vals.first.clamp(0.0, 1.0);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final bodyW = w * 0.88;
+    final bodyH = h * 0.55;
+    final tipW = w * 0.06;
+    final kids = <VsdxShape>[
+      _rectChild(
+        id: next(),
+        pinX: bodyW / 2,
+        pinY: h / 2,
+        width: bodyW,
+        height: bodyH,
+        fill: const VsdxColor(0xFFE8E8E8),
+        chrome: true,
+      ),
+      _rectChild(
+        id: next(),
+        pinX: bodyW + tipW / 2,
+        pinY: h / 2,
+        width: tipW,
+        height: bodyH * 0.45,
+        fill: const VsdxColor(0xFFBDBDBD),
+        chrome: true,
+      ),
+      _rectChild(
+        id: next(),
+        pinX: (bodyW * 0.9 * level) / 2 + bodyW * 0.05,
+        pinY: h / 2,
+        width: math.max(bodyW * 0.9 * level, 0.04),
+        height: bodyH * 0.7,
+        fill: level > 0.3 ? seriesColors[2] : seriesColors[1],
+      ),
+    ];
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'battery',
+      values: vals,
+    );
+  }
+
+  static VsdxShape trafficLightChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 0.8,
+    double height = 2.0,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.72];
+    final level = vals.first.clamp(0.0, 1.0);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final active = level < 0.34 ? 0 : (level < 0.67 ? 1 : 2);
+    const colors = <VsdxColor>[
+      VsdxColor(0xFFE53935),
+      VsdxColor(0xFFFFC000),
+      VsdxColor(0xFF43A047),
+    ];
+    final kids = <VsdxShape>[
+      _rectChild(
+        id: next(),
+        pinX: w / 2,
+        pinY: h / 2,
+        width: w * 0.7,
+        height: h * 0.92,
+        fill: const VsdxColor(0xFF424242),
+        chrome: true,
+      ),
+    ];
+    for (var i = 0; i < 3; i++) {
+      final r = w * 0.22;
+      final cy = h * (0.78 - i * 0.28);
+      final on = i == active;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w / 2,
+        pinY: cy,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(
+          foreground: on ? colors[i] : const VsdxColor(0xFF616161),
+        ),
+        line: const VsdxLine(pattern: 0),
+        userCells: on ? const <VsdxUserCell>[] : _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'trafficLight',
       values: vals,
     );
   }

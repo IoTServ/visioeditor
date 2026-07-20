@@ -55,6 +55,22 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.coneChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Spark Column',
+      (id, cx, cy) => ChartOps.sparkColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Triangle Bar',
+      (id, cx, cy) => ChartOps.triangleBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Mirror Column',
+      (id, cx, cy) => ChartOps.mirrorColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Pareto Chart',
+      (id, cx, cy) => ChartOps.paretoChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Diverging Bar',
       (id, cx, cy) => ChartOps.divergingBarChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -128,6 +144,10 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.radialBarChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Radial Column',
+      (id, cx, cy) => ChartOps.radialColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Gauge',
       (id, cx, cy) => ChartOps.gaugeChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -150,6 +170,14 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Waffle Chart',
       (id, cx, cy) => ChartOps.waffleChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Battery Chart',
+      (id, cx, cy) => ChartOps.batteryChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Traffic Light',
+      (id, cx, cy) => ChartOps.trafficLightChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Waterfall',
