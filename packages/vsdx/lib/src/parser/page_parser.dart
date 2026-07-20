@@ -322,7 +322,7 @@ class PageParser {
                 : effectiveRich.plainText)) ??
         proto?.text;
 
-    final layerMembers = LayerParser.parseLayerMembers(shapeEl);
+    final layerMembers = LayerParser.parseLayerMembersOrNull(shapeEl);
     final imagePartName = _resolveForeignDataPart(shapeEl) ??
         proto?.imagePartName;
     final foreignMeta = _readForeignDataMeta(shapeEl);
@@ -423,9 +423,9 @@ class PageParser {
       shadow: shadow,
       glow: glow,
       reflection: reflection,
-      layerMemberIds: layerMembers.isEmpty && proto != null
+      layerMemberIds: layerMembers == null && proto != null
           ? proto.layerMemberIds
-          : layerMembers,
+          : (layerMembers ?? const <int>[]),
       is1D: is1D,
       beginX: beginX,
       beginY: beginY,

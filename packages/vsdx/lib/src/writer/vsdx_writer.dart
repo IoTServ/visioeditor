@@ -2957,9 +2957,8 @@ class VsdxWriter {
   bool _patchLayerMember(XmlElement el, List<int> base, List<int> edited) {
     final want = edited.isEmpty ? '' : edited.join(';');
     if (_intListsEqual(base, edited)) {
-      // Still scrub F=Inh when membership is unchanged.
-      final c = _findCell(el, 'LayerMember');
-      if (c == null) return false;
+      // Explicit empty must still exist so Master LayerMember cannot revive.
+      final c = _ensureCell(el, 'LayerMember');
       if ((c.getAttribute('F') ?? '').isEmpty && c.getAttribute('V') == want) {
         return false;
       }
@@ -4437,6 +4436,8 @@ class VsdxWriter {
     );
     changed |=
         _patchAngle(el, 'TxtAngle', base.angleRad, edited.angleRad);
+    // Scrub F=Inh / ensure cell even when angle stays 0 (Master π/2 revive).
+    changed |= _forceLiteralLength(el, 'TxtAngle', edited.angleRad);
     changed |= _patchInt(el, 'VerticalAlign', _vAlignInt(base.verticalAlign),
         _vAlignInt(edited.verticalAlign));
     // Model verticalAlign is authoritative — scrub F=Inh even when value matches.
@@ -4560,14 +4561,14 @@ class VsdxWriter {
     addLen('TxtLocPinY', b.locPinYInches,
         defaultFormula: fillBox ? 'TxtHeight*0.5' : null,
         fallback: fillBox ? h / 2 : null);
-    if (b.angleRad.abs() > _epsilon || formulas.containsKey('TxtAngle')) {
-      children.add(
-          _cell('TxtAngle', _fmt(b.angleRad), formula: formulas['TxtAngle']));
-    }
-    if (hasLabel || b.verticalAlign != VsdxVertAlign.middle) {
-      children.add(
-          _cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
-    }
+    // Always emit TxtAngle (incl. 0) so Master text rotation cannot revive
+    // after an explicit upright override + group rebuild.
+    children.add(
+        _cell('TxtAngle', _fmt(b.angleRad), formula: formulas['TxtAngle']));
+    // Always emit VerticalAlign (incl. middle) so StyleSheet / Master cannot
+    // revive a non-middle align after clear + group rebuild — mirrors HideText.
+    children.add(
+        _cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
     // Always emit HideText (incl. 0) so Master HideText=1 cannot revive after
     // the user un-hides on a group-rebuild path.
     children.add(_cell('HideText', b.hideText ? '1' : '0'));
@@ -5482,9 +5483,9 @@ class VsdxWriter {
       // Always emit CompoundType (incl. 0) so StyleSheet inheritance cannot
       // revive double-line after the user cleared compound on a rebuild path.
       ..add(_cell('CompoundType', s.line.compoundType.toString()));
-    if (s.layerMemberIds.isNotEmpty) {
-      children.add(_cell('LayerMember', s.layerMemberIds.join(';')));
-    }
+    // Always emit LayerMember (incl. empty) so clearing layers survives
+    // group rebuild — absent cell would re-inherit Master membership.
+    children.add(_cell('LayerMember', s.layerMemberIds.join(';')));
     // --- Effects / text block ------------------------------------------------
     if (s.shadow.enabled) {
       children.add(_cell('ShadowPattern', '1'));
@@ -6095,8 +6096,8 @@ class VsdxWriter {
       _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
       _cell('Rounding', _fmt(s.line.roundingInches)),
       _cell('CompoundType', s.line.compoundType.toString()),
-      if (s.layerMemberIds.isNotEmpty)
-        _cell('LayerMember', s.layerMemberIds.join(';')),
+      // Always emit (incl. empty) — mirrors normal shape rebuild.
+      _cell('LayerMember', s.layerMemberIds.join(';')),
       _cell('FlipX', s.flipX ? '1' : '0'),
       _cell('FlipY', s.flipY ? '1' : '0'),
     ];

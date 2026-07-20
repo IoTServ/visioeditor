@@ -34,7 +34,13 @@ class StyleParser {
         defaults.backgroundTransparency;
     final pat = _int(shape, 'FillPattern') ?? defaults.pattern;
 
-    final gradient = _parseGradient(shape) ?? defaults.gradient;
+    // Explicit FillGradientEnabled=0 must clear the gradient — do not fall
+    // back to Master defaults (writer emits V=0 on clear / group rebuild).
+    final fillGradEnabledCell = findCell(shape, 'FillGradientEnabled');
+    final parsedFillGrad = _parseGradient(shape);
+    final gradient = fillGradEnabledCell != null
+        ? parsedFillGrad
+        : (parsedFillGrad ?? defaults.gradient);
 
     return VsdxFill(
       foreground: fgRes.color ?? defaults.foreground,
@@ -251,7 +257,12 @@ class StyleParser {
     final softEdges =
         readLengthInches(shape, 'SoftEdgesSize') ?? defaults.softEdgesInches;
     final compoundType = _int(shape, 'CompoundType') ?? defaults.compoundType;
-    final gradient = _parseLineGradient(shape) ?? defaults.gradient;
+    // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
+    final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');
+    final parsedLineGrad = _parseLineGradient(shape);
+    final gradient = lineGradEnabledCell != null
+        ? parsedLineGrad
+        : (parsedLineGrad ?? defaults.gradient);
 
     return VsdxLine(
       color: colorRes.color ?? defaults.color,

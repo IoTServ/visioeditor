@@ -8302,6 +8302,108 @@ void main() {
     expect(outXml.contains('N="LockTextEdit" V="1"'), isTrue);
   });
 
+  test('VerticalAlign middle emitted on unlabeled shape group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    // Both unlabeled rects must carry explicit middle align (V=1).
+    expect(
+      RegExp(r'N="VerticalAlign"\s+V="1"').allMatches(pageXml).length,
+      greaterThanOrEqualTo(2),
+    );
+    // TxtAngle=0 and empty LayerMember always present after rebuild.
+    expect(RegExp(r'N="TxtAngle"\s+V="0').allMatches(pageXml).length,
+        greaterThanOrEqualTo(2));
+    expect(RegExp(r'N="LayerMember"\s+V=""').allMatches(pageXml).length,
+        greaterThanOrEqualTo(2));
+  });
+
+  test('cleared LayerMember stays empty across group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(layerMemberIds: const [0]),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    // Clear membership then group (rebuild path).
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .updateShapeById(id, (s) => s.copyWith(layerMemberIds: const []))
+          .group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.layerMemberIds, isEmpty);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="LayerMember" V=""'), isTrue);
+  });
+
   test('cleared arrows and HideText=0 survive group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

@@ -47,11 +47,14 @@ class LayerParser {
     return List.unmodifiable(out);
   }
 
-  /// Parse a shape's `LayerMember` cell into a list of layer ids. The cell
-  /// value is a semicolon-separated string ("0;3;5") or absent.
-  static List<int> parseLayerMembers(XmlElement shape) {
+  /// Parse a shape's `LayerMember` cell into a list of layer ids.
+  ///
+  /// Returns `null` when the cell is absent (inherit Master / prototype).
+  /// Returns an empty list when the cell is present with an empty `V`
+  /// (explicitly cleared membership).
+  static List<int>? parseLayerMembersOrNull(XmlElement shape) {
     final cell = findCell(shape, 'LayerMember');
-    if (cell == null) return const <int>[];
+    if (cell == null) return null;
     final v = cell.getAttribute('V');
     if (v == null || v.isEmpty) return const <int>[];
     final ids = <int>[];
@@ -61,6 +64,14 @@ class LayerParser {
     }
     return List.unmodifiable(ids);
   }
+
+  /// Parse a shape's `LayerMember` cell into a list of layer ids. The cell
+  /// value is a semicolon-separated string ("0;3;5") or absent.
+  ///
+  /// Absent and empty both yield `[]` — prefer [parseLayerMembersOrNull]
+  /// when Master inheritance must be distinguished from an explicit clear.
+  static List<int> parseLayerMembers(XmlElement shape) =>
+      parseLayerMembersOrNull(shape) ?? const <int>[];
 
   String? _cellString(XmlElement parent, String name) {
     final cell = findCell(parent, name);
