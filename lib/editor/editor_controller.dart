@@ -5516,6 +5516,69 @@ class EditorController extends ChangeNotifier {
 
   int _iconRebuildSerial = 0;
 
+  /// Caption height placed below an icon picture (inches).
+  static const double iconCaptionHeightInches = 0.22;
+
+  /// Attach [caption] under [shapeId] (TxtPin below the picture box).
+  /// Does not change the picture frame size so the glyph stays full-bleed.
+  /// Pass [transient] `true` to fold into the preceding undo step (e.g. insert).
+  void setIconCaptionBelow(
+    int shapeId,
+    String caption, {
+    bool transient = false,
+  }) {
+    final page = currentPage;
+    final s = page?.findShapeById(shapeId);
+    if (s == null || s.locked || isOnLockedLayer(shapeId)) return;
+    final text = caption.trim();
+    if (text.isEmpty) return;
+    final w = s.width.abs();
+    final labelH = iconCaptionHeightInches;
+    final labelW = math.max(w, 0.9);
+    final sizeInches = (8.0 / 72.0).clamp(4.0 / 72.0, 0.18);
+    final cjk = _containsCjk(text);
+    updateCurrentPage(
+      (p) => p.updateShapeById(
+        shapeId,
+        (sh) => sh.copyWith(
+          text: text,
+          fields: const <VsdxFieldRow>[],
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: text,
+                charStyle: VsdxCharStyle(
+                  fontSizeInches: sizeInches,
+                  fontFamily: cjk ? 'Microsoft YaHei' : null,
+                  asianFont: 'Microsoft YaHei',
+                  langId: cjk ? 'zh-CN' : null,
+                ),
+                paraStyle: const VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              pinXInches: w / 2,
+              // Sit just under the picture (shape-local Y-up; y=0 is bottom).
+              pinYInches: -labelH / 2,
+              locPinXInches: labelW / 2,
+              locPinYInches: labelH / 2,
+              widthInches: labelW,
+              heightInches: labelH,
+              verticalAlign: VsdxVertAlign.middle,
+              marginLeftInches: 0.02,
+              marginRightInches: 0.02,
+              marginTopInches: 0.01,
+              marginBottomInches: 0.01,
+            ),
+          ),
+        ),
+      ),
+      transient: transient,
+    );
+  }
+
   /// Selected picture that carries [IconOps] metadata, or null.
   int? get selectedIconId {
     final page = currentPage;

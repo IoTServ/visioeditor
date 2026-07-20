@@ -133,6 +133,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _stencilsUserAdjusted = false;
   bool _showImageMaterials = false;
   bool _showThirdPartyIcons = false;
+  /// When true, newly inserted third-party icons get a caption under the glyph.
+  bool _addIconLabel = true;
   bool _showCharts = false;
   bool _showFind = false;
   bool _findShowReplace = false;
@@ -375,6 +377,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   /// Rasterise a third-party [IconData] and insert it as a picture shape.
+  /// When [_addIconLabel] is true, places [entry.name] as a caption below the
+  /// icon (not overlaid on the glyph via the shape-name fallback).
   Future<void> _insertThirdPartyIcon(
     ThirdPartyIcon entry, {
     Offset? pagePt,
@@ -396,7 +400,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
         heightInches: kThirdPartyIconMaxInches,
         cx: pagePt?.dx,
         cy: pagePt?.dy,
-        name: entry.name,
+        // Keep auto Sheet.N name so the painter does not treat the display
+        // name as an on-glyph label fallback.
         userCells: providerId == null
             ? null
             : IconOps.meta(
@@ -405,6 +410,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 colorArgb: colorArgb,
               ),
       );
+      if (_addIconLabel) {
+        final id = c.singleSelectedId;
+        if (id != null) {
+          c.setIconCaptionBelow(id, entry.name, transient: true);
+        }
+      }
       _snack(EditorL10n.of(context).insertedNamed(entry.name));
     } catch (_) {
       if (mounted) {
@@ -1131,6 +1142,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 : _showThirdPartyIcons
                     ? _ThirdPartyIconsPanel(
                         key: const ValueKey<String>('third-party-icons-panel'),
+                        addLabel: _addIconLabel,
+                        onAddLabelChanged: (v) =>
+                            setState(() => _addIconLabel = v),
                         onInsert: _insertThirdPartyIcon,
                       )
                     : _showCharts
@@ -2697,9 +2711,13 @@ class _ThirdPartyIconsPanel extends StatefulWidget {
   const _ThirdPartyIconsPanel({
     super.key,
     required this.onInsert,
+    required this.addLabel,
+    required this.onAddLabelChanged,
   });
 
   final Future<void> Function(ThirdPartyIcon icon, {Offset? pagePt}) onInsert;
+  final bool addLabel;
+  final ValueChanged<bool> onAddLabelChanged;
 
   @override
   State<_ThirdPartyIconsPanel> createState() => _ThirdPartyIconsPanelState();
@@ -2758,6 +2776,23 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
                 ),
                 style: const TextStyle(fontSize: 13),
                 onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+              child: CheckboxListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: widget.addLabel,
+                onChanged: (v) {
+                  if (v != null) widget.onAddLabelChanged(v);
+                },
+                title: Text(
+                  el.addIconLabel,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
               ),
             ),
             Padding(

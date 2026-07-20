@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:visioeditor/editor/third_party_icons.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -39,5 +42,32 @@ void main() {
   test('findProviderIdForIcon resolves catalog instances', () {
     final entry = findThirdPartyIcon('phosphor', 'cloud')!;
     expect(findProviderIdForIcon(entry), 'phosphor');
+  });
+
+  test('setIconCaptionBelow places text under the picture', () {
+    final c = EditorController();
+    c.newDocument();
+    final bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
+    c.insertImage(
+      bytes,
+      fileExtension: 'png',
+      widthInches: 0.75,
+      heightInches: 0.75,
+      userCells: IconOps.meta(
+        providerId: 'material',
+        iconId: 'cloud',
+        colorArgb: IconOps.defaultColorArgb,
+      ),
+    );
+    final id = c.singleSelectedId!;
+    c.setIconCaptionBelow(id, 'Cloud');
+    final shape = c.currentPage!.findShapeById(id)!;
+    expect(shape.text, 'Cloud');
+    expect(shape.richText.plainText, 'Cloud');
+    final block = shape.richText.textBlock;
+    expect(block.pinYInches, lessThan(0));
+    expect(block.pinXInches, closeTo(shape.width / 2, 1e-6));
+    // Shape name stays auto so the painter won't overlay a name fallback.
+    expect(shape.name, matches(RegExp(r'^Sheet\.\d+$')));
   });
 }

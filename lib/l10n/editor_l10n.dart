@@ -151,6 +151,7 @@ class EditorL10n {
   String get chartsLibrary => _t('chartsLibrary');
   String get searchCharts => _t('searchCharts');
   String get iconLicenseHint => _t('iconLicenseHint');
+  String get addIconLabel => _t('addIconLabel');
   String categoriesCount(int n) =>
       _t('categoriesCount').replaceAll('{n}', '$n');
   String get expandAll => _t('expandAll');
