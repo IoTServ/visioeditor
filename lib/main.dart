@@ -124,6 +124,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
   /// Flowchart / Arrows): at this width the shapes sidebar opens by default.
   static const double _stencilsSidebarBreakpoint = 900;
 
+  /// Phones / small tablets: docked property + library sidebars would leave
+  /// almost no canvas (56 + 232 ≈ 288px chrome). Use overlays instead.
+  static const double _compactLayoutBreakpoint = 720;
+
   final EditorWorkspace _workspace = EditorWorkspace();
   final RecentFiles _recentFiles = RecentFiles();
   List<String> _recents = const <String>[];
@@ -266,6 +270,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  bool get _isCompactLayout =>
+      MediaQuery.sizeOf(context).width < _compactLayoutBreakpoint;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -276,6 +283,62 @@ class _EditorHomePageState extends State<EditorHomePage> {
       _showStencils =
           MediaQuery.sizeOf(context).width >= _stencilsSidebarBreakpoint;
     }
+  }
+
+  /// Compact screens: format inspector as a bottom sheet so the canvas keeps
+  /// full remaining width beside the tool strip.
+  Future<void> _openFormatSheet(EditorController c) async {
+    final el = EditorL10n.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.85;
+        return SizedBox(
+          height: maxH,
+          child: ListenableBuilder(
+            listenable: c,
+            builder: (context, _) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            c.hasSelection
+                                ? el.selectedCount(c.selection.length)
+                                : el.panelDiagram,
+                            style: Theme.of(context).textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: el.close,
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: c.hasSelection
+                        ? _PropertyPanel(controller: c, fillWidth: true)
+                        : _PageFormatPanel(controller: c, fillWidth: true),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   void _closeLibrarySidebars({bool keepStencils = false}) {
@@ -1567,32 +1630,47 @@ class _EditorHomePageState extends State<EditorHomePage> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              if (page != null) ...[
-                Icon(Icons.crop_free, size: 13, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 4),
+              if (page != null)
+                Flexible(
+                  flex: 3,
+                  child: Row(
+                    children: [
+                      Icon(Icons.crop_free,
+                          size: 13, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          '${_trimNum(page.widthInches)} × '
+                          '${_trimNum(page.heightInches)} in · '
+                          '${el.pageOf(c.currentPageIndex + 1, c.pageCount)}',
+                          style: style,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (c.isDirty)
                 Flexible(
                   child: Text(
-                    '${_trimNum(page.widthInches)} × '
-                    '${_trimNum(page.heightInches)} in · '
-                    '${el.pageOf(c.currentPageIndex + 1, c.pageCount)}',
+                    el.unsaved,
                     style: style,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
                   ),
                 ),
-              ],
-              const Spacer(),
-              if (c.isDirty) ...[
-                Text(el.unsaved, style: style),
-                const SizedBox(width: 12),
-              ],
-              Text(
-                selCount == 0
-                    ? el.noSelection
-                    : el.selectedCount(selCount),
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Flexible(
+                child: Text(
+                  selCount == 0
+                      ? el.noSelection
+                      : el.selectedCount(selCount),
+                  style: style,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                ),
               ),
             ],
           ),
@@ -1652,6 +1730,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
         onOpenExample: _openExample,
       );
     }
+    final compact = _isCompactLayout;
+    final screenW = MediaQuery.sizeOf(context).width;
+    // Floating panels must fit inside the canvas strip (tool strip is 56).
+    final floatMaxW = math.max(160.0, screenW - (compact ? 72 : 48));
     return Row(
       children: [
         if (!_presentationMode) ...[
@@ -1667,14 +1749,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
             onToggleCharts: _toggleCharts,
           ),
           const VerticalDivider(width: 1),
-          // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
-          if (stencilChild != null) ...[
+          // Docked library only on wide layouts; compact uses a canvas overlay.
+          if (!compact && stencilChild != null) ...[
             stencilChild,
             const VerticalDivider(width: 1),
           ],
         ],
         Expanded(
           child: Stack(
+            clipBehavior: Clip.hardEdge,
             children: [
               Positioned.fill(
                 key: _canvasHostKey,
@@ -1702,27 +1785,53 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 ),
               if (!_presentationMode && _showOutline)
                 Positioned(
-                  right: 16,
-                  bottom: 64,
+                  right: 12,
+                  bottom: compact ? 72 : 64,
                   child: OutlinePanel(
                     controller: c,
                     camera: _camera,
+                    width: math.min(220, floatMaxW),
+                    height: math.min(165, floatMaxW * 0.75),
                     onClose: () => setState(() => _showOutline = false),
                   ),
                 ),
               if (!_presentationMode && _showLayersPanel)
                 Positioned(
-                  left: 16,
-                  top: 16,
+                  left: 12,
+                  top: 12,
                   child: LayersPanel(
                     controller: c,
+                    width: math.min(300, floatMaxW),
                     onClose: () => setState(() => _showLayersPanel = false),
+                  ),
+                ),
+              if (compact && !_presentationMode && stencilChild != null)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Material(
+                    elevation: 8,
+                    child: stencilChild,
+                  ),
+                ),
+              if (compact && !_presentationMode)
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: FloatingActionButton.small(
+                    heroTag: 'format-sheet',
+                    tooltip: c.hasSelection
+                        ? EditorL10n.of(context).selectedCount(c.selection.length)
+                        : EditorL10n.of(context).panelDiagram,
+                    onPressed: () => _openFormatSheet(c),
+                    child: const Icon(Icons.tune),
                   ),
                 ),
             ],
           ),
         ),
-        if (!_presentationMode) ...[
+        if (!compact && !_presentationMode) ...[
           const VerticalDivider(width: 1),
           // drawio always keeps the Format panel docked: a shape inspector when
           // something is selected, otherwise the page/"Diagram" settings.
@@ -1925,62 +2034,77 @@ class _EmptyState extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
     final el = EditorL10n.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.account_tree_outlined, size: 72, color: scheme.primary),
-          const SizedBox(height: 20),
-          Text(
-            l10n.appTitle,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            el.emptySubtitle,
-            style: TextStyle(color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 20),
-          // Wrap so narrow windows do not overflow the two CTAs.
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              FilledButton.icon(
-                onPressed: onNew,
-                icon: const Icon(Icons.note_add_outlined),
-                label: Text(el.newDrawing),
-              ),
-              OutlinedButton.icon(
-                onPressed: onOpen,
-                icon: const Icon(Icons.folder_open_outlined),
-                label: Text(el.openVisioDrawing),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          Text(el.orTrySample,
-              style: TextStyle(color: scheme.onSurfaceVariant)),
-          const SizedBox(height: 10),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final e in examples)
-                  ActionChip(
-                    avatar: const Icon(Icons.description_outlined, size: 18),
-                    label: Text(_exampleLabel(context, e)),
-                    onPressed: () => onOpenExample(e),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.account_tree_outlined,
+                      size: 72, color: scheme.primary),
+                  const SizedBox(height: 20),
+                  Text(
+                    l10n.appTitle,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
                   ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    el.emptySubtitle,
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  // Wrap so narrow windows do not overflow the two CTAs.
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: onNew,
+                        icon: const Icon(Icons.note_add_outlined),
+                        label: Text(el.newDrawing),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onOpen,
+                        icon: const Icon(Icons.folder_open_outlined),
+                        label: Text(el.openVisioDrawing),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  Text(el.orTrySample,
+                      style: TextStyle(color: scheme.onSurfaceVariant)),
+                  const SizedBox(height: 10),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final e in examples)
+                          ActionChip(
+                            avatar: const Icon(Icons.description_outlined,
+                                size: 18),
+                            label: Text(_exampleLabel(context, e)),
+                            onPressed: () => onOpenExample(e),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -2279,12 +2403,17 @@ class _StencilPanelState extends State<_StencilPanel> {
       padding: const EdgeInsets.fromLTRB(12, 0, 4, 0),
       child: Row(
         children: [
-          Text(el.categoriesCount(kStencilGroups.length),
+          Flexible(
+            child: Text(
+              el.categoriesCount(kStencilGroups.length),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
-                  ?.copyWith(color: scheme.onSurfaceVariant)),
-          const Spacer(),
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
           btn(Icons.unfold_more, el.expandAll,
               allExpanded ? null : () => _setAllCollapsed(false)),
           btn(Icons.unfold_less, el.collapseAll,
@@ -2897,6 +3026,8 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
               padding: const EdgeInsets.fromLTRB(12, 0, 8, 2),
               child: Text(
                 el.categoriesCount(kThirdPartyIconProviders.length),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context)
                     .textTheme
                     .labelSmall
@@ -2907,6 +3038,8 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
               padding: const EdgeInsets.fromLTRB(12, 0, 8, 4),
               child: Text(
                 el.iconLicenseHint,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                       fontSize: 10,
@@ -3225,9 +3358,11 @@ class _StencilThumbPainter extends CustomPainter {
 
 /// Right-hand inspector for the current selection (fill / line / delete).
 class _PropertyPanel extends StatelessWidget {
-  const _PropertyPanel({required this.controller});
+  const _PropertyPanel({required this.controller, this.fillWidth = false});
 
   final EditorController controller;
+  /// When true (compact bottom sheet), stretch to the parent width.
+  final bool fillWidth;
 
   static const List<int> _swatches = <int>[
     0xFFFFFFFF,
@@ -3246,7 +3381,7 @@ class _PropertyPanel extends StatelessWidget {
     final isChart = controller.selectedChartId != null;
     final isIcon = controller.selectedIconId != null;
     return SizedBox(
-      width: (isChart || isIcon) ? 300 : 232,
+      width: fillWidth ? double.infinity : ((isChart || isIcon) ? 300 : 232),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -4804,9 +4939,11 @@ class _Paper {
 /// tab: grid / snap toggles, page background colour, and paper size (preset +
 /// orientation + custom width/height). All changes round-trip via the writer.
 class _PageFormatPanel extends StatelessWidget {
-  const _PageFormatPanel({required this.controller});
+  const _PageFormatPanel({required this.controller, this.fillWidth = false});
 
   final EditorController controller;
+  /// When true (compact bottom sheet), stretch to the parent width.
+  final bool fillWidth;
 
   static const List<int> _backgrounds = <int>[
     0xFFFFFFFF,
@@ -4836,7 +4973,9 @@ class _PageFormatPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final size = controller.pageSize;
-    if (size == null) return const SizedBox(width: 232);
+    if (size == null) {
+      return SizedBox(width: fillWidth ? double.infinity : 232);
+    }
     final w = size.width;
     final h = size.height;
     final landscape = controller.pageIsLandscape;
@@ -4844,7 +4983,7 @@ class _PageFormatPanel extends StatelessWidget {
     final bg = controller.pageBackgroundColor;
 
     return SizedBox(
-      width: 232,
+      width: fillWidth ? double.infinity : 232,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
