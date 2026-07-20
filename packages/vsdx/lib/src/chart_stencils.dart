@@ -38,6 +38,32 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.lollipopChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Horizontal Lollipop',
+      (id, cx, cy) =>
+          ChartOps.horizontalLollipopChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Histogram',
+      (id, cx, cy) => ChartOps.histogramChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Diverging Bar',
+      (id, cx, cy) => ChartOps.divergingBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Dot Plot',
+      (id, cx, cy) => ChartOps.dotPlotChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Composition Bar',
+      (id, cx, cy) =>
+          ChartOps.compositionBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Treemap',
+      (id, cx, cy) => ChartOps.treemapChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Pie Chart',
       (id, cx, cy) => ChartOps.pieChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -92,6 +118,10 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Ring Progress',
       (id, cx, cy) => ChartOps.ringProgressChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Bullet Chart',
+      (id, cx, cy) => ChartOps.bulletChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Waterfall',

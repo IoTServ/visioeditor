@@ -42,16 +42,27 @@ abstract final class ChartOps {
     ('Bars & columns', <String>[
       'column',
       'bar',
+      'histogram',
       'stackedColumn',
       'stackedBar',
       'clusteredColumn',
       'clusteredBar',
       'lollipop',
+      'horizontalLollipop',
+      'divergingBar',
+      'dotPlot',
     ]),
     ('Pies', <String>['pie', 'donut', 'semiDonut', 'rose']),
     ('Lines & areas', <String>['line', 'stepLine', 'area', 'radar']),
-    ('Process', <String>['funnel', 'pyramid', 'waterfall', 'radialBar']),
-    ('Meters', <String>['gauge', 'progress', 'ringProgress']),
+    ('Process', <String>[
+      'funnel',
+      'pyramid',
+      'waterfall',
+      'radialBar',
+      'compositionBar',
+      'treemap',
+    ]),
+    ('Meters', <String>['gauge', 'progress', 'ringProgress', 'bullet']),
     ('Other', <String>['bubble']),
   ];
 
@@ -59,11 +70,15 @@ abstract final class ChartOps {
   static const Map<String, String> kindDisplayNames = <String, String>{
     'column': 'Column Chart',
     'bar': 'Bar Chart',
+    'histogram': 'Histogram',
     'stackedColumn': 'Stacked Column',
     'stackedBar': 'Stacked Bar',
     'clusteredColumn': 'Clustered Column',
     'clusteredBar': 'Clustered Bar',
     'lollipop': 'Lollipop Chart',
+    'horizontalLollipop': 'Horizontal Lollipop',
+    'divergingBar': 'Diverging Bar',
+    'dotPlot': 'Dot Plot',
     'pie': 'Pie Chart',
     'donut': 'Donut Chart',
     'semiDonut': 'Semi Donut',
@@ -75,9 +90,12 @@ abstract final class ChartOps {
     'pyramid': 'Pyramid Chart',
     'radar': 'Radar Chart',
     'radialBar': 'Radial Bar',
+    'compositionBar': 'Composition Bar',
+    'treemap': 'Treemap',
     'gauge': 'Gauge',
     'progress': 'Progress',
     'ringProgress': 'Ring Progress',
+    'bullet': 'Bullet Chart',
     'waterfall': 'Waterfall',
     'bubble': 'Bubble Chart',
   };
@@ -361,7 +379,10 @@ abstract final class ChartOps {
       ];
 
   static bool isSingleValueKind(String kind) =>
-      kind == 'gauge' || kind == 'progress' || kind == 'ringProgress';
+      kind == 'gauge' ||
+      kind == 'progress' ||
+      kind == 'ringProgress' ||
+      kind == 'bullet';
 
   static List<VsdxColor> padColors(List<VsdxColor> colors, int n) {
     if (n <= 0) return const <VsdxColor>[];
@@ -731,6 +752,69 @@ abstract final class ChartOps {
             pinY: pinY,
             width: width ?? 2.4,
             height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'horizontalLollipop':
+        return horizontalLollipopChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'histogram':
+        return histogramChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'divergingBar':
+        return divergingBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'dotPlot':
+        return dotPlotChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'compositionBar':
+        return compositionBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 0.7,
+            values: values,
+            allocId: allocId);
+      case 'treemap':
+        return treemapChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'bullet':
+        return bulletChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 0.7,
             values: values,
             allocId: allocId);
       case 'pie':
@@ -2501,6 +2585,473 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'ringProgress',
+      values: vals,
+    );
+  }
+
+  static VsdxShape histogramChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.2, 0.35, 0.55, 0.8, 0.65, 0.4, 0.25];
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.08;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.015;
+    final barW = (plotW - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final bh = plotH * unit[i];
+      final cx = padL + gap + barW / 2 + i * (barW + gap);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: padB + bh / 2,
+        width: barW,
+        height: bh,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'histogram',
+      values: vals,
+    );
+  }
+
+  static VsdxShape horizontalLollipopChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - h * 0.08;
+    final gap = plotH * 0.08;
+    final slot = (plotH - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final cy = padB + gap + slot / 2 + i * (slot + gap);
+      final tip = padL + plotW * unit[i];
+      final stemW = math.max(tip - padL, 0.04);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + stemW / 2,
+        pinY: cy,
+        width: stemW,
+        height: 0.03,
+        fill: const VsdxColor(0xFFB0B0B0),
+        chrome: true,
+      ));
+      const r = 0.07;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: tip,
+        pinY: cy,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: seriesColors[i % seriesColors.length]),
+        line: _barLine(seriesColors[i % seriesColors.length]),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'horizontalLollipop',
+      values: vals,
+    );
+  }
+
+  static VsdxShape divergingBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[-0.4, 0.55, -0.25, 0.7, 0.35];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.08;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - h * 0.08;
+    final midX = padL + plotW / 2;
+    final maxAbs = vals.map((v) => v.abs()).fold(0.0, math.max);
+    final scale = maxAbs > 0 ? (plotW / 2) / maxAbs : plotW / 2;
+    final gap = plotH * 0.08;
+    final barH = (plotH - gap * (vals.length + 1)) / vals.length;
+    final kids = <VsdxShape>[
+      _axesChild(id: next(), width: w, height: h),
+      // Center baseline.
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: midX,
+        pinY: padB + plotH / 2,
+        width: 0.02,
+        height: plotH,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.01, 0),
+              LineTo(0.01, plotH),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFF888888),
+          weightInches: 0.01,
+        ),
+        userCells: _chromeMeta,
+      ),
+    ];
+    for (var i = 0; i < vals.length; i++) {
+      final v = vals[i];
+      final bw = math.max(v.abs() * scale, 0.04);
+      final cy = padB + gap + barH / 2 + i * (barH + gap);
+      final cx = v >= 0 ? midX + bw / 2 : midX - bw / 2;
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: cy,
+        width: bw,
+        height: barH * 0.85,
+        fill: v >= 0 ? seriesColors[0] : seriesColors[1],
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'divergingBar',
+      values: vals,
+    );
+  }
+
+  static VsdxShape dotPlotChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - h * 0.08;
+    final gap = plotH * 0.08;
+    final slot = (plotH - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final cy = padB + gap + slot / 2 + i * (slot + gap);
+      final cx = padL + plotW * unit[i];
+      // Guide line (chrome).
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW / 2,
+        pinY: cy,
+        width: plotW,
+        height: 0.015,
+        fill: const VsdxColor(0xFFD0D0D0),
+        chrome: true,
+      ));
+      const r = 0.08;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: cy,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: seriesColors[i % seriesColors.length]),
+        line: _barLine(seriesColors[i % seriesColors.length]),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'dotPlot',
+      values: vals,
+    );
+  }
+
+  static VsdxShape compositionBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 0.7,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.3, 0.25, 0.2, 0.15, 0.1];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final sum = vals.fold<double>(0, (a, b) => a + b.abs());
+    final total = sum > 0 ? sum : 1.0;
+    final barH = h * 0.55;
+    final kids = <VsdxShape>[];
+    var x0 = 0.0;
+    for (var i = 0; i < vals.length; i++) {
+      final bw = math.max(w * (vals[i].abs() / total), 0.04);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: x0 + bw / 2,
+        pinY: h / 2,
+        width: bw,
+        height: barH,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+      x0 += bw;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'compositionBar',
+      values: vals,
+    );
+  }
+
+  static VsdxShape treemapChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.35, 0.25, 0.2, 0.12, 0.08];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final kids = <VsdxShape>[];
+    final absVals = <double>[for (final v in vals) v.abs()];
+    final total = absVals.fold<double>(0, (a, b) => a + b);
+    final norm = total > 0
+        ? absVals
+        : List<double>.filled(math.max(vals.length, 1), 1);
+
+    void layout(
+      List<int> idxs,
+      double x,
+      double y,
+      double rw,
+      double rh,
+    ) {
+      if (idxs.isEmpty) return;
+      if (idxs.length == 1) {
+        final i = idxs.first;
+        final gap = 0.02;
+        kids.add(_rectChild(
+          id: next(),
+          pinX: x + rw / 2,
+          pinY: y + rh / 2,
+          width: math.max(rw - gap, 0.04),
+          height: math.max(rh - gap, 0.04),
+          fill: seriesColors[i % seriesColors.length],
+        ));
+        return;
+      }
+      var halfSum = 0.0;
+      final target =
+          idxs.fold<double>(0, (a, i) => a + norm[i]) / 2;
+      var split = 1;
+      for (var k = 0; k < idxs.length - 1; k++) {
+        halfSum += norm[idxs[k]];
+        split = k + 1;
+        if (halfSum >= target) break;
+      }
+      final left = idxs.sublist(0, split);
+      final right = idxs.sublist(split);
+      final leftSum = left.fold<double>(0, (a, i) => a + norm[i]);
+      final allSum = leftSum + right.fold<double>(0, (a, i) => a + norm[i]);
+      final frac = allSum > 0 ? leftSum / allSum : 0.5;
+      if (rw >= rh) {
+        final lw = rw * frac;
+        layout(left, x, y, lw, rh);
+        layout(right, x + lw, y, rw - lw, rh);
+      } else {
+        final th = rh * frac;
+        layout(left, x, y, rw, th);
+        layout(right, x, y + th, rw, rh - th);
+      }
+    }
+
+    layout(
+      <int>[for (var i = 0; i < vals.length; i++) i],
+      0.04,
+      0.04,
+      w - 0.08,
+      h - 0.08,
+    );
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'treemap',
+      values: vals,
+    );
+  }
+
+  static VsdxShape bulletChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 0.7,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.72];
+    final level = vals.first.clamp(0.0, 1.0);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final trackH = h * 0.55;
+    final kids = <VsdxShape>[
+      // Qualitative bands (chrome).
+      _rectChild(
+        id: next(),
+        pinX: w * 0.3 / 2,
+        pinY: h / 2,
+        width: w * 0.3,
+        height: trackH,
+        fill: const VsdxColor(0xFFD9D9D9),
+        chrome: true,
+      ),
+      _rectChild(
+        id: next(),
+        pinX: w * 0.3 + w * 0.35 / 2,
+        pinY: h / 2,
+        width: w * 0.35,
+        height: trackH,
+        fill: const VsdxColor(0xFFBDBDBD),
+        chrome: true,
+      ),
+      _rectChild(
+        id: next(),
+        pinX: w * 0.65 + w * 0.35 / 2,
+        pinY: h / 2,
+        width: w * 0.35,
+        height: trackH,
+        fill: const VsdxColor(0xFF9E9E9E),
+        chrome: true,
+      ),
+      // Value bar.
+      _rectChild(
+        id: next(),
+        pinX: (w * level) / 2,
+        pinY: h / 2,
+        width: math.max(w * level, 0.04),
+        height: trackH * 0.45,
+        fill: seriesColors.first,
+      ),
+      // Target marker (chrome).
+      _rectChild(
+        id: next(),
+        pinX: w * 0.85,
+        pinY: h / 2,
+        width: 0.035,
+        height: trackH * 0.9,
+        fill: const VsdxColor(0xFF333333),
+        chrome: true,
+      ),
+    ];
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'bullet',
       values: vals,
     );
   }

@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(23));
+    expect(kChartStencils, hasLength(30));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -142,6 +142,12 @@ void main() {
       'stepLine',
       'radialBar',
       'clusteredBar',
+      'histogram',
+      'horizontalLollipop',
+      'divergingBar',
+      'dotPlot',
+      'compositionBar',
+      'treemap',
     ]) {
       final chart = ChartOps.buildKind(
         kind,
@@ -193,6 +199,13 @@ void main() {
     );
     expect(ChartOps.chartKind(back), 'lollipop');
     expect(ChartOps.chartValues(back), <double>[0.2, 0.4, 0.6]);
+  });
+
+  test('bullet is a single-value kind', () {
+    final chart = ChartOps.bulletChart(id: 2, pinX: 1, pinY: 1);
+    expect(ChartOps.isSingleValueKind('bullet'), isTrue);
+    expect(ChartOps.chartValues(chart), hasLength(1));
+    expect(ChartOps.seriesChildren(chart), hasLength(1));
   });
 
   test('parseSeriesPaste supports labeled pairs', () {
