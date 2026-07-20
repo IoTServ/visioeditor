@@ -261,9 +261,14 @@ class VsdxCharStyle {
     String? complexScriptFont,
     String? langId,
     double? complexScriptSizeInches,
+    bool clearFontFamily = false,
+    bool clearAsianFont = false,
+    bool clearComplexScriptFont = false,
+    bool clearLangId = false,
+    bool clearComplexScriptSize = false,
   }) =>
       VsdxCharStyle(
-        fontFamily: fontFamily ?? this.fontFamily,
+        fontFamily: clearFontFamily ? null : (fontFamily ?? this.fontFamily),
         fontSizeInches: fontSizeInches ?? this.fontSizeInches,
         style: style ?? this.style,
         color: color ?? this.color,
@@ -280,11 +285,14 @@ class VsdxCharStyle {
         position: position ?? this.position,
         textCase: textCase ?? this.textCase,
         fontScale: fontScale ?? this.fontScale,
-        asianFont: asianFont ?? this.asianFont,
-        complexScriptFont: complexScriptFont ?? this.complexScriptFont,
-        langId: langId ?? this.langId,
-        complexScriptSizeInches:
-            complexScriptSizeInches ?? this.complexScriptSizeInches,
+        asianFont: clearAsianFont ? null : (asianFont ?? this.asianFont),
+        complexScriptFont: clearComplexScriptFont
+            ? null
+            : (complexScriptFont ?? this.complexScriptFont),
+        langId: clearLangId ? null : (langId ?? this.langId),
+        complexScriptSizeInches: clearComplexScriptSize
+            ? null
+            : (complexScriptSizeInches ?? this.complexScriptSizeInches),
       );
 }
 

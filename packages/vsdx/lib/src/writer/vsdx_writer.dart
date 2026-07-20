@@ -2762,6 +2762,8 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'Type'), p.type.toString());
       if (p.sortKey != null) {
         _writeValue(_ensureCell(row, 'SortKey'), p.sortKey!);
+      } else {
+        _removeNamedCells(row, const ['SortKey']);
       }
       _writeValue(_ensureCell(row, 'Invisible'), p.invisible ? '1' : '0');
       _writeValue(_ensureCell(row, 'Verify'), p.verify ? '1' : '0');
@@ -2769,9 +2771,13 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'DataLinked'), p.dataLinked ? '1' : '0');
       if (p.langId != null) {
         _writeValue(_ensureCell(row, 'LangID'), p.langId!);
+      } else {
+        _removeNamedCells(row, const ['LangID']);
       }
       if (p.calendar != null) {
         _writeValue(_ensureCell(row, 'Calendar'), p.calendar.toString());
+      } else {
+        _removeNamedCells(row, const ['Calendar']);
       }
     }
     return true;
@@ -2843,6 +2849,8 @@ class VsdxWriter {
       }
       if (c.prompt != null) {
         _writeValue(_ensureCell(row, 'Prompt'), c.prompt!);
+      } else {
+        _removeNamedCells(row, const ['Prompt']);
       }
     }
     return true;
@@ -3057,7 +3065,10 @@ class VsdxWriter {
   bool _patchRichText(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_richTextEqual(base.richText, edited.richText)) return false;
     final runs = edited.richText.runs;
-    if (runs.isEmpty) return false;
+    if (runs.isEmpty) {
+      // Align with rebuild: no text runs → drop Character / Paragraph.
+      return _removeCharacterParagraphSections(el);
+    }
 
     final charSection = _ensureSection(el, 'Character');
     final paraSection = _ensureSection(el, 'Paragraph');
@@ -3084,6 +3095,20 @@ class VsdxWriter {
       paraSection.children.remove(paraRows[i]);
     }
     return true;
+  }
+
+  /// Drop local Character / Paragraph sections (empty label / clear text).
+  bool _removeCharacterParagraphSections(XmlElement el) {
+    var changed = false;
+    for (final child in el.childElements.toList()) {
+      if (child.name.local != 'Section') continue;
+      final n = child.getAttribute('N');
+      if (n == 'Character' || n == 'Paragraph') {
+        child.parent?.children.remove(child);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   bool _patchTabs(XmlElement el, VsdxShape base, VsdxShape edited) {
@@ -3123,8 +3148,11 @@ class VsdxWriter {
       // THEMEVAL cannot revive on the next reopen.
       _removeNamedCells(row, const ['Color']);
     }
-    if (c.fontFamily != null) {
+    if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'Font'), c.fontFamily!);
+    } else {
+      // Match rebuild: omit Font when unbound so a prior face cannot stick.
+      _removeNamedCells(row, const ['Font']);
     }
     _writeValue(_ensureCell(row, 'Strikethru'), c.strikethrough ? '1' : '0');
     // Always write these managed cells so clearing a style (e.g. DblUnderline
@@ -3142,16 +3170,24 @@ class VsdxWriter {
     _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'AsianFont'), c.asianFont!);
+    } else {
+      _removeNamedCells(row, const ['AsianFont']);
     }
     if (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'ComplexScriptFont'), c.complexScriptFont!);
+    } else {
+      _removeNamedCells(row, const ['ComplexScriptFont']);
     }
     if (c.langId != null && c.langId!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'LangID'), c.langId!);
+    } else {
+      _removeNamedCells(row, const ['LangID']);
     }
     if (c.complexScriptSizeInches != null) {
       _writeValue(_ensureCell(row, 'ComplexScriptSize'),
           _fmt(c.complexScriptSizeInches!));
+    } else {
+      _removeNamedCells(row, const ['ComplexScriptSize']);
     }
   }
 
@@ -3887,12 +3923,14 @@ class VsdxWriter {
   }
 
   void _patchTextStyleSections(XmlElement el, List<VsdxTextRun> runs) {
-    if (runs.isEmpty) return;
+    // Always drop existing Character/Paragraph first so an empty label does
+    // not leave stale Font rows (rebuild omits both sections when no text).
     for (final child in el.childElements.toList()) {
       if (child.name.local != 'Section') continue;
       final n = child.getAttribute('N');
       if (n == 'Character' || n == 'Paragraph') child.remove();
     }
+    if (runs.isEmpty) return;
     XmlElement? textEl;
     for (final c in el.childElements) {
       if (c.name.local == 'Text') {

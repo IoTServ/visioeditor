@@ -99,8 +99,9 @@ class VsdxUserProperty {
   String get displayLabel => label?.trim().isNotEmpty == true ? label! : name;
   String get displayValue => value ?? '';
 
-  /// Functional update. As with [VsdxShape.copyWith], omitted nullable fields
-  /// keep their current value (they can't be reset to `null` via `copyWith`).
+  /// Functional update. Pass [clearPrompt] / [clearSortKey] / … to reset a
+  /// nullable field to `null` (plain `copyWith(prompt: null)` keeps the old
+  /// value, matching [VsdxShape.copyWith]).
   VsdxUserProperty copyWith({
     String? name,
     String? label,
@@ -116,22 +117,28 @@ class VsdxUserProperty {
     bool? dataLinked,
     String? langId,
     int? calendar,
+    bool clearLabel = false,
+    bool clearPrompt = false,
+    bool clearFormat = false,
+    bool clearSortKey = false,
+    bool clearLangId = false,
+    bool clearCalendar = false,
   }) {
     return VsdxUserProperty(
       name: name ?? this.name,
-      label: label ?? this.label,
+      label: clearLabel ? null : (label ?? this.label),
       value: value ?? this.value,
       valueFormula: valueFormula ?? this.valueFormula,
-      prompt: prompt ?? this.prompt,
-      format: format ?? this.format,
+      prompt: clearPrompt ? null : (prompt ?? this.prompt),
+      format: clearFormat ? null : (format ?? this.format),
       type: type ?? this.type,
-      sortKey: sortKey ?? this.sortKey,
+      sortKey: clearSortKey ? null : (sortKey ?? this.sortKey),
       invisible: invisible ?? this.invisible,
       verify: verify ?? this.verify,
       ask: ask ?? this.ask,
       dataLinked: dataLinked ?? this.dataLinked,
-      langId: langId ?? this.langId,
-      calendar: calendar ?? this.calendar,
+      langId: clearLangId ? null : (langId ?? this.langId),
+      calendar: clearCalendar ? null : (calendar ?? this.calendar),
     );
   }
 
@@ -199,12 +206,13 @@ class VsdxUserCell {
     String? value,
     String? valueFormula,
     String? prompt,
+    bool clearPrompt = false,
   }) =>
       VsdxUserCell(
         name: name ?? this.name,
         value: value ?? this.value,
         valueFormula: valueFormula ?? this.valueFormula,
-        prompt: prompt ?? this.prompt,
+        prompt: clearPrompt ? null : (prompt ?? this.prompt),
       );
 
   @override

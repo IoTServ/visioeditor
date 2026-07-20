@@ -8805,4 +8805,195 @@ void main() {
     expect(m, isNotNull);
     expect(m!.group(0)!.contains('F="Inh"'), isFalse);
   });
+
+  test('Character Font/LangID clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Georgia',
+                  asianFont: 'SimSun',
+                  langId: 'zh-CN',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) {
+          final run = s.richText.runs.first;
+          return s.copyWith(
+            richText: s.richText.copyWith(
+              runs: [
+                run.copyWith(
+                  charStyle: run.charStyle.copyWith(
+                    clearFontFamily: true,
+                    clearAsianFont: true,
+                    clearLangId: true,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Font"'), isFalse);
+    expect(pageXml.contains('N="AsianFont"'), isFalse);
+    expect(pageXml.contains('N="LangID"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.runs.first.charStyle.fontFamily, isNull);
+    expect(after.richText.runs.first.charStyle.asianFont, isNull);
+    expect(after.richText.runs.first.charStyle.langId, isNull);
+  });
+
+  test('empty text drops Character/Paragraph on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle: VsdxCharStyle(fontFamily: 'Georgia'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(text: '', richText: VsdxRichText.empty),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Character"'), isFalse);
+    expect(pageXml.contains('N="Paragraph"'), isFalse);
+    expect(pageXml.contains('Georgia'), isFalse);
+  });
+
+  test('User Prompt and Property SortKey clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          userCells: const [
+            VsdxUserCell(name: 'Row_1', value: '1', prompt: 'hint'),
+          ],
+          userProperties: const [
+            VsdxUserProperty(
+              name: 'Prop1',
+              value: 'x',
+              sortKey: '01',
+              langId: 'en-US',
+              calendar: 0,
+            ),
+          ],
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          userCells: [
+            s.userCells.first.copyWith(clearPrompt: true),
+          ],
+          userProperties: [
+            s.userProperties.first.copyWith(
+              clearSortKey: true,
+              clearLangId: true,
+              clearCalendar: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Prompt"'), isFalse);
+    expect(pageXml.contains('N="SortKey"'), isFalse);
+    // LangID/Calendar may appear elsewhere; check inside Property row context.
+    expect(
+      RegExp(r'<Section N="Property"[\s\S]*?N="LangID"').hasMatch(pageXml),
+      isFalse,
+    );
+    expect(
+      RegExp(r'<Section N="Property"[\s\S]*?N="Calendar"').hasMatch(pageXml),
+      isFalse,
+    );
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.userCells.first.prompt, isNull);
+    expect(after.userProperties.first.sortKey, isNull);
+    expect(after.userProperties.first.langId, isNull);
+    expect(after.userProperties.first.calendar, isNull);
+  });
 }
