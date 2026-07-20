@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visioeditor/editor/ruler.dart';
 import 'package:visioeditor/main.dart';
 import 'package:visioeditor/settings/app_settings.dart';
 
@@ -100,19 +101,22 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
       await tester.pumpAndSettle();
 
-      // Compact layout: format is a FAB, not a docked 232px panel.
+      // Compact layout: format FAB + bottom tool rail (no left 56px chrome).
       expect(find.byIcon(Icons.tune), findsOneWidget);
       expect(find.byType(FloatingActionButton), findsOneWidget);
 
-      // Canvas strip should be most of the width (tool strip ~56 only).
+      // Full-width scaffold on phones (tools sit under the canvas).
       final canvas = tester.getSize(find.byType(Scaffold).first);
-      expect(canvas.width, greaterThanOrEqualTo(300));
+      expect(canvas.width, greaterThanOrEqualTo(360));
+
+      // Rulers default off; status bar hidden on compact.
+      expect(find.byType(RulerOverlay), findsNothing);
 
       await tester.tap(find.byIcon(Icons.tune));
       await tester.pumpAndSettle();
       expect(find.text('Diagram'), findsWidgets);
 
-      // Dismiss sheet, then open shapes as an overlay (not a Row sibling).
+      // Dismiss sheet, then open shapes as a bottom library sheet.
       Navigator.of(tester.element(find.text('Diagram').first)).pop();
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.tune), findsOneWidget);

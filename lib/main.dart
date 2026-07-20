@@ -143,6 +143,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _showOutline = false;
   bool _showLayersPanel = false;
   bool _showRulers = true;
+  /// Once the user toggles rulers, stop re-seeding from compact/wide layout.
+  bool _rulersUserAdjusted = false;
   bool _presentationMode = false;
   final CanvasCamera _camera = CanvasCamera();
 
@@ -276,12 +278,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < _compactLayoutBreakpoint;
     // Wide: open the shapes sidebar so the responsive group seeds inside
     // [_StencilPanel] are visible. Narrow: keep it closed to preserve canvas.
     // Assignment without setState is fine — MediaQuery already schedules build.
     if (!_stencilsUserAdjusted) {
-      _showStencils =
-          MediaQuery.sizeOf(context).width >= _stencilsSidebarBreakpoint;
+      _showStencils = width >= _stencilsSidebarBreakpoint;
+    }
+    // Phones: rulers eat into a small canvas and are awkward with touch.
+    if (!_rulersUserAdjusted) {
+      _showRulers = !compact;
     }
   }
 
@@ -1221,12 +1228,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
           final el = EditorL10n.of(context);
           // Many toolbar IconButtons overflow AppBar on phone/narrow windows.
           final toolbarWide = MediaQuery.sizeOf(context).width >= 1100;
+          final compact = _isCompactLayout;
           return Scaffold(
             appBar: _presentationMode
                 ? null
                 : AppBar(
+                    toolbarHeight: compact ? 48 : kToolbarHeight,
+                    titleSpacing: compact ? 8 : null,
                     title: Text(
-                      l10n.appTitle,
+                      compact && cur != null
+                          ? (cur.fileName ?? l10n.appTitle)
+                          : l10n.appTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1236,11 +1248,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
                           onPressed: cur.canUndo ? cur.undo : null,
                           icon: const Icon(Icons.undo),
                           tooltip: el.undo,
+                          visualDensity: compact
+                              ? VisualDensity.compact
+                              : VisualDensity.standard,
                         ),
                         IconButton(
                           onPressed: cur.canRedo ? cur.redo : null,
                           icon: const Icon(Icons.redo),
                           tooltip: el.redo,
+                          visualDensity: compact
+                              ? VisualDensity.compact
+                              : VisualDensity.standard,
                         ),
                         if (toolbarWide) ...[
                           IconButton(
@@ -1251,8 +1269,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                             tooltip: el.outline,
                           ),
                           IconButton(
-                            onPressed: () =>
-                                setState(() => _showRulers = !_showRulers),
+                            onPressed: () => setState(() {
+                              _rulersUserAdjusted = true;
+                              _showRulers = !_showRulers;
+                            }),
                             icon: const Icon(Icons.straighten),
                             isSelected: _showRulers,
                             tooltip: el.rulers,
@@ -1291,6 +1311,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
                           onPressed: _save,
                           icon: const Icon(Icons.save_outlined),
                           tooltip: l10n.save,
+                          visualDensity: compact
+                              ? VisualDensity.compact
+                              : VisualDensity.standard,
                         ),
                       ],
                       if (toolbarWide) ...[
@@ -1398,7 +1421,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               case 'outline':
                                 setState(() => _showOutline = !_showOutline);
                               case 'rulers':
-                                setState(() => _showRulers = !_showRulers);
+                                setState(() {
+                                  _rulersUserAdjusted = true;
+                                  _showRulers = !_showRulers;
+                                });
                               case 'grid':
                                 cur.toggleGrid();
                               case 'fit':
@@ -1610,7 +1636,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     cur.hasDocument)
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: [_pageTabs(cur), _statusBar(cur)],
+                    children: [
+                      _pageTabs(cur),
+                      // Status text is redundant on phones (selection count is
+                      // already on the format FAB tooltip / sheet header).
+                      if (!_isCompactLayout) _statusBar(cur),
+                    ],
                   )
                 : null,
           );
@@ -1735,106 +1766,137 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
     final compact = _isCompactLayout;
     final screenW = MediaQuery.sizeOf(context).width;
-    // Floating panels must fit inside the canvas strip (tool strip is 56).
-    final floatMaxW = math.max(160.0, screenW - (compact ? 72 : 48));
+    // Floating panels must fit inside the canvas (full width on compact).
+    final floatMaxW = math.max(160.0, screenW - (compact ? 24 : 48));
+
+    final canvasStack = Expanded(
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned.fill(
+            key: _canvasHostKey,
+            // Key by controller so each open document gets its own canvas
+            // state (view transform, caches). Without this the shared state
+            // leaks across tabs / new files, so a freshly-created document —
+            // whose first page reuses id 0 — keeps the previous document's
+            // zoom & offset and shows up tiny in a corner instead of fitted.
+            child: PageCanvas(
+              key: ObjectKey(c),
+              controller: c,
+              camera: _camera,
+              canvasColor: _presentationMode
+                  ? const Color(0xFF1A1C1E)
+                  : const Color(0xFFECEFF3),
+              presentationMode: _presentationMode,
+              onExitPresentation: _exitPresentation,
+              onImageMaterialDropped: _insertImageMaterial,
+              onThirdPartyIconDropped: _insertThirdPartyIcon,
+            ),
+          ),
+          if (!_presentationMode && _showRulers)
+            Positioned.fill(
+              child: RulerOverlay(controller: c, camera: _camera),
+            ),
+          if (!_presentationMode && _showOutline)
+            Positioned(
+              right: 12,
+              bottom: compact ? 72 : 64,
+              child: OutlinePanel(
+                controller: c,
+                camera: _camera,
+                width: math.min(220, floatMaxW),
+                height: math.min(165, floatMaxW * 0.75),
+                onClose: () => setState(() => _showOutline = false),
+              ),
+            ),
+          if (!_presentationMode && _showLayersPanel)
+            Positioned(
+              left: 12,
+              top: 12,
+              child: LayersPanel(
+                controller: c,
+                width: math.min(300, floatMaxW),
+                onClose: () => setState(() => _showLayersPanel = false),
+              ),
+            ),
+          // Compact: library as a bottom sheet over the canvas (full width).
+          if (compact && !_presentationMode && stencilChild != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: math.min(
+                320,
+                MediaQuery.sizeOf(context).height * 0.42,
+              ),
+              child: Material(
+                elevation: 10,
+                child: stencilChild,
+              ),
+            ),
+          if (compact && !_presentationMode)
+            Positioned(
+              right: 12,
+              bottom: 12 +
+                  MediaQuery.paddingOf(context).bottom +
+                  (stencilChild != null
+                      ? math.min(
+                          320,
+                          MediaQuery.sizeOf(context).height * 0.42,
+                        )
+                      : 0),
+              child: FloatingActionButton.small(
+                heroTag: 'format-sheet',
+                tooltip: c.hasSelection
+                    ? EditorL10n.of(context)
+                        .selectedCount(c.selection.length)
+                    : EditorL10n.of(context).panelDiagram,
+                onPressed: () => _openFormatSheet(c),
+                child: const Icon(Icons.tune),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    final toolStrip = _ToolStrip(
+      controller: c,
+      horizontal: compact,
+      showStencils: _showStencils,
+      onToggleStencils: _toggleStencils,
+      showImageMaterials: _showImageMaterials,
+      onToggleImageMaterials: _toggleImageMaterials,
+      showThirdPartyIcons: _showThirdPartyIcons,
+      onToggleThirdPartyIcons: _toggleThirdPartyIcons,
+      showCharts: _showCharts,
+      onToggleCharts: _toggleCharts,
+    );
+
+    if (compact) {
+      // Mobile: full-width canvas + bottom tool rail (no left 56px chrome).
+      return Column(
+        children: [
+          canvasStack,
+          if (!_presentationMode) ...[
+            const Divider(height: 1),
+            toolStrip,
+          ],
+        ],
+      );
+    }
+
     return Row(
       children: [
         if (!_presentationMode) ...[
-          _ToolStrip(
-            controller: c,
-            showStencils: _showStencils,
-            onToggleStencils: _toggleStencils,
-            showImageMaterials: _showImageMaterials,
-            onToggleImageMaterials: _toggleImageMaterials,
-            showThirdPartyIcons: _showThirdPartyIcons,
-            onToggleThirdPartyIcons: _toggleThirdPartyIcons,
-            showCharts: _showCharts,
-            onToggleCharts: _toggleCharts,
-          ),
+          toolStrip,
           const VerticalDivider(width: 1),
-          // Docked library only on wide layouts; compact uses a canvas overlay.
-          if (!compact && stencilChild != null) ...[
+          if (stencilChild != null) ...[
             stencilChild,
             const VerticalDivider(width: 1),
           ],
         ],
-        Expanded(
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned.fill(
-                key: _canvasHostKey,
-                // Key by controller so each open document gets its own canvas
-                // state (view transform, caches). Without this the shared state
-                // leaks across tabs / new files, so a freshly-created document —
-                // whose first page reuses id 0 — keeps the previous document's
-                // zoom & offset and shows up tiny in a corner instead of fitted.
-                child: PageCanvas(
-                  key: ObjectKey(c),
-                  controller: c,
-                  camera: _camera,
-                  canvasColor: _presentationMode
-                      ? const Color(0xFF1A1C1E)
-                      : const Color(0xFFECEFF3),
-                  presentationMode: _presentationMode,
-                  onExitPresentation: _exitPresentation,
-                  onImageMaterialDropped: _insertImageMaterial,
-                  onThirdPartyIconDropped: _insertThirdPartyIcon,
-                ),
-              ),
-              if (!_presentationMode && _showRulers)
-                Positioned.fill(
-                  child: RulerOverlay(controller: c, camera: _camera),
-                ),
-              if (!_presentationMode && _showOutline)
-                Positioned(
-                  right: 12,
-                  bottom: compact ? 72 : 64,
-                  child: OutlinePanel(
-                    controller: c,
-                    camera: _camera,
-                    width: math.min(220, floatMaxW),
-                    height: math.min(165, floatMaxW * 0.75),
-                    onClose: () => setState(() => _showOutline = false),
-                  ),
-                ),
-              if (!_presentationMode && _showLayersPanel)
-                Positioned(
-                  left: 12,
-                  top: 12,
-                  child: LayersPanel(
-                    controller: c,
-                    width: math.min(300, floatMaxW),
-                    onClose: () => setState(() => _showLayersPanel = false),
-                  ),
-                ),
-              if (compact && !_presentationMode && stencilChild != null)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Material(
-                    elevation: 8,
-                    child: stencilChild,
-                  ),
-                ),
-              if (compact && !_presentationMode)
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'format-sheet',
-                    tooltip: c.hasSelection
-                        ? EditorL10n.of(context).selectedCount(c.selection.length)
-                        : EditorL10n.of(context).panelDiagram,
-                    onPressed: () => _openFormatSheet(c),
-                    child: const Icon(Icons.tune),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (!compact && !_presentationMode) ...[
+        canvasStack,
+        if (!_presentationMode) ...[
           const VerticalDivider(width: 1),
           // drawio always keeps the Format panel docked: a shape inspector when
           // something is selected, otherwise the page/"Diagram" settings.
@@ -2174,7 +2236,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// Left-hand vertical tool palette.
+/// Tool palette: vertical rail on desktop, horizontal bottom rail on phones.
 class _ToolStrip extends StatelessWidget {
   const _ToolStrip({
     required this.controller,
@@ -2186,9 +2248,11 @@ class _ToolStrip extends StatelessWidget {
     required this.onToggleThirdPartyIcons,
     required this.showCharts,
     required this.onToggleCharts,
+    this.horizontal = false,
   });
 
   final EditorController controller;
+  final bool horizontal;
   final bool showStencils;
   final VoidCallback onToggleStencils;
   final bool showImageMaterials;
@@ -2206,7 +2270,9 @@ class _ToolStrip extends StatelessWidget {
     Widget tool(EditorTool t, IconData icon, String tip) {
       final active = controller.tool == t;
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        padding: horizontal
+            ? const EdgeInsets.symmetric(horizontal: 2)
+            : const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
         child: Material(
           color: active ? cs.primaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -2214,6 +2280,8 @@ class _ToolStrip extends StatelessWidget {
             onPressed: () => controller.setTool(t),
             icon: Icon(icon),
             tooltip: tip,
+            visualDensity:
+                horizontal ? VisualDensity.compact : VisualDensity.standard,
             color: active ? cs.onPrimaryContainer : null,
           ),
         ),
@@ -2227,7 +2295,9 @@ class _ToolStrip extends StatelessWidget {
       required String tip,
     }) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+        padding: horizontal
+            ? const EdgeInsets.symmetric(horizontal: 2)
+            : const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
         child: Material(
           color: active ? cs.primaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -2235,7 +2305,63 @@ class _ToolStrip extends StatelessWidget {
             onPressed: onPressed,
             icon: Icon(icon),
             tooltip: tip,
+            visualDensity:
+                horizontal ? VisualDensity.compact : VisualDensity.standard,
             color: active ? cs.onPrimaryContainer : null,
+          ),
+        ),
+      );
+    }
+
+    final tools = <Widget>[
+      tool(EditorTool.select, Icons.near_me_outlined, el.toolSelect),
+      tool(EditorTool.rectangle, Icons.crop_square, el.toolRectangle),
+      tool(EditorTool.ellipse, Icons.circle_outlined, el.toolEllipse),
+      tool(EditorTool.line, Icons.horizontal_rule, el.toolLine),
+      tool(EditorTool.connector, Icons.timeline, el.toolConnector),
+      tool(EditorTool.freehand, Icons.gesture, el.toolFreehand),
+      tool(EditorTool.text, Icons.text_fields, el.toolText),
+    ];
+    final libraries = <Widget>[
+      libraryToggle(
+        active: showStencils,
+        onPressed: onToggleStencils,
+        icon: Icons.category_outlined,
+        tip: el.moreShapes,
+      ),
+      libraryToggle(
+        active: showImageMaterials,
+        onPressed: onToggleImageMaterials,
+        icon: Icons.collections_outlined,
+        tip: el.imageMaterials,
+      ),
+      libraryToggle(
+        active: showThirdPartyIcons,
+        onPressed: onToggleThirdPartyIcons,
+        icon: Icons.auto_awesome_mosaic_outlined,
+        tip: el.thirdPartyIcons,
+      ),
+      libraryToggle(
+        active: showCharts,
+        onPressed: onToggleCharts,
+        icon: Icons.bar_chart_outlined,
+        tip: el.chartsLibrary,
+      ),
+    ];
+
+    if (horizontal) {
+      return ColoredBox(
+        color: cs.surface,
+        child: SizedBox(
+          height: 52,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            children: [
+              ...tools,
+              const VerticalDivider(width: 16, indent: 10, endIndent: 10),
+              ...libraries,
+            ],
           ),
         ),
       );
@@ -2256,39 +2382,10 @@ class _ToolStrip extends StatelessWidget {
                   child: Column(
                     children: [
                       const SizedBox(height: 8),
-                      tool(EditorTool.select, Icons.near_me_outlined, el.toolSelect),
-                      tool(EditorTool.rectangle, Icons.crop_square, el.toolRectangle),
-                      tool(EditorTool.ellipse, Icons.circle_outlined, el.toolEllipse),
-                      tool(EditorTool.line, Icons.horizontal_rule, el.toolLine),
-                      tool(EditorTool.connector, Icons.timeline, el.toolConnector),
-                      tool(EditorTool.freehand, Icons.gesture, el.toolFreehand),
-                      tool(EditorTool.text, Icons.text_fields, el.toolText),
+                      ...tools,
                       const Spacer(),
                       const Divider(height: 1, indent: 10, endIndent: 10),
-                      libraryToggle(
-                        active: showStencils,
-                        onPressed: onToggleStencils,
-                        icon: Icons.category_outlined,
-                        tip: el.moreShapes,
-                      ),
-                      libraryToggle(
-                        active: showImageMaterials,
-                        onPressed: onToggleImageMaterials,
-                        icon: Icons.collections_outlined,
-                        tip: el.imageMaterials,
-                      ),
-                      libraryToggle(
-                        active: showThirdPartyIcons,
-                        onPressed: onToggleThirdPartyIcons,
-                        icon: Icons.auto_awesome_mosaic_outlined,
-                        tip: el.thirdPartyIcons,
-                      ),
-                      libraryToggle(
-                        active: showCharts,
-                        onPressed: onToggleCharts,
-                        icon: Icons.bar_chart_outlined,
-                        tip: el.chartsLibrary,
-                      ),
+                      ...libraries,
                     ],
                   ),
                 ),
@@ -2389,8 +2486,13 @@ class _StencilPanelState extends State<_StencilPanel> {
       if (matches.isEmpty) continue;
       groups.add((group: group, matches: matches));
     }
-    return SizedBox(
-      width: 184,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.clamp(184.0, 420.0)
+            : 184.0;
+        return SizedBox(
+      width: width,
       child: ColoredBox(
         color: scheme.surface,
         child: Column(
@@ -2445,6 +2547,8 @@ class _StencilPanelState extends State<_StencilPanel> {
           ],
         ),
       ),
+        );
+      },
     );
   }
 
@@ -2633,8 +2737,13 @@ class _ChartsPanelState extends State<_ChartsPanel> {
       if (matches.isEmpty) continue;
       groups.add((group: group, matches: matches));
     }
-    return SizedBox(
-      width: 184,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.clamp(184.0, 420.0)
+            : 184.0;
+        return SizedBox(
+      width: width,
       child: ColoredBox(
         color: scheme.surface,
         child: Column(
@@ -2731,6 +2840,8 @@ class _ChartsPanelState extends State<_ChartsPanel> {
           ],
         ),
       ),
+        );
+      },
     );
   }
 
@@ -2817,8 +2928,13 @@ class _ImageMaterialsPanelState extends State<_ImageMaterialsPanel> {
       if (matches.isEmpty) continue;
       groups.add((group: group, matches: matches));
     }
-    return SizedBox(
-      width: 184,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.clamp(184.0, 420.0)
+            : 184.0;
+        return SizedBox(
+      width: width,
       child: ColoredBox(
         color: scheme.surface,
         child: Column(
@@ -2878,6 +2994,8 @@ class _ImageMaterialsPanelState extends State<_ImageMaterialsPanel> {
           ],
         ),
       ),
+        );
+      },
     );
   }
 
@@ -3043,8 +3161,13 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
       if (matches.isEmpty) continue;
       groups.add((provider: provider, matches: matches));
     }
-    return SizedBox(
-      width: 184,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.clamp(184.0, 420.0)
+            : 184.0;
+        return SizedBox(
+      width: width,
       // Material (not ColoredBox) so CheckboxListTile ink/selection paint
       // on this ancestor instead of being hidden under an opaque fill.
       child: Material(
@@ -3139,6 +3262,8 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
           ],
         ),
       ),
+        );
+      },
     );
   }
 
