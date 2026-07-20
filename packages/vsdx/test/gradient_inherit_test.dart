@@ -229,4 +229,30 @@ void main() {
     expect(fill.gradient!.angleRad, closeTo(1.2, 1e-9));
     expect(fill.gradient!.type, VsdxGradientType.radial);
   });
+
+  test('FillForegnd F=Inh inherits Master color (not cached V)', () {
+    final fill = style.parseFill(
+      XmlDocument.parse(
+        '<Shape><Cell N="FillForegnd" V="#000000" F="Inh"/></Shape>',
+      ).rootElement,
+      defaults: const VsdxFill(
+        foreground: VsdxColor(0xFFFF0080),
+        background: VsdxColor.white,
+      ),
+    );
+    expect(fill.foreground, const VsdxColor(0xFFFF0080));
+  });
+
+  test('LineColor F=Inh inherits Master color (not cached V)', () {
+    final line = style.parseLine(
+      XmlDocument.parse(
+        '<Shape><Cell N="LineColor" V="#000000" F="Inh"/></Shape>',
+      ).rootElement,
+      defaults: const VsdxLine(
+        color: VsdxColor(0xFF0080FF),
+        weightInches: 0.01,
+      ),
+    );
+    expect(line.color, const VsdxColor(0xFF0080FF));
+  });
 }

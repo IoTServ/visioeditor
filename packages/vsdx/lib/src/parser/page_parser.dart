@@ -415,16 +415,19 @@ class PageParser {
     final connectionPoints = ownConnPts.isEmpty && proto != null
         ? proto.connectionPoints
         : ownConnPts;
-    final ownHyperlinks = const HyperlinkParser().parse(shapeEl);
+    final ownHyperlinks =
+        const HyperlinkParser().parse(shapeEl, inherit: proto?.hyperlinks);
     final hyperlinks =
         ownHyperlinks.isEmpty && proto != null ? proto.hyperlinks : ownHyperlinks;
 
     const userParser = UserPropertyParser();
-    final ownProps = userParser.parseProperties(shapeEl);
+    final ownProps = userParser.parseProperties(shapeEl,
+        inherit: proto?.userProperties);
     final props = ownProps.isEmpty && proto != null
         ? proto.userProperties
         : ownProps;
-    final ownUserCells = userParser.parseUserCells(shapeEl);
+    final ownUserCells =
+        userParser.parseUserCells(shapeEl, inherit: proto?.userCells);
     final userCells = ownUserCells.isEmpty && proto != null
         ? proto.userCells
         : ownUserCells;
@@ -618,12 +621,20 @@ class PageParser {
               _double(row, 'DynY', inheritFrom: proto?.dynY) ??
               proto?.dynY ??
               0,
-          xFormula: _formula(row, 'X'),
-          yFormula: _formula(row, 'Y'),
-          dynXFormula: _formula(row, dynXName) ?? _formula(row, 'DynX'),
-          dynYFormula: _formula(row, dynYName) ?? _formula(row, 'DynY'),
-          conXFormula: _formula(row, conXName) ?? _formula(row, 'ConX'),
-          conYFormula: _formula(row, conYName) ?? _formula(row, 'ConY'),
+          xFormula: _formulaOrInherit(row, 'X', proto?.xFormula),
+          yFormula: _formulaOrInherit(row, 'Y', proto?.yFormula),
+          dynXFormula: _formulaOrInherit(
+                  row, dynXName, proto?.dynXFormula) ??
+              _formulaOrInherit(row, 'DynX', proto?.dynXFormula),
+          dynYFormula: _formulaOrInherit(
+                  row, dynYName, proto?.dynYFormula) ??
+              _formulaOrInherit(row, 'DynY', proto?.dynYFormula),
+          conXFormula: _formulaOrInherit(
+                  row, conXName, proto?.conXFormula) ??
+              _formulaOrInherit(row, 'ConX', proto?.conXFormula),
+          conYFormula: _formulaOrInherit(
+                  row, conYName, proto?.conYFormula) ??
+              _formulaOrInherit(row, 'ConY', proto?.conYFormula),
           canGlue: (_int(row, 'CanGlue',
                       inheritFrom: proto == null ? null : (proto.canGlue ? 1 : 0)) ??
                   (proto?.canGlue == true ? 1 : 0)) !=
@@ -762,7 +773,8 @@ class PageParser {
     };
     for (final name in _formulaCellNames) {
       final f = _formula(shapeEl, name);
-      if (f != null) out[name] = f;
+      if (f == null || isInhFormula(f)) continue;
+      out[name] = f;
     }
     return Map.unmodifiable(out);
   }
@@ -1012,8 +1024,8 @@ class PageParser {
           type: type,
           autoGen: autoGen,
           prompt: prompt,
-          xFormula: _formula(row, 'X'),
-          yFormula: _formula(row, 'Y'),
+          xFormula: _formulaOrInherit(row, 'X', proto?.xFormula),
+          yFormula: _formulaOrInherit(row, 'Y', proto?.yFormula),
         ));
       }
     }

@@ -304,6 +304,82 @@ class GeometryParser {
         eccentricity: pick('D', master.eccentricity, inst.eccentricity),
       );
     }
+    if (master is EllipseCmd && inst is EllipseCmd) {
+      return EllipseCmd(
+        cx: pick('X', master.cx, inst.cx),
+        cy: pick('Y', master.cy, inst.cy),
+        aX: pick('A', master.aX, inst.aX),
+        aY: pick('B', master.aY, inst.aY),
+        bX: pick('C', master.bX, inst.bX),
+        bY: pick('D', master.bY, inst.bY),
+      );
+    }
+    if (master is InfiniteLineCmd &&
+        inst is InfiniteLineCmd &&
+        master.relative == inst.relative) {
+      return InfiniteLineCmd(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        a: pick('A', master.a, inst.a),
+        b: pick('B', master.b, inst.b),
+        relative: master.relative,
+      );
+    }
+    if (master is PolylineTo &&
+        inst is PolylineTo &&
+        master.relative == inst.relative) {
+      final useMasterVerts = isInhFormula(instF['A']);
+      return PolylineTo(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        vertices: useMasterVerts ? master.vertices : inst.vertices,
+        relative: master.relative,
+        vertsRelative:
+            useMasterVerts ? master.vertsRelative : inst.vertsRelative,
+        vertsYRelative:
+            useMasterVerts ? master.vertsYRelative : inst.vertsYRelative,
+      );
+    }
+    if (master is SplineStart &&
+        inst is SplineStart &&
+        master.relative == inst.relative) {
+      return SplineStart(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        a: pick('A', master.a, inst.a),
+        b: pick('B', master.b, inst.b),
+        c: pick('C', master.c, inst.c),
+        degree: isInhFormula(instF['D']) ? master.degree : inst.degree,
+        relative: master.relative,
+      );
+    }
+    if (master is SplineKnot &&
+        inst is SplineKnot &&
+        master.relative == inst.relative) {
+      return SplineKnot(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        knot: pick('A', master.knot, inst.knot),
+        relative: master.relative,
+      );
+    }
+    if (master is NurbsTo &&
+        inst is NurbsTo &&
+        master.relative == inst.relative) {
+      final useMasterCps = isInhFormula(instF['E']);
+      return NurbsTo(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        controlPoints:
+            useMasterCps ? master.controlPoints : inst.controlPoints,
+        weights: useMasterCps ? master.weights : inst.weights,
+        knots: useMasterCps ? master.knots : inst.knots,
+        degree: useMasterCps ? master.degree : inst.degree,
+        relative: master.relative,
+        cpRelative: useMasterCps ? master.cpRelative : inst.cpRelative,
+        cpYRelative: useMasterCps ? master.cpYRelative : inst.cpYRelative,
+      );
+    }
     return inst;
   }
 

@@ -419,6 +419,116 @@ void main() {
       expect(cub.fy2, closeTo(0.5, 1e-9));
     });
 
+    test('EllipseCmd F=Inh cells keep master axes', () {
+      final master = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="Ellipse">'
+                    '<Cell N="X" V="1"/><Cell N="Y" V="2"/>'
+                    '<Cell N="A" V="3"/><Cell N="B" V="2"/>'
+                    '<Cell N="C" V="1"/><Cell N="D" V="4"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final instance = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="Ellipse">'
+                    '<Cell N="X" V="1.5"/>'
+                    '<Cell N="Y" V="0" F="Inh"/>'
+                    '<Cell N="A" V="0" F="Inh"/><Cell N="B" V="0" F="Inh"/>'
+                    '<Cell N="C" V="0" F="Inh"/><Cell N="D" V="0" F="Inh"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final merged = GeometryParser.mergeInherited(master, instance).single;
+      final el = merged.commands.single as EllipseCmd;
+      expect(el.cx, closeTo(1.5, 1e-9));
+      expect(el.cy, closeTo(2, 1e-9));
+      expect(el.aX, closeTo(3, 1e-9));
+      expect(el.aY, closeTo(2, 1e-9));
+      expect(el.bX, closeTo(1, 1e-9));
+      expect(el.bY, closeTo(4, 1e-9));
+    });
+
+    test('InfiniteLineCmd F=Inh cells keep master direction', () {
+      final master = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="InfiniteLine">'
+                    '<Cell N="X" V="0"/><Cell N="Y" V="1"/>'
+                    '<Cell N="A" V="2"/><Cell N="B" V="3"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final instance = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="InfiniteLine">'
+                    '<Cell N="X" V="0.25"/>'
+                    '<Cell N="Y" V="0" F="Inh"/>'
+                    '<Cell N="A" V="0" F="Inh"/><Cell N="B" V="0" F="Inh"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final merged = GeometryParser.mergeInherited(master, instance).single;
+      final line = merged.commands.single as InfiniteLineCmd;
+      expect(line.x, closeTo(0.25, 1e-9));
+      expect(line.y, closeTo(1, 1e-9));
+      expect(line.a, closeTo(2, 1e-9));
+      expect(line.b, closeTo(3, 1e-9));
+      expect(line.relative, isFalse);
+    });
+
+    test('PolylineTo A F=Inh keeps master vertices', () {
+      final master = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="PolylineTo">'
+                    '<Cell N="X" V="2"/><Cell N="Y" V="0"/>'
+                    '<Cell N="A" V="" F="POLYLINE(1,1,0.5,0.5,1.5,0.5)"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final instance = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="PolylineTo">'
+                    '<Cell N="X" V="3"/>'
+                    '<Cell N="Y" V="0" F="Inh"/>'
+                    '<Cell N="A" V="" F="Inh"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final merged = GeometryParser.mergeInherited(master, instance).single;
+      final poly = merged.commands[1] as PolylineTo;
+      expect(poly.x, closeTo(3, 1e-9));
+      expect(poly.y, closeTo(0, 1e-9));
+      expect(poly.vertices, hasLength(2));
+      expect(poly.vertices[0].x, closeTo(0.5, 1e-9));
+      expect(poly.vertices[1].x, closeTo(1.5, 1e-9));
+    });
+
     test('test9 line shape merges master geometry (real fixture)', () {
       const parser = DocumentParser();
       final doc = parser.parse(

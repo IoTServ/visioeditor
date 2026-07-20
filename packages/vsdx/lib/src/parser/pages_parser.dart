@@ -179,43 +179,63 @@ class PagesParser {
   }
 
   VsdxPageSheet _readPageSheet(XmlElement pageSheet) {
-    int? i(String n) {
+    int? i(String n, {int? inheritFrom}) {
       final cell = findCell(pageSheet, n);
       if (cell == null) return null;
+      if (isInhFormula(cell.getAttribute('F'))) {
+        return inheritFrom; // null ⇒ treat Inh as absent
+      }
       return int.tryParse(cell.getAttribute('V') ?? '') ??
           double.tryParse(cell.getAttribute('V') ?? '')?.toInt();
     }
 
-    double? d(String n) {
+    double? d(String n, {double? inheritFrom}) {
       final cell = findCell(pageSheet, n);
       if (cell == null) return null;
+      if (isInhFormula(cell.getAttribute('F'))) {
+        return inheritFrom;
+      }
       return double.tryParse(cell.getAttribute('V') ?? '');
     }
 
-    bool b(String n, bool fallback) => (i(n) ?? (fallback ? 1 : 0)) != 0;
+    bool b(String n, bool fallback) =>
+        (i(n, inheritFrom: fallback ? 1 : 0) ?? (fallback ? 1 : 0)) != 0;
 
     String? unit(String n) => findCell(pageSheet, n)?.getAttribute('U');
 
     const def = VsdxPageSheet.defaults;
     return VsdxPageSheet(
-      shadowOffsetXInches:
-          readLengthInches(pageSheet, 'ShdwOffsetX') ?? def.shadowOffsetXInches,
-      shadowOffsetYInches:
-          readLengthInches(pageSheet, 'ShdwOffsetY') ?? def.shadowOffsetYInches,
-      pageScale: d('PageScale') ?? def.pageScale,
+      shadowOffsetXInches: readLengthInches(pageSheet, 'ShdwOffsetX',
+              inheritFrom: def.shadowOffsetXInches) ??
+          def.shadowOffsetXInches,
+      shadowOffsetYInches: readLengthInches(pageSheet, 'ShdwOffsetY',
+              inheritFrom: def.shadowOffsetYInches) ??
+          def.shadowOffsetYInches,
+      pageScale: d('PageScale', inheritFrom: def.pageScale) ?? def.pageScale,
       pageScaleUnit: unit('PageScale') ?? def.pageScaleUnit,
-      drawingScale: d('DrawingScale') ?? def.drawingScale,
+      drawingScale:
+          d('DrawingScale', inheritFrom: def.drawingScale) ?? def.drawingScale,
       drawingScaleUnit: unit('DrawingScale') ?? def.drawingScaleUnit,
-      drawingSizeType: i('DrawingSizeType') ?? def.drawingSizeType,
-      drawingScaleType: i('DrawingScaleType') ?? def.drawingScaleType,
-      drawingResizeType: i('DrawingResizeType') ?? def.drawingResizeType,
+      drawingSizeType: i('DrawingSizeType', inheritFrom: def.drawingSizeType) ??
+          def.drawingSizeType,
+      drawingScaleType:
+          i('DrawingScaleType', inheritFrom: def.drawingScaleType) ??
+              def.drawingScaleType,
+      drawingResizeType:
+          i('DrawingResizeType', inheritFrom: def.drawingResizeType) ??
+              def.drawingResizeType,
       inhibitSnap: b('InhibitSnap', def.inhibitSnap),
       pageLockReplace: b('PageLockReplace', def.pageLockReplace),
       pageLockDuplicate: b('PageLockDuplicate', def.pageLockDuplicate),
-      uiVisibility: i('UIVisibility') ?? def.uiVisibility,
-      shadowType: i('ShdwType') ?? def.shadowType,
-      shadowObliqueAngle: d('ShdwObliqueAngle') ?? def.shadowObliqueAngle,
-      shadowScaleFactor: d('ShdwScaleFactor') ?? def.shadowScaleFactor,
+      uiVisibility:
+          i('UIVisibility', inheritFrom: def.uiVisibility) ?? def.uiVisibility,
+      shadowType: i('ShdwType', inheritFrom: def.shadowType) ?? def.shadowType,
+      shadowObliqueAngle: d('ShdwObliqueAngle',
+              inheritFrom: def.shadowObliqueAngle) ??
+          def.shadowObliqueAngle,
+      shadowScaleFactor: d('ShdwScaleFactor',
+              inheritFrom: def.shadowScaleFactor) ??
+          def.shadowScaleFactor,
       pageShapeSplit: b('PageShapeSplit', def.pageShapeSplit),
       lineJumpCode: i('LineJumpCode'),
       lineJumpStyle: i('LineJumpStyle'),
@@ -227,16 +247,21 @@ class PagesParser {
           d('LineToLineY'),
       lineJumpFactorX: d('LineJumpFactorX'),
       lineJumpFactorY: d('LineJumpFactorY'),
-      marginLeftInches:
-          readLengthInches(pageSheet, 'PageLeftMargin') ?? def.marginLeftInches,
-      marginRightInches: readLengthInches(pageSheet, 'PageRightMargin') ??
+      marginLeftInches: readLengthInches(pageSheet, 'PageLeftMargin',
+              inheritFrom: def.marginLeftInches) ??
+          def.marginLeftInches,
+      marginRightInches: readLengthInches(pageSheet, 'PageRightMargin',
+              inheritFrom: def.marginRightInches) ??
           def.marginRightInches,
-      marginTopInches:
-          readLengthInches(pageSheet, 'PageTopMargin') ?? def.marginTopInches,
-      marginBottomInches: readLengthInches(pageSheet, 'PageBottomMargin') ??
+      marginTopInches: readLengthInches(pageSheet, 'PageTopMargin',
+              inheritFrom: def.marginTopInches) ??
+          def.marginTopInches,
+      marginBottomInches: readLengthInches(pageSheet, 'PageBottomMargin',
+              inheritFrom: def.marginBottomInches) ??
           def.marginBottomInches,
-      printPageOrientation:
-          i('PrintPageOrientation') ?? def.printPageOrientation,
+      printPageOrientation: i('PrintPageOrientation',
+              inheritFrom: def.printPageOrientation) ??
+          def.printPageOrientation,
       variationColorIndex: i('VariationColorIndex'),
       variationStyleIndex: i('VariationStyleIndex'),
     );
@@ -246,6 +271,8 @@ class PagesParser {
     for (final el in pageSheet.childElements) {
       if (el.name.local != 'Cell') continue;
       if (el.getAttribute('N') != 'PageColor') continue;
+      // F=Inh with no stylesheet inherit source → treat as absent (white default).
+      if (isInhFormula(el.getAttribute('F'))) return null;
       final v = el.getAttribute('V');
       if (v == null || v.isEmpty) return null;
       return VsdxColor.tryParse(v);

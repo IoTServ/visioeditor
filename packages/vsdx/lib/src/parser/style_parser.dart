@@ -141,7 +141,12 @@ class StyleParser {
       inheritFrom: defaults.enabled ? defaults.sizeInches : 0,
     );
     final size = sizeCell ?? (defaults.enabled ? defaults.sizeInches : null);
-    final col = _resolveColor(shape, 'GlowColor', 'QuickStyleEffectColor');
+    final col = _resolveColor(
+      shape,
+      'GlowColor',
+      'QuickStyleEffectColor',
+      honorInh: defaults.enabled,
+    );
     // Only inherit Trans from an enabled master; otherwise keep cached V so
     // F=Inh does not wipe a local transparency (disabled default is 1.0).
     final transparency = (_double(
@@ -258,7 +263,12 @@ class StyleParser {
         );
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
-    final col = _resolveColor(shape, 'ShadowForegnd', 'QuickStyleShadowColor');
+    final col = _resolveColor(
+      shape,
+      'ShadowForegnd',
+      'QuickStyleShadowColor',
+      honorInh: defaults.enabled,
+    );
     // F=Inh → master defaults when enabled; otherwise page Sheet ShdwOffset*.
     // Missing cell → page Sheet (Visio behaviour for pattern-only shadows).
     final ox = readLengthInches(shape, 'ShadowOffsetX',
@@ -486,16 +496,24 @@ class StyleParser {
   }
 
   /// Resolve a `<Cell N="$colorCell">` to either a concrete colour or a
-  /// theme index. Returns both `null` when the cell is absent.
+  /// theme index. Returns both `null` when the cell is absent or `F=Inh`
+  /// (caller falls back to Master defaults via `??`).
+  ///
+  /// When [honorInh] is false, `F=Inh` keeps the cached `V=` (used for
+  /// disabled effect companions so re-enable can restore a local colour).
   _ColorResolution _resolveColor(
     XmlElement shape,
     String colorCell,
-    String quickStyleCell,
-  ) {
+    String quickStyleCell, {
+    bool honorInh = true,
+  }) {
     final cell = findCell(shape, colorCell);
     if (cell == null) return const _ColorResolution(null, null);
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
+    if (honorInh && isInhFormula(f)) {
+      return const _ColorResolution(null, null);
+    }
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // Prefer an explicit THEMEVAL("AccentColor2") / THEMEVAL(3) argument so
       // FillBkgnd can differ from FillForegnd's QuickStyleFillColor slot.
