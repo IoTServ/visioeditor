@@ -37,6 +37,8 @@ void main() {
   Map<ShortcutActivator, VoidCallback> bindingsFor(
     EditorController c, {
     VoidCallback? onBold,
+    VoidCallback? onFind,
+    VoidCallback? onRotate,
   }) {
     void deleteSel() {
       if (isEditableTextFocused()) return;
@@ -57,6 +59,8 @@ void main() {
     }
 
     final bold = onBold ?? () {};
+    final find = onFind ?? () {};
+    final rotate = onRotate ?? () {};
 
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): deleteSel,
@@ -69,6 +73,10 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyB, meta: true): bold,
       const SingleActivator(LogicalKeyboardKey.keyB, control: true): bold,
+      const SingleActivator(LogicalKeyboardKey.keyF, meta: true): find,
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true): find,
+      const SingleActivator(LogicalKeyboardKey.keyR, meta: true): rotate,
+      const SingleActivator(LogicalKeyboardKey.keyR, control: true): rotate,
     };
   }
 
@@ -77,13 +85,20 @@ void main() {
     EditorController c, {
     Widget? body,
     VoidCallback? onBold,
+    VoidCallback? onFind,
+    VoidCallback? onRotate,
   }) async {
     final focus = FocusNode();
     addTearDown(focus.dispose);
     await tester.pumpWidget(
       MaterialApp(
         home: EditorCallbackShortcuts(
-          bindings: bindingsFor(c, onBold: onBold),
+          bindings: bindingsFor(
+            c,
+            onBold: onBold,
+            onFind: onFind,
+            onRotate: onRotate,
+          ),
           isEditableTextFocused: isEditableTextFocused,
           child: Scaffold(
             body: body ??
@@ -222,5 +237,75 @@ void main() {
     await tester.pump();
 
     expect(boldHits, 0);
+  });
+
+  testWidgets('Cmd/Ctrl+F and R with text focus do not open find or rotate',
+      (tester) async {
+    final c = ctrlWithRect();
+    var findHits = 0;
+    var rotateHits = 0;
+    final search = TextEditingController(text: 'hello');
+    addTearDown(search.dispose);
+
+    await pumpHarness(
+      tester,
+      c,
+      onFind: () => findHits++,
+      onRotate: () => rotateHits++,
+      body: TextField(
+        controller: search,
+        autofocus: true,
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    expect(findHits, 0);
+    expect(rotateHits, 0);
+  });
+
+  testWidgets('Cmd+S is still recognised as a document chord while typing',
+      (tester) async {
+    final c = ctrlWithRect();
+    final search = TextEditingController(text: 'hello');
+    addTearDown(search.dispose);
+
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(
+        controller: search,
+        autofocus: true,
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    expect(
+      EditorCallbackShortcuts.isTextEditingShortcut(
+        const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.keyS,
+          logicalKey: LogicalKeyboardKey.keyS,
+          timeStamp: Duration.zero,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      EditorCallbackShortcuts.isTextEditingShortcut(
+        const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.keyF,
+          logicalKey: LogicalKeyboardKey.keyF,
+          timeStamp: Duration.zero,
+        ),
+      ),
+      isTrue,
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
   });
 }

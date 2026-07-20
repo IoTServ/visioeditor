@@ -20,6 +20,14 @@ class EditorCallbackShortcuts extends StatelessWidget {
   final bool Function() isEditableTextFocused;
   final Widget child;
 
+  /// Document-level chords that should still run while a text field is focused
+  /// (new / open / save / close tab).
+  static bool _isDocumentChord(LogicalKeyboardKey key) =>
+      key == LogicalKeyboardKey.keyN ||
+      key == LogicalKeyboardKey.keyO ||
+      key == LogicalKeyboardKey.keyS ||
+      key == LogicalKeyboardKey.keyW;
+
   /// Keys that must bubble to the focused text field / default editing
   /// shortcuts instead of being claimed by the diagram editor.
   @visibleForTesting
@@ -38,18 +46,18 @@ class EditorCallbackShortcuts extends StatelessWidget {
           key == LogicalKeyboardKey.escape ||
           key == LogicalKeyboardKey.tab;
     }
-    // Keep clipboard / select-all / undo-redo / bold-italic-underline
-    // working inside text fields (do not steal for shape formatting).
     if (chord && !alt) {
-      return key == LogicalKeyboardKey.keyA ||
-          key == LogicalKeyboardKey.keyC ||
-          key == LogicalKeyboardKey.keyV ||
-          key == LogicalKeyboardKey.keyX ||
-          key == LogicalKeyboardKey.keyZ ||
-          key == LogicalKeyboardKey.keyY ||
-          key == LogicalKeyboardKey.keyB ||
-          key == LogicalKeyboardKey.keyI ||
-          key == LogicalKeyboardKey.keyU;
+      // Keep New/Open/Save/Close available while typing in a search box.
+      if (_isDocumentChord(key)) return false;
+      // Defer every other Cmd/Ctrl(+Shift) letter and bracket chord so find,
+      // rotate, duplicate, group, lock, bold, undo, etc. cannot steal keys
+      // from the field (and so default text-editing shortcuts can run).
+      if (key == LogicalKeyboardKey.bracketLeft ||
+          key == LogicalKeyboardKey.bracketRight) {
+        return true;
+      }
+      return key.keyId >= LogicalKeyboardKey.keyA.keyId &&
+          key.keyId <= LogicalKeyboardKey.keyZ.keyId;
     }
     return false;
   }

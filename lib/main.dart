@@ -4127,6 +4127,7 @@ class _PropertyPanel extends StatelessWidget {
   }
 
   Map<int, String> _dashPresets(EditorL10n el) => <int, String>{
+        0: el.none,
         1: el.solid,
         2: el.dashed,
         3: el.dotted,
@@ -4137,7 +4138,9 @@ class _PropertyPanel extends StatelessWidget {
     final el = EditorL10n.of(context);
     final presets = _dashPresets(el);
     final pattern = controller.selectedLine?.pattern ?? 1;
-    final value = presets.containsKey(pattern) ? pattern : 1;
+    // Do not fall back to Solid (1) for NoLine (0) or unknown Visio patterns —
+    // that lied about stroke visibility after setNoLine.
+    final value = presets.containsKey(pattern) ? pattern : null;
     return Row(
       children: [
         const Icon(Icons.line_style, size: 18),
@@ -4145,6 +4148,7 @@ class _PropertyPanel extends StatelessWidget {
         DropdownButton<int>(
           value: value,
           isDense: true,
+          hint: Text(el.none),
           items: [
             for (final e in presets.entries)
               DropdownMenuItem<int>(value: e.key, child: Text(e.value)),

@@ -206,6 +206,17 @@ void main() {
     expect(e.currentPage!.findShapeById(a)!.line.hasLine, isFalse);
   });
 
+  test('NoLine dash dropdown value must stay 0 (not coerce to Solid)', () {
+    final e = ctrl();
+    rect(e, 2, 4);
+    e.setNoLine();
+    final pattern = e.selectedLine?.pattern ?? 1;
+    // Mirror Format panel dash presets: include 0=None; unknown → null.
+    const presets = <int>{0, 1, 2, 3, 4};
+    final value = presets.contains(pattern) ? pattern : null;
+    expect(value, 0);
+  });
+
   test('beginEditConnectionPoints on locked is no-op', () {
     final e = ctrl();
     rect(e, 2, 4);
