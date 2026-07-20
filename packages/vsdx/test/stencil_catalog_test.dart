@@ -58,6 +58,19 @@ void main() {
           stencil: 'totally-not-a-shape', id: 3, cx: 0, cy: 0, w: 1, h: 1);
       expect(s.geometries, isNotEmpty);
     });
+
+    test('Table resolves to HTML grid, not floorplan furniture', () {
+      final s = resolveStencilShape(
+          stencil: 'Table', id: 9, cx: 1, cy: 1, w: 3, h: 2);
+      expect(TableOps.isTable(s), isTrue);
+      expect(s.children, isNotEmpty);
+      expect(s.connectionPoints, isNotEmpty);
+
+      final dining = resolveStencilShape(
+          stencil: 'Dining Table', id: 10, cx: 1, cy: 1, w: 1.6, h: 1.0);
+      expect(TableOps.isTable(dining), isFalse);
+      expect(dining.children, isEmpty);
+    });
   });
 
   group('searchStencils', () {

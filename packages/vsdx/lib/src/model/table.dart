@@ -438,6 +438,9 @@ abstract final class TableOps {
       geometries: _rectGeometry(w, h),
       fill: _tableFill,
       line: _cellLine,
+      // Match assemblePool: persist root glue so save→reopen keeps Connection
+      // rows (writer no longer invents them when empty).
+      connectionPoints: VsdxPage.defaultConnectionPoints(w, h),
       userCells: tableUserCells(
         rows: rCount,
         cols: cCount,

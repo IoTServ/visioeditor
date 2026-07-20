@@ -52,13 +52,26 @@ String? coreNameOrNull(String stencil) {
 String _norm(String s) => s.toLowerCase().replaceAll(RegExp('[^a-z0-9]'), '');
 
 /// The full ~300-shape library (draw.io parity), indexed by normalised name.
-final Map<String, Stencil> _catalogByNorm = <String, Stencil>{
-  for (final s in kStencils) _norm(s.name): s,
-};
-final Map<String, String> _groupByNorm = <String, String>{
-  for (final g in kStencilGroups)
-    for (final s in g.stencils) _norm(s.name): g.name,
-};
+///
+/// First occurrence wins ([Map.putIfAbsent]) so everyday General shapes are
+/// not overwritten by later groups that reuse a display name (e.g. HTML
+/// [Table] vs floorplan furniture historically both named "Table").
+final Map<String, Stencil> _catalogByNorm = () {
+  final m = <String, Stencil>{};
+  for (final s in kStencils) {
+    m.putIfAbsent(_norm(s.name), () => s);
+  }
+  return m;
+}();
+final Map<String, String> _groupByNorm = () {
+  final m = <String, String>{};
+  for (final g in kStencilGroups) {
+    for (final s in g.stencils) {
+      m.putIfAbsent(_norm(s.name), () => g.name);
+    }
+  }
+  return m;
+}();
 
 /// Resolve [stencil] to a concrete shape: the curated core (clean size + fill),
 /// else the full catalog (resized, styling overridden only when given), else a

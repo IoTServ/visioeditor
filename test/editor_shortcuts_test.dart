@@ -47,6 +47,12 @@ void main() {
       c.moveSelectionBy(dx * step, dy * step);
     }
 
+    // Match app bindings: undo does not itself guard on text focus — the
+    // host must defer Cmd/Ctrl+Z so EditableText receives the chord.
+    void undo() {
+      if (c.canUndo) c.undo();
+    }
+
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): deleteSel,
       const SingleActivator(LogicalKeyboardKey.backspace): deleteSel,
@@ -54,6 +60,8 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => nudge(1, 0),
       const SingleActivator(LogicalKeyboardKey.arrowUp): () => nudge(0, 1),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
+      const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): undo,
+      const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
     };
   }
 
@@ -151,4 +159,34 @@ void main() {
     expect(search.text, 'ab');
     expect(c.currentPage!.findShapeById(id), isNotNull);
   });
+
+  testWidgets('Cmd/Ctrl+Z with text focus does not undo the document',
+      (tester) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    final search = TextEditingController(text: 'hello');
+    addTearDown(search.dispose);
+
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(
+        controller: search,
+        autofocus: true,
+      ),
+    );
+    await tester.pump();
+    expect(isEditableTextFocused(), isTrue);
+    expect(c.canUndo, isTrue);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    // Document undo would remove the rect; deferral must leave it alone.
+    expect(c.currentPage!.findShapeById(id), isNotNull);
+    expect(c.canUndo, isTrue);
+  });
+
 }

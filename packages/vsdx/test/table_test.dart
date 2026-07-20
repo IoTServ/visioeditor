@@ -15,6 +15,7 @@ void main() {
       );
       expect(TableOps.isTable(table), isTrue);
       expect(table.shapeKind, VsdxShapeKind.container);
+      expect(table.connectionPoints, hasLength(5));
       final cells = TableOps.cellsOf(table);
       expect(cells, hasLength(9));
       expect(TableOps.dimensions(table).rows, 3);

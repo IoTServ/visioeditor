@@ -2202,7 +2202,7 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.floorplanWindowOpening(
             id: id, pinX: cx, pinY: cy, width: 1.6, height: 0.55)),
     Stencil(
-        'Table',
+        'Dining Table',
         (id, cx, cy) => VsdxShapeFactory.floorplanTable(
             id: id, pinX: cx, pinY: cy, width: 1.6, height: 1.0)),
     Stencil(
