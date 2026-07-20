@@ -1758,6 +1758,41 @@ void main() {
     expect(g.stops.last.color, isNull);
   });
 
+  test('enabling fill gradient from theme fill keeps THEMEVAL stop', () {
+    final e = EditorController()..newDocument();
+    addTearDown(e.dispose);
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 2,
+        height: 1,
+      ).copyWith(
+        fill: const VsdxFill(
+          pattern: 1,
+          themeForegroundIndex: 3,
+        ),
+      ),
+      3,
+      3,
+    );
+    // Mimic Format: Linear chip on a theme-bound solid (no existing stops).
+    e.setFillGradient(
+      const VsdxGradient(
+        type: VsdxGradientType.linear,
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, themeColorIndex: 3),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFFFFFFFF)),
+        ],
+      ),
+    );
+    final g = e.selectedFill!.gradient!;
+    expect(g.stops.first.themeColorIndex, 3);
+    expect(g.stops.first.color, isNull);
+    expect(g.stops.last.color?.value, 0xFFFFFFFF);
+  });
+
   test('setShadow toggles restore colour/offset; setLinePattern(0) clears gradient',
       () {
     final e = EditorController()..newDocument();

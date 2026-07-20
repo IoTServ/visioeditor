@@ -5516,10 +5516,19 @@ class VsdxWriter {
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     } else {
       // Edraw StyleSheet defaults can leave a residual shadow unless the shape
-      // explicitly disables it. Emit both aliases + companions (patch does).
+      // explicitly disables it. Emit both aliases + companions (patch does),
+      // including Foregnd/theme so toggle-off → rebuild → reopen restores colour.
       children
         ..add(_cell('ShadowPattern', '0'))
-        ..add(_cell('ShdwPattern', '0'))
+        ..add(_cell('ShdwPattern', '0'));
+      if (s.shadow.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+      } else if (s.shadow.themeColorIndex != null) {
+        children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
+      }
+      children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
@@ -5536,7 +5545,15 @@ class VsdxWriter {
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     } else {
+      // Size=0 disables; keep colour/theme companions for re-enable after rebuild.
       children.add(_cell('GlowSize', '0'));
+      if (s.glow.color != null) {
+        children.add(_cell('GlowColor', _hex(s.glow.color!)));
+      } else if (s.glow.themeColorIndex != null) {
+        children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+      }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
     if (s.reflection.enabled) {
@@ -6132,7 +6149,15 @@ class VsdxWriter {
     } else {
       children
         ..add(_cell('ShadowPattern', '0'))
-        ..add(_cell('ShdwPattern', '0'))
+        ..add(_cell('ShdwPattern', '0'));
+      if (s.shadow.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+      } else if (s.shadow.themeColorIndex != null) {
+        children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
+      }
+      children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
@@ -6150,6 +6175,13 @@ class VsdxWriter {
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     } else {
       children.add(_cell('GlowSize', '0'));
+      if (s.glow.color != null) {
+        children.add(_cell('GlowColor', _hex(s.glow.color!)));
+      } else if (s.glow.themeColorIndex != null) {
+        children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+      }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
     if (s.reflection.enabled) {

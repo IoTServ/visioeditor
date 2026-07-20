@@ -9125,6 +9125,7 @@ void main() {
             ).copyWith(
               shadow: const VsdxShadow(
                 enabled: false,
+                color: VsdxColor(0xFF1565C0),
                 offsetXInches: 0.12,
                 offsetYInches: -0.08,
                 blurInches: 0.05,
@@ -9160,10 +9161,67 @@ void main() {
     expect(pageXml.contains('N="ShadowOffsetX"'), isTrue);
     expect(pageXml.contains('N="ShadowBlur"'), isTrue);
     expect(pageXml.contains('N="ShadowForegndTrans"'), isTrue);
+    expect(pageXml.contains('N="ShadowForegnd"'), isTrue);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.shadow.enabled, isFalse);
     expect(after.shadow.offsetXInches, closeTo(0.12, 1e-6));
     expect(after.shadow.blurInches, closeTo(0.05, 1e-6));
+    expect(after.shadow.color?.value, 0xFF1565C0);
+  });
+
+  test('disabled glow rebuild keeps GlowColor for re-enable', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(
+              glow: const VsdxGlow(
+                enabled: false,
+                color: VsdxColor(0xFF00AA00),
+                sizeInches: 0,
+                transparency: 0.4,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="GlowSize" V="0"'), isTrue);
+    expect(pageXml.contains('N="GlowColor"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.glow.enabled, isFalse);
+    expect(after.glow.color?.value, 0xFF00AA00);
   });
 
   test('FillForegnd / FillPattern F=Inh scrubbed on rebuild', () {

@@ -3740,17 +3740,33 @@ class _PropertyPanel extends StatelessWidget {
           if (!isChart) ...[
           _section(context, EditorL10n.of(context).panelFill),
           _swatchRow(
-            onColor: (v) => controller.setFillColor(VsdxColor(v)),
+            onColor: (v) {
+              final fill = controller.selectedFill;
+              if (fill != null && fill.hasGradient) {
+                _retargetFillGradientStop0(controller, solid: VsdxColor(v));
+              } else {
+                controller.setFillColor(VsdxColor(v));
+              }
+            },
             onNone: controller.setNoFill,
           ),
           const SizedBox(height: 6),
           _themeSwatchRow(
             context,
             controller: controller,
-            onSlot: controller.setFillThemeSlot,
-            selectedSlot: controller.selectedFill?.foreground == null
-                ? controller.selectedFill?.themeForegroundIndex
-                : null,
+            onSlot: (slot) {
+              final fill = controller.selectedFill;
+              if (fill != null && fill.hasGradient) {
+                _retargetFillGradientStop0(controller, themeSlot: slot);
+              } else {
+                controller.setFillThemeSlot(slot);
+              }
+            },
+            selectedSlot: controller.selectedFill?.hasGradient == true
+                ? controller.selectedFill?.gradient?.stops.first.themeColorIndex
+                : (controller.selectedFill?.foreground == null
+                    ? controller.selectedFill?.themeForegroundIndex
+                    : null),
           ),
           _fillPatternControls(context, controller),
           if ((controller.selectedFill?.pattern ?? 1) > 1) ...[
@@ -3788,17 +3804,33 @@ class _PropertyPanel extends StatelessWidget {
           const SizedBox(height: 16),
           _section(context, EditorL10n.of(context).panelLine),
           _swatchRow(
-            onColor: (v) => controller.setLineColor(VsdxColor(v)),
+            onColor: (v) {
+              final line = controller.selectedLine;
+              if (line != null && line.hasGradient) {
+                _retargetLineGradientStop0(controller, solid: VsdxColor(v));
+              } else {
+                controller.setLineColor(VsdxColor(v));
+              }
+            },
             onNone: controller.setNoLine,
           ),
           const SizedBox(height: 6),
           _themeSwatchRow(
             context,
             controller: controller,
-            onSlot: controller.setLineThemeSlot,
-            selectedSlot: controller.selectedLine?.color == null
-                ? controller.selectedLine?.themeColorIndex
-                : null,
+            onSlot: (slot) {
+              final line = controller.selectedLine;
+              if (line != null && line.hasGradient) {
+                _retargetLineGradientStop0(controller, themeSlot: slot);
+              } else {
+                controller.setLineThemeSlot(slot);
+              }
+            },
+            selectedSlot: controller.selectedLine?.hasGradient == true
+                ? controller.selectedLine?.gradient?.stops.first.themeColorIndex
+                : (controller.selectedLine?.color == null
+                    ? controller.selectedLine?.themeColorIndex
+                    : null),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -4105,6 +4137,70 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
+  /// When a fill gradient is active, Format fill swatches retarget stop 0
+  /// instead of wiping the gradient via [EditorController.setFillColor].
+  void _retargetFillGradientStop0(
+    EditorController controller, {
+    VsdxColor? solid,
+    int? themeSlot,
+  }) {
+    final fill = controller.selectedFill;
+    final g = fill?.gradient;
+    if (fill == null || g == null || g.stops.isEmpty) return;
+    final stops = List<VsdxGradientStop>.from(g.stops);
+    final s0 = stops.first;
+    stops[0] = solid != null
+        ? VsdxGradientStop(
+            position: s0.position,
+            color: solid,
+            transparency: s0.transparency,
+          )
+        : VsdxGradientStop(
+            position: s0.position,
+            themeColorIndex: themeSlot,
+            transparency: s0.transparency,
+          );
+    controller.setFillGradient(
+      VsdxGradient(
+        type: g.type,
+        angleRad: g.angleRad,
+        dir: g.dir,
+        stops: stops,
+      ),
+    );
+  }
+
+  void _retargetLineGradientStop0(
+    EditorController controller, {
+    VsdxColor? solid,
+    int? themeSlot,
+  }) {
+    final line = controller.selectedLine;
+    final g = line?.gradient;
+    if (line == null || g == null || g.stops.isEmpty) return;
+    final stops = List<VsdxGradientStop>.from(g.stops);
+    final s0 = stops.first;
+    stops[0] = solid != null
+        ? VsdxGradientStop(
+            position: s0.position,
+            color: solid,
+            transparency: s0.transparency,
+          )
+        : VsdxGradientStop(
+            position: s0.position,
+            themeColorIndex: themeSlot,
+            transparency: s0.transparency,
+          );
+    controller.setLineGradient(
+      VsdxGradient(
+        type: g.type,
+        angleRad: g.angleRad,
+        dir: g.dir,
+        stops: stops,
+      ),
+    );
+  }
+
   /// Fill gradient type + two colour stops + linear angle (draw.io Format).
   Widget _fillGradientControls(
     BuildContext context,
@@ -4120,7 +4216,10 @@ class _PropertyPanel extends StatelessWidget {
     final stop1 = g != null && g.stops.length > 1
         ? g.stops[1].color?.value
         : 0xFFFFFFFF;
-    final angleDeg = g == null ? 0 : (g.angleRad * 180 / math.pi).round() % 180;
+    // Full circle — 0° and 180° are opposite directions in Visio.
+    final angleDeg = g == null
+        ? 0
+        : ((g.angleRad * 180 / math.pi).round() % 360 + 360) % 360;
 
     void apply({
       VsdxGradientType? newType,
@@ -4132,16 +4231,25 @@ class _PropertyPanel extends StatelessWidget {
       final existing = g?.stops ?? const <VsdxGradientStop>[];
       List<VsdxGradientStop> stops;
       if (existing.isEmpty) {
-        stops = <VsdxGradientStop>[
-          VsdxGradientStop(
-            position: 0,
-            color: VsdxColor(color0 ?? stop0 ?? 0xFF1E88E5),
-          ),
-          VsdxGradientStop(
-            position: 1,
-            color: VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF),
-          ),
-        ];
+        // Theme-bound solid fill → keep THEMEVAL on stop 0 (not a baked blue).
+        final theme0 = fill.themeForegroundIndex;
+        final first = color0 != null
+            ? VsdxGradientStop(position: 0, color: VsdxColor(color0))
+            : (stop0 != null
+                ? VsdxGradientStop(position: 0, color: VsdxColor(stop0))
+                : (theme0 != null
+                    ? VsdxGradientStop(position: 0, themeColorIndex: theme0)
+                    : const VsdxGradientStop(
+                        position: 0,
+                        color: VsdxColor(0xFF1E88E5),
+                      )));
+        final second = color1 != null
+            ? VsdxGradientStop(position: 1, color: VsdxColor(color1))
+            : VsdxGradientStop(
+                position: 1,
+                color: VsdxColor(stop1 ?? 0xFFFFFFFF),
+              );
+        stops = <VsdxGradientStop>[first, second];
       } else {
         stops = List<VsdxGradientStop>.from(existing);
         if (color0 != null) {
@@ -4247,7 +4355,16 @@ class _PropertyPanel extends StatelessWidget {
             Wrap(
               spacing: 6,
               children: [
-                for (final deg in const <int>[0, 45, 90, 135])
+                for (final deg in const <int>[
+                  0,
+                  45,
+                  90,
+                  135,
+                  180,
+                  225,
+                  270,
+                  315,
+                ])
                   ChoiceChip(
                     label: Text('$deg°'),
                     selected: angleDeg == deg,
@@ -4278,7 +4395,9 @@ class _PropertyPanel extends StatelessWidget {
     final stop1 = g != null && g.stops.length > 1
         ? g.stops[1].color?.value
         : 0xFFFFFFFF;
-    final angleDeg = g == null ? 0 : (g.angleRad * 180 / math.pi).round() % 180;
+    final angleDeg = g == null
+        ? 0
+        : ((g.angleRad * 180 / math.pi).round() % 360 + 360) % 360;
 
     void apply({
       VsdxGradientType? newType,
@@ -4290,16 +4409,24 @@ class _PropertyPanel extends StatelessWidget {
       final existing = g?.stops ?? const <VsdxGradientStop>[];
       List<VsdxGradientStop> stops;
       if (existing.isEmpty) {
-        stops = <VsdxGradientStop>[
-          VsdxGradientStop(
-            position: 0,
-            color: VsdxColor(color0 ?? stop0 ?? 0xFF212121),
-          ),
-          VsdxGradientStop(
-            position: 1,
-            color: VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF),
-          ),
-        ];
+        final theme0 = line.themeColorIndex;
+        final first = color0 != null
+            ? VsdxGradientStop(position: 0, color: VsdxColor(color0))
+            : (stop0 != null
+                ? VsdxGradientStop(position: 0, color: VsdxColor(stop0))
+                : (theme0 != null
+                    ? VsdxGradientStop(position: 0, themeColorIndex: theme0)
+                    : const VsdxGradientStop(
+                        position: 0,
+                        color: VsdxColor(0xFF212121),
+                      )));
+        final second = color1 != null
+            ? VsdxGradientStop(position: 1, color: VsdxColor(color1))
+            : VsdxGradientStop(
+                position: 1,
+                color: VsdxColor(stop1 ?? 0xFFFFFFFF),
+              );
+        stops = <VsdxGradientStop>[first, second];
       } else {
         stops = List<VsdxGradientStop>.from(existing);
         if (color0 != null) {
@@ -4403,7 +4530,16 @@ class _PropertyPanel extends StatelessWidget {
             Wrap(
               spacing: 6,
               children: [
-                for (final deg in const <int>[0, 45, 90, 135])
+                for (final deg in const <int>[
+                  0,
+                  45,
+                  90,
+                  135,
+                  180,
+                  225,
+                  270,
+                  315,
+                ])
                   ChoiceChip(
                     label: Text('$deg°'),
                     selected: angleDeg == deg,
