@@ -2333,6 +2333,70 @@ void main() {
     );
   });
 
+  test('custom ImgOffset crop formula is preserved on rewrite', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    const part = '/visio/media/image_offset_crop.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    ).copyWith(
+      formulas: const <String, String>{
+        'ImgOffsetX': 'Width*0.1',
+        'ImgOffsetY': 'Height*0.05',
+      },
+      imgOffsetXInches: 0.2,
+      imgOffsetYInches: 0.1,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, page.addShape(pic));
+    final out1 = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(out1);
+    expect(doc.pages.first.findShapeById(id)!.formulas['ImgOffsetX'],
+        'Width*0.1');
+    // Trigger a patch rewrite (move the picture) without changing formulas.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.5),
+      ),
+    );
+    final out2 = writer.write(originalBytes: out1, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out2)
+          .findFile('visio/pages/page1.xml')!
+          .content as List<int>,
+    );
+    expect(
+      outXml,
+      contains('N="ImgOffsetX"'),
+      reason: 'ImgOffsetX cell must remain',
+    );
+    expect(outXml, contains('F="Width*0.1"'),
+        reason: 'custom ImgOffsetX formula must survive patch');
+    expect(outXml, contains('F="Height*0.05"'),
+        reason: 'custom ImgOffsetY formula must survive patch');
+    final after = parser.parse(out2).pages.first.findShapeById(id)!;
+    expect(after.formulas['ImgOffsetX'], 'Width*0.1');
+    expect(after.formulas['ImgOffsetY'], 'Height*0.05');
+  });
+
   test('resizing a picture patches ImgWidth/ImgHeight cached V=', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

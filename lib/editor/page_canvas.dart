@@ -1232,6 +1232,17 @@ class _PageCanvasState extends State<PageCanvas> {
     final cs = run?.charStyle ?? VsdxCharStyle.defaults;
     final fontPx = math.max(cs.fontSizeInches * widget.pxPerInch * _scale, 8.0);
     final align = run?.paraStyle.horizontalAlign ?? VsdxHorzAlign.center;
+    final vAlign = s.richText.textBlock.verticalAlign;
+    final previewAlign = switch (vAlign) {
+      VsdxVertAlign.top => Alignment.topCenter,
+      VsdxVertAlign.bottom => Alignment.bottomCenter,
+      VsdxVertAlign.middle => Alignment.center,
+    };
+    final textAlignVertical = switch (vAlign) {
+      VsdxVertAlign.top => TextAlignVertical.top,
+      VsdxVertAlign.bottom => TextAlignVertical.bottom,
+      VsdxVertAlign.middle => TextAlignVertical.center,
+    };
     final scheme = Theme.of(context).colorScheme;
     final docTheme = _c.documentTheme.isEmpty
         ? VsdxTheme.office
@@ -1328,7 +1339,7 @@ class _PageCanvasState extends State<PageCanvas> {
                       width: math.max(width - 8, 1),
                       height: math.max(height - 4, 1),
                       child: Align(
-                        alignment: Alignment.center,
+                        alignment: previewAlign,
                         child: SizedBox(
                           width: math.max(width - 8, 1),
                           child: Text.rich(
@@ -1356,7 +1367,7 @@ class _PageCanvasState extends State<PageCanvas> {
                 maxLines: null,
                 expands: true,
                 textAlign: _textAlign(align),
-                textAlignVertical: TextAlignVertical.center,
+                textAlignVertical: textAlignVertical,
                 cursorColor: scheme.primary,
                 style: TextStyle(
                   fontSize: fontPx,

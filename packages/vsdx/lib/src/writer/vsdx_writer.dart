@@ -5031,8 +5031,21 @@ class VsdxWriter {
     ]) {
       final cell = _ensureCell(el, entry.$1);
       final next = _fmt(entry.$2);
-      // Scrub F=Inh so Master image placement cannot override the model.
-      if (cell.getAttribute('V') != next || cell.getAttribute('F') != null) {
+      final modelF = _nonInhFormula(s.formulas[entry.$1]);
+      final curF = cell.getAttribute('F');
+      if (modelF != null) {
+        // Preserve parametric crop offsets (Width*0.1, …); only refresh V=.
+        if (cell.getAttribute('V') != next) {
+          cell.setAttribute('V', next);
+          changed = true;
+        }
+        if (curF != modelF) {
+          cell.setAttribute('F', modelF);
+          changed = true;
+        }
+      } else if (cell.getAttribute('V') != next ||
+          (curF != null && curF.isNotEmpty)) {
+        // Absolute offset — scrub F=Inh / stale formulas.
         _writeValue(cell, next);
         changed = true;
       }
