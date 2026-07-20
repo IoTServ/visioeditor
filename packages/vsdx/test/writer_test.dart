@@ -9398,6 +9398,103 @@ void main() {
     expect(outXml.contains('N="LockTextEdit" V="1"'), isTrue);
   });
 
+  test('fine-grained LockTextEdit survives pin patch when unlocked', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp('<Shape ID="$id"[^>]*>\\s*<Cell '),
+      '<Shape ID="$id" NameU="Sheet.$id" Name="Sheet.$id" Type="Shape">'
+          '<Cell N="LockTextEdit" V="1"/><Cell ',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.locked, isFalse);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.25),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(outXml.contains('N="LockTextEdit" V="1"'), isTrue,
+        reason: 'unlocked pin patch must not zero fine-grained Lock*');
+  });
+
+  test('Connection DirX F=Inh scrubs on pin patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          connectionPoints: const [
+            VsdxConnectionPoint(1, 0.5, dirX: 1, dirY: 0),
+          ],
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="DirX"[^/]*/>'),
+      '<Cell N="DirX" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final dir = RegExp(r'<Cell N="DirX"[^/]*/>').firstMatch(outXml)!.group(0)!;
+    expect(dir.contains('F="Inh"'), isFalse);
+    expect(dir.contains('V="1"'), isTrue);
+  });
+
   test('VerticalAlign middle emitted on unlabeled shape group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

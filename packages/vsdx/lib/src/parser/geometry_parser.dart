@@ -162,7 +162,18 @@ class GeometryParser {
     final instHasRowIx = inst.rowIndices.length == inst.commands.length;
     for (var i = 0; i < inst.commands.length; i++) {
       final rowIx = instHasRowIx ? inst.rowIndices[i] : (1000000 + i);
-      rows[rowIx] = (cmd: inst.commands[i], f: inst.formulasAt(i));
+      final instCmd = inst.commands[i];
+      final instF = inst.formulasAt(i);
+      final masterRow = rows[rowIx];
+      if (masterRow != null && instF.values.any(isInhFormula)) {
+        // F=Inh cells keep master coordinates; real formulas still override.
+        rows[rowIx] = (
+          cmd: _blendInhCoords(masterRow.cmd, instCmd, instF),
+          f: _mergeRowFormulas(masterRow.f, instF),
+        );
+      } else {
+        rows[rowIx] = (cmd: instCmd, f: instF);
+      }
     }
     for (final d in inst.deletedRowIndices) {
       rows.remove(d);
@@ -185,6 +196,80 @@ class GeometryParser {
           inst.deletedRowIndices.where(masterIxs.contains)),
       definedFlagCells: {...m.definedFlagCells, ...inst.definedFlagCells},
     );
+  }
+
+  /// Keep master formulas for Inh cells; take instance formulas otherwise.
+  static Map<String, String> _mergeRowFormulas(
+    Map<String, String> master,
+    Map<String, String> inst,
+  ) {
+    final out = <String, String>{...master};
+    for (final e in inst.entries) {
+      if (isInhFormula(e.value)) continue;
+      out[e.key] = e.value;
+    }
+    return Map.unmodifiable(out);
+  }
+
+  /// For each cell marked `F=Inh` on the instance, take the master's coordinate.
+  static VsdxPathCommand _blendInhCoords(
+    VsdxPathCommand master,
+    VsdxPathCommand inst,
+    Map<String, String> instF,
+  ) {
+    double pick(String name, double masterVal, double instVal) =>
+        isInhFormula(instF[name]) ? masterVal : instVal;
+
+    if (master is MoveTo && inst is MoveTo) {
+      return MoveTo(pick('X', master.x, inst.x), pick('Y', master.y, inst.y));
+    }
+    if (master is LineTo && inst is LineTo) {
+      return LineTo(pick('X', master.x, inst.x), pick('Y', master.y, inst.y));
+    }
+    if (master is RelMoveTo && inst is RelMoveTo) {
+      return RelMoveTo(
+          pick('X', master.fx, inst.fx), pick('Y', master.fy, inst.fy));
+    }
+    if (master is RelLineTo && inst is RelLineTo) {
+      return RelLineTo(
+          pick('X', master.fx, inst.fx), pick('Y', master.fy, inst.fy));
+    }
+    if (master is ArcTo && inst is ArcTo) {
+      return ArcTo(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        bow: pick('A', master.bow, inst.bow),
+      );
+    }
+    if (master is CubBezTo && inst is CubBezTo) {
+      return CubBezTo(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        x1: pick('A', master.x1, inst.x1),
+        y1: pick('B', master.y1, inst.y1),
+        x2: pick('C', master.x2, inst.x2),
+        y2: pick('D', master.y2, inst.y2),
+      );
+    }
+    if (master is QuadBezTo && inst is QuadBezTo) {
+      return QuadBezTo(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        x1: pick('A', master.x1, inst.x1),
+        y1: pick('B', master.y1, inst.y1),
+      );
+    }
+    if (master is EllipticalArcTo && inst is EllipticalArcTo) {
+      return EllipticalArcTo(
+        x: pick('X', master.x, inst.x),
+        y: pick('Y', master.y, inst.y),
+        controlX: pick('A', master.controlX, inst.controlX),
+        controlY: pick('B', master.controlY, inst.controlY),
+        angle: pick('C', master.angle, inst.angle),
+        eccentricity: pick('D', master.eccentricity, inst.eccentricity),
+      );
+    }
+    return inst;
   }
 
   /// Collect per-cell `F=` on a Geometry row (`Scratch.X1`, `Width*0.5`, …).

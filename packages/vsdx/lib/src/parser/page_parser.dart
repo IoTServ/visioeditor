@@ -284,15 +284,17 @@ class PageParser {
 
     // Character defaults (libvisio order):
     //   1. shape's own TextStyle stylesheet
-    //   2. master prototype Character / seeded TextStyle
+    //   2. master TextStyle / prototype Character
     //   3. document DefaultTextStyle
     // Do NOT apply DefaultTextStyle when the shape only has a Master — that
     // would wipe Connector=8pt / stencil Character=10pt with Normal=12pt.
     final ownTextStyleId =
         int.tryParse(shapeEl.getAttribute('TextStyle') ?? '');
     final textStyleId = ownTextStyleId ?? proto?.textStyleId;
-    final sheetChar = ownTextStyleId != null
-        ? _stylesheets.resolveCharStyle(ownTextStyleId)
+    // Resolve TextStyle from the instance or Master (FillStyle/LineStyle
+    // already resolve proto ids — Character must too for stencil fonts).
+    final sheetChar = textStyleId != null
+        ? _stylesheets.resolveCharStyle(textStyleId)
         : null;
     final protoChar = proto?.richText.runs.isNotEmpty == true
         ? proto!.richText.runs.first.charStyle
@@ -408,7 +410,8 @@ class PageParser {
             proto?.imageContrast ??
             0.5)
         .clamp(0.0, 1.0);
-    final ownConnPts = _readConnectionPoints(shapeEl);
+    final ownConnPts =
+        _readConnectionPoints(shapeEl, inherit: proto?.connectionPoints);
     final connectionPoints = ownConnPts.isEmpty && proto != null
         ? proto.connectionPoints
         : ownConnPts;
@@ -884,22 +887,42 @@ class PageParser {
 
   /// Read `<Section N="Connection">` rows into shape-local connection points
   /// (X/Y in inches, in row order). Empty when the shape has no such section.
-  List<VsdxConnectionPoint> _readConnectionPoints(XmlElement shapeEl) {
+  List<VsdxConnectionPoint> _readConnectionPoints(
+    XmlElement shapeEl, {
+    List<VsdxConnectionPoint>? inherit,
+  }) {
     final out = <VsdxConnectionPoint>[];
     for (final section in shapeEl.childElements) {
       if (section.name.local != 'Section') continue;
       if (section.getAttribute('N') != 'Connection') continue;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
-        final x = readLengthInches(row, 'X');
-        final y = readLengthInches(row, 'Y');
+        final proto =
+            (inherit != null && out.length < inherit.length)
+                ? inherit[out.length]
+                : null;
+        final x = readLengthInches(row, 'X', inheritFrom: proto?.x) ?? proto?.x;
+        final y = readLengthInches(row, 'Y', inheritFrom: proto?.y) ?? proto?.y;
         if (x == null || y == null) continue;
-        final dirX = _double(row, 'DirX') ?? 0.0;
-        final dirY = _double(row, 'DirY') ?? 0.0;
-        final type = _int(row, 'Type') ?? 0;
-        final autoGen = (_int(row, 'AutoGen') ?? 0) != 0;
+        final dirX = _double(row, 'DirX', inheritFrom: proto?.dirX) ??
+            proto?.dirX ??
+            0.0;
+        final dirY = _double(row, 'DirY', inheritFrom: proto?.dirY) ??
+            proto?.dirY ??
+            0.0;
+        final type =
+            _int(row, 'Type', inheritFrom: proto?.type) ?? proto?.type ?? 0;
+        final autoGen = (_int(row, 'AutoGen',
+                    inheritFrom: proto == null ? null : (proto.autoGen ? 1 : 0)) ??
+                (proto?.autoGen == true ? 1 : 0)) !=
+            0;
         final promptCell = findCell(row, 'Prompt');
-        final prompt = promptCell?.getAttribute('V');
+        final prompt = () {
+          if (promptCell == null) return proto?.prompt;
+          if (isInhFormula(promptCell.getAttribute('F'))) return proto?.prompt;
+          final p = promptCell.getAttribute('V');
+          return (p == null || p.isEmpty) ? null : p;
+        }();
         out.add(VsdxConnectionPoint(
           x,
           y,
@@ -907,7 +930,7 @@ class PageParser {
           dirY: dirY,
           type: type,
           autoGen: autoGen,
-          prompt: (prompt == null || prompt.isEmpty) ? null : prompt,
+          prompt: prompt,
           xFormula: _formula(row, 'X'),
           yFormula: _formula(row, 'Y'),
         ));

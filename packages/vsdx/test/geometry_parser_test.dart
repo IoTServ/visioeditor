@@ -349,6 +349,36 @@ void main() {
       expect(merged.noShow, isTrue);
     });
 
+    test('LineTo Y F=Inh keeps master Y while local X overrides', () {
+      final master = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="LineTo"><Cell N="X" V="1"/><Cell N="Y" V="0.5"/></Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final instance = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="LineTo">'
+                    '<Cell N="X" V="3"/>'
+                    '<Cell N="Y" V="0" F="Inh"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final merged = GeometryParser.mergeInherited(master, instance).single;
+      final lt = merged.commands[1] as LineTo;
+      expect(lt.x, closeTo(3, 1e-9));
+      expect(lt.y, closeTo(0.5, 1e-9));
+    });
+
     test('test9 line shape merges master geometry (real fixture)', () {
       const parser = DocumentParser();
       final doc = parser.parse(

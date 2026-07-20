@@ -2065,14 +2065,18 @@ class VsdxWriter {
         preserveFormula: _isParametricFormula(edited.formulas['EndY']));
     // Values may be unchanged after detach; still strip stale F= from XML.
     // Never re-emit Master F=Inh (same scrub as TxtAngle / Angle).
-    changed |= _syncCellFormulaAttr(
-        el, 'BeginX', _nonInhFormula(edited.formulas['BeginX']));
-    changed |= _syncCellFormulaAttr(
-        el, 'BeginY', _nonInhFormula(edited.formulas['BeginY']));
-    changed |= _syncCellFormulaAttr(
-        el, 'EndX', _nonInhFormula(edited.formulas['EndX']));
-    changed |= _syncCellFormulaAttr(
-        el, 'EndY', _nonInhFormula(edited.formulas['EndY']));
+    for (final name in const ['BeginX', 'BeginY', 'EndX', 'EndY']) {
+      final f = _nonInhFormula(edited.formulas[name]);
+      if (f != null) {
+        changed |= _syncCellFormulaAttr(el, name, f);
+      } else {
+        final c = _findCell(el, name);
+        final raw = (c?.getAttribute('F') ?? '').trim().toUpperCase();
+        if (raw == 'INH' || raw.startsWith('INH(') || edited.formulas[name] != null) {
+          changed |= _clearCellFormulaAttr(el, name);
+        }
+      }
+    }
     // PinX/Y / size: scrub Inh on the cell (formulas map may omit PinX Inh
     // after some parses); keep real parametric (GUARD, EndX-BeginX, …).
     for (final name in const ['PinX', 'PinY', 'Width', 'Height']) {
@@ -2456,10 +2460,17 @@ class VsdxWriter {
         changed |= _clearCellFormulaAttr(el, entry.key);
         continue;
       }
+      // Never re-emit Master F=Inh — treat like a cleared formula.
+      final f = _nonInhFormula(entry.value);
+      if (f == null) {
+        changed |= _clearCellFormulaAttr(el, entry.key);
+        continue;
+      }
       final prev = base.formulas[entry.key];
       if (prev == entry.value) continue;
       final cell = _ensureCell(el, entry.key);
-      cell.setAttribute('F', entry.value);
+      if (cell.getAttribute('F') == f) continue;
+      cell.setAttribute('F', f);
       changed = true;
     }
     for (final key in base.formulas.keys) {
@@ -2482,7 +2493,11 @@ class VsdxWriter {
     bool isThemeVal(String? f) =>
         f != null &&
         RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(f);
-    bool isInh(String? f) => f == 'Inh';
+    bool isInh(String? f) {
+      if (f == null) return false;
+      final u = f.trim().toUpperCase();
+      return u == 'INH' || u.startsWith('INH(');
+    }
     if ((isThemeVal(s.formulas['FillForegnd']) &&
             (s.fill.foreground != null ||
                 s.fill.themeForegroundIndex == null)) ||
@@ -2630,7 +2645,8 @@ class VsdxWriter {
   bool _patchConnectionPoints(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_connectionPointsEqual(
         base.connectionPoints, edited.connectionPoints)) {
-      return false;
+      // Values unchanged — still scrub residual Dir*/Type F=Inh.
+      return _scrubConnectionCompanionInh(el, edited);
     }
     XmlElement? section;
     for (final s in el.childElements) {
@@ -2687,13 +2703,13 @@ class VsdxWriter {
         } else if (!keepY && p.yFormula != null) {
           yCell.setAttribute('F', p.yFormula!);
         }
-        // Dir*/Type/AutoGen — update cached V but keep any Width* formulas.
+        // Dir*/Type/AutoGen — update cached V; drop F=Inh (not parametric).
         final dirXCell = _ensureCell(rows[i], 'DirX');
         final dirYCell = _ensureCell(rows[i], 'DirY');
         _writeValue(dirXCell, _fmt(p.dirX),
-            preserveFormula: dirXCell.getAttribute('F') != null);
+            preserveFormula: _isParametricFormula(dirXCell.getAttribute('F')));
         _writeValue(dirYCell, _fmt(p.dirY),
-            preserveFormula: dirYCell.getAttribute('F') != null);
+            preserveFormula: _isParametricFormula(dirYCell.getAttribute('F')));
         _writeValue(_ensureCell(rows[i], 'Type'), p.type.toString());
         _writeValue(_ensureCell(rows[i], 'AutoGen'), p.autoGen ? '1' : '0');
         if (p.prompt != null) {
@@ -2711,6 +2727,49 @@ class VsdxWriter {
     for (var i = rows.length - 1; i >= edited.connectionPoints.length; i--) {
       rows[i].parent?.children.remove(rows[i]);
     }
+    return true;
+  }
+
+  /// When Connection points are unchanged, still drop companion F=Inh so
+  /// Master inheritance cannot revive stale Dir*/Type after a pin-only save.
+  bool _scrubConnectionCompanionInh(XmlElement el, VsdxShape edited) {
+    if (edited.connectionPoints.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Connection') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rows =
+        section.childElements.where((r) => r.name.local == 'Row').toList();
+    var changed = false;
+    for (var i = 0; i < edited.connectionPoints.length && i < rows.length; i++) {
+      final p = edited.connectionPoints[i];
+      final dirXCell = _ensureCell(rows[i], 'DirX');
+      final dirYCell = _ensureCell(rows[i], 'DirY');
+      changed |= _writeValueIfNeeded(dirXCell, _fmt(p.dirX));
+      changed |= _writeValueIfNeeded(dirYCell, _fmt(p.dirY));
+      changed |=
+          _writeValueIfNeeded(_ensureCell(rows[i], 'Type'), p.type.toString());
+      changed |= _writeValueIfNeeded(
+          _ensureCell(rows[i], 'AutoGen'), p.autoGen ? '1' : '0');
+    }
+    return changed;
+  }
+
+  /// Write [value] and clear F=/E= when the cell still carries Inh or differs.
+  bool _writeValueIfNeeded(XmlElement cell, String value) {
+    final f = cell.getAttribute('F');
+    final v = cell.getAttribute('V');
+    if (_isParametricFormula(f)) {
+      if (v == value) return false;
+      cell.setAttribute('V', value);
+      return true;
+    }
+    if (v == value && (f == null || f.isEmpty)) return false;
+    _writeValue(cell, value);
     return true;
   }
 
@@ -4894,15 +4953,18 @@ class VsdxWriter {
   ];
 
   /// Patch the shape's protection cells to reflect [edited]'s locked flag.
-  /// Scrubs residual Lock* F=Inh whether locked or unlocked.
+  /// Scrubs residual LockMove* F=Inh; leaves fine-grained Visio locks opaque
+  /// when the shape stays unlocked (LockTextEdit / LockWidth / …).
   bool _patchLock(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (base.locked == edited.locked) {
       var changed = false;
-      final v = edited.locked ? 1 : 0;
-      for (final name in _lockCells) {
-        changed |= edited.locked
-            ? _ensureLiteralInt(el, name, v)
-            : _forceLiteralInt(el, name, v);
+      if (edited.locked) {
+        for (final name in _lockCells) {
+          changed |= _ensureLiteralInt(el, name, 1);
+        }
+      } else {
+        changed |= _forceLiteralInt(el, 'LockMoveX', 0);
+        changed |= _forceLiteralInt(el, 'LockMoveY', 0);
       }
       return changed;
     }
@@ -7057,13 +7119,18 @@ class VsdxWriter {
   }
 
   /// Drop Master `F=Inh` so rebuild emits a local formula / literal instead.
-  static String? _nonInhFormula(String? f) =>
-      (f == null || f.isEmpty || f == 'Inh') ? null : f;
+  static String? _nonInhFormula(String? f) {
+    if (f == null || f.isEmpty) return null;
+    final u = f.trim().toUpperCase();
+    if (u == 'INH' || u.startsWith('INH(')) return null;
+    return f;
+  }
 
   static bool _isParametricFormula(String? f) {
     if (f == null || f.isEmpty || f == 'No Formula') return false;
     // Inh is Master inherit, not a local parametric — scrub on V= writes.
-    if (f == 'Inh') return false;
+    final u0 = f.trim().toUpperCase();
+    if (u0 == 'INH' || u0.startsWith('INH(')) return false;
     final u = f.toUpperCase();
     return u.contains('SETATREF') ||
         u.contains('PAR(PNT') ||
