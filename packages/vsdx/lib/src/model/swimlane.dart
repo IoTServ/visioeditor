@@ -405,6 +405,7 @@ abstract final class SwimlaneOps {
       ],
       fill: _poolFill,
       line: _laneLine,
+      connectionPoints: VsdxPage.defaultConnectionPoints(w, h),
       userCells: poolCells(),
       children: lanes,
     );
@@ -426,19 +427,22 @@ abstract final class SwimlaneOps {
     final sy = height / oldH;
     final oldOx = lane.effectiveLocPinX;
     final oldOy = lane.effectiveLocPinY;
-    final framed = lane.copyWith(
-      pinX: pinX,
-      pinY: pinY,
-      width: width,
-      height: height,
-      geometries: laneGeometry(
-        width: width,
-        height: height,
-        horizontal: horizontal,
-      ),
-      userCells: _mergeLaneCells(lane.userCells, horizontal: horizontal),
-      shapeKind: VsdxShapeKind.swimlane,
-    );
+    final framed = lane
+        .copyWith(
+          pinX: pinX,
+          pinY: pinY,
+          width: width,
+          height: height,
+          geometries: laneGeometry(
+            width: width,
+            height: height,
+            horizontal: horizontal,
+          ),
+          userCells: _mergeLaneCells(lane.userCells, horizontal: horizontal),
+          shapeKind: VsdxShapeKind.swimlane,
+        )
+        // Refresh Width*/Height* Connection V values after the lane frame resize.
+        .recalculateLocalFormulas();
     if (lane.children.isEmpty ||
         ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
       return framed;

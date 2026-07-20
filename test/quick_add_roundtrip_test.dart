@@ -270,6 +270,9 @@ void main() {
     for (final c in cells) {
       expect(c.connectionPoints.length, greaterThanOrEqualTo(4),
           reason: 'cell ${c.id}');
+      // Layout must refresh absolute Connection V (not stay stuck at 1×1 birth).
+      final right = c.connectionPoints[1];
+      expect(right.x, closeTo(c.width, 1e-6), reason: 'cell ${c.id} right CP');
     }
 
     e.addShapeFromBuilderAt(
@@ -286,11 +289,14 @@ void main() {
     );
     final poolId = e.singleSelectedId!;
     final pool = e.currentPage!.findShapeById(poolId)!;
+    expect(pool.connectionPoints.length, greaterThanOrEqualTo(4));
     final lanes = SwimlaneOps.lanesOf(pool);
     expect(lanes.length, 2);
     for (final lane in lanes) {
       expect(lane.connectionPoints.length, greaterThanOrEqualTo(4),
           reason: 'lane ${lane.id}');
+      final right = lane.connectionPoints[1];
+      expect(right.x, closeTo(lane.width, 1e-6), reason: 'lane ${lane.id} CP');
     }
 
     final blank = writer.emptyDocument(widthInches: 11, heightInches: 8.5);
@@ -298,9 +304,13 @@ void main() {
     final page = parser.parse(out).pages.first;
     for (final c in TableOps.cellsOf(page.findShapeById(tableId)!)) {
       expect(c.connectionPoints.length, greaterThanOrEqualTo(4));
+      expect(c.connectionPoints[1].x, closeTo(c.width, 1e-6));
     }
-    for (final lane in SwimlaneOps.lanesOf(page.findShapeById(poolId)!)) {
+    final pool2 = page.findShapeById(poolId)!;
+    expect(pool2.connectionPoints.length, greaterThanOrEqualTo(4));
+    for (final lane in SwimlaneOps.lanesOf(pool2)) {
       expect(lane.connectionPoints.length, greaterThanOrEqualTo(4));
+      expect(lane.connectionPoints[1].x, closeTo(lane.width, 1e-6));
     }
   });
 }

@@ -89,6 +89,13 @@ VsdxShape resolveStencilShape({
   final cat = _catalogByNorm[_norm(stencil)];
   if (cat != null) {
     var s = cat.build(id, cx, cy).resizeTo(pinX: cx, pinY: cy, width: w, height: h);
+    // resizeTo does not reflow structural children — retile pools/tables so
+    // lanes/cells match the requested box after agent sizing.
+    if (SwimlaneOps.isPool(s)) {
+      s = SwimlaneOps.layoutLanes(s);
+    } else if (TableOps.isTable(s)) {
+      s = TableOps.layoutCells(s);
+    }
     if (fillHex != null && fillHex.trim().isNotEmpty) {
       s = s.copyWith(fill: fillFromHex(fillHex));
     }
@@ -111,11 +118,20 @@ VsdxShape resolveStencilShape({
 
 /// Materialise mid-edge Connection points so Edraw glue works after save
 /// without the writer inventing points over an intentional empty list.
+/// Recurses into children (pool lanes / table cells / groups).
 VsdxShape _withDefaultGluePoints(VsdxShape s) {
-  if (s.is1D || s.connectionPoints.isNotEmpty) return s;
-  return s.copyWith(
-    connectionPoints: VsdxPage.defaultConnectionPoints(s.width, s.height),
-  );
+  final kids = s.children.isEmpty
+      ? s.children
+      : <VsdxShape>[
+          for (final c in s.children) _withDefaultGluePoints(c),
+        ];
+  var out = identical(kids, s.children) ? s : s.copyWith(children: kids);
+  if (!out.is1D && out.connectionPoints.isEmpty) {
+    out = out.copyWith(
+      connectionPoints: VsdxPage.defaultConnectionPoints(out.width, out.height),
+    );
+  }
+  return out;
 }
 
 /// Search the curated core **plus** the full ~300-shape catalog by name/group.

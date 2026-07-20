@@ -922,19 +922,23 @@ abstract final class TableOps {
     final sy = height / oldH;
     final oldOx = cell.effectiveLocPinX;
     final oldOy = cell.effectiveLocPinY;
-    final framed = cell.copyWith(
-      pinX: pinX,
-      pinY: pinY,
-      width: width,
-      height: height,
-      geometries: _rectGeometry(width, height),
-      userCells: cellUserCells(
-        row: row,
-        col: col,
-        rowSpan: rowSpan,
-        colSpan: colSpan,
-      ),
-    );
+    final framed = cell
+        .copyWith(
+          pinX: pinX,
+          pinY: pinY,
+          width: width,
+          height: height,
+          geometries: _rectGeometry(width, height),
+          userCells: cellUserCells(
+            row: row,
+            col: col,
+            rowSpan: rowSpan,
+            colSpan: colSpan,
+          ),
+        )
+        // Refresh Width*/Height* Connection V values after the frame resize
+        // (cells are born 1×1 then laid out to their tile size).
+        .recalculateLocalFormulas();
     if (cell.children.isEmpty ||
         ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
       return framed;
