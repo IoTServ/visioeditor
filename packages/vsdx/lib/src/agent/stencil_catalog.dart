@@ -75,7 +75,7 @@ VsdxShape resolveStencilShape({
 }) {
   final core = coreNameOrNull(stencil);
   if (core != null) {
-    return syncNoneGeometryFlags(buildStencilShape(
+    return _withDefaultGluePoints(syncNoneGeometryFlags(buildStencilShape(
       stencil: core,
       id: id,
       cx: cx,
@@ -84,7 +84,7 @@ VsdxShape resolveStencilShape({
       h: h,
       fill: fillFromHex(fillHex),
       line: lineFromHex(lineHex),
-    ));
+    )));
   }
   final cat = _catalogByNorm[_norm(stencil)];
   if (cat != null) {
@@ -95,9 +95,9 @@ VsdxShape resolveStencilShape({
     if (lineHex != null && lineHex.trim().isNotEmpty) {
       s = s.copyWith(line: lineFromHex(lineHex));
     }
-    return syncNoneGeometryFlags(s);
+    return _withDefaultGluePoints(syncNoneGeometryFlags(s));
   }
-  return syncNoneGeometryFlags(buildStencilShape(
+  return _withDefaultGluePoints(syncNoneGeometryFlags(buildStencilShape(
     stencil: 'rectangle',
     id: id,
     cx: cx,
@@ -106,7 +106,16 @@ VsdxShape resolveStencilShape({
     h: h,
     fill: fillFromHex(fillHex),
     line: lineFromHex(lineHex),
-  ));
+  )));
+}
+
+/// Materialise mid-edge Connection points so Edraw glue works after save
+/// without the writer inventing points over an intentional empty list.
+VsdxShape _withDefaultGluePoints(VsdxShape s) {
+  if (s.is1D || s.connectionPoints.isNotEmpty) return s;
+  return s.copyWith(
+    connectionPoints: VsdxPage.defaultConnectionPoints(s.width, s.height),
+  );
 }
 
 /// Search the curated core **plus** the full ~300-shape catalog by name/group.

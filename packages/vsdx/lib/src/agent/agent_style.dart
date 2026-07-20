@@ -111,6 +111,9 @@ VsdxShape withLabel(
   }
   return s.copyWith(
     text: text,
+    // Plain label rewrite drops field spans — also drop Field rows so the
+    // writer cannot leave an orphan `<Section N="Field">` without `<fld>`.
+    fields: const <VsdxFieldRow>[],
     richText: VsdxRichText(runs: <VsdxTextRun>[
       VsdxTextRun(
         text: text,

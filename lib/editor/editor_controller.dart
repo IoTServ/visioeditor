@@ -2027,8 +2027,18 @@ class EditorController extends ChangeNotifier {
               id: id, pinX: pinX, pinY: pinY, width: w, height: h);
     }
 
-    final shape =
+    final shape0 =
         _withMemoStyle(base, includeFill: _tool != EditorTool.line);
+    // Materialise default blue points on new 2-D shapes so Edraw glue works
+    // after save without the writer inventing points over an intentional clear.
+    final shape = (!shape0.is1D && shape0.connectionPoints.isEmpty)
+        ? shape0.copyWith(
+            connectionPoints: VsdxPage.defaultConnectionPoints(
+              shape0.width,
+              shape0.height,
+            ),
+          )
+        : shape0;
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
@@ -5334,6 +5344,8 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Apply [text] to [s], preserving multi-run styles when possible.
+  /// Clears Field rows when the label is rewritten (field spans are dropped
+  /// by [replacePlainText] / a fresh single run).
   static VsdxShape _withLabelText(VsdxShape s, String text) {
     final runs = s.richText.runs;
     final current =
@@ -5346,6 +5358,7 @@ class EditorController extends ChangeNotifier {
       final cjk = _containsCjk(text);
       return s.copyWith(
         text: text,
+        fields: const <VsdxFieldRow>[],
         richText: s.richText.copyWith(
           runs: <VsdxTextRun>[
             VsdxTextRun(
@@ -5365,7 +5378,8 @@ class EditorController extends ChangeNotifier {
       );
     }
     final next = replacePlainText(s.richText, text);
-    return s.copyWith(text: text, richText: next);
+    return s.copyWith(
+        text: text, richText: next, fields: const <VsdxFieldRow>[]);
   }
 
   static String _shapeLabel(VsdxShape s) =>

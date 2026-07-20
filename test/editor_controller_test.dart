@@ -1938,7 +1938,8 @@ void main() {
     final id = c.currentPage!.shapes.single.id;
     c.setSelection(<int>{id});
     expect(c.canEditConnectionPoints, isTrue);
-    expect(c.currentPage!.findShapeById(id)!.connectionPoints, isEmpty);
+    // New 2-D shapes materialise default blue points at create time.
+    expect(c.currentPage!.findShapeById(id)!.connectionPoints.length, 5);
 
     c.beginEditConnectionPoints();
     expect(c.editingConnectionPoints, isTrue);

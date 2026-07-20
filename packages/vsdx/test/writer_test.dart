@@ -2318,6 +2318,8 @@ void main() {
     final b = VsdxShapeFactory.rectangle(
         id: page.nextFreeShapeId(), pinX: 6, pinY: 5, width: 2, height: 2);
     page = page.addShape(b);
+    // Materialise glue points in the model (writer no longer invents them).
+    page = page.materializeConnectionPoints(a.id).materializeConnectionPoints(b.id);
     final connId = page.nextFreeShapeId();
     final conn =
         VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
@@ -2332,8 +2334,6 @@ void main() {
     ]).rerouteConnectors();
     doc = doc.replacePage(0, page);
 
-    // First write: 2-D shapes without Connection rows get the standard mid-
-    // edge set so 万兴图示 glues to borders (not an empty / odd attachment).
     final bytes1 = writer.write(originalBytes: blank, edited: doc);
     final r1 = parser.parse(bytes1);
     expect(r1.pages.first.findShapeById(b.id)!.connectionPoints.length, 5);
@@ -8580,5 +8580,229 @@ void main() {
         RegExp(r'<Cell N="ShdwOffsetX"[^/]*/>').firstMatch(pagesXml);
     expect(shdw, isNotNull);
     expect(shdw!.group(0)!.contains('F="Inh"'), isFalse);
+  });
+
+  test('cleared connection points stay empty across second save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          connectionPoints: VsdxPage.defaultConnectionPoints(2, 1),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.connectionPoints.length, 5);
+    // Delete every blue point.
+    var page = doc.pages.first;
+    while (page.findShapeById(id)!.connectionPoints.isNotEmpty) {
+      page = page.removeConnectionPoint(id, 0);
+    }
+    doc = doc.replacePage(0, page);
+    final cleared = writer.write(originalBytes: mid, edited: doc);
+    expect(
+      parser.parse(cleared).pages.first.findShapeById(id)!.connectionPoints,
+      isEmpty,
+    );
+    // Second save must not re-inject defaults.
+    final again = writer.write(
+      originalBytes: cleared,
+      edited: parser.parse(cleared),
+    );
+    expect(
+      parser.parse(again).pages.first.findShapeById(id)!.connectionPoints,
+      isEmpty,
+    );
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(again)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Connection"'), isFalse);
+  });
+
+  test('clearing fieldSpans rewrites Text and drops fld markers', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'W',
+          fields: const [
+            VsdxFieldRow(ix: 0, value: '2', valueFormula: 'Width'),
+          ],
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'W',
+                fieldSpans: [VsdxFieldSpan(start: 0, length: 1, ix: 0)],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    var pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(mid)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('<fld'), isTrue);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fields: const <VsdxFieldRow>[],
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: s.richText.plainText,
+                charStyle: s.richText.runs.first.charStyle,
+                paraStyle: s.richText.runs.first.paraStyle,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('<fld'), isFalse);
+    expect(pageXml.contains('N="Field"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fields, isEmpty);
+    expect(after.richText.runs.first.fieldSpans, isEmpty);
+  });
+
+  test('NoShow F=Inh scrubbed on geometry ensure', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="NoShow"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="NoShow"[^/]*/>'),
+        '<Cell N="NoShow" V="0" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '<Section N="Geometry"',
+        '<Section N="Geometry"><Cell N="NoShow" V="0" F="Inh"/>',
+      );
+    }
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(foreground: const VsdxColor(0xFFABCDEF)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final noShow = RegExp(r'<Cell N="NoShow"[^/]*/>').firstMatch(pageXml);
+    expect(noShow, isNotNull);
+    expect(noShow!.group(0)!.contains('F="Inh"'), isFalse);
+  });
+
+  test('QuickStyleFillMatrix F=Inh scrubbed when value unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(quickStyleFillMatrix: 1),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="QuickStyleFillMatrix"[^/]*/>'),
+      '<Cell N="QuickStyleFillMatrix" V="1" F="Inh"/>',
+    );
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(foreground: const VsdxColor(0xFF112233)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final m =
+        RegExp(r'<Cell N="QuickStyleFillMatrix"[^/]*/>').firstMatch(pageXml);
+    expect(m, isNotNull);
+    expect(m!.group(0)!.contains('F="Inh"'), isFalse);
   });
 }

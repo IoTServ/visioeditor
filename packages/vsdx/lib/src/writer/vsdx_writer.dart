@@ -2278,6 +2278,22 @@ class VsdxWriter {
         base.quickStyleEffectsMatrix, edited.quickStyleEffectsMatrix);
     changed |= _patchOptionalIntCell(el, 'QuickStyleFontMatrix',
         base.quickStyleFontMatrix, edited.quickStyleFontMatrix);
+    if (edited.quickStyleFillMatrix != null) {
+      changed |= _forceLiteralInt(
+          el, 'QuickStyleFillMatrix', edited.quickStyleFillMatrix!);
+    }
+    if (edited.quickStyleLineMatrix != null) {
+      changed |= _forceLiteralInt(
+          el, 'QuickStyleLineMatrix', edited.quickStyleLineMatrix!);
+    }
+    if (edited.quickStyleEffectsMatrix != null) {
+      changed |= _forceLiteralInt(
+          el, 'QuickStyleEffectsMatrix', edited.quickStyleEffectsMatrix!);
+    }
+    if (edited.quickStyleFontMatrix != null) {
+      changed |= _forceLiteralInt(
+          el, 'QuickStyleFontMatrix', edited.quickStyleFontMatrix!);
+    }
     // ObjType / NoAlignBox / etc. — rebuild emits them; patch must too so
     // in-place edits survive save without a group rebuild.
     changed |=
@@ -2630,6 +2646,8 @@ class VsdxWriter {
         _writeValue(_ensureCell(rows[i], 'AutoGen'), p.autoGen ? '1' : '0');
         if (p.prompt != null) {
           _writeValue(_ensureCell(rows[i], 'Prompt'), p.prompt!);
+        } else {
+          _removeNamedCells(rows[i], const ['Prompt']);
         }
         rows[i].setAttribute('IX', i.toString());
       } else {
@@ -2726,9 +2744,21 @@ class VsdxWriter {
       if (p.valueFormula != null) {
         _ensureCell(row, 'Value').setAttribute('F', p.valueFormula!);
       }
-      if (p.label != null) _writeValue(_ensureCell(row, 'Label'), p.label!);
-      if (p.prompt != null) _writeValue(_ensureCell(row, 'Prompt'), p.prompt!);
-      if (p.format != null) _writeValue(_ensureCell(row, 'Format'), p.format!);
+      if (p.label != null) {
+        _writeValue(_ensureCell(row, 'Label'), p.label!);
+      } else {
+        _removeNamedCells(row, const ['Label']);
+      }
+      if (p.prompt != null) {
+        _writeValue(_ensureCell(row, 'Prompt'), p.prompt!);
+      } else {
+        _removeNamedCells(row, const ['Prompt']);
+      }
+      if (p.format != null) {
+        _writeValue(_ensureCell(row, 'Format'), p.format!);
+      } else {
+        _removeNamedCells(row, const ['Format']);
+      }
       _writeValue(_ensureCell(row, 'Type'), p.type.toString());
       if (p.sortKey != null) {
         _writeValue(_ensureCell(row, 'SortKey'), p.sortKey!);
@@ -3800,18 +3830,18 @@ class VsdxWriter {
     return true;
   }
 
-  /// Rewrite `<Text>` only when the visible plain string changes. Prefer
-  /// emitting `<cp>/<pp>` markers for multi-run rich text so Character /
-  /// Paragraph row indices stay wired (aligns with how Visio / libvisio
-  /// store styled text). Literal `\t` in runs is written back as
-  /// `<tp IX="0"/>` (Visio tab-stop marker).
+  /// Rewrite `<Text>` when the visible plain string **or** field/tab markers
+  /// change. Prefer emitting `<cp>/<pp>` markers for multi-run rich text so
+  /// Character / Paragraph row indices stay wired. Literal `\t` in runs is
+  /// written back as `<tp IX="0"/>` (Visio tab-stop marker).
   bool _patchTextContent(XmlElement el, VsdxShape base, VsdxShape edited) {
     final basePlain =
         base.richText.runs.isNotEmpty ? base.richText.plainText : (base.text ?? '');
     final editedPlain = edited.richText.runs.isNotEmpty
         ? edited.richText.plainText
         : (edited.text ?? '');
-    if (editedPlain == basePlain) return false;
+    final markersChanged = !_textMarkersEqual(base.richText, edited.richText);
+    if (editedPlain == basePlain && !markersChanged) return false;
 
     XmlElement? textEl;
     for (final child in el.childElements) {
@@ -3839,6 +3869,20 @@ class VsdxWriter {
     }
     // Keep Character / Paragraph sections in sync when content is rewritten.
     _patchTextStyleSections(el, runs);
+    return true;
+  }
+
+  /// True when field spans / tab indices differ (plain text may be unchanged).
+  static bool _textMarkersEqual(VsdxRichText a, VsdxRichText b) {
+    if (a.runs.length != b.runs.length) return false;
+    for (var i = 0; i < a.runs.length; i++) {
+      if (!_listEqual(a.runs[i].fieldSpans, b.runs[i].fieldSpans)) {
+        return false;
+      }
+      if (!_intListsEqual(a.runs[i].tabIndices, b.runs[i].tabIndices)) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -4724,24 +4768,23 @@ class VsdxWriter {
     return changed;
   }
 
-  /// Write default mid-edge Connection points when a 2-D shape has none.
+  /// Write model Connection points when a 2-D shape has none in XML.
+  /// Does **not** invent defaults — an intentional empty list (user deleted
+  /// every blue point) must survive a second save / group rebuild.
   bool _ensureConnectionPoints(XmlElement el, VsdxShape s) {
     if (s.is1D) return false;
     if (el.getAttribute('Master') != null ||
         el.getAttribute('MasterShape') != null) {
       return false;
     }
+    if (s.connectionPoints.isEmpty) return false;
     for (final child in el.childElements) {
       if (child.name.local == 'Section' &&
           child.getAttribute('N') == 'Connection') {
         return false;
       }
     }
-    final cps = s.connectionPoints.isNotEmpty
-        ? s.connectionPoints
-        : VsdxPage.defaultConnectionPoints(s.width, s.height);
-    if (cps.isEmpty) return false;
-    el.children.add(_buildConnectionSection(cps));
+    el.children.add(_buildConnectionSection(s.connectionPoints));
     return true;
   }
 
@@ -4834,8 +4877,15 @@ class VsdxWriter {
       final g = i < s.geometries.length ? s.geometries[i] : null;
       final wantFill = g?.noFill ?? false;
       final wantLine = g?.noLine ?? false;
+      final wantShow = g?.noShow ?? false;
+      final wantSnap = g?.noSnap ?? false;
+      final wantQuick = g?.noQuickDrag ?? false;
       changed |= _syncGeometryFlagCell(section, 'NoFill', wantFill);
       changed |= _syncGeometryFlagCell(section, 'NoLine', wantLine);
+      // Scrub F=Inh on companions rebuild always emits as literals.
+      changed |= _syncGeometryFlagCell(section, 'NoShow', wantShow);
+      changed |= _syncGeometryFlagCell(section, 'NoSnap', wantSnap);
+      changed |= _syncGeometryFlagCell(section, 'NoQuickDrag', wantQuick);
     }
     return changed;
   }
@@ -5450,15 +5500,10 @@ class VsdxWriter {
     if (s.hyperlinks.isNotEmpty) {
       children.add(_buildHyperlinkSection(s.hyperlinks));
     }
-    // Emit edge glue points so 万兴图示 attaches connectors at mid-sides
-    // (missing Connection → Edraw falls back to Pin/odd corners).
-    final cps = s.connectionPoints.isNotEmpty
-        ? s.connectionPoints
-        : (!s.is1D
-            ? VsdxPage.defaultConnectionPoints(s.width, s.height)
-            : const <VsdxConnectionPoint>[]);
-    if (cps.isNotEmpty) {
-      children.add(_buildConnectionSection(cps));
+    // Emit edge glue points so 万兴图示 attaches connectors at mid-sides.
+    // Honour intentional empty lists (do not re-inject defaults after clear).
+    if (s.connectionPoints.isNotEmpty) {
+      children.add(_buildConnectionSection(s.connectionPoints));
     }
     // Unmodelled cells / sections from the prior XML (group rebuild).
     _appendOpaqueChildren(children, s, opaqueById);
@@ -6100,13 +6145,9 @@ class VsdxWriter {
     if (s.actions.isNotEmpty) {
       children.add(_buildActionsSection(s.actions));
     }
-    // Edge glue points — match normal shapes so connectors can attach after
-    // a Foreign group rebuild (Connection is modeled, not opaque-preserved).
-    final cps = s.connectionPoints.isNotEmpty
-        ? s.connectionPoints
-        : VsdxPage.defaultConnectionPoints(s.width, s.height);
-    if (cps.isNotEmpty) {
-      children.add(_buildConnectionSection(cps));
+    // Edge glue points — honour model (incl. intentional empty after clear).
+    if (s.connectionPoints.isNotEmpty) {
+      children.add(_buildConnectionSection(s.connectionPoints));
     }
     if (s.hyperlinks.isNotEmpty) {
       children.add(_buildHyperlinkSection(s.hyperlinks));
