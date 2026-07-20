@@ -3823,19 +3823,14 @@ class _PropertyPanel extends StatelessWidget {
                   ),
               ],
             ),
-            Row(
-              children: [
-                Text(EditorL10n.of(context).rounded),
-                const Spacer(),
-                Switch(
-                  value: controller.selectedConnectorRounded,
-                  // Rounded corners are moot for an already-smooth curved edge.
-                  onChanged: controller.selectedConnectorRouteStyle ==
-                          ConnectorRouteStyle.curved
-                      ? null
-                      : controller.setConnectorRounded,
-                ),
-              ],
+            _switchRow(
+              label: EditorL10n.of(context).rounded,
+              value: controller.selectedConnectorRounded,
+              // Rounded corners are moot for an already-smooth curved edge.
+              onChanged: controller.selectedConnectorRouteStyle ==
+                      ConnectorRouteStyle.curved
+                  ? null
+                  : controller.setConnectorRounded,
             ),
           ],
           // Text sits with Style (fill/line) like draw.io's Format → Text tab —
@@ -3849,57 +3844,37 @@ class _PropertyPanel extends StatelessWidget {
           ], // !isChart
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelShadow),
-          Row(
-            children: [
-              Text(EditorL10n.of(context).enabled),
-              const Spacer(),
-              Switch(
-                value: controller.selectedHasShadow,
-                onChanged: controller.setShadow,
-              ),
-            ],
+          _switchRow(
+            label: EditorL10n.of(context).enabled,
+            value: controller.selectedHasShadow,
+            onChanged: controller.setShadow,
           ),
           if (controller.selectedHasShadow)
             _shadowDetailControls(context, controller),
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelGlow),
-          Row(
-            children: [
-              Text(EditorL10n.of(context).enabled),
-              const Spacer(),
-              Switch(
-                value: controller.selectedHasGlow,
-                onChanged: controller.setGlow,
-              ),
-            ],
+          _switchRow(
+            label: EditorL10n.of(context).enabled,
+            value: controller.selectedHasGlow,
+            onChanged: controller.setGlow,
           ),
           if (controller.selectedHasGlow)
             _glowDetailControls(context, controller),
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelReflection),
-          Row(
-            children: [
-              Text(EditorL10n.of(context).enabled),
-              const Spacer(),
-              Switch(
-                value: controller.selectedHasReflection,
-                onChanged: controller.setReflection,
-              ),
-            ],
+          _switchRow(
+            label: EditorL10n.of(context).enabled,
+            value: controller.selectedHasReflection,
+            onChanged: controller.setReflection,
           ),
           if (controller.selectedHasReflection)
             _reflectionDetailControls(context, controller),
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelSoftEdges),
-          Row(
-            children: [
-              Text(EditorL10n.of(context).enabled),
-              const Spacer(),
-              Switch(
-                value: controller.selectedHasSoftEdges,
-                onChanged: controller.setSoftEdges,
-              ),
-            ],
+          _switchRow(
+            label: EditorL10n.of(context).enabled,
+            value: controller.selectedHasSoftEdges,
+            onChanged: controller.setSoftEdges,
           ),
           if (controller.selectedHasSoftEdges)
             _RangeSlider(
@@ -3931,6 +3906,27 @@ class _PropertyPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// Label + trailing switch that ellipsizes long locale strings in the
+  /// narrow Format panel (232px) / compact bottom sheet.
+  Widget _switchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Switch(value: value, onChanged: onChanged),
+      ],
     );
   }
 
@@ -4706,7 +4702,13 @@ class _PropertyPanel extends StatelessWidget {
         ),
         Row(
           children: [
-            Flexible(child: Text(EditorL10n.of(context).curvedText)),
+            Expanded(
+              child: Text(
+                EditorL10n.of(context).curvedText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             Switch(
               value: controller.selectedCurvedText,
               onChanged: controller.setCurvedText,
@@ -4715,7 +4717,13 @@ class _PropertyPanel extends StatelessWidget {
         ),
         Row(
           children: [
-            Flexible(child: Text(EditorL10n.of(context).bulletList)),
+            Expanded(
+              child: Text(
+                EditorL10n.of(context).bulletList,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             Switch(
               value: controller.selectedHasBullet,
               onChanged: controller.setBullet,
