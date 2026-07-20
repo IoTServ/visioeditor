@@ -2757,7 +2757,9 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
     }
     return SizedBox(
       width: 184,
-      child: ColoredBox(
+      // Material (not ColoredBox) so CheckboxListTile ink/selection paint
+      // on this ancestor instead of being hidden under an opaque fill.
+      child: Material(
         color: scheme.surface,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
