@@ -370,6 +370,29 @@ void main() {
     );
   });
 
+  test('rotateShape clears stale formulas Angle Inh', () {
+    final c = EditorController()..newDocument();
+    final id = 1;
+    c.updateCurrentPage(
+      (p) => p.copyWith(
+        shapes: <VsdxShape>[
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 2,
+            pinY: 2,
+            width: 2,
+            height: 1,
+          ).copyWith(formulas: const {'Angle': 'Inh'}),
+        ],
+      ),
+    );
+    expect(c.currentPage!.findShapeById(id)!.formulas['Angle'], 'Inh');
+    c.rotateShape(id, 0.25);
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.angleRad, closeTo(0.25, 1e-9));
+    expect(after.formulas.containsKey('Angle'), isFalse);
+  });
+
   test('rotateSelection90 on 1D rewrites Begin/End and keeps Angle 0', () {
     final c = EditorController()..newDocument();
     c

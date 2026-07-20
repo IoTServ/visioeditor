@@ -3906,9 +3906,7 @@ class EditorController extends ChangeNotifier {
           if (parentId == null) {
             next = next.updateShapeById(
               id,
-              (sh) => sh
-                  .copyWith(angleRad: sh.angleRad + delta)
-                  .syncInkEndpoints(),
+              (sh) => _withLiteralAngle(sh, sh.angleRad + delta),
             );
           } else {
             // Page-space delta then parent-local writeback so a flipped
@@ -3930,8 +3928,7 @@ class EditorController extends ChangeNotifier {
             if (s.flipY) localAngle -= math.pi;
             next = next.updateShapeById(
               id,
-              (sh) =>
-                  sh.copyWith(angleRad: localAngle).syncInkEndpoints(),
+              (sh) => _withLiteralAngle(sh, localAngle),
             );
           }
         }
@@ -6078,6 +6075,8 @@ class EditorController extends ChangeNotifier {
   /// Rotate a single shape about its pin (radians, Visio CCW convention).
   /// 1-D connectors rotate Begin/End geometry; [angleRad] is treated as a
   /// delta from the current heading when the shape already has Angle 0.
+  /// Clears stale `formulas['Angle']` (e.g. Master Inh) so group rebuild
+  /// cannot resurrect inherited rotation.
   void rotateShape(int id, double angleRad, {bool transient = false}) {
     final page = currentPage;
     final s = page?.findShapeById(id);
@@ -6105,13 +6104,22 @@ class EditorController extends ChangeNotifier {
         return p
             .updateShapeById(
               id,
-              (s) => s.copyWith(angleRad: angleRad).syncInkEndpoints(),
+              (s) => _withLiteralAngle(s, angleRad),
             )
             .recalculateFormulas(changedShapeIds: movedIds)
             .rerouteConnectors(movedShapeIds: movedIds);
       },
       transient: transient,
     );
+  }
+
+  /// Drop `formulas['Angle']` and set a literal angle (UI rotate / arrange).
+  static VsdxShape _withLiteralAngle(VsdxShape s, double angleRad) {
+    if (!s.formulas.containsKey('Angle')) {
+      return s.copyWith(angleRad: angleRad).syncInkEndpoints();
+    }
+    final next = Map<String, String>.from(s.formulas)..remove('Angle');
+    return s.copyWith(angleRad: angleRad, formulas: next).syncInkEndpoints();
   }
 
   /// Resize a single shape (used by the canvas resize handles); geometry is

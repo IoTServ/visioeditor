@@ -580,16 +580,19 @@ class VsdxWriter {
         bp.viewCenterY != ep.viewCenterY;
     final needBackgroundFlag = bp.isBackgroundPage != ep.isBackgroundPage;
     final needBackPage = bp.backgroundPageId != ep.backgroundPageId;
+    final sheetEl = _firstChild(pageEl, 'PageSheet');
+    final hasInh = sheetEl != null && _pageSheetHasInh(sheetEl);
     if (!needWidth &&
         !needHeight &&
         !needColor &&
         !needSheet &&
         !needView &&
         !needBackgroundFlag &&
-        !needBackPage) {
+        !needBackPage &&
+        !hasInh) {
       return false;
     }
-    final sheet = _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
+    final sheet = sheetEl ?? _ensurePageSheet(pageEl);
     var changed = false;
     if (needWidth) {
       // `V` is written in Visio's internal units (inches); the existing `U`
@@ -619,7 +622,7 @@ class VsdxWriter {
         }
       }
     }
-    if (needSheet) {
+    if (needSheet || hasInh) {
       changed |= _patchPageSheetCells(sheet, bp.pageSheet, ep.pageSheet);
     }
     if (needView) {
@@ -692,14 +695,16 @@ class VsdxWriter {
       XmlElement sheet, VsdxPageSheet base, VsdxPageSheet edited) {
     var changed = false;
     void len(String name, double b, double e) {
-      if ((b - e).abs() <= _epsilon) return;
+      final inh = _pageSheetCellF(sheet, name) == 'Inh';
+      if ((b - e).abs() <= _epsilon && !inh) return;
       _writeValue(_ensurePageSheetCell(sheet, name), _fmt(e),
           preserveFormula: _pageSheetCellHasFormula(sheet, name));
       changed = true;
     }
 
     void raw(String name, String b, String e, {String? unit}) {
-      if (b == e) return;
+      final inh = _pageSheetCellF(sheet, name) == 'Inh';
+      if (b == e && !inh) return;
       final cell = _ensurePageSheetCell(sheet, name);
       _writeValue(cell, e,
           preserveFormula: _pageSheetCellHasFormula(sheet, name));
@@ -710,7 +715,8 @@ class VsdxWriter {
     }
 
     void flag(String name, bool b, bool e) {
-      if (b == e) return;
+      final inh = _pageSheetCellF(sheet, name) == 'Inh';
+      if (b == e && !inh) return;
       _writeValue(_ensurePageSheetCell(sheet, name), e ? '1' : '0');
       changed = true;
     }
@@ -741,18 +747,26 @@ class VsdxWriter {
     if (edited.lineJumpCode != null) {
       raw('LineJumpCode', (base.lineJumpCode ?? -1).toString(),
           edited.lineJumpCode.toString());
+    } else if (base.lineJumpCode != null) {
+      changed |= _removePageSheetCells(sheet, const ['LineJumpCode']);
     }
     if (edited.lineJumpStyle != null) {
       raw('LineJumpStyle', (base.lineJumpStyle ?? -1).toString(),
           edited.lineJumpStyle.toString());
+    } else if (base.lineJumpStyle != null) {
+      changed |= _removePageSheetCells(sheet, const ['LineJumpStyle']);
     }
     if (edited.lineJumpDirX != null) {
       raw('PageLineJumpDirX', (base.lineJumpDirX ?? -1).toString(),
           edited.lineJumpDirX.toString());
+    } else if (base.lineJumpDirX != null) {
+      changed |= _removePageSheetCells(sheet, const ['PageLineJumpDirX']);
     }
     if (edited.lineJumpDirY != null) {
       raw('PageLineJumpDirY', (base.lineJumpDirY ?? -1).toString(),
           edited.lineJumpDirY.toString());
+    } else if (base.lineJumpDirY != null) {
+      changed |= _removePageSheetCells(sheet, const ['PageLineJumpDirY']);
     }
     if (edited.lineToLineXInches != null) {
       len('LineToLineX', base.lineToLineXInches ?? 0, edited.lineToLineXInches!);
@@ -777,12 +791,48 @@ class VsdxWriter {
     if (edited.variationColorIndex != null) {
       raw('VariationColorIndex', (base.variationColorIndex ?? -1).toString(),
           edited.variationColorIndex.toString());
+    } else if (base.variationColorIndex != null) {
+      changed |= _removePageSheetCells(sheet, const ['VariationColorIndex']);
     }
     if (edited.variationStyleIndex != null) {
       raw('VariationStyleIndex', (base.variationStyleIndex ?? -1).toString(),
           edited.variationStyleIndex.toString());
+    } else if (base.variationStyleIndex != null) {
+      changed |= _removePageSheetCells(sheet, const ['VariationStyleIndex']);
     }
     return changed;
+  }
+
+  static String? _pageSheetCellF(XmlElement sheet, String name) {
+    for (final el in sheet.childElements) {
+      if (el.name.local == 'Cell' && el.getAttribute('N') == name) {
+        return el.getAttribute('F');
+      }
+    }
+    return null;
+  }
+
+  static bool _pageSheetHasInh(XmlElement sheet) {
+    for (final el in sheet.childElements) {
+      if (el.name.local == 'Cell' && el.getAttribute('F') == 'Inh') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _removePageSheetCells(XmlElement sheet, List<String> names) {
+    final want = names.toSet();
+    var any = false;
+    for (final el in sheet.childElements.toList()) {
+      if (el.name.local != 'Cell') continue;
+      final n = el.getAttribute('N');
+      if (n != null && want.contains(n)) {
+        el.parent?.children.remove(el);
+        any = true;
+      }
+    }
+    return any;
   }
 
   static bool _pageSheetCellHasFormula(XmlElement sheet, String name) {
@@ -1980,6 +2030,13 @@ class VsdxWriter {
     }
     changed |= _ensureLineFillBasics(el, edited);
     changed |= _patchAngle(el, 'Angle', base.angleRad, edited.angleRad);
+    // Scrub Angle F=Inh when the model holds a literal (keep real formulas).
+    if (_nonInhFormula(edited.formulas['Angle']) == null) {
+      changed |= _ensureLiteralLength(el, 'Angle', edited.angleRad);
+    } else {
+      changed |=
+          _syncCellFormulaAttr(el, 'Angle', edited.formulas['Angle']);
+    }
     // Honour the *edited* model for Begin/End F= — baseline XML PAR(PNT…)
     // must not survive after glue detach / reconnect cleared those formulas.
     changed |= _patchNullableLength(el, 'BeginX', base.beginX, edited.beginX,
@@ -2094,14 +2151,18 @@ class VsdxWriter {
     changed |= _forceLiteralRatio(el, 'LineColorTrans', edited.line.transparency);
     changed |= _patchLength(
         el, 'Rounding', base.line.roundingInches, edited.line.roundingInches);
-    changed |= _forceLiteralLength(el, 'Rounding', edited.line.roundingInches);
+    // Ensure missing SoftEdges/Rounding/CompoundType cells (rebuild always
+    // emits them; StyleSheet can revive 0 defaults when cells are absent).
+    changed |=
+        _ensureLiteralLength(el, 'Rounding', edited.line.roundingInches);
     changed |= _patchLength(
         el, 'SoftEdgesSize', base.line.softEdgesInches, edited.line.softEdgesInches);
     changed |=
-        _forceLiteralLength(el, 'SoftEdgesSize', edited.line.softEdgesInches);
+        _ensureLiteralLength(el, 'SoftEdgesSize', edited.line.softEdgesInches);
     changed |= _patchInt(
         el, 'CompoundType', base.line.compoundType, edited.line.compoundType);
-    changed |= _forceLiteralInt(el, 'CompoundType', edited.line.compoundType);
+    changed |=
+        _ensureLiteralInt(el, 'CompoundType', edited.line.compoundType);
     changed |= _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
     // Text block transform (TxtPin / TxtWidth / TxtAngle / margins) +
     // HideText / TextBkgnd + drop shadow / glow / reflection.
@@ -2112,8 +2173,16 @@ class VsdxWriter {
     // Disabled effects: force literal V=0 even when base/edited already match
     // as "off" so F=Inh cannot revive Glow/Reflection via StyleSheet inherit.
     if (!edited.shadow.enabled) {
-      changed |= _scrubDisabledFlagCell(el, 'ShadowPattern');
-      changed |= _scrubDisabledFlagCell(el, 'ShdwPattern');
+      // Inject / scrub pattern=0 so StyleSheet cannot revive a shadow on 2-D
+      // shapes (connectors already ensure via _ensureConnectorDynamics).
+      for (final name in const ['ShadowPattern', 'ShdwPattern']) {
+        final c = _ensureCell(el, name);
+        if (c.getAttribute('V') != '0' ||
+            (c.getAttribute('F') ?? '').isNotEmpty) {
+          _writeValue(c, '0');
+          changed = true;
+        }
+      }
     }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
@@ -2827,13 +2896,18 @@ class VsdxWriter {
   }
 
   bool _patchLayerMember(XmlElement el, List<int> base, List<int> edited) {
-    if (_intListsEqual(base, edited)) return false;
-    if (edited.isEmpty) {
-      // Clearing membership: write empty string (Visio convention).
-      _writeValue(_ensureCell(el, 'LayerMember'), '');
+    final want = edited.isEmpty ? '' : edited.join(';');
+    if (_intListsEqual(base, edited)) {
+      // Still scrub F=Inh when membership is unchanged.
+      final c = _findCell(el, 'LayerMember');
+      if (c == null) return false;
+      if ((c.getAttribute('F') ?? '').isEmpty && c.getAttribute('V') == want) {
+        return false;
+      }
+      _writeValue(c, want);
       return true;
     }
-    _writeValue(_ensureCell(el, 'LayerMember'), edited.join(';'));
+    _writeValue(_ensureCell(el, 'LayerMember'), want);
     return true;
   }
 
@@ -4401,7 +4475,34 @@ class VsdxWriter {
     return true;
   }
 
+  /// Ensure an int cell exists as literal [value] without `F=`.
+  bool _ensureLiteralInt(XmlElement shape, String cell, int value) {
+    final c = _ensureCell(shape, cell);
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final want = value.toString();
+    final already = v == want && (f == null || f.isEmpty);
+    if (already) return false;
+    _writeValue(c, want);
+    return true;
+  }
+
+  /// Ensure a length cell exists as literal [value] without `F=`.
+  bool _ensureLiteralLength(XmlElement shape, String cell, double value) {
+    final c = _ensureCell(shape, cell);
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final parsed = v == null ? null : double.tryParse(v);
+    final already = (f == null || f.isEmpty) &&
+        parsed != null &&
+        (parsed - value).abs() <= _epsilon;
+    if (already) return false;
+    _writeValue(c, _fmt(value));
+    return true;
+  }
+
   /// Ensure an int cell is literal [value] without `F=` (scrub Inh / stale F).
+  /// No-op when the cell is absent (use [_ensureLiteralInt] to inject).
   bool _forceLiteralInt(XmlElement shape, String cell, int value) {
     final c = _findCell(shape, cell);
     if (c == null) return false;
@@ -4415,6 +4516,7 @@ class VsdxWriter {
   }
 
   /// Ensure a length cell is literal [value] without `F=`.
+  /// No-op when the cell is absent (use [_ensureLiteralLength] to inject).
   bool _forceLiteralLength(XmlElement shape, String cell, double value) {
     final c = _findCell(shape, cell);
     if (c == null) return false;
@@ -4537,14 +4639,15 @@ class VsdxWriter {
   ];
 
   /// Patch the shape's protection cells to reflect [edited]'s locked flag.
-  /// Writes when the flag flips; also scrubs residual Lock* when unlocked so
-  /// Master / F=Inh cannot revive LockMoveX after unlock.
+  /// Scrubs residual Lock* F=Inh whether locked or unlocked.
   bool _patchLock(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (base.locked == edited.locked) {
-      if (edited.locked) return false;
       var changed = false;
+      final v = edited.locked ? 1 : 0;
       for (final name in _lockCells) {
-        changed |= _forceLiteralInt(el, name, 0);
+        changed |= edited.locked
+            ? _ensureLiteralInt(el, name, v)
+            : _forceLiteralInt(el, name, v);
       }
       return changed;
     }
@@ -5008,7 +5111,8 @@ class VsdxWriter {
     children
       ..add(_cell('LocPinX', _fmt(s.effectiveLocPinX), formula: locPinXF))
       ..add(_cell('LocPinY', _fmt(s.effectiveLocPinY), formula: locPinYF));
-    children.add(_cell('Angle', _fmt(s.angleRad), formula: s.formulas['Angle']));
+    children.add(_cell('Angle', _fmt(s.angleRad),
+        formula: _nonInhFormula(s.formulas['Angle'])));
     // Always emit Flip* (incl. 0) so Master FlipX cannot revive after clear.
     children
       ..add(_cell('FlipX', s.flipX ? '1' : '0'))
@@ -5698,7 +5802,8 @@ class VsdxWriter {
                 ? 'Height*0.5'
                 : null),
       ),
-      _cell('Angle', _fmt(s.angleRad), formula: s.formulas['Angle']),
+      _cell('Angle', _fmt(s.angleRad),
+          formula: _nonInhFormula(s.formulas['Angle'])),
       // MS-VSDX §2.2.6 Image — Edraw / Visio use these to place the bitmap
       // inside the Foreign shape. Without them many hosts show an empty box.
       // Drop F=Inh so Master image placement cannot override the model.

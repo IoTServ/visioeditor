@@ -8406,4 +8406,179 @@ void main() {
     expect(w.group(0)!.contains('Width*1'), isTrue);
     expect(h.group(0)!.contains('Height*1'), isTrue);
   });
+
+  test('Angle F=Inh scrubbed on group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    const angle = 0.5;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(
+              angleRad: angle,
+              formulas: const {'Angle': 'Inh'},
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final ang = RegExp(r'<Cell N="Angle"[^/]*/>').firstMatch(pageXml);
+    expect(ang, isNotNull);
+    expect(ang!.group(0)!.contains('F="Inh"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.angleRad, closeTo(angle, 1e-6));
+  });
+
+  test('SoftEdgesSize=0 injected when cell missing', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Strip SoftEdgesSize so patch must re-inject literal 0.
+    pageXml = pageXml.replaceAll(RegExp(r'<Cell N="SoftEdgesSize"[^/]*/>'), '');
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(foreground: const VsdxColor(0xFF112233)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
+    final soft =
+        RegExp(r'<Cell N="SoftEdgesSize"[^/]*/>').firstMatch(pageXml);
+    expect(soft, isNotNull);
+    expect(soft!.group(0)!.contains('F="Inh"'), isFalse);
+  });
+
+  test('disabled shadow injects ShadowPattern=0 when missing', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml
+        .replaceAll(RegExp(r'<Cell N="ShadowPattern"[^/]*/>'), '')
+        .replaceAll(RegExp(r'<Cell N="ShdwPattern"[^/]*/>'), '');
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(foreground: const VsdxColor(0xFF445566)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ShadowPattern" V="0"'), isTrue);
+    expect(pageXml.contains('N="ShdwPattern" V="0"'), isTrue);
+  });
+
+  test('PageSheet ShdwOffsetX F=Inh scrubbed when value unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    expect(pagesXml.contains('N="ShdwOffsetX"'), isTrue);
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="ShdwOffsetX"[^/]*/>'),
+      '<Cell N="ShdwOffsetX" V="0.125" F="Inh"/>',
+    );
+    final tainted = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(tainted);
+    // PageSheet model equals defaults — still must scrub Inh on write.
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    final shdw =
+        RegExp(r'<Cell N="ShdwOffsetX"[^/]*/>').firstMatch(pagesXml);
+    expect(shdw, isNotNull);
+    expect(shdw!.group(0)!.contains('F="Inh"'), isFalse);
+  });
 }
