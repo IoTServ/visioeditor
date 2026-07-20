@@ -22,6 +22,8 @@ abstract final class ChartOps {
   static const String userChart = 'visioeditor.Chart';
   static const String userKind = 'visioeditor.ChartKind';
   static const String userValues = 'visioeditor.ChartValues';
+  /// Marks non-series chrome (axes, grid, track, bridges, needle).
+  static const String userChrome = 'visioeditor.ChartChrome';
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
     VsdxColor(0xFF5B9BD5),
@@ -65,6 +67,16 @@ abstract final class ChartOps {
     return false;
   }
 
+  /// True for axes / grid / track / bridge / needle children (not series).
+  static bool isChartChrome(VsdxShape s) {
+    for (final c in s.userCells) {
+      if (c.name == userChrome && (c.value == '1' || c.value == 'true')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static String? chartKind(VsdxShape s) {
     for (final c in s.userCells) {
       if (c.name == userKind) return c.value;
@@ -102,6 +114,13 @@ abstract final class ChartOps {
         VsdxUserCell(name: userValues, value: formatValues(values)),
       ];
 
+  static const List<VsdxUserCell> _chromeMeta = <VsdxUserCell>[
+    VsdxUserCell(name: userChrome, value: '1'),
+  ];
+
+  /// Auto id name so the painter does not treat it as a visible label.
+  static String _sheetName(int id) => 'Sheet.$id';
+
   /// Normalise values into (0, 1] for plotting (keeps relative proportions).
   static List<double> _unit(List<double> values) {
     if (values.isEmpty) return List<double>.of(defaultValues);
@@ -131,7 +150,6 @@ abstract final class ChartOps {
       width: chart.width,
       height: chart.height,
       values: vals,
-      name: chart.name,
       allocId: allocId,
     );
   }
@@ -144,7 +162,6 @@ abstract final class ChartOps {
     double? width,
     double? height,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     switch (kind) {
@@ -156,7 +173,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'stackedColumn':
         return stackedColumnChart(
@@ -166,7 +182,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'stackedBar':
         return stackedBarChart(
@@ -176,7 +191,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'clusteredColumn':
         return clusteredColumnChart(
@@ -186,7 +200,6 @@ abstract final class ChartOps {
             width: width ?? 2.6,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'pie':
         return pieChart(
@@ -196,7 +209,6 @@ abstract final class ChartOps {
             width: width ?? 2.0,
             height: height ?? 2.0,
             values: values,
-            name: name,
             allocId: allocId);
       case 'donut':
         return donutChart(
@@ -206,7 +218,6 @@ abstract final class ChartOps {
             width: width ?? 2.0,
             height: height ?? 2.0,
             values: values,
-            name: name,
             allocId: allocId);
       case 'line':
         return lineChart(
@@ -216,7 +227,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'area':
         return areaChart(
@@ -226,7 +236,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'funnel':
         return funnelChart(
@@ -236,7 +245,6 @@ abstract final class ChartOps {
             width: width ?? 2.0,
             height: height ?? 2.2,
             values: values,
-            name: name,
             allocId: allocId);
       case 'pyramid':
         return pyramidChart(
@@ -246,7 +254,6 @@ abstract final class ChartOps {
             width: width ?? 2.0,
             height: height ?? 2.2,
             values: values,
-            name: name,
             allocId: allocId);
       case 'radar':
         return radarChart(
@@ -256,7 +263,6 @@ abstract final class ChartOps {
             width: width ?? 2.0,
             height: height ?? 2.0,
             values: values,
-            name: name,
             allocId: allocId);
       case 'gauge':
         return gaugeChart(
@@ -266,7 +272,6 @@ abstract final class ChartOps {
             width: width ?? 2.2,
             height: height ?? 1.4,
             values: values,
-            name: name,
             allocId: allocId);
       case 'progress':
         return progressChart(
@@ -276,7 +281,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 0.55,
             values: values,
-            name: name,
             allocId: allocId);
       case 'waterfall':
         return waterfallChart(
@@ -286,7 +290,6 @@ abstract final class ChartOps {
             width: width ?? 2.6,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'bubble':
         return bubbleChart(
@@ -296,7 +299,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
       case 'column':
       default:
@@ -307,7 +309,6 @@ abstract final class ChartOps {
             width: width ?? 2.4,
             height: height ?? 1.8,
             values: values,
-            name: name,
             allocId: allocId);
     }
   }
@@ -329,13 +330,13 @@ abstract final class ChartOps {
     required double width,
     required double height,
     required VsdxColor fill,
-    String? name,
+    bool chrome = false,
   }) {
     final w = math.max(width.abs(), 0.02);
     final h = math.max(height.abs(), 0.02);
     return VsdxShape(
       id: id,
-      name: name ?? 'Series.$id',
+      name: _sheetName(id),
       pinX: pinX,
       pinY: pinY,
       width: w,
@@ -351,10 +352,11 @@ abstract final class ChartOps {
       ],
       fill: VsdxFill(foreground: fill),
       line: _barLine(fill),
+      userCells: chrome ? _chromeMeta : const <VsdxUserCell>[],
     );
   }
 
-  /// Axes in Y-up: origin at bottom-left → ┘ shape.
+  /// Axes in Y-up: origin at bottom-left → └ shape.
   static VsdxShape _axesChild({
     required int id,
     required double width,
@@ -365,7 +367,7 @@ abstract final class ChartOps {
     const pad = 0.08;
     return VsdxShape(
       id: id,
-      name: 'Axes.$id',
+      name: _sheetName(id),
       pinX: w / 2,
       pinY: h / 2,
       width: w,
@@ -382,6 +384,7 @@ abstract final class ChartOps {
       ],
       fill: const VsdxFill(pattern: 0),
       line: _axisLine,
+      userCells: _chromeMeta,
     );
   }
 
@@ -394,13 +397,13 @@ abstract final class ChartOps {
     required List<VsdxShape> children,
     required String kind,
     required List<double> values,
-    String? name,
   }) {
     final w = width.abs();
     final h = height.abs();
     return VsdxShape(
       id: id,
-      name: name ?? 'Chart.$id',
+      // Always Sheet.N — readable stencil titles must not become on-canvas labels.
+      name: _sheetName(id),
       pinX: pinX,
       pinY: pinY,
       width: w,
@@ -496,7 +499,7 @@ abstract final class ChartOps {
     }
     return VsdxShape(
       id: id,
-      name: 'Slice.$id',
+      name: _sheetName(id),
       pinX: minX + bw / 2,
       pinY: minY + bh / 2,
       width: bw,
@@ -518,7 +521,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? defaultValues;
@@ -556,7 +558,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'column',
       values: vals,
-      name: name ?? 'Column Chart',
     );
   }
 
@@ -567,7 +568,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? defaultValues;
@@ -605,7 +605,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'bar',
       values: vals,
-      name: name ?? 'Bar Chart',
     );
   }
 
@@ -616,7 +615,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     // values interpreted as flat series repeating every 3 for 3 categories.
@@ -666,7 +664,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'stackedColumn',
       values: vals,
-      name: name ?? 'Stacked Column',
     );
   }
 
@@ -677,7 +674,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.25, 0.2, 0.3, 0.35, 0.25, 0.15, 0.2, 0.35, 0.25];
@@ -726,7 +722,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'stackedBar',
       values: vals,
-      name: name ?? 'Stacked Bar',
     );
   }
 
@@ -737,7 +732,6 @@ abstract final class ChartOps {
     double width = 2.6,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.5, 0.7, 0.4, 0.65, 0.55, 0.8];
@@ -781,7 +775,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'clusteredColumn',
       values: vals,
-      name: name ?? 'Clustered Column',
     );
   }
 
@@ -794,7 +787,6 @@ abstract final class ChartOps {
     required List<double> values,
     required double inner,
     required String kind,
-    required String name,
     int Function()? allocId,
   }) {
     final w = width.abs();
@@ -837,7 +829,6 @@ abstract final class ChartOps {
       children: kids,
       kind: kind,
       values: values,
-      name: name,
     );
   }
 
@@ -848,7 +839,6 @@ abstract final class ChartOps {
     double width = 2.0,
     double height = 2.0,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) =>
       _radial(
@@ -860,7 +850,6 @@ abstract final class ChartOps {
         values: values ?? const <double>[0.3, 0.25, 0.2, 0.25],
         inner: 0,
         kind: 'pie',
-        name: name ?? 'Pie Chart',
         allocId: allocId,
       );
 
@@ -871,7 +860,6 @@ abstract final class ChartOps {
     double width = 2.0,
     double height = 2.0,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) =>
       _radial(
@@ -883,7 +871,6 @@ abstract final class ChartOps {
         values: values ?? const <double>[0.28, 0.22, 0.3, 0.2],
         inner: 0.45,
         kind: 'donut',
-        name: name ?? 'Donut Chart',
         allocId: allocId,
       );
 
@@ -894,7 +881,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.35, 0.55, 0.45, 0.8, 0.65];
@@ -929,7 +915,7 @@ abstract final class ChartOps {
     final lh = math.max(maxY - minY, 0.04);
     kids.add(VsdxShape(
       id: next(),
-      name: 'Line.$id',
+      name: _sheetName(id),
       pinX: minX + lw / 2,
       pinY: minY + lh / 2,
       width: lw,
@@ -954,7 +940,7 @@ abstract final class ChartOps {
       const r = 0.06;
       kids.add(VsdxShape(
         id: next(),
-        name: 'Mark.$i',
+        name: _sheetName(id),
         pinX: pts[i].x,
         pinY: pts[i].y,
         width: r * 2,
@@ -984,7 +970,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'line',
       values: vals,
-      name: name ?? 'Line Chart',
     );
   }
 
@@ -995,7 +980,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.3, 0.6, 0.5, 0.85, 0.55];
@@ -1028,7 +1012,7 @@ abstract final class ChartOps {
     final ah = math.max(maxY - minY, 0.04);
     kids.add(VsdxShape(
       id: next(),
-      name: 'Area.$id',
+      name: _sheetName(id),
       pinX: minX + aw / 2,
       pinY: minY + ah / 2,
       width: aw,
@@ -1060,7 +1044,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'area',
       values: vals,
-      name: name ?? 'Area Chart',
     );
   }
 
@@ -1071,7 +1054,6 @@ abstract final class ChartOps {
     double width = 2.0,
     double height = 2.2,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[1.0, 0.78, 0.55, 0.35];
@@ -1105,7 +1087,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'funnel',
       values: vals,
-      name: name ?? 'Funnel',
     );
   }
 
@@ -1116,7 +1097,6 @@ abstract final class ChartOps {
     double width = 2.0,
     double height = 2.2,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.35, 0.55, 0.78, 1.0];
@@ -1150,7 +1130,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'pyramid',
       values: vals,
-      name: name ?? 'Pyramid Chart',
     );
   }
 
@@ -1161,7 +1140,6 @@ abstract final class ChartOps {
     double width = 2.0,
     double height = 2.0,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.7, 0.55, 0.85, 0.45, 0.65];
@@ -1197,7 +1175,7 @@ abstract final class ChartOps {
     }
     kids.add(VsdxShape(
       id: next(),
-      name: 'RadarGrid.$id',
+      name: _sheetName(id),
       pinX: cx,
       pinY: cy,
       width: w,
@@ -1205,6 +1183,7 @@ abstract final class ChartOps {
       geometries: gridCmds,
       fill: const VsdxFill(pattern: 0),
       line: _axisLine,
+      userCells: _chromeMeta,
     ));
     final polyPts = <({double x, double y})>[];
     for (var i = 0; i < unit.length; i++) {
@@ -1226,7 +1205,7 @@ abstract final class ChartOps {
     final ph = math.max(maxY - minY, 0.04);
     kids.add(VsdxShape(
       id: next(),
-      name: 'RadarFill.$id',
+      name: _sheetName(id),
       pinX: minX + pw / 2,
       pinY: minY + ph / 2,
       width: pw,
@@ -1257,7 +1236,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'radar',
       values: vals,
-      name: name ?? 'Radar Chart',
     );
   }
 
@@ -1268,7 +1246,6 @@ abstract final class ChartOps {
     double width = 2.2,
     double height = 1.4,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.65];
@@ -1309,7 +1286,7 @@ abstract final class ChartOps {
     final nMaxY = math.max(cy, ny) + 0.02;
     kids.add(VsdxShape(
       id: next(),
-      name: 'Needle.$id',
+      name: _sheetName(id),
       pinX: (nMinX + nMaxX) / 2,
       pinY: (nMinY + nMaxY) / 2,
       width: math.max(nMaxX - nMinX, 0.04),
@@ -1328,6 +1305,7 @@ abstract final class ChartOps {
         color: VsdxColor(0xFF333333),
         weightInches: 0.02,
       ),
+      userCells: _chromeMeta,
     ));
     return _group(
       id: id,
@@ -1338,7 +1316,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'gauge',
       values: vals,
-      name: name ?? 'Gauge',
     );
   }
 
@@ -1349,7 +1326,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 0.55,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.68];
@@ -1365,7 +1341,7 @@ abstract final class ChartOps {
         width: w,
         height: h * 0.55,
         fill: const VsdxColor(0xFFE8E8E8),
-        name: 'Track.$id',
+        chrome: true,
       ),
       _rectChild(
         id: next(),
@@ -1374,7 +1350,6 @@ abstract final class ChartOps {
         width: math.max(w * level, 0.04),
         height: h * 0.55,
         fill: seriesColors.first,
-        name: 'Fill.$id',
       ),
     ];
     return _group(
@@ -1386,7 +1361,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'progress',
       values: vals,
-      name: name ?? 'Progress',
     );
   }
 
@@ -1397,7 +1371,6 @@ abstract final class ChartOps {
     double width = 2.6,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     final vals = values ?? const <double>[0.4, 0.25, -0.15, 0.3, -0.1];
@@ -1434,7 +1407,7 @@ abstract final class ChartOps {
         final nextX = padL + gap + barW / 2 + (i + 1) * (barW + gap);
         kids.add(VsdxShape(
           id: next(),
-          name: 'Bridge.$i',
+          name: _sheetName(id),
           pinX: (cx + nextX) / 2,
           pinY: connectorY,
           width: math.max((nextX - cx).abs(), 0.04),
@@ -1454,6 +1427,7 @@ abstract final class ChartOps {
             weightInches: 0.008,
             pattern: 2,
           ),
+          userCells: _chromeMeta,
         ));
       }
       running += step;
@@ -1467,7 +1441,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'waterfall',
       values: vals,
-      name: name ?? 'Waterfall',
     );
   }
 
@@ -1478,7 +1451,6 @@ abstract final class ChartOps {
     double width = 2.4,
     double height = 1.8,
     List<double>? values,
-    String? name,
     int Function()? allocId,
   }) {
     // Triples: x, y, size (0..1-ish), repeated.
@@ -1500,7 +1472,7 @@ abstract final class ChartOps {
       final r = 0.08 + 0.18 * s;
       kids.add(VsdxShape(
         id: next(),
-        name: 'Bubble.$i',
+        name: _sheetName(id),
         pinX: padL + plotW * x,
         pinY: padB + plotH * y,
         width: r * 2,
@@ -1533,7 +1505,6 @@ abstract final class ChartOps {
       children: kids,
       kind: 'bubble',
       values: vals,
-      name: name ?? 'Bubble Chart',
     );
   }
 }

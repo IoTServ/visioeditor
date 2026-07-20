@@ -5324,14 +5324,7 @@ class EditorController extends ChangeNotifier {
     ];
   }
 
-  static bool _isChartChrome(VsdxShape s) {
-    final n = s.name;
-    return n.startsWith('Axes.') ||
-        n.startsWith('RadarGrid.') ||
-        n.startsWith('Track.') ||
-        n.startsWith('Bridge.') ||
-        n.startsWith('Needle.');
-  }
+  static bool _isChartChrome(VsdxShape s) => ChartOps.isChartChrome(s);
 
   /// Set fill colour on a chart series child (one undo step).
   void setChartSeriesColor(int seriesId, VsdxColor color) {

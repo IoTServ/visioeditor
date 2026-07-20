@@ -19,7 +19,7 @@ void main() {
 
   test('axes form bottom-left L in Y-up local space', () {
     final chart = ChartOps.columnChart(id: 1, pinX: 2, pinY: 2);
-    final axes = chart.children.firstWhere((c) => c.name.startsWith('Axes.'));
+    final axes = chart.children.firstWhere(ChartOps.isChartChrome);
     final cmds = axes.geometries.first.commands;
     expect(cmds, hasLength(3));
     final m = cmds[0] as MoveTo;
@@ -30,6 +30,23 @@ void main() {
     expect(a.x, closeTo(m.x, 1e-9));
     expect(b.y, closeTo(a.y, 1e-9));
     expect(b.x, greaterThan(a.x));
+  });
+
+  test('chart shapes use Sheet.N names so painter skips name labels', () {
+    final autoName = RegExp(r'^Sheet\.\d+$');
+    for (final s in kChartStencils) {
+      final shape = s.build(7, 4, 5);
+      void check(VsdxShape node) {
+        expect(autoName.hasMatch(node.name), isTrue,
+            reason: '${s.name} id=${node.id} name=${node.name}');
+        expect(node.text, isNull, reason: '${s.name} id=${node.id}');
+        for (final c in node.children) {
+          check(c);
+        }
+      }
+
+      check(shape);
+    }
   });
 
   test('pie slices use tight AABB (not full chart frame)', () {
