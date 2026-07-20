@@ -2249,7 +2249,75 @@ class EditorController extends ChangeNotifier {
       targetId = clone.id;
     }
 
-    final target = next.findShapeById(targetId)!;
+    _wireDirectionalConnector(
+      page: next,
+      sourceId: sourceId,
+      targetId: targetId,
+      dir: dir,
+    );
+  }
+
+  /// EdrawMax / draw.io quick-add: place a shape from [build] one step from
+  /// [sourceId] in [dir] (0=N, 1=E, 2=S, 3=W) at ([cx],[cy]) and glue a
+  /// connector between facing connection points. One undo step; selects the
+  /// new shape. No-op for a 1-D / locked source.
+  void quickAddInDirection(
+    int sourceId,
+    int dir, {
+    required VsdxShape Function(int id, double cx, double cy) build,
+    required double cx,
+    required double cy,
+  }) {
+    final doc = _document;
+    final page = currentPage;
+    if (doc == null || page == null) return;
+    final source = page.findShapeById(sourceId);
+    if (source == null ||
+        source.is1D ||
+        source.locked ||
+        isOnLockedLayer(sourceId)) {
+      return;
+    }
+
+    final id = page.nextFreeShapeId();
+    final built = build(id, snap(cx), snap(cy));
+    if (built.is1D) return;
+    var shape = _withMemoStyle(built, includeFill: true);
+    if (shape.connectionPoints.isEmpty) {
+      shape = shape.copyWith(
+        connectionPoints: VsdxPage.defaultConnectionPoints(
+          shape.width,
+          shape.height,
+        ),
+      );
+    }
+    final next = page.addShape(shape);
+    _wireDirectionalConnector(
+      page: next,
+      sourceId: sourceId,
+      targetId: id,
+      dir: dir,
+    );
+    // Same containment as stencil drop so lane / container parenting applies.
+    applyDropContainmentAt(snap(cx), snap(cy), transient: false);
+  }
+
+  /// Shared glue + route for [connectDirectional] / [quickAddInDirection]:
+  /// connector from [sourceId] to [targetId] along [dir], ends pinned to facing
+  /// fixed connection points. Applies one undo step and selects [targetId].
+  void _wireDirectionalConnector({
+    required VsdxPage page,
+    required int sourceId,
+    required int targetId,
+    required int dir,
+  }) {
+    final doc = _document;
+    if (doc == null) return;
+    final source = page.findShapeById(sourceId);
+    final target = page.findShapeById(targetId);
+    if (source == null || target == null) return;
+
+    var next = page;
     final connId = next.nextFreeShapeId();
     var baseLine = (_memoLine ?? const VsdxLine(color: VsdxColor.black))
         .copyWith(endArrow: 4);

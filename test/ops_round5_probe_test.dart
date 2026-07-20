@@ -160,4 +160,85 @@ void main() {
     expect(e.selection, equals({a}));
     expect(e.currentPage!.shapes.length, 1);
   });
+
+  test('quickAddInDirection places stencil and glues facing CPs', () {
+    final e = ctrl();
+    final a = rect(e, 2, 4);
+    e.setSelection([a]);
+    e.quickAddInDirection(
+      a,
+      1,
+      build: (id, cx, cy) => VsdxShapeFactory.ellipse(
+          id: id, pinX: cx, pinY: cy, width: 1.2, height: 0.8),
+      cx: 5,
+      cy: 4,
+    );
+    final target = e.singleSelectedId!;
+    expect(target, isNot(a));
+    final page = e.currentPage!;
+    final shape = page.findShapeById(target)!;
+    expect(shape.is1D, isFalse);
+    expect(shape.connectionPoints, isNotEmpty);
+    // One new 2-D shape + one connector.
+    expect(page.shapes.where((s) => !s.is1D).length, 2);
+    expect(page.shapes.where((s) => s.is1D).length, 1);
+    final conn = page.shapes.firstWhere((s) => s.is1D);
+    final begins = page.connects
+        .where((c) => c.fromSheetId == conn.id && c.fromCell == 'BeginX');
+    final ends = page.connects
+        .where((c) => c.fromSheetId == conn.id && c.fromCell == 'EndX');
+    expect(begins.single.toSheetId, a);
+    expect(ends.single.toSheetId, target);
+    // Facing fixed CPs (ToPart = 100 + index), not whole-shape glue.
+    expect(begins.single.toPart, greaterThanOrEqualTo(100));
+    expect(ends.single.toPart, greaterThanOrEqualTo(100));
+    e.undo();
+    expect(e.selection, equals({a}));
+    expect(e.currentPage!.shapes.length, 1);
+  });
+
+  test('quickAddInDirection is no-op for locked source', () {
+    final e = ctrl();
+    final a = rect(e, 2, 4);
+    e.setSelection([a]);
+    e.setSelectionLocked(true);
+    e.quickAddInDirection(
+      a,
+      1,
+      build: (id, cx, cy) => VsdxShapeFactory.rectangle(
+          id: id, pinX: cx, pinY: cy, width: 1, height: 0.6),
+      cx: 5,
+      cy: 4,
+    );
+    expect(e.currentPage!.shapes.length, 1);
+    expect(e.selection, equals({a}));
+  });
+
+  test('quickAddInDirection works for all four directions', () {
+    final e = ctrl();
+    final a = rect(e, 5, 4);
+    const diamond = <Offset2D>[
+      Offset2D(0.5, 1),
+      Offset2D(1, 0.5),
+      Offset2D(0.5, 0),
+      Offset2D(0, 0.5),
+    ];
+    for (final dir in <int>[0, 1, 2, 3]) {
+      e.setSelection([a]);
+      final before = e.currentPage!.shapes.length;
+      e.quickAddInDirection(
+        a,
+        dir,
+        build: (id, cx, cy) => VsdxShapeFactory.polygon(
+            id: id, pinX: cx, pinY: cy, width: 1, height: 1, unit: diamond),
+        cx: 5 + (dir == 1 ? 2 : dir == 3 ? -2 : 0),
+        cy: 4 + (dir == 0 ? 2 : dir == 2 ? -2 : 0),
+      );
+      expect(e.currentPage!.shapes.length, before + 2,
+          reason: 'dir $dir adds shape + connector');
+      expect(e.selection.contains(a), isFalse);
+      e.undo();
+      expect(e.currentPage!.shapes.length, before);
+    }
+  });
 }

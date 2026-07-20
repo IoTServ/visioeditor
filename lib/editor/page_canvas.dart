@@ -18,6 +18,7 @@ import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
 import 'image_materials.dart';
 import '../l10n/editor_l10n.dart';
+import 'quick_add_picker.dart';
 import 'snap_guides.dart';
 import 'stencils.dart';
 import 'third_party_icons.dart';
@@ -149,20 +150,28 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _endpointConnId;
   bool _endpointIsBegin = false;
 
-  // Hover-to-connect (drawio HoverIcons): the top-level shape currently under
-  // the cursor in idle select mode (shows directional connect arrows), the
-  // source shape while dragging out a new connector from one of those arrows,
-  // and the shape currently under the cursor while wiring (highlighted).
+  // Hover-to-connect (drawio HoverIcons / EdrawMax quick-add): the top-level
+  // shape currently under the cursor in idle select mode (shows directional
+  // arrows), the source while dragging a connector from a blue connection
+  // point / perimeter / arrow, and the glue target while wiring.
   int? _hoverShapeId;
   int? _connectSourceId;
   int? _connectTargetId;
 
+  /// Dismisses an open quick-add shape picker, if any.
+  VoidCallback? _dismissQuickAdd;
+
+  /// Arrow press that became a pan (slop) — open quick-add on release if the
+  /// pointer barely moved, so jittery clicks still work when Tap loses the arena.
+  ({int id, int dir, Offset start})? _pendingQuickAdd;
+
   /// Container under the pointer while dragging shapes (drop-into highlight).
   int? _dropContainerId;
 
-  // Whether the pointer sits on a connect affordance (directional arrow or an
-  // edge connection point) of the hovered shape — drives the crosshair cursor.
+  // Whether the pointer sits on a shape connection point / perimeter (crosshair)
+  // or a directional quick-add arrow (click cursor).
   bool _hoverOnConnectPoint = false;
+  bool _hoverOnQuickAddArrow = false;
 
   // Fixed connection-point index the new connector's begin end glues to (the
   // arrow / blue point it was dragged out of), or null for a whole-shape glue.
@@ -210,6 +219,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    _dismissQuickAdd?.call();
+    _dismissQuickAdd = null;
+    _pendingQuickAdd = null;
     _textFocus
       ..removeListener(_onEditorFocusChange)
       ..dispose();
@@ -739,18 +751,6 @@ class _PageCanvasState extends State<PageCanvas> {
     ];
   }
 
-  /// Midpoint of the [box] edge a connect arrow with [dir] points out of
-  /// (content-px) — the visual start of the connector preview.
-  static Offset _connectEdge(Rect box, int dir) {
-    final b = _normaliseRect(box);
-    return switch (dir) {
-      0 => b.topCenter,
-      1 => b.centerRight,
-      2 => b.bottomCenter,
-      _ => b.centerLeft,
-    };
-  }
-
   static Rect _normaliseRect(Rect r) => Rect.fromLTRB(
         math.min(r.left, r.right),
         math.min(r.top, r.bottom),
@@ -814,31 +814,39 @@ class _PageCanvasState extends State<PageCanvas> {
       final s = _page?.findShapeById(next);
       if (s == null || !_canConnectFrom(s)) next = null;
     }
-    // Crosshair affordance: the pointer is on a directional arrow or an edge
-    // connection point of the hovered shape (drawio shows a crosshair there).
+    // Cursor affordances: arrows → click (quick-add); blue CPs / perimeter →
+    // crosshair (draw a connector glued to the shape).
     var onConnect = false;
+    var onArrow = false;
     if (next != null) {
       final s = _page?.findShapeById(next);
       if (s != null && _canConnectFrom(s)) {
-        onConnect = _connectArrowHitDir(s, pos) != null ||
-            (_resizableSelection()?.id != s.id &&
-                (_connDragSourceIndex(s, pos) != null ||
-                    _nearShapePerimeter(s, pos)));
+        onArrow = _connectArrowHitDir(s, pos) != null;
+        onConnect = !onArrow &&
+            _resizableSelection()?.id != s.id &&
+            (_connDragSourceIndex(s, pos) != null ||
+                _nearShapePerimeter(s, pos));
       }
     }
-    if (next != _hoverShapeId || onConnect != _hoverOnConnectPoint) {
+    if (next != _hoverShapeId ||
+        onConnect != _hoverOnConnectPoint ||
+        onArrow != _hoverOnQuickAddArrow) {
       setState(() {
         _hoverShapeId = next;
         _hoverOnConnectPoint = onConnect;
+        _hoverOnQuickAddArrow = onArrow;
       });
     }
   }
 
   void _clearHover() {
-    if (_hoverShapeId != null || _hoverOnConnectPoint) {
+    if (_hoverShapeId != null ||
+        _hoverOnConnectPoint ||
+        _hoverOnQuickAddArrow) {
       setState(() {
         _hoverShapeId = null;
         _hoverOnConnectPoint = false;
+        _hoverOnQuickAddArrow = false;
       });
     }
   }
@@ -860,14 +868,20 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return;
     }
-    // A click on a hover-connect arrow connects to (or clones + connects) the
-    // shape one step over in that direction, drawio-style, and selects it.
+    // Click a directional arrow → EdrawMax / draw.io quick-add picker (choose
+    // the next shape and auto-connect). Shift+click still clones the source.
     if (_connectAffordanceActive && _hoverShapeId != null) {
       final s = _page?.findShapeById(_hoverShapeId!);
       if (s != null && _canConnectFrom(s)) {
         final dir = _connectArrowHitDir(s, d.localPosition);
         if (dir != null) {
-          _connectInDirection(s, dir);
+          // Tap won the arena — don't also fire from a pending pan release.
+          _pendingQuickAdd = null;
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            _connectInDirection(s, dir);
+          } else {
+            _showQuickAddFor(s, dir, d.localPosition);
+          }
           return;
         }
       }
@@ -1446,16 +1460,21 @@ class _PageCanvasState extends State<PageCanvas> {
       });
       return;
     }
-    // Hover-connect: dragging out of one of a hovered shape's arrows starts a
-    // new connector glued to that shape (drawio's HoverIcons).
+    // Hover affordances: arrows → quick-add (click); blue CPs / perimeter →
+    // drag out a connector glued to the shape.
     final hover = _hoverShapeId;
     if (hover != null) {
       final s = _page?.findShapeById(hover);
       if (s != null && _canConnectFrom(s)) {
-        // Edge connection point (drawio blue X): drag out a connector glued to
-        // that exact point. Skipped for the active resize selection so its
-        // edge-midpoint handles keep priority. Otherwise any point on the
-        // geometry perimeter starts a whole-shape glue (draw.io floating).
+        // Directional arrows are quick-add only — do not start a connector.
+        // Remember the press so a pan that wins the gesture arena (tiny
+        // movement) still opens the picker on release.
+        final arrowDir = _connectArrowHitDir(s, d.localPosition);
+        if (arrowDir != null) {
+          _pendingQuickAdd =
+              (id: s.id, dir: arrowDir, start: d.localPosition);
+          return;
+        }
         if (_resizableSelection()?.id != s.id) {
           final cpIndex = _connDragSourceIndex(s, d.localPosition);
           if (cpIndex != null) {
@@ -1483,26 +1502,6 @@ class _PageCanvasState extends State<PageCanvas> {
             });
             return;
           }
-        }
-        final dir = _connectArrowHitDir(s, d.localPosition);
-        if (dir != null) {
-          _connectSourceId = hover;
-          // Glue begin to the side CP nearest the page-space arrow (N/E/S/W).
-          // After rotate/flip, page-north is not always local CP0.
-          final page = _c.currentPage;
-          final sidePts = page == null
-              ? const <VsdxConnectionPoint>[]
-              : VsdxPage.effectiveConnectionPoints(s);
-          _connectSourceConnIndex = page != null && sidePts.length >= 4
-              ? page.connectionIndexForPageDir(s.id, dir)
-              : null;
-          _connectTargetId = null;
-          _mode = _DragMode.connect;
-          setState(() {
-            _previewStart = _connectEdge(_exactContentBox(s), dir);
-            _previewEnd = _viewportToContent(d.localPosition);
-          });
-          return;
         }
       }
     }
@@ -1604,6 +1603,11 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _onPanUpdate(DragUpdateDetails d) {
     final pos = d.localPosition;
+    // Abandon a pending arrow click once the pointer clearly dragged away.
+    final pending = _pendingQuickAdd;
+    if (pending != null && (pos - pending.start).distance > 8) {
+      _pendingQuickAdd = null;
+    }
     switch (_mode) {
       case _DragMode.moveConnectionPoint:
         final id = _c.singleSelectedId;
@@ -2147,11 +2151,9 @@ class _PageCanvasState extends State<PageCanvas> {
     return best < 0 ? null : best;
   }
 
-  /// drawio directional-arrow *click*: connect [s] to the shape one step over
-  /// in [dir] (0=N, 1=E, 2=S, 3=W) — or clone [s] there and connect to it —
-  /// then select the connected shape.
-  void _connectInDirection(VsdxShape s, int dir) {
-    // Gap between the two boxes' facing edges (snapped so clones tile neatly).
+  /// Page-inch centre one step from [s] in [dir] (0=N, 1=E, 2=S, 3=W).
+  (double, double) _neighbourCentre(VsdxShape s, int dir) {
+    // Gap between the two boxes' facing edges (snapped so neighbours tile).
     const gap = 0.5;
     final aabb = _page!.shapePageAabb(s.id);
     final pin = _page!.shapePinPage(s.id);
@@ -2168,8 +2170,13 @@ class _PageCanvasState extends State<PageCanvas> {
       default: // west
         cx = pin.x - w - gap;
     }
-    cx = _c.snap(cx);
-    cy = _c.snap(cy);
+    return (_c.snap(cx), _c.snap(cy));
+  }
+
+  /// drawio directional-arrow Shift+click: connect [s] to the shape one step
+  /// over in [dir] — or clone [s] there and connect to it — then select it.
+  void _connectInDirection(VsdxShape s, int dir) {
+    final (cx, cy) = _neighbourCentre(s, dir);
     // Connect to a shape already sitting where the clone would land, else clone.
     final existing = _glueTargetAt(_pageToScreen(cx, cy), excludeId: s.id);
     _c.connectDirectional(
@@ -2178,6 +2185,46 @@ class _PageCanvasState extends State<PageCanvas> {
       existingTargetId: existing,
       cloneX: cx,
       cloneY: cy,
+    );
+  }
+
+  /// EdrawMax-style click on a hover arrow: open the quick-add shape picker.
+  void _showQuickAddFor(VsdxShape s, int dir, Offset localPos) {
+    _dismissQuickAdd?.call();
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    // Anchor at the arrow centre (more stable than the raw pointer).
+    final gap = _connectArrowGapPx / _scale;
+    Offset content = localPos;
+    for (final (c, d) in _connectArrows(_exactContentBox(s), gap)) {
+      if (d == dir) {
+        content = c;
+        break;
+      }
+    }
+    final global = box.localToGlobal(_offset + content * _scale);
+    final sourceId = s.id;
+    _dismissQuickAdd = showQuickAddPicker(
+      context: context,
+      anchorGlobal: global,
+      onClosed: () => _dismissQuickAdd = null,
+      onSelect: (stencil) {
+        final src = _page?.findShapeById(sourceId);
+        if (src == null || !_canConnectFrom(src)) return;
+        final (cx, cy) = _neighbourCentre(src, dir);
+        _c.quickAddInDirection(
+          sourceId,
+          dir,
+          build: stencil.build,
+          cx: cx,
+          cy: cy,
+        );
+      },
+      onDuplicate: () {
+        final src = _page?.findShapeById(sourceId);
+        if (src == null || !_canConnectFrom(src)) return;
+        _connectInDirection(src, dir);
+      },
     );
   }
 
@@ -2491,11 +2538,28 @@ class _PageCanvasState extends State<PageCanvas> {
         break;
     }
     _mode = _DragMode.none;
+    _finishPendingQuickAdd();
+  }
+
+  /// If a directional-arrow press was claimed by the pan recognizer but barely
+  /// moved, treat the release as a click (open picker / Shift-clone).
+  void _finishPendingQuickAdd() {
+    final pending = _pendingQuickAdd;
+    _pendingQuickAdd = null;
+    if (pending == null || !_connectAffordanceActive) return;
+    final s = _page?.findShapeById(pending.id);
+    if (s == null || !_canConnectFrom(s)) return;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      _connectInDirection(s, pending.dir);
+    } else {
+      _showQuickAddFor(s, pending.dir, pending.start);
+    }
   }
 
   /// Abort whatever drag is in progress and revert transient model changes
   /// (Escape). Further pan updates are ignored because the mode is reset.
   void _cancelActiveDrag() {
+    _pendingQuickAdd = null;
     switch (_mode) {
       case _DragMode.moveShapes:
       case _DragMode.resize:
@@ -2691,6 +2755,16 @@ class _PageCanvasState extends State<PageCanvas> {
         return KeyEventResult.handled;
       }
     } else if (key == LogicalKeyboardKey.escape) {
+      // Dismiss quick-add picker before other Escape actions.
+      if (_dismissQuickAdd != null) {
+        _dismissQuickAdd!.call();
+        return KeyEventResult.handled;
+      }
+      // Cancel a pending arrow click (pan claimed, not yet released).
+      if (_pendingQuickAdd != null) {
+        _pendingQuickAdd = null;
+        return KeyEventResult.handled;
+      }
       // Cancel an in-progress drag first (revert to the pre-drag state).
       if (_mode != _DragMode.none) {
         _cancelActiveDrag();
@@ -2935,12 +3009,14 @@ class _PageCanvasState extends State<PageCanvas> {
               onExit: (_) => _clearHover(),
               cursor: _c.tool == EditorTool.text
                   ? SystemMouseCursors.text
-                  : (_c.tool == EditorTool.freehand ||
-                          _c.tool == EditorTool.connector ||
-                          _mode == _DragMode.connect ||
-                          _hoverOnConnectPoint)
-                      ? SystemMouseCursors.precise
-                      : MouseCursor.defer,
+                  : _hoverOnQuickAddArrow
+                      ? SystemMouseCursors.click
+                      : (_c.tool == EditorTool.freehand ||
+                              _c.tool == EditorTool.connector ||
+                              _mode == _DragMode.connect ||
+                              _hoverOnConnectPoint)
+                          ? SystemMouseCursors.precise
+                          : MouseCursor.defer,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapUp: _onTapUp,
@@ -3282,7 +3358,7 @@ class _SelectionPainter extends CustomPainter {
       );
   }
 
-  /// Directional connect arrows around the hovered shape (drawio HoverIcons).
+  /// Directional quick-add arrows around the hovered shape (EdrawMax / draw.io).
   void _paintHoverArrows(Canvas canvas) {
     final box = hoverBox;
     if (box == null) return;
