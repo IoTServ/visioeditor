@@ -6938,4 +6938,182 @@ void main() {
     expect(after.formulas['FillPattern'], isNull);
     expect(after.formulas['LinePattern'], isNull);
   });
+
+  test('LineCap / HideText / CompoundType F=Inh scrub when values match', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(text: 'Hi'),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="LineCap"[^/]*/>'),
+      '<Cell N="LineCap" V="0" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="CompoundType"[^/]*/>'),
+      '<Cell N="CompoundType" V="0" F="Inh"/>',
+    );
+    if (pageXml.contains('N="HideText"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="HideText"[^/]*/>'),
+        '<Cell N="HideText" V="0" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="HideText" V="0" F="Inh"/></Shape>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['LineCap', 'CompoundType', 'HideText']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('F'), isNull, reason: name);
+      expect(cell.getAttribute('V'), '0', reason: name);
+    }
+  });
+
+  test('disabled SoftEdges/Glow/Gradient emit V=0 on group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final a = doc.pages.first.nextFreeShapeId();
+    final b = a + 1;
+    final gid = b + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: a,
+              pinX: 1,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: b,
+              pinX: 3,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({a, b}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SoftEdgesSize" V="0"'), isTrue);
+    expect(pageXml.contains('N="GlowSize" V="0"'), isTrue);
+    expect(pageXml.contains('N="FillGradientEnabled" V="0"'), isTrue);
+    expect(pageXml.contains('N="ReflectionSize" V="0"'), isTrue);
+  });
+
+  test('Foreign User/Control/Scratch survive group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    final otherId = picId + 1;
+    final gid = otherId + 1;
+    const part = '/visio/media/image_user_group.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(
+      userCells: const [
+        VsdxUserCell(name: 'visVersion', value: '1'),
+      ],
+      controls: const [
+        VsdxControlRow(name: 'Row_1', x: 0.5, y: 0.5),
+      ],
+      scratch: const [
+        VsdxScratchRow(ix: 0, x: 1, y: 2),
+      ],
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(
+          0,
+          doc.pages.first
+              .addShape(pic)
+              .addShape(
+                VsdxShapeFactory.rectangle(
+                  id: otherId,
+                  pinX: 4,
+                  pinY: 2,
+                  width: 1,
+                  height: 1,
+                ),
+              ),
+        );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({picId, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="User"'), isTrue);
+    expect(pageXml.contains('N="Control"'), isTrue);
+    expect(pageXml.contains('N="Scratch"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.userCells.single.name, 'visVersion');
+    expect(after.controls.single.name, 'Row_1');
+    expect(after.scratch.single.ix, 0);
+  });
 }

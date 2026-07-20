@@ -2036,14 +2036,18 @@ class VsdxWriter {
           return name == null ? null : 'THEMEVAL("$name")';
         }());
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
+    changed |= _forceLiteralInt(el, 'FillPattern', edited.fill.pattern);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
         baseTheme: base.line.themeColorIndex,
         editedColor: edited.line.color,
         editedTheme: edited.line.themeColorIndex);
     changed |= _patchLength(el, 'LineWeight', base.line.weightInches, edited.line.weightInches);
+    changed |= _forceLiteralLength(el, 'LineWeight', edited.line.weightInches);
     changed |= _patchInt(el, 'LinePattern', base.line.pattern, edited.line.pattern);
+    changed |= _forceLiteralInt(el, 'LinePattern', edited.line.pattern);
     changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
+    changed |= _forceLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
     changed |= _patchInt(el, 'BeginArrow', base.line.beginArrow, edited.line.beginArrow);
     changed |= _patchInt(el, 'EndArrow', base.line.endArrow, edited.line.endArrow);
     changed |= _patchInt(
@@ -2071,10 +2075,15 @@ class VsdxWriter {
     }
     changed |= _patchRatio(el, 'FillForegndTrans',
         base.fill.foregroundTransparency, edited.fill.foregroundTransparency);
+    changed |= _forceLiteralRatio(
+        el, 'FillForegndTrans', edited.fill.foregroundTransparency);
     changed |= _patchRatio(el, 'FillBkgndTrans',
         base.fill.backgroundTransparency, edited.fill.backgroundTransparency);
+    changed |= _forceLiteralRatio(
+        el, 'FillBkgndTrans', edited.fill.backgroundTransparency);
     changed |= _patchRatio(
         el, 'LineColorTrans', base.line.transparency, edited.line.transparency);
+    changed |= _forceLiteralRatio(el, 'LineColorTrans', edited.line.transparency);
     changed |= _patchLength(
         el, 'Rounding', base.line.roundingInches, edited.line.roundingInches);
     changed |= _patchLength(
@@ -2089,6 +2098,7 @@ class VsdxWriter {
     }
     changed |= _patchInt(
         el, 'CompoundType', base.line.compoundType, edited.line.compoundType);
+    changed |= _forceLiteralInt(el, 'CompoundType', edited.line.compoundType);
     changed |= _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
     // Text block transform (TxtPin / TxtWidth / TxtAngle / margins) +
     // HideText / TextBkgnd + drop shadow / glow / reflection.
@@ -4142,13 +4152,16 @@ class VsdxWriter {
         el, 'VerticalAlign', _vAlignInt(edited.verticalAlign));
     changed |= _patchInt(
         el, 'HideText', base.hideText ? 1 : 0, edited.hideText ? 1 : 0);
+    changed |= _forceLiteralInt(el, 'HideText', edited.hideText ? 1 : 0);
     changed |= _patchInt(
         el, 'TextDirection', base.textDirection, edited.textDirection);
+    changed |= _forceLiteralInt(el, 'TextDirection', edited.textDirection);
     changed |= _patchLength(el, 'DefaultTabStop', base.defaultTabStopInches,
         edited.defaultTabStopInches);
     if (edited.backgroundColor != null) {
       changed |= _patchColor(
           el, 'TextBkgnd', base.backgroundColor, edited.backgroundColor);
+      changed |= _forceLiteralColor(el, 'TextBkgnd', edited.backgroundColor!);
     } else if (base.backgroundColor != null) {
       _writeValue(_ensureCell(el, 'TextBkgnd'), '0');
       changed = true;
@@ -4158,6 +4171,8 @@ class VsdxWriter {
         'TextBkgndTrans',
         base.backgroundTransparency,
         edited.backgroundTransparency);
+    changed |= _forceLiteralRatio(
+        el, 'TextBkgndTrans', edited.backgroundTransparency);
     changed |= _patchLength(
         el, 'LeftMargin', base.marginLeftInches, edited.marginLeftInches);
     changed |= _patchLength(
@@ -4299,6 +4314,40 @@ class VsdxWriter {
     final v = c.getAttribute('V');
     final want = value.toString();
     final already = v == want && (f == null || f.isEmpty);
+    if (already) return false;
+    _writeValue(c, want);
+    return true;
+  }
+
+  /// Ensure a length cell is literal [value] without `F=`.
+  bool _forceLiteralLength(XmlElement shape, String cell, double value) {
+    final c = _findCell(shape, cell);
+    if (c == null) return false;
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final parsed = v == null ? null : double.tryParse(v);
+    final already = (f == null || f.isEmpty) &&
+        parsed != null &&
+        (parsed - value).abs() <= _epsilon;
+    if (already) return false;
+    _writeValue(c, _fmt(value));
+    return true;
+  }
+
+  /// Ensure a 0..1 ratio cell is literal [value] without `F=`.
+  bool _forceLiteralRatio(XmlElement shape, String cell, double value) =>
+      _forceLiteralLength(shape, cell, value);
+
+  /// Ensure a colour cell is literal hex without `F=`.
+  bool _forceLiteralColor(XmlElement shape, String cell, VsdxColor color) {
+    final c = _findCell(shape, cell);
+    if (c == null) return false;
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final want = _hex(color);
+    final already = (f == null || f.isEmpty) &&
+        v != null &&
+        v.toUpperCase() == want.toUpperCase();
     if (already) return false;
     _writeValue(c, want);
     return true;
@@ -4989,15 +5038,14 @@ class VsdxWriter {
             'EndArrowSize',
             _arrowSizeToBucket(s.line.endArrowSizeInches).toString()));
     }
-    if (s.line.roundingInches > _epsilon) {
-      children.add(_cell('Rounding', _fmt(s.line.roundingInches)));
-    }
-    if (s.line.softEdgesInches > _epsilon) {
-      children.add(_cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)));
-    }
-    // Always emit CompoundType (incl. 0) so StyleSheet inheritance cannot
-    // revive double-line after the user cleared compound on a rebuild path.
-    children.add(_cell('CompoundType', s.line.compoundType.toString()));
+    // Always emit SoftEdges/Rounding (incl. 0) so StyleSheet cannot revive
+    // feathering after a group rebuild cleared the effect in the model.
+    children
+      ..add(_cell('Rounding', _fmt(s.line.roundingInches)))
+      ..add(_cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)))
+      // Always emit CompoundType (incl. 0) so StyleSheet inheritance cannot
+      // revive double-line after the user cleared compound on a rebuild path.
+      ..add(_cell('CompoundType', s.line.compoundType.toString()));
     if (s.layerMemberIds.isNotEmpty) {
       children.add(_cell('LayerMember', s.layerMemberIds.join(';')));
     }
@@ -5033,6 +5081,8 @@ class VsdxWriter {
             'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
+    } else {
+      children.add(_cell('GlowSize', '0'));
     }
     if (s.reflection.enabled) {
       children
@@ -5041,6 +5091,8 @@ class VsdxWriter {
         ..add(_cell(
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
+    } else {
+      children.add(_cell('ReflectionSize', '0'));
     }
     if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
       children
@@ -5048,6 +5100,8 @@ class VsdxWriter {
         ..add(_cell('FillGradientDir',
             _gradientDirFromType(s.fill.gradient!.type).toString()))
         ..add(_cell('FillGradientAngle', _fmt(s.fill.gradient!.angleRad)));
+    } else {
+      children.add(_cell('FillGradientEnabled', '0'));
     }
     if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
       children
@@ -5055,6 +5109,8 @@ class VsdxWriter {
         ..add(_cell('LineGradientDir',
             _gradientDirFromType(s.line.gradient!.type).toString()))
         ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
+    } else {
+      children.add(_cell('LineGradientEnabled', '0'));
     }
     // Character / Paragraph — one row per rich-text run (matches <cp>/<pp>).
     // Computed early so text-block defaults know whether a label is present.
@@ -5544,13 +5600,10 @@ class VsdxWriter {
       _cell('FillPattern', s.fill.pattern.toString()),
       _cell('LinePattern', s.line.pattern.toString()),
       _cell('LineCap', '0'),
-      // SoftEdges / effects survive group rebuild (patch path already writes
-      // them; fresh Foreign emit previously dropped them).
-      if (s.line.softEdgesInches > _epsilon)
-        _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
-      if (s.line.roundingInches > _epsilon)
-        _cell('Rounding', _fmt(s.line.roundingInches)),
-      // Always emit CompoundType (incl. 0) — match normal shape rebuild.
+      // SoftEdges / Rounding / CompoundType — always emit (incl. 0) so
+      // StyleSheet inheritance cannot revive effects after Foreign rebuild.
+      _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
+      _cell('Rounding', _fmt(s.line.roundingInches)),
       _cell('CompoundType', s.line.compoundType.toString()),
       if (s.layerMemberIds.isNotEmpty)
         _cell('LayerMember', s.layerMemberIds.join(';')),
@@ -5572,6 +5625,8 @@ class VsdxWriter {
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+    } else {
+      children.add(_cell('ShdwPattern', '0'));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
@@ -5583,6 +5638,8 @@ class VsdxWriter {
             'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
+    } else {
+      children.add(_cell('GlowSize', '0'));
     }
     if (s.reflection.enabled) {
       children
@@ -5591,6 +5648,8 @@ class VsdxWriter {
         ..add(_cell(
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
+    } else {
+      children.add(_cell('ReflectionSize', '0'));
     }
     if (s.locked) {
       for (final name in _lockCells) {
@@ -5647,6 +5706,15 @@ class VsdxWriter {
     }
     if (s.userProperties.isNotEmpty) {
       children.add(_buildPropertySection(s.userProperties));
+    }
+    if (s.userCells.isNotEmpty) {
+      children.add(_buildUserSection(s.userCells));
+    }
+    if (s.controls.isNotEmpty) {
+      children.add(_buildControlSection(s.controls));
+    }
+    if (s.scratch.isNotEmpty) {
+      children.add(_buildScratchSection(s.scratch));
     }
     // Edge glue points — match normal shapes so connectors can attach after
     // a Foreign group rebuild (Connection is modeled, not opaque-preserved).
