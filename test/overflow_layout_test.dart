@@ -225,8 +225,10 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
       await tester.pumpAndSettle();
 
-      // Compact page chrome: no dedicated add/delete icons beside the chips.
-      expect(find.byIcon(Icons.add), findsNothing);
+      // Compact page chrome: dedicated page-action icons are folded away
+      // (zoom still uses Icons.add, so assert on page-specific icons only).
+      expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
+      expect(find.byIcon(Icons.copy_all_outlined), findsNothing);
       expect(find.byIcon(Icons.delete_outline), findsNothing);
       expect(find.byType(PopupMenuButton<String>), findsWidgets);
     });
