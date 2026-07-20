@@ -200,7 +200,10 @@ class PageParser {
         false;
     // drawio-style "locked": read back the canonical protection bit written by
     // the writer (a shape is treated as locked when its move is locked).
-    final locked = _readBoolCell(shapeEl, 'LockMoveX') ?? proto?.locked ?? false;
+    final locked =
+        _readBoolCell(shapeEl, 'LockMoveX', inheritFrom: proto?.locked) ??
+            proto?.locked ??
+            false;
 
     final shapeTypeAttr = shapeEl.getAttribute('Type');
     final has1DEndpoints = findCell(shapeEl, 'BeginX') != null ||

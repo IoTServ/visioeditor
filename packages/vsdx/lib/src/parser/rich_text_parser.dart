@@ -435,8 +435,20 @@ class RichTextParser {
   /// (vertical / rotated labels) — from its Master renders correctly instead of
   /// defaulting to horizontal. Matches Visio / libvisio cell inheritance.
   VsdxTextBlock _readTextBlock(XmlElement shape, VsdxTextBlock inherit) {
-    final vAlignInt = _cellInt(shape, 'VerticalAlign');
-    final hideInt = _cellInt(shape, 'HideText');
+    final vAlignInt = _cellInt(
+      shape,
+      'VerticalAlign',
+      inheritFrom: switch (inherit.verticalAlign) {
+        VsdxVertAlign.top => 0,
+        VsdxVertAlign.bottom => 2,
+        _ => 1,
+      },
+    );
+    final hideInt = _cellInt(
+      shape,
+      'HideText',
+      inheritFrom: inherit.hideText ? 1 : 0,
+    );
     return VsdxTextBlock(
       pinXInches: readLengthInches(
             shape,
@@ -520,7 +532,12 @@ class RichTextParser {
       backgroundTransparency:
           (_cellDouble(shape, 'TextBkgndTrans') ?? inherit.backgroundTransparency)
               .clamp(0.0, 1.0),
-      textDirection: _cellInt(shape, 'TextDirection') ?? inherit.textDirection,
+      textDirection: _cellInt(
+            shape,
+            'TextDirection',
+            inheritFrom: inherit.textDirection,
+          ) ??
+          inherit.textDirection,
       defaultTabStopInches: readLengthInches(shape, 'DefaultTabStop') ??
           inherit.defaultTabStopInches,
     );
@@ -725,9 +742,15 @@ class RichTextParser {
     return v.isEmpty ? null : v;
   }
 
-  int? _cellInt(XmlElement parent, String name) {
-    final s = _cellString(parent, name);
-    if (s == null) return null;
+  int? _cellInt(XmlElement parent, String name, {int? inheritFrom}) {
+    final cell = findCell(parent, name);
+    if (cell == null) return null;
+    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
+    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
+      return inheritFrom;
+    }
+    final s = cell.getAttribute('V');
+    if (s == null || s.isEmpty) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
   }
 

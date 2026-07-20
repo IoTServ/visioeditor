@@ -68,4 +68,38 @@ void main() {
     );
     expect(line.weightInches, closeTo(0.05, 1e-9));
   });
+
+  test('FillPattern F=Inh inherits Master hatch (not cached V=1)', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: const VsdxFill(pattern: 7),
+    );
+    expect(fill.pattern, 7);
+  });
+
+  test('LinePattern/LineCap/CompoundType F=Inh inherit Master', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="LinePattern" V="1" F="Inh"/>'
+      '<Cell N="LineCap" V="0" F="Inh"/>'
+      '<Cell N="CompoundType" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final line = style.parseLine(
+      el,
+      defaults: const VsdxLine(
+        pattern: 4,
+        cap: LineCap.square,
+        compoundType: 2,
+      ),
+    );
+    expect(line.pattern, 4);
+    expect(line.cap, LineCap.square);
+    expect(line.compoundType, 2);
+  });
 }

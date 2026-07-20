@@ -32,7 +32,8 @@ class StyleParser {
         defaults.foregroundTransparency;
     final bgT = _double(shape, 'FillBkgndTrans') ??
         defaults.backgroundTransparency;
-    final pat = _int(shape, 'FillPattern') ?? defaults.pattern;
+    final pat = _int(shape, 'FillPattern', inheritFrom: defaults.pattern) ??
+        defaults.pattern;
 
     // Explicit FillGradientEnabled=0 must clear the gradient — do not fall
     // back to Master defaults (writer emits V=0 on clear / group rebuild).
@@ -276,8 +277,18 @@ class StyleParser {
           inheritFrom: defaults.weightInches,
         ) ??
         defaults.weightInches;
-    final pat = _int(shape, 'LinePattern') ?? defaults.pattern;
-    final capInt = _int(shape, 'LineCap');
+    final pat =
+        _int(shape, 'LinePattern', inheritFrom: defaults.pattern) ??
+            defaults.pattern;
+    final capInt = _int(
+      shape,
+      'LineCap',
+      inheritFrom: switch (defaults.cap) {
+        LineCap.square => 1,
+        LineCap.extended => 2,
+        LineCap.round => 0,
+      },
+    );
     final cap = capInt == null ? defaults.cap : _capFromInt(capInt);
     final transparency =
         _double(shape, 'LineColorTrans') ?? defaults.transparency;
@@ -297,7 +308,9 @@ class StyleParser {
     final softEdges = readLengthInches(
           shape, 'SoftEdgesSize', inheritFrom: defaults.softEdgesInches) ??
         defaults.softEdgesInches;
-    final compoundType = _int(shape, 'CompoundType') ?? defaults.compoundType;
+    final compoundType =
+        _int(shape, 'CompoundType', inheritFrom: defaults.compoundType) ??
+            defaults.compoundType;
     // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
     final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');
     final parsedLineGrad = _parseLineGradient(shape);
@@ -466,9 +479,13 @@ class StyleParser {
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
 
-  int? _int(XmlElement shape, String name) {
+  int? _int(XmlElement shape, String name, {int? inheritFrom}) {
     final cell = findCell(shape, name);
     if (cell == null) return null;
+    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
+    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
+      return inheritFrom;
+    }
     final s = cell.getAttribute('V');
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();

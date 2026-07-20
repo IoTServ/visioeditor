@@ -67,6 +67,28 @@ void main() {
     expect(rich.textBlock.marginLeftInches, closeTo(0.2, 1e-9));
   });
 
+  test('HideText F=Inh inherits master hide (not cached V=0)', () {
+    final el = shape(
+      '<Cell N="HideText" V="0" F="Inh"/><Text>Label</Text>',
+    );
+    final rich = parser.parse(
+      el,
+      defaultBlock: const VsdxTextBlock(hideText: true),
+    );
+    expect(rich.textBlock.hideText, isTrue);
+  });
+
+  test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {
+    final el = shape(
+      '<Cell N="VerticalAlign" V="1" F="Inh"/><Text>Label</Text>',
+    );
+    final rich = parser.parse(
+      el,
+      defaultBlock: const VsdxTextBlock(verticalAlign: VsdxVertAlign.top),
+    );
+    expect(rich.textBlock.verticalAlign, VsdxVertAlign.top);
+  });
+
   test('vertical align + margins also inherit from the master', () {
     final el = shape('<Text>Label</Text>');
     final rich = parser.parse(
