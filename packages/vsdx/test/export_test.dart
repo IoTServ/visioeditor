@@ -1005,6 +1005,38 @@ void main() {
     expect(svg, contains('height="0.68"'));
   });
 
+  test('SVG shadow filter region includes offset so large offsets are not clipped',
+      () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // |offset| 0.25 > blur*3 (0.12) — old pad alone would clip the shadow.
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        offsetXInches: 0.25,
+        offsetYInches: -0.25,
+        blurInches: 0.04,
+        color: VsdxColor(0xFF000000),
+        transparency: 0.4,
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('feGaussianBlur'));
+    // pad = 0.04*3 + 0.25 = 0.37; 1×1 box → width/height 1.74
+    expect(svg, contains('width="1.74"'));
+    expect(svg, contains('height="1.74"'));
+    expect(svg, contains('translate(0.25 -0.25)'));
+  });
+
   test('SVG Foreign Blur/Brightness/Contrast emit tone filter', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

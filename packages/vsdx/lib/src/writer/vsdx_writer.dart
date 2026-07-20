@@ -4311,7 +4311,9 @@ class VsdxWriter {
     if (eg == null || eg.stops.isEmpty) {
       return _scrubDisabledFlagCell(el, 'FillGradientEnabled');
     }
-    return false;
+    // Gradient still on — drop F=Inh so stylesheet inheritance cannot override
+    // the local V=1 (same hazard as the clear path, mirrored).
+    return _scrubEnabledFlagCell(el, 'FillGradientEnabled');
   }
 
   /// Mirror of [_patchGradient] for `LineGradient*` / `<Section N="LineGradient">`.
@@ -4342,7 +4344,7 @@ class VsdxWriter {
     if (eg == null || eg.stops.isEmpty) {
       return _scrubDisabledFlagCell(el, 'LineGradientEnabled');
     }
-    return false;
+    return _scrubEnabledFlagCell(el, 'LineGradientEnabled');
   }
 
   /// When the model has a flag off, force literal `V=0` without `F=` so
@@ -4356,6 +4358,23 @@ class VsdxWriter {
         (v == '0' || v == '0.0') && (f == null || f.isEmpty);
     if (already) return false;
     _writeValue(c, '0');
+    return true;
+  }
+
+  /// When the model has a flag on, force literal `V=1` without `F=` so
+  /// stylesheet `Inh` cannot replace the local enable bit.
+  bool _scrubEnabledFlagCell(XmlElement shape, String cell) {
+    final c = _findCell(shape, cell);
+    if (c == null) {
+      _writeValue(_ensureCell(shape, cell), '1');
+      return true;
+    }
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final already =
+        (v == '1' || v == '1.0') && (f == null || f.isEmpty);
+    if (already) return false;
+    _writeValue(c, '1');
     return true;
   }
 

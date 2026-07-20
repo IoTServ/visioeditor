@@ -645,7 +645,8 @@ class VsdxToSvgSerializer {
           );
         } else {
           final gid = 'glow-$paintId';
-          final pad = glow.sizeInches * 3;
+          // Stroke half-width ≈ size; Gaussian extent ≈ 3×sigma(=size) → ~4×.
+          final pad = glow.sizeInches * 4;
           final region = _filterRegionAttr(fillBounds, pad);
           // Opacity lives only on feFlood — putting it on stroke as well would
           // square alpha vs canvas [_drawGlow] (which multiplies once).
@@ -1055,7 +1056,13 @@ class VsdxToSvgSerializer {
           shape.line.weightInches > 0 ? shape.line.weightInches : 0.01,
         ),
       );
-      final region = _filterRegionAttr(bounds, blur * 3);
+      // Include shadow translate in the filter region. The same <path> carries
+      // transform="translate(dx,dy)" + filter — a blur-only pad clips when
+      // |offset| exceeds ~3×blur (canvas has no equivalent clip).
+      final region = _filterRegionAttr(
+        bounds,
+        blur * 3 + math.max(dx.abs(), dy.abs()),
+      );
       buf.writeln(
         '$indent<defs><filter id="$sid" $region>'
         '<feGaussianBlur stdDeviation="${_n(blur)}"/>'
