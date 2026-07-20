@@ -219,4 +219,14 @@ void main() {
     );
     expect(rich.textBlock.backgroundColor, isNull);
   });
+
+  test('TextBkgnd F=Inh inherits master colour (not cached clear)', () {
+    final rich = parser.parse(
+      shape('<Cell N="TextBkgnd" V="0" F="Inh"/><Text>Label</Text>'),
+      defaultBlock: const VsdxTextBlock(
+        backgroundColor: VsdxColor(0xFFFFFF00),
+      ),
+    );
+    expect(rich.textBlock.backgroundColor?.value, 0xFFFFFF00);
+  });
 }

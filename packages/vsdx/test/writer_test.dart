@@ -8173,6 +8173,42 @@ void main() {
     expect(after.userProperties.single.ask, isTrue);
   });
 
+  test('Property Format F= round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      userProperties: const [
+        VsdxUserProperty(
+          name: 'Cost',
+          label: 'Cost',
+          value: '1.5',
+          format: '#,##0.00',
+          formatFormula: 'FIELDPICTURE(0)',
+          type: 2,
+        ),
+      ],
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('F="FIELDPICTURE(0)"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.userProperties.single.formatFormula, 'FIELDPICTURE(0)');
+    expect(after.userProperties.single.format, '#,##0.00');
+  });
+
   test('Hyperlink ExtraInfo / Invisible / SortKey round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

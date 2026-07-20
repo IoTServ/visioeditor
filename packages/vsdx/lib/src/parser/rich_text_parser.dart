@@ -650,10 +650,12 @@ class RichTextParser {
     );
   }
 
-  /// Resolve `TextBkgnd`: missing cell inherits; present transparent sentinel
-  /// clears (null); otherwise parse the colour.
+  /// Resolve `TextBkgnd`: missing / `F=Inh` inherits; present transparent
+  /// sentinel clears (null); otherwise parse the colour.
   VsdxColor? _resolveTextBkgnd(XmlElement shape, VsdxColor? inherit) {
-    if (findCell(shape, 'TextBkgnd') == null) return inherit;
+    final cell = findCell(shape, 'TextBkgnd');
+    if (cell == null) return inherit;
+    if (isInhFormula(cell.getAttribute('F'))) return inherit;
     return _readTextBkgnd(shape);
   }
 

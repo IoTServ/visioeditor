@@ -71,7 +71,9 @@ class StyleSheetParser {
     VsdxCharStyle? charStyle;
     var charSizeInherits = false;
     VsdxLine? line;
+    final lineDefined = <String>{};
     VsdxFill? fill;
+    final fillDefined = <String>{};
 
     for (final section in ss.childElements) {
       if (section.name.local != 'Section') continue;
@@ -80,7 +82,7 @@ class StyleSheetParser {
           final row = _firstRow(section);
           if (row != null) {
             final sizeCell = findCell(row, 'Size');
-            charSizeInherits = _isInh(sizeCell?.getAttribute('F'));
+            charSizeInherits = isInhFormula(sizeCell?.getAttribute('F'));
             charStyle = VsdxCharStyle(
               fontFamily: _cellString(row, 'Font'),
               fontSizeInches:
@@ -92,25 +94,43 @@ class StyleSheetParser {
           }
         case 'Line':
           // Line cells may sit directly under the section (no Row) in styles.
-          final weight = readLengthInches(section, 'LineWeight');
+          // F=Inh → treat as absent so [StyleSheetRegistry.resolveLine] walks
+          // the parent LineStyle chain instead of the cached V=.
+          final weight = _length(section, 'LineWeight');
           final pat = _cellInt(section, 'LinePattern');
-          final color = VsdxColor.tryParse(_cellString(section, 'LineColor') ?? '');
-          final soft = readLengthInches(section, 'SoftEdgesSize');
-          if (weight != null || pat != null || color != null || soft != null) {
+          final colorStr = _cellString(section, 'LineColor');
+          final color =
+              colorStr == null ? null : VsdxColor.tryParse(colorStr);
+          final soft = _length(section, 'SoftEdgesSize');
+          final rounding = _length(section, 'Rounding');
+          if (weight != null) lineDefined.add('LineWeight');
+          if (pat != null) lineDefined.add('LinePattern');
+          if (color != null) lineDefined.add('LineColor');
+          if (soft != null) lineDefined.add('SoftEdgesSize');
+          if (rounding != null) lineDefined.add('Rounding');
+          if (lineDefined.isNotEmpty) {
             line = VsdxLine(
               color: color,
               weightInches: weight ?? VsdxLine.defaultLine.weightInches,
               pattern: pat ?? VsdxLine.defaultLine.pattern,
               softEdgesInches: soft ?? VsdxLine.defaultLine.softEdgesInches,
+              roundingInches:
+                  rounding ?? VsdxLine.defaultLine.roundingInches,
             );
           }
         case 'Fill':
           final pat = _cellInt(section, 'FillPattern');
-          final fg =
-              VsdxColor.tryParse(_cellString(section, 'FillForegnd') ?? '');
-          if (pat != null || fg != null) {
+          final fgStr = _cellString(section, 'FillForegnd');
+          final fg = fgStr == null ? null : VsdxColor.tryParse(fgStr);
+          final bgStr = _cellString(section, 'FillBkgnd');
+          final bg = bgStr == null ? null : VsdxColor.tryParse(bgStr);
+          if (pat != null) fillDefined.add('FillPattern');
+          if (fg != null) fillDefined.add('FillForegnd');
+          if (bg != null) fillDefined.add('FillBkgnd');
+          if (fillDefined.isNotEmpty) {
             fill = VsdxFill(
               foreground: fg,
+              background: bg,
               pattern: pat ?? VsdxFill.defaultFill.pattern,
             );
           }
@@ -126,7 +146,9 @@ class StyleSheetParser {
       charStyle: charStyle,
       charSizeInherits: charSizeInherits,
       line: line,
+      lineDefinedCells: Set.unmodifiable(lineDefined),
       fill: fill,
+      fillDefinedCells: Set.unmodifiable(fillDefined),
     );
   }
 
@@ -137,15 +159,18 @@ class StyleSheetParser {
     return null;
   }
 
-  bool _isInh(String? f) {
-    if (f == null) return false;
-    final u = f.trim().toUpperCase();
-    return u == 'INH' || u.startsWith('INH(');
+  /// Length cell; `F=Inh` → null (caller keeps walking the parent chain).
+  double? _length(XmlElement parent, String name) {
+    final cell = findCell(parent, name);
+    if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F'))) return null;
+    return readLengthInches(parent, name);
   }
 
   String? _cellString(XmlElement parent, String name) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F'))) return null;
     final v = cell.getAttribute('V');
     if (v == null || v.isEmpty) return null;
     // Skip theme formulas — not a concrete font name / colour.
@@ -167,6 +192,7 @@ class StyleSheetParser {
   int? _rawCellInt(XmlElement parent, String name) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F'))) return null;
     final v = cell.getAttribute('V');
     if (v == null) return null;
     return int.tryParse(v) ?? double.tryParse(v)?.toInt();

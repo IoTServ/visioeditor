@@ -27,6 +27,7 @@ class VsdxUserProperty {
     this.valueFormula,
     this.prompt,
     this.format,
+    this.formatFormula,
     this.type = 0,
     this.sortKey,
     this.invisible = false,
@@ -59,6 +60,9 @@ class VsdxUserProperty {
   /// `Format` cell — printf-ish picture string (e.g. `"# ##0.00"`,
   /// `"yyyy-mm-dd"`).
   final String? format;
+
+  /// Optional `F=` on the Format cell (e.g. `FIELDPICTURE(0)`).
+  final String? formatFormula;
 
   /// Visio property type code:
   ///
@@ -109,6 +113,7 @@ class VsdxUserProperty {
     String? valueFormula,
     String? prompt,
     String? format,
+    String? formatFormula,
     int? type,
     String? sortKey,
     bool? invisible,
@@ -120,6 +125,7 @@ class VsdxUserProperty {
     bool clearLabel = false,
     bool clearPrompt = false,
     bool clearFormat = false,
+    bool clearFormatFormula = false,
     bool clearSortKey = false,
     bool clearLangId = false,
     bool clearCalendar = false,
@@ -131,6 +137,8 @@ class VsdxUserProperty {
       valueFormula: valueFormula ?? this.valueFormula,
       prompt: clearPrompt ? null : (prompt ?? this.prompt),
       format: clearFormat ? null : (format ?? this.format),
+      formatFormula:
+          clearFormatFormula ? null : (formatFormula ?? this.formatFormula),
       type: type ?? this.type,
       sortKey: clearSortKey ? null : (sortKey ?? this.sortKey),
       invisible: invisible ?? this.invisible,
@@ -151,6 +159,7 @@ class VsdxUserProperty {
       other.valueFormula == valueFormula &&
       other.prompt == prompt &&
       other.format == format &&
+      other.formatFormula == formatFormula &&
       other.type == type &&
       other.sortKey == sortKey &&
       other.invisible == invisible &&
@@ -168,6 +177,7 @@ class VsdxUserProperty {
         valueFormula,
         prompt,
         format,
+        formatFormula,
         type,
         sortKey,
         invisible,

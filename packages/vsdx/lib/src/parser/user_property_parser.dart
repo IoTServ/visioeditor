@@ -53,6 +53,7 @@ class UserPropertyParser {
           valueFormula: _formulaOrInherit(row, 'Value', proto?.valueFormula),
           prompt: _cellString(row, 'Prompt', inheritFrom: proto?.prompt),
           format: _cellString(row, 'Format', inheritFrom: proto?.format),
+          formatFormula: _formulaOrInherit(row, 'Format', proto?.formatFormula),
           type: _cellInt(row, 'Type', inheritFrom: proto?.type) ??
               proto?.type ??
               0,

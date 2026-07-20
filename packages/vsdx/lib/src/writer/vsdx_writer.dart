@@ -2866,9 +2866,16 @@ class VsdxWriter {
         _removeNamedCells(row, const ['Prompt']);
       }
       if (p.format != null) {
-        _writeValue(_ensureCell(row, 'Format'), p.format!);
+        _writeValue(_ensureCell(row, 'Format'), p.format!,
+            preserveFormula: p.formatFormula != null);
+      } else if (p.formatFormula != null) {
+        _writeValue(_ensureCell(row, 'Format'), '',
+            preserveFormula: true);
       } else {
         _removeNamedCells(row, const ['Format']);
+      }
+      if (p.formatFormula != null) {
+        _ensureCell(row, 'Format').setAttribute('F', p.formatFormula!);
       }
       _writeValue(_ensureCell(row, 'Type'), p.type.toString());
       if (p.sortKey != null) {
@@ -6593,7 +6600,8 @@ class VsdxWriter {
             if (p.label != null) _cell('Label', p.label!),
             _cell('Value', p.value ?? '', formula: p.valueFormula),
             if (p.prompt != null) _cell('Prompt', p.prompt!),
-            if (p.format != null) _cell('Format', p.format!),
+            if (p.format != null || p.formatFormula != null)
+              _cell('Format', p.format ?? '', formula: p.formatFormula),
             _cell('Type', p.type.toString()),
             if (p.sortKey != null) _cell('SortKey', p.sortKey!),
             if (p.invisible) _cell('Invisible', '1'),

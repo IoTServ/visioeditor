@@ -1990,11 +1990,23 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
-      } else {
+      } else if (g.type == VsdxGradientType.radial) {
         defs.write(
           '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
           'cx="${_n(cx)}" cy="${_n(cy)}" r="${_n(r)}">'
           '$stops</radialGradient>',
+        );
+      } else {
+        // Rectangular / path: SVG has no direct equivalent — approximate with
+        // an axis-aligned linear gradient along the Visio angle (better than
+        // painting a radial disc for square/path fills).
+        final dx = math.cos(g.angleRad) * r;
+        final dy = math.sin(g.angleRad) * r;
+        defs.write(
+          '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
+          'x1="${_n(cx - dx)}" y1="${_n(cy - dy)}" '
+          'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
+          '$stops</linearGradient>',
         );
       }
       return 'fill="url(#$id)"';
@@ -2183,11 +2195,23 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
-      } else {
+      } else if (g.type == VsdxGradientType.radial) {
         defs.write(
           '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
           'cx="${_n(cx)}" cy="${_n(cy)}" r="${_n(r)}">'
           '$stops</radialGradient>',
+        );
+      } else {
+        // Rectangular / path: SVG has no direct equivalent — approximate with
+        // an axis-aligned linear gradient along the Visio angle (better than
+        // painting a radial disc for square/path fills).
+        final dx = math.cos(g.angleRad) * r;
+        final dy = math.sin(g.angleRad) * r;
+        defs.write(
+          '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
+          'x1="${_n(cx - dx)}" y1="${_n(cy - dy)}" '
+          'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
+          '$stops</linearGradient>',
         );
       }
       strokePaint =

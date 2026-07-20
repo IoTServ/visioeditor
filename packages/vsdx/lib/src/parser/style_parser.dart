@@ -83,19 +83,37 @@ class StyleParser {
         inherit?.angleRad ??
         0;
     final stops = <VsdxGradientStop>[];
+    var stopIx = 0;
     for (final section in shape.childElements) {
       if (section.name.local != 'Section') continue;
       if (section.getAttribute('N') != 'FillGradient') continue;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
-        final pos = _doubleIn(row, 'GradientStopPosition') ?? 0;
-        final res =
-            _resolveRowColor(row, 'GradientStopColor', 'QuickStyleFillColor');
-        final t = _doubleIn(row, 'GradientStopColorTrans') ?? 0;
+        final ix =
+            int.tryParse(row.getAttribute('IX') ?? '') ?? stopIx;
+        stopIx++;
+        final proto = (inherit != null && ix < inherit.stops.length)
+            ? inherit.stops[ix]
+            : null;
+        final pos = _doubleIn(row, 'GradientStopPosition',
+                inheritFrom: proto?.position) ??
+            proto?.position ??
+            0;
+        final res = _resolveRowColor(
+          row,
+          'GradientStopColor',
+          'QuickStyleFillColor',
+          inheritColor: proto?.color,
+          inheritThemeIndex: proto?.themeColorIndex,
+        );
+        final t = _doubleIn(row, 'GradientStopColorTrans',
+                inheritFrom: proto?.transparency) ??
+            proto?.transparency ??
+            0;
         stops.add(VsdxGradientStop(
           position: pos.clamp(0.0, 1.0),
-          color: res.color,
-          themeColorIndex: res.themeIndex,
+          color: res.color ?? proto?.color,
+          themeColorIndex: res.themeIndex ?? proto?.themeColorIndex,
           transparency: t.clamp(0.0, 1.0),
         ));
       }
@@ -432,19 +450,37 @@ class StyleParser {
         inherit?.angleRad ??
         0;
     final stops = <VsdxGradientStop>[];
+    var stopIx = 0;
     for (final section in shape.childElements) {
       if (section.name.local != 'Section') continue;
       if (section.getAttribute('N') != 'LineGradient') continue;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
-        final pos = _doubleIn(row, 'GradientStopPosition') ?? 0;
-        final res =
-            _resolveRowColor(row, 'GradientStopColor', 'QuickStyleLineColor');
-        final t = _doubleIn(row, 'GradientStopColorTrans') ?? 0;
+        final ix =
+            int.tryParse(row.getAttribute('IX') ?? '') ?? stopIx;
+        stopIx++;
+        final proto = (inherit != null && ix < inherit.stops.length)
+            ? inherit.stops[ix]
+            : null;
+        final pos = _doubleIn(row, 'GradientStopPosition',
+                inheritFrom: proto?.position) ??
+            proto?.position ??
+            0;
+        final res = _resolveRowColor(
+          row,
+          'GradientStopColor',
+          'QuickStyleLineColor',
+          inheritColor: proto?.color,
+          inheritThemeIndex: proto?.themeColorIndex,
+        );
+        final t = _doubleIn(row, 'GradientStopColorTrans',
+                inheritFrom: proto?.transparency) ??
+            proto?.transparency ??
+            0;
         stops.add(VsdxGradientStop(
           position: pos.clamp(0.0, 1.0),
-          color: res.color,
-          themeColorIndex: res.themeIndex,
+          color: res.color ?? proto?.color,
+          themeColorIndex: res.themeIndex ?? proto?.themeColorIndex,
           transparency: t.clamp(0.0, 1.0),
         ));
       }
@@ -520,8 +556,13 @@ class StyleParser {
       final named = _themeValArgSlot(f.isNotEmpty ? f : v);
       if (named != null) return _ColorResolution(null, named);
       // Visio defaults QuickStyle*Color to 1 (lt1) when the cell is absent.
-      final idx = _int(shape, quickStyleCell) ?? ThemeSlot.lt1;
-      return _ColorResolution(null, idx);
+      // F=Inh on QuickStyle* → treat as absent (caller / ThemeSlot.lt1).
+      final qsCell = findCell(shape, quickStyleCell);
+      int? idx;
+      if (qsCell != null && !isInhFormula(qsCell.getAttribute('F'))) {
+        idx = _int(shape, quickStyleCell);
+      }
+      return _ColorResolution(null, idx ?? ThemeSlot.lt1);
     }
     return _ColorResolution(VsdxColor.tryParse(v), null);
   }
@@ -542,12 +583,17 @@ class StyleParser {
   _ColorResolution _resolveRowColor(
     XmlElement row,
     String colorCell,
-    String quickStyleCell,
-  ) {
+    String quickStyleCell, {
+    VsdxColor? inheritColor,
+    int? inheritThemeIndex,
+  }) {
     final cell = findCell(row, colorCell);
     if (cell == null) return const _ColorResolution(null, null);
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
+    if (isInhFormula(f)) {
+      return _ColorResolution(inheritColor, inheritThemeIndex);
+    }
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // Prefer cached slot in V (writer emits V=slot + F=THEMEVAL()), then
       // named THEMEVAL arg, then row QuickStyle*, then Light1 fallback.
@@ -557,8 +603,12 @@ class StyleParser {
       }
       final named = _themeValArgSlot(f.isNotEmpty ? f : v);
       if (named != null) return _ColorResolution(null, named);
-      final idx = _intIn(row, quickStyleCell) ?? ThemeSlot.lt1;
-      return _ColorResolution(null, idx);
+      final qs = findCell(row, quickStyleCell);
+      int? idx;
+      if (qs != null && !isInhFormula(qs.getAttribute('F'))) {
+        idx = _intIn(row, quickStyleCell);
+      }
+      return _ColorResolution(null, idx ?? ThemeSlot.lt1);
     }
     // Visio GradientStopColor often stores a theme palette index as a bare
     // integer (`V="1"`). Do NOT route that through [VsdxColor.tryParse], which
@@ -570,15 +620,17 @@ class StyleParser {
     return _ColorResolution(VsdxColor.tryParse(v), null);
   }
 
-  double? _doubleIn(XmlElement parent, String name) {
+  double? _doubleIn(XmlElement parent, String name, {double? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F'))) return inheritFrom;
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
 
-  int? _intIn(XmlElement parent, String name) {
+  int? _intIn(XmlElement parent, String name, {int? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F'))) return inheritFrom;
     final s = cell.getAttribute('V');
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();

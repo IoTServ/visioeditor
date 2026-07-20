@@ -22,7 +22,9 @@ class VsdxStyleSheet {
     this.charStyle,
     this.charSizeInherits = false,
     this.line,
+    this.lineDefinedCells = const <String>{},
     this.fill,
+    this.fillDefinedCells = const <String>{},
   });
 
   final int id;
@@ -43,7 +45,16 @@ class VsdxStyleSheet {
   final bool charSizeInherits;
 
   final VsdxLine? line;
+
+  /// Cell names that were concrete on this sheet (not absent / not `F=Inh`).
+  /// [StyleSheetRegistry.resolveLine] only takes values for these names so a
+  /// parent sheet's LineWeight is not blocked by a child that only set SoftEdges.
+  final Set<String> lineDefinedCells;
+
   final VsdxFill? fill;
+
+  /// Same idea as [lineDefinedCells] for Fill cells.
+  final Set<String> fillDefinedCells;
 }
 
 /// Registry of every `<StyleSheet>` in the document, with chain resolution
@@ -120,7 +131,7 @@ class StyleSheetRegistry {
   }
 
   /// Resolve effective [VsdxLine] defaults from a `LineStyle` id (weight /
-  /// pattern / colour / SoftEdgesSize), walking the parent chain like Visio.
+  /// pattern / colour / SoftEdgesSize / Rounding), walking the parent chain.
   VsdxLine? resolveLine(int? lineStyleId) {
     var id = lineStyleId;
     if (id == null) return null;
@@ -129,18 +140,44 @@ class StyleSheetRegistry {
     double? weightInches;
     int? pattern;
     double? softEdgesInches;
+    double? roundingInches;
 
     final seen = <int>{};
     while (id != null && seen.add(id)) {
       final sheet = _byId[id];
       if (sheet == null) break;
       final line = sheet.line;
+      // Empty defined set ⇒ hand-built / legacy sheet: take every field.
+      final defined = sheet.lineDefinedCells.isEmpty
+          ? const {
+              'LineColor',
+              'LineWeight',
+              'LinePattern',
+              'SoftEdgesSize',
+              'Rounding',
+            }
+          : sheet.lineDefinedCells;
       if (line != null) {
-        color ??= line.color;
-        weightInches ??= line.weightInches;
-        pattern ??= line.pattern;
-        if (softEdgesInches == null && line.softEdgesInches > 0) {
+        if (color == null &&
+            defined.contains('LineColor') &&
+            line.color != null) {
+          color = line.color;
+        }
+        if (weightInches == null && defined.contains('LineWeight')) {
+          weightInches = line.weightInches;
+        }
+        if (pattern == null && defined.contains('LinePattern')) {
+          pattern = line.pattern;
+        }
+        if (softEdgesInches == null &&
+            defined.contains('SoftEdgesSize') &&
+            line.softEdgesInches > 0) {
           softEdgesInches = line.softEdgesInches;
+        }
+        if (roundingInches == null &&
+            defined.contains('Rounding') &&
+            line.roundingInches > 0) {
+          roundingInches = line.roundingInches;
         }
       }
       id = sheet.lineStyleId;
@@ -149,7 +186,8 @@ class StyleSheetRegistry {
     if (color == null &&
         weightInches == null &&
         pattern == null &&
-        softEdgesInches == null) {
+        softEdgesInches == null &&
+        roundingInches == null) {
       return null;
     }
     return VsdxLine(
@@ -158,6 +196,7 @@ class StyleSheetRegistry {
       pattern: pattern ?? VsdxLine.defaultLine.pattern,
       softEdgesInches:
           softEdgesInches ?? VsdxLine.defaultLine.softEdgesInches,
+      roundingInches: roundingInches ?? VsdxLine.defaultLine.roundingInches,
     );
   }
 
@@ -182,14 +221,36 @@ class StyleSheetRegistry {
       final sheet = _byId[id];
       if (sheet == null) break;
       final fill = sheet.fill;
+      // Empty defined set ⇒ hand-built / legacy sheet: take every field.
+      final defined = sheet.fillDefinedCells.isEmpty
+          ? const {
+              'FillForegnd',
+              'FillBkgnd',
+              'FillPattern',
+              'FillForegndTrans',
+              'FillBkgndTrans',
+            }
+          : sheet.fillDefinedCells;
       if (fill != null) {
-        foreground ??= fill.foreground;
-        background ??= fill.background;
-        pattern ??= fill.pattern;
+        if (foreground == null &&
+            defined.contains('FillForegnd') &&
+            fill.foreground != null) {
+          foreground = fill.foreground;
+        }
+        if (background == null &&
+            defined.contains('FillBkgnd') &&
+            fill.background != null) {
+          background = fill.background;
+        }
+        if (pattern == null && defined.contains('FillPattern')) {
+          pattern = fill.pattern;
+        }
         themeForegroundIndex ??= fill.themeForegroundIndex;
         themeBackgroundIndex ??= fill.themeBackgroundIndex;
         gradient ??= fill.gradient;
-        if (!sawTransparency) {
+        if (!sawTransparency &&
+            (defined.contains('FillForegndTrans') ||
+                defined.contains('FillBkgndTrans'))) {
           foregroundTransparency = fill.foregroundTransparency;
           backgroundTransparency = fill.backgroundTransparency;
           sawTransparency = true;
