@@ -409,8 +409,26 @@ class _HeatmapEditorState extends State<_HeatmapEditor>
     );
   }
 
+  void _ensureControllers() {
+    final chart = controller.selectedChart;
+    final n = _rows * _cols;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'heatmap' &&
+        (_cells.isEmpty || _cells.length != n)) {
+      syncFields(chart);
+      return;
+    }
+    while (_cells.length > n) {
+      _cells.removeLast().dispose();
+    }
+    while (_cells.length < n) {
+      _cells.add(TextEditingController(text: '50'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureControllers();
     final el = EditorL10n.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -950,8 +968,26 @@ class _CalendarHeatEditorState extends State<_CalendarHeatEditor>
     );
   }
 
+  void _ensureControllers() {
+    final chart = controller.selectedChart;
+    final n = _weeks * 7;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'calendarHeat' &&
+        (_cells.isEmpty || _cells.length != n)) {
+      syncFields(chart);
+      return;
+    }
+    while (_cells.length > n) {
+      _cells.removeLast().dispose();
+    }
+    while (_cells.length < n) {
+      _cells.add(TextEditingController(text: '40'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureControllers();
     final el = EditorL10n.of(context);
     final days = el.chartWeekdaysShort.split(',');
     return Column(
