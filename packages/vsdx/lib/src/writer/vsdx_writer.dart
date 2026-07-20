@@ -4487,6 +4487,21 @@ class VsdxWriter {
         el, 'BottomMargin', base.marginBottomInches, edited.marginBottomInches);
     changed |=
         _forceLiteralLength(el, 'BottomMargin', edited.marginBottomInches);
+    // Honour the *edited* model for Txt* F= (like Begin/End): clearing
+    // formulas in setIconCaptionBelow must scrub SETATREF/TEXTWIDTH/Height*
+    // from XML even when V= is unchanged.
+    changed |= _syncCellFormulaAttr(el, 'TxtPinX', shape.formulas['TxtPinX']);
+    changed |= _syncCellFormulaAttr(el, 'TxtPinY', shape.formulas['TxtPinY']);
+    changed |=
+        _syncCellFormulaAttr(el, 'TxtWidth', shape.formulas['TxtWidth']);
+    changed |=
+        _syncCellFormulaAttr(el, 'TxtHeight', shape.formulas['TxtHeight']);
+    changed |=
+        _syncCellFormulaAttr(el, 'TxtLocPinX', shape.formulas['TxtLocPinX']);
+    changed |=
+        _syncCellFormulaAttr(el, 'TxtLocPinY', shape.formulas['TxtLocPinY']);
+    changed |=
+        _syncCellFormulaAttr(el, 'TxtAngle', shape.formulas['TxtAngle']);
     return changed;
   }
 
@@ -6915,8 +6930,8 @@ class VsdxWriter {
   }
 
   /// Rewrite a caption that uses a negative [VsdxTextBlock.pinYInches] into the
-  /// Edraw-safe form `TxtPinY=0`, `TxtLocPinY=TxtHeight` while keeping the same
-  /// painted box (text hanging fully below the shape).
+  /// Edraw-safe form `TxtPinY≥0`, `TxtLocPinY=TxtHeight` while keeping the same
+  /// painted box when the caption already sits flush under the shape.
   static VsdxTextBlock _edrawSafeCaptionBelow(VsdxTextBlock b) {
     final pinY = b.pinYInches;
     final th = b.heightInches;
@@ -6925,14 +6940,18 @@ class VsdxWriter {
     }
     final locY = b.locPinYInches ?? th / 2;
     final top = pinY - locY + th; // top edge of the text block in shape space
+    // EdrawMax clamps negative TxtPinY — never emit a negative pin. When the
+    // caption already had a gap below the shape (top<0), pin at 0 and hang the
+    // label fully under the glyph (gap is sacrificed for host compatibility).
     return b.copyWith(
-      pinYInches: top,
+      pinYInches: top < -_epsilon ? 0.0 : top,
       locPinYInches: th,
     );
   }
 
-  /// Preserve Txt* `F=` only when it still matches the edited cache value
-  /// (same idea as LocPin `_sameRatio`), or when it is SETATREF/TEXTWIDTH/….
+  /// Preserve Txt* `F=` only when the **model** still carries that formula and
+  /// it agrees with the edited cache (or is SETATREF/TEXTWIDTH/…). If the
+  /// model cleared the formula (absolute caption), never keep XML F=.
   bool _preserveTxtLengthFormula(
     XmlElement el,
     String cellName,
@@ -6940,6 +6959,8 @@ class VsdxWriter {
     VsdxShape shape,
   ) {
     if (editedValue == null) return false;
+    final modelF = shape.formulas[cellName];
+    if (modelF == null || modelF.isEmpty) return false;
     final f = _cellFormula(el, cellName);
     if (!_isParametricFormula(f)) return false;
     return _txtFormulaAgreesWithValue(f!, editedValue, shape);

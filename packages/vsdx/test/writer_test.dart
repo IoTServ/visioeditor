@@ -940,6 +940,81 @@ void main() {
     expect(pageXml, contains('N="TxtLocPinY" V="0.22"'));
   });
 
+  test('clearing Txt* formulas scrubs SETATREF from XML even when V matches', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          text: 'Label',
+          formulas: const <String, String>{
+            'TxtPinX': 'SETATREF(Controls.TextPosition)',
+            'TxtPinY': 'SETATREF(Controls.TextPosition.Y)',
+            'TxtWidth': 'TEXTWIDTH(TheText)',
+          },
+          controls: const <VsdxControlRow>[
+            VsdxControlRow(name: 'TextPosition', x: 0.5, y: 0.5),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Label')],
+            textBlock: VsdxTextBlock(
+              pinXInches: 0.5,
+              pinYInches: 0.5,
+              widthInches: 1,
+              heightInches: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    final bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    expect(doc.pages.first.findShapeById(id)!.formulas['TxtPinX'],
+        contains('SETATREF'));
+    // Absolute caption placement clears formulas but keeps the same pin V.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          formulas: Map<String, String>.of(s.formulas)
+            ..remove('TxtPinX')
+            ..remove('TxtPinY')
+            ..remove('TxtWidth')
+            ..remove('TxtHeight'),
+          richText: s.richText.copyWith(
+            textBlock: const VsdxTextBlock(
+              pinXInches: 0.5,
+              pinYInches: 0,
+              locPinXInches: 0.5,
+              locPinYInches: 0.22,
+              widthInches: 1,
+              heightInches: 0.22,
+            ),
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: bytes, edited: doc);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, isNot(contains('SETATREF(Controls.TextPosition')));
+    expect(pageXml, isNot(contains('TEXTWIDTH(TheText)')));
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.formulas['TxtPinX'], isNull);
+    expect(after.formulas['TxtPinY'], isNull);
+    expect(after.richText.textBlock.pinYInches, closeTo(0, 1e-6));
+  });
+
   test('page rename round-trips', () {
     final bytes = _fixture('test1.vsdx');
     final doc = parser.parse(bytes);

@@ -1244,6 +1244,9 @@ class _PageCanvasState extends State<PageCanvas> {
     var pageAngle = 0.0;
     var locAlignX = 0.0;
     var locAlignY = 0.0;
+    // When the editor is placed via localToPageDeep(TxtPin), flip is already
+    // in the page pin — applying Transform flip again would double-flip.
+    var applyShapeFlip = true;
     if (s.isGlueableConnector) {
       // Edge label: a compact editor centred on the connector's route midpoint.
       final mid = _connectorMidpointPage(s);
@@ -1288,6 +1291,7 @@ class _PageCanvasState extends State<PageCanvas> {
       top = pinScr.dy - locPinYFromTop;
       locAlignX = width <= 0 ? 0.0 : (locPinX / width) * 2 - 1;
       locAlignY = height <= 0 ? 0.0 : (locPinYFromTop / height) * 2 - 1;
+      applyShapeFlip = !useTextBlock;
     }
     Widget editor = CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -1377,9 +1381,11 @@ class _PageCanvasState extends State<PageCanvas> {
     );
     // Boxes and freehand ink: match paint flip/rotate about LocPin.
     // Glueable connectors keep an axis-aligned edge-label editor.
+    // Text-block placement already includes Flip via localToPageDeep — skip
+    // a second Transform flip (would misplace icon captions under FlipY).
     if (!s.isGlueableConnector) {
-      final sx = s.flipX ? -1.0 : 1.0;
-      final sy = s.flipY ? -1.0 : 1.0;
+      final sx = applyShapeFlip && s.flipX ? -1.0 : 1.0;
+      final sy = applyShapeFlip && s.flipY ? -1.0 : 1.0;
       final align = Alignment(locAlignX, locAlignY);
       if (sx != 1.0 || sy != 1.0) {
         editor = Transform(
