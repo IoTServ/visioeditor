@@ -5999,6 +5999,12 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('N="FillGradient"'), isTrue);
+    expect(
+      RegExp(r'N="GradientStopColor"[^>]*F="THEMEVAL').hasMatch(pageXml) ||
+          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"').hasMatch(pageXml),
+      isTrue,
+      reason: 'theme gradient stops must bind via THEMEVAL like Character Color',
+    );
     expect(pageXml.contains('N="GradientStopColor" V="1"') ||
             pageXml.contains('V="1" N="GradientStopColor"'),
         isTrue);
@@ -6171,7 +6177,11 @@ void main() {
       width: 1.5,
       height: 1,
       imagePartName: part,
-    ).copyWith(line: const VsdxLine(softEdgesInches: 0.06));
+    ).copyWith(
+      line: const VsdxLine(softEdgesInches: 0.06, compoundType: 0),
+      layerMemberIds: const [0],
+      connectionPoints: VsdxPage.defaultConnectionPoints(1.5, 1),
+    );
     doc = doc
         .copyWith(
           images: doc.images.withImage(
@@ -6181,6 +6191,11 @@ void main() {
         .replacePage(
           0,
           doc.pages.first
+              .copyWith(
+                layers: const [
+                  VsdxLayer(id: 0, name: 'Default'),
+                ],
+              )
               .addShape(pic)
               .addShape(
                 VsdxShapeFactory.rectangle(
@@ -6210,9 +6225,229 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
+    expect(pageXml.contains('N="CompoundType" V="0"'), isTrue);
+    expect(pageXml.contains('N="LayerMember"'), isTrue);
+    expect(pageXml.contains('N="Connection"'), isTrue);
     final after = parser.parse(out).pages.first.findShapeById(picId)!;
     expect(after.line.softEdgesInches, closeTo(0.06, 1e-6));
+    expect(after.line.compoundType, 0);
+    expect(after.layerMemberIds, [0]);
+    expect(after.connectionPoints, isNotEmpty);
     expect(after.hasImage, isTrue);
+  });
+
+  test('ShadowPattern F=Inh scrubs when shadow disabled', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(shadow: const VsdxShadow(enabled: true)),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ShadowPattern"[^/]*/>'),
+      '<Cell N="ShadowPattern" V="0" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ShdwPattern"[^/]*/>'),
+      '<Cell N="ShdwPattern" V="0" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.shadow.enabled, isFalse);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['ShadowPattern', 'ShdwPattern']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .where(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          )
+          .firstOrNull;
+      if (cell == null) continue;
+      expect(cell.getAttribute('V'), '0', reason: name);
+      expect(cell.getAttribute('F'), isNull, reason: name);
+    }
+  });
+
+  test('BeginArrowSize F=Inh scrubs when arrow is set', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: id,
+          ax: 1,
+          ay: 1,
+          bx: 3,
+          by: 1,
+        ).copyWith(
+          line: const VsdxLine(
+            beginArrow: 4,
+            beginArrowSizeInches: 0.125,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="BeginArrowSize"[^/]*/>'),
+      '<Cell N="BeginArrowSize" V="2" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'BeginArrowSize',
+        );
+    expect(cell.getAttribute('V'), '2');
+    expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('VerticalAlign F=Inh scrubs to literal model value', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(text: 'Hi'),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="VerticalAlign"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="VerticalAlign"[^/]*/>'),
+        '<Cell N="VerticalAlign" V="1" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="VerticalAlign" V="1" F="Inh"/></Shape>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'VerticalAlign',
+        );
+    expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('hyperlink ExtraInfo clears on patch when set to null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(hyperlinks: const [
+          VsdxHyperlink(
+            id: 0,
+            address: 'https://example.com',
+            extraInfo: 'keep-me',
+            isDefault: true,
+          ),
+        ]),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      utf8.decode(
+        ZipDecoder()
+            .decodeBytes(mid)
+            .firstWhere((f) => f.name.contains('pages/page1.xml'))
+            .content as List<int>,
+      ),
+      contains('ExtraInfo'),
+    );
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(hyperlinks: [
+          VsdxHyperlink(
+            id: s.hyperlinks.first.id,
+            address: s.hyperlinks.first.address,
+            description: s.hyperlinks.first.description,
+            isDefault: s.hyperlinks.first.isDefault,
+          ),
+        ]),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('ExtraInfo'), isFalse);
+    expect(parser.parse(out).pages.first.findShapeById(id)!.hyperlinks.first.extraInfo,
+        isNull);
   });
 
   test('clearing FillGradient drops Inh formula on FillGradientEnabled', () {

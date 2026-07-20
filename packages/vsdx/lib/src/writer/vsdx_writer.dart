@@ -2056,6 +2056,19 @@ class VsdxWriter {
         'EndArrowSize',
         _arrowSizeToBucket(base.line.endArrowSizeInches),
         _arrowSizeToBucket(edited.line.endArrowSizeInches));
+    // Arrow sizes with F=Inh would skip _patchInt when buckets match — scrub.
+    if (edited.line.beginArrow != 0) {
+      changed |= _forceLiteralInt(
+          el,
+          'BeginArrowSize',
+          _arrowSizeToBucket(edited.line.beginArrowSizeInches));
+    }
+    if (edited.line.endArrow != 0) {
+      changed |= _forceLiteralInt(
+          el,
+          'EndArrowSize',
+          _arrowSizeToBucket(edited.line.endArrowSizeInches));
+    }
     changed |= _patchRatio(el, 'FillForegndTrans',
         base.fill.foregroundTransparency, edited.fill.foregroundTransparency);
     changed |= _patchRatio(el, 'FillBkgndTrans',
@@ -2085,6 +2098,10 @@ class VsdxWriter {
     changed |= _patchReflection(el, base.reflection, edited.reflection);
     // Disabled effects: force literal V=0 even when base/edited already match
     // as "off" so F=Inh cannot revive Glow/Reflection via StyleSheet inherit.
+    if (!edited.shadow.enabled) {
+      changed |= _scrubDisabledFlagCell(el, 'ShadowPattern');
+      changed |= _scrubDisabledFlagCell(el, 'ShdwPattern');
+    }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
     }
@@ -2774,13 +2791,21 @@ class VsdxWriter {
       _writeValue(_ensureCell(row, 'Description'), h.description ?? '');
       if (h.extraInfo != null) {
         _writeValue(_ensureCell(row, 'ExtraInfo'), h.extraInfo!);
+      } else {
+        _removeNamedCells(row, const ['ExtraInfo']);
       }
-      if (h.frame != null) _writeValue(_ensureCell(row, 'Frame'), h.frame!);
+      if (h.frame != null) {
+        _writeValue(_ensureCell(row, 'Frame'), h.frame!);
+      } else {
+        _removeNamedCells(row, const ['Frame']);
+      }
       _writeValue(_ensureCell(row, 'NewWindow'), h.newWindow ? '1' : '0');
       _writeValue(_ensureCell(row, 'Default'), h.isDefault ? '1' : '0');
       _writeValue(_ensureCell(row, 'Invisible'), h.invisible ? '1' : '0');
       if (h.sortKey != null) {
         _writeValue(_ensureCell(row, 'SortKey'), h.sortKey!);
+      } else {
+        _removeNamedCells(row, const ['SortKey']);
       }
     }
     return true;
@@ -4112,6 +4137,9 @@ class VsdxWriter {
         _patchAngle(el, 'TxtAngle', base.angleRad, edited.angleRad);
     changed |= _patchInt(el, 'VerticalAlign', _vAlignInt(base.verticalAlign),
         _vAlignInt(edited.verticalAlign));
+    // Model verticalAlign is authoritative — scrub F=Inh even when value matches.
+    changed |= _forceLiteralInt(
+        el, 'VerticalAlign', _vAlignInt(edited.verticalAlign));
     changed |= _patchInt(
         el, 'HideText', base.hideText ? 1 : 0, edited.hideText ? 1 : 0);
     changed |= _patchInt(
@@ -4260,6 +4288,19 @@ class VsdxWriter {
         (v == '0' || v == '0.0') && (f == null || f.isEmpty);
     if (already) return false;
     _writeValue(c, '0');
+    return true;
+  }
+
+  /// Ensure an int cell is literal [value] without `F=` (scrub Inh / stale F).
+  bool _forceLiteralInt(XmlElement shape, String cell, int value) {
+    final c = _findCell(shape, cell);
+    if (c == null) return false;
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final want = value.toString();
+    final already = v == want && (f == null || f.isEmpty);
+    if (already) return false;
+    _writeValue(c, want);
     return true;
   }
 
@@ -5509,8 +5550,10 @@ class VsdxWriter {
         _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
       if (s.line.roundingInches > _epsilon)
         _cell('Rounding', _fmt(s.line.roundingInches)),
-      if (s.line.compoundType != 0)
-        _cell('CompoundType', s.line.compoundType.toString()),
+      // Always emit CompoundType (incl. 0) — match normal shape rebuild.
+      _cell('CompoundType', s.line.compoundType.toString()),
+      if (s.layerMemberIds.isNotEmpty)
+        _cell('LayerMember', s.layerMemberIds.join(';')),
       if (s.flipX) _cell('FlipX', '1'),
       if (s.flipY) _cell('FlipY', '1'),
     ];
@@ -5601,6 +5644,17 @@ class VsdxWriter {
       );
       final section = _buildGeometrySection(frame, 0);
       if (section != null) children.add(section);
+    }
+    if (s.userProperties.isNotEmpty) {
+      children.add(_buildPropertySection(s.userProperties));
+    }
+    // Edge glue points — match normal shapes so connectors can attach after
+    // a Foreign group rebuild (Connection is modeled, not opaque-preserved).
+    final cps = s.connectionPoints.isNotEmpty
+        ? s.connectionPoints
+        : VsdxPage.defaultConnectionPoints(s.width, s.height);
+    if (cps.isNotEmpty) {
+      children.add(_buildConnectionSection(cps));
     }
     if (s.hyperlinks.isNotEmpty) {
       children.add(_buildHyperlinkSection(s.hyperlinks));
@@ -5852,14 +5906,19 @@ class VsdxWriter {
     );
   }
 
-  /// Hex colour, or bare theme palette index (`V="1"`) when only
-  /// [VsdxGradientStop.themeColorIndex] is set.
+  /// Hex colour, or theme slot with `THEMEVAL()` (matches Character Color).
   List<XmlNode> _gradientStopColorCells(VsdxGradientStop stop) {
     if (stop.color != null) {
       return [_cell('GradientStopColor', _hex(stop.color!))];
     }
     if (stop.themeColorIndex != null) {
-      return [_cell('GradientStopColor', stop.themeColorIndex.toString())];
+      return [
+        _cell(
+          'GradientStopColor',
+          stop.themeColorIndex.toString(),
+          formula: 'THEMEVAL()',
+        ),
+      ];
     }
     return const [];
   }

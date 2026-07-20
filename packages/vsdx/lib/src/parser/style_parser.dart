@@ -354,6 +354,14 @@ class StyleParser {
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
+      // Prefer cached slot in V (writer emits V=slot + F=THEMEVAL()), then
+      // named THEMEVAL arg, then row QuickStyle*, then Light1 fallback.
+      final fromV = int.tryParse(v.trim());
+      if (fromV != null && fromV >= 0 && fromV < 100 && !_isThemeFormula(v)) {
+        return _ColorResolution(null, fromV);
+      }
+      final named = _themeValArgSlot(f.isNotEmpty ? f : v);
+      if (named != null) return _ColorResolution(null, named);
       final idx = _intIn(row, quickStyleCell) ?? ThemeSlot.lt1;
       return _ColorResolution(null, idx);
     }
