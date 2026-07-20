@@ -5462,11 +5462,11 @@ class VsdxWriter {
     if (cp != null && !cp.isEmpty) {
       if (cp.begTrigger != null || s.formulas.containsKey('BegTrigger')) {
         children.add(_cell('BegTrigger', cp.begTrigger ?? '0',
-            formula: s.formulas['BegTrigger']));
+            formula: _nonInhFormula(s.formulas['BegTrigger'])));
       }
       if (cp.endTrigger != null || s.formulas.containsKey('EndTrigger')) {
         children.add(_cell('EndTrigger', cp.endTrigger ?? '0',
-            formula: s.formulas['EndTrigger']));
+            formula: _nonInhFormula(s.formulas['EndTrigger'])));
       }
       if (cp.glueType != null) {
         children.add(_cell('GlueType', cp.glueType.toString()));
@@ -5501,11 +5501,14 @@ class VsdxWriter {
         children.add(_cell('ShapePlaceFlip', cp.shapePlaceFlip.toString()));
       }
     } else {
+      // Drop F=Inh; keep real XFTRIGGER formulas only.
       if (s.formulas.containsKey('BegTrigger')) {
-        children.add(_cell('BegTrigger', '0', formula: s.formulas['BegTrigger']));
+        children.add(_cell('BegTrigger', '0',
+            formula: _nonInhFormula(s.formulas['BegTrigger'])));
       }
       if (s.formulas.containsKey('EndTrigger')) {
-        children.add(_cell('EndTrigger', '0', formula: s.formulas['EndTrigger']));
+        children.add(_cell('EndTrigger', '0',
+            formula: _nonInhFormula(s.formulas['EndTrigger'])));
       }
     }
     // --- Fill ----------------------------------------------------------------
@@ -5715,7 +5718,7 @@ class VsdxWriter {
       children.add(_cell(
         'EventDblClick',
         s.eventDblClick ?? '0',
-        formula: s.formulas['EventDblClick'],
+        formula: _nonInhFormula(s.formulas['EventDblClick']),
       ));
     }
     children
@@ -6342,7 +6345,7 @@ class VsdxWriter {
       children.add(_cell(
         'EventDblClick',
         s.eventDblClick ?? '0',
-        formula: s.formulas['EventDblClick'],
+        formula: _nonInhFormula(s.formulas['EventDblClick']),
       ));
     }
     children

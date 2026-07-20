@@ -132,9 +132,15 @@ class StyleParser {
     );
     final size = sizeCell ?? (defaults.enabled ? defaults.sizeInches : null);
     final col = _resolveColor(shape, 'GlowColor', 'QuickStyleEffectColor');
-    final transparency =
-        (_double(shape, 'GlowColorTrans') ?? defaults.transparency)
-            .clamp(0.0, 1.0);
+    // Only inherit Trans from an enabled master; otherwise keep cached V so
+    // F=Inh does not wipe a local transparency (disabled default is 1.0).
+    final transparency = (_double(
+          shape,
+          'GlowColorTrans',
+          inheritFrom: defaults.enabled ? defaults.transparency : null,
+        ) ??
+            defaults.transparency)
+        .clamp(0.0, 1.0);
     final enabled = size != null && size > 0;
     if (!enabled) {
       final hasCompanion = col.color != null ||
@@ -184,9 +190,15 @@ class StyleParser {
       'ReflectionBlur',
       inheritFrom: defaults.enabled ? defaults.blurInches : null,
     );
-    final transparency =
-        (_double(shape, 'ReflectionTransparency') ?? defaults.transparency)
-            .clamp(0.0, 1.0);
+    // Only inherit Trans from an enabled master; otherwise keep cached V so
+    // F=Inh does not wipe a local transparency (disabled default is 1.0).
+    final transparency = (_double(
+          shape,
+          'ReflectionTransparency',
+          inheritFrom: defaults.enabled ? defaults.transparency : null,
+        ) ??
+            defaults.transparency)
+        .clamp(0.0, 1.0);
     final enabled = size != null && size > 0;
     if (!enabled) {
       final hasCompanion = dist != null ||
@@ -238,9 +250,15 @@ class StyleParser {
         // Blur has no page-sheet fallback; only inherit from an enabled master
         // so F=Inh keeps the cached V instead of the disabled default 0.04".
         inheritFrom: defaults.enabled ? defaults.blurInches : null);
-    final transparency =
-        (_double(shape, 'ShadowForegndTrans') ?? defaults.transparency)
-            .clamp(0.0, 1.0);
+    // Only inherit Trans from an enabled master; otherwise keep cached V so
+    // F=Inh does not wipe a local transparency (disabled default is 1.0).
+    final transparency = (_double(
+          shape,
+          'ShadowForegndTrans',
+          inheritFrom: defaults.enabled ? defaults.transparency : null,
+        ) ??
+            defaults.transparency)
+        .clamp(0.0, 1.0);
     final fallbackOx = pageOffsetXInches ?? defaults.offsetXInches;
     final fallbackOy = pageOffsetYInches ?? defaults.offsetYInches;
     if (!enabled) {

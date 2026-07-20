@@ -140,4 +140,23 @@ void main() {
     );
     expect(fill.foregroundTransparency, closeTo(0.4, 1e-9));
   });
+
+  test('GlowColorTrans F=Inh inherits Master transparency', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="GlowSize" V="0.1"/>'
+      '<Cell N="GlowColorTrans" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final glow = style.parseGlow(
+      el,
+      defaults: const VsdxGlow(
+        enabled: true,
+        sizeInches: 0.1,
+        transparency: 0.55,
+      ),
+    );
+    expect(glow.enabled, isTrue);
+    expect(glow.transparency, closeTo(0.55, 1e-9));
+  });
 }

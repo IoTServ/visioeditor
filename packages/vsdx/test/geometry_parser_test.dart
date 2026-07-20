@@ -322,6 +322,33 @@ void main() {
       expect(merged.noFill, isTrue);
     });
 
+    test('NoShow F=Inh does not override master NoShow=1', () {
+      final master = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Cell N="NoShow" V="1"/>'
+                    '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="LineTo"><Cell N="X" V="1"/><Cell N="Y" V="0"/></Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final instance = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Cell N="NoShow" V="0" F="Inh"/>'
+                    '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="LineTo"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final merged = GeometryParser.mergeInherited(master, instance).single;
+      expect(merged.noShow, isTrue);
+    });
+
     test('test9 line shape merges master geometry (real fixture)', () {
       const parser = DocumentParser();
       final doc = parser.parse(

@@ -5507,6 +5507,54 @@ void main() {
     expect(pageXml.contains('N="ObjType"'), isTrue);
   });
 
+  test('EventDblClick F=Inh is not re-emitted on group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(
+              eventDblClick: '0',
+              formulas: const {'EventDblClick': 'Inh'},
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = RegExp(r'<Cell N="EventDblClick"[^/]*/>').firstMatch(pageXml);
+    if (cell != null) {
+      expect(cell.group(0)!.contains('F="Inh"'), isFalse);
+    }
+  });
+
   test('multi-run Character/Paragraph rows on rebuild', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);
