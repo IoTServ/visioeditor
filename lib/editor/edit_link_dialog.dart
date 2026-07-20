@@ -183,24 +183,17 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
                 Navigator.pop(context, const _LinkEditResult(null)),
             icon: const Icon(Icons.link_off, size: 18),
             label: Text(el.removeLink),
-          )
-        else
-          const SizedBox.shrink(),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(el.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                _LinkEditResult(_buildPrimary()),
-              ),
-              child: Text(el.apply),
-            ),
-          ],
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(el.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _LinkEditResult(_buildPrimary()),
+          ),
+          child: Text(el.apply),
         ),
       ],
       actionsAlignment: MainAxisAlignment.spaceBetween,

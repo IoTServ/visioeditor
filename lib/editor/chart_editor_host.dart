@@ -333,10 +333,21 @@ class _SpecialtyAddButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      child: OutlinedButton.icon(
+      child: OutlinedButton(
         onPressed: onPressed,
-        icon: const Icon(Icons.add, size: 18),
-        label: Text(label),
+        child: Row(
+          children: [
+            const Icon(Icons.add, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

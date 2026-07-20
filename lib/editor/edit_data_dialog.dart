@@ -167,16 +167,11 @@ class _EditDataDialogState extends State<_EditDataDialog> {
           icon: const Icon(Icons.add, size: 18),
           label: Text(el.addProperty),
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(el.cancel),
-            ),
-            FilledButton(onPressed: _apply, child: Text(el.apply)),
-          ],
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(el.cancel),
         ),
+        FilledButton(onPressed: _apply, child: Text(el.apply)),
       ],
       actionsAlignment: MainAxisAlignment.spaceBetween,
     );

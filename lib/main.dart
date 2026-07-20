@@ -1853,18 +1853,26 @@ class _EditorHomePageState extends State<EditorHomePage> {
       child: ColoredBox(
         color: scheme.primary.withValues(alpha: 0.10),
         child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(
-              color: scheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: scheme.primary, width: 2),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: math.max(160, MediaQuery.sizeOf(context).width - 48),
             ),
-            child: Text(
-              _c != null && _c!.hasDocument
-                  ? EditorL10n.of(context).dropHint
-                  : EditorL10n.of(context).dropToOpen,
-              style: const TextStyle(fontSize: 16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.primary, width: 2),
+              ),
+              child: Text(
+                _c != null && _c!.hasDocument
+                    ? EditorL10n.of(context).dropHint
+                    : EditorL10n.of(context).dropToOpen,
+                style: const TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
         ),
@@ -1877,63 +1885,117 @@ class _EditorHomePageState extends State<EditorHomePage> {
       elevation: 8,
       child: SizedBox(
         height: 46,
-        child: Row(
-          children: [
-            Expanded(
-              child: ReorderableListView.builder(
-                scrollDirection: Axis.horizontal,
-                buildDefaultDragHandles: false,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: c.pageCount,
-                onReorderItem: (oldIndex, newIndex) {
-                  c.movePage(oldIndex, newIndex);
-                },
-                itemBuilder: (context, i) {
-                  final page = c.document!.pages[i];
-                  return ReorderableDragStartListener(
-                    key: ValueKey<int>(page.id),
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 3, vertical: 7),
-                      child: ChoiceChip(
-                        avatar: page.isBackgroundPage
-                            ? const Icon(Icons.layers_outlined, size: 16)
-                            : null,
-                        label: Text(page.name),
-                        selected: i == c.currentPageIndex,
-                        onSelected: (_) => _onPageTabSelected(i),
-                        tooltip: page.isBackgroundPage
-                            ? EditorL10n.of(context).backgroundPageReorderHint
-                            : EditorL10n.of(context).pageReorderHint,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Four trailing IconButtons (~200px) leave almost no room for
+            // page chips on phones — fold them into one menu.
+            final compactActions = constraints.maxWidth < 420;
+            final el = EditorL10n.of(context);
+            return Row(
+              children: [
+                Expanded(
+                  child: ReorderableListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    buildDefaultDragHandles: false,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemCount: c.pageCount,
+                    onReorderItem: (oldIndex, newIndex) {
+                      c.movePage(oldIndex, newIndex);
+                    },
+                    itemBuilder: (context, i) {
+                      final page = c.document!.pages[i];
+                      return ReorderableDragStartListener(
+                        key: ValueKey<int>(page.id),
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 3, vertical: 7),
+                          child: ChoiceChip(
+                            avatar: page.isBackgroundPage
+                                ? const Icon(Icons.layers_outlined, size: 16)
+                                : null,
+                            label: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: compactActions ? 100 : 160,
+                              ),
+                              child: Text(
+                                page.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            selected: i == c.currentPageIndex,
+                            onSelected: (_) => _onPageTabSelected(i),
+                            tooltip: page.isBackgroundPage
+                                ? el.backgroundPageReorderHint
+                                : el.pageReorderHint,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                if (compactActions)
+                  PopupMenuButton<String>(
+                    tooltip: el.addPage,
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'rename':
+                          _renamePage(c.currentPageIndex);
+                        case 'add':
+                          c.addPage();
+                        case 'duplicate':
+                          c.duplicateCurrentPage();
+                        case 'delete':
+                          if (c.pageCount > 1) c.deleteCurrentPage();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'rename',
+                        child: Text(el.renamePage),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            IconButton(
-              onPressed: () => _renamePage(c.currentPageIndex),
-              icon: const Icon(Icons.drive_file_rename_outline),
-              tooltip: EditorL10n.of(context).renamePage,
-            ),
-            IconButton(
-              onPressed: c.addPage,
-              icon: const Icon(Icons.add),
-              tooltip: EditorL10n.of(context).addPage,
-            ),
-            IconButton(
-              onPressed: c.duplicateCurrentPage,
-              icon: const Icon(Icons.copy_all_outlined),
-              tooltip: EditorL10n.of(context).duplicatePage,
-            ),
-            IconButton(
-              onPressed: c.pageCount > 1 ? c.deleteCurrentPage : null,
-              icon: const Icon(Icons.delete_outline),
-              tooltip: EditorL10n.of(context).deletePage,
-            ),
-            const SizedBox(width: 8),
-          ],
+                      PopupMenuItem<String>(
+                        value: 'add',
+                        child: Text(el.addPage),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'duplicate',
+                        child: Text(el.duplicatePage),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        enabled: c.pageCount > 1,
+                        child: Text(el.deletePage),
+                      ),
+                    ],
+                  )
+                else ...[
+                  IconButton(
+                    onPressed: () => _renamePage(c.currentPageIndex),
+                    icon: const Icon(Icons.drive_file_rename_outline),
+                    tooltip: el.renamePage,
+                  ),
+                  IconButton(
+                    onPressed: c.addPage,
+                    icon: const Icon(Icons.add),
+                    tooltip: el.addPage,
+                  ),
+                  IconButton(
+                    onPressed: c.duplicateCurrentPage,
+                    icon: const Icon(Icons.copy_all_outlined),
+                    tooltip: el.duplicatePage,
+                  ),
+                  IconButton(
+                    onPressed: c.pageCount > 1 ? c.deleteCurrentPage : null,
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: el.deletePage,
+                  ),
+                ],
+                const SizedBox(width: 8),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -3752,6 +3814,34 @@ class _PropertyPanel extends StatelessWidget {
         child: Text(label, style: Theme.of(context).textTheme.labelLarge),
       );
 
+  /// Full-width outline action that ellipsizes long locale labels inside the
+  /// narrow Format panel / bottom sheet.
+  Widget _fullWidthOutlineButton({
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        child: Row(
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Picture shape: replace embedded media (drawio "Replace Image").
   Widget _imageSection(BuildContext context) {
     final id = controller.singleSelectedId;
@@ -3762,7 +3852,7 @@ class _PropertyPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _section(context, EditorL10n.of(context).panelImage),
-        OutlinedButton.icon(
+        _fullWidthOutlineButton(
           onPressed: () async {
             final picked = await pickImageFile();
             if (picked == null) return;
@@ -3773,8 +3863,8 @@ class _PropertyPanel extends StatelessWidget {
               clearIconMeta: true,
             );
           },
-          icon: const Icon(Icons.image_outlined, size: 18),
-          label: Text(EditorL10n.of(context).replaceImage),
+          icon: Icons.image_outlined,
+          label: EditorL10n.of(context).replaceImage,
         ),
       ],
     );
@@ -3826,10 +3916,10 @@ class _PropertyPanel extends StatelessWidget {
               ),
             ),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
+        _fullWidthOutlineButton(
           onPressed: () => showEditDataDialog(context, controller, id),
-          icon: const Icon(Icons.data_object, size: 18),
-          label: Text(EditorL10n.of(context).editData),
+          icon: Icons.data_object,
+          label: EditorL10n.of(context).editData,
         ),
       ],
     );
@@ -3862,10 +3952,10 @@ class _PropertyPanel extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
+        _fullWidthOutlineButton(
           onPressed: () => showEditLinkDialog(context, controller, id),
-          icon: const Icon(Icons.link, size: 18),
-          label: Text(EditorL10n.of(context).editLink),
+          icon: Icons.link,
+          label: EditorL10n.of(context).editLink,
         ),
       ],
     );
@@ -4491,8 +4581,7 @@ class _PropertyPanel extends StatelessWidget {
         ),
         Row(
           children: [
-            Text(EditorL10n.of(context).curvedText),
-            const Spacer(),
+            Flexible(child: Text(EditorL10n.of(context).curvedText)),
             Switch(
               value: controller.selectedCurvedText,
               onChanged: controller.setCurvedText,
@@ -4501,8 +4590,7 @@ class _PropertyPanel extends StatelessWidget {
         ),
         Row(
           children: [
-            Text(EditorL10n.of(context).bulletList),
-            const Spacer(),
+            Flexible(child: Text(EditorL10n.of(context).bulletList)),
             Switch(
               value: controller.selectedHasBullet,
               onChanged: controller.setBullet,

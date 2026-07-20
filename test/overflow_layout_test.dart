@@ -213,4 +213,22 @@ void main() {
       expect(find.byType(OutlinedButton), findsWidgets);
     });
   });
+
+  testWidgets('narrow page tab bar folds actions into a menu', (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _withOverflowGuard(tester, () async {
+      await _setViewSize(tester, const Size(360, 640));
+      final settings = await AppSettings.load();
+      await tester.pumpWidget(VisioEditorApp(settings: settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+      await tester.pumpAndSettle();
+
+      // Compact page chrome: no dedicated add/delete icons beside the chips.
+      expect(find.byIcon(Icons.add), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
+      expect(find.byType(PopupMenuButton<String>), findsWidgets);
+    });
+  });
 }
