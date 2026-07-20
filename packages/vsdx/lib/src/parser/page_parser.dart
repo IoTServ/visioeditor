@@ -345,33 +345,69 @@ class PageParser {
     final foreignCompressionType =
         foreignMeta.$2 ?? proto?.foreignCompressionType;
     // Image Properties (MS-VSDX §2.2.6) — top-level cells on Foreign shapes.
-    final imgOffsetX = readLengthInches(shapeEl, 'ImgOffsetX') ??
-        _double(shapeEl, 'ImgOffsetX') ??
+    final imgOffsetX = readLengthInches(
+          shapeEl,
+          'ImgOffsetX',
+          inheritFrom: proto?.imgOffsetXInches,
+        ) ??
+        _double(shapeEl, 'ImgOffsetX', inheritFrom: proto?.imgOffsetXInches) ??
         proto?.imgOffsetXInches ??
         0.0;
-    final imgOffsetY = readLengthInches(shapeEl, 'ImgOffsetY') ??
-        _double(shapeEl, 'ImgOffsetY') ??
+    final imgOffsetY = readLengthInches(
+          shapeEl,
+          'ImgOffsetY',
+          inheritFrom: proto?.imgOffsetYInches,
+        ) ??
+        _double(shapeEl, 'ImgOffsetY', inheritFrom: proto?.imgOffsetYInches) ??
         proto?.imgOffsetYInches ??
         0.0;
-    final imgWidth = readLengthInches(shapeEl, 'ImgWidth') ??
-        _double(shapeEl, 'ImgWidth') ??
+    final imgWidth = readLengthInches(
+          shapeEl,
+          'ImgWidth',
+          inheritFrom: proto?.imgWidthInches,
+        ) ??
+        _double(shapeEl, 'ImgWidth', inheritFrom: proto?.imgWidthInches) ??
         proto?.imgWidthInches;
-    final imgHeight = readLengthInches(shapeEl, 'ImgHeight') ??
-        _double(shapeEl, 'ImgHeight') ??
+    final imgHeight = readLengthInches(
+          shapeEl,
+          'ImgHeight',
+          inheritFrom: proto?.imgHeightInches,
+        ) ??
+        _double(shapeEl, 'ImgHeight', inheritFrom: proto?.imgHeightInches) ??
         proto?.imgHeightInches;
     // Top-level Image `Transparency` (not Character-row Transparency).
-    final imageTransparency = (_double(shapeEl, 'Transparency') ??
+    final imageTransparency = (_double(
+              shapeEl,
+              'Transparency',
+              inheritFrom: proto?.imageTransparency,
+            ) ??
             proto?.imageTransparency ??
             0.0)
         .clamp(0.0, 1.0);
-    final imageBlur =
-        (_double(shapeEl, 'Blur') ?? proto?.imageBlur ?? 0.0).clamp(0.0, 1.0);
-    final imageBrightness =
-        (_double(shapeEl, 'Brightness') ?? proto?.imageBrightness ?? 0.5)
-            .clamp(0.0, 1.0);
-    final imageContrast =
-        (_double(shapeEl, 'Contrast') ?? proto?.imageContrast ?? 0.5)
-            .clamp(0.0, 1.0);
+    final imageBlur = (_double(
+              shapeEl,
+              'Blur',
+              inheritFrom: proto?.imageBlur,
+            ) ??
+            proto?.imageBlur ??
+            0.0)
+        .clamp(0.0, 1.0);
+    final imageBrightness = (_double(
+              shapeEl,
+              'Brightness',
+              inheritFrom: proto?.imageBrightness,
+            ) ??
+            proto?.imageBrightness ??
+            0.5)
+        .clamp(0.0, 1.0);
+    final imageContrast = (_double(
+              shapeEl,
+              'Contrast',
+              inheritFrom: proto?.imageContrast,
+            ) ??
+            proto?.imageContrast ??
+            0.5)
+        .clamp(0.0, 1.0);
     final ownConnPts = _readConnectionPoints(shapeEl);
     final connectionPoints = ownConnPts.isEmpty && proto != null
         ? proto.connectionPoints
@@ -389,7 +425,7 @@ class PageParser {
     final userCells = ownUserCells.isEmpty && proto != null
         ? proto.userCells
         : ownUserCells;
-    final ownControls = _readControls(shapeEl);
+    final ownControls = _readControls(shapeEl, inherit: proto?.controls);
     final controls =
         ownControls.isEmpty && proto != null ? proto.controls : ownControls;
     final ownScratch = _readScratch(shapeEl);
@@ -406,7 +442,11 @@ class PageParser {
         : proto?.masterName;
 
     final formulas = _readFormulas(shapeEl, proto?.formulas);
-    final connectorProps = _readConnectorProps(shapeEl) ?? proto?.connectorProps;
+    final connectorProps = _readConnectorProps(
+          shapeEl,
+          inherit: proto?.connectorProps,
+        ) ??
+        proto?.connectorProps;
 
     const kindDetector = ShapeKindDetector();
     final shapeKind = kindDetector.detect(
@@ -530,7 +570,14 @@ class PageParser {
 
   /// `<Section N="Control">` — named handle rows (libvisio / MS-VSDX).
   /// Accepts Visio `XDyn`/`XCon` names and Lucidchart `DynX`/`ConX` aliases.
-  List<VsdxControlRow> _readControls(XmlElement shapeEl) {
+  List<VsdxControlRow> _readControls(
+    XmlElement shapeEl, {
+    List<VsdxControlRow>? inherit,
+  }) {
+    final byName = <String, VsdxControlRow>{
+      if (inherit != null)
+        for (final c in inherit) c.name: c,
+    };
     final out = <VsdxControlRow>[];
     for (final section in shapeEl.childElements) {
       if (section.name.local != 'Section') continue;
@@ -539,6 +586,7 @@ class PageParser {
         if (row.name.local != 'Row') continue;
         final name = row.getAttribute('N');
         if (name == null || name.isEmpty) continue;
+        final proto = byName[name];
         final hasVisioDyn = findCell(row, 'XDyn') != null ||
             findCell(row, 'YDyn') != null ||
             findCell(row, 'XCon') != null ||
@@ -549,21 +597,39 @@ class PageParser {
         final conYName = hasVisioDyn ? 'YCon' : 'ConY';
         out.add(VsdxControlRow(
           name: name,
-          x: _double(row, 'X') ?? 0,
-          y: _double(row, 'Y') ?? 0,
-          conX: _double(row, conXName) ?? _double(row, 'ConX') ?? 0,
-          conY: _double(row, conYName) ?? _double(row, 'ConY') ?? 0,
-          dynX: _double(row, dynXName) ?? _double(row, 'DynX') ?? 0,
-          dynY: _double(row, dynYName) ?? _double(row, 'DynY') ?? 0,
+          x: _double(row, 'X', inheritFrom: proto?.x) ?? proto?.x ?? 0,
+          y: _double(row, 'Y', inheritFrom: proto?.y) ?? proto?.y ?? 0,
+          conX: _double(row, conXName, inheritFrom: proto?.conX) ??
+              _double(row, 'ConX', inheritFrom: proto?.conX) ??
+              proto?.conX ??
+              0,
+          conY: _double(row, conYName, inheritFrom: proto?.conY) ??
+              _double(row, 'ConY', inheritFrom: proto?.conY) ??
+              proto?.conY ??
+              0,
+          dynX: _double(row, dynXName, inheritFrom: proto?.dynX) ??
+              _double(row, 'DynX', inheritFrom: proto?.dynX) ??
+              proto?.dynX ??
+              0,
+          dynY: _double(row, dynYName, inheritFrom: proto?.dynY) ??
+              _double(row, 'DynY', inheritFrom: proto?.dynY) ??
+              proto?.dynY ??
+              0,
           xFormula: _formula(row, 'X'),
           yFormula: _formula(row, 'Y'),
           dynXFormula: _formula(row, dynXName) ?? _formula(row, 'DynX'),
           dynYFormula: _formula(row, dynYName) ?? _formula(row, 'DynY'),
           conXFormula: _formula(row, conXName) ?? _formula(row, 'ConX'),
           conYFormula: _formula(row, conYName) ?? _formula(row, 'ConY'),
-          canGlue: (_int(row, 'CanGlue') ?? 0) != 0,
+          canGlue: (_int(row, 'CanGlue',
+                      inheritFrom: proto == null ? null : (proto.canGlue ? 1 : 0)) ??
+                  (proto?.canGlue == true ? 1 : 0)) !=
+              0,
           prompt: () {
-            final p = findCell(row, 'Prompt')?.getAttribute('V');
+            final cell = findCell(row, 'Prompt');
+            if (cell == null) return proto?.prompt;
+            if (isInhFormula(cell.getAttribute('F'))) return proto?.prompt;
+            final p = cell.getAttribute('V');
             return (p == null || p.isEmpty) ? null : p;
           }(),
           useVisioDynNames: hasVisioDyn ||
@@ -660,20 +726,51 @@ class PageParser {
     return Map.unmodifiable(out);
   }
 
-  VsdxConnectorProps? _readConnectorProps(XmlElement shapeEl) {
-    final beg = findCell(shapeEl, 'BegTrigger')?.getAttribute('V');
-    final end = findCell(shapeEl, 'EndTrigger')?.getAttribute('V');
-    final glue = _int(shapeEl, 'GlueType');
-    final fixed = _int(shapeEl, 'ConFixedCode');
-    final dyn = _int(shapeEl, 'DynFeedback');
-    final noLive = _readBoolCell(shapeEl, 'NoLiveDynamics');
-    final jump = _int(shapeEl, 'ConLineJumpCode');
-    final routeExt = _int(shapeEl, 'ConLineRouteExt');
-    final jumpStyle = _int(shapeEl, 'ConLineJumpStyle');
-    final jumpDirX = _int(shapeEl, 'ConLineJumpDirX');
-    final jumpDirY = _int(shapeEl, 'ConLineJumpDirY');
-    final route = _int(shapeEl, 'ShapeRouteStyle');
-    final placeFlip = _int(shapeEl, 'ShapePlaceFlip');
+  VsdxConnectorProps? _readConnectorProps(
+    XmlElement shapeEl, {
+    VsdxConnectorProps? inherit,
+  }) {
+    final begCell = findCell(shapeEl, 'BegTrigger');
+    final endCell = findCell(shapeEl, 'EndTrigger');
+    final beg = (begCell != null && isInhFormula(begCell.getAttribute('F')))
+        ? inherit?.begTrigger
+        : begCell?.getAttribute('V');
+    final end = (endCell != null && isInhFormula(endCell.getAttribute('F')))
+        ? inherit?.endTrigger
+        : endCell?.getAttribute('V');
+    final glue =
+        _int(shapeEl, 'GlueType', inheritFrom: inherit?.glueType) ??
+            inherit?.glueType;
+    final fixed =
+        _int(shapeEl, 'ConFixedCode', inheritFrom: inherit?.conFixedCode) ??
+            inherit?.conFixedCode;
+    final dyn =
+        _int(shapeEl, 'DynFeedback', inheritFrom: inherit?.dynFeedback) ??
+            inherit?.dynFeedback;
+    final noLive = _readBoolCell(shapeEl, 'NoLiveDynamics',
+            inheritFrom: inherit?.noLiveDynamics) ??
+        inherit?.noLiveDynamics;
+    final jump = _int(shapeEl, 'ConLineJumpCode',
+            inheritFrom: inherit?.conLineJumpCode) ??
+        inherit?.conLineJumpCode;
+    final routeExt = _int(shapeEl, 'ConLineRouteExt',
+            inheritFrom: inherit?.conLineRouteExt) ??
+        inherit?.conLineRouteExt;
+    final jumpStyle = _int(shapeEl, 'ConLineJumpStyle',
+            inheritFrom: inherit?.conLineJumpStyle) ??
+        inherit?.conLineJumpStyle;
+    final jumpDirX = _int(shapeEl, 'ConLineJumpDirX',
+            inheritFrom: inherit?.conLineJumpDirX) ??
+        inherit?.conLineJumpDirX;
+    final jumpDirY = _int(shapeEl, 'ConLineJumpDirY',
+            inheritFrom: inherit?.conLineJumpDirY) ??
+        inherit?.conLineJumpDirY;
+    final route = _int(shapeEl, 'ShapeRouteStyle',
+            inheritFrom: inherit?.shapeRouteStyle) ??
+        inherit?.shapeRouteStyle;
+    final placeFlip = _int(shapeEl, 'ShapePlaceFlip',
+            inheritFrom: inherit?.shapePlaceFlip) ??
+        inherit?.shapePlaceFlip;
     final props = VsdxConnectorProps(
       begTrigger: (beg == null || beg.isEmpty) ? null : beg,
       endTrigger: (end == null || end.isEmpty) ? null : end,
@@ -819,9 +916,12 @@ class PageParser {
     return List.unmodifiable(out);
   }
 
-  static double? _double(XmlElement parent, String name) {
+  static double? _double(XmlElement parent, String name, {double? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F')) && inheritFrom != null) {
+      return inheritFrom;
+    }
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
 

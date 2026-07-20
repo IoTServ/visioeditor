@@ -47,7 +47,7 @@ class StyleParser {
     // back to Master defaults (writer emits V=0 on clear / group rebuild).
     // F=Inh is not a local override — treat like a missing cell.
     final fillGradEnabledCell = findCell(shape, 'FillGradientEnabled');
-    final parsedFillGrad = _parseGradient(shape);
+    final parsedFillGrad = _parseGradient(shape, inherit: defaults.gradient);
     final gradient =
         (fillGradEnabledCell != null && !isInhFormula(fillGradEnabledCell.getAttribute('F')))
             ? parsedFillGrad
@@ -69,11 +69,19 @@ class StyleParser {
 
   /// Look at `FillGradientEnabled` + `<Section N="FillGradient">`. Returns
   /// `null` when there's no gradient defined.
-  VsdxGradient? _parseGradient(XmlElement shape) {
+  VsdxGradient? _parseGradient(XmlElement shape, {VsdxGradient? inherit}) {
     final enabled = _int(shape, 'FillGradientEnabled') ?? 0;
     if (enabled == 0) return null;
-    final dir = _int(shape, 'FillGradientDir') ?? 0;
-    final angle = _double(shape, 'FillGradientAngle') ?? 0;
+    final dir = _int(shape, 'FillGradientDir', inheritFrom: inherit?.dir) ??
+        inherit?.dir ??
+        0;
+    final angle = _double(
+          shape,
+          'FillGradientAngle',
+          inheritFrom: inherit?.angleRad,
+        ) ??
+        inherit?.angleRad ??
+        0;
     final stops = <VsdxGradientStop>[];
     for (final section in shape.childElements) {
       if (section.name.local != 'Section') continue;
@@ -371,7 +379,7 @@ class StyleParser {
     // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
     // F=Inh is not a local override — treat like a missing cell.
     final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');
-    final parsedLineGrad = _parseLineGradient(shape);
+    final parsedLineGrad = _parseLineGradient(shape, inherit: defaults.gradient);
     final gradient =
         (lineGradEnabledCell != null && !isInhFormula(lineGradEnabledCell.getAttribute('F')))
             ? parsedLineGrad
@@ -400,11 +408,19 @@ class StyleParser {
   }
 
   /// `LineGradientEnabled` + `<Section N="LineGradient">` (mirrors fill).
-  VsdxGradient? _parseLineGradient(XmlElement shape) {
+  VsdxGradient? _parseLineGradient(XmlElement shape, {VsdxGradient? inherit}) {
     final enabled = _int(shape, 'LineGradientEnabled') ?? 0;
     if (enabled == 0) return null;
-    final dir = _int(shape, 'LineGradientDir') ?? 0;
-    final angle = _double(shape, 'LineGradientAngle') ?? 0;
+    final dir = _int(shape, 'LineGradientDir', inheritFrom: inherit?.dir) ??
+        inherit?.dir ??
+        0;
+    final angle = _double(
+          shape,
+          'LineGradientAngle',
+          inheritFrom: inherit?.angleRad,
+        ) ??
+        inherit?.angleRad ??
+        0;
     final stops = <VsdxGradientStop>[];
     for (final section in shape.childElements) {
       if (section.name.local != 'Section') continue;

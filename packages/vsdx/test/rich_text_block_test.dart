@@ -165,6 +165,41 @@ void main() {
     expect(rich.runs.first.charStyle.fontSizeInches, closeTo(0.25, 1e-9));
   });
 
+  test('Character LangID/Color F=Inh inherit master', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="LangID" V="en-US" F="Inh"/>'
+        '<Cell N="Color" V="#000000" F="Inh"/>'
+        '<Cell N="Font" V="Arial" F="Inh"/>'
+        '</Row></Section>'
+        '<Text>Label</Text>',
+      ),
+      defaultChar: const VsdxCharStyle(
+        fontFamily: 'Calibri',
+        langId: 'zh-CN',
+        color: VsdxColor(0xFFFF0000),
+      ),
+    );
+    final c = rich.runs.first.charStyle;
+    expect(c.langId, 'zh-CN');
+    expect(c.color?.value, 0xFFFF0000);
+    expect(c.fontFamily, 'Calibri');
+  });
+
+  test('absent Font stays null (does not materialise defaults)', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Size" V="0.1667"/>'
+        '</Row></Section>'
+        '<Text>Label</Text>',
+      ),
+      defaultChar: const VsdxCharStyle(fontFamily: 'Arial'),
+    );
+    expect(rich.runs.first.charStyle.fontFamily, isNull);
+  });
+
   test('absent TextBkgnd inherits master colour', () {
     final rich = parser.parse(
       shape('<Text>Label</Text>'),

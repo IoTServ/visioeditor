@@ -192,4 +192,41 @@ void main() {
     expect(shadow.enabled, isTrue);
     expect(shadow.pattern, 2);
   });
+
+  test('FillGradientDir F=Inh inherits Master dir/angle', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="FillGradientEnabled" V="1"/>'
+      '<Cell N="FillGradientDir" V="0" F="Inh"/>'
+      '<Cell N="FillGradientAngle" V="0" F="Inh"/>'
+      '<Section N="FillGradient">'
+      '<Row IX="0">'
+      '<Cell N="GradientStopPosition" V="0"/>'
+      '<Cell N="GradientStopColor" V="#FF0000"/>'
+      '</Row>'
+      '<Row IX="1">'
+      '<Cell N="GradientStopPosition" V="1"/>'
+      '<Cell N="GradientStopColor" V="#0000FF"/>'
+      '</Row>'
+      '</Section>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: VsdxFill(
+        pattern: 1,
+        gradient: VsdxGradient(
+          type: VsdxGradientType.radial,
+          angleRad: 1.2,
+          dir: 4,
+          stops: masterGrad.stops,
+        ),
+      ),
+    );
+    expect(fill.gradient, isNotNull);
+    expect(fill.gradient!.dir, 4);
+    expect(fill.gradient!.angleRad, closeTo(1.2, 1e-9));
+    expect(fill.gradient!.type, VsdxGradientType.radial);
+  });
 }

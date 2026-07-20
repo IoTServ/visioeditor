@@ -285,7 +285,7 @@ class RichTextParser {
     // (inherit via DefaultTextStyle at paint / in Visio); stuffing Arial /
     // #000000 here made save→reopen drift (`null → Arial` / `null → black`).
     // Size and other metrics still fall back to [defaults] (TextStyle / master).
-    final font = _cellString(row, 'Font');
+    final font = _cellString(row, 'Font', inheritFrom: defaults.fontFamily);
     final size = readLengthInches(
           row,
           'Size',
@@ -306,16 +306,23 @@ class RichTextParser {
     final colorCell = findCell(row, 'Color');
     final colorV = colorCell?.getAttribute('V');
     final colorF = colorCell?.getAttribute('F') ?? '';
-    final isTheme = (colorV != null &&
-            (colorV.toUpperCase().contains('THEMEVAL') ||
-                colorV.toUpperCase().contains('THEMEGUARD'))) ||
-        colorF.toUpperCase().contains('THEMEVAL') ||
-        colorF.toUpperCase().contains('THEMEGUARD');
-    final color = isTheme ? null : VsdxColor.tryParse(colorV);
+    final colorInh = isInhFormula(colorF);
+    final isTheme = !colorInh &&
+        ((colorV != null &&
+                (colorV.toUpperCase().contains('THEMEVAL') ||
+                    colorV.toUpperCase().contains('THEMEGUARD'))) ||
+            colorF.toUpperCase().contains('THEMEVAL') ||
+            colorF.toUpperCase().contains('THEMEGUARD'));
+    // F=Inh → master colour / theme slot; do not materialise a stale V=.
+    final color = colorInh
+        ? defaults.color
+        : (isTheme ? null : VsdxColor.tryParse(colorV));
     // A theme character colour caches its slot index in V (see the writer);
     // read it back when present, otherwise fall back to the inherited slot.
     int? themeIdx;
-    if (isTheme) {
+    if (colorInh) {
+      themeIdx = defaults.themeColorIndex;
+    } else if (isTheme) {
       final parsed = int.tryParse((colorV ?? '').trim());
       themeIdx = (parsed != null && parsed >= 0 && parsed < 100)
           ? parsed
@@ -393,10 +400,14 @@ class RichTextParser {
       position: position,
       textCase: textCase,
       fontScale: fontScale,
-      asianFont: _cellString(row, 'AsianFont') ?? defaults.asianFont,
-      complexScriptFont:
-          _cellString(row, 'ComplexScriptFont') ?? defaults.complexScriptFont,
-      langId: _cellString(row, 'LangID') ?? defaults.langId,
+      asianFont:
+          _cellString(row, 'AsianFont', inheritFrom: defaults.asianFont) ??
+              defaults.asianFont,
+      complexScriptFont: _cellString(row, 'ComplexScriptFont',
+              inheritFrom: defaults.complexScriptFont) ??
+          defaults.complexScriptFont,
+      langId: _cellString(row, 'LangID', inheritFrom: defaults.langId) ??
+          defaults.langId,
       complexScriptSizeInches: readLengthInches(
             row,
             'ComplexScriptSize',
@@ -420,8 +431,10 @@ class RichTextParser {
     final align = horz == null ? defaults.horizontalAlign : _alignFromInt(horz);
     final (lineSpacing, lineSpacingAbs, lineSpacingSolid) =
         _readLineSpacing(row, defaults);
-    final bulletStr = _cellString(row, 'BulletStr');
-    final bulletFont = _cellString(row, 'BulletFont');
+    final bulletStr =
+        _cellString(row, 'BulletStr', inheritFrom: defaults.bulletStr);
+    final bulletFont =
+        _cellString(row, 'BulletFont', inheritFrom: defaults.bulletFont);
     return VsdxParaStyle(
       horizontalAlign: align,
       indentFirstInches: readLengthInches(
@@ -828,9 +841,12 @@ class RichTextParser {
     }
   }
 
-  String? _cellString(XmlElement parent, String name) {
+  String? _cellString(XmlElement parent, String name, {String? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    // F=Inh → master string (LangID / Font); absent cell stays null so Font
+    // is not materialised from stylesheet defaults into the model.
+    if (isInhFormula(cell.getAttribute('F'))) return inheritFrom;
     final v = cell.getAttribute('V');
     if (v == null) return null;
     return v.isEmpty ? null : v;
