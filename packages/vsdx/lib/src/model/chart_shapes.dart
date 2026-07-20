@@ -10,6 +10,7 @@ import 'fill.dart';
 import 'geometry.dart';
 import 'line.dart';
 import 'page.dart';
+import 'rich_text.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
 import 'user_property.dart';
@@ -28,10 +29,29 @@ abstract final class ChartOps {
   static const String userValuesBackup = 'visioeditor.ChartValuesBackup';
   static const String userColorsBackup = 'visioeditor.ChartColorsBackup';
   static const String userLabelsBackup = 'visioeditor.ChartLabelsBackup';
+  /// Marks legend / category-label chrome under the plot.
+  static const String userLegend = 'visioeditor.ChartLegend';
   /// Marks non-series chrome (axes, grid, track, bridges, needle).
   static const String userChrome = 'visioeditor.ChartChrome';
 
   static const int maxSeriesItems = 12;
+
+  /// Kind picker groups for the editor (group title → kind keys).
+  static const List<(String, List<String>)> kindGroups =
+      <(String, List<String>)>[
+    ('Bars & columns', <String>[
+      'column',
+      'bar',
+      'stackedColumn',
+      'stackedBar',
+      'clusteredColumn',
+    ]),
+    ('Pies', <String>['pie', 'donut']),
+    ('Lines & areas', <String>['line', 'area', 'radar']),
+    ('Process', <String>['funnel', 'pyramid', 'waterfall']),
+    ('Meters', <String>['gauge', 'progress']),
+    ('Other', <String>['bubble']),
+  ];
 
   /// Chart kinds exposed in the editor type picker (value → stencil English name).
   static const Map<String, String> kindDisplayNames = <String, String>{
@@ -95,10 +115,22 @@ abstract final class ChartOps {
     return false;
   }
 
-  /// True for axes / grid / track / bridge / needle children (not series).
+  /// True for axes / grid / track / bridge / needle / legend children.
   static bool isChartChrome(VsdxShape s) {
     for (final c in s.userCells) {
       if (c.name == userChrome && (c.value == '1' || c.value == 'true')) {
+        return true;
+      }
+      if (c.name == userLegend && (c.value == '1' || c.value == 'true')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool isLegend(VsdxShape s) {
+    for (final c in s.userCells) {
+      if (c.name == userLegend && (c.value == '1' || c.value == 'true')) {
         return true;
       }
     }
@@ -216,6 +248,57 @@ abstract final class ChartOps {
       if (v != null && v.isFinite) out.add(v);
     }
     return out.isEmpty ? List<double>.of(defaultValues) : out;
+  }
+
+  /// Paste helper: `1, 2, 3` or `North: 1; South: 2` → values (+ optional labels).
+  static ({List<double> values, List<String>? labels}) parseSeriesPaste(
+    String? raw,
+  ) {
+    if (raw == null || raw.trim().isEmpty) {
+      return (values: List<double>.of(defaultValues), labels: null);
+    }
+    final chunks = raw
+        .split(RegExp(r'[\n;]+'))
+        .expand((line) => line.split(','))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (chunks.isEmpty) {
+      return (values: List<double>.of(defaultValues), labels: null);
+    }
+    final vals = <double>[];
+    final labs = <String>[];
+    var labeled = 0;
+    for (final chunk in chunks) {
+      final colon = chunk.indexOf(':');
+      if (colon > 0) {
+        final name = chunk.substring(0, colon).trim();
+        final num = double.tryParse(
+          chunk.substring(colon + 1).trim().replaceAll(',', '.'),
+        );
+        if (num != null && num.isFinite) {
+          labs.add(name.isEmpty ? defaultLabel(vals.length) : name);
+          vals.add(num);
+          labeled++;
+          continue;
+        }
+      }
+      final num = double.tryParse(chunk.replaceAll(',', '.'));
+      if (num != null && num.isFinite) {
+        vals.add(num);
+        labs.add(defaultLabel(vals.length - 1));
+      }
+    }
+    if (vals.isEmpty) {
+      return (values: List<double>.of(defaultValues), labels: null);
+    }
+    if (vals.length > maxSeriesItems) {
+      return (
+        values: vals.sublist(0, maxSeriesItems),
+        labels: labeled > 0 ? labs.sublist(0, maxSeriesItems) : null,
+      );
+    }
+    return (values: vals, labels: labeled > 0 ? labs : null);
   }
 
   static String formatValues(List<double> values) =>
@@ -412,6 +495,78 @@ abstract final class ChartOps {
     );
   }
 
+  static const List<VsdxUserCell> _legendMeta = <VsdxUserCell>[
+    VsdxUserCell(name: userChrome, value: '1'),
+    VsdxUserCell(name: userLegend, value: '1'),
+  ];
+
+  /// Category labels along the bottom of the chart (visible on canvas).
+  static VsdxShape withCategoryLabels(
+    VsdxShape chart,
+    List<String> labels,
+    List<VsdxColor> colors, {
+    required int Function() allocId,
+  }) {
+    final kind = chartKind(chart) ?? 'column';
+    final baseKids = <VsdxShape>[
+      for (final c in chart.children)
+        if (!isLegend(c)) c,
+    ];
+    if (isSingleValueKind(kind) || labels.isEmpty) {
+      return chart.copyWith(children: baseKids);
+    }
+    final w = chart.width.abs();
+    final h = chart.height.abs();
+    final n = labels.length;
+    final legendH = math.min(0.2, h * 0.12).clamp(0.12, 0.22);
+    final slotW = w / n;
+    final font = (legendH * 0.42).clamp(0.07, 0.11);
+    final kids = <VsdxShape>[...baseKids];
+    for (var i = 0; i < n; i++) {
+      final raw = labels[i].trim().isEmpty ? defaultLabel(i) : labels[i].trim();
+      final text = raw.length > 12 ? '${raw.substring(0, 11)}…' : raw;
+      final id = allocId();
+      kids.add(VsdxShape(
+        id: id,
+        name: _sheetName(id),
+        pinX: slotW * i + slotW / 2,
+        pinY: legendH / 2,
+        width: math.max(slotW * 0.9, 0.12),
+        height: legendH,
+        text: text,
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: text,
+            charStyle: VsdxCharStyle(
+              fontSizeInches: font,
+              color: colors[i % colors.length],
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(math.max(slotW * 0.9, 0.12), 0),
+              LineTo(math.max(slotW * 0.9, 0.12), legendH),
+              LineTo(0, legendH),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _legendMeta,
+      ));
+    }
+    return chart.copyWith(children: kids);
+  }
+
   // ---------------------------------------------------------------------------
   // Rebuild
   // ---------------------------------------------------------------------------
@@ -486,7 +641,7 @@ abstract final class ChartOps {
       values: vals,
       allocId: allocId,
     );
-    return withSeriesColors(
+    final colored = withSeriesColors(
       built,
       cols,
       labels: labs,
@@ -494,6 +649,7 @@ abstract final class ChartOps {
       colorsBackup: colorsBackup,
       labelsBackup: labelsBackup,
     );
+    return withCategoryLabels(colored, labs, cols, allocId: allocId);
   }
 
   static VsdxShape buildKind(

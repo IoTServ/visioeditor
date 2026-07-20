@@ -34,8 +34,10 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
   void initState() {
     super.initState();
     _percentFocus.addListener(_onPercentFocus);
-    _syncFromController();
     controller.addListener(_onController);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncFromController();
+    });
   }
 
   @override
@@ -146,6 +148,15 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
     }
   }
 
+  String _displayLabel(EditorL10n el, String stored, int index) {
+    final m = RegExp(r'^Item (\d+)$').firstMatch(stored.trim());
+    if (m != null) {
+      return el.chartDefaultItem(int.parse(m.group(1)!));
+    }
+    if (stored.trim().isEmpty) return el.chartDefaultItem(index + 1);
+    return stored;
+  }
+
   void _syncFromController() {
     final chart = controller.selectedChart;
     final id = controller.selectedChartId;
@@ -157,6 +168,7 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
     final values = ChartOps.chartValues(chart);
     final labels = ChartOps.chartLabels(chart, values.length);
     final kind = ChartOps.chartKind(chart) ?? 'column';
+    final el = EditorL10n.of(context);
     _ensureFieldCount(values.length);
     for (var i = 0; i < values.length; i++) {
       if (_editingValueIndex == i) continue;
@@ -164,11 +176,14 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
           ? ChartOps.formatPercent(values[i])
           : ChartOps.formatValues(<double>[values[i]]);
       if (_valueCtrls[i].text != text) _valueCtrls[i].text = text;
-      if (_editingLabelIndex != i && _labelCtrls[i].text != labels[i]) {
-        _labelCtrls[i].text = labels[i];
+      if (_editingLabelIndex != i) {
+        final shown = _displayLabel(el, labels[i], i);
+        if (_labelCtrls[i].text != shown) _labelCtrls[i].text = shown;
       }
     }
-    if (!_editingPercent && ChartOps.isSingleValueKind(kind) && values.isNotEmpty) {
+    if (!_editingPercent &&
+        ChartOps.isSingleValueKind(kind) &&
+        values.isNotEmpty) {
       final p = ChartOps.formatPercent(values.first);
       if (_percentCtrl.text != p) _percentCtrl.text = p;
     }
@@ -217,7 +232,11 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
 
   void _addItem() {
     _flushEdits();
-    controller.addChartItem();
+    final el = EditorL10n.of(context);
+    final n = (controller.selectedChart != null)
+        ? ChartOps.chartValues(controller.selectedChart!).length + 1
+        : 1;
+    controller.addChartItem(label: el.chartDefaultItem(n));
   }
 
   void _removeItem(int i) {
@@ -235,6 +254,48 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
     controller.setChartKind(kind);
   }
 
+  Future<void> _pasteValues() async {
+    _flushEdits();
+    final el = EditorL10n.of(context);
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final draft = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(el.chartPasteValues),
+        content: SizedBox(
+          width: 360,
+          child: TextField(
+            controller: draft,
+            autofocus: true,
+            maxLines: 5,
+            decoration: InputDecoration(
+              hintText: el.chartValuesHint,
+              helperText: el.chartPasteHint,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(el.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, draft.text),
+            child: Text(el.applyChart),
+          ),
+        ],
+      ),
+    );
+    draft.dispose();
+    if (result == null) return;
+    controller.pasteChartSeries(result);
+  }
+
   @override
   Widget build(BuildContext context) {
     final chart = controller.selectedChart;
@@ -248,6 +309,9 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
     final single = ChartOps.isSingleValueKind(kind);
     final canAdd = !single && values.length < ChartOps.maxSeriesItems;
     final canRemove = !single && values.length > 1;
+    final kindTitle = el.stencil(
+      ChartOps.kindDisplayNames[kind] ?? 'Column Chart',
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,67 +320,64 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
         const SizedBox(height: 8),
         Text(el.chartType, style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: 4),
-        InputDecorator(
-          decoration: const InputDecoration(
-            isDense: true,
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: ChartOps.kindDisplayNames.containsKey(kind)
-                  ? kind
-                  : 'column',
-              isExpanded: true,
-              isDense: true,
-              style: TextStyle(fontSize: 13, color: scheme.onSurface),
-              items: [
-                for (final e in ChartOps.kindDisplayNames.entries)
-                  DropdownMenuItem(
-                    value: e.key,
-                    child: Text(
-                      el.stencil(e.value),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+        PopupMenuButton<String>(
+          tooltip: el.chartType,
+          onSelected: _setKind,
+          itemBuilder: (ctx) => [
+            for (final group in ChartOps.kindGroups) ...[
+              PopupMenuItem<String>(
+                enabled: false,
+                height: 28,
+                child: Text(
+                  el.chartKindGroup(group.$1),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.primary,
                   ),
-              ],
-              onChanged: (v) {
-                if (v != null) _setKind(v);
-              },
+                ),
+              ),
+              for (final k in group.$2)
+                CheckedPopupMenuItem<String>(
+                  value: k,
+                  checked: k == kind,
+                  child: Text(
+                    el.stencil(ChartOps.kindDisplayNames[k] ?? k),
+                  ),
+                ),
+            ],
+          ],
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              suffixIcon: Icon(Icons.arrow_drop_down, size: 20),
             ),
+            child: Text(kindTitle, style: const TextStyle(fontSize: 13)),
           ),
         ),
         const SizedBox(height: 12),
         if (single) ...[
           Text(el.chartLevel, style: Theme.of(context).textTheme.labelMedium),
           const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _percentCtrl,
-                  focusNode: _percentFocus,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    suffixText: '%',
-                    border: const OutlineInputBorder(),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,%]')),
-                  ],
-                  onEditingComplete: _commitPercent,
-                  onSubmitted: (_) => _commitPercent(),
-                ),
-              ),
+          TextField(
+            controller: _percentCtrl,
+            focusNode: _percentFocus,
+            decoration: InputDecoration(
+              isDense: true,
+              suffixText: '%',
+              border: const OutlineInputBorder(),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            ),
+            style: const TextStyle(fontSize: 13),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,%]')),
             ],
+            onEditingComplete: _commitPercent,
+            onSubmitted: (_) => _commitPercent(),
           ),
           Slider(
             value: values.first.clamp(0.0, 1.0),
@@ -345,10 +406,26 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
               ),
               Text(
                 '${values.length}/${ChartOps.maxSeriesItems}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+              IconButton(
+                tooltip: el.chartPasteValues,
+                onPressed: _pasteValues,
+                icon: const Icon(Icons.content_paste_go_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              ),
+              IconButton(
+                tooltip: el.chartEqualize,
+                onPressed: () {
+                  _flushEdits();
+                  controller.equalizeChartValues();
+                },
+                icon: const Icon(Icons.horizontal_distribute, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ],
           ),
@@ -457,6 +534,8 @@ class _ChartItemCard extends StatelessWidget {
     0xFF8E24AA,
     0xFF00897B,
     0xFF6D4C41,
+    0xFF1E88E5,
+    0xFFFB8C00,
   ];
 
   @override

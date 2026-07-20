@@ -134,10 +134,35 @@ void main() {
     expect(ChartOps.chartValues(back), <double>[0.2, 0.4, 0.6, 0.8]);
   });
 
+  test('parseSeriesPaste supports labeled pairs', () {
+    final parsed = ChartOps.parseSeriesPaste('North: 10, South: 20; East: 5');
+    expect(parsed.values, <double>[10, 20, 5]);
+    expect(parsed.labels, <String>['North', 'South', 'East']);
+  });
+
   test('parseUnitValue accepts percent and fractions', () {
     expect(ChartOps.parseUnitValue('68%'), closeTo(0.68, 1e-9));
     expect(ChartOps.parseUnitValue('68'), closeTo(0.68, 1e-9));
     expect(ChartOps.parseUnitValue('0.45'), closeTo(0.45, 1e-9));
+  });
+
+  test('rebuild attaches category legend labels on canvas', () {
+    final chart = ChartOps.columnChart(
+      id: 4,
+      pinX: 1,
+      pinY: 1,
+      values: const <double>[1, 2, 3],
+    );
+    var next = 40;
+    final labeled = ChartOps.rebuild(
+      chart,
+      values: const <double>[1, 2, 3],
+      labels: const <String>['Alpha', 'Beta', 'Gamma'],
+      allocId: () => next++,
+    );
+    final legends = labeled.children.where(ChartOps.isLegend).toList();
+    expect(legends, hasLength(3));
+    expect(legends.map((s) => s.text).toList(), <String>['Alpha', 'Beta', 'Gamma']);
   });
 
   test('parseValues accepts negatives for waterfall', () {

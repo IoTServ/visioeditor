@@ -229,6 +229,17 @@ class EditorL10n {
   String get chartMoveDown => _t('chartMoveDown');
   String get chartLevel => _t('chartLevel');
   String get chartConfigHint => _t('chartConfigHint');
+  String get chartPasteValues => _t('chartPasteValues');
+  String get chartPasteHint => _t('chartPasteHint');
+  String get chartEqualize => _t('chartEqualize');
+  String chartDefaultItem(int n) =>
+      _t('chartDefaultItem').replaceAll('{n}', '$n');
+  String chartKindGroup(String english) {
+    final key = 'cg_${english.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')}';
+    return kEditorL10nTables[locale.languageCode]?[key] ??
+        _en[key] ??
+        english;
+  }
   String get panelLink => _t('panelLink');
   String get panelDiagram => _t('panelDiagram');
   String get panelView => _t('panelView');

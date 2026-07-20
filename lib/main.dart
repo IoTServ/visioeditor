@@ -3123,6 +3123,10 @@ class _PropertyPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (isChart) ...[
+            const SizedBox(height: 16),
+            ChartConfigPanel(controller: controller),
+          ],
           const SizedBox(height: 16),
           _section(context, EditorL10n.of(context).panelArrange),
           Wrap(
@@ -3219,10 +3223,6 @@ class _PropertyPanel extends StatelessWidget {
                 ],
               ],
             ),
-            const SizedBox(height: 16),
-          ],
-          if (isChart) ...[
-            ChartConfigPanel(controller: controller),
             const SizedBox(height: 16),
           ],
           if (!isChart) ...[

@@ -5292,8 +5292,23 @@ class EditorController extends ChangeNotifier {
 
   /// Rebuild the selected chart from comma/semicolon-separated [csv] values.
   void setChartValuesCsv(String csv) {
-    final values = ChartOps.parseValues(csv);
-    setChartValues(values);
+    final parsed = ChartOps.parseSeriesPaste(csv);
+    _rebuildSelectedChart(
+      values: parsed.values,
+      labels: parsed.labels,
+    );
+  }
+
+  /// Paste values (and optional `Label: value` pairs) into the selected chart.
+  void pasteChartSeries(String text) => setChartValuesCsv(text);
+
+  /// Set every series value to the same relative weight (equal bars/slices).
+  void equalizeChartValues() {
+    final chart = selectedChart;
+    if (chart == null) return;
+    final n = ChartOps.chartValues(chart).length;
+    if (n < 1) return;
+    _rebuildSelectedChart(values: List<double>.filled(n, 1));
   }
 
   /// Rebuild the selected chart with [values] (one undo step).
@@ -5317,7 +5332,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Append a series item (default mid value / next palette colour).
-  void addChartItem() {
+  void addChartItem({String? label}) {
     final chart = selectedChart;
     if (chart == null) return;
     final vals = List<double>.of(ChartOps.chartValues(chart));
@@ -5332,7 +5347,9 @@ class EditorController extends ChangeNotifier {
         : vals.reduce((a, b) => a + b) / vals.length;
     vals.add(avg);
     cols.add(ChartOps.seriesColors[vals.length % ChartOps.seriesColors.length]);
-    labs.add(ChartOps.defaultLabel(vals.length - 1));
+    labs.add(label?.trim().isNotEmpty == true
+        ? label!.trim()
+        : ChartOps.defaultLabel(vals.length - 1));
     _rebuildSelectedChart(values: vals, colors: cols, labels: labs);
   }
 
