@@ -4180,7 +4180,13 @@ class EditorController extends ChangeNotifier {
       (page) => page
           .updateShapeById(
             s.id,
-            (sh) => sh.copyWith(geometries: <VsdxGeometry>[geom]),
+            (sh) {
+              // Preserve NoFill/NoLine after regenerating corner geometry.
+              var geos = <VsdxGeometry>[geom];
+              geos = syncGeometryNoFill(geos, hollow: sh.fill.pattern == 0);
+              geos = syncGeometryNoLine(geos, hollow: !sh.line.hasLine);
+              return sh.copyWith(geometries: geos);
+            },
           )
           .recalculateFormulas(changedShapeIds: movedIds)
           .rerouteConnectors(movedShapeIds: movedIds),

@@ -602,6 +602,35 @@ void main() {
     );
   });
 
+  test('setCornerRadius preserves NoFill/NoLine geometry flags', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 4, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    c.setNoFill();
+    c.setNoLine();
+    expect(c.currentPage!.findShapeById(id)!.fill.pattern, 0);
+    expect(c.currentPage!.findShapeById(id)!.line.pattern, 0);
+    expect(
+      c.currentPage!.findShapeById(id)!.geometries.every((g) => g.noFill),
+      isTrue,
+    );
+    expect(
+      c.currentPage!.findShapeById(id)!.geometries.every((g) => g.noLine),
+      isTrue,
+    );
+
+    c.setCornerRadius(0.25);
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.fill.pattern, 0);
+    expect(after.line.pattern, 0);
+    expect(after.geometries.every((g) => g.noFill), isTrue);
+    expect(after.geometries.every((g) => g.noLine), isTrue);
+    expect(c.selectedCornerRadius, closeTo(0.25, 1e-9));
+  });
+
   test('cancelTransaction reverts a transient drag without history', () {
     final c = EditorController()..newDocument();
     c

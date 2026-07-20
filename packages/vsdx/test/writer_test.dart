@@ -8166,4 +8166,244 @@ void main() {
     expect(after.shadow.offsetXInches, closeTo(0.12, 1e-6));
     expect(after.shadow.blurInches, closeTo(0.05, 1e-6));
   });
+
+  test('FillForegnd / FillPattern F=Inh scrubbed on rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF0000),
+                pattern: 1,
+              ),
+              formulas: const {
+                'FillForegnd': 'Inh',
+                'FillPattern': 'Inh',
+              },
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final ff = RegExp(r'<Cell N="FillForegnd"[^/]*/>').firstMatch(pageXml);
+    final fp = RegExp(r'<Cell N="FillPattern"[^/]*/>').firstMatch(pageXml);
+    expect(ff, isNotNull);
+    expect(fp, isNotNull);
+    expect(ff!.group(0)!.contains('F="Inh"'), isFalse);
+    expect(fp!.group(0)!.contains('F="Inh"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.foreground?.value, 0xFFFF0000);
+    expect(after.fill.pattern, 1);
+  });
+
+  test('FlipX F=Inh scrubs when flip is false', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="FlipX"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="FlipX"[^/]*/>'),
+        '<Cell N="FlipX" V="0" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="FlipX" V="0" F="Inh"/></Shape>',
+      );
+    }
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    // Touch a style cell so patch runs while Flip stays false.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(foreground: const VsdxColor(0xFF00FF00)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final flip = RegExp(r'<Cell N="FlipX"[^/]*/>').firstMatch(pageXml);
+    expect(flip, isNotNull);
+    expect(flip!.group(0)!.contains('F="Inh"'), isFalse);
+    expect(flip.group(0)!.contains('V="0"'), isTrue);
+  });
+
+  test('TextBkgnd F=Inh scrubs when background is clear', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: [VsdxTextRun(text: 'Hi')],
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="TextBkgnd"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="TextBkgnd"[^/]*/>'),
+        '<Cell N="TextBkgnd" V="0" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="TextBkgnd" V="0" F="Inh"/></Shape>',
+      );
+    }
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(foreground: const VsdxColor(0xFF0000FF)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final tb = RegExp(r'<Cell N="TextBkgnd"[^/]*/>').firstMatch(pageXml);
+    expect(tb, isNotNull);
+    expect(tb!.group(0)!.contains('F="Inh"'), isFalse);
+    expect(tb.group(0)!.contains('V="0"'), isTrue);
+  });
+
+  test('Foreign ImgWidth F=Inh becomes Width*1 on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_inh_wh.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 5, 4, 3, 2,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ImgWidth"[^/]*/>'),
+      '<Cell N="ImgWidth" V="1.5" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ImgHeight"[^/]*/>'),
+      '<Cell N="ImgHeight" V="1" F="Inh"/>',
+    );
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        picId,
+        (s) => s.copyWith(imageTransparency: 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final w = RegExp(r'<Cell N="ImgWidth"[^/]*/>').firstMatch(pageXml);
+    final h = RegExp(r'<Cell N="ImgHeight"[^/]*/>').firstMatch(pageXml);
+    expect(w, isNotNull);
+    expect(h, isNotNull);
+    expect(w!.group(0)!.contains('F="Inh"'), isFalse);
+    expect(h!.group(0)!.contains('F="Inh"'), isFalse);
+    expect(w.group(0)!.contains('Width*1'), isTrue);
+    expect(h.group(0)!.contains('Height*1'), isTrue);
+  });
 }

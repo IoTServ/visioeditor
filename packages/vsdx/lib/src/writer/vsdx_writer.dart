@@ -1997,11 +1997,18 @@ class VsdxWriter {
     changed |= _syncCellFormulaAttr(el, 'EndY', edited.formulas['EndY']);
     changed |= _patchBool(el, 'FlipX', base.flipX, edited.flipX);
     changed |= _patchBool(el, 'FlipY', base.flipY, edited.flipY);
+    // Always literal Flip* (scrub F=Inh) — matches rebuild emit of 0/1.
+    changed |= _forceLiteralInt(el, 'FlipX', edited.flipX ? 1 : 0);
+    changed |= _forceLiteralInt(el, 'FlipY', edited.flipY ? 1 : 0);
     // Group behaviour (libvisio IsTextEditTarget / DontMoveChildren / …).
     changed |= _patchBool(
         el, 'IsTextEditTarget', base.isTextEditTarget, edited.isTextEditTarget);
+    changed |= _forceLiteralInt(
+        el, 'IsTextEditTarget', edited.isTextEditTarget ? 1 : 0);
     changed |= _patchBool(
         el, 'DontMoveChildren', base.dontMoveChildren, edited.dontMoveChildren);
+    changed |= _forceLiteralInt(
+        el, 'DontMoveChildren', edited.dontMoveChildren ? 1 : 0);
     changed |= _patchOptionalIntCell(
         el, 'SelectMode', base.selectMode, edited.selectMode);
     changed |= _patchOptionalIntCell(
@@ -2208,12 +2215,32 @@ class VsdxWriter {
         _patchOptionalIntCell(el, 'ObjType', base.objType, edited.objType);
     changed |= _patchOptionalIntCell(
         el, 'ResizeMode', base.resizeMode, edited.resizeMode);
+    if (edited.objType != null) {
+      changed |= _forceLiteralInt(el, 'ObjType', edited.objType!);
+    }
+    if (edited.resizeMode != null) {
+      changed |= _forceLiteralInt(el, 'ResizeMode', edited.resizeMode!);
+    }
     changed |=
         _patchFlagCell(el, 'NoAlignBox', base.noAlignBox, edited.noAlignBox);
     changed |= _patchFlagCell(
         el, 'ShapeSplittable', base.shapeSplittable, edited.shapeSplittable);
     changed |= _patchOptionalStringCell(
         el, 'EventDblClick', base.eventDblClick, edited.eventDblClick);
+    // Scrub F=Inh on EventDblClick when the model holds a literal (keep real
+    // formulas like OPENTEXTWIN()).
+    if (edited.eventDblClick != null) {
+      final modelF = edited.formulas['EventDblClick'];
+      final keepFormula =
+          modelF != null && modelF.isNotEmpty && modelF != 'Inh';
+      if (!keepFormula) {
+        final c = _findCell(el, 'EventDblClick');
+        if (c != null && (c.getAttribute('F') ?? '').isNotEmpty) {
+          _writeValue(c, edited.eventDblClick!);
+          changed = true;
+        }
+      }
+    }
     return changed;
   }
 
@@ -2221,9 +2248,8 @@ class VsdxWriter {
   /// inheritance cannot revive a cleared flag after save (do not delete the cell).
   bool _patchFlagCell(XmlElement shape, String cell, bool base, bool edited) {
     if (base == edited) {
-      // Still scrub F=Inh when the flag is on.
-      if (!edited) return false;
-      return _forceLiteralInt(shape, cell, 1);
+      // Scrub F=Inh whether the flag is on or off (cleared false must stick).
+      return _forceLiteralInt(shape, cell, edited ? 1 : 0);
     }
     _writeValue(_ensureCell(shape, cell), edited ? '1' : '0');
     return true;
@@ -2312,28 +2338,41 @@ class VsdxWriter {
   }
 
   /// Cells whose model no longer carries a theme binding but still list a
-  /// THEMEVAL formula (leftover from theme → solid / no-fill / pattern edits).
+  /// THEMEVAL / Inh formula (leftover from theme → solid / no-fill / pattern
+  /// edits, or Master inheritance). Rebuild must not re-emit these.
   Set<String> _staleThemeFormulaKeys(VsdxShape s) {
     final out = <String>{};
     bool isThemeVal(String? f) =>
         f != null &&
         RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(f);
-    if (isThemeVal(s.formulas['FillForegnd']) &&
-        (s.fill.foreground != null || s.fill.themeForegroundIndex == null)) {
+    bool isInh(String? f) => f == 'Inh';
+    if ((isThemeVal(s.formulas['FillForegnd']) &&
+            (s.fill.foreground != null ||
+                s.fill.themeForegroundIndex == null)) ||
+        isInh(s.formulas['FillForegnd'])) {
       out.add('FillForegnd');
     }
-    if (isThemeVal(s.formulas['FillBkgnd']) &&
-        (s.fill.background != null || s.fill.themeBackgroundIndex == null)) {
+    if ((isThemeVal(s.formulas['FillBkgnd']) &&
+            (s.fill.background != null ||
+                s.fill.themeBackgroundIndex == null)) ||
+        isInh(s.formulas['FillBkgnd'])) {
       out.add('FillBkgnd');
     }
-    if (isThemeVal(s.formulas['LineColor']) &&
-        (s.line.color != null || s.line.themeColorIndex == null)) {
+    if ((isThemeVal(s.formulas['LineColor']) &&
+            (s.line.color != null || s.line.themeColorIndex == null)) ||
+        isInh(s.formulas['LineColor'])) {
       out.add('LineColor');
     }
-    // Pattern cells are always literal ints in the model — a leftover
-    // THEMEVAL would resurrect theme pattern on a second save.
-    if (isThemeVal(s.formulas['FillPattern'])) out.add('FillPattern');
-    if (isThemeVal(s.formulas['LinePattern'])) out.add('LinePattern');
+    // Pattern cells are always literal ints in the model — leftover THEMEVAL
+    // / Inh would resurrect theme / Master pattern on a second save.
+    if (isThemeVal(s.formulas['FillPattern']) ||
+        isInh(s.formulas['FillPattern'])) {
+      out.add('FillPattern');
+    }
+    if (isThemeVal(s.formulas['LinePattern']) ||
+        isInh(s.formulas['LinePattern'])) {
+      out.add('LinePattern');
+    }
     return out;
   }
 
@@ -2398,6 +2437,8 @@ class VsdxWriter {
     }
     changed |= _patchBool(el, 'NoLiveDynamics', b?.noLiveDynamics ?? false,
         e.noLiveDynamics);
+    changed |= _forceLiteralInt(
+        el, 'NoLiveDynamics', e.noLiveDynamics ? 1 : 0);
     if (e.conLineJumpCode != null) {
       changed |= _patchInt(
           el, 'ConLineJumpCode', b?.conLineJumpCode ?? -1, e.conLineJumpCode!);
@@ -3595,16 +3636,18 @@ class VsdxWriter {
     String? themeValFormula,
   }) {
     if (editedColor != null) {
-      // Explicit colour: _writeValue drops any inherited THEMEVAL formula so
-      // the chosen colour is honoured (the parser then ignores QuickStyle*).
+      // Explicit colour: _writeValue drops THEMEVAL / Inh so the chosen colour
+      // is honoured (the parser then ignores QuickStyle*).
       final curF = _cellFormula(shape, cell);
       final hasThemeF = curF != null &&
           RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(curF);
+      final hasInh = curF == 'Inh';
       var changed = false;
       if (!(baseTheme == null &&
           editedTheme == null &&
           baseColor?.value == editedColor.value &&
-          !hasThemeF)) {
+          !hasThemeF &&
+          !hasInh)) {
         _writeValue(_ensureCell(shape, cell), _hex(editedColor));
         changed = true;
       }
@@ -4215,9 +4258,14 @@ class VsdxWriter {
       changed |= _patchColor(
           el, 'TextBkgnd', base.backgroundColor, edited.backgroundColor);
       changed |= _forceLiteralColor(el, 'TextBkgnd', edited.backgroundColor!);
-    } else if (base.backgroundColor != null) {
-      _writeValue(_ensureCell(el, 'TextBkgnd'), '0');
-      changed = true;
+    } else {
+      // Always literal 0 when transparent — scrub F=Inh / match rebuild.
+      final c = _ensureCell(el, 'TextBkgnd');
+      if (c.getAttribute('V') != '0' ||
+          (c.getAttribute('F') ?? '').isNotEmpty) {
+        _writeValue(c, '0');
+        changed = true;
+      }
     }
     changed |= _patchRatio(
         el,
@@ -4341,9 +4389,9 @@ class VsdxWriter {
 
   /// When the model length is 0, ensure XML is literal `V=0` without `F=Inh`
   /// (even if base already parsed as 0 and `_patchLength` was a no-op).
+  /// Creates the cell when missing so Master effects cannot stay invisible.
   bool _forceLiteralZeroLength(XmlElement shape, String cell) {
-    final c = _findCell(shape, cell);
-    if (c == null) return false;
+    final c = _ensureCell(shape, cell);
     final f = c.getAttribute('F');
     final v = c.getAttribute('V');
     final already =
@@ -4446,7 +4494,8 @@ class VsdxWriter {
     if (formula == null || formula.isEmpty || formula == 'No Formula') {
       return false;
     }
-    if (formula == 'Inh') return true;
+    // Inh follows Master — never preserve across a local V= write.
+    if (formula == 'Inh') return false;
     final tol = _epsilon + (oldV.abs() + newV.abs()) * 1e-6;
     if (oldV.abs() <= _epsilon && newV.abs() <= _epsilon) return true;
     for (final s in <double>[sx, sy, 1.0]) {
@@ -4488,9 +4537,17 @@ class VsdxWriter {
   ];
 
   /// Patch the shape's protection cells to reflect [edited]'s locked flag.
-  /// Only writes when the flag actually flipped relative to the baseline.
+  /// Writes when the flag flips; also scrubs residual Lock* when unlocked so
+  /// Master / F=Inh cannot revive LockMoveX after unlock.
   bool _patchLock(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (base.locked == edited.locked) return false;
+    if (base.locked == edited.locked) {
+      if (edited.locked) return false;
+      var changed = false;
+      for (final name in _lockCells) {
+        changed |= _forceLiteralInt(el, name, 0);
+      }
+      return changed;
+    }
     final v = edited.locked ? '1' : '0';
     for (final name in _lockCells) {
       _writeValue(_ensureCell(el, name), v);
@@ -4608,14 +4665,14 @@ class VsdxWriter {
     // Default 3 (reroute on crossover) — matches Visio fixtures. Never use 0
     // (reroute freely): 万兴图示 then discards multi-segment Geometry.
     put('ConFixedCode', (s.connectorProps?.conFixedCode ?? 3).toString());
-    put('NoLiveDynamics',
-        (s.connectorProps?.noLiveDynamics ?? true) ? '1' : '0');
     put('ShdwPattern', s.shadow.enabled ? '1' : '0');
-    // Honour model NoAlignBox / ShapeSplittable (do not force Edraw 1 over
-    // cleared false — rebuild already emits literal 0/1).
+    // Honour model NoAlignBox / ShapeSplittable / NoLiveDynamics (do not force
+    // Edraw defaults over cleared false — rebuild already emits literal 0/1).
+    final noLive = s.connectorProps?.noLiveDynamics ?? true;
     for (final entry in <(String, String)>[
       ('NoAlignBox', s.noAlignBox ? '1' : '0'),
       ('ShapeSplittable', s.shapeSplittable ? '1' : '0'),
+      ('NoLiveDynamics', noLive ? '1' : '0'),
     ]) {
       final cell = _ensureCell(el, entry.$1);
       if (cell.getAttribute('V') != entry.$2 ||
@@ -4730,15 +4787,19 @@ class VsdxWriter {
       final cell = _ensureCell(el, entry.$1);
       final f = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
       final defaultF = entry.$3.replaceAll(' ', '');
-      final isDefaultMapping = f.isEmpty || f == defaultF;
+      // F=Inh is Master inherit — treat as default Width*1/Height*1 mapping.
+      final isDefaultMapping = f.isEmpty || f == defaultF || f == 'Inh';
       final next = _fmt(isDefaultMapping ? entry.$4 : entry.$2);
       if (cell.getAttribute('V') != next) {
         cell.setAttribute('V', next);
         changed = true;
       }
-      if (isDefaultMapping && (cell.getAttribute('F') ?? '').isEmpty) {
-        cell.setAttribute('F', entry.$3);
-        changed = true;
+      if (isDefaultMapping) {
+        final curF = cell.getAttribute('F') ?? '';
+        if (curF.replaceAll(' ', '') != defaultF) {
+          cell.setAttribute('F', entry.$3);
+          changed = true;
+        }
       }
     }
     for (final entry in <(String, double)>[
@@ -4980,9 +5041,8 @@ class VsdxWriter {
       if (cp.dynFeedback != null) {
         children.add(_cell('DynFeedback', cp.dynFeedback.toString()));
       }
-      if (cp.noLiveDynamics) {
-        children.add(_cell('NoLiveDynamics', '1'));
-      }
+      // Always emit NoLiveDynamics (incl. 0) so Master cannot revive it.
+      children.add(_cell('NoLiveDynamics', cp.noLiveDynamics ? '1' : '0'));
       if (cp.conLineJumpCode != null) {
         children.add(_cell('ConLineJumpCode', cp.conLineJumpCode.toString()));
       }
@@ -5641,14 +5701,15 @@ class VsdxWriter {
       _cell('Angle', _fmt(s.angleRad), formula: s.formulas['Angle']),
       // MS-VSDX §2.2.6 Image — Edraw / Visio use these to place the bitmap
       // inside the Foreign shape. Without them many hosts show an empty box.
+      // Drop F=Inh so Master image placement cannot override the model.
       _cell('ImgOffsetX', _fmt(s.imgOffsetXInches),
-          formula: s.formulas['ImgOffsetX']),
+          formula: _nonInhFormula(s.formulas['ImgOffsetX'])),
       _cell('ImgOffsetY', _fmt(s.imgOffsetYInches),
-          formula: s.formulas['ImgOffsetY']),
+          formula: _nonInhFormula(s.formulas['ImgOffsetY'])),
       _cell(
         'ImgWidth',
         _fmt(s.effectiveImgWidth),
-        formula: s.formulas['ImgWidth'] ??
+        formula: _nonInhFormula(s.formulas['ImgWidth']) ??
             (s.imgWidthInches == null ||
                     (s.imgWidthInches! - s.width).abs() <= _epsilon
                 ? 'Width*1'
@@ -5657,7 +5718,7 @@ class VsdxWriter {
       _cell(
         'ImgHeight',
         _fmt(s.effectiveImgHeight),
-        formula: s.formulas['ImgHeight'] ??
+        formula: _nonInhFormula(s.formulas['ImgHeight']) ??
             (s.imgHeightInches == null ||
                     (s.imgHeightInches! - s.height).abs() <= _epsilon
                 ? 'Height*1'
@@ -6523,9 +6584,14 @@ class VsdxWriter {
     return false;
   }
 
+  /// Drop Master `F=Inh` so rebuild emits a local formula / literal instead.
+  static String? _nonInhFormula(String? f) =>
+      (f == null || f.isEmpty || f == 'Inh') ? null : f;
+
   static bool _isParametricFormula(String? f) {
     if (f == null || f.isEmpty || f == 'No Formula') return false;
-    if (f == 'Inh') return true;
+    // Inh is Master inherit, not a local parametric — scrub on V= writes.
+    if (f == 'Inh') return false;
     final u = f.toUpperCase();
     return u.contains('SETATREF') ||
         u.contains('PAR(PNT') ||
