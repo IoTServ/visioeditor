@@ -5777,10 +5777,23 @@ class EditorController extends ChangeNotifier {
           }
           final prev = s.shadow;
           if (prev.enabled) return s;
+          // Prefer page Sheet ShdwOffset* (Visio default 0.125/-0.125) when
+          // the shape still carries the library 0.05/0.05 placeholder.
+          final page = currentPage;
+          final sheet = page?.pageSheet;
+          final usePageOffset = sheet != null &&
+              (prev.offsetXInches - 0.05).abs() < 1e-9 &&
+              (prev.offsetYInches - 0.05).abs() < 1e-9;
           return s.copyWith(
             shadow: prev.copyWith(
               enabled: true,
               transparency: prev.transparency >= 1 ? 0.4 : prev.transparency,
+              offsetXInches: usePageOffset
+                  ? sheet.shadowOffsetXInches
+                  : prev.offsetXInches,
+              offsetYInches: usePageOffset
+                  ? sheet.shadowOffsetYInches
+                  : prev.offsetYInches,
             ),
           );
         },

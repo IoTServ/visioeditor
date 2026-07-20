@@ -2049,7 +2049,9 @@ class VsdxWriter {
     changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
     changed |= _forceLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
     changed |= _patchInt(el, 'BeginArrow', base.line.beginArrow, edited.line.beginArrow);
+    changed |= _forceLiteralInt(el, 'BeginArrow', edited.line.beginArrow);
     changed |= _patchInt(el, 'EndArrow', base.line.endArrow, edited.line.endArrow);
+    changed |= _forceLiteralInt(el, 'EndArrow', edited.line.endArrow);
     changed |= _patchInt(
         el,
         'BeginArrowSize',
@@ -2060,19 +2062,16 @@ class VsdxWriter {
         'EndArrowSize',
         _arrowSizeToBucket(base.line.endArrowSizeInches),
         _arrowSizeToBucket(edited.line.endArrowSizeInches));
-    // Arrow sizes with F=Inh would skip _patchInt when buckets match — scrub.
-    if (edited.line.beginArrow != 0) {
-      changed |= _forceLiteralInt(
-          el,
-          'BeginArrowSize',
-          _arrowSizeToBucket(edited.line.beginArrowSizeInches));
-    }
-    if (edited.line.endArrow != 0) {
-      changed |= _forceLiteralInt(
-          el,
-          'EndArrowSize',
-          _arrowSizeToBucket(edited.line.endArrowSizeInches));
-    }
+    // Arrow sizes: scrub Inh whether the arrow is on or off (StyleSheet can
+    // still revive size companions when Begin/EndArrow is literal 0).
+    changed |= _forceLiteralInt(
+        el,
+        'BeginArrowSize',
+        _arrowSizeToBucket(edited.line.beginArrowSizeInches));
+    changed |= _forceLiteralInt(
+        el,
+        'EndArrowSize',
+        _arrowSizeToBucket(edited.line.endArrowSizeInches));
     changed |= _patchRatio(el, 'FillForegndTrans',
         base.fill.foregroundTransparency, edited.fill.foregroundTransparency);
     changed |= _forceLiteralRatio(
@@ -2188,7 +2187,43 @@ class VsdxWriter {
         base.quickStyleEffectsMatrix, edited.quickStyleEffectsMatrix);
     changed |= _patchOptionalIntCell(el, 'QuickStyleFontMatrix',
         base.quickStyleFontMatrix, edited.quickStyleFontMatrix);
+    // ObjType / NoAlignBox / etc. — rebuild emits them; patch must too so
+    // in-place edits survive save without a group rebuild.
+    changed |=
+        _patchOptionalIntCell(el, 'ObjType', base.objType, edited.objType);
+    changed |= _patchOptionalIntCell(
+        el, 'ResizeMode', base.resizeMode, edited.resizeMode);
+    changed |=
+        _patchFlagCell(el, 'NoAlignBox', base.noAlignBox, edited.noAlignBox);
+    changed |= _patchFlagCell(
+        el, 'ShapeSplittable', base.shapeSplittable, edited.shapeSplittable);
+    changed |= _patchOptionalStringCell(
+        el, 'EventDblClick', base.eventDblClick, edited.eventDblClick);
     return changed;
+  }
+
+  /// Patch a boolean ShapeSheet flag cell (`V="1"` present ⇒ true; absent ⇒ false).
+  bool _patchFlagCell(XmlElement shape, String cell, bool base, bool edited) {
+    if (base == edited) {
+      if (!edited) return false;
+      return _forceLiteralInt(shape, cell, 1);
+    }
+    if (!edited) return _removeNamedCells(shape, [cell]);
+    _writeValue(_ensureCell(shape, cell), '1');
+    return true;
+  }
+
+  /// Patch an optional string cell (remove when [edited] is null).
+  bool _patchOptionalStringCell(
+    XmlElement shape,
+    String cell,
+    String? base,
+    String? edited,
+  ) {
+    if (base == edited) return false;
+    if (edited == null) return _removeNamedCells(shape, [cell]);
+    _writeValue(_ensureCell(shape, cell), edited);
+    return true;
   }
 
   /// Patch a top-level ShapeSheet int cell that may be absent (`null`).
@@ -4158,6 +4193,8 @@ class VsdxWriter {
     changed |= _forceLiteralInt(el, 'TextDirection', edited.textDirection);
     changed |= _patchLength(el, 'DefaultTabStop', base.defaultTabStopInches,
         edited.defaultTabStopInches);
+    changed |= _forceLiteralLength(
+        el, 'DefaultTabStop', edited.defaultTabStopInches);
     if (edited.backgroundColor != null) {
       changed |= _patchColor(
           el, 'TextBkgnd', base.backgroundColor, edited.backgroundColor);
@@ -4175,12 +4212,19 @@ class VsdxWriter {
         el, 'TextBkgndTrans', edited.backgroundTransparency);
     changed |= _patchLength(
         el, 'LeftMargin', base.marginLeftInches, edited.marginLeftInches);
+    changed |=
+        _forceLiteralLength(el, 'LeftMargin', edited.marginLeftInches);
     changed |= _patchLength(
         el, 'RightMargin', base.marginRightInches, edited.marginRightInches);
+    changed |=
+        _forceLiteralLength(el, 'RightMargin', edited.marginRightInches);
     changed |= _patchLength(
         el, 'TopMargin', base.marginTopInches, edited.marginTopInches);
+    changed |= _forceLiteralLength(el, 'TopMargin', edited.marginTopInches);
     changed |= _patchLength(
         el, 'BottomMargin', base.marginBottomInches, edited.marginBottomInches);
+    changed |=
+        _forceLiteralLength(el, 'BottomMargin', edited.marginBottomInches);
     return changed;
   }
 
@@ -5656,9 +5700,16 @@ class VsdxWriter {
         children.add(_cell(name, '1'));
       }
     }
-    // Caption text with Character/Paragraph (same as normal shapes) so Edraw
-    // does not fall back to a wrong default font size.
+    // Caption + text-block (Txt*/VerticalAlign) — match normal shapes so
+    // Edraw places Foreign captions correctly after a group rebuild.
     final pictureRuns = _effectiveTextRuns(s);
+    _appendTextBlockCells(
+      children,
+      s.richText.textBlock,
+      formulas: s.formulas,
+      shapeForDefaults: s,
+      hasLabel: pictureRuns.isNotEmpty,
+    );
     if (pictureRuns.isNotEmpty) {
       children
         ..add(_buildCharacterSection(pictureRuns))
@@ -5715,6 +5766,12 @@ class VsdxWriter {
     }
     if (s.scratch.isNotEmpty) {
       children.add(_buildScratchSection(s.scratch));
+    }
+    if (s.fields.isNotEmpty) {
+      children.add(_buildFieldSection(s.fields));
+    }
+    if (s.actions.isNotEmpty) {
+      children.add(_buildActionsSection(s.actions));
     }
     // Edge glue points — match normal shapes so connectors can attach after
     // a Foreign group rebuild (Connection is modeled, not opaque-preserved).

@@ -7116,4 +7116,234 @@ void main() {
     expect(after.controls.single.name, 'Row_1');
     expect(after.scratch.single.ix, 0);
   });
+
+  test('BeginArrow/EndArrow F=Inh scrub when arrows are zero', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    for (final name in ['BeginArrow', 'EndArrow']) {
+      if (pageXml.contains('N="$name"')) {
+        pageXml = pageXml.replaceFirst(
+          RegExp('<Cell N="$name"[^/]*/>'),
+          '<Cell N="$name" V="0" F="Inh"/>',
+        );
+      } else {
+        pageXml = pageXml.replaceFirst(
+          '</Shape>',
+          '<Cell N="$name" V="0" F="Inh"/></Shape>',
+        );
+      }
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          line: s.line.copyWith(transparency: 0.1),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['BeginArrow', 'EndArrow']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('V'), '0', reason: name);
+      expect(cell.getAttribute('F'), isNull, reason: name);
+    }
+  });
+
+  test('LeftMargin F=Inh scrubs to literal model value', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(text: 'Hi'),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="LeftMargin"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="LeftMargin"[^/]*/>'),
+        '<Cell N="LeftMargin" V="0.04" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="LeftMargin" V="0.04" F="Inh"/></Shape>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'LeftMargin',
+        );
+    expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('ObjType / NoAlignBox patch without rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          objType: 1,
+          noAlignBox: true,
+          shapeSplittable: true,
+          eventDblClick: 'OPENTEXTDLG()',
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ObjType" V="1"'), isTrue);
+    expect(pageXml.contains('N="NoAlignBox" V="1"'), isTrue);
+    expect(pageXml.contains('N="ShapeSplittable" V="1"'), isTrue);
+    expect(pageXml.contains('OPENTEXTDLG()'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.objType, 1);
+    expect(after.noAlignBox, isTrue);
+    expect(after.shapeSplittable, isTrue);
+    expect(after.eventDblClick, 'OPENTEXTDLG()');
+  });
+
+  test('Foreign Field/Actions survive group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    final otherId = picId + 1;
+    final gid = otherId + 1;
+    const part = '/visio/media/image_field_group.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(
+      text: 'Cap',
+      fields: const [
+        VsdxFieldRow(ix: 0, value: '1', valueFormula: 'Width'),
+      ],
+      actions: const [
+        VsdxActionRow(
+          name: 'Row_1',
+          ix: 1,
+          menu: 'Do it',
+          action: '0',
+          actionFormula: 'RUNADDON("X")',
+        ),
+      ],
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(
+          0,
+          doc.pages.first
+              .addShape(pic)
+              .addShape(
+                VsdxShapeFactory.rectangle(
+                  id: otherId,
+                  pinX: 4,
+                  pinY: 2,
+                  width: 1,
+                  height: 1,
+                ),
+              ),
+        );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({picId, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Field"'), isTrue);
+    expect(pageXml.contains('N="Actions"'), isTrue);
+    expect(pageXml.contains('N="VerticalAlign"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.fields, isNotEmpty);
+    expect(after.actions.single.menu, 'Do it');
+    expect(after.text, contains('Cap'));
+  });
 }
