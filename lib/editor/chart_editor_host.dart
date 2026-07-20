@@ -500,7 +500,6 @@ class _CommitTextField extends StatelessWidget {
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       onEditingComplete: onCommit,
-      onSubmitted: (_) => onCommit(),
       onTapOutside: (_) => onCommit(),
     );
   }
@@ -517,7 +516,10 @@ class _SpecialtyApplyButton extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: FilledButton(
-          onPressed: () => FocusScope.of(context).unfocus(),
+          onPressed: () {
+            // Drop focus so any pending field commits via onTapOutside / focus loss.
+            FocusManager.instance.primaryFocus?.unfocus();
+          },
           child: Text(el.applyChart),
         ),
       ),
@@ -652,6 +654,39 @@ class _CandlestickEditorState extends State<_CandlestickEditor>
     if (chart != null && _rows.isEmpty) syncFields(chart);
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    if (parsed.values.isEmpty) return;
+    final candles = (parsed.values.length / 4).ceil().clamp(1, 4);
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < candles; i++) ...[
+          for (var j = 0; j < 4; j++)
+            i * 4 + j < parsed.values.length
+                ? parsed.values[i * 4 + j]
+                : const <double>[0.4, 0.7, 0.3, 0.55][j],
+        ],
+      ],
+    );
+  }
+
+  void _equalize() {
+    if (_rows.isEmpty) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < _rows.length; i++) ...[0.4, 0.7, 0.3, 0.55],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -664,7 +699,12 @@ class _CandlestickEditorState extends State<_CandlestickEditor>
           title: el.stencil('Candlestick Chart'),
           hint: el.chartSpecialtyCandlestickHint,
         ),
-        _SpecialtyDataToolbar(count: _rows.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _rows.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+          onEqualize: _equalize,
+        ),
         for (var i = 0; i < _rows.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
@@ -1030,6 +1070,56 @@ class _GanttEditorState extends State<_GanttEditor>
     if (chart != null && _starts.isEmpty) syncFields(chart);
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    if (parsed.values.isEmpty) return;
+    final n = (parsed.values.length / 2).ceil().clamp(1, 8);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++) ...[
+          (i * 2 < parsed.values.length ? parsed.values[i * 2] : 0.1)
+              .clamp(0.0, 1.0),
+          (i * 2 + 1 < parsed.values.length ? parsed.values[i * 2 + 1] : 0.3)
+              .clamp(0.0, 1.0),
+        ],
+      ],
+      labels: <String>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'Task ${i + 1}',
+      ],
+    );
+  }
+
+  void _equalize() {
+    if (_starts.isEmpty) return;
+    final step = 1.0 / (_starts.length + 1);
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < _starts.length; i++) ...[
+          (step * (i + 0.2)).clamp(0.0, 0.85),
+          step.clamp(0.1, 0.4),
+        ],
+      ],
+      labels: <String>[
+        for (var i = 0; i < _labels.length; i++)
+          _labels[i].text.trim().isEmpty
+              ? 'Task ${i + 1}'
+              : _labels[i].text.trim(),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -1042,7 +1132,12 @@ class _GanttEditorState extends State<_GanttEditor>
           title: el.stencil('Gantt Chart'),
           hint: el.chartSpecialtyGanttHint,
         ),
-        _SpecialtyDataToolbar(count: _starts.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _starts.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+          onEqualize: _equalize,
+        ),
         for (var i = 0; i < _starts.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
@@ -2045,6 +2140,24 @@ class _PositionEventsEditorState extends State<_PositionEventsEditor>
     );
   }
 
+  void _equalize() {
+    if (_pos.isEmpty) return;
+    final step = _pos.length == 1 ? 0.5 : 1.0 / (_pos.length - 1);
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < _pos.length; i++)
+          (_pos.length == 1 ? 0.5 : step * i).clamp(0.0, 1.0),
+      ],
+      labels: <String>[
+        for (var i = 0; i < _labels.length; i++)
+          _labels[i].text.trim().isEmpty
+              ? _defaultLabel(i)
+              : _labels[i].text.trim(),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -2061,6 +2174,7 @@ class _PositionEventsEditorState extends State<_PositionEventsEditor>
           count: _pos.length,
           maxItems: widget.maxItems,
           onPaste: _paste,
+          onEqualize: _equalize,
         ),
         for (var i = 0; i < _pos.length; i++) ...[
           _SpecialtyItemFrame(
@@ -2226,6 +2340,13 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _vals.length) return;
+    final v = _vals.removeAt(from);
+    _vals.insert(to, v);
+    _commit();
+  }
+
   Future<void> _paste() async {
     final chart = controller.selectedChart;
     final initial = chart == null
@@ -2296,32 +2417,43 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
         ),
         for (var i = 0; i < _vals.length; i++) ...[
           _SpecialtyItemFrame(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _vals[i],
-                    decoration: InputDecoration(
-                      isDense: true,
-                      labelText: i < _inner
-                          ? '${el.chartInnerRing} ${i + 1}'
-                          : '${el.chartOuterRing} ${i - _inner + 1}',
-                      border: const OutlineInputBorder(),
-                    ),
-                    style: const TextStyle(fontSize: 12),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    onEditingComplete: _commit,
-                    onSubmitted: (_) => _commit(),
-                    onTapOutside: (_) => _commit(),
-                  ),
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _vals.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _vals.length > 2
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
                 ),
-                if (_vals.length > 2)
-                  IconButton(
-                    tooltip: el.chartRemoveItem,
-                    onPressed: () => _remove(i),
-                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                TextField(
+                  controller: _vals[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: i < _inner
+                        ? '${el.chartInnerRing} ${i + 1}'
+                        : '${el.chartOuterRing} ${i - _inner + 1}',
+                    border: const OutlineInputBorder(),
                   ),
+                  style: const TextStyle(fontSize: 12),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
+                ),
               ],
             ),
           ),
@@ -3246,6 +3378,13 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _vals.length) return;
+    final v = _vals.removeAt(from);
+    _vals.insert(to, v);
+    _commit();
+  }
+
   Future<void> _paste() async {
     final chart = controller.selectedChart;
     final initial = chart == null
@@ -3293,27 +3432,39 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
         ),
         for (var i = 0; i < _vals.length; i++) ...[
           _SpecialtyItemFrame(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _vals[i],
-                    decoration: InputDecoration(
-                      isDense: true,
-                      labelText: '${el.chartRing} ${i + 1}',
-                      suffixText: '%',
-                      border: const OutlineInputBorder(),
-                    ),
-                    onEditingComplete: _commit,
-                    onTapOutside: (_) => _commit(),
-                  ),
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _vals.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _vals.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
                 ),
-                if (_vals.length > 1)
-                  IconButton(
-                    tooltip: el.chartRemoveItem,
-                    onPressed: () => _remove(i),
-                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                TextField(
+                  controller: _vals[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${el.chartRing} ${i + 1}',
+                    suffixText: '%',
+                    border: const OutlineInputBorder(),
                   ),
+                  onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
+                ),
               ],
             ),
           ),
@@ -3708,6 +3859,34 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
     if (chart != null && _labels.isEmpty) syncFields(chart);
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    final n = mathMax(parsed.values.length, pastedLabs.length).clamp(1, 8);
+    if (n < 1) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++)
+          i < parsed.values.length
+              ? parsed.values[i].clamp(0.0, 1.0)
+              : 0.0,
+      ],
+      labels: <String>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'Step ${i + 1}',
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -3725,7 +3904,11 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
           title: el.stencil('Process Steps'),
           hint: el.chartSpecialtyProcessHint,
         ),
-        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _labels.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+        ),
         for (var i = 0; i < _labels.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
@@ -3766,6 +3949,7 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
                 ),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<double>(
+                  key: ValueKey('status-dd-$i-${_status[i]}'),
                   initialValue: _status[i] >= 0.99
                       ? 1
                       : _status[i] >= 0.4
@@ -4262,6 +4446,35 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
     _commit();
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    final n = mathMax(parsed.values.length, pastedLabs.length).clamp(1, 8);
+    if (n < 1) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++)
+          i < parsed.values.length
+              ? parsed.values[i].clamp(0.0, 1.0)
+              : 1.0,
+      ],
+      labels: <String>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'Item ${i + 1}',
+      ],
+      extras: ChartOps.formatScorecardCols(_cols),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -4295,7 +4508,11 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
           ],
         ),
         const SizedBox(height: 8),
-        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _labels.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+        ),
         for (var i = 0; i < _labels.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
@@ -4336,6 +4553,7 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
                 ),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<double>(
+                  key: ValueKey('status-dd-$i-${_status[i]}'),
                   initialValue: _status[i] >= 0.99
                       ? 1
                       : _status[i] >= 0.4
@@ -4577,6 +4795,41 @@ class _CheckboxListEditorState extends State<_CheckboxListEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _labels.length) return;
+    final lab = _labels.removeAt(from);
+    final done = _done.removeAt(from);
+    _labels.insert(to, lab);
+    _done.insert(to, done);
+    _commit();
+  }
+
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    final n = mathMax(parsed.values.length, pastedLabs.length).clamp(1, 8);
+    if (n < 1) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++)
+          i < parsed.values.length && parsed.values[i] >= 0.5 ? 1.0 : 0.0,
+      ],
+      labels: <String>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'Item ${i + 1}',
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -4589,12 +4842,35 @@ class _CheckboxListEditorState extends State<_CheckboxListEditor>
           title: el.stencil('Checklist'),
           hint: el.chartSpecialtyCheckboxListHint,
         ),
-        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _labels.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+        ),
         for (var i = 0; i < _labels.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _labels.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _labels.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
                 TextField(
                   controller: _labels[i],
                   decoration: InputDecoration(
@@ -4609,27 +4885,15 @@ class _CheckboxListEditorState extends State<_CheckboxListEditor>
                   onEditingComplete: _commit,
                   onTapOutside: (_) => _commit(),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: CheckboxListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(el.chartStepDone),
-                        value: _done[i],
-                        onChanged: (v) {
-                          setState(() => _done[i] = v ?? false);
-                          _commit();
-                        },
-                      ),
-                    ),
-                    if (_labels.length > 1)
-                      IconButton(
-                        tooltip: el.chartRemoveItem,
-                        onPressed: () => _remove(i),
-                        icon: const Icon(Icons.remove_circle_outline, size: 18),
-                      ),
-                  ],
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(el.chartStepDone),
+                  value: _done[i],
+                  onChanged: (v) {
+                    setState(() => _done[i] = v ?? false);
+                    _commit();
+                  },
                 ),
               ],
             ),
@@ -4848,6 +5112,43 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _labels.length) return;
+    final lab = _labels.removeAt(from);
+    final st = _status.removeAt(from);
+    _labels.insert(to, lab);
+    _status.insert(to, st);
+    _commit();
+  }
+
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    final n = mathMax(parsed.values.length, pastedLabs.length).clamp(1, 8);
+    if (n < 1) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++)
+          i < parsed.values.length
+              ? parsed.values[i].clamp(0.0, 1.0)
+              : 1.0,
+      ],
+      labels: <String>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'Item ${i + 1}',
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -4865,12 +5166,35 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
           title: el.stencil('Traffic Row'),
           hint: el.chartSpecialtyTrafficRowHint,
         ),
-        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _labels.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+        ),
         for (var i = 0; i < _labels.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _labels.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _labels.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
                 TextField(
                   controller: _labels[i],
                   decoration: InputDecoration(
@@ -4886,38 +5210,27 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
                   onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<double>(
-                        initialValue: _status[i] >= 0.99
-                            ? 1
-                            : _status[i] >= 0.4
-                                ? 0.5
-                                : 0,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          labelText: el.chartStepStatus,
-                          border: const OutlineInputBorder(),
-                        ),
-                        items: [
-                          for (final s in statuses)
-                            DropdownMenuItem(value: s.$1, child: Text(s.$2)),
-                        ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _status[i] = v);
-                          _commit();
-                        },
-                      ),
-                    ),
-                    if (_labels.length > 1)
-                      IconButton(
-                        tooltip: el.chartRemoveItem,
-                        onPressed: () => _remove(i),
-                        icon: const Icon(Icons.remove_circle_outline, size: 18),
-                      ),
+                DropdownButtonFormField<double>(
+                  key: ValueKey('traffic-$i-${_status[i]}'),
+                  initialValue: _status[i] >= 0.99
+                      ? 1
+                      : _status[i] >= 0.4
+                          ? 0.5
+                          : 0,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: el.chartStepStatus,
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final s in statuses)
+                      DropdownMenuItem(value: s.$1, child: Text(s.$2)),
                   ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _status[i] = v);
+                    _commit();
+                  },
                 ),
               ],
             ),
@@ -5147,6 +5460,38 @@ class _WinLossStripEditorState extends State<_WinLossStripEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _wins.length) return;
+    final w = _wins.removeAt(from);
+    _wins.insert(to, w);
+    _commit();
+  }
+
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    final n = mathMax(parsed.values.length, pastedLabs.length).clamp(1, 8);
+    if (n < 1) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length &&
+                  RegExp(r'^[Ll]').hasMatch(pastedLabs[i].trim())
+              ? 0.0
+              : (i < parsed.values.length && parsed.values[i] < 0.5
+                  ? 0.0
+                  : 1.0),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -5159,36 +5504,53 @@ class _WinLossStripEditorState extends State<_WinLossStripEditor>
           title: el.stencil('Win/Loss Strip'),
           hint: el.chartSpecialtyWinLossStripHint,
         ),
-        _SpecialtyDataToolbar(count: _wins.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _wins.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+        ),
         for (var i = 0; i < _wins.length; i++) ...[
           _SpecialtyItemFrame(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<bool>(
-                    initialValue: _wins[i],
-                    decoration: InputDecoration(
-                      isDense: true,
-                      labelText: '${el.chartSegment} ${i + 1}',
-                      border: const OutlineInputBorder(),
-                    ),
-                    items: [
-                      DropdownMenuItem(value: true, child: Text(el.chartWin)),
-                      DropdownMenuItem(value: false, child: Text(el.chartLoss)),
-                    ],
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _wins[i] = v);
-                      _commit();
-                    },
-                  ),
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _wins.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _wins.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
                 ),
-                if (_wins.length > 1)
-                  IconButton(
-                    tooltip: el.chartRemoveItem,
-                    onPressed: () => _remove(i),
-                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                DropdownButtonFormField<bool>(
+                  key: ValueKey('winloss-$i-${_wins[i]}'),
+                  initialValue: _wins[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${el.chartSegment} ${i + 1}',
+                    border: const OutlineInputBorder(),
                   ),
+                  items: [
+                    DropdownMenuItem(value: true, child: Text(el.chartWin)),
+                    DropdownMenuItem(value: false, child: Text(el.chartLoss)),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _wins[i] = v);
+                    _commit();
+                  },
+                ),
               ],
             ),
           ),
