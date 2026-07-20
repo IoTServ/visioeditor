@@ -51,6 +51,28 @@ class EditorWorkspace extends ChangeNotifier {
     }
   }
 
+  /// Reorder open tabs. [newIndex] is the destination index after removal
+  /// (same contract as [ReorderableListView.onReorderItem] / page [movePage]).
+  void moveAt(int oldIndex, int newIndex) {
+    if (oldIndex < 0 ||
+        oldIndex >= _docs.length ||
+        newIndex < 0 ||
+        newIndex >= _docs.length ||
+        oldIndex == newIndex) {
+      return;
+    }
+    final c = _docs.removeAt(oldIndex);
+    _docs.insert(newIndex, c);
+    if (_activeIndex == oldIndex) {
+      _activeIndex = newIndex;
+    } else if (oldIndex < _activeIndex && newIndex >= _activeIndex) {
+      _activeIndex -= 1;
+    } else if (oldIndex > _activeIndex && newIndex <= _activeIndex) {
+      _activeIndex += 1;
+    }
+    notifyListeners();
+  }
+
   void closeAt(int index) {
     if (index < 0 || index >= _docs.length) return;
     final c = _docs.removeAt(index);

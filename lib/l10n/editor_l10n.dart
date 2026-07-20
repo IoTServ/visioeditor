@@ -80,6 +80,12 @@ class EditorL10n {
   String get lineJumps => _t('lineJumps');
   String get closeTab => _t('closeTab');
   String get closeTabShortcut => _t('closeTabShortcut');
+  String get closeOtherTabs => _t('closeOtherTabs');
+  String get closeTabsToTheLeft => _t('closeTabsToTheLeft');
+  String get closeTabsToTheRight => _t('closeTabsToTheRight');
+  String get closeAllTabs => _t('closeAllTabs');
+  String get tabReorderHint => _t('tabReorderHint');
+  String get tabMenuTooltip => _t('tabMenuTooltip');
 
   // --- Context menu ---
   String get cut => _t('cut');

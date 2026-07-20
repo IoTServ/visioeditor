@@ -749,6 +749,90 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }
   }
 
+  /// Close every tab for which [shouldClose] is true (matched by controller
+  /// identity so indices stay stable as tabs disappear).
+  Future<void> _closeTabsWhere(
+    bool Function(int index, EditorController c) shouldClose,
+  ) async {
+    final targets = <EditorController>[
+      for (var i = 0; i < _workspace.docs.length; i++)
+        if (shouldClose(i, _workspace.docs[i])) _workspace.docs[i],
+    ];
+    for (final c in targets) {
+      if (!mounted) return;
+      final i = _workspace.indexOf(c);
+      if (i < 0) continue;
+      if (await _confirmDiscard(c)) {
+        _workspace.closeAt(i);
+      }
+    }
+  }
+
+  Future<void> _closeOtherTabs(int keepIndex) =>
+      _closeTabsWhere((i, _) => i != keepIndex);
+
+  Future<void> _closeTabsToTheLeft(int index) =>
+      _closeTabsWhere((i, _) => i < index);
+
+  Future<void> _closeTabsToTheRight(int index) =>
+      _closeTabsWhere((i, _) => i > index);
+
+  Future<void> _closeAllTabs() => _closeTabsWhere((_, _) => true);
+
+  Future<void> _showDocTabMenu(Offset globalPosition, int index) async {
+    if (index < 0 || index >= _workspace.docs.length) return;
+    final el = EditorL10n.of(context);
+    final n = _workspace.docs.length;
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx,
+        globalPosition.dy,
+        globalPosition.dx,
+        globalPosition.dy,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'close',
+          child: Text(el.closeTab),
+        ),
+        PopupMenuItem<String>(
+          value: 'closeOthers',
+          enabled: n > 1,
+          child: Text(el.closeOtherTabs),
+        ),
+        PopupMenuItem<String>(
+          value: 'closeLeft',
+          enabled: index > 0,
+          child: Text(el.closeTabsToTheLeft),
+        ),
+        PopupMenuItem<String>(
+          value: 'closeRight',
+          enabled: index < n - 1,
+          child: Text(el.closeTabsToTheRight),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'closeAll',
+          child: Text(el.closeAllTabs),
+        ),
+      ],
+    );
+    if (!mounted || value == null) return;
+    switch (value) {
+      case 'close':
+        await _closeTab(index);
+      case 'closeOthers':
+        await _closeOtherTabs(index);
+      case 'closeLeft':
+        await _closeTabsToTheLeft(index);
+      case 'closeRight':
+        await _closeTabsToTheRight(index);
+      case 'closeAll':
+        await _closeAllTabs();
+    }
+  }
+
   Future<void> _save() async {
     final c = _c;
     if (c == null || !c.hasDocument) return;
@@ -1756,17 +1840,24 @@ class _EditorHomePageState extends State<EditorHomePage> {
         height: 40,
         alignment: Alignment.centerLeft,
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: ListView.builder(
+        child: ReorderableListView.builder(
           scrollDirection: Axis.horizontal,
+          buildDefaultDragHandles: false,
           itemCount: _workspace.docs.length,
+          onReorderItem: (oldIndex, newIndex) {
+            _workspace.moveAt(oldIndex, newIndex);
+          },
           itemBuilder: (context, i) {
             final doc = _workspace.docs[i];
             return _DocTab(
+              key: ObjectKey(doc),
+              index: i,
               label: doc.fileName ?? EditorL10n.of(context).untitled,
               dirty: doc.isDirty,
               active: i == _workspace.activeIndex,
               onTap: () => _workspace.setActive(i),
               onClose: () => _closeTab(i),
+              onMenu: (pos) => _showDocTabMenu(pos, i),
             );
           },
         ),
@@ -2118,20 +2209,42 @@ class _EditorHomePageState extends State<EditorHomePage> {
 }
 
 /// A single open-file tab in the top tab bar.
+///
+/// Drag-to-reorder is limited to the label area (not the close / menu buttons).
+/// Right-click the label or tap ⋮ for close-related actions.
 class _DocTab extends StatelessWidget {
   const _DocTab({
+    super.key,
+    required this.index,
     required this.label,
     required this.dirty,
     required this.active,
     required this.onTap,
     required this.onClose,
+    required this.onMenu,
   });
 
+  final int index;
   final String label;
   final bool dirty;
   final bool active;
   final VoidCallback onTap;
   final VoidCallback onClose;
+  final void Function(Offset globalPosition) onMenu;
+
+  void _menuAt(BuildContext context, {Alignment alignment = Alignment.bottomCenter}) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      onMenu(Offset.zero);
+      return;
+    }
+    final origin = box.localToGlobal(Offset.zero);
+    final size = box.size;
+    onMenu(Offset(
+      origin.dx + size.width * (alignment.x + 1) / 2,
+      origin.dy + size.height * (alignment.y + 1) / 2,
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2142,38 +2255,70 @@ class _DocTab extends StatelessWidget {
       child: Material(
         color: active ? scheme.surface : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.only(left: 12, right: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (dirty)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Icon(Icons.circle, size: 8, color: scheme.primary),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Only the title chip is a reorder handle — chrome stays clickable.
+            ReorderableDragStartListener(
+              index: index,
+              child: Tooltip(
+                message: el.tabReorderHint,
+                waitDuration: const Duration(milliseconds: 600),
+                child: InkWell(
+                  onTap: onTap,
+                  onSecondaryTapDown: (d) => onMenu(d.globalPosition),
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(8),
                   ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 160),
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (dirty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Icon(
+                              Icons.circle,
+                              size: 8,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 148),
+                          child: Text(
+                            label,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight:
+                                  active ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close, size: 16),
-                  visualDensity: VisualDensity.compact,
-                  tooltip: el.closeTab,
-                ),
-              ],
+              ),
             ),
-          ),
+            IconButton(
+              onPressed: () =>
+                  _menuAt(context, alignment: Alignment.bottomRight),
+              icon: const Icon(Icons.arrow_drop_down, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
+              tooltip: el.tabMenuTooltip,
+            ),
+            IconButton(
+              onPressed: onClose,
+              icon: const Icon(Icons.close, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
+              tooltip: el.closeTab,
+            ),
+          ],
         ),
       ),
     );
