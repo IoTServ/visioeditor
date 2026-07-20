@@ -269,6 +269,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Calendar Heatmap',
       (id, cx, cy) => ChartOps.calendarHeatChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Range Bar',
+      (id, cx, cy) => ChartOps.rangeBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Dumbbell Chart',
+      (id, cx, cy) => ChartOps.dumbbellChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Quadrant Chart',
+      (id, cx, cy) => ChartOps.quadrantChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Timeline Chart',
+      (id, cx, cy) => ChartOps.timelineChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Nested Donut',
+      (id, cx, cy) => ChartOps.nestedDonutChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'KPI Target',
+      (id, cx, cy) => ChartOps.kpiTargetChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 

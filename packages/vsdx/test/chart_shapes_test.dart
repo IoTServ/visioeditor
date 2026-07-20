@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(64));
+    expect(kChartStencils, hasLength(70));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);

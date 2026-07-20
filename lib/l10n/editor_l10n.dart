@@ -242,6 +242,12 @@ class EditorL10n {
   String get chartSpecialtyBoxplotHint => _t('chartSpecialtyBoxplotHint');
   String get chartSpecialtySlopeHint => _t('chartSpecialtySlopeHint');
   String get chartSpecialtyCalendarHint => _t('chartSpecialtyCalendarHint');
+  String get chartSpecialtyRangeBarHint => _t('chartSpecialtyRangeBarHint');
+  String get chartSpecialtyDumbbellHint => _t('chartSpecialtyDumbbellHint');
+  String get chartSpecialtyQuadrantHint => _t('chartSpecialtyQuadrantHint');
+  String get chartSpecialtyTimelineHint => _t('chartSpecialtyTimelineHint');
+  String get chartSpecialtyNestedDonutHint => _t('chartSpecialtyNestedDonutHint');
+  String get chartSpecialtyKpiHint => _t('chartSpecialtyKpiHint');
   String get chartCandle => _t('chartCandle');
   String get chartOpen => _t('chartOpen');
   String get chartHigh => _t('chartHigh');
@@ -263,6 +269,19 @@ class EditorL10n {
   String get chartAfter => _t('chartAfter');
   String get chartWeeks => _t('chartWeeks');
   String get chartWeekdaysShort => _t('chartWeekdaysShort');
+  String get chartStartValue => _t('chartStartValue');
+  String get chartEndValue => _t('chartEndValue');
+  String get chartAxisX => _t('chartAxisX');
+  String get chartAxisY => _t('chartAxisY');
+  String get chartEventName => _t('chartEventName');
+  String get chartPosition => _t('chartPosition');
+  String get chartAddEvent => _t('chartAddEvent');
+  String get chartInnerSlices => _t('chartInnerSlices');
+  String get chartInnerRing => _t('chartInnerRing');
+  String get chartOuterRing => _t('chartOuterRing');
+  String get chartKpiName => _t('chartKpiName');
+  String get chartActual => _t('chartActual');
+  String get chartTarget => _t('chartTarget');
   String chartDefaultItem(int n) =>
       _t('chartDefaultItem').replaceAll('{n}', '$n');
   String chartKindGroup(String english) {

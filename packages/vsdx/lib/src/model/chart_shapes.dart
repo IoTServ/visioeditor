@@ -46,6 +46,12 @@ abstract final class ChartOps {
     'boxplot',
     'slope',
     'calendarHeat',
+    'rangeBar',
+    'dumbbell',
+    'quadrant',
+    'timeline',
+    'nestedDonut',
+    'kpiTarget',
   };
 
   static bool isCustomEditorKind(String kind) =>
@@ -64,7 +70,16 @@ abstract final class ChartOps {
       case 'boxplot':
         return 15; // 3 boxes × 5 stats
       case 'slope':
+      case 'rangeBar':
+      case 'dumbbell':
+      case 'quadrant':
         return 12; // 6 pairs
+      case 'timeline':
+        return 10;
+      case 'nestedDonut':
+        return 12;
+      case 'kpiTarget':
+        return 2;
       default:
         return maxSeriesItems;
     }
@@ -81,6 +96,9 @@ abstract final class ChartOps {
         return math.max(1, values.length ~/ 4);
       case 'gantt':
       case 'slope':
+      case 'rangeBar':
+      case 'dumbbell':
+      case 'quadrant':
         return math.max(1, values.length ~/ 2);
       case 'boxplot':
         return math.max(1, values.length ~/ 5);
@@ -89,6 +107,12 @@ abstract final class ChartOps {
         return g.$1 * g.$2;
       case 'calendarHeat':
         return calendarCellCount(extras);
+      case 'timeline':
+        return math.max(1, values.length);
+      case 'nestedDonut':
+        return math.max(1, values.length);
+      case 'kpiTarget':
+        return 1;
       default:
         return values.length;
     }
@@ -117,6 +141,16 @@ abstract final class ChartOps {
 
   static int calendarCellCount(String? extras) =>
       parseCalendarWeeks(extras) * 7;
+
+  static int parseNestedInner(String? extras, int total) {
+    final m = RegExp(r'inner\s*=\s*(\d+)').firstMatch(extras ?? '');
+    if (m != null) {
+      return int.parse(m.group(1)!).clamp(1, math.max(1, total - 1));
+    }
+    return math.max(1, total ~/ 2);
+  }
+
+  static String formatNestedInner(int inner) => 'inner=${inner.clamp(1, 8)}';
 
   /// Kind picker groups for the editor (group title → kind keys).
   static const List<(String, List<String>)> kindGroups =
@@ -191,6 +225,12 @@ abstract final class ChartOps {
       'boxplot',
       'slope',
       'calendarHeat',
+      'rangeBar',
+      'dumbbell',
+      'quadrant',
+      'timeline',
+      'nestedDonut',
+      'kpiTarget',
     ]),
   ];
 
@@ -266,6 +306,12 @@ abstract final class ChartOps {
     'boxplot': 'Box Plot',
     'slope': 'Slope Chart',
     'calendarHeat': 'Calendar Heatmap',
+    'rangeBar': 'Range Bar',
+    'dumbbell': 'Dumbbell Chart',
+    'quadrant': 'Quadrant Chart',
+    'timeline': 'Timeline Chart',
+    'nestedDonut': 'Nested Donut',
+    'kpiTarget': 'KPI Target',
   };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
@@ -937,6 +983,18 @@ abstract final class ChartOps {
         return <double>[
           for (var i = 0; i < n; i++) ((i * 37) % 100) / 100.0,
         ];
+      case 'rangeBar':
+        return const <double>[0.1, 0.55, 0.25, 0.7, 0.15, 0.45, 0.4, 0.85];
+      case 'dumbbell':
+        return const <double>[0.2, 0.75, 0.35, 0.55, 0.15, 0.9];
+      case 'quadrant':
+        return const <double>[0.25, 0.7, 0.7, 0.75, 0.3, 0.3, 0.8, 0.35];
+      case 'timeline':
+        return const <double>[0.1, 0.35, 0.55, 0.8];
+      case 'nestedDonut':
+        return const <double>[0.3, 0.25, 0.2, 0.25, 0.4, 0.35, 0.25];
+      case 'kpiTarget':
+        return const <double>[0.72, 0.9];
       default:
         return List<double>.of(defaultValues);
     }
@@ -1522,6 +1580,61 @@ abstract final class ChartOps {
             height: height ?? 1.6,
             values: values,
             extras: extras,
+            allocId: allocId);
+      case 'rangeBar':
+        return rangeBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'dumbbell':
+        return dumbbellChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'quadrant':
+        return quadrantChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.2,
+            height: height ?? 2.0,
+            values: values,
+            allocId: allocId);
+      case 'timeline':
+        return timelineChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 1.2,
+            values: values,
+            allocId: allocId);
+      case 'nestedDonut':
+        return nestedDonutChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.0,
+            height: height ?? 2.0,
+            values: values,
+            extras: extras,
+            allocId: allocId);
+      case 'kpiTarget':
+        return kpiTargetChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.2,
+            height: height ?? 1.2,
+            values: values,
             allocId: allocId);
       case 'column':
       default:
@@ -5856,6 +5969,481 @@ abstract final class ChartOps {
       kind: 'calendarHeat',
       values: vals,
       extras: ex,
+    );
+  }
+
+  /// Range bars: values packed as low,high per category.
+  static VsdxShape rangeBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('rangeBar', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final padT = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final n = math.max(1, vals.length ~/ 2);
+    final gap = plotH * 0.08;
+    final barH = (plotH - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final lo = math.min(vals[i * 2], vals[i * 2 + 1]).clamp(0.0, 1.0);
+      final hi = math.max(vals[i * 2], vals[i * 2 + 1]).clamp(0.0, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      final cy = padB + gap + barH / 2 + i * (barH + gap);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW * ((lo + hi) / 2),
+        pinY: cy,
+        width: math.max(plotW * (hi - lo), 0.06),
+        height: barH * 0.65,
+        fill: color,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'rangeBar',
+      values: vals,
+    );
+  }
+
+  /// Dumbbell: start/end dots connected by a stem (horizontal).
+  static VsdxShape dumbbellChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('dumbbell', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final padT = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final n = math.max(1, vals.length ~/ 2);
+    final gap = plotH * 0.1;
+    final rowH = (plotH - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final a = vals[i * 2].clamp(0.0, 1.0);
+      final b = vals[i * 2 + 1].clamp(0.0, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      final cy = padB + gap + rowH / 2 + i * (rowH + gap);
+      final x0 = padL + plotW * a;
+      final x1 = padL + plotW * b;
+      final minX = math.min(x0, x1);
+      final maxX = math.max(x0, x1);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: (minX + maxX) / 2,
+        pinY: cy,
+        width: math.max(maxX - minX, 0.04),
+        height: 0.02,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0.01),
+              LineTo(math.max(maxX - minX, 0.04), 0.01),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: VsdxLine(color: color, weightInches: 0.014),
+        userCells: _chromeMeta,
+      ));
+      for (final x in <double>[x0, x1]) {
+        const r = 0.055;
+        kids.add(VsdxShape(
+          id: next(),
+          name: _sheetName(id),
+          pinX: x,
+          pinY: cy,
+          width: r * 2,
+          height: r * 2,
+          geometries: <VsdxGeometry>[
+            VsdxGeometry(commands: <VsdxPathCommand>[
+              EllipseCmd(
+                cx: r,
+                cy: r,
+                aX: r * 2,
+                aY: r,
+                bX: r,
+                bY: 0,
+              ),
+            ]),
+          ],
+          fill: VsdxFill(foreground: color),
+          line: _barLine(color),
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'dumbbell',
+      values: vals,
+    );
+  }
+
+  /// Quadrant scatter: values packed as x,y per point.
+  static VsdxShape quadrantChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.2,
+    double height = 2.0,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('quadrant', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = math.min(w, h) * 0.1;
+    final plotW = w - pad * 2;
+    final plotH = h - pad * 2;
+    final kids = <VsdxShape>[
+      _axesChild(id: next(), width: w, height: h),
+      // Crosshair (chrome).
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w / 2,
+        pinY: h / 2,
+        width: w,
+        height: h,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(pad + plotW / 2, pad),
+              LineTo(pad + plotW / 2, pad + plotH),
+              MoveTo(pad, pad + plotH / 2),
+              LineTo(pad + plotW, pad + plotH / 2),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFBDBDBD),
+          weightInches: 0.008,
+        ),
+        userCells: _chromeMeta,
+      ),
+    ];
+    final n = math.max(1, vals.length ~/ 2);
+    for (var i = 0; i < n; i++) {
+      final x = vals[i * 2].clamp(0.0, 1.0);
+      final y = vals[i * 2 + 1].clamp(0.0, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      const r = 0.07;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: pad + plotW * x,
+        pinY: pad + plotH * y,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'quadrant',
+      values: vals,
+    );
+  }
+
+  /// Timeline milestones along a baseline (0–1 positions).
+  static VsdxShape timelineChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 1.2,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('timeline', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.08;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final baseY = h * 0.45;
+    final kids = <VsdxShape>[
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w / 2,
+        pinY: baseY,
+        width: plotW,
+        height: 0.02,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0.01),
+              LineTo(plotW, 0.01),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFF888888),
+          weightInches: 0.014,
+        ),
+        userCells: _chromeMeta,
+      ),
+    ];
+    for (var i = 0; i < vals.length; i++) {
+      final t = vals[i].clamp(0.0, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      final x = padL + plotW * t;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x,
+        pinY: baseY,
+        width: 0.02,
+        height: h * 0.28,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.01, 0),
+              LineTo(0.01, h * 0.28),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: VsdxLine(color: color, weightInches: 0.01),
+        userCells: _chromeMeta,
+      ));
+      const r = 0.06;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x,
+        pinY: baseY + h * 0.28,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'timeline',
+      values: vals,
+    );
+  }
+
+  /// Nested donut: inner ring then outer ring. [extras] = `inner=N`.
+  static VsdxShape nestedDonutChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.0,
+    double height = 2.0,
+    List<double>? values,
+    String? extras,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('nestedDonut', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final cx = w / 2;
+    final cy = h / 2;
+    final rx = math.min(w, h) * 0.42;
+    final ry = rx;
+    final innerCount = parseNestedInner(extras, vals.length);
+    final ex = formatNestedInner(innerCount);
+    final kids = <VsdxShape>[];
+
+    void addRing(List<double> ringVals, double outer, double hole, int colorOff) {
+      final sum = ringVals.fold<double>(0, (a, b) => a + b.abs());
+      if (sum <= 0) return;
+      var a0 = math.pi / 2;
+      for (var i = 0; i < ringVals.length; i++) {
+        final sweep = (ringVals[i].abs() / sum) * 2 * math.pi;
+        final a1 = a0 - sweep;
+        final color = seriesColors[(colorOff + i) % seriesColors.length];
+        kids.add(_wedgeChild(
+          id: next(),
+          cx: cx,
+          cy: cy,
+          rx: outer * rx,
+          ry: outer * ry,
+          a0: a0,
+          a1: a1,
+          inner: hole / outer,
+          fill: color,
+        ));
+        a0 = a1;
+      }
+    }
+
+    final innerVals = vals.take(innerCount).toList();
+    final outerVals = vals.skip(innerCount).toList();
+    if (outerVals.isEmpty) {
+      addRing(vals, 1.0, 0.55, 0);
+    } else {
+      addRing(outerVals, 1.0, 0.62, innerCount);
+      addRing(innerVals, 0.55, 0.28, 0);
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'nestedDonut',
+      values: vals,
+      extras: ex,
+    );
+  }
+
+  /// KPI actual vs target bar with track.
+  static VsdxShape kpiTargetChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.2,
+    double height = 1.2,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('kpiTarget', null);
+    final actual = (raw.isNotEmpty ? raw[0] : 0.72).clamp(0.0, 1.0);
+    final target = (raw.length > 1 ? raw[1] : 0.9).clamp(0.05, 1.0);
+    final vals = <double>[actual, target];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.1;
+    final padR = w * 0.1;
+    final trackY = h * 0.42;
+    final trackH = h * 0.22;
+    final plotW = w - padL - padR;
+    final kids = <VsdxShape>[
+      _rectChild(
+        id: next(),
+        pinX: padL + plotW / 2,
+        pinY: trackY,
+        width: plotW,
+        height: trackH,
+        fill: const VsdxColor(0xFFE0E0E0),
+        chrome: true,
+      ),
+      _rectChild(
+        id: next(),
+        pinX: padL + plotW * actual / 2,
+        pinY: trackY,
+        width: math.max(plotW * actual, 0.04),
+        height: trackH * 0.85,
+        fill: seriesColors.first,
+      ),
+      // Target marker.
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + plotW * target,
+        pinY: trackY,
+        width: 0.03,
+        height: trackH * 1.6,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.015, 0),
+              LineTo(0.015, trackH * 1.6),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFE53935),
+          weightInches: 0.016,
+        ),
+        userCells: _chromeMeta,
+      ),
+    ];
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'kpiTarget',
+      values: vals,
     );
   }
 }

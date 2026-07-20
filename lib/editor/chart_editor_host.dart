@@ -27,6 +27,33 @@ class ChartEditorHost extends StatelessWidget {
       'boxplot' => _BoxplotEditor(controller: controller),
       'slope' => _SlopeEditor(controller: controller),
       'calendarHeat' => _CalendarHeatEditor(controller: controller),
+      'rangeBar' => _PairSeriesEditor(
+          controller: controller,
+          title: 'Range Bar',
+          hintGetter: (el) => el.chartSpecialtyRangeBarHint,
+          leftGetter: (el) => el.chartLow,
+          rightGetter: (el) => el.chartHigh,
+          maxItems: 6,
+        ),
+      'dumbbell' => _PairSeriesEditor(
+          controller: controller,
+          title: 'Dumbbell Chart',
+          hintGetter: (el) => el.chartSpecialtyDumbbellHint,
+          leftGetter: (el) => el.chartStartValue,
+          rightGetter: (el) => el.chartEndValue,
+          maxItems: 6,
+        ),
+      'quadrant' => _PairSeriesEditor(
+          controller: controller,
+          title: 'Quadrant Chart',
+          hintGetter: (el) => el.chartSpecialtyQuadrantHint,
+          leftGetter: (el) => el.chartAxisX,
+          rightGetter: (el) => el.chartAxisY,
+          maxItems: 6,
+        ),
+      'timeline' => _TimelineEditor(controller: controller),
+      'nestedDonut' => _NestedDonutEditor(controller: controller),
+      'kpiTarget' => _KpiTargetEditor(controller: controller),
       _ => ChartConfigPanel(controller: controller),
     };
   }
@@ -956,3 +983,541 @@ class _CalendarHeatEditorState extends State<_CalendarHeatEditor>
 }
 
 int mathMax(int a, int b) => a > b ? a : b;
+
+/// Shared editor for packed low/high (or x/y) series with labels.
+class _PairSeriesEditor extends StatefulWidget {
+  const _PairSeriesEditor({
+    required this.controller,
+    required this.title,
+    required this.hintGetter,
+    required this.leftGetter,
+    required this.rightGetter,
+    required this.maxItems,
+  });
+
+  final EditorController controller;
+  final String title;
+  final String Function(EditorL10n el) hintGetter;
+  final String Function(EditorL10n el) leftGetter;
+  final String Function(EditorL10n el) rightGetter;
+  final int maxItems;
+
+  @override
+  State<_PairSeriesEditor> createState() => _PairSeriesEditorState();
+}
+
+class _PairSeriesEditorState extends State<_PairSeriesEditor>
+    with _ChartSync<_PairSeriesEditor> {
+  final List<TextEditingController> _labels = [];
+  final List<TextEditingController> _left = [];
+  final List<TextEditingController> _right = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in [..._labels, ..._left, ..._right]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final n = mathMax(1, vals.length ~/ 2);
+    final labs = ChartOps.chartLabels(chart, n);
+    void ensure(List<TextEditingController> list, int count) {
+      while (list.length > count) {
+        list.removeLast().dispose();
+      }
+      while (list.length < count) {
+        list.add(TextEditingController());
+      }
+    }
+
+    ensure(_labels, n);
+    ensure(_left, n);
+    ensure(_right, n);
+    for (var i = 0; i < n; i++) {
+      if (_labels[i].text != labs[i]) _labels[i].text = labs[i];
+      final a = ChartOps.formatValues(<double>[vals[i * 2]]);
+      final b = ChartOps.formatValues(<double>[vals[i * 2 + 1]]);
+      if (_left[i].text != a) _left[i].text = a;
+      if (_right[i].text != b) _right[i].text = b;
+    }
+  }
+
+  void _commit() {
+    final values = <double>[];
+    final labels = <String>[];
+    for (var i = 0; i < _left.length; i++) {
+      values.add(double.tryParse(_left[i].text.replaceAll(',', '.')) ?? 0.2);
+      values.add(double.tryParse(_right[i].text.replaceAll(',', '.')) ?? 0.7);
+      labels.add(_labels[i].text.trim().isEmpty
+          ? 'Item ${i + 1}'
+          : _labels[i].text.trim());
+    }
+    markDirty();
+    controller.setChartSpecialtyData(values: values, labels: labels);
+  }
+
+  void _add() {
+    if (_left.length >= widget.maxItems) return;
+    _labels.add(TextEditingController(text: 'Item ${_left.length + 1}'));
+    _left.add(TextEditingController(text: '0.2'));
+    _right.add(TextEditingController(text: '0.7'));
+    _commit();
+  }
+
+  void _remove(int i) {
+    if (_left.length <= 1) return;
+    _labels.removeAt(i).dispose();
+    _left.removeAt(i).dispose();
+    _right.removeAt(i).dispose();
+    _commit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil(widget.title),
+          hint: widget.hintGetter(el),
+        ),
+        for (var i = 0; i < _left.length; i++) ...[
+          TextField(
+            controller: _labels[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: el.chartItemLabel,
+              border: const OutlineInputBorder(),
+            ),
+            style: const TextStyle(fontSize: 12),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              _NumField(
+                  label: widget.leftGetter(el),
+                  controller: _left[i],
+                  onCommit: _commit),
+              const SizedBox(width: 4),
+              _NumField(
+                  label: widget.rightGetter(el),
+                  controller: _right[i],
+                  onCommit: _commit),
+              IconButton(
+                onPressed: _left.length > 1 ? () => _remove(i) : null,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        TextButton.icon(
+          onPressed: _left.length < widget.maxItems ? _add : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(el.chartAddItem),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineEditor extends StatefulWidget {
+  const _TimelineEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_TimelineEditor> createState() => _TimelineEditorState();
+}
+
+class _TimelineEditorState extends State<_TimelineEditor>
+    with _ChartSync<_TimelineEditor> {
+  final List<TextEditingController> _labels = [];
+  final List<TextEditingController> _pos = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in [..._labels, ..._pos]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final n = mathMax(1, vals.length);
+    final labs = ChartOps.chartLabels(chart, n);
+    while (_labels.length > n) {
+      _labels.removeLast().dispose();
+      _pos.removeLast().dispose();
+    }
+    while (_labels.length < n) {
+      _labels.add(TextEditingController());
+      _pos.add(TextEditingController());
+    }
+    for (var i = 0; i < n; i++) {
+      if (_labels[i].text != labs[i]) _labels[i].text = labs[i];
+      final t = ChartOps.formatPercent(vals[i]);
+      if (_pos[i].text != t) _pos[i].text = t;
+    }
+  }
+
+  void _commit() {
+    final values = <double>[
+      for (final c in _pos) ChartOps.parseUnitValue(c.text),
+    ];
+    final labels = <String>[
+      for (var i = 0; i < _labels.length; i++)
+        _labels[i].text.trim().isEmpty
+            ? 'Event ${i + 1}'
+            : _labels[i].text.trim(),
+    ];
+    markDirty();
+    controller.setChartSpecialtyData(values: values, labels: labels);
+  }
+
+  void _add() {
+    if (_pos.length >= 10) return;
+    _labels.add(TextEditingController(text: 'Event ${_pos.length + 1}'));
+    _pos.add(TextEditingController(text: '50'));
+    _commit();
+  }
+
+  void _remove(int i) {
+    if (_pos.length <= 1) return;
+    _labels.removeAt(i).dispose();
+    _pos.removeAt(i).dispose();
+    _commit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Timeline Chart'),
+          hint: el.chartSpecialtyTimelineHint,
+        ),
+        for (var i = 0; i < _pos.length; i++) ...[
+          TextField(
+            controller: _labels[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: el.chartEventName,
+              border: const OutlineInputBorder(),
+            ),
+            style: const TextStyle(fontSize: 12),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              _NumField(
+                  label: el.chartPosition,
+                  controller: _pos[i],
+                  onCommit: _commit),
+              IconButton(
+                onPressed: _pos.length > 1 ? () => _remove(i) : null,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        TextButton.icon(
+          onPressed: _pos.length < 10 ? _add : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(el.chartAddEvent),
+        ),
+      ],
+    );
+  }
+}
+
+class _NestedDonutEditor extends StatefulWidget {
+  const _NestedDonutEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_NestedDonutEditor> createState() => _NestedDonutEditorState();
+}
+
+class _NestedDonutEditorState extends State<_NestedDonutEditor>
+    with _ChartSync<_NestedDonutEditor> {
+  int _inner = 3;
+  final List<TextEditingController> _vals = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in _vals) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.chartExtras(chart)}|${ChartOps.formatValues(ChartOps.chartValues(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    _inner = ChartOps.parseNestedInner(ChartOps.chartExtras(chart), vals.length);
+    while (_vals.length > vals.length) {
+      _vals.removeLast().dispose();
+    }
+    while (_vals.length < vals.length) {
+      _vals.add(TextEditingController());
+    }
+    for (var i = 0; i < vals.length; i++) {
+      final t = ChartOps.formatValues(<double>[vals[i]]);
+      if (_vals[i].text != t) _vals[i].text = t;
+    }
+  }
+
+  void _commit({int? inner}) {
+    final values = <double>[
+      for (final c in _vals)
+        double.tryParse(c.text.replaceAll(',', '.')) ?? 0.25,
+    ];
+    final inn = (inner ?? _inner).clamp(1, mathMax(1, values.length - 1));
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: values,
+      extras: ChartOps.formatNestedInner(inn),
+    );
+  }
+
+  void _add() {
+    if (_vals.length >= 12) return;
+    _vals.add(TextEditingController(text: '0.25'));
+    _commit();
+  }
+
+  void _remove(int i) {
+    if (_vals.length <= 2) return;
+    _vals.removeAt(i).dispose();
+    _commit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Nested Donut'),
+          hint: el.chartSpecialtyNestedDonutHint,
+        ),
+        Row(
+          children: [
+            Text(el.chartInnerSlices,
+                style: Theme.of(context).textTheme.labelMedium),
+            const Spacer(),
+            IconButton(
+              onPressed: _inner > 1 ? () => _commit(inner: _inner - 1) : null,
+              icon: const Icon(Icons.remove, size: 18),
+            ),
+            Text('$_inner'),
+            IconButton(
+              onPressed: _inner < _vals.length - 1
+                  ? () => _commit(inner: _inner + 1)
+                  : null,
+              icon: const Icon(Icons.add, size: 18),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < _vals.length; i++) ...[
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _vals[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: i < _inner
+                        ? '${el.chartInnerRing} ${i + 1}'
+                        : '${el.chartOuterRing} ${i - _inner + 1}',
+                    border: const OutlineInputBorder(),
+                  ),
+                  style: const TextStyle(fontSize: 12),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onEditingComplete: _commit,
+                  onSubmitted: (_) => _commit(),
+                ),
+              ),
+              IconButton(
+                onPressed: _vals.length > 2 ? () => _remove(i) : null,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+        ],
+        TextButton.icon(
+          onPressed: _vals.length < 12 ? _add : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(el.chartAddItem),
+        ),
+      ],
+    );
+  }
+}
+
+class _KpiTargetEditor extends StatefulWidget {
+  const _KpiTargetEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_KpiTargetEditor> createState() => _KpiTargetEditorState();
+}
+
+class _KpiTargetEditorState extends State<_KpiTargetEditor>
+    with _ChartSync<_KpiTargetEditor> {
+  final _label = TextEditingController();
+  final _actual = TextEditingController();
+  final _target = TextEditingController();
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    _label.dispose();
+    _actual.dispose();
+    _target.dispose();
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final labs = ChartOps.chartLabels(chart, 1);
+    if (_label.text != labs.first) _label.text = labs.first;
+    final a = ChartOps.formatPercent(vals.isNotEmpty ? vals[0] : 0.72);
+    final t = ChartOps.formatPercent(vals.length > 1 ? vals[1] : 0.9);
+    if (_actual.text != a) _actual.text = a;
+    if (_target.text != t) _target.text = t;
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        ChartOps.parseUnitValue(_actual.text),
+        ChartOps.parseUnitValue(_target.text),
+      ],
+      labels: <String>[
+        _label.text.trim().isEmpty ? 'KPI' : _label.text.trim(),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('KPI Target'),
+          hint: el.chartSpecialtyKpiHint,
+        ),
+        TextField(
+          controller: _label,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartKpiName,
+            border: const OutlineInputBorder(),
+          ),
+          onEditingComplete: _commit,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _actual,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartActual,
+            suffixText: '%',
+            border: const OutlineInputBorder(),
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onEditingComplete: _commit,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _target,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartTarget,
+            suffixText: '%',
+            border: const OutlineInputBorder(),
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onEditingComplete: _commit,
+        ),
+      ],
+    );
+  }
+}
