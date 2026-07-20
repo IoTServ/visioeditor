@@ -12,6 +12,7 @@ import 'package:vsdx/vsdx.dart';
 
 import 'agent_bridge/agent_bridge.dart';
 import 'editor/canvas_camera.dart';
+import 'editor/chart_config_panel.dart';
 import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
@@ -3063,234 +3064,6 @@ class _StencilThumbPainter extends CustomPainter {
       old.stencil != stencil;
 }
 
-/// Chart data / series colour editor shown when a chart (or descendant) is selected.
-class _ChartConfigSection extends StatefulWidget {
-  const _ChartConfigSection({required this.controller});
-
-  final EditorController controller;
-
-  @override
-  State<_ChartConfigSection> createState() => _ChartConfigSectionState();
-}
-
-class _ChartConfigSectionState extends State<_ChartConfigSection> {
-  late final TextEditingController _values;
-  int? _boundChartId;
-  String _boundCsv = '';
-
-  EditorController get controller => widget.controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _values = TextEditingController();
-    _syncFromController();
-    controller.addListener(_onController);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ChartConfigSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onController);
-      widget.controller.addListener(_onController);
-      _syncFromController();
-    }
-  }
-
-  @override
-  void dispose() {
-    controller.removeListener(_onController);
-    _values.dispose();
-    super.dispose();
-  }
-
-  void _onController() {
-    if (!mounted) return;
-    _syncFromController();
-  }
-
-  void _syncFromController() {
-    final chart = controller.selectedChart;
-    final id = controller.selectedChartId;
-    if (chart == null || id == null) return;
-    final csv = ChartOps.formatValues(ChartOps.chartValues(chart));
-    if (id == _boundChartId && csv == _boundCsv) return;
-    _boundChartId = id;
-    _boundCsv = csv;
-    if (_values.text != csv) {
-      _values.text = csv;
-    }
-    setState(() {});
-  }
-
-  void _apply() {
-    controller.setChartValuesCsv(_values.text);
-    final chart = controller.selectedChart;
-    if (chart != null) {
-      _boundCsv = ChartOps.formatValues(ChartOps.chartValues(chart));
-      _values.text = _boundCsv;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final chart = controller.selectedChart;
-    if (chart == null) return const SizedBox.shrink();
-    final el = EditorL10n.of(context);
-    final kind = ChartOps.chartKind(chart) ?? '';
-    final series = controller.selectedChartSeries;
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(el.panelChart, style: Theme.of(context).textTheme.labelLarge),
-        if (kind.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(
-            el.stencil(_kindDisplayName(kind)),
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-          ),
-        ],
-        const SizedBox(height: 8),
-        Text(el.chartValues, style: Theme.of(context).textTheme.labelMedium),
-        const SizedBox(height: 4),
-        TextField(
-          controller: _values,
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: el.chartValuesHint,
-            border: const OutlineInputBorder(),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          ),
-          style: const TextStyle(fontSize: 13),
-          maxLines: 2,
-          onSubmitted: (_) => _apply(),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _apply,
-          icon: const Icon(Icons.refresh, size: 18),
-          label: Text(el.applyChart),
-        ),
-        if (series.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(el.chartSeries, style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final s in series)
-                _ChartSeriesSwatch(
-                  color: s.fill.foreground?.value ?? 0xFF1E88E5,
-                  onColor: (v) =>
-                      controller.setChartSeriesColor(s.id, VsdxColor(v)),
-                ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
-  static String _kindDisplayName(String kind) {
-    switch (kind) {
-      case 'bar':
-        return 'Bar Chart';
-      case 'stackedColumn':
-        return 'Stacked Column';
-      case 'stackedBar':
-        return 'Stacked Bar';
-      case 'clusteredColumn':
-        return 'Clustered Column';
-      case 'pie':
-        return 'Pie Chart';
-      case 'donut':
-        return 'Donut Chart';
-      case 'line':
-        return 'Line Chart';
-      case 'area':
-        return 'Area Chart';
-      case 'funnel':
-        return 'Funnel';
-      case 'pyramid':
-        return 'Pyramid Chart';
-      case 'radar':
-        return 'Radar Chart';
-      case 'gauge':
-        return 'Gauge';
-      case 'progress':
-        return 'Progress';
-      case 'waterfall':
-        return 'Waterfall';
-      case 'bubble':
-        return 'Bubble Chart';
-      case 'column':
-      default:
-        return 'Column Chart';
-    }
-  }
-}
-
-class _ChartSeriesSwatch extends StatelessWidget {
-  const _ChartSeriesSwatch({required this.color, required this.onColor});
-
-  final int color;
-  final ValueChanged<int> onColor;
-
-  static const _palette = <int>[
-    0xFF1E88E5,
-    0xFFE53935,
-    0xFF43A047,
-    0xFFFDD835,
-    0xFFFB8C00,
-    0xFF8E24AA,
-    0xFF00897B,
-    0xFF6D4C41,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<int>(
-      tooltip: EditorL10n.of(context).chartSeries,
-      padding: EdgeInsets.zero,
-      onSelected: onColor,
-      itemBuilder: (ctx) => [
-        for (final c in _palette)
-          PopupMenuItem(
-            value: c,
-            child: Row(
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: Color(c),
-                    border: Border.all(color: Colors.black26),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text('#${c.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}'),
-              ],
-            ),
-          ),
-      ],
-      child: Container(
-        width: 22,
-        height: 22,
-        decoration: BoxDecoration(
-          color: Color(color),
-          border: Border.all(color: Colors.black26),
-          borderRadius: BorderRadius.circular(4),
-        ),
-      ),
-    );
-  }
-}
-
 /// Right-hand inspector for the current selection (fill / line / delete).
 class _PropertyPanel extends StatelessWidget {
   const _PropertyPanel({required this.controller});
@@ -3311,6 +3084,7 @@ class _PropertyPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = controller.selection.length;
+    final isChart = controller.selectedChartId != null;
     return SizedBox(
       width: 232,
       child: ListView(
@@ -3447,6 +3221,11 @@ class _PropertyPanel extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
+          if (isChart) ...[
+            ChartConfigPanel(controller: controller),
+            const SizedBox(height: 16),
+          ],
+          if (!isChart) ...[
           _section(context, EditorL10n.of(context).panelFill),
           _swatchRow(
             onColor: (v) => controller.setFillColor(VsdxColor(v)),
@@ -3578,6 +3357,7 @@ class _PropertyPanel extends StatelessWidget {
             _section(context, EditorL10n.of(context).panelText),
             _textControls(context),
           ],
+          ], // !isChart
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelShadow),
           Row(
@@ -3647,10 +3427,6 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.canReplaceSelectedImage) ...[
             const SizedBox(height: 16),
             _imageSection(context),
-          ],
-          if (controller.selectedChartId != null) ...[
-            const SizedBox(height: 16),
-            _ChartConfigSection(controller: controller),
           ],
           if (controller.singleSelectedId != null) ...[
             const SizedBox(height: 16),

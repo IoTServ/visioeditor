@@ -219,6 +219,13 @@ class EditorL10n {
   String get chartValuesHint => _t('chartValuesHint');
   String get applyChart => _t('applyChart');
   String get chartSeries => _t('chartSeries');
+  String get chartType => _t('chartType');
+  String get chartItems => _t('chartItems');
+  String get chartAddItem => _t('chartAddItem');
+  String get chartRemoveItem => _t('chartRemoveItem');
+  String get chartValue => _t('chartValue');
+  String get chartLevel => _t('chartLevel');
+  String get chartConfigHint => _t('chartConfigHint');
   String get panelLink => _t('panelLink');
   String get panelDiagram => _t('panelDiagram');
   String get panelView => _t('panelView');

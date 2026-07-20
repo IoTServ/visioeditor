@@ -81,10 +81,41 @@ void main() {
     }
   });
 
+  test('rebuild preserves custom series colours in userCells', () {
+    final chart = ChartOps.columnChart(
+      id: 10,
+      pinX: 1,
+      pinY: 2,
+      values: const <double>[1, 2, 3],
+    );
+    var next = 100;
+    final colored = ChartOps.rebuild(
+      chart,
+      values: const <double>[1, 2, 3],
+      colors: const <VsdxColor>[
+        VsdxColor(0xFFE53935),
+        VsdxColor(0xFF43A047),
+        VsdxColor(0xFF1E88E5),
+      ],
+      allocId: () => next++,
+    );
+    expect(ChartOps.formatColors(ChartOps.chartColors(colored)),
+        '#E53935, #43A047, #1E88E5');
+    final series = ChartOps.seriesChildren(colored);
+    expect(series, hasLength(3));
+    expect(series[0].fill.foreground?.value, 0xFFE53935);
+    expect(series[1].fill.foreground?.value, 0xFF43A047);
+  });
+
+  test('parseValues accepts negatives for waterfall', () {
+    expect(ChartOps.parseValues('0.4, -0.2, 0.3'), <double>[0.4, -0.2, 0.3]);
+  });
+
   test('parseValues accepts commas semicolons and whitespace', () {
     expect(ChartOps.parseValues('1, 2;3  4.5'), <double>[1, 2, 3, 4.5]);
     expect(ChartOps.parseValues(''), ChartOps.defaultValues);
   });
+
 
   test('new chart kinds round-trip through vsdx writer', () {
     const writer = VsdxWriter();

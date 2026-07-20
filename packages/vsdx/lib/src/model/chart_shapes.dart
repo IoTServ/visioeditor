@@ -22,8 +22,31 @@ abstract final class ChartOps {
   static const String userChart = 'visioeditor.Chart';
   static const String userKind = 'visioeditor.ChartKind';
   static const String userValues = 'visioeditor.ChartValues';
+  static const String userColors = 'visioeditor.ChartColors';
   /// Marks non-series chrome (axes, grid, track, bridges, needle).
   static const String userChrome = 'visioeditor.ChartChrome';
+
+  static const int maxSeriesItems = 12;
+
+  /// Chart kinds exposed in the editor type picker (value → stencil English name).
+  static const Map<String, String> kindDisplayNames = <String, String>{
+    'column': 'Column Chart',
+    'bar': 'Bar Chart',
+    'stackedColumn': 'Stacked Column',
+    'stackedBar': 'Stacked Bar',
+    'clusteredColumn': 'Clustered Column',
+    'pie': 'Pie Chart',
+    'donut': 'Donut Chart',
+    'line': 'Line Chart',
+    'area': 'Area Chart',
+    'funnel': 'Funnel',
+    'pyramid': 'Pyramid Chart',
+    'radar': 'Radar Chart',
+    'gauge': 'Gauge',
+    'progress': 'Progress',
+    'waterfall': 'Waterfall',
+    'bubble': 'Bubble Chart',
+  };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
     VsdxColor(0xFF5B9BD5),
@@ -99,19 +122,87 @@ abstract final class ChartOps {
     for (final part in raw.split(RegExp(r'[,;\s]+'))) {
       if (part.isEmpty) continue;
       final v = double.tryParse(part);
-      if (v != null && v.isFinite && v >= 0) out.add(v);
+      if (v != null && v.isFinite) out.add(v);
     }
     return out.isEmpty ? List<double>.of(defaultValues) : out;
   }
 
   static String formatValues(List<double> values) =>
-      values.map((v) => v.toStringAsFixed(2)).join(', ');
+      values.map((v) => _fmtNum(v)).join(', ');
 
-  static List<VsdxUserCell> _meta(String kind, List<double> values) =>
+  static String _fmtNum(double v) {
+    if (v == v.roundToDouble()) return v.toInt().toString();
+    return v.toStringAsFixed(2);
+  }
+
+  static List<VsdxColor> parseColors(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return const <VsdxColor>[];
+    final out = <VsdxColor>[];
+    for (final part in raw.split(RegExp(r'[,;\s]+'))) {
+      if (part.isEmpty) continue;
+      var hex = part.trim();
+      if (hex.startsWith('#')) hex = hex.substring(1);
+      if (hex.length == 6) hex = 'FF$hex';
+      final v = int.tryParse(hex, radix: 16);
+      if (v != null) out.add(VsdxColor(v));
+    }
+    return out;
+  }
+
+  static String formatColors(List<VsdxColor> colors) => colors
+      .map((c) =>
+          '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}')
+      .join(', ');
+
+  /// Series fills for [chart], from userCells or derived from children.
+  static List<VsdxColor> chartColors(VsdxShape s) {
+    for (final c in s.userCells) {
+      if (c.name == userColors) {
+        final parsed = parseColors(c.value);
+        if (parsed.isNotEmpty) return parsed;
+      }
+    }
+    final derived = <VsdxColor>[];
+    for (final c in s.children) {
+      if (isChartChrome(c)) continue;
+      final fg = c.fill.foreground;
+      if (fg != null) derived.add(fg);
+    }
+    if (derived.isNotEmpty) return derived;
+    return List<VsdxColor>.of(seriesColors);
+  }
+
+  static List<VsdxShape> seriesChildren(VsdxShape chart) => <VsdxShape>[
+        for (final c in chart.children)
+          if (!isChartChrome(c)) c,
+      ];
+
+  static bool isSingleValueKind(String kind) =>
+      kind == 'gauge' || kind == 'progress';
+
+  static List<VsdxColor> padColors(List<VsdxColor> colors, int n) {
+    if (n <= 0) return const <VsdxColor>[];
+    if (colors.isEmpty) {
+      return <VsdxColor>[
+        for (var i = 0; i < n; i++) seriesColors[i % seriesColors.length],
+      ];
+    }
+    return <VsdxColor>[
+      for (var i = 0; i < n; i++) colors[i % colors.length],
+    ];
+  }
+
+  static List<VsdxUserCell> _meta(
+    String kind,
+    List<double> values, {
+    List<VsdxColor>? colors,
+  }) =>
       <VsdxUserCell>[
         const VsdxUserCell(name: userChart, value: '1'),
         VsdxUserCell(name: userKind, value: kind),
         VsdxUserCell(name: userValues, value: formatValues(values)),
+        if (colors != null && colors.isNotEmpty)
+          VsdxUserCell(name: userColors, value: formatColors(colors)),
       ];
 
   static const List<VsdxUserCell> _chromeMeta = <VsdxUserCell>[
@@ -124,26 +215,98 @@ abstract final class ChartOps {
   /// Normalise values into (0, 1] for plotting (keeps relative proportions).
   static List<double> _unit(List<double> values) {
     if (values.isEmpty) return List<double>.of(defaultValues);
-    final maxV = values.reduce(math.max);
+    final maxV = values.map((v) => v.abs()).reduce(math.max);
     if (maxV <= 0) return List<double>.filled(values.length, 0.1);
-    return <double>[for (final v in values) (v / maxV).clamp(0.02, 1.0)];
+    return <double>[
+      for (final v in values) (v.abs() / maxV).clamp(0.02, 1.0),
+    ];
+  }
+
+  /// Apply [colors] to non-chrome children (in order) and persist on the root.
+  static VsdxShape withSeriesColors(VsdxShape chart, List<VsdxColor> colors) {
+    final kind = chartKind(chart) ?? 'column';
+    final vals = chartValues(chart);
+    final padded = padColors(colors, math.max(vals.length, 1));
+    // Gauge keeps its traffic-light bands; only persist the meta colours.
+    final List<VsdxShape> kids;
+    if (kind == 'gauge') {
+      kids = chart.children;
+    } else {
+      final series = seriesChildren(chart);
+      final byId = <int, VsdxColor>{};
+      if (series.length == vals.length) {
+        for (var i = 0; i < series.length; i++) {
+          byId[series[i].id] = padded[i];
+        }
+      } else if (series.length == vals.length + 1 && vals.isNotEmpty) {
+        // Line / area / radar: shared stroke/fill first, then per-point marks.
+        byId[series.first.id] = padded.first;
+        for (var i = 0; i < vals.length; i++) {
+          byId[series[i + 1].id] = padded[i];
+        }
+      } else {
+        for (var i = 0; i < series.length; i++) {
+          byId[series[i].id] = padded[i % padded.length];
+        }
+      }
+      kids = <VsdxShape>[
+        for (final c in chart.children)
+          if (byId[c.id] case final color?) _recolor(c, color) else c,
+      ];
+    }
+    final kept = <VsdxUserCell>[
+      for (final c in chart.userCells)
+        if (c.name != userChart &&
+            c.name != userKind &&
+            c.name != userValues &&
+            c.name != userColors)
+          c,
+    ];
+    return chart.copyWith(
+      children: kids,
+      userCells: <VsdxUserCell>[
+        ...kept,
+        ..._meta(kind, vals, colors: padded),
+      ],
+    );
+  }
+
+  static VsdxShape _recolor(VsdxShape s, VsdxColor color) {
+    final fill = s.fill;
+    return s.copyWith(
+      fill: fill.copyWith(
+        foreground: color,
+        pattern: fill.pattern == 0 ? 1 : fill.pattern,
+      ),
+      line: s.line.copyWith(color: VsdxColor(_darken(color.value))),
+    );
   }
 
   // ---------------------------------------------------------------------------
   // Rebuild
   // ---------------------------------------------------------------------------
 
-  /// Rebuild [chart] with optional new [values], keeping frame and root id.
+  /// Rebuild [chart] with optional new [values] / [colors] / [kind].
   /// Child ids are reassigned via [allocId] (must return unused page ids).
   static VsdxShape rebuild(
     VsdxShape chart, {
     List<double>? values,
+    List<VsdxColor>? colors,
+    String? kind,
     required int Function() allocId,
   }) {
-    final kind = chartKind(chart) ?? 'column';
-    final vals = values ?? chartValues(chart);
-    return buildKind(
-      kind,
+    final k = kind ?? chartKind(chart) ?? 'column';
+    var vals = List<double>.of(values ?? chartValues(chart));
+    if (isSingleValueKind(k) && vals.length > 1) {
+      vals = <double>[vals.first];
+    }
+    if (vals.isEmpty) vals = List<double>.of(defaultValues);
+    if (vals.length > maxSeriesItems) {
+      vals = vals.sublist(0, maxSeriesItems);
+    }
+    final cols = padColors(colors ?? chartColors(chart), vals.length);
+    final built = buildKind(
+      k,
       id: chart.id,
       pinX: chart.pinX,
       pinY: chart.pinY,
@@ -152,6 +315,7 @@ abstract final class ChartOps {
       values: vals,
       allocId: allocId,
     );
+    return withSeriesColors(built, cols);
   }
 
   static VsdxShape buildKind(

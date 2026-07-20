@@ -5298,68 +5298,116 @@ class EditorController extends ChangeNotifier {
 
   /// Rebuild the selected chart with [values] (one undo step).
   void setChartValues(List<double> values) {
+    _rebuildSelectedChart(values: values);
+  }
+
+  /// Change chart type while keeping values/colors (one undo step).
+  void setChartKind(String kind) {
+    if (!ChartOps.kindDisplayNames.containsKey(kind)) return;
+    _rebuildSelectedChart(kind: kind);
+  }
+
+  /// Replace values and optional series colours (one undo step).
+  void setChartData({
+    List<double>? values,
+    List<VsdxColor>? colors,
+    String? kind,
+  }) {
+    _rebuildSelectedChart(values: values, colors: colors, kind: kind);
+  }
+
+  /// Append a series item (default mid value / next palette colour).
+  void addChartItem() {
+    final chart = selectedChart;
+    if (chart == null) return;
+    final vals = List<double>.of(ChartOps.chartValues(chart));
+    if (ChartOps.isSingleValueKind(ChartOps.chartKind(chart) ?? 'column')) {
+      return;
+    }
+    if (vals.length >= ChartOps.maxSeriesItems) return;
+    final cols = List<VsdxColor>.of(ChartOps.chartColors(chart));
+    final avg = vals.isEmpty
+        ? 0.5
+        : vals.reduce((a, b) => a + b) / vals.length;
+    vals.add(avg);
+    cols.add(ChartOps.seriesColors[vals.length % ChartOps.seriesColors.length]);
+    _rebuildSelectedChart(values: vals, colors: cols);
+  }
+
+  /// Remove series item at [index].
+  void removeChartItem(int index) {
+    final chart = selectedChart;
+    if (chart == null) return;
+    final vals = List<double>.of(ChartOps.chartValues(chart));
+    if (index < 0 || index >= vals.length || vals.length <= 1) return;
+    final cols = List<VsdxColor>.of(ChartOps.chartColors(chart));
+    vals.removeAt(index);
+    if (index < cols.length) cols.removeAt(index);
+    _rebuildSelectedChart(values: vals, colors: cols);
+  }
+
+  /// Update one series item value and/or colour.
+  void updateChartItem(
+    int index, {
+    double? value,
+    VsdxColor? color,
+    bool transient = false,
+  }) {
+    final chart = selectedChart;
+    if (chart == null) return;
+    final vals = List<double>.of(ChartOps.chartValues(chart));
+    if (index < 0 || index >= vals.length) return;
+    final cols = ChartOps.padColors(ChartOps.chartColors(chart), vals.length);
+    if (value != null && value.isFinite) vals[index] = value;
+    if (color != null) cols[index] = color;
+    _rebuildSelectedChart(values: vals, colors: cols, transient: transient);
+  }
+
+  void _rebuildSelectedChart({
+    List<double>? values,
+    List<VsdxColor>? colors,
+    String? kind,
+    bool transient = false,
+  }) {
     final chartId = selectedChartId;
     if (chartId == null) return;
     final page0 = currentPage;
     final chart0 = page0?.findShapeById(chartId);
     if (chart0 == null || chart0.locked || isOnLockedLayer(chartId)) return;
-    updateCurrentPage((page) {
-      final chart = page.findShapeById(chartId);
-      if (chart == null || !ChartOps.isChart(chart)) return page;
-      var nextId = page.nextFreeShapeId();
-      final rebuilt =
-          ChartOps.rebuild(chart, values: values, allocId: () => nextId++);
-      return page.updateShapeById(chartId, (_) => rebuilt);
-    });
-    setSelection([chartId]);
+    updateCurrentPage(
+      (page) {
+        final chart = page.findShapeById(chartId);
+        if (chart == null || !ChartOps.isChart(chart)) return page;
+        var nextId = page.nextFreeShapeId();
+        final rebuilt = ChartOps.rebuild(
+          chart,
+          values: values,
+          colors: colors,
+          kind: kind,
+          allocId: () => nextId++,
+        );
+        return page.updateShapeById(chartId, (_) => rebuilt);
+      },
+      transient: transient,
+    );
+    if (!transient) setSelection([chartId]);
   }
 
   /// Coloured series children of the selected chart (for swatch editing).
   List<VsdxShape> get selectedChartSeries {
     final chart = selectedChart;
     if (chart == null) return const <VsdxShape>[];
-    return <VsdxShape>[
-      for (final c in chart.children)
-        if (!_isChartChrome(c)) c,
-    ];
+    return ChartOps.seriesChildren(chart);
   }
-
-  static bool _isChartChrome(VsdxShape s) => ChartOps.isChartChrome(s);
 
   /// Set fill colour on a chart series child (one undo step).
   void setChartSeriesColor(int seriesId, VsdxColor color) {
-    final chartId = selectedChartId;
-    if (chartId == null) return;
-    final page = currentPage;
-    final chart = page?.findShapeById(chartId);
-    if (chart == null || chart.locked || isOnLockedLayer(chartId)) return;
-    if (!chart.children.any((c) => c.id == seriesId)) return;
-    updateCurrentPage(
-      (page) => page.updateShapeById(
-        seriesId,
-        (s) {
-          final fill = s.fill;
-          final line = s.line;
-          return s.copyWith(
-            fill: fill.copyWith(
-              foreground: color,
-              pattern: fill.pattern == 0 ? 1 : fill.pattern,
-            ),
-            line: line.copyWith(
-              color: VsdxColor(_darkenArgb(color.value)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  static int _darkenArgb(int argb) {
-    final a = (argb >> 24) & 0xFF;
-    final r = (((argb >> 16) & 0xFF) * 0.75).round().clamp(0, 255);
-    final g = (((argb >> 8) & 0xFF) * 0.75).round().clamp(0, 255);
-    final b = ((argb & 0xFF) * 0.75).round().clamp(0, 255);
-    return (a << 24) | (r << 16) | (g << 8) | b;
+    final chart = selectedChart;
+    if (chart == null) return;
+    final series = ChartOps.seriesChildren(chart);
+    final index = series.indexWhere((s) => s.id == seriesId);
+    if (index < 0) return;
+    updateChartItem(index, color: color);
   }
 
   /// The custom properties (`<Section N="Property">`, Visio "Shape Data") of
