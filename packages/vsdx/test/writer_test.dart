@@ -7240,6 +7240,242 @@ void main() {
     expect(cell.getAttribute('F'), isNull);
   });
 
+  test('ShadowPattern V=1 F=Inh scrubs while shadow stays on', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            pattern: 1,
+            offsetXInches: 0.12,
+            transparency: 0.35,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    for (final name in ['ShadowPattern', 'ShdwPattern']) {
+      pageXml = pageXml.replaceFirst(
+        RegExp('<Cell N="$name"[^/]*/>'),
+        '<Cell N="$name" V="1" F="Inh"/>',
+      );
+    }
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ShadowForegndTrans"[^/]*/>'),
+      '<Cell N="ShadowForegndTrans" V="0.35" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.shadow.enabled, isTrue);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.25),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['ShadowPattern', 'ShdwPattern', 'ShadowForegndTrans']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('F'), isNull, reason: name);
+      if (name == 'ShadowForegndTrans') {
+        expect(double.parse(cell.getAttribute('V')!), closeTo(0.35, 1e-6));
+      } else {
+        expect(cell.getAttribute('V'), '1', reason: name);
+      }
+    }
+    expect(parser.parse(out).pages.first.findShapeById(id)!.shadow.enabled,
+        isTrue);
+  });
+
+  test('Glow/Reflection companion F=Inh scrubs while effects stay on', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            sizeInches: 0.1,
+            transparency: 0.25,
+          ),
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.5,
+            distanceInches: 0.08,
+            transparency: 0.3,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Size cells must stay literal — F=Inh on Size is parsed as disabled
+    // (inheritFrom 0). Companions keep V= while F=Inh is the stale-inherit
+    // hazard when the effect model is unchanged.
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="GlowColorTrans"[^/]*/>'),
+      '<Cell N="GlowColorTrans" V="0.25" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ReflectionTransparency"[^/]*/>'),
+      '<Cell N="ReflectionTransparency" V="0.3" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final shape = doc.pages.first.findShapeById(id)!;
+    expect(shape.glow.enabled, isTrue);
+    expect(shape.reflection.enabled, isTrue);
+    expect(shape.glow.transparency, closeTo(0.25, 1e-6));
+    expect(shape.reflection.transparency, closeTo(0.3, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.25),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final entry in {
+      'GlowColorTrans': 0.25,
+      'ReflectionTransparency': 0.3,
+    }.entries) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) =>
+                e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
+          );
+      expect(cell.getAttribute('F'), isNull, reason: entry.key);
+      expect(double.parse(cell.getAttribute('V')!), closeTo(entry.value, 1e-6),
+          reason: entry.key);
+    }
+  });
+
+  test('FillGradientDir/Angle F=Inh scrub while gradient stays on', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              type: VsdxGradientType.radial,
+              angleRad: 0.75,
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="FillGradientDir"[^/]*/>'),
+      '<Cell N="FillGradientDir" V="4" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="FillGradientAngle"[^/]*/>'),
+      '<Cell N="FillGradientAngle" V="0.75" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final g = doc.pages.first.findShapeById(id)!.fill.gradient!;
+    expect(g.type, VsdxGradientType.radial);
+    expect(g.angleRad, closeTo(0.75, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.25),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final dir = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'FillGradientDir',
+        );
+    final angle = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'FillGradientAngle',
+        );
+    expect(dir.getAttribute('V'), '4');
+    expect(dir.getAttribute('F'), isNull);
+    expect(double.parse(angle.getAttribute('V')!), closeTo(0.75, 1e-6));
+    expect(angle.getAttribute('F'), isNull);
+  });
+
   test('Foreign SoftEdges survives group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

@@ -2191,8 +2191,9 @@ class VsdxWriter {
     changed |= _patchShadow(el, base.shadow, edited.shadow);
     changed |= _patchGlow(el, base.glow, edited.glow);
     changed |= _patchReflection(el, base.reflection, edited.reflection);
-    // Disabled effects: force literal V=0 even when base/edited already match
-    // as "off" so F=Inh cannot revive Glow/Reflection via StyleSheet inherit.
+    // Effects: force literal cell values without F= so StyleSheet Inh cannot
+    // override enable bits / companions whether the effect is on or off
+    // (mirrors SoftEdgesSize / FillGradientEnabled scrub paths).
     if (!edited.shadow.enabled) {
       // Inject / scrub pattern=0 so StyleSheet cannot revive a shadow on 2-D
       // shapes (connectors already ensure via _ensureConnectorDynamics).
@@ -2204,38 +2205,43 @@ class VsdxWriter {
           changed = true;
         }
       }
+    } else {
+      // Shadow still on — drop F=Inh on pattern so inheritance cannot clear it.
+      changed |=
+          _ensureLiteralInt(el, 'ShadowPattern', edited.shadow.xmlPattern);
+      changed |=
+          _ensureLiteralInt(el, 'ShdwPattern', edited.shadow.xmlPattern);
     }
+    // Keep companion V= (re-enable), scrub F=Inh on or off.
+    changed |= _ensureLiteralLength(
+        el, 'ShadowOffsetX', edited.shadow.offsetXInches);
+    changed |= _ensureLiteralLength(
+        el, 'ShadowOffsetY', edited.shadow.offsetYInches);
+    changed |=
+        _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
+    changed |= _ensureLiteralLength(
+        el, 'ShadowForegndTrans', edited.shadow.transparency);
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
-      // Companion can still carry F=Inh after Size is scrubbed; ensure cells
-      // exist when enable→edit→disable never wrote them before.
+    } else {
       changed |=
-          _ensureLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
+          _ensureLiteralLength(el, 'GlowSize', edited.glow.sizeInches);
     }
-    if (!edited.shadow.enabled) {
-      // Keep companion V= (re-enable), but scrub F=Inh so StyleSheet cannot
-      // override offsets / blur while the pattern is off.
-      changed |= _ensureLiteralLength(
-          el, 'ShadowOffsetX', edited.shadow.offsetXInches);
-      changed |= _ensureLiteralLength(
-          el, 'ShadowOffsetY', edited.shadow.offsetYInches);
-      changed |=
-          _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
-      changed |= _ensureLiteralLength(
-          el, 'ShadowForegndTrans', edited.shadow.transparency);
-    }
+    changed |=
+        _ensureLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
     if (!edited.reflection.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
-      // Keep Dist/Blur/Trans like Shadow companions so toggle-off → save →
-      // reopen → toggle-on restores the previous values (parser retains them
-      // when Size=0). Scrub F=Inh so StyleSheet cannot override while off.
+    } else {
       changed |= _ensureLiteralLength(
-          el, 'ReflectionDist', edited.reflection.distanceInches);
-      changed |= _ensureLiteralLength(
-          el, 'ReflectionBlur', edited.reflection.blurInches);
-      changed |= _ensureLiteralLength(
-          el, 'ReflectionTransparency', edited.reflection.transparency);
+          el, 'ReflectionSize', edited.reflection.sizeInches);
     }
+    // Dist/Blur/Trans kept for toggle-off → save → reopen → toggle-on.
+    changed |= _ensureLiteralLength(
+        el, 'ReflectionDist', edited.reflection.distanceInches);
+    changed |= _ensureLiteralLength(
+        el, 'ReflectionBlur', edited.reflection.blurInches);
+    changed |= _ensureLiteralLength(
+        el, 'ReflectionTransparency', edited.reflection.transparency);
     changed |= _patchGradient(el, base.fill, edited.fill);
     changed |= _patchLineGradient(el, base.line, edited.line);
     // Text content — only rewrite `<Text>` when the plain string changes so
@@ -4311,9 +4317,14 @@ class VsdxWriter {
     if (eg == null || eg.stops.isEmpty) {
       return _scrubDisabledFlagCell(el, 'FillGradientEnabled');
     }
-    // Gradient still on — drop F=Inh so stylesheet inheritance cannot override
-    // the local V=1 (same hazard as the clear path, mirrored).
-    return _scrubEnabledFlagCell(el, 'FillGradientEnabled');
+    // Gradient still on — drop F=Inh on Enabled/Dir/Angle so stylesheet
+    // inheritance cannot override the local literals.
+    var scrubbed = _scrubEnabledFlagCell(el, 'FillGradientEnabled');
+    scrubbed |=
+        _ensureLiteralInt(el, 'FillGradientDir', _gradientDirFor(eg));
+    scrubbed |=
+        _ensureLiteralLength(el, 'FillGradientAngle', eg.angleRad);
+    return scrubbed;
   }
 
   /// Mirror of [_patchGradient] for `LineGradient*` / `<Section N="LineGradient">`.
@@ -4344,7 +4355,12 @@ class VsdxWriter {
     if (eg == null || eg.stops.isEmpty) {
       return _scrubDisabledFlagCell(el, 'LineGradientEnabled');
     }
-    return _scrubEnabledFlagCell(el, 'LineGradientEnabled');
+    var scrubbed = _scrubEnabledFlagCell(el, 'LineGradientEnabled');
+    scrubbed |=
+        _ensureLiteralInt(el, 'LineGradientDir', _gradientDirFor(eg));
+    scrubbed |=
+        _ensureLiteralLength(el, 'LineGradientAngle', eg.angleRad);
+    return scrubbed;
   }
 
   /// When the model has a flag off, force literal `V=0` without `F=` so
