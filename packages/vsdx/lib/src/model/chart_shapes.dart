@@ -43,6 +43,8 @@ abstract final class ChartOps {
       'column',
       'bar',
       'histogram',
+      'cylinder',
+      'cone',
       'stackedColumn',
       'stackedBar',
       'clusteredColumn',
@@ -53,16 +55,25 @@ abstract final class ChartOps {
       'dotPlot',
     ]),
     ('Pies', <String>['pie', 'donut', 'semiDonut', 'rose']),
-    ('Lines & areas', <String>['line', 'stepLine', 'area', 'radar']),
+    ('Lines & areas', <String>['line', 'stepLine', 'area', 'stepArea', 'radar']),
     ('Process', <String>[
       'funnel',
       'pyramid',
       'waterfall',
       'radialBar',
       'compositionBar',
+      'percentColumn',
       'treemap',
+      'packedBubble',
     ]),
-    ('Meters', <String>['gauge', 'progress', 'ringProgress', 'bullet']),
+    ('Meters', <String>[
+      'gauge',
+      'progress',
+      'ringProgress',
+      'bullet',
+      'thermometer',
+      'waffle',
+    ]),
     ('Other', <String>['bubble']),
   ];
 
@@ -71,6 +82,8 @@ abstract final class ChartOps {
     'column': 'Column Chart',
     'bar': 'Bar Chart',
     'histogram': 'Histogram',
+    'cylinder': 'Cylinder Chart',
+    'cone': 'Cone Chart',
     'stackedColumn': 'Stacked Column',
     'stackedBar': 'Stacked Bar',
     'clusteredColumn': 'Clustered Column',
@@ -86,16 +99,21 @@ abstract final class ChartOps {
     'line': 'Line Chart',
     'stepLine': 'Step Line',
     'area': 'Area Chart',
+    'stepArea': 'Step Area',
     'funnel': 'Funnel',
     'pyramid': 'Pyramid Chart',
     'radar': 'Radar Chart',
     'radialBar': 'Radial Bar',
     'compositionBar': 'Composition Bar',
+    'percentColumn': 'Percent Column',
     'treemap': 'Treemap',
+    'packedBubble': 'Packed Bubble',
     'gauge': 'Gauge',
     'progress': 'Progress',
     'ringProgress': 'Ring Progress',
     'bullet': 'Bullet Chart',
+    'thermometer': 'Thermometer',
+    'waffle': 'Waffle Chart',
     'waterfall': 'Waterfall',
     'bubble': 'Bubble Chart',
   };
@@ -382,7 +400,9 @@ abstract final class ChartOps {
       kind == 'gauge' ||
       kind == 'progress' ||
       kind == 'ringProgress' ||
-      kind == 'bullet';
+      kind == 'bullet' ||
+      kind == 'thermometer' ||
+      kind == 'waffle';
 
   static List<VsdxColor> padColors(List<VsdxColor> colors, int n) {
     if (n <= 0) return const <VsdxColor>[];
@@ -470,8 +490,10 @@ abstract final class ChartOps {
     final List<VsdxShape> kids;
     if (kind == 'gauge') {
       kids = chart.children;
-    } else if (kind == 'ringProgress') {
-      // All progress wedges share the single series colour.
+    } else if (kind == 'ringProgress' ||
+        kind == 'waffle' ||
+        kind == 'thermometer') {
+      // All value glyphs share the single series colour.
       final color = padded.first;
       kids = <VsdxShape>[
         for (final c in chart.children)
@@ -772,6 +794,24 @@ abstract final class ChartOps {
             height: height ?? 1.8,
             values: values,
             allocId: allocId);
+      case 'cylinder':
+        return cylinderChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'cone':
+        return coneChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
       case 'divergingBar':
         return divergingBarChart(
             id: id,
@@ -799,8 +839,26 @@ abstract final class ChartOps {
             height: height ?? 0.7,
             values: values,
             allocId: allocId);
+      case 'percentColumn':
+        return percentColumnChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 1.2,
+            height: height ?? 2.2,
+            values: values,
+            allocId: allocId);
       case 'treemap':
         return treemapChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'packedBubble':
+        return packedBubbleChart(
             id: id,
             pinX: pinX,
             pinY: pinY,
@@ -815,6 +873,24 @@ abstract final class ChartOps {
             pinY: pinY,
             width: width ?? 2.6,
             height: height ?? 0.7,
+            values: values,
+            allocId: allocId);
+      case 'thermometer':
+        return thermometerChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 0.7,
+            height: height ?? 2.2,
+            values: values,
+            allocId: allocId);
+      case 'waffle':
+        return waffleChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.0,
+            height: height ?? 2.0,
             values: values,
             allocId: allocId);
       case 'pie':
@@ -873,6 +949,15 @@ abstract final class ChartOps {
             allocId: allocId);
       case 'area':
         return areaChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'stepArea':
+        return stepAreaChart(
             id: id,
             pinX: pinX,
             pinY: pinY,
@@ -3052,6 +3137,476 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'bullet',
+      values: vals,
+    );
+  }
+
+  static VsdxShape cylinderChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.1;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.08;
+    final barW = (plotW - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final bh = plotH * unit[i];
+      final cx = padL + gap + barW / 2 + i * (barW + gap);
+      final color = seriesColors[i % seriesColors.length];
+      final bodyH = math.max(bh - barW * 0.22, 0.04);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: padB + bodyH / 2,
+        width: barW * 0.85,
+        height: bodyH,
+        fill: color,
+      ));
+      final r = barW * 0.425;
+      final topY = padB + bodyH;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: topY,
+        width: r * 2,
+        height: r * 0.55,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r * 0.275,
+              aX: r * 2,
+              aY: r * 0.275,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: VsdxColor(_darken(color.value))),
+        line: _barLine(color),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'cylinder',
+      values: vals,
+    );
+  }
+
+  static VsdxShape coneChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.08;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.08;
+    final barW = (plotW - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final bh = math.max(plotH * unit[i], 0.06);
+      final cx = padL + gap + barW / 2 + i * (barW + gap);
+      final color = seriesColors[i % seriesColors.length];
+      final half = barW * 0.42;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: padB + bh / 2,
+        width: half * 2,
+        height: bh,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(half * 2, 0),
+            LineTo(half, bh),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'cone',
+      values: vals,
+    );
+  }
+
+  static VsdxShape stepAreaChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.3, 0.55, 0.45, 0.8, 0.6];
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.1;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    final pts = <({double x, double y})>[];
+    for (var i = 0; i < unit.length; i++) {
+      final x = padL +
+          (unit.length == 1 ? 0 : plotW * i / (unit.length - 1));
+      final y = padB + plotH * unit[i];
+      pts.add((x: x, y: y));
+    }
+    final stepPts = <({double x, double y})>[pts.first];
+    for (var i = 1; i < pts.length; i++) {
+      stepPts.add((x: pts[i].x, y: pts[i - 1].y));
+      stepPts.add(pts[i]);
+    }
+    var minX = stepPts.first.x, maxX = stepPts.first.x;
+    var minY = padB, maxY = stepPts.first.y;
+    for (final p in stepPts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    final aw = math.max(maxX - minX, 0.04);
+    final ah = math.max(maxY - minY, 0.04);
+    kids.add(VsdxShape(
+      id: next(),
+      name: _sheetName(id),
+      pinX: minX + aw / 2,
+      pinY: minY + ah / 2,
+      width: aw,
+      height: ah,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(stepPts.first.x - minX, padB - minY),
+          LineTo(stepPts.first.x - minX, stepPts.first.y - minY),
+          for (final p in stepPts.skip(1)) LineTo(p.x - minX, p.y - minY),
+          LineTo(stepPts.last.x - minX, padB - minY),
+          LineTo(stepPts.first.x - minX, padB - minY),
+        ]),
+      ],
+      fill: const VsdxFill(
+        foreground: VsdxColor(0xFF5B9BD5),
+        foregroundTransparency: 0.35,
+      ),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF2E75B6),
+        weightInches: 0.012,
+      ),
+    ));
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'stepArea',
+      values: vals,
+    );
+  }
+
+  static VsdxShape percentColumnChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 1.2,
+    double height = 2.2,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.3, 0.25, 0.2, 0.15, 0.1];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final sum = vals.fold<double>(0, (a, b) => a + b.abs());
+    final total = sum > 0 ? sum : 1.0;
+    final colW = w * 0.55;
+    final kids = <VsdxShape>[];
+    var y0 = 0.0;
+    for (var i = 0; i < vals.length; i++) {
+      final bh = math.max(h * (vals[i].abs() / total), 0.04);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: w / 2,
+        pinY: y0 + bh / 2,
+        width: colW,
+        height: bh,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+      y0 += bh;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'percentColumn',
+      values: vals,
+    );
+  }
+
+  static VsdxShape packedBubbleChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final kids = <VsdxShape>[];
+    // Simple row-pack: place circles left-to-right, wrap when needed.
+    var x = 0.12;
+    var y = h - 0.12;
+    var rowH = 0.0;
+    for (var i = 0; i < unit.length; i++) {
+      final r = 0.08 + 0.16 * unit[i];
+      if (x + r * 2 > w - 0.08) {
+        x = 0.12;
+        y -= rowH + 0.06;
+        rowH = 0;
+      }
+      if (y - r < 0.08) {
+        y = r + 0.08;
+      }
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x + r,
+        pinY: y - r,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(
+          foreground: seriesColors[i % seriesColors.length],
+          foregroundTransparency: 0.15,
+        ),
+        line: _barLine(seriesColors[i % seriesColors.length]),
+      ));
+      x += r * 2 + 0.04;
+      rowH = math.max(rowH, r * 2);
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'packedBubble',
+      values: vals,
+    );
+  }
+
+  static VsdxShape thermometerChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 0.7,
+    double height = 2.2,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.68];
+    final level = vals.first.clamp(0.0, 1.0);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final tubeW = w * 0.28;
+    final bulbR = w * 0.32;
+    final tubeTop = h * 0.88;
+    final tubeBottom = bulbR * 1.6;
+    final tubeH = tubeTop - tubeBottom;
+    final kids = <VsdxShape>[
+      // Tube track.
+      _rectChild(
+        id: next(),
+        pinX: w / 2,
+        pinY: tubeBottom + tubeH / 2,
+        width: tubeW,
+        height: tubeH,
+        fill: const VsdxColor(0xFFE8E8E8),
+        chrome: true,
+      ),
+      // Bulb chrome.
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w / 2,
+        pinY: bulbR,
+        width: bulbR * 2,
+        height: bulbR * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: bulbR,
+              cy: bulbR,
+              aX: bulbR * 2,
+              aY: bulbR,
+              bX: bulbR,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: const VsdxFill(foreground: VsdxColor(0xFFE8E8E8)),
+        line: const VsdxLine(color: VsdxColor(0xFFB0B0B0), weightInches: 0.008),
+        userCells: _chromeMeta,
+      ),
+    ];
+    final fillH = math.max(tubeH * level, 0.04);
+    kids.add(_rectChild(
+      id: next(),
+      pinX: w / 2,
+      pinY: tubeBottom + fillH / 2,
+      width: tubeW * 0.7,
+      height: fillH,
+      fill: seriesColors[1],
+    ));
+    kids.add(VsdxShape(
+      id: next(),
+      name: _sheetName(id),
+      pinX: w / 2,
+      pinY: bulbR,
+      width: bulbR * 1.5,
+      height: bulbR * 1.5,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          EllipseCmd(
+            cx: bulbR * 0.75,
+            cy: bulbR * 0.75,
+            aX: bulbR * 1.5,
+            aY: bulbR * 0.75,
+            bX: bulbR * 0.75,
+            bY: 0,
+          ),
+        ]),
+      ],
+      fill: VsdxFill(foreground: seriesColors[1]),
+      line: _barLine(seriesColors[1]),
+    ));
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'thermometer',
+      values: vals,
+    );
+  }
+
+  static VsdxShape waffleChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.0,
+    double height = 2.0,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.68];
+    final level = vals.first.clamp(0.0, 1.0);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    const cols = 10;
+    const rows = 10;
+    final filled = (level * cols * rows).round().clamp(0, cols * rows);
+    final gap = 0.03;
+    final cellW = (w - gap * (cols + 1)) / cols;
+    final cellH = (h - gap * (rows + 1)) / rows;
+    final kids = <VsdxShape>[];
+    var n = 0;
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        final cx = gap + cellW / 2 + c * (cellW + gap);
+        final cy = h - (gap + cellH / 2 + r * (cellH + gap));
+        final on = n < filled;
+        n++;
+        kids.add(_rectChild(
+          id: next(),
+          pinX: cx,
+          pinY: cy,
+          width: cellW,
+          height: cellH,
+          fill: on ? seriesColors.first : const VsdxColor(0xFFE8E8E8),
+          chrome: !on,
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'waffle',
       values: vals,
     );
   }

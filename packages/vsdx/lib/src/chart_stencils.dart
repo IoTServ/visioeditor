@@ -47,6 +47,14 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.histogramChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Cylinder Chart',
+      (id, cx, cy) => ChartOps.cylinderChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Cone Chart',
+      (id, cx, cy) => ChartOps.coneChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Diverging Bar',
       (id, cx, cy) => ChartOps.divergingBarChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -60,8 +68,16 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
           ChartOps.compositionBarChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Percent Column',
+      (id, cx, cy) => ChartOps.percentColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Treemap',
       (id, cx, cy) => ChartOps.treemapChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Packed Bubble',
+      (id, cx, cy) => ChartOps.packedBubbleChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Pie Chart',
@@ -90,6 +106,10 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Area Chart',
       (id, cx, cy) => ChartOps.areaChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Step Area',
+      (id, cx, cy) => ChartOps.stepAreaChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Funnel',
@@ -122,6 +142,14 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Bullet Chart',
       (id, cx, cy) => ChartOps.bulletChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Thermometer',
+      (id, cx, cy) => ChartOps.thermometerChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Waffle Chart',
+      (id, cx, cy) => ChartOps.waffleChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Waterfall',

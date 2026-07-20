@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(30));
+    expect(kChartStencils, hasLength(37));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -148,6 +148,11 @@ void main() {
       'dotPlot',
       'compositionBar',
       'treemap',
+      'cylinder',
+      'cone',
+      'stepArea',
+      'percentColumn',
+      'packedBubble',
     ]) {
       final chart = ChartOps.buildKind(
         kind,
@@ -206,6 +211,16 @@ void main() {
     expect(ChartOps.isSingleValueKind('bullet'), isTrue);
     expect(ChartOps.chartValues(chart), hasLength(1));
     expect(ChartOps.seriesChildren(chart), hasLength(1));
+  });
+
+  test('thermometer and waffle are single-value meters', () {
+    expect(ChartOps.isSingleValueKind('thermometer'), isTrue);
+    expect(ChartOps.isSingleValueKind('waffle'), isTrue);
+    final t = ChartOps.thermometerChart(id: 3, pinX: 1, pinY: 1);
+    final w = ChartOps.waffleChart(id: 4, pinX: 2, pinY: 1);
+    expect(ChartOps.chartValues(t), hasLength(1));
+    expect(ChartOps.chartValues(w), hasLength(1));
+    expect(ChartOps.seriesChildren(w), isNotEmpty);
   });
 
   test('parseSeriesPaste supports labeled pairs', () {
