@@ -211,4 +211,18 @@ void main() {
     final after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.connectionPoints.length, before.connectionPoints.length);
   });
+
+  test('text tool box materialises CPs and round-trips', () {
+    final e = ctrl();
+    e.setTool(EditorTool.text);
+    e.createShapeByDrag(3, 4, 3.05, 4.05);
+    final id = e.singleSelectedId!;
+    final box = e.currentPage!.findShapeById(id)!;
+    expect(box.connectionPoints.length, greaterThanOrEqualTo(4));
+
+    final blank = writer.emptyDocument(widthInches: 11, heightInches: 8.5);
+    final out = writer.write(originalBytes: blank, edited: e.document!);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.connectionPoints.length, box.connectionPoints.length);
+  });
 }

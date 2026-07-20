@@ -1976,13 +1976,21 @@ class EditorController extends ChangeNotifier {
       }
       final pinX = left + w / 2;
       final pinY = bottom + h / 2;
-      final box = VsdxShapeFactory.textBox(
+      var box = VsdxShapeFactory.textBox(
         id: id,
         pinX: pinX,
         pinY: pinY,
         width: w,
         height: h,
       );
+      if (box.connectionPoints.isEmpty) {
+        box = box.copyWith(
+          connectionPoints: VsdxPage.defaultConnectionPoints(
+            box.width,
+            box.height,
+          ),
+        );
+      }
       final undoSel = Set<int>.of(_selection);
       _selection
         ..clear()
@@ -1992,8 +2000,8 @@ class EditorController extends ChangeNotifier {
         doc.replacePage(_currentPageIndex, page.addShape(box)),
         undoSelection: undoSel,
       );
-      // Match stencil drop: reparent into a container / lane under the pin.
-      applyDropContainmentAt(pinX, pinY, transient: false);
+      // Transient so insert + contain stay one undo step (palette / drag parity).
+      applyDropContainmentAt(pinX, pinY, transient: true);
       return;
     }
 
@@ -2228,6 +2236,7 @@ class EditorController extends ChangeNotifier {
 
     var next = page;
     final int targetId;
+    var didClone = false;
     if (existingTargetId != null &&
         existingTargetId != sourceId &&
         page.findShapeById(existingTargetId)?.is1D == false) {
@@ -2247,6 +2256,7 @@ class EditorController extends ChangeNotifier {
       );
       next = next.addShape(clone);
       targetId = clone.id;
+      didClone = true;
     }
 
     _wireDirectionalConnector(
@@ -2255,6 +2265,11 @@ class EditorController extends ChangeNotifier {
       targetId: targetId,
       dir: dir,
     );
+    // Match quick-add: reparent a freshly cloned neighbour into a lane /
+    // container under its pin (folded into the same undo step).
+    if (didClone) {
+      applyDropContainmentAt(snap(cloneX), snap(cloneY), transient: true);
+    }
   }
 
   /// EdrawMax / draw.io quick-add: place a shape from [build] one step from
@@ -2953,14 +2968,20 @@ class EditorController extends ChangeNotifier {
         return false;
       }
       _clipboardWriteSerial++;
+      final plain = VsdxShapeFactory.textBox(
+        id: 1,
+        pinX: 0,
+        pinY: 0,
+        width: 1.6,
+        height: 0.6,
+        text: trimmed,
+      );
       _clipboard = <VsdxShape>[
-        VsdxShapeFactory.textBox(
-          id: 1,
-          pinX: 0,
-          pinY: 0,
-          width: 1.6,
-          height: 0.6,
-          text: trimmed,
+        plain.copyWith(
+          connectionPoints: VsdxPage.defaultConnectionPoints(
+            plain.width,
+            plain.height,
+          ),
         ),
       ];
       _clipboardConnects = const <VsdxConnect>[];

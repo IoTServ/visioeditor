@@ -20,6 +20,17 @@ void main() {
     return e.singleSelectedId!;
   }
 
+  /// Palette drops now materialise default glue points; clear them when a test
+  /// needs an intentionally empty Connection section (locked-shape guards).
+  void clearConnectionPoints(EditorController e, int shapeId) {
+    e.updateCurrentPage(
+      (p) => p.updateShapeById(
+        shapeId,
+        (s) => s.copyWith(connectionPoints: const <VsdxConnectionPoint>[]),
+      ),
+    );
+  }
+
   void lockOnLayer(EditorController e, int shapeId) {
     e.updateCurrentPage((p) {
       final layers = <VsdxLayer>[
@@ -38,6 +49,8 @@ void main() {
     final e = ctrl();
     final a = rect(e, 2, 4);
     final b = rect(e, 5, 4);
+    clearConnectionPoints(e, a);
+    clearConnectionPoints(e, b);
     e.setSelection([b]);
     e.setSelectionLocked(true);
     expect(e.currentPage!.findShapeById(b)!.connectionPoints, isEmpty);
@@ -66,6 +79,7 @@ void main() {
     final e = ctrl();
     final a = rect(e, 2, 4);
     final b = rect(e, 5, 4);
+    clearConnectionPoints(e, b);
     lockOnLayer(e, b);
     expect(e.isOnLockedLayer(b), isTrue);
 
@@ -86,6 +100,8 @@ void main() {
     final e = ctrl();
     final a = rect(e, 2, 4);
     final b = rect(e, 5, 4);
+    clearConnectionPoints(e, a);
+    clearConnectionPoints(e, b);
     // Whole-shape glue — does not materialize CPs.
     e.createConnector(2, 4, 5, 4, beginTarget: a, endTarget: b);
     final conn = e.currentPage!.shapes.lastWhere((s) => s.is1D).id;
@@ -125,6 +141,7 @@ void main() {
   test('materializeConnectionPoints no-op on locked shape', () {
     final e = ctrl();
     final a = rect(e, 2, 4);
+    clearConnectionPoints(e, a);
     e.setSelection([a]);
     e.setSelectionLocked(true);
     final next = e.currentPage!.materializeConnectionPoints(a);
