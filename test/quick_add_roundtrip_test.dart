@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:vsdx/vsdx.dart';
@@ -224,5 +226,81 @@ void main() {
     final out = writer.write(originalBytes: blank, edited: e.document!);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.connectionPoints.length, box.connectionPoints.length);
+  });
+
+  test('insertImage materialises CPs across save → reopen', () {
+    final e = ctrl();
+    e.insertImage(
+      Uint8List.fromList(<int>[137, 80, 78, 71, 0, 1, 2, 3]),
+      fileExtension: 'png',
+      widthInches: 1.5,
+      heightInches: 1.0,
+      cx: 4,
+      cy: 4,
+    );
+    final id = e.singleSelectedId!;
+    final pic = e.currentPage!.findShapeById(id)!;
+    expect(pic.connectionPoints.length, greaterThanOrEqualTo(4));
+
+    final blank = writer.emptyDocument(widthInches: 11, heightInches: 8.5);
+    final out = writer.write(originalBytes: blank, edited: e.document!);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.connectionPoints.length, pic.connectionPoints.length);
+  });
+
+  test('table cells and swimlane lanes keep CPs across save → reopen', () {
+    final e = ctrl();
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      5,
+    );
+    final tableId = e.singleSelectedId!;
+    final table = e.currentPage!.findShapeById(tableId)!;
+    final cells = TableOps.cellsOf(table);
+    expect(cells, isNotEmpty);
+    for (final c in cells) {
+      expect(c.connectionPoints.length, greaterThanOrEqualTo(4),
+          reason: 'cell ${c.id}');
+    }
+
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => SwimlaneOps.assemblePool(
+        poolId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 4,
+        height: 3,
+        laneCount: 2,
+      ),
+      8,
+      5,
+    );
+    final poolId = e.singleSelectedId!;
+    final pool = e.currentPage!.findShapeById(poolId)!;
+    final lanes = SwimlaneOps.lanesOf(pool);
+    expect(lanes.length, 2);
+    for (final lane in lanes) {
+      expect(lane.connectionPoints.length, greaterThanOrEqualTo(4),
+          reason: 'lane ${lane.id}');
+    }
+
+    final blank = writer.emptyDocument(widthInches: 11, heightInches: 8.5);
+    final out = writer.write(originalBytes: blank, edited: e.document!);
+    final page = parser.parse(out).pages.first;
+    for (final c in TableOps.cellsOf(page.findShapeById(tableId)!)) {
+      expect(c.connectionPoints.length, greaterThanOrEqualTo(4));
+    }
+    for (final lane in SwimlaneOps.lanesOf(page.findShapeById(poolId)!)) {
+      expect(lane.connectionPoints.length, greaterThanOrEqualTo(4));
+    }
   });
 }

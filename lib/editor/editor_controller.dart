@@ -2466,14 +2466,24 @@ class EditorController extends ChangeNotifier {
     h *= scale;
 
     final id = page.nextFreeShapeId();
-    final shape = VsdxShapeFactory.picture(
+    final pinX = snap(cx ?? page.widthInches / 2);
+    final pinY = snap(cy ?? page.heightInches / 2);
+    var shape = VsdxShapeFactory.picture(
       id: id,
-      pinX: snap(cx ?? page.widthInches / 2),
-      pinY: snap(cy ?? page.heightInches / 2),
+      pinX: pinX,
+      pinY: pinY,
       width: w,
       height: h,
       imagePartName: minted.partName,
     );
+    if (shape.connectionPoints.isEmpty) {
+      shape = shape.copyWith(
+        connectionPoints: VsdxPage.defaultConnectionPoints(
+          shape.width,
+          shape.height,
+        ),
+      );
+    }
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
@@ -2486,6 +2496,8 @@ class EditorController extends ChangeNotifier {
           ),
       undoSelection: undoSel,
     );
+    // Fold lane/container reparent into the same undo step as the insert.
+    applyDropContainmentAt(pinX, pinY, transient: true);
   }
 
   /// Replace the media on an existing picture shape (drawio drop-on-image /
@@ -3117,6 +3129,10 @@ class EditorController extends ChangeNotifier {
 
   /// Clone [shapes] onto the current page with fresh ids, reminted image parts,
   /// rewritten `Sheet.n!` formulas, and remapped [connects]. Selects the copies.
+  ///
+  /// Does **not** auto-contain into nearby groups: an offset duplicate of a
+  /// group still overlaps the original AABB, and drop-into would swallow the
+  /// copy (draw.io keeps paste/duplicate as page-level unless the user drops).
   void _cloneShapesOntoPage(
     List<VsdxShape> shapes, {
     required double dx,

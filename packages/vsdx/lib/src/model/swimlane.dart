@@ -148,6 +148,8 @@ abstract final class SwimlaneOps {
       ),
       fill: fill,
       line: line,
+      // Persist default glue points (writer no longer invents empty Connections).
+      connectionPoints: VsdxPage.defaultConnectionPoints(w, h),
       userCells: laneCells(horizontal: horizontal),
     );
   }

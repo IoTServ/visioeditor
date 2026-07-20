@@ -293,6 +293,9 @@ abstract final class TableOps {
       geometries: _rectGeometry(w, h),
       fill: _cellFill,
       line: _cellLine,
+      // Persist default glue points so save→reopen keeps Edraw-compatible
+      // Connection rows (writer no longer invents them when empty).
+      connectionPoints: VsdxPage.defaultConnectionPoints(w, h),
       userCells: cellUserCells(
         row: row,
         col: col,
