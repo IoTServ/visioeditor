@@ -6675,6 +6675,53 @@ void main() {
     expect(cell.getAttribute('F'), isNull);
   });
 
+  test('LineGradientEnabled V=0 F=Inh scrubs when model has no gradient', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '</Shape>',
+      '<Cell N="LineGradientEnabled" V="0" F="Inh"/></Shape>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.line.gradient, isNull);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'LineGradientEnabled',
+        );
+    expect(cell.getAttribute('V'), '0');
+    expect(cell.getAttribute('F'), isNull);
+  });
+
   test('Foreign SoftEdges survives group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -7038,6 +7085,82 @@ void main() {
     expect(enabled.getAttribute('F'), isNull,
         reason: 'Inh must not survive clearing the gradient');
     expect(parser.parse(out).pages.first.findShapeById(id)!.fill.hasGradient,
+        isFalse);
+  });
+
+  test('clearing LineGradient drops Inh formula on LineGradientEnabled', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final withGrad = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      line: const VsdxLine(
+        weightInches: 0.05,
+        gradient: VsdxGradient(
+          type: VsdxGradientType.linear,
+          stops: [
+            VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+            VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(withGrad));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      'N="LineGradientEnabled" V="1"',
+      'N="LineGradientEnabled" V="1" F="Inh"',
+    );
+    if (!pageXml.contains('LineGradientEnabled') ||
+        !pageXml.contains('F="Inh"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="LineGradientEnabled"[^/]*/>'),
+        '<Cell N="LineGradientEnabled" V="1" F="Inh"/>',
+      );
+    }
+    final tainted = _rezipWith(
+      mid,
+      pageFile.name,
+      utf8.encode(pageXml),
+    );
+
+    doc = parser.parse(tainted);
+    final cleared = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(line: s.line.withGradient(null)),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: cleared);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final enabled = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'LineGradientEnabled',
+        );
+    expect(enabled.getAttribute('V'), '0');
+    expect(enabled.getAttribute('F'), isNull,
+        reason: 'Inh must not survive clearing the line gradient');
+    expect(parser.parse(out).pages.first.findShapeById(id)!.line.hasGradient,
         isFalse);
   });
 
@@ -7608,6 +7731,7 @@ void main() {
     expect(pageXml.contains('N="SoftEdgesSize" V="0"'), isTrue);
     expect(pageXml.contains('N="GlowSize" V="0"'), isTrue);
     expect(pageXml.contains('N="FillGradientEnabled" V="0"'), isTrue);
+    expect(pageXml.contains('N="LineGradientEnabled" V="0"'), isTrue);
     expect(pageXml.contains('N="ReflectionSize" V="0"'), isTrue);
   });
 
