@@ -255,6 +255,17 @@ class EditorL10n {
   String get chartSpecialtySpanHint => _t('chartSpecialtySpanHint');
   String get chartSpecialtyRankingHint => _t('chartSpecialtyRankingHint');
   String get chartSpecialtyProcessHint => _t('chartSpecialtyProcessHint');
+  String get chartSpecialtyArcGaugeHint => _t('chartSpecialtyArcGaugeHint');
+  String get chartSpecialtyBulletGroupHint => _t('chartSpecialtyBulletGroupHint');
+  String get chartSpecialtyLikertHint => _t('chartSpecialtyLikertHint');
+  String get chartSpecialtyHeatStripHint => _t('chartSpecialtyHeatStripHint');
+  String get chartSpecialtyDualCompareHint => _t('chartSpecialtyDualCompareHint');
+  String get chartSpecialtyStatusBoardHint => _t('chartSpecialtyStatusBoardHint');
+  String get chartCells => _t('chartCells');
+  String get chartSegment => _t('chartSegment');
+  String get chartStatusOk => _t('chartStatusOk');
+  String get chartStatusWarn => _t('chartStatusWarn');
+  String get chartStatusBad => _t('chartStatusBad');
   String get chartVennSetA => _t('chartVennSetA');
   String get chartVennSetB => _t('chartVennSetB');
   String get chartVennOnlyA => _t('chartVennOnlyA');
@@ -310,6 +321,8 @@ class EditorL10n {
   String get chartKpiName => _t('chartKpiName');
   String get chartActual => _t('chartActual');
   String get chartTarget => _t('chartTarget');
+  String get chartSeriesA => _t('chartSeriesA');
+  String get chartSeriesB => _t('chartSeriesB');
   String chartDefaultItem(int n) =>
       _t('chartDefaultItem').replaceAll('{n}', '$n');
   String chartKindGroup(String english) {

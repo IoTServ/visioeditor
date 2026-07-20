@@ -59,6 +59,12 @@ abstract final class ChartOps {
     'spanColumn',
     'ranking',
     'processSteps',
+    'arcGauge',
+    'bulletGroup',
+    'likert',
+    'heatStrip',
+    'dualCompare',
+    'statusBoard',
   };
 
   static bool isCustomEditorKind(String kind) =>
@@ -100,6 +106,18 @@ abstract final class ChartOps {
       case 'ranking':
         return 10;
       case 'processSteps':
+        return 8;
+      case 'arcGauge':
+        return 2;
+      case 'bulletGroup':
+        return 12;
+      case 'likert':
+        return 5;
+      case 'heatStrip':
+        return 16;
+      case 'dualCompare':
+        return 12;
+      case 'statusBoard':
         return 8;
       default:
         return maxSeriesItems;
@@ -143,9 +161,16 @@ abstract final class ChartOps {
       case 'radialMulti':
       case 'ranking':
       case 'processSteps':
+      case 'likert':
+      case 'heatStrip':
+      case 'statusBoard':
         return math.max(1, values.length);
       case 'spanColumn':
+      case 'bulletGroup':
+      case 'dualCompare':
         return math.max(1, values.length ~/ 2);
+      case 'arcGauge':
+        return 1;
       default:
         return values.length;
     }
@@ -225,6 +250,15 @@ abstract final class ChartOps {
   }
 
   static String formatScorecardCols(int cols) => 'cols=${cols.clamp(1, 4)}';
+
+  static int parseHeatStripCells(String? extras) {
+    final m = RegExp(r'cells\s*=\s*(\d+)').firstMatch(extras ?? '');
+    if (m != null) return int.parse(m.group(1)!).clamp(3, 16);
+    return 8;
+  }
+
+  static String formatHeatStripCells(int cells) =>
+      'cells=${cells.clamp(3, 16)}';
 
   /// Kind picker groups for the editor (group title → kind keys).
   static const List<(String, List<String>)> kindGroups =
@@ -312,6 +346,12 @@ abstract final class ChartOps {
       'spanColumn',
       'ranking',
       'processSteps',
+      'arcGauge',
+      'bulletGroup',
+      'likert',
+      'heatStrip',
+      'dualCompare',
+      'statusBoard',
     ]),
   ];
 
@@ -400,6 +440,12 @@ abstract final class ChartOps {
     'spanColumn': 'Span Column',
     'ranking': 'Ranking Chart',
     'processSteps': 'Process Steps',
+    'arcGauge': 'Arc Gauge',
+    'bulletGroup': 'Bullet Group',
+    'likert': 'Likert Scale',
+    'heatStrip': 'Heat Strip',
+    'dualCompare': 'Dual Compare',
+    'statusBoard': 'Status Board',
   };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
@@ -805,7 +851,8 @@ abstract final class ChartOps {
       kids = chart.children;
     } else if (kind == 'heatmap' ||
         kind == 'calendarHeat' ||
-        kind == 'dataTable') {
+        kind == 'dataTable' ||
+        kind == 'heatStrip') {
       // Table / heat colours are applied at build time.
       kids = chart.children;
     } else if (kind == 'ringProgress' ||
@@ -899,7 +946,10 @@ abstract final class ChartOps {
         kind == 'calendarHeat' ||
         kind == 'scorecard' ||
         kind == 'processSteps' ||
-        kind == 'venn') {
+        kind == 'venn' ||
+        kind == 'statusBoard' ||
+        kind == 'likert' ||
+        kind == 'heatStrip') {
       return chart.copyWith(children: baseKids);
     }
     final w = chart.width.abs();
@@ -1135,6 +1185,21 @@ abstract final class ChartOps {
         return const <double>[0.9, 0.75, 0.6, 0.45, 0.3];
       case 'processSteps':
         return const <double>[1, 1, 0.5, 0, 0];
+      case 'arcGauge':
+        return const <double>[0.68, 0.85];
+      case 'bulletGroup':
+        return const <double>[0.7, 0.9, 0.55, 0.8, 0.4, 0.7];
+      case 'likert':
+        return const <double>[0.1, 0.15, 0.25, 0.3, 0.2];
+      case 'heatStrip':
+        final n = parseHeatStripCells(extras);
+        return <double>[
+          for (var i = 0; i < n; i++) ((i * 37) % 100) / 100.0,
+        ];
+      case 'dualCompare':
+        return const <double>[0.6, 0.45, 0.75, 0.55, 0.4, 0.7];
+      case 'statusBoard':
+        return const <double>[1, 0.5, 0, 1];
       default:
         return List<double>.of(defaultValues);
     }
@@ -1848,6 +1913,66 @@ abstract final class ChartOps {
             height: height ?? 1.0,
             values: values,
             labels: labels,
+            allocId: allocId);
+      case 'arcGauge':
+        return arcGaugeChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.2,
+            height: height ?? 1.4,
+            values: values,
+            allocId: allocId);
+      case 'bulletGroup':
+        return bulletGroupChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'likert':
+        return likertChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 0.9,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'heatStrip':
+        return heatStripChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 0.7,
+            values: values,
+            extras: extras,
+            allocId: allocId);
+      case 'dualCompare':
+        return dualCompareChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'statusBoard':
+        return statusBoardChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 1.4,
+            values: values,
+            labels: labels,
+            extras: extras,
             allocId: allocId);
       case 'column':
       default:
@@ -7278,6 +7403,509 @@ abstract final class ChartOps {
       kind: 'processSteps',
       values: List<double>.of(vals),
       labels: labs,
+    );
+  }
+
+  /// Arc gauge with value + target marker. Values: [value, target].
+  static VsdxShape arcGaugeChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.2,
+    double height = 1.4,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('arcGauge', null);
+    final level = (raw.isNotEmpty ? raw[0] : 0.68).clamp(0.0, 1.0);
+    final target = (raw.length > 1 ? raw[1] : 0.85).clamp(0.05, 1.0);
+    final vals = <double>[level, target];
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final cx = w / 2;
+    final cy = h * 0.72;
+    final r = math.min(w, h) * 0.55;
+    const inner = 0.62;
+    final kids = <VsdxShape>[
+      _wedgeChild(
+        id: next(),
+        cx: cx,
+        cy: cy,
+        rx: r,
+        ry: r,
+        a0: math.pi,
+        a1: 0,
+        inner: inner,
+        fill: const VsdxColor(0xFFE0E0E0),
+      ).copyWith(userCells: _chromeMeta),
+      if (level > 0.01)
+        _wedgeChild(
+          id: next(),
+          cx: cx,
+          cy: cy,
+          rx: r,
+          ry: r,
+          a0: math.pi,
+          a1: math.pi * (1 - level),
+          inner: inner,
+          fill: seriesColors.first,
+        ),
+    ];
+    // Target tick.
+    final ta = math.pi * (1 - target);
+    final t0x = cx + r * inner * 0.9 * math.cos(ta);
+    final t0y = cy + r * inner * 0.9 * math.sin(ta);
+    final t1x = cx + r * 1.05 * math.cos(ta);
+    final t1y = cy + r * 1.05 * math.sin(ta);
+    final minX = math.min(t0x, t1x) - 0.02;
+    final maxX = math.max(t0x, t1x) + 0.02;
+    final minY = math.min(t0y, t1y) - 0.02;
+    final maxY = math.max(t0y, t1y) + 0.02;
+    kids.add(VsdxShape(
+      id: next(),
+      name: _sheetName(id),
+      pinX: (minX + maxX) / 2,
+      pinY: (minY + maxY) / 2,
+      width: math.max(maxX - minX, 0.04),
+      height: math.max(maxY - minY, 0.04),
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(t0x - minX, t0y - minY),
+            LineTo(t1x - minX, t1y - minY),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFFE53935),
+        weightInches: 0.016,
+      ),
+      userCells: _chromeMeta,
+    ));
+    final label = '${formatPercent(level)}%';
+    kids.add(VsdxShape(
+      id: next(),
+      name: _sheetName(id),
+      pinX: cx,
+      pinY: cy - r * 0.15,
+      width: 0.7,
+      height: 0.28,
+      text: label,
+      richText: VsdxRichText(runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: label,
+          charStyle: const VsdxCharStyle(
+            fontSizeInches: 0.12,
+            color: VsdxColor(0xFF212121),
+            style: VsdxFontStyle.boldStyle,
+          ),
+          paraStyle: const VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.center,
+          ),
+        ),
+      ]),
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          noLine: true,
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            const LineTo(0.7, 0),
+            const LineTo(0.7, 0.28),
+            const LineTo(0, 0.28),
+            const LineTo(0, 0),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      userCells: _chromeMeta,
+    ));
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'arcGauge',
+      values: vals,
+    );
+  }
+
+  /// Multiple bullet meters. Values packed as actual,target.
+  static VsdxShape bulletGroupChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('bulletGroup', null);
+    final n = math.max(1, vals.length ~/ 2);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.08;
+    final padR = w * 0.06;
+    final padT = h * 0.08;
+    final padB = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padT - padB;
+    final gap = plotH * 0.1;
+    final rowH = (plotH - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final actual = vals[i * 2].clamp(0.0, 1.0);
+      final target = vals[i * 2 + 1].clamp(0.05, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      final cy = h - padT - gap - rowH / 2 - i * (rowH + gap);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW / 2,
+        pinY: cy,
+        width: plotW,
+        height: rowH * 0.55,
+        fill: const VsdxColor(0xFFE0E0E0),
+        chrome: true,
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW * actual / 2,
+        pinY: cy,
+        width: math.max(plotW * actual, 0.04),
+        height: rowH * 0.35,
+        fill: color,
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + plotW * target,
+        pinY: cy,
+        width: 0.025,
+        height: rowH * 0.75,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.012, 0),
+              LineTo(0.012, rowH * 0.75),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFE53935),
+          weightInches: 0.012,
+        ),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'bulletGroup',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Likert stacked bar (5 sentiment segments).
+  static VsdxShape likertChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 0.9,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('likert', null);
+    final vals = <double>[
+      for (var i = 0; i < 5; i++)
+        (i < raw.length ? raw[i] : 0.2).clamp(0.02, 1.0),
+    ];
+    final labs = padLabels(
+      labels ??
+          const <String>['SD', 'D', 'N', 'A', 'SA'],
+      5,
+    );
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = w * 0.06;
+    final barH = h * 0.45;
+    final cy = h * 0.55;
+    final sum = vals.fold<double>(0, (a, b) => a + b);
+    final plotW = w - pad * 2;
+    var x = pad;
+    const palette = <VsdxColor>[
+      VsdxColor(0xFFE53935),
+      VsdxColor(0xFFFB8C00),
+      VsdxColor(0xFFFFC000),
+      VsdxColor(0xFF7CB342),
+      VsdxColor(0xFF43A047),
+    ];
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < 5; i++) {
+      final segW = plotW * (vals[i] / sum);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x + segW / 2,
+        pinY: cy,
+        width: math.max(segW, 0.04),
+        height: barH,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(math.max(segW, 0.04), 0),
+            LineTo(math.max(segW, 0.04), barH),
+            LineTo(0, barH),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: palette[i]),
+        line: _barLine(palette[i]),
+      ));
+      x += segW;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'likert',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Single-row heat strip. [extras] = `cells=N`.
+  static VsdxShape heatStripChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 0.7,
+    List<double>? values,
+    String? extras,
+    int Function()? allocId,
+  }) {
+    final cells = parseHeatStripCells(extras);
+    final ex = formatHeatStripCells(cells);
+    var vals = values ?? _defaultValuesForKind('heatStrip', ex);
+    if (vals.length < cells) {
+      vals = <double>[
+        ...vals,
+        for (var i = vals.length; i < cells; i++) ((i * 37) % 100) / 100.0,
+      ];
+    } else if (vals.length > cells) {
+      vals = vals.sublist(0, cells);
+    }
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = math.min(w, h) * 0.1;
+    final gap = w * 0.01;
+    final cellW = (w - pad * 2 - gap * (cells - 1)) / cells;
+    final cellH = h - pad * 2;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < cells; i++) {
+      final t = vals[i].clamp(0.0, 1.0);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: pad + cellW / 2 + i * (cellW + gap),
+        pinY: h / 2,
+        width: cellW,
+        height: cellH,
+        fill: _heatColor(t, base: 0xFF6A1B9A),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'heatStrip',
+      values: vals,
+      extras: ex,
+    );
+  }
+
+  /// Side-by-side A/B compare columns. Values packed as a,b.
+  static VsdxShape dualCompareChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('dualCompare', null);
+    final n = math.max(1, vals.length ~/ 2);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final padT = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.08;
+    final slot = (plotW - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final a = vals[i * 2].clamp(0.0, 1.0);
+      final b = vals[i * 2 + 1].clamp(0.0, 1.0);
+      final cx = padL + gap + slot / 2 + i * (slot + gap);
+      final barW = slot * 0.35;
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx - barW * 0.55,
+        pinY: padB + plotH * a / 2,
+        width: barW,
+        height: math.max(plotH * a, 0.04),
+        fill: seriesColors[0],
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx + barW * 0.55,
+        pinY: padB + plotH * b / 2,
+        width: barW,
+        height: math.max(plotH * b, 0.04),
+        fill: seriesColors[1],
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'dualCompare',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Status board cards. Values: 1=ok, 0.5=warn, 0=bad.
+  static VsdxShape statusBoardChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 1.4,
+    List<double>? values,
+    List<String>? labels,
+    String? extras,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('statusBoard', null);
+    final n = math.max(1, vals.length);
+    final cols = parseScorecardCols(extras).clamp(1, n);
+    final ex = formatScorecardCols(cols);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final rows = (n + cols - 1) ~/ cols;
+    final pad = math.min(w, h) * 0.06;
+    final gap = math.min(w, h) * 0.04;
+    final cellW = (w - pad * 2 - gap * (cols - 1)) / cols;
+    final cellH = (h - pad * 2 - gap * (rows - 1)) / rows;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final r = i ~/ cols;
+      final c = i % cols;
+      final s = vals[i].clamp(0.0, 1.0);
+      final color = s >= 0.99
+          ? const VsdxColor(0xFF43A047)
+          : s >= 0.4
+              ? const VsdxColor(0xFFFFC000)
+              : const VsdxColor(0xFFE53935);
+      final status = s >= 0.99 ? 'OK' : s >= 0.4 ? 'WARN' : 'BAD';
+      final text = '${labs[i]}\n$status';
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: pad + cellW / 2 + c * (cellW + gap),
+        pinY: h - pad - cellH / 2 - r * (cellH + gap),
+        width: cellW,
+        height: cellH,
+        text: text,
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: text,
+            charStyle: VsdxCharStyle(
+              fontSizeInches: (cellH * 0.16).clamp(0.07, 0.11),
+              color: const VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(cellW, 0),
+            LineTo(cellW, cellH),
+            LineTo(0, cellH),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'statusBoard',
+      values: List<double>.of(vals),
+      labels: labs,
+      extras: ex,
     );
   }
 }

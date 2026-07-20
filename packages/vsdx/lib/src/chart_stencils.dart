@@ -321,6 +321,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Process Steps',
       (id, cx, cy) => ChartOps.processStepsChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Arc Gauge',
+      (id, cx, cy) => ChartOps.arcGaugeChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Bullet Group',
+      (id, cx, cy) => ChartOps.bulletGroupChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Likert Scale',
+      (id, cx, cy) => ChartOps.likertChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Heat Strip',
+      (id, cx, cy) => ChartOps.heatStripChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Dual Compare',
+      (id, cx, cy) => ChartOps.dualCompareChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Status Board',
+      (id, cx, cy) => ChartOps.statusBoardChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 
