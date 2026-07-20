@@ -1183,7 +1183,12 @@ class VsdxToSvgSerializer {
     if (hasStroke) {
       final line = shape.line;
       final c = _resolveColor(line.color, line.themeColorIndex, theme);
-      reflStrokeAlpha = _combinedOpacity(c, line.transparency) * alpha;
+      // Gradient strokes ignore LineColor.a (same as [_strokeAttr]); solid
+      // strokes still combine colour AA with LineColorTrans.
+      reflStrokeAlpha = (line.hasGradient
+              ? (1 - line.transparency.clamp(0.0, 1.0))
+              : _combinedOpacity(c, line.transparency)) *
+          alpha;
       final hex = c == null ? '#000000' : _hex(c);
       reflStrokePaint = line.hasGradient
           ? 'stroke="url(#lg-$paintId)"'
@@ -1574,7 +1579,7 @@ class VsdxToSvgSerializer {
             : 0.0;
     if (soft <= 0) return null;
     final id = 'fx-$paintId';
-    final region = _filterRegionAttr(bounds, soft * 3);
+    final region = _filterRegionAttr(bounds, _softEdgesPad(shape.line, soft));
     defs.write(
       '<filter id="$id" $region>'
       '<feGaussianBlur in="SourceGraphic" '
@@ -1582,6 +1587,17 @@ class VsdxToSvgSerializer {
       '</filter>',
     );
     return 'url(#$id)';
+  }
+
+  /// Soft-edge filter / saveLayer pad: blur extent plus half-weight (and
+  /// compound rail extent) so thick strokes are not clipped after feathering.
+  double _softEdgesPad(VsdxLine line, double soft) {
+    final weight = line.weightInches > 0 ? line.weightInches : 0.01;
+    var extent = weight / 2;
+    for (final r in compoundRails(line.compoundType, weight)) {
+      extent = math.max(extent, r.offset.abs() + r.width / 2);
+    }
+    return soft * 3 + extent;
   }
 
   String _geometryToD(
@@ -2134,8 +2150,12 @@ class VsdxToSvgSerializer {
     // Visio Rounding fillets corners; when we cannot rewrite the path, round
     // joins approximate the soft elbow look (canvas uses filletPolyline).
     final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
-    // Keep LineColorTrans as stroke-opacity even for gradients (canvas applies
-    // line.transparency once via the stroke paint / shader, not twice).
+    // Keep LineColorTrans as stroke-opacity even for gradients (canvas bakes
+    // line.transparency into the shader and forces paint alpha=1). Do NOT fold
+    // LineColor.a into stroke-opacity when a gradient paints the stroke — the
+    // LineColor cell is unused for colour and its AA would make SVG more
+    // transparent than canvas.
+    final lineTransAlpha = (1 - line.transparency.clamp(0.0, 1.0));
     var strokePaint = 'stroke="$hex" stroke-opacity="${_n(alpha)}"';
     if (line.hasGradient) {
       final g = line.gradient!;
@@ -2170,7 +2190,8 @@ class VsdxToSvgSerializer {
           '$stops</radialGradient>',
         );
       }
-      strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(alpha)}"';
+      strokePaint =
+          'stroke="url(#$id)" stroke-opacity="${_n(lineTransAlpha)}"';
     }
     final markers = StringBuffer();
     // PDF backends ignore <marker>; callers bake geometry via [_bakeArrows].

@@ -224,6 +224,35 @@ void main() {
     expect(midY.abs(), lessThan(0.05));
   });
 
+  test('SVG line gradient stroke-opacity ignores LineColor alpha', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final line = VsdxShapeFactory.line(
+      id: page.nextFreeShapeId(),
+      ax: 1,
+      ay: 1,
+      bx: 4,
+      by: 1,
+    ).copyWith(
+      line: const VsdxLine(
+        color: VsdxColor(0x80FF0000),
+        transparency: 0.4,
+        weightInches: 0.05,
+        gradient: VsdxGradient(
+          stops: <VsdxGradientStop>[
+            VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+            VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, page.addShape(line));
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg.contains('stroke-opacity="0.6"'), isTrue);
+    expect(svg.contains('stroke-opacity="0.3"'), isFalse);
+  });
+
   test('SVG gradient stroke arrows use tip stop colour (not context-stroke)', () {
     final blank = const VsdxWriter().emptyDocument();
     var doc = parser.parse(blank);
@@ -1001,8 +1030,33 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('filterUnits="userSpaceOnUse"'));
     expect(svg.contains('x="-50%"'), isFalse);
-    // pad = 0.08*3 = 0.24; height 0.2 → filter height 0.68
-    expect(svg, contains('height="0.68"'));
+    // pad = soft*3 + weight/2 = 0.08*3 + 0.01/2 = 0.245; height 0.2 → 0.69
+    expect(svg, contains('height="0.69"'));
+  });
+
+  test('SVG SoftEdges filter pad includes line weight so thick strokes are not clipped',
+      () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 1,
+          width: 3,
+          height: 0.2,
+        ).copyWith(
+          line: const VsdxLine(softEdgesInches: 0.08, weightInches: 0.2),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // pad = 0.24 + 0.1 = 0.34; height 0.2 → 0.88
+    expect(svg, contains('height="0.88"'));
   });
 
   test('SVG shadow filter region includes offset so large offsets are not clipped',

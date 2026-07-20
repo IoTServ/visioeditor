@@ -34,6 +34,17 @@ void main() {
     expect(rich.textBlock.angleRad, 0);
   });
 
+  test('TxtAngle F=Inh inherits master angle (not cached V=0)', () {
+    final el = shape(
+      '<Cell N="TxtAngle" V="0" F="Inh"/><Text>Label</Text>',
+    );
+    final rich = parser.parse(
+      el,
+      defaultBlock: const VsdxTextBlock(angleRad: math.pi / 2),
+    );
+    expect(rich.textBlock.angleRad, closeTo(math.pi / 2, 1e-9));
+  });
+
   test('vertical align + margins also inherit from the master', () {
     final el = shape('<Text>Label</Text>');
     final rich = parser.parse(

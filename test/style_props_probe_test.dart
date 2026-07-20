@@ -1364,6 +1364,39 @@ void main() {
     expect(svg.contains('stroke-opacity="0.6"'), isTrue);
   });
 
+  test('SVG line gradient ignores LineColor alpha in stroke-opacity', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(
+          id: 9,
+          ax: 1,
+          ay: 1,
+          bx: 4,
+          by: 1,
+          line: VsdxLine(
+            color: const VsdxColor(0x80FF0000),
+            transparency: 0.4,
+            weightInches: 0.05,
+            gradient: VsdxGradient(
+              stops: const <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Must stay 0.6 (1-0.4), not 0.3 from folding LineColor AA into opacity.
+    expect(svg.contains('stroke-opacity="0.6"'), isTrue);
+    expect(svg.contains('stroke-opacity="0.3"'), isFalse);
+  });
+
   test('SVG pattern 8 emits dots not diagonal fallback', () {
     final page = VsdxPage(
       id: 0,

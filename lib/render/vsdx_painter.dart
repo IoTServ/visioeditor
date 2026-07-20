@@ -417,7 +417,13 @@ class VsdxPainter extends CustomPainter {
       final useSoft = soft > 0 && !shape.is1D && !softHollow;
       if (useSoft) {
         final sigma = _blurSigmaPx(soft);
-        final bounds = path.getBounds().inflate(soft * 3);
+        final weight =
+            shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+        var extent = weight / 2;
+        for (final r in compoundRails(shape.line.compoundType, weight)) {
+          extent = math.max(extent, r.offset.abs() + r.width / 2);
+        }
+        final bounds = path.getBounds().inflate(soft * 3 + extent);
         canvas.saveLayer(
           bounds,
           Paint()

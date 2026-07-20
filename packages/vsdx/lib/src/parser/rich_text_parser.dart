@@ -446,7 +446,14 @@ class RichTextParser {
           readLengthInches(shape, 'TxtLocPinY') ?? inherit.locPinYInches,
       widthInches: readLengthInches(shape, 'TxtWidth') ?? inherit.widthInches,
       heightInches: readLengthInches(shape, 'TxtHeight') ?? inherit.heightInches,
-      angleRad: readAngleRadians(shape, 'TxtAngle') ?? inherit.angleRad,
+      // F=Inh + cached V=0 must not flatten Master vertical text (π/2).
+      angleRad: readAngleRadians(
+            shape,
+            'TxtAngle',
+            inheritFrom:
+                inherit.angleRad.abs() > 1e-12 ? inherit.angleRad : null,
+          ) ??
+          inherit.angleRad,
       verticalAlign: vAlignInt == null
           ? inherit.verticalAlign
           : switch (vAlignInt) {
