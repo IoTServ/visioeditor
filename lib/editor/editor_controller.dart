@@ -4478,6 +4478,8 @@ class EditorController extends ChangeNotifier {
                   ? null
                   : VsdxFill.keepGradient,
               clearThemeBackgroundIndex: pattern <= 1,
+              // Match [setNoFill]: drop FG theme so it cannot revive later.
+              clearThemeForegroundIndex: pattern == 0,
             ),
           );
         },

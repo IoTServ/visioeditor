@@ -5824,6 +5824,82 @@ void main() {
     expect(after.fill.gradient!.stops.last.themeColorIndex, 4);
   });
 
+  test('clearing FillGradient drops Inh formula on FillGradientEnabled', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final withGrad = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: const VsdxFill(
+        pattern: 1,
+        gradient: VsdxGradient(
+          type: VsdxGradientType.linear,
+          stops: [
+            VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+            VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(withGrad));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+
+    // Inject F="Inh" on FillGradientEnabled (stylesheet inheritance).
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      'N="FillGradientEnabled" V="1"',
+      'N="FillGradientEnabled" V="1" F="Inh"',
+    );
+    if (!pageXml.contains('F="Inh"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="FillGradientEnabled"[^/]*/>'),
+        '<Cell N="FillGradientEnabled" V="1" F="Inh"/>',
+      );
+    }
+    final tainted = _rezipWith(
+      mid,
+      pageFile.name,
+      utf8.encode(pageXml),
+    );
+
+    doc = parser.parse(tainted);
+    final cleared = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(fill: s.fill.withGradient(null)),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: cleared);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final enabled = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'FillGradientEnabled',
+        );
+    expect(enabled.getAttribute('V'), '0');
+    expect(enabled.getAttribute('F'), isNull,
+        reason: 'Inh must not survive clearing the gradient');
+    expect(parser.parse(out).pages.first.findShapeById(id)!.fill.hasGradient,
+        isFalse);
+  });
+
   test('Property Value F= + Ask round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

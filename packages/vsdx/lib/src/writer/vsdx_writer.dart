@@ -3855,23 +3855,16 @@ class VsdxWriter {
         el.children.remove(s);
       }
       if (eg != null && eg.stops.isNotEmpty) {
-        _writeValue(
-          _ensureCell(el, 'FillGradientEnabled'),
-          '1',
-          preserveFormula:
-              _cellHasParametricFormula(el, 'FillGradientEnabled'),
-        );
+        // Literal V=1 — do not keep F="Inh" / parametric, which would ignore V.
+        _writeValue(_ensureCell(el, 'FillGradientEnabled'), '1');
         _writeValue(_ensureCell(el, 'FillGradientDir'),
             _gradientDirFromType(eg.type).toString());
         _writeValue(_ensureCell(el, 'FillGradientAngle'), _fmt(eg.angleRad));
         _insertBeforeTextOrShapes(el, _buildFillGradientSection(eg));
       } else {
-        _writeValue(
-          _ensureCell(el, 'FillGradientEnabled'),
-          '0',
-          preserveFormula:
-              _cellHasParametricFormula(el, 'FillGradientEnabled'),
-        );
+        // Clearing must drop Inh/parametric F= so Visio cannot revive the
+        // deleted FillGradient section via inheritance.
+        _writeValue(_ensureCell(el, 'FillGradientEnabled'), '0');
       }
       return true;
     }
@@ -3893,23 +3886,13 @@ class VsdxWriter {
         el.children.remove(s);
       }
       if (eg != null && eg.stops.isNotEmpty) {
-        _writeValue(
-          _ensureCell(el, 'LineGradientEnabled'),
-          '1',
-          preserveFormula:
-              _cellHasParametricFormula(el, 'LineGradientEnabled'),
-        );
+        _writeValue(_ensureCell(el, 'LineGradientEnabled'), '1');
         _writeValue(_ensureCell(el, 'LineGradientDir'),
             _gradientDirFromType(eg.type).toString());
         _writeValue(_ensureCell(el, 'LineGradientAngle'), _fmt(eg.angleRad));
         _insertBeforeTextOrShapes(el, _buildLineGradientSection(eg));
       } else {
-        _writeValue(
-          _ensureCell(el, 'LineGradientEnabled'),
-          '0',
-          preserveFormula:
-              _cellHasParametricFormula(el, 'LineGradientEnabled'),
-        );
+        _writeValue(_ensureCell(el, 'LineGradientEnabled'), '0');
       }
       return true;
     }

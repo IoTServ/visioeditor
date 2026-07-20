@@ -884,6 +884,35 @@ void main() {
     expect(sh.color, isNull);
   });
 
+  test('SVG skips stroke shadow when NoFill and LinePattern=0', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 21,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.1,
+            offsetYInches: 0.1,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('filter="url(#shadow-'), isFalse,
+        reason: 'canvas skips stroke shadow when LinePattern=0');
+  });
+
   test('SVG skips reflection fill on NoFill geometry', () {
     final geom = VsdxShapeFactory.rectangle(
       id: 14,

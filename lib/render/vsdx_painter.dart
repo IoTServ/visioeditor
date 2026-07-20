@@ -438,14 +438,15 @@ class VsdxPainter extends CustomPainter {
             final jumped = _lineJumpsPath(shape, geom);
             if (jumped != null) strokeSrc = jumped;
           }
-          final strokeP =
-              dashes == null ? strokeSrc : dashedPath(strokeSrc, dashes);
+          // Offset compound rails on the continuous path, then dash each rail
+          // (SVG order) — dashing before offset breaks thick-thin rails.
           _drawCompoundStroke(
             canvas,
-            strokeP,
+            strokeSrc,
             strokePaint,
             shape.line.compoundType,
             shape.line.weightInches,
+            dashes: dashes,
           );
         }
       }
@@ -459,16 +460,21 @@ class VsdxPainter extends CustomPainter {
   /// Types 1–3 are drawn as two parallel offset rails (see [compoundRails])
   /// so thick-thin / thin-thick are visually distinct. Falls back to a
   /// concentric clear-gap double when the path cannot be sampled.
+  ///
+  /// [dashes] is applied **after** offsetting so compound + LinePattern match
+  /// the SVG exporter (dash on each continuous rail).
   void _drawCompoundStroke(
     Canvas canvas,
     Path path,
     Paint paint,
     int compoundType,
-    double weightInches,
-  ) {
+    double weightInches, {
+    List<double>? dashes,
+  }) {
     final w = math.max(paint.strokeWidth, weightInches);
     if (compoundType <= 0 || w < 1e-6) {
-      canvas.drawPath(path, paint);
+      final p = dashes == null ? path : dashedPath(path, dashes);
+      canvas.drawPath(p, paint);
       return;
     }
     final rails = compoundRails(compoundType, w);
@@ -477,8 +483,9 @@ class VsdxPainter extends CustomPainter {
       for (final rail in rails) {
         final offset = _parallelPath(path, rail.offset);
         if (offset == null) continue;
+        final stroked = dashes == null ? offset : dashedPath(offset, dashes);
         canvas.drawPath(
-          offset,
+          stroked,
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeCap = paint.strokeCap
@@ -492,11 +499,12 @@ class VsdxPainter extends CustomPainter {
       if (drew) return;
     }
     // Fallback: concentric double with a transparent gap.
-    final bounds = path.getBounds().inflate(w * 2);
+    final src = dashes == null ? path : dashedPath(path, dashes);
+    final bounds = src.getBounds().inflate(w * 2);
     canvas.saveLayer(bounds, Paint());
-    canvas.drawPath(path, paint..strokeWidth = w);
+    canvas.drawPath(src, paint..strokeWidth = w);
     canvas.drawPath(
-      path,
+      src,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = paint.strokeCap
@@ -697,14 +705,13 @@ class VsdxPainter extends CustomPainter {
     _drawGlow(canvas, shape, path);
     _drawReflection(canvas, shape, path, noFill: true, noLine: false);
     _applyLineGradient(stroke, shape, path.getBounds());
-    final dashes = dashPatternFor(shape.line.pattern);
-    final strokeP = dashes == null ? path : dashedPath(path, dashes);
     _drawCompoundStroke(
       canvas,
-      strokeP,
+      path,
       stroke,
       shape.line.compoundType,
       shape.line.weightInches,
+      dashes: dashPatternFor(shape.line.pattern),
     );
   }
 

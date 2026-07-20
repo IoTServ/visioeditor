@@ -112,4 +112,17 @@ void main() {
     expect(fill.themeBackgroundIndex, isNull);
     expect(fill.themeForegroundIndex, isNull);
   });
+
+  test('setFillPattern(0) clears foreground theme like setNoFill', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setFillThemeSlot(ThemeSlot.accent1)
+      ..setFillPattern(0)
+      ..setFillPattern(2);
+    final fill = c.currentPage!.shapes.single.fill;
+    expect(fill.pattern, 2);
+    expect(fill.themeForegroundIndex, isNull);
+  });
 }

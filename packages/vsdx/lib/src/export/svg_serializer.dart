@@ -1031,6 +1031,8 @@ class VsdxToSvgSerializer {
     final lineOnly =
         !imageSilhouette && (shape.is1D || noFill || !shape.fill.hasFill);
     if (lineOnly && noLine) return;
+    // Match canvas: LinePattern=0 means no stroke, so no stroke-style shadow.
+    if (lineOnly && !shape.line.hasLine) return;
     if (!lineOnly && noFill && !imageSilhouette) return;
     final hex = _hex(base);
     final dx = shadow.offsetXInches;
