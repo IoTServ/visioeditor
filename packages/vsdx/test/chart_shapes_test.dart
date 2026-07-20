@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(58));
+    expect(kChartStencils, hasLength(64));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -358,6 +358,33 @@ void main() {
     expect(ChartOps.chartKind(loaded), 'column');
     expect(loaded.connectionPoints, isNotEmpty);
     expect(validateDocument(after).where((i) => i.severity == 'error'), isEmpty);
+  });
+
+  test('specialty charts use custom editor kinds and rebuild', () {
+    for (final kind in ChartOps.customEditorKinds) {
+      expect(ChartOps.isCustomEditorKind(kind), isTrue);
+      final chart = ChartOps.buildKind(kind, id: 21, pinX: 1, pinY: 1);
+      expect(ChartOps.chartKind(chart), kind);
+      expect(ChartOps.chartValues(chart), isNotEmpty);
+      var next = 300;
+      final rebuilt = ChartOps.rebuild(
+        chart,
+        values: List<double>.of(ChartOps.chartValues(chart)),
+        allocId: () => next++,
+      );
+      expect(ChartOps.chartKind(rebuilt), kind);
+      expect(rebuilt.children, isNotEmpty);
+    }
+    final heat = ChartOps.heatmapChart(id: 2, pinX: 1, pinY: 1);
+    expect(ChartOps.chartExtras(heat), '3x4');
+    var next = 400;
+    final resized = ChartOps.rebuild(
+      heat,
+      extras: '2x3',
+      allocId: () => next++,
+    );
+    expect(ChartOps.chartExtras(resized), '2x3');
+    expect(ChartOps.chartValues(resized), hasLength(6));
   });
 
   test('pie and line charts round-trip', () {

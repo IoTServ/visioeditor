@@ -12,7 +12,7 @@ import 'package:vsdx/vsdx.dart';
 
 import 'agent_bridge/agent_bridge.dart';
 import 'editor/canvas_camera.dart';
-import 'editor/chart_config_panel.dart';
+import 'editor/chart_editor_host.dart';
 import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
@@ -3146,7 +3146,7 @@ class _PropertyPanel extends StatelessWidget {
           ),
           if (isChart) ...[
             const SizedBox(height: 16),
-            ChartConfigPanel(controller: controller),
+            ChartEditorHost(controller: controller),
           ],
           if (isIcon) ...[
             const SizedBox(height: 16),

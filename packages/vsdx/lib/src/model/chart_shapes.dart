@@ -33,8 +33,90 @@ abstract final class ChartOps {
   static const String userLegend = 'visioeditor.ChartLegend';
   /// Marks non-series chrome (axes, grid, track, bridges, needle).
   static const String userChrome = 'visioeditor.ChartChrome';
+  /// Kind-specific params (e.g. heatmap `3x4`, calendar `weeks=4`).
+  static const String userExtras = 'visioeditor.ChartExtras';
 
   static const int maxSeriesItems = 12;
+
+  /// Kinds that use a dedicated right-panel editor (not the shared series UI).
+  static const Set<String> customEditorKinds = <String>{
+    'candlestick',
+    'heatmap',
+    'gantt',
+    'boxplot',
+    'slope',
+    'calendarHeat',
+  };
+
+  static bool isCustomEditorKind(String kind) =>
+      customEditorKinds.contains(kind);
+
+  /// Max packed values for custom kinds (shared series cap stays [maxSeriesItems]).
+  static int maxValuesForKind(String kind) {
+    switch (kind) {
+      case 'heatmap':
+      case 'calendarHeat':
+        return 36;
+      case 'candlestick':
+        return 16; // 4 candles × OHLC
+      case 'gantt':
+        return 16; // 8 tasks × start/duration
+      case 'boxplot':
+        return 15; // 3 boxes × 5 stats
+      case 'slope':
+        return 12; // 6 pairs
+      default:
+        return maxSeriesItems;
+    }
+  }
+
+  /// Logical series count for labels/colours on custom kinds.
+  static int logicalSeriesCount(
+    String kind,
+    List<double> values, [
+    String? extras,
+  ]) {
+    switch (kind) {
+      case 'candlestick':
+        return math.max(1, values.length ~/ 4);
+      case 'gantt':
+      case 'slope':
+        return math.max(1, values.length ~/ 2);
+      case 'boxplot':
+        return math.max(1, values.length ~/ 5);
+      case 'heatmap':
+        final g = parseHeatmapGrid(extras);
+        return g.$1 * g.$2;
+      case 'calendarHeat':
+        return calendarCellCount(extras);
+      default:
+        return values.length;
+    }
+  }
+
+  static (int rows, int cols) parseHeatmapGrid(String? extras) {
+    final m = RegExp(r'(\d+)\s*[x×]\s*(\d+)').firstMatch(extras ?? '');
+    if (m != null) {
+      final rows = int.parse(m.group(1)!).clamp(1, 6);
+      final cols = int.parse(m.group(2)!).clamp(1, 6);
+      return (rows, cols);
+    }
+    return (3, 4);
+  }
+
+  static String formatHeatmapGrid(int rows, int cols) =>
+      '${rows.clamp(1, 6)}x${cols.clamp(1, 6)}';
+
+  static int parseCalendarWeeks(String? extras) {
+    final m = RegExp(r'weeks\s*=\s*(\d+)').firstMatch(extras ?? '');
+    if (m != null) return int.parse(m.group(1)!).clamp(2, 6);
+    return 4;
+  }
+
+  static String formatCalendarWeeks(int weeks) => 'weeks=${weeks.clamp(2, 6)}';
+
+  static int calendarCellCount(String? extras) =>
+      parseCalendarWeeks(extras) * 7;
 
   /// Kind picker groups for the editor (group title → kind keys).
   static const List<(String, List<String>)> kindGroups =
@@ -101,7 +183,22 @@ abstract final class ChartOps {
       'trafficLight',
     ]),
     ('Other', <String>['bubble']),
+    // Specialty kinds have dedicated editors; listed for display names / insert.
+    ('Specialty', <String>[
+      'candlestick',
+      'heatmap',
+      'gantt',
+      'boxplot',
+      'slope',
+      'calendarHeat',
+    ]),
   ];
+
+  /// Kind groups shown in the shared series editor (excludes specialty).
+  static List<(String, List<String>)> get sharedKindGroups => <(String, List<String>)>[
+        for (final g in kindGroups)
+          if (g.$1 != 'Specialty') g,
+      ];
 
   /// Chart kinds exposed in the editor type picker (value → stencil English name).
   static const Map<String, String> kindDisplayNames = <String, String>{
@@ -163,6 +260,12 @@ abstract final class ChartOps {
     'trafficLight': 'Traffic Light',
     'waterfall': 'Waterfall',
     'bubble': 'Bubble Chart',
+    'candlestick': 'Candlestick Chart',
+    'heatmap': 'Heatmap',
+    'gantt': 'Gantt Chart',
+    'boxplot': 'Box Plot',
+    'slope': 'Slope Chart',
+    'calendarHeat': 'Calendar Heatmap',
   };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
@@ -234,6 +337,27 @@ abstract final class ChartOps {
       if (c.name == userKind) return c.value;
     }
     return null;
+  }
+
+  static String? chartExtras(VsdxShape s) {
+    for (final c in s.userCells) {
+      if (c.name == userExtras) {
+        final v = (c.value ?? '').trim();
+        if (v.isNotEmpty) return v;
+      }
+    }
+    return null;
+  }
+
+  static VsdxShape withExtras(VsdxShape chart, String? extras) {
+    final kept = <VsdxUserCell>[
+      for (final c in chart.userCells)
+        if (c.name != userExtras) c,
+    ];
+    if (extras != null && extras.trim().isNotEmpty) {
+      kept.add(VsdxUserCell(name: userExtras, value: extras.trim()));
+    }
+    return chart.copyWith(userCells: kept);
   }
 
   static List<double> chartValues(VsdxShape s) {
@@ -475,6 +599,7 @@ abstract final class ChartOps {
     List<double>? valuesBackup,
     List<VsdxColor>? colorsBackup,
     List<String>? labelsBackup,
+    String? extras,
   }) =>
       <VsdxUserCell>[
         const VsdxUserCell(name: userChart, value: '1'),
@@ -484,6 +609,8 @@ abstract final class ChartOps {
           VsdxUserCell(name: userColors, value: formatColors(colors)),
         if (labels != null && labels.isNotEmpty)
           VsdxUserCell(name: userLabels, value: formatLabels(labels)),
+        if (extras != null && extras.trim().isNotEmpty)
+          VsdxUserCell(name: userExtras, value: extras.trim()),
         if (valuesBackup != null && valuesBackup.length > 1)
           VsdxUserCell(
               name: userValuesBackup, value: formatValues(valuesBackup)),
@@ -501,6 +628,7 @@ abstract final class ChartOps {
     userValues,
     userColors,
     userLabels,
+    userExtras,
     userValuesBackup,
     userColorsBackup,
     userLabelsBackup,
@@ -540,6 +668,9 @@ abstract final class ChartOps {
     // Gauge keeps its traffic-light bands; only persist the meta colours.
     final List<VsdxShape> kids;
     if (kind == 'gauge') {
+      kids = chart.children;
+    } else if (kind == 'heatmap' || kind == 'calendarHeat') {
+      // Intensity colours come from values at build time.
       kids = chart.children;
     } else if (kind == 'ringProgress' ||
         kind == 'waffle' ||
@@ -591,6 +722,7 @@ abstract final class ChartOps {
           valuesBackup: valuesBackup ?? _backupValues(chart),
           colorsBackup: colorsBackup ?? _backupColors(chart),
           labelsBackup: labelsBackup ?? _backupLabels(chart),
+          extras: chartExtras(chart),
         ),
       ],
     );
@@ -691,13 +823,20 @@ abstract final class ChartOps {
     List<VsdxColor>? colors,
     List<String>? labels,
     String? kind,
+    String? extras,
     required int Function() allocId,
   }) {
     final prevKind = chartKind(chart) ?? 'column';
     final k = kind ?? prevKind;
     final prevVals = chartValues(chart);
     final prevCols = chartColors(chart);
-    final prevLabs = chartLabels(chart, prevVals.length);
+    final extrasOut = extras ?? chartExtras(chart);
+    final prevLabs = chartLabels(
+      chart,
+      isCustomEditorKind(prevKind)
+          ? logicalSeriesCount(prevKind, prevVals, chartExtras(chart))
+          : prevVals.length,
+    );
 
     var vals = List<double>.of(values ?? prevVals);
     var cols = List<VsdxColor>.of(colors ?? prevCols);
@@ -736,12 +875,20 @@ abstract final class ChartOps {
     if (isSingleValueKind(k) && vals.length > 1) {
       vals = <double>[vals.first.clamp(0.0, 1.0)];
     }
-    if (vals.isEmpty) vals = List<double>.of(defaultValues);
-    if (vals.length > maxSeriesItems) {
-      vals = vals.sublist(0, maxSeriesItems);
+    if (vals.isEmpty) {
+      vals = isCustomEditorKind(k)
+          ? List<double>.of(_defaultValuesForKind(k, extrasOut))
+          : List<double>.of(defaultValues);
     }
-    cols = padColors(cols, vals.length);
-    labs = padLabels(labs, vals.length);
+    final maxV = maxValuesForKind(k);
+    if (vals.length > maxV) {
+      vals = vals.sublist(0, maxV);
+    }
+    final labelCount = isCustomEditorKind(k)
+        ? logicalSeriesCount(k, vals, extrasOut)
+        : vals.length;
+    cols = padColors(cols, labelCount);
+    labs = padLabels(labs, labelCount);
 
     final built = buildKind(
       k,
@@ -751,6 +898,7 @@ abstract final class ChartOps {
       width: chart.width,
       height: chart.height,
       values: vals,
+      extras: extrasOut,
       allocId: allocId,
     );
     final colored = withSeriesColors(
@@ -761,7 +909,37 @@ abstract final class ChartOps {
       colorsBackup: colorsBackup,
       labelsBackup: labelsBackup,
     );
-    return withCategoryLabels(colored, labs, cols, allocId: allocId);
+    final withEx = extrasOut == null ? colored : withExtras(colored, extrasOut);
+    return withCategoryLabels(withEx, labs, cols, allocId: allocId);
+  }
+
+  static List<double> _defaultValuesForKind(String kind, String? extras) {
+    switch (kind) {
+      case 'candlestick':
+        return const <double>[
+          0.4, 0.7, 0.3, 0.55,
+          0.55, 0.8, 0.45, 0.65,
+          0.5, 0.75, 0.35, 0.4,
+        ];
+      case 'heatmap':
+        final g = parseHeatmapGrid(extras);
+        return <double>[
+          for (var i = 0; i < g.$1 * g.$2; i++) 0.2 + (i % 5) * 0.15,
+        ];
+      case 'gantt':
+        return const <double>[0.05, 0.35, 0.25, 0.3, 0.45, 0.4, 0.7, 0.25];
+      case 'boxplot':
+        return const <double>[0.15, 0.35, 0.5, 0.65, 0.85];
+      case 'slope':
+        return const <double>[0.3, 0.7, 0.6, 0.4, 0.45, 0.8];
+      case 'calendarHeat':
+        final n = calendarCellCount(extras);
+        return <double>[
+          for (var i = 0; i < n; i++) ((i * 37) % 100) / 100.0,
+        ];
+      default:
+        return List<double>.of(defaultValues);
+    }
   }
 
   static VsdxShape buildKind(
@@ -772,6 +950,7 @@ abstract final class ChartOps {
     double? width,
     double? height,
     List<double>? values,
+    String? extras,
     int Function()? allocId,
   }) {
     switch (kind) {
@@ -1288,6 +1467,62 @@ abstract final class ChartOps {
             height: height ?? 1.8,
             values: values,
             allocId: allocId);
+      case 'candlestick':
+        return candlestickChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'heatmap':
+        return heatmapChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            extras: extras,
+            allocId: allocId);
+      case 'gantt':
+        return ganttChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'boxplot':
+        return boxplotChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'slope':
+        return slopeChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'calendarHeat':
+        return calendarHeatChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.6,
+            values: values,
+            extras: extras,
+            allocId: allocId);
       case 'column':
       default:
         return columnChart(
@@ -1385,6 +1620,7 @@ abstract final class ChartOps {
     required List<VsdxShape> children,
     required String kind,
     required List<double> values,
+    String? extras,
   }) {
     final w = width.abs();
     final h = height.abs();
@@ -1400,7 +1636,7 @@ abstract final class ChartOps {
       fill: const VsdxFill(pattern: 0),
       line: const VsdxLine(pattern: 0),
       connectionPoints: VsdxPage.defaultConnectionPoints(w, h),
-      userCells: _meta(kind, values),
+      userCells: _meta(kind, values, extras: extras),
       children: children,
     );
   }
@@ -5179,6 +5415,447 @@ abstract final class ChartOps {
       children: kids,
       kind: 'polarLine',
       values: vals,
+    );
+  }
+
+  static VsdxColor _heatColor(double t, {int base = 0xFF1565C0}) {
+    final u = t.clamp(0.0, 1.0);
+    final a = (base >> 24) & 0xFF;
+    final r0 = (base >> 16) & 0xFF;
+    final g0 = (base >> 8) & 0xFF;
+    final b0 = base & 0xFF;
+    // Blend toward white for low intensity.
+    final r = (r0 + ((255 - r0) * (1 - u))).round().clamp(0, 255);
+    final g = (g0 + ((255 - g0) * (1 - u))).round().clamp(0, 255);
+    final b = (b0 + ((255 - b0) * (1 - u))).round().clamp(0, 255);
+    return VsdxColor((a << 24) | (r << 16) | (g << 8) | b);
+  }
+
+  /// OHLC candlesticks. Values packed as open,high,low,close per candle.
+  static VsdxShape candlestickChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('candlestick', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final padT = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final n = math.max(1, vals.length ~/ 4);
+    final gap = plotW * 0.08;
+    final slot = (plotW - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final o = vals[i * 4].clamp(0.0, 1.0);
+      final hi = vals[i * 4 + 1].clamp(0.0, 1.0);
+      final lo = vals[i * 4 + 2].clamp(0.0, 1.0);
+      final c = vals[i * 4 + 3].clamp(0.0, 1.0);
+      final cx = padL + gap + slot / 2 + i * (slot + gap);
+      final up = c >= o;
+      final color = up
+          ? const VsdxColor(0xFF43A047)
+          : const VsdxColor(0xFFE53935);
+      final wickTop = padB + plotH * math.max(hi, math.max(o, c));
+      final wickBot = padB + plotH * math.min(lo, math.min(o, c));
+      final bodyTop = padB + plotH * math.max(o, c);
+      final bodyBot = padB + plotH * math.min(o, c);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: (wickTop + wickBot) / 2,
+        width: 0.02,
+        height: math.max(wickTop - wickBot, 0.02),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.01, 0),
+              LineTo(0.01, math.max(wickTop - wickBot, 0.02)),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: VsdxLine(color: color, weightInches: 0.012),
+        userCells: _chromeMeta,
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: (bodyTop + bodyBot) / 2,
+        width: slot * 0.55,
+        height: math.max(bodyTop - bodyBot, 0.04),
+        fill: color,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'candlestick',
+      values: vals,
+    );
+  }
+
+  /// Grid heatmap. [extras] = `rows x cols` (default `3x4`).
+  static VsdxShape heatmapChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    String? extras,
+    int Function()? allocId,
+  }) {
+    final grid = parseHeatmapGrid(extras);
+    final rows = grid.$1;
+    final cols = grid.$2;
+    final ex = formatHeatmapGrid(rows, cols);
+    var vals = values ?? _defaultValuesForKind('heatmap', ex);
+    final need = rows * cols;
+    if (vals.length < need) {
+      vals = <double>[
+        ...vals,
+        for (var i = vals.length; i < need; i++) 0.2 + (i % 5) * 0.15,
+      ];
+    } else if (vals.length > need) {
+      vals = vals.sublist(0, need);
+    }
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = math.min(w, h) * 0.08;
+    final gap = math.min(w, h) * 0.02;
+    final cellW = (w - pad * 2 - gap * (cols - 1)) / cols;
+    final cellH = (h - pad * 2 - gap * (rows - 1)) / rows;
+    final kids = <VsdxShape>[];
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        final i = r * cols + c;
+        final t = vals[i].clamp(0.0, 1.0);
+        kids.add(_rectChild(
+          id: next(),
+          pinX: pad + cellW / 2 + c * (cellW + gap),
+          pinY: h - pad - cellH / 2 - r * (cellH + gap),
+          width: cellW,
+          height: cellH,
+          fill: _heatColor(t),
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'heatmap',
+      values: vals,
+      extras: ex,
+    );
+  }
+
+  /// Gantt bars. Values packed as start,duration (0–1) per task.
+  static VsdxShape ganttChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('gantt', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.06;
+    final padT = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final n = math.max(1, vals.length ~/ 2);
+    final gap = plotH * 0.08;
+    final barH = (plotH - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final start = vals[i * 2].clamp(0.0, 0.95);
+      final dur = vals[i * 2 + 1].clamp(0.05, 1.0 - start);
+      final color = seriesColors[i % seriesColors.length];
+      final cy = padB + gap + barH / 2 + i * (barH + gap);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW * (start + dur / 2),
+        pinY: cy,
+        width: math.max(plotW * dur, 0.06),
+        height: barH * 0.7,
+        fill: color,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'gantt',
+      values: vals,
+    );
+  }
+
+  /// Box plot. Values packed as min,q1,median,q3,max per box.
+  static VsdxShape boxplotChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('boxplot', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final padT = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - padT;
+    final n = math.max(1, vals.length ~/ 5);
+    final gap = plotW * 0.1;
+    final slot = (plotW - gap * (n + 1)) / n;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final sorted = <double>[
+        vals[i * 5],
+        vals[i * 5 + 1],
+        vals[i * 5 + 2],
+        vals[i * 5 + 3],
+        vals[i * 5 + 4],
+      ]..sort();
+      final mn = sorted[0].clamp(0.0, 1.0);
+      final q1 = sorted[1].clamp(0.0, 1.0);
+      final med = sorted[2].clamp(0.0, 1.0);
+      final q3 = sorted[3].clamp(0.0, 1.0);
+      final mx = sorted[4].clamp(0.0, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      final cx = padL + gap + slot / 2 + i * (slot + gap);
+      final y = (double t) => padB + plotH * t;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: (y(mn) + y(mx)) / 2,
+        width: 0.02,
+        height: math.max(y(mx) - y(mn), 0.02),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.01, 0),
+              LineTo(0.01, math.max(y(mx) - y(mn), 0.02)),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: VsdxLine(color: color, weightInches: 0.01),
+        userCells: _chromeMeta,
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: (y(q1) + y(q3)) / 2,
+        width: slot * 0.55,
+        height: math.max(y(q3) - y(q1), 0.04),
+        fill: color,
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: y(med),
+        width: slot * 0.55,
+        height: 0.025,
+        fill: const VsdxColor(0xFF212121),
+        chrome: true,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'boxplot',
+      values: vals,
+    );
+  }
+
+  /// Slope chart. Values packed as before,after per series.
+  static VsdxShape slopeChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? _defaultValuesForKind('slope', null);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.18;
+    final padB = h * 0.12;
+    final padR = w * 0.18;
+    final padT = h * 0.1;
+    final plotH = h - padB - padT;
+    final x0 = padL;
+    final x1 = w - padR;
+    final n = math.max(1, vals.length ~/ 2);
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < n; i++) {
+      final a = vals[i * 2].clamp(0.0, 1.0);
+      final b = vals[i * 2 + 1].clamp(0.0, 1.0);
+      final color = seriesColors[i % seriesColors.length];
+      final y0 = padB + plotH * a;
+      final y1 = padB + plotH * b;
+      final minY = math.min(y0, y1);
+      final maxY = math.max(y0, y1);
+      final lh = math.max(maxY - minY, 0.04);
+      final lw = math.max(x1 - x0, 0.04);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: (x0 + x1) / 2,
+        pinY: (y0 + y1) / 2,
+        width: lw,
+        height: lh,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, y0 - minY),
+              LineTo(lw, y1 - minY),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: VsdxLine(color: color, weightInches: 0.016),
+        userCells: _chromeMeta,
+      ));
+      for (final p in <(double, double)>[(x0, y0), (x1, y1)]) {
+        const r = 0.055;
+        kids.add(VsdxShape(
+          id: next(),
+          name: _sheetName(id),
+          pinX: p.$1,
+          pinY: p.$2,
+          width: r * 2,
+          height: r * 2,
+          geometries: <VsdxGeometry>[
+            VsdxGeometry(commands: <VsdxPathCommand>[
+              EllipseCmd(
+                cx: r,
+                cy: r,
+                aX: r * 2,
+                aY: r,
+                bX: r,
+                bY: 0,
+              ),
+            ]),
+          ],
+          fill: VsdxFill(foreground: color),
+          line: _barLine(color),
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'slope',
+      values: vals,
+    );
+  }
+
+  /// Calendar heatmap (weeks × 7 days). [extras] = `weeks=N`.
+  static VsdxShape calendarHeatChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.6,
+    List<double>? values,
+    String? extras,
+    int Function()? allocId,
+  }) {
+    final weeks = parseCalendarWeeks(extras);
+    final ex = formatCalendarWeeks(weeks);
+    final need = weeks * 7;
+    var vals = values ?? _defaultValuesForKind('calendarHeat', ex);
+    if (vals.length < need) {
+      vals = <double>[
+        ...vals,
+        for (var i = vals.length; i < need; i++) ((i * 37) % 100) / 100.0,
+      ];
+    } else if (vals.length > need) {
+      vals = vals.sublist(0, need);
+    }
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = math.min(w, h) * 0.08;
+    final gap = math.min(w, h) * 0.015;
+    final cellW = (w - pad * 2 - gap * 6) / 7;
+    final cellH = (h - pad * 2 - gap * (weeks - 1)) / weeks;
+    final kids = <VsdxShape>[];
+    for (var week = 0; week < weeks; week++) {
+      for (var day = 0; day < 7; day++) {
+        final i = week * 7 + day;
+        final t = vals[i].clamp(0.0, 1.0);
+        kids.add(_rectChild(
+          id: next(),
+          pinX: pad + cellW / 2 + day * (cellW + gap),
+          pinY: h - pad - cellH / 2 - week * (cellH + gap),
+          width: cellW,
+          height: cellH,
+          fill: _heatColor(t, base: 0xFF2E7D32),
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'calendarHeat',
+      values: vals,
+      extras: ex,
     );
   }
 }

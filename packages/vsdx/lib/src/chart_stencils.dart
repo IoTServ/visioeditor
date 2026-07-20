@@ -245,6 +245,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Bubble Chart',
       (id, cx, cy) => ChartOps.bubbleChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Candlestick Chart',
+      (id, cx, cy) => ChartOps.candlestickChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Heatmap',
+      (id, cx, cy) => ChartOps.heatmapChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Gantt Chart',
+      (id, cx, cy) => ChartOps.ganttChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Box Plot',
+      (id, cx, cy) => ChartOps.boxplotChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Slope Chart',
+      (id, cx, cy) => ChartOps.slopeChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Calendar Heatmap',
+      (id, cx, cy) => ChartOps.calendarHeatChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 

@@ -235,6 +235,34 @@ class EditorL10n {
   String get chartPasteValues => _t('chartPasteValues');
   String get chartPasteHint => _t('chartPasteHint');
   String get chartEqualize => _t('chartEqualize');
+  String get chartSpecialtyCandlestickHint =>
+      _t('chartSpecialtyCandlestickHint');
+  String get chartSpecialtyHeatmapHint => _t('chartSpecialtyHeatmapHint');
+  String get chartSpecialtyGanttHint => _t('chartSpecialtyGanttHint');
+  String get chartSpecialtyBoxplotHint => _t('chartSpecialtyBoxplotHint');
+  String get chartSpecialtySlopeHint => _t('chartSpecialtySlopeHint');
+  String get chartSpecialtyCalendarHint => _t('chartSpecialtyCalendarHint');
+  String get chartCandle => _t('chartCandle');
+  String get chartOpen => _t('chartOpen');
+  String get chartHigh => _t('chartHigh');
+  String get chartLow => _t('chartLow');
+  String get chartClose => _t('chartClose');
+  String get chartAddCandle => _t('chartAddCandle');
+  String get chartRows => _t('chartRows');
+  String get chartCols => _t('chartCols');
+  String get chartTaskName => _t('chartTaskName');
+  String get chartStart => _t('chartStart');
+  String get chartDuration => _t('chartDuration');
+  String get chartAddTask => _t('chartAddTask');
+  String get chartMin => _t('chartMin');
+  String get chartQ1 => _t('chartQ1');
+  String get chartMedian => _t('chartMedian');
+  String get chartQ3 => _t('chartQ3');
+  String get chartMax => _t('chartMax');
+  String get chartBefore => _t('chartBefore');
+  String get chartAfter => _t('chartAfter');
+  String get chartWeeks => _t('chartWeeks');
+  String get chartWeekdaysShort => _t('chartWeekdaysShort');
   String chartDefaultItem(int n) =>
       _t('chartDefaultItem').replaceAll('{n}', '$n');
   String chartKindGroup(String english) {

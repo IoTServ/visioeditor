@@ -5446,6 +5446,7 @@ class EditorController extends ChangeNotifier {
     List<VsdxColor>? colors,
     List<String>? labels,
     String? kind,
+    String? extras,
     bool transient = false,
   }) {
     final chartId = selectedChartId;
@@ -5464,6 +5465,7 @@ class EditorController extends ChangeNotifier {
           colors: colors,
           labels: labels,
           kind: kind,
+          extras: extras,
           allocId: () => nextId++,
         );
         return page.updateShapeById(chartId, (_) => rebuilt);
@@ -5471,6 +5473,26 @@ class EditorController extends ChangeNotifier {
       transient: transient,
     );
     if (!transient) setSelection([chartId]);
+  }
+
+  /// Update kind-specific extras (heatmap grid, calendar weeks, …).
+  void setChartExtras(String extras) {
+    _rebuildSelectedChart(extras: extras);
+  }
+
+  /// Rebuild selected chart with packed specialty values + optional extras.
+  void setChartSpecialtyData({
+    List<double>? values,
+    List<VsdxColor>? colors,
+    List<String>? labels,
+    String? extras,
+  }) {
+    _rebuildSelectedChart(
+      values: values,
+      colors: colors,
+      labels: labels,
+      extras: extras,
+    );
   }
 
   /// Coloured series children of the selected chart (for swatch editing).

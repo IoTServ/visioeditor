@@ -324,7 +324,7 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
           tooltip: el.chartType,
           onSelected: _setKind,
           itemBuilder: (ctx) => [
-            for (final group in ChartOps.kindGroups) ...[
+            for (final group in ChartOps.sharedKindGroups) ...[
               PopupMenuItem<String>(
                 enabled: false,
                 height: 28,
