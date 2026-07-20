@@ -3470,13 +3470,8 @@ class VsdxWriter {
       final gb = base.geometries[si];
       final ge = edited.geometries[si];
       if (gb.commands.length != ge.commands.length) return false;
-      if (gb.noFill != ge.noFill ||
-          gb.noLine != ge.noLine ||
-          gb.noShow != ge.noShow ||
-          gb.noSnap != ge.noSnap ||
-          gb.noQuickDrag != ge.noQuickDrag) {
-        return false;
-      }
+      // Flags are applied after by [_ensureGeometryNoFillNoLine]; do not abort
+      // in-place coordinate patches when only NoFill/NoLine/… changed.
       final rows = sections[si]
           .childElements
           .where((r) => r.name.local == 'Row')
@@ -3752,12 +3747,10 @@ class VsdxWriter {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
       final ga = a[i], gb = b[i];
-      if (ga.noFill != gb.noFill ||
-          ga.noLine != gb.noLine ||
-          ga.noShow != gb.noShow ||
-          ga.noSnap != gb.noSnap ||
-          ga.noQuickDrag != gb.noQuickDrag ||
-          ga.commands.length != gb.commands.length) {
+      // Section flags (NoFill/NoLine/…) are synced separately by
+      // [_ensureGeometryNoFillNoLine]; comparing them here forced a full
+      // Geometry rebuild that dropped Width*/Scratch/unmodelled cells.
+      if (ga.commands.length != gb.commands.length) {
         return false;
       }
       for (var j = 0; j < ga.commands.length; j++) {

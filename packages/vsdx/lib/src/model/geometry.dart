@@ -1452,3 +1452,23 @@ List<VsdxGeometry> syncGeometryNoLine(
   if (!geos.every((g) => g.noLine)) return geos;
   return [for (final g in geos) g.copyWith(noLine: false)];
 }
+
+/// Copy section flags from [prior] onto freshly rebuilt [fresh] paths so
+/// layout/resize regenerations do not drop NoFill/NoLine (Edraw export).
+List<VsdxGeometry> preserveGeometryFlags(
+  List<VsdxGeometry> fresh,
+  List<VsdxGeometry> prior,
+) {
+  if (fresh.isEmpty || prior.isEmpty) return fresh;
+  return <VsdxGeometry>[
+    for (var i = 0; i < fresh.length; i++)
+      fresh[i].copyWith(
+        noFill: i < prior.length ? prior[i].noFill : fresh[i].noFill,
+        noLine: i < prior.length ? prior[i].noLine : fresh[i].noLine,
+        noShow: i < prior.length ? prior[i].noShow : fresh[i].noShow,
+        noSnap: i < prior.length ? prior[i].noSnap : fresh[i].noSnap,
+        noQuickDrag:
+            i < prior.length ? prior[i].noQuickDrag : fresh[i].noQuickDrag,
+      ),
+  ];
+}

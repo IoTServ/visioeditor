@@ -5041,6 +5041,62 @@ void main() {
     expect(after.geometries.first.noQuickDrag, isTrue);
   });
 
+  test('NoFill-only edit keeps Geometry formulas (no full rebuild)', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      geometries: [
+        VsdxGeometry(
+          commands: const [
+            MoveTo(0, 0),
+            LineTo(2, 0),
+            LineTo(2, 1),
+            LineTo(0, 1),
+            LineTo(0, 0),
+          ],
+          commandFormulas: const [
+            {'X': 'Width*0', 'Y': 'Height*0'},
+            {'X': 'Width*1', 'Y': 'Height*0'},
+            {'X': 'Width*1', 'Y': 'Height*1'},
+            {'X': 'Width*0', 'Y': 'Height*1'},
+            {'X': 'Width*0', 'Y': 'Height*0'},
+          ],
+        ),
+      ],
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final mid = writer.write(originalBytes: blank, edited: outDoc);
+    final midDoc = parser.parse(mid);
+    final edited = midDoc.replacePage(
+      0,
+      midDoc.pages.first.updateShapeById(id, (s) {
+        return s.copyWith(
+          fill: const VsdxFill(pattern: 0),
+          geometries: syncGeometryNoFill(s.geometries, hollow: true),
+        );
+      }),
+    );
+    final out = writer.write(originalBytes: mid, edited: edited);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="NoFill" V="1"'), isTrue);
+    expect(pageXml.contains('F="Width*1"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.geometries.first.noFill, isTrue);
+    expect(after.geometries.first.formulasAt(1)['X'], 'Width*1');
+  });
+
   test('group rebuild preserves opaque EventDblClick / ObjType', () {
     final bytes = _fixture('test5_master.vsdx');
     final doc = parser.parse(bytes);

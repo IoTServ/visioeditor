@@ -166,4 +166,35 @@ void main() {
     expect(scaled.pinY, closeTo(1 * (4 / 2), 0.15));
     expect(scaled.height, closeTo(0.4 * (4 / 2), 0.15));
   });
+
+  test('lane layout preserves NoFill/NoLine on regenerated geometry', () {
+    var pool = SwimlaneOps.assemblePool(
+      poolId: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 4,
+      height: 2,
+      laneCount: 2,
+      horizontal: true,
+    );
+    final lanes = SwimlaneOps.lanesOf(pool);
+    final hollow = lanes.first.copyWith(
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      geometries: syncGeometryNoLine(
+        syncGeometryNoFill(lanes.first.geometries, hollow: true),
+        hollow: true,
+      ),
+    );
+    pool = pool.copyWith(
+      children: <VsdxShape>[
+        hollow.copyWith(height: 2.5),
+        lanes.last,
+      ],
+    );
+    final laid = SwimlaneOps.layoutLanesPreservingSizes(pool);
+    final lane = SwimlaneOps.lanesOf(laid).first;
+    expect(lane.geometries.first.noFill, isTrue);
+    expect(lane.geometries.first.noLine, isTrue);
+  });
 }

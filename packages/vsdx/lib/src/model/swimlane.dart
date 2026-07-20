@@ -433,10 +433,13 @@ abstract final class SwimlaneOps {
           pinY: pinY,
           width: width,
           height: height,
-          geometries: laneGeometry(
-            width: width,
-            height: height,
-            horizontal: horizontal,
+          geometries: preserveGeometryFlags(
+            laneGeometry(
+              width: width,
+              height: height,
+              horizontal: horizontal,
+            ),
+            lane.geometries,
           ),
           userCells: _mergeLaneCells(lane.userCells, horizontal: horizontal),
           shapeKind: VsdxShapeKind.swimlane,

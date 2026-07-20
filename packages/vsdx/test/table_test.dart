@@ -209,5 +209,34 @@ void main() {
         isTrue,
       );
     });
+
+    test('layout preserves cell NoFill across resize', () {
+      var table = TableOps.assembleTable(
+        tableId: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      );
+      table = table.copyWith(
+        children: <VsdxShape>[
+          for (final c in table.children)
+            TableOps.isCell(c)
+                ? c.copyWith(
+                    fill: const VsdxFill(pattern: 0),
+                    geometries: syncGeometryNoFill(c.geometries, hollow: true),
+                  )
+                : c,
+        ],
+      );
+      table = TableOps.resizeColumnBoundary(table, 0, 0.5);
+      for (final c in TableOps.cellsOf(table)) {
+        if (TableOps.isCovered(c)) continue;
+        expect(c.geometries.first.noFill, isTrue,
+            reason: 'cell ${TableOps.cellRow(c)}_${TableOps.cellCol(c)}');
+      }
+    });
   });
 }

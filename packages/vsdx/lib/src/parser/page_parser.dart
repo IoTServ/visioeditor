@@ -232,9 +232,14 @@ class PageParser {
     // cells are absent (older writers omitted them), default to pattern 0
     // rather than Visio's solid defaults so round-trips stay visually empty.
     final isForeign = shapeTypeAttr == 'Foreign';
+    final fillStyleId = int.tryParse(shapeEl.getAttribute('FillStyle') ?? '') ??
+        proto?.fillStyleId;
+    final sheetFill =
+        fillStyleId != null ? _stylesheets.resolveFill(fillStyleId) : null;
     final fill = _style.parseFill(
       shapeEl,
       defaults: proto?.fill ??
+          sheetFill ??
           (isForeign ? const VsdxFill(pattern: 0) : VsdxFill.defaultFill),
     );
     final lineStyleId = int.tryParse(shapeEl.getAttribute('LineStyle') ?? '') ??
@@ -270,8 +275,6 @@ class PageParser {
     // would wipe Connector=8pt / stencil Character=10pt with Normal=12pt.
     final ownTextStyleId =
         int.tryParse(shapeEl.getAttribute('TextStyle') ?? '');
-    final fillStyleId = int.tryParse(shapeEl.getAttribute('FillStyle') ?? '') ??
-        proto?.fillStyleId;
     final textStyleId = ownTextStyleId ?? proto?.textStyleId;
     final sheetChar = ownTextStyleId != null
         ? _stylesheets.resolveCharStyle(ownTextStyleId)

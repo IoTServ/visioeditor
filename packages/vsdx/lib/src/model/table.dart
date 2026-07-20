@@ -367,7 +367,10 @@ abstract final class TableOps {
               pinY: 0.01,
               width: 0.01,
               height: 0.01,
-              geometries: _rectGeometry(0.01, 0.01),
+              geometries: preserveGeometryFlags(
+                _rectGeometry(0.01, 0.01),
+                existing.geometries,
+              ),
               userCells: cellUserCells(
                 row: r,
                 col: c,
@@ -986,7 +989,10 @@ abstract final class TableOps {
           pinY: pinY,
           width: width,
           height: height,
-          geometries: _rectGeometry(width, height),
+          geometries: preserveGeometryFlags(
+            _rectGeometry(width, height),
+            cell.geometries,
+          ),
           userCells: cellUserCells(
             row: row,
             col: col,

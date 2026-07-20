@@ -6,6 +6,7 @@ library;
 import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
+import 'effects.dart';
 import 'fill.dart';
 import 'line.dart';
 import 'rich_text.dart';
@@ -157,6 +158,65 @@ class StyleSheetRegistry {
       pattern: pattern ?? VsdxLine.defaultLine.pattern,
       softEdgesInches:
           softEdgesInches ?? VsdxLine.defaultLine.softEdgesInches,
+    );
+  }
+
+  /// Resolve effective [VsdxFill] defaults from a `FillStyle` id, walking the
+  /// parent chain like Visio / [resolveLine].
+  VsdxFill? resolveFill(int? fillStyleId) {
+    var id = fillStyleId;
+    if (id == null) return null;
+
+    VsdxColor? foreground;
+    VsdxColor? background;
+    int? pattern;
+    int? themeForegroundIndex;
+    int? themeBackgroundIndex;
+    VsdxGradient? gradient;
+    double? foregroundTransparency;
+    double? backgroundTransparency;
+    var sawTransparency = false;
+
+    final seen = <int>{};
+    while (id != null && seen.add(id)) {
+      final sheet = _byId[id];
+      if (sheet == null) break;
+      final fill = sheet.fill;
+      if (fill != null) {
+        foreground ??= fill.foreground;
+        background ??= fill.background;
+        pattern ??= fill.pattern;
+        themeForegroundIndex ??= fill.themeForegroundIndex;
+        themeBackgroundIndex ??= fill.themeBackgroundIndex;
+        gradient ??= fill.gradient;
+        if (!sawTransparency) {
+          foregroundTransparency = fill.foregroundTransparency;
+          backgroundTransparency = fill.backgroundTransparency;
+          sawTransparency = true;
+        }
+      }
+      id = sheet.fillStyleId;
+    }
+
+    if (foreground == null &&
+        background == null &&
+        pattern == null &&
+        themeForegroundIndex == null &&
+        themeBackgroundIndex == null &&
+        gradient == null) {
+      return null;
+    }
+    return VsdxFill(
+      foreground: foreground,
+      background: background,
+      pattern: pattern ?? VsdxFill.defaultFill.pattern,
+      foregroundTransparency:
+          foregroundTransparency ?? VsdxFill.defaultFill.foregroundTransparency,
+      backgroundTransparency:
+          backgroundTransparency ?? VsdxFill.defaultFill.backgroundTransparency,
+      themeForegroundIndex: themeForegroundIndex,
+      themeBackgroundIndex: themeBackgroundIndex,
+      gradient: gradient,
     );
   }
 }
