@@ -374,6 +374,11 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
             child: Text(kindTitle, style: const TextStyle(fontSize: 13)),
           ),
         ),
+        const SizedBox(height: 8),
+        Text(
+          el.chartConfigHint,
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+        ),
         const SizedBox(height: 12),
         if (single) ...[
           Text(el.chartLevel, style: Theme.of(context).textTheme.labelMedium),
@@ -485,11 +490,6 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
               ),
             ),
         ],
-        const SizedBox(height: 8),
-        Text(
-          el.chartConfigHint,
-          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-        ),
       ],
     );
   }
