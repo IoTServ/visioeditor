@@ -1034,6 +1034,20 @@ class VsdxShape {
                     ? block.heightInches
                     : block.heightInches! * sy,
           );
+    // Absolute Foreign Img* cells (no Width*/Height* F=) scale with the box;
+    // formula-driven cells keep their V and are refreshed by recalc below.
+    final nextImgOffsetX = hasF(formulas['ImgOffsetX'])
+        ? imgOffsetXInches
+        : imgOffsetXInches * sx;
+    final nextImgOffsetY = hasF(formulas['ImgOffsetY'])
+        ? imgOffsetYInches
+        : imgOffsetYInches * sy;
+    final nextImgWidth = imgWidthInches == null || hasF(formulas['ImgWidth'])
+        ? imgWidthInches
+        : imgWidthInches! * sx;
+    final nextImgHeight = imgHeightInches == null || hasF(formulas['ImgHeight'])
+        ? imgHeightInches
+        : imgHeightInches! * sy;
     return copyWith(
       pinX: pinX,
       pinY: pinY,
@@ -1045,6 +1059,10 @@ class VsdxShape {
       connectionPoints: scaledCPs,
       controls: scaledControls,
       scratch: scaledScratch,
+      imgOffsetXInches: nextImgOffsetX,
+      imgOffsetYInches: nextImgOffsetY,
+      imgWidthInches: nextImgWidth,
+      imgHeightInches: nextImgHeight,
       richText: identical(scaledBlock, block)
           ? richText
           : richText.copyWith(textBlock: scaledBlock),
@@ -1558,6 +1576,45 @@ class VsdxShape {
       }
     });
 
+    // Foreign image placement — Width*/Height* (or custom crop) formulas must
+    // refresh cached V= after resize so the bitmap stays framed correctly.
+    var nextImgOffsetX = imgOffsetXInches;
+    var nextImgOffsetY = imgOffsetYInches;
+    var nextImgWidth = imgWidthInches;
+    var nextImgHeight = imgHeightInches;
+    void applyImg(String cell, void Function(double v) set) {
+      final f = formulas[cell];
+      if (f == null || f.isEmpty || f == 'Inh') return;
+      final v = eval(f);
+      if (v == null) return;
+      set(v);
+    }
+
+    applyImg('ImgOffsetX', (v) {
+      if ((nextImgOffsetX - v).abs() > 1e-12) {
+        nextImgOffsetX = v;
+        changed = true;
+      }
+    });
+    applyImg('ImgOffsetY', (v) {
+      if ((nextImgOffsetY - v).abs() > 1e-12) {
+        nextImgOffsetY = v;
+        changed = true;
+      }
+    });
+    applyImg('ImgWidth', (v) {
+      if (nextImgWidth == null || (nextImgWidth! - v).abs() > 1e-12) {
+        nextImgWidth = v;
+        changed = true;
+      }
+    });
+    applyImg('ImgHeight', (v) {
+      if (nextImgHeight == null || (nextImgHeight! - v).abs() > 1e-12) {
+        nextImgHeight = v;
+        changed = true;
+      }
+    });
+
     // Scratch: Width/Height pass, then up to two passes with Scratch.* bound
     // so rows that reference earlier Scratch cells can settle.
     List<VsdxScratchRow>? nextScratch;
@@ -1681,6 +1738,10 @@ class VsdxShape {
       controls: nextControls,
       userCells: nextUsers,
       geometries: nextGeoms,
+      imgOffsetXInches: nextImgOffsetX,
+      imgOffsetYInches: nextImgOffsetY,
+      imgWidthInches: nextImgWidth,
+      imgHeightInches: nextImgHeight,
     ).syncSetAtRefFromControls();
   }
 

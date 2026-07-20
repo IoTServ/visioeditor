@@ -439,6 +439,58 @@ void main() {
     expect(resized.richText.textBlock.pinYInches, closeTo(1, 1e-9));
   });
 
+  test('resizeTo refreshes ImgWidth from Width*1 after reopen-style cache', () {
+    final pic = VsdxShapeFactory.picture(
+      id: 30,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+      imagePartName: '/visio/media/a.png',
+    ).copyWith(
+      // Mimic parse after save: Img* V= cached with default full-frame F=.
+      imgWidthInches: 1,
+      imgHeightInches: 1,
+      formulas: const <String, String>{
+        'ImgWidth': 'Width*1',
+        'ImgHeight': 'Height*1',
+      },
+    );
+    final resized = pic.resizeTo(pinX: 2, pinY: 2, width: 2.5, height: 2);
+    expect(resized.effectiveImgWidth, closeTo(2.5, 1e-9));
+    expect(resized.effectiveImgHeight, closeTo(2, 1e-9));
+    expect(resized.imgWidthInches, closeTo(2.5, 1e-9));
+    expect(resized.imgHeightInches, closeTo(2, 1e-9));
+  });
+
+  test('resizeTo refreshes custom ImgWidth crop formula Width*0.5', () {
+    final pic = VsdxShapeFactory.picture(
+      id: 31,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: '/visio/media/b.png',
+    ).copyWith(
+      imgWidthInches: 1,
+      imgHeightInches: 1,
+      imgOffsetXInches: 0.2,
+      imgOffsetYInches: 0.1,
+      formulas: const <String, String>{
+        'ImgWidth': 'Width*0.5',
+        'ImgHeight': 'Height*0.5',
+        'ImgOffsetX': 'Width*0.1',
+        'ImgOffsetY': 'Height*0.05',
+      },
+    );
+    final resized = pic.resizeTo(pinX: 2, pinY: 2, width: 4, height: 4);
+    expect(resized.imgWidthInches, closeTo(2, 1e-9));
+    expect(resized.imgHeightInches, closeTo(2, 1e-9));
+    expect(resized.imgOffsetXInches, closeTo(0.4, 1e-9));
+    expect(resized.imgOffsetYInches, closeTo(0.2, 1e-9));
+    expect(resized.formulas['ImgWidth'], 'Width*0.5');
+  });
+
   test('freehand factory builds a 1-D ink polyline (not a connector)', () {
     final stroke = VsdxShapeFactory.freehand(
       id: 7,
