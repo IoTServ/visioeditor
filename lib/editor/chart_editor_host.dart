@@ -312,6 +312,82 @@ class _SpecialtyItemFrame extends StatelessWidget {
   }
 }
 
+class _SpecialtyAddButton extends StatelessWidget {
+  const _SpecialtyAddButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.add, size: 18),
+        label: Text(label),
+      ),
+    );
+  }
+}
+
+class _SpecialtyIndexChrome extends StatelessWidget {
+  const _SpecialtyIndexChrome({
+    required this.index,
+    required this.canMoveUp,
+    required this.canMoveDown,
+    required this.onMoveUp,
+    required this.onMoveDown,
+    this.trailing,
+  });
+
+  final int index;
+  final bool canMoveUp;
+  final bool canMoveDown;
+  final VoidCallback onMoveUp;
+  final VoidCallback onMoveDown;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Text(
+          '${index + 1}',
+          style: TextStyle(
+            fontSize: 12,
+            color: scheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: el.chartMoveUp,
+          onPressed: canMoveUp ? onMoveUp : null,
+          icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        ),
+        IconButton(
+          tooltip: el.chartMoveDown,
+          onPressed: canMoveDown ? onMoveDown : null,
+          icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        ),
+        ?trailing,
+      ],
+    );
+  }
+}
+
 Future<String?> _promptChartPaste(
   BuildContext context, {
   required String initial,
@@ -501,9 +577,23 @@ class _CandlestickEditorState extends State<_CandlestickEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _rows.length) return;
+    final row = _rows.removeAt(from);
+    _rows.insert(to, row);
+    _commit();
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null && _rows.isEmpty) syncFields(chart);
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 4;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -511,48 +601,69 @@ class _CandlestickEditorState extends State<_CandlestickEditor>
           title: el.stencil('Candlestick Chart'),
           hint: el.chartSpecialtyCandlestickHint,
         ),
+        _SpecialtyDataToolbar(count: _rows.length, maxItems: maxItems),
         for (var i = 0; i < _rows.length; i++) ...[
-          Text('${el.chartCandle} ${i + 1}',
-              style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _NumField(
-                  label: el.chartOpen,
-                  controller: _rows[i][0],
-                  onCommit: _commit),
-              const SizedBox(width: 4),
-              _NumField(
-                  label: el.chartHigh,
-                  controller: _rows[i][1],
-                  onCommit: _commit),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _NumField(
-                  label: el.chartLow,
-                  controller: _rows[i][2],
-                  onCommit: _commit),
-              const SizedBox(width: 4),
-              _NumField(
-                  label: el.chartClose,
-                  controller: _rows[i][3],
-                  onCommit: _commit),
-              IconButton(
-                tooltip: el.delete,
-                onPressed: _rows.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _rows.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _rows.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
+                Text('${el.chartCandle} ${i + 1}',
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _NumField(
+                        label: el.chartOpen,
+                        controller: _rows[i][0],
+                        onCommit: _commit),
+                    const SizedBox(width: 4),
+                    _NumField(
+                        label: el.chartHigh,
+                        controller: _rows[i][1],
+                        onCommit: _commit),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    _NumField(
+                        label: el.chartLow,
+                        controller: _rows[i][2],
+                        onCommit: _commit),
+                    const SizedBox(width: 4),
+                    _NumField(
+                        label: el.chartClose,
+                        controller: _rows[i][3],
+                        onCommit: _commit),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _rows.length < 4 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddCandle),
+        _SpecialtyAddButton(
+          label: el.chartAddCandle,
+          onPressed: _rows.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -660,6 +771,7 @@ class _HeatmapEditorState extends State<_HeatmapEditor>
           title: el.stencil('Heatmap'),
           hint: el.chartSpecialtyHeatmapHint,
         ),
+        _SpecialtyDataToolbar(count: _rows * _cols, maxItems: 36),
         Row(
           children: [
             Text(el.chartRows, style: Theme.of(context).textTheme.labelMedium),
@@ -699,34 +811,45 @@ class _HeatmapEditorState extends State<_HeatmapEditor>
           ],
         ),
         const SizedBox(height: 8),
-        for (var r = 0; r < _rows; r++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              children: [
-                for (var c = 0; c < _cols; c++) ...[
-                  if (c > 0) const SizedBox(width: 4),
-                  Expanded(
-                    child: TextField(
-                      controller: _cells[r * _cols + c],
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                        suffixText: '%',
-                      ),
-                      style: const TextStyle(fontSize: 11),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      onEditingComplete: _commit,
-                      onSubmitted: (_) => _commit(),
-                    ),
+        _SpecialtyItemFrame(
+          child: Column(
+            children: [
+              for (var r = 0; r < _rows; r++)
+                Padding(
+                  padding: EdgeInsets.only(bottom: r < _rows - 1 ? 4 : 0),
+                  child: Row(
+                    children: [
+                      for (var c = 0; c < _cols; c++) ...[
+                        if (c > 0) const SizedBox(width: 4),
+                        Expanded(
+                          child: TextField(
+                            controller: _cells[r * _cols + c],
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 6),
+                              suffixText: '%',
+                            ),
+                            style: const TextStyle(fontSize: 11),
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            onEditingComplete: _commit,
+                            onSubmitted: (_) => _commit(),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+            ],
           ),
+        ),
+        const SizedBox(height: 8),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _rows < 6 ? () => _commit(rows: _rows + 1) : null,
+        ),
       ],
     );
   }
@@ -827,9 +950,27 @@ class _GanttEditorState extends State<_GanttEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _starts.length) return;
+    final lab = _labels.removeAt(from);
+    final s = _starts.removeAt(from);
+    final d = _durs.removeAt(from);
+    _labels.insert(to, lab);
+    _starts.insert(to, s);
+    _durs.insert(to, d);
+    _commit();
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null && _starts.isEmpty) syncFields(chart);
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -837,41 +978,67 @@ class _GanttEditorState extends State<_GanttEditor>
           title: el.stencil('Gantt Chart'),
           hint: el.chartSpecialtyGanttHint,
         ),
+        _SpecialtyDataToolbar(count: _starts.length, maxItems: maxItems),
         for (var i = 0; i < _starts.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartTaskName,
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _starts.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _starts.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: el.chartTaskName,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 12),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _NumField(
+                        label: el.chartStart,
+                        controller: _starts[i],
+                        onCommit: _commit),
+                    const SizedBox(width: 4),
+                    _NumField(
+                        label: el.chartDuration,
+                        controller: _durs[i],
+                        onCommit: _commit),
+                  ],
+                ),
+              ],
             ),
-            style: const TextStyle(fontSize: 12),
-            onEditingComplete: _commit,
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _NumField(
-                  label: el.chartStart,
-                  controller: _starts[i],
-                  onCommit: _commit),
-              const SizedBox(width: 4),
-              _NumField(
-                  label: el.chartDuration,
-                  controller: _durs[i],
-                  onCommit: _commit),
-              IconButton(
-                onPressed: _starts.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _starts.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddTask),
+        _SpecialtyAddButton(
+          label: el.chartAddTask,
+          onPressed: _starts.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -956,19 +1123,22 @@ class _BoxplotEditorState extends State<_BoxplotEditor>
           title: el.stencil('Box Plot'),
           hint: el.chartSpecialtyBoxplotHint,
         ),
+        _SpecialtyDataToolbar(count: 5, maxItems: 5),
         for (var i = 0; i < _ctrls.length; i++) ...[
-          TextField(
-            controller: _ctrls[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: labels[i],
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: TextField(
+              controller: _ctrls[i],
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: labels[i],
+                border: const OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontSize: 13),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              onEditingComplete: _commit,
+              onSubmitted: (_) => _commit(),
             ),
-            style: const TextStyle(fontSize: 13),
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            onEditingComplete: _commit,
-            onSubmitted: (_) => _commit(),
           ),
           const SizedBox(height: 8),
         ],
@@ -1071,9 +1241,27 @@ class _SlopeEditorState extends State<_SlopeEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _before.length) return;
+    final lab = _labels.removeAt(from);
+    final a = _before.removeAt(from);
+    final b = _after.removeAt(from);
+    _labels.insert(to, lab);
+    _before.insert(to, a);
+    _after.insert(to, b);
+    _commit();
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null && _before.isEmpty) syncFields(chart);
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 6;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1081,41 +1269,67 @@ class _SlopeEditorState extends State<_SlopeEditor>
           title: el.stencil('Slope Chart'),
           hint: el.chartSpecialtySlopeHint,
         ),
+        _SpecialtyDataToolbar(count: _before.length, maxItems: maxItems),
         for (var i = 0; i < _before.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartItemLabel,
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _before.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _before.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: el.chartItemLabel,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                  ),
+                  style: const TextStyle(fontSize: 12),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _NumField(
+                        label: el.chartBefore,
+                        controller: _before[i],
+                        onCommit: _commit),
+                    const SizedBox(width: 4),
+                    _NumField(
+                        label: el.chartAfter,
+                        controller: _after[i],
+                        onCommit: _commit),
+                  ],
+                ),
+              ],
             ),
-            style: const TextStyle(fontSize: 12),
-            onEditingComplete: _commit,
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _NumField(
-                  label: el.chartBefore,
-                  controller: _before[i],
-                  onCommit: _commit),
-              const SizedBox(width: 4),
-              _NumField(
-                  label: el.chartAfter,
-                  controller: _after[i],
-                  onCommit: _commit),
-              IconButton(
-                onPressed: _before.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _before.length < 6 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _before.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -1554,13 +1768,9 @@ class _PairSeriesEditorState extends State<_PairSeriesEditor>
           const SizedBox(height: 8),
         ],
         if (canAdd)
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _add,
-              icon: const Icon(Icons.add, size: 18),
-              label: Text(el.chartAddItem),
-            ),
+          _SpecialtyAddButton(
+            label: el.chartAddItem,
+            onPressed: _add,
           ),
       ],
     );
@@ -1800,13 +2010,9 @@ class _PositionEventsEditorState extends State<_PositionEventsEditor>
           const SizedBox(height: 8),
         ],
         if (canAdd)
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _add,
-              icon: const Icon(Icons.add, size: 18),
-              label: Text(el.chartAddEvent),
-            ),
+          _SpecialtyAddButton(
+            label: el.chartAddEvent,
+            onPressed: _add,
           ),
       ],
     );
@@ -1892,6 +2098,7 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
   @override
   Widget build(BuildContext context) {
     final el = EditorL10n.of(context);
+    const maxItems = 12;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1918,38 +2125,42 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
           ],
         ),
         const SizedBox(height: 8),
+        _SpecialtyDataToolbar(count: _vals.length, maxItems: maxItems),
         for (var i = 0; i < _vals.length; i++) ...[
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _vals[i],
-                  decoration: InputDecoration(
-                    isDense: true,
-                    labelText: i < _inner
-                        ? '${el.chartInnerRing} ${i + 1}'
-                        : '${el.chartOuterRing} ${i - _inner + 1}',
-                    border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _vals[i],
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: i < _inner
+                          ? '${el.chartInnerRing} ${i + 1}'
+                          : '${el.chartOuterRing} ${i - _inner + 1}',
+                      border: const OutlineInputBorder(),
+                    ),
+                    style: const TextStyle(fontSize: 12),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onEditingComplete: _commit,
+                    onSubmitted: (_) => _commit(),
                   ),
-                  style: const TextStyle(fontSize: 12),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onEditingComplete: _commit,
-                  onSubmitted: (_) => _commit(),
                 ),
-              ),
-              IconButton(
-                onPressed: _vals.length > 2 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+                if (_vals.length > 2)
+                  IconButton(
+                    tooltip: el.chartRemoveItem,
+                    onPressed: () => _remove(i),
+                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 6),
         ],
-        TextButton.icon(
-          onPressed: _vals.length < 12 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _vals.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -2026,38 +2237,47 @@ class _KpiTargetEditorState extends State<_KpiTargetEditor>
           title: el.stencil('KPI Target'),
           hint: el.chartSpecialtyKpiHint,
         ),
-        TextField(
-          controller: _label,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartKpiName,
-            border: const OutlineInputBorder(),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _label,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartKpiName,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _actual,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartActual,
+                  suffixText: '%',
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _target,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartTarget,
+                  suffixText: '%',
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _actual,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartActual,
-            suffixText: '%',
-            border: const OutlineInputBorder(),
-          ),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _target,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartTarget,
-            suffixText: '%',
-            border: const OutlineInputBorder(),
-          ),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          onEditingComplete: _commit,
         ),
       ],
     );
@@ -2326,37 +2546,48 @@ class _DataTableEditorState extends State<_DataTableEditor>
         const SizedBox(height: 10),
         Text(el.chartCellText, style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: 6),
-        for (var r = 0; r < _rows; r++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              children: [
-                for (var c = 0; c < _cols; c++) ...[
-                  if (c > 0) const SizedBox(width: 4),
-                  Expanded(
-                    child: TextField(
-                      controller: _cells[r * _cols + c],
-                      decoration: InputDecoration(
-                        isDense: true,
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 6),
-                        hintText: _header && r == 0 ? 'H${c + 1}' : null,
-                      ),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: _header && r == 0
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
-                      onEditingComplete: _commit,
-                      onSubmitted: (_) => _commit(),
-                    ),
+        _SpecialtyItemFrame(
+          child: Column(
+            children: [
+              for (var r = 0; r < _rows; r++)
+                Padding(
+                  padding: EdgeInsets.only(bottom: r < _rows - 1 ? 4 : 0),
+                  child: Row(
+                    children: [
+                      for (var c = 0; c < _cols; c++) ...[
+                        if (c > 0) const SizedBox(width: 4),
+                        Expanded(
+                          child: TextField(
+                            controller: _cells[r * _cols + c],
+                            decoration: InputDecoration(
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 6),
+                              hintText: _header && r == 0 ? 'H${c + 1}' : null,
+                            ),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: _header && r == 0
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                            onEditingComplete: _commit,
+                            onSubmitted: (_) => _commit(),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+            ],
           ),
+        ),
+        const SizedBox(height: 8),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _rows < 8 ? () => _commit(rows: _rows + 1) : null,
+        ),
       ],
     );
   }
@@ -2444,64 +2675,86 @@ class _VennEditorState extends State<_VennEditor>
           title: el.stencil('Venn Diagram'),
           hint: el.chartSpecialtyVennHint,
         ),
-        TextField(
-          controller: _la,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartVennSetA,
-            border: const OutlineInputBorder(),
+        _SpecialtyDataToolbar(count: 3, maxItems: 3),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _la,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartVennSetA,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _a,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartVennOnlyA,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _a,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartVennOnlyA,
-            border: const OutlineInputBorder(),
-          ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _lb,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartVennSetB,
-            border: const OutlineInputBorder(),
-          ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _b,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartVennOnlyB,
-            border: const OutlineInputBorder(),
-          ),
-          onEditingComplete: _commit,
         ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _lboth,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartVennBothLabel,
-            border: const OutlineInputBorder(),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _lb,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartVennSetB,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _b,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartVennOnlyB,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
         ),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _both,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartVennBothValue,
-            border: const OutlineInputBorder(),
+        const SizedBox(height: 8),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _lboth,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartVennBothLabel,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _both,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartVennBothValue,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
         ),
       ],
     );
@@ -2597,9 +2850,25 @@ class _ScorecardEditorState extends State<_ScorecardEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _vals.length) return;
+    final lab = _labels.removeAt(from);
+    final val = _vals.removeAt(from);
+    _labels.insert(to, lab);
+    _vals.insert(to, val);
+    _commit();
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null && _vals.isEmpty) syncFields(chart);
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2623,35 +2892,57 @@ class _ScorecardEditorState extends State<_ScorecardEditor>
           ],
         ),
         const SizedBox(height: 8),
+        _SpecialtyDataToolbar(count: _vals.length, maxItems: maxItems),
         for (var i = 0; i < _vals.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartKpiName,
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _vals.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _vals.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: el.chartKpiName,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                _NumField(
+                    label: el.chartActual,
+                    controller: _vals[i],
+                    onCommit: _commit),
+              ],
             ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _NumField(
-                  label: el.chartActual,
-                  controller: _vals[i],
-                  onCommit: _commit),
-              IconButton(
-                onPressed: _vals.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
           ),
           const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _vals.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _vals.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -2730,7 +3021,10 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
 
   @override
   Widget build(BuildContext context) {
+    final chart = controller.selectedChart;
+    if (chart != null && _vals.isEmpty) syncFields(chart);
     final el = EditorL10n.of(context);
+    const maxItems = 5;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2738,33 +3032,37 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
           title: el.stencil('Radial Multi'),
           hint: el.chartSpecialtyRadialMultiHint,
         ),
+        _SpecialtyDataToolbar(count: _vals.length, maxItems: maxItems),
         for (var i = 0; i < _vals.length; i++) ...[
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _vals[i],
-                  decoration: InputDecoration(
-                    isDense: true,
-                    labelText: '${el.chartRing} ${i + 1}',
-                    suffixText: '%',
-                    border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _vals[i],
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: '${el.chartRing} ${i + 1}',
+                      suffixText: '%',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onEditingComplete: _commit,
                   ),
-                  onEditingComplete: _commit,
                 ),
-              ),
-              IconButton(
-                onPressed: _vals.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+                if (_vals.length > 1)
+                  IconButton(
+                    tooltip: el.chartRemoveItem,
+                    onPressed: () => _remove(i),
+                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 6),
         ],
-        TextButton.icon(
-          onPressed: _vals.length < 5 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddRing),
+        _SpecialtyAddButton(
+          label: el.chartAddRing,
+          onPressed: _vals.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -3045,13 +3343,9 @@ class _LabeledValuesEditorState extends State<_LabeledValuesEditor>
           const SizedBox(height: 8),
         ],
         if (canAdd)
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _add,
-              icon: const Icon(Icons.add, size: 18),
-              label: Text(el.chartAddItem),
-            ),
+          _SpecialtyAddButton(
+            label: el.chartAddItem,
+            onPressed: _add,
           ),
       ],
     );
@@ -3139,9 +3433,25 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _labels.length) return;
+    final lab = _labels.removeAt(from);
+    final st = _status.removeAt(from);
+    _labels.insert(to, lab);
+    _status.insert(to, st);
+    _commit();
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null && _labels.isEmpty) syncFields(chart);
+  }
+
   @override
   Widget build(BuildContext context) {
+    _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     final statuses = <(double, String)>[
       (1, el.chartStepDone),
       (0.5, el.chartStepCurrent),
@@ -3154,21 +3464,46 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
           title: el.stencil('Process Steps'),
           hint: el.chartSpecialtyProcessHint,
         ),
+        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
         for (var i = 0; i < _labels.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartStepName,
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<double>(
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _labels.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _labels.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: el.chartStepName,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<double>(
                   initialValue: _status[i] >= 0.99
                       ? 1
                       : _status[i] >= 0.4
@@ -3189,19 +3524,14 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
                     _commit();
                   },
                 ),
-              ),
-              IconButton(
-                onPressed: _labels.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _labels.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddStep),
+        _SpecialtyAddButton(
+          label: el.chartAddStep,
+          onPressed: _labels.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -3272,26 +3602,33 @@ class _ArcGaugeEditorState extends State<_ArcGaugeEditor>
           title: el.stencil('Arc Gauge'),
           hint: el.chartSpecialtyArcGaugeHint,
         ),
-        TextField(
-          controller: _actual,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartActual,
-            suffixText: '%',
-            border: const OutlineInputBorder(),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _actual,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartActual,
+                  suffixText: '%',
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _target,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartTarget,
+                  suffixText: '%',
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _target,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartTarget,
-            suffixText: '%',
-            border: const OutlineInputBorder(),
-          ),
-          onEditingComplete: _commit,
         ),
       ],
     );
@@ -3377,25 +3714,33 @@ class _LikertEditorState extends State<_LikertEditor>
           title: el.stencil('Likert Scale'),
           hint: el.chartSpecialtyLikertHint,
         ),
+        _SpecialtyDataToolbar(count: 5, maxItems: 5),
         for (var i = 0; i < 5; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: '${el.chartSegment} ${i + 1}',
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${el.chartSegment} ${i + 1}',
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _vals[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: el.chartValue,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+              ],
             ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _vals[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartValue,
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
           ),
           const SizedBox(height: 8),
         ],
@@ -3496,6 +3841,7 @@ class _HeatStripEditorState extends State<_HeatStripEditor>
           title: el.stencil('Heat Strip'),
           hint: el.chartSpecialtyHeatStripHint,
         ),
+        _SpecialtyDataToolbar(count: _cells, maxItems: 16),
         Row(
           children: [
             Text(el.chartCells, style: Theme.of(context).textTheme.labelMedium),
@@ -3512,28 +3858,35 @@ class _HeatStripEditorState extends State<_HeatStripEditor>
           ],
         ),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          children: [
-            for (var i = 0; i < _vals.length; i++)
-              SizedBox(
-                width: 56,
-                child: TextField(
-                  controller: _vals[i],
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                    suffixText: '%',
+        _SpecialtyItemFrame(
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (var i = 0; i < _vals.length; i++)
+                SizedBox(
+                  width: 56,
+                  child: TextField(
+                    controller: _vals[i],
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      suffixText: '%',
+                    ),
+                    style: const TextStyle(fontSize: 11),
+                    onEditingComplete: _commit,
+                    onSubmitted: (_) => _commit(),
                   ),
-                  style: const TextStyle(fontSize: 11),
-                  onEditingComplete: _commit,
-                  onSubmitted: (_) => _commit(),
                 ),
-              ),
-          ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _cells < 16 ? () => _commit(cells: _cells + 1) : null,
         ),
       ],
     );
@@ -3633,10 +3986,20 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
     _commit();
   }
 
+  void _move(int from, int to) {
+    if (to < 0 || to >= _labels.length) return;
+    final lab = _labels.removeAt(from);
+    final st = _status.removeAt(from);
+    _labels.insert(to, lab);
+    _status.insert(to, st);
+    _commit();
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     final statuses = <(double, String)>[
       (1, el.chartStatusOk),
       (0.5, el.chartStatusWarn),
@@ -3665,21 +4028,46 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
           ],
         ),
         const SizedBox(height: 8),
+        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
         for (var i = 0; i < _labels.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartItemLabel,
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<double>(
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SpecialtyIndexChrome(
+                  index: i,
+                  canMoveUp: i > 0,
+                  canMoveDown: i < _labels.length - 1,
+                  onMoveUp: () => _move(i, i - 1),
+                  onMoveDown: () => _move(i, i + 1),
+                  trailing: _labels.length > 1
+                      ? IconButton(
+                          tooltip: el.chartRemoveItem,
+                          onPressed: () => _remove(i),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 18),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                        )
+                      : null,
+                ),
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: el.chartItemLabel,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<double>(
                   initialValue: _status[i] >= 0.99
                       ? 1
                       : _status[i] >= 0.4
@@ -3700,19 +4088,14 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
                     _commit();
                   },
                 ),
-              ),
-              IconButton(
-                onPressed: _labels.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _labels.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _labels.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -3797,26 +4180,34 @@ class _PriorityMatrixEditorState extends State<_PriorityMatrixEditor>
           title: el.stencil('Priority Matrix'),
           hint: el.chartSpecialtyPriorityMatrixHint,
         ),
+        _SpecialtyDataToolbar(count: 4, maxItems: 4),
         for (var i = 0; i < 4; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: '${el.chartQuadrant} ${i + 1}',
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${el.chartQuadrant} ${i + 1}',
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _vals[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: el.chartValue,
+                    suffixText: '%',
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+              ],
             ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _vals[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartValue,
-              suffixText: '%',
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
           ),
           const SizedBox(height: 8),
         ],
@@ -3920,6 +4311,7 @@ class _CheckboxListEditorState extends State<_CheckboxListEditor>
   Widget build(BuildContext context) {
     _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3927,43 +4319,55 @@ class _CheckboxListEditorState extends State<_CheckboxListEditor>
           title: el.stencil('Checklist'),
           hint: el.chartSpecialtyCheckboxListHint,
         ),
+        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
         for (var i = 0; i < _labels.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartItemLabel,
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(el.chartStepDone),
-                  value: _done[i],
-                  onChanged: (v) {
-                    setState(() => _done[i] = v ?? false);
-                    _commit();
-                  },
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: el.chartItemLabel,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                  ),
+                  onEditingComplete: _commit,
                 ),
-              ),
-              IconButton(
-                onPressed: _labels.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: CheckboxListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(el.chartStepDone),
+                        value: _done[i],
+                        onChanged: (v) {
+                          setState(() => _done[i] = v ?? false);
+                          _commit();
+                        },
+                      ),
+                    ),
+                    if (_labels.length > 1)
+                      IconButton(
+                        tooltip: el.chartRemoveItem,
+                        onPressed: () => _remove(i),
+                        icon: const Icon(Icons.remove_circle_outline, size: 18),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 6),
         ],
-        TextButton.icon(
-          onPressed: _labels.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _labels.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -4046,25 +4450,33 @@ class _VoteStackEditorState extends State<_VoteStackEditor>
           title: el.stencil('Vote Stack'),
           hint: el.chartSpecialtyVoteStackHint,
         ),
+        _SpecialtyDataToolbar(count: 3, maxItems: 3),
         for (var i = 0; i < 3; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: '${el.chartSegment} ${i + 1}',
-              border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _labels[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${el.chartSegment} ${i + 1}',
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _vals[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: el.chartValue,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _commit,
+                ),
+              ],
             ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _vals[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartValue,
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
           ),
           const SizedBox(height: 8),
         ],
@@ -4167,6 +4579,7 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
   Widget build(BuildContext context) {
     _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     final statuses = <(double, String)>[
       (1, el.chartStatusOk),
       (0.5, el.chartStatusWarn),
@@ -4179,54 +4592,67 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
           title: el.stencil('Traffic Row'),
           hint: el.chartSpecialtyTrafficRowHint,
         ),
+        _SpecialtyDataToolbar(count: _labels.length, maxItems: maxItems),
         for (var i = 0; i < _labels.length; i++) ...[
-          TextField(
-            controller: _labels[i],
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: el.chartItemLabel,
-              border: const OutlineInputBorder(),
-            ),
-            onEditingComplete: _commit,
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<double>(
-                  initialValue: _status[i] >= 0.99
-                      ? 1
-                      : _status[i] >= 0.4
-                          ? 0.5
-                          : 0,
+          _SpecialtyItemFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _labels[i],
                   decoration: InputDecoration(
                     isDense: true,
-                    labelText: el.chartStepStatus,
+                    hintText: el.chartItemLabel,
                     border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                   ),
-                  items: [
-                    for (final s in statuses)
-                      DropdownMenuItem(value: s.$1, child: Text(s.$2)),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _status[i] = v);
-                    _commit();
-                  },
+                  onEditingComplete: _commit,
                 ),
-              ),
-              IconButton(
-                onPressed: _labels.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<double>(
+                        initialValue: _status[i] >= 0.99
+                            ? 1
+                            : _status[i] >= 0.4
+                                ? 0.5
+                                : 0,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          labelText: el.chartStepStatus,
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final s in statuses)
+                            DropdownMenuItem(value: s.$1, child: Text(s.$2)),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _status[i] = v);
+                          _commit();
+                        },
+                      ),
+                    ),
+                    if (_labels.length > 1)
+                      IconButton(
+                        tooltip: el.chartRemoveItem,
+                        onPressed: () => _remove(i),
+                        icon: const Icon(Icons.remove_circle_outline, size: 18),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _labels.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _labels.length < maxItems ? _add : null,
         ),
       ],
     );
@@ -4307,46 +4733,61 @@ class _CompareCardsEditorState extends State<_CompareCardsEditor>
           title: el.stencil('Compare Cards'),
           hint: el.chartSpecialtyCompareCardsHint,
         ),
-        TextField(
-          controller: _la,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartSeriesA,
-            border: const OutlineInputBorder(),
+        _SpecialtyDataToolbar(count: 2, maxItems: 2),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _la,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartSeriesA,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _va,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartValue,
+                  suffixText: '%',
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
         ),
-        const SizedBox(height: 4),
-        TextField(
-          controller: _va,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartValue,
-            suffixText: '%',
-            border: const OutlineInputBorder(),
+        const SizedBox(height: 8),
+        _SpecialtyItemFrame(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _lb,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartSeriesB,
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _vb,
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: el.chartValue,
+                  suffixText: '%',
+                  border: const OutlineInputBorder(),
+                ),
+                onEditingComplete: _commit,
+              ),
+            ],
           ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _lb,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartSeriesB,
-            border: const OutlineInputBorder(),
-          ),
-          onEditingComplete: _commit,
-        ),
-        const SizedBox(height: 4),
-        TextField(
-          controller: _vb,
-          decoration: InputDecoration(
-            isDense: true,
-            labelText: el.chartValue,
-            suffixText: '%',
-            border: const OutlineInputBorder(),
-          ),
-          onEditingComplete: _commit,
         ),
       ],
     );
@@ -4432,6 +4873,7 @@ class _WinLossStripEditorState extends State<_WinLossStripEditor>
   Widget build(BuildContext context) {
     _ensureFields();
     final el = EditorL10n.of(context);
+    const maxItems = 8;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4439,40 +4881,44 @@ class _WinLossStripEditorState extends State<_WinLossStripEditor>
           title: el.stencil('Win/Loss Strip'),
           hint: el.chartSpecialtyWinLossStripHint,
         ),
+        _SpecialtyDataToolbar(count: _wins.length, maxItems: maxItems),
         for (var i = 0; i < _wins.length; i++) ...[
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<bool>(
-                  initialValue: _wins[i],
-                  decoration: InputDecoration(
-                    isDense: true,
-                    labelText: '${el.chartSegment} ${i + 1}',
-                    border: const OutlineInputBorder(),
+          _SpecialtyItemFrame(
+            child: Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<bool>(
+                    initialValue: _wins[i],
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: '${el.chartSegment} ${i + 1}',
+                      border: const OutlineInputBorder(),
+                    ),
+                    items: [
+                      DropdownMenuItem(value: true, child: Text(el.chartWin)),
+                      DropdownMenuItem(value: false, child: Text(el.chartLoss)),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _wins[i] = v);
+                      _commit();
+                    },
                   ),
-                  items: [
-                    DropdownMenuItem(value: true, child: Text(el.chartWin)),
-                    DropdownMenuItem(value: false, child: Text(el.chartLoss)),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _wins[i] = v);
-                    _commit();
-                  },
                 ),
-              ),
-              IconButton(
-                onPressed: _wins.length > 1 ? () => _remove(i) : null,
-                icon: const Icon(Icons.remove_circle_outline, size: 18),
-              ),
-            ],
+                if (_wins.length > 1)
+                  IconButton(
+                    tooltip: el.chartRemoveItem,
+                    onPressed: () => _remove(i),
+                    icon: const Icon(Icons.remove_circle_outline, size: 18),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
         ],
-        TextButton.icon(
-          onPressed: _wins.length < 8 ? _add : null,
-          icon: const Icon(Icons.add, size: 16),
-          label: Text(el.chartAddItem),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _wins.length < maxItems ? _add : null,
         ),
       ],
     );
