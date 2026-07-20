@@ -45,6 +45,17 @@ void main() {
     expect(rich.textBlock.angleRad, closeTo(math.pi / 2, 1e-9));
   });
 
+  test('TxtWidth F=Inh inherits master width (not cached V=0)', () {
+    final el = shape(
+      '<Cell N="TxtWidth" V="0" F="Inh"/><Text>Label</Text>',
+    );
+    final rich = parser.parse(
+      el,
+      defaultBlock: const VsdxTextBlock(widthInches: 1.25),
+    );
+    expect(rich.textBlock.widthInches, closeTo(1.25, 1e-9));
+  });
+
   test('vertical align + margins also inherit from the master', () {
     final el = shape('<Text>Label</Text>');
     final rich = parser.parse(

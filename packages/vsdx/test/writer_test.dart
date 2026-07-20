@@ -10180,6 +10180,130 @@ void main() {
     expect(h.group(0)!.contains('Height*1'), isTrue);
   });
 
+  test('Foreign ImgWidth F=Inh keeps custom crop as literal', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_inh_crop.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(imgWidthInches: 0.5, imgHeightInches: 0.4);
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ImgWidth"[^/]*/>'),
+      '<Cell N="ImgWidth" V="0.5" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ImgHeight"[^/]*/>'),
+      '<Cell N="ImgHeight" V="0.4" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(picId)!.imgWidthInches,
+        closeTo(0.5, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        picId,
+        (s) => s.copyWith(imageTransparency: 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final w = RegExp(r'<Cell N="ImgWidth"[^/]*/>').firstMatch(pageXml)!;
+    final h = RegExp(r'<Cell N="ImgHeight"[^/]*/>').firstMatch(pageXml)!;
+    expect(w.group(0)!.contains('F="Inh"'), isFalse);
+    expect(h.group(0)!.contains('F="Inh"'), isFalse);
+    expect(w.group(0)!.contains('Width*1'), isFalse);
+    expect(double.parse(RegExp(r'V="([^"]+)"').firstMatch(w.group(0)!)!.group(1)!),
+        closeTo(0.5, 1e-6));
+    expect(double.parse(RegExp(r'V="([^"]+)"').firstMatch(h.group(0)!)!.group(1)!),
+        closeTo(0.4, 1e-6));
+  });
+
+  test('TxtAngle F=Inh scrubs and is not re-synced from formulas', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Label',
+          richText: const VsdxRichText(
+            runs: [VsdxTextRun(text: 'Label')],
+            textBlock: VsdxTextBlock(angleRad: 0),
+          ),
+          formulas: const {'TxtAngle': 'Inh'},
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="TxtAngle"[^/]*/>'),
+      '<Cell N="TxtAngle" V="0" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    // Keep formulas map carrying Inh (as after a typical reopen) and move.
+    final shape = doc.pages.first.findShapeById(id)!;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          pinX: s.pinX + 0.1,
+          formulas: {...s.formulas, 'TxtAngle': 'Inh'},
+        ),
+      ),
+    );
+    expect(shape.richText.textBlock.angleRad, 0);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = RegExp(r'<Cell N="TxtAngle"[^/]*/>').firstMatch(pageXml)!;
+    expect(cell.group(0)!.contains('F="Inh"'), isFalse);
+    expect(cell.group(0)!.contains('V="0"'), isTrue);
+  });
+
   test('Angle F=Inh scrubbed on group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

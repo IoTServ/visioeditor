@@ -4502,7 +4502,24 @@ class VsdxWriter {
     changed |=
         _patchAngle(el, 'TxtAngle', base.angleRad, edited.angleRad);
     // Scrub F=Inh / ensure cell even when angle stays 0 (Master π/2 revive).
-    changed |= _forceLiteralLength(el, 'TxtAngle', edited.angleRad);
+    // Do not re-apply formulas['TxtAngle']=Inh via sync below.
+    if (_nonInhFormula(shape.formulas['TxtAngle']) == null) {
+      changed |= _forceLiteralLength(el, 'TxtAngle', edited.angleRad);
+    }
+    // Same for TxtPin*/Width/Height when model holds a literal (no SETATREF…).
+    for (final entry in <(String, double?)>[
+      ('TxtPinX', edited.pinXInches),
+      ('TxtPinY', edited.pinYInches),
+      ('TxtLocPinX', edited.locPinXInches),
+      ('TxtLocPinY', edited.locPinYInches),
+      ('TxtWidth', edited.widthInches),
+      ('TxtHeight', edited.heightInches),
+    ]) {
+      final v = entry.$2;
+      if (v == null) continue;
+      if (_nonInhFormula(shape.formulas[entry.$1]) != null) continue;
+      changed |= _forceLiteralLength(el, entry.$1, v);
+    }
     changed |= _patchInt(el, 'VerticalAlign', _vAlignInt(base.verticalAlign),
         _vAlignInt(edited.verticalAlign));
     // Model verticalAlign is authoritative — scrub F=Inh even when value matches.
@@ -4555,19 +4572,21 @@ class VsdxWriter {
         _forceLiteralLength(el, 'BottomMargin', edited.marginBottomInches);
     // Honour the *edited* model for Txt* F= (like Begin/End): clearing
     // formulas in setIconCaptionBelow must scrub SETATREF/TEXTWIDTH/Height*
-    // from XML even when V= is unchanged.
-    changed |= _syncCellFormulaAttr(el, 'TxtPinX', shape.formulas['TxtPinX']);
-    changed |= _syncCellFormulaAttr(el, 'TxtPinY', shape.formulas['TxtPinY']);
-    changed |=
-        _syncCellFormulaAttr(el, 'TxtWidth', shape.formulas['TxtWidth']);
-    changed |=
-        _syncCellFormulaAttr(el, 'TxtHeight', shape.formulas['TxtHeight']);
-    changed |=
-        _syncCellFormulaAttr(el, 'TxtLocPinX', shape.formulas['TxtLocPinX']);
-    changed |=
-        _syncCellFormulaAttr(el, 'TxtLocPinY', shape.formulas['TxtLocPinY']);
-    changed |=
-        _syncCellFormulaAttr(el, 'TxtAngle', shape.formulas['TxtAngle']);
+    // from XML even when V= is unchanged. Never re-emit Master F=Inh.
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtPinX', _nonInhFormula(shape.formulas['TxtPinX']));
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtPinY', _nonInhFormula(shape.formulas['TxtPinY']));
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtWidth', _nonInhFormula(shape.formulas['TxtWidth']));
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtHeight', _nonInhFormula(shape.formulas['TxtHeight']));
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtLocPinX', _nonInhFormula(shape.formulas['TxtLocPinX']));
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtLocPinY', _nonInhFormula(shape.formulas['TxtLocPinY']));
+    changed |= _syncCellFormulaAttr(
+        el, 'TxtAngle', _nonInhFormula(shape.formulas['TxtAngle']));
     return changed;
   }
 
@@ -4584,7 +4603,7 @@ class VsdxWriter {
   }) {
     b = _edrawSafeCaptionBelow(b);
     void addLen(String name, double? v, {String? defaultFormula, double? fallback}) {
-      var f = formulas[name] ?? defaultFormula;
+      var f = _nonInhFormula(formulas[name]) ?? defaultFormula;
       final value = v ?? fallback;
       if (value == null && f == null) return;
       // Stale Width*/Height* (or any parametric that no longer matches V) must
@@ -4628,8 +4647,11 @@ class VsdxWriter {
         fallback: fillBox ? h / 2 : null);
     // Always emit TxtAngle (incl. 0) so Master text rotation cannot revive
     // after an explicit upright override + group rebuild.
-    children.add(
-        _cell('TxtAngle', _fmt(b.angleRad), formula: formulas['TxtAngle']));
+    children.add(_cell(
+      'TxtAngle',
+      _fmt(b.angleRad),
+      formula: _nonInhFormula(formulas['TxtAngle']),
+    ));
     // Always emit VerticalAlign (incl. middle) so StyleSheet / Master cannot
     // revive a non-middle align after clear + group rebuild — mirrors HideText.
     children.add(
@@ -5150,7 +5172,9 @@ class VsdxWriter {
               ? (explicit == null ||
                   (explicit - shapeSize).abs() <= _epsilon)
               : true);
-      final treatAsDefault = modelIsDefault || curF == 'Inh';
+      // F=Inh alone must not force full-frame when the model holds a crop —
+      // scrub Inh to a literal V= instead (below).
+      final treatAsDefault = modelIsDefault;
       if (modelIsCustom) {
         final next = _fmt(entry.$2);
         if (cell.getAttribute('V') != next) {

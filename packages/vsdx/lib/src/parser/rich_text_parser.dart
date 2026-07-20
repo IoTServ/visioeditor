@@ -438,14 +438,42 @@ class RichTextParser {
     final vAlignInt = _cellInt(shape, 'VerticalAlign');
     final hideInt = _cellInt(shape, 'HideText');
     return VsdxTextBlock(
-      pinXInches: readLengthInches(shape, 'TxtPinX') ?? inherit.pinXInches,
-      pinYInches: readLengthInches(shape, 'TxtPinY') ?? inherit.pinYInches,
-      locPinXInches:
-          readLengthInches(shape, 'TxtLocPinX') ?? inherit.locPinXInches,
-      locPinYInches:
-          readLengthInches(shape, 'TxtLocPinY') ?? inherit.locPinYInches,
-      widthInches: readLengthInches(shape, 'TxtWidth') ?? inherit.widthInches,
-      heightInches: readLengthInches(shape, 'TxtHeight') ?? inherit.heightInches,
+      pinXInches: readLengthInches(
+            shape,
+            'TxtPinX',
+            inheritFrom: inherit.pinXInches,
+          ) ??
+          inherit.pinXInches,
+      pinYInches: readLengthInches(
+            shape,
+            'TxtPinY',
+            inheritFrom: inherit.pinYInches,
+          ) ??
+          inherit.pinYInches,
+      locPinXInches: readLengthInches(
+            shape,
+            'TxtLocPinX',
+            inheritFrom: inherit.locPinXInches,
+          ) ??
+          inherit.locPinXInches,
+      locPinYInches: readLengthInches(
+            shape,
+            'TxtLocPinY',
+            inheritFrom: inherit.locPinYInches,
+          ) ??
+          inherit.locPinYInches,
+      widthInches: readLengthInches(
+            shape,
+            'TxtWidth',
+            inheritFrom: inherit.widthInches,
+          ) ??
+          inherit.widthInches,
+      heightInches: readLengthInches(
+            shape,
+            'TxtHeight',
+            inheritFrom: inherit.heightInches,
+          ) ??
+          inherit.heightInches,
       // F=Inh + cached V=0 must not flatten Master vertical text (π/2).
       angleRad: readAngleRadians(
             shape,
