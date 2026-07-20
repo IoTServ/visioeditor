@@ -1418,3 +1418,37 @@ class VsdxGeometry {
       '${noSnap ? ' NoSnap' : ''}'
       '${noQuickDrag ? ' NoQuickDrag' : ''})';
 }
+
+/// Sync Geometry NoFill without wiping decorative hollow segments on
+/// multi-geometry shapes (e.g. doubleRectangle inner ring stays NoFill).
+///
+/// - [hollow] true → all geoms NoFill.
+/// - [hollow] false → only restore when fully hollowed; re-enable the first
+///   (primary) fill path and keep later NoFill decorations.
+List<VsdxGeometry> syncGeometryNoFill(
+  List<VsdxGeometry> geos, {
+  required bool hollow,
+}) {
+  if (geos.isEmpty) return geos;
+  if (hollow) {
+    return [for (final g in geos) g.copyWith(noFill: true)];
+  }
+  if (!geos.every((g) => g.noFill)) return geos;
+  return [
+    for (var i = 0; i < geos.length; i++)
+      geos[i].copyWith(noFill: i == 0 ? false : true),
+  ];
+}
+
+/// Sync Geometry NoLine (usually uniform across geoms).
+List<VsdxGeometry> syncGeometryNoLine(
+  List<VsdxGeometry> geos, {
+  required bool hollow,
+}) {
+  if (geos.isEmpty) return geos;
+  if (hollow) {
+    return [for (final g in geos) g.copyWith(noLine: true)];
+  }
+  if (!geos.every((g) => g.noLine)) return geos;
+  return [for (final g in geos) g.copyWith(noLine: false)];
+}

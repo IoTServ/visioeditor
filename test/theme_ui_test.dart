@@ -147,6 +147,57 @@ void main() {
     expect(s.geometries.every((g) => !g.noFill), isTrue);
   });
 
+  test('pasteStyle after setNoFill restores Geometry fill', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2);
+    final src = c.selection.single;
+    c
+      ..setFillColor(const VsdxColor(0xFFFF0000))
+      ..copyStyle()
+      ..createShapeByDrag(4, 1, 5, 2);
+    final dst = c.selection.single;
+    c
+      ..setNoFill()
+      ..pasteStyle();
+    final s = c.currentPage!.findShapeById(dst)!;
+    expect(s.fill.pattern, isNonZero);
+    expect(s.geometries.every((g) => !g.noFill), isTrue);
+    // Source still filled.
+    expect(c.currentPage!.findShapeById(src)!.fill.pattern, isNonZero);
+  });
+
+  test('setFillColor on doubleRectangle keeps inner NoFill decoration', () {
+    final c = EditorController()..newDocument();
+    final blank = c.document!;
+    final id = blank.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.doubleRectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.5,
+    );
+    expect(shape.geometries.length, greaterThanOrEqualTo(2));
+    expect(shape.geometries[1].noFill, isTrue);
+    c.applyEdit(
+      blank.replacePage(0, blank.pages.first.addShape(shape)),
+    );
+    c.setSelection([id]);
+    c.setFillColor(const VsdxColor(0xFF00FF00));
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.geometries[0].noFill, isFalse);
+    expect(after.geometries[1].noFill, isTrue);
+    c.setNoFill();
+    final hollow = c.currentPage!.findShapeById(id)!;
+    expect(hollow.geometries.every((g) => g.noFill), isTrue);
+    c.setFillColor(const VsdxColor(0xFF0000FF));
+    final restored = c.currentPage!.findShapeById(id)!;
+    expect(restored.geometries[0].noFill, isFalse);
+    expect(restored.geometries[1].noFill, isTrue);
+  });
+
   test('setFillPattern(0) clears foreground theme like setNoFill', () {
     final c = EditorController()..newDocument();
     c

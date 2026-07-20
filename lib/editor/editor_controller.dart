@@ -4295,9 +4295,7 @@ class EditorController extends ChangeNotifier {
           if (s.is1D) return s;
           return s.copyWith(
             fill: s.fill.withSolidForeground(color),
-            geometries: [
-              for (final g in s.geometries) g.copyWith(noFill: false),
-            ],
+            geometries: syncGeometryNoFill(s.geometries, hollow: false),
           );
         },
         rememberStyle: true,
@@ -4312,9 +4310,7 @@ class EditorController extends ChangeNotifier {
         if (s.is1D) return s;
         return s.copyWith(
           fill: s.fill.withThemeForeground(slot),
-          geometries: [
-            for (final g in s.geometries) g.copyWith(noFill: false),
-          ],
+          geometries: syncGeometryNoFill(s.geometries, hollow: false),
         );
       },
     );
@@ -4332,9 +4328,7 @@ class EditorController extends ChangeNotifier {
               clearThemeForegroundIndex: true,
               clearThemeBackgroundIndex: true,
             ),
-            geometries: [
-              for (final g in s.geometries) g.copyWith(noFill: true),
-            ],
+            geometries: syncGeometryNoFill(s.geometries, hollow: true),
           );
         },
         rememberStyle: true,
@@ -4349,9 +4343,7 @@ class EditorController extends ChangeNotifier {
             fill: s.fill.withGradient(gradient),
             geometries: gradient == null
                 ? null
-                : [
-                    for (final g in s.geometries) g.copyWith(noFill: false),
-                  ],
+                : syncGeometryNoFill(s.geometries, hollow: false),
           );
         },
         rememberStyle: true,
@@ -4360,9 +4352,7 @@ class EditorController extends ChangeNotifier {
   void setLineColor(VsdxColor color) => _updateSelectedShapes(
         (s) => s.copyWith(
           line: s.line.withSolidColor(color),
-          geometries: [
-            for (final g in s.geometries) g.copyWith(noLine: false),
-          ],
+          geometries: syncGeometryNoLine(s.geometries, hollow: false),
         ),
         rememberStyle: true,
       );
@@ -4373,9 +4363,7 @@ class EditorController extends ChangeNotifier {
       slot,
       (s) => s.copyWith(
         line: s.line.withThemeColor(slot),
-        geometries: [
-          for (final g in s.geometries) g.copyWith(noLine: false),
-        ],
+        geometries: syncGeometryNoLine(s.geometries, hollow: false),
       ),
     );
   }
@@ -4386,9 +4374,7 @@ class EditorController extends ChangeNotifier {
           line: s.line.withGradient(gradient),
           geometries: gradient == null
               ? null
-              : [
-                  for (final g in s.geometries) g.copyWith(noLine: false),
-                ],
+              : syncGeometryNoLine(s.geometries, hollow: false),
         ),
         rememberStyle: true,
       );
@@ -4425,9 +4411,7 @@ class EditorController extends ChangeNotifier {
             weightInches: inches,
             pattern: s.line.pattern == 0 ? 1 : s.line.pattern,
           ),
-          geometries: [
-            for (final g in s.geometries) g.copyWith(noLine: false),
-          ],
+          geometries: syncGeometryNoLine(s.geometries, hollow: false),
         ),
         rememberStyle: true,
       );
@@ -4439,9 +4423,7 @@ class EditorController extends ChangeNotifier {
             gradient: null,
             clearThemeColorIndex: true,
           ),
-          geometries: [
-            for (final g in s.geometries) g.copyWith(noLine: true),
-          ],
+          geometries: syncGeometryNoLine(s.geometries, hollow: true),
         ),
         rememberStyle: true,
       );
@@ -4456,10 +4438,7 @@ class EditorController extends ChangeNotifier {
             gradient: pattern == 0 ? null : VsdxLine.keepGradient,
             clearThemeColorIndex: pattern == 0,
           ),
-          geometries: [
-            for (final g in s.geometries)
-              g.copyWith(noLine: pattern == 0),
-          ],
+          geometries: syncGeometryNoLine(s.geometries, hollow: pattern == 0),
         ),
         rememberStyle: true,
       );
@@ -4535,10 +4514,7 @@ class EditorController extends ChangeNotifier {
               // Match [setNoFill]: drop FG theme so it cannot revive later.
               clearThemeForegroundIndex: pattern == 0,
             ),
-            geometries: [
-              for (final g in s.geometries)
-                g.copyWith(noFill: pattern == 0),
-            ],
+            geometries: syncGeometryNoFill(s.geometries, hollow: pattern == 0),
           );
         },
         rememberStyle: true,
@@ -4551,9 +4527,7 @@ class EditorController extends ChangeNotifier {
           if (s.is1D) return s;
           return s.copyWith(
             fill: s.fill.withSolidBackground(color),
-            geometries: [
-              for (final g in s.geometries) g.copyWith(noFill: false),
-            ],
+            geometries: syncGeometryNoFill(s.geometries, hollow: false),
           );
         },
         rememberStyle: true,
@@ -4567,9 +4541,7 @@ class EditorController extends ChangeNotifier {
         if (s.is1D) return s;
         return s.copyWith(
           fill: s.fill.withThemeBackground(slot),
-          geometries: [
-            for (final g in s.geometries) g.copyWith(noFill: false),
-          ],
+          geometries: syncGeometryNoFill(s.geometries, hollow: false),
         );
       },
     );
@@ -5099,6 +5071,23 @@ class EditorController extends ChangeNotifier {
             glow: clip.includeEffects ? clip.glow : s.glow,
             reflection: clip.includeEffects ? clip.reflection : s.reflection,
           );
+    // Keep Geometry NoFill/NoLine in sync with pasted fill/line — otherwise
+    // setNoFill → pasteStyle leaves geom.noFill=true and the canvas stays hollow.
+    if (!s.is1D) {
+      var geos = next.geometries;
+      if (clip.includeFill) {
+        geos = syncGeometryNoFill(geos, hollow: next.fill.pattern == 0);
+      }
+      geos = syncGeometryNoLine(geos, hollow: next.line.pattern == 0);
+      if (!identical(geos, next.geometries)) {
+        next = next.copyWith(geometries: geos);
+      }
+    } else if (next.line.pattern != 0) {
+      final geos = syncGeometryNoLine(next.geometries, hollow: false);
+      if (!identical(geos, next.geometries)) {
+        next = next.copyWith(geometries: geos);
+      }
+    }
     if (clip.char != null || clip.para != null) {
       var runs = next.richText.runs;
       if (runs.isEmpty) {

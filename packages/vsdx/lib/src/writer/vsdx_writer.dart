@@ -4307,15 +4307,11 @@ class VsdxWriter {
       // inheritance on reopen (parser treats V=0 as transparent).
       children.add(_cell('TextBkgnd', '0'));
     }
-    if (b.backgroundTransparency > _epsilon) {
-      children.add(_cell('TextBkgndTrans', _fmt(b.backgroundTransparency)));
-    }
-    if (b.textDirection != 0) {
-      children.add(_cell('TextDirection', b.textDirection.toString()));
-    }
-    if ((b.defaultTabStopInches - 0.5).abs() > _epsilon) {
-      children.add(_cell('DefaultTabStop', _fmt(b.defaultTabStopInches)));
-    }
+    // Always emit Trans / Direction / DefaultTabStop (incl. defaults) so Master
+    // values cannot revive after clear + group rebuild.
+    children.add(_cell('TextBkgndTrans', _fmt(b.backgroundTransparency)));
+    children.add(_cell('TextDirection', b.textDirection.toString()));
+    children.add(_cell('DefaultTabStop', _fmt(b.defaultTabStopInches)));
     const d = VsdxTextBlock.defaults;
     final margin = hasLabel ? 0.05555555555555555 : null;
     if ((b.marginLeftInches - d.marginLeftInches).abs() > _epsilon) {
@@ -5060,14 +5056,11 @@ class VsdxWriter {
     // FillBkgnd default comes from document StyleSheets (No Style) when omitted.
     children.add(_cell('FillPattern', s.fill.pattern.toString(),
         formula: formulaOf('FillPattern')));
-    if (s.fill.foregroundTransparency > _epsilon) {
-      children.add(
-          _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)));
-    }
-    if (s.fill.backgroundTransparency > _epsilon) {
-      children.add(
-          _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)));
-    }
+    // Always emit Trans (incl. 0) so Master transparency cannot revive after
+    // clear + group rebuild (patch already force-writes these).
+    children
+      ..add(_cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)))
+      ..add(_cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)));
     // --- Line ----------------------------------------------------------------
     if (s.line.color != null) {
       children.add(_cell('LineColor', _hex(s.line.color!),
@@ -5085,10 +5078,8 @@ class VsdxWriter {
       ..add(_cell('LinePattern', s.line.pattern.toString(),
           formula: formulaOf('LinePattern')))
       // Always emit LineCap (Visio/Edraw "No Style" default is 0 = round).
-      ..add(_cell('LineCap', _lineCapInt(s.line.cap).toString()));
-    if (s.line.transparency > _epsilon) {
-      children.add(_cell('LineColorTrans', _fmt(s.line.transparency)));
-    }
+      ..add(_cell('LineCap', _lineCapInt(s.line.cap).toString()))
+      ..add(_cell('LineColorTrans', _fmt(s.line.transparency)));
     // Always emit arrows (incl. 0) so StyleSheet cannot revive arrowheads
     // after the user cleared them on a rebuild path (patch already forces 0).
     children
@@ -5235,6 +5226,10 @@ class VsdxWriter {
       for (final name in _lockCells) {
         children.add(_cell(name, '1'));
       }
+    } else {
+      // Always emit LockMoveX=0 so Master LockMoveX cannot revive after unlock
+      // + group rebuild (other Lock* stay opaque for fine-grained Visio locks).
+      children.add(_cell('LockMoveX', '0'));
     }
     // --- Sections ------------------------------------------------------------
     // Plain `.text` without runs is synthesised so Edraw gets an explicit Size
@@ -5402,26 +5397,19 @@ class VsdxWriter {
             : asian,
       ));
     }
-    if (c.strikethrough) cells.add(_cell('Strikethru', '1'));
-    if (c.doubleUnderline) cells.add(_cell('DblUnderline', '1'));
-    if (c.doubleStrikethrough) cells.add(_cell('DoubleStrikethrough', '1'));
-    if (c.overline) cells.add(_cell('Overline', '1'));
-    if (c.letterSpacingInches.abs() > _epsilon) {
-      cells.add(_cell('Letterspace', _fmt(c.letterSpacingInches)));
-    }
-    if (c.position != VsdxTextPosition.normal) {
-      cells.add(_cell('Pos', _textPositionInt(c.position).toString()));
-    }
-    if (c.textCase != VsdxTextCase.normal) {
-      cells.add(_cell('Case', _textCaseInt(c.textCase).toString()));
-    }
-    // Only emit when non-default — always writing FontScale/ColorTrans made
-    // some 万兴图示 builds clip or hide CJK labels on brand-new shapes.
+    // Always emit clearable style flags (incl. 0) so StyleSheet/Master cannot
+    // revive after group rebuild. Keep FontScale omit-when-default for CJK.
+    cells
+      ..add(_cell('Strikethru', c.strikethrough ? '1' : '0'))
+      ..add(_cell('DblUnderline', c.doubleUnderline ? '1' : '0'))
+      ..add(_cell('DoubleStrikethrough', c.doubleStrikethrough ? '1' : '0'))
+      ..add(_cell('Overline', c.overline ? '1' : '0'))
+      ..add(_cell('Letterspace', _fmt(c.letterSpacingInches)))
+      ..add(_cell('Pos', _textPositionInt(c.position).toString()))
+      ..add(_cell('Case', _textCaseInt(c.textCase).toString()))
+      ..add(_cell('ColorTrans', _fmt(c.transparency)));
     if ((c.fontScale - 1.0).abs() > _epsilon) {
       cells.add(_cell('FontScale', _fmt(c.fontScale)));
-    }
-    if (c.transparency > _epsilon) {
-      cells.add(_cell('ColorTrans', _fmt(c.transparency)));
     }
     final lang = c.langId ?? (cjk ? 'zh-CN' : null);
     if (lang != null && lang.isNotEmpty) {
@@ -5473,9 +5461,8 @@ class VsdxWriter {
     if (spLine != null) {
       cells.add(_cell('SpLine', _fmt(spLine)));
     }
-    if (p.bullet != 0) {
-      cells.add(_cell('Bullet', p.bullet.toString()));
-    }
+    // Always emit Bullet (incl. 0) so cleared bullets cannot revive via Master.
+    cells.add(_cell('Bullet', p.bullet.toString()));
     if (p.bulletStr != null && p.bulletStr!.isNotEmpty) {
       cells.add(_cell('BulletStr', p.bulletStr!));
     }
@@ -5707,10 +5694,8 @@ class VsdxWriter {
         if (s.fill.themeForegroundIndex == null)
           _cell('QuickStyleFillColor', s.fill.themeBackgroundIndex!.toString()),
       ],
-      if (s.fill.foregroundTransparency > _epsilon)
-        _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)),
-      if (s.fill.backgroundTransparency > _epsilon)
-        _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)),
+      _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)),
+      _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)),
       _cell('LinePattern', s.line.pattern.toString()),
       _cell('LineWeight', _fmt(s.line.weightInches)),
       _cell('LineCap', _lineCapInt(s.line.cap).toString()),
@@ -5720,8 +5705,7 @@ class VsdxWriter {
         _cell('LineColor', '0', formula: 'THEMEVAL()'),
         _cell('QuickStyleLineColor', s.line.themeColorIndex!.toString()),
       ],
-      if (s.line.transparency > _epsilon)
-        _cell('LineColorTrans', _fmt(s.line.transparency)),
+      _cell('LineColorTrans', _fmt(s.line.transparency)),
       // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
       _cell('BeginArrow', s.line.beginArrow.toString()),
       _cell(
@@ -5806,6 +5790,8 @@ class VsdxWriter {
       for (final name in _lockCells) {
         children.add(_cell(name, '1'));
       }
+    } else {
+      children.add(_cell('LockMoveX', '0'));
     }
     // Meta cells — match normal shapes so ThemeIndex / EventDblClick / ObjType
     // survive a Foreign group rebuild (they are modeled, not opaque).
