@@ -219,6 +219,9 @@ void main() {
       final c = r.document.pages.single.findShapeById(r.createdIds.single)!;
       expect(c.line.hasLine, isFalse);
       expect(c.line.pattern, 0);
+      // Geometry NoLine must track LinePattern=0 so Edraw does not stroke.
+      expect(c.geometries.isNotEmpty, isTrue);
+      expect(c.geometries.every((g) => g.noLine), isTrue);
     });
 
     test('set_style + set_text mutate the target shape', () {

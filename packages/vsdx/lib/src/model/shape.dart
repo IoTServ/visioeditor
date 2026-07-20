@@ -1845,7 +1845,12 @@ class VsdxShape {
       formulas: nextFormulas,
       connectorProps: props,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: commands, noFill: true),
+        VsdxGeometry(
+          commands: commands,
+          noFill: true,
+          // Keep LinePattern=0 (line:none) visible to Edraw after re-route.
+          noLine: !line.hasLine,
+        ),
       ],
     );
   }

@@ -1445,10 +1445,10 @@ class VsdxWriter {
       '<Cell N="ShdwPattern" V="0"/>'
       '<Cell N="ShapeShdwShow" V="0"/>'
       '<Cell N="VerticalAlign" V="1"/>'
-      '<Cell N="LeftMargin" V="0.05555555555555555"/>'
-      '<Cell N="RightMargin" V="0.05555555555555555"/>'
-      '<Cell N="TopMargin" V="0.05555555555555555"/>'
-      '<Cell N="BottomMargin" V="0.05555555555555555"/>'
+      '<Cell N="LeftMargin" V="0.04"/>'
+      '<Cell N="RightMargin" V="0.04"/>'
+      '<Cell N="TopMargin" V="0.04"/>'
+      '<Cell N="BottomMargin" V="0.04"/>'
       '<Section N="Character">'
       '<Row IX="0">'
       '<Cell N="Font" V="Arial"/>'
@@ -4608,10 +4608,22 @@ class VsdxWriter {
     // Default 3 (reroute on crossover) — matches Visio fixtures. Never use 0
     // (reroute freely): 万兴图示 then discards multi-segment Geometry.
     put('ConFixedCode', (s.connectorProps?.conFixedCode ?? 3).toString());
-    put('NoAlignBox', '1');
-    put('NoLiveDynamics', '1');
-    put('ShapeSplittable', '1');
+    put('NoLiveDynamics',
+        (s.connectorProps?.noLiveDynamics ?? true) ? '1' : '0');
     put('ShdwPattern', s.shadow.enabled ? '1' : '0');
+    // Honour model NoAlignBox / ShapeSplittable (do not force Edraw 1 over
+    // cleared false — rebuild already emits literal 0/1).
+    for (final entry in <(String, String)>[
+      ('NoAlignBox', s.noAlignBox ? '1' : '0'),
+      ('ShapeSplittable', s.shapeSplittable ? '1' : '0'),
+    ]) {
+      final cell = _ensureCell(el, entry.$1);
+      if (cell.getAttribute('V') != entry.$2 ||
+          cell.getAttribute('F') != null) {
+        _writeValue(cell, entry.$2);
+        changed = true;
+      }
+    }
     // Pin centred on Begin/End — Edraw samples always carry these formulas.
     void putPinFormula(String name, String fallback, double value) {
       final cell = _ensureCell(el, name);
@@ -4705,8 +4717,9 @@ class VsdxWriter {
     ]) {
       final cell = _ensureCell(el, entry.$1);
       final next = _fmt(entry.$2);
-      if (cell.getAttribute('V') != next) {
-        cell.setAttribute('V', next);
+      // Scrub F=Inh so Master image placement cannot override the model.
+      if (cell.getAttribute('V') != next || cell.getAttribute('F') != null) {
+        _writeValue(cell, next);
         changed = true;
       }
     }
@@ -4736,8 +4749,9 @@ class VsdxWriter {
     ]) {
       final cell = _ensureCell(el, entry.$1);
       final next = _fmt(entry.$2);
-      if (cell.getAttribute('V') != next) {
-        cell.setAttribute('V', next);
+      // Scrub F=Inh so Master tone cannot override cleared/edited values.
+      if (cell.getAttribute('V') != next || cell.getAttribute('F') != null) {
+        _writeValue(cell, next);
         changed = true;
       }
     }
@@ -4792,16 +4806,16 @@ class VsdxWriter {
     if (!_hasCell(el, 'VerticalAlign')) {
       _writeValue(_ensureCell(el, 'VerticalAlign'), '1');
     }
-    // Small margins match Edraw flowchart defaults (~4pt).
-    const m = 0.05555555555555555;
-    for (final name in const [
-      'LeftMargin',
-      'RightMargin',
-      'TopMargin',
-      'BottomMargin',
+    // Match Visio / VsdxTextBlock defaults (0.04"), not Edraw's ~4pt rewrite.
+    final tb = s.richText.textBlock;
+    for (final entry in <(String, double)>[
+      ('LeftMargin', tb.marginLeftInches),
+      ('RightMargin', tb.marginRightInches),
+      ('TopMargin', tb.marginTopInches),
+      ('BottomMargin', tb.marginBottomInches),
     ]) {
-      if (!_hasCell(el, name)) {
-        _writeValue(_ensureCell(el, name), _fmt(m));
+      if (!_hasCell(el, entry.$1)) {
+        _writeValue(_ensureCell(el, entry.$1), _fmt(entry.$2));
       }
     }
     // Our canvas centres plain labels; older exports wrote HorzAlign=0.
@@ -5107,9 +5121,14 @@ class VsdxWriter {
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     } else {
       // Edraw StyleSheet defaults can leave a residual shadow unless the shape
-      // explicitly disables it. Emit both aliases (patch path already does).
-      children.add(_cell('ShadowPattern', '0'));
-      children.add(_cell('ShdwPattern', '0'));
+      // explicitly disables it. Emit both aliases + companions (patch does).
+      children
+        ..add(_cell('ShadowPattern', '0'))
+        ..add(_cell('ShdwPattern', '0'))
+        ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
@@ -5714,8 +5733,13 @@ class VsdxWriter {
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     } else {
-      children.add(_cell('ShadowPattern', '0'));
-      children.add(_cell('ShdwPattern', '0'));
+      children
+        ..add(_cell('ShadowPattern', '0'))
+        ..add(_cell('ShdwPattern', '0'))
+        ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));

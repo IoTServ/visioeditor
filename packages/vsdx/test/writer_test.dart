@@ -7958,4 +7958,212 @@ void main() {
     expect(after.richText.textBlock.marginLeftInches, closeTo(0.04, 1e-6));
     expect(after.noAlignBox, isFalse);
   });
+
+  test('Foreign Img* F=Inh scrubbed on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_inh_tone.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(
+      imageTransparency: 0.25,
+      imageBlur: 0.1,
+      imageBrightness: 0.05,
+      imageContrast: 0.15,
+      imgOffsetXInches: 0.1,
+      imgOffsetYInches: 0.2,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    for (final name in const [
+      'Transparency',
+      'Blur',
+      'Brightness',
+      'Contrast',
+      'ImgOffsetX',
+      'ImgOffsetY',
+    ]) {
+      pageXml = pageXml.replaceFirst(
+        RegExp('<Cell N="$name"[^/]*/>'),
+        '<Cell N="$name" V="0.5" F="Inh"/>',
+      );
+    }
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    // Re-apply model values so patch syncs + scrubs Inh.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        picId,
+        (s) => s.copyWith(
+          imageTransparency: 0.25,
+          imageBlur: 0.1,
+          imageBrightness: 0.05,
+          imageContrast: 0.15,
+          imgOffsetXInches: 0.1,
+          imgOffsetYInches: 0.2,
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in const [
+      'Transparency',
+      'Blur',
+      'Brightness',
+      'Contrast',
+      'ImgOffsetX',
+      'ImgOffsetY',
+    ]) {
+      final m = RegExp('<Cell N="$name"[^/]*/>').firstMatch(pageXml);
+      expect(m, isNotNull, reason: name);
+      expect(m!.group(0)!.contains('F="Inh"'), isFalse, reason: name);
+    }
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.imageTransparency, closeTo(0.25, 1e-6));
+    expect(after.imageBlur, closeTo(0.1, 1e-6));
+    expect(after.imgOffsetXInches, closeTo(0.1, 1e-6));
+  });
+
+  test('connector ensure honours NoAlignBox/ShapeSplittable=0', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final conn = VsdxShapeFactory.line(
+      id: id,
+      ax: 1,
+      ay: 2,
+      bx: 4,
+      by: 2,
+    ).reshapeAsPolyline(const <Offset2D>[
+      Offset2D(1, 2),
+      Offset2D(2.5, 2),
+      Offset2D(4, 2),
+    ]).copyWith(noAlignBox: false, shapeSplittable: false);
+    doc = doc.replacePage(0, doc.pages.first.addShape(conn));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Simulate Edraw defaults forcing both flags on.
+    for (final name in const ['NoAlignBox', 'ShapeSplittable']) {
+      if (pageXml.contains('N="$name"')) {
+        pageXml = pageXml.replaceFirst(
+          RegExp('<Cell N="$name"[^/]*/>'),
+          '<Cell N="$name" V="1"/>',
+        );
+      } else {
+        pageXml = pageXml.replaceFirst(
+          '</Shape>',
+          '<Cell N="$name" V="1"/></Shape>',
+        );
+      }
+    }
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(noAlignBox: false, shapeSplittable: false),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="NoAlignBox" V="0"'), isTrue);
+    expect(pageXml.contains('N="ShapeSplittable" V="0"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.noAlignBox, isFalse);
+    expect(after.shapeSplittable, isFalse);
+  });
+
+  test('disabled shadow rebuild emits companion offset/blur/trans', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: false,
+                offsetXInches: 0.12,
+                offsetYInches: -0.08,
+                blurInches: 0.05,
+                transparency: 0.3,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ShadowPattern" V="0"'), isTrue);
+    expect(pageXml.contains('N="ShdwPattern" V="0"'), isTrue);
+    expect(pageXml.contains('N="ShadowOffsetX"'), isTrue);
+    expect(pageXml.contains('N="ShadowBlur"'), isTrue);
+    expect(pageXml.contains('N="ShadowForegndTrans"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.shadow.enabled, isFalse);
+    expect(after.shadow.offsetXInches, closeTo(0.12, 1e-6));
+    expect(after.shadow.blurInches, closeTo(0.05, 1e-6));
+  });
 }

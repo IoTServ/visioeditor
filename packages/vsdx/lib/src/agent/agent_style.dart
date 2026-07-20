@@ -179,8 +179,9 @@ VsdxShape withLabel(
       endTrigger: '2',
     ),
   );
-  final connector =
-      (label != null && label.isNotEmpty) ? withLabel(base, label, pt: 10) : base;
+  final connector = syncNoneGeometryFlags(
+    (label != null && label.isNotEmpty) ? withLabel(base, label, pt: 10) : base,
+  );
   final connects = <VsdxConnect>[
     VsdxConnect(
       fromSheetId: id,
