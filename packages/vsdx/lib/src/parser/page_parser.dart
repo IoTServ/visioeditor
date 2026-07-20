@@ -431,13 +431,13 @@ class PageParser {
     final ownControls = _readControls(shapeEl, inherit: proto?.controls);
     final controls =
         ownControls.isEmpty && proto != null ? proto.controls : ownControls;
-    final ownScratch = _readScratch(shapeEl);
+    final ownScratch = _readScratch(shapeEl, inherit: proto?.scratch);
     final scratch =
         ownScratch.isEmpty && proto != null ? proto.scratch : ownScratch;
-    final ownFields = _readFields(shapeEl);
+    final ownFields = _readFields(shapeEl, inherit: proto?.fields);
     final fields =
         ownFields.isEmpty && proto != null ? proto.fields : ownFields;
-    final ownActions = _readActions(shapeEl);
+    final ownActions = _readActions(shapeEl, inherit: proto?.actions);
     final actions =
         ownActions.isEmpty && proto != null ? proto.actions : ownActions;
     final masterName = masterId != null
@@ -644,7 +644,14 @@ class PageParser {
   }
 
   /// `<Section N="Scratch">` — indexed parametric cells.
-  List<VsdxScratchRow> _readScratch(XmlElement shapeEl) {
+  List<VsdxScratchRow> _readScratch(
+    XmlElement shapeEl, {
+    List<VsdxScratchRow>? inherit,
+  }) {
+    final byIx = <int, VsdxScratchRow>{
+      if (inherit != null)
+        for (final s in inherit) s.ix: s,
+    };
     final out = <VsdxScratchRow>[];
     for (final section in shapeEl.childElements) {
       if (section.name.local != 'Section') continue;
@@ -652,24 +659,55 @@ class PageParser {
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
         final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? out.length;
+        final proto = byIx[ix];
         out.add(VsdxScratchRow(
           ix: ix,
-          x: readLengthInches(row, 'X') ?? _double(row, 'X') ?? 0,
-          y: readLengthInches(row, 'Y') ?? _double(row, 'Y') ?? 0,
-          a: readLengthInches(row, 'A') ?? _double(row, 'A') ?? 0,
-          b: readLengthInches(row, 'B') ?? _double(row, 'B') ?? 0,
-          c: readLengthInches(row, 'C') ?? _double(row, 'C') ?? 0,
-          d: readLengthInches(row, 'D') ?? _double(row, 'D') ?? 0,
-          xFormula: _formula(row, 'X'),
-          yFormula: _formula(row, 'Y'),
-          aFormula: _formula(row, 'A'),
-          bFormula: _formula(row, 'B'),
-          cFormula: _formula(row, 'C'),
-          dFormula: _formula(row, 'D'),
+          x: readLengthInches(row, 'X', inheritFrom: proto?.x) ??
+              _double(row, 'X', inheritFrom: proto?.x) ??
+              proto?.x ??
+              0,
+          y: readLengthInches(row, 'Y', inheritFrom: proto?.y) ??
+              _double(row, 'Y', inheritFrom: proto?.y) ??
+              proto?.y ??
+              0,
+          a: readLengthInches(row, 'A', inheritFrom: proto?.a) ??
+              _double(row, 'A', inheritFrom: proto?.a) ??
+              proto?.a ??
+              0,
+          b: readLengthInches(row, 'B', inheritFrom: proto?.b) ??
+              _double(row, 'B', inheritFrom: proto?.b) ??
+              proto?.b ??
+              0,
+          c: readLengthInches(row, 'C', inheritFrom: proto?.c) ??
+              _double(row, 'C', inheritFrom: proto?.c) ??
+              proto?.c ??
+              0,
+          d: readLengthInches(row, 'D', inheritFrom: proto?.d) ??
+              _double(row, 'D', inheritFrom: proto?.d) ??
+              proto?.d ??
+              0,
+          xFormula: _formulaOrInherit(row, 'X', proto?.xFormula),
+          yFormula: _formulaOrInherit(row, 'Y', proto?.yFormula),
+          aFormula: _formulaOrInherit(row, 'A', proto?.aFormula),
+          bFormula: _formulaOrInherit(row, 'B', proto?.bFormula),
+          cFormula: _formulaOrInherit(row, 'C', proto?.cFormula),
+          dFormula: _formulaOrInherit(row, 'D', proto?.dFormula),
         ));
       }
     }
     return List.unmodifiable(out);
+  }
+
+  /// Prefer a real parametric `F=`; `F=Inh` falls back to the master formula.
+  static String? _formulaOrInherit(
+    XmlElement parent,
+    String name,
+    String? inherit,
+  ) {
+    final f = _formula(parent, name);
+    if (f == null) return inherit;
+    if (isInhFormula(f)) return inherit;
+    return f;
   }
 
   static String? _formula(XmlElement parent, String name) {
@@ -793,7 +831,14 @@ class PageParser {
   }
 
   /// `<Section N="Field">` — dynamic text field rows (`<fld IX>`).
-  List<VsdxFieldRow> _readFields(XmlElement shapeEl) {
+  List<VsdxFieldRow> _readFields(
+    XmlElement shapeEl, {
+    List<VsdxFieldRow>? inherit,
+  }) {
+    final byIx = <int, VsdxFieldRow>{
+      if (inherit != null)
+        for (final f in inherit) f.ix: f,
+    };
     final out = <VsdxFieldRow>[];
     for (final section in shapeEl.childElements) {
       if (section.name.local != 'Section') continue;
@@ -801,20 +846,23 @@ class PageParser {
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
         final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? out.length;
+        final proto = byIx[ix];
         final valueCell = findCell(row, 'Value');
         final formatCell = findCell(row, 'Format');
         out.add(VsdxFieldRow(
           ix: ix,
-          value: valueCell?.getAttribute('V'),
-          valueFormula: _formula(row, 'Value'),
-          format: formatCell?.getAttribute('V'),
-          formatFormula: _formula(row, 'Format'),
-          type: _int(row, 'Type') ?? 0,
-          uiCat: _int(row, 'UICat'),
-          uiCod: _int(row, 'UICod'),
-          uiFmt: _int(row, 'UIFmt'),
-          calendar: _int(row, 'Calendar'),
-          objectKind: _int(row, 'ObjectKind'),
+          value: _stringCellOrInherit(valueCell, proto?.value),
+          valueFormula: _formulaOrInherit(row, 'Value', proto?.valueFormula),
+          format: _stringCellOrInherit(formatCell, proto?.format),
+          formatFormula: _formulaOrInherit(row, 'Format', proto?.formatFormula),
+          type: _int(row, 'Type', inheritFrom: proto?.type) ?? proto?.type ?? 0,
+          uiCat: _int(row, 'UICat', inheritFrom: proto?.uiCat) ?? proto?.uiCat,
+          uiCod: _int(row, 'UICod', inheritFrom: proto?.uiCod) ?? proto?.uiCod,
+          uiFmt: _int(row, 'UIFmt', inheritFrom: proto?.uiFmt) ?? proto?.uiFmt,
+          calendar: _int(row, 'Calendar', inheritFrom: proto?.calendar) ??
+              proto?.calendar,
+          objectKind: _int(row, 'ObjectKind', inheritFrom: proto?.objectKind) ??
+              proto?.objectKind,
         ));
       }
     }
@@ -822,7 +870,14 @@ class PageParser {
   }
 
   /// `<Section N="Actions">` — context-menu / right-click action rows.
-  List<VsdxActionRow> _readActions(XmlElement shapeEl) {
+  List<VsdxActionRow> _readActions(
+    XmlElement shapeEl, {
+    List<VsdxActionRow>? inherit,
+  }) {
+    final byName = <String, VsdxActionRow>{
+      if (inherit != null)
+        for (final a in inherit) a.name: a,
+    };
     final out = <VsdxActionRow>[];
     for (final section in shapeEl.childElements) {
       if (section.name.local != 'Section') continue;
@@ -832,23 +887,49 @@ class PageParser {
         final name = row.getAttribute('N') ??
             'Row${row.getAttribute('IX') ?? out.length}';
         final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? out.length;
+        final proto = byName[name];
         out.add(VsdxActionRow(
           name: name,
           ix: ix,
-          menu: findCell(row, 'Menu')?.getAttribute('V'),
-          action: findCell(row, 'Action')?.getAttribute('V'),
-          actionFormula: _formula(row, 'Action'),
-          checked: (_int(row, 'Checked') ?? 0) != 0,
-          disabled: (_int(row, 'Disabled') ?? 0) != 0,
-          readOnly: (_int(row, 'ReadOnly') ?? 0) != 0,
-          invisible: (_int(row, 'Invisible') ?? 0) != 0,
-          tag: findCell(row, 'Tag')?.getAttribute('V'),
-          buttonFace: _int(row, 'ButtonFace') ?? 0,
-          sortKey: findCell(row, 'SortKey')?.getAttribute('V'),
+          menu: _stringCellOrInherit(findCell(row, 'Menu'), proto?.menu),
+          action: _stringCellOrInherit(findCell(row, 'Action'), proto?.action),
+          actionFormula: _formulaOrInherit(row, 'Action', proto?.actionFormula),
+          checked: (_int(row, 'Checked',
+                      inheritFrom: proto == null ? null : (proto.checked ? 1 : 0)) ??
+                  (proto?.checked == true ? 1 : 0)) !=
+              0,
+          disabled: (_int(row, 'Disabled',
+                      inheritFrom:
+                          proto == null ? null : (proto.disabled ? 1 : 0)) ??
+                  (proto?.disabled == true ? 1 : 0)) !=
+              0,
+          readOnly: (_int(row, 'ReadOnly',
+                      inheritFrom:
+                          proto == null ? null : (proto.readOnly ? 1 : 0)) ??
+                  (proto?.readOnly == true ? 1 : 0)) !=
+              0,
+          invisible: (_int(row, 'Invisible',
+                      inheritFrom:
+                          proto == null ? null : (proto.invisible ? 1 : 0)) ??
+                  (proto?.invisible == true ? 1 : 0)) !=
+              0,
+          tag: _stringCellOrInherit(findCell(row, 'Tag'), proto?.tag),
+          buttonFace: _int(row, 'ButtonFace', inheritFrom: proto?.buttonFace) ??
+              proto?.buttonFace ??
+              0,
+          sortKey:
+              _stringCellOrInherit(findCell(row, 'SortKey'), proto?.sortKey),
         ));
       }
     }
     return List.unmodifiable(out);
+  }
+
+  /// Read a string cell; `F=Inh` / missing → [inherit].
+  static String? _stringCellOrInherit(XmlElement? cell, String? inherit) {
+    if (cell == null) return inherit;
+    if (isInhFormula(cell.getAttribute('F'))) return inherit;
+    return cell.getAttribute('V');
   }
 
   /// Resolve a shape's `<ForeignData>` reference to an absolute part name.

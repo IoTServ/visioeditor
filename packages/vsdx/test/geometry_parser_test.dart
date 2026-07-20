@@ -379,6 +379,46 @@ void main() {
       expect(lt.y, closeTo(0.5, 1e-9));
     });
 
+    test('RelCubBezTo F=Inh cells keep master control points', () {
+      final master = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="RelMoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="RelCubBezTo">'
+                    '<Cell N="X" V="1"/><Cell N="Y" V="1"/>'
+                    '<Cell N="A" V="0.2"/><Cell N="B" V="0.3"/>'
+                    '<Cell N="C" V="0.4"/><Cell N="D" V="0.5"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final instance = <VsdxGeometry>[
+        gp
+            .parse(XmlDocument.parse(
+                    '<Shape><Section N="Geometry" IX="0">'
+                    '<Row IX="1" T="RelMoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>'
+                    '<Row IX="2" T="RelCubBezTo">'
+                    '<Cell N="X" V="0.9"/>'
+                    '<Cell N="Y" V="0" F="Inh"/>'
+                    '<Cell N="A" V="0" F="Inh"/><Cell N="B" V="0" F="Inh"/>'
+                    '<Cell N="C" V="0" F="Inh"/><Cell N="D" V="0" F="Inh"/>'
+                    '</Row>'
+                    '</Section></Shape>')
+                .rootElement)
+            .single,
+      ];
+      final merged = GeometryParser.mergeInherited(master, instance).single;
+      final cub = merged.commands[1] as RelCubBezTo;
+      expect(cub.fx, closeTo(0.9, 1e-9));
+      expect(cub.fy, closeTo(1, 1e-9));
+      expect(cub.fx1, closeTo(0.2, 1e-9));
+      expect(cub.fy1, closeTo(0.3, 1e-9));
+      expect(cub.fx2, closeTo(0.4, 1e-9));
+      expect(cub.fy2, closeTo(0.5, 1e-9));
+    });
+
     test('test9 line shape merges master geometry (real fixture)', () {
       const parser = DocumentParser();
       final doc = parser.parse(

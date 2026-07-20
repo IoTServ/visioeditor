@@ -269,6 +269,41 @@ class GeometryParser {
         eccentricity: pick('D', master.eccentricity, inst.eccentricity),
       );
     }
+    if (master is RelCubBezTo && inst is RelCubBezTo) {
+      return RelCubBezTo(
+        fx: pick('X', master.fx, inst.fx),
+        fy: pick('Y', master.fy, inst.fy),
+        fx1: pick('A', master.fx1, inst.fx1),
+        fy1: pick('B', master.fy1, inst.fy1),
+        fx2: pick('C', master.fx2, inst.fx2),
+        fy2: pick('D', master.fy2, inst.fy2),
+      );
+    }
+    if (master is RelQuadBezTo && inst is RelQuadBezTo) {
+      return RelQuadBezTo(
+        fx: pick('X', master.fx, inst.fx),
+        fy: pick('Y', master.fy, inst.fy),
+        fx1: pick('A', master.fx1, inst.fx1),
+        fy1: pick('B', master.fy1, inst.fy1),
+      );
+    }
+    if (master is RelArcTo && inst is RelArcTo) {
+      return RelArcTo(
+        fx: pick('X', master.fx, inst.fx),
+        fy: pick('Y', master.fy, inst.fy),
+        fbow: pick('A', master.fbow, inst.fbow),
+      );
+    }
+    if (master is RelEllipticalArcTo && inst is RelEllipticalArcTo) {
+      return RelEllipticalArcTo(
+        fx: pick('X', master.fx, inst.fx),
+        fy: pick('Y', master.fy, inst.fy),
+        fcx: pick('A', master.fcx, inst.fcx),
+        fcy: pick('B', master.fcy, inst.fcy),
+        angle: pick('C', master.angle, inst.angle),
+        eccentricity: pick('D', master.eccentricity, inst.eccentricity),
+      );
+    }
     return inst;
   }
 
