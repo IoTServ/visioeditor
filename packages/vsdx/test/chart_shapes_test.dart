@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(70));
+    expect(kChartStencils, hasLength(71));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -36,16 +36,19 @@ void main() {
     final autoName = RegExp(r'^Sheet\.\d+$');
     for (final s in kChartStencils) {
       final shape = s.build(7, 4, 5);
-      void check(VsdxShape node) {
+      final allowCellText = ChartOps.chartKind(shape) == 'dataTable';
+      void check(VsdxShape node, {required bool isRoot}) {
         expect(autoName.hasMatch(node.name), isTrue,
             reason: '${s.name} id=${node.id} name=${node.name}');
-        expect(node.text, isNull, reason: '${s.name} id=${node.id}');
+        if (isRoot || !allowCellText) {
+          expect(node.text, isNull, reason: '${s.name} id=${node.id}');
+        }
         for (final c in node.children) {
-          check(c);
+          check(c, isRoot: false);
         }
       }
 
-      check(shape);
+      check(shape, isRoot: true);
     }
   });
 
@@ -385,6 +388,37 @@ void main() {
     );
     expect(ChartOps.chartExtras(resized), '2x3');
     expect(ChartOps.chartValues(resized), hasLength(6));
+  });
+
+  test('data table respects grid extras and cell labels', () {
+    final table = ChartOps.dataTableChart(
+      id: 5,
+      pinX: 1,
+      pinY: 1,
+      extras: '3x2;header=1;borders=1;zebra=1',
+      labels: const <String>['A', 'B', '1', '2', '3', '4'],
+    );
+    expect(ChartOps.chartKind(table), 'dataTable');
+    expect(ChartOps.isCustomEditorKind('dataTable'), isTrue);
+    expect(ChartOps.chartExtras(table), contains('3x2'));
+    expect(ChartOps.chartLabels(table, 6), hasLength(6));
+    expect(ChartOps.seriesChildren(table), hasLength(6));
+    var next = 500;
+    final rebuilt = ChartOps.rebuild(
+      table,
+      extras: '2x2;header=0;borders=0;zebra=0',
+      labels: const <String>['w', 'x', 'y', 'z'],
+      colors: const <VsdxColor>[
+        VsdxColor(0xFFE53935),
+        VsdxColor(0xFFFFFFFF),
+        VsdxColor(0xFFEEEEEE),
+      ],
+      allocId: () => next++,
+    );
+    expect(ChartOps.parseTableGrid(ChartOps.chartExtras(rebuilt)).$1, 2);
+    expect(ChartOps.parseTableFlag(ChartOps.chartExtras(rebuilt), 'header'),
+        isFalse);
+    expect(ChartOps.seriesChildren(rebuilt), hasLength(4));
   });
 
   test('pie and line charts round-trip', () {

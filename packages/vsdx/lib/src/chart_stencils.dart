@@ -293,6 +293,10 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'KPI Target',
       (id, cx, cy) => ChartOps.kpiTargetChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Data Table',
+      (id, cx, cy) => ChartOps.dataTableChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 

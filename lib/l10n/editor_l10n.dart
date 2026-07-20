@@ -248,6 +248,14 @@ class EditorL10n {
   String get chartSpecialtyTimelineHint => _t('chartSpecialtyTimelineHint');
   String get chartSpecialtyNestedDonutHint => _t('chartSpecialtyNestedDonutHint');
   String get chartSpecialtyKpiHint => _t('chartSpecialtyKpiHint');
+  String get chartSpecialtyTableHint => _t('chartSpecialtyTableHint');
+  String get chartTableHeader => _t('chartTableHeader');
+  String get chartTableBorders => _t('chartTableBorders');
+  String get chartTableZebra => _t('chartTableZebra');
+  String get chartHeaderFill => _t('chartHeaderFill');
+  String get chartBodyFill => _t('chartBodyFill');
+  String get chartZebraFill => _t('chartZebraFill');
+  String get chartCellText => _t('chartCellText');
   String get chartCandle => _t('chartCandle');
   String get chartOpen => _t('chartOpen');
   String get chartHigh => _t('chartHigh');

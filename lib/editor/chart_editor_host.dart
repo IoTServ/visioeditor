@@ -54,6 +54,7 @@ class ChartEditorHost extends StatelessWidget {
       'timeline' => _TimelineEditor(controller: controller),
       'nestedDonut' => _NestedDonutEditor(controller: controller),
       'kpiTarget' => _KpiTargetEditor(controller: controller),
+      'dataTable' => _DataTableEditor(controller: controller),
       _ => ChartConfigPanel(controller: controller),
     };
   }
@@ -1517,6 +1518,289 @@ class _KpiTargetEditorState extends State<_KpiTargetEditor>
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onEditingComplete: _commit,
         ),
+      ],
+    );
+  }
+}
+
+class _DataTableEditor extends StatefulWidget {
+  const _DataTableEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_DataTableEditor> createState() => _DataTableEditorState();
+}
+
+class _DataTableEditorState extends State<_DataTableEditor>
+    with _ChartSync<_DataTableEditor> {
+  static const List<int> _swatches = <int>[
+    0xFF5B9BD5,
+    0xFFED7D31,
+    0xFF70AD47,
+    0xFFFFC000,
+    0xFF9E7CC3,
+    0xFFFFFFFF,
+    0xFFF0F4F8,
+    0xFFE3F2FD,
+    0xFF212121,
+    0xFF90A4AE,
+  ];
+
+  int _rows = 4;
+  int _cols = 3;
+  bool _header = true;
+  bool _borders = true;
+  bool _zebra = false;
+  int _headerColor = 0xFF5B9BD5;
+  int _bodyColor = 0xFFFFFFFF;
+  int _zebraColor = 0xFFF0F4F8;
+  final List<TextEditingController> _cells = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in _cells) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) {
+    final cols = ChartOps.chartColors(chart);
+    final colFp = cols.isEmpty
+        ? ''
+        : cols.map((c) => c.value.toRadixString(16)).join(',');
+    return '${ChartOps.chartExtras(chart)}|'
+        '${ChartOps.formatLabels(ChartOps.chartLabels(chart))}|$colFp';
+  }
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final extras = ChartOps.chartExtras(chart);
+    final g = ChartOps.parseTableGrid(extras);
+    _rows = g.$1;
+    _cols = g.$2;
+    _header = ChartOps.parseTableFlag(extras, 'header');
+    _borders = ChartOps.parseTableFlag(extras, 'borders');
+    _zebra = ChartOps.parseTableFlag(extras, 'zebra', defaultValue: false);
+    final colors = ChartOps.padColors(ChartOps.chartColors(chart), 3);
+    _headerColor = colors[0].value;
+    _bodyColor = colors[1].value;
+    _zebraColor = colors[2].value;
+    final labs = ChartOps.chartLabels(chart, _rows * _cols);
+    final n = _rows * _cols;
+    while (_cells.length > n) {
+      _cells.removeLast().dispose();
+    }
+    while (_cells.length < n) {
+      _cells.add(TextEditingController());
+    }
+    for (var i = 0; i < n; i++) {
+      if (_cells[i].text != labs[i]) _cells[i].text = labs[i];
+    }
+  }
+
+  void _commit({
+    int? rows,
+    int? cols,
+    bool? header,
+    bool? borders,
+    bool? zebra,
+    int? headerColor,
+    int? bodyColor,
+    int? zebraColor,
+  }) {
+    final r = rows ?? _rows;
+    final c = cols ?? _cols;
+    final n = r * c;
+    final labels = <String>[
+      for (var i = 0; i < n; i++)
+        i < _cells.length && _cells[i].text.trim().isNotEmpty
+            ? _cells[i].text
+            : ( (header ?? _header) && i < c
+                ? 'H${i + 1}'
+                : 'R${i ~/ c + 1}C${i % c + 1}'),
+    ];
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: List<double>.filled(n, 1),
+      labels: labels,
+      colors: <VsdxColor>[
+        VsdxColor(headerColor ?? _headerColor),
+        VsdxColor(bodyColor ?? _bodyColor),
+        VsdxColor(zebraColor ?? _zebraColor),
+      ],
+      extras: ChartOps.formatTableExtras(
+        rows: r,
+        cols: c,
+        header: header ?? _header,
+        borders: borders ?? _borders,
+        zebra: zebra ?? _zebra,
+      ),
+    );
+  }
+
+  Widget _colorRow(String label, int color, ValueChanged<int> onPick) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(label, style: Theme.of(context).textTheme.labelMedium),
+        ),
+        PopupMenuButton<int>(
+          tooltip: label,
+          onSelected: onPick,
+          itemBuilder: (ctx) => [
+            for (final s in _swatches)
+              PopupMenuItem<int>(
+                value: s,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Color(s),
+                        border: Border.all(color: Colors.black26),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '#${s.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: Color(color),
+              border: Border.all(color: Colors.black26),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Data Table'),
+          hint: el.chartSpecialtyTableHint,
+        ),
+        Row(
+          children: [
+            Text(el.chartRows, style: Theme.of(context).textTheme.labelMedium),
+            const Spacer(),
+            IconButton(
+              onPressed: _rows > 1 ? () => _commit(rows: _rows - 1) : null,
+              icon: const Icon(Icons.remove, size: 18),
+            ),
+            Text('$_rows'),
+            IconButton(
+              onPressed: _rows < 8 ? () => _commit(rows: _rows + 1) : null,
+              icon: const Icon(Icons.add, size: 18),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Text(el.chartCols, style: Theme.of(context).textTheme.labelMedium),
+            const Spacer(),
+            IconButton(
+              onPressed: _cols > 1 ? () => _commit(cols: _cols - 1) : null,
+              icon: const Icon(Icons.remove, size: 18),
+            ),
+            Text('$_cols'),
+            IconButton(
+              onPressed: _cols < 8 ? () => _commit(cols: _cols + 1) : null,
+              icon: const Icon(Icons.add, size: 18),
+            ),
+          ],
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(el.chartTableHeader, style: const TextStyle(fontSize: 13)),
+          value: _header,
+          onChanged: (v) => _commit(header: v),
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(el.chartTableBorders, style: const TextStyle(fontSize: 13)),
+          value: _borders,
+          onChanged: (v) => _commit(borders: v),
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(el.chartTableZebra, style: const TextStyle(fontSize: 13)),
+          value: _zebra,
+          onChanged: (v) => _commit(zebra: v),
+        ),
+        const SizedBox(height: 4),
+        _colorRow(el.chartHeaderFill, _headerColor,
+            (c) => _commit(headerColor: c)),
+        const SizedBox(height: 6),
+        _colorRow(el.chartBodyFill, _bodyColor, (c) => _commit(bodyColor: c)),
+        if (_zebra) ...[
+          const SizedBox(height: 6),
+          _colorRow(el.chartZebraFill, _zebraColor,
+              (c) => _commit(zebraColor: c)),
+        ],
+        const SizedBox(height: 10),
+        Text(el.chartCellText, style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: 6),
+        for (var r = 0; r < _rows; r++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                for (var c = 0; c < _cols; c++) ...[
+                  if (c > 0) const SizedBox(width: 4),
+                  Expanded(
+                    child: TextField(
+                      controller: _cells[r * _cols + c],
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 6),
+                        hintText: _header && r == 0 ? 'H${c + 1}' : null,
+                      ),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: _header && r == 0
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                      onEditingComplete: _commit,
+                      onSubmitted: (_) => _commit(),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }

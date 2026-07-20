@@ -52,6 +52,7 @@ abstract final class ChartOps {
     'timeline',
     'nestedDonut',
     'kpiTarget',
+    'dataTable',
   };
 
   static bool isCustomEditorKind(String kind) =>
@@ -80,6 +81,8 @@ abstract final class ChartOps {
         return 12;
       case 'kpiTarget':
         return 2;
+      case 'dataTable':
+        return 48; // up to 8×6 cells
       default:
         return maxSeriesItems;
     }
@@ -113,6 +116,9 @@ abstract final class ChartOps {
         return math.max(1, values.length);
       case 'kpiTarget':
         return 1;
+      case 'dataTable':
+        final g = parseTableGrid(extras);
+        return g.$1 * g.$2;
       default:
         return values.length;
     }
@@ -151,6 +157,39 @@ abstract final class ChartOps {
   }
 
   static String formatNestedInner(int inner) => 'inner=${inner.clamp(1, 8)}';
+
+  static (int rows, int cols) parseTableGrid(String? extras) {
+    final m = RegExp(r'(\d+)\s*[x×]\s*(\d+)').firstMatch(extras ?? '');
+    if (m != null) {
+      return (
+        int.parse(m.group(1)!).clamp(1, 8),
+        int.parse(m.group(2)!).clamp(1, 8),
+      );
+    }
+    return (4, 3);
+  }
+
+  static bool parseTableFlag(String? extras, String key, {bool defaultValue = true}) {
+    final m = RegExp(
+      '${RegExp.escape(key)}\\s*=\\s*(1|0|true|false)',
+      caseSensitive: false,
+    ).firstMatch(extras ?? '');
+    if (m == null) return defaultValue;
+    final v = m.group(1)!.toLowerCase();
+    return v == '1' || v == 'true';
+  }
+
+  static String formatTableExtras({
+    required int rows,
+    required int cols,
+    bool header = true,
+    bool borders = true,
+    bool zebra = false,
+  }) =>
+      '${rows.clamp(1, 8)}x${cols.clamp(1, 8)};'
+      'header=${header ? 1 : 0};'
+      'borders=${borders ? 1 : 0};'
+      'zebra=${zebra ? 1 : 0}';
 
   /// Kind picker groups for the editor (group title → kind keys).
   static const List<(String, List<String>)> kindGroups =
@@ -231,6 +270,7 @@ abstract final class ChartOps {
       'timeline',
       'nestedDonut',
       'kpiTarget',
+      'dataTable',
     ]),
   ];
 
@@ -312,6 +352,7 @@ abstract final class ChartOps {
     'timeline': 'Timeline Chart',
     'nestedDonut': 'Nested Donut',
     'kpiTarget': 'KPI Target',
+    'dataTable': 'Data Table',
   };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
@@ -715,8 +756,10 @@ abstract final class ChartOps {
     final List<VsdxShape> kids;
     if (kind == 'gauge') {
       kids = chart.children;
-    } else if (kind == 'heatmap' || kind == 'calendarHeat') {
-      // Intensity colours come from values at build time.
+    } else if (kind == 'heatmap' ||
+        kind == 'calendarHeat' ||
+        kind == 'dataTable') {
+      // Table / heat colours are applied at build time.
       kids = chart.children;
     } else if (kind == 'ringProgress' ||
         kind == 'waffle' ||
@@ -802,7 +845,11 @@ abstract final class ChartOps {
       for (final c in chart.children)
         if (!isLegend(c)) c,
     ];
-    if (isSingleValueKind(kind) || labels.isEmpty) {
+    if (isSingleValueKind(kind) ||
+        labels.isEmpty ||
+        kind == 'dataTable' ||
+        kind == 'heatmap' ||
+        kind == 'calendarHeat') {
       return chart.copyWith(children: baseKids);
     }
     final w = chart.width.abs();
@@ -930,11 +977,37 @@ abstract final class ChartOps {
     if (vals.length > maxV) {
       vals = vals.sublist(0, maxV);
     }
-    final labelCount = isCustomEditorKind(k)
-        ? logicalSeriesCount(k, vals, extrasOut)
-        : vals.length;
-    cols = padColors(cols, labelCount);
-    labs = padLabels(labs, labelCount);
+    if (k == 'dataTable') {
+      final g = parseTableGrid(extrasOut);
+      final need = g.$1 * g.$2;
+      if (vals.length < need) {
+        vals = <double>[
+          ...vals,
+          for (var i = vals.length; i < need; i++) 1.0,
+        ];
+      } else if (vals.length > need) {
+        vals = vals.sublist(0, need);
+      }
+      // Style colours: header / body / zebra (not one-per-cell).
+      if (cols.length > 3) cols = cols.sublist(0, 3);
+      cols = padColors(
+        cols.isEmpty
+            ? const <VsdxColor>[
+                VsdxColor(0xFF5B9BD5),
+                VsdxColor(0xFFFFFFFF),
+                VsdxColor(0xFFF0F4F8),
+              ]
+            : cols,
+        3,
+      );
+      labs = padLabels(labs, need);
+    } else {
+      final labelCount = isCustomEditorKind(k)
+          ? logicalSeriesCount(k, vals, extrasOut)
+          : vals.length;
+      cols = padColors(cols, labelCount);
+      labs = padLabels(labs, labelCount);
+    }
 
     final built = buildKind(
       k,
@@ -944,6 +1017,8 @@ abstract final class ChartOps {
       width: chart.width,
       height: chart.height,
       values: vals,
+      labels: labs,
+      colors: cols,
       extras: extrasOut,
       allocId: allocId,
     );
@@ -995,6 +1070,9 @@ abstract final class ChartOps {
         return const <double>[0.3, 0.25, 0.2, 0.25, 0.4, 0.35, 0.25];
       case 'kpiTarget':
         return const <double>[0.72, 0.9];
+      case 'dataTable':
+        final g = parseTableGrid(extras);
+        return List<double>.filled(g.$1 * g.$2, 1);
       default:
         return List<double>.of(defaultValues);
     }
@@ -1008,6 +1086,8 @@ abstract final class ChartOps {
     double? width,
     double? height,
     List<double>? values,
+    List<String>? labels,
+    List<VsdxColor>? colors,
     String? extras,
     int Function()? allocId,
   }) {
@@ -1636,6 +1716,18 @@ abstract final class ChartOps {
             height: height ?? 1.2,
             values: values,
             allocId: allocId);
+      case 'dataTable':
+        return dataTableChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 3.2,
+            height: height ?? 2.0,
+            values: values,
+            labels: labels,
+            colors: colors,
+            extras: extras,
+            allocId: allocId);
       case 'column':
       default:
         return columnChart(
@@ -1734,6 +1826,8 @@ abstract final class ChartOps {
     required String kind,
     required List<double> values,
     String? extras,
+    List<String>? labels,
+    List<VsdxColor>? colors,
   }) {
     final w = width.abs();
     final h = height.abs();
@@ -1749,7 +1843,13 @@ abstract final class ChartOps {
       fill: const VsdxFill(pattern: 0),
       line: const VsdxLine(pattern: 0),
       connectionPoints: VsdxPage.defaultConnectionPoints(w, h),
-      userCells: _meta(kind, values, extras: extras),
+      userCells: _meta(
+        kind,
+        values,
+        extras: extras,
+        labels: labels,
+        colors: colors,
+      ),
       children: children,
     );
   }
@@ -6444,6 +6544,138 @@ abstract final class ChartOps {
       children: kids,
       kind: 'kpiTarget',
       values: vals,
+    );
+  }
+
+  /// Editable data table with configurable rows/cols and cell styles.
+  ///
+  /// [extras] = `RxC;header=1;borders=1;zebra=0`.
+  /// [colors]: `[0]` header fill, `[1]` body fill, `[2]` zebra fill.
+  /// [labels]: row-major cell text.
+  static VsdxShape dataTableChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 3.2,
+    double height = 2.0,
+    List<double>? values,
+    List<String>? labels,
+    List<VsdxColor>? colors,
+    String? extras,
+    int Function()? allocId,
+  }) {
+    final grid = parseTableGrid(extras);
+    final rows = grid.$1;
+    final cols = grid.$2;
+    final headerOn = parseTableFlag(extras, 'header', defaultValue: true);
+    final bordersOn = parseTableFlag(extras, 'borders', defaultValue: true);
+    final zebraOn = parseTableFlag(extras, 'zebra', defaultValue: false);
+    final ex = formatTableExtras(
+      rows: rows,
+      cols: cols,
+      header: headerOn,
+      borders: bordersOn,
+      zebra: zebraOn,
+    );
+    final need = rows * cols;
+    var vals = values ?? List<double>.filled(need, 1);
+    if (vals.length < need) {
+      vals = <double>[...vals, for (var i = vals.length; i < need; i++) 1.0];
+    } else if (vals.length > need) {
+      vals = vals.sublist(0, need);
+    }
+    final labs = padLabels(
+      labels ??
+          <String>[
+            for (var r = 0; r < rows; r++)
+              for (var c = 0; c < cols; c++)
+                headerOn && r == 0 ? 'H${c + 1}' : 'R${r + 1}C${c + 1}',
+          ],
+      need,
+    );
+    final headerFill = (colors != null && colors.isNotEmpty)
+        ? colors[0]
+        : const VsdxColor(0xFF5B9BD5);
+    final bodyFill = (colors != null && colors.length > 1)
+        ? colors[1]
+        : const VsdxColor(0xFFFFFFFF);
+    final zebraFill = (colors != null && colors.length > 2)
+        ? colors[2]
+        : const VsdxColor(0xFFF0F4F8);
+    final styleColors = <VsdxColor>[headerFill, bodyFill, zebraFill];
+
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = math.min(w, h) * 0.04;
+    final gap = bordersOn ? 0.0 : math.min(w, h) * 0.008;
+    final cellW = (w - pad * 2 - gap * (cols - 1)) / cols;
+    final cellH = (h - pad * 2 - gap * (rows - 1)) / rows;
+    final font = (cellH * 0.28).clamp(0.06, 0.12);
+    final borderLine = bordersOn
+        ? const VsdxLine(color: VsdxColor(0xFF90A4AE), weightInches: 0.008)
+        : const VsdxLine(pattern: 0);
+    final kids = <VsdxShape>[];
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        final i = r * cols + c;
+        final isHeader = headerOn && r == 0;
+        final fill = isHeader
+            ? headerFill
+            : (zebraOn && r.isOdd ? zebraFill : bodyFill);
+        final textColor = isHeader
+            ? const VsdxColor(0xFFFFFFFF)
+            : const VsdxColor(0xFF212121);
+        final text = labs[i];
+        kids.add(VsdxShape(
+          id: next(),
+          name: _sheetName(id),
+          pinX: pad + cellW / 2 + c * (cellW + gap),
+          pinY: h - pad - cellH / 2 - r * (cellH + gap),
+          width: cellW,
+          height: cellH,
+          text: text,
+          richText: VsdxRichText(runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: text,
+              charStyle: VsdxCharStyle(
+                fontSizeInches: font,
+                color: textColor,
+                style: isHeader
+                    ? VsdxFontStyle.boldStyle
+                    : VsdxFontStyle.regular,
+              ),
+              paraStyle: const VsdxParaStyle(
+                horizontalAlign: VsdxHorzAlign.center,
+              ),
+            ),
+          ]),
+          geometries: <VsdxGeometry>[
+            VsdxGeometry(commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(cellW, 0),
+              LineTo(cellW, cellH),
+              LineTo(0, cellH),
+              const LineTo(0, 0),
+            ]),
+          ],
+          fill: VsdxFill(foreground: fill),
+          line: bordersOn ? borderLine : _barLine(fill),
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'dataTable',
+      values: vals,
+      labels: labs,
+      colors: styleColors,
+      extras: ex,
     );
   }
 }
