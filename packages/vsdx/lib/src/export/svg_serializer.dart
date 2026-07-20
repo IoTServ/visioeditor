@@ -625,7 +625,10 @@ class VsdxToSvgSerializer {
     // Match canvas order: shadow → glow → reflection → body.
     // Soft outer glow (canvas strokes a blurred path before fill).
     final glow = shape.glow;
-    if (glow.enabled && glow.sizeInches > 0) {
+    final glowHollow = (noFill || !shape.fill.hasFill) &&
+        (noLine || !shape.line.hasLine) &&
+        !shape.hasImage;
+    if (glow.enabled && glow.sizeInches > 0 && !glowHollow) {
       // Match canvas [_drawGlow]: amber fallback + soft 0.6 alpha scale.
       final gc = _resolveColor(glow.color, glow.themeColorIndex, theme) ??
           const VsdxColor(0xFFFFC107);

@@ -125,4 +125,17 @@ void main() {
     expect(fill.pattern, 2);
     expect(fill.themeForegroundIndex, isNull);
   });
+
+  test('setNoLine clears line theme so it cannot revive', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setLineThemeSlot(ThemeSlot.accent2)
+      ..setNoLine()
+      ..setLinePattern(1);
+    final line = c.currentPage!.shapes.single.line;
+    expect(line.pattern, 1);
+    expect(line.themeColorIndex, isNull);
+  });
 }

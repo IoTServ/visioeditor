@@ -2066,6 +2066,14 @@ class VsdxWriter {
         el, 'Rounding', base.line.roundingInches, edited.line.roundingInches);
     changed |= _patchLength(
         el, 'SoftEdgesSize', base.line.softEdgesInches, edited.line.softEdgesInches);
+    // Parser maps F=Inh (no inherit) → model 0; force literal V=0 and drop F=
+    // so Visio cannot revive SoftEdges/Rounding via inheritance.
+    if (edited.line.roundingInches.abs() <= _epsilon) {
+      changed |= _forceLiteralZeroLength(el, 'Rounding');
+    }
+    if (edited.line.softEdgesInches.abs() <= _epsilon) {
+      changed |= _forceLiteralZeroLength(el, 'SoftEdgesSize');
+    }
     changed |= _patchInt(
         el, 'CompoundType', base.line.compoundType, edited.line.compoundType);
     changed |= _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
@@ -2213,8 +2221,8 @@ class VsdxWriter {
     return changed;
   }
 
-  /// Colour cells whose model no longer carries a theme binding but still
-  /// list a THEMEVAL formula (leftover from theme → solid / no-fill edits).
+  /// Cells whose model no longer carries a theme binding but still list a
+  /// THEMEVAL formula (leftover from theme → solid / no-fill / pattern edits).
   Set<String> _staleThemeFormulaKeys(VsdxShape s) {
     final out = <String>{};
     bool isThemeVal(String? f) =>
@@ -2232,6 +2240,10 @@ class VsdxWriter {
         (s.line.color != null || s.line.themeColorIndex == null)) {
       out.add('LineColor');
     }
+    // Pattern cells are always literal ints in the model — a leftover
+    // THEMEVAL would resurrect theme pattern on a second save.
+    if (isThemeVal(s.formulas['FillPattern'])) out.add('FillPattern');
+    if (isThemeVal(s.formulas['LinePattern'])) out.add('LinePattern');
     return out;
   }
 
@@ -4183,6 +4195,20 @@ class VsdxWriter {
     if ((base - value).abs() <= _epsilon) return false;
     _writeValue(_ensureCell(shape, cell), _fmt(value),
         preserveFormula: preserveFormula);
+    return true;
+  }
+
+  /// When the model length is 0, ensure XML is literal `V=0` without `F=Inh`
+  /// (even if base already parsed as 0 and `_patchLength` was a no-op).
+  bool _forceLiteralZeroLength(XmlElement shape, String cell) {
+    final c = _findCell(shape, cell);
+    if (c == null) return false;
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final already =
+        (v == '0' || v == '0.0') && (f == null || f.isEmpty);
+    if (already) return false;
+    _writeValue(c, '0');
     return true;
   }
 

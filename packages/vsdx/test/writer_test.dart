@@ -5824,6 +5824,53 @@ void main() {
     expect(after.fill.gradient!.stops.last.themeColorIndex, 4);
   });
 
+  test('SoftEdgesSize F=Inh scrubs to literal 0 when model is zero', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(line: const VsdxLine(softEdgesInches: 0.08)),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="SoftEdgesSize"[^/]*/>'),
+      '<Cell N="SoftEdgesSize" V="0.08" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    // Parser maps Inh→0; model stays 0 — still must scrub F=Inh on write.
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.line.softEdgesInches, 0);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final soft = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'SoftEdgesSize',
+        );
+    expect(soft.getAttribute('V'), '0');
+    expect(soft.getAttribute('F'), isNull);
+  });
+
   test('clearing FillGradient drops Inh formula on FillGradientEnabled', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

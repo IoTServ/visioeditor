@@ -124,6 +124,79 @@ void main() {
         reason: 'explicit colour must clear the THEMEVAL binding');
   });
 
+  test('FillPattern THEMEVAL does not resurrect on second save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    // Inject theme formula on FillPattern.
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="FillPattern"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="FillPattern"[^/]*/>'),
+        '<Cell N="FillPattern" V="1" F="THEMEVAL()"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="FillPattern" V="1" F="THEMEVAL()"/></Shape>',
+      );
+    }
+    mid = Uint8List.fromList(
+      ZipEncoder().encode(
+        () {
+          final out = Archive();
+          for (final f in archive) {
+            if (f.name == pageFile.name) {
+              final bytes = utf8.encode(pageXml);
+              out.addFile(ArchiveFile(f.name, bytes.length, bytes));
+            } else {
+              out.addFile(ArchiveFile(f.name, f.size, f.content));
+            }
+          }
+          return out;
+        }(),
+      )!,
+    );
+    doc = parser.parse(mid);
+    // Mimic setNoFill: pattern=0 but stale formulas map kept.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(fill: s.fill.copyWith(pattern: 0)),
+      ),
+    );
+    final once = writer.write(originalBytes: mid, edited: doc);
+    final twice = writer.write(originalBytes: once, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(twice)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="FillPattern"[^>]*F="THEMEVAL').hasMatch(outXml),
+      isFalse,
+    );
+    expect(parser.parse(twice).pages.first.findShapeById(id)!.fill.pattern, 0);
+  });
+
   test('theme→solid survives a second save without reparse', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);

@@ -4393,7 +4393,13 @@ class EditorController extends ChangeNotifier {
       );
 
   void setNoLine() => _updateSelectedShapes(
-        (s) => s.copyWith(line: s.line.copyWith(pattern: 0, gradient: null)),
+        (s) => s.copyWith(
+          line: s.line.copyWith(
+            pattern: 0,
+            gradient: null,
+            clearThemeColorIndex: true,
+          ),
+        ),
         rememberStyle: true,
       );
 
@@ -4403,8 +4409,9 @@ class EditorController extends ChangeNotifier {
         (s) => s.copyWith(
           line: s.line.copyWith(
             pattern: pattern,
-            // pattern=0 is NoLine — clear gradient like [setNoLine].
+            // pattern=0 is NoLine — clear gradient/theme like [setNoLine].
             gradient: pattern == 0 ? null : VsdxLine.keepGradient,
+            clearThemeColorIndex: pattern == 0,
           ),
         ),
         rememberStyle: true,

@@ -397,7 +397,7 @@ class VsdxPainter extends CustomPainter {
         roundingInches: shape.line.roundingInches,
       );
       _drawShadow(canvas, shape, path, geom: geom);
-      _drawGlow(canvas, shape, path);
+      _drawGlow(canvas, shape, path, geom: geom);
       _drawReflection(
         canvas,
         shape,
@@ -1012,9 +1012,18 @@ class VsdxPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _drawGlow(Canvas canvas, VsdxShape shape, Path path) {
+  void _drawGlow(
+    Canvas canvas,
+    VsdxShape shape,
+    Path path, {
+    VsdxGeometry? geom,
+  }) {
     final glow = shape.glow;
     if (!glow.enabled || glow.sizeInches <= 0) return;
+    // Match shadow: NoFill+NoLine (non-image) must not paint a ghost halo.
+    final noFill = (geom?.noFill ?? false) || !shape.fill.hasFill;
+    final noLine = (geom?.noLine ?? false) || !shape.line.hasLine;
+    if (noFill && noLine && !shape.hasImage) return;
     final base = _colourOrTheme(glow.color, glow.themeColorIndex) ??
         const Color(0xFFFFC107);
     final alpha = (1 - glow.transparency).clamp(0.0, 1.0);

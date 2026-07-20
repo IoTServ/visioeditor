@@ -150,9 +150,13 @@ ApplyResult applyOps(
             }
             if (lineHex != null) {
               if (lineHex.trim().toLowerCase() == 'none') {
-                // Match UI setNoLine: clear dash pattern and any line gradient.
+                // Match UI setNoLine: clear dash, gradient, and line theme.
                 next = next.copyWith(
-                  line: next.line.copyWith(pattern: 0, gradient: null),
+                  line: next.line.copyWith(
+                    pattern: 0,
+                    gradient: null,
+                    clearThemeColorIndex: true,
+                  ),
                 );
               } else {
                 final c = parseColorOrNull(lineHex);
