@@ -141,6 +141,10 @@ class PagesParser {
                 totalPages: totalPages,
               ));
             }
+            parser = parser.withPageShadowOffsets(
+              sheet.shadowOffsetXInches,
+              sheet.shadowOffsetYInches,
+            );
             shapes
               ..clear()
               ..addAll(parser.parseShapes(pageXml, partName: target));

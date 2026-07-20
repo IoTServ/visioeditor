@@ -37,6 +37,8 @@ class PageParser {
     MasterRegistry masters = MasterRegistry.empty,
     StyleSheetRegistry stylesheets = StyleSheetRegistry.empty,
     Map<String, String>? imageRels,
+    this.pageShadowOffsetXInches = 0.125,
+    this.pageShadowOffsetYInches = -0.125,
   })  : _geometry = geometry,
         _style = style,
         _richText = richText,
@@ -54,6 +56,11 @@ class PageParser {
   /// references on this page. The PagesParser injects it per page.
   final Map<String, String>? _imageRels;
 
+  /// PageSheet `ShdwOffsetX` / `ShdwOffsetY` — used when a shape enables
+  /// shadow without its own `ShadowOffset*` cells (Visio behaviour).
+  final double pageShadowOffsetXInches;
+  final double pageShadowOffsetYInches;
+
   /// Spawn a sibling parser configured with a different rich-text field
   /// resolver — used by the PagesParser to push page-specific values
   /// (page name, page index, total pages) before parsing shapes.
@@ -64,6 +71,20 @@ class PageParser {
         masters: _masters,
         stylesheets: _stylesheets,
         imageRels: _imageRels,
+        pageShadowOffsetXInches: pageShadowOffsetXInches,
+        pageShadowOffsetYInches: pageShadowOffsetYInches,
+      );
+
+  /// Override page-level shadow offsets from PageSheet.
+  PageParser withPageShadowOffsets(double x, double y) => PageParser(
+        geometry: _geometry,
+        style: _style,
+        richText: _richText,
+        masters: _masters,
+        stylesheets: _stylesheets,
+        imageRels: _imageRels,
+        pageShadowOffsetXInches: x,
+        pageShadowOffsetYInches: y,
       );
 
   /// Returns the top-level shapes of [pageDoc]. Group sub-shapes are
@@ -229,6 +250,8 @@ class PageParser {
     final shadow = _style.parseShadow(
       shapeEl,
       defaults: proto?.shadow ?? VsdxShadow.disabled,
+      pageOffsetXInches: pageShadowOffsetXInches,
+      pageOffsetYInches: pageShadowOffsetYInches,
     );
     final glow = _style.parseGlow(
       shapeEl,

@@ -178,17 +178,30 @@ class StyleParser {
   VsdxShadow parseShadow(
     XmlElement shape, {
     VsdxShadow defaults = VsdxShadow.disabled,
+    double? pageOffsetXInches,
+    double? pageOffsetYInches,
   }) {
     final pat = _int(shape, 'ShadowPattern') ?? _int(shape, 'ShdwPattern');
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
     final col = _resolveColor(shape, 'ShadowForegnd', 'QuickStyleShadowColor');
-    final ox = readLengthInches(shape, 'ShadowOffsetX');
-    final oy = readLengthInches(shape, 'ShadowOffsetY');
-    final blur = readLengthInches(shape, 'ShadowBlur');
+    // F=Inh → master defaults when enabled; otherwise page Sheet ShdwOffset*.
+    // Missing cell → page Sheet (Visio behaviour for pattern-only shadows).
+    final ox = readLengthInches(shape, 'ShadowOffsetX',
+        inheritFrom: defaults.enabled
+            ? defaults.offsetXInches
+            : (pageOffsetXInches ?? defaults.offsetXInches));
+    final oy = readLengthInches(shape, 'ShadowOffsetY',
+        inheritFrom: defaults.enabled
+            ? defaults.offsetYInches
+            : (pageOffsetYInches ?? defaults.offsetYInches));
+    final blur = readLengthInches(shape, 'ShadowBlur',
+        inheritFrom: defaults.blurInches);
     final transparency =
         (_double(shape, 'ShadowForegndTrans') ?? defaults.transparency)
             .clamp(0.0, 1.0);
+    final fallbackOx = pageOffsetXInches ?? defaults.offsetXInches;
+    final fallbackOy = pageOffsetYInches ?? defaults.offsetYInches;
     if (!enabled) {
       final hasCompanion = col.color != null ||
           col.themeIndex != null ||
@@ -201,8 +214,8 @@ class StyleParser {
         enabled: false,
         color: col.color ?? defaults.color,
         themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
-        offsetXInches: ox ?? defaults.offsetXInches,
-        offsetYInches: oy ?? defaults.offsetYInches,
+        offsetXInches: ox ?? fallbackOx,
+        offsetYInches: oy ?? fallbackOy,
         blurInches: blur ?? defaults.blurInches,
         transparency: transparency,
       );
@@ -212,8 +225,8 @@ class StyleParser {
       enabled: true,
       color: col.color ?? defaults.color,
       themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
-      offsetXInches: ox ?? defaults.offsetXInches,
-      offsetYInches: oy ?? defaults.offsetYInches,
+      offsetXInches: ox ?? fallbackOx,
+      offsetYInches: oy ?? fallbackOy,
       blurInches: blur ?? defaults.blurInches,
       transparency: transparency,
     );

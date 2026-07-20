@@ -7346,4 +7346,206 @@ void main() {
     expect(after.actions.single.menu, 'Do it');
     expect(after.text, contains('Cap'));
   });
+
+  test('ShadowPattern alone inherits page ShdwOffset offsets', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // Custom page offsets (not the Visio 0.125/-0.125 defaults).
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        pageSheet: doc.pages.first.pageSheet.copyWith(
+          shadowOffsetXInches: 0.25,
+          shadowOffsetYInches: -0.2,
+        ),
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            offsetXInches: 0.25,
+            offsetYInches: -0.2,
+          ),
+        ),
+      ),
+    );
+    final withOffsets = writer.write(originalBytes: blank, edited: doc);
+    // Strip shape ShadowOffset* so reopen must fall back to page Sheet.
+    final archive = ZipDecoder().decodeBytes(withOffsets);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml
+        .replaceAll(RegExp(r'<Cell N="ShadowOffsetX"[^/]*/>'), '')
+        .replaceAll(RegExp(r'<Cell N="ShadowOffsetY"[^/]*/>'), '');
+    final rebuilt = Archive();
+    for (final f in archive) {
+      if (f.name.contains('pages/page1.xml')) {
+        final bytes = utf8.encode(pageXml);
+        rebuilt.addFile(ArchiveFile(f.name, bytes.length, bytes));
+      } else {
+        rebuilt.addFile(f);
+      }
+    }
+    final stripped = Uint8List.fromList(ZipEncoder().encode(rebuilt)!);
+    final after = parser.parse(stripped).pages.first.findShapeById(id)!;
+    expect(after.shadow.enabled, isTrue);
+    expect(after.shadow.offsetXInches, closeTo(0.25, 1e-6));
+    expect(after.shadow.offsetYInches, closeTo(-0.2, 1e-6));
+
+    // Direct StyleParser: pattern only → page offsets.
+    const style = StyleParser();
+    final el = XmlDocument.parse('''
+      <Shape ID="1" Type="Shape">
+        <Cell N="ShadowPattern" V="1"/>
+      </Shape>''').rootElement;
+    final parsed = style.parseShadow(
+      el,
+      pageOffsetXInches: 0.125,
+      pageOffsetYInches: -0.125,
+    );
+    expect(parsed.enabled, isTrue);
+    expect(parsed.offsetXInches, closeTo(0.125, 1e-6));
+    expect(parsed.offsetYInches, closeTo(-0.125, 1e-6));
+  });
+
+  test('Foreign ThemeIndex / EventDblClick survive group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    final otherId = picId + 1;
+    final gid = otherId + 1;
+    const part = '/visio/media/image_meta_group.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(
+      themeIndex: 2,
+      eventDblClick: '0',
+      formulas: const {'EventDblClick': 'OPENTEXTWIN()'},
+      objType: 1,
+      selectMode: 1,
+      imageTransparency: 0.4,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(
+          0,
+          doc.pages.first
+              .addShape(pic)
+              .addShape(
+                VsdxShapeFactory.rectangle(
+                  id: otherId,
+                  pinX: 4,
+                  pinY: 2,
+                  width: 1,
+                  height: 1,
+                ),
+              ),
+        );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    // Clear image transparency — must not resurrect via opaque after group.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .updateShapeById(picId, (s) => s.copyWith(imageTransparency: 0))
+          .group({picId, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ThemeIndex"'), isTrue);
+    expect(pageXml.contains('OPENTEXTWIN()'), isTrue);
+    expect(pageXml.contains('N="ObjType"'), isTrue);
+    expect(pageXml.contains('N="SelectMode"'), isTrue);
+    // ImgOffset emitted once by builder (not duplicated via opaque).
+    expect(RegExp(r'N="ImgOffsetX"').allMatches(pageXml).length, 1);
+    expect(pageXml.contains('N="Transparency"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.themeIndex, 2);
+    expect(after.formulas['EventDblClick'], 'OPENTEXTWIN()');
+    expect(after.objType, 1);
+    expect(after.selectMode, 1);
+    expect(after.imageTransparency, closeTo(0, 1e-6));
+    expect(after.hasImage, isTrue);
+  });
+
+  test('ConFixedCode F=Inh scrubbed on connector ensure', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final conn = VsdxShapeFactory.line(
+      id: id,
+      ax: 1,
+      ay: 2,
+      bx: 4,
+      by: 2,
+    ).reshapeAsPolyline(const <Offset2D>[
+      Offset2D(1, 2),
+      Offset2D(2.5, 2),
+      Offset2D(4, 2),
+    ]);
+    doc = doc.replacePage(0, doc.pages.first.addShape(conn));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Inject stale F=Inh on ConFixedCode.
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ConFixedCode"[^/]*/>'),
+      '<Cell N="ConFixedCode" V="3" F="Inh"/>',
+    );
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    // Touch connector so ensure path runs on write.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (shape) => shape.copyWith(
+          connectorProps: (shape.connectorProps ??
+                  const VsdxConnectorProps(conFixedCode: 3))
+              .copyWith(conFixedCode: 3),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final match = RegExp(r'<Cell N="ConFixedCode"[^/]*/>').firstMatch(outXml);
+    expect(match, isNotNull);
+    expect(match!.group(0)!.contains('F='), isFalse);
+    expect(match.group(0)!.contains('V="3"'), isTrue);
+  });
 }

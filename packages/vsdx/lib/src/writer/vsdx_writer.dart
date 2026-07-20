@@ -2002,13 +2002,15 @@ class VsdxWriter {
         el, 'IsTextEditTarget', base.isTextEditTarget, edited.isTextEditTarget);
     changed |= _patchBool(
         el, 'DontMoveChildren', base.dontMoveChildren, edited.dontMoveChildren);
+    changed |= _patchOptionalIntCell(
+        el, 'SelectMode', base.selectMode, edited.selectMode);
+    changed |= _patchOptionalIntCell(
+        el, 'DisplayMode', base.displayMode, edited.displayMode);
     if (edited.selectMode != null) {
-      changed |=
-          _patchInt(el, 'SelectMode', base.selectMode ?? -1, edited.selectMode!);
+      changed |= _forceLiteralInt(el, 'SelectMode', edited.selectMode!);
     }
     if (edited.displayMode != null) {
-      changed |= _patchInt(
-          el, 'DisplayMode', base.displayMode ?? -1, edited.displayMode!);
+      changed |= _forceLiteralInt(el, 'DisplayMode', edited.displayMode!);
     }
     // Protection (drawio "Lock/Unlock").
     changed |= _patchLock(el, base, edited);
@@ -2179,6 +2181,9 @@ class VsdxWriter {
     // them — patch must too or edit→save drops ThemeIndex).
     changed |= _patchOptionalIntCell(
         el, 'ThemeIndex', base.themeIndex, edited.themeIndex);
+    if (edited.themeIndex != null) {
+      changed |= _forceLiteralInt(el, 'ThemeIndex', edited.themeIndex!);
+    }
     changed |= _patchOptionalIntCell(el, 'QuickStyleFillMatrix',
         base.quickStyleFillMatrix, edited.quickStyleFillMatrix);
     changed |= _patchOptionalIntCell(el, 'QuickStyleLineMatrix',
@@ -4634,8 +4639,9 @@ class VsdxWriter {
     // If an older export left ConFixedCode=0, force it up to the model value.
     final wantFixed = s.connectorProps?.conFixedCode ?? 3;
     final fixedCell = _ensureCell(el, 'ConFixedCode');
-    if (fixedCell.getAttribute('V') != wantFixed.toString()) {
-      fixedCell.setAttribute('V', wantFixed.toString());
+    if (fixedCell.getAttribute('V') != wantFixed.toString() ||
+        fixedCell.getAttribute('F') != null) {
+      _writeValue(fixedCell, wantFixed.toString());
       changed = true;
     }
     return changed;
@@ -5559,6 +5565,10 @@ class VsdxWriter {
     'ThemeIndex', 'QuickStyleFillMatrix', 'QuickStyleLineMatrix',
     'QuickStyleEffectsMatrix', 'QuickStyleFontMatrix',
     'IsTextEditTarget', 'DontMoveChildren', 'SelectMode', 'DisplayMode',
+    // Foreign / Image cells — builder owns these; keep out of opaque so
+    // cleared tone / crop cannot resurrect on group rebuild.
+    'ImgOffsetX', 'ImgOffsetY', 'ImgWidth', 'ImgHeight',
+    'Transparency', 'Blur', 'Brightness', 'Contrast',
   };
 
   static const _modeledSections = <String>{
@@ -5699,6 +5709,51 @@ class VsdxWriter {
       for (final name in _lockCells) {
         children.add(_cell(name, '1'));
       }
+    }
+    // Meta cells — match normal shapes so ThemeIndex / EventDblClick / ObjType
+    // survive a Foreign group rebuild (they are modeled, not opaque).
+    final picObjType = s.objType;
+    if (picObjType != null) {
+      children.add(_cell('ObjType', picObjType.toString()));
+    }
+    if (s.resizeMode != null) {
+      children.add(_cell('ResizeMode', s.resizeMode.toString()));
+    }
+    if (s.eventDblClick != null || s.formulas.containsKey('EventDblClick')) {
+      children.add(_cell(
+        'EventDblClick',
+        s.eventDblClick ?? '0',
+        formula: s.formulas['EventDblClick'],
+      ));
+    }
+    if (s.noAlignBox) children.add(_cell('NoAlignBox', '1'));
+    if (s.shapeSplittable) children.add(_cell('ShapeSplittable', '1'));
+    if (s.themeIndex != null) {
+      children.add(_cell('ThemeIndex', s.themeIndex.toString()));
+    }
+    if (s.quickStyleFillMatrix != null) {
+      children.add(
+          _cell('QuickStyleFillMatrix', s.quickStyleFillMatrix.toString()));
+    }
+    if (s.quickStyleLineMatrix != null) {
+      children.add(
+          _cell('QuickStyleLineMatrix', s.quickStyleLineMatrix.toString()));
+    }
+    if (s.quickStyleEffectsMatrix != null) {
+      children.add(_cell(
+          'QuickStyleEffectsMatrix', s.quickStyleEffectsMatrix.toString()));
+    }
+    if (s.quickStyleFontMatrix != null) {
+      children.add(
+          _cell('QuickStyleFontMatrix', s.quickStyleFontMatrix.toString()));
+    }
+    if (s.isTextEditTarget) children.add(_cell('IsTextEditTarget', '1'));
+    if (s.dontMoveChildren) children.add(_cell('DontMoveChildren', '1'));
+    if (s.selectMode != null) {
+      children.add(_cell('SelectMode', s.selectMode.toString()));
+    }
+    if (s.displayMode != null) {
+      children.add(_cell('DisplayMode', s.displayMode.toString()));
     }
     // Caption + text-block (Txt*/VerticalAlign) — match normal shapes so
     // Edraw places Foreign captions correctly after a group rebuild.
