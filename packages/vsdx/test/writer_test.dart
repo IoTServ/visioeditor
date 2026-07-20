@@ -489,7 +489,7 @@ void main() {
     for (final shape in pageXml.rootElement.descendants
         .whereType<XmlElement>()
         .where((e) => e.name.local == 'Shape')) {
-      for (final cell in shape.childElements.toList()) {
+      for (final cell in shape.descendants.whereType<XmlElement>().toList()) {
         if (cell.name.local != 'Cell') continue;
         final n = cell.getAttribute('N') ?? '';
         if (n.startsWith('Txt') ||
@@ -509,6 +509,11 @@ void main() {
       utf8.encode(pageXml.toXmlString()),
     );
     final reopened = parser.parse(stripped);
+    expect(
+      reopened.pages.first.findShapeById(id)!.richText.runs.first.paraStyle
+          .horizontalAlign,
+      VsdxHorzAlign.left,
+    );
     final out = writer.write(originalBytes: stripped, edited: reopened);
     final outPage = VsdxPackage.open(out)
         .readPartXml('/visio/pages/page1.xml')!
@@ -517,8 +522,8 @@ void main() {
     expect(outPage, contains('N="TxtWidth"'));
     expect(outPage, contains('N="VerticalAlign"'));
     expect(outPage, contains('F="Width*0.5"'));
-    // Injecting the centred text box also upgrades left HorzAlign → center.
-    expect(outPage, contains('N="HorzAlign" V="1"'));
+    // Explicit left HorzAlign must survive text-box heal (do not force center).
+    expect(outPage, contains('N="HorzAlign" V="0"'));
   });
 
   test('re-saving a legacy blank export injects LocPin + StyleSheets', () {

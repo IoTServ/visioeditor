@@ -1684,14 +1684,23 @@ class VsdxShape {
     ).syncSetAtRefFromControls();
   }
 
-  /// Pull `TxtPin*` / `TxtWidth` / `TxtHeight` cache values from formulas
-  /// (SETATREF or Width*/Height* expressions).
+  /// Pull `TxtPin*` / `TxtWidth` / `TxtHeight` / `TxtLocPin*` cache values
+  /// from formulas (SETATREF or Width*/Height*/TxtWidth* expressions).
   VsdxShape syncSetAtRefFromControls() {
     final fx = formulas['TxtPinX'];
     final fy = formulas['TxtPinY'];
     final fw = formulas['TxtWidth'];
     final fh = formulas['TxtHeight'];
-    if (fx == null && fy == null && fw == null && fh == null) return this;
+    final flx = formulas['TxtLocPinX'];
+    final fly = formulas['TxtLocPinY'];
+    if (fx == null &&
+        fy == null &&
+        fw == null &&
+        fh == null &&
+        flx == null &&
+        fly == null) {
+      return this;
+    }
 
     final locals = <String, double>{
       'Width': width,
@@ -1726,6 +1735,8 @@ class VsdxShape {
     var txtPinY = block.pinYInches;
     var txtW = block.widthInches;
     var txtH = block.heightInches;
+    var txtLocX = block.locPinXInches;
+    var txtLocY = block.locPinYInches;
     var touched = false;
     final rx = resolve(fx, forY: false);
     if (rx != null && (txtPinX == null || (txtPinX - rx).abs() > 1e-12)) {
@@ -1747,6 +1758,19 @@ class VsdxShape {
       txtH = rh;
       touched = true;
     }
+    // LocPin formulas often reference TxtWidth/TxtHeight — publish sizes first.
+    locals['TxtWidth'] = txtW ?? block.widthInches ?? width;
+    locals['TxtHeight'] = txtH ?? block.heightInches ?? height;
+    final rlx = resolve(flx, forY: false);
+    if (rlx != null && (txtLocX == null || (txtLocX - rlx).abs() > 1e-12)) {
+      txtLocX = rlx;
+      touched = true;
+    }
+    final rly = resolve(fly, forY: true);
+    if (rly != null && (txtLocY == null || (txtLocY - rly).abs() > 1e-12)) {
+      txtLocY = rly;
+      touched = true;
+    }
     if (!touched) return this;
     return copyWith(
       richText: richText.copyWith(
@@ -1755,6 +1779,8 @@ class VsdxShape {
           pinYInches: txtPinY,
           widthInches: txtW,
           heightInches: txtH,
+          locPinXInches: txtLocX,
+          locPinYInches: txtLocY,
         ),
       ),
     );

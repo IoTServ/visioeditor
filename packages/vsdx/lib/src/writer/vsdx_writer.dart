@@ -5117,15 +5117,15 @@ class VsdxWriter {
         _writeValue(_ensureCell(el, entry.$1), _fmt(entry.$2));
       }
     }
-    // Our canvas centres plain labels; older exports wrote HorzAlign=0.
-    // Align Paragraph when we synthesise the Edraw text box.
-    _ensureParagraphHorzAlignCenter(el);
+    // Our canvas centres plain labels when Paragraph/HorzAlign is missing.
+    // Preserve an explicit left (0) / right (2) / justify (3) already in XML.
+    _ensureParagraphHorzAlignForTextBox(el, s);
     return true;
   }
 
-  /// Set Paragraph/HorzAlign=1 when missing or left (0).
-  /// Preserve explicit right (2) / justify (3) alignment.
-  bool _ensureParagraphHorzAlignCenter(XmlElement el) {
+  /// When synthesising a text box, set Paragraph/HorzAlign from the model if
+  /// the cell is missing. Never upgrade an explicit left (0) to center.
+  bool _ensureParagraphHorzAlignForTextBox(XmlElement el, VsdxShape s) {
     XmlElement? para;
     for (final child in el.childElements) {
       if (child.name.local == 'Section' &&
@@ -5151,9 +5151,18 @@ class VsdxWriter {
     }
     final cell = _ensureCell(row, 'HorzAlign');
     final cur = cell.getAttribute('V');
-    if (cur == '1') return false;
-    if (cur == '2' || cur == '3') return false;
-    cell.setAttribute('V', '1');
+    // Keep any explicit alignment already written.
+    if (cur == '0' || cur == '1' || cur == '2' || cur == '3') return false;
+    final modelAlign = s.richText.runs.isNotEmpty
+        ? s.richText.runs.first.paraStyle.horizontalAlign
+        : VsdxHorzAlign.center;
+    final want = switch (modelAlign) {
+      VsdxHorzAlign.left => '0',
+      VsdxHorzAlign.right => '2',
+      VsdxHorzAlign.justify => '3',
+      VsdxHorzAlign.center => '1',
+    };
+    cell.setAttribute('V', want);
     return true;
   }
 

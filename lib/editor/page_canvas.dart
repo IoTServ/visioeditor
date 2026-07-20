@@ -1253,17 +1253,37 @@ class _PageCanvasState extends State<PageCanvas> {
       left = screen.dx - width / 2;
       top = screen.dy - height / 2;
     } else {
-      // Local w×h at the page pin, rotated by page heading so nested / rotated
-      // shapes get an editor that matches painted text (not the AABB).
+      // Prefer the text-block box (TxtPin/TxtWidth) so captions below icons
+      // edit where they paint — not the picture Width×Height frame.
       final ppi = widget.pxPerInch;
-      width = math.max(s.width * ppi * _scale, 44.0);
-      height = math.max(s.height * ppi * _scale, 26.0);
-      final pin = _page!.shapePinPage(s.id);
-      final pinScr = _pageToScreen(pin.x, pin.y);
-      pageAngle = _page!.shapePageAngle(s.id);
-      final locPinX = s.effectiveLocPinX * ppi * _scale;
-      final locPinYFromTop =
-          (s.height - s.effectiveLocPinY) * ppi * _scale;
+      final block = s.richText.textBlock;
+      final useTextBlock = block.pinXInches != null ||
+          block.pinYInches != null ||
+          block.widthInches != null ||
+          block.heightInches != null;
+      final boxW = useTextBlock ? (block.widthInches ?? s.width) : s.width;
+      final boxH = useTextBlock ? (block.heightInches ?? s.height) : s.height;
+      final pinLocalX =
+          useTextBlock ? (block.pinXInches ?? s.width / 2) : s.effectiveLocPinX;
+      final pinLocalY = useTextBlock
+          ? (block.pinYInches ?? s.height / 2)
+          : s.effectiveLocPinY;
+      final locPinXIn = useTextBlock
+          ? (block.locPinXInches ?? boxW / 2)
+          : s.effectiveLocPinX;
+      final locPinYIn = useTextBlock
+          ? (block.locPinYInches ?? boxH / 2)
+          : s.effectiveLocPinY;
+      width = math.max(boxW * ppi * _scale, 44.0);
+      height = math.max(boxH * ppi * _scale, 26.0);
+      final pinPage = useTextBlock
+          ? _page!.localToPageDeep(s.id, Offset2D(pinLocalX, pinLocalY))
+          : _page!.shapePinPage(s.id);
+      final pinScr = _pageToScreen(pinPage.x, pinPage.y);
+      pageAngle = _page!.shapePageAngle(s.id) +
+          (useTextBlock ? block.angleRad : 0.0);
+      final locPinX = locPinXIn * ppi * _scale;
+      final locPinYFromTop = (boxH - locPinYIn) * ppi * _scale;
       left = pinScr.dx - locPinX;
       top = pinScr.dy - locPinYFromTop;
       locAlignX = width <= 0 ? 0.0 : (locPinX / width) * 2 - 1;
