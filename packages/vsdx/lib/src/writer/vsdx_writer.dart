@@ -5105,6 +5105,7 @@ class VsdxWriter {
   }
 
   /// Set Paragraph/HorzAlign=1 when missing or left (0).
+  /// Preserve explicit right (2) / justify (3) alignment.
   bool _ensureParagraphHorzAlignCenter(XmlElement el) {
     XmlElement? para;
     for (final child in el.childElements) {
@@ -5132,6 +5133,7 @@ class VsdxWriter {
     final cell = _ensureCell(row, 'HorzAlign');
     final cur = cell.getAttribute('V');
     if (cur == '1') return false;
+    if (cur == '2' || cur == '3') return false;
     cell.setAttribute('V', '1');
     return true;
   }

@@ -52,6 +52,69 @@ void main() {
       expect(next.runs.single.text, 'Hello World');
       expect(next.runs.single.charStyle.style.bold, isFalse);
     });
+
+    test('preserves fieldSpans and tabIndices across style splits', () {
+      const rich = VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'A\tFIELD\tZ',
+            fieldSpans: <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 2, length: 5, ix: 3),
+            ],
+            tabIndices: <int>[1, 2],
+          ),
+        ],
+      );
+      final next = applyCharStyleToRange(
+        rich,
+        start: 0,
+        end: 1,
+        update: (c) => c.copyWith(style: c.style.copyWith(bold: true)),
+      );
+      expect(next.plainText, 'A\tFIELD\tZ');
+      var offset = 0;
+      final abs = <VsdxFieldSpan>[];
+      final tabs = <int>[];
+      for (final r in next.runs) {
+        for (final f in r.fieldSpans) {
+          abs.add(VsdxFieldSpan(
+            start: offset + f.start,
+            length: f.length,
+            ix: f.ix,
+          ));
+        }
+        tabs.addAll(r.tabIndices);
+        offset += r.text.length;
+      }
+      expect(abs, <VsdxFieldSpan>[
+        const VsdxFieldSpan(start: 2, length: 5, ix: 3),
+      ]);
+      expect(tabs, <int>[1, 2]);
+    });
+
+    test('does not merge runs that only differ by bulletFont/flags', () {
+      const rich = VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'A',
+            paraStyle: VsdxParaStyle(bulletFont: 'Wingdings', flags: 1),
+          ),
+          VsdxTextRun(
+            text: 'B',
+            paraStyle: VsdxParaStyle(bulletFont: 'Segoe UI', flags: 0),
+          ),
+        ],
+      );
+      final next = applyCharStyleToRange(
+        rich,
+        start: 0,
+        end: 2,
+        update: (c) => c.copyWith(style: c.style.copyWith(bold: true)),
+      );
+      expect(next.runs, hasLength(2));
+      expect(next.runs[0].paraStyle.bulletFont, 'Wingdings');
+      expect(next.runs[1].paraStyle.bulletFont, 'Segoe UI');
+    });
   });
 
   group('replacePlainText', () {

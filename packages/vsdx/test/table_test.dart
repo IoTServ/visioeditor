@@ -165,5 +165,49 @@ void main() {
       final same = TableOps.removeRow(table, 0);
       expect(TableOps.dimensions(same).rows, 1);
     });
+
+    test('layout preserves non-table User cells on table and cells', () {
+      var table = TableOps.assembleTable(
+        tableId: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      );
+      const tag = VsdxUserCell(name: 'agentTag', value: 'keep-me');
+      table = table.copyWith(
+        userCells: <VsdxUserCell>[...table.userCells, tag],
+        children: <VsdxShape>[
+          for (final c in table.children)
+            TableOps.isCell(c)
+                ? c.copyWith(
+                    userCells: <VsdxUserCell>[
+                      ...c.userCells,
+                      const VsdxUserCell(name: 'cellNote', value: 'x'),
+                    ],
+                  )
+                : c,
+        ],
+      );
+      table = TableOps.layoutCells(table);
+      expect(
+        table.userCells.any((c) => c.name == 'agentTag' && c.value == 'keep-me'),
+        isTrue,
+      );
+      for (final c in TableOps.cellsOf(table)) {
+        expect(
+          c.userCells.any((u) => u.name == 'cellNote' && u.value == 'x'),
+          isTrue,
+          reason: 'cell ${TableOps.cellRow(c)}_${TableOps.cellCol(c)}',
+        );
+      }
+      table = TableOps.addRow(table, startId: 50);
+      expect(
+        table.userCells.any((c) => c.name == 'agentTag'),
+        isTrue,
+      );
+    });
   });
 }

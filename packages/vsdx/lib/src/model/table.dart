@@ -103,6 +103,7 @@ abstract final class TableOps {
     required int cols,
     List<double>? colFractions,
     List<double>? rowFractions,
+    List<VsdxUserCell>? preserve,
   }) {
     final out = <VsdxUserCell>[
       const VsdxUserCell(name: userTable, value: '1'),
@@ -121,7 +122,7 @@ abstract final class TableOps {
         value: _encodeFractions(rowFractions),
       ));
     }
-    return out;
+    return _mergeMeta(preserve, out, ownedKeys: _tableMetaKeys);
   }
 
   static List<VsdxUserCell> cellUserCells({
@@ -130,6 +131,7 @@ abstract final class TableOps {
     int rowSpan = 1,
     int colSpan = 1,
     bool covered = false,
+    List<VsdxUserCell>? preserve,
   }) {
     final out = <VsdxUserCell>[
       const VsdxUserCell(name: userCell, value: '1'),
@@ -145,7 +147,39 @@ abstract final class TableOps {
     if (covered) {
       out.add(const VsdxUserCell(name: userCovered, value: '1'));
     }
-    return out;
+    return _mergeMeta(preserve, out, ownedKeys: _cellMetaKeys);
+  }
+
+  /// Keep non-table User rows (hyperlink helpers, agent tags, …) across layout.
+  /// Always drop owned meta keys so cleared flags (e.g. veCovered) do not stick.
+  static const Set<String> _tableMetaKeys = <String>{
+    userTable,
+    userRows,
+    userCols,
+    userColWidths,
+    userRowHeights,
+  };
+
+  static const Set<String> _cellMetaKeys = <String>{
+    userCell,
+    userRow,
+    userCol,
+    userRowSpan,
+    userColSpan,
+    userCovered,
+  };
+
+  static List<VsdxUserCell> _mergeMeta(
+    List<VsdxUserCell>? preserve,
+    List<VsdxUserCell> meta, {
+    required Set<String> ownedKeys,
+  }) {
+    if (preserve == null || preserve.isEmpty) return meta;
+    return <VsdxUserCell>[
+      for (final c in preserve)
+        if (!ownedKeys.contains(c.name)) c,
+      ...meta,
+    ];
   }
 
   /// Direct cell children of [table], sorted by row then column.
@@ -338,6 +372,7 @@ abstract final class TableOps {
                 row: r,
                 col: c,
                 covered: true,
+                preserve: existing.userCells,
               ),
             ),
           );
@@ -384,6 +419,7 @@ abstract final class TableOps {
         cols: dim.cols,
         colFractions: colF,
         rowFractions: rowF,
+        preserve: table.userCells,
       ),
       shapeKind: VsdxShapeKind.container,
     );
@@ -479,6 +515,7 @@ abstract final class TableOps {
           cols: dim.cols,
           colFractions: _normalize(fracs),
           rowFractions: rowFractions(table),
+          preserve: table.userCells,
         ),
       ),
     );
@@ -513,6 +550,7 @@ abstract final class TableOps {
           cols: dim.cols,
           colFractions: colFractions(table),
           rowFractions: _normalize(fracs),
+          preserve: table.userCells,
         ),
       ),
     );
@@ -601,6 +639,7 @@ abstract final class TableOps {
               col: col,
               rowSpan: rowSpan,
               colSpan: colSpan,
+              preserve: master.userCells,
             ),
           ),
         );
@@ -610,7 +649,12 @@ abstract final class TableOps {
           c.copyWith(
             text: '',
             richText: VsdxRichText.empty,
-            userCells: cellUserCells(row: r, col: cc, covered: true),
+            userCells: cellUserCells(
+              row: r,
+              col: cc,
+              covered: true,
+              preserve: c.userCells,
+            ),
           ),
         );
       }
@@ -640,6 +684,7 @@ abstract final class TableOps {
           col: col,
           rowSpan: rowSpan,
           colSpan: colSpan,
+          preserve: m.userCells,
         ),
       );
     }
@@ -672,7 +717,11 @@ abstract final class TableOps {
       }
       nextCells.add(
         c.copyWith(
-          userCells: cellUserCells(row: r, col: cc),
+          userCells: cellUserCells(
+            row: r,
+            col: cc,
+            preserve: c.userCells,
+          ),
         ),
       );
     }
@@ -716,6 +765,7 @@ abstract final class TableOps {
           cols: dim.cols,
           colFractions: colFractions(table),
           rowFractions: _normalize(rowF),
+          preserve: table.userCells,
         ),
       ),
     );
@@ -754,6 +804,7 @@ abstract final class TableOps {
           cols: dim.cols + 1,
           colFractions: _normalize(colF),
           rowFractions: rowFractions(table),
+          preserve: table.userCells,
         ),
       ),
     );
@@ -778,6 +829,7 @@ abstract final class TableOps {
             rowSpan: rowSpan(c),
             colSpan: colSpan(c),
             covered: isCovered(c),
+            preserve: c.userCells,
           ),
         ),
       );
@@ -791,6 +843,7 @@ abstract final class TableOps {
           cols: dim.cols,
           colFractions: colFractions(next),
           rowFractions: _normalize(rowF),
+          preserve: next.userCells,
         ),
       ),
     );
@@ -815,6 +868,7 @@ abstract final class TableOps {
             rowSpan: rowSpan(c),
             colSpan: colSpan(c),
             covered: isCovered(c),
+            preserve: c.userCells,
           ),
         ),
       );
@@ -828,6 +882,7 @@ abstract final class TableOps {
           cols: dim.cols - 1,
           colFractions: _normalize(colF),
           rowFractions: rowFractions(next),
+          preserve: next.userCells,
         ),
       ),
     );
@@ -937,6 +992,7 @@ abstract final class TableOps {
             col: col,
             rowSpan: rowSpan,
             colSpan: colSpan,
+            preserve: cell.userCells,
           ),
         )
         // Refresh Width*/Height* Connection V values after the frame resize

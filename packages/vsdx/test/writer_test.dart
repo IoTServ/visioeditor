@@ -4931,6 +4931,76 @@ void main() {
     expect(after.richText.plainText, display);
   });
 
+  test('style-range edit keeps fld markers through write/read', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    const display = 'X42Y';
+    final base = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 0.5,
+    ).copyWith(
+      fields: const [
+        VsdxFieldRow(
+          ix: 0,
+          value: '42',
+          valueFormula: 'PAGENUMBER()',
+          type: 0,
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: display,
+            fieldSpans: [VsdxFieldSpan(start: 1, length: 2, ix: 0)],
+          ),
+        ],
+      ),
+      text: display,
+    );
+    final styled = applyCharStyleToRange(
+      base.richText,
+      start: 0,
+      end: 1,
+      update: (c) => c.copyWith(style: c.style.copyWith(bold: true)),
+    );
+    outDoc = outDoc.replacePage(
+      0,
+      outDoc.pages.first.addShape(
+        base.copyWith(richText: styled, text: styled.plainText),
+      ),
+    );
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('<fld IX="0">'), isTrue);
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
+    expect(after.richText.plainText, display);
+    var offset = 0;
+    final abs = <VsdxFieldSpan>[];
+    for (final r in after.richText.runs) {
+      for (final f in r.fieldSpans) {
+        abs.add(VsdxFieldSpan(
+          start: offset + f.start,
+          length: f.length,
+          ix: f.ix,
+        ));
+      }
+      offset += r.text.length;
+    }
+    expect(abs, isNotEmpty);
+    expect(abs.first.start, 1);
+    expect(abs.first.length, 2);
+    expect(abs.first.ix, 0);
+  });
+
   test('NoSnap / NoQuickDrag survive geometry rebuild', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);

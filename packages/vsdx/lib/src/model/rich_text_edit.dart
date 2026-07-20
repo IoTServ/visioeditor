@@ -11,6 +11,9 @@ import 'rich_text.dart';
 /// [rich.plainText]). Splits runs at the range boundaries and merges adjacent
 /// runs that end up with identical styles. Out-of-range indices are clamped;
 /// an empty range is a no-op.
+///
+/// Field (`<fld>`) and tab (`<tp>`) markers are remapped onto the resulting
+/// runs so a style-only edit does not strip Visio dynamic text on save.
 VsdxRichText applyCharStyleToRange(
   VsdxRichText rich, {
   required int start,
@@ -31,7 +34,15 @@ VsdxRichText applyCharStyleToRange(
   for (var i = a; i < b; i++) {
     styles[i] = update(styles[i]);
   }
-  return rich.copyWith(runs: _coalesce(plain, styles, paras));
+  return rich.copyWith(
+    runs: _coalesce(
+      plain,
+      styles,
+      paras,
+      fields: _absoluteFields(rich),
+      tabs: _absoluteTabs(rich),
+    ),
+  );
 }
 
 /// Apply [update] to paragraph styles of every character in [[start], [end]).
@@ -55,15 +66,24 @@ VsdxRichText applyParaStyleToRange(
   for (var i = a; i < b; i++) {
     paras[i] = update(paras[i]);
   }
-  return rich.copyWith(runs: _coalesce(plain, styles, paras));
+  return rich.copyWith(
+    runs: _coalesce(
+      plain,
+      styles,
+      paras,
+      fields: _absoluteFields(rich),
+      tabs: _absoluteTabs(rich),
+    ),
+  );
 }
 
 /// Replace the plain-text content of [rich] with [newText], preserving
 /// per-character styles on the longest common prefix and suffix. Characters
 /// inserted in the middle inherit the style at the caret (end of the prefix).
 ///
-/// This is what [EditorController.setShapeText] uses so editing a mixed-style
-/// label no longer collapses it to the first run's style alone.
+/// Field / tab markers wholly inside the preserved prefix or suffix are kept
+/// (suffix markers are remapped); markers that overlapped the edited middle
+/// are dropped.
 VsdxRichText replacePlainText(VsdxRichText rich, String newText) {
   final old = rich.plainText;
   if (old == newText) return rich;
@@ -105,7 +125,8 @@ VsdxRichText replacePlainText(VsdxRichText rich, String newText) {
 
   var prefix = 0;
   final maxPrefix = old.length < newText.length ? old.length : newText.length;
-  while (prefix < maxPrefix && old.codeUnitAt(prefix) == newText.codeUnitAt(prefix)) {
+  while (prefix < maxPrefix &&
+      old.codeUnitAt(prefix) == newText.codeUnitAt(prefix)) {
     prefix++;
   }
   var suffix = 0;
@@ -118,10 +139,8 @@ VsdxRichText replacePlainText(VsdxRichText rich, String newText) {
     suffix++;
   }
 
-  final insertChar =
-      prefix > 0 ? styles[prefix - 1] : styles.first;
-  final insertPara =
-      prefix > 0 ? paras[prefix - 1] : paras.first;
+  final insertChar = prefix > 0 ? styles[prefix - 1] : styles.first;
+  final insertPara = prefix > 0 ? paras[prefix - 1] : paras.first;
 
   final newStyles = <VsdxCharStyle>[];
   final newParas = <VsdxParaStyle>[];
@@ -139,7 +158,40 @@ VsdxRichText replacePlainText(VsdxRichText rich, String newText) {
     newStyles.add(styles[oi]);
     newParas.add(paras[oi]);
   }
-  return rich.copyWith(runs: _coalesce(newText, newStyles, newParas));
+
+  final oldSuffixStart = old.length - suffix;
+  final newSuffixStart = newText.length - suffix;
+  final mappedFields = <(int, int, int)>[];
+  for (final f in _absoluteFields(rich)) {
+    final end = f.$1 + f.$2;
+    if (end <= prefix) {
+      mappedFields.add(f);
+    } else if (f.$1 >= oldSuffixStart) {
+      mappedFields.add((
+        newSuffixStart + (f.$1 - oldSuffixStart),
+        f.$2,
+        f.$3,
+      ));
+    }
+  }
+  final mappedTabs = <(int, int)>[];
+  for (final t in _absoluteTabs(rich)) {
+    if (t.$1 < prefix) {
+      mappedTabs.add(t);
+    } else if (t.$1 >= oldSuffixStart) {
+      mappedTabs.add((newSuffixStart + (t.$1 - oldSuffixStart), t.$2));
+    }
+  }
+
+  return rich.copyWith(
+    runs: _coalesce(
+      newText,
+      newStyles,
+      newParas,
+      fields: mappedFields,
+      tabs: mappedTabs,
+    ),
+  );
 }
 
 /// Character style at UTF-16 offset [index] (clamped), or `null` when empty.
@@ -169,11 +221,81 @@ void _expandStyles(
   }
 }
 
+/// Absolute (start, length, ix) field spans across [rich.plainText].
+List<(int, int, int)> _absoluteFields(VsdxRichText rich) {
+  final out = <(int, int, int)>[];
+  var offset = 0;
+  for (final r in rich.runs) {
+    for (final f in r.fieldSpans) {
+      out.add((offset + f.start, f.length, f.ix));
+    }
+    offset += r.text.length;
+  }
+  return out;
+}
+
+/// Absolute (position, tab-row IX) for each `\t` in [rich.plainText].
+List<(int, int)> _absoluteTabs(VsdxRichText rich) {
+  final out = <(int, int)>[];
+  var offset = 0;
+  for (final r in rich.runs) {
+    var ti = 0;
+    for (var i = 0; i < r.text.length; i++) {
+      if (r.text.codeUnitAt(i) != 0x09) continue;
+      final ix = ti < r.tabIndices.length ? r.tabIndices[ti] : 0;
+      out.add((offset + i, ix));
+      ti++;
+    }
+    offset += r.text.length;
+  }
+  return out;
+}
+
+List<VsdxFieldSpan> _clipFields(
+  List<(int, int, int)> fields,
+  int runStart,
+  int runEnd,
+) {
+  final out = <VsdxFieldSpan>[];
+  for (final f in fields) {
+    final fs = f.$1;
+    final fe = f.$1 + f.$2;
+    if (fe <= runStart || fs >= runEnd) continue;
+    final clipStart = fs < runStart ? runStart : fs;
+    final clipEnd = fe > runEnd ? runEnd : fe;
+    final len = clipEnd - clipStart;
+    if (len <= 0) continue;
+    out.add(VsdxFieldSpan(
+      start: clipStart - runStart,
+      length: len,
+      ix: f.$3,
+    ));
+  }
+  return out;
+}
+
+List<int> _clipTabs(
+  List<(int, int)> tabs,
+  String plain,
+  int runStart,
+  int runEnd,
+) {
+  final out = <int>[];
+  for (final t in tabs) {
+    if (t.$1 < runStart || t.$1 >= runEnd) continue;
+    if (plain.codeUnitAt(t.$1) != 0x09) continue;
+    out.add(t.$2);
+  }
+  return out;
+}
+
 List<VsdxTextRun> _coalesce(
   String plain,
   List<VsdxCharStyle> styles,
-  List<VsdxParaStyle> paras,
-) {
+  List<VsdxParaStyle> paras, {
+  List<(int, int, int)> fields = const <(int, int, int)>[],
+  List<(int, int)> tabs = const <(int, int)>[],
+}) {
   assert(plain.length == styles.length);
   assert(plain.length == paras.length);
   if (plain.isEmpty) {
@@ -195,6 +317,8 @@ List<VsdxTextRun> _coalesce(
         text: plain.substring(start, i),
         charStyle: styles[start],
         paraStyle: paras[start],
+        fieldSpans: _clipFields(fields, start, i),
+        tabIndices: _clipTabs(tabs, plain, start, i),
       ));
       start = i;
     }
@@ -241,5 +365,11 @@ bool _samePara(VsdxParaStyle a, VsdxParaStyle b) =>
     a.spaceBeforeInches == b.spaceBeforeInches &&
     a.spaceAfterInches == b.spaceAfterInches &&
     a.lineSpacing == b.lineSpacing &&
+    a.lineSpacingAbsoluteInches == b.lineSpacingAbsoluteInches &&
+    a.lineSpacingSolid == b.lineSpacingSolid &&
     a.bullet == b.bullet &&
-    a.bulletStr == b.bulletStr;
+    a.bulletStr == b.bulletStr &&
+    a.bulletFont == b.bulletFont &&
+    a.bulletFontSizeInches == b.bulletFontSizeInches &&
+    a.textPosAfterBulletInches == b.textPosAfterBulletInches &&
+    a.flags == b.flags;
