@@ -1582,9 +1582,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       right: 12,
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxWidth: math.max(
-                            280,
-                            MediaQuery.sizeOf(context).width - 80,
+                          // Never force a width wider than the viewport; Find's
+                          // dense IconButton row overflows if maxWidth is 280+
+                          // on a 360-wide phone.
+                          maxWidth: math.min(
+                            420,
+                            MediaQuery.sizeOf(context).width - 24,
                           ),
                         ),
                         child: _FindBar(
@@ -4708,17 +4711,23 @@ class _PropertyPanel extends StatelessWidget {
       children: [
         const Icon(Icons.line_style, size: 18),
         const SizedBox(width: 8),
-        DropdownButton<int>(
-          value: value,
-          isDense: true,
-          hint: Text(el.none),
-          items: [
-            for (final e in presets.entries)
-              DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: (p) {
-            if (p != null) controller.setLinePattern(p);
-          },
+        Expanded(
+          child: DropdownButton<int>(
+            value: value,
+            isDense: true,
+            isExpanded: true,
+            hint: Text(el.none),
+            items: [
+              for (final e in presets.entries)
+                DropdownMenuItem<int>(
+                  value: e.key,
+                  child: Text(e.value, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (p) {
+              if (p != null) controller.setLinePattern(p);
+            },
+          ),
         ),
       ],
     );
@@ -5112,7 +5121,13 @@ class _PageFormatPanel extends StatelessWidget {
                             ),
                           ),
                       const SizedBox(width: 6),
-                      Text(t.name),
+                      Flexible(
+                        child: Text(
+                          t.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -5176,33 +5191,41 @@ class _PageFormatPanel extends StatelessWidget {
           const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              final narrow = constraints.maxWidth < 200;
+              // Docked panel content ≈ 200px; German Hochformat/Querformat
+              // needs icon-only well before the old <200 threshold.
+              final narrow = constraints.maxWidth < 260;
               return SegmentedButton<bool>(
                 showSelectedIcon: false,
                 style: narrow
-                    ? ButtonStyle(
+                    ? const ButtonStyle(
                         visualDensity: VisualDensity.compact,
-                        textStyle: WidgetStatePropertyAll(
-                          Theme.of(context).textTheme.labelSmall,
-                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       )
                     : null,
                 segments: [
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text(
-                      EditorL10n.of(context).portrait,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: narrow
+                        ? null
+                        : Text(
+                            EditorL10n.of(context).portrait,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                    icon: const Icon(Icons.stay_current_portrait, size: 18),
+                    tooltip: EditorL10n.of(context).portrait,
                   ),
                   ButtonSegment<bool>(
                     value: true,
-                    label: Text(
-                      EditorL10n.of(context).landscape,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: narrow
+                        ? null
+                        : Text(
+                            EditorL10n.of(context).landscape,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                    icon: const Icon(Icons.stay_current_landscape, size: 18),
+                    tooltip: EditorL10n.of(context).landscape,
                   ),
                 ],
                 selected: <bool>{landscape},
@@ -5700,158 +5723,220 @@ class _FindBarState extends State<_FindBar> {
                   : '$ord / $count';
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Six IconButtons + count label need ~300px; fold options on
+                // phones so the search field stays usable.
+                final narrow = constraints.maxWidth < 380;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.search, size: 18),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: CallbackShortcuts(
-                        bindings: <ShortcutActivator, VoidCallback>{
-                          const SingleActivator(LogicalKeyboardKey.escape):
-                              widget.onClose,
-                        },
-                        child: TextField(
-                          controller: _text,
-                          focusNode: _focus,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            hintText: el.findShapesHint,
-                            border: InputBorder.none,
+                    Row(
+                      children: [
+                        const Icon(Icons.search, size: 18),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: CallbackShortcuts(
+                            bindings: <ShortcutActivator, VoidCallback>{
+                              const SingleActivator(LogicalKeyboardKey.escape):
+                                  widget.onClose,
+                            },
+                            child: TextField(
+                              controller: _text,
+                              focusNode: _focus,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                hintText: el.findShapesHint,
+                                border: InputBorder.none,
+                              ),
+                              onChanged: widget.controller.updateFind,
+                              onSubmitted: (_) {
+                                if (HardwareKeyboard.instance.isShiftPressed) {
+                                  widget.controller.findPrevious();
+                                } else {
+                                  widget.controller.findNext();
+                                }
+                              },
+                            ),
                           ),
-                          onChanged: widget.controller.updateFind,
-                          onSubmitted: (_) {
-                            if (HardwareKeyboard.instance.isShiftPressed) {
-                              widget.controller.findPrevious();
-                            } else {
-                              widget.controller.findNext();
-                            }
-                          },
                         ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: multiPage ? 72 : 56,
-                      child: Text(
-                        label,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => widget.controller.setFindMatchCase(
-                        !widget.controller.findMatchCase,
-                      ),
-                      icon: Text(
-                        'Aa',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: widget.controller.findMatchCase
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      tooltip: widget.controller.findMatchCase
-                          ? el.matchCaseOn
-                          : el.matchCaseOff,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    IconButton(
-                      onPressed: () => widget.controller.setFindWholeWord(
-                        !widget.controller.findWholeWord,
-                      ),
-                      icon: Text(
-                        'W',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: widget.controller.findWholeWord
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      tooltip: widget.controller.findWholeWord
-                          ? el.wholeWordOn
-                          : el.wholeWordOff,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    IconButton(
-                      onPressed:
-                          count == 0 ? null : widget.controller.findPrevious,
-                      icon: const Icon(Icons.keyboard_arrow_up),
-                      tooltip: el.previousShortcut,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    IconButton(
-                      onPressed: count == 0 ? null : widget.controller.findNext,
-                      icon: const Icon(Icons.keyboard_arrow_down),
-                      tooltip: el.nextShortcut,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    IconButton(
-                      onPressed: widget.onToggleReplace,
-                      icon: Icon(
-                        widget.showReplace
-                            ? Icons.expand_less
-                            : Icons.find_replace,
-                        size: 18,
-                      ),
-                      tooltip: widget.showReplace
-                          ? el.hideReplace
-                          : el.showReplaceShortcut,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    IconButton(
-                      onPressed: widget.onClose,
-                      icon: const Icon(Icons.close, size: 18),
-                      tooltip: el.closeEsc,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                if (widget.showReplace) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const SizedBox(width: 24),
-                      Expanded(
-                        child: TextField(
-                          controller: _replace,
-                          focusNode: _replaceFocus,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            hintText: EditorL10n.of(context).replaceWithHint,
-                            border: InputBorder.none,
+                        Flexible(
+                          child: Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.onSurfaceVariant),
                           ),
-                          onSubmitted: (_) => widget.controller
-                              .replaceFind(_replace.text),
                         ),
+                        if (!narrow) ...[
+                          IconButton(
+                            onPressed: () =>
+                                widget.controller.setFindMatchCase(
+                              !widget.controller.findMatchCase,
+                            ),
+                            icon: Text(
+                              'Aa',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: widget.controller.findMatchCase
+                                    ? scheme.primary
+                                    : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                            tooltip: widget.controller.findMatchCase
+                                ? el.matchCaseOn
+                                : el.matchCaseOff,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          IconButton(
+                            onPressed: () =>
+                                widget.controller.setFindWholeWord(
+                              !widget.controller.findWholeWord,
+                            ),
+                            icon: Text(
+                              'W',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: widget.controller.findWholeWord
+                                    ? scheme.primary
+                                    : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                            tooltip: widget.controller.findWholeWord
+                                ? el.wholeWordOn
+                                : el.wholeWordOff,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ],
+                        IconButton(
+                          onPressed: count == 0
+                              ? null
+                              : widget.controller.findPrevious,
+                          icon: const Icon(Icons.keyboard_arrow_up),
+                          tooltip: el.previousShortcut,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        IconButton(
+                          onPressed:
+                              count == 0 ? null : widget.controller.findNext,
+                          icon: const Icon(Icons.keyboard_arrow_down),
+                          tooltip: el.nextShortcut,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        if (!narrow)
+                          IconButton(
+                            onPressed: widget.onToggleReplace,
+                            icon: Icon(
+                              widget.showReplace
+                                  ? Icons.expand_less
+                                  : Icons.find_replace,
+                              size: 18,
+                            ),
+                            tooltip: widget.showReplace
+                                ? el.hideReplace
+                                : el.showReplaceShortcut,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (narrow)
+                          PopupMenuButton<String>(
+                            tooltip: el.showReplaceShortcut,
+                            padding: EdgeInsets.zero,
+                            onSelected: (v) {
+                              switch (v) {
+                                case 'case':
+                                  widget.controller.setFindMatchCase(
+                                    !widget.controller.findMatchCase,
+                                  );
+                                case 'word':
+                                  widget.controller.setFindWholeWord(
+                                    !widget.controller.findWholeWord,
+                                  );
+                                case 'replace':
+                                  widget.onToggleReplace();
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              CheckedPopupMenuItem<String>(
+                                value: 'case',
+                                checked: widget.controller.findMatchCase,
+                                child: Text(el.matchCaseOn),
+                              ),
+                              CheckedPopupMenuItem<String>(
+                                value: 'word',
+                                checked: widget.controller.findWholeWord,
+                                child: Text(el.wholeWordOn),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'replace',
+                                child: Text(
+                                  widget.showReplace
+                                      ? el.hideReplace
+                                      : el.showReplaceShortcut,
+                                ),
+                              ),
+                            ],
+                          ),
+                        IconButton(
+                          onPressed: widget.onClose,
+                          icon: const Icon(Icons.close, size: 18),
+                          tooltip: el.closeEsc,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                    if (widget.showReplace) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: TextField(
+                              controller: _replace,
+                              focusNode: _replaceFocus,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                hintText:
+                                    EditorL10n.of(context).replaceWithHint,
+                                border: InputBorder.none,
+                              ),
+                              onSubmitted: (_) => widget.controller
+                                  .replaceFind(_replace.text),
+                            ),
+                          ),
+                        ],
                       ),
-                      TextButton(
-                        onPressed: count == 0
-                            ? null
-                            : () => widget.controller
-                                .replaceFind(_replace.text),
-                        child: Text(EditorL10n.of(context).replace),
-                      ),
-                      TextButton(
-                        onPressed: widget.controller.findQuery.trim().isEmpty
-                            ? null
-                            : () => widget.controller
-                                .replaceAllFind(_replace.text),
-                        child: Text(EditorL10n.of(context).replaceAll),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Wrap(
+                          spacing: 4,
+                          children: [
+                            TextButton(
+                              onPressed: count == 0
+                                  ? null
+                                  : () => widget.controller
+                                      .replaceFind(_replace.text),
+                              child: Text(EditorL10n.of(context).replace),
+                            ),
+                            TextButton(
+                              onPressed:
+                                  widget.controller.findQuery.trim().isEmpty
+                                      ? null
+                                      : () => widget.controller
+                                          .replaceAllFind(_replace.text),
+                              child: Text(EditorL10n.of(context).replaceAll),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
-                  ),
-                ],
-              ],
+                  ],
+                );
+              },
             ),
           );
         },

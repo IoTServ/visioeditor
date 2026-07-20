@@ -138,4 +138,79 @@ void main() {
       expect(find.byType(SegmentedButton<ThemeMode>), findsOneWidget);
     });
   });
+
+  testWidgets('find and replace bar does not overflow on phone widths',
+      (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final size in const [Size(360, 640), Size(320, 568)]) {
+      await _withOverflowGuard(tester, () async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await _setViewSize(tester, size);
+        final settings = await AppSettings.load();
+        await tester.pumpWidget(VisioEditorApp(settings: settings));
+        await tester.pumpAndSettle();
+
+        final newBtn = find.widgetWithText(FilledButton, 'New drawing');
+        expect(newBtn, findsOneWidget);
+        await tester.ensureVisible(newBtn);
+        await tester.tap(newBtn);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(PopupMenuButton<String>).first);
+        await tester.pumpAndSettle();
+        // Prefer replace mode so both find rows are exercised.
+        final replaceMenu = find.text('Find and Replace… (Cmd+H)');
+        await tester.ensureVisible(replaceMenu);
+        await tester.tap(replaceMenu);
+        await tester.pumpAndSettle();
+        expect(find.text('Find shapes…'), findsOneWidget);
+      });
+    }
+  });
+
+  testWidgets('German paper orientation chips fit in format sheet',
+      (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _withOverflowGuard(tester, () async {
+      await _setViewSize(tester, const Size(360, 640));
+      final settings = await AppSettings.load();
+      await settings.setLocalePreference('de');
+      await tester.pumpWidget(VisioEditorApp(settings: settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Neue Zeichnung'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.tune));
+      await tester.pumpAndSettle();
+
+      // Paper orientation sits lower in the Diagram ListView — scroll to it.
+      await tester.drag(find.byType(ListView).last, const Offset(0, -500));
+      await tester.pumpAndSettle();
+      expect(find.byType(SegmentedButton<bool>), findsOneWidget);
+      expect(find.byIcon(Icons.stay_current_portrait), findsOneWidget);
+      expect(find.byIcon(Icons.stay_current_landscape), findsOneWidget);
+    });
+  });
+
+  testWidgets('layers panel long German label does not overflow', (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _withOverflowGuard(tester, () async {
+      await _setViewSize(tester, const Size(360, 640));
+      final settings = await AppSettings.load();
+      await settings.setLocalePreference('de');
+      await tester.pumpWidget(VisioEditorApp(settings: settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Neue Zeichnung'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(PopupMenuButton<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ebenen'));
+      await tester.pumpAndSettle();
+      expect(find.byType(OutlinedButton), findsWidgets);
+    });
+  });
 }

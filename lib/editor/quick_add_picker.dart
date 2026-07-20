@@ -63,13 +63,14 @@ class QuickAddPicker extends StatelessWidget {
     final stencils = quickAddStencils();
 
     // Prefer opening beside the arrow; clamp so the panel stays on-screen.
+    final panelWidth = math.min(_panelWidth, media.size.width - 16);
     var left = anchorGlobal.dx + 18;
     var top = anchorGlobal.dy - 40;
-    final maxLeft = media.size.width - _panelWidth - 8;
+    final maxLeft = media.size.width - panelWidth - 8;
     final estimatedH =
         48.0 + ((stencils.length + _cols - 1) ~/ _cols) * (_cell + 4) + 16;
     final maxTop = media.size.height - estimatedH - 8;
-    if (left > maxLeft) left = anchorGlobal.dx - _panelWidth - 18;
+    if (left > maxLeft) left = anchorGlobal.dx - panelWidth - 18;
     left = left.clamp(8.0, math.max(8.0, maxLeft));
     top = top.clamp(8.0, math.max(8.0, maxTop));
 
@@ -91,7 +92,7 @@ class QuickAddPicker extends StatelessWidget {
             color: scheme.surface,
             shadowColor: Colors.black54,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _panelWidth),
+              constraints: BoxConstraints(maxWidth: panelWidth),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
                 child: Column(
@@ -111,12 +112,16 @@ class QuickAddPicker extends StatelessWidget {
                             Icon(Icons.copy_outlined,
                                 size: 16, color: scheme.primary),
                             const SizedBox(width: 8),
-                            Text(
-                              el.duplicate,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: scheme.onSurface,
+                            Flexible(
+                              child: Text(
+                                el.duplicate,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: scheme.onSurface,
+                                ),
                               ),
                             ),
                           ],

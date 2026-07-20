@@ -264,32 +264,35 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
     final draft = TextEditingController(text: initial);
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(el.chartPasteValues),
-        content: SizedBox(
-          width: 360,
-          child: TextField(
-            controller: draft,
-            autofocus: true,
-            maxLines: 5,
-            decoration: InputDecoration(
-              hintText: el.chartValuesHint,
-              helperText: el.chartPasteHint,
-              border: const OutlineInputBorder(),
+      builder: (ctx) {
+        final maxW = MediaQuery.sizeOf(ctx).width - 48;
+        return AlertDialog(
+          title: Text(el.chartPasteValues),
+          content: SizedBox(
+            width: maxW < 360 ? maxW : 360,
+            child: TextField(
+              controller: draft,
+              autofocus: true,
+              maxLines: 5,
+              decoration: InputDecoration(
+                hintText: el.chartValuesHint,
+                helperText: el.chartPasteHint,
+                border: const OutlineInputBorder(),
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(el.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, draft.text),
-            child: Text(el.applyChart),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(el.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, draft.text),
+              child: Text(el.applyChart),
+            ),
+          ],
+        );
+      },
     );
     draft.dispose();
     if (result == null) return;

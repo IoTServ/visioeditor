@@ -3187,7 +3187,11 @@ class _PageCanvasState extends State<PageCanvas> {
                       if (!widget.presentationMode)
                         Positioned(
                           right: 12,
-                          bottom: 12,
+                          // Leave room for the compact-layout format FAB
+                          // (same corner) so zoom stays tappable on phones.
+                          bottom: MediaQuery.sizeOf(context).width < 720
+                              ? 64
+                              : 12,
                           child: _ZoomControls(
                             zoom: _scale,
                             onZoomIn: () => _zoomBy(1.25),

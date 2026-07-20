@@ -179,15 +179,24 @@ class LayersPanel extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-                  child: OutlinedButton.icon(
+                  child: OutlinedButton(
                     onPressed: () => controller.addLayer(
                       assignSelection: controller.hasSelection,
                     ),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(
-                      controller.hasSelection
-                          ? el.addLayerWithSelection
-                          : el.addLayer,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.add, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            controller.hasSelection
+                                ? el.addLayerWithSelection
+                                : el.addLayer,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

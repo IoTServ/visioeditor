@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -96,14 +98,21 @@ class _EditDataDialogState extends State<_EditDataDialog> {
       title: Row(
         children: [
           Expanded(child: Text(el.editData.replaceAll('…', ''))),
-          Text(
-            widget.title,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          Flexible(
+            child: Text(
+              widget.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
           ),
         ],
       ),
-      content: SizedBox(
-        width: 420,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: math.min(420, MediaQuery.sizeOf(context).width - 48),
+        ),
         child: _fields.isEmpty
             ? Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
@@ -118,8 +127,8 @@ class _EditDataDialogState extends State<_EditDataDialog> {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      SizedBox(
-                        width: 130,
+                      Flexible(
+                        flex: 2,
                         child: TextField(
                           controller: f.name,
                           decoration: InputDecoration(
@@ -131,6 +140,7 @@ class _EditDataDialogState extends State<_EditDataDialog> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
+                        flex: 3,
                         child: TextField(
                           controller: f.value,
                           decoration: InputDecoration(

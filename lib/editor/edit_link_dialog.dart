@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -129,14 +131,21 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
       title: Row(
         children: [
           Expanded(child: Text(el.editLink.replaceAll('…', ''))),
-          Text(
-            widget.title,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          Flexible(
+            child: Text(
+              widget.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
           ),
         ],
       ),
-      content: SizedBox(
-        width: 420,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: math.min(420, MediaQuery.sizeOf(context).width - 48),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
