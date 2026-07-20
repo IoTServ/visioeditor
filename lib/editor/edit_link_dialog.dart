@@ -99,6 +99,10 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
     final desc = _label.text.trim();
     final isAnchor = raw.startsWith('#');
     final base = widget.initial;
+    final priorTarget = isAnchor
+        ? (base?.subAddress ?? '')
+        : (base?.address ?? '');
+    final targetChanged = raw != priorTarget;
     return VsdxHyperlink(
       id: base?.id ?? 0,
       address: isAnchor ? null : raw,
@@ -111,7 +115,8 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
       newWindow: base?.newWindow ?? false,
       invisible: base?.invisible ?? false,
       sortKey: base?.sortKey,
-      addressFormula: base?.addressFormula,
+      // Drop stale Address F= when the user edited the URL text.
+      addressFormula: targetChanged ? null : base?.addressFormula,
     );
   }
 

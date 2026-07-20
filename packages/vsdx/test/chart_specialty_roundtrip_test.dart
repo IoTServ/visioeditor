@@ -22,12 +22,13 @@ void main() {
       case 'spanColumn':
       case 'bulletGroup':
       case 'dualCompare':
-      case 'balanceBar':
-      case 'gapAnalysis':
-      case 'quotaBoard':
         return <double>[
           for (var i = 0; i < 4; i++) ...[0.12 + i * 0.08, 0.35 + i * 0.05],
         ];
+      case 'balanceBar':
+      case 'gapAnalysis':
+      case 'quotaBoard':
+        return const <double>[0, 0.01, 0.5, 0.02, 0.01, 0.8, 0.3, 0.05];
       case 'boxplot':
         return const <double>[0.1, 0.3, 0.5, 0.7, 0.9];
       case 'heatmap':
@@ -38,13 +39,20 @@ void main() {
         return List<double>.filled(6, 1);
       case 'kpiTarget':
       case 'arcGauge':
-        return const <double>[0.66, 0.88];
+        return const <double>[0.66, 0.02];
       case 'venn':
-        return const <double>[0.42, 0.38, 0.18];
+        return const <double>[0.01, 0.38, 0];
       case 'likert':
-        return const <double>[0.1, 0.15, 0.25, 0.3, 0.2];
+        return const <double>[0, 0.01, 0.25, 0.3, 0.2];
       case 'voteStack':
-        return const <double>[0.45, 0.35, 0.2];
+        return const <double>[0.45, 0, 0.01];
+      case 'progressList':
+      case 'meterCluster':
+      case 'rhythmBars':
+      case 'stageFunnel':
+      case 'pipeline':
+      case 'cycleFlow':
+        return const <double>[0, 0.01, 0.5, 0.75];
       case 'priorityMatrix':
         return const <double>[0.8, 0.6, 0.4, 0.2];
       case 'compareCards':
@@ -298,5 +306,23 @@ void main() {
       expect(ChartOps.chartKind(loaded), e.value);
       expect(ChartOps.chartValues(loaded), isNotEmpty);
     }
+  });
+
+  test('tornado keeps user order; formatValues keeps sub-cent precision', () {
+    final chart0 = ChartOps.buildKind('tornado', id: 7, pinX: 1, pinY: 1);
+    var next = 40;
+    final values = const <double>[0.3, -0.9, 0.5, 0.125, 1 / 3];
+    final rebuilt = ChartOps.rebuild(
+      chart0,
+      values: values,
+      allocId: () => next++,
+    );
+    final got = ChartOps.chartValues(rebuilt);
+    expect(got.length, values.length);
+    for (var i = 0; i < values.length; i++) {
+      expect(got[i], closeTo(values[i], 1e-6), reason: 'tornado[$i]');
+    }
+    expect(ChartOps.formatValues(values), contains('0.125'));
+    expect(ChartOps.formatValues(values), contains('0.333333'));
   });
 }

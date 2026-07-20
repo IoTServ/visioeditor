@@ -795,9 +795,16 @@ abstract final class ChartOps {
   static String formatValues(List<double> values) =>
       values.map((v) => _fmtNum(v)).join(', ');
 
+  /// Persist chart numbers with enough precision for rebuild/side-panel fidelity.
   static String _fmtNum(double v) {
+    if (v.isNaN || v.isInfinite) return '0';
     if (v == v.roundToDouble()) return v.toInt().toString();
-    return v.toStringAsFixed(2);
+    var s = v.toStringAsFixed(6);
+    if (s.contains('.')) {
+      s = s.replaceFirst(RegExp(r'0+$'), '');
+      if (s.endsWith('.')) s = s.substring(0, s.length - 1);
+    }
+    return s;
   }
 
   static List<VsdxColor> parseColors(String? raw) {
@@ -5436,20 +5443,23 @@ abstract final class ChartOps {
     List<double>? values,
     int Function()? allocId,
   }) {
-    // Same geometry as diverging bars, but sorted by absolute value.
-    final raw = List<double>.of(values ?? const <double>[-0.7, 0.55, -0.4, 0.85, 0.3]);
-    raw.sort((a, b) => b.abs().compareTo(a.abs()));
+    // Keep userCells order stable; sort a paint copy by absolute value.
+    final stored = List<double>.of(
+      values ?? const <double>[-0.7, 0.55, -0.4, 0.85, 0.3],
+    );
+    final painted = List<double>.of(stored)
+      ..sort((a, b) => b.abs().compareTo(a.abs()));
     final chart = divergingBarChart(
       id: id,
       pinX: pinX,
       pinY: pinY,
       width: width,
       height: height,
-      values: raw,
+      values: painted,
       allocId: allocId,
     );
     return chart.copyWith(
-      userCells: _meta('tornado', raw),
+      userCells: _meta('tornado', stored),
     );
   }
 
@@ -7054,8 +7064,9 @@ abstract final class ChartOps {
   }) {
     final raw = values ?? _defaultValuesForKind('kpiTarget', null);
     final actual = (raw.isNotEmpty ? raw[0] : 0.72).clamp(0.0, 1.0);
-    final target = (raw.length > 1 ? raw[1] : 0.9).clamp(0.05, 1.0);
-    final vals = <double>[actual, target];
+    final targetStored = (raw.length > 1 ? raw[1] : 0.9).clamp(0.0, 1.0);
+    final target = math.max(targetStored, 0.05);
+    final vals = <double>[actual, targetStored];
     final w = width.abs();
     final h = height.abs();
     final next = _seq(id + 1, allocId);
@@ -7263,9 +7274,11 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('venn', null);
-    final vals = <double>[
-      for (var i = 0; i < 3; i++) (i < raw.length ? raw[i] : 0.3).clamp(0.05, 1.0),
+    final stored = <double>[
+      for (var i = 0; i < 3; i++)
+        (i < raw.length ? raw[i] : 0.3).clamp(0.0, 1.0),
     ];
+    final vals = <double>[for (final v in stored) math.max(v, 0.05)];
     final labs = padLabels(
       labels ?? const <String>['A', 'B', 'A∩B'],
       3,
@@ -7307,9 +7320,9 @@ abstract final class ChartOps {
     addCircle(cxB, seriesColors[1]);
     // Value labels as small text shapes.
     final spots = <(double, double, String)>[
-      (cxA - r * 0.35, cy, '${labs[0]}\n${formatValues(<double>[vals[0]])}'),
-      (cxB + r * 0.35, cy, '${labs[1]}\n${formatValues(<double>[vals[1]])}'),
-      ((cxA + cxB) / 2, cy, '${labs[2]}\n${formatValues(<double>[vals[2]])}'),
+      (cxA - r * 0.35, cy, '${labs[0]}\n${formatValues(<double>[stored[0]])}'),
+      (cxB + r * 0.35, cy, '${labs[1]}\n${formatValues(<double>[stored[1]])}'),
+      ((cxA + cxB) / 2, cy, '${labs[2]}\n${formatValues(<double>[stored[2]])}'),
     ];
     for (var i = 0; i < spots.length; i++) {
       final s = spots[i];
@@ -7359,7 +7372,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'venn',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -7748,8 +7761,9 @@ abstract final class ChartOps {
   }) {
     final raw = values ?? _defaultValuesForKind('arcGauge', null);
     final level = (raw.isNotEmpty ? raw[0] : 0.68).clamp(0.0, 1.0);
-    final target = (raw.length > 1 ? raw[1] : 0.85).clamp(0.05, 1.0);
-    final vals = <double>[level, target];
+    final targetStored = (raw.length > 1 ? raw[1] : 0.85).clamp(0.0, 1.0);
+    final target = math.max(targetStored, 0.05);
+    final vals = <double>[level, targetStored];
     final w = width.abs();
     final h = height.abs();
     final next = _seq(id + 1, allocId);
@@ -7963,10 +7977,11 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('likert', null);
-    final vals = <double>[
+    final stored = <double>[
       for (var i = 0; i < 5; i++)
-        (i < raw.length ? raw[i] : 0.2).clamp(0.02, 1.0),
+        (i < raw.length ? raw[i] : 0.2).clamp(0.0, 1.0),
     ];
+    final vals = <double>[for (final v in stored) math.max(v, 0.02)];
     final labs = padLabels(
       labels ??
           const <String>['SD', 'D', 'N', 'A', 'SA'],
@@ -8034,7 +8049,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'likert',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -8251,9 +8266,8 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('progressList', null);
-    final vals = <double>[
-      for (final v in raw) v.clamp(0.02, 1.0),
-    ];
+    final stored = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final vals = <double>[for (final v in stored) math.max(v, 0.02)];
     final n = math.max(1, vals.length);
     final labs = padLabels(labels ?? defaultLabels(n), n);
     final w = width.abs();
@@ -8334,7 +8348,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'progressList',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -8473,12 +8487,13 @@ abstract final class ChartOps {
   }) {
     final raw = values ?? _defaultValuesForKind('balanceBar', null);
     final pairs = math.max(1, raw.length ~/ 2);
-    final vals = <double>[
+    final stored = <double>[
       for (var i = 0; i < pairs; i++) ...[
-        (i * 2 < raw.length ? raw[i * 2] : 0.5).clamp(0.02, 1.0),
-        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 0.5).clamp(0.02, 1.0),
+        (i * 2 < raw.length ? raw[i * 2] : 0.5).clamp(0.0, 1.0),
+        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 0.5).clamp(0.0, 1.0),
       ],
     ];
+    final vals = <double>[for (final v in stored) math.max(v, 0.02)];
     final labs = padLabels(labels ?? defaultLabels(pairs), pairs);
     final w = width.abs();
     final h = height.abs();
@@ -8584,7 +8599,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'balanceBar',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -8601,7 +8616,8 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('meterCluster', null);
-    final vals = <double>[for (final v in raw) v.clamp(0.02, 1.0)];
+    final stored = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final vals = <double>[for (final v in stored) math.max(v, 0.02)];
     final n = math.max(1, vals.length);
     final labs = padLabels(labels ?? defaultLabels(n), n);
     final w = width.abs();
@@ -8718,7 +8734,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'meterCluster',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -9062,12 +9078,13 @@ abstract final class ChartOps {
   }) {
     final raw = values ?? _defaultValuesForKind('gapAnalysis', null);
     final pairs = math.max(1, raw.length ~/ 2);
-    final vals = <double>[
+    final stored = <double>[
       for (var i = 0; i < pairs; i++) ...[
-        (i * 2 < raw.length ? raw[i * 2] : 0.5).clamp(0.02, 1.0),
-        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 0.8).clamp(0.02, 1.0),
+        (i * 2 < raw.length ? raw[i * 2] : 0.5).clamp(0.0, 1.0),
+        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 0.8).clamp(0.0, 1.0),
       ],
     ];
+    final vals = <double>[for (final v in stored) math.max(v, 0.02)];
     final labs = padLabels(labels ?? defaultLabels(pairs), pairs);
     final w = width.abs();
     final h = height.abs();
@@ -9149,7 +9166,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'gapAnalysis',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -9166,7 +9183,8 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('stageFunnel', null);
-    final vals = <double>[for (final v in raw) v.clamp(0.08, 1.0)];
+    final stored = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final vals = <double>[for (final v in stored) math.max(v, 0.08)];
     final n = math.max(1, vals.length);
     final labs = padLabels(labels ?? defaultLabels(n), n);
     final w = width.abs();
@@ -9223,7 +9241,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'stageFunnel',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -9240,7 +9258,8 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('rhythmBars', null);
-    final vals = <double>[for (final v in raw) v.clamp(0.05, 1.0)];
+    final stored = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final vals = <double>[for (final v in stored) math.max(v, 0.05)];
     final n = math.max(1, vals.length);
     final labs = padLabels(labels ?? defaultLabels(n), n);
     final w = width.abs();
@@ -9313,7 +9332,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'rhythmBars',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -9330,10 +9349,11 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('voteStack', null);
-    final vals = <double>[
+    final stored = <double>[
       for (var i = 0; i < 3; i++)
-        (i < raw.length ? raw[i] : 0.33).clamp(0.02, 1.0),
+        (i < raw.length ? raw[i] : 0.33).clamp(0.0, 1.0),
     ];
+    final vals = <double>[for (final v in stored) math.max(v, 0.02)];
     final labs = padLabels(
       labels ?? const <String>['Yes', 'No', 'Abstain'],
       3,
@@ -9398,7 +9418,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'voteStack',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -9852,10 +9872,16 @@ abstract final class ChartOps {
   }) {
     final raw = values ?? _defaultValuesForKind('quotaBoard', null);
     final pairs = math.max(1, raw.length ~/ 2);
+    final stored = <double>[
+      for (var i = 0; i < pairs; i++) ...[
+        (i * 2 < raw.length ? raw[i * 2] : 0.6).clamp(0.0, 1.0),
+        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 1.0).clamp(0.0, 1.0),
+      ],
+    ];
     final vals = <double>[
       for (var i = 0; i < pairs; i++) ...[
-        (i * 2 < raw.length ? raw[i * 2] : 0.6).clamp(0.02, 1.0),
-        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 1.0).clamp(0.05, 1.0),
+        math.max(stored[i * 2], 0.02),
+        math.max(stored[i * 2 + 1], 0.05),
       ],
     ];
     final labs = padLabels(labels ?? defaultLabels(pairs), pairs);
@@ -9967,7 +9993,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'quotaBoard',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
