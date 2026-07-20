@@ -2182,7 +2182,12 @@ class VsdxWriter {
     changed |= _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
     // Text block transform (TxtPin / TxtWidth / TxtAngle / margins) +
     // HideText / TextBkgnd + drop shadow / glow / reflection.
-    changed |= _patchTextBlock(el, base.richText.textBlock, edited.richText.textBlock);
+    changed |= _patchTextBlock(
+      el,
+      base.richText.textBlock,
+      edited.richText.textBlock,
+      edited,
+    );
     changed |= _patchShadow(el, base.shadow, edited.shadow);
     changed |= _patchGlow(el, base.glow, edited.glow);
     changed |= _patchReflection(el, base.reflection, edited.reflection);
@@ -4360,21 +4365,32 @@ class VsdxWriter {
   /// Patch text-block transform cells so TxtPin / TxtWidth / TxtAngle / margins
   /// survive a save (parser already reads them; previously only VerticalAlign
   /// was written back).
-  bool _patchTextBlock(XmlElement el, VsdxTextBlock base, VsdxTextBlock edited) {
+  ///
+  /// Width*/Height* formulas are preserved only when they still evaluate to the
+  /// edited cache value — otherwise absolute caption placement (e.g. icon
+  /// label below the picture) would snap back on resize / reopen.
+  bool _patchTextBlock(
+    XmlElement el,
+    VsdxTextBlock base,
+    VsdxTextBlock edited,
+    VsdxShape shape,
+  ) {
     var changed = false;
     changed |= _patchNullableLength(
       el,
       'TxtPinX',
       base.pinXInches,
       edited.pinXInches,
-      preserveFormula: _cellHasParametricFormula(el, 'TxtPinX'),
+      preserveFormula:
+          _preserveTxtLengthFormula(el, 'TxtPinX', edited.pinXInches, shape),
     );
     changed |= _patchNullableLength(
       el,
       'TxtPinY',
       base.pinYInches,
       edited.pinYInches,
-      preserveFormula: _cellHasParametricFormula(el, 'TxtPinY'),
+      preserveFormula:
+          _preserveTxtLengthFormula(el, 'TxtPinY', edited.pinYInches, shape),
     );
     changed |= _patchNullableLength(
       el,
@@ -4405,14 +4421,16 @@ class VsdxWriter {
       'TxtWidth',
       base.widthInches,
       edited.widthInches,
-      preserveFormula: _cellHasParametricFormula(el, 'TxtWidth'),
+      preserveFormula:
+          _preserveTxtLengthFormula(el, 'TxtWidth', edited.widthInches, shape),
     );
     changed |= _patchNullableLength(
       el,
       'TxtHeight',
       base.heightInches,
       edited.heightInches,
-      preserveFormula: _cellHasParametricFormula(el, 'TxtHeight'),
+      preserveFormula: _preserveTxtLengthFormula(
+          el, 'TxtHeight', edited.heightInches, shape),
     );
     changed |=
         _patchAngle(el, 'TxtAngle', base.angleRad, edited.angleRad);
@@ -4481,9 +4499,17 @@ class VsdxWriter {
     bool hasLabel = false,
   }) {
     void addLen(String name, double? v, {String? defaultFormula, double? fallback}) {
-      final f = formulas[name] ?? defaultFormula;
+      var f = formulas[name] ?? defaultFormula;
       final value = v ?? fallback;
       if (value == null && f == null) return;
+      // Stale Width*/Height* (or any parametric that no longer matches V) must
+      // not be re-emitted — absolute caption pins would otherwise revive.
+      if (f != null &&
+          value != null &&
+          shapeForDefaults != null &&
+          !_txtFormulaAgreesWithValue(f, value, shapeForDefaults!)) {
+        f = null;
+      }
       children.add(_cell(name, _fmt(value ?? 0), formula: f));
     }
 
@@ -6812,6 +6838,81 @@ class VsdxWriter {
         u.contains('BEGINY') ||
         u.contains('ENDX') ||
         u.contains('ENDY');
+  }
+
+  /// SETATREF / TEXTWIDTH / … — keep even when V was force-edited.
+  static bool _isComplexTxtParametric(String? f) {
+    if (f == null || f.isEmpty || f == 'No Formula' || f == 'Inh') return false;
+    final u = f.toUpperCase();
+    return u.contains('SETATREF') ||
+        u.contains('PAR(PNT') ||
+        u.contains('CONTROLS.') ||
+        u.contains('SCRATCH.') ||
+        u.contains('TEXTHEIGHT') ||
+        u.contains('TEXTWIDTH') ||
+        u.contains('THETEXT') ||
+        u.contains('GUARD(') ||
+        u.contains('MIN(') ||
+        u.contains('MAX(');
+  }
+
+  /// Evaluate simple `Width*k` / `Height*k` (and `TxtWidth*k` / `TxtHeight*k`
+  /// when [txtWidth]/[txtHeight] are known). Returns null if not a simple ratio.
+  static double? _evalSimpleDimRatioFormula(
+    String f, {
+    required double width,
+    required double height,
+    double? txtWidth,
+    double? txtHeight,
+  }) {
+    final u = f.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+    final m = RegExp(r'^(WIDTH|HEIGHT|TXTWIDTH|TXTHEIGHT)\*([0-9]*\.?[0-9]+)$')
+        .firstMatch(u);
+    if (m == null) return null;
+    final k = double.tryParse(m.group(2)!);
+    if (k == null) return null;
+    switch (m.group(1)) {
+      case 'WIDTH':
+        return width * k;
+      case 'HEIGHT':
+        return height * k;
+      case 'TXTWIDTH':
+        return txtWidth == null ? null : txtWidth * k;
+      case 'TXTHEIGHT':
+        return txtHeight == null ? null : txtHeight * k;
+    }
+    return null;
+  }
+
+  /// True when [f] still agrees with [value] for [shape] (keep F=), or when it
+  /// is a complex parametric we must not scrub.
+  bool _txtFormulaAgreesWithValue(String f, double value, VsdxShape shape) {
+    if (_isComplexTxtParametric(f)) return true;
+    final block = shape.richText.textBlock;
+    final expected = _evalSimpleDimRatioFormula(
+      f,
+      width: shape.width,
+      height: shape.height,
+      txtWidth: block.widthInches ?? shape.width,
+      txtHeight: block.heightInches ?? shape.height,
+    );
+    if (expected != null) return (expected - value).abs() <= _epsilon;
+    // Unknown Width*/Height* expression — honour the edited V.
+    return !_isParametricFormula(f);
+  }
+
+  /// Preserve Txt* `F=` only when it still matches the edited cache value
+  /// (same idea as LocPin `_sameRatio`), or when it is SETATREF/TEXTWIDTH/….
+  bool _preserveTxtLengthFormula(
+    XmlElement el,
+    String cellName,
+    double? editedValue,
+    VsdxShape shape,
+  ) {
+    if (editedValue == null) return false;
+    final f = _cellFormula(el, cellName);
+    if (!_isParametricFormula(f)) return false;
+    return _txtFormulaAgreesWithValue(f!, editedValue, shape);
   }
 
   XmlElement _cell(String name, String value, {String? formula, String? unit}) =>

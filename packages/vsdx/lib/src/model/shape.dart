@@ -1007,28 +1007,32 @@ class VsdxShape {
           ];
     // Absolute text-block cells (no Width*/Height* formula) scale with the box
     // so custom TxtPin/TxtWidth placement stays proportional after resize.
+    // Formula-driven cells keep their V and are refreshed by recalc below.
     final block = richText.textBlock;
     final scaledBlock = ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)
         ? block
         : block.copyWith(
-            pinXInches: block.pinXInches == null
-                ? null
+            pinXInches: block.pinXInches == null || hasF(formulas['TxtPinX'])
+                ? block.pinXInches
                 : block.pinXInches! * sx,
-            pinYInches: block.pinYInches == null
-                ? null
+            pinYInches: block.pinYInches == null || hasF(formulas['TxtPinY'])
+                ? block.pinYInches
                 : block.pinYInches! * sy,
-            locPinXInches: block.locPinXInches == null
-                ? null
-                : block.locPinXInches! * sx,
-            locPinYInches: block.locPinYInches == null
-                ? null
-                : block.locPinYInches! * sy,
-            widthInches: block.widthInches == null
-                ? null
+            locPinXInches:
+                block.locPinXInches == null || hasF(formulas['TxtLocPinX'])
+                    ? block.locPinXInches
+                    : block.locPinXInches! * sx,
+            locPinYInches:
+                block.locPinYInches == null || hasF(formulas['TxtLocPinY'])
+                    ? block.locPinYInches
+                    : block.locPinYInches! * sy,
+            widthInches: block.widthInches == null || hasF(formulas['TxtWidth'])
+                ? block.widthInches
                 : block.widthInches! * sx,
-            heightInches: block.heightInches == null
-                ? null
-                : block.heightInches! * sy,
+            heightInches:
+                block.heightInches == null || hasF(formulas['TxtHeight'])
+                    ? block.heightInches
+                    : block.heightInches! * sy,
           );
     return copyWith(
       pinX: pinX,

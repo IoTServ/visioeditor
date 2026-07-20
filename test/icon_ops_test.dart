@@ -60,6 +60,21 @@ void main() {
       ),
     );
     final id = c.singleSelectedId!;
+    // Stale Height* formulas must not revive after caption placement.
+    c.updateCurrentPage(
+      (p) => p.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          formulas: <String, String>{
+            ...s.formulas,
+            'TxtPinX': 'Width*0.5',
+            'TxtPinY': 'Height*0.5',
+            'TxtWidth': 'Width*1',
+            'TxtHeight': 'Height*1',
+          },
+        ),
+      ),
+    );
     c.setIconCaptionBelow(id, 'Cloud');
     final shape = c.currentPage!.findShapeById(id)!;
     expect(shape.text, 'Cloud');
@@ -67,6 +82,16 @@ void main() {
     final block = shape.richText.textBlock;
     expect(block.pinYInches, lessThan(0));
     expect(block.pinXInches, closeTo(shape.width / 2, 1e-6));
+    expect(shape.formulas.containsKey('TxtPinY'), isFalse);
+    expect(shape.formulas.containsKey('TxtHeight'), isFalse);
+    // Resize must keep the caption below (absolute pin, no Height* revive).
+    final grown = shape.resizeTo(
+      pinX: shape.pinX,
+      pinY: shape.pinY,
+      width: 1.5,
+      height: 1.5,
+    );
+    expect(grown.richText.textBlock.pinYInches, lessThan(0));
     // Shape name stays auto so the painter won't overlay a name fallback.
     expect(shape.name, matches(RegExp(r'^Sheet\.\d+$')));
   });

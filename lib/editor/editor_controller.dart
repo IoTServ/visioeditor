@@ -5540,40 +5540,52 @@ class EditorController extends ChangeNotifier {
     updateCurrentPage(
       (p) => p.updateShapeById(
         shapeId,
-        (sh) => sh.copyWith(
-          text: text,
-          fields: const <VsdxFieldRow>[],
-          richText: VsdxRichText(
-            runs: <VsdxTextRun>[
-              VsdxTextRun(
-                text: text,
-                charStyle: VsdxCharStyle(
-                  fontSizeInches: sizeInches,
-                  fontFamily: cjk ? 'Microsoft YaHei' : null,
-                  asianFont: 'Microsoft YaHei',
-                  langId: cjk ? 'zh-CN' : null,
+        (sh) {
+          // Drop Width*/Height*/SETATREF Txt* formulas so absolute caption
+          // placement is not overwritten by recalculate / resize / save.
+          final nextFormulas = Map<String, String>.of(sh.formulas)
+            ..remove('TxtPinX')
+            ..remove('TxtPinY')
+            ..remove('TxtWidth')
+            ..remove('TxtHeight')
+            ..remove('TxtLocPinX')
+            ..remove('TxtLocPinY');
+          return sh.copyWith(
+            text: text,
+            fields: const <VsdxFieldRow>[],
+            formulas: nextFormulas,
+            richText: VsdxRichText(
+              runs: <VsdxTextRun>[
+                VsdxTextRun(
+                  text: text,
+                  charStyle: VsdxCharStyle(
+                    fontSizeInches: sizeInches,
+                    fontFamily: cjk ? 'Microsoft YaHei' : null,
+                    asianFont: 'Microsoft YaHei',
+                    langId: cjk ? 'zh-CN' : null,
+                  ),
+                  paraStyle: const VsdxParaStyle(
+                    horizontalAlign: VsdxHorzAlign.center,
+                  ),
                 ),
-                paraStyle: const VsdxParaStyle(
-                  horizontalAlign: VsdxHorzAlign.center,
-                ),
+              ],
+              textBlock: VsdxTextBlock(
+                pinXInches: w / 2,
+                // Sit just under the picture (shape-local Y-up; y=0 is bottom).
+                pinYInches: -labelH / 2,
+                locPinXInches: labelW / 2,
+                locPinYInches: labelH / 2,
+                widthInches: labelW,
+                heightInches: labelH,
+                verticalAlign: VsdxVertAlign.middle,
+                marginLeftInches: 0.02,
+                marginRightInches: 0.02,
+                marginTopInches: 0.01,
+                marginBottomInches: 0.01,
               ),
-            ],
-            textBlock: VsdxTextBlock(
-              pinXInches: w / 2,
-              // Sit just under the picture (shape-local Y-up; y=0 is bottom).
-              pinYInches: -labelH / 2,
-              locPinXInches: labelW / 2,
-              locPinYInches: labelH / 2,
-              widthInches: labelW,
-              heightInches: labelH,
-              verticalAlign: VsdxVertAlign.middle,
-              marginLeftInches: 0.02,
-              marginRightInches: 0.02,
-              marginTopInches: 0.01,
-              marginBottomInches: 0.01,
             ),
-          ),
-        ),
+          );
+        },
       ),
       transient: transient,
     );

@@ -91,6 +91,31 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out) {
       local.apply(s.width + pad / 2, s.height + pad / 2),
       local.apply(-pad / 2, s.height + pad / 2),
     ]);
+    // Caption / label may sit outside the picture box (e.g. icon text below).
+    final block = s.richText.textBlock;
+    final hasLabel = !block.hideText &&
+        ((s.text != null && s.text!.trim().isNotEmpty) ||
+            s.richText.plainText.trim().isNotEmpty);
+    if (hasLabel &&
+        (block.pinXInches != null ||
+            block.pinYInches != null ||
+            block.widthInches != null ||
+            block.heightInches != null)) {
+      final tw = block.widthInches ?? s.width;
+      final th = block.heightInches ?? s.height;
+      final pinX = block.pinXInches ?? s.width / 2;
+      final pinY = block.pinYInches ?? s.height / 2;
+      final locX = block.locPinXInches ?? tw / 2;
+      final locY = block.locPinYInches ?? th / 2;
+      final x0 = pinX - locX;
+      final y0 = pinY - locY;
+      corners.addAll(<Offset>[
+        local.apply(x0, y0),
+        local.apply(x0 + tw, y0),
+        local.apply(x0 + tw, y0 + th),
+        local.apply(x0, y0 + th),
+      ]);
+    }
   }
   var minX = corners.first.dx, maxX = corners.first.dx;
   var minY = corners.first.dy, maxY = corners.first.dy;

@@ -745,6 +745,81 @@ void main() {
     expect(after.marginBottomInches, closeTo(0.13, 1e-6));
   });
 
+  test('absolute caption below scrubs stale Height* TxtPinY on save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // First write with centred Height* formulas (as Visio masters often do).
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 0.75,
+          height: 0.75,
+        ).copyWith(
+          text: 'Cloud',
+          formulas: const <String, String>{
+            'TxtPinX': 'Width*0.5',
+            'TxtPinY': 'Height*0.5',
+            'TxtWidth': 'Width*1',
+            'TxtHeight': 'Height*1',
+          },
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Cloud')],
+            textBlock: VsdxTextBlock(
+              pinXInches: 0.375,
+              pinYInches: 0.375,
+              widthInches: 0.75,
+              heightInches: 0.75,
+            ),
+          ),
+        ),
+      ),
+    );
+    final bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    const labelH = 0.22;
+    // Move caption below the picture — V no longer matches Height*0.5.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          formulas: Map<String, String>.of(s.formulas)
+            ..remove('TxtPinX')
+            ..remove('TxtPinY')
+            ..remove('TxtWidth')
+            ..remove('TxtHeight'),
+          richText: s.richText.copyWith(
+            textBlock: VsdxTextBlock(
+              pinXInches: 0.375,
+              pinYInches: -labelH / 2,
+              locPinXInches: 0.375,
+              locPinYInches: labelH / 2,
+              widthInches: 0.75,
+              heightInches: labelH,
+            ),
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: bytes, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.textBlock.pinYInches, closeTo(-labelH / 2, 1e-6));
+    expect(after.formulas['TxtPinY'], isNull);
+    // Resize after reopen must not snap the caption back into the box.
+    final grown = after.resizeTo(
+      pinX: after.pinX,
+      pinY: after.pinY,
+      width: 1.5,
+      height: 1.5,
+    );
+    expect(grown.richText.textBlock.pinYInches, lessThan(0));
+  });
+
   test('page rename round-trips', () {
     final bytes = _fixture('test1.vsdx');
     final doc = parser.parse(bytes);

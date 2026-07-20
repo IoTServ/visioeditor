@@ -24,4 +24,38 @@ void main() {
     expect(box.bottom, greaterThanOrEqualTo(5 - 0.25));
     expect(box.height, greaterThan(2.5));
   });
+
+  test('buildShapeBounds includes caption text block below the shape', () {
+    const labelH = 0.22;
+    final icon = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 2,
+      pinY: 2,
+      width: 0.75,
+      height: 0.75,
+    ).copyWith(
+      text: 'Cloud',
+      richText: VsdxRichText(
+        runs: const <VsdxTextRun>[VsdxTextRun(text: 'Cloud')],
+        textBlock: VsdxTextBlock(
+          pinXInches: 0.375,
+          pinYInches: -labelH / 2,
+          locPinXInches: 0.375,
+          locPinYInches: labelH / 2,
+          widthInches: 0.75,
+          heightInches: labelH,
+        ),
+      ),
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 10,
+      heightInches: 10,
+      shapes: <VsdxShape>[icon],
+    );
+    final box = buildShapeBounds(page)[2]!;
+    // Caption sits under the local box (y=0 bottom); page pin is centre.
+    expect(box.top, lessThan(2 - 0.75 / 2));
+  });
 }
