@@ -15,6 +15,7 @@ import 'editor/canvas_camera.dart';
 import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
+import 'editor/editor_shortcuts.dart';
 import 'editor/editor_workspace.dart';
 import 'editor/image_materials.dart';
 import 'editor/layers_panel.dart';
@@ -841,7 +842,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   /// Plain keys such as Delete / arrows are bound here (not only on the canvas
   /// [Focus]) so they still work after focus moves to a toolbar button or
   /// sidebar control. Editable text focus is excluded via
-  /// [_isEditableTextFocused].
+  /// [EditorCallbackShortcuts] (must not consume the key — a no-op callback
+  /// on [CallbackShortcuts] still blocks default text-editing shortcuts).
   Map<ShortcutActivator, VoidCallback> _editorShortcutBindings(
     EditorController? Function() c,
   ) {
@@ -1075,8 +1077,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
     // stay correct across tab switches without rebuilding this subtree every
     // document edit.
     EditorController? c() => _c;
-    return CallbackShortcuts(
+    return EditorCallbackShortcuts(
       bindings: _editorShortcutBindings(c),
+      isEditableTextFocused: _isEditableTextFocused,
       // Document edits rebuild the builder only; the shapes palette is [child]
       // so its scroll position / thumbnails are not rebuilt every drag tick.
       child: ListenableBuilder(

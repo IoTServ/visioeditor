@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
+import 'package:visioeditor/editor/editor_shortcuts.dart';
 import 'package:vsdx/vsdx.dart';
 
-/// Minimal harness that mirrors app-level [CallbackShortcuts] for Delete /
+/// Minimal harness that mirrors app-level [EditorCallbackShortcuts] for Delete /
 /// Backspace / arrows so we can verify they mutate the controller without the
 /// canvas [Focus] node holding primary focus.
 void main() {
@@ -26,12 +27,21 @@ void main() {
     return c;
   }
 
+  bool isEditableTextFocused() {
+    final primary = FocusManager.instance.primaryFocus;
+    final ctx = primary?.context;
+    if (ctx == null) return false;
+    return ctx.findAncestorStateOfType<EditableTextState>() != null;
+  }
+
   Map<ShortcutActivator, VoidCallback> bindingsFor(EditorController c) {
     void deleteSel() {
+      if (isEditableTextFocused()) return;
       if (c.hasSelection || c.editingConnectionPoints) c.deleteSelection();
     }
 
     void nudge(double dx, double dy) {
+      if (isEditableTextFocused()) return;
       if (!c.hasSelection || c.editingConnectionPoints) return;
       final step = c.snapToGrid ? c.gridInches : 0.1;
       c.moveSelectionBy(dx * step, dy * step);
@@ -47,26 +57,34 @@ void main() {
     };
   }
 
-  Future<void> pumpHarness(WidgetTester tester, EditorController c) async {
+  Future<void> pumpHarness(
+    WidgetTester tester,
+    EditorController c, {
+    Widget? body,
+  }) async {
     final focus = FocusNode();
     addTearDown(focus.dispose);
     await tester.pumpWidget(
       MaterialApp(
-        home: CallbackShortcuts(
+        home: EditorCallbackShortcuts(
           bindings: bindingsFor(c),
+          isEditableTextFocused: isEditableTextFocused,
           child: Scaffold(
-            body: Focus(
-              focusNode: focus,
-              autofocus: true,
-              child: const SizedBox(width: 100, height: 100),
-            ),
+            body: body ??
+                Focus(
+                  focusNode: focus,
+                  autofocus: true,
+                  child: const SizedBox(width: 100, height: 100),
+                ),
           ),
         ),
       ),
     );
     await tester.pump();
-    focus.requestFocus();
-    await tester.pump();
+    if (body == null) {
+      focus.requestFocus();
+      await tester.pump();
+    }
   }
 
   testWidgets('Delete removes selection without canvas focus', (tester) async {
@@ -107,5 +125,30 @@ void main() {
     final after = c.currentPage!.findShapeById(id)!;
     expect(after.pinX, closeTo(before.pinX + 0.1, 1e-9));
     expect(after.pinY, closeTo(before.pinY, 1e-9));
+  });
+
+  testWidgets('Backspace edits search field instead of deleting shapes',
+      (tester) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    final search = TextEditingController(text: 'abc');
+    addTearDown(search.dispose);
+
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(
+        controller: search,
+        autofocus: true,
+      ),
+    );
+    await tester.pump();
+    expect(isEditableTextFocused(), isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+
+    expect(search.text, 'ab');
+    expect(c.currentPage!.findShapeById(id), isNotNull);
   });
 }
