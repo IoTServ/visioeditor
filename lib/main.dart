@@ -302,7 +302,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
       useSafeArea: true,
       showDragHandle: true,
       builder: (ctx) {
-        final maxH = MediaQuery.sizeOf(ctx).height * 0.85;
+        final viewH = MediaQuery.sizeOf(ctx).height;
+        // Short landscape phones need more canvas than a near-fullscreen sheet.
+        final maxH = viewH * (viewH < 480 ? 0.72 : 0.85);
         return SizedBox(
           height: maxH,
           child: ListenableBuilder(
@@ -1765,97 +1767,118 @@ class _EditorHomePageState extends State<EditorHomePage> {
       );
     }
     final compact = _isCompactLayout;
-    final screenW = MediaQuery.sizeOf(context).width;
-    // Floating panels must fit inside the canvas (full width on compact).
-    final floatMaxW = math.max(160.0, screenW - (compact ? 24 : 48));
 
     final canvasStack = Expanded(
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Positioned.fill(
-            key: _canvasHostKey,
-            // Key by controller so each open document gets its own canvas
-            // state (view transform, caches). Without this the shared state
-            // leaks across tabs / new files, so a freshly-created document —
-            // whose first page reuses id 0 — keeps the previous document's
-            // zoom & offset and shows up tiny in a corner instead of fitted.
-            child: PageCanvas(
-              key: ObjectKey(c),
-              controller: c,
-              camera: _camera,
-              canvasColor: _presentationMode
-                  ? const Color(0xFF1A1C1E)
-                  : const Color(0xFFECEFF3),
-              presentationMode: _presentationMode,
-              onExitPresentation: _exitPresentation,
-              onImageMaterialDropped: _insertImageMaterial,
-              onThirdPartyIconDropped: _insertThirdPartyIcon,
+      child: LayoutBuilder(
+        builder: (context, canvasConstraints) {
+          final canvasH = canvasConstraints.maxHeight;
+          final canvasW = canvasConstraints.maxWidth;
+          final localFloatMaxW =
+              math.max(160.0, canvasW - (compact ? 24 : 48));
+          // Prefer canvas height over full-window height so short landscape
+          // phones do not bury the page under a huge library sheet.
+          final libraryH = compact
+              ? math.min(280.0, math.max(120.0, canvasH * 0.48))
+              : 0.0;
+          final outlineBottom = compact ? 72.0 : 64.0;
+          final outlineH = math.min(
+            165.0,
+            math.min(
+              localFloatMaxW * 0.75,
+              math.max(72.0, canvasH - outlineBottom - 16),
             ),
-          ),
-          if (!_presentationMode && _showRulers)
-            Positioned.fill(
-              child: RulerOverlay(controller: c, camera: _camera),
-            ),
-          if (!_presentationMode && _showOutline)
-            Positioned(
-              right: 12,
-              bottom: compact ? 72 : 64,
-              child: OutlinePanel(
-                controller: c,
-                camera: _camera,
-                width: math.min(220, floatMaxW),
-                height: math.min(165, floatMaxW * 0.75),
-                onClose: () => setState(() => _showOutline = false),
+          );
+          final outlineW = math.min(220.0, localFloatMaxW);
+          final layersW = math.min(300.0, localFloatMaxW);
+          final layersMaxH = math.max(100.0, canvasH - 24);
+
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned.fill(
+                key: _canvasHostKey,
+                // Key by controller so each open document gets its own canvas
+                // state (view transform, caches). Without this the shared state
+                // leaks across tabs / new files, so a freshly-created document —
+                // whose first page reuses id 0 — keeps the previous document's
+                // zoom & offset and shows up tiny in a corner instead of fitted.
+                child: PageCanvas(
+                  key: ObjectKey(c),
+                  controller: c,
+                  camera: _camera,
+                  canvasColor: _presentationMode
+                      ? const Color(0xFF1A1C1E)
+                      : const Color(0xFFECEFF3),
+                  presentationMode: _presentationMode,
+                  onExitPresentation: _exitPresentation,
+                  onImageMaterialDropped: _insertImageMaterial,
+                  onThirdPartyIconDropped: _insertThirdPartyIcon,
+                ),
               ),
-            ),
-          if (!_presentationMode && _showLayersPanel)
-            Positioned(
-              left: 12,
-              top: 12,
-              child: LayersPanel(
-                controller: c,
-                width: math.min(300, floatMaxW),
-                onClose: () => setState(() => _showLayersPanel = false),
-              ),
-            ),
-          // Compact: library as a bottom sheet over the canvas (full width).
-          if (compact && !_presentationMode && stencilChild != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: math.min(
-                320,
-                MediaQuery.sizeOf(context).height * 0.42,
-              ),
-              child: Material(
-                elevation: 10,
-                child: stencilChild,
-              ),
-            ),
-          if (compact && !_presentationMode)
-            Positioned(
-              right: 12,
-              bottom: 12 +
-                  MediaQuery.paddingOf(context).bottom +
-                  (stencilChild != null
-                      ? math.min(
-                          320,
-                          MediaQuery.sizeOf(context).height * 0.42,
-                        )
-                      : 0),
-              child: FloatingActionButton.small(
-                heroTag: 'format-sheet',
-                tooltip: c.hasSelection
-                    ? EditorL10n.of(context)
-                        .selectedCount(c.selection.length)
-                    : EditorL10n.of(context).panelDiagram,
-                onPressed: () => _openFormatSheet(c),
-                child: const Icon(Icons.tune),
-              ),
-            ),
-        ],
+              if (!_presentationMode && _showRulers)
+                Positioned.fill(
+                  child: RulerOverlay(controller: c, camera: _camera),
+                ),
+              if (!_presentationMode && _showOutline)
+                Positioned(
+                  right: 12,
+                  bottom: outlineBottom,
+                  child: OutlinePanel(
+                    controller: c,
+                    camera: _camera,
+                    width: outlineW,
+                    height: outlineH,
+                    onClose: () => setState(() => _showOutline = false),
+                  ),
+                ),
+              if (!_presentationMode && _showLayersPanel)
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: layersW,
+                      maxHeight: layersMaxH,
+                    ),
+                    child: LayersPanel(
+                      controller: c,
+                      width: layersW,
+                      maxBodyHeight: math.max(80.0, layersMaxH - 56),
+                      onClose: () => setState(() => _showLayersPanel = false),
+                    ),
+                  ),
+                ),
+              // Compact: library as a bottom sheet over the canvas (full width).
+              if (compact && !_presentationMode && stencilChild != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: libraryH,
+                  child: Material(
+                    elevation: 10,
+                    child: stencilChild,
+                  ),
+                ),
+              if (compact && !_presentationMode)
+                Positioned(
+                  right: 12,
+                  bottom: 12 +
+                      MediaQuery.paddingOf(context).bottom +
+                      (stencilChild != null ? libraryH : 0),
+                  child: FloatingActionButton.small(
+                    heroTag: 'format-sheet',
+                    tooltip: c.hasSelection
+                        ? EditorL10n.of(context)
+                            .selectedCount(c.selection.length)
+                        : EditorL10n.of(context).panelDiagram,
+                    onPressed: () => _openFormatSheet(c),
+                    child: const Icon(Icons.tune),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
 

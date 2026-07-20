@@ -10,12 +10,15 @@ class LayersPanel extends StatelessWidget {
     required this.controller,
     this.onClose,
     this.width = 300,
+    this.maxBodyHeight = 360,
     super.key,
   });
 
   final EditorController controller;
   final VoidCallback? onClose;
   final double width;
+  /// Scrollable list budget so short phone canvases do not clip the panel.
+  final double maxBodyHeight;
 
   Future<void> _rename(BuildContext context, VsdxLayer layer) async {
     final el = EditorL10n.of(context);
@@ -93,7 +96,7 @@ class LayersPanel extends StatelessWidget {
                     ),
                   ),
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 360),
+                  constraints: BoxConstraints(maxHeight: maxBodyHeight),
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Column(

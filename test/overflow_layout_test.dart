@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visioeditor/editor/outline_panel.dart';
 import 'package:visioeditor/editor/ruler.dart';
 import 'package:visioeditor/main.dart';
 import 'package:visioeditor/settings/app_settings.dart';
@@ -235,6 +236,35 @@ void main() {
       expect(find.byIcon(Icons.copy_all_outlined), findsNothing);
       expect(find.byIcon(Icons.delete_outline), findsNothing);
       expect(find.byType(PopupMenuButton<String>), findsWidgets);
+    });
+  });
+
+  testWidgets('short landscape keeps outline and library inside the canvas',
+      (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _withOverflowGuard(tester, () async {
+      await _setViewSize(tester, const Size(640, 360));
+      final settings = await AppSettings.load();
+      await tester.pumpWidget(VisioEditorApp(settings: settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+      await tester.pumpAndSettle();
+
+      // Open outline via the overflow menu.
+      await tester.tap(find.byType(PopupMenuButton<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Outline'));
+      await tester.pumpAndSettle();
+
+      final outline = tester.getRect(find.byType(OutlinePanel));
+      final scaffold = tester.getRect(find.byType(Scaffold).first);
+      expect(outline.bottom, lessThanOrEqualTo(scaffold.bottom + 0.5));
+      expect(outline.height, lessThanOrEqualTo(160));
+
+      await tester.tap(find.byIcon(Icons.category_outlined));
+      await tester.pumpAndSettle();
+      expect(find.byType(FloatingActionButton), findsOneWidget);
     });
   });
 }
