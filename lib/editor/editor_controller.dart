@@ -6387,6 +6387,7 @@ class EditorController extends ChangeNotifier {
   /// Update shadow colour / offsets / blur / opacity on the selection.
   void updateShadow({
     VsdxColor? color,
+    int? themeColorIndex,
     double? offsetXInches,
     double? offsetYInches,
     double? blurInches,
@@ -6398,21 +6399,32 @@ class EditorController extends ChangeNotifier {
         if (s.is1D) return s;
         // Prefer the shape's shadow (may be disabled but still hold offsets).
         final base = s.shadow;
-        final next = color != null
-            ? base.withSolidColor(color).copyWith(
-                  offsetXInches: offsetXInches,
-                  offsetYInches: offsetYInches,
-                  blurInches: blurInches,
-                  transparency: transparency,
-                  enabled: true,
-                )
-            : base.copyWith(
+        final VsdxShadow next;
+        if (themeColorIndex != null) {
+          next = base.withThemeColor(themeColorIndex).copyWith(
                 offsetXInches: offsetXInches,
                 offsetYInches: offsetYInches,
                 blurInches: blurInches,
                 transparency: transparency,
                 enabled: true,
               );
+        } else if (color != null) {
+          next = base.withSolidColor(color).copyWith(
+                offsetXInches: offsetXInches,
+                offsetYInches: offsetYInches,
+                blurInches: blurInches,
+                transparency: transparency,
+                enabled: true,
+              );
+        } else {
+          next = base.copyWith(
+            offsetXInches: offsetXInches,
+            offsetYInches: offsetYInches,
+            blurInches: blurInches,
+            transparency: transparency,
+            enabled: true,
+          );
+        }
         return s.copyWith(shadow: next);
       },
       transient: transient,
@@ -6460,6 +6472,7 @@ class EditorController extends ChangeNotifier {
 
   void updateGlow({
     VsdxColor? color,
+    int? themeColorIndex,
     double? sizeInches,
     double? transparency,
     bool transient = false,
@@ -6469,19 +6482,30 @@ class EditorController extends ChangeNotifier {
         if (s.is1D) return s;
         // Prefer the shape's glow (may be disabled but still hold theme/size).
         final base = s.glow;
-        final next = color != null
-            ? base.withSolidColor(color).copyWith(
-                  sizeInches: sizeInches,
-                  transparency: transparency,
-                  enabled: true,
-                )
-            : base.copyWith(
+        final VsdxGlow next;
+        if (themeColorIndex != null) {
+          next = base.withThemeColor(themeColorIndex).copyWith(
                 sizeInches: sizeInches ??
                     (base.sizeInches <= 0 ? 0.05 : base.sizeInches),
                 transparency: transparency ??
                     (base.transparency >= 1 ? 0.6 : base.transparency),
                 enabled: true,
               );
+        } else if (color != null) {
+          next = base.withSolidColor(color).copyWith(
+                sizeInches: sizeInches,
+                transparency: transparency,
+                enabled: true,
+              );
+        } else {
+          next = base.copyWith(
+            sizeInches: sizeInches ??
+                (base.sizeInches <= 0 ? 0.05 : base.sizeInches),
+            transparency: transparency ??
+                (base.transparency >= 1 ? 0.6 : base.transparency),
+            enabled: true,
+          );
+        }
         return s.copyWith(glow: next);
       },
       transient: transient,

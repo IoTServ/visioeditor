@@ -4562,7 +4562,9 @@ class _PropertyPanel extends StatelessWidget {
   ) {
     final shadow = controller.selectedShadow;
     if (shadow == null || !shadow.enabled) return const SizedBox.shrink();
-    final colorValue = shadow.color?.value ?? 0xFF000000;
+    final colorValue = shadow.color?.value;
+    final themeSlot =
+        shadow.color == null ? shadow.themeColorIndex : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4582,6 +4584,13 @@ class _PropertyPanel extends StatelessWidget {
                     controller.updateShadow(color: VsdxColor(argb)),
               ),
           ],
+        ),
+        const SizedBox(height: 6),
+        _themeSwatchRow(
+          context,
+          controller: controller,
+          onSlot: (slot) => controller.updateShadow(themeColorIndex: slot),
+          selectedSlot: themeSlot,
         ),
         _RangeSlider(
           label: EditorL10n.of(context).offsetX,
@@ -4637,7 +4646,8 @@ class _PropertyPanel extends StatelessWidget {
   ) {
     final glow = controller.selectedGlow;
     if (glow == null || !glow.enabled) return const SizedBox.shrink();
-    final colorValue = glow.color?.value ?? 0xFFFFC107;
+    final colorValue = glow.color?.value;
+    final themeSlot = glow.color == null ? glow.themeColorIndex : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4656,6 +4666,13 @@ class _PropertyPanel extends StatelessWidget {
                 onTap: () => controller.updateGlow(color: VsdxColor(argb)),
               ),
           ],
+        ),
+        const SizedBox(height: 6),
+        _themeSwatchRow(
+          context,
+          controller: controller,
+          onSlot: (slot) => controller.updateGlow(themeColorIndex: slot),
+          selectedSlot: themeSlot,
         ),
         _RangeSlider(
           label: EditorL10n.of(context).size,

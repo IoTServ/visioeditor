@@ -6737,6 +6737,172 @@ void main() {
     expect(after.fill.gradient!.stops.last.themeColorIndex, 4);
   });
 
+  test('LineGradient theme palette index stop round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      line: const VsdxLine(
+        weightInches: 0.04,
+        gradient: VsdxGradient(
+          type: VsdxGradientType.linear,
+          angleRad: 0,
+          stops: [
+            VsdxGradientStop(position: 0, themeColorIndex: 2),
+            VsdxGradientStop(position: 1, themeColorIndex: 5),
+          ],
+        ),
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="LineGradient"'), isTrue);
+    expect(
+      RegExp(r'N="GradientStopColor"[^>]*F="THEMEVAL').hasMatch(pageXml) ||
+          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"').hasMatch(pageXml),
+      isTrue,
+    );
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.line.gradient!.stops.first.themeColorIndex, 2);
+    expect(after.line.gradient!.stops.last.themeColorIndex, 5);
+  });
+
+  test('MS LineGradientDir radial round-trips', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          line: const VsdxLine(
+            weightInches: 0.05,
+            gradient: VsdxGradient(
+              type: VsdxGradientType.radial,
+              dir: 4,
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="LineGradientDir" V="4"'), isTrue);
+    expect(pageXml.contains('N="LineGradientDir" V="35"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.line.gradient!.type, VsdxGradientType.radial);
+    expect(after.line.gradient!.dir, 4);
+  });
+
+  test('glow colour edited then disabled survives single save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    // Baseline: plain rectangle with no GlowColor cell.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    // Enable + set colour + disable in one edit before the only save.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          glow: const VsdxGlow(
+            enabled: false,
+            color: VsdxColor(0xFF00BCD4),
+            sizeInches: 0,
+            transparency: 0.35,
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.glow.enabled, isFalse);
+    expect(after.glow.color?.value, 0xFF00BCD4,
+        reason: 'patch must inject GlowColor on disable→save');
+    expect(after.glow.transparency, closeTo(0.35, 1e-6));
+  });
+
+  test('reflection Dist edited then disabled survives single save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          reflection: const VsdxReflection(
+            enabled: false,
+            sizeInches: 0,
+            distanceInches: 0.14,
+            blurInches: 0.09,
+            transparency: 0.4,
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.reflection.enabled, isFalse);
+    expect(after.reflection.distanceInches, closeTo(0.14, 1e-6));
+    expect(after.reflection.blurInches, closeTo(0.09, 1e-6));
+  });
+
   test('SoftEdgesSize F=Inh scrubs to literal 0 when model is zero', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

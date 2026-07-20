@@ -2207,20 +2207,21 @@ class VsdxWriter {
     }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
-      // Companion can still carry F=Inh after Size is scrubbed.
+      // Companion can still carry F=Inh after Size is scrubbed; ensure cells
+      // exist when enable→edit→disable never wrote them before.
       changed |=
-          _forceLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
+          _ensureLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
     }
     if (!edited.shadow.enabled) {
       // Keep companion V= (re-enable), but scrub F=Inh so StyleSheet cannot
       // override offsets / blur while the pattern is off.
-      changed |= _forceLiteralLength(
+      changed |= _ensureLiteralLength(
           el, 'ShadowOffsetX', edited.shadow.offsetXInches);
-      changed |= _forceLiteralLength(
+      changed |= _ensureLiteralLength(
           el, 'ShadowOffsetY', edited.shadow.offsetYInches);
       changed |=
-          _forceLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
-      changed |= _forceLiteralLength(
+          _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
+      changed |= _ensureLiteralLength(
           el, 'ShadowForegndTrans', edited.shadow.transparency);
     }
     if (!edited.reflection.enabled) {
@@ -2228,11 +2229,11 @@ class VsdxWriter {
       // Keep Dist/Blur/Trans like Shadow companions so toggle-off → save →
       // reopen → toggle-on restores the previous values (parser retains them
       // when Size=0). Scrub F=Inh so StyleSheet cannot override while off.
-      changed |= _forceLiteralLength(
+      changed |= _ensureLiteralLength(
           el, 'ReflectionDist', edited.reflection.distanceInches);
-      changed |= _forceLiteralLength(
+      changed |= _ensureLiteralLength(
           el, 'ReflectionBlur', edited.reflection.blurInches);
-      changed |= _forceLiteralLength(
+      changed |= _ensureLiteralLength(
           el, 'ReflectionTransparency', edited.reflection.transparency);
     }
     changed |= _patchGradient(el, base.fill, edited.fill);
@@ -4091,56 +4092,51 @@ class VsdxWriter {
         el, 'ShadowPattern', base.xmlPattern, edited.xmlPattern);
     changed |= _patchInt(
         el, 'ShdwPattern', base.xmlPattern, edited.xmlPattern);
-    if (edited.enabled) {
-      // Re-enable after Pattern=0: model defaults match so _patchLength /
-      // _patchColorOrTheme would skip and leave stale Offset/Foregnd in XML.
-      final reenable = !base.enabled;
-      if (reenable ||
-          edited.color != null ||
-          edited.themeColorIndex != null ||
-          base.color != null ||
-          base.themeColorIndex != null) {
-        if (edited.color == null && edited.themeColorIndex == null) {
-          // Default shadow has no authored colour — drop stale cells so reopen
-          // does not resurrect a previous solid / theme Foregnd.
-          if (_removeNamedCells(el, const ['ShadowForegnd', 'QuickStyleShadowColor'])) {
-            changed = true;
-          }
-        } else {
-          changed |= _patchColorOrTheme(
-            el,
-            'ShadowForegnd',
-            'QuickStyleShadowColor',
-            baseColor: reenable ? null : base.color,
-            baseTheme: reenable ? null : base.themeColorIndex,
-            editedColor: edited.color,
-            editedTheme: edited.themeColorIndex,
-          );
-        }
-      }
-      if (reenable ||
-          (base.offsetXInches - edited.offsetXInches).abs() > _epsilon) {
-        _writeValue(
-            _ensureCell(el, 'ShadowOffsetX'), _fmt(edited.offsetXInches));
+    // Sync companions whether on or off so enable→edit→disable→save keeps
+    // colour / offsets (rebuild already did; patch previously skipped).
+    final forceCompanions = !edited.enabled || !base.enabled;
+    if (edited.color == null && edited.themeColorIndex == null) {
+      if (_removeNamedCells(
+          el, const ['ShadowForegnd', 'QuickStyleShadowColor'])) {
         changed = true;
       }
-      if (reenable ||
-          (base.offsetYInches - edited.offsetYInches).abs() > _epsilon) {
-        _writeValue(
-            _ensureCell(el, 'ShadowOffsetY'), _fmt(edited.offsetYInches));
-        changed = true;
-      }
-      if (reenable ||
-          (base.blurInches - edited.blurInches).abs() > _epsilon) {
-        _writeValue(_ensureCell(el, 'ShadowBlur'), _fmt(edited.blurInches));
-        changed = true;
-      }
-      if (reenable ||
-          (base.transparency - edited.transparency).abs() > _epsilon) {
-        _writeValue(
-            _ensureCell(el, 'ShadowForegndTrans'), _fmt(edited.transparency));
-        changed = true;
-      }
+    } else if (forceCompanions ||
+        edited.color != null ||
+        edited.themeColorIndex != null ||
+        base.color != null ||
+        base.themeColorIndex != null) {
+      changed |= _patchColorOrTheme(
+        el,
+        'ShadowForegnd',
+        'QuickStyleShadowColor',
+        baseColor: forceCompanions ? null : base.color,
+        baseTheme: forceCompanions ? null : base.themeColorIndex,
+        editedColor: edited.color,
+        editedTheme: edited.themeColorIndex,
+      );
+    }
+    if (forceCompanions ||
+        (base.offsetXInches - edited.offsetXInches).abs() > _epsilon) {
+      _writeValue(
+          _ensureCell(el, 'ShadowOffsetX'), _fmt(edited.offsetXInches));
+      changed = true;
+    }
+    if (forceCompanions ||
+        (base.offsetYInches - edited.offsetYInches).abs() > _epsilon) {
+      _writeValue(
+          _ensureCell(el, 'ShadowOffsetY'), _fmt(edited.offsetYInches));
+      changed = true;
+    }
+    if (forceCompanions ||
+        (base.blurInches - edited.blurInches).abs() > _epsilon) {
+      _writeValue(_ensureCell(el, 'ShadowBlur'), _fmt(edited.blurInches));
+      changed = true;
+    }
+    if (forceCompanions ||
+        (base.transparency - edited.transparency).abs() > _epsilon) {
+      _writeValue(
+          _ensureCell(el, 'ShadowForegndTrans'), _fmt(edited.transparency));
+      changed = true;
     }
     return changed;
   }
@@ -4170,10 +4166,28 @@ class VsdxWriter {
     }
     var changed = false;
     if (!edited.enabled) {
-      if (base.enabled) {
-        _writeValue(_ensureCell(el, 'GlowSize'), '0');
-        changed = true;
+      _writeValue(_ensureCell(el, 'GlowSize'), '0');
+      changed = true;
+      // Sync companions on disable so enable→edit colour→disable→save keeps
+      // the new colour (cell may never have existed before this write).
+      if (edited.color == null && edited.themeColorIndex == null) {
+        if (_removeNamedCells(
+            el, const ['GlowColor', 'QuickStyleEffectColor'])) {
+          changed = true;
+        }
+      } else {
+        changed |= _patchColorOrTheme(
+          el,
+          'GlowColor',
+          'QuickStyleEffectColor',
+          baseColor: null,
+          baseTheme: null,
+          editedColor: edited.color,
+          editedTheme: edited.themeColorIndex,
+        );
       }
+      _writeValue(
+          _ensureCell(el, 'GlowColorTrans'), _fmt(edited.transparency));
       return changed;
     }
     // Re-enable after Size=0: force Size/Color/Trans so stale GlowColor cannot
@@ -4226,11 +4240,16 @@ class VsdxWriter {
     }
     var changed = false;
     if (!edited.enabled) {
-      if (base.enabled) {
-        _writeValue(_ensureCell(el, 'ReflectionSize'), '0');
-        changed = true;
-      }
-      return changed;
+      _writeValue(_ensureCell(el, 'ReflectionSize'), '0');
+      // Inject Dist/Blur/Trans even when cells were never written (first
+      // disable→save after editing companions only in memory).
+      _writeValue(
+          _ensureCell(el, 'ReflectionDist'), _fmt(edited.distanceInches));
+      _writeValue(
+          _ensureCell(el, 'ReflectionBlur'), _fmt(edited.blurInches));
+      _writeValue(_ensureCell(el, 'ReflectionTransparency'),
+          _fmt(edited.transparency));
+      return true;
     }
     // Re-enable after Size=0: force Size/Dist/Blur/Trans so stale XML cells
     // cannot resurrect prior custom values over the new model defaults.

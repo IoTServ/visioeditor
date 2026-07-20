@@ -65,6 +65,12 @@ class VsdxShadow {
         clearThemeColorIndex: true,
       );
 
+  /// Bind shadow to a document theme slot, clearing any solid colour.
+  VsdxShadow withThemeColor(int slot) => copyWith(
+        color: null,
+        themeColorIndex: slot,
+      );
+
   VsdxShadow copyWith({
     Object? color = keepColor,
     int? themeColorIndex,
@@ -123,6 +129,12 @@ class VsdxGlow {
   VsdxGlow withSolidColor(VsdxColor color) => copyWith(
         color: color,
         clearThemeColorIndex: true,
+      );
+
+  /// Bind glow to a document theme slot, clearing any solid colour.
+  VsdxGlow withThemeColor(int slot) => copyWith(
+        color: null,
+        themeColorIndex: slot,
       );
 
   VsdxGlow copyWith({
