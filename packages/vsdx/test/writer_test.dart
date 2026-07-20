@@ -7454,6 +7454,55 @@ void main() {
     expect(after.formulas['LinePattern'], isNull);
   });
 
+  test('Foreign dual theme fill emits named THEMEVAL for FillBkgnd', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final picId = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_dual_theme.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(
+      fill: const VsdxFill(
+        themeForegroundIndex: ThemeSlot.accent1,
+        themeBackgroundIndex: ThemeSlot.accent3,
+        pattern: 1,
+      ),
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(
+        r'N="FillBkgnd"[^>]*F="THEMEVAL\((?:&quot;|")AccentColor3(?:&quot;|")\)"',
+      ).hasMatch(pageXml),
+      isTrue,
+    );
+    expect(RegExp(r'N="Transparency"\s+V="0').hasMatch(pageXml), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.fill.themeForegroundIndex, ThemeSlot.accent1);
+    expect(after.fill.themeBackgroundIndex, ThemeSlot.accent3);
+    expect(after.imageTransparency, closeTo(0, 1e-6));
+  });
+
   test('LineCap / HideText / CompoundType F=Inh scrub when values match', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -8001,7 +8050,8 @@ void main() {
     expect(pageXml.contains('N="SelectMode"'), isTrue);
     // ImgOffset emitted once by builder (not duplicated via opaque).
     expect(RegExp(r'N="ImgOffsetX"').allMatches(pageXml).length, 1);
-    expect(pageXml.contains('N="Transparency"'), isFalse);
+    // Transparency always emitted (incl. 0) so Master tone cannot revive.
+    expect(RegExp(r'N="Transparency"\s+V="0').hasMatch(pageXml), isTrue);
     final after = parser.parse(out).pages.first.findShapeById(picId)!;
     expect(after.themeIndex, 2);
     expect(after.formulas['EventDblClick'], 'OPENTEXTWIN()');

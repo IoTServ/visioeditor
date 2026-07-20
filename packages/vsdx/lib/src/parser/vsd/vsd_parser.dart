@@ -5169,7 +5169,7 @@ class VsdBinaryParser {
       formulas: Map<String, String>.unmodifiable(d.formulas),
       text: text,
       richText: rich,
-      geometries: geoms,
+      geometries: tagStructuralHitBoxes(geoms),
       fill: d.fill ??
           const VsdxFill(
             foreground: VsdxColor(0xFFFFFFFF),

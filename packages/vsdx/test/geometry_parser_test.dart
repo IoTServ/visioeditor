@@ -337,4 +337,42 @@ void main() {
       expect(lt.y, closeTo(0.787401, 1e-4));
     });
   });
+
+  group('syncGeometryNoLine hit-box restore', () {
+    test('annotation keeps hit-box NoLine after hollow toggle', () {
+      final shape = VsdxShapeFactory.annotation(
+        id: 1,
+        pinX: 1,
+        pinY: 1,
+        width: 1,
+        height: 2,
+      );
+      expect(shape.geometries[0].hitBox, isTrue);
+      expect(shape.geometries[0].noLine, isTrue);
+      expect(shape.geometries[1].noLine, isFalse);
+
+      final hollowed =
+          syncGeometryNoLine(shape.geometries, hollow: true);
+      expect(hollowed.every((g) => g.noLine), isTrue);
+      expect(hollowed[0].hitBox, isTrue);
+
+      final restored = syncGeometryNoLine(hollowed, hollow: false);
+      expect(restored[0].noLine, isTrue);
+      expect(restored[1].noLine, isFalse);
+    });
+
+    test('doubleRectangle restores stroke on both geoms', () {
+      final shape = VsdxShapeFactory.doubleRectangle(
+        id: 1,
+        pinX: 1,
+        pinY: 1,
+        width: 2,
+        height: 1.5,
+      );
+      final hollowed =
+          syncGeometryNoLine(shape.geometries, hollow: true);
+      final restored = syncGeometryNoLine(hollowed, hollow: false);
+      expect(restored.every((g) => !g.noLine), isTrue);
+    });
+  });
 }

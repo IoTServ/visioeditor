@@ -5991,6 +5991,11 @@ class VsdxWriter {
                 partName: part ?? '',
               )
             : null);
+    final bgSlot = s.fill.themeBackgroundIndex;
+    final fgSlot = s.fill.themeForegroundIndex;
+    final namedBg = (bgSlot != null && fgSlot != null && fgSlot != bgSlot)
+        ? ThemeSlot.themeValName(bgSlot)
+        : null;
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX), formula: s.formulas['PinX']),
       _cell('PinY', _fmt(s.pinY), formula: s.formulas['PinY']),
@@ -6039,13 +6044,12 @@ class VsdxWriter {
                 ? 'Height*1'
                 : null),
       ),
-      if (s.imageTransparency > _epsilon)
-        _cell('Transparency', _fmt(s.imageTransparency)),
-      if (s.imageBlur > _epsilon) _cell('Blur', _fmt(s.imageBlur)),
-      if ((s.imageBrightness - 0.5).abs() > _epsilon)
-        _cell('Brightness', _fmt(s.imageBrightness)),
-      if ((s.imageContrast - 0.5).abs() > _epsilon)
-        _cell('Contrast', _fmt(s.imageContrast)),
+      // Always emit image tone (incl. defaults) so StyleSheet / Master values
+      // cannot revive after Foreign rebuild or group — mirrors SoftEdges.
+      _cell('Transparency', _fmt(s.imageTransparency)),
+      _cell('Blur', _fmt(s.imageBlur)),
+      _cell('Brightness', _fmt(s.imageBrightness)),
+      _cell('Contrast', _fmt(s.imageContrast)),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),
@@ -6057,10 +6061,13 @@ class VsdxWriter {
       ],
       if (s.fill.background != null)
         _cell('FillBkgnd', _hex(s.fill.background!))
-      else if (s.fill.themeBackgroundIndex != null) ...[
-        _cell('FillBkgnd', '0', formula: 'THEMEVAL()'),
-        if (s.fill.themeForegroundIndex == null)
-          _cell('QuickStyleFillColor', s.fill.themeBackgroundIndex!.toString()),
+      else if (bgSlot != null) ...[
+        _cell(
+          'FillBkgnd',
+          '0',
+          formula: namedBg != null ? 'THEMEVAL("$namedBg")' : 'THEMEVAL()',
+        ),
+        if (fgSlot == null) _cell('QuickStyleFillColor', bgSlot.toString()),
       ],
       _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)),
       _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)),

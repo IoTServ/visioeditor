@@ -417,7 +417,7 @@ class PageParser {
       text: plain,
       richText: effectiveRich,
       children: children,
-      geometries: geometries,
+      geometries: tagStructuralHitBoxes(geometries),
       fill: fill,
       line: line,
       shadow: shadow,

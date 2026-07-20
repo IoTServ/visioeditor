@@ -1282,6 +1282,7 @@ class VsdxGeometry {
     this.noShow = false,
     this.noSnap = false,
     this.noQuickDrag = false,
+    this.hitBox = false,
     this.ix = 0,
     this.rowIndices = const <int>[],
     this.deletedRowIndices = const <int>{},
@@ -1309,6 +1310,11 @@ class VsdxGeometry {
 
   /// `<Cell N="NoQuickDrag" V="1"/>` — disable quick-drag handles.
   final bool noQuickDrag;
+
+  /// Invisible selection frame (annotation / parallel-mode). Not a VSDX cell —
+  /// in-memory only so [syncGeometryNoLine] can restore strokes without
+  /// painting a box around hollow hit-test geometry.
+  final bool hitBox;
 
   /// Section index (`<Section N="Geometry" IX="N">`). Used to merge a shape's
   /// geometry with the geometry it inherits from its master by matching IX
@@ -1346,6 +1352,7 @@ class VsdxGeometry {
     bool? noShow,
     bool? noSnap,
     bool? noQuickDrag,
+    bool? hitBox,
     int? ix,
     List<int>? rowIndices,
     Set<int>? deletedRowIndices,
@@ -1360,6 +1367,7 @@ class VsdxGeometry {
         noShow: noShow ?? this.noShow,
         noSnap: noSnap ?? this.noSnap,
         noQuickDrag: noQuickDrag ?? this.noQuickDrag,
+        hitBox: hitBox ?? this.hitBox,
         ix: ix ?? this.ix,
         rowIndices: rowIndices ?? this.rowIndices,
         deletedRowIndices: deletedRowIndices ?? this.deletedRowIndices,
@@ -1440,17 +1448,33 @@ List<VsdxGeometry> syncGeometryNoFill(
   ];
 }
 
-/// Sync Geometry NoLine (usually uniform across geoms).
+/// Mark structural hit-boxes: geoms that already have NoLine while siblings
+/// still stroke. Used after parse and before [syncGeometryNoLine] hollows all.
+List<VsdxGeometry> tagStructuralHitBoxes(List<VsdxGeometry> geos) {
+  if (geos.length < 2) return geos;
+  final mixed = geos.any((g) => g.noLine) && geos.any((g) => !g.noLine);
+  if (!mixed) return geos;
+  return [
+    for (final g in geos) g.noLine ? g.copyWith(hitBox: true) : g,
+  ];
+}
+
+/// Sync Geometry NoLine without painting hit-box frames (annotation brackets).
+///
+/// - [hollow] true → all geoms NoLine (preserving [VsdxGeometry.hitBox]).
+/// - [hollow] false → only restore when fully NoLine'd; re-enable strokes on
+///   non-hit-box geoms so invisible selection frames stay NoLine.
 List<VsdxGeometry> syncGeometryNoLine(
   List<VsdxGeometry> geos, {
   required bool hollow,
 }) {
   if (geos.isEmpty) return geos;
   if (hollow) {
-    return [for (final g in geos) g.copyWith(noLine: true)];
+    final tagged = tagStructuralHitBoxes(geos);
+    return [for (final g in tagged) g.copyWith(noLine: true)];
   }
   if (!geos.every((g) => g.noLine)) return geos;
-  return [for (final g in geos) g.copyWith(noLine: false)];
+  return [for (final g in geos) g.copyWith(noLine: g.hitBox)];
 }
 
 /// Copy section flags from [prior] onto freshly rebuilt [fresh] paths so
@@ -1469,6 +1493,7 @@ List<VsdxGeometry> preserveGeometryFlags(
         noSnap: i < prior.length ? prior[i].noSnap : fresh[i].noSnap,
         noQuickDrag:
             i < prior.length ? prior[i].noQuickDrag : fresh[i].noQuickDrag,
+        hitBox: i < prior.length ? prior[i].hitBox : fresh[i].hitBox,
       ),
   ];
 }
