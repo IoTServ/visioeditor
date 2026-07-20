@@ -2090,6 +2090,10 @@ class VsdxWriter {
     }
     if (!edited.reflection.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
+      // Companion cells can still carry F=Inh after Size is scrubbed.
+      changed |= _forceLiteralZeroLength(el, 'ReflectionDist');
+      changed |= _forceLiteralZeroLength(el, 'ReflectionBlur');
+      changed |= _forceLiteralZeroLength(el, 'ReflectionTransparency');
     }
     changed |= _patchGradient(el, base.fill, edited.fill);
     changed |= _patchLineGradient(el, base.line, edited.line);
@@ -2883,6 +2887,10 @@ class VsdxWriter {
       final cell = _ensureCell(row, 'Color');
       _writeValue(cell, c.themeColorIndex!.toString(), preserveFormula: true);
       cell.setAttribute('F', 'THEMEVAL()');
+    } else {
+      // Match [_charCells] rebuild: omit Color when unbound so a prior
+      // THEMEVAL cannot revive on the next reopen.
+      _removeNamedCells(row, const ['Color']);
     }
     if (c.fontFamily != null) {
       _writeValue(_ensureCell(row, 'Font'), c.fontFamily!);
@@ -3506,14 +3514,20 @@ class VsdxWriter {
       final curF = _cellFormula(shape, cell);
       final hasThemeF = curF != null &&
           RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(curF);
-      if (baseTheme == null &&
+      var changed = false;
+      if (!(baseTheme == null &&
           editedTheme == null &&
           baseColor?.value == editedColor.value &&
-          !hasThemeF) {
-        return false;
+          !hasThemeF)) {
+        _writeValue(_ensureCell(shape, cell), _hex(editedColor));
+        changed = true;
       }
-      _writeValue(_ensureCell(shape, cell), _hex(editedColor));
-      return true;
+      // Drop leftover QuickStyle* when no longer theme-bound (Shadow/Glow
+      // already remove companion cells; Fill/Line previously left them).
+      if (editedTheme == null && writeQuickStyle) {
+        if (_removeNamedCells(shape, [quickStyleCell])) changed = true;
+      }
+      return changed;
     }
     if (editedTheme != null) {
       final wantF = themeValFormula ?? 'THEMEVAL()';
@@ -3540,15 +3554,23 @@ class VsdxWriter {
         (_cellFormula(shape, cell) != null &&
             RegExp(r'THEMEVAL\s*\(', caseSensitive: false)
                 .hasMatch(_cellFormula(shape, cell)!))) {
-      final c = _ensureCell(shape, cell);
-      // Keep V if present; just drop THEMEVAL so inheritance cannot revive.
-      if (c.getAttribute('V') == null) {
-        _writeValue(c, '0');
+      var changed = false;
+      // Remove the colour cell entirely so reopen does not parse leftover
+      // V="0" as palette[0] black. Rebuild path also omits unbound colours.
+      if (_removeNamedCells(shape, [cell])) {
+        changed = true;
       } else {
-        c.removeAttribute('F');
-        c.removeAttribute('E');
+        final c = _findCell(shape, cell);
+        if (c != null) {
+          c.removeAttribute('F');
+          c.removeAttribute('E');
+          changed = true;
+        }
       }
-      return true;
+      if (writeQuickStyle) {
+        if (_removeNamedCells(shape, [quickStyleCell])) changed = true;
+      }
+      return changed;
     }
     return false;
   }
@@ -4932,9 +4954,9 @@ class VsdxWriter {
     if (s.line.softEdgesInches > _epsilon) {
       children.add(_cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)));
     }
-    if (s.line.compoundType != 0) {
-      children.add(_cell('CompoundType', s.line.compoundType.toString()));
-    }
+    // Always emit CompoundType (incl. 0) so StyleSheet inheritance cannot
+    // revive double-line after the user cleared compound on a rebuild path.
+    children.add(_cell('CompoundType', s.line.compoundType.toString()));
     if (s.layerMemberIds.isNotEmpty) {
       children.add(_cell('LayerMember', s.layerMemberIds.join(';')));
     }

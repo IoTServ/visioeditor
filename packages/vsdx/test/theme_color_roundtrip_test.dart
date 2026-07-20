@@ -124,6 +124,62 @@ void main() {
         reason: 'explicit colour must clear the THEMEVAL binding');
   });
 
+  test('theme→solid drops QuickStyleFillColor / QuickStyleLineColor', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(themeForegroundIndex: ThemeSlot.accent1),
+          line: const VsdxLine(themeColorIndex: ThemeSlot.accent2),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(
+      utf8.decode(
+        ZipDecoder()
+            .decodeBytes(mid)
+            .firstWhere((f) => f.name.contains('pages/page1.xml'))
+            .content as List<int>,
+      ),
+      contains('QuickStyleFillColor'),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.withSolidForeground(const VsdxColor(0xFF112233)),
+          line: s.line.withSolidColor(const VsdxColor(0xFF445566)),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('QuickStyleFillColor'), isFalse);
+    expect(pageXml.contains('QuickStyleLineColor'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.foreground?.value, 0xFF112233);
+    expect(after.fill.themeForegroundIndex, isNull);
+    expect(after.line.color?.value, 0xFF445566);
+    expect(after.line.themeColorIndex, isNull);
+  });
+
   test('FillPattern THEMEVAL does not resurrect on second save', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);

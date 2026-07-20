@@ -5136,6 +5136,190 @@ void main() {
         reason: 'fresh Character emit must cache theme slot in Color V');
   });
 
+  test('unbound Character Color clears THEMEVAL on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle:
+                    VsdxCharStyle.defaults.copyWith(themeColorIndex: 3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(
+      doc.pages.first.findShapeById(id)!.richText.runs.first.charStyle
+          .themeColorIndex,
+      3,
+    );
+    // Clear colour + theme (pasteStyle / default inheritance path).
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle: VsdxCharStyle.defaults.copyWith(
+                  clearThemeColorIndex: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="Color"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isFalse,
+      reason: 'unbound text colour must not keep Character Color THEMEVAL',
+    );
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.runs.first.charStyle.themeColorIndex, isNull);
+    expect(after.richText.runs.first.charStyle.color, isNull);
+  });
+
+  test('Reflection Dist/Blur F=Inh scrub when reflection disabled', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.2,
+            distanceInches: 0.05,
+            blurInches: 0.04,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ReflectionSize"[^/]*/>'),
+      '<Cell N="ReflectionSize" V="0.2" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ReflectionDist"[^/]*/>'),
+      '<Cell N="ReflectionDist" V="0.05" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ReflectionBlur"[^/]*/>'),
+      '<Cell N="ReflectionBlur" V="0.04" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.reflection.enabled, isFalse);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['ReflectionSize', 'ReflectionDist', 'ReflectionBlur']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('V'), '0', reason: name);
+      expect(cell.getAttribute('F'), isNull, reason: name);
+    }
+  });
+
+  test('CompoundType 0 survives group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final a = doc.pages.first.nextFreeShapeId();
+    final b = a + 1;
+    final gid = b + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: a,
+              pinX: 1,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ).copyWith(line: const VsdxLine(compoundType: 1)),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: b,
+              pinX: 3,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        a,
+        (s) => s.copyWith(line: s.line.copyWith(compoundType: 0)),
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({a, b}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="CompoundType" V="0"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(a)!;
+    expect(after.line.compoundType, 0);
+  });
+
   test('Visio XDyn/XCon/CanGlue Control round-trip', () {
     final bytes = _fixture('test9_rect_and_line.vsdx');
     final doc = parser.parse(bytes);

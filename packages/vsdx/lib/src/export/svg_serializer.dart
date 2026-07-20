@@ -608,6 +608,8 @@ class VsdxToSvgSerializer {
       paintId,
       defs,
       bounds: fillBounds,
+      noFill: noFill,
+      noLine: noLine,
     );
     if (defs.isNotEmpty) {
       buf.writeln('$indent<defs>$defs</defs>');
@@ -1550,12 +1552,14 @@ class VsdxToSvgSerializer {
     String paintId,
     StringBuffer defs, {
     required ({double minX, double minY, double width, double height}) bounds,
+    bool noFill = false,
+    bool noLine = false,
   }) {
     // package:pdf ignores filters — SoftEdges would silently vanish.
     if (pdfCompat) return null;
-    // Match glow: hollow non-image shapes have nothing to feather.
-    final softHollow = !shape.fill.hasFill &&
-        !shape.line.hasLine &&
+    // Match glow / canvas: geom or shape hollow (non-image) has nothing to feather.
+    final softHollow = (noFill || !shape.fill.hasFill) &&
+        (noLine || !shape.line.hasLine) &&
         !shape.hasImage;
     final soft =
         (!shape.is1D && !softHollow && shape.line.softEdgesInches > 0)

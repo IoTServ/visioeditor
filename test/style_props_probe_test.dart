@@ -977,6 +977,46 @@ void main() {
         reason: 'hollow shapes must not hang SoftEdges blur filters');
   });
 
+  test('SVG skips SoftEdges on NoFill+NoLine geometry even if shape has fill', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 24,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            pattern: 1,
+            foreground: VsdxColor(0xFFFF0000),
+          ),
+          line: const VsdxLine(softEdgesInches: 0.08),
+          geometries: const [
+            VsdxGeometry(
+              noFill: true,
+              noLine: true,
+              commands: [
+                MoveTo(0, 0),
+                LineTo(2, 0),
+                LineTo(2, 1),
+                LineTo(0, 1),
+                LineTo(0, 0),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('fx-'), isFalse,
+        reason: 'geom hollow SoftEdges must match canvas / glowHollow');
+  });
+
   test('SVG skips stroke shadow when NoFill and LinePattern=0', () {
     final page = VsdxPage(
       id: 0,
