@@ -77,6 +77,12 @@ abstract final class ChartOps {
     'rhythmBars',
     'voteStack',
     'trafficRow',
+    'starRating',
+    'compareCards',
+    'pipeline',
+    'winLossStrip',
+    'quotaBoard',
+    'tickLadder',
   };
 
   static bool isCustomEditorKind(String kind) =>
@@ -139,14 +145,21 @@ abstract final class ChartOps {
       case 'stageFunnel':
       case 'rhythmBars':
       case 'trafficRow':
+      case 'starRating':
+      case 'pipeline':
+      case 'winLossStrip':
+      case 'tickLadder':
         return 8;
       case 'balanceBar':
       case 'gapAnalysis':
+      case 'quotaBoard':
         return 12;
       case 'priorityMatrix':
         return 4;
       case 'voteStack':
         return 3;
+      case 'compareCards':
+        return 2;
       default:
         return maxSeriesItems;
     }
@@ -202,12 +215,18 @@ abstract final class ChartOps {
       case 'rhythmBars':
       case 'trafficRow':
       case 'voteStack':
+      case 'starRating':
+      case 'compareCards':
+      case 'pipeline':
+      case 'winLossStrip':
+      case 'tickLadder':
         return math.max(1, values.length);
       case 'spanColumn':
       case 'bulletGroup':
       case 'dualCompare':
       case 'balanceBar':
       case 'gapAnalysis':
+      case 'quotaBoard':
         return math.max(1, values.length ~/ 2);
       case 'arcGauge':
         return 1;
@@ -404,6 +423,12 @@ abstract final class ChartOps {
       'rhythmBars',
       'voteStack',
       'trafficRow',
+      'starRating',
+      'compareCards',
+      'pipeline',
+      'winLossStrip',
+      'quotaBoard',
+      'tickLadder',
     ]),
   ];
 
@@ -510,6 +535,12 @@ abstract final class ChartOps {
     'rhythmBars': 'Rhythm Bars',
     'voteStack': 'Vote Stack',
     'trafficRow': 'Traffic Row',
+    'starRating': 'Star Rating',
+    'compareCards': 'Compare Cards',
+    'pipeline': 'Pipeline',
+    'winLossStrip': 'Win/Loss Strip',
+    'quotaBoard': 'Quota Board',
+    'tickLadder': 'Tick Ladder',
   };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
@@ -1022,7 +1053,13 @@ abstract final class ChartOps {
         kind == 'checkboxList' ||
         kind == 'stageFunnel' ||
         kind == 'voteStack' ||
-        kind == 'trafficRow') {
+        kind == 'trafficRow' ||
+        kind == 'starRating' ||
+        kind == 'compareCards' ||
+        kind == 'pipeline' ||
+        kind == 'winLossStrip' ||
+        kind == 'quotaBoard' ||
+        kind == 'tickLadder') {
       return chart.copyWith(children: baseKids);
     }
     final w = chart.width.abs();
@@ -1297,6 +1334,18 @@ abstract final class ChartOps {
         return const <double>[0.45, 0.35, 0.2];
       case 'trafficRow':
         return const <double>[1, 0.5, 0, 1];
+      case 'starRating':
+        return const <double>[0.9, 0.7, 0.5];
+      case 'compareCards':
+        return const <double>[0.72, 0.58];
+      case 'pipeline':
+        return const <double>[1.0, 0.7, 0.45, 0.25];
+      case 'winLossStrip':
+        return const <double>[1, 1, 0, 1, 0, 1];
+      case 'quotaBoard':
+        return const <double>[0.65, 1.0, 0.8, 1.0, 0.45, 1.0];
+      case 'tickLadder':
+        return const <double>[0.8, 0.5, 0.3];
       default:
         return List<double>.of(defaultValues);
     }
@@ -2188,6 +2237,66 @@ abstract final class ChartOps {
             pinY: pinY,
             width: width ?? 2.8,
             height: height ?? 0.9,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'starRating':
+        return starRatingChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.5,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'compareCards':
+        return compareCardsChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 1.4,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'pipeline':
+        return pipelineChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 3.2,
+            height: height ?? 1.1,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'winLossStrip':
+        return winLossStripChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 0.8,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'quotaBoard':
+        return quotaBoardChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'tickLadder':
+        return tickLadderChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.5,
             values: values,
             labels: labels,
             allocId: allocId);
@@ -9385,6 +9494,562 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'trafficRow',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+
+  /// Star rating rows: value 0–1 fills up to 5 stars.
+  static VsdxShape starRatingChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.5,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('starRating', null);
+    final vals = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = h * 0.08;
+    final gap = h * 0.06;
+    final rowH = (h - pad * 2 - gap * (n - 1)) / n;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final cy = h - pad - rowH / 2 - i * (rowH + gap);
+      final filled = (vals[i] * 5).clamp(0.0, 5.0);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w * 0.18,
+        pinY: cy,
+        width: w * 0.32,
+        height: rowH * 0.7,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFF424242),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.right,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.4, 0),
+              LineTo(0.4, 0.2),
+              LineTo(0, 0.2),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+      final starSize = math.min(rowH * 0.55, w * 0.08);
+      final startX = w * 0.4;
+      for (var s = 0; s < 5; s++) {
+        final on = filled >= s + 1
+            ? true
+            : filled > s
+                ? true
+                : false;
+        final color = on
+            ? const VsdxColor(0xFFFFC000)
+            : const VsdxColor(0xFFE0E0E0);
+        final cx = startX + starSize / 2 + s * (starSize * 1.25);
+        kids.add(_rectChild(
+          id: next(),
+          pinX: cx,
+          pinY: cy,
+          width: starSize,
+          height: starSize,
+          fill: color,
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'starRating',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Compare cards: two side-by-side KPI cards.
+  static VsdxShape compareCardsChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 1.4,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('compareCards', null);
+    final vals = <double>[
+      (raw.isNotEmpty ? raw[0] : 0.72).clamp(0.0, 1.0),
+      (raw.length > 1 ? raw[1] : 0.58).clamp(0.0, 1.0),
+    ];
+    final labs = padLabels(labels ?? const <String>['A', 'B'], 2);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = w * 0.05;
+    final gap = w * 0.06;
+    final cardW = (w - pad * 2 - gap) / 2;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < 2; i++) {
+      final color = seriesColors[i % seriesColors.length];
+      final cx = pad + cardW / 2 + i * (cardW + gap);
+      final text = '${labs[i]}\n${formatPercent(vals[i])}%';
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: h / 2,
+        width: cardW,
+        height: h * 0.85,
+        text: text,
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: text,
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.11,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(cardW, 0),
+            LineTo(cardW, h * 0.85),
+            LineTo(0, h * 0.85),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'compareCards',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Pipeline: connected horizontal stages.
+  static VsdxShape pipelineChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 3.2,
+    double height = 1.1,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('pipeline', null);
+    final vals = <double>[for (final v in raw) v.clamp(0.15, 1.0)];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = w * 0.04;
+    final gap = w * 0.015;
+    final stageW = (w - pad * 2 - gap * (n - 1)) / n;
+    final stageH = h * 0.5;
+    final cy = h * 0.55;
+    final tip = stageW * 0.18;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final color = seriesColors[i % seriesColors.length];
+      final x0 = pad + i * (stageW + gap);
+      final body = math.max(stageW - tip, 0.1);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x0 + stageW / 2,
+        pinY: cy,
+        width: stageW,
+        height: stageH * vals[i].clamp(0.5, 1.0),
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(body, 0),
+            LineTo(stageW, stageH * vals[i].clamp(0.5, 1.0) / 2),
+            LineTo(body, stageH * vals[i].clamp(0.5, 1.0)),
+            LineTo(0, stageH * vals[i].clamp(0.5, 1.0)),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'pipeline',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Win/loss strip: green W / red L cells.
+  static VsdxShape winLossStripChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 0.8,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('winLossStrip', null);
+    final vals = <double>[for (final v in raw) v >= 0.5 ? 1.0 : 0.0];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(
+      labels ??
+          <String>[for (var i = 0; i < n; i++) (vals[i] >= 0.5 ? 'W' : 'L')],
+      n,
+    );
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = w * 0.05;
+    final gap = w * 0.02;
+    final cellW = (w - pad * 2 - gap * (n - 1)) / n;
+    final cellH = h * 0.55;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final win = vals[i] >= 0.5;
+      final color =
+          win ? const VsdxColor(0xFF43A047) : const VsdxColor(0xFFE53935);
+      final text = labs[i].trim().isEmpty ? (win ? 'W' : 'L') : labs[i];
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: pad + cellW / 2 + i * (cellW + gap),
+        pinY: h * 0.5,
+        width: cellW,
+        height: cellH,
+        text: text,
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: text,
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.1,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(cellW, 0),
+            LineTo(cellW, cellH),
+            LineTo(0, cellH),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'winLossStrip',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Quota board: actual/target progress rows.
+  static VsdxShape quotaBoardChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('quotaBoard', null);
+    final pairs = math.max(1, raw.length ~/ 2);
+    final vals = <double>[
+      for (var i = 0; i < pairs; i++) ...[
+        (i * 2 < raw.length ? raw[i * 2] : 0.6).clamp(0.02, 1.0),
+        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 1.0).clamp(0.05, 1.0),
+      ],
+    ];
+    final labs = padLabels(labels ?? defaultLabels(pairs), pairs);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.28;
+    final padR = w * 0.06;
+    final padT = h * 0.08;
+    final padB = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padT - padB;
+    final gap = plotH * 0.12;
+    final rowH = (plotH - gap * (pairs - 1)) / pairs;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < pairs; i++) {
+      final actual = vals[i * 2];
+      final target = vals[i * 2 + 1];
+      final ratio = (actual / target).clamp(0.0, 1.2);
+      final cy = h - padT - rowH / 2 - i * (rowH + gap);
+      final barH = rowH * 0.45;
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW / 2,
+        pinY: cy,
+        width: plotW,
+        height: barH,
+        fill: const VsdxColor(0xFFE0E0E0),
+        chrome: true,
+      ));
+      final fillW = plotW * ratio.clamp(0.0, 1.0);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + fillW / 2,
+        pinY: cy,
+        width: math.max(fillW, 0.04),
+        height: barH,
+        fill: ratio >= 1
+            ? const VsdxColor(0xFF43A047)
+            : seriesColors[i % seriesColors.length],
+      ));
+      // Target tick at full quota.
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + plotW,
+        pinY: cy,
+        width: 0.02,
+        height: barH * 1.4,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.01, 0),
+              LineTo(0.01, barH * 1.4),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFE53935),
+          weightInches: 0.012,
+        ),
+        userCells: _chromeMeta,
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL * 0.5,
+        pinY: cy,
+        width: padL * 0.9,
+        height: rowH * 0.7,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFF424242),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.right,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.4, 0),
+              LineTo(0.4, 0.2),
+              LineTo(0, 0.2),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'quotaBoard',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Tick ladder: rows of discrete tick marks filled by value.
+  static VsdxShape tickLadderChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.5,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('tickLadder', null);
+    final vals = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    const ticks = 10;
+    final pad = h * 0.08;
+    final gap = h * 0.08;
+    final rowH = (h - pad * 2 - gap * (n - 1)) / n;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final cy = h - pad - rowH / 2 - i * (rowH + gap);
+      final filled = (vals[i] * ticks).round().clamp(0, ticks);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w * 0.16,
+        pinY: cy,
+        width: w * 0.28,
+        height: rowH * 0.7,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFF424242),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.right,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.35, 0),
+              LineTo(0.35, 0.2),
+              LineTo(0, 0.2),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+      final startX = w * 0.36;
+      final tickW = w * 0.04;
+      final tickGap = w * 0.018;
+      final tickH = rowH * 0.5;
+      for (var t = 0; t < ticks; t++) {
+        final on = t < filled;
+        kids.add(_rectChild(
+          id: next(),
+          pinX: startX + tickW / 2 + t * (tickW + tickGap),
+          pinY: cy,
+          width: tickW,
+          height: tickH,
+          fill: on
+              ? seriesColors[i % seriesColors.length]
+              : const VsdxColor(0xFFE0E0E0),
+        ));
+      }
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'tickLadder',
       values: vals,
       labels: labs,
     );

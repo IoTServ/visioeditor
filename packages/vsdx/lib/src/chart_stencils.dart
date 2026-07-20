@@ -393,6 +393,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Traffic Row',
       (id, cx, cy) => ChartOps.trafficRowChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Star Rating',
+      (id, cx, cy) => ChartOps.starRatingChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Compare Cards',
+      (id, cx, cy) => ChartOps.compareCardsChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Pipeline',
+      (id, cx, cy) => ChartOps.pipelineChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Win/Loss Strip',
+      (id, cx, cy) => ChartOps.winLossStripChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Quota Board',
+      (id, cx, cy) => ChartOps.quotaBoardChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Tick Ladder',
+      (id, cx, cy) => ChartOps.tickLadderChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 

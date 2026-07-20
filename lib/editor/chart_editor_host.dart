@@ -162,6 +162,37 @@ class ChartEditorHost extends StatelessWidget {
         ),
       'voteStack' => _VoteStackEditor(controller: controller),
       'trafficRow' => _TrafficRowEditor(controller: controller),
+      'starRating' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Star Rating',
+          hintGetter: (el) => el.chartSpecialtyStarRatingHint,
+          maxItems: 6,
+          asPercent: true,
+        ),
+      'compareCards' => _CompareCardsEditor(controller: controller),
+      'pipeline' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Pipeline',
+          hintGetter: (el) => el.chartSpecialtyPipelineHint,
+          maxItems: 8,
+          asPercent: true,
+        ),
+      'winLossStrip' => _WinLossStripEditor(controller: controller),
+      'quotaBoard' => _PairSeriesEditor(
+          controller: controller,
+          title: 'Quota Board',
+          hintGetter: (el) => el.chartSpecialtyQuotaBoardHint,
+          leftGetter: (el) => el.chartActual,
+          rightGetter: (el) => el.chartTarget,
+          maxItems: 6,
+        ),
+      'tickLadder' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Tick Ladder',
+          hintGetter: (el) => el.chartSpecialtyTickLadderHint,
+          maxItems: 6,
+          asPercent: true,
+        ),
       _ => ChartConfigPanel(controller: controller),
     };
   }
@@ -3707,6 +3738,252 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
         ],
         TextButton.icon(
           onPressed: _labels.length < 8 ? _add : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(el.chartAddItem),
+        ),
+      ],
+    );
+  }
+}
+
+
+class _CompareCardsEditor extends StatefulWidget {
+  const _CompareCardsEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_CompareCardsEditor> createState() => _CompareCardsEditorState();
+}
+
+class _CompareCardsEditorState extends State<_CompareCardsEditor>
+    with _ChartSync<_CompareCardsEditor> {
+  final _la = TextEditingController();
+  final _lb = TextEditingController();
+  final _va = TextEditingController();
+  final _vb = TextEditingController();
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in [_la, _lb, _va, _vb]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final labs = ChartOps.chartLabels(chart, 2);
+    if (_la.text != labs[0]) _la.text = labs[0];
+    if (_lb.text != labs[1]) _lb.text = labs[1];
+    final a = ChartOps.formatPercent(vals.isNotEmpty ? vals[0] : 0.72);
+    final b = ChartOps.formatPercent(vals.length > 1 ? vals[1] : 0.58);
+    if (_va.text != a) _va.text = a;
+    if (_vb.text != b) _vb.text = b;
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        ChartOps.parseUnitValue(_va.text),
+        ChartOps.parseUnitValue(_vb.text),
+      ],
+      labels: <String>[
+        _la.text.trim().isEmpty ? 'A' : _la.text.trim(),
+        _lb.text.trim().isEmpty ? 'B' : _lb.text.trim(),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Compare Cards'),
+          hint: el.chartSpecialtyCompareCardsHint,
+        ),
+        TextField(
+          controller: _la,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartSeriesA,
+            border: const OutlineInputBorder(),
+          ),
+          onEditingComplete: _commit,
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _va,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartValue,
+            suffixText: '%',
+            border: const OutlineInputBorder(),
+          ),
+          onEditingComplete: _commit,
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _lb,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartSeriesB,
+            border: const OutlineInputBorder(),
+          ),
+          onEditingComplete: _commit,
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _vb,
+          decoration: InputDecoration(
+            isDense: true,
+            labelText: el.chartValue,
+            suffixText: '%',
+            border: const OutlineInputBorder(),
+          ),
+          onEditingComplete: _commit,
+        ),
+      ],
+    );
+  }
+}
+
+class _WinLossStripEditor extends StatefulWidget {
+  const _WinLossStripEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_WinLossStripEditor> createState() => _WinLossStripEditorState();
+}
+
+class _WinLossStripEditorState extends State<_WinLossStripEditor>
+    with _ChartSync<_WinLossStripEditor> {
+  final List<bool> _wins = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      ChartOps.formatValues(ChartOps.chartValues(chart));
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final n = mathMax(1, vals.length);
+    while (_wins.length > n) {
+      _wins.removeLast();
+    }
+    while (_wins.length < n) {
+      _wins.add(true);
+    }
+    for (var i = 0; i < n; i++) {
+      _wins[i] = vals[i] >= 0.5;
+    }
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'winLossStrip' &&
+        _wins.isEmpty) {
+      syncFields(chart);
+    }
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[for (final w in _wins) w ? 1.0 : 0.0],
+      labels: <String>[for (final w in _wins) w ? 'W' : 'L'],
+    );
+  }
+
+  void _add() {
+    if (_wins.length >= 8) return;
+    _wins.add(true);
+    _commit();
+  }
+
+  void _remove(int i) {
+    if (_wins.length <= 1) return;
+    _wins.removeAt(i);
+    _commit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _ensureFields();
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Win/Loss Strip'),
+          hint: el.chartSpecialtyWinLossStripHint,
+        ),
+        for (var i = 0; i < _wins.length; i++) ...[
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<bool>(
+                  initialValue: _wins[i],
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: '${el.chartSegment} ${i + 1}',
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(value: true, child: Text(el.chartWin)),
+                    DropdownMenuItem(value: false, child: Text(el.chartLoss)),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _wins[i] = v);
+                    _commit();
+                  },
+                ),
+              ),
+              IconButton(
+                onPressed: _wins.length > 1 ? () => _remove(i) : null,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextButton.icon(
+          onPressed: _wins.length < 8 ? _add : null,
           icon: const Icon(Icons.add, size: 16),
           label: Text(el.chartAddItem),
         ),
