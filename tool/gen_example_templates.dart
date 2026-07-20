@@ -29,6 +29,17 @@ void main() {
     'Project Roadmap.vsdx': _projectRoadmap(),
     'SWOT Matrix.vsdx': _swotMatrix(),
     'System Architecture.vsdx': _systemArchitecture(),
+    'Mind Map.vsdx': _mindMap(),
+    'Timeline.vsdx': _timeline(),
+    'Kanban Board.vsdx': _kanbanBoard(),
+    'Fishbone.vsdx': _fishbone(),
+    'Cycle Process.vsdx': _cycleProcess(),
+    'Venn Diagram.vsdx': _vennDiagram(),
+    'Sales Funnel.vsdx': _salesFunnel(),
+    'User Journey.vsdx': _userJourney(),
+    'Network Topology.vsdx': _networkTopology(),
+    'Meeting Agenda.vsdx': _meetingAgenda(),
+    'OKR Cascade.vsdx': _okrCascade(),
   };
   for (final e in built.entries) {
     final path = '$kOutDir/${e.key}';
@@ -629,4 +640,483 @@ Uint8List _systemArchitecture() {
     ],
     <VsdxConnect>[for (final l in links) ...l.connects],
   );
+}
+
+Uint8List _mindMap() {
+  final title = _title(1, 5.5, 7.7, 'Mind map');
+  final hub = _ellipse(
+    id: 2,
+    cx: 5.5,
+    cy: 4.4,
+    w: 2.2,
+    h: 1.2,
+    fillArgb: 0xFF93C5FD,
+    label: 'Idea',
+    bold: true,
+    pt: 14,
+  );
+  final branches = <(String, int, double, double)>[
+    ('Goals', 0xFFBBF7D0, 2.0, 6.2),
+    ('Risks', 0xFFFECACA, 9.0, 6.2),
+    ('People', 0xFFFDE68A, 2.0, 2.6),
+    ('Next\nsteps', 0xFFC4B5FD, 9.0, 2.6),
+    ('Insights', 0xFFFED7AA, 5.5, 1.6),
+  ];
+  final shapes = <VsdxShape>[title, hub];
+  final connects = <VsdxConnect>[];
+  var id = 3;
+  for (final (label, color, x, y) in branches) {
+    final node = _box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.7,
+      h: 0.9,
+      fillArgb: color,
+      label: label,
+    );
+    shapes.add(node);
+    final link = _link(id++, hub, node);
+    shapes.add(link.connector);
+    connects.addAll(link.connects);
+  }
+  return _write('Mind Map', shapes, connects);
+}
+
+Uint8List _timeline() {
+  final title = _title(1, 5.5, 7.7, 'Project timeline');
+  final rail = _box(
+    id: 2,
+    cx: 5.5,
+    cy: 4.4,
+    w: 9.2,
+    h: 0.18,
+    fillArgb: 0xFF94A3B8,
+    label: '',
+    rounded: false,
+  );
+  final milestones = <(String, String, int, double)>[
+    ('Kickoff', 'Week 1', 0xFFBFDBFE, 1.6),
+    ('Alpha', 'Week 4', 0xFFC4B5FD, 4.0),
+    ('Beta', 'Week 8', 0xFFFDE68A, 6.5),
+    ('GA', 'Week 12', 0xFFBBF7D0, 9.0),
+  ];
+  final shapes = <VsdxShape>[title, rail];
+  var id = 3;
+  for (final (name, whenLabel, color, x) in milestones) {
+    shapes.add(_ellipse(
+      id: id++,
+      cx: x,
+      cy: 4.4,
+      w: 0.45,
+      h: 0.45,
+      fillArgb: color,
+      label: '',
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 5.7,
+      w: 1.8,
+      h: 0.85,
+      fillArgb: color,
+      label: name,
+      bold: true,
+    ));
+    shapes.add(_withLabel(
+      VsdxShapeFactory.textBox(
+        id: id++,
+        pinX: x,
+        pinY: 3.2,
+        width: 1.6,
+        height: 0.35,
+        text: whenLabel,
+      ),
+      whenLabel,
+      pt: 10,
+    ));
+  }
+  return _write('Timeline', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _kanbanBoard() {
+  final title = _title(1, 5.5, 7.7, 'Kanban board');
+  final columns = <(String, int, double)>[
+    ('Backlog', 0xFFE2E8F0, 2.0),
+    ('Doing', 0xFFBFDBFE, 5.5),
+    ('Done', 0xFFBBF7D0, 9.0),
+  ];
+  final cards = <(String, double, double)>[
+    ('Story A', 2.0, 5.2),
+    ('Story B', 2.0, 3.7),
+    ('Story C', 5.5, 5.2),
+    ('Story D', 9.0, 5.2),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (name, color, x) in columns) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.4,
+      w: 2.8,
+      h: 0.6,
+      fillArgb: color,
+      label: name,
+      bold: true,
+      pt: 12,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 3.6,
+      w: 2.8,
+      h: 4.2,
+      fillArgb: 0xFFF8FAFC,
+      label: '',
+      rounded: false,
+    ));
+  }
+  for (final (name, x, y) in cards) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 2.3,
+      h: 0.85,
+      fillArgb: 0xFFFFFFFF,
+      label: name,
+      pt: 11,
+    ));
+  }
+  return _write('Kanban Board', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _fishbone() {
+  final title = _title(1, 5.5, 7.7, 'Cause & effect');
+  final spine = _box(
+    id: 2,
+    cx: 5.2,
+    cy: 4.4,
+    w: 7.5,
+    h: 0.14,
+    fillArgb: 0xFF64748B,
+    label: '',
+    rounded: false,
+  );
+  final head = _diamond(
+    id: 3,
+    cx: 9.8,
+    cy: 4.4,
+    w: 1.8,
+    h: 1.2,
+    fillArgb: 0xFFFECACA,
+    label: 'Effect',
+  );
+  final bones = <(String, double, double)>[
+    ('People', 2.4, 6.0),
+    ('Process', 4.6, 6.0),
+    ('Tools', 6.8, 6.0),
+    ('Data', 2.4, 2.8),
+    ('Policy', 4.6, 2.8),
+    ('Env', 6.8, 2.8),
+  ];
+  final shapes = <VsdxShape>[title, spine, head];
+  var id = 4;
+  for (final (label, x, y) in bones) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.7,
+      h: 0.75,
+      fillArgb: y > 4.4 ? 0xFFBFDBFE : 0xFFFDE68A,
+      label: label,
+    ));
+  }
+  return _write('Fishbone', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _cycleProcess() {
+  final title = _title(1, 5.5, 7.7, 'Improvement cycle');
+  final steps = <(String, int, double, double)>[
+    ('Plan', 0xFFBFDBFE, 5.5, 6.3),
+    ('Do', 0xFFC4B5FD, 8.4, 4.4),
+    ('Check', 0xFFFDE68A, 5.5, 2.5),
+    ('Act', 0xFFBBF7D0, 2.6, 4.4),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  final nodes = <VsdxShape>[];
+  var id = 2;
+  for (final (label, color, x, y) in steps) {
+    final n = _ellipse(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.8,
+      h: 1.1,
+      fillArgb: color,
+      label: label,
+      bold: true,
+      pt: 13,
+    );
+    nodes.add(n);
+    shapes.add(n);
+  }
+  for (var i = 0; i < nodes.length; i++) {
+    final link = _link(id++, nodes[i], nodes[(i + 1) % nodes.length]);
+    shapes.add(link.connector);
+    connects.addAll(link.connects);
+  }
+  return _write('Cycle Process', shapes, connects);
+}
+
+Uint8List _vennDiagram() {
+  final title = _title(1, 5.5, 7.7, 'Venn overlap');
+  final a = _ellipse(
+    id: 2,
+    cx: 4.3,
+    cy: 4.3,
+    w: 3.4,
+    h: 3.4,
+    fillArgb: 0x6693C5FD,
+    label: 'Set A',
+    bold: true,
+    pt: 14,
+  );
+  final b = _ellipse(
+    id: 3,
+    cx: 6.7,
+    cy: 4.3,
+    w: 3.4,
+    h: 3.4,
+    fillArgb: 0x66F9A8D4,
+    label: 'Set B',
+    bold: true,
+    pt: 14,
+  );
+  final mid = _withLabel(
+    VsdxShapeFactory.textBox(
+      id: 4,
+      pinX: 5.5,
+      pinY: 4.3,
+      width: 1.4,
+      height: 0.4,
+      text: 'Shared',
+    ),
+    'Shared',
+    pt: 11,
+    bold: true,
+  );
+  return _write('Venn Diagram', <VsdxShape>[title, a, b, mid], const []);
+}
+
+Uint8List _salesFunnel() {
+  final title = _title(1, 5.5, 7.7, 'Sales funnel');
+  final stages = <(String, int, double, double)>[
+    ('Awareness', 0xFF93C5FD, 5.5, 6.4),
+    ('Interest', 0xFFBFDBFE, 5.5, 5.2),
+    ('Decision', 0xFFC4B5FD, 5.5, 4.0),
+    ('Purchase', 0xFFBBF7D0, 5.5, 2.8),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  var w = 7.2;
+  for (final (label, color, x, y) in stages) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: w,
+      h: 0.85,
+      fillArgb: color,
+      label: label,
+      bold: true,
+      pt: 13,
+    ));
+    w -= 1.2;
+  }
+  return _write('Sales Funnel', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _userJourney() {
+  final title = _title(1, 5.5, 7.7, 'User journey');
+  final stages = <(String, String, int, double)>[
+    ('Discover', '😊', 0xFFBFDBFE, 1.8),
+    ('Sign up', '🙂', 0xFFC4B5FD, 4.0),
+    ('First use', '😐', 0xFFFDE68A, 6.2),
+    ('Habit', '😄', 0xFFBBF7D0, 8.4),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  VsdxShape? prev;
+  var id = 2;
+  for (final (name, mood, color, x) in stages) {
+    final card = _box(
+      id: id++,
+      cx: x,
+      cy: 5.0,
+      w: 1.9,
+      h: 1.5,
+      fillArgb: color,
+      label: '$name\n$mood',
+      bold: true,
+    );
+    shapes.add(card);
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 2.8,
+      w: 1.9,
+      h: 1.2,
+      fillArgb: 0xFFF8FAFC,
+      label: 'Touchpoints\n• …',
+      pt: 10,
+      rounded: false,
+    ));
+    if (prev != null) {
+      final link = _link(id++, prev, card);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+    prev = card;
+  }
+  return _write('User Journey', shapes, connects);
+}
+
+Uint8List _networkTopology() {
+  final title = _title(1, 5.5, 7.7, 'Network topology');
+  final core = _ellipse(
+    id: 2,
+    cx: 5.5,
+    cy: 4.5,
+    w: 1.6,
+    h: 1.0,
+    fillArgb: 0xFF93C5FD,
+    label: 'Core',
+    bold: true,
+  );
+  final nodes = <(String, int, double, double)>[
+    ('Edge A', 0xFFBFDBFE, 2.2, 6.2),
+    ('Edge B', 0xFFBFDBFE, 8.8, 6.2),
+    ('Edge C', 0xFFBFDBFE, 2.2, 2.8),
+    ('Edge D', 0xFFBFDBFE, 8.8, 2.8),
+    ('Cloud', 0xFFE0E7FF, 5.5, 1.7),
+  ];
+  final shapes = <VsdxShape>[title, core];
+  final connects = <VsdxConnect>[];
+  var id = 3;
+  for (final (label, color, x, y) in nodes) {
+    final n = _box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.7,
+      h: 0.85,
+      fillArgb: color,
+      label: label,
+    );
+    shapes.add(n);
+    final link = _link(id++, core, n);
+    shapes.add(link.connector);
+    connects.addAll(link.connects);
+  }
+  return _write('Network Topology', shapes, connects);
+}
+
+Uint8List _meetingAgenda() {
+  final title = _title(1, 5.5, 7.7, 'Meeting agenda');
+  final headerLight = _box(
+    id: 2,
+    cx: 5.5,
+    cy: 6.3,
+    w: 8.5,
+    h: 0.7,
+    fillArgb: 0xFF93C5FD,
+    label: 'Weekly sync  ·  30 min',
+    bold: true,
+    pt: 13,
+  );
+  final rows = <(String, String, double)>[
+    ('5 min', 'Wins & blockers', 5.2),
+    ('10 min', 'Priorities this week', 4.2),
+    ('10 min', 'Decisions needed', 3.2),
+    ('5 min', 'Action items', 2.2),
+  ];
+  final shapes = <VsdxShape>[title, headerLight];
+  var id = 3;
+  for (final (time, topic, y) in rows) {
+    shapes.add(_box(
+      id: id++,
+      cx: 2.2,
+      cy: y,
+      w: 1.6,
+      h: 0.7,
+      fillArgb: 0xFFE0E7FF,
+      label: time,
+      bold: true,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: 6.4,
+      cy: y,
+      w: 6.4,
+      h: 0.7,
+      fillArgb: 0xFFF8FAFC,
+      label: topic,
+      rounded: false,
+    ));
+  }
+  return _write('Meeting Agenda', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _okrCascade() {
+  final title = _title(1, 5.5, 7.7, 'OKR cascade');
+  final objective = _box(
+    id: 2,
+    cx: 5.5,
+    cy: 6.2,
+    w: 4.5,
+    h: 0.95,
+    fillArgb: 0xFF93C5FD,
+    label: 'Objective',
+    bold: true,
+    pt: 14,
+  );
+  final krs = <(String, double)>[
+    ('KR 1 — metric', 2.2),
+    ('KR 2 — metric', 5.5),
+    ('KR 3 — metric', 8.8),
+  ];
+  final shapes = <VsdxShape>[title, objective];
+  final connects = <VsdxConnect>[];
+  var id = 3;
+  for (final (label, x) in krs) {
+    final kr = _box(
+      id: id++,
+      cx: x,
+      cy: 4.2,
+      w: 2.6,
+      h: 1.0,
+      fillArgb: 0xFFBFDBFE,
+      label: label,
+    );
+    shapes.add(kr);
+    final link = _link(id++, objective, kr);
+    shapes.add(link.connector);
+    connects.addAll(link.connects);
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 2.4,
+      w: 2.6,
+      h: 1.1,
+      fillArgb: 0xFFF8FAFC,
+      label: 'Initiatives\n• …\n• …',
+      pt: 10,
+      rounded: false,
+    ));
+  }
+  return _write('OKR Cascade', shapes, connects);
 }

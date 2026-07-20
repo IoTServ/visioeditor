@@ -176,9 +176,12 @@ class EditorL10n {
       _t('selectedCount').replaceAll('{n}', '$n');
   String get emptySubtitle => _t('emptySubtitle');
   String get newDrawing => _t('newDrawing');
+  String get newFromTemplate => _t('newFromTemplate');
+  String get chooseTemplateHint => _t('chooseTemplateHint');
   String get openVisioDrawing => _t('openVisioDrawing');
   String get orTrySample => _t('orTrySample');
   String get dropHint => _t('dropHint');
+  String get browseTemplates => _t('browseTemplates');
 
   // --- Dialogs ---
   String get discardUnsavedTitle => _t('discardUnsavedTitle');

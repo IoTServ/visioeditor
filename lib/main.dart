@@ -37,6 +37,8 @@ import 'io/pdf_export.dart';
 import 'io/recent_files.dart';
 import 'settings/app_settings.dart';
 import 'settings/settings_page.dart';
+import 'templates/diagram_templates.dart';
+import 'templates/template_picker_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -730,6 +732,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
 
   void _newDoc() => _workspace.newDocument();
 
+  Future<void> _newFromTemplate() async {
+    final picked = await showTemplatePickerDialog(context);
+    if (!mounted || picked == null) return;
+    if (picked.isBlank) {
+      _newDoc();
+      return;
+    }
+    await _openExample(picked.assetName!);
+  }
+
   Future<void> _closeTab(int index) async {
     if (index < 0 || index >= _workspace.docs.length) return;
     if (await _confirmDiscard(_workspace.docs[index])) {
@@ -1325,6 +1337,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                           tooltip: l10n.newDrawing,
                         ),
                         IconButton(
+                          onPressed: _newFromTemplate,
+                          icon: const Icon(Icons.dashboard_customize_outlined),
+                          tooltip: l10n.newFromTemplate,
+                        ),
+                        IconButton(
                           onPressed: _open,
                           icon: const Icon(Icons.folder_open_outlined),
                           tooltip: l10n.openDrawing,
@@ -1357,6 +1374,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                           onPressed: _newDoc,
                           icon: const Icon(Icons.note_add_outlined),
                           tooltip: l10n.newDrawing,
+                        ),
+                        IconButton(
+                          onPressed: _newFromTemplate,
+                          icon: const Icon(Icons.dashboard_customize_outlined),
+                          tooltip: l10n.newFromTemplate,
                         ),
                         IconButton(
                           onPressed: _open,
@@ -1436,6 +1458,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                     () => _showLayersPanel = !_showLayersPanel);
                               case 'new':
                                 _newDoc();
+                              case 'newTemplate':
+                                _newFromTemplate();
                               case 'open':
                                 _open();
                             }
@@ -1445,6 +1469,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               PopupMenuItem<String>(
                                 value: 'new',
                                 child: Text(l10n.newDrawing),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'newTemplate',
+                                child: Text(l10n.newFromTemplate),
                               ),
                               PopupMenuItem<String>(
                                 value: 'open',
@@ -1751,6 +1779,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
       return _EmptyState(
         onOpen: _open,
         onNew: _newDoc,
+        onNewFromTemplate: _newFromTemplate,
         examples: _examples,
         onOpenExample: _openExample,
       );
@@ -1762,6 +1791,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
       return _EmptyState(
         onOpen: _open,
         onNew: _newDoc,
+        onNewFromTemplate: _newFromTemplate,
         examples: _examples,
         onOpenExample: _openExample,
       );
@@ -2153,29 +2183,26 @@ class _DocTab extends StatelessWidget {
 /// Friendly chip labels for starter templates (zh when locale is Chinese).
 String _exampleLabel(BuildContext context, String assetName) {
   final zh = Localizations.localeOf(context).languageCode == 'zh';
-  const labels = <String, (String, String)>{
-    'Process Flow.vsdx': ('Process Flow', '流程图'),
-    'Org Chart.vsdx': ('Org Chart', '组织架构'),
-    'Project Roadmap.vsdx': ('Project Roadmap', '项目路线图'),
-    'SWOT Matrix.vsdx': ('SWOT Matrix', 'SWOT 矩阵'),
-    'System Architecture.vsdx': ('System Architecture', '系统架构'),
-    'workflow.vsdx': ('Workflow', '工作流示例'),
-  };
-  final pair = labels[assetName];
-  if (pair == null) return assetName.replaceAll('.vsdx', '');
-  return zh ? pair.$2 : pair.$1;
+  for (final t in kDiagramTemplates) {
+    if (t.assetName == assetName) {
+      return zh ? t.titleZh : t.titleEn;
+    }
+  }
+  return assetName.replaceAll('.vsdx', '');
 }
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({
     required this.onOpen,
     required this.onNew,
+    required this.onNewFromTemplate,
     required this.examples,
     required this.onOpenExample,
   });
 
   final VoidCallback onOpen;
   final VoidCallback onNew;
+  final VoidCallback onNewFromTemplate;
   final List<String> examples;
   final void Function(String assetName) onOpenExample;
 
@@ -2210,13 +2237,18 @@ class _EmptyState extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
-                  // Wrap so narrow windows do not overflow the two CTAs.
+                  // Wrap so narrow windows do not overflow the CTAs.
                   Wrap(
                     alignment: WrapAlignment.center,
                     spacing: 12,
                     runSpacing: 8,
                     children: [
                       FilledButton.icon(
+                        onPressed: onNewFromTemplate,
+                        icon: const Icon(Icons.dashboard_customize_outlined),
+                        label: Text(el.newFromTemplate),
+                      ),
+                      FilledButton.tonalIcon(
                         onPressed: onNew,
                         icon: const Icon(Icons.note_add_outlined),
                         label: Text(el.newDrawing),
@@ -2233,7 +2265,7 @@ class _EmptyState extends StatelessWidget {
                       style: TextStyle(color: scheme.onSurfaceVariant)),
                   const SizedBox(height: 10),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
+                    constraints: const BoxConstraints(maxWidth: 560),
                     child: Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 8,
@@ -2246,6 +2278,11 @@ class _EmptyState extends StatelessWidget {
                             label: Text(_exampleLabel(context, e)),
                             onPressed: () => onOpenExample(e),
                           ),
+                        ActionChip(
+                          avatar: const Icon(Icons.apps_outlined, size: 18),
+                          label: Text(el.browseTemplates),
+                          onPressed: onNewFromTemplate,
+                        ),
                       ],
                     ),
                   ),
