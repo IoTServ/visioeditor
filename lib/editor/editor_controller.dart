@@ -4250,6 +4250,18 @@ class EditorController extends ChangeNotifier {
       }
       r = r.copyWith(line: line);
     }
+    // Match pasteStyle / setNoFill: keep Geometry NoFill/NoLine in sync so
+    // Edraw does not revive a fill when FillPattern=0 but NoFill=0.
+    var geos = r.geometries;
+    if (includeFill && _memoFill != null) {
+      geos = syncGeometryNoFill(geos, hollow: r.fill.pattern == 0);
+    }
+    if (_memoLine != null) {
+      geos = syncGeometryNoLine(geos, hollow: r.line.pattern == 0);
+    }
+    if (!identical(geos, r.geometries)) {
+      r = r.copyWith(geometries: geos);
+    }
     return r;
   }
 

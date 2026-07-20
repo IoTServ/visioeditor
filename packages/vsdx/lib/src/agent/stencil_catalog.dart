@@ -75,7 +75,7 @@ VsdxShape resolveStencilShape({
 }) {
   final core = coreNameOrNull(stencil);
   if (core != null) {
-    return buildStencilShape(
+    return syncNoneGeometryFlags(buildStencilShape(
       stencil: core,
       id: id,
       cx: cx,
@@ -84,7 +84,7 @@ VsdxShape resolveStencilShape({
       h: h,
       fill: fillFromHex(fillHex),
       line: lineFromHex(lineHex),
-    );
+    ));
   }
   final cat = _catalogByNorm[_norm(stencil)];
   if (cat != null) {
@@ -95,9 +95,9 @@ VsdxShape resolveStencilShape({
     if (lineHex != null && lineHex.trim().isNotEmpty) {
       s = s.copyWith(line: lineFromHex(lineHex));
     }
-    return s;
+    return syncNoneGeometryFlags(s);
   }
-  return buildStencilShape(
+  return syncNoneGeometryFlags(buildStencilShape(
     stencil: 'rectangle',
     id: id,
     cx: cx,
@@ -106,7 +106,7 @@ VsdxShape resolveStencilShape({
     h: h,
     fill: fillFromHex(fillHex),
     line: lineFromHex(lineHex),
-  );
+  ));
 }
 
 /// Search the curated core **plus** the full ~300-shape catalog by name/group.

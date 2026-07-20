@@ -2217,14 +2217,15 @@ class VsdxWriter {
     return changed;
   }
 
-  /// Patch a boolean ShapeSheet flag cell (`V="1"` present ⇒ true; absent ⇒ false).
+  /// Patch a boolean ShapeSheet flag cell. Always write `V="0"`/`"1"` so Master
+  /// inheritance cannot revive a cleared flag after save (do not delete the cell).
   bool _patchFlagCell(XmlElement shape, String cell, bool base, bool edited) {
     if (base == edited) {
+      // Still scrub F=Inh when the flag is on.
       if (!edited) return false;
       return _forceLiteralInt(shape, cell, 1);
     }
-    if (!edited) return _removeNamedCells(shape, [cell]);
-    _writeValue(_ensureCell(shape, cell), '1');
+    _writeValue(_ensureCell(shape, cell), edited ? '1' : '0');
     return true;
   }
 
@@ -4312,28 +4313,13 @@ class VsdxWriter {
     children.add(_cell('TextBkgndTrans', _fmt(b.backgroundTransparency)));
     children.add(_cell('TextDirection', b.textDirection.toString()));
     children.add(_cell('DefaultTabStop', _fmt(b.defaultTabStopInches)));
-    const d = VsdxTextBlock.defaults;
-    final margin = hasLabel ? 0.05555555555555555 : null;
-    if ((b.marginLeftInches - d.marginLeftInches).abs() > _epsilon) {
-      children.add(_cell('LeftMargin', _fmt(b.marginLeftInches)));
-    } else if (margin != null) {
-      children.add(_cell('LeftMargin', _fmt(margin)));
-    }
-    if ((b.marginRightInches - d.marginRightInches).abs() > _epsilon) {
-      children.add(_cell('RightMargin', _fmt(b.marginRightInches)));
-    } else if (margin != null) {
-      children.add(_cell('RightMargin', _fmt(margin)));
-    }
-    if ((b.marginTopInches - d.marginTopInches).abs() > _epsilon) {
-      children.add(_cell('TopMargin', _fmt(b.marginTopInches)));
-    } else if (margin != null) {
-      children.add(_cell('TopMargin', _fmt(margin)));
-    }
-    if ((b.marginBottomInches - d.marginBottomInches).abs() > _epsilon) {
-      children.add(_cell('BottomMargin', _fmt(b.marginBottomInches)));
-    } else if (margin != null) {
-      children.add(_cell('BottomMargin', _fmt(margin)));
-    }
+    // Always emit model margins (patch force-writes them). Do not rewrite the
+    // Visio default 0.04" to Edraw's ~4pt (0.055…) — that corrupted rebuilds.
+    children
+      ..add(_cell('LeftMargin', _fmt(b.marginLeftInches)))
+      ..add(_cell('RightMargin', _fmt(b.marginRightInches)))
+      ..add(_cell('TopMargin', _fmt(b.marginTopInches)))
+      ..add(_cell('BottomMargin', _fmt(b.marginBottomInches)));
   }
 
   // A cell's `V` is always in Visio's internal units — inches for length,
@@ -5137,6 +5123,7 @@ class VsdxWriter {
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     } else {
       children.add(_cell('GlowSize', '0'));
+      children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
     if (s.reflection.enabled) {
       children
@@ -5146,7 +5133,11 @@ class VsdxWriter {
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
-      children.add(_cell('ReflectionSize', '0'));
+      children
+        ..add(_cell('ReflectionSize', '0'))
+        ..add(_cell('ReflectionDist', '0'))
+        ..add(_cell('ReflectionTransparency', '0'))
+        ..add(_cell('ReflectionBlur', '0'));
     }
     if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
       children
@@ -5193,8 +5184,9 @@ class VsdxWriter {
         formula: s.formulas['EventDblClick'],
       ));
     }
-    if (s.noAlignBox) children.add(_cell('NoAlignBox', '1'));
-    if (s.shapeSplittable) children.add(_cell('ShapeSplittable', '1'));
+    children
+      ..add(_cell('NoAlignBox', s.noAlignBox ? '1' : '0'))
+      ..add(_cell('ShapeSplittable', s.shapeSplittable ? '1' : '0'));
     if (s.themeIndex != null) {
       children.add(_cell('ThemeIndex', s.themeIndex.toString()));
     }
@@ -5214,8 +5206,9 @@ class VsdxWriter {
       children.add(
           _cell('QuickStyleFontMatrix', s.quickStyleFontMatrix.toString()));
     }
-    if (s.isTextEditTarget) children.add(_cell('IsTextEditTarget', '1'));
-    if (s.dontMoveChildren) children.add(_cell('DontMoveChildren', '1'));
+    children
+      ..add(_cell('IsTextEditTarget', s.isTextEditTarget ? '1' : '0'))
+      ..add(_cell('DontMoveChildren', s.dontMoveChildren ? '1' : '0'));
     if (s.selectMode != null) {
       children.add(_cell('SelectMode', s.selectMode.toString()));
     }
@@ -5407,10 +5400,8 @@ class VsdxWriter {
       ..add(_cell('Letterspace', _fmt(c.letterSpacingInches)))
       ..add(_cell('Pos', _textPositionInt(c.position).toString()))
       ..add(_cell('Case', _textCaseInt(c.textCase).toString()))
-      ..add(_cell('ColorTrans', _fmt(c.transparency)));
-    if ((c.fontScale - 1.0).abs() > _epsilon) {
-      cells.add(_cell('FontScale', _fmt(c.fontScale)));
-    }
+      ..add(_cell('ColorTrans', _fmt(c.transparency)))
+      ..add(_cell('FontScale', _fmt(c.fontScale)));
     final lang = c.langId ?? (cjk ? 'zh-CN' : null);
     if (lang != null && lang.isNotEmpty) {
       cells.add(_cell('LangID', lang));
@@ -5439,46 +5430,28 @@ class VsdxWriter {
   }
 
   List<XmlNode> _paraCells(VsdxParaStyle p) {
-    final cells = <XmlNode>[
+    // Align with [_writeParaRow]: always emit managed cells (incl. 0) so
+    // cleared spacing / bullets cannot revive via Master on group rebuild.
+    return <XmlNode>[
       _cell('HorzAlign', _alignToInt(p.horizontalAlign).toString()),
+      _cell('IndFirst', _fmt(p.indentFirstInches)),
+      _cell('IndLeft', _fmt(p.indentLeftInches)),
+      _cell('IndRight', _fmt(p.indentRightInches)),
+      _cell('SpBefore', _fmt(p.spaceBeforeInches)),
+      _cell('SpAfter', _fmt(p.spaceAfterInches)),
+      _cell('SpLine', _fmt(_spLineValue(p) ?? -1)),
+      _cell('Bullet', p.bullet.toString()),
+      _cell('BulletStr', p.bulletStr ?? ''),
+      _cell('BulletFont', p.bulletFont ?? ''),
+      _cell(
+        'BulletFontSize',
+        p.bulletFontSizeInches != null
+            ? _fmt(p.bulletFontSizeInches!)
+            : '0',
+      ),
+      _cell('TextPosAfterBullet', _fmt(p.textPosAfterBulletInches)),
+      _cell('Flags', p.flags.toString()),
     ];
-    if (p.indentFirstInches.abs() > _epsilon) {
-      cells.add(_cell('IndFirst', _fmt(p.indentFirstInches)));
-    }
-    if (p.indentLeftInches.abs() > _epsilon) {
-      cells.add(_cell('IndLeft', _fmt(p.indentLeftInches)));
-    }
-    if (p.indentRightInches.abs() > _epsilon) {
-      cells.add(_cell('IndRight', _fmt(p.indentRightInches)));
-    }
-    if (p.spaceBeforeInches.abs() > _epsilon) {
-      cells.add(_cell('SpBefore', _fmt(p.spaceBeforeInches)));
-    }
-    if (p.spaceAfterInches.abs() > _epsilon) {
-      cells.add(_cell('SpAfter', _fmt(p.spaceAfterInches)));
-    }
-    final spLine = _spLineValue(p);
-    if (spLine != null) {
-      cells.add(_cell('SpLine', _fmt(spLine)));
-    }
-    // Always emit Bullet (incl. 0) so cleared bullets cannot revive via Master.
-    cells.add(_cell('Bullet', p.bullet.toString()));
-    if (p.bulletStr != null && p.bulletStr!.isNotEmpty) {
-      cells.add(_cell('BulletStr', p.bulletStr!));
-    }
-    if (p.bulletFont != null && p.bulletFont!.isNotEmpty) {
-      cells.add(_cell('BulletFont', p.bulletFont!));
-    }
-    if (p.bulletFontSizeInches != null) {
-      cells.add(_cell('BulletFontSize', _fmt(p.bulletFontSizeInches!)));
-    }
-    if (p.textPosAfterBulletInches.abs() > _epsilon) {
-      cells.add(_cell('TextPosAfterBullet', _fmt(p.textPosAfterBulletInches)));
-    }
-    if (p.flags != 0) {
-      cells.add(_cell('Flags', p.flags.toString()));
-    }
-    return cells;
   }
 
   /// `<Section N="Tabs">` — libvisio `PositionN` / `AlignmentN` cells.
@@ -5756,6 +5729,7 @@ class VsdxWriter {
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     } else {
       children.add(_cell('GlowSize', '0'));
+      children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
     if (s.reflection.enabled) {
       children
@@ -5765,7 +5739,11 @@ class VsdxWriter {
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
-      children.add(_cell('ReflectionSize', '0'));
+      children
+        ..add(_cell('ReflectionSize', '0'))
+        ..add(_cell('ReflectionDist', '0'))
+        ..add(_cell('ReflectionTransparency', '0'))
+        ..add(_cell('ReflectionBlur', '0'));
     }
     // Match Shape rebuild: always emit gradient enable flags (incl. 0).
     if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
@@ -5809,8 +5787,9 @@ class VsdxWriter {
         formula: s.formulas['EventDblClick'],
       ));
     }
-    if (s.noAlignBox) children.add(_cell('NoAlignBox', '1'));
-    if (s.shapeSplittable) children.add(_cell('ShapeSplittable', '1'));
+    children
+      ..add(_cell('NoAlignBox', s.noAlignBox ? '1' : '0'))
+      ..add(_cell('ShapeSplittable', s.shapeSplittable ? '1' : '0'));
     if (s.themeIndex != null) {
       children.add(_cell('ThemeIndex', s.themeIndex.toString()));
     }
@@ -5830,8 +5809,9 @@ class VsdxWriter {
       children.add(
           _cell('QuickStyleFontMatrix', s.quickStyleFontMatrix.toString()));
     }
-    if (s.isTextEditTarget) children.add(_cell('IsTextEditTarget', '1'));
-    if (s.dontMoveChildren) children.add(_cell('DontMoveChildren', '1'));
+    children
+      ..add(_cell('IsTextEditTarget', s.isTextEditTarget ? '1' : '0'))
+      ..add(_cell('DontMoveChildren', s.dontMoveChildren ? '1' : '0'));
     if (s.selectMode != null) {
       children.add(_cell('SelectMode', s.selectMode.toString()));
     }

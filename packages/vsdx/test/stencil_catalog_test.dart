@@ -35,6 +35,24 @@ void main() {
       expect(s.fill.foreground?.value, 0xFFFF0000);
     });
 
+    test('fill none syncs Geometry NoFill for Edraw export', () {
+      final s = resolveStencilShape(
+        stencil: 'process',
+        id: 4,
+        cx: 1,
+        cy: 1,
+        w: 2,
+        h: 1,
+        fillHex: 'none',
+        lineHex: 'none',
+      );
+      expect(s.fill.pattern, 0);
+      expect(s.line.pattern, 0);
+      expect(s.geometries, isNotEmpty);
+      expect(s.geometries.every((g) => g.noFill), isTrue);
+      expect(s.geometries.every((g) => g.noLine), isTrue);
+    });
+
     test('unknown stencil falls back to a rectangle', () {
       final s = resolveStencilShape(
           stencil: 'totally-not-a-shape', id: 3, cx: 0, cy: 0, w: 1, h: 1);

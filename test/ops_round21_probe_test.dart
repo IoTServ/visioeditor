@@ -160,6 +160,20 @@ void main() {
     expect(a, isNotNull);
   });
 
+  test('memo no-fill seeds Geometry NoFill on new shapes', () {
+    final e = ctrl();
+    rect(e, 2, 4);
+    e.setNoFill();
+    e.setNoLine();
+    // Creating another shape should inherit memo with Geometry flags synced.
+    final id = rect(e, 5, 4);
+    final s = e.currentPage!.findShapeById(id)!;
+    expect(s.fill.pattern, 0);
+    expect(s.line.pattern, 0);
+    expect(s.geometries.every((g) => g.noFill), isTrue);
+    expect(s.geometries.every((g) => g.noLine), isTrue);
+  });
+
   test('ungroup nested group one level only', () {
     final e = ctrl();
     final a = rect(e, 2, 4);

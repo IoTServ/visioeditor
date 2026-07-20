@@ -48,6 +48,16 @@ VsdxLine lineFromHex(String? hex, {double weightInches = 0.012, int endArrow = 0
   return VsdxLine(color: c, weightInches: weightInches, endArrow: endArrow);
 }
 
+/// Keep Geometry NoFill/NoLine aligned with [s.fill]/[s.line] patterns so
+/// `fill:none` / `line:none` export with Edraw-visible hollow flags.
+VsdxShape syncNoneGeometryFlags(VsdxShape s) {
+  var geos = s.geometries;
+  geos = syncGeometryNoFill(geos, hollow: s.fill.pattern == 0);
+  geos = syncGeometryNoLine(geos, hollow: s.line.pattern == 0);
+  if (identical(geos, s.geometries)) return s;
+  return s.copyWith(geometries: geos);
+}
+
 /// Attach a single-run label to [s] (plain text cache + styled rich run).
 ///
 /// When [bold] / [colorHex] / [pt] are omitted, an existing first-run style is
