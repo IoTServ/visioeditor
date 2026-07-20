@@ -1718,6 +1718,21 @@ class _DataTableEditorState extends State<_DataTableEditor>
   @override
   Widget build(BuildContext context) {
     final el = EditorL10n.of(context);
+    // First frame can run before the post-frame sync creates cell controllers.
+    final chart = controller.selectedChart;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'dataTable' &&
+        (_cells.isEmpty || _cells.length != _rows * _cols)) {
+      syncFields(chart);
+    } else {
+      final n = _rows * _cols;
+      while (_cells.length > n) {
+        _cells.removeLast().dispose();
+      }
+      while (_cells.length < n) {
+        _cells.add(TextEditingController());
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
