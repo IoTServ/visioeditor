@@ -304,8 +304,25 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
     final scheme = Theme.of(context).colorScheme;
     final kind = ChartOps.chartKind(chart) ?? 'column';
     final values = ChartOps.chartValues(chart);
+    final labels = ChartOps.chartLabels(chart, values.length);
     final colors =
         ChartOps.padColors(ChartOps.chartColors(chart), values.length);
+    // First frame can run before the post-frame sync; keep controllers in lockstep.
+    if (_valueCtrls.length != values.length) {
+      _ensureFieldCount(values.length);
+      for (var i = 0; i < values.length; i++) {
+        final text = ChartOps.isSingleValueKind(kind)
+            ? ChartOps.formatPercent(values[i])
+            : ChartOps.formatValues(<double>[values[i]]);
+        if (_valueCtrls[i].text != text) _valueCtrls[i].text = text;
+        final shown = _displayLabel(el, labels[i], i);
+        if (_labelCtrls[i].text != shown) _labelCtrls[i].text = shown;
+      }
+      if (ChartOps.isSingleValueKind(kind) && values.isNotEmpty) {
+        final p = ChartOps.formatPercent(values.first);
+        if (_percentCtrl.text != p) _percentCtrl.text = p;
+      }
+    }
     final single = ChartOps.isSingleValueKind(kind);
     final canAdd = !single && values.length < ChartOps.maxSeriesItems;
     final canRemove = !single && values.length > 1;
