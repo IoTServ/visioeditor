@@ -34,7 +34,10 @@ void main() {
     return ctx.findAncestorStateOfType<EditableTextState>() != null;
   }
 
-  Map<ShortcutActivator, VoidCallback> bindingsFor(EditorController c) {
+  Map<ShortcutActivator, VoidCallback> bindingsFor(
+    EditorController c, {
+    VoidCallback? onBold,
+  }) {
     void deleteSel() {
       if (isEditableTextFocused()) return;
       if (c.hasSelection || c.editingConnectionPoints) c.deleteSelection();
@@ -47,11 +50,13 @@ void main() {
       c.moveSelectionBy(dx * step, dy * step);
     }
 
-    // Match app bindings: undo does not itself guard on text focus — the
-    // host must defer Cmd/Ctrl+Z so EditableText receives the chord.
+    // Match app bindings: these do not themselves guard on text focus — the
+    // host must defer the chords so EditableText receives them.
     void undo() {
       if (c.canUndo) c.undo();
     }
+
+    final bold = onBold ?? () {};
 
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): deleteSel,
@@ -62,6 +67,8 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
       const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
+      const SingleActivator(LogicalKeyboardKey.keyB, meta: true): bold,
+      const SingleActivator(LogicalKeyboardKey.keyB, control: true): bold,
     };
   }
 
@@ -69,13 +76,14 @@ void main() {
     WidgetTester tester,
     EditorController c, {
     Widget? body,
+    VoidCallback? onBold,
   }) async {
     final focus = FocusNode();
     addTearDown(focus.dispose);
     await tester.pumpWidget(
       MaterialApp(
         home: EditorCallbackShortcuts(
-          bindings: bindingsFor(c),
+          bindings: bindingsFor(c, onBold: onBold),
           isEditableTextFocused: isEditableTextFocused,
           child: Scaffold(
             body: body ??
@@ -189,4 +197,30 @@ void main() {
     expect(c.canUndo, isTrue);
   });
 
+  testWidgets('Cmd/Ctrl+B with text focus does not toggle shape bold',
+      (tester) async {
+    final c = ctrlWithRect();
+    var boldHits = 0;
+    final search = TextEditingController(text: 'hello');
+    addTearDown(search.dispose);
+
+    await pumpHarness(
+      tester,
+      c,
+      onBold: () => boldHits++,
+      body: TextField(
+        controller: search,
+        autofocus: true,
+      ),
+    );
+    await tester.pump();
+    expect(isEditableTextFocused(), isTrue);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    expect(boldHits, 0);
+  });
 }

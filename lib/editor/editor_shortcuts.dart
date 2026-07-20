@@ -38,14 +38,18 @@ class EditorCallbackShortcuts extends StatelessWidget {
           key == LogicalKeyboardKey.escape ||
           key == LogicalKeyboardKey.tab;
     }
-    // Keep clipboard / select-all / undo-redo working inside text fields.
+    // Keep clipboard / select-all / undo-redo / bold-italic-underline
+    // working inside text fields (do not steal for shape formatting).
     if (chord && !alt) {
       return key == LogicalKeyboardKey.keyA ||
           key == LogicalKeyboardKey.keyC ||
           key == LogicalKeyboardKey.keyV ||
           key == LogicalKeyboardKey.keyX ||
           key == LogicalKeyboardKey.keyZ ||
-          key == LogicalKeyboardKey.keyY;
+          key == LogicalKeyboardKey.keyY ||
+          key == LogicalKeyboardKey.keyB ||
+          key == LogicalKeyboardKey.keyI ||
+          key == LogicalKeyboardKey.keyU;
     }
     return false;
   }

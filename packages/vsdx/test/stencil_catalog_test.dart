@@ -71,6 +71,30 @@ void main() {
       expect(TableOps.isTable(dining), isFalse);
       expect(dining.children, isEmpty);
     });
+
+    test('Note resolves to sticky note, not text box', () {
+      final note = resolveStencilShape(
+          stencil: 'Note', id: 11, cx: 1, cy: 1, w: 1.2, h: 1.2);
+      final text = resolveStencilShape(
+          stencil: 'text', id: 12, cx: 1, cy: 1, w: 1.2, h: 1.2);
+      // Sticky notes use folded-corner geometry (multi-row), text boxes are a
+      // single rectangle.
+      expect(note.geometries.length, greaterThan(text.geometries.length));
+      expect(coreNameOrNull('note'), isNull);
+    });
+
+    test('Dataflow and OCI Data Flow resolve to distinct catalog shapes', () {
+      // Same requested box so a norm-collision would yield identical geometry.
+      final gcp = resolveStencilShape(
+          stencil: 'Dataflow', id: 13, cx: 1, cy: 1, w: 2, h: 2);
+      final oci = resolveStencilShape(
+          stencil: 'OCI Data Flow', id: 14, cx: 1, cy: 1, w: 2, h: 2);
+      expect(gcp.geometries.first.commands.length,
+          isNot(oci.geometries.first.commands.length));
+      final names = searchStencils('dataflow', limit: 20).map((e) => e.name);
+      expect(names, contains('Dataflow'));
+      expect(names, contains('OCI Data Flow'));
+    });
   });
 
   group('searchStencils', () {

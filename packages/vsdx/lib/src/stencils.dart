@@ -3270,7 +3270,7 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.oracleDataScience(
             id: id, pinX: cx, pinY: cy, width: 1.2, height: 1.2)),
     Stencil(
-        'Data Flow',
+        'OCI Data Flow',
         (id, cx, cy) => VsdxShapeFactory.oracleDataFlow(
             id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
     Stencil(

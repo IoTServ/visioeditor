@@ -32,7 +32,8 @@ const List<StencilEntry> kCoreStencils = <StencilEntry>[
   StencilEntry('hexagon', 'Flowchart', ['preparation']),
   StencilEntry('triangle', 'General', []),
   StencilEntry('cylinder', 'Containers', ['database', 'db', 'store', 'storage']),
-  StencilEntry('text', 'General', ['textbox', 'label', 'note']),
+  // Intentionally no 'note' alias — catalog sticky Note must win for agents.
+  StencilEntry('text', 'General', ['textbox', 'label']),
 ];
 
 /// Resolve [stencil] (case-insensitive, alias-aware) to its canonical core
