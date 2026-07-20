@@ -6950,6 +6950,176 @@ void main() {
     expect(soft.getAttribute('F'), isNull);
   });
 
+  test('Rounding V= F=Inh keeps cached radius across save', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(line: const VsdxLine(roundingInches: 0.15)),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="Rounding"[^/]*/>'),
+      '<Cell N="Rounding" V="0.15" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.line.roundingInches,
+        closeTo(0.15, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.line.roundingInches, closeTo(0.15, 1e-6));
+    final cell = XmlDocument.parse(utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    ))
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'Rounding',
+        );
+    expect(double.parse(cell.getAttribute('V')!), closeTo(0.15, 1e-6));
+    expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('ReflectionDist/Blur F=Inh keep cached V while reflection stays on', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            distanceInches: 0.12,
+            blurInches: 0.08,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ReflectionDist"[^/]*/>'),
+      '<Cell N="ReflectionDist" V="0.12" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ReflectionBlur"[^/]*/>'),
+      '<Cell N="ReflectionBlur" V="0.08" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final midShape = doc.pages.first.findShapeById(id)!;
+    expect(midShape.reflection.enabled, isTrue);
+    expect(midShape.reflection.distanceInches, closeTo(0.12, 1e-6));
+    expect(midShape.reflection.blurInches, closeTo(0.08, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.reflection.distanceInches, closeTo(0.12, 1e-6));
+    expect(after.reflection.blurInches, closeTo(0.08, 1e-6));
+  });
+
+  test('ShadowBlur F=Inh keeps cached blur while shadow stays on', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            blurInches: 0.09,
+            offsetXInches: 0.15,
+            offsetYInches: 0.1,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ShadowBlur"[^/]*/>'),
+      '<Cell N="ShadowBlur" V="0.09" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.shadow.blurInches,
+        closeTo(0.09, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.shadow.blurInches, closeTo(0.09, 1e-6));
+    final cell = XmlDocument.parse(utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    ))
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'ShadowBlur',
+        );
+    expect(double.parse(cell.getAttribute('V')!), closeTo(0.09, 1e-6));
+    expect(cell.getAttribute('F'), isNull);
+  });
+
   test('GlowSize F=Inh scrubs to literal 0 when glow disabled', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

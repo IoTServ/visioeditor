@@ -166,12 +166,14 @@ class StyleParser {
     final dist = readLengthInches(
       shape,
       'ReflectionDist',
-      inheritFrom: defaults.distanceInches,
+      // Only inherit Dist from an enabled master; otherwise keep cached V so
+      // F=Inh does not wipe a local distance when Size still enables reflection.
+      inheritFrom: defaults.enabled ? defaults.distanceInches : null,
     );
     final blur = readLengthInches(
       shape,
       'ReflectionBlur',
-      inheritFrom: defaults.blurInches,
+      inheritFrom: defaults.enabled ? defaults.blurInches : null,
     );
     final transparency =
         (_double(shape, 'ReflectionTransparency') ?? defaults.transparency)
@@ -224,7 +226,9 @@ class StyleParser {
             ? defaults.offsetYInches
             : (pageOffsetYInches ?? defaults.offsetYInches));
     final blur = readLengthInches(shape, 'ShadowBlur',
-        inheritFrom: defaults.blurInches);
+        // Blur has no page-sheet fallback; only inherit from an enabled master
+        // so F=Inh keeps the cached V instead of the disabled default 0.04".
+        inheritFrom: defaults.enabled ? defaults.blurInches : null);
     final transparency =
         (_double(shape, 'ShadowForegndTrans') ?? defaults.transparency)
             .clamp(0.0, 1.0);
@@ -278,7 +282,13 @@ class StyleParser {
     final beginSize = _int(shape, 'BeginArrowSize');
     final endSize = _int(shape, 'EndArrowSize');
     final rounding = readLengthInches(
-          shape, 'Rounding', inheritFrom: defaults.roundingInches) ??
+          shape,
+          'Rounding',
+          // Stylesheets do not yet resolve Rounding; avoid Inh→0 wiping the
+          // cached V when defaults are the zero defaultLine.
+          inheritFrom:
+              defaults.roundingInches > 1e-12 ? defaults.roundingInches : null,
+        ) ??
         defaults.roundingInches;
     final softEdges = readLengthInches(
           shape, 'SoftEdgesSize', inheritFrom: defaults.softEdgesInches) ??

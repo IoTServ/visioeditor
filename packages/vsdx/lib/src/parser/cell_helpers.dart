@@ -30,10 +30,12 @@ XmlElement? findCell(XmlElement parent, String name) {
 /// internal unit is likewise inches. (See the Visio XML schema: "The value of a
 /// cell element is always expressed in internal units.")
 ///
-/// When `F="Inh"` and [inheritFrom] is supplied, returns [inheritFrom] directly
-/// (formula-level master inheritance). When there is no literal `V`, falls back
-/// to evaluating the `F=` formula, which *does* honour inline units written in
-/// the expression itself (`1.5 in`, `25.4 mm`).
+/// When `F="Inh"` and [inheritFrom] is supplied, returns [inheritFrom]
+/// (formula-level master / page inheritance). When [inheritFrom] is `null`,
+/// falls through to the cached `V=` so companions (Rounding, ReflectionDist,
+/// …) are not zeroed when the stylesheet/master is unresolved. When there is
+/// no literal `V`, falls back to evaluating the `F=` formula, which *does*
+/// honour inline units written in the expression itself (`1.5 in`, `25.4 mm`).
 double? readLengthInches(
   XmlElement parent,
   String name, {
@@ -42,7 +44,7 @@ double? readLengthInches(
   final cell = findCell(parent, name);
   if (cell == null) return null;
   final f = cell.getAttribute('F');
-  if (f != null && _isInhFormula(f)) {
+  if (f != null && _isInhFormula(f) && inheritFrom != null) {
     return inheritFrom;
   }
   final v = cell.getAttribute('V');
@@ -52,7 +54,8 @@ double? readLengthInches(
   }
   // No literal — fall back to the F= formula. evaluateFormula handles
   // numeric expressions with inline length units (`1.5 in`, `25.4 mm`).
-  if (f == null) return null;
+  // (Still skip pure Inh with no V / no inherit source.)
+  if (f == null || _isInhFormula(f)) return null;
   return evaluateFormula(f);
 }
 
@@ -67,7 +70,7 @@ double? readAngleRadians(
   final cell = findCell(parent, name);
   if (cell == null) return null;
   final f = cell.getAttribute('F');
-  if (f != null && _isInhFormula(f)) {
+  if (f != null && _isInhFormula(f) && inheritFrom != null) {
     return inheritFrom;
   }
   final v = cell.getAttribute('V');
@@ -75,7 +78,7 @@ double? readAngleRadians(
     final n = double.tryParse(v);
     if (n != null) return n; // V is already in internal units (radians)
   }
-  if (f == null) return null;
+  if (f == null || _isInhFormula(f)) return null;
   return evaluateFormula(f);
 }
 
