@@ -46,6 +46,9 @@ abstract final class ChartOps {
       'cylinder',
       'horizontalCylinder',
       'cone',
+      'variableColumn',
+      'pillBar',
+      'arrowBar',
       'sparkColumn',
       'sparkWinLoss',
       'triangleBar',
@@ -58,10 +61,11 @@ abstract final class ChartOps {
       'clusteredBar',
       'lollipop',
       'horizontalLollipop',
+      'diamondLollipop',
       'divergingBar',
       'dotPlot',
     ]),
-    ('Pies', <String>['pie', 'donut', 'semiDonut', 'rose']),
+    ('Pies', <String>['pie', 'donut', 'semiDonut', 'rose', 'nightingale']),
     ('Lines & areas', <String>[
       'line',
       'stepLine',
@@ -70,10 +74,12 @@ abstract final class ChartOps {
       'sparkLine',
       'sparkArea',
       'radar',
+      'polarLine',
     ]),
     ('Process', <String>[
       'funnel',
       'pyramid',
+      'chevron',
       'waterfall',
       'radialBar',
       'radialColumn',
@@ -105,6 +111,9 @@ abstract final class ChartOps {
     'cylinder': 'Cylinder Chart',
     'horizontalCylinder': 'Horizontal Cylinder',
     'cone': 'Cone Chart',
+    'variableColumn': 'Variable Column',
+    'pillBar': 'Pill Bar',
+    'arrowBar': 'Arrow Bar',
     'sparkColumn': 'Spark Column',
     'sparkWinLoss': 'Spark Win/Loss',
     'triangleBar': 'Triangle Bar',
@@ -117,12 +126,14 @@ abstract final class ChartOps {
     'clusteredBar': 'Clustered Bar',
     'lollipop': 'Lollipop Chart',
     'horizontalLollipop': 'Horizontal Lollipop',
+    'diamondLollipop': 'Diamond Lollipop',
     'divergingBar': 'Diverging Bar',
     'dotPlot': 'Dot Plot',
     'pie': 'Pie Chart',
     'donut': 'Donut Chart',
     'semiDonut': 'Semi Donut',
     'rose': 'Rose Chart',
+    'nightingale': 'Nightingale Chart',
     'line': 'Line Chart',
     'stepLine': 'Step Line',
     'area': 'Area Chart',
@@ -131,7 +142,9 @@ abstract final class ChartOps {
     'sparkArea': 'Spark Area',
     'funnel': 'Funnel',
     'pyramid': 'Pyramid Chart',
+    'chevron': 'Chevron Process',
     'radar': 'Radar Chart',
+    'polarLine': 'Polar Line',
     'radialBar': 'Radial Bar',
     'radialColumn': 'Radial Column',
     'compositionBar': 'Composition Bar',
@@ -825,6 +838,15 @@ abstract final class ChartOps {
             height: height ?? 1.8,
             values: values,
             allocId: allocId);
+      case 'diamondLollipop':
+        return diamondLollipopChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
       case 'histogram':
         return histogramChart(
             id: id,
@@ -854,6 +876,33 @@ abstract final class ChartOps {
             allocId: allocId);
       case 'cone':
         return coneChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'variableColumn':
+        return variableColumnChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'pillBar':
+        return pillBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 1.8,
+            values: values,
+            allocId: allocId);
+      case 'arrowBar':
+        return arrowBarChart(
             id: id,
             pinX: pinX,
             pinY: pinY,
@@ -1050,6 +1099,15 @@ abstract final class ChartOps {
             height: height ?? 2.0,
             values: values,
             allocId: allocId);
+      case 'nightingale':
+        return nightingaleChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.0,
+            height: height ?? 2.0,
+            values: values,
+            allocId: allocId);
       case 'line':
         return lineChart(
             id: id,
@@ -1122,8 +1180,26 @@ abstract final class ChartOps {
             height: height ?? 2.2,
             values: values,
             allocId: allocId);
+      case 'chevron':
+        return chevronChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 0.9,
+            values: values,
+            allocId: allocId);
       case 'radar':
         return radarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.0,
+            height: height ?? 2.0,
+            values: values,
+            allocId: allocId);
+      case 'polarLine':
+        return polarLineChart(
             id: id,
             pinX: pinX,
             pinY: pinY,
@@ -4616,6 +4692,492 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'stepProgress',
+      values: vals,
+    );
+  }
+
+  static VsdxShape nightingaleChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.0,
+    double height = 2.0,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.55, 0.8, 0.4, 0.7, 0.5, 0.65];
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final cx = w / 2;
+    final cy = h / 2;
+    final rx = w * 0.42;
+    final ry = h * 0.42;
+    final sweep = (2 * math.pi) / unit.length;
+    var angle = math.pi / 2;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < unit.length; i++) {
+      final a0 = angle;
+      final a1 = angle - sweep;
+      final scale = unit[i];
+      kids.add(_wedgeChild(
+        id: next(),
+        cx: cx,
+        cy: cy,
+        rx: rx * scale,
+        ry: ry * scale,
+        a0: a0,
+        a1: a1,
+        inner: 0.35,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+      angle = a1;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'nightingale',
+      values: vals,
+    );
+  }
+
+  static VsdxShape variableColumnChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.08;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.06;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    var x0 = padL + gap;
+    final sum = unit.fold<double>(0, (a, b) => a + b);
+    for (var i = 0; i < unit.length; i++) {
+      final bw = math.max(plotW * (sum > 0 ? unit[i] / sum : 1 / unit.length) * 0.9, 0.06);
+      final bh = plotH * unit[i];
+      kids.add(_rectChild(
+        id: next(),
+        pinX: x0 + bw / 2,
+        pinY: padB + bh / 2,
+        width: bw,
+        height: bh,
+        fill: seriesColors[i % seriesColors.length],
+      ));
+      x0 += bw + gap * 0.5;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'variableColumn',
+      values: vals,
+    );
+  }
+
+  static VsdxShape pillBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - h * 0.08;
+    final gap = plotH * 0.1;
+    final barH = (plotH - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final bw = math.max(plotW * unit[i], barH);
+      final cy = padB + gap + barH / 2 + i * (barH + gap);
+      final color = seriesColors[i % seriesColors.length];
+      final r = barH * 0.42;
+      // Capsule ≈ rect + two half-circles (full ellipses as end caps).
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + bw / 2,
+        pinY: cy,
+        width: math.max(bw - r, 0.04),
+        height: barH * 0.75,
+        fill: color,
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + bw - r * 0.15,
+        pinY: cy,
+        width: r * 1.1,
+        height: r * 1.6,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r * 0.55,
+              cy: r * 0.8,
+              aX: r * 1.1,
+              aY: r * 0.8,
+              bX: r * 0.55,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'pillBar',
+      values: vals,
+    );
+  }
+
+  static VsdxShape arrowBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padB - h * 0.08;
+    final gap = plotH * 0.08;
+    final barH = (plotH - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final bw = math.max(plotW * unit[i], 0.12);
+      final cy = padB + gap + barH / 2 + i * (barH + gap);
+      final color = seriesColors[i % seriesColors.length];
+      final tip = math.min(bw * 0.28, barH);
+      final body = math.max(bw - tip, 0.04);
+      final bh = barH * 0.75;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + bw / 2,
+        pinY: cy,
+        width: bw,
+        height: bh,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0, bh * 0.2),
+            LineTo(body, bh * 0.2),
+            LineTo(body, 0),
+            LineTo(bw, bh / 2),
+            LineTo(body, bh),
+            LineTo(body, bh * 0.8),
+            LineTo(0, bh * 0.8),
+            LineTo(0, bh * 0.2),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'arrowBar',
+      values: vals,
+    );
+  }
+
+  static VsdxShape diamondLollipopChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 1.8,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.12;
+    final padB = h * 0.12;
+    final padT = h * 0.08;
+    final plotW = w - padL - w * 0.08;
+    final plotH = h - padB - padT;
+    final gap = plotW * 0.08;
+    final slot = (plotW - gap * (unit.length + 1)) / unit.length;
+    final kids = <VsdxShape>[_axesChild(id: next(), width: w, height: h)];
+    for (var i = 0; i < unit.length; i++) {
+      final cx = padL + gap + slot / 2 + i * (slot + gap);
+      final top = padB + plotH * unit[i];
+      final stemH = math.max(top - padB, 0.04);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: padB + stemH / 2,
+        width: 0.03,
+        height: stemH,
+        fill: const VsdxColor(0xFFB0B0B0),
+        chrome: true,
+      ));
+      const s = 0.1;
+      final color = seriesColors[i % seriesColors.length];
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: top,
+        width: s * 2,
+        height: s * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(s, 0),
+            LineTo(s * 2, s),
+            LineTo(s, s * 2),
+            LineTo(0, s),
+            LineTo(s, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'diamondLollipop',
+      values: vals,
+    );
+  }
+
+  static VsdxShape chevronChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 0.9,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? defaultValues;
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final gap = w * 0.02;
+    final tip = math.min(w * 0.06, h * 0.45);
+    final stepW = (w - gap * (vals.length + 1)) / vals.length;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < vals.length; i++) {
+      final color = seriesColors[i % seriesColors.length];
+      final x0 = gap + i * (stepW + gap);
+      final bh = h * 0.7;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x0 + stepW / 2,
+        pinY: h / 2,
+        width: stepW,
+        height: bh,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(stepW - tip, 0),
+            LineTo(stepW, bh / 2),
+            LineTo(stepW - tip, bh),
+            LineTo(0, bh),
+            LineTo(tip, bh / 2),
+            LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'chevron',
+      values: vals,
+    );
+  }
+
+  static VsdxShape polarLineChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.0,
+    double height = 2.0,
+    List<double>? values,
+    int Function()? allocId,
+  }) {
+    final vals = values ?? const <double>[0.55, 0.75, 0.45, 0.85, 0.6];
+    final unit = _unit(vals);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final cx = w / 2;
+    final cy = h / 2;
+    final maxR = math.min(w, h) * 0.38;
+    final kids = <VsdxShape>[];
+    // Grid rings (chrome).
+    for (final f in <double>[0.33, 0.66, 1.0]) {
+      final r = maxR * f;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: cy,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              EllipseCmd(
+                cx: r,
+                cy: r,
+                aX: r * 2,
+                aY: r,
+                bX: r,
+                bY: 0,
+              ),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFD0D0D0),
+          weightInches: 0.006,
+        ),
+        userCells: _chromeMeta,
+      ));
+    }
+    final pts = <({double x, double y})>[];
+    final n = unit.length;
+    for (var i = 0; i < n; i++) {
+      final a = math.pi / 2 - i * (2 * math.pi / n);
+      final r = maxR * unit[i];
+      pts.add((x: cx + r * math.cos(a), y: cy + r * math.sin(a)));
+    }
+    pts.add(pts.first);
+    var minX = pts.first.x, maxX = pts.first.x;
+    var minY = pts.first.y, maxY = pts.first.y;
+    for (final p in pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    final lw = math.max(maxX - minX, 0.04);
+    final lh = math.max(maxY - minY, 0.04);
+    kids.add(VsdxShape(
+      id: next(),
+      name: _sheetName(id),
+      pinX: minX + lw / 2,
+      pinY: minY + lh / 2,
+      width: lw,
+      height: lh,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(pts.first.x - minX, pts.first.y - minY),
+            for (final p in pts.skip(1)) LineTo(p.x - minX, p.y - minY),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF5B9BD5),
+        weightInches: 0.016,
+      ),
+    ));
+    for (var i = 0; i < n; i++) {
+      const r = 0.06;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: pts[i].x,
+        pinY: pts[i].y,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+              cx: r,
+              cy: r,
+              aX: r * 2,
+              aY: r,
+              bX: r,
+              bY: 0,
+            ),
+          ]),
+        ],
+        fill: VsdxFill(foreground: seriesColors[i % seriesColors.length]),
+        line: _barLine(seriesColors[i % seriesColors.length]),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'polarLine',
       values: vals,
     );
   }

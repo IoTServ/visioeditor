@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(51));
+    expect(kChartStencils, hasLength(58));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -163,6 +163,13 @@ void main() {
       'tornado',
       'sparkLine',
       'sparkArea',
+      'nightingale',
+      'variableColumn',
+      'pillBar',
+      'arrowBar',
+      'diamondLollipop',
+      'chevron',
+      'polarLine',
     ]) {
       final chart = ChartOps.buildKind(
         kind,

@@ -43,6 +43,11 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
           ChartOps.horizontalLollipopChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Diamond Lollipop',
+      (id, cx, cy) =>
+          ChartOps.diamondLollipopChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Histogram',
       (id, cx, cy) => ChartOps.histogramChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -58,6 +63,18 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Cone Chart',
       (id, cx, cy) => ChartOps.coneChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Variable Column',
+      (id, cx, cy) => ChartOps.variableColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Pill Bar',
+      (id, cx, cy) => ChartOps.pillBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Arrow Bar',
+      (id, cx, cy) => ChartOps.arrowBarChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Spark Column',
@@ -125,6 +142,10 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.roseChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Nightingale Chart',
+      (id, cx, cy) => ChartOps.nightingaleChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Line Chart',
       (id, cx, cy) => ChartOps.lineChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -157,8 +178,16 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.pyramidChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Chevron Process',
+      (id, cx, cy) => ChartOps.chevronChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Radar Chart',
       (id, cx, cy) => ChartOps.radarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Polar Line',
+      (id, cx, cy) => ChartOps.polarLineChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Radial Bar',
