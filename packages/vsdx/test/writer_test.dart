@@ -5770,16 +5770,72 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    for (final name in ['ReflectionSize', 'ReflectionDist', 'ReflectionBlur']) {
+    final size = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'ReflectionSize',
+        );
+    expect(size.getAttribute('V'), '0');
+    expect(size.getAttribute('F'), isNull);
+    for (final name in ['ReflectionDist', 'ReflectionBlur']) {
       final cell = XmlDocument.parse(outXml)
           .descendants
           .whereType<XmlElement>()
           .firstWhere(
             (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
           );
-      expect(cell.getAttribute('V'), '0', reason: name);
       expect(cell.getAttribute('F'), isNull, reason: name);
+      // Companions keep model values (Inh→null→defaults), not forced zeros.
+      final v = double.parse(cell.getAttribute('V')!);
+      expect(v, greaterThanOrEqualTo(0), reason: name);
     }
+  });
+
+  test('disabled reflection keeps Dist/Blur through save → reopen', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            distanceInches: 0.12,
+            blurInches: 0.07,
+            transparency: 0.45,
+          ),
+        ),
+      ),
+    );
+    var bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          reflection: s.reflection.copyWith(enabled: false),
+        ),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    final after = parser.parse(bytes).pages.first.findShapeById(id)!;
+    expect(after.reflection.enabled, isFalse);
+    expect(after.reflection.distanceInches, closeTo(0.12, 1e-6));
+    expect(after.reflection.blurInches, closeTo(0.07, 1e-6));
+    expect(after.reflection.transparency, closeTo(0.45, 1e-6));
+    // Size stays available for toggle-on (controller restores when ≤0).
+    expect(after.reflection.sizeInches, 0);
   });
 
   test('CompoundType 0 survives group rebuild', () {

@@ -1808,6 +1808,49 @@ void main() {
         reason: 'GlowColor cell must survive Size=0 for toggle restore');
   });
 
+  test('disabled reflection Dist/Blur survive save → reopen for re-enable', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.35,
+            distanceInches: 0.11,
+            blurInches: 0.06,
+            transparency: 0.4,
+          ),
+        ),
+      ),
+    );
+    var bytes = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(bytes);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          reflection: s.reflection.copyWith(enabled: false),
+        ),
+      ),
+    );
+    bytes = writer.write(originalBytes: bytes, edited: doc);
+    final after = parser.parse(bytes).pages.first.findShapeById(id)!;
+    expect(after.reflection.enabled, isFalse);
+    expect(after.reflection.distanceInches, closeTo(0.11, 1e-6));
+    expect(after.reflection.blurInches, closeTo(0.06, 1e-6));
+    expect(after.reflection.transparency, closeTo(0.4, 1e-6));
+  });
+
   test('SVG FontScale uses letter-spacing not font-size scale', () {
     final page = VsdxPage(
       id: 0,

@@ -110,7 +110,11 @@ class StyleParser {
     XmlElement shape, {
     VsdxGlow defaults = VsdxGlow.disabled,
   }) {
-    final sizeCell = readLengthInches(shape, 'GlowSize');
+    final sizeCell = readLengthInches(
+      shape,
+      'GlowSize',
+      inheritFrom: defaults.enabled ? defaults.sizeInches : 0,
+    );
     final size = sizeCell ?? (defaults.enabled ? defaults.sizeInches : null);
     final col = _resolveColor(shape, 'GlowColor', 'QuickStyleEffectColor');
     final transparency =
@@ -147,10 +151,22 @@ class StyleParser {
     XmlElement shape, {
     VsdxReflection defaults = VsdxReflection.disabled,
   }) {
-    final sizeCell = readLengthInches(shape, 'ReflectionSize');
+    final sizeCell = readLengthInches(
+      shape,
+      'ReflectionSize',
+      inheritFrom: defaults.enabled ? defaults.sizeInches : 0,
+    );
     final size = sizeCell ?? (defaults.enabled ? defaults.sizeInches : null);
-    final dist = readLengthInches(shape, 'ReflectionDist');
-    final blur = readLengthInches(shape, 'ReflectionBlur');
+    final dist = readLengthInches(
+      shape,
+      'ReflectionDist',
+      inheritFrom: defaults.distanceInches,
+    );
+    final blur = readLengthInches(
+      shape,
+      'ReflectionBlur',
+      inheritFrom: defaults.blurInches,
+    );
     final transparency =
         (_double(shape, 'ReflectionTransparency') ?? defaults.transparency)
             .clamp(0.0, 1.0);
@@ -252,10 +268,12 @@ class StyleParser {
     final endArrow = _int(shape, 'EndArrow') ?? defaults.endArrow;
     final beginSize = _int(shape, 'BeginArrowSize');
     final endSize = _int(shape, 'EndArrowSize');
-    final rounding =
-        readLengthInches(shape, 'Rounding') ?? defaults.roundingInches;
-    final softEdges =
-        readLengthInches(shape, 'SoftEdgesSize') ?? defaults.softEdgesInches;
+    final rounding = readLengthInches(
+          shape, 'Rounding', inheritFrom: defaults.roundingInches) ??
+        defaults.roundingInches;
+    final softEdges = readLengthInches(
+          shape, 'SoftEdgesSize', inheritFrom: defaults.softEdgesInches) ??
+        defaults.softEdgesInches;
     final compoundType = _int(shape, 'CompoundType') ?? defaults.compoundType;
     // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
     final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');

@@ -2225,10 +2225,15 @@ class VsdxWriter {
     }
     if (!edited.reflection.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
-      // Companion cells can still carry F=Inh after Size is scrubbed.
-      changed |= _forceLiteralZeroLength(el, 'ReflectionDist');
-      changed |= _forceLiteralZeroLength(el, 'ReflectionBlur');
-      changed |= _forceLiteralZeroLength(el, 'ReflectionTransparency');
+      // Keep Dist/Blur/Trans like Shadow companions so toggle-off → save →
+      // reopen → toggle-on restores the previous values (parser retains them
+      // when Size=0). Scrub F=Inh so StyleSheet cannot override while off.
+      changed |= _forceLiteralLength(
+          el, 'ReflectionDist', edited.reflection.distanceInches);
+      changed |= _forceLiteralLength(
+          el, 'ReflectionBlur', edited.reflection.blurInches);
+      changed |= _forceLiteralLength(
+          el, 'ReflectionTransparency', edited.reflection.transparency);
     }
     changed |= _patchGradient(el, base.fill, edited.fill);
     changed |= _patchLineGradient(el, base.line, edited.line);
@@ -5536,11 +5541,13 @@ class VsdxWriter {
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
+      // Size=0 disables; keep companions for re-enable after rebuild.
       children
         ..add(_cell('ReflectionSize', '0'))
-        ..add(_cell('ReflectionDist', '0'))
-        ..add(_cell('ReflectionTransparency', '0'))
-        ..add(_cell('ReflectionBlur', '0'));
+        ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
+        ..add(_cell(
+            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     }
     if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
       children
@@ -6147,11 +6154,13 @@ class VsdxWriter {
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
+      // Size=0 disables; keep companions for re-enable after Foreign rebuild.
       children
         ..add(_cell('ReflectionSize', '0'))
-        ..add(_cell('ReflectionDist', '0'))
-        ..add(_cell('ReflectionTransparency', '0'))
-        ..add(_cell('ReflectionBlur', '0'));
+        ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
+        ..add(_cell(
+            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     }
     // Match Shape rebuild: always emit gradient enable flags (incl. 0).
     if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
