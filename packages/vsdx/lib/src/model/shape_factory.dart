@@ -1082,6 +1082,7 @@ abstract final class VsdxShapeFactory {
         // Invisible hit box so the shape is selectable.
         VsdxGeometry(
           noLine: true,
+          noFill: true,
           hitBox: true,
           commands: <VsdxPathCommand>[
             const MoveTo(0, 0),
@@ -1131,6 +1132,7 @@ abstract final class VsdxShapeFactory {
       geometries: <VsdxGeometry>[
         VsdxGeometry(
           noLine: true,
+          noFill: true,
           hitBox: true,
           commands: <VsdxPathCommand>[
             const MoveTo(0, 0),

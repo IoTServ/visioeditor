@@ -1432,16 +1432,25 @@ class VsdxGeometry {
 ///
 /// - [hollow] true → all geoms NoFill.
 /// - [hollow] false → only restore when fully hollowed; re-enable the first
-///   (primary) fill path and keep later NoFill decorations.
+///   non-hit-box fill path and keep later NoFill decorations. When a hit-box
+///   frame precedes stroke-only geoms (annotation / parallel mode), keep
+///   every geom NoFill so restoring fill cannot paint the selection rectangle.
 List<VsdxGeometry> syncGeometryNoFill(
   List<VsdxGeometry> geos, {
   required bool hollow,
 }) {
   if (geos.isEmpty) return geos;
   if (hollow) {
-    return [for (final g in geos) g.copyWith(noFill: true)];
+    final tagged = tagStructuralHitBoxes(geos);
+    return [for (final g in tagged) g.copyWith(noFill: true)];
   }
   if (!geos.every((g) => g.noFill)) return geos;
+  final primary = geos.indexWhere((g) => !g.hitBox);
+  // Only hit-boxes, or hit-box + stroke decorations: never paint the invisible
+  // selection frame (annotation / parallel / picture silhouette).
+  if (primary != 0) {
+    return [for (final g in geos) g.copyWith(noFill: true)];
+  }
   return [
     for (var i = 0; i < geos.length; i++)
       geos[i].copyWith(noFill: i == 0 ? false : true),

@@ -375,4 +375,54 @@ void main() {
       expect(restored.every((g) => !g.noLine), isTrue);
     });
   });
+
+  group('syncGeometryNoFill hit-box restore', () {
+    test('annotation keeps all NoFill after fill restore', () {
+      final shape = VsdxShapeFactory.annotation(
+        id: 1,
+        pinX: 1,
+        pinY: 1,
+        width: 1,
+        height: 2,
+      );
+      expect(shape.geometries.every((g) => g.noFill), isTrue);
+      final hollowed =
+          syncGeometryNoFill(shape.geometries, hollow: true);
+      final restored = syncGeometryNoFill(hollowed, hollow: false);
+      expect(restored.every((g) => g.noFill), isTrue);
+      expect(restored[0].hitBox, isTrue);
+    });
+
+    test('picture frame can restore fill on the silhouette geom', () {
+      final shape = VsdxShapeFactory.picture(
+        id: 1,
+        pinX: 1,
+        pinY: 1,
+        width: 1,
+        height: 1,
+        imagePartName: '/visio/media/x.png',
+      );
+      expect(shape.geometries.single.hitBox, isFalse);
+      final hollowed =
+          syncGeometryNoFill(shape.geometries, hollow: true);
+      final restored = syncGeometryNoFill(hollowed, hollow: false);
+      // Single non-hit-box frame: restore allows a backing fill (border box).
+      expect(restored.single.noFill, isFalse);
+    });
+
+    test('doubleRectangle restores outer fill only', () {
+      final shape = VsdxShapeFactory.doubleRectangle(
+        id: 1,
+        pinX: 1,
+        pinY: 1,
+        width: 2,
+        height: 1.5,
+      );
+      final hollowed =
+          syncGeometryNoFill(shape.geometries, hollow: true);
+      final restored = syncGeometryNoFill(hollowed, hollow: false);
+      expect(restored[0].noFill, isFalse);
+      expect(restored[1].noFill, isTrue);
+    });
+  });
 }
