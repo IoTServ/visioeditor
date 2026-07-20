@@ -51,7 +51,13 @@ class ChartEditorHost extends StatelessWidget {
           rightGetter: (el) => el.chartAxisY,
           maxItems: 6,
         ),
-      'timeline' => _TimelineEditor(controller: controller),
+      'timeline' => _PositionEventsEditor(
+          controller: controller,
+          title: 'Timeline Chart',
+          hintGetter: (el) => el.chartSpecialtyTimelineHint,
+          defaultLabelPrefix: 'Event',
+          maxItems: 10,
+        ),
       'nestedDonut' => _NestedDonutEditor(controller: controller),
       'kpiTarget' => _KpiTargetEditor(controller: controller),
       'dataTable' => _DataTableEditor(controller: controller),
@@ -94,6 +100,43 @@ class ChartEditorHost extends StatelessWidget {
           maxItems: 6,
         ),
       'statusBoard' => _StatusBoardEditor(controller: controller),
+      'progressList' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Progress List',
+          hintGetter: (el) => el.chartSpecialtyProgressListHint,
+          maxItems: 8,
+          asPercent: true,
+        ),
+      'milestone' => _PositionEventsEditor(
+          controller: controller,
+          title: 'Milestone Track',
+          hintGetter: (el) => el.chartSpecialtyMilestoneHint,
+          defaultLabelPrefix: 'M',
+          maxItems: 8,
+        ),
+      'balanceBar' => _PairSeriesEditor(
+          controller: controller,
+          title: 'Balance Bar',
+          hintGetter: (el) => el.chartSpecialtyBalanceBarHint,
+          leftGetter: (el) => el.chartSeriesA,
+          rightGetter: (el) => el.chartSeriesB,
+          maxItems: 6,
+        ),
+      'meterCluster' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Meter Cluster',
+          hintGetter: (el) => el.chartSpecialtyMeterClusterHint,
+          maxItems: 6,
+          asPercent: true,
+        ),
+      'priorityMatrix' => _PriorityMatrixEditor(controller: controller),
+      'cycleFlow' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Cycle Flow',
+          hintGetter: (el) => el.chartSpecialtyCycleFlowHint,
+          maxItems: 8,
+          asPercent: false,
+        ),
       _ => ChartConfigPanel(controller: controller),
     };
   }
@@ -1218,15 +1261,27 @@ class _PairSeriesEditorState extends State<_PairSeriesEditor>
   }
 }
 
-class _TimelineEditor extends StatefulWidget {
-  const _TimelineEditor({required this.controller});
+class _PositionEventsEditor extends StatefulWidget {
+  const _PositionEventsEditor({
+    required this.controller,
+    required this.title,
+    required this.hintGetter,
+    required this.defaultLabelPrefix,
+    required this.maxItems,
+  });
+
   final EditorController controller;
+  final String title;
+  final String Function(EditorL10n el) hintGetter;
+  final String defaultLabelPrefix;
+  final int maxItems;
+
   @override
-  State<_TimelineEditor> createState() => _TimelineEditorState();
+  State<_PositionEventsEditor> createState() => _PositionEventsEditorState();
 }
 
-class _TimelineEditorState extends State<_TimelineEditor>
-    with _ChartSync<_TimelineEditor> {
+class _PositionEventsEditorState extends State<_PositionEventsEditor>
+    with _ChartSync<_PositionEventsEditor> {
   final List<TextEditingController> _labels = [];
   final List<TextEditingController> _pos = [];
 
@@ -1273,6 +1328,8 @@ class _TimelineEditorState extends State<_TimelineEditor>
     }
   }
 
+  String _defaultLabel(int i) => '${widget.defaultLabelPrefix} ${i + 1}';
+
   void _commit() {
     final values = <double>[
       for (final c in _pos) ChartOps.parseUnitValue(c.text),
@@ -1280,7 +1337,7 @@ class _TimelineEditorState extends State<_TimelineEditor>
     final labels = <String>[
       for (var i = 0; i < _labels.length; i++)
         _labels[i].text.trim().isEmpty
-            ? 'Event ${i + 1}'
+            ? _defaultLabel(i)
             : _labels[i].text.trim(),
     ];
     markDirty();
@@ -1288,8 +1345,8 @@ class _TimelineEditorState extends State<_TimelineEditor>
   }
 
   void _add() {
-    if (_pos.length >= 10) return;
-    _labels.add(TextEditingController(text: 'Event ${_pos.length + 1}'));
+    if (_pos.length >= widget.maxItems) return;
+    _labels.add(TextEditingController(text: _defaultLabel(_pos.length)));
     _pos.add(TextEditingController(text: '50'));
     _commit();
   }
@@ -1308,8 +1365,8 @@ class _TimelineEditorState extends State<_TimelineEditor>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SpecialtyHeader(
-          title: el.stencil('Timeline Chart'),
-          hint: el.chartSpecialtyTimelineHint,
+          title: el.stencil(widget.title),
+          hint: widget.hintGetter(el),
         ),
         for (var i = 0; i < _pos.length; i++) ...[
           TextField(
@@ -1338,7 +1395,7 @@ class _TimelineEditorState extends State<_TimelineEditor>
           const SizedBox(height: 10),
         ],
         TextButton.icon(
-          onPressed: _pos.length < 10 ? _add : null,
+          onPressed: _pos.length < widget.maxItems ? _add : null,
           icon: const Icon(Icons.add, size: 16),
           label: Text(el.chartAddEvent),
         ),
@@ -3114,6 +3171,112 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
           icon: const Icon(Icons.add, size: 16),
           label: Text(el.chartAddItem),
         ),
+      ],
+    );
+  }
+}
+
+
+class _PriorityMatrixEditor extends StatefulWidget {
+  const _PriorityMatrixEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_PriorityMatrixEditor> createState() => _PriorityMatrixEditorState();
+}
+
+class _PriorityMatrixEditorState extends State<_PriorityMatrixEditor>
+    with _ChartSync<_PriorityMatrixEditor> {
+  static const _defaults = <String>[
+    'Do first',
+    'Schedule',
+    'Delegate',
+    'Drop',
+  ];
+  final List<TextEditingController> _labels =
+      List.generate(4, (_) => TextEditingController());
+  final List<TextEditingController> _vals =
+      List.generate(4, (_) => TextEditingController());
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in [..._labels, ..._vals]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final labs = ChartOps.chartLabels(chart, 4);
+    for (var i = 0; i < 4; i++) {
+      if (_labels[i].text != labs[i]) _labels[i].text = labs[i];
+      final t = ChartOps.formatPercent(i < vals.length ? vals[i] : 0.5);
+      if (_vals[i].text != t) _vals[i].text = t;
+    }
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (final c in _vals) ChartOps.parseUnitValue(c.text),
+      ],
+      labels: <String>[
+        for (var i = 0; i < 4; i++)
+          _labels[i].text.trim().isEmpty ? _defaults[i] : _labels[i].text.trim(),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Priority Matrix'),
+          hint: el.chartSpecialtyPriorityMatrixHint,
+        ),
+        for (var i = 0; i < 4; i++) ...[
+          TextField(
+            controller: _labels[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: '${el.chartQuadrant} ${i + 1}',
+              border: const OutlineInputBorder(),
+            ),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _vals[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: el.chartValue,
+              suffixText: '%',
+              border: const OutlineInputBorder(),
+            ),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 8),
+        ],
       ],
     );
   }

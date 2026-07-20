@@ -345,6 +345,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Status Board',
       (id, cx, cy) => ChartOps.statusBoardChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Progress List',
+      (id, cx, cy) => ChartOps.progressListChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Milestone Track',
+      (id, cx, cy) => ChartOps.milestoneChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Balance Bar',
+      (id, cx, cy) => ChartOps.balanceBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Meter Cluster',
+      (id, cx, cy) => ChartOps.meterClusterChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Priority Matrix',
+      (id, cx, cy) => ChartOps.priorityMatrixChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Cycle Flow',
+      (id, cx, cy) => ChartOps.cycleFlowChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 

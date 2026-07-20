@@ -65,6 +65,12 @@ abstract final class ChartOps {
     'heatStrip',
     'dualCompare',
     'statusBoard',
+    'progressList',
+    'milestone',
+    'balanceBar',
+    'meterCluster',
+    'priorityMatrix',
+    'cycleFlow',
   };
 
   static bool isCustomEditorKind(String kind) =>
@@ -119,6 +125,15 @@ abstract final class ChartOps {
         return 12;
       case 'statusBoard':
         return 8;
+      case 'progressList':
+      case 'milestone':
+      case 'meterCluster':
+      case 'cycleFlow':
+        return 8;
+      case 'balanceBar':
+        return 12;
+      case 'priorityMatrix':
+        return 4;
       default:
         return maxSeriesItems;
     }
@@ -164,10 +179,16 @@ abstract final class ChartOps {
       case 'likert':
       case 'heatStrip':
       case 'statusBoard':
+      case 'progressList':
+      case 'milestone':
+      case 'meterCluster':
+      case 'cycleFlow':
+      case 'priorityMatrix':
         return math.max(1, values.length);
       case 'spanColumn':
       case 'bulletGroup':
       case 'dualCompare':
+      case 'balanceBar':
         return math.max(1, values.length ~/ 2);
       case 'arcGauge':
         return 1;
@@ -352,6 +373,12 @@ abstract final class ChartOps {
       'heatStrip',
       'dualCompare',
       'statusBoard',
+      'progressList',
+      'milestone',
+      'balanceBar',
+      'meterCluster',
+      'priorityMatrix',
+      'cycleFlow',
     ]),
   ];
 
@@ -446,6 +473,12 @@ abstract final class ChartOps {
     'heatStrip': 'Heat Strip',
     'dualCompare': 'Dual Compare',
     'statusBoard': 'Status Board',
+    'progressList': 'Progress List',
+    'milestone': 'Milestone Track',
+    'balanceBar': 'Balance Bar',
+    'meterCluster': 'Meter Cluster',
+    'priorityMatrix': 'Priority Matrix',
+    'cycleFlow': 'Cycle Flow',
   };
 
   static const List<VsdxColor> seriesColors = <VsdxColor>[
@@ -949,7 +982,12 @@ abstract final class ChartOps {
         kind == 'venn' ||
         kind == 'statusBoard' ||
         kind == 'likert' ||
-        kind == 'heatStrip') {
+        kind == 'heatStrip' ||
+        kind == 'progressList' ||
+        kind == 'milestone' ||
+        kind == 'meterCluster' ||
+        kind == 'priorityMatrix' ||
+        kind == 'cycleFlow') {
       return chart.copyWith(children: baseKids);
     }
     final w = chart.width.abs();
@@ -1200,6 +1238,18 @@ abstract final class ChartOps {
         return const <double>[0.6, 0.45, 0.75, 0.55, 0.4, 0.7];
       case 'statusBoard':
         return const <double>[1, 0.5, 0, 1];
+      case 'progressList':
+        return const <double>[0.85, 0.6, 0.4, 0.25];
+      case 'milestone':
+        return const <double>[0.1, 0.35, 0.65, 0.9];
+      case 'balanceBar':
+        return const <double>[0.55, 0.45, 0.7, 0.35, 0.4, 0.6];
+      case 'meterCluster':
+        return const <double>[0.8, 0.55, 0.35];
+      case 'priorityMatrix':
+        return const <double>[0.8, 0.55, 0.4, 0.25];
+      case 'cycleFlow':
+        return const <double>[1, 1, 1, 1];
       default:
         return List<double>.of(defaultValues);
     }
@@ -1973,6 +2023,66 @@ abstract final class ChartOps {
             values: values,
             labels: labels,
             extras: extras,
+            allocId: allocId);
+      case 'progressList':
+        return progressListChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'milestone':
+        return milestoneChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 1.3,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'balanceBar':
+        return balanceBarChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.6,
+            height: height ?? 1.8,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'meterCluster':
+        return meterClusterChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.8,
+            height: height ?? 1.2,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'priorityMatrix':
+        return priorityMatrixChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.4,
+            height: height ?? 2.0,
+            values: values,
+            labels: labels,
+            allocId: allocId);
+      case 'cycleFlow':
+        return cycleFlowChart(
+            id: id,
+            pinX: pinX,
+            pinY: pinY,
+            width: width ?? 2.2,
+            height: height ?? 2.2,
+            values: values,
+            labels: labels,
             allocId: allocId);
       case 'column':
       default:
@@ -7908,4 +8018,684 @@ abstract final class ChartOps {
       extras: ex,
     );
   }
+
+  /// Progress list: labeled horizontal bars. Values in 0–1.
+  static VsdxShape progressListChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('progressList', null);
+    final vals = <double>[
+      for (final v in raw) v.clamp(0.02, 1.0),
+    ];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.28;
+    final padR = w * 0.06;
+    final padT = h * 0.08;
+    final padB = h * 0.08;
+    final plotW = w - padL - padR;
+    final plotH = h - padT - padB;
+    final gap = plotH * 0.1;
+    final barH = (plotH - gap * (n - 1)) / n;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final color = seriesColors[i % seriesColors.length];
+      final cy = h - padT - barH / 2 - i * (barH + gap);
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW / 2,
+        pinY: cy,
+        width: plotW,
+        height: barH * 0.55,
+        fill: const VsdxColor(0xFFE0E0E0),
+        chrome: true,
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: padL + plotW * vals[i] / 2,
+        pinY: cy,
+        width: math.max(plotW * vals[i], 0.05),
+        height: barH * 0.55,
+        fill: color,
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL * 0.5,
+        pinY: cy,
+        width: padL * 0.9,
+        height: barH * 0.8,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFF424242),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.right,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(padL * 0.9, 0),
+              LineTo(padL * 0.9, barH * 0.8),
+              LineTo(0, barH * 0.8),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'progressList',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Milestone track: markers on a line at positions 0–1.
+  static VsdxShape milestoneChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 1.3,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('milestone', null);
+    final vals = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.08;
+    final padR = w * 0.08;
+    final plotW = w - padL - padR;
+    final baseY = h * 0.4;
+    final kids = <VsdxShape>[
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: w / 2,
+        pinY: baseY,
+        width: plotW,
+        height: 0.025,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0.012),
+              LineTo(plotW, 0.012),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFF888888),
+          weightInches: 0.014,
+        ),
+        userCells: _chromeMeta,
+      ),
+    ];
+    for (var i = 0; i < n; i++) {
+      final color = seriesColors[i % seriesColors.length];
+      final x = padL + plotW * vals[i];
+      const r = 0.07;
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x,
+        pinY: baseY,
+        width: r * 2,
+        height: r * 2,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(r, 0),
+            LineTo(r * 2, r),
+            LineTo(r, r * 2),
+            LineTo(0, r),
+            LineTo(r, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: color),
+        line: _barLine(color),
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: x,
+        pinY: baseY + h * 0.28,
+        width: math.min(0.55, plotW / n * 1.2),
+        height: 0.28,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFF424242),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.5, 0),
+              LineTo(0.5, 0.28),
+              LineTo(0, 0.28),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'milestone',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Balance bar: left/right opposing bars from center. Values packed L,R,…
+  static VsdxShape balanceBarChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.6,
+    double height = 1.8,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('balanceBar', null);
+    final pairs = math.max(1, raw.length ~/ 2);
+    final vals = <double>[
+      for (var i = 0; i < pairs; i++) ...[
+        (i * 2 < raw.length ? raw[i * 2] : 0.5).clamp(0.02, 1.0),
+        (i * 2 + 1 < raw.length ? raw[i * 2 + 1] : 0.5).clamp(0.02, 1.0),
+      ],
+    ];
+    final labs = padLabels(labels ?? defaultLabels(pairs), pairs);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final padL = w * 0.06;
+    final padR = w * 0.06;
+    final padT = h * 0.1;
+    final padB = h * 0.1;
+    final mid = w / 2;
+    final half = (w - padL - padR) / 2 * 0.92;
+    final plotH = h - padT - padB;
+    final gap = plotH * 0.1;
+    final barH = (plotH - gap * (pairs - 1)) / pairs;
+    final kids = <VsdxShape>[
+      VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: mid,
+        pinY: h / 2,
+        width: 0.02,
+        height: plotH,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0.01, 0),
+              LineTo(0.01, plotH),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFFBDBDBD),
+          weightInches: 0.01,
+        ),
+        userCells: _chromeMeta,
+      ),
+    ];
+    for (var i = 0; i < pairs; i++) {
+      final left = vals[i * 2];
+      final right = vals[i * 2 + 1];
+      final cy = h - padT - barH / 2 - i * (barH + gap);
+      final lh = barH * 0.55;
+      kids.add(_rectChild(
+        id: next(),
+        pinX: mid - half * left / 2,
+        pinY: cy,
+        width: math.max(half * left, 0.05),
+        height: lh,
+        fill: seriesColors[0],
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: mid + half * right / 2,
+        pinY: cy,
+        width: math.max(half * right, 0.05),
+        height: lh,
+        fill: seriesColors[1],
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: mid,
+        pinY: cy + barH * 0.42,
+        width: w * 0.35,
+        height: 0.18,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.065,
+              color: VsdxColor(0xFF616161),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.35, 0),
+              LineTo(0.35, 0.18),
+              LineTo(0, 0.18),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'balanceBar',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Meter cluster: side-by-side mini progress meters.
+  static VsdxShape meterClusterChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.8,
+    double height = 1.2,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('meterCluster', null);
+    final vals = <double>[for (final v in raw) v.clamp(0.02, 1.0)];
+    final n = math.max(1, vals.length);
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = w * 0.05;
+    final gap = w * 0.04;
+    final cellW = (w - pad * 2 - gap * (n - 1)) / n;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final color = seriesColors[i % seriesColors.length];
+      final cx = pad + cellW / 2 + i * (cellW + gap);
+      final trackH = h * 0.18;
+      final trackY = h * 0.38;
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx,
+        pinY: trackY,
+        width: cellW * 0.85,
+        height: trackH,
+        fill: const VsdxColor(0xFFE0E0E0),
+        chrome: true,
+      ));
+      kids.add(_rectChild(
+        id: next(),
+        pinX: cx - cellW * 0.85 * (1 - vals[i]) / 2,
+        pinY: trackY,
+        width: math.max(cellW * 0.85 * vals[i], 0.04),
+        height: trackH,
+        fill: color,
+      ));
+      final pct = '${formatPercent(vals[i])}%';
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: h * 0.62,
+        width: cellW * 0.9,
+        height: 0.22,
+        text: pct,
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: pct,
+            charStyle: VsdxCharStyle(
+              fontSizeInches: 0.09,
+              color: color,
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.4, 0),
+              LineTo(0.4, 0.22),
+              LineTo(0, 0.22),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: cx,
+        pinY: h * 0.82,
+        width: cellW * 0.9,
+        height: 0.2,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.065,
+              color: VsdxColor(0xFF616161),
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.4, 0),
+              LineTo(0.4, 0.2),
+              LineTo(0, 0.2),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'meterCluster',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Priority matrix: fixed 2×2 cells with intensity + labels.
+  static VsdxShape priorityMatrixChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.4,
+    double height = 2.0,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('priorityMatrix', null);
+    final vals = <double>[
+      for (var i = 0; i < 4; i++)
+        (i < raw.length ? raw[i] : 0.5).clamp(0.0, 1.0),
+    ];
+    final defaultLabs = const <String>[
+      'Do first',
+      'Schedule',
+      'Delegate',
+      'Drop',
+    ];
+    final labs = padLabels(labels ?? defaultLabs, 4);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final pad = math.min(w, h) * 0.06;
+    final gap = math.min(w, h) * 0.04;
+    final cellW = (w - pad * 2 - gap) / 2;
+    final cellH = (h - pad * 2 - gap) / 2;
+    const palette = <VsdxColor>[
+      VsdxColor(0xFFE53935),
+      VsdxColor(0xFFFFC000),
+      VsdxColor(0xFF1E88E5),
+      VsdxColor(0xFF9E9E9E),
+    ];
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < 4; i++) {
+      final r = i ~/ 2;
+      final c = i % 2;
+      final base = palette[i];
+      final t = vals[i];
+      final fill = VsdxColor(
+        (0xFF << 24) |
+            ((((base.value >> 16) & 0xFF) * (0.35 + 0.65 * t)).round() << 16) |
+            ((((base.value >> 8) & 0xFF) * (0.35 + 0.65 * t)).round() << 8) |
+            (((base.value & 0xFF) * (0.35 + 0.65 * t)).round()),
+      );
+      final text = '${labs[i]}\n${formatPercent(t)}%';
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: pad + cellW / 2 + c * (cellW + gap),
+        pinY: h - pad - cellH / 2 - r * (cellH + gap),
+        width: cellW,
+        height: cellH,
+        text: text,
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: text,
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.08,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(cellW, 0),
+            LineTo(cellW, cellH),
+            LineTo(0, cellH),
+            const LineTo(0, 0),
+          ]),
+        ],
+        fill: VsdxFill(foreground: fill),
+        line: _barLine(fill),
+      ));
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'priorityMatrix',
+      values: vals,
+      labels: labs,
+    );
+  }
+
+  /// Cycle flow: equal wedges around a ring with step labels.
+  static VsdxShape cycleFlowChart({
+    required int id,
+    required double pinX,
+    required double pinY,
+    double width = 2.2,
+    double height = 2.2,
+    List<double>? values,
+    List<String>? labels,
+    int Function()? allocId,
+  }) {
+    final raw = values ?? _defaultValuesForKind('cycleFlow', null);
+    final n = math.max(3, math.min(8, raw.isEmpty ? 4 : raw.length));
+    final vals = <double>[
+      for (var i = 0; i < n; i++)
+        (i < raw.length ? raw[i] : 1.0).clamp(0.2, 1.0),
+    ];
+    final labs = padLabels(labels ?? defaultLabels(n), n);
+    final w = width.abs();
+    final h = height.abs();
+    final next = _seq(id + 1, allocId);
+    final cx = w / 2;
+    final cy = h / 2;
+    final r = math.min(w, h) * 0.42;
+    const inner = 0.55;
+    final sum = vals.fold<double>(0, (a, b) => a + b);
+    var a0 = -math.pi / 2;
+    final kids = <VsdxShape>[];
+    for (var i = 0; i < n; i++) {
+      final sweep = (vals[i] / sum) * math.pi * 2;
+      final a1 = a0 + sweep;
+      final color = seriesColors[i % seriesColors.length];
+      kids.add(_wedgeChild(
+        id: next(),
+        cx: cx,
+        cy: cy,
+        rx: r,
+        ry: r,
+        a0: a0,
+        a1: a1,
+        inner: inner,
+        fill: color,
+      ));
+      final mid = a0 + sweep / 2;
+      final lx = cx + r * 0.78 * math.cos(mid);
+      final ly = cy + r * 0.78 * math.sin(mid);
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: lx,
+        pinY: ly,
+        width: 0.55,
+        height: 0.22,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(0.55, 0),
+              LineTo(0.55, 0.22),
+              LineTo(0, 0.22),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
+      ));
+      a0 = a1;
+    }
+    return _group(
+      id: id,
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      children: kids,
+      kind: 'cycleFlow',
+      values: vals,
+      labels: labs,
+    );
+  }
+
 }
