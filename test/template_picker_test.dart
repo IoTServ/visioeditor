@@ -23,7 +23,7 @@ void main() {
         .where((t) => t.assetName != null)
         .map((t) => t.assetName!)
         .toSet();
-    expect(assets.length, greaterThanOrEqualTo(15));
+    expect(assets.length, greaterThanOrEqualTo(30));
   });
 
   testWidgets('empty state offers new from template and opens blank',
@@ -77,15 +77,19 @@ void main() {
     await tester.tap(find.text('Flowcharts'));
     await tester.pumpAndSettle();
     expect(find.text('Process flow'), findsOneWidget);
-    expect(find.text('PDCA cycle'), findsOneWidget);
+    expect(find.text('Swimlane process'), findsOneWidget);
 
-    await tester.tap(find.text('Analysis'));
+    await tester.tap(find.text('Strategy'));
     await tester.pumpAndSettle();
-    expect(find.text('SWOT matrix'), findsOneWidget);
-    expect(find.text('Mind map'), findsOneWidget);
+    expect(find.text('Business model canvas'), findsOneWidget);
+    expect(find.text('Five forces'), findsOneWidget);
 
-    await tester.tap(find.text('SWOT matrix'));
+    await tester.tap(find.text('Education'));
     await tester.pumpAndSettle();
-    expect(picked?.id, 'swot');
+    expect(find.text('Lesson plan'), findsOneWidget);
+
+    await tester.tap(find.text('Lesson plan'));
+    await tester.pumpAndSettle();
+    expect(picked?.id, 'lesson');
   });
 }

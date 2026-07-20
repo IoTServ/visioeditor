@@ -112,9 +112,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
   static const List<String> _examples = <String>[
     'Process Flow.vsdx',
     'Org Chart.vsdx',
-    'Project Roadmap.vsdx',
-    'SWOT Matrix.vsdx',
-    'System Architecture.vsdx',
+    'Business Model Canvas.vsdx',
+    'Cloud Architecture.vsdx',
+    'Mind Map.vsdx',
     'workflow.vsdx',
   ];
 

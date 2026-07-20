@@ -71,7 +71,7 @@ class _TemplatePickerDialogState extends State<_TemplatePickerDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 580),
+        constraints: const BoxConstraints(maxWidth: 920, maxHeight: 620),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -111,7 +111,7 @@ class _TemplatePickerDialogState extends State<_TemplatePickerDialog> {
                   ? Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(width: 168, child: categoryRail),
+                        SizedBox(width: 176, child: categoryRail),
                         const VerticalDivider(width: 1),
                         Expanded(child: grid),
                       ],
