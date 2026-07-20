@@ -540,12 +540,20 @@ class VsdxWriter {
         _writeValue(_ensureCell(row, 'Glue'), layer.glue ? '1' : '0');
         changed = true;
       }
-      if (layer.color?.value != base.color?.value && layer.color != null) {
-        _writeValue(_ensureCell(row, 'Color'), _hex(layer.color!));
+      if (layer.color?.value != base.color?.value) {
+        if (layer.color != null) {
+          _writeValue(_ensureCell(row, 'Color'), _hex(layer.color!));
+        } else {
+          _removeNamedCells(row, const ['Color']);
+        }
         changed = true;
       }
-      if (layer.nameUniv != base.nameUniv && layer.nameUniv != null) {
-        _writeValue(_ensureCell(row, 'NameUniv'), layer.nameUniv!);
+      if (layer.nameUniv != base.nameUniv) {
+        if (layer.nameUniv != null) {
+          _writeValue(_ensureCell(row, 'NameUniv'), layer.nameUniv!);
+        } else {
+          _removeNamedCells(row, const ['NameUniv']);
+        }
         changed = true;
       }
       if ((layer.colorTrans - base.colorTrans).abs() > _epsilon) {
@@ -770,17 +778,25 @@ class VsdxWriter {
     }
     if (edited.lineToLineXInches != null) {
       len('LineToLineX', base.lineToLineXInches ?? 0, edited.lineToLineXInches!);
+    } else if (base.lineToLineXInches != null) {
+      changed |= _removePageSheetCells(sheet, const ['LineToLineX']);
     }
     if (edited.lineToLineYInches != null) {
       len('LineToLineY', base.lineToLineYInches ?? 0, edited.lineToLineYInches!);
+    } else if (base.lineToLineYInches != null) {
+      changed |= _removePageSheetCells(sheet, const ['LineToLineY']);
     }
     if (edited.lineJumpFactorX != null) {
       raw('LineJumpFactorX', _fmt(base.lineJumpFactorX ?? -1),
           _fmt(edited.lineJumpFactorX!));
+    } else if (base.lineJumpFactorX != null) {
+      changed |= _removePageSheetCells(sheet, const ['LineJumpFactorX']);
     }
     if (edited.lineJumpFactorY != null) {
       raw('LineJumpFactorY', _fmt(base.lineJumpFactorY ?? -1),
           _fmt(edited.lineJumpFactorY!));
+    } else if (base.lineJumpFactorY != null) {
+      changed |= _removePageSheetCells(sheet, const ['LineJumpFactorY']);
     }
     len('PageLeftMargin', base.marginLeftInches, edited.marginLeftInches);
     len('PageRightMargin', base.marginRightInches, edited.marginRightInches);
@@ -3002,7 +3018,11 @@ class VsdxWriter {
         _ensureCell(row, 'Address').setAttribute('F', h.addressFormula!);
       }
       _writeValue(_ensureCell(row, 'SubAddress'), h.subAddress ?? '');
-      _writeValue(_ensureCell(row, 'Description'), h.description ?? '');
+      if (h.description != null) {
+        _writeValue(_ensureCell(row, 'Description'), h.description!);
+      } else {
+        _removeNamedCells(row, const ['Description']);
+      }
       if (h.extraInfo != null) {
         _writeValue(_ensureCell(row, 'ExtraInfo'), h.extraInfo!);
       } else {
@@ -3207,13 +3227,21 @@ class VsdxWriter {
     // would leave a stale absolute value after the user resets spacing.
     _writeValue(_ensureCell(row, 'SpLine'), _fmt(_spLineValue(p) ?? -1));
     _writeValue(_ensureCell(row, 'Bullet'), p.bullet.toString());
-    _writeValue(_ensureCell(row, 'BulletStr'), p.bulletStr ?? '');
-    _writeValue(_ensureCell(row, 'BulletFont'), p.bulletFont ?? '');
+    if (p.bulletStr != null) {
+      _writeValue(_ensureCell(row, 'BulletStr'), p.bulletStr!);
+    } else {
+      _removeNamedCells(row, const ['BulletStr']);
+    }
+    if (p.bulletFont != null) {
+      _writeValue(_ensureCell(row, 'BulletFont'), p.bulletFont!);
+    } else {
+      _removeNamedCells(row, const ['BulletFont']);
+    }
     if (p.bulletFontSizeInches != null) {
       _writeValue(
           _ensureCell(row, 'BulletFontSize'), _fmt(p.bulletFontSizeInches!));
     } else {
-      _writeValue(_ensureCell(row, 'BulletFontSize'), '0');
+      _removeNamedCells(row, const ['BulletFontSize']);
     }
     _writeValue(_ensureCell(row, 'TextPosAfterBullet'),
         _fmt(p.textPosAfterBulletInches));
@@ -5636,25 +5664,25 @@ class VsdxWriter {
         formula: 'THEMEVAL()',
       ));
     }
-    // AsianFont (+ ComplexScriptFont) required for CJK in 万兴图示; Font
-    // only when set or CJK. Match Edraw's 人才招聘 Character row shape.
-    final asian = (c.asianFont != null && c.asianFont!.isNotEmpty)
-        ? c.asianFont!
-        : _defaultAsianFont;
+    // AsianFont / ComplexScriptFont: honour cleared null (patch deletes these).
+    // Only inject Edraw defaults for CJK text that still has no asian face.
+    if (c.asianFont != null && c.asianFont!.isNotEmpty) {
+      cells.add(_cell('AsianFont', c.asianFont!));
+    } else if (cjk) {
+      cells.add(_cell('AsianFont', _defaultAsianFont));
+    }
     if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
       cells.add(_cell('Font', c.fontFamily!));
     } else if (cjk) {
       cells.add(_cell('Font', _defaultAsianFont));
     }
-    cells.add(_cell('AsianFont', asian));
-    if (cjk ||
-        (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty)) {
-      cells.add(_cell(
-        'ComplexScriptFont',
-        (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty)
-            ? c.complexScriptFont!
-            : asian,
-      ));
+    if (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty) {
+      cells.add(_cell('ComplexScriptFont', c.complexScriptFont!));
+    } else if (cjk) {
+      final asianFace = (c.asianFont != null && c.asianFont!.isNotEmpty)
+          ? c.asianFont!
+          : _defaultAsianFont;
+      cells.add(_cell('ComplexScriptFont', asianFace));
     }
     // Always emit clearable style flags (incl. 0) so StyleSheet/Master cannot
     // revive after group rebuild. Keep FontScale omit-when-default for CJK.
@@ -5707,14 +5735,10 @@ class VsdxWriter {
       _cell('SpAfter', _fmt(p.spaceAfterInches)),
       _cell('SpLine', _fmt(_spLineValue(p) ?? -1)),
       _cell('Bullet', p.bullet.toString()),
-      _cell('BulletStr', p.bulletStr ?? ''),
-      _cell('BulletFont', p.bulletFont ?? ''),
-      _cell(
-        'BulletFontSize',
-        p.bulletFontSizeInches != null
-            ? _fmt(p.bulletFontSizeInches!)
-            : '0',
-      ),
+      if (p.bulletStr != null) _cell('BulletStr', p.bulletStr!),
+      if (p.bulletFont != null) _cell('BulletFont', p.bulletFont!),
+      if (p.bulletFontSizeInches != null)
+        _cell('BulletFontSize', _fmt(p.bulletFontSizeInches!)),
       _cell('TextPosAfterBullet', _fmt(p.textPosAfterBulletInches)),
       _cell('Flags', p.flags.toString()),
     ];

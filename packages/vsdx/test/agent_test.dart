@@ -479,6 +479,86 @@ void main() {
       expect(style.themeColorIndex, ThemeSlot.accent1);
     });
 
+    test('set_text textColor none clears solid and theme colour', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final solidId = doc.pages.first.nextFreeShapeId();
+      final themeId = solidId + 1;
+      doc = doc.replacePage(
+        0,
+        doc.pages.first
+            .addShape(
+              VsdxShapeFactory.rectangle(
+                id: solidId,
+                pinX: 2,
+                pinY: 2,
+                width: 1.5,
+                height: 0.8,
+              ).copyWith(
+                text: 'Old',
+                richText: const VsdxRichText(runs: [
+                  VsdxTextRun(
+                    text: 'Old',
+                    charStyle: VsdxCharStyle(
+                      fontSizeInches: 12 / 72.0,
+                      color: VsdxColor(0xFFCC0000),
+                    ),
+                  ),
+                ]),
+              ),
+            )
+            .addShape(
+              VsdxShapeFactory.rectangle(
+                id: themeId,
+                pinX: 4,
+                pinY: 2,
+                width: 1.5,
+                height: 0.8,
+              ).copyWith(
+                text: 'Old',
+                richText: VsdxRichText(runs: [
+                  VsdxTextRun(
+                    text: 'Old',
+                    charStyle: VsdxCharStyle(
+                      fontSizeInches: 12 / 72.0,
+                    ).withThemeColor(ThemeSlot.accent1),
+                  ),
+                ]),
+              ),
+            ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_text',
+          'id': solidId,
+          'text': 'New',
+          'textColor': 'none',
+        },
+        <String, dynamic>{
+          'op': 'set_text',
+          'id': themeId,
+          'text': 'New',
+          'textColor': 'none',
+        },
+      ]);
+      final solid = r.document.pages.first
+          .findShapeById(solidId)!
+          .richText
+          .runs
+          .single
+          .charStyle;
+      final theme = r.document.pages.first
+          .findShapeById(themeId)!
+          .richText
+          .runs
+          .single
+          .charStyle;
+      expect(solid.color, isNull);
+      expect(solid.themeColorIndex, isNull);
+      expect(theme.color, isNull);
+      expect(theme.themeColorIndex, isNull);
+    });
+
     test('set_style line none clears line gradient', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

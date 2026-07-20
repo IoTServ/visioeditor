@@ -80,6 +80,7 @@ class VsdxControlRow {
     bool? canGlue,
     String? prompt,
     bool? useVisioDynNames,
+    bool clearPrompt = false,
   }) =>
       VsdxControlRow(
         name: name ?? this.name,
@@ -96,7 +97,7 @@ class VsdxControlRow {
         conXFormula: conXFormula ?? this.conXFormula,
         conYFormula: conYFormula ?? this.conYFormula,
         canGlue: canGlue ?? this.canGlue,
-        prompt: prompt ?? this.prompt,
+        prompt: clearPrompt ? null : (prompt ?? this.prompt),
         useVisioDynNames: useVisioDynNames ?? this.useVisioDynNames,
       );
 

@@ -75,7 +75,9 @@ VsdxShape withLabel(
   }
   final prev =
       s.richText.runs.isNotEmpty ? s.richText.runs.first.charStyle : null;
-  final parsed = parseColorOrNull(colorHex);
+  final clearColor =
+      colorHex != null && colorHex.trim().toLowerCase() == 'none';
+  final parsed = clearColor ? null : parseColorOrNull(colorHex);
   final fontSize = pt != null
       ? pt / 72.0
       : (prev?.fontSizeInches ?? 11 / 72.0);
@@ -86,14 +88,16 @@ VsdxShape withLabel(
           : (prev?.style ?? VsdxFontStyle.regular);
   // Preserve theme-bound text (color=null + themeColorIndex) unless the op
   // supplies an explicit colour — injecting kInk would paint solid ink and
-  // writer would drop THEMEVAL on save.
+  // writer would drop THEMEVAL on save. textColor:"none" clears solid/theme.
   late final VsdxCharStyle style;
   if (prev != null) {
     var next = prev.copyWith(
       fontSizeInches: fontSize,
       style: fontStyle,
     );
-    if (parsed != null) {
+    if (clearColor) {
+      next = next.copyWith(clearColor: true, clearThemeColorIndex: true);
+    } else if (parsed != null) {
       next = next.withSolidColor(parsed);
     }
     style = next;
@@ -102,6 +106,11 @@ VsdxShape withLabel(
       fontSizeInches: fontSize,
       style: fontStyle,
     ).withSolidColor(parsed);
+  } else if (clearColor) {
+    style = VsdxCharStyle(
+      fontSizeInches: fontSize,
+      style: fontStyle,
+    );
   } else {
     style = VsdxCharStyle(
       fontSizeInches: fontSize,

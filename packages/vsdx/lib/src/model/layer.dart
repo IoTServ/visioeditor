@@ -65,6 +65,8 @@ class VsdxLayer {
     double? colorTrans,
     String? nameUniv,
     int? status,
+    bool clearColor = false,
+    bool clearNameUniv = false,
   }) =>
       VsdxLayer(
         id: id,
@@ -75,9 +77,9 @@ class VsdxLayer {
         locked: locked ?? this.locked,
         snap: snap ?? this.snap,
         glue: glue ?? this.glue,
-        color: color ?? this.color,
+        color: clearColor ? null : (color ?? this.color),
         colorTrans: colorTrans ?? this.colorTrans,
-        nameUniv: nameUniv ?? this.nameUniv,
+        nameUniv: clearNameUniv ? null : (nameUniv ?? this.nameUniv),
         status: status ?? this.status,
       );
 

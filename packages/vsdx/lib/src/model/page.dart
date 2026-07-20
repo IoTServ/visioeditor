@@ -148,6 +148,16 @@ class VsdxPageSheet {
     int? printPageOrientation,
     int? variationColorIndex,
     int? variationStyleIndex,
+    bool clearLineJumpCode = false,
+    bool clearLineJumpStyle = false,
+    bool clearLineJumpDirX = false,
+    bool clearLineJumpDirY = false,
+    bool clearLineToLineX = false,
+    bool clearLineToLineY = false,
+    bool clearLineJumpFactorX = false,
+    bool clearLineJumpFactorY = false,
+    bool clearVariationColorIndex = false,
+    bool clearVariationStyleIndex = false,
   }) =>
       VsdxPageSheet(
         shadowOffsetXInches:
@@ -169,22 +179,38 @@ class VsdxPageSheet {
         shadowObliqueAngle: shadowObliqueAngle ?? this.shadowObliqueAngle,
         shadowScaleFactor: shadowScaleFactor ?? this.shadowScaleFactor,
         pageShapeSplit: pageShapeSplit ?? this.pageShapeSplit,
-        lineJumpCode: lineJumpCode ?? this.lineJumpCode,
-        lineJumpStyle: lineJumpStyle ?? this.lineJumpStyle,
-        lineJumpDirX: lineJumpDirX ?? this.lineJumpDirX,
-        lineJumpDirY: lineJumpDirY ?? this.lineJumpDirY,
-        lineToLineXInches: lineToLineXInches ?? this.lineToLineXInches,
-        lineToLineYInches: lineToLineYInches ?? this.lineToLineYInches,
-        lineJumpFactorX: lineJumpFactorX ?? this.lineJumpFactorX,
-        lineJumpFactorY: lineJumpFactorY ?? this.lineJumpFactorY,
+        lineJumpCode:
+            clearLineJumpCode ? null : (lineJumpCode ?? this.lineJumpCode),
+        lineJumpStyle:
+            clearLineJumpStyle ? null : (lineJumpStyle ?? this.lineJumpStyle),
+        lineJumpDirX:
+            clearLineJumpDirX ? null : (lineJumpDirX ?? this.lineJumpDirX),
+        lineJumpDirY:
+            clearLineJumpDirY ? null : (lineJumpDirY ?? this.lineJumpDirY),
+        lineToLineXInches: clearLineToLineX
+            ? null
+            : (lineToLineXInches ?? this.lineToLineXInches),
+        lineToLineYInches: clearLineToLineY
+            ? null
+            : (lineToLineYInches ?? this.lineToLineYInches),
+        lineJumpFactorX: clearLineJumpFactorX
+            ? null
+            : (lineJumpFactorX ?? this.lineJumpFactorX),
+        lineJumpFactorY: clearLineJumpFactorY
+            ? null
+            : (lineJumpFactorY ?? this.lineJumpFactorY),
         marginLeftInches: marginLeftInches ?? this.marginLeftInches,
         marginRightInches: marginRightInches ?? this.marginRightInches,
         marginTopInches: marginTopInches ?? this.marginTopInches,
         marginBottomInches: marginBottomInches ?? this.marginBottomInches,
         printPageOrientation:
             printPageOrientation ?? this.printPageOrientation,
-        variationColorIndex: variationColorIndex ?? this.variationColorIndex,
-        variationStyleIndex: variationStyleIndex ?? this.variationStyleIndex,
+        variationColorIndex: clearVariationColorIndex
+            ? null
+            : (variationColorIndex ?? this.variationColorIndex),
+        variationStyleIndex: clearVariationStyleIndex
+            ? null
+            : (variationStyleIndex ?? this.variationStyleIndex),
       );
 
   @override

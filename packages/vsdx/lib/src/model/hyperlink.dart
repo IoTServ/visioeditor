@@ -107,10 +107,12 @@ class VsdxHyperlink {
     bool clearFrame = false,
     bool clearSortKey = false,
     bool clearAddressFormula = false,
+    bool clearDescription = false,
   }) =>
       VsdxHyperlink(
         id: id ?? this.id,
-        description: description ?? this.description,
+        description:
+            clearDescription ? null : (description ?? this.description),
         address: address ?? this.address,
         addressFormula: clearAddressFormula
             ? null

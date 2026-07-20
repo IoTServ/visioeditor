@@ -8996,4 +8996,371 @@ void main() {
     expect(after.userProperties.first.langId, isNull);
     expect(after.userProperties.first.calendar, isNull);
   });
+
+  test('Layer Color/NameUniv clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: const [
+          VsdxLayer(
+            id: 0,
+            name: 'Default',
+            color: VsdxColor(0xFFFF0000),
+            nameUniv: 'Default',
+          ),
+        ],
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.layers.first.color, isNotNull);
+    expect(doc.pages.first.layers.first.nameUniv, 'Default');
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: [
+          doc.pages.first.layers.first.copyWith(
+            clearColor: true,
+            clearNameUniv: true,
+          ),
+        ],
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Layer"[\s\S]*?N="Color"').hasMatch(pageXml),
+      isFalse,
+    );
+    expect(
+      RegExp(r'<Section N="Layer"[\s\S]*?N="NameUniv"').hasMatch(pageXml),
+      isFalse,
+    );
+    final layer = parser.parse(out).pages.first.layers.first;
+    expect(layer.color, isNull);
+    expect(layer.nameUniv, isNull);
+  });
+
+  test('PageSheet LineToLine/LineJumpFactor clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        pageSheet: doc.pages.first.pageSheet.copyWith(
+          lineToLineXInches: 0.13,
+          lineToLineYInches: 0.13,
+          lineJumpFactorX: 0.65,
+          lineJumpFactorY: 0.65,
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.pageSheet.lineJumpFactorX, closeTo(0.65, 1e-6));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        pageSheet: doc.pages.first.pageSheet.copyWith(
+          clearLineToLineX: true,
+          clearLineToLineY: true,
+          clearLineJumpFactorX: true,
+          clearLineJumpFactorY: true,
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(pagesXml.contains('N="LineToLineX"'), isFalse);
+    expect(pagesXml.contains('N="LineToLineY"'), isFalse);
+    expect(pagesXml.contains('N="LineJumpFactorX"'), isFalse);
+    expect(pagesXml.contains('N="LineJumpFactorY"'), isFalse);
+    final sheet = parser.parse(out).pages.first.pageSheet;
+    expect(sheet.lineToLineXInches, isNull);
+    expect(sheet.lineToLineYInches, isNull);
+    expect(sheet.lineJumpFactorX, isNull);
+    expect(sheet.lineJumpFactorY, isNull);
+  });
+
+  test('Paragraph BulletStr/Font clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Item',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Item',
+                paraStyle: VsdxParaStyle(
+                  bullet: 1,
+                  bulletStr: '•',
+                  bulletFont: 'Segoe UI',
+                  bulletFontSizeInches: 0.15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) {
+          final run = s.richText.runs.first;
+          return s.copyWith(
+            richText: s.richText.copyWith(
+              runs: [
+                run.copyWith(
+                  paraStyle: run.paraStyle.copyWith(
+                    bullet: 0,
+                    clearBulletStr: true,
+                    clearBulletFont: true,
+                    clearBulletFontSize: true,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="BulletStr"'), isFalse);
+    expect(pageXml.contains('N="BulletFont"'), isFalse);
+    expect(pageXml.contains('N="BulletFontSize"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.runs.first.paraStyle.bulletStr, isNull);
+    expect(after.richText.runs.first.paraStyle.bulletFont, isNull);
+    expect(after.richText.runs.first.paraStyle.bulletFontSizeInches, isNull);
+  });
+
+  test('Hyperlink Description clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          hyperlinks: const [
+            VsdxHyperlink(
+              id: 1,
+              address: 'https://example.com',
+              description: 'Example',
+            ),
+          ],
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          hyperlinks: [
+            s.hyperlinks.first.copyWith(clearDescription: true),
+          ],
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Hyperlink"[\s\S]*?N="Description"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+    expect(
+      parser.parse(out).pages.first.findShapeById(id)!.hyperlinks.first
+          .description,
+      isNull,
+    );
+  });
+
+  test('Character Color clear + AsianFont stays cleared after group rebuild',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = id + 2;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: 1,
+              pinY: 1,
+              width: 2,
+              height: 1,
+            ).copyWith(
+              text: 'Hi',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: 'Hi',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Georgia',
+                      asianFont: 'SimSun',
+                      color: VsdxColor(0xFFCC0000),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) {
+          final run = s.richText.runs.first;
+          return s.copyWith(
+            richText: s.richText.copyWith(
+              runs: [
+                run.copyWith(
+                  charStyle: run.charStyle.copyWith(
+                    clearAsianFont: true,
+                    clearColor: true,
+                    clearThemeColorIndex: true,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    final cleared = writer.write(originalBytes: mid, edited: doc);
+    doc = parser.parse(cleared);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: cleared, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    // Latin text with cleared AsianFont must not revive on group rebuild.
+    final shapeXml = RegExp(
+      r'<Shape[^>]*ID="' + id.toString() + r'"[\s\S]*?</Shape>',
+    ).firstMatch(pageXml)?.group(0);
+    expect(shapeXml, isNotNull);
+    expect(shapeXml!.contains('N="AsianFont"'), isFalse);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.runs.first.charStyle.asianFont, isNull);
+    expect(after.richText.runs.first.charStyle.color, isNull);
+  });
+
+  test('Control Prompt clear on patch', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          controls: const [
+            VsdxControlRow(name: 'Row_1', x: 0.5, y: 0.5, prompt: 'Drag me'),
+          ],
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.controls.first.prompt, 'Drag me');
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          controls: [
+            s.controls.first.copyWith(clearPrompt: true),
+          ],
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Control"[\s\S]*?N="Prompt"').hasMatch(pageXml),
+      isFalse,
+    );
+    expect(
+      parser.parse(out).pages.first.findShapeById(id)!.controls.first.prompt,
+      isNull,
+    );
+  });
 }

@@ -266,12 +266,13 @@ class VsdxCharStyle {
     bool clearComplexScriptFont = false,
     bool clearLangId = false,
     bool clearComplexScriptSize = false,
+    bool clearColor = false,
   }) =>
       VsdxCharStyle(
         fontFamily: clearFontFamily ? null : (fontFamily ?? this.fontFamily),
         fontSizeInches: fontSizeInches ?? this.fontSizeInches,
         style: style ?? this.style,
-        color: color ?? this.color,
+        color: clearColor ? null : (color ?? this.color),
         themeColorIndex: clearThemeColorIndex
             ? null
             : (themeColorIndex ?? this.themeColorIndex),
@@ -410,6 +411,9 @@ class VsdxParaStyle {
     double? bulletFontSizeInches,
     double? textPosAfterBulletInches,
     int? flags,
+    bool clearBulletStr = false,
+    bool clearBulletFont = false,
+    bool clearBulletFontSize = false,
   }) =>
       VsdxParaStyle(
         horizontalAlign: horizontalAlign ?? this.horizontalAlign,
@@ -423,9 +427,11 @@ class VsdxParaStyle {
             lineSpacingAbsoluteInches ?? this.lineSpacingAbsoluteInches,
         lineSpacingSolid: lineSpacingSolid ?? this.lineSpacingSolid,
         bullet: bullet ?? this.bullet,
-        bulletStr: bulletStr ?? this.bulletStr,
-        bulletFont: bulletFont ?? this.bulletFont,
-        bulletFontSizeInches: bulletFontSizeInches ?? this.bulletFontSizeInches,
+        bulletStr: clearBulletStr ? null : (bulletStr ?? this.bulletStr),
+        bulletFont: clearBulletFont ? null : (bulletFont ?? this.bulletFont),
+        bulletFontSizeInches: clearBulletFontSize
+            ? null
+            : (bulletFontSizeInches ?? this.bulletFontSizeInches),
         textPosAfterBulletInches:
             textPosAfterBulletInches ?? this.textPosAfterBulletInches,
         flags: flags ?? this.flags,
