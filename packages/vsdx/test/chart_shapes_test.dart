@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(71));
+    expect(kChartStencils, hasLength(77));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -36,7 +36,12 @@ void main() {
     final autoName = RegExp(r'^Sheet\.\d+$');
     for (final s in kChartStencils) {
       final shape = s.build(7, 4, 5);
-      final allowCellText = ChartOps.chartKind(shape) == 'dataTable';
+      final kind = ChartOps.chartKind(shape);
+      final allowCellText = kind == 'dataTable' ||
+          kind == 'scorecard' ||
+          kind == 'processSteps' ||
+          kind == 'venn' ||
+          kind == 'ranking';
       void check(VsdxShape node, {required bool isRoot}) {
         expect(autoName.hasMatch(node.name), isTrue,
             reason: '${s.name} id=${node.id} name=${node.name}');

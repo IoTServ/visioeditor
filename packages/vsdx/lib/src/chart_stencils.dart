@@ -297,6 +297,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Data Table',
       (id, cx, cy) => ChartOps.dataTableChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Venn Diagram',
+      (id, cx, cy) => ChartOps.vennChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Scorecard',
+      (id, cx, cy) => ChartOps.scorecardChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Radial Multi',
+      (id, cx, cy) => ChartOps.radialMultiChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Span Column',
+      (id, cx, cy) => ChartOps.spanColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Ranking Chart',
+      (id, cx, cy) => ChartOps.rankingChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Process Steps',
+      (id, cx, cy) => ChartOps.processStepsChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 
