@@ -71,7 +71,7 @@ class _TemplatePickerDialogState extends State<_TemplatePickerDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 920, maxHeight: 620),
+        constraints: const BoxConstraints(maxWidth: 960, maxHeight: 640),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

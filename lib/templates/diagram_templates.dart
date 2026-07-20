@@ -17,6 +17,7 @@ enum TemplateCategory {
   strategy,
   product,
   education,
+  operations,
   technical,
 }
 
@@ -30,6 +31,7 @@ extension TemplateCategoryLabel on TemplateCategory {
         TemplateCategory.strategy => ('Strategy', '战略'),
         TemplateCategory.product => ('Product', '产品'),
         TemplateCategory.education => ('Education', '教育'),
+        TemplateCategory.operations => ('Operations', '运营'),
         TemplateCategory.technical => ('Technical', '技术'),
       };
 
@@ -42,6 +44,7 @@ extension TemplateCategoryLabel on TemplateCategory {
         TemplateCategory.strategy => Icons.insights_outlined,
         TemplateCategory.product => Icons.devices_outlined,
         TemplateCategory.education => Icons.school_outlined,
+        TemplateCategory.operations => Icons.miscellaneous_services_outlined,
         TemplateCategory.technical => Icons.hub_outlined,
       };
 }
@@ -239,6 +242,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFF14B8A6),
     icon: Icons.view_week_outlined,
   ),
+  DiagramTemplate(
+    id: 'budget',
+    category: TemplateCategory.business,
+    assetName: 'Budget Waterfall.vsdx',
+    titleEn: 'Budget waterfall',
+    titleZh: '预算瀑布',
+    descEn: 'Start balance through inflows and costs.',
+    descZh: '期初到期末的收支瀑布图。',
+    accent: Color(0xFF0369A1),
+    icon: Icons.waterfall_chart,
+  ),
   // --- Planning ---
   DiagramTemplate(
     id: 'roadmap',
@@ -294,6 +308,28 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     descZh: '紧急与重要四象限优先级。',
     accent: Color(0xFFDC2626),
     icon: Icons.dashboard_outlined,
+  ),
+  DiagramTemplate(
+    id: 'retro',
+    category: TemplateCategory.planning,
+    assetName: 'Retrospective Board.vsdx',
+    titleEn: 'Retrospective board',
+    titleZh: '回顾看板',
+    descEn: 'Went well / improve / actions.',
+    descZh: '做得好 / 待改进 / 行动项。',
+    accent: Color(0xFF0D9488),
+    icon: Icons.rate_review_outlined,
+  ),
+  DiagramTemplate(
+    id: 'risk',
+    category: TemplateCategory.planning,
+    assetName: 'Risk Matrix.vsdx',
+    titleEn: 'Risk matrix',
+    titleZh: '风险矩阵',
+    descEn: 'Likelihood × impact heat grid.',
+    descZh: '可能性 × 影响热力网格。',
+    accent: Color(0xFFB45309),
+    icon: Icons.warning_amber_outlined,
   ),
   // --- Analysis ---
   DiagramTemplate(
@@ -351,6 +387,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFF7C3AED),
     icon: Icons.public,
   ),
+  DiagramTemplate(
+    id: 'a3',
+    category: TemplateCategory.analysis,
+    assetName: 'A3 Problem Solving.vsdx',
+    titleEn: 'A3 problem solving',
+    titleZh: 'A3 问题解决',
+    descEn: 'Background through follow-up panels.',
+    descZh: '背景到跟进的 A3 面板。',
+    accent: Color(0xFFBE123C),
+    icon: Icons.article_outlined,
+  ),
   // --- Strategy ---
   DiagramTemplate(
     id: 'bmc',
@@ -396,6 +443,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFFB45309),
     icon: Icons.category_outlined,
   ),
+  DiagramTemplate(
+    id: 'compete',
+    category: TemplateCategory.strategy,
+    assetName: 'Competitive Matrix.vsdx',
+    titleEn: 'Competitive matrix',
+    titleZh: '竞争对比矩阵',
+    descEn: 'Score yourself against rivals.',
+    descZh: '与竞品按维度打分对比。',
+    accent: Color(0xFF7C2D12),
+    icon: Icons.compare_arrows,
+  ),
   // --- Product ---
   DiagramTemplate(
     id: 'wireflow',
@@ -430,6 +488,28 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFFA855F7),
     icon: Icons.person_outline,
   ),
+  DiagramTemplate(
+    id: 'onboarding',
+    category: TemplateCategory.product,
+    assetName: 'Onboarding Flow.vsdx',
+    titleEn: 'Onboarding flow',
+    titleZh: '新手引导',
+    descEn: 'Welcome → profile → tour → first win.',
+    descZh: '欢迎 → 资料 → 导览 → 首次成功。',
+    accent: Color(0xFF4F46E5),
+    icon: Icons.waving_hand_outlined,
+  ),
+  DiagramTemplate(
+    id: 'empathy',
+    category: TemplateCategory.product,
+    assetName: 'Empathy Map.vsdx',
+    titleEn: 'Empathy map',
+    titleZh: '共情图',
+    descEn: 'Says / thinks / does / feels.',
+    descZh: '说 / 想 / 做 / 感 四象限。',
+    accent: Color(0xFFDB2777),
+    icon: Icons.favorite_outline,
+  ),
   // --- Education ---
   DiagramTemplate(
     id: 'lesson',
@@ -452,6 +532,40 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     descZh: '核心概念与关联概念网络。',
     accent: Color(0xFF7C3AED),
     icon: Icons.schema_outlined,
+  ),
+  DiagramTemplate(
+    id: 'learning_path',
+    category: TemplateCategory.education,
+    assetName: 'Learning Path.vsdx',
+    titleEn: 'Learning path',
+    titleZh: '学习路径',
+    descEn: 'Basics through certification milestones.',
+    descZh: '从基础到认证的学习里程碑。',
+    accent: Color(0xFF0891B2),
+    icon: Icons.route_outlined,
+  ),
+  // --- Operations ---
+  DiagramTemplate(
+    id: 'service_blueprint',
+    category: TemplateCategory.operations,
+    assetName: 'Service Blueprint.vsdx',
+    titleEn: 'Service blueprint',
+    titleZh: '服务蓝图',
+    descEn: 'Customer, frontstage, backstage, systems.',
+    descZh: '客户、前台、后台与支撑系统。',
+    accent: Color(0xFF2563EB),
+    icon: Icons.layers_outlined,
+  ),
+  DiagramTemplate(
+    id: 'incident',
+    category: TemplateCategory.operations,
+    assetName: 'Incident Response.vsdx',
+    titleEn: 'Incident response',
+    titleZh: '事故响应',
+    descEn: 'Detect → triage → mitigate → recover → learn.',
+    descZh: '发现 → 分级 → 缓解 → 恢复 → 复盘。',
+    accent: Color(0xFFDC2626),
+    icon: Icons.health_and_safety_outlined,
   ),
   // --- Technical ---
   DiagramTemplate(
@@ -508,6 +622,28 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     descZh: '提交 → 构建 → 测试 → 预发 → 生产。',
     accent: Color(0xFFEA580C),
     icon: Icons.rocket_launch_outlined,
+  ),
+  DiagramTemplate(
+    id: 'sequence',
+    category: TemplateCategory.technical,
+    assetName: 'Sequence Diagram.vsdx',
+    titleEn: 'Sequence diagram',
+    titleZh: '时序图',
+    descEn: 'Client ↔ API ↔ DB message flow.',
+    descZh: '客户端 ↔ API ↔ 数据库消息流。',
+    accent: Color(0xFF4F46E5),
+    icon: Icons.swap_vert,
+  ),
+  DiagramTemplate(
+    id: 'state_machine',
+    category: TemplateCategory.flowchart,
+    assetName: 'State Machine.vsdx',
+    titleEn: 'State machine',
+    titleZh: '状态机',
+    descEn: 'Draft → review → published → archived.',
+    descZh: '草稿 → 评审 → 已发布 → 已归档。',
+    accent: Color(0xFF0F766E),
+    icon: Icons.mediation_outlined,
   ),
 ];
 

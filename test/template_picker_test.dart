@@ -23,7 +23,7 @@ void main() {
         .where((t) => t.assetName != null)
         .map((t) => t.assetName!)
         .toSet();
-    expect(assets.length, greaterThanOrEqualTo(30));
+    expect(assets.length, greaterThanOrEqualTo(40));
   });
 
   testWidgets('empty state offers new from template and opens blank',
@@ -47,7 +47,7 @@ void main() {
   });
 
   testWidgets('template picker filters by category', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(900, 700));
+    await tester.binding.setSurfaceSize(const Size(960, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     DiagramTemplate? picked;
@@ -77,19 +77,15 @@ void main() {
     await tester.tap(find.text('Flowcharts'));
     await tester.pumpAndSettle();
     expect(find.text('Process flow'), findsOneWidget);
-    expect(find.text('Swimlane process'), findsOneWidget);
+    expect(find.text('State machine'), findsOneWidget);
 
-    await tester.tap(find.text('Strategy'));
+    await tester.tap(find.text('Operations'));
     await tester.pumpAndSettle();
-    expect(find.text('Business model canvas'), findsOneWidget);
-    expect(find.text('Five forces'), findsOneWidget);
+    expect(find.text('Service blueprint'), findsOneWidget);
+    expect(find.text('Incident response'), findsOneWidget);
 
-    await tester.tap(find.text('Education'));
+    await tester.tap(find.text('Service blueprint'));
     await tester.pumpAndSettle();
-    expect(find.text('Lesson plan'), findsOneWidget);
-
-    await tester.tap(find.text('Lesson plan'));
-    await tester.pumpAndSettle();
-    expect(picked?.id, 'lesson');
+    expect(picked?.id, 'service_blueprint');
   });
 }

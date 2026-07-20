@@ -61,6 +61,19 @@ void main() {
     'Cloud Architecture.vsdx': _cloudArchitecture(),
     'Data Model.vsdx': _dataModel(),
     'CI CD Pipeline.vsdx': _ciCdPipeline(),
+    // Wave 3 — operations + denser packs
+    'Service Blueprint.vsdx': _serviceBlueprint(),
+    'Incident Response.vsdx': _incidentResponse(),
+    'Onboarding Flow.vsdx': _onboardingFlow(),
+    'Retrospective Board.vsdx': _retrospectiveBoard(),
+    'Competitive Matrix.vsdx': _competitiveMatrix(),
+    'Empathy Map.vsdx': _empathyMap(),
+    'Learning Path.vsdx': _learningPath(),
+    'Sequence Diagram.vsdx': _sequenceDiagram(),
+    'State Machine.vsdx': _stateMachine(),
+    'Risk Matrix.vsdx': _riskMatrix(),
+    'Budget Waterfall.vsdx': _budgetWaterfall(),
+    'A3 Problem Solving.vsdx': _a3ProblemSolving(),
   };
   for (final e in built.entries) {
     final path = '$kOutDir/${e.key}';
@@ -2051,4 +2064,588 @@ Uint8List _ciCdPipeline() {
     prev = s;
   }
   return _write('CI CD Pipeline', shapes, connects);
+}
+
+// --- wave 3 templates ------------------------------------------------------
+
+Uint8List _serviceBlueprint() {
+  final title = _title(1, 5.5, 7.85, 'Service blueprint');
+  final rows = <(String, int, double)>[
+    ('Customer actions', 0xFFDBEAFE, 6.2),
+    ('Frontstage', 0xFFE0E7FF, 4.9),
+    ('Backstage', 0xFFD1FAE5, 3.6),
+    ('Support systems', 0xFFFEF3C7, 2.3),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (name, color, y) in rows) {
+    shapes.add(_box(
+      id: id++,
+      cx: 5.5,
+      cy: y,
+      w: 9.4,
+      h: 1.1,
+      fillArgb: color,
+      label: '',
+      rounded: false,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: 1.35,
+      cy: y,
+      w: 1.9,
+      h: 0.85,
+      fillArgb: 0xFFFFFFFF,
+      label: name,
+      bold: true,
+      pt: 10,
+    ));
+  }
+  final touch = <(String, double, double)>[
+    ('Arrive', 3.4, 6.2),
+    ('Request', 5.6, 6.2),
+    ('Receive', 7.8, 6.2),
+    ('Greet', 3.4, 4.9),
+    ('Serve', 5.6, 4.9),
+    ('Fulfill', 5.6, 3.6),
+    ('CRM', 7.8, 2.3),
+  ];
+  for (final (label, x, y) in touch) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.7,
+      h: 0.7,
+      fillArgb: 0xFFF8FAFC,
+      label: label,
+      pt: 10,
+    ));
+  }
+  return _write('Service Blueprint', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _incidentResponse() {
+  final title = _title(1, 5.5, 7.75, 'Incident response');
+  final stages = <(String, int, double)>[
+    ('Detect', 0xFFFECACA, 1.7),
+    ('Triage', 0xFFFDE68A, 3.7),
+    ('Mitigate', 0xFFBFDBFE, 5.7),
+    ('Recover', 0xFFBBF7D0, 7.7),
+    ('Learn', 0xFFE0E7FF, 9.7),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  VsdxShape? prev;
+  var id = 2;
+  for (final (label, color, x) in stages) {
+    final s = _ellipse(
+      id: id++,
+      cx: x,
+      cy: 5.0,
+      w: 1.6,
+      h: 1.0,
+      fillArgb: color,
+      label: label,
+      bold: true,
+    );
+    shapes.add(s);
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 3.1,
+      w: 1.7,
+      h: 1.3,
+      fillArgb: 0xFFF8FAFC,
+      label: 'owner\nrunbook',
+      pt: 10,
+      rounded: false,
+    ));
+    if (prev != null) {
+      final link = _link(id++, prev, s);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+    prev = s;
+  }
+  return _write('Incident Response', shapes, connects);
+}
+
+Uint8List _onboardingFlow() {
+  final title = _title(1, 5.5, 7.75, 'Onboarding flow');
+  final steps = <(String, int, double)>[
+    ('Welcome', 0xFFE0E7FF, 1.8),
+    ('Profile', 0xFFBFDBFE, 4.0),
+    ('Tour', 0xFFC4B5FD, 6.2),
+    ('First win', 0xFFBBF7D0, 8.4),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  VsdxShape? prev;
+  var id = 2;
+  for (final (label, color, x) in steps) {
+    final s = _box(
+      id: id++,
+      cx: x,
+      cy: 5.1,
+      w: 1.9,
+      h: 2.4,
+      fillArgb: color,
+      label: '$label\n\n▢\n—\n▢',
+      bold: true,
+      pt: 12,
+      rounded: false,
+    );
+    shapes.add(s);
+    if (prev != null) {
+      final link = _link(id++, prev, s);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+    prev = s;
+  }
+  shapes.add(_box(
+    id: id,
+    cx: 5.5,
+    cy: 2.4,
+    w: 8.5,
+    h: 0.85,
+    fillArgb: 0xFFFEF3C7,
+    label: 'Success metric: activated within 7 days',
+    bold: true,
+    pt: 12,
+  ));
+  return _write('Onboarding Flow', shapes, connects);
+}
+
+Uint8List _retrospectiveBoard() {
+  final title = _title(1, 5.5, 7.75, 'Retrospective board');
+  final cols = <(String, int, double)>[
+    ('Went well', 0xFFBBF7D0, 2.2),
+    ('To improve', 0xFFFDE68A, 5.5),
+    ('Actions', 0xFFBFDBFE, 8.8),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (head, color, x) in cols) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.3,
+      w: 2.8,
+      h: 0.75,
+      fillArgb: color,
+      label: head,
+      bold: true,
+      pt: 13,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 3.7,
+      w: 2.8,
+      h: 3.6,
+      fillArgb: 0xFFF8FAFC,
+      label: '• …\n• …\n• …',
+      pt: 12,
+      rounded: false,
+    ));
+  }
+  return _write('Retrospective Board', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _competitiveMatrix() {
+  final title = _title(1, 5.5, 7.8, 'Competitive matrix');
+  final headers = <(String, double)>[
+    ('Criterion', 2.0),
+    ('Us', 4.6),
+    ('Rival A', 6.8),
+    ('Rival B', 9.0),
+  ];
+  final rows = <(String, List<String>, double)>[
+    ('Price', ['●●●', '●●', '●'], 5.7),
+    ('UX', ['●●●●', '●●', '●●●'], 4.5),
+    ('Speed', ['●●●', '●●●●', '●●'], 3.3),
+    ('Support', ['●●●●', '●●', '●●●'], 2.1),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  final headerColors = <int>[0xFF93C5FD, 0xFFBBF7D0, 0xFFFDE68A, 0xFFF9A8D4];
+  for (var i = 0; i < headers.length; i++) {
+    final (h, x) = headers[i];
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.75,
+      w: i == 0 ? 2.6 : 1.9,
+      h: 0.65,
+      fillArgb: headerColors[i],
+      label: h,
+      bold: true,
+    ));
+  }
+  for (final (crit, scores, y) in rows) {
+    shapes.add(_box(
+      id: id++,
+      cx: 2.0,
+      cy: y,
+      w: 2.6,
+      h: 0.9,
+      fillArgb: 0xFFF1F5F9,
+      label: crit,
+      bold: true,
+      rounded: false,
+    ));
+    final xs = <double>[4.6, 6.8, 9.0];
+    for (var i = 0; i < scores.length; i++) {
+      shapes.add(_box(
+        id: id++,
+        cx: xs[i],
+        cy: y,
+        w: 1.9,
+        h: 0.9,
+        fillArgb: 0xFFFFFFFF,
+        label: scores[i],
+        bold: true,
+        rounded: false,
+      ));
+    }
+  }
+  return _write('Competitive Matrix', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _empathyMap() {
+  final title = _title(1, 5.5, 7.8, 'Empathy map');
+  final quads = <(String, int, double, double)>[
+    ('Says', 0xFFBFDBFE, 3.2, 5.5),
+    ('Thinks', 0xFFC4B5FD, 7.8, 5.5),
+    ('Does', 0xFFBBF7D0, 3.2, 2.8),
+    ('Feels', 0xFFF9A8D4, 7.8, 2.8),
+  ];
+  final shapes = <VsdxShape>[
+    title,
+    _ellipse(
+      id: 2,
+      cx: 5.5,
+      cy: 4.15,
+      w: 1.6,
+      h: 1.0,
+      fillArgb: 0xFFE0E7FF,
+      label: 'User',
+      bold: true,
+    ),
+  ];
+  var id = 3;
+  for (final (head, color, x, y) in quads) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 3.8,
+      h: 2.1,
+      fillArgb: color,
+      label: '$head\n• …\n• …',
+      bold: true,
+      pt: 12,
+    ));
+  }
+  return _write('Empathy Map', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _learningPath() {
+  final title = _title(1, 5.5, 7.75, 'Learning path');
+  final nodes = <(String, int, double, double)>[
+    ('Basics', 0xFFE0E7FF, 1.8, 5.2),
+    ('Practice', 0xFFBFDBFE, 4.0, 5.2),
+    ('Project', 0xFFC4B5FD, 6.2, 5.2),
+    ('Review', 0xFFBBF7D0, 8.4, 5.2),
+    ('Certify', 0xFFFDE68A, 9.8, 3.0),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  final built = <VsdxShape>[];
+  var id = 2;
+  for (final (label, color, x, y) in nodes) {
+    final n = _ellipse(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.7,
+      h: 1.0,
+      fillArgb: color,
+      label: label,
+      bold: true,
+    );
+    shapes.add(n);
+    built.add(n);
+  }
+  for (var i = 0; i < built.length - 1; i++) {
+    final link = _link(id++, built[i], built[i + 1]);
+    shapes.add(link.connector);
+    connects.addAll(link.connects);
+  }
+  shapes.add(_box(
+    id: id,
+    cx: 5.0,
+    cy: 2.8,
+    w: 6.5,
+    h: 1.2,
+    fillArgb: 0xFFF8FAFC,
+    label: 'Optional electives · resources · checkpoints',
+    pt: 12,
+    rounded: false,
+  ));
+  return _write('Learning Path', shapes, connects);
+}
+
+Uint8List _sequenceDiagram() {
+  final title = _title(1, 5.5, 7.8, 'Sequence diagram');
+  final actors = <(String, double)>[
+    ('Client', 2.0),
+    ('API', 5.5),
+    ('DB', 9.0),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (name, x) in actors) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.5,
+      w: 1.8,
+      h: 0.7,
+      fillArgb: 0xFF93C5FD,
+      label: name,
+      bold: true,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 3.6,
+      w: 0.12,
+      h: 4.4,
+      fillArgb: 0xFFCBD5E1,
+      label: '',
+      rounded: false,
+    ));
+  }
+  // Message labels as horizontal bars
+  final msgs = <(String, double, double, double)>[
+    ('1. request', 3.75, 5.4, 3.2),
+    ('2. query', 7.25, 4.4, 3.2),
+    ('3. rows', 7.25, 3.4, 3.2),
+    ('4. response', 3.75, 2.4, 3.2),
+  ];
+  for (final (label, x, y, w) in msgs) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: w,
+      h: 0.55,
+      fillArgb: 0xFFE0E7FF,
+      label: label,
+      pt: 10,
+    ));
+  }
+  return _write('Sequence Diagram', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _stateMachine() {
+  final title = _title(1, 5.5, 7.75, 'State machine');
+  final draft = _ellipse(
+    id: 2,
+    cx: 2.2,
+    cy: 4.8,
+    w: 1.6,
+    h: 1.0,
+    fillArgb: 0xFFE0E7FF,
+    label: 'Draft',
+    bold: true,
+  );
+  final review = _ellipse(
+    id: 3,
+    cx: 5.5,
+    cy: 4.8,
+    w: 1.7,
+    h: 1.0,
+    fillArgb: 0xFFFDE68A,
+    label: 'Review',
+    bold: true,
+  );
+  final published = _ellipse(
+    id: 4,
+    cx: 8.8,
+    cy: 4.8,
+    w: 1.8,
+    h: 1.0,
+    fillArgb: 0xFFBBF7D0,
+    label: 'Published',
+    bold: true,
+  );
+  final archived = _ellipse(
+    id: 5,
+    cx: 8.8,
+    cy: 2.5,
+    w: 1.8,
+    h: 1.0,
+    fillArgb: 0xFFF1F5F9,
+    label: 'Archived',
+  );
+  final links = <({VsdxShape connector, List<VsdxConnect> connects})>[
+    _link(20, draft, review),
+    _link(21, review, published),
+    _link(22, published, archived),
+    _link(23, review, draft),
+  ];
+  return _write(
+    'State Machine',
+    <VsdxShape>[
+      title,
+      draft,
+      review,
+      published,
+      archived,
+      ...links.map((l) => l.connector),
+    ],
+    links.expand((l) => l.connects).toList(),
+  );
+}
+
+Uint8List _riskMatrix() {
+  final title = _title(1, 5.5, 7.8, 'Risk matrix');
+  // 3x3 likelihood × impact grid
+  final cells = <(String, int, double, double)>[
+    ('Low / Low', 0xFFBBF7D0, 3.0, 5.5),
+    ('Med / Low', 0xFFD9F99D, 5.5, 5.5),
+    ('High / Low', 0xFFFDE68A, 8.0, 5.5),
+    ('Low / Med', 0xFFD9F99D, 3.0, 3.8),
+    ('Med / Med', 0xFFFDE68A, 5.5, 3.8),
+    ('High / Med', 0xFFFDBA74, 8.0, 3.8),
+    ('Low / High', 0xFFFDE68A, 3.0, 2.1),
+    ('Med / High', 0xFFFDBA74, 5.5, 2.1),
+    ('High / High', 0xFFFECACA, 8.0, 2.1),
+  ];
+  final shapes = <VsdxShape>[
+    title,
+    _withLabel(
+      VsdxShapeFactory.textBox(
+        id: 2,
+        pinX: 1.1,
+        pinY: 3.8,
+        width: 0.9,
+        height: 2.5,
+        text: 'Impact',
+      ),
+      'Impact',
+      pt: 11,
+      bold: true,
+    ),
+    _withLabel(
+      VsdxShapeFactory.textBox(
+        id: 3,
+        pinX: 5.5,
+        pinY: 6.6,
+        width: 3,
+        height: 0.35,
+        text: 'Likelihood →',
+      ),
+      'Likelihood →',
+      pt: 11,
+      bold: true,
+    ),
+  ];
+  var id = 4;
+  for (final (label, color, x, y) in cells) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 2.2,
+      h: 1.35,
+      fillArgb: color,
+      label: label,
+      bold: true,
+      pt: 11,
+      rounded: false,
+    ));
+  }
+  return _write('Risk Matrix', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _budgetWaterfall() {
+  final title = _title(1, 5.5, 7.75, 'Budget waterfall');
+  final bars = <(String, int, double, double)>[
+    ('Start', 0xFF93C5FD, 1.6, 2.8),
+    ('+ Sales', 0xFFBBF7D0, 3.4, 3.4),
+    ('− COGS', 0xFFFECACA, 5.2, 2.4),
+    ('− Opex', 0xFFFED7AA, 7.0, 1.8),
+    ('End', 0xFFC4B5FD, 8.8, 2.2),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (label, color, x, h) in bars) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 2.2 + h / 2,
+      w: 1.5,
+      h: h,
+      fillArgb: color,
+      label: '',
+      rounded: false,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.2,
+      w: 1.6,
+      h: 0.7,
+      fillArgb: 0xFFF8FAFC,
+      label: label,
+      bold: true,
+      pt: 11,
+    ));
+  }
+  shapes.add(_box(
+    id: id,
+    cx: 5.5,
+    cy: 1.3,
+    w: 9.0,
+    h: 0.15,
+    fillArgb: 0xFF94A3B8,
+    label: '',
+    rounded: false,
+  ));
+  return _write('Budget Waterfall', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _a3ProblemSolving() {
+  final title = _title(1, 5.5, 7.85, 'A3 problem solving');
+  final panels = <(String, int, double, double, double, double)>[
+    ('1. Background', 0xFFE0E7FF, 2.5, 5.9, 3.6, 1.5),
+    ('2. Current state', 0xFFBFDBFE, 6.3, 5.9, 3.6, 1.5),
+    ('3. Goal', 0xFFBBF7D0, 9.5, 5.9, 2.4, 1.5),
+    ('4. Root cause', 0xFFFDE68A, 3.5, 3.9, 5.6, 1.5),
+    ('5. Countermeasures', 0xFFC4B5FD, 8.6, 3.9, 4.2, 1.5),
+    ('6. Plan', 0xFFF9A8D4, 3.5, 2.1, 5.6, 1.3),
+    ('7. Follow-up', 0xFFFED7AA, 8.6, 2.1, 4.2, 1.3),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (label, color, x, y, w, h) in panels) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: w,
+      h: h,
+      fillArgb: color,
+      label: label,
+      bold: true,
+      pt: 12,
+      rounded: false,
+    ));
+  }
+  return _write('A3 Problem Solving', shapes, const <VsdxConnect>[]);
 }
