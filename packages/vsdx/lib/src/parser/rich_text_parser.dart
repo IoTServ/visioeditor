@@ -489,14 +489,30 @@ class RichTextParser {
               2 => VsdxVertAlign.bottom,
               _ => VsdxVertAlign.middle,
             },
-      marginLeftInches:
-          readLengthInches(shape, 'LeftMargin') ?? inherit.marginLeftInches,
-      marginRightInches:
-          readLengthInches(shape, 'RightMargin') ?? inherit.marginRightInches,
-      marginTopInches:
-          readLengthInches(shape, 'TopMargin') ?? inherit.marginTopInches,
-      marginBottomInches:
-          readLengthInches(shape, 'BottomMargin') ?? inherit.marginBottomInches,
+      marginLeftInches: readLengthInches(
+            shape,
+            'LeftMargin',
+            inheritFrom: inherit.marginLeftInches,
+          ) ??
+          inherit.marginLeftInches,
+      marginRightInches: readLengthInches(
+            shape,
+            'RightMargin',
+            inheritFrom: inherit.marginRightInches,
+          ) ??
+          inherit.marginRightInches,
+      marginTopInches: readLengthInches(
+            shape,
+            'TopMargin',
+            inheritFrom: inherit.marginTopInches,
+          ) ??
+          inherit.marginTopInches,
+      marginBottomInches: readLengthInches(
+            shape,
+            'BottomMargin',
+            inheritFrom: inherit.marginBottomInches,
+          ) ??
+          inherit.marginBottomInches,
       hideText: hideInt == null ? inherit.hideText : hideInt != 0,
       // Absent TextBkgnd → inherit; explicit V=0/255 → transparent (do not
       // fall back to master — mirrors VSD textBgFilled=false).

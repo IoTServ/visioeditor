@@ -56,6 +56,17 @@ void main() {
     expect(rich.textBlock.widthInches, closeTo(1.25, 1e-9));
   });
 
+  test('LeftMargin F=Inh inherits master margin (not cached V=0)', () {
+    final el = shape(
+      '<Cell N="LeftMargin" V="0" F="Inh"/><Text>Label</Text>',
+    );
+    final rich = parser.parse(
+      el,
+      defaultBlock: const VsdxTextBlock(marginLeftInches: 0.2),
+    );
+    expect(rich.textBlock.marginLeftInches, closeTo(0.2, 1e-9));
+  });
+
   test('vertical align + margins also inherit from the master', () {
     final el = shape('<Text>Label</Text>');
     final rich = parser.parse(

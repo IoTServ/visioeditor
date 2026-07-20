@@ -192,8 +192,12 @@ class PageParser {
         readAngleRadians(shapeEl, 'Angle', inheritFrom: proto?.angleRad) ??
             proto?.angleRad ??
             0.0;
-    final flipX = _readBoolCell(shapeEl, 'FlipX') ?? proto?.flipX ?? false;
-    final flipY = _readBoolCell(shapeEl, 'FlipY') ?? proto?.flipY ?? false;
+    final flipX = _readBoolCell(shapeEl, 'FlipX', inheritFrom: proto?.flipX) ??
+        proto?.flipX ??
+        false;
+    final flipY = _readBoolCell(shapeEl, 'FlipY', inheritFrom: proto?.flipY) ??
+        proto?.flipY ??
+        false;
     // drawio-style "locked": read back the canonical protection bit written by
     // the writer (a shape is treated as locked when its move is locked).
     final locked = _readBoolCell(shapeEl, 'LockMoveX') ?? proto?.locked ?? false;
@@ -795,9 +799,13 @@ class PageParser {
     return int.tryParse(cell.getAttribute('V') ?? '');
   }
 
-  bool? _readBoolCell(XmlElement parent, String name) {
+  bool? _readBoolCell(XmlElement parent, String name, {bool? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
+    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
+      return inheritFrom;
+    }
     final v = cell.getAttribute('V');
     if (v == null) return null;
     return v == '1' || v.toLowerCase() == 'true';

@@ -270,8 +270,12 @@ class StyleParser {
   VsdxLine parseLine(XmlElement shape,
       {VsdxLine defaults = VsdxLine.defaultLine}) {
     final colorRes = _resolveColor(shape, 'LineColor', 'QuickStyleLineColor');
-    final weight =
-        readLengthInches(shape, 'LineWeight') ?? defaults.weightInches;
+    final weight = readLengthInches(
+          shape,
+          'LineWeight',
+          inheritFrom: defaults.weightInches,
+        ) ??
+        defaults.weightInches;
     final pat = _int(shape, 'LinePattern') ?? defaults.pattern;
     final capInt = _int(shape, 'LineCap');
     final cap = capInt == null ? defaults.cap : _capFromInt(capInt);

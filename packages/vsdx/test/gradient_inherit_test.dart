@@ -54,4 +54,18 @@ void main() {
     );
     expect(line.gradient, isNull);
   });
+
+  test('LineWeight F=Inh inherits Master weight (not cached V=0)', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="LinePattern" V="1"/>'
+      '<Cell N="LineWeight" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final line = style.parseLine(
+      el,
+      defaults: const VsdxLine(weightInches: 0.05),
+    );
+    expect(line.weightInches, closeTo(0.05, 1e-9));
+  });
 }
