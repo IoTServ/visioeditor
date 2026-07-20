@@ -5267,6 +5267,108 @@ class EditorController extends ChangeNotifier {
   /// selected. Used to scope shape-data editing to one shape.
   int? get singleSelectedId => _selection.length == 1 ? _selection.first : null;
 
+  /// Chart group root for the single selection (self or ancestor), or null.
+  int? get selectedChartId {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return null;
+    var cur = id;
+    while (true) {
+      final s = page.findShapeById(cur);
+      if (s == null) return null;
+      if (ChartOps.isChart(s)) return cur;
+      final p = page.findParentId(cur);
+      if (p == null) return null;
+      cur = p;
+    }
+  }
+
+  /// The chart group for [selectedChartId], or null.
+  VsdxShape? get selectedChart {
+    final id = selectedChartId;
+    if (id == null) return null;
+    return currentPage?.findShapeById(id);
+  }
+
+  /// Rebuild the selected chart from comma/semicolon-separated [csv] values.
+  void setChartValuesCsv(String csv) {
+    final values = ChartOps.parseValues(csv);
+    setChartValues(values);
+  }
+
+  /// Rebuild the selected chart with [values] (one undo step).
+  void setChartValues(List<double> values) {
+    final chartId = selectedChartId;
+    if (chartId == null) return;
+    final page0 = currentPage;
+    final chart0 = page0?.findShapeById(chartId);
+    if (chart0 == null || chart0.locked || isOnLockedLayer(chartId)) return;
+    updateCurrentPage((page) {
+      final chart = page.findShapeById(chartId);
+      if (chart == null || !ChartOps.isChart(chart)) return page;
+      var nextId = page.nextFreeShapeId();
+      final rebuilt =
+          ChartOps.rebuild(chart, values: values, allocId: () => nextId++);
+      return page.updateShapeById(chartId, (_) => rebuilt);
+    });
+    setSelection([chartId]);
+  }
+
+  /// Coloured series children of the selected chart (for swatch editing).
+  List<VsdxShape> get selectedChartSeries {
+    final chart = selectedChart;
+    if (chart == null) return const <VsdxShape>[];
+    return <VsdxShape>[
+      for (final c in chart.children)
+        if (!_isChartChrome(c)) c,
+    ];
+  }
+
+  static bool _isChartChrome(VsdxShape s) {
+    final n = s.name;
+    return n.startsWith('Axes.') ||
+        n.startsWith('RadarGrid.') ||
+        n.startsWith('Track.') ||
+        n.startsWith('Bridge.') ||
+        n.startsWith('Needle.');
+  }
+
+  /// Set fill colour on a chart series child (one undo step).
+  void setChartSeriesColor(int seriesId, VsdxColor color) {
+    final chartId = selectedChartId;
+    if (chartId == null) return;
+    final page = currentPage;
+    final chart = page?.findShapeById(chartId);
+    if (chart == null || chart.locked || isOnLockedLayer(chartId)) return;
+    if (!chart.children.any((c) => c.id == seriesId)) return;
+    updateCurrentPage(
+      (page) => page.updateShapeById(
+        seriesId,
+        (s) {
+          final fill = s.fill;
+          final line = s.line;
+          return s.copyWith(
+            fill: fill.copyWith(
+              foreground: color,
+              pattern: fill.pattern == 0 ? 1 : fill.pattern,
+            ),
+            line: line.copyWith(
+              color: VsdxColor(_darkenArgb(color.value)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static int _darkenArgb(int argb) {
+    final a = (argb >> 24) & 0xFF;
+    final r = (((argb >> 16) & 0xFF) * 0.75).round().clamp(0, 255);
+    final g = (((argb >> 8) & 0xFF) * 0.75).round().clamp(0, 255);
+    final b = ((argb & 0xFF) * 0.75).round().clamp(0, 255);
+    return (a << 24) | (r << 16) | (g << 8) | b;
+  }
+
   /// The custom properties (`<Section N="Property">`, Visio "Shape Data") of
   /// the single selection, or an empty list.
   List<VsdxUserProperty> get selectedProperties =>

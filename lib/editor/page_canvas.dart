@@ -448,6 +448,21 @@ class _PageCanvasState extends State<PageCanvas> {
     return best;
   }
 
+  /// Prefer the chart group root when clicking a series child (Alt drills in).
+  int _chartAwareHit(int hit) {
+    if (HardwareKeyboard.instance.isAltPressed) return hit;
+    final page = _page;
+    if (page == null) return hit;
+    var cur = hit;
+    while (true) {
+      final s = page.findShapeById(cur);
+      if (s != null && ChartOps.isChart(s)) return cur;
+      final p = page.findParentId(cur);
+      if (p == null) return hit;
+      cur = p;
+    }
+  }
+
   /// True when [pt] (page inches) is within stroke hit distance of [s]'s path.
   bool _hit1DStroke(VsdxPage page, VsdxShape s, Offset pt) {
     final segs = _strokePageSegments(page, s);
@@ -896,7 +911,8 @@ class _PageCanvasState extends State<PageCanvas> {
       if (wasText) _startEditingNewTextBox();
       return;
     }
-    final hit = _hitTest(d.localPosition);
+    final hit0 = _hitTest(d.localPosition);
+    final hit = hit0 == null ? null : _chartAwareHit(hit0);
     final shift = HardwareKeyboard.instance.isShiftPressed;
     if (hit != null) {
       if (shift) {
@@ -1542,7 +1558,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_tryStartEndpointDrag(d.localPosition)) return;
     if (_tryStartWaypointDrag(d.localPosition)) return;
 
-    final hit = _hitTest(d.localPosition);
+    final hit0 = _hitTest(d.localPosition);
+    final hit = hit0 == null ? null : _chartAwareHit(hit0);
     if (hit != null) {
       if (!_c.isSelected(hit)) _c.selectOnly(hit);
       // Alt/Option-drag leaves the originals behind and drags a copy (drawio).

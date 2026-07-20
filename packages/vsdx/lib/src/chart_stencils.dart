@@ -5,8 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 import 'stencils.dart';
 
-/// Chart libraries shown in the dedicated Charts sidebar (not mixed into
-/// [kStencilGroups] "More shapes").
+/// Chart libraries shown in the dedicated Charts sidebar.
 final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
   StencilGroup('Charts', <Stencil>[
     Stencil(
@@ -20,6 +19,15 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Stacked Column',
       (id, cx, cy) => ChartOps.stackedColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Stacked Bar',
+      (id, cx, cy) => ChartOps.stackedBarChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Clustered Column',
+      (id, cx, cy) =>
+          ChartOps.clusteredColumnChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Pie Chart',
@@ -42,12 +50,28 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.funnelChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Pyramid Chart',
+      (id, cx, cy) => ChartOps.pyramidChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Radar Chart',
       (id, cx, cy) => ChartOps.radarChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Gauge',
       (id, cx, cy) => ChartOps.gaugeChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Progress',
+      (id, cx, cy) => ChartOps.progressChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Waterfall',
+      (id, cx, cy) => ChartOps.waterfallChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Bubble Chart',
+      (id, cx, cy) => ChartOps.bubbleChart(id: id, pinX: cx, pinY: cy),
     ),
   ], expandAtWidth: 900),
 ];

@@ -4,14 +4,103 @@ import 'package:vsdx/stencils.dart';
 import 'package:vsdx/vsdx.dart';
 
 void main() {
-  test('chart stencils build groups with series children', () {
-    expect(kChartStencils, isNotEmpty);
+  test('chart stencils build groups with series children and meta', () {
+    expect(kChartStencils, hasLength(16));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
       expect(shape.children, isNotEmpty, reason: s.name);
       expect(shape.connectionPoints, isNotEmpty, reason: s.name);
+      expect(ChartOps.isChart(shape), isTrue, reason: s.name);
+      expect(ChartOps.chartKind(shape), isNotNull, reason: s.name);
+      expect(ChartOps.chartValues(shape), isNotEmpty, reason: s.name);
     }
+  });
+
+  test('axes form bottom-left L in Y-up local space', () {
+    final chart = ChartOps.columnChart(id: 1, pinX: 2, pinY: 2);
+    final axes = chart.children.firstWhere((c) => c.name.startsWith('Axes.'));
+    final cmds = axes.geometries.first.commands;
+    expect(cmds, hasLength(3));
+    final m = cmds[0] as MoveTo;
+    final a = cmds[1] as LineTo;
+    final b = cmds[2] as LineTo;
+    // Top of Y axis → origin → right along X axis (└).
+    expect(m.y, greaterThan(a.y));
+    expect(a.x, closeTo(m.x, 1e-9));
+    expect(b.y, closeTo(a.y, 1e-9));
+    expect(b.x, greaterThan(a.x));
+  });
+
+  test('pie slices use tight AABB (not full chart frame)', () {
+    final pie = ChartOps.pieChart(id: 5, pinX: 3, pinY: 3, width: 2, height: 2);
+    for (final slice in pie.children) {
+      expect(slice.width, lessThan(pie.width * 0.95), reason: slice.name);
+      expect(slice.height, lessThan(pie.height * 0.95), reason: slice.name);
+    }
+  });
+
+  test('rebuild preserves root id and updates ChartValues', () {
+    final chart = ChartOps.columnChart(
+      id: 10,
+      pinX: 1,
+      pinY: 2,
+      values: const <double>[1, 2, 3],
+    );
+    var next = 100;
+    final rebuilt = ChartOps.rebuild(
+      chart,
+      values: const <double>[0.2, 0.4, 0.6, 0.8],
+      allocId: () => next++,
+    );
+    expect(rebuilt.id, 10);
+    expect(rebuilt.pinX, 1);
+    expect(rebuilt.pinY, 2);
+    expect(ChartOps.chartKind(rebuilt), 'column');
+    expect(ChartOps.chartValues(rebuilt), <double>[0.2, 0.4, 0.6, 0.8]);
+    expect(rebuilt.children.length, greaterThan(chart.children.length - 1));
+    for (final c in rebuilt.children) {
+      expect(c.id, greaterThanOrEqualTo(100));
+    }
+  });
+
+  test('parseValues accepts commas semicolons and whitespace', () {
+    expect(ChartOps.parseValues('1, 2;3  4.5'), <double>[1, 2, 3, 4.5]);
+    expect(ChartOps.parseValues(''), ChartOps.defaultValues);
+  });
+
+  test('new chart kinds round-trip through vsdx writer', () {
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    final builders = <VsdxShape Function(int id)>[
+      (id) => ChartOps.stackedBarChart(id: id, pinX: 1, pinY: 1),
+      (id) => ChartOps.clusteredColumnChart(id: id, pinX: 3, pinY: 1),
+      (id) => ChartOps.pyramidChart(id: id, pinX: 5, pinY: 1),
+      (id) => ChartOps.progressChart(id: id, pinX: 1, pinY: 3),
+      (id) => ChartOps.waterfallChart(id: id, pinX: 3, pinY: 3),
+      (id) => ChartOps.bubbleChart(id: id, pinX: 5, pinY: 3),
+      (id) => ChartOps.gaugeChart(id: id, pinX: 2, pinY: 5),
+    ];
+    var id = 20;
+    for (final b in builders) {
+      page = page.addShape(b(id));
+      id += 20;
+    }
+    doc = doc.replacePage(0, page);
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(out).pages.first;
+    for (var i = 20; i < id; i += 20) {
+      final loaded = after.findShapeById(i);
+      expect(loaded, isNotNull, reason: 'id=$i');
+      expect(ChartOps.isChart(loaded!), isTrue, reason: 'id=$i');
+      expect(loaded.children, isNotEmpty, reason: 'id=$i');
+      expect(ChartOps.chartValues(loaded), isNotEmpty, reason: 'id=$i');
+    }
+    expect(validateDocument(parser.parse(out)).where((i) => i.severity == 'error'),
+        isEmpty);
   });
 
   test('column chart round-trips through vsdx writer', () {
@@ -27,6 +116,8 @@ void main() {
     expect(loaded, isNotNull);
     expect(loaded!.shapeKind, VsdxShapeKind.group);
     expect(loaded.children.length, chart.children.length);
+    expect(ChartOps.isChart(loaded), isTrue);
+    expect(ChartOps.chartKind(loaded), 'column');
     expect(loaded.connectionPoints, isNotEmpty);
     expect(validateDocument(after).where((i) => i.severity == 'error'), isEmpty);
   });
@@ -43,6 +134,7 @@ void main() {
     final out = writer.write(originalBytes: blank, edited: doc);
     final after = parser.parse(out).pages.first;
     expect(after.findShapeById(20)!.children, isNotEmpty);
+    expect(ChartOps.isChart(after.findShapeById(20)!), isTrue);
     expect(after.findShapeById(40)!.children, isNotEmpty);
   });
 }
