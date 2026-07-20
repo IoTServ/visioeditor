@@ -23,7 +23,7 @@ void main() {
         .where((t) => t.assetName != null)
         .map((t) => t.assetName!)
         .toSet();
-    expect(assets.length, greaterThanOrEqualTo(40));
+    expect(assets.length, greaterThanOrEqualTo(50));
   });
 
   testWidgets('empty state offers new from template and opens blank',
@@ -74,18 +74,20 @@ void main() {
     expect(find.text('Blank drawing'), findsOneWidget);
     expect(find.text('Process flow'), findsNothing);
 
-    await tester.tap(find.text('Flowcharts'));
+    await tester.ensureVisible(find.text('People'));
+    await tester.tap(find.text('People'));
     await tester.pumpAndSettle();
-    expect(find.text('Process flow'), findsOneWidget);
-    expect(find.text('State machine'), findsOneWidget);
+    expect(find.text('Career ladder'), findsOneWidget);
+    expect(find.text('Hiring pipeline'), findsOneWidget);
 
-    await tester.tap(find.text('Operations'));
+    await tester.ensureVisible(find.text('Marketing'));
+    await tester.tap(find.text('Marketing'));
     await tester.pumpAndSettle();
-    expect(find.text('Service blueprint'), findsOneWidget);
-    expect(find.text('Incident response'), findsOneWidget);
+    expect(find.text('Content calendar'), findsOneWidget);
+    expect(find.text('Positioning map'), findsOneWidget);
 
-    await tester.tap(find.text('Service blueprint'));
+    await tester.tap(find.text('Content calendar'));
     await tester.pumpAndSettle();
-    expect(picked?.id, 'service_blueprint');
+    expect(picked?.id, 'content_cal');
   });
 }

@@ -111,7 +111,7 @@ class _TemplatePickerDialogState extends State<_TemplatePickerDialog> {
                   ? Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(width: 176, child: categoryRail),
+                        SizedBox(width: 184, child: categoryRail),
                         const VerticalDivider(width: 1),
                         Expanded(child: grid),
                       ],

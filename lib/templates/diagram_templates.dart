@@ -18,6 +18,8 @@ enum TemplateCategory {
   product,
   education,
   operations,
+  hr,
+  marketing,
   technical,
 }
 
@@ -32,6 +34,8 @@ extension TemplateCategoryLabel on TemplateCategory {
         TemplateCategory.product => ('Product', '产品'),
         TemplateCategory.education => ('Education', '教育'),
         TemplateCategory.operations => ('Operations', '运营'),
+        TemplateCategory.hr => ('People', '人力'),
+        TemplateCategory.marketing => ('Marketing', '营销'),
         TemplateCategory.technical => ('Technical', '技术'),
       };
 
@@ -45,6 +49,8 @@ extension TemplateCategoryLabel on TemplateCategory {
         TemplateCategory.product => Icons.devices_outlined,
         TemplateCategory.education => Icons.school_outlined,
         TemplateCategory.operations => Icons.miscellaneous_services_outlined,
+        TemplateCategory.hr => Icons.badge_outlined,
+        TemplateCategory.marketing => Icons.campaign_outlined,
         TemplateCategory.technical => Icons.hub_outlined,
       };
 }
@@ -398,6 +404,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFFBE123C),
     icon: Icons.article_outlined,
   ),
+  DiagramTemplate(
+    id: 'affinity',
+    category: TemplateCategory.analysis,
+    assetName: 'Affinity Map.vsdx',
+    titleEn: 'Affinity map',
+    titleZh: '亲和图',
+    descEn: 'Cluster sticky notes into themes.',
+    descZh: '把便签归类成主题簇。',
+    accent: Color(0xFFCA8A04),
+    icon: Icons.sticky_note_2_outlined,
+  ),
   // --- Strategy ---
   DiagramTemplate(
     id: 'bmc',
@@ -453,6 +470,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     descZh: '与竞品按维度打分对比。',
     accent: Color(0xFF7C2D12),
     icon: Icons.compare_arrows,
+  ),
+  DiagramTemplate(
+    id: 'vmv',
+    category: TemplateCategory.strategy,
+    assetName: 'Vision Mission Values.vsdx',
+    titleEn: 'Vision · mission · values',
+    titleZh: '愿景使命价值观',
+    descEn: 'North star with three core values.',
+    descZh: '愿景使命与三项核心价值观。',
+    accent: Color(0xFF1D4ED8),
+    icon: Icons.auto_awesome_outlined,
   ),
   // --- Product ---
   DiagramTemplate(
@@ -510,6 +538,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFFDB2777),
     icon: Icons.favorite_outline,
   ),
+  DiagramTemplate(
+    id: 'feature_tree',
+    category: TemplateCategory.product,
+    assetName: 'Feature Tree.vsdx',
+    titleEn: 'Feature tree',
+    titleZh: '功能树',
+    descEn: 'Product epics broken into features.',
+    descZh: '从产品到史诗再到功能分解。',
+    accent: Color(0xFF0EA5E9),
+    icon: Icons.account_tree,
+  ),
   // --- Education ---
   DiagramTemplate(
     id: 'lesson',
@@ -544,6 +583,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     accent: Color(0xFF0891B2),
     icon: Icons.route_outlined,
   ),
+  DiagramTemplate(
+    id: 'flipped',
+    category: TemplateCategory.education,
+    assetName: 'Flipped Classroom.vsdx',
+    titleEn: 'Flipped classroom',
+    titleZh: '翻转课堂',
+    descEn: 'Before / during / after class activities.',
+    descZh: '课前 / 课中 / 课后活动安排。',
+    accent: Color(0xFF16A34A),
+    icon: Icons.swap_horiz,
+  ),
   // --- Operations ---
   DiagramTemplate(
     id: 'service_blueprint',
@@ -566,6 +616,85 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     descZh: '发现 → 分级 → 缓解 → 恢复 → 复盘。',
     accent: Color(0xFFDC2626),
     icon: Icons.health_and_safety_outlined,
+  ),
+  DiagramTemplate(
+    id: 'change',
+    category: TemplateCategory.operations,
+    assetName: 'Change Roadmap.vsdx',
+    titleEn: 'Change roadmap',
+    titleZh: '变革路线图',
+    descEn: 'Prepare → pilot → rollout → embed.',
+    descZh: '准备 → 试点 → 推广 → 固化。',
+    accent: Color(0xFF7C3AED),
+    icon: Icons.trending_up,
+  ),
+  // --- People / HR ---
+  DiagramTemplate(
+    id: 'career',
+    category: TemplateCategory.hr,
+    assetName: 'Career Ladder.vsdx',
+    titleEn: 'Career ladder',
+    titleZh: '职业阶梯',
+    descEn: 'Junior to principal with skill notes.',
+    descZh: '初级到专家级及能力说明。',
+    accent: Color(0xFF0284C7),
+    icon: Icons.stairs_outlined,
+  ),
+  DiagramTemplate(
+    id: 'skills',
+    category: TemplateCategory.hr,
+    assetName: 'Skills Matrix.vsdx',
+    titleEn: 'Skills matrix',
+    titleZh: '技能矩阵',
+    descEn: 'People × capability heatmap.',
+    descZh: '人员 × 能力热力表。',
+    accent: Color(0xFF059669),
+    icon: Icons.grid_on,
+  ),
+  DiagramTemplate(
+    id: 'hiring',
+    category: TemplateCategory.hr,
+    assetName: 'Hiring Pipeline.vsdx',
+    titleEn: 'Hiring pipeline',
+    titleZh: '招聘漏斗',
+    descEn: 'Sourced through hired stages.',
+    descZh: '从寻访到入职的招聘阶段。',
+    accent: Color(0xFFDB2777),
+    icon: Icons.how_to_reg_outlined,
+  ),
+  // --- Marketing ---
+  DiagramTemplate(
+    id: 'content_cal',
+    category: TemplateCategory.marketing,
+    assetName: 'Content Calendar.vsdx',
+    titleEn: 'Content calendar',
+    titleZh: '内容日历',
+    descEn: 'Week-at-a-glance content slots.',
+    descZh: '一周内容排期一览。',
+    accent: Color(0xFFEA580C),
+    icon: Icons.calendar_month_outlined,
+  ),
+  DiagramTemplate(
+    id: 'campaign',
+    category: TemplateCategory.marketing,
+    assetName: 'Campaign Journey.vsdx',
+    titleEn: 'Campaign journey',
+    titleZh: '营销旅程',
+    descEn: 'Aware → engage → convert → retain.',
+    descZh: '认知 → 互动 → 转化 → 留存。',
+    accent: Color(0xFFD946EF),
+    icon: Icons.route,
+  ),
+  DiagramTemplate(
+    id: 'positioning',
+    category: TemplateCategory.marketing,
+    assetName: 'Positioning Map.vsdx',
+    titleEn: 'Positioning map',
+    titleZh: '定位图',
+    descEn: 'Premium/value × niche/mass map.',
+    descZh: '高端/性价比 × 细分/大众定位。',
+    accent: Color(0xFF4F46E5),
+    icon: Icons.bubble_chart,
   ),
   // --- Technical ---
   DiagramTemplate(
@@ -633,6 +762,17 @@ const List<DiagramTemplate> kDiagramTemplates = <DiagramTemplate>[
     descZh: '客户端 ↔ API ↔ 数据库消息流。',
     accent: Color(0xFF4F46E5),
     icon: Icons.swap_vert,
+  ),
+  DiagramTemplate(
+    id: 'microservices',
+    category: TemplateCategory.technical,
+    assetName: 'Microservices Map.vsdx',
+    titleEn: 'Microservices map',
+    titleZh: '微服务地图',
+    descEn: 'Gateway with domain services.',
+    descZh: '网关与领域微服务布局。',
+    accent: Color(0xFF0891B2),
+    icon: Icons.apps_outlined,
   ),
   DiagramTemplate(
     id: 'state_machine',

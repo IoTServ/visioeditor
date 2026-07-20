@@ -74,6 +74,19 @@ void main() {
     'Risk Matrix.vsdx': _riskMatrix(),
     'Budget Waterfall.vsdx': _budgetWaterfall(),
     'A3 Problem Solving.vsdx': _a3ProblemSolving(),
+    // Wave 4 — HR + marketing + denser packs
+    'Career Ladder.vsdx': _careerLadder(),
+    'Skills Matrix.vsdx': _skillsMatrix(),
+    'Hiring Pipeline.vsdx': _hiringPipeline(),
+    'Content Calendar.vsdx': _contentCalendar(),
+    'Campaign Journey.vsdx': _campaignJourney(),
+    'Positioning Map.vsdx': _positioningMap(),
+    'Affinity Map.vsdx': _affinityMap(),
+    'Feature Tree.vsdx': _featureTree(),
+    'Change Roadmap.vsdx': _changeRoadmap(),
+    'Microservices Map.vsdx': _microservicesMap(),
+    'Vision Mission Values.vsdx': _visionMissionValues(),
+    'Flipped Classroom.vsdx': _flippedClassroom(),
   };
   for (final e in built.entries) {
     final path = '$kOutDir/${e.key}';
@@ -2648,4 +2661,629 @@ Uint8List _a3ProblemSolving() {
     ));
   }
   return _write('A3 Problem Solving', shapes, const <VsdxConnect>[]);
+}
+
+// --- wave 4 templates ------------------------------------------------------
+
+Uint8List _careerLadder() {
+  final title = _title(1, 5.5, 7.8, 'Career ladder');
+  final rungs = <(String, int, double, double)>[
+    ('Principal', 0xFF93C5FD, 5.5, 6.4),
+    ('Senior', 0xFFBFDBFE, 5.5, 5.1),
+    ('Mid', 0xFFC4B5FD, 5.5, 3.8),
+    ('Junior', 0xFFBBF7D0, 5.5, 2.5),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  var w = 3.0;
+  for (final (label, color, x, y) in rungs) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: w,
+      h: 0.95,
+      fillArgb: color,
+      label: label,
+      bold: true,
+      pt: 13,
+    ));
+    shapes.add(_box(
+      id: id++,
+      cx: x + w / 2 + 1.4,
+      cy: y,
+      w: 2.4,
+      h: 0.85,
+      fillArgb: 0xFFF8FAFC,
+      label: 'skills · scope',
+      pt: 10,
+      rounded: false,
+    ));
+    w += 1.1;
+  }
+  return _write('Career Ladder', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _skillsMatrix() {
+  final title = _title(1, 5.5, 7.8, 'Skills matrix');
+  final headers = <(String, double)>[
+    ('Person', 1.9),
+    ('Design', 4.2),
+    ('Code', 6.2),
+    ('Comm', 8.2),
+    ('Lead', 10.0),
+  ];
+  final rows = <(String, List<String>, double)>[
+    ('Alex', ['●●●●', '●●', '●●●', '●●'], 5.7),
+    ('Sam', ['●●', '●●●●', '●●●', '●'], 4.5),
+    ('Jordan', ['●●●', '●●●', '●●●●', '●●●'], 3.3),
+    ('Riley', ['●', '●●●', '●●', '●●●●'], 2.1),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  final headerColors = <int>[
+    0xFF93C5FD,
+    0xFFBFDBFE,
+    0xFFC4B5FD,
+    0xFFBBF7D0,
+    0xFFFDE68A,
+  ];
+  for (var i = 0; i < headers.length; i++) {
+    final (h, x) = headers[i];
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.75,
+      w: i == 0 ? 2.4 : 1.7,
+      h: 0.65,
+      fillArgb: headerColors[i],
+      label: h,
+      bold: true,
+    ));
+  }
+  for (final (name, scores, y) in rows) {
+    shapes.add(_box(
+      id: id++,
+      cx: 1.9,
+      cy: y,
+      w: 2.4,
+      h: 0.9,
+      fillArgb: 0xFFF1F5F9,
+      label: name,
+      bold: true,
+      rounded: false,
+    ));
+    final xs = <double>[4.2, 6.2, 8.2, 10.0];
+    for (var i = 0; i < scores.length; i++) {
+      shapes.add(_box(
+        id: id++,
+        cx: xs[i],
+        cy: y,
+        w: 1.7,
+        h: 0.9,
+        fillArgb: 0xFFFFFFFF,
+        label: scores[i],
+        bold: true,
+        rounded: false,
+      ));
+    }
+  }
+  return _write('Skills Matrix', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _hiringPipeline() {
+  final title = _title(1, 5.5, 7.75, 'Hiring pipeline');
+  final stages = <(String, int, double)>[
+    ('Sourced', 0xFFE0E7FF, 1.6),
+    ('Screen', 0xFFBFDBFE, 3.6),
+    ('Interview', 0xFFC4B5FD, 5.6),
+    ('Offer', 0xFFBBF7D0, 7.6),
+    ('Hired', 0xFFFDE68A, 9.6),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  VsdxShape? prev;
+  var id = 2;
+  for (final (label, color, x) in stages) {
+    final s = _box(
+      id: id++,
+      cx: x,
+      cy: 5.0,
+      w: 1.7,
+      h: 1.1,
+      fillArgb: color,
+      label: label,
+      bold: true,
+    );
+    shapes.add(s);
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 3.2,
+      w: 1.7,
+      h: 1.0,
+      fillArgb: 0xFFF8FAFC,
+      label: 'n = …',
+      pt: 11,
+      rounded: false,
+    ));
+    if (prev != null) {
+      final link = _link(id++, prev, s);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+    prev = s;
+  }
+  return _write('Hiring Pipeline', shapes, connects);
+}
+
+Uint8List _contentCalendar() {
+  final title = _title(1, 5.5, 7.8, 'Content calendar');
+  final days = <(String, double)>[
+    ('Mon', 1.7),
+    ('Tue', 3.5),
+    ('Wed', 5.3),
+    ('Thu', 7.1),
+    ('Fri', 8.9),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (day, x) in days) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.5,
+      w: 1.6,
+      h: 0.6,
+      fillArgb: 0xFF93C5FD,
+      label: day,
+      bold: true,
+    ));
+  }
+  final cells = <(String, int, double, double)>[
+    ('Blog', 0xFFBFDBFE, 1.7, 5.2),
+    ('Reel', 0xFFF9A8D4, 3.5, 5.2),
+    ('Newsletter', 0xFFC4B5FD, 5.3, 5.2),
+    ('Thread', 0xFFBBF7D0, 7.1, 5.2),
+    ('Live', 0xFFFDE68A, 8.9, 5.2),
+    ('Case study', 0xFFE0E7FF, 1.7, 3.5),
+    ('Short', 0xFFFECACA, 3.5, 3.5),
+    ('Webinar', 0xFFBFDBFE, 5.3, 3.5),
+    ('Carousel', 0xFFD9F99D, 7.1, 3.5),
+    ('AMA', 0xFFFED7AA, 8.9, 3.5),
+  ];
+  for (final (label, color, x, y) in cells) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.6,
+      h: 1.2,
+      fillArgb: color,
+      label: label,
+      pt: 11,
+      rounded: false,
+    ));
+  }
+  return _write('Content Calendar', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _campaignJourney() {
+  final title = _title(1, 5.5, 7.75, 'Campaign journey');
+  final stages = <(String, String, int, double)>[
+    ('Aware', 'ads · SEO', 0xFFBFDBFE, 1.8),
+    ('Engage', 'content', 0xFFC4B5FD, 4.0),
+    ('Convert', 'landing', 0xFFBBF7D0, 6.2),
+    ('Retain', 'nurture', 0xFFFDE68A, 8.4),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  VsdxShape? prev;
+  var id = 2;
+  for (final (head, sub, color, x) in stages) {
+    final s = _box(
+      id: id++,
+      cx: x,
+      cy: 5.0,
+      w: 1.9,
+      h: 1.5,
+      fillArgb: color,
+      label: '$head\n$sub',
+      bold: true,
+      pt: 12,
+    );
+    shapes.add(s);
+    if (prev != null) {
+      final link = _link(id++, prev, s);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+    prev = s;
+  }
+  shapes.add(_box(
+    id: id,
+    cx: 5.5,
+    cy: 2.6,
+    w: 8.5,
+    h: 1.1,
+    fillArgb: 0xFFF8FAFC,
+    label: 'KPIs: CTR · CPL · CVR · retention',
+    bold: true,
+    pt: 12,
+    rounded: false,
+  ));
+  return _write('Campaign Journey', shapes, connects);
+}
+
+Uint8List _positioningMap() {
+  final title = _title(1, 5.5, 7.8, 'Positioning map');
+  // Axes labels + 4 quadrant brands
+  final shapes = <VsdxShape>[
+    title,
+    _box(
+      id: 2,
+      cx: 5.5,
+      cy: 4.3,
+      w: 7.5,
+      h: 4.6,
+      fillArgb: 0xFFF8FAFC,
+      label: '',
+      rounded: false,
+    ),
+    _withLabel(
+      VsdxShapeFactory.textBox(
+        id: 3,
+        pinX: 5.5,
+        pinY: 6.85,
+        width: 3,
+        height: 0.35,
+        text: 'Premium ↑',
+      ),
+      'Premium ↑',
+      pt: 11,
+      bold: true,
+    ),
+    _withLabel(
+      VsdxShapeFactory.textBox(
+        id: 4,
+        pinX: 5.5,
+        pinY: 1.75,
+        width: 3,
+        height: 0.35,
+        text: 'Value ↓',
+      ),
+      'Value ↓',
+      pt: 11,
+      bold: true,
+    ),
+    _withLabel(
+      VsdxShapeFactory.textBox(
+        id: 5,
+        pinX: 1.4,
+        pinY: 4.3,
+        width: 1.4,
+        height: 0.8,
+        text: '← Niche',
+      ),
+      '← Niche',
+      pt: 11,
+      bold: true,
+    ),
+    _withLabel(
+      VsdxShapeFactory.textBox(
+        id: 6,
+        pinX: 9.6,
+        pinY: 4.3,
+        width: 1.5,
+        height: 0.8,
+        text: 'Mass →',
+      ),
+      'Mass →',
+      pt: 11,
+      bold: true,
+    ),
+  ];
+  final brands = <(String, int, double, double)>[
+    ('Us', 0xFF93C5FD, 7.2, 5.6),
+    ('Rival A', 0xFFF9A8D4, 3.6, 5.4),
+    ('Rival B', 0xFFFDE68A, 3.8, 2.9),
+    ('Rival C', 0xFFBBF7D0, 7.5, 3.0),
+  ];
+  var id = 7;
+  for (final (label, color, x, y) in brands) {
+    shapes.add(_ellipse(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 1.5,
+      h: 0.85,
+      fillArgb: color,
+      label: label,
+      bold: true,
+    ));
+  }
+  return _write('Positioning Map', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _affinityMap() {
+  final title = _title(1, 5.5, 7.75, 'Affinity map');
+  final clusters = <(String, List<String>, int, double)>[
+    ('Theme A', ['note 1', 'note 2', 'note 3'], 0xFFBFDBFE, 2.2),
+    ('Theme B', ['note 1', 'note 2'], 0xFFC4B5FD, 5.5),
+    ('Theme C', ['note 1', 'note 2', 'note 3'], 0xFFBBF7D0, 8.8),
+  ];
+  final shapes = <VsdxShape>[title];
+  var id = 2;
+  for (final (theme, notes, color, x) in clusters) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 6.35,
+      w: 2.8,
+      h: 0.7,
+      fillArgb: color,
+      label: theme,
+      bold: true,
+      pt: 13,
+    ));
+    var y = 5.2;
+    for (final n in notes) {
+      shapes.add(_box(
+        id: id++,
+        cx: x,
+        cy: y,
+        w: 2.6,
+        h: 0.85,
+        fillArgb: 0xFFFEF9C3,
+        label: n,
+        pt: 11,
+        rounded: false,
+      ));
+      y -= 1.05;
+    }
+  }
+  return _write('Affinity Map', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _featureTree() {
+  final title = _title(1, 5.5, 7.75, 'Feature tree');
+  final root = _box(
+    id: 2,
+    cx: 5.5,
+    cy: 6.3,
+    w: 2.8,
+    h: 0.9,
+    fillArgb: 0xFF93C5FD,
+    label: 'Product',
+    bold: true,
+    pt: 14,
+  );
+  final branches = <(String, int, double)>[
+    ('Discover', 0xFFBFDBFE, 2.2),
+    ('Create', 0xFFC4B5FD, 5.5),
+    ('Share', 0xFFBBF7D0, 8.8),
+  ];
+  final shapes = <VsdxShape>[title, root];
+  final connects = <VsdxConnect>[];
+  var id = 3;
+  for (final (label, color, x) in branches) {
+    final b = _box(
+      id: id++,
+      cx: x,
+      cy: 4.5,
+      w: 2.4,
+      h: 0.9,
+      fillArgb: color,
+      label: label,
+      bold: true,
+    );
+    shapes.add(b);
+    final link = _link(id++, root, b);
+    shapes.add(link.connector);
+    connects.addAll(link.connects);
+    for (final leafY in <double>[3.0, 1.9]) {
+      shapes.add(_box(
+        id: id++,
+        cx: x,
+        cy: leafY,
+        w: 2.2,
+        h: 0.75,
+        fillArgb: 0xFFF8FAFC,
+        label: 'feature',
+        pt: 11,
+        rounded: false,
+      ));
+    }
+  }
+  return _write('Feature Tree', shapes, connects);
+}
+
+Uint8List _changeRoadmap() {
+  final title = _title(1, 5.5, 7.75, 'Change roadmap');
+  final phases = <(String, String, int, double)>[
+    ('Prepare', 'sponsors\ncomms', 0xFFE0E7FF, 2.0),
+    ('Pilot', 'early\nadopters', 0xFFBFDBFE, 4.5),
+    ('Rollout', 'train &\nenable', 0xFFC4B5FD, 7.0),
+    ('Embed', 'measure\n& iterate', 0xFFBBF7D0, 9.5),
+  ];
+  final shapes = <VsdxShape>[title];
+  final connects = <VsdxConnect>[];
+  VsdxShape? prev;
+  var id = 2;
+  for (final (head, body, color, x) in phases) {
+    final s = _box(
+      id: id++,
+      cx: x,
+      cy: 5.0,
+      w: 2.1,
+      h: 1.8,
+      fillArgb: color,
+      label: '$head\n$body',
+      bold: true,
+      pt: 12,
+    );
+    shapes.add(s);
+    if (prev != null) {
+      final link = _link(id++, prev, s);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+    prev = s;
+  }
+  shapes.add(_box(
+    id: id,
+    cx: 5.5,
+    cy: 2.5,
+    w: 9.0,
+    h: 0.9,
+    fillArgb: 0xFFFEF3C7,
+    label: 'Risks · champions · success criteria',
+    bold: true,
+    pt: 12,
+  ));
+  return _write('Change Roadmap', shapes, connects);
+}
+
+Uint8List _microservicesMap() {
+  final title = _title(1, 5.5, 7.75, 'Microservices map');
+  final gateway = _box(
+    id: 2,
+    cx: 5.5,
+    cy: 6.3,
+    w: 2.4,
+    h: 0.85,
+    fillArgb: 0xFF93C5FD,
+    label: 'API gateway',
+    bold: true,
+  );
+  final svcs = <(String, int, double, double)>[
+    ('Auth', 0xFFBFDBFE, 2.2, 4.6),
+    ('Catalog', 0xFFC4B5FD, 5.5, 4.6),
+    ('Orders', 0xFFBBF7D0, 8.8, 4.6),
+    ('Notify', 0xFFFDE68A, 2.2, 2.6),
+    ('Billing', 0xFFF9A8D4, 5.5, 2.6),
+    ('Search', 0xFFE0E7FF, 8.8, 2.6),
+  ];
+  final shapes = <VsdxShape>[title, gateway];
+  final connects = <VsdxConnect>[];
+  var id = 3;
+  for (final (label, color, x, y) in svcs) {
+    final s = _box(
+      id: id++,
+      cx: x,
+      cy: y,
+      w: 2.0,
+      h: 0.95,
+      fillArgb: color,
+      label: label,
+      bold: true,
+    );
+    shapes.add(s);
+    if (y > 3.5) {
+      final link = _link(id++, gateway, s);
+      shapes.add(link.connector);
+      connects.addAll(link.connects);
+    }
+  }
+  return _write('Microservices Map', shapes, connects);
+}
+
+Uint8List _visionMissionValues() {
+  final title = _title(1, 5.5, 7.8, 'Vision · mission · values');
+  final shapes = <VsdxShape>[
+    title,
+    _box(
+      id: 2,
+      cx: 5.5,
+      cy: 6.2,
+      w: 8.5,
+      h: 1.1,
+      fillArgb: 0xFF93C5FD,
+      label: 'Vision — where we are going',
+      bold: true,
+      pt: 14,
+    ),
+    _box(
+      id: 3,
+      cx: 5.5,
+      cy: 4.6,
+      w: 8.5,
+      h: 1.1,
+      fillArgb: 0xFFBFDBFE,
+      label: 'Mission — how we get there',
+      bold: true,
+      pt: 14,
+    ),
+  ];
+  final values = <(String, int, double)>[
+    ('Customer first', 0xFFBBF7D0, 2.2),
+    ('Craft', 0xFFC4B5FD, 5.5),
+    ('Ownership', 0xFFFDE68A, 8.8),
+  ];
+  var id = 4;
+  for (final (label, color, x) in values) {
+    shapes.add(_box(
+      id: id++,
+      cx: x,
+      cy: 2.7,
+      w: 2.8,
+      h: 1.5,
+      fillArgb: color,
+      label: label,
+      bold: true,
+      pt: 13,
+    ));
+  }
+  return _write('Vision Mission Values', shapes, const <VsdxConnect>[]);
+}
+
+Uint8List _flippedClassroom() {
+  final title = _title(1, 5.5, 7.75, 'Flipped classroom');
+  final before = _box(
+    id: 2,
+    cx: 2.8,
+    cy: 4.6,
+    w: 3.2,
+    h: 3.6,
+    fillArgb: 0xFFE0E7FF,
+    label: 'Before class\n\n• video\n• reading\n• quiz',
+    bold: true,
+    pt: 13,
+  );
+  final during = _box(
+    id: 3,
+    cx: 6.2,
+    cy: 4.6,
+    w: 3.2,
+    h: 3.6,
+    fillArgb: 0xFFBBF7D0,
+    label: 'In class\n\n• discuss\n• practice\n• coach',
+    bold: true,
+    pt: 13,
+  );
+  final after = _box(
+    id: 4,
+    cx: 9.4,
+    cy: 4.6,
+    w: 2.6,
+    h: 3.6,
+    fillArgb: 0xFFFDE68A,
+    label: 'After\n\n• reflect\n• extend',
+    bold: true,
+    pt: 13,
+  );
+  final link1 = _link(10, before, during);
+  final link2 = _link(11, during, after);
+  return _write(
+    'Flipped Classroom',
+    <VsdxShape>[
+      title,
+      before,
+      during,
+      after,
+      link1.connector,
+      link2.connector,
+    ],
+    <VsdxConnect>[...link1.connects, ...link2.connects],
+  );
 }
