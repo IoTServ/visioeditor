@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -120,6 +122,52 @@ void main() {
     expect(after.fill.foreground?.value, 0xFF123456);
     expect(after.fill.themeForegroundIndex, isNull,
         reason: 'explicit colour must clear the THEMEVAL binding');
+  });
+
+  test('theme→solid survives a second save without reparse', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(themeForegroundIndex: ThemeSlot.accent1),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    // Reparse so formulas carry THEMEVAL, then override to solid in memory.
+    doc = parser.parse(mid);
+    final solidPage = doc.pages.first.updateShapeById(
+      id,
+      (s) => s.copyWith(
+        fill: s.fill.withSolidForeground(const VsdxColor(0xFF00FF00)),
+      ),
+    );
+    doc = doc.replacePage(0, solidPage);
+    final once = writer.write(originalBytes: mid, edited: doc);
+    // Second save with the same in-memory model (stale formulas map).
+    final twice = writer.write(originalBytes: once, edited: doc);
+    final after = parser.parse(twice).pages.first.findShapeById(id)!;
+    expect(after.fill.foreground?.value, 0xFF00FF00);
+    expect(after.fill.themeForegroundIndex, isNull);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(twice)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="FillForegnd"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isFalse,
+      reason: 'second save must not resurrect THEMEVAL over solid V',
+    );
   });
 
   test('same theme slot resolves to different colours per document theme', () {

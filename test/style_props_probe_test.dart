@@ -544,6 +544,46 @@ void main() {
     expect(svg.contains('stroke-width="0.025"'), isTrue); // thin 25%
   });
 
+  test('SVG reflection stroke honours CompoundType rail widths', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(
+          id: 8,
+          ax: 1,
+          ay: 3,
+          bx: 4,
+          by: 3,
+          line: const VsdxLine(
+            compoundType: 2,
+            weightInches: 0.10,
+            color: VsdxColor.black,
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            transparency: 0.3,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    // Body + reflection each emit thick/thin rails (not a full-width mirror).
+    expect(RegExp(r'stroke-width="0\.055"').allMatches(svg).length,
+        greaterThanOrEqualTo(2));
+    expect(RegExp(r'stroke-width="0\.025"').allMatches(svg).length,
+        greaterThanOrEqualTo(2));
+    expect(
+      RegExp(r'scale\(1 -1\)[\s\S]*?stroke-width="0\.1"').hasMatch(svg),
+      isFalse,
+      reason: 'reflection must not stroke full compound weight',
+    );
+  });
+
   test('SVG compound+shadow applies filter once on wrapper', () {
     final page = VsdxPage(
       id: 0,

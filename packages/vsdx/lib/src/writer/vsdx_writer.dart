@@ -2175,10 +2175,26 @@ class VsdxWriter {
 
   /// Write / update ShapeSheet `F=` for XForm / trigger cells from the model.
   /// Also clears `F=` (and inert trigger `V`) for keys removed from [edited].
+  ///
+  /// Stale `THEMEVAL` entries left on [edited.formulas] after a solid-colour
+  /// override are stripped — otherwise a second save (same in-memory model)
+  /// rewrites `F="THEMEVAL()"` over an explicit `V="#…"`.
   bool _patchFormulas(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_mapEqual(base.formulas, edited.formulas)) return false;
+    if (_mapEqual(base.formulas, edited.formulas)) {
+      // Still scrub stale theme formulas that match base-for-base (both dirty).
+      var scrubbed = false;
+      for (final key in _staleThemeFormulaKeys(edited)) {
+        scrubbed |= _clearCellFormulaAttr(el, key);
+      }
+      return scrubbed;
+    }
     var changed = false;
+    final stale = _staleThemeFormulaKeys(edited);
     for (final entry in edited.formulas.entries) {
+      if (stale.contains(entry.key)) {
+        changed |= _clearCellFormulaAttr(el, entry.key);
+        continue;
+      }
       final prev = base.formulas[entry.key];
       if (prev == entry.value) continue;
       final cell = _ensureCell(el, entry.key);
@@ -2186,10 +2202,37 @@ class VsdxWriter {
       changed = true;
     }
     for (final key in base.formulas.keys) {
-      if (edited.formulas.containsKey(key)) continue;
+      if (edited.formulas.containsKey(key) && !stale.contains(key)) continue;
       changed |= _clearCellFormulaAttr(el, key, zeroTriggerValue: true);
     }
+    // Stale keys only on edited (not in base) still need XML cleared.
+    for (final key in stale) {
+      if (base.formulas.containsKey(key)) continue;
+      changed |= _clearCellFormulaAttr(el, key);
+    }
     return changed;
+  }
+
+  /// Colour cells whose model no longer carries a theme binding but still
+  /// list a THEMEVAL formula (leftover from theme → solid / no-fill edits).
+  Set<String> _staleThemeFormulaKeys(VsdxShape s) {
+    final out = <String>{};
+    bool isThemeVal(String? f) =>
+        f != null &&
+        RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(f);
+    if (isThemeVal(s.formulas['FillForegnd']) &&
+        (s.fill.foreground != null || s.fill.themeForegroundIndex == null)) {
+      out.add('FillForegnd');
+    }
+    if (isThemeVal(s.formulas['FillBkgnd']) &&
+        (s.fill.background != null || s.fill.themeBackgroundIndex == null)) {
+      out.add('FillBkgnd');
+    }
+    if (isThemeVal(s.formulas['LineColor']) &&
+        (s.line.color != null || s.line.themeColorIndex == null)) {
+      out.add('LineColor');
+    }
+    return out;
   }
 
   /// Align a cell's `F=` with the model formula (or strip it when absent).
@@ -3440,9 +3483,13 @@ class VsdxWriter {
     if (editedColor != null) {
       // Explicit colour: _writeValue drops any inherited THEMEVAL formula so
       // the chosen colour is honoured (the parser then ignores QuickStyle*).
+      final curF = _cellFormula(shape, cell);
+      final hasThemeF = curF != null &&
+          RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(curF);
       if (baseTheme == null &&
           editedTheme == null &&
-          baseColor?.value == editedColor.value) {
+          baseColor?.value == editedColor.value &&
+          !hasThemeF) {
         return false;
       }
       _writeValue(_ensureCell(shape, cell), _hex(editedColor));
@@ -3465,6 +3512,21 @@ class VsdxWriter {
       if (writeQuickStyle) {
         _writeValue(
             _ensureCell(shape, quickStyleCell), editedTheme.toString());
+      }
+      return true;
+    }
+    // Theme cleared with no replacement colour (e.g. FillBkgnd after solid).
+    if (baseTheme != null ||
+        (_cellFormula(shape, cell) != null &&
+            RegExp(r'THEMEVAL\s*\(', caseSensitive: false)
+                .hasMatch(_cellFormula(shape, cell)!))) {
+      final c = _ensureCell(shape, cell);
+      // Keep V if present; just drop THEMEVAL so inheritance cannot revive.
+      if (c.getAttribute('V') == null) {
+        _writeValue(c, '0');
+      } else {
+        c.removeAttribute('F');
+        c.removeAttribute('E');
       }
       return true;
     }

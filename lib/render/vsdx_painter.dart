@@ -492,6 +492,7 @@ class VsdxPainter extends CustomPainter {
             ..strokeJoin = paint.strokeJoin
             ..color = paint.color
             ..shader = paint.shader
+            ..maskFilter = paint.maskFilter
             ..strokeWidth = rail.width,
         );
         drew = true;
@@ -970,10 +971,15 @@ class VsdxPainter extends CustomPainter {
     final stroke = paintStroke ? _resolveStrokePaint(shape) : null;
     if (stroke != null) {
       _applyLineGradient(stroke, shape, path.getBounds());
-      // Match SVG reflection: honour LinePattern dashes on the mirrored stroke.
-      final dashes = dashPatternFor(shape.line.pattern);
-      final strokeP = dashes == null ? path : dashedPath(path, dashes);
-      canvas.drawPath(strokeP, stroke);
+      // Match body / SVG: compound rails, then LinePattern dash on each rail.
+      _drawCompoundStroke(
+        canvas,
+        path,
+        stroke,
+        shape.line.compoundType,
+        shape.line.weightInches,
+        dashes: dashPatternFor(shape.line.pattern),
+      );
     }
     if (paintImage) {
       _paintImage(
@@ -1072,14 +1078,19 @@ class VsdxPainter extends CustomPainter {
     canvas.save();
     // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
     canvas.translate(shadow.offsetXInches, shadow.offsetYInches);
-    // Match main stroke / SVG: dashed LinePattern casts a dashed shadow.
-    final shadowPath = lineOnly
-        ? () {
-            final dashes = dashPatternFor(shape.line.pattern);
-            return dashes == null ? path : dashedPath(path, dashes);
-          }()
-        : path;
-    canvas.drawPath(shadowPath, paint);
+    if (lineOnly) {
+      // Match body stroke: compound rails + dash (blur via paint.maskFilter).
+      _drawCompoundStroke(
+        canvas,
+        path,
+        paint,
+        shape.line.compoundType,
+        shape.line.weightInches,
+        dashes: dashPatternFor(shape.line.pattern),
+      );
+    } else {
+      canvas.drawPath(path, paint);
+    }
     canvas.restore();
   }
 

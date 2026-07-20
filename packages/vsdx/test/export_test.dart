@@ -1039,6 +1039,8 @@ void main() {
     expect(svg, contains('id="img-tone-$id"'));
     expect(svg, contains('feGaussianBlur'));
     expect(svg, contains('feColorMatrix'));
+    expect(svg, contains('filterUnits="userSpaceOnUse"'),
+        reason: 'tone blur must use padded userSpace region like SoftEdges');
   });
 
   test('SVG vector metafile Blur/Brightness emit tone filter', () {

@@ -1059,23 +1059,16 @@ class VsdxToSvgSerializer {
       filterAttr = ' filter="url(#$sid)"';
     }
     if (lineOnly) {
-      final weight =
-          shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
-      final linecap = switch (shape.line.cap) {
-        LineCap.round => 'round',
-        LineCap.square => 'square',
-        LineCap.extended => 'butt',
-      };
-      final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
-      final dash = _dashAttr(shape.line.pattern);
-      // Shadow uses raw geometry (canvas); jump arcs are stroke-only.
-      // Honour LinePattern like the main stroke / reflection.
-      buf.writeln(
-        '$indent<path d="$d" fill="none" stroke="$hex" '
-        'stroke-opacity="${_n(alpha)}" stroke-width="${_n(weight)}" '
-        'stroke-linecap="$linecap" stroke-linejoin="$linejoin"'
-        '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'} '
-        'transform="translate(${_n(dx)} ${_n(dy)})"$filterAttr/>',
+      // Match body / canvas: CompoundType rails + LinePattern dash.
+      _writeCompoundOrPlainStroke(
+        buf,
+        d: d,
+        line: shape.line,
+        strokePaint: 'stroke="$hex"',
+        strokeOpacity: alpha,
+        indent: indent,
+        extraAttrs:
+            ' transform="translate(${_n(dx)} ${_n(dy)})"$filterAttr',
       );
     } else {
       buf.writeln(
@@ -1172,27 +1165,17 @@ class VsdxToSvgSerializer {
           _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
     }
     // Stroke without arrow markers (canvas reflection draws the path stroke).
-    var strokeAttrs = 'stroke="none"';
+    // Compound rails are emitted separately via [_writeCompoundOrPlainStroke].
+    String? reflStrokePaint;
+    var reflStrokeAlpha = 0.0;
     if (hasStroke) {
       final line = shape.line;
       final c = _resolveColor(line.color, line.themeColorIndex, theme);
-      final strokeAlpha = _combinedOpacity(c, line.transparency) * alpha;
+      reflStrokeAlpha = _combinedOpacity(c, line.transparency) * alpha;
       final hex = c == null ? '#000000' : _hex(c);
-      final weight = line.weightInches > 0 ? line.weightInches : 0.01;
-      final linecap = switch (line.cap) {
-        LineCap.round => 'round',
-        LineCap.square => 'square',
-        LineCap.extended => 'butt',
-      };
-      final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
-      final dash = _dashAttr(line.pattern);
-      final strokePaint = line.hasGradient
+      reflStrokePaint = line.hasGradient
           ? 'stroke="url(#lg-$paintId)"'
           : 'stroke="$hex"';
-      strokeAttrs = '$strokePaint stroke-opacity="${_n(strokeAlpha)}" '
-          'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
-          'stroke-linejoin="$linejoin"'
-          '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}';
     }
     // Fade mask matches canvas BlendMode.dstIn: opaque near the shape bottom,
     // transparent at the far edge of ReflectionSize.
@@ -1224,10 +1207,22 @@ class VsdxToSvgSerializer {
         );
         buf.writeln('$indent  </g>');
       } else {
-        buf.writeln(
-          '$indent  <path d="$d" fill="$fillPaint" '
-          'fill-opacity="${_n(fillOp * 0.55)}" $strokeAttrs/>',
-        );
+        if (fillPaint != 'none' && fillOp > 0) {
+          buf.writeln(
+            '$indent  <path d="$d" fill="$fillPaint" '
+            'fill-opacity="${_n(fillOp * 0.55)}" stroke="none"/>',
+          );
+        }
+        if (reflStrokePaint != null) {
+          _writeCompoundOrPlainStroke(
+            buf,
+            d: d,
+            line: shape.line,
+            strokePaint: reflStrokePaint,
+            strokeOpacity: reflStrokeAlpha * 0.55,
+            indent: '$indent  ',
+          );
+        }
       }
       buf.writeln('$indent</g>');
       return;
@@ -1282,12 +1277,72 @@ class VsdxToSvgSerializer {
       );
       buf.writeln('$indent  </g>');
     } else {
-      buf.writeln(
-        '$indent  <path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
-        '$strokeAttrs$filter/>',
-      );
+      if (fillPaint != 'none' && fillOp > 0) {
+        buf.writeln(
+          '$indent  <path d="$d" fill="$fillPaint" '
+          'fill-opacity="${_n(fillOp)}" stroke="none"$filter/>',
+        );
+      }
+      if (reflStrokePaint != null) {
+        _writeCompoundOrPlainStroke(
+          buf,
+          d: d,
+          line: shape.line,
+          strokePaint: reflStrokePaint,
+          strokeOpacity: reflStrokeAlpha,
+          indent: '$indent  ',
+          extraAttrs: filter,
+        );
+      }
     }
     buf.writeln('$indent</g>');
+  }
+
+  /// Emit one plain stroke or CompoundType parallel rails for [d].
+  void _writeCompoundOrPlainStroke(
+    StringBuffer buf, {
+    required String d,
+    required VsdxLine line,
+    required String strokePaint,
+    required double strokeOpacity,
+    required String indent,
+    String extraAttrs = '',
+  }) {
+    final weight = line.weightInches > 0 ? line.weightInches : 0.01;
+    final linecap = switch (line.cap) {
+      LineCap.round => 'round',
+      LineCap.square => 'square',
+      LineCap.extended => 'butt',
+    };
+    final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
+    final dash = _dashAttr(line.pattern);
+    final dashAttr = dash.isEmpty ? '' : ' stroke-dasharray="$dash"';
+    final rails = compoundRails(line.compoundType, weight);
+    final sampled = samplePathD(d);
+    if (rails.isNotEmpty && sampled.points.length >= 2) {
+      for (final rail in rails) {
+        final off = offsetPolyline(
+          sampled.points,
+          rail.offset,
+          closed: sampled.closed,
+        );
+        if (off.length < 2) continue;
+        final od = polylineToPathD(off, closed: sampled.closed);
+        buf.writeln(
+          '$indent<path d="$od" fill="none" $strokePaint '
+          'stroke-opacity="${_n(strokeOpacity)}" '
+          'stroke-width="${_n(rail.width)}" stroke-linecap="$linecap" '
+          'stroke-linejoin="$linejoin"$dashAttr$extraAttrs/>',
+        );
+      }
+      return;
+    }
+    buf.writeln(
+      '$indent<path d="$d" fill="none" $strokePaint '
+      'stroke-opacity="${_n(strokeOpacity)}" '
+      'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
+      'stroke-linejoin="$linejoin"$dashAttr$extraAttrs/>',
+    );
   }
 
   /// Axis-aligned bounds of path `d` in shape-local inches (for gradients).
@@ -2499,7 +2554,20 @@ class VsdxToSvgSerializer {
     } else {
       parts.write('<feMerge><feMergeNode in="blur"/></feMerge>');
     }
-    buf.writeln('$indent<defs><filter id="$id">$parts</filter></defs>');
+    // Match canvas imgRect.inflate(0.08*blur*3) — default OBB ±10% clips
+    // soft blur on small Foreign pictures.
+    final ox = shape.imgOffsetXInches;
+    final oy = shape.imgOffsetYInches;
+    final iw = shape.effectiveImgWidth;
+    final ih = shape.effectiveImgHeight;
+    final pad = math.max(0.08 * blur * 3, 0.01);
+    final region = _filterRegionAttr(
+      (minX: ox, minY: oy, width: iw, height: ih),
+      pad,
+    );
+    buf.writeln(
+      '$indent<defs><filter id="$id" $region>$parts</filter></defs>',
+    );
     return ' filter="url(#$id)"';
   }
 
