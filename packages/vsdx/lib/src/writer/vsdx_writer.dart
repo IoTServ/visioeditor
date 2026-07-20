@@ -2064,10 +2064,29 @@ class VsdxWriter {
     changed |= _patchNullableLength(el, 'EndY', base.endY, edited.endY,
         preserveFormula: _isParametricFormula(edited.formulas['EndY']));
     // Values may be unchanged after detach; still strip stale F= from XML.
-    changed |= _syncCellFormulaAttr(el, 'BeginX', edited.formulas['BeginX']);
-    changed |= _syncCellFormulaAttr(el, 'BeginY', edited.formulas['BeginY']);
-    changed |= _syncCellFormulaAttr(el, 'EndX', edited.formulas['EndX']);
-    changed |= _syncCellFormulaAttr(el, 'EndY', edited.formulas['EndY']);
+    // Never re-emit Master F=Inh (same scrub as TxtAngle / Angle).
+    changed |= _syncCellFormulaAttr(
+        el, 'BeginX', _nonInhFormula(edited.formulas['BeginX']));
+    changed |= _syncCellFormulaAttr(
+        el, 'BeginY', _nonInhFormula(edited.formulas['BeginY']));
+    changed |= _syncCellFormulaAttr(
+        el, 'EndX', _nonInhFormula(edited.formulas['EndX']));
+    changed |= _syncCellFormulaAttr(
+        el, 'EndY', _nonInhFormula(edited.formulas['EndY']));
+    // PinX/Y / size: scrub Inh on the cell (formulas map may omit PinX Inh
+    // after some parses); keep real parametric (GUARD, EndX-BeginX, …).
+    for (final name in const ['PinX', 'PinY', 'Width', 'Height']) {
+      final f = _nonInhFormula(edited.formulas[name]);
+      if (f != null) {
+        changed |= _syncCellFormulaAttr(el, name, f);
+      } else {
+        final c = _findCell(el, name);
+        final raw = (c?.getAttribute('F') ?? '').trim().toUpperCase();
+        if (raw == 'INH' || raw.startsWith('INH(')) {
+          changed |= _clearCellFormulaAttr(el, name);
+        }
+      }
+    }
     changed |= _patchBool(el, 'FlipX', base.flipX, edited.flipX);
     changed |= _patchBool(el, 'FlipY', base.flipY, edited.flipY);
     // Always literal Flip* (scrub F=Inh) — matches rebuild emit of 0/1.
@@ -5022,7 +5041,7 @@ class VsdxWriter {
     // Pin centred on Begin/End — Edraw samples always carry these formulas.
     void putPinFormula(String name, String fallback, double value) {
       final cell = _ensureCell(el, name);
-      final formula = s.formulas[name] ?? fallback;
+      final formula = _nonInhFormula(s.formulas[name]) ?? fallback;
       if (cell.getAttribute('F') != formula) {
         cell.setAttribute('F', formula);
         changed = true;
@@ -5399,21 +5418,23 @@ class VsdxWriter {
         staleTheme.contains(key) ? null : s.formulas[key];
     // --- XForm ---------------------------------------------------------------
     final children = <XmlNode>[
-      _cell('PinX', _fmt(s.pinX), formula: s.formulas['PinX']),
-      _cell('PinY', _fmt(s.pinY), formula: s.formulas['PinY']),
-      _cell('Width', _fmt(s.width), formula: s.formulas['Width']),
-      _cell('Height', _fmt(s.height), formula: s.formulas['Height']),
+      _cell('PinX', _fmt(s.pinX), formula: _nonInhFormula(s.formulas['PinX'])),
+      _cell('PinY', _fmt(s.pinY), formula: _nonInhFormula(s.formulas['PinY'])),
+      _cell('Width', _fmt(s.width),
+          formula: _nonInhFormula(s.formulas['Width'])),
+      _cell('Height', _fmt(s.height),
+          formula: _nonInhFormula(s.formulas['Height'])),
     ];
     // Always emit LocPin. Visio's *formula* default is Width/2, Height/2, but
     // when the cells are absent Edraw / libvisio fall back to (0,0) (= pin at
     // the shape's bottom-left), shifting every centred shape by half its size.
     // Writing the cells (with Width*0.5 / Height*0.5 when centred) keeps
     // exports aligned with how this editor and Visio place the pin.
-    final locPinXF = s.formulas['LocPinX'] ??
+    final locPinXF = _nonInhFormula(s.formulas['LocPinX']) ??
         ((s.effectiveLocPinX - s.width / 2).abs() <= _epsilon
             ? 'Width*0.5'
             : null);
-    final locPinYF = s.formulas['LocPinY'] ??
+    final locPinYF = _nonInhFormula(s.formulas['LocPinY']) ??
         ((s.effectiveLocPinY - s.height / 2).abs() <= _epsilon
             ? 'Height*0.5'
             : null);
@@ -5429,11 +5450,13 @@ class VsdxWriter {
     if (s.is1D) {
       children
         ..add(_cell('BeginX', _fmt(s.beginX ?? 0),
-            formula: s.formulas['BeginX']))
+            formula: _nonInhFormula(s.formulas['BeginX'])))
         ..add(_cell('BeginY', _fmt(s.beginY ?? 0),
-            formula: s.formulas['BeginY']))
-        ..add(_cell('EndX', _fmt(s.endX ?? 0), formula: s.formulas['EndX']))
-        ..add(_cell('EndY', _fmt(s.endY ?? 0), formula: s.formulas['EndY']));
+            formula: _nonInhFormula(s.formulas['BeginY'])))
+        ..add(_cell('EndX', _fmt(s.endX ?? 0),
+            formula: _nonInhFormula(s.formulas['EndX'])))
+        ..add(_cell('EndY', _fmt(s.endY ?? 0),
+            formula: _nonInhFormula(s.formulas['EndY'])));
     }
     final cp = s.connectorProps;
     if (cp != null && !cp.isEmpty) {
@@ -6106,14 +6129,16 @@ class VsdxWriter {
         ? ThemeSlot.themeValName(bgSlot)
         : null;
     final children = <XmlNode>[
-      _cell('PinX', _fmt(s.pinX), formula: s.formulas['PinX']),
-      _cell('PinY', _fmt(s.pinY), formula: s.formulas['PinY']),
-      _cell('Width', _fmt(s.width), formula: s.formulas['Width']),
-      _cell('Height', _fmt(s.height), formula: s.formulas['Height']),
+      _cell('PinX', _fmt(s.pinX), formula: _nonInhFormula(s.formulas['PinX'])),
+      _cell('PinY', _fmt(s.pinY), formula: _nonInhFormula(s.formulas['PinY'])),
+      _cell('Width', _fmt(s.width),
+          formula: _nonInhFormula(s.formulas['Width'])),
+      _cell('Height', _fmt(s.height),
+          formula: _nonInhFormula(s.formulas['Height'])),
       _cell(
         'LocPinX',
         _fmt(s.effectiveLocPinX),
-        formula: s.formulas['LocPinX'] ??
+        formula: _nonInhFormula(s.formulas['LocPinX']) ??
             ((s.effectiveLocPinX - s.width / 2).abs() <= _epsilon
                 ? 'Width*0.5'
                 : null),
@@ -6121,7 +6146,7 @@ class VsdxWriter {
       _cell(
         'LocPinY',
         _fmt(s.effectiveLocPinY),
-        formula: s.formulas['LocPinY'] ??
+        formula: _nonInhFormula(s.formulas['LocPinY']) ??
             ((s.effectiveLocPinY - s.height / 2).abs() <= _epsilon
                 ? 'Height*0.5'
                 : null),

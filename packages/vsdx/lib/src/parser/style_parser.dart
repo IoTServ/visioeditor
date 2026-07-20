@@ -28,9 +28,17 @@ class StyleParser {
     final fgRes = _resolveColor(shape, 'FillForegnd', 'QuickStyleFillColor');
     final bgRes = _resolveColor(shape, 'FillBkgnd', 'QuickStyleFillColor');
 
-    final fgT = _double(shape, 'FillForegndTrans') ??
+    final fgT = _double(
+          shape,
+          'FillForegndTrans',
+          inheritFrom: defaults.foregroundTransparency,
+        ) ??
         defaults.foregroundTransparency;
-    final bgT = _double(shape, 'FillBkgndTrans') ??
+    final bgT = _double(
+          shape,
+          'FillBkgndTrans',
+          inheritFrom: defaults.backgroundTransparency,
+        ) ??
         defaults.backgroundTransparency;
     final pat = _int(shape, 'FillPattern', inheritFrom: defaults.pattern) ??
         defaults.pattern;
@@ -290,12 +298,28 @@ class StyleParser {
       },
     );
     final cap = capInt == null ? defaults.cap : _capFromInt(capInt);
-    final transparency =
-        _double(shape, 'LineColorTrans') ?? defaults.transparency;
-    final beginArrow = _int(shape, 'BeginArrow') ?? defaults.beginArrow;
-    final endArrow = _int(shape, 'EndArrow') ?? defaults.endArrow;
-    final beginSize = _int(shape, 'BeginArrowSize');
-    final endSize = _int(shape, 'EndArrowSize');
+    final transparency = _double(
+          shape,
+          'LineColorTrans',
+          inheritFrom: defaults.transparency,
+        ) ??
+        defaults.transparency;
+    final beginArrow =
+        _int(shape, 'BeginArrow', inheritFrom: defaults.beginArrow) ??
+            defaults.beginArrow;
+    final endArrow =
+        _int(shape, 'EndArrow', inheritFrom: defaults.endArrow) ??
+            defaults.endArrow;
+    final beginSize = _int(
+      shape,
+      'BeginArrowSize',
+      inheritFrom: _arrowSizeToBucket(defaults.beginArrowSizeInches),
+    );
+    final endSize = _int(
+      shape,
+      'EndArrowSize',
+      inheritFrom: _arrowSizeToBucket(defaults.endArrowSizeInches),
+    );
     final rounding = readLengthInches(
           shape,
           'Rounding',
@@ -387,6 +411,29 @@ class StyleParser {
         _ => 0.125,
       };
 
+  /// Inverse of [_arrowSizeFromBucket] for Master `F=Inh` inheritance.
+  int _arrowSizeToBucket(double inches) {
+    const buckets = <double>[
+      0.0625,
+      0.0875,
+      0.125,
+      0.175,
+      0.225,
+      0.30,
+      0.375,
+    ];
+    var best = 2;
+    var bestDist = double.infinity;
+    for (var i = 0; i < buckets.length; i++) {
+      final d = (buckets[i] - inches).abs();
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   /// Resolve a `<Cell N="$colorCell">` to either a concrete colour or a
   /// theme index. Returns both `null` when the cell is absent.
   _ColorResolution _resolveColor(
@@ -473,9 +520,13 @@ class StyleParser {
     return u.contains('THEMEVAL') || u.contains('THEMEGUARD');
   }
 
-  double? _double(XmlElement shape, String name) {
+  double? _double(XmlElement shape, String name, {double? inheritFrom}) {
     final cell = findCell(shape, name);
     if (cell == null) return null;
+    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
+    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
+      return inheritFrom;
+    }
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
 

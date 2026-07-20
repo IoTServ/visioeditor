@@ -10304,6 +10304,63 @@ void main() {
     expect(cell.group(0)!.contains('V="0"'), isTrue);
   });
 
+  test('BeginX/PinX F=Inh scrub and are not re-synced from formulas', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: id,
+          ax: 1,
+          ay: 1,
+          bx: 3,
+          by: 2,
+        ).copyWith(
+          formulas: const {'BeginX': 'Inh', 'PinX': 'Inh'},
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="BeginX"[^/]*/>'),
+      '<Cell N="BeginX" V="1" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="PinX"[^/]*/>'),
+      '<Cell N="PinX" V="2" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          pinY: s.pinY + 0.05,
+          formulas: {...s.formulas, 'BeginX': 'Inh', 'PinX': 'Inh'},
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final begin = RegExp(r'<Cell N="BeginX"[^/]*/>').firstMatch(pageXml)!;
+    expect(begin.group(0)!.contains('F="Inh"'), isFalse, reason: begin.group(0));
+    final pin = RegExp(r'<Cell N="PinX"[^/]*/>').firstMatch(pageXml)!;
+    // Connector ensure may replace Inh with (BeginX+EndX)*0.5 — never Inh.
+    expect(pin.group(0)!.contains('F="Inh"'), isFalse, reason: pin.group(0));
+  });
+
   test('Angle F=Inh scrubbed on group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

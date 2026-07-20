@@ -102,4 +102,42 @@ void main() {
     expect(line.cap, LineCap.square);
     expect(line.compoundType, 2);
   });
+
+  test('BeginArrow/EndArrow F=Inh inherit Master arrows', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="BeginArrow" V="0" F="Inh"/>'
+      '<Cell N="EndArrow" V="0" F="Inh"/>'
+      '<Cell N="BeginArrowSize" V="2" F="Inh"/>'
+      '<Cell N="LineColorTrans" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final line = style.parseLine(
+      el,
+      defaults: const VsdxLine(
+        beginArrow: 5,
+        endArrow: 4,
+        beginArrowSizeInches: 0.225,
+        transparency: 0.35,
+      ),
+    );
+    expect(line.beginArrow, 5);
+    expect(line.endArrow, 4);
+    expect(line.beginArrowSizeInches, closeTo(0.225, 1e-9));
+    expect(line.transparency, closeTo(0.35, 1e-9));
+  });
+
+  test('FillForegndTrans F=Inh inherits Master transparency', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="FillForegndTrans" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: const VsdxFill(pattern: 1, foregroundTransparency: 0.4),
+    );
+    expect(fill.foregroundTransparency, closeTo(0.4, 1e-9));
+  });
 }
