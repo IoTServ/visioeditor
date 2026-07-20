@@ -2087,16 +2087,11 @@ class VsdxWriter {
     changed |= _forceLiteralRatio(el, 'LineColorTrans', edited.line.transparency);
     changed |= _patchLength(
         el, 'Rounding', base.line.roundingInches, edited.line.roundingInches);
+    changed |= _forceLiteralLength(el, 'Rounding', edited.line.roundingInches);
     changed |= _patchLength(
         el, 'SoftEdgesSize', base.line.softEdgesInches, edited.line.softEdgesInches);
-    // Parser maps F=Inh (no inherit) → model 0; force literal V=0 and drop F=
-    // so Visio cannot revive SoftEdges/Rounding via inheritance.
-    if (edited.line.roundingInches.abs() <= _epsilon) {
-      changed |= _forceLiteralZeroLength(el, 'Rounding');
-    }
-    if (edited.line.softEdgesInches.abs() <= _epsilon) {
-      changed |= _forceLiteralZeroLength(el, 'SoftEdgesSize');
-    }
+    changed |=
+        _forceLiteralLength(el, 'SoftEdgesSize', edited.line.softEdgesInches);
     changed |= _patchInt(
         el, 'CompoundType', base.line.compoundType, edited.line.compoundType);
     changed |= _forceLiteralInt(el, 'CompoundType', edited.line.compoundType);
@@ -4302,9 +4297,15 @@ class VsdxWriter {
       children.add(
           _cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
     }
-    if (b.hideText) children.add(_cell('HideText', '1'));
+    // Always emit HideText (incl. 0) so Master HideText=1 cannot revive after
+    // the user un-hides on a group-rebuild path.
+    children.add(_cell('HideText', b.hideText ? '1' : '0'));
     if (b.backgroundColor != null) {
       children.add(_cell('TextBkgnd', _hex(b.backgroundColor!)));
+    } else {
+      // Explicit clear — matches patch path and prevents Master TextBkgnd
+      // inheritance on reopen (parser treats V=0 as transparent).
+      children.add(_cell('TextBkgnd', '0'));
     }
     if (b.backgroundTransparency > _epsilon) {
       children.add(_cell('TextBkgndTrans', _fmt(b.backgroundTransparency)));
@@ -4951,8 +4952,10 @@ class VsdxWriter {
       ..add(_cell('LocPinX', _fmt(s.effectiveLocPinX), formula: locPinXF))
       ..add(_cell('LocPinY', _fmt(s.effectiveLocPinY), formula: locPinYF));
     children.add(_cell('Angle', _fmt(s.angleRad), formula: s.formulas['Angle']));
-    if (s.flipX) children.add(_cell('FlipX', '1'));
-    if (s.flipY) children.add(_cell('FlipY', '1'));
+    // Always emit Flip* (incl. 0) so Master FlipX cannot revive after clear.
+    children
+      ..add(_cell('FlipX', s.flipX ? '1' : '0'))
+      ..add(_cell('FlipY', s.flipY ? '1' : '0'));
     if (s.is1D) {
       children
         ..add(_cell('BeginX', _fmt(s.beginX ?? 0),
@@ -5086,19 +5089,17 @@ class VsdxWriter {
     if (s.line.transparency > _epsilon) {
       children.add(_cell('LineColorTrans', _fmt(s.line.transparency)));
     }
-    // Emit both arrow ends whenever either is set (and sizes), so Edraw
-    // doesn't inherit odd BeginArrowSize from a missing StyleSheet.
-    if (s.line.beginArrow != 0 || s.line.endArrow != 0) {
-      children
-        ..add(_cell('BeginArrow', s.line.beginArrow.toString()))
-        ..add(_cell(
-            'BeginArrowSize',
-            _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()))
-        ..add(_cell('EndArrow', s.line.endArrow.toString()))
-        ..add(_cell(
-            'EndArrowSize',
-            _arrowSizeToBucket(s.line.endArrowSizeInches).toString()));
-    }
+    // Always emit arrows (incl. 0) so StyleSheet cannot revive arrowheads
+    // after the user cleared them on a rebuild path (patch already forces 0).
+    children
+      ..add(_cell('BeginArrow', s.line.beginArrow.toString()))
+      ..add(_cell(
+          'BeginArrowSize',
+          _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()))
+      ..add(_cell('EndArrow', s.line.endArrow.toString()))
+      ..add(_cell(
+          'EndArrowSize',
+          _arrowSizeToBucket(s.line.endArrowSizeInches).toString()));
     // Always emit SoftEdges/Rounding (incl. 0) so StyleSheet cannot revive
     // feathering after a group rebuild cleared the effect in the model.
     children
@@ -5694,7 +5695,22 @@ class VsdxWriter {
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),
       if (s.fill.foreground != null)
-        _cell('FillForegnd', _hex(s.fill.foreground!)),
+        _cell('FillForegnd', _hex(s.fill.foreground!))
+      else if (s.fill.themeForegroundIndex != null) ...[
+        _cell('FillForegnd', '0', formula: 'THEMEVAL()'),
+        _cell('QuickStyleFillColor', s.fill.themeForegroundIndex!.toString()),
+      ],
+      if (s.fill.background != null)
+        _cell('FillBkgnd', _hex(s.fill.background!))
+      else if (s.fill.themeBackgroundIndex != null) ...[
+        _cell('FillBkgnd', '0', formula: 'THEMEVAL()'),
+        if (s.fill.themeForegroundIndex == null)
+          _cell('QuickStyleFillColor', s.fill.themeBackgroundIndex!.toString()),
+      ],
+      if (s.fill.foregroundTransparency > _epsilon)
+        _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)),
+      if (s.fill.backgroundTransparency > _epsilon)
+        _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)),
       _cell('LinePattern', s.line.pattern.toString()),
       _cell('LineWeight', _fmt(s.line.weightInches)),
       _cell('LineCap', _lineCapInt(s.line.cap).toString()),
@@ -5706,6 +5722,15 @@ class VsdxWriter {
       ],
       if (s.line.transparency > _epsilon)
         _cell('LineColorTrans', _fmt(s.line.transparency)),
+      // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
+      _cell('BeginArrow', s.line.beginArrow.toString()),
+      _cell(
+          'BeginArrowSize',
+          _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()),
+      _cell('EndArrow', s.line.endArrow.toString()),
+      _cell(
+          'EndArrowSize',
+          _arrowSizeToBucket(s.line.endArrowSizeInches).toString()),
       // SoftEdges / Rounding / CompoundType — always emit (incl. 0) so
       // StyleSheet inheritance cannot revive effects after Foreign rebuild.
       _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
@@ -5713,8 +5738,8 @@ class VsdxWriter {
       _cell('CompoundType', s.line.compoundType.toString()),
       if (s.layerMemberIds.isNotEmpty)
         _cell('LayerMember', s.layerMemberIds.join(';')),
-      if (s.flipX) _cell('FlipX', '1'),
-      if (s.flipY) _cell('FlipY', '1'),
+      _cell('FlipX', s.flipX ? '1' : '0'),
+      _cell('FlipY', s.flipY ? '1' : '0'),
     ];
     if (s.shadow.enabled) {
       children.add(_cell('ShadowPattern', '1'));

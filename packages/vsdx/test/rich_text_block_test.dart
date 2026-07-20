@@ -83,4 +83,24 @@ void main() {
       expect(rich.runs.first.paraStyle.lineSpacing, closeTo(1.5, 1e-9));
     });
   });
+
+  test('absent TextBkgnd inherits master colour', () {
+    final rich = parser.parse(
+      shape('<Text>Label</Text>'),
+      defaultBlock: const VsdxTextBlock(
+        backgroundColor: VsdxColor(0xFFFFFF00),
+      ),
+    );
+    expect(rich.textBlock.backgroundColor?.value, 0xFFFFFF00);
+  });
+
+  test('explicit TextBkgnd=0 does not inherit master colour', () {
+    final rich = parser.parse(
+      shape('<Cell N="TextBkgnd" V="0"/><Text>Label</Text>'),
+      defaultBlock: const VsdxTextBlock(
+        backgroundColor: VsdxColor(0xFFFFFF00),
+      ),
+    );
+    expect(rich.textBlock.backgroundColor, isNull);
+  });
 }

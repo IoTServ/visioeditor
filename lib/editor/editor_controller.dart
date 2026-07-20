@@ -4310,7 +4310,12 @@ class EditorController extends ChangeNotifier {
       slot,
       (s) {
         if (s.is1D) return s;
-        return s.copyWith(fill: s.fill.withThemeForeground(slot));
+        return s.copyWith(
+          fill: s.fill.withThemeForeground(slot),
+          geometries: [
+            for (final g in s.geometries) g.copyWith(noFill: false),
+          ],
+        );
       },
     );
   }
@@ -4340,7 +4345,14 @@ class EditorController extends ChangeNotifier {
   void setFillGradient(VsdxGradient? gradient) => _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
-          return s.copyWith(fill: s.fill.withGradient(gradient));
+          return s.copyWith(
+            fill: s.fill.withGradient(gradient),
+            geometries: gradient == null
+                ? null
+                : [
+                    for (final g in s.geometries) g.copyWith(noFill: false),
+                  ],
+          );
         },
         rememberStyle: true,
       );
@@ -4359,13 +4371,25 @@ class EditorController extends ChangeNotifier {
   void setLineThemeSlot(int slot) {
     _applyThemeSlotToSelection(
       slot,
-      (s) => s.copyWith(line: s.line.withThemeColor(slot)),
+      (s) => s.copyWith(
+        line: s.line.withThemeColor(slot),
+        geometries: [
+          for (final g in s.geometries) g.copyWith(noLine: false),
+        ],
+      ),
     );
   }
 
   /// Set or clear the selection's line gradient (draw.io Format → Line).
   void setLineGradient(VsdxGradient? gradient) => _updateSelectedShapes(
-        (s) => s.copyWith(line: s.line.withGradient(gradient)),
+        (s) => s.copyWith(
+          line: s.line.withGradient(gradient),
+          geometries: gradient == null
+              ? null
+              : [
+                  for (final g in s.geometries) g.copyWith(noLine: false),
+                ],
+        ),
         rememberStyle: true,
       );
 
@@ -4401,6 +4425,9 @@ class EditorController extends ChangeNotifier {
             weightInches: inches,
             pattern: s.line.pattern == 0 ? 1 : s.line.pattern,
           ),
+          geometries: [
+            for (final g in s.geometries) g.copyWith(noLine: false),
+          ],
         ),
         rememberStyle: true,
       );
@@ -4522,7 +4549,12 @@ class EditorController extends ChangeNotifier {
   void setFillBackground(VsdxColor color) => _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
-          return s.copyWith(fill: s.fill.withSolidBackground(color));
+          return s.copyWith(
+            fill: s.fill.withSolidBackground(color),
+            geometries: [
+              for (final g in s.geometries) g.copyWith(noFill: false),
+            ],
+          );
         },
         rememberStyle: true,
       );
@@ -4533,7 +4565,12 @@ class EditorController extends ChangeNotifier {
       slot,
       (s) {
         if (s.is1D) return s;
-        return s.copyWith(fill: s.fill.withThemeBackground(slot));
+        return s.copyWith(
+          fill: s.fill.withThemeBackground(slot),
+          geometries: [
+            for (final g in s.geometries) g.copyWith(noFill: false),
+          ],
+        );
       },
     );
   }

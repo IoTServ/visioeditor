@@ -134,6 +134,19 @@ void main() {
     expect(restored.geometries.every((g) => !g.noLine), isTrue);
   });
 
+  test('setFillThemeSlot after setNoFill clears Geometry noFill', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setNoFill()
+      ..setFillThemeSlot(ThemeSlot.accent1);
+    final s = c.currentPage!.shapes.single;
+    expect(s.fill.themeForegroundIndex, ThemeSlot.accent1);
+    expect(s.fill.pattern, isNonZero);
+    expect(s.geometries.every((g) => !g.noFill), isTrue);
+  });
+
   test('setFillPattern(0) clears foreground theme like setNoFill', () {
     final c = EditorController()..newDocument();
     c

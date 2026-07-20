@@ -463,7 +463,9 @@ class RichTextParser {
       marginBottomInches:
           readLengthInches(shape, 'BottomMargin') ?? inherit.marginBottomInches,
       hideText: hideInt == null ? inherit.hideText : hideInt != 0,
-      backgroundColor: _readTextBkgnd(shape) ?? inherit.backgroundColor,
+      // Absent TextBkgnd → inherit; explicit V=0/255 → transparent (do not
+      // fall back to master — mirrors VSD textBgFilled=false).
+      backgroundColor: _resolveTextBkgnd(shape, inherit.backgroundColor),
       backgroundTransparency:
           (_cellDouble(shape, 'TextBkgndTrans') ?? inherit.backgroundTransparency)
               .clamp(0.0, 1.0),
@@ -471,6 +473,13 @@ class RichTextParser {
       defaultTabStopInches: readLengthInches(shape, 'DefaultTabStop') ??
           inherit.defaultTabStopInches,
     );
+  }
+
+  /// Resolve `TextBkgnd`: missing cell inherits; present transparent sentinel
+  /// clears (null); otherwise parse the colour.
+  VsdxColor? _resolveTextBkgnd(XmlElement shape, VsdxColor? inherit) {
+    if (findCell(shape, 'TextBkgnd') == null) return inherit;
+    return _readTextBkgnd(shape);
   }
 
   /// `TextBkgnd` — solid colour behind the text. Palette indices `0` / `255`

@@ -103,19 +103,25 @@ class VsdxHyperlink {
     bool? isDefault,
     bool? invisible,
     String? sortKey,
+    bool clearExtraInfo = false,
+    bool clearFrame = false,
+    bool clearSortKey = false,
+    bool clearAddressFormula = false,
   }) =>
       VsdxHyperlink(
         id: id ?? this.id,
         description: description ?? this.description,
         address: address ?? this.address,
-        addressFormula: addressFormula ?? this.addressFormula,
+        addressFormula: clearAddressFormula
+            ? null
+            : (addressFormula ?? this.addressFormula),
         subAddress: subAddress ?? this.subAddress,
-        extraInfo: extraInfo ?? this.extraInfo,
-        frame: frame ?? this.frame,
+        extraInfo: clearExtraInfo ? null : (extraInfo ?? this.extraInfo),
+        frame: clearFrame ? null : (frame ?? this.frame),
         newWindow: newWindow ?? this.newWindow,
         isDefault: isDefault ?? this.isDefault,
         invisible: invisible ?? this.invisible,
-        sortKey: sortKey ?? this.sortKey,
+        sortKey: clearSortKey ? null : (sortKey ?? this.sortKey),
       );
 
   @override

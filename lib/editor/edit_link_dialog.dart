@@ -98,12 +98,20 @@ class _EditLinkDialogState extends State<_EditLinkDialog> {
     if (raw.isEmpty) return null;
     final desc = _label.text.trim();
     final isAnchor = raw.startsWith('#');
+    final base = widget.initial;
     return VsdxHyperlink(
-      id: widget.initial?.id ?? 0,
+      id: base?.id ?? 0,
       address: isAnchor ? null : raw,
       subAddress: isAnchor ? raw : null,
       description: desc.isEmpty ? null : desc,
       isDefault: true,
+      // Preserve Visio ExtraInfo / Frame / flags when only URL/label change.
+      extraInfo: base?.extraInfo,
+      frame: base?.frame,
+      newWindow: base?.newWindow ?? false,
+      invisible: base?.invisible ?? false,
+      sortKey: base?.sortKey,
+      addressFormula: base?.addressFormula,
     );
   }
 

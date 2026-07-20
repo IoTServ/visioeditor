@@ -7736,4 +7736,107 @@ void main() {
     );
     expect(outXml.contains('N="LockTextEdit" V="1"'), isTrue);
   });
+
+  test('cleared arrows and HideText=0 survive group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final otherId = id + 1;
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.line(id: id, ax: 1, ay: 2, bx: 4, by: 2).copyWith(
+              line: const VsdxLine(beginArrow: 0, endArrow: 0),
+              richText: const VsdxRichText(
+                runs: [VsdxTextRun(text: 'x')],
+                textBlock: VsdxTextBlock(hideText: false),
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 5,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="BeginArrow" V="0"'), isTrue);
+    expect(pageXml.contains('N="EndArrow" V="0"'), isTrue);
+    expect(pageXml.contains('N="HideText" V="0"'), isTrue);
+    expect(pageXml.contains('N="FlipX" V="0"'), isTrue);
+  });
+
+  test('hyperlink ExtraInfo survives address-only rewrite', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final link = const VsdxHyperlink(
+      id: 1,
+      address: 'https://example.com/old',
+      description: 'Old',
+      extraInfo: 'utm=1',
+      frame: '_blank',
+      newWindow: true,
+      sortKey: 'A',
+      isDefault: true,
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(hyperlinks: [link]),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    // Mimic Edit Link dialog: change URL/label but keep ExtraInfo via copy fields.
+    final updated = link.copyWith(
+      address: 'https://example.com/new',
+      description: 'New',
+    );
+    expect(updated.extraInfo, 'utm=1');
+    expect(updated.frame, '_blank');
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(hyperlinks: [updated]),
+      ),
+    );
+    final after = parser
+        .parse(writer.write(originalBytes: mid, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!
+        .hyperlinks
+        .single;
+    expect(after.address, 'https://example.com/new');
+    expect(after.extraInfo, 'utm=1');
+    expect(after.frame, '_blank');
+    expect(after.newWindow, isTrue);
+    expect(after.sortKey, 'A');
+  });
 }
