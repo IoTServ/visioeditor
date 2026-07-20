@@ -220,7 +220,7 @@ void main() {
   test('every locale includes full stencil key set', () {
     final stKeys =
         en.keys.where((k) => k.startsWith('st_')).toList(growable: false);
-    expect(stKeys, hasLength(638));
+    expect(stKeys, hasLength(645));
     for (final lang in kEditorL10nTables.keys) {
       final table = kEditorL10nTables[lang]!;
       for (final key in stKeys) {

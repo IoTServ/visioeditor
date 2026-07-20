@@ -51,6 +51,11 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.cylinderChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Horizontal Cylinder',
+      (id, cx, cy) =>
+          ChartOps.horizontalCylinderChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Cone Chart',
       (id, cx, cy) => ChartOps.coneChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -59,12 +64,20 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.sparkColumnChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Spark Win/Loss',
+      (id, cx, cy) => ChartOps.sparkWinLossChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Triangle Bar',
       (id, cx, cy) => ChartOps.triangleBarChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Mirror Column',
       (id, cx, cy) => ChartOps.mirrorColumnChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Tornado Chart',
+      (id, cx, cy) => ChartOps.tornadoChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Pareto Chart',
@@ -128,6 +141,14 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       (id, cx, cy) => ChartOps.stepAreaChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
+      'Spark Line',
+      (id, cx, cy) => ChartOps.sparkLineChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Spark Area',
+      (id, cx, cy) => ChartOps.sparkAreaChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
       'Funnel',
       (id, cx, cy) => ChartOps.funnelChart(id: id, pinX: cx, pinY: cy),
     ),
@@ -158,6 +179,14 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
     Stencil(
       'Ring Progress',
       (id, cx, cy) => ChartOps.ringProgressChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Semi Progress',
+      (id, cx, cy) => ChartOps.semiProgressChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Step Progress',
+      (id, cx, cy) => ChartOps.stepProgressChart(id: id, pinX: cx, pinY: cy),
     ),
     Stencil(
       'Bullet Chart',

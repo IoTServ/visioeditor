@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(44));
+    expect(kChartStencils, hasLength(51));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -158,6 +158,11 @@ void main() {
       'mirrorColumn',
       'pareto',
       'radialColumn',
+      'horizontalCylinder',
+      'sparkWinLoss',
+      'tornado',
+      'sparkLine',
+      'sparkArea',
     ]) {
       final chart = ChartOps.buildKind(
         kind,
@@ -236,6 +241,15 @@ void main() {
     expect(ChartOps.chartValues(b), hasLength(1));
     expect(ChartOps.seriesChildren(b), hasLength(1));
     expect(ChartOps.seriesChildren(t), hasLength(1));
+  });
+
+  test('semiProgress and stepProgress are single-value meters', () {
+    expect(ChartOps.isSingleValueKind('semiProgress'), isTrue);
+    expect(ChartOps.isSingleValueKind('stepProgress'), isTrue);
+    final s = ChartOps.semiProgressChart(id: 7, pinX: 1, pinY: 1);
+    final p = ChartOps.stepProgressChart(id: 8, pinX: 2, pinY: 1);
+    expect(ChartOps.chartValues(s), hasLength(1));
+    expect(ChartOps.chartValues(p), hasLength(1));
   });
 
   test('parseSeriesPaste supports labeled pairs', () {
