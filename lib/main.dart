@@ -3086,7 +3086,7 @@ class _PropertyPanel extends StatelessWidget {
     final count = controller.selection.length;
     final isChart = controller.selectedChartId != null;
     return SizedBox(
-      width: 232,
+      width: isChart ? 300 : 232,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [

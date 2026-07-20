@@ -97,14 +97,47 @@ void main() {
         VsdxColor(0xFF43A047),
         VsdxColor(0xFF1E88E5),
       ],
+      labels: const <String>['A', 'B', 'C'],
       allocId: () => next++,
     );
     expect(ChartOps.formatColors(ChartOps.chartColors(colored)),
         '#E53935, #43A047, #1E88E5');
+    expect(ChartOps.chartLabels(colored), <String>['A', 'B', 'C']);
     final series = ChartOps.seriesChildren(colored);
     expect(series, hasLength(3));
     expect(series[0].fill.foreground?.value, 0xFFE53935);
     expect(series[1].fill.foreground?.value, 0xFF43A047);
+  });
+
+  test('switching to gauge stashes values and restores on switch back', () {
+    final chart = ChartOps.columnChart(
+      id: 3,
+      pinX: 1,
+      pinY: 1,
+      values: const <double>[0.2, 0.4, 0.6, 0.8],
+    );
+    var next = 50;
+    final gauge = ChartOps.rebuild(
+      chart,
+      kind: 'gauge',
+      allocId: () => next++,
+    );
+    expect(ChartOps.chartKind(gauge), 'gauge');
+    expect(ChartOps.chartValues(gauge), hasLength(1));
+    next = 80;
+    final back = ChartOps.rebuild(
+      gauge,
+      kind: 'column',
+      allocId: () => next++,
+    );
+    expect(ChartOps.chartKind(back), 'column');
+    expect(ChartOps.chartValues(back), <double>[0.2, 0.4, 0.6, 0.8]);
+  });
+
+  test('parseUnitValue accepts percent and fractions', () {
+    expect(ChartOps.parseUnitValue('68%'), closeTo(0.68, 1e-9));
+    expect(ChartOps.parseUnitValue('68'), closeTo(0.68, 1e-9));
+    expect(ChartOps.parseUnitValue('0.45'), closeTo(0.45, 1e-9));
   });
 
   test('parseValues accepts negatives for waterfall', () {

@@ -5326,12 +5326,14 @@ class EditorController extends ChangeNotifier {
     }
     if (vals.length >= ChartOps.maxSeriesItems) return;
     final cols = List<VsdxColor>.of(ChartOps.chartColors(chart));
+    final labs = List<String>.of(ChartOps.chartLabels(chart, vals.length));
     final avg = vals.isEmpty
         ? 0.5
         : vals.reduce((a, b) => a + b) / vals.length;
     vals.add(avg);
     cols.add(ChartOps.seriesColors[vals.length % ChartOps.seriesColors.length]);
-    _rebuildSelectedChart(values: vals, colors: cols);
+    labs.add(ChartOps.defaultLabel(vals.length - 1));
+    _rebuildSelectedChart(values: vals, colors: cols, labels: labs);
   }
 
   /// Remove series item at [index].
@@ -5341,16 +5343,42 @@ class EditorController extends ChangeNotifier {
     final vals = List<double>.of(ChartOps.chartValues(chart));
     if (index < 0 || index >= vals.length || vals.length <= 1) return;
     final cols = List<VsdxColor>.of(ChartOps.chartColors(chart));
+    final labs = List<String>.of(ChartOps.chartLabels(chart, vals.length));
     vals.removeAt(index);
     if (index < cols.length) cols.removeAt(index);
-    _rebuildSelectedChart(values: vals, colors: cols);
+    if (index < labs.length) labs.removeAt(index);
+    _rebuildSelectedChart(values: vals, colors: cols, labels: labs);
   }
 
-  /// Update one series item value and/or colour.
+  /// Move series item from [from] to [to].
+  void reorderChartItem(int from, int to) {
+    final chart = selectedChart;
+    if (chart == null) return;
+    final vals = List<double>.of(ChartOps.chartValues(chart));
+    if (from < 0 ||
+        to < 0 ||
+        from >= vals.length ||
+        to >= vals.length ||
+        from == to) {
+      return;
+    }
+    final cols = ChartOps.padColors(ChartOps.chartColors(chart), vals.length);
+    final labs = ChartOps.padLabels(ChartOps.chartLabels(chart), vals.length);
+    final v = vals.removeAt(from);
+    final c = cols.removeAt(from);
+    final l = labs.removeAt(from);
+    vals.insert(to, v);
+    cols.insert(to, c);
+    labs.insert(to, l);
+    _rebuildSelectedChart(values: vals, colors: cols, labels: labs);
+  }
+
+  /// Update one series item value, colour, and/or label.
   void updateChartItem(
     int index, {
     double? value,
     VsdxColor? color,
+    String? label,
     bool transient = false,
   }) {
     final chart = selectedChart;
@@ -5358,14 +5386,25 @@ class EditorController extends ChangeNotifier {
     final vals = List<double>.of(ChartOps.chartValues(chart));
     if (index < 0 || index >= vals.length) return;
     final cols = ChartOps.padColors(ChartOps.chartColors(chart), vals.length);
+    final labs = ChartOps.padLabels(ChartOps.chartLabels(chart), vals.length);
     if (value != null && value.isFinite) vals[index] = value;
     if (color != null) cols[index] = color;
-    _rebuildSelectedChart(values: vals, colors: cols, transient: transient);
+    if (label != null) {
+      labs[index] =
+          label.trim().isEmpty ? ChartOps.defaultLabel(index) : label.trim();
+    }
+    _rebuildSelectedChart(
+      values: vals,
+      colors: cols,
+      labels: labs,
+      transient: transient,
+    );
   }
 
   void _rebuildSelectedChart({
     List<double>? values,
     List<VsdxColor>? colors,
+    List<String>? labels,
     String? kind,
     bool transient = false,
   }) {
@@ -5383,6 +5422,7 @@ class EditorController extends ChangeNotifier {
           chart,
           values: values,
           colors: colors,
+          labels: labels,
           kind: kind,
           allocId: () => nextId++,
         );

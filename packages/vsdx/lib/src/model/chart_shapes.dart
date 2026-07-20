@@ -23,6 +23,11 @@ abstract final class ChartOps {
   static const String userKind = 'visioeditor.ChartKind';
   static const String userValues = 'visioeditor.ChartValues';
   static const String userColors = 'visioeditor.ChartColors';
+  static const String userLabels = 'visioeditor.ChartLabels';
+  /// Full series stashed when switching to a single-value kind (gauge/progress).
+  static const String userValuesBackup = 'visioeditor.ChartValuesBackup';
+  static const String userColorsBackup = 'visioeditor.ChartColorsBackup';
+  static const String userLabelsBackup = 'visioeditor.ChartLabelsBackup';
   /// Marks non-series chrome (axes, grid, track, bridges, needle).
   static const String userChrome = 'visioeditor.ChartChrome';
 
@@ -114,6 +119,92 @@ abstract final class ChartOps {
     return List<double>.of(defaultValues);
   }
 
+  static List<String> chartLabels(VsdxShape s, [int? count]) {
+    final n = count ?? chartValues(s).length;
+    for (final c in s.userCells) {
+      if (c.name == userLabels) return parseLabels(c.value, n);
+    }
+    return defaultLabels(n);
+  }
+
+  static String defaultLabel(int index) => 'Item ${index + 1}';
+
+  static List<String> defaultLabels(int n) => <String>[
+        for (var i = 0; i < n; i++) defaultLabel(i),
+      ];
+
+  static List<String> parseLabels(String? raw, int count) {
+    if (count <= 0) return const <String>[];
+    if (raw == null || raw.trim().isEmpty) return defaultLabels(count);
+    final parts = raw.split('|');
+    return <String>[
+      for (var i = 0; i < count; i++)
+        (i < parts.length && parts[i].trim().isNotEmpty)
+            ? parts[i].trim()
+            : defaultLabel(i),
+    ];
+  }
+
+  static String formatLabels(List<String> labels) =>
+      labels.map((l) => l.replaceAll('|', '/').trim()).join('|');
+
+  static List<String> padLabels(List<String> labels, int n) {
+    if (n <= 0) return const <String>[];
+    return <String>[
+      for (var i = 0; i < n; i++)
+        (i < labels.length && labels[i].trim().isNotEmpty)
+            ? labels[i].trim()
+            : defaultLabel(i),
+    ];
+  }
+
+  /// Parse a unit fraction from `0.68`, `68`, or `68%`.
+  static double parseUnitValue(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return 0;
+    if (s.endsWith('%')) {
+      final v = double.tryParse(s.substring(0, s.length - 1).trim());
+      return ((v ?? 0) / 100).clamp(0.0, 1.0);
+    }
+    final v = double.tryParse(s.replaceAll(',', '.'));
+    if (v == null || !v.isFinite) return 0;
+    if (v > 1) return (v / 100).clamp(0.0, 1.0);
+    return v.clamp(0.0, 1.0);
+  }
+
+  static String formatPercent(double unit) =>
+      '${(unit.clamp(0.0, 1.0) * 100).round()}';
+
+  static List<double>? _backupValues(VsdxShape s) {
+    for (final c in s.userCells) {
+      if (c.name == userValuesBackup) {
+        final v = parseValues(c.value);
+        return v.length > 1 ? v : null;
+      }
+    }
+    return null;
+  }
+
+  static List<VsdxColor>? _backupColors(VsdxShape s) {
+    for (final c in s.userCells) {
+      if (c.name == userColorsBackup) {
+        final v = parseColors(c.value);
+        return v.isNotEmpty ? v : null;
+      }
+    }
+    return null;
+  }
+
+  static List<String>? _backupLabels(VsdxShape s) {
+    for (final c in s.userCells) {
+      final raw = c.value;
+      if (c.name == userLabelsBackup && raw != null && raw.trim().isNotEmpty) {
+        return raw.split('|');
+      }
+    }
+    return null;
+  }
+
   static List<double> parseValues(String? raw) {
     if (raw == null || raw.trim().isEmpty) {
       return List<double>.of(defaultValues);
@@ -196,6 +287,10 @@ abstract final class ChartOps {
     String kind,
     List<double> values, {
     List<VsdxColor>? colors,
+    List<String>? labels,
+    List<double>? valuesBackup,
+    List<VsdxColor>? colorsBackup,
+    List<String>? labelsBackup,
   }) =>
       <VsdxUserCell>[
         const VsdxUserCell(name: userChart, value: '1'),
@@ -203,7 +298,29 @@ abstract final class ChartOps {
         VsdxUserCell(name: userValues, value: formatValues(values)),
         if (colors != null && colors.isNotEmpty)
           VsdxUserCell(name: userColors, value: formatColors(colors)),
+        if (labels != null && labels.isNotEmpty)
+          VsdxUserCell(name: userLabels, value: formatLabels(labels)),
+        if (valuesBackup != null && valuesBackup.length > 1)
+          VsdxUserCell(
+              name: userValuesBackup, value: formatValues(valuesBackup)),
+        if (colorsBackup != null && colorsBackup.isNotEmpty)
+          VsdxUserCell(
+              name: userColorsBackup, value: formatColors(colorsBackup)),
+        if (labelsBackup != null && labelsBackup.isNotEmpty)
+          VsdxUserCell(
+              name: userLabelsBackup, value: formatLabels(labelsBackup)),
       ];
+
+  static const _metaKeys = <String>{
+    userChart,
+    userKind,
+    userValues,
+    userColors,
+    userLabels,
+    userValuesBackup,
+    userColorsBackup,
+    userLabelsBackup,
+  };
 
   static const List<VsdxUserCell> _chromeMeta = <VsdxUserCell>[
     VsdxUserCell(name: userChrome, value: '1'),
@@ -223,10 +340,19 @@ abstract final class ChartOps {
   }
 
   /// Apply [colors] to non-chrome children (in order) and persist on the root.
-  static VsdxShape withSeriesColors(VsdxShape chart, List<VsdxColor> colors) {
+  static VsdxShape withSeriesColors(
+    VsdxShape chart,
+    List<VsdxColor> colors, {
+    List<String>? labels,
+    List<double>? valuesBackup,
+    List<VsdxColor>? colorsBackup,
+    List<String>? labelsBackup,
+  }) {
     final kind = chartKind(chart) ?? 'column';
     final vals = chartValues(chart);
     final padded = padColors(colors, math.max(vals.length, 1));
+    final labs =
+        padLabels(labels ?? chartLabels(chart, vals.length), vals.length);
     // Gauge keeps its traffic-light bands; only persist the meta colours.
     final List<VsdxShape> kids;
     if (kind == 'gauge') {
@@ -256,17 +382,21 @@ abstract final class ChartOps {
     }
     final kept = <VsdxUserCell>[
       for (final c in chart.userCells)
-        if (c.name != userChart &&
-            c.name != userKind &&
-            c.name != userValues &&
-            c.name != userColors)
-          c,
+        if (!_metaKeys.contains(c.name)) c,
     ];
     return chart.copyWith(
       children: kids,
       userCells: <VsdxUserCell>[
         ...kept,
-        ..._meta(kind, vals, colors: padded),
+        ..._meta(
+          kind,
+          vals,
+          colors: padded,
+          labels: labs,
+          valuesBackup: valuesBackup ?? _backupValues(chart),
+          colorsBackup: colorsBackup ?? _backupColors(chart),
+          labelsBackup: labelsBackup ?? _backupLabels(chart),
+        ),
       ],
     );
   }
@@ -286,25 +416,66 @@ abstract final class ChartOps {
   // Rebuild
   // ---------------------------------------------------------------------------
 
-  /// Rebuild [chart] with optional new [values] / [colors] / [kind].
+  /// Rebuild [chart] with optional new [values] / [colors] / [labels] / [kind].
   /// Child ids are reassigned via [allocId] (must return unused page ids).
   static VsdxShape rebuild(
     VsdxShape chart, {
     List<double>? values,
     List<VsdxColor>? colors,
+    List<String>? labels,
     String? kind,
     required int Function() allocId,
   }) {
-    final k = kind ?? chartKind(chart) ?? 'column';
-    var vals = List<double>.of(values ?? chartValues(chart));
+    final prevKind = chartKind(chart) ?? 'column';
+    final k = kind ?? prevKind;
+    final prevVals = chartValues(chart);
+    final prevCols = chartColors(chart);
+    final prevLabs = chartLabels(chart, prevVals.length);
+
+    var vals = List<double>.of(values ?? prevVals);
+    var cols = List<VsdxColor>.of(colors ?? prevCols);
+    var labs = List<String>.of(labels ?? prevLabs);
+
+    List<double>? valuesBackup = _backupValues(chart);
+    List<VsdxColor>? colorsBackup = _backupColors(chart);
+    List<String>? labelsBackup = _backupLabels(chart);
+
+    // Multi → single: stash full series so switching back can restore.
+    if (isSingleValueKind(k) && !isSingleValueKind(prevKind) && prevVals.length > 1) {
+      valuesBackup = List<double>.of(prevVals);
+      colorsBackup = List<VsdxColor>.of(prevCols);
+      labelsBackup = List<String>.of(prevLabs);
+      if (values == null) vals = <double>[prevVals.first.clamp(0.0, 1.0)];
+    }
+
+    // Single → multi: restore stashed series when caller did not pass values.
+    if (!isSingleValueKind(k) &&
+        isSingleValueKind(prevKind) &&
+        values == null &&
+        valuesBackup != null &&
+        valuesBackup.length > 1) {
+      vals = List<double>.of(valuesBackup);
+      if (colors == null && colorsBackup != null) {
+        cols = List<VsdxColor>.of(colorsBackup);
+      }
+      if (labels == null && labelsBackup != null) {
+        labs = padLabels(labelsBackup, vals.length);
+      }
+      valuesBackup = null;
+      colorsBackup = null;
+      labelsBackup = null;
+    }
+
     if (isSingleValueKind(k) && vals.length > 1) {
-      vals = <double>[vals.first];
+      vals = <double>[vals.first.clamp(0.0, 1.0)];
     }
     if (vals.isEmpty) vals = List<double>.of(defaultValues);
     if (vals.length > maxSeriesItems) {
       vals = vals.sublist(0, maxSeriesItems);
     }
-    final cols = padColors(colors ?? chartColors(chart), vals.length);
+    cols = padColors(cols, vals.length);
+    labs = padLabels(labs, vals.length);
+
     final built = buildKind(
       k,
       id: chart.id,
@@ -315,7 +486,14 @@ abstract final class ChartOps {
       values: vals,
       allocId: allocId,
     );
-    return withSeriesColors(built, cols);
+    return withSeriesColors(
+      built,
+      cols,
+      labels: labs,
+      valuesBackup: valuesBackup,
+      colorsBackup: colorsBackup,
+      labelsBackup: labelsBackup,
+    );
   }
 
   static VsdxShape buildKind(
