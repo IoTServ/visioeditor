@@ -5,7 +5,7 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   test('chart stencils build groups with series children and meta', () {
-    expect(kChartStencils, hasLength(16));
+    expect(kChartStencils, hasLength(23));
     for (final s in kChartStencils) {
       final shape = s.build(1, 4, 5);
       expect(shape.shapeKind, VsdxShapeKind.group, reason: s.name);
@@ -134,6 +134,67 @@ void main() {
     expect(ChartOps.chartValues(back), <double>[0.2, 0.4, 0.6, 0.8]);
   });
 
+  test('new multi-value kinds rebuild and keep item colours', () {
+    for (final kind in <String>[
+      'lollipop',
+      'semiDonut',
+      'rose',
+      'stepLine',
+      'radialBar',
+      'clusteredBar',
+    ]) {
+      final chart = ChartOps.buildKind(
+        kind,
+        id: 11,
+        pinX: 1,
+        pinY: 1,
+        values: const <double>[0.3, 0.5, 0.7],
+      );
+      expect(ChartOps.chartKind(chart), kind);
+      var next = 200;
+      final rebuilt = ChartOps.rebuild(
+        chart,
+        values: const <double>[0.2, 0.4, 0.6, 0.8],
+        colors: const <VsdxColor>[
+          VsdxColor(0xFFE53935),
+          VsdxColor(0xFF43A047),
+          VsdxColor(0xFF1E88E5),
+          VsdxColor(0xFFFFC000),
+        ],
+        labels: const <String>['A', 'B', 'C', 'D'],
+        allocId: () => next++,
+      );
+      expect(ChartOps.chartValues(rebuilt), hasLength(4), reason: kind);
+      expect(ChartOps.chartLabels(rebuilt), <String>['A', 'B', 'C', 'D'],
+          reason: kind);
+    }
+  });
+
+  test('ringProgress is a single-value kind with backup restore', () {
+    final chart = ChartOps.columnChart(
+      id: 9,
+      pinX: 1,
+      pinY: 1,
+      values: const <double>[0.2, 0.4, 0.6],
+    );
+    var next = 30;
+    final ring = ChartOps.rebuild(
+      chart,
+      kind: 'ringProgress',
+      allocId: () => next++,
+    );
+    expect(ChartOps.isSingleValueKind('ringProgress'), isTrue);
+    expect(ChartOps.chartValues(ring), hasLength(1));
+    next = 60;
+    final back = ChartOps.rebuild(
+      ring,
+      kind: 'lollipop',
+      allocId: () => next++,
+    );
+    expect(ChartOps.chartKind(back), 'lollipop');
+    expect(ChartOps.chartValues(back), <double>[0.2, 0.4, 0.6]);
+  });
+
   test('parseSeriesPaste supports labeled pairs', () {
     final parsed = ChartOps.parseSeriesPaste('North: 10, South: 20; East: 5');
     expect(parsed.values, <double>[10, 20, 5]);
@@ -189,6 +250,13 @@ void main() {
       (id) => ChartOps.waterfallChart(id: id, pinX: 3, pinY: 3),
       (id) => ChartOps.bubbleChart(id: id, pinX: 5, pinY: 3),
       (id) => ChartOps.gaugeChart(id: id, pinX: 2, pinY: 5),
+      (id) => ChartOps.lollipopChart(id: id, pinX: 4, pinY: 5),
+      (id) => ChartOps.semiDonutChart(id: id, pinX: 6, pinY: 5),
+      (id) => ChartOps.roseChart(id: id, pinX: 1, pinY: 7),
+      (id) => ChartOps.stepLineChart(id: id, pinX: 3, pinY: 7),
+      (id) => ChartOps.radialBarChart(id: id, pinX: 5, pinY: 7),
+      (id) => ChartOps.ringProgressChart(id: id, pinX: 7, pinY: 7),
+      (id) => ChartOps.clusteredBarChart(id: id, pinX: 2, pinY: 9),
     ];
     var id = 20;
     for (final b in builders) {
