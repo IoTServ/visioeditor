@@ -148,6 +148,8 @@ class EditorL10n {
   String get searchImages => _t('searchImages');
   String get thirdPartyIcons => _t('thirdPartyIcons');
   String get searchIcons => _t('searchIcons');
+  String get chartsLibrary => _t('chartsLibrary');
+  String get searchCharts => _t('searchCharts');
   String get iconLicenseHint => _t('iconLicenseHint');
   String categoriesCount(int n) =>
       _t('categoriesCount').replaceAll('{n}', '$n');

@@ -131,6 +131,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _stencilsUserAdjusted = false;
   bool _showImageMaterials = false;
   bool _showThirdPartyIcons = false;
+  bool _showCharts = false;
   bool _showFind = false;
   bool _findShowReplace = false;
   bool _showOutline = false;
@@ -279,6 +280,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     if (!keepStencils) _showStencils = false;
     _showImageMaterials = false;
     _showThirdPartyIcons = false;
+    _showCharts = false;
   }
 
   void _toggleStencils() {
@@ -308,6 +310,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (open) {
         _stencilsUserAdjusted = true;
         _showThirdPartyIcons = true;
+      }
+    });
+  }
+
+  void _toggleCharts() {
+    setState(() {
+      final open = !_showCharts;
+      _closeLibrarySidebars();
+      if (open) {
+        _stencilsUserAdjusted = true;
+        _showCharts = true;
       }
     });
   }
@@ -1099,7 +1112,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                         key: const ValueKey<String>('third-party-icons-panel'),
                         onInsert: _insertThirdPartyIcon,
                       )
-                    : null,
+                    : _showCharts
+                        ? _ChartsPanel(
+                            key: const ValueKey<String>('charts-panel'),
+                            workspace: _workspace,
+                          )
+                        : null,
         builder: (context, stencilChild) {
           final cur = _workspace.active;
           final l10n = AppLocalizations.of(context);
@@ -1518,6 +1536,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
             onToggleImageMaterials: _toggleImageMaterials,
             showThirdPartyIcons: _showThirdPartyIcons,
             onToggleThirdPartyIcons: _toggleThirdPartyIcons,
+            showCharts: _showCharts,
+            onToggleCharts: _toggleCharts,
           ),
           const VerticalDivider(width: 1),
           // [stencilChild] is the ListenableBuilder child — not rebuilt on edits.
@@ -1846,6 +1866,8 @@ class _ToolStrip extends StatelessWidget {
     required this.onToggleImageMaterials,
     required this.showThirdPartyIcons,
     required this.onToggleThirdPartyIcons,
+    required this.showCharts,
+    required this.onToggleCharts,
   });
 
   final EditorController controller;
@@ -1855,6 +1877,8 @@ class _ToolStrip extends StatelessWidget {
   final VoidCallback onToggleImageMaterials;
   final bool showThirdPartyIcons;
   final VoidCallback onToggleThirdPartyIcons;
+  final bool showCharts;
+  final VoidCallback onToggleCharts;
 
   @override
   Widget build(BuildContext context) {
@@ -1940,6 +1964,12 @@ class _ToolStrip extends StatelessWidget {
                         onPressed: onToggleThirdPartyIcons,
                         icon: Icons.auto_awesome_mosaic_outlined,
                         tip: el.thirdPartyIcons,
+                      ),
+                      libraryToggle(
+                        active: showCharts,
+                        onPressed: onToggleCharts,
+                        icon: Icons.bar_chart_outlined,
+                        tip: el.chartsLibrary,
                       ),
                     ],
                   ),
@@ -2226,7 +2256,187 @@ class _StencilPanelState extends State<_StencilPanel> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 3),
             child: Text(
-              s.name,
+              EditorL10n.of(context).stencil(s.name),
+              style: const TextStyle(fontSize: 8.5),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Left-hand Charts palette (draw.io / 万兴图示 style): column, pie, line, …
+/// Click / drag inserts a geometric chart group that saves in the .vsdx.
+class _ChartsPanel extends StatefulWidget {
+  const _ChartsPanel({super.key, required this.workspace});
+
+  final EditorWorkspace workspace;
+
+  @override
+  State<_ChartsPanel> createState() => _ChartsPanelState();
+}
+
+class _ChartsPanelState extends State<_ChartsPanel> {
+  final ScrollController _scroll = ScrollController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _dropStencil(Stencil s) {
+    widget.workspace.active?.addShapeFromBuilder(s.build);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final el = EditorL10n.of(context);
+    final q = _query.trim().toLowerCase();
+    final searching = q.isNotEmpty;
+    final groups = <({StencilGroup group, List<Stencil> matches})>[];
+    for (final group in kChartStencilGroups) {
+      final matches = searching
+          ? group.stencils
+              .where((s) => el.stencilMatches(s.name, q))
+              .toList()
+          : group.stencils;
+      if (matches.isEmpty) continue;
+      groups.add((group: group, matches: matches));
+    }
+    return SizedBox(
+      width: 184,
+      child: ColoredBox(
+        color: scheme.surface,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: TextField(
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: el.searchCharts,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                style: const TextStyle(fontSize: 13),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 8, 4),
+              child: Text(
+                el.categoriesCount(kChartStencilGroups.length),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+            Expanded(
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  primary: false,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final entry in groups) ...[
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(top: 8, bottom: 4, left: 2),
+                          child: Text(
+                            el.stencilGroup(entry.group.name),
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                        ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final s in entry.matches)
+                              Tooltip(
+                                message: el.stencil(s.name),
+                                child: RepaintBoundary(
+                                  child: Draggable<Stencil>(
+                                    data: s,
+                                    dragAnchorStrategy:
+                                        pointerDragAnchorStrategy,
+                                    feedback: Material(
+                                      color: Colors.transparent,
+                                      child: Opacity(
+                                        opacity: 0.85,
+                                        child: _chartTile(scheme, s,
+                                            elevated: true),
+                                      ),
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.4,
+                                      child: _chartTile(scheme, s),
+                                    ),
+                                    child: InkWell(
+                                      onTap: () => _dropStencil(s),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: _chartTile(scheme, s),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chartTile(ColorScheme scheme, Stencil s, {bool elevated = false}) {
+    return Container(
+      width: 72,
+      height: 62,
+      decoration: BoxDecoration(
+        color: elevated
+            ? scheme.surfaceContainerHighest
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 52,
+            height: 32,
+            child: CustomPaint(
+              painter: _StencilThumbPainter(s),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Text(
+              EditorL10n.of(context).stencil(s.name),
               style: const TextStyle(fontSize: 8.5),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -2700,15 +2910,18 @@ class _ThumbGeom {
     this.width,
     this.height,
     this.paths,
-    this.fillColor,
-    this.strokeColor,
   );
 
   final double width;
   final double height;
-  final List<({Path path, bool fill, bool line})> paths;
-  final Color fillColor;
-  final Color strokeColor;
+  final List<
+      ({
+        Path path,
+        bool fill,
+        bool line,
+        Color fillColor,
+        Color strokeColor,
+      })> paths;
 }
 
 /// Paints a stencil's real geometry into a thumbnail box. Builds the shape once
@@ -2738,24 +2951,57 @@ class _StencilThumbPainter extends CustomPainter {
     final shape = stencil.build(0, 0, 0);
     final w = shape.width;
     final h = shape.height;
+    final paths = <({Path path, bool fill, bool line, Color fillColor, Color strokeColor})>[];
+    if (w > 0 && h > 0) {
+      _collectThumbPaths(shape, paths, root: true);
+    }
+    return _geomCache[stencil] = _ThumbGeom(w, h, paths);
+  }
+
+  void _collectThumbPaths(
+    VsdxShape shape,
+    List<
+            ({
+              Path path,
+              bool fill,
+              bool line,
+              Color fillColor,
+              Color strokeColor,
+            })>
+        out, {
+    double ox = 0,
+    double oy = 0,
+    bool root = false,
+  }) {
+    final w = shape.width;
+    final h = shape.height;
     final fillColor = shape.fill.hasFill
         ? _flutterColor(shape.fill.foreground, fallback: const Color(0xFFDAE8FC))
         : const Color(0x00000000);
     final strokeColor = shape.line.hasLine
         ? _flutterColor(shape.line.color, fallback: const Color(0xFF6C8EBF))
         : const Color(0x00000000);
-    final paths = <({Path path, bool fill, bool line})>[];
+    // Root: paint in shape-local inches (0…W, 0…H). Children: offset by Pin
+    // relative to the parent's bottom-left (LocPin defaults to centre).
+    final originX = root ? 0.0 : ox + shape.pinX - w / 2;
+    final originY = root ? 0.0 : oy + shape.pinY - h / 2;
     if (w > 0 && h > 0) {
       for (final g in shape.geometries) {
         if (g.noShow) continue;
-        paths.add((
-          path: buildPath(g, widthInches: w, heightInches: h),
+        final raw = buildPath(g, widthInches: w, heightInches: h);
+        final shifted = root ? raw : raw.shift(Offset(originX, originY));
+        out.add((
+          path: shifted,
           fill: !g.noFill && shape.fill.hasFill,
           line: !g.noLine && shape.line.hasLine,
+          fillColor: fillColor,
+          strokeColor: strokeColor,
         ));
       }
     }
-    return _geomCache[stencil] = _ThumbGeom(w, h, paths, fillColor, strokeColor);
+    for (final child in shape.children) {
+      _collectThumbPaths(child, out, ox: originX, oy: originY);
+    }
   }
 
   ui.Picture _picture(Size size) {
@@ -2779,18 +3025,26 @@ class _StencilThumbPainter extends CustomPainter {
         canvas.save();
         canvas.translate(dx, size.height - dy);
         canvas.scale(s, -s);
-        final fill = Paint()
-          ..color = geom.fillColor
-          ..style = PaintingStyle.fill;
-        final line = Paint()
-          ..color = geom.strokeColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2 / s
-          ..strokeJoin = StrokeJoin.round
-          ..strokeCap = StrokeCap.round;
         for (final p in geom.paths) {
-          if (p.fill) canvas.drawPath(p.path, fill);
-          if (p.line) canvas.drawPath(p.path, line);
+          if (p.fill) {
+            canvas.drawPath(
+              p.path,
+              Paint()
+                ..color = p.fillColor
+                ..style = PaintingStyle.fill,
+            );
+          }
+          if (p.line) {
+            canvas.drawPath(
+              p.path,
+              Paint()
+                ..color = p.strokeColor
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 1.2 / s
+                ..strokeJoin = StrokeJoin.round
+                ..strokeCap = StrokeCap.round,
+            );
+          }
         }
         canvas.restore();
       }

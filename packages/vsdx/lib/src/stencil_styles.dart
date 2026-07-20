@@ -72,6 +72,7 @@ const Map<String, StencilColors> kStencilGroupColors = <String, StencilColors>{
   'Signs': kStencilDanger,
   'Floorplan': StencilColors('#EFEBE9', '#6D4C41'),
   'EIP': StencilColors('#E8F5E9', '#43A047'),
+  'Charts': kStencilSky,
   'AWS': kStencilAws,
   'Azure': kStencilAzure,
   'GCP': kStencilGcp,

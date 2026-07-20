@@ -8,3 +8,4 @@
 library;
 
 export 'src/stencils.dart';
+export 'src/chart_stencils.dart';
