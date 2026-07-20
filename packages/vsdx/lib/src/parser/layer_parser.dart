@@ -55,6 +55,8 @@ class LayerParser {
   static List<int>? parseLayerMembersOrNull(XmlElement shape) {
     final cell = findCell(shape, 'LayerMember');
     if (cell == null) return null;
+    // F=Inh → inherit Master / prototype (same as a missing cell).
+    if (isInhFormula(cell.getAttribute('F'))) return null;
     final v = cell.getAttribute('V');
     if (v == null || v.isEmpty) return const <int>[];
     final ids = <int>[];

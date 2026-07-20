@@ -159,4 +159,37 @@ void main() {
     expect(glow.enabled, isTrue);
     expect(glow.transparency, closeTo(0.55, 1e-9));
   });
+
+  test('FillGradientEnabled F=Inh inherits Master gradient', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="FillGradientEnabled" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: VsdxFill(pattern: 1, gradient: masterGrad),
+    );
+    expect(fill.gradient, isNotNull);
+    expect(fill.gradient!.stops, hasLength(2));
+  });
+
+  test('ShadowPattern F=Inh inherits Master pattern', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="ShadowPattern" V="0" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final shadow = style.parseShadow(
+      el,
+      defaults: const VsdxShadow(
+        enabled: true,
+        pattern: 2,
+        transparency: 0.4,
+      ),
+    );
+    expect(shadow.enabled, isTrue);
+    expect(shadow.pattern, 2);
+  });
 }

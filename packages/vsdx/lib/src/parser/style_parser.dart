@@ -12,7 +12,7 @@ import '../model/fill.dart';
 import '../model/line.dart';
 import '../model/theme.dart';
 import '../utils/color.dart';
-import 'cell_helpers.dart' show findCell, readLengthInches;
+import 'cell_helpers.dart' show findCell, isInhFormula, readLengthInches;
 
 class StyleParser {
   const StyleParser();
@@ -45,11 +45,13 @@ class StyleParser {
 
     // Explicit FillGradientEnabled=0 must clear the gradient — do not fall
     // back to Master defaults (writer emits V=0 on clear / group rebuild).
+    // F=Inh is not a local override — treat like a missing cell.
     final fillGradEnabledCell = findCell(shape, 'FillGradientEnabled');
     final parsedFillGrad = _parseGradient(shape);
-    final gradient = fillGradEnabledCell != null
-        ? parsedFillGrad
-        : (parsedFillGrad ?? defaults.gradient);
+    final gradient =
+        (fillGradEnabledCell != null && !isInhFormula(fillGradEnabledCell.getAttribute('F')))
+            ? parsedFillGrad
+            : (parsedFillGrad ?? defaults.gradient);
 
     return VsdxFill(
       foreground: fgRes.color ?? defaults.foreground,
@@ -232,7 +234,20 @@ class StyleParser {
     double? pageOffsetXInches,
     double? pageOffsetYInches,
   }) {
-    final pat = _int(shape, 'ShadowPattern') ?? _int(shape, 'ShdwPattern');
+    final pat = _int(
+          shape,
+          'ShadowPattern',
+          inheritFrom: defaults.enabled
+              ? (defaults.pattern <= 0 ? 1 : defaults.pattern)
+              : null,
+        ) ??
+        _int(
+          shape,
+          'ShdwPattern',
+          inheritFrom: defaults.enabled
+              ? (defaults.pattern <= 0 ? 1 : defaults.pattern)
+              : null,
+        );
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
     final col = _resolveColor(shape, 'ShadowForegnd', 'QuickStyleShadowColor');
@@ -354,11 +369,13 @@ class StyleParser {
         _int(shape, 'CompoundType', inheritFrom: defaults.compoundType) ??
             defaults.compoundType;
     // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
+    // F=Inh is not a local override — treat like a missing cell.
     final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');
     final parsedLineGrad = _parseLineGradient(shape);
-    final gradient = lineGradEnabledCell != null
-        ? parsedLineGrad
-        : (parsedLineGrad ?? defaults.gradient);
+    final gradient =
+        (lineGradEnabledCell != null && !isInhFormula(lineGradEnabledCell.getAttribute('F')))
+            ? parsedLineGrad
+            : (parsedLineGrad ?? defaults.gradient);
 
     return VsdxLine(
       color: colorRes.color ?? defaults.color,

@@ -44,7 +44,7 @@ double? readLengthInches(
   final cell = findCell(parent, name);
   if (cell == null) return null;
   final f = cell.getAttribute('F');
-  if (f != null && _isInhFormula(f) && inheritFrom != null) {
+  if (f != null && isInhFormula(f) && inheritFrom != null) {
     return inheritFrom;
   }
   final v = cell.getAttribute('V');
@@ -55,7 +55,7 @@ double? readLengthInches(
   // No literal — fall back to the F= formula. evaluateFormula handles
   // numeric expressions with inline length units (`1.5 in`, `25.4 mm`).
   // (Still skip pure Inh with no V / no inherit source.)
-  if (f == null || _isInhFormula(f)) return null;
+  if (f == null || isInhFormula(f)) return null;
   return evaluateFormula(f);
 }
 
@@ -70,7 +70,7 @@ double? readAngleRadians(
   final cell = findCell(parent, name);
   if (cell == null) return null;
   final f = cell.getAttribute('F');
-  if (f != null && _isInhFormula(f) && inheritFrom != null) {
+  if (f != null && isInhFormula(f) && inheritFrom != null) {
     return inheritFrom;
   }
   final v = cell.getAttribute('V');
@@ -78,11 +78,13 @@ double? readAngleRadians(
     final n = double.tryParse(v);
     if (n != null) return n; // V is already in internal units (radians)
   }
-  if (f == null || _isInhFormula(f)) return null;
+  if (f == null || isInhFormula(f)) return null;
   return evaluateFormula(f);
 }
 
-bool _isInhFormula(String f) {
+/// True when [f] is Visio master-inheritance (`Inh` / `Inh(...)`).
+bool isInhFormula(String? f) {
+  if (f == null) return false;
   final t = f.trim();
   if (t.isEmpty) return false;
   final u = t.toUpperCase();

@@ -210,10 +210,18 @@ class PageParser {
         findCell(shapeEl, 'EndX') != null;
     final is1D = shapeTypeAttr == 'Shape' && has1DEndpoints ||
         proto?.is1D == true;
-    final beginX = readLengthInches(shapeEl, 'BeginX') ?? proto?.beginX;
-    final beginY = readLengthInches(shapeEl, 'BeginY') ?? proto?.beginY;
-    final endX = readLengthInches(shapeEl, 'EndX') ?? proto?.endX;
-    final endY = readLengthInches(shapeEl, 'EndY') ?? proto?.endY;
+    final beginX =
+        readLengthInches(shapeEl, 'BeginX', inheritFrom: proto?.beginX) ??
+            proto?.beginX;
+    final beginY =
+        readLengthInches(shapeEl, 'BeginY', inheritFrom: proto?.beginY) ??
+            proto?.beginY;
+    final endX =
+        readLengthInches(shapeEl, 'EndX', inheritFrom: proto?.endX) ??
+            proto?.endX;
+    final endY =
+        readLengthInches(shapeEl, 'EndY', inheritFrom: proto?.endY) ??
+            proto?.endY;
 
     // Nested <Shapes> ⇒ a group. Children inherit the same master context so
     // their `MasterShape="N"` references resolve against master [master].
@@ -452,33 +460,54 @@ class PageParser {
       imageContrast: imageContrast,
       foreignType: foreignType,
       foreignCompressionType: foreignCompressionType,
-      objType: _int(shapeEl, 'ObjType') ?? proto?.objType,
-      resizeMode: _int(shapeEl, 'ResizeMode') ?? proto?.resizeMode,
-      eventDblClick: findCell(shapeEl, 'EventDblClick')?.getAttribute('V') ??
-          proto?.eventDblClick,
-      noAlignBox: _readBoolCell(shapeEl, 'NoAlignBox') ??
+      objType: _int(shapeEl, 'ObjType', inheritFrom: proto?.objType) ??
+          proto?.objType,
+      resizeMode: _int(shapeEl, 'ResizeMode', inheritFrom: proto?.resizeMode) ??
+          proto?.resizeMode,
+      eventDblClick: () {
+        final cell = findCell(shapeEl, 'EventDblClick');
+        if (cell == null) return proto?.eventDblClick;
+        if (isInhFormula(cell.getAttribute('F')) &&
+            proto?.eventDblClick != null) {
+          return proto!.eventDblClick;
+        }
+        return cell.getAttribute('V') ?? proto?.eventDblClick;
+      }(),
+      noAlignBox: _readBoolCell(shapeEl, 'NoAlignBox',
+              inheritFrom: proto?.noAlignBox) ??
           proto?.noAlignBox ??
           false,
-      shapeSplittable: _readBoolCell(shapeEl, 'ShapeSplittable') ??
+      shapeSplittable: _readBoolCell(shapeEl, 'ShapeSplittable',
+              inheritFrom: proto?.shapeSplittable) ??
           proto?.shapeSplittable ??
           false,
-      themeIndex: _int(shapeEl, 'ThemeIndex') ?? proto?.themeIndex,
-      quickStyleFillMatrix:
-          _int(shapeEl, 'QuickStyleFillMatrix') ?? proto?.quickStyleFillMatrix,
-      quickStyleLineMatrix:
-          _int(shapeEl, 'QuickStyleLineMatrix') ?? proto?.quickStyleLineMatrix,
-      quickStyleEffectsMatrix: _int(shapeEl, 'QuickStyleEffectsMatrix') ??
+      themeIndex: _int(shapeEl, 'ThemeIndex', inheritFrom: proto?.themeIndex) ??
+          proto?.themeIndex,
+      quickStyleFillMatrix: _int(shapeEl, 'QuickStyleFillMatrix',
+              inheritFrom: proto?.quickStyleFillMatrix) ??
+          proto?.quickStyleFillMatrix,
+      quickStyleLineMatrix: _int(shapeEl, 'QuickStyleLineMatrix',
+              inheritFrom: proto?.quickStyleLineMatrix) ??
+          proto?.quickStyleLineMatrix,
+      quickStyleEffectsMatrix: _int(shapeEl, 'QuickStyleEffectsMatrix',
+              inheritFrom: proto?.quickStyleEffectsMatrix) ??
           proto?.quickStyleEffectsMatrix,
-      quickStyleFontMatrix:
-          _int(shapeEl, 'QuickStyleFontMatrix') ?? proto?.quickStyleFontMatrix,
-      isTextEditTarget: _readBoolCell(shapeEl, 'IsTextEditTarget') ??
+      quickStyleFontMatrix: _int(shapeEl, 'QuickStyleFontMatrix',
+              inheritFrom: proto?.quickStyleFontMatrix) ??
+          proto?.quickStyleFontMatrix,
+      isTextEditTarget: _readBoolCell(shapeEl, 'IsTextEditTarget',
+              inheritFrom: proto?.isTextEditTarget) ??
           proto?.isTextEditTarget ??
           false,
-      dontMoveChildren: _readBoolCell(shapeEl, 'DontMoveChildren') ??
+      dontMoveChildren: _readBoolCell(shapeEl, 'DontMoveChildren',
+              inheritFrom: proto?.dontMoveChildren) ??
           proto?.dontMoveChildren ??
           false,
-      selectMode: _int(shapeEl, 'SelectMode') ?? proto?.selectMode,
-      displayMode: _int(shapeEl, 'DisplayMode') ?? proto?.displayMode,
+      selectMode: _int(shapeEl, 'SelectMode', inheritFrom: proto?.selectMode) ??
+          proto?.selectMode,
+      displayMode:
+          _int(shapeEl, 'DisplayMode', inheritFrom: proto?.displayMode) ??
+              proto?.displayMode,
       connectionPoints: connectionPoints,
       hyperlinks: hyperlinks,
       userProperties: props,
@@ -796,9 +825,12 @@ class PageParser {
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
 
-  static int? _int(XmlElement parent, String name) {
+  static int? _int(XmlElement parent, String name, {int? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F')) && inheritFrom != null) {
+      return inheritFrom;
+    }
     return int.tryParse(cell.getAttribute('V') ?? '');
   }
 

@@ -286,8 +286,20 @@ class RichTextParser {
     // #000000 here made save→reopen drift (`null → Arial` / `null → black`).
     // Size and other metrics still fall back to [defaults] (TextStyle / master).
     final font = _cellString(row, 'Font');
-    final size = readLengthInches(row, 'Size') ?? defaults.fontSizeInches;
-    final styleInt = _cellInt(row, 'Style');
+    final size = readLengthInches(
+          row,
+          'Size',
+          inheritFrom: defaults.fontSizeInches,
+        ) ??
+        defaults.fontSizeInches;
+    final styleInt = _cellInt(
+      row,
+      'Style',
+      inheritFrom: (defaults.style.bold ? 0x01 : 0) |
+          (defaults.style.italic ? 0x02 : 0) |
+          (defaults.underline ? 0x04 : 0) |
+          (defaults.style.smallCaps ? 0x08 : 0),
+    );
     final style = styleInt == null
         ? defaults.style
         : VsdxFontStyle.fromBitmask(styleInt);
@@ -312,35 +324,54 @@ class RichTextParser {
     // Underline lives in Style bit 0x04 (libvisio); only inherit when absent.
     final underline =
         styleInt != null ? (styleInt & 0x04) != 0 : defaults.underline;
-    final strikeCell = _cellInt(row, 'Strikethru');
+    final strikeCell = _cellInt(row, 'Strikethru',
+        inheritFrom: defaults.strikethrough ? 1 : 0);
     final strike =
         strikeCell != null ? strikeCell != 0 : defaults.strikethrough;
-    final dblUnderCell = _cellInt(row, 'DblUnderline');
+    final dblUnderCell = _cellInt(row, 'DblUnderline',
+        inheritFrom: defaults.doubleUnderline ? 1 : 0);
     final dblUnder = dblUnderCell != null
         ? dblUnderCell != 0
         : defaults.doubleUnderline;
-    final dblStrikeCell = _cellInt(row, 'DoubleStrikethrough');
+    final dblStrikeCell = _cellInt(row, 'DoubleStrikethrough',
+        inheritFrom: defaults.doubleStrikethrough ? 1 : 0);
     final dblStrike = dblStrikeCell != null
         ? dblStrikeCell != 0
         : defaults.doubleStrikethrough;
-    final overCell = _cellInt(row, 'Overline');
+    final overCell =
+        _cellInt(row, 'Overline', inheritFrom: defaults.overline ? 1 : 0);
     final overline = overCell != null ? overCell != 0 : defaults.overline;
-    final transparency = _cellDouble(row, 'ColorTrans') ?? defaults.transparency;
-    final posInt = _cellInt(row, 'Pos');
+    final transparency = (_cellDouble(row, 'ColorTrans',
+                inheritFrom: defaults.transparency) ??
+            defaults.transparency)
+        .clamp(0.0, 1.0);
+    final posInt = _cellInt(row, 'Pos',
+        inheritFrom: switch (defaults.position) {
+          VsdxTextPosition.superscript => 1,
+          VsdxTextPosition.subscript => 2,
+          _ => 0,
+        });
     final position = switch (posInt) {
       1 => VsdxTextPosition.superscript,
       2 => VsdxTextPosition.subscript,
       null => defaults.position,
       _ => VsdxTextPosition.normal,
     };
-    final caseInt = _cellInt(row, 'Case');
+    final caseInt = _cellInt(row, 'Case',
+        inheritFrom: switch (defaults.textCase) {
+          VsdxTextCase.allCaps => 1,
+          VsdxTextCase.initialCaps => 2,
+          _ => 0,
+        });
     final textCase = switch (caseInt) {
       1 => VsdxTextCase.allCaps,
       2 => VsdxTextCase.initialCaps,
       null => defaults.textCase,
       _ => VsdxTextCase.normal,
     };
-    final fontScale = _cellDouble(row, 'FontScale') ?? defaults.fontScale;
+    final fontScale =
+        _cellDouble(row, 'FontScale', inheritFrom: defaults.fontScale) ??
+            defaults.fontScale;
     return VsdxCharStyle(
       fontFamily: font,
       fontSizeInches: size,
@@ -352,9 +383,13 @@ class RichTextParser {
       doubleUnderline: dblUnder,
       doubleStrikethrough: dblStrike,
       overline: overline,
-      transparency: transparency.clamp(0.0, 1.0),
-      letterSpacingInches:
-          readLengthInches(row, 'Letterspace') ?? defaults.letterSpacingInches,
+      transparency: transparency,
+      letterSpacingInches: readLengthInches(
+            row,
+            'Letterspace',
+            inheritFrom: defaults.letterSpacingInches,
+          ) ??
+          defaults.letterSpacingInches,
       position: position,
       textCase: textCase,
       fontScale: fontScale,
@@ -362,13 +397,26 @@ class RichTextParser {
       complexScriptFont:
           _cellString(row, 'ComplexScriptFont') ?? defaults.complexScriptFont,
       langId: _cellString(row, 'LangID') ?? defaults.langId,
-      complexScriptSizeInches: readLengthInches(row, 'ComplexScriptSize') ??
+      complexScriptSizeInches: readLengthInches(
+            row,
+            'ComplexScriptSize',
+            inheritFrom: defaults.complexScriptSizeInches,
+          ) ??
           defaults.complexScriptSizeInches,
     );
   }
 
   VsdxParaStyle _readParaRow(XmlElement row, VsdxParaStyle defaults) {
-    final horz = _cellInt(row, 'HorzAlign');
+    final horz = _cellInt(
+      row,
+      'HorzAlign',
+      inheritFrom: switch (defaults.horizontalAlign) {
+        VsdxHorzAlign.center => 1,
+        VsdxHorzAlign.right => 2,
+        VsdxHorzAlign.justify => 3,
+        _ => 0,
+      },
+    );
     final align = horz == null ? defaults.horizontalAlign : _alignFromInt(horz);
     final (lineSpacing, lineSpacingAbs, lineSpacingSolid) =
         _readLineSpacing(row, defaults);
@@ -376,32 +424,61 @@ class RichTextParser {
     final bulletFont = _cellString(row, 'BulletFont');
     return VsdxParaStyle(
       horizontalAlign: align,
-      indentFirstInches:
-          readLengthInches(row, 'IndFirst') ?? defaults.indentFirstInches,
-      indentLeftInches:
-          readLengthInches(row, 'IndLeft') ?? defaults.indentLeftInches,
-      indentRightInches:
-          readLengthInches(row, 'IndRight') ?? defaults.indentRightInches,
-      spaceBeforeInches:
-          readLengthInches(row, 'SpBefore') ?? defaults.spaceBeforeInches,
-      spaceAfterInches:
-          readLengthInches(row, 'SpAfter') ?? defaults.spaceAfterInches,
+      indentFirstInches: readLengthInches(
+            row,
+            'IndFirst',
+            inheritFrom: defaults.indentFirstInches,
+          ) ??
+          defaults.indentFirstInches,
+      indentLeftInches: readLengthInches(
+            row,
+            'IndLeft',
+            inheritFrom: defaults.indentLeftInches,
+          ) ??
+          defaults.indentLeftInches,
+      indentRightInches: readLengthInches(
+            row,
+            'IndRight',
+            inheritFrom: defaults.indentRightInches,
+          ) ??
+          defaults.indentRightInches,
+      spaceBeforeInches: readLengthInches(
+            row,
+            'SpBefore',
+            inheritFrom: defaults.spaceBeforeInches,
+          ) ??
+          defaults.spaceBeforeInches,
+      spaceAfterInches: readLengthInches(
+            row,
+            'SpAfter',
+            inheritFrom: defaults.spaceAfterInches,
+          ) ??
+          defaults.spaceAfterInches,
       lineSpacing: lineSpacing,
       lineSpacingAbsoluteInches: lineSpacingAbs,
       lineSpacingSolid: lineSpacingSolid,
-      bullet: _cellInt(row, 'Bullet') ?? defaults.bullet,
+      bullet: _cellInt(row, 'Bullet', inheritFrom: defaults.bullet) ??
+          defaults.bullet,
       bulletStr: (bulletStr == null || bulletStr.isEmpty)
           ? defaults.bulletStr
           : bulletStr,
       bulletFont: (bulletFont == null || bulletFont.isEmpty)
           ? defaults.bulletFont
           : bulletFont,
-      bulletFontSizeInches: readLengthInches(row, 'BulletFontSize') ??
+      bulletFontSizeInches: readLengthInches(
+            row,
+            'BulletFontSize',
+            inheritFrom: defaults.bulletFontSizeInches,
+          ) ??
           defaults.bulletFontSizeInches,
-      textPosAfterBulletInches:
-          readLengthInches(row, 'TextPosAfterBullet') ??
-              defaults.textPosAfterBulletInches,
-      flags: _cellInt(row, 'Flags') ?? defaults.flags,
+      textPosAfterBulletInches: readLengthInches(
+            row,
+            'TextPosAfterBullet',
+            inheritFrom: defaults.textPosAfterBulletInches,
+          ) ??
+          defaults.textPosAfterBulletInches,
+      flags: _cellInt(row, 'Flags', inheritFrom: defaults.flags) ??
+          defaults.flags,
     );
   }
 
@@ -416,7 +493,16 @@ class RichTextParser {
   /// upward instead of downward. Returns `(multiple, absoluteInches, solid)`.
   (double, double, bool) _readLineSpacing(
       XmlElement row, VsdxParaStyle defaults) {
-    final sp = _cellDouble(row, 'SpLine');
+    // Reconstruct master SpLine so F=Inh does not keep a stale V=.
+    double? inheritSp;
+    if (defaults.lineSpacingSolid) {
+      inheritSp = 0;
+    } else if (defaults.lineSpacingAbsoluteInches > 1e-12) {
+      inheritSp = defaults.lineSpacingAbsoluteInches;
+    } else if ((defaults.lineSpacing - 1.0).abs() > 1e-12) {
+      inheritSp = -defaults.lineSpacing;
+    }
+    final sp = _cellDouble(row, 'SpLine', inheritFrom: inheritSp);
     if (sp == null) {
       return (
         defaults.lineSpacing,
@@ -529,16 +615,24 @@ class RichTextParser {
       // Absent TextBkgnd → inherit; explicit V=0/255 → transparent (do not
       // fall back to master — mirrors VSD textBgFilled=false).
       backgroundColor: _resolveTextBkgnd(shape, inherit.backgroundColor),
-      backgroundTransparency:
-          (_cellDouble(shape, 'TextBkgndTrans') ?? inherit.backgroundTransparency)
-              .clamp(0.0, 1.0),
+      backgroundTransparency: (_cellDouble(
+                shape,
+                'TextBkgndTrans',
+                inheritFrom: inherit.backgroundTransparency,
+              ) ??
+              inherit.backgroundTransparency)
+          .clamp(0.0, 1.0),
       textDirection: _cellInt(
             shape,
             'TextDirection',
             inheritFrom: inherit.textDirection,
           ) ??
           inherit.textDirection,
-      defaultTabStopInches: readLengthInches(shape, 'DefaultTabStop') ??
+      defaultTabStopInches: readLengthInches(
+            shape,
+            'DefaultTabStop',
+            inheritFrom: inherit.defaultTabStopInches,
+          ) ??
           inherit.defaultTabStopInches,
     );
   }
@@ -754,9 +848,15 @@ class RichTextParser {
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
   }
 
-  double? _cellDouble(XmlElement parent, String name) {
-    final s = _cellString(parent, name);
-    if (s == null) return null;
+  double? _cellDouble(XmlElement parent, String name, {double? inheritFrom}) {
+    final cell = findCell(parent, name);
+    if (cell == null) return null;
+    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
+    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
+      return inheritFrom;
+    }
+    final s = cell.getAttribute('V');
+    if (s == null || s.isEmpty) return null;
     return double.tryParse(s);
   }
 

@@ -137,6 +137,32 @@ void main() {
       );
       expect(rich.runs.first.paraStyle.lineSpacing, closeTo(1.5, 1e-9));
     });
+
+    test('SpLine F=Inh inherits master spacing (ignores stale V)', () {
+      final rich = parser.parse(
+        shape(
+          '<Section N="Paragraph"><Row IX="0">'
+          '<Cell N="SpLine" V="-1" F="Inh"/>'
+          '</Row></Section>'
+          '<Text>Label</Text>',
+        ),
+        defaultPara: const VsdxParaStyle(lineSpacing: 1.5),
+      );
+      expect(rich.runs.first.paraStyle.lineSpacing, closeTo(1.5, 1e-9));
+    });
+  });
+
+  test('Character Size F=Inh inherits master font size', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Size" V="0.1" F="Inh"/>'
+        '</Row></Section>'
+        '<Text>Label</Text>',
+      ),
+      defaultChar: const VsdxCharStyle(fontSizeInches: 0.25),
+    );
+    expect(rich.runs.first.charStyle.fontSizeInches, closeTo(0.25, 1e-9));
   });
 
   test('absent TextBkgnd inherits master colour', () {
