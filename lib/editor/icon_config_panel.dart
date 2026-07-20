@@ -125,16 +125,12 @@ class _IconConfigPanelState extends State<IconConfigPanel> {
     final iconId = IconOps.iconId(icon);
     final colorArgb = IconOps.colorArgb(icon);
     final entry = IconOps.resolve(icon);
-    final filterId = _providerFilter ?? providerId;
     final q = _query.trim().toLowerCase();
 
     final providers = kThirdPartyIconProviders;
-    final filterProvider = filterId == null
-        ? null
-        : findThirdPartyIconProvider(filterId);
     final matches = <({String providerId, ThirdPartyIcon icon})>[];
     for (final p in providers) {
-      if (filterProvider != null && p.id != filterProvider.id) continue;
+      if (_providerFilter != null && p.id != _providerFilter) continue;
       for (final i in p.icons) {
         if (!thirdPartyIconMatches(i, q)) continue;
         matches.add((providerId: p.id, icon: i));
@@ -206,10 +202,19 @@ class _IconConfigPanelState extends State<IconConfigPanel> {
           spacing: 6,
           runSpacing: 6,
           children: [
+            ChoiceChip(
+              label: Text(el.expandAll, style: const TextStyle(fontSize: 11)),
+              selected: _providerFilter == null,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onSelected: _busy
+                  ? null
+                  : (_) => setState(() => _providerFilter = null),
+            ),
             for (final p in providers)
               ChoiceChip(
                 label: Text(p.name, style: const TextStyle(fontSize: 11)),
-                selected: filterId == p.id,
+                selected: _providerFilter == p.id,
                 visualDensity: VisualDensity.compact,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 onSelected: _busy
@@ -262,13 +267,14 @@ class _IconConfigPanelState extends State<IconConfigPanel> {
                 const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             border:
                 OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            suffixText: '${matches.length}',
           ),
           style: const TextStyle(fontSize: 13),
           onChanged: (v) => setState(() => _query = v),
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 220,
+          height: 280,
           child: matches.isEmpty
               ? Center(
                   child: Text(

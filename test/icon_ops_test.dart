@@ -6,9 +6,11 @@ void main() {
   test('icon catalog has multiple packs including Cupertino', () {
     final ids = kThirdPartyIconProviders.map((p) => p.id).toList();
     expect(ids, containsAll(['material', 'lucide', 'phosphor', 'cupertino']));
-    expect(kThirdPartyIconByKey.length, greaterThan(200));
+    expect(kThirdPartyIconByKey.length, greaterThan(800));
     expect(findThirdPartyIcon('cupertino', 'cloud'), isNotNull);
     expect(findThirdPartyIcon('lucide', 'unlock'), isNotNull);
+    expect(findThirdPartyIcon('lucide', 'kanban'), isNotNull);
+    expect(findThirdPartyIcon('material', 'view_kanban'), isNotNull);
   });
 
   test('IconOps meta round-trips on a picture shape', () {
