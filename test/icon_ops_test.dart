@@ -80,7 +80,10 @@ void main() {
     expect(shape.text, 'Cloud');
     expect(shape.richText.plainText, 'Cloud');
     final block = shape.richText.textBlock;
-    expect(block.pinYInches, lessThan(0));
+    // Caption hangs below: pin on the bottom edge, locPin at top of label.
+    expect(block.pinYInches, closeTo(0, 1e-6));
+    expect(block.locPinYInches, closeTo(EditorController.iconCaptionHeightInches, 1e-6));
+    expect(block.pinYInches! - block.locPinYInches!, lessThan(0));
     expect(block.pinXInches, closeTo(shape.width / 2, 1e-6));
     expect(shape.formulas.containsKey('TxtPinY'), isFalse);
     expect(shape.formulas.containsKey('TxtHeight'), isFalse);
@@ -91,7 +94,12 @@ void main() {
       width: 1.5,
       height: 1.5,
     );
-    expect(grown.richText.textBlock.pinYInches, lessThan(0));
+    expect(grown.richText.textBlock.pinYInches, closeTo(0, 1e-6));
+    expect(
+      grown.richText.textBlock.pinYInches! -
+          grown.richText.textBlock.locPinYInches!,
+      lessThan(0),
+    );
     // Shape name stays auto so the painter won't overlay a name fallback.
     expect(shape.name, matches(RegExp(r'^Sheet\.\d+$')));
   });

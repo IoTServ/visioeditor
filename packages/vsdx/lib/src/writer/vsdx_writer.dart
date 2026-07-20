@@ -4375,6 +4375,9 @@ class VsdxWriter {
     VsdxTextBlock edited,
     VsdxShape shape,
   ) {
+    // Rewrite negative TxtPinY to pin@0 + LocPin=TxtHeight so EdrawMax keeps
+    // captions below the glyph (it clamps / ignores negative pins).
+    edited = _edrawSafeCaptionBelow(edited);
     var changed = false;
     changed |= _patchNullableLength(
       el,
@@ -4498,6 +4501,7 @@ class VsdxWriter {
     VsdxShape? shapeForDefaults,
     bool hasLabel = false,
   }) {
+    b = _edrawSafeCaptionBelow(b);
     void addLen(String name, double? v, {String? defaultFormula, double? fallback}) {
       var f = formulas[name] ?? defaultFormula;
       final value = v ?? fallback;
@@ -6908,6 +6912,23 @@ class VsdxWriter {
     if (expected != null) return (expected - value).abs() <= _epsilon;
     // Unknown Width*/Height* expression — honour the edited V.
     return !_isParametricFormula(f);
+  }
+
+  /// Rewrite a caption that uses a negative [VsdxTextBlock.pinYInches] into the
+  /// Edraw-safe form `TxtPinY=0`, `TxtLocPinY=TxtHeight` while keeping the same
+  /// painted box (text hanging fully below the shape).
+  static VsdxTextBlock _edrawSafeCaptionBelow(VsdxTextBlock b) {
+    final pinY = b.pinYInches;
+    final th = b.heightInches;
+    if (pinY == null || th == null || th <= _epsilon || pinY >= -_epsilon) {
+      return b;
+    }
+    final locY = b.locPinYInches ?? th / 2;
+    final top = pinY - locY + th; // top edge of the text block in shape space
+    return b.copyWith(
+      pinYInches: top,
+      locPinYInches: th,
+    );
   }
 
   /// Preserve Txt* `F=` only when it still matches the edited cache value

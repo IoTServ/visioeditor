@@ -39,9 +39,9 @@ void main() {
         runs: const <VsdxTextRun>[VsdxTextRun(text: 'Cloud')],
         textBlock: VsdxTextBlock(
           pinXInches: 0.375,
-          pinYInches: -labelH / 2,
+          pinYInches: 0,
           locPinXInches: 0.375,
-          locPinYInches: labelH / 2,
+          locPinYInches: labelH,
           widthInches: 0.75,
           heightInches: labelH,
         ),

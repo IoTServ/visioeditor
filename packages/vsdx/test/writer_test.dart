@@ -787,7 +787,8 @@ void main() {
     final bytes = writer.write(originalBytes: blank, edited: doc);
     doc = parser.parse(bytes);
     const labelH = 0.22;
-    // Move caption below the picture — V no longer matches Height*0.5.
+    // Hang caption below: pin on bottom edge, locPin at top of label
+    // (Edraw-safe; avoids negative TxtPinY).
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
@@ -797,13 +798,15 @@ void main() {
             ..remove('TxtPinX')
             ..remove('TxtPinY')
             ..remove('TxtWidth')
-            ..remove('TxtHeight'),
+            ..remove('TxtHeight')
+            ..remove('TxtLocPinX')
+            ..remove('TxtLocPinY'),
           richText: s.richText.copyWith(
             textBlock: VsdxTextBlock(
               pinXInches: 0.375,
-              pinYInches: -labelH / 2,
+              pinYInches: 0,
               locPinXInches: 0.375,
-              locPinYInches: labelH / 2,
+              locPinYInches: labelH,
               widthInches: 0.75,
               heightInches: labelH,
             ),
@@ -813,7 +816,8 @@ void main() {
     );
     final out = writer.write(originalBytes: bytes, edited: doc);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.richText.textBlock.pinYInches, closeTo(-labelH / 2, 1e-6));
+    expect(after.richText.textBlock.pinYInches, closeTo(0, 1e-6));
+    expect(after.richText.textBlock.locPinYInches, closeTo(labelH, 1e-6));
     expect(after.formulas['TxtPinY'], isNull);
     // Resize after reopen must not snap the caption back into the box.
     final grown = after.resizeTo(
@@ -822,7 +826,118 @@ void main() {
       width: 1.5,
       height: 1.5,
     );
-    expect(grown.richText.textBlock.pinYInches, lessThan(0));
+    expect(grown.richText.textBlock.pinYInches, closeTo(0, 1e-6));
+    expect(
+      grown.richText.textBlock.pinYInches! -
+          grown.richText.textBlock.locPinYInches!,
+      lessThan(0),
+    );
+  });
+
+  test('Foreign picture caption below uses non-negative TxtPinY for Edraw', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_caption_below.png';
+    final png = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+      0x00, 0x00, 0x00, 0x00,
+    ]);
+    const labelH = 0.22;
+    final shape = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 3,
+      width: 0.75,
+      height: 0.75,
+      imagePartName: part,
+    ).copyWith(
+      text: 'Cloud',
+      richText: VsdxRichText(
+        runs: const <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'Cloud',
+            paraStyle: VsdxParaStyle(horizontalAlign: VsdxHorzAlign.center),
+          ),
+        ],
+        textBlock: VsdxTextBlock(
+          pinXInches: 0.375,
+          pinYInches: 0,
+          locPinXInches: 0.375,
+          locPinYInches: labelH,
+          widthInches: 0.75,
+          heightInches: labelH,
+          verticalAlign: VsdxVertAlign.middle,
+        ),
+      ),
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('Type="Foreign"'));
+    expect(pageXml, contains('Cloud'));
+    // EdrawMax ignores / clamps negative TxtPinY — export must stay ≥ 0.
+    expect(pageXml, isNot(contains('N="TxtPinY" V="-')));
+    expect(pageXml, contains('N="TxtPinY" V="0"'));
+    expect(pageXml, contains('N="TxtLocPinY" V="0.22"'));
+    expect(pageXml, contains('N="TxtHeight" V="0.22"'));
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.textBlock.pinYInches, closeTo(0, 1e-6));
+    expect(after.richText.textBlock.locPinYInches, closeTo(labelH, 1e-6));
+  });
+
+  test('writer rewrites negative TxtPinY caption into Edraw-safe form', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_neg_pin.png';
+    final png = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    ]);
+    const labelH = 0.22;
+    // Legacy model used negative TxtPinY; export must rewrite for Edraw.
+    final shape = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 3,
+      width: 0.75,
+      height: 0.75,
+      imagePartName: part,
+    ).copyWith(
+      text: 'Cloud',
+      richText: VsdxRichText(
+        runs: const <VsdxTextRun>[VsdxTextRun(text: 'Cloud')],
+        textBlock: VsdxTextBlock(
+          pinXInches: 0.375,
+          pinYInches: -labelH / 2,
+          locPinXInches: 0.375,
+          locPinYInches: labelH / 2,
+          widthInches: 0.75,
+          heightInches: labelH,
+        ),
+      ),
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final pageXml = VsdxPackage.open(writer.write(originalBytes: blank, edited: doc))
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, isNot(contains('N="TxtPinY" V="-')));
+    expect(pageXml, contains('N="TxtPinY" V="0"'));
+    expect(pageXml, contains('N="TxtLocPinY" V="0.22"'));
   });
 
   test('page rename round-trips', () {

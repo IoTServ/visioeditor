@@ -5569,12 +5569,15 @@ class EditorController extends ChangeNotifier {
                   ),
                 ),
               ],
+              // Pin at the shape's bottom edge (Y=0) with LocPin at the top
+              // of the caption box so the label hangs fully below. Prefer this
+              // over a negative TxtPinY — EdrawMax clamps / ignores negative
+              // pins and would otherwise paint the caption on top of the glyph.
               textBlock: VsdxTextBlock(
                 pinXInches: w / 2,
-                // Sit just under the picture (shape-local Y-up; y=0 is bottom).
-                pinYInches: -labelH / 2,
+                pinYInches: 0,
                 locPinXInches: labelW / 2,
-                locPinYInches: labelH / 2,
+                locPinYInches: labelH,
                 widthInches: labelW,
                 heightInches: labelH,
                 verticalAlign: VsdxVertAlign.middle,
