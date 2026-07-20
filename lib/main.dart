@@ -1156,11 +1156,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
           final cur = _workspace.active;
           final l10n = AppLocalizations.of(context);
           final el = EditorL10n.of(context);
+          // Many toolbar IconButtons overflow AppBar on phone/narrow windows.
+          final toolbarWide = MediaQuery.sizeOf(context).width >= 1100;
           return Scaffold(
             appBar: _presentationMode
                 ? null
                 : AppBar(
-                    title: Text(l10n.appTitle),
+                    title: Text(
+                      l10n.appTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     actions: [
                       if (cur != null) ...[
                         IconButton(
@@ -1173,86 +1179,108 @@ class _EditorHomePageState extends State<EditorHomePage> {
                           icon: const Icon(Icons.redo),
                           tooltip: el.redo,
                         ),
-                        IconButton(
-                          onPressed: () =>
-                              setState(() => _showOutline = !_showOutline),
-                          icon: const Icon(Icons.map_outlined),
-                          isSelected: _showOutline,
-                          tooltip: el.outline,
-                        ),
-                        IconButton(
-                          onPressed: () =>
-                              setState(() => _showRulers = !_showRulers),
-                          icon: const Icon(Icons.straighten),
-                          isSelected: _showRulers,
-                          tooltip: el.rulers,
-                        ),
-                        IconButton(
-                          onPressed: cur.toggleGrid,
-                          icon: Icon(
-                              cur.showGrid ? Icons.grid_on : Icons.grid_off),
-                          tooltip: el.toggleGrid,
-                        ),
-                        IconButton(
-                          onPressed: cur.requestFitToWindow,
-                          icon: const Icon(Icons.fit_screen_outlined),
-                          tooltip: el.fitToWindowShortcut,
-                        ),
-                        if (cur.hasDocument)
+                        if (toolbarWide) ...[
                           IconButton(
-                            onPressed: _enterPresentation,
-                            icon: const Icon(Icons.slideshow_outlined),
-                            tooltip: el.presentationModeShortcut,
+                            onPressed: () =>
+                                setState(() => _showOutline = !_showOutline),
+                            icon: const Icon(Icons.map_outlined),
+                            isSelected: _showOutline,
+                            tooltip: el.outline,
                           ),
-                        IconButton(
-                          onPressed: () => setState(
-                              () => _showLayersPanel = !_showLayersPanel),
-                          icon: const Icon(Icons.layers_outlined),
-                          isSelected: _showLayersPanel,
-                          tooltip: el.layers,
-                        ),
-                        IconButton(
-                          onPressed: _insertImage,
-                          icon: const Icon(Icons.image_outlined),
-                          tooltip: el.insertImage,
-                        ),
+                          IconButton(
+                            onPressed: () =>
+                                setState(() => _showRulers = !_showRulers),
+                            icon: const Icon(Icons.straighten),
+                            isSelected: _showRulers,
+                            tooltip: el.rulers,
+                          ),
+                          IconButton(
+                            onPressed: cur.toggleGrid,
+                            icon: Icon(
+                                cur.showGrid ? Icons.grid_on : Icons.grid_off),
+                            tooltip: el.toggleGrid,
+                          ),
+                          IconButton(
+                            onPressed: cur.requestFitToWindow,
+                            icon: const Icon(Icons.fit_screen_outlined),
+                            tooltip: el.fitToWindowShortcut,
+                          ),
+                          if (cur.hasDocument)
+                            IconButton(
+                              onPressed: _enterPresentation,
+                              icon: const Icon(Icons.slideshow_outlined),
+                              tooltip: el.presentationModeShortcut,
+                            ),
+                          IconButton(
+                            onPressed: () => setState(
+                                () => _showLayersPanel = !_showLayersPanel),
+                            icon: const Icon(Icons.layers_outlined),
+                            isSelected: _showLayersPanel,
+                            tooltip: el.layers,
+                          ),
+                          IconButton(
+                            onPressed: _insertImage,
+                            icon: const Icon(Icons.image_outlined),
+                            tooltip: el.insertImage,
+                          ),
+                        ],
                         IconButton(
                           onPressed: _save,
                           icon: const Icon(Icons.save_outlined),
                           tooltip: l10n.save,
                         ),
                       ],
-                      IconButton(
-                        onPressed: _newDoc,
-                        icon: const Icon(Icons.note_add_outlined),
-                        tooltip: l10n.newDrawing,
-                      ),
-                      IconButton(
-                        onPressed: _open,
-                        icon: const Icon(Icons.folder_open_outlined),
-                        tooltip: l10n.openDrawing,
-                      ),
-                      if (_recents.isNotEmpty)
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.history),
-                          tooltip: l10n.recentFiles,
-                          onSelected: _openPath,
-                          itemBuilder: (context) => [
-                            for (final p in _recents)
-                              PopupMenuItem<String>(
-                                value: p,
-                                child: Text(
-                                  p.split(RegExp(r'[/\\]')).last,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                          ],
+                      if (toolbarWide) ...[
+                        IconButton(
+                          onPressed: _newDoc,
+                          icon: const Icon(Icons.note_add_outlined),
+                          tooltip: l10n.newDrawing,
                         ),
-                      IconButton(
-                        onPressed: _openSettings,
-                        icon: const Icon(Icons.settings_outlined),
-                        tooltip: l10n.settingsTooltip,
-                      ),
+                        IconButton(
+                          onPressed: _open,
+                          icon: const Icon(Icons.folder_open_outlined),
+                          tooltip: l10n.openDrawing,
+                        ),
+                        if (_recents.isNotEmpty)
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.history),
+                            tooltip: l10n.recentFiles,
+                            onSelected: _openPath,
+                            itemBuilder: (context) => [
+                              for (final p in _recents)
+                                PopupMenuItem<String>(
+                                  value: p,
+                                  child: Text(
+                                    p.split(RegExp(r'[/\\]')).last,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        IconButton(
+                          onPressed: _openSettings,
+                          icon: const Icon(Icons.settings_outlined),
+                          tooltip: l10n.settingsTooltip,
+                        ),
+                      ] else if (cur == null) ...[
+                        // Empty home on a narrow window — keep open/new/settings
+                        // reachable without the document "more" menu.
+                        IconButton(
+                          onPressed: _newDoc,
+                          icon: const Icon(Icons.note_add_outlined),
+                          tooltip: l10n.newDrawing,
+                        ),
+                        IconButton(
+                          onPressed: _open,
+                          icon: const Icon(Icons.folder_open_outlined),
+                          tooltip: l10n.openDrawing,
+                        ),
+                        IconButton(
+                          onPressed: _openSettings,
+                          icon: const Icon(Icons.settings_outlined),
+                          tooltip: l10n.settingsTooltip,
+                        ),
+                      ],
                       if (cur != null)
                         PopupMenuButton<String>(
                           tooltip: l10n.more,
@@ -1304,9 +1332,55 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 _openSettings();
                               case 'close':
                                 _closeTab(_workspace.activeIndex);
+                              case 'outline':
+                                setState(() => _showOutline = !_showOutline);
+                              case 'rulers':
+                                setState(() => _showRulers = !_showRulers);
+                              case 'grid':
+                                cur.toggleGrid();
+                              case 'fit':
+                                cur.requestFitToWindow();
+                              case 'layers':
+                                setState(
+                                    () => _showLayersPanel = !_showLayersPanel);
+                              case 'new':
+                                _newDoc();
+                              case 'open':
+                                _open();
                             }
                           },
                           itemBuilder: (context) => [
+                            if (!toolbarWide) ...[
+                              PopupMenuItem<String>(
+                                value: 'new',
+                                child: Text(l10n.newDrawing),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'open',
+                                child: Text(l10n.openDrawing),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'outline',
+                                child: Text(el.outline),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'rulers',
+                                child: Text(el.rulers),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'grid',
+                                child: Text(el.toggleGrid),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'fit',
+                                child: Text(el.fitToWindowShortcut),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'layers',
+                                child: Text(el.layers),
+                              ),
+                              const PopupMenuDivider(),
+                            ],
                             PopupMenuItem<String>(
                               value: 'selectAll',
                               child: Text(el.selectAllShortcut),
@@ -1443,14 +1517,22 @@ class _EditorHomePageState extends State<EditorHomePage> {
                     Positioned(
                       top: 12,
                       right: 12,
-                      child: _FindBar(
-                        controller: cur,
-                        showReplace: _findShowReplace,
-                        onToggleReplace: () {
-                          setState(
-                              () => _findShowReplace = !_findShowReplace);
-                        },
-                        onClose: _closeFind,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: math.max(
+                            280,
+                            MediaQuery.sizeOf(context).width - 80,
+                          ),
+                        ),
+                        child: _FindBar(
+                          controller: cur,
+                          showReplace: _findShowReplace,
+                          onToggleReplace: () {
+                            setState(
+                                () => _findShowReplace = !_findShowReplace);
+                          },
+                          onClose: _closeFind,
+                        ),
                       ),
                     ),
                   if (_dragging) Positioned.fill(child: _dropOverlay(context)),
@@ -1488,19 +1570,30 @@ class _EditorHomePageState extends State<EditorHomePage> {
               if (page != null) ...[
                 Icon(Icons.crop_free, size: 13, color: scheme.onSurfaceVariant),
                 const SizedBox(width: 4),
-                Text('${_trimNum(page.widthInches)} × '
-                    '${_trimNum(page.heightInches)} in', style: style),
-                const SizedBox(width: 16),
-                Text(el.pageOf(c.currentPageIndex + 1, c.pageCount),
-                    style: style),
+                Flexible(
+                  child: Text(
+                    '${_trimNum(page.widthInches)} × '
+                    '${_trimNum(page.heightInches)} in · '
+                    '${el.pageOf(c.currentPageIndex + 1, c.pageCount)}',
+                    style: style,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
               const Spacer(),
               if (c.isDirty) ...[
                 Text(el.unsaved, style: style),
                 const SizedBox(width: 12),
               ],
-              Text(selCount == 0 ? el.noSelection : el.selectedCount(selCount),
-                  style: style),
+              Text(
+                selCount == 0
+                    ? el.noSelection
+                    : el.selectedCount(selCount),
+                style: style,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
@@ -1848,15 +1941,17 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // Wrap so narrow windows do not overflow the two CTAs.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
             children: [
               FilledButton.icon(
                 onPressed: onNew,
                 icon: const Icon(Icons.note_add_outlined),
                 label: Text(el.newDrawing),
               ),
-              const SizedBox(width: 12),
               OutlinedButton.icon(
                 onPressed: onOpen,
                 icon: const Icon(Icons.folder_open_outlined),
@@ -2793,6 +2888,8 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
                 title: Text(
                   el.addIconLabel,
                   style: Theme.of(context).textTheme.labelMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
@@ -2868,6 +2965,7 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
                     size: 16),
                 const SizedBox(width: 2),
                 Flexible(
+                  flex: 3,
                   child: Text(
                     provider.name,
                     style: text.labelLarge,
@@ -2875,11 +2973,16 @@ class _ThirdPartyIconsPanelState extends State<_ThirdPartyIconsPanel> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  provider.license,
-                  style: text.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 9,
+                Flexible(
+                  flex: 2,
+                  child: Text(
+                    provider.license,
+                    style: text.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 9,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -3617,6 +3720,7 @@ class _PropertyPanel extends StatelessWidget {
                 ? '${link.description}  →  $target'
                 : target,
             style: TextStyle(fontSize: 12, color: scheme.primary),
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
         const SizedBox(height: 8),
@@ -4931,18 +5035,42 @@ class _PageFormatPanel extends StatelessWidget {
             },
           ),
           const SizedBox(height: 8),
-          SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment<bool>(
-                  value: false,
-                  label: Text(EditorL10n.of(context).portrait)),
-              ButtonSegment<bool>(
-                  value: true,
-                  label: Text(EditorL10n.of(context).landscape)),
-            ],
-            selected: <bool>{landscape},
-            onSelectionChanged: (s) => controller.setPageLandscape(s.first),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 200;
+              return SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: narrow
+                    ? ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: WidgetStatePropertyAll(
+                          Theme.of(context).textTheme.labelSmall,
+                        ),
+                      )
+                    : null,
+                segments: [
+                  ButtonSegment<bool>(
+                    value: false,
+                    label: Text(
+                      EditorL10n.of(context).portrait,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  ButtonSegment<bool>(
+                    value: true,
+                    label: Text(
+                      EditorL10n.of(context).landscape,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+                selected: <bool>{landscape},
+                onSelectionChanged: (s) =>
+                    controller.setPageLandscape(s.first),
+              );
+            },
           ),
           const SizedBox(height: 12),
           Row(
@@ -5438,12 +5566,10 @@ class _FindBarState extends State<_FindBar> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.search, size: 18),
                     const SizedBox(width: 6),
-                    SizedBox(
-                      width: 180,
+                    Expanded(
                       child: CallbackShortcuts(
                         bindings: <ShortcutActivator, VoidCallback>{
                           const SingleActivator(LogicalKeyboardKey.escape):
@@ -5473,6 +5599,8 @@ class _FindBarState extends State<_FindBar> {
                       child: Text(
                         label,
                         textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                             fontSize: 12, color: scheme.onSurfaceVariant),
                       ),
@@ -5552,11 +5680,9 @@ class _FindBarState extends State<_FindBar> {
                 if (widget.showReplace) ...[
                   const SizedBox(height: 2),
                   Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const SizedBox(width: 24),
-                      SizedBox(
-                        width: 180,
+                      Expanded(
                         child: TextField(
                           controller: _replace,
                           focusNode: _replaceFocus,

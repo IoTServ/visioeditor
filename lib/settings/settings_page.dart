@@ -29,27 +29,59 @@ class SettingsPage extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SegmentedButton<ThemeMode>(
-                  segments: <ButtonSegment<ThemeMode>>[
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.system,
-                      label: Text(l10n.themeModeSystem),
-                      icon: const Icon(Icons.brightness_auto, size: 18),
-                    ),
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.light,
-                      label: Text(l10n.themeModeLight),
-                      icon: const Icon(Icons.light_mode_outlined, size: 18),
-                    ),
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.dark,
-                      label: Text(l10n.themeModeDark),
-                      icon: const Icon(Icons.dark_mode_outlined, size: 18),
-                    ),
-                  ],
-                  selected: <ThemeMode>{settings.themeMode},
-                  onSelectionChanged: (sel) {
-                    if (sel.isNotEmpty) settings.setThemeMode(sel.first);
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final narrow = constraints.maxWidth < 420;
+                    return SegmentedButton<ThemeMode>(
+                      style: narrow
+                          ? const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            )
+                          : null,
+                      segments: <ButtonSegment<ThemeMode>>[
+                        ButtonSegment<ThemeMode>(
+                          value: ThemeMode.system,
+                          label: narrow
+                              ? null
+                              : Text(
+                                  l10n.themeModeSystem,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                          icon: const Icon(Icons.brightness_auto, size: 18),
+                          tooltip: l10n.themeModeSystem,
+                        ),
+                        ButtonSegment<ThemeMode>(
+                          value: ThemeMode.light,
+                          label: narrow
+                              ? null
+                              : Text(
+                                  l10n.themeModeLight,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                          icon: const Icon(Icons.light_mode_outlined, size: 18),
+                          tooltip: l10n.themeModeLight,
+                        ),
+                        ButtonSegment<ThemeMode>(
+                          value: ThemeMode.dark,
+                          label: narrow
+                              ? null
+                              : Text(
+                                  l10n.themeModeDark,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                          icon: const Icon(Icons.dark_mode_outlined, size: 18),
+                          tooltip: l10n.themeModeDark,
+                        ),
+                      ],
+                      selected: <ThemeMode>{settings.themeMode},
+                      onSelectionChanged: (sel) {
+                        if (sel.isNotEmpty) settings.setThemeMode(sel.first);
+                      },
+                    );
                   },
                 ),
               ),
