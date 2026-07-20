@@ -3186,7 +3186,7 @@ class VsdxToSvgSerializer {
           'y="${_n(yText)}">'
           '<tspan x="${_n(bx)}" font-size="${_n(bFs)}" '
           '${style.bulletFont != null ? 'font-family="${_esc(style.bulletFont!)}" ' : ''}'
-          'fill="#222222">${_esc(glyph)}</tspan></text>',
+          'fill="#000000" fill-opacity="0.87">${_esc(glyph)}</tspan></text>',
         );
       }
 
@@ -3575,8 +3575,9 @@ class VsdxToSvgSerializer {
     bool synthesizeSmallCaps = false,
     double? fontSizeOverride,
   }) {
+    // Match canvas [Colors.black87] (0xDD000000) when no solid/theme colour.
     final color = _resolveColor(c.color, c.themeColorIndex, theme) ??
-        const VsdxColor(0xFF222222);
+        const VsdxColor(0xDD000000);
     final op = _combinedOpacity(color, c.transparency);
     var fs = math.max(c.fontSizeInches, 0.04);
     switch (c.position) {

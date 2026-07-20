@@ -2049,14 +2049,14 @@ class EditorController extends ChangeNotifier {
       undoSelection: undoSel,
     );
     // Match stencil drop: reparent into a container / lane under the pin
-    // (or line midpoint) so lane resize / collapse keeps the new shape.
+    // (or line midpoint). Transient so insert + contain stay one undo step.
     final dropX = shape.is1D
         ? ((shape.beginX ?? shape.pinX) + (shape.endX ?? shape.pinX)) / 2
         : shape.pinX;
     final dropY = shape.is1D
         ? ((shape.beginY ?? shape.pinY) + (shape.endY ?? shape.pinY)) / 2
         : shape.pinY;
-    applyDropContainmentAt(dropX, dropY, transient: false);
+    applyDropContainmentAt(dropX, dropY, transient: true);
   }
 
   /// Create a connector line between two page points. When [beginTarget] /
@@ -2298,8 +2298,8 @@ class EditorController extends ChangeNotifier {
       targetId: id,
       dir: dir,
     );
-    // Same containment as stencil drop so lane / container parenting applies.
-    applyDropContainmentAt(snap(cx), snap(cy), transient: false);
+    // Fold lane/container reparent into the same undo step as the insert.
+    applyDropContainmentAt(snap(cx), snap(cy), transient: true);
   }
 
   /// Shared glue + route for [connectDirectional] / [quickAddInDirection]:
@@ -2657,7 +2657,17 @@ class EditorController extends ChangeNotifier {
     if (doc == null || page == null) return;
     final id = page.nextFreeShapeId();
     final built = build(id, snap(cx), snap(cy));
-    final shape = _withMemoStyle(built, includeFill: !built.is1D);
+    var shape = _withMemoStyle(built, includeFill: !built.is1D);
+    // Materialise default blue points like [createShapeByDrag] / quick-add so
+    // exported diagrams keep glue targets (writer no longer invents them).
+    if (!shape.is1D && shape.connectionPoints.isEmpty) {
+      shape = shape.copyWith(
+        connectionPoints: VsdxPage.defaultConnectionPoints(
+          shape.width,
+          shape.height,
+        ),
+      );
+    }
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
@@ -2667,8 +2677,8 @@ class EditorController extends ChangeNotifier {
       doc.replacePage(_currentPageIndex, page.addShape(shape)),
       undoSelection: undoSel,
     );
-    // Same containment as canvas stencil drop / createShapeByDrag.
-    applyDropContainmentAt(snap(cx), snap(cy), transient: false);
+    // Fold containment into the same undo step as the insert (transient).
+    applyDropContainmentAt(snap(cx), snap(cy), transient: true);
   }
 
   /// Delete all selected shapes as a single undo step.
