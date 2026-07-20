@@ -240,6 +240,37 @@ void main() {
       expect(page.connects.any((c) => c.toSheetId == victim.id), isFalse);
     });
 
+    test('locked shapes reject mutate ops', () {
+      final doc = built();
+      final target = doc.pages.single.shapes.first;
+      final lockedDoc = doc.replacePage(
+        0,
+        doc.pages.single.updateShapeById(
+          target.id,
+          (s) => s.copyWith(locked: true),
+        ),
+      );
+      final pinX = lockedDoc.pages.single.findShapeById(target.id)!.pinX;
+      final r = applyOps(lockedDoc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'id': target.id,
+          'fill': '#FF0000',
+        },
+        <String, dynamic>{
+          'op': 'move_shape',
+          'id': target.id,
+          'x': 9.0,
+          'y': 9.0,
+        },
+        <String, dynamic>{'op': 'delete_shape', 'id': target.id},
+      ]);
+      expect(r.log.any((l) => l.contains('locked')), isTrue);
+      final after = r.document.pages.single.findShapeById(target.id)!;
+      expect(after.pinX, closeTo(pinX, 1e-9));
+      expect(after.fill.foreground?.value, isNot(0xFFFF0000));
+    });
+
     test('applyOpsBytes round-trips through the writer', () {
       final original = DiagramSpec.parse(_spec).build();
       final out = applyOpsBytes(original, '''

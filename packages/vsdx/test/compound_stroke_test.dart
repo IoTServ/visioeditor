@@ -62,4 +62,13 @@ void main() {
     expect(solid.themeBackgroundIndex, isNull);
     expect(solid.themeForegroundIndex, isNull);
   });
+
+  test('samplePathD flattens circular A arcs off the chord', () {
+    // Semicircle from (0,0) to (2,0) with r=1, sweep=0 → apex near (1,1).
+    final arc = samplePathD('M 0 0 A 1 1 0 0 0 2 0');
+    expect(arc.points.length, greaterThan(3));
+    final midY = arc.points.map((p) => p.y).reduce((a, b) => a > b ? a : b);
+    expect(midY, greaterThan(0.5),
+        reason: 'arc samples must leave the chord, not lerp along it');
+  });
 }

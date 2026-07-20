@@ -1041,6 +1041,83 @@ void main() {
     expect(svg, contains('feColorMatrix'));
   });
 
+  test('SVG vector metafile Blur/Brightness emit tone filter', () {
+    final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
+        .readAsBytesSync();
+    const part = '/visio/media/tone.wmf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 7,
+          pinX: 2,
+          pinY: 1.5,
+          width: 3,
+          height: 2,
+          imagePartName: part,
+        ).copyWith(
+          imageBlur: 0.3,
+          imageBrightness: 0.65,
+          imageContrast: 0.35,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: wmf, mimeType: 'image/x-wmf'),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(svg, contains('id="img-tone-7"'));
+    expect(svg, contains('feGaussianBlur'));
+    expect(svg, contains('feColorMatrix'));
+  });
+
+  test('SVG Foreign image reflection embeds the bitmap not a gray plate', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final png = Uint8List.fromList(base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ));
+    const part = 'media/image_refl.png';
+    final images = ImageRegistry.empty.withImage(
+      VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
+    );
+    final shape = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.5,
+      imagePartName: part,
+    ).copyWith(
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        transparency: 0.3,
+      ),
+    );
+    doc = doc
+        .copyWith(images: images)
+        .replacePage(0, doc.pages.first.addShape(shape));
+    final svg = VsdxToSvgSerializer().serializePage(
+      doc.pages.first,
+      images: doc.images,
+    );
+    expect(svg, contains('href="data:image/png;base64,'));
+    // Reflection + body each embed the bitmap (not a gray #666 silhouette).
+    expect(
+      'href="data:image/png;base64,'.allMatches(svg).length,
+      greaterThanOrEqualTo(2),
+    );
+    expect(svg.contains('fill="#666666"'), isFalse);
+  });
+
   test('SVG Foreign ImgOffset/ImgWidth crop and Transparency', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

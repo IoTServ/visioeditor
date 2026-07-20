@@ -4313,7 +4313,16 @@ class EditorController extends ChangeNotifier {
   void setNoFill() => _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
-          return s.copyWith(fill: s.fill.copyWith(pattern: 0, gradient: null));
+          // Clear theme slots too — otherwise a later hatch can revive a stale
+          // FillBkgnd AccentColor (same hygiene as [setFillPattern(0)]).
+          return s.copyWith(
+            fill: s.fill.copyWith(
+              pattern: 0,
+              gradient: null,
+              clearThemeForegroundIndex: true,
+              clearThemeBackgroundIndex: true,
+            ),
+          );
         },
         rememberStyle: true,
       );

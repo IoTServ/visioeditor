@@ -97,4 +97,19 @@ void main() {
     expect(fill.background?.value, 0xFFFFCC00);
     expect(fill.themeBackgroundIndex, isNull);
   });
+
+  test('setNoFill clears hatch FillBkgnd theme so it cannot revive', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setFillPattern(2)
+      ..setFillBackgroundThemeSlot(ThemeSlot.accent2)
+      ..setNoFill()
+      ..setFillPattern(2);
+    final fill = c.currentPage!.shapes.single.fill;
+    expect(fill.pattern, 2);
+    expect(fill.themeBackgroundIndex, isNull);
+    expect(fill.themeForegroundIndex, isNull);
+  });
 }

@@ -1111,8 +1111,7 @@ class VsdxToSvgSerializer {
     if (!refl.enabled || refl.sizeInches <= 0) return;
     final hasFill = !noFill && shape.fill.hasFill;
     final hasStroke = !noLine && shape.line.hasLine;
-    // Foreign pictures mirror a silhouette when fill/stroke are off (canvas
-    // paints the bitmap; SVG approximates with a filled frame).
+    // Foreign pictures mirror the real bitmap/metafile (canvas [_paintImage]).
     final imageMirror = shape.hasImage && !hasFill && !hasStroke;
     if (!hasFill && !hasStroke && !imageMirror) return;
     final alpha = (1 - refl.transparency).clamp(0.0, 1.0);
@@ -1145,8 +1144,9 @@ class VsdxToSvgSerializer {
     late final String fillPaint;
     late final double fillOp;
     if (imageMirror) {
-      fillPaint = '#666666';
-      fillOp = alpha * 0.55;
+      // Content is written via [_writeForeignImageContent]; path fill unused.
+      fillPaint = 'none';
+      fillOp = 0;
     } else if (!hasFill) {
       fillPaint = 'none';
       fillOp = 0;
@@ -1204,11 +1204,30 @@ class VsdxToSvgSerializer {
       buf.writeln(
         '$indent<g transform="translate(0 ${_n(-dist)}) '
         'translate(0 ${_n(bottomY)}) scale(1 -1) '
-        'translate(0 ${_n(-bottomY)})">'
-        '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp * 0.55)}" '
-        '$strokeAttrs/>'
-        '</g>',
+        'translate(0 ${_n(-bottomY)})">',
       );
+      if (imageMirror) {
+        final geomClip = 'refl-img-$paintId';
+        buf.writeln(
+          '$indent  <defs><clipPath id="$geomClip">'
+          '<path d="$d"/></clipPath></defs>'
+          '$indent  <g clip-path="url(#$geomClip)" '
+          'opacity="${_n(alpha * 0.55)}">',
+        );
+        _writeForeignImageContent(
+          buf,
+          shape,
+          indent: '$indent    ',
+          toneIdSuffix: '-refl',
+        );
+        buf.writeln('$indent  </g>');
+      } else {
+        buf.writeln(
+          '$indent  <path d="$d" fill="$fillPaint" '
+          'fill-opacity="${_n(fillOp * 0.55)}" $strokeAttrs/>',
+        );
+      }
+      buf.writeln('$indent</g>');
       return;
     }
     final blurPad = math.max(refl.blurInches, 0.001) * 3;
@@ -1243,11 +1262,30 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '$indent<g clip-path="url(#$cid)" mask="url(#$maskId)" '
       'transform="translate(0 ${_n(-dist)}) translate(0 ${_n(bottomY)}) '
-      'scale(1 -1) translate(0 ${_n(-bottomY)})">'
-      '<path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
-      '$strokeAttrs$filter/>'
-      '</g>',
+      'scale(1 -1) translate(0 ${_n(-bottomY)})">',
     );
+    if (imageMirror) {
+      final geomClip = 'refl-img-$paintId';
+      buf.writeln(
+        '$indent  <defs><clipPath id="$geomClip">'
+        '<path d="$d"/></clipPath></defs>'
+        '$indent  <g clip-path="url(#$geomClip)"$filter '
+        'opacity="${_n(alpha)}">',
+      );
+      _writeForeignImageContent(
+        buf,
+        shape,
+        indent: '$indent    ',
+        toneIdSuffix: '-refl',
+      );
+      buf.writeln('$indent  </g>');
+    } else {
+      buf.writeln(
+        '$indent  <path d="$d" fill="$fillPaint" fill-opacity="${_n(fillOp)}" '
+        '$strokeAttrs$filter/>',
+      );
+    }
+    buf.writeln('$indent</g>');
   }
 
   /// Axis-aligned bounds of path `d` in shape-local inches (for gradients).
@@ -1409,10 +1447,7 @@ class VsdxToSvgSerializer {
     return (minX: minX, minY: minY, width: w, height: h);
   }
 
-  /// Sample an SVG elliptical `A` arc (excludes [start], includes [end]).
-  ///
-  /// Circular arcs reuse [sampleArcByBow]; general ellipses use the W3C
-  /// endpoint→centre parameterisation so bounds/tip tangents stay tight.
+  /// Sample an SVG elliptical `A` arc — see [sampleSvgArc].
   static List<Offset2D> _sampleSvgArc(
     Offset2D start,
     Offset2D end, {
@@ -1421,102 +1456,16 @@ class VsdxToSvgSerializer {
     required bool largeArc,
     required bool sweep,
     int steps = 8,
-  }) {
-    if (rx < 1e-12 || ry < 1e-12) return <Offset2D>[end];
-    final dx = end.x - start.x;
-    final dy = end.y - start.y;
-    final chord = math.sqrt(dx * dx + dy * dy);
-    if (chord < 1e-12) return <Offset2D>[end];
-
-    // Circular ArcTo path: recover Visio bow and sample like canvas.
-    if ((rx - ry).abs() <= 1e-9 * math.max(rx, ry)) {
-      final r = rx;
-      final half = chord * 0.5;
-      if (half > r + 1e-9) {
-        // Radii too small for the chord — fall back to the chord.
-        return <Offset2D>[end];
-      }
-      final h = math.sqrt(math.max(0.0, r * r - half * half));
-      final s = largeArc ? r + h : r - h;
-      if (s < 1e-12) return <Offset2D>[end];
-      // Visio: sweep=1 ⇔ bow < 0.
-      final bow = (sweep ? -1.0 : 1.0) * s;
-      return sampleArcByBow(
-        start: start,
-        end: end,
-        bow: bow,
+  }) =>
+      sampleSvgArc(
+        start,
+        end,
+        rx: rx,
+        ry: ry,
+        largeArc: largeArc,
+        sweep: sweep,
         steps: steps,
       );
-    }
-
-    // Elliptical: endpoint-to-centre (SVG / PDF).
-    var rax = rx.abs();
-    var ray = ry.abs();
-    final x1 = start.x;
-    final y1 = start.y;
-    final x2 = end.x;
-    final y2 = end.y;
-    // φ = 0 (Visio emits axis-aligned A); keep general form for robustness.
-    const phi = 0.0;
-    final cosPhi = math.cos(phi);
-    final sinPhi = math.sin(phi);
-    final dx2 = (x1 - x2) / 2;
-    final dy2 = (y1 - y2) / 2;
-    final x1p = cosPhi * dx2 + sinPhi * dy2;
-    final y1p = -sinPhi * dx2 + cosPhi * dy2;
-    var lam = (x1p * x1p) / (rax * rax) + (y1p * y1p) / (ray * ray);
-    if (lam > 1) {
-      final s = math.sqrt(lam);
-      rax *= s;
-      ray *= s;
-    }
-    final rxSq = rax * rax;
-    final rySq = ray * ray;
-    final x1pSq = x1p * x1p;
-    final y1pSq = y1p * y1p;
-    var num = rxSq * rySq - rxSq * y1pSq - rySq * x1pSq;
-    var den = rxSq * y1pSq + rySq * x1pSq;
-    if (den <= 0) return <Offset2D>[end];
-    num = math.max(0.0, num);
-    var coef = math.sqrt(num / den);
-    if (largeArc == sweep) coef = -coef;
-    final cxp = coef * (rax * y1p) / ray;
-    final cyp = coef * -(ray * x1p) / rax;
-    final cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
-    final cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
-
-    double angle(double ux, double uy, double vx, double vy) {
-      final dot = ux * vx + uy * vy;
-      final len = math.sqrt(ux * ux + uy * uy) * math.sqrt(vx * vx + vy * vy);
-      if (len < 1e-18) return 0.0;
-      var ang = math.acos((dot / len).clamp(-1.0, 1.0));
-      if (ux * vy - uy * vx < 0) ang = -ang;
-      return ang;
-    }
-
-    final theta1 = angle(1, 0, (x1p - cxp) / rax, (y1p - cyp) / ray);
-    var dTheta = angle(
-      (x1p - cxp) / rax,
-      (y1p - cyp) / ray,
-      (-x1p - cxp) / rax,
-      (-y1p - cyp) / ray,
-    );
-    if (!sweep && dTheta > 0) dTheta -= 2 * math.pi;
-    if (sweep && dTheta < 0) dTheta += 2 * math.pi;
-
-    final out = <Offset2D>[];
-    for (var i = 1; i <= steps; i++) {
-      final t = i / steps;
-      final a = theta1 + dTheta * t;
-      final cosA = math.cos(a);
-      final sinA = math.sin(a);
-      final x = cosPhi * rax * cosA - sinPhi * ray * sinA + cx;
-      final y = sinPhi * rax * cosA + cosPhi * ray * sinA + cy;
-      out.add(Offset2D(x, y));
-    }
-    if (out.isNotEmpty) out[out.length - 1] = end;
-    return out;
-  }
 
   /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
   Offset2D _pageToLocal(VsdxShape shape, double pageX, double pageY) {
@@ -2398,78 +2347,122 @@ class VsdxToSvgSerializer {
     VsdxShape shape, {
     required String indent,
   }) {
-    final src = _images.findByPart(shape.imagePartName ?? '');
-    if (!embedImages || src == null) {
-      _writeImagePlaceholder(buf, shape, indent: indent);
-      return;
-    }
-    String? mime;
-    List<int>? bytes;
-    MetafileDrawing? vectorDrawing;
-    if (src.isFlutterDecodable) {
-      mime = src.mimeType.isEmpty ? 'image/png' : src.mimeType;
-      bytes = src.bytes;
-    } else {
-      // EMF/WMF/OLE with an embedded DIB — same extract path the canvas uses.
-      final raster = extractMetafileRaster(
-        Uint8List.fromList(src.bytes),
-        mimeType: src.mimeType,
-      );
-      if (raster != null) {
-        mime = 'image/bmp';
-        bytes = raster;
-      } else {
-        // Pure-vector metafile: emit SVG paths (no Flutter rasterizer).
-        final drawing = parseMetafileDrawing(
-          Uint8List.fromList(src.bytes),
-          mimeType: src.mimeType,
-          partName: src.partName,
-        );
-        if (drawing != null && !drawing.isEmpty) {
-          vectorDrawing = drawing;
-        }
-      }
-    }
-    if (vectorDrawing == null && (mime == null || bytes == null)) {
+    final resolved = _resolveForeignImage(shape);
+    if (resolved == null) {
       _writeImagePlaceholder(buf, shape, indent: indent);
       return;
     }
     // Clip + SoftEdges wrap both bitmaps and vector metafiles (canvas does).
     final nest = _writeImageDecorationsOpen(buf, shape, indent: indent);
-    if (vectorDrawing != null) {
-      _writeMetafileDrawing(buf, shape, vectorDrawing, indent: '$indent  ');
-    } else {
-      final href = 'data:$mime;base64,${base64Encode(bytes!)}';
-      final ox = shape.imgOffsetXInches;
-      final oy = shape.imgOffsetYInches;
-      final iw = shape.effectiveImgWidth;
-      final ih = shape.effectiveImgHeight;
-      // Bitmap rows are Y-down — flip about the image rect centre (not the
-      // shape centre) so ImgOffset* pan stays correct under FlipY.
-      final uprightY = shape.flipY ? 1.0 : -1.0;
-      final cx = ox + iw / 2;
-      final cy = oy + ih / 2;
-      final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
-      final opacityAttr =
-          opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
-      final toneAttr = _imageToneFilterAttr(shape, buf, indent: '$indent  ');
-      buf.writeln(
-        '$indent  <g$toneAttr transform="translate(${_n(cx)} ${_n(cy)}) '
-        'scale(1 ${_n(uprightY)}) '
-        'translate(${_n(-cx)} ${_n(-cy)})">'
-        '<image href="$href" x="${_n(ox)}" y="${_n(oy)}" '
-        'width="${_n(iw)}" height="${_n(ih)}" '
-        'preserveAspectRatio="none"$opacityAttr/></g>',
-      );
-    }
+    _writeForeignImageContent(
+      buf,
+      shape,
+      indent: '$indent  ',
+      resolved: resolved,
+    );
     _writeImageDecorationsClose(buf, indent: indent, geomClipped: nest);
   }
 
-  /// Blur / Brightness / Contrast filter for Foreign bitmaps (skip in pdfCompat).
+  /// Resolve Foreign media to a Flutter-decodable bitmap or vector metafile.
+  ({String? mime, List<int>? bytes, MetafileDrawing? vectorDrawing})?
+      _resolveForeignImage(VsdxShape shape) {
+    final src = _images.findByPart(shape.imagePartName ?? '');
+    if (!embedImages || src == null) return null;
+    if (src.isFlutterDecodable) {
+      return (
+        mime: src.mimeType.isEmpty ? 'image/png' : src.mimeType,
+        bytes: src.bytes,
+        vectorDrawing: null,
+      );
+    }
+    final raster = extractMetafileRaster(
+      Uint8List.fromList(src.bytes),
+      mimeType: src.mimeType,
+    );
+    if (raster != null) {
+      return (mime: 'image/bmp', bytes: raster, vectorDrawing: null);
+    }
+    final drawing = parseMetafileDrawing(
+      Uint8List.fromList(src.bytes),
+      mimeType: src.mimeType,
+      partName: src.partName,
+    );
+    if (drawing != null && !drawing.isEmpty) {
+      return (mime: null, bytes: null, vectorDrawing: drawing);
+    }
+    return null;
+  }
+
+  /// Bitmap / metafile content without SoftEdges or box clip (body + reflection).
+  void _writeForeignImageContent(
+    StringBuffer buf,
+    VsdxShape shape, {
+    required String indent,
+    String toneIdSuffix = '',
+    ({String? mime, List<int>? bytes, MetafileDrawing? vectorDrawing})?
+        resolved,
+  }) {
+    final media = resolved ?? _resolveForeignImage(shape);
+    if (media == null) {
+      _writeImagePlaceholder(buf, shape, indent: indent);
+      return;
+    }
+    final toneAttr = _imageToneFilterAttr(
+      shape,
+      buf,
+      indent: indent,
+      idSuffix: toneIdSuffix,
+    );
+    if (media.vectorDrawing != null) {
+      if (toneAttr.isNotEmpty) {
+        buf.writeln('$indent<g$toneAttr>');
+      }
+      _writeMetafileDrawing(
+        buf,
+        shape,
+        media.vectorDrawing!,
+        indent: toneAttr.isNotEmpty ? '$indent  ' : indent,
+      );
+      if (toneAttr.isNotEmpty) {
+        buf.writeln('$indent</g>');
+      }
+      return;
+    }
+    final mime = media.mime;
+    final bytes = media.bytes;
+    if (mime == null || bytes == null) {
+      _writeImagePlaceholder(buf, shape, indent: indent);
+      return;
+    }
+    final href = 'data:$mime;base64,${base64Encode(bytes)}';
+    final ox = shape.imgOffsetXInches;
+    final oy = shape.imgOffsetYInches;
+    final iw = shape.effectiveImgWidth;
+    final ih = shape.effectiveImgHeight;
+    // Bitmap rows are Y-down — flip about the image rect centre (not the
+    // shape centre) so ImgOffset* pan stays correct under FlipY.
+    final uprightY = shape.flipY ? 1.0 : -1.0;
+    final cx = ox + iw / 2;
+    final cy = oy + ih / 2;
+    final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+    final opacityAttr =
+        opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
+    buf.writeln(
+      '$indent<g$toneAttr transform="translate(${_n(cx)} ${_n(cy)}) '
+      'scale(1 ${_n(uprightY)}) '
+      'translate(${_n(-cx)} ${_n(-cy)})">'
+      '<image href="$href" x="${_n(ox)}" y="${_n(oy)}" '
+      'width="${_n(iw)}" height="${_n(ih)}" '
+      'preserveAspectRatio="none"$opacityAttr/></g>',
+    );
+  }
+
+  /// Blur / Brightness / Contrast filter for Foreign images (skip in pdfCompat).
   String _imageToneFilterAttr(
     VsdxShape shape,
     StringBuffer buf, {
     required String indent,
+    String idSuffix = '',
   }) {
     if (pdfCompat) return '';
     final blur = shape.imageBlur.clamp(0.0, 1.0);
@@ -2480,7 +2473,7 @@ class VsdxToSvgSerializer {
         (contrast - 0.5).abs() <= 1e-3) {
       return '';
     }
-    final id = 'img-tone-${shape.id}';
+    final id = 'img-tone-${shape.id}$idSuffix';
     final c = 1.0 + (contrast - 0.5) * 2.0;
     final b = (bright - 0.5) * 2.0;
     final t = (1.0 - c) * 0.5 + b;

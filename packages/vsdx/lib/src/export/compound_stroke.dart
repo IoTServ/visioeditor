@@ -7,6 +7,7 @@ library;
 import 'dart:math' as math;
 
 import '../model/geometry.dart';
+import '../model/spline.dart';
 
 /// One rail of a compound stroke, measured from the path centreline.
 class CompoundRail {
@@ -290,12 +291,11 @@ List<Offset2D> offsetPolyline(
         quad(x1, y1, x, y);
         break;
       case 'A':
-        // Flatten elliptical arc via chord samples (enough for rail offset).
         final rx = num().abs();
         final ry = num().abs();
-        num(); // x-axis rotation
-        num(); // large-arc
-        num(); // sweep
+        num(); // x-axis rotation (Visio emits axis-aligned)
+        final largeArc = num() != 0;
+        final sweep = num() != 0;
         var x = num();
         var y = num();
         if (rel) {
@@ -303,10 +303,19 @@ List<Offset2D> offsetPolyline(
           y += cy;
         }
         final steps =
-            math.max(4, ((rx + ry) / math.max(curveStep, 0.02)).ceil());
-        for (var s = 1; s <= steps; s++) {
-          final t = s / steps;
-          lineTo(cx + (x - cx) * t, cy + (y - cy) * t);
+            math.max(8, ((rx + ry) / math.max(curveStep, 0.02)).ceil());
+        final start = Offset2D(cx, cy);
+        final end = Offset2D(x, y);
+        for (final p in sampleSvgArc(
+          start,
+          end,
+          rx: rx,
+          ry: ry,
+          largeArc: largeArc,
+          sweep: sweep,
+          steps: steps,
+        )) {
+          lineTo(p.x, p.y);
         }
         break;
       case 'Z':
@@ -325,6 +334,113 @@ List<Offset2D> offsetPolyline(
     if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) closed = true;
   }
   return (points: pts, closed: closed);
+}
+
+/// Sample an SVG elliptical `A` arc (excludes [start], includes [end]).
+///
+/// Circular arcs reuse [sampleArcByBow]; general ellipses use the W3C
+/// endpoint→centre parameterisation (same as the SVG serializer).
+List<Offset2D> sampleSvgArc(
+  Offset2D start,
+  Offset2D end, {
+  required double rx,
+  required double ry,
+  required bool largeArc,
+  required bool sweep,
+  int steps = 8,
+}) {
+  if (rx < 1e-12 || ry < 1e-12) return <Offset2D>[end];
+  final dx = end.x - start.x;
+  final dy = end.y - start.y;
+  final chord = math.sqrt(dx * dx + dy * dy);
+  if (chord < 1e-12) return <Offset2D>[end];
+
+  // Circular ArcTo path: recover Visio bow and sample like canvas.
+  if ((rx - ry).abs() <= 1e-9 * math.max(rx, ry)) {
+    final r = rx;
+    final half = chord * 0.5;
+    if (half > r + 1e-9) {
+      return <Offset2D>[end];
+    }
+    final h = math.sqrt(math.max(0.0, r * r - half * half));
+    final s = largeArc ? r + h : r - h;
+    if (s < 1e-12) return <Offset2D>[end];
+    // Visio: sweep=1 ⇔ bow < 0.
+    final bow = (sweep ? -1.0 : 1.0) * s;
+    return sampleArcByBow(
+      start: start,
+      end: end,
+      bow: bow,
+      steps: steps,
+    );
+  }
+
+  // Elliptical: endpoint-to-centre (SVG / PDF).
+  var rax = rx.abs();
+  var ray = ry.abs();
+  final x1 = start.x;
+  final y1 = start.y;
+  final x2 = end.x;
+  final y2 = end.y;
+  const phi = 0.0;
+  final cosPhi = math.cos(phi);
+  final sinPhi = math.sin(phi);
+  final dx2 = (x1 - x2) / 2;
+  final dy2 = (y1 - y2) / 2;
+  final x1p = cosPhi * dx2 + sinPhi * dy2;
+  final y1p = -sinPhi * dx2 + cosPhi * dy2;
+  var lam = (x1p * x1p) / (rax * rax) + (y1p * y1p) / (ray * ray);
+  if (lam > 1) {
+    final s = math.sqrt(lam);
+    rax *= s;
+    ray *= s;
+  }
+  final rxSq = rax * rax;
+  final rySq = ray * ray;
+  final x1pSq = x1p * x1p;
+  final y1pSq = y1p * y1p;
+  var num = rxSq * rySq - rxSq * y1pSq - rySq * x1pSq;
+  var den = rxSq * y1pSq + rySq * x1pSq;
+  if (den <= 0) return <Offset2D>[end];
+  num = math.max(0.0, num);
+  var coef = math.sqrt(num / den);
+  if (largeArc == sweep) coef = -coef;
+  final cxp = coef * (rax * y1p) / ray;
+  final cyp = coef * -(ray * x1p) / rax;
+  final cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+  final cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+
+  double angle(double ux, double uy, double vx, double vy) {
+    final dot = ux * vx + uy * vy;
+    final len = math.sqrt(ux * ux + uy * uy) * math.sqrt(vx * vx + vy * vy);
+    if (len < 1e-18) return 0.0;
+    var ang = math.acos((dot / len).clamp(-1.0, 1.0));
+    if (ux * vy - uy * vx < 0) ang = -ang;
+    return ang;
+  }
+
+  final theta1 = angle(1, 0, (x1p - cxp) / rax, (y1p - cyp) / ray);
+  var dTheta = angle(
+    (x1p - cxp) / rax,
+    (y1p - cyp) / ray,
+    (-x1p - cxp) / rax,
+    (-y1p - cyp) / ray,
+  );
+  if (!sweep && dTheta > 0) dTheta -= 2 * math.pi;
+  if (sweep && dTheta < 0) dTheta += 2 * math.pi;
+
+  final out = <Offset2D>[];
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final a = theta1 + dTheta * t;
+    final cosA = math.cos(a);
+    final sinA = math.sin(a);
+    final x = cosPhi * rax * cosA - sinPhi * ray * sinA + cx;
+    final y = sinPhi * rax * cosA + cosPhi * ray * sinA + cy;
+    out.add(Offset2D(x, y));
+  }
+  if (out.isNotEmpty) out[out.length - 1] = end;
+  return out;
 }
 
 String polylineToPathD(List<Offset2D> pts, {bool closed = false}) {

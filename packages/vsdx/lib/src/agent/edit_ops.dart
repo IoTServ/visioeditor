@@ -121,8 +121,13 @@ ApplyResult applyOps(
         final fillHex = op['fill']?.toString();
         final lineHex = (op['line'] ?? op['stroke'])?.toString();
         for (final id in ids) {
-          if (page.findShapeById(id) == null) {
+          final target = page.findShapeById(id);
+          if (target == null) {
             log.add('set_style: shape $id not found');
+            continue;
+          }
+          if (_isProtected(page, target)) {
+            log.add('set_style: shape $id is locked');
             continue;
           }
           page = page.updateShapeById(id, (s) {
@@ -130,6 +135,7 @@ ApplyResult applyOps(
             // Match UI setFillColor: 1-D strokes never take a fill.
             if (fillHex != null && !s.is1D) {
               if (fillHex.trim().toLowerCase() == 'none') {
+                // Whole-fill replace clears theme slots (matches UI setNoFill).
                 next = next.copyWith(fill: const VsdxFill(pattern: 0));
               } else {
                 final c = parseColorOrNull(fillHex);
@@ -168,8 +174,13 @@ ApplyResult applyOps(
           log.add('set_text: missing or invalid id=${op['id']}');
           break;
         }
-        if (page.findShapeById(id) == null) {
+        final textTarget = page.findShapeById(id);
+        if (textTarget == null) {
           log.add('set_text: shape $id not found');
+          break;
+        }
+        if (_isProtected(page, textTarget)) {
+          log.add('set_text: shape $id is locked');
           break;
         }
         page = page.updateShapeById(
@@ -194,6 +205,10 @@ ApplyResult applyOps(
           log.add('move_shape: shape $id not found');
           break;
         }
+        if (_isProtected(page, moving)) {
+          log.add('move_shape: shape $id is locked');
+          break;
+        }
         // [x],[y] are page inches (same space as listShapes / shapePinPage).
         page = _moveShapeToPagePin(page, id, x, y);
         // Include descendants so glue on group children re-routes (editor
@@ -211,6 +226,10 @@ ApplyResult applyOps(
         final resizing = page.findShapeById(id);
         if (resizing == null) {
           log.add('resize_shape: shape $id not found');
+          break;
+        }
+        if (_isProtected(page, resizing)) {
+          log.add('resize_shape: shape $id is locked');
           break;
         }
         if (resizing.isGlueableConnector &&
@@ -326,8 +345,13 @@ ApplyResult applyOps(
           log.add('delete_shape: missing or invalid id=${op['id']}');
           break;
         }
-        if (page.findShapeById(id) == null) {
+        final deleting = page.findShapeById(id);
+        if (deleting == null) {
           log.add('delete_shape: shape $id not found');
+          break;
+        }
+        if (_isProtected(page, deleting)) {
+          log.add('delete_shape: shape $id is locked');
           break;
         }
         // removeShapeById prunes Connect rows; no selective re-route needed.
@@ -345,6 +369,10 @@ ApplyResult applyOps(
   }
   return ApplyResult(doc.replacePage(idx, page), created, log);
 }
+
+/// True when the shape or its layer tree is locked (matches EditorController).
+bool _isProtected(VsdxPage page, VsdxShape s) =>
+    s.locked || page.isShapeTreeOnLockedLayer(s.id);
 
 /// Add [id] and every descendant shape id into [out] (group move / resize).
 void _addSubtreeIds(VsdxPage page, int id, Set<int> out) {
