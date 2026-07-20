@@ -5050,24 +5050,65 @@ class VsdxWriter {
         changed = true;
       }
     }
-    for (final entry in <(String, double, String, double)>[
-      ('ImgWidth', s.effectiveImgWidth, 'Width*1', s.width),
-      ('ImgHeight', s.effectiveImgHeight, 'Height*1', s.height),
+    for (final entry in <(String, double, String, double, String?, double?)>[
+      (
+        'ImgWidth',
+        s.effectiveImgWidth,
+        'Width*1',
+        s.width,
+        s.formulas['ImgWidth'],
+        s.imgWidthInches,
+      ),
+      (
+        'ImgHeight',
+        s.effectiveImgHeight,
+        'Height*1',
+        s.height,
+        s.formulas['ImgHeight'],
+        s.imgHeightInches,
+      ),
     ]) {
       final cell = _ensureCell(el, entry.$1);
-      final f = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
-      final defaultF = entry.$3.replaceAll(' ', '');
-      // F=Inh is Master inherit — treat as default Width*1/Height*1 mapping.
-      final isDefaultMapping = f.isEmpty || f == defaultF || f == 'Inh';
-      final next = _fmt(isDefaultMapping ? entry.$4 : entry.$2);
-      if (cell.getAttribute('V') != next) {
-        cell.setAttribute('V', next);
-        changed = true;
-      }
-      if (isDefaultMapping) {
-        final curF = cell.getAttribute('F') ?? '';
-        if (curF.replaceAll(' ', '') != defaultF) {
-          cell.setAttribute('F', entry.$3);
+      final defaultF = entry.$3;
+      final defaultFNorm = defaultF.replaceAll(' ', '');
+      final shapeSize = entry.$4;
+      final modelF = _nonInhFormula(entry.$5);
+      final explicit = entry.$6;
+      final curF = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
+      final modelIsCustom = modelF != null &&
+          modelF.replaceAll(' ', '') != defaultFNorm;
+      // Full-frame when model says so, or when size is implicit / matches the
+      // box. Empty F= with V≠size is an absolute crop — do NOT invent Width*1.
+      final modelIsDefault = !modelIsCustom &&
+          (modelF == null
+              ? (explicit == null ||
+                  (explicit - shapeSize).abs() <= _epsilon)
+              : true);
+      final treatAsDefault = modelIsDefault || curF == 'Inh';
+      if (modelIsCustom) {
+        final next = _fmt(entry.$2);
+        if (cell.getAttribute('V') != next) {
+          cell.setAttribute('V', next);
+          changed = true;
+        }
+        if (cell.getAttribute('F') != modelF) {
+          cell.setAttribute('F', modelF!);
+          changed = true;
+        }
+      } else if (treatAsDefault) {
+        final next = _fmt(shapeSize);
+        if (cell.getAttribute('V') != next) {
+          cell.setAttribute('V', next);
+          changed = true;
+        }
+        if (curF != defaultFNorm) {
+          cell.setAttribute('F', defaultF);
+          changed = true;
+        }
+      } else {
+        final next = _fmt(entry.$2);
+        if (cell.getAttribute('V') != next || curF.isNotEmpty) {
+          _writeValue(cell, next);
           changed = true;
         }
       }

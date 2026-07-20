@@ -2333,6 +2333,61 @@ void main() {
     );
   });
 
+  test('absolute ImgWidth without F= survives patch (not rewritten to Width*1)',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_abs_crop.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    // Absolute crop: V≠Width and no F= (common Visio / hand-authored crop).
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    ).copyWith(
+      imgWidthInches: 1,
+      imgHeightInches: 1.25,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final out1 = writer.write(originalBytes: blank, edited: doc);
+    // Trigger patch path (move) without changing crop.
+    doc = parser.parse(out1);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.25),
+      ),
+    );
+    final out2 = writer.write(originalBytes: out1, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out2)
+          .findFile('visio/pages/page1.xml')!
+          .content as List<int>,
+    );
+    expect(outXml, isNot(contains('N="ImgWidth" V="2" F="Width*1"')),
+        reason: 'must not invent full-frame Width*1 over absolute crop');
+    expect(outXml, contains('N="ImgWidth" V="1"'));
+    expect(outXml, contains('N="ImgHeight" V="1.25"'));
+    final after = parser.parse(out2).pages.first.findShapeById(id)!;
+    expect(after.imgWidthInches, closeTo(1, 1e-6));
+    expect(after.imgHeightInches, closeTo(1.25, 1e-6));
+    expect(after.formulas['ImgWidth'], isNull);
+  });
+
   test('custom ImgOffset crop formula is preserved on rewrite', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
