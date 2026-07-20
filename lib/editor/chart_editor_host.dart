@@ -20,7 +20,7 @@ class ChartEditorHost extends StatelessWidget {
     if (!ChartOps.isCustomEditorKind(kind)) {
       return ChartConfigPanel(controller: controller);
     }
-    return switch (kind) {
+    final editor = switch (kind) {
       'candlestick' => _CandlestickEditor(controller: controller),
       'heatmap' => _HeatmapEditor(controller: controller),
       'gantt' => _GanttEditor(controller: controller),
@@ -195,6 +195,14 @@ class ChartEditorHost extends StatelessWidget {
         ),
       _ => ChartConfigPanel(controller: controller),
     };
+    if (editor is ChartConfigPanel) return editor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        editor,
+        const _SpecialtyApplyButton(),
+      ],
+    );
   }
 }
 
@@ -441,8 +449,9 @@ class _NumField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: TextField(
+      child: _CommitTextField(
         controller: controller,
+        onCommit: onCommit,
         decoration: InputDecoration(
           isDense: true,
           labelText: label,
@@ -455,8 +464,62 @@ class _NumField extends StatelessWidget {
         inputFormatters: [
           FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]')),
         ],
-        onEditingComplete: onCommit,
-        onSubmitted: (_) => onCommit(),
+      ),
+    );
+  }
+}
+
+/// Text field that commits on Enter and when focus leaves (tap outside).
+class _CommitTextField extends StatelessWidget {
+  const _CommitTextField({
+    required this.controller,
+    required this.onCommit,
+    this.decoration,
+    this.style,
+    this.keyboardType,
+    this.inputFormatters,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onCommit;
+  final InputDecoration? decoration;
+  final TextStyle? style;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      decoration: decoration ??
+          const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+      style: style,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      onEditingComplete: onCommit,
+      onSubmitted: (_) => onCommit(),
+      onTapOutside: (_) => onCommit(),
+    );
+  }
+}
+
+class _SpecialtyApplyButton extends StatelessWidget {
+  const _SpecialtyApplyButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: () => FocusScope.of(context).unfocus(),
+          child: Text(el.applyChart),
+        ),
       ),
     );
   }
@@ -836,6 +899,7 @@ class _HeatmapEditorState extends State<_HeatmapEditor>
                                 decimal: true),
                             onEditingComplete: _commit,
                             onSubmitted: (_) => _commit(),
+                            onTapOutside: (_) => _commit(),
                           ),
                         ),
                       ],
@@ -1016,6 +1080,7 @@ class _GanttEditorState extends State<_GanttEditor>
                   ),
                   style: const TextStyle(fontSize: 12),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -1138,6 +1203,7 @@ class _BoxplotEditorState extends State<_BoxplotEditor>
                   const TextInputType.numberWithOptions(decimal: true),
               onEditingComplete: _commit,
               onSubmitted: (_) => _commit(),
+              onTapOutside: (_) => _commit(),
             ),
           ),
           const SizedBox(height: 8),
@@ -1257,6 +1323,50 @@ class _SlopeEditorState extends State<_SlopeEditor>
     if (chart != null && _before.isEmpty) syncFields(chart);
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    if (parsed.values.isEmpty) return;
+    final pairs = (parsed.values.length / 2).ceil().clamp(1, 6);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < pairs; i++) ...[
+          i * 2 < parsed.values.length ? parsed.values[i * 2] : 0.3,
+          i * 2 + 1 < parsed.values.length ? parsed.values[i * 2 + 1] : 0.7,
+        ],
+      ],
+      labels: <String>[
+        for (var i = 0; i < pairs; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'Series ${i + 1}',
+      ],
+    );
+  }
+
+  void _equalize() {
+    if (_before.isEmpty) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < _before.length; i++) ...[0.35, 0.65],
+      ],
+      labels: <String>[
+        for (var i = 0; i < _labels.length; i++)
+          _labels[i].text.trim().isEmpty
+              ? 'Series ${i + 1}'
+              : _labels[i].text.trim(),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -1269,7 +1379,12 @@ class _SlopeEditorState extends State<_SlopeEditor>
           title: el.stencil('Slope Chart'),
           hint: el.chartSpecialtySlopeHint,
         ),
-        _SpecialtyDataToolbar(count: _before.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _before.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+          onEqualize: _equalize,
+        ),
         for (var i = 0; i < _before.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
@@ -1307,6 +1422,7 @@ class _SlopeEditorState extends State<_SlopeEditor>
                   ),
                   style: const TextStyle(fontSize: 12),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -1434,6 +1550,7 @@ class _CalendarHeatEditorState extends State<_CalendarHeatEditor>
           title: el.stencil('Calendar Heatmap'),
           hint: el.chartSpecialtyCalendarHint,
         ),
+        _SpecialtyDataToolbar(count: _weeks * 7, maxItems: 42),
         Row(
           children: [
             Text(el.chartWeeks, style: Theme.of(context).textTheme.labelMedium),
@@ -1463,33 +1580,45 @@ class _CalendarHeatEditorState extends State<_CalendarHeatEditor>
           ],
         ),
         const SizedBox(height: 4),
-        for (var week = 0; week < _weeks; week++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              children: [
-                for (var day = 0; day < 7; day++) ...[
-                  if (day > 0) const SizedBox(width: 2),
-                  Expanded(
-                    child: TextField(
-                      controller: _cells[week * 7 + day],
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                      ),
-                      style: const TextStyle(fontSize: 10),
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      onEditingComplete: _commit,
-                      onSubmitted: (_) => _commit(),
-                    ),
+        _SpecialtyItemFrame(
+          child: Column(
+            children: [
+              for (var week = 0; week < _weeks; week++)
+                Padding(
+                  padding: EdgeInsets.only(bottom: week < _weeks - 1 ? 4 : 0),
+                  child: Row(
+                    children: [
+                      for (var day = 0; day < 7; day++) ...[
+                        if (day > 0) const SizedBox(width: 2),
+                        Expanded(
+                          child: TextField(
+                            controller: _cells[week * 7 + day],
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 2, vertical: 4),
+                            ),
+                            style: const TextStyle(fontSize: 10),
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            onEditingComplete: _commit,
+                            onSubmitted: (_) => _commit(),
+                            onTapOutside: (_) => _commit(),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+            ],
           ),
+        ),
+        const SizedBox(height: 8),
+        _SpecialtyAddButton(
+          label: el.chartAddItem,
+          onPressed: _weeks < 6 ? () => _commit(weeks: _weeks + 1) : null,
+        ),
       ],
     );
   }
@@ -1715,6 +1844,7 @@ class _PairSeriesEditorState extends State<_PairSeriesEditor>
                         ),
                         style: const TextStyle(fontSize: 12),
                         onEditingComplete: _commit,
+                        onTapOutside: (_) => _commit(),
                       ),
                     ),
                     IconButton(
@@ -1962,6 +2092,7 @@ class _PositionEventsEditorState extends State<_PositionEventsEditor>
                         ),
                         style: const TextStyle(fontSize: 12),
                         onEditingComplete: _commit,
+                        onTapOutside: (_) => _commit(),
                       ),
                     ),
                     IconButton(
@@ -2095,8 +2226,40 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
     _commit();
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    if (parsed.values.isEmpty) return;
+    final n = parsed.values.length.clamp(2, 12);
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: parsed.values.take(n).toList(),
+      extras: ChartOps.formatNestedInner(_inner.clamp(1, n - 1)),
+    );
+  }
+
+  void _equalize() {
+    if (_vals.isEmpty) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: List<double>.filled(_vals.length, 1.0),
+      extras: ChartOps.formatNestedInner(_inner),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final chart = controller.selectedChart;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'nestedDonut' &&
+        _vals.isEmpty) {
+      syncFields(chart);
+    }
     final el = EditorL10n.of(context);
     const maxItems = 12;
     return Column(
@@ -2125,7 +2288,12 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
           ],
         ),
         const SizedBox(height: 8),
-        _SpecialtyDataToolbar(count: _vals.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _vals.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+          onEqualize: _equalize,
+        ),
         for (var i = 0; i < _vals.length; i++) ...[
           _SpecialtyItemFrame(
             child: Row(
@@ -2145,6 +2313,7 @@ class _NestedDonutEditorState extends State<_NestedDonutEditor>
                         const TextInputType.numberWithOptions(decimal: true),
                     onEditingComplete: _commit,
                     onSubmitted: (_) => _commit(),
+                    onTapOutside: (_) => _commit(),
                   ),
                 ),
                 if (_vals.length > 2)
@@ -2249,6 +2418,7 @@ class _KpiTargetEditorState extends State<_KpiTargetEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -2262,6 +2432,7 @@ class _KpiTargetEditorState extends State<_KpiTargetEditor>
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -2275,6 +2446,7 @@ class _KpiTargetEditorState extends State<_KpiTargetEditor>
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),
@@ -2482,6 +2654,7 @@ class _DataTableEditorState extends State<_DataTableEditor>
           title: el.stencil('Data Table'),
           hint: el.chartSpecialtyTableHint,
         ),
+        _SpecialtyDataToolbar(count: _rows * _cols, maxItems: 64),
         Row(
           children: [
             Text(el.chartRows, style: Theme.of(context).textTheme.labelMedium),
@@ -2574,6 +2747,7 @@ class _DataTableEditorState extends State<_DataTableEditor>
                             ),
                             onEditingComplete: _commit,
                             onSubmitted: (_) => _commit(),
+                            onTapOutside: (_) => _commit(),
                           ),
                         ),
                       ],
@@ -2688,6 +2862,7 @@ class _VennEditorState extends State<_VennEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -2698,6 +2873,7 @@ class _VennEditorState extends State<_VennEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),
@@ -2715,6 +2891,7 @@ class _VennEditorState extends State<_VennEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -2725,6 +2902,7 @@ class _VennEditorState extends State<_VennEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),
@@ -2742,6 +2920,7 @@ class _VennEditorState extends State<_VennEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -2752,6 +2931,7 @@ class _VennEditorState extends State<_VennEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),
@@ -2864,6 +3044,47 @@ class _ScorecardEditorState extends State<_ScorecardEditor>
     if (chart != null && _vals.isEmpty) syncFields(chart);
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    if (parsed.values.isEmpty) return;
+    final n = parsed.values.length.clamp(1, 8);
+    final pastedLabs = parsed.labels ?? const <String>[];
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++) parsed.values[i].clamp(0.0, 1.0),
+      ],
+      labels: <String>[
+        for (var i = 0; i < n; i++)
+          i < pastedLabs.length && pastedLabs[i].trim().isNotEmpty
+              ? pastedLabs[i].trim()
+              : 'KPI ${i + 1}',
+      ],
+      extras: ChartOps.formatScorecardCols(_cols),
+    );
+  }
+
+  void _equalize() {
+    if (_vals.isEmpty) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: List<double>.filled(_vals.length, 0.5),
+      labels: <String>[
+        for (var i = 0; i < _labels.length; i++)
+          _labels[i].text.trim().isEmpty
+              ? 'KPI ${i + 1}'
+              : _labels[i].text.trim(),
+      ],
+      extras: ChartOps.formatScorecardCols(_cols),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _ensureFields();
@@ -2892,7 +3113,12 @@ class _ScorecardEditorState extends State<_ScorecardEditor>
           ],
         ),
         const SizedBox(height: 8),
-        _SpecialtyDataToolbar(count: _vals.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _vals.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+          onEqualize: _equalize,
+        ),
         for (var i = 0; i < _vals.length; i++) ...[
           _SpecialtyItemFrame(
             child: Column(
@@ -2929,6 +3155,7 @@ class _ScorecardEditorState extends State<_ScorecardEditor>
                     ),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 _NumField(
@@ -3019,6 +3246,32 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
     _commit();
   }
 
+  Future<void> _paste() async {
+    final chart = controller.selectedChart;
+    final initial = chart == null
+        ? ''
+        : ChartOps.formatValues(ChartOps.chartValues(chart));
+    final result = await _promptChartPaste(context, initial: initial);
+    if (result == null || !mounted) return;
+    final parsed = ChartOps.parseSeriesPaste(result);
+    if (parsed.values.isEmpty) return;
+    final n = parsed.values.length.clamp(1, 5);
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (var i = 0; i < n; i++) parsed.values[i].clamp(0.0, 1.0),
+      ],
+    );
+  }
+
+  void _equalize() {
+    if (_vals.isEmpty) return;
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: List<double>.filled(_vals.length, 0.5),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final chart = controller.selectedChart;
@@ -3032,7 +3285,12 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
           title: el.stencil('Radial Multi'),
           hint: el.chartSpecialtyRadialMultiHint,
         ),
-        _SpecialtyDataToolbar(count: _vals.length, maxItems: maxItems),
+        _SpecialtyDataToolbar(
+          count: _vals.length,
+          maxItems: maxItems,
+          onPaste: _paste,
+          onEqualize: _equalize,
+        ),
         for (var i = 0; i < _vals.length; i++) ...[
           _SpecialtyItemFrame(
             child: Row(
@@ -3047,6 +3305,7 @@ class _RadialMultiEditorState extends State<_RadialMultiEditor>
                       border: const OutlineInputBorder(),
                     ),
                     onEditingComplete: _commit,
+                    onTapOutside: (_) => _commit(),
                   ),
                 ),
                 if (_vals.length > 1)
@@ -3277,6 +3536,7 @@ class _LabeledValuesEditorState extends State<_LabeledValuesEditor>
                         ),
                         style: const TextStyle(fontSize: 13),
                         onEditingComplete: _commit,
+                        onTapOutside: (_) => _commit(),
                       ),
                     ),
                     IconButton(
@@ -3322,6 +3582,7 @@ class _LabeledValuesEditorState extends State<_LabeledValuesEditor>
                         ),
                         onEditingComplete: _commit,
                         onSubmitted: (_) => _commit(),
+                        onTapOutside: (_) => _commit(),
                       ),
                     ),
                     if (_vals.length > 1)
@@ -3501,6 +3762,7 @@ class _ProcessStepsEditorState extends State<_ProcessStepsEditor>
                     ),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<double>(
@@ -3615,6 +3877,7 @@ class _ArcGaugeEditorState extends State<_ArcGaugeEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -3626,6 +3889,7 @@ class _ArcGaugeEditorState extends State<_ArcGaugeEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),
@@ -3728,6 +3992,7 @@ class _LikertEditorState extends State<_LikertEditor>
                     border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 TextField(
@@ -3738,6 +4003,7 @@ class _LikertEditorState extends State<_LikertEditor>
                     border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
               ],
             ),
@@ -3878,6 +4144,7 @@ class _HeatStripEditorState extends State<_HeatStripEditor>
                     style: const TextStyle(fontSize: 11),
                     onEditingComplete: _commit,
                     onSubmitted: (_) => _commit(),
+                    onTapOutside: (_) => _commit(),
                   ),
                 ),
             ],
@@ -4065,6 +4332,7 @@ class _StatusBoardEditorState extends State<_StatusBoardEditor>
                     ),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<double>(
@@ -4194,6 +4462,7 @@ class _PriorityMatrixEditorState extends State<_PriorityMatrixEditor>
                     border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 TextField(
@@ -4205,6 +4474,7 @@ class _PriorityMatrixEditorState extends State<_PriorityMatrixEditor>
                     border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
               ],
             ),
@@ -4337,6 +4607,7 @@ class _CheckboxListEditorState extends State<_CheckboxListEditor>
                     ),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 Row(
                   children: [
@@ -4464,6 +4735,7 @@ class _VoteStackEditorState extends State<_VoteStackEditor>
                     border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 TextField(
@@ -4474,6 +4746,7 @@ class _VoteStackEditorState extends State<_VoteStackEditor>
                     border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
               ],
             ),
@@ -4610,6 +4883,7 @@ class _TrafficRowEditorState extends State<_TrafficRowEditor>
                     ),
                   ),
                   onEditingComplete: _commit,
+                  onTapOutside: (_) => _commit(),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -4746,6 +5020,7 @@ class _CompareCardsEditorState extends State<_CompareCardsEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -4757,6 +5032,7 @@ class _CompareCardsEditorState extends State<_CompareCardsEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),
@@ -4774,6 +5050,7 @@ class _CompareCardsEditorState extends State<_CompareCardsEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -4785,6 +5062,7 @@ class _CompareCardsEditorState extends State<_CompareCardsEditor>
                   border: const OutlineInputBorder(),
                 ),
                 onEditingComplete: _commit,
+                onTapOutside: (_) => _commit(),
               ),
             ],
           ),

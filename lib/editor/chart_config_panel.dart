@@ -383,39 +383,56 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
         if (single) ...[
           Text(el.chartLevel, style: Theme.of(context).textTheme.labelMedium),
           const SizedBox(height: 4),
-          TextField(
-            controller: _percentCtrl,
-            focusNode: _percentFocus,
-            decoration: InputDecoration(
-              isDense: true,
-              suffixText: '%',
-              border: const OutlineInputBorder(),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: scheme.outlineVariant),
+              borderRadius: BorderRadius.circular(8),
             ),
-            style: const TextStyle(fontSize: 13),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,%]')),
-            ],
-            onEditingComplete: _commitPercent,
-            onSubmitted: (_) => _commitPercent(),
-          ),
-          Slider(
-            value: values.first.clamp(0.0, 1.0),
-            min: 0,
-            max: 1,
-            divisions: 100,
-            label: '${(values.first.clamp(0.0, 1.0) * 100).round()}%',
-            onChangeStart: (_) {
-              _flushEdits();
-              controller.beginTransaction();
-            },
-            onChanged: (v) {
-              _percentCtrl.text = ChartOps.formatPercent(v);
-              controller.updateChartItem(0, value: v, transient: true);
-            },
-            onChangeEnd: (_) => controller.commitTransaction(),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _percentCtrl,
+                    focusNode: _percentFocus,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      suffixText: '%',
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 8),
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,%]')),
+                    ],
+                    onEditingComplete: _commitPercent,
+                    onSubmitted: (_) => _commitPercent(),
+                    onTapOutside: (_) => _commitPercent(),
+                  ),
+                  Slider(
+                    value: values.first.clamp(0.0, 1.0),
+                    min: 0,
+                    max: 1,
+                    divisions: 100,
+                    label:
+                        '${(values.first.clamp(0.0, 1.0) * 100).round()}%',
+                    onChangeStart: (_) {
+                      _flushEdits();
+                      controller.beginTransaction();
+                    },
+                    onChanged: (v) {
+                      _percentCtrl.text = ChartOps.formatPercent(v);
+                      controller.updateChartItem(0, value: v, transient: true);
+                    },
+                    onChangeEnd: (_) => controller.commitTransaction(),
+                  ),
+                ],
+              ),
+            ),
           ),
         ] else ...[
           Row(
@@ -490,6 +507,17 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
               ),
             ),
         ],
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: () {
+              _flushEdits();
+              FocusScope.of(context).unfocus();
+            },
+            child: Text(el.applyChart),
+          ),
+        ),
       ],
     );
   }
@@ -624,6 +652,7 @@ class _ChartItemCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 13),
                     onEditingComplete: onCommitLabel,
                     onSubmitted: (_) => onCommitLabel(),
+                    onTapOutside: (_) => onCommitLabel(),
                   ),
                 ),
                 IconButton(
@@ -681,6 +710,7 @@ class _ChartItemCard extends StatelessWidget {
                     ],
                     onEditingComplete: onCommitValue,
                     onSubmitted: (_) => onCommitValue(),
+                    onTapOutside: (_) => onCommitValue(),
                   ),
                 ),
                 if (canRemove)
