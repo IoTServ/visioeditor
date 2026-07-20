@@ -137,6 +137,31 @@ class ChartEditorHost extends StatelessWidget {
           maxItems: 8,
           asPercent: false,
         ),
+      'checkboxList' => _CheckboxListEditor(controller: controller),
+      'gapAnalysis' => _PairSeriesEditor(
+          controller: controller,
+          title: 'Gap Analysis',
+          hintGetter: (el) => el.chartSpecialtyGapAnalysisHint,
+          leftGetter: (el) => el.chartActual,
+          rightGetter: (el) => el.chartTarget,
+          maxItems: 6,
+        ),
+      'stageFunnel' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Stage Funnel',
+          hintGetter: (el) => el.chartSpecialtyStageFunnelHint,
+          maxItems: 8,
+          asPercent: true,
+        ),
+      'rhythmBars' => _LabeledValuesEditor(
+          controller: controller,
+          title: 'Rhythm Bars',
+          hintGetter: (el) => el.chartSpecialtyRhythmBarsHint,
+          maxItems: 8,
+          asPercent: true,
+        ),
+      'voteStack' => _VoteStackEditor(controller: controller),
+      'trafficRow' => _TrafficRowEditor(controller: controller),
       _ => ChartConfigPanel(controller: controller),
     };
   }
@@ -3277,6 +3302,414 @@ class _PriorityMatrixEditorState extends State<_PriorityMatrixEditor>
           ),
           const SizedBox(height: 8),
         ],
+      ],
+    );
+  }
+}
+
+
+class _CheckboxListEditor extends StatefulWidget {
+  const _CheckboxListEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_CheckboxListEditor> createState() => _CheckboxListEditorState();
+}
+
+class _CheckboxListEditorState extends State<_CheckboxListEditor>
+    with _ChartSync<_CheckboxListEditor> {
+  final List<TextEditingController> _labels = [];
+  final List<bool> _done = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in _labels) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final n = mathMax(1, vals.length);
+    final labs = ChartOps.chartLabels(chart, n);
+    while (_labels.length > n) {
+      _labels.removeLast().dispose();
+      _done.removeLast();
+    }
+    while (_labels.length < n) {
+      _labels.add(TextEditingController());
+      _done.add(false);
+    }
+    for (var i = 0; i < n; i++) {
+      if (_labels[i].text != labs[i]) _labels[i].text = labs[i];
+      _done[i] = vals[i] >= 0.5;
+    }
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'checkboxList' &&
+        _labels.isEmpty) {
+      syncFields(chart);
+    }
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[for (final d in _done) d ? 1.0 : 0.0],
+      labels: <String>[
+        for (var i = 0; i < _labels.length; i++)
+          _labels[i].text.trim().isEmpty
+              ? 'Item ${i + 1}'
+              : _labels[i].text.trim(),
+      ],
+    );
+  }
+
+  void _add() {
+    if (_labels.length >= 8) return;
+    _labels.add(TextEditingController(text: 'Item ${_labels.length + 1}'));
+    _done.add(false);
+    _commit();
+  }
+
+  void _remove(int i) {
+    if (_labels.length <= 1) return;
+    _labels.removeAt(i).dispose();
+    _done.removeAt(i);
+    _commit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _ensureFields();
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Checklist'),
+          hint: el.chartSpecialtyCheckboxListHint,
+        ),
+        for (var i = 0; i < _labels.length; i++) ...[
+          TextField(
+            controller: _labels[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: el.chartItemLabel,
+              border: const OutlineInputBorder(),
+            ),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(el.chartStepDone),
+                  value: _done[i],
+                  onChanged: (v) {
+                    setState(() => _done[i] = v ?? false);
+                    _commit();
+                  },
+                ),
+              ),
+              IconButton(
+                onPressed: _labels.length > 1 ? () => _remove(i) : null,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+        ],
+        TextButton.icon(
+          onPressed: _labels.length < 8 ? _add : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(el.chartAddItem),
+        ),
+      ],
+    );
+  }
+}
+
+class _VoteStackEditor extends StatefulWidget {
+  const _VoteStackEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_VoteStackEditor> createState() => _VoteStackEditorState();
+}
+
+class _VoteStackEditorState extends State<_VoteStackEditor>
+    with _ChartSync<_VoteStackEditor> {
+  static const _defaults = <String>['Yes', 'No', 'Abstain'];
+  final List<TextEditingController> _labels =
+      List.generate(3, (_) => TextEditingController());
+  final List<TextEditingController> _vals =
+      List.generate(3, (_) => TextEditingController());
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in [..._labels, ..._vals]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final labs = ChartOps.chartLabels(chart, 3);
+    for (var i = 0; i < 3; i++) {
+      if (_labels[i].text != labs[i]) _labels[i].text = labs[i];
+      final t = ChartOps.formatValues(
+          <double>[i < vals.length ? vals[i] : 0.3]);
+      if (_vals[i].text != t) _vals[i].text = t;
+    }
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: <double>[
+        for (final c in _vals)
+          double.tryParse(c.text.replaceAll(',', '.')) ?? 0.3,
+      ],
+      labels: <String>[
+        for (var i = 0; i < 3; i++)
+          _labels[i].text.trim().isEmpty
+              ? _defaults[i]
+              : _labels[i].text.trim(),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Vote Stack'),
+          hint: el.chartSpecialtyVoteStackHint,
+        ),
+        for (var i = 0; i < 3; i++) ...[
+          TextField(
+            controller: _labels[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: '${el.chartSegment} ${i + 1}',
+              border: const OutlineInputBorder(),
+            ),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _vals[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: el.chartValue,
+              border: const OutlineInputBorder(),
+            ),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _TrafficRowEditor extends StatefulWidget {
+  const _TrafficRowEditor({required this.controller});
+  final EditorController controller;
+  @override
+  State<_TrafficRowEditor> createState() => _TrafficRowEditorState();
+}
+
+class _TrafficRowEditorState extends State<_TrafficRowEditor>
+    with _ChartSync<_TrafficRowEditor> {
+  final List<TextEditingController> _labels = [];
+  final List<double> _status = [];
+
+  @override
+  EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(onControllerTick);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onControllerTick());
+  }
+
+  @override
+  void dispose() {
+    controller.removeListener(onControllerTick);
+    for (final c in _labels) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  String fingerprint(VsdxShape chart) =>
+      '${ChartOps.formatValues(ChartOps.chartValues(chart))}|${ChartOps.formatLabels(ChartOps.chartLabels(chart))}';
+
+  @override
+  void syncFields(VsdxShape chart) {
+    final vals = ChartOps.chartValues(chart);
+    final n = mathMax(1, vals.length);
+    final labs = ChartOps.chartLabels(chart, n);
+    while (_labels.length > n) {
+      _labels.removeLast().dispose();
+      _status.removeLast();
+    }
+    while (_labels.length < n) {
+      _labels.add(TextEditingController());
+      _status.add(1);
+    }
+    for (var i = 0; i < n; i++) {
+      if (_labels[i].text != labs[i]) _labels[i].text = labs[i];
+      _status[i] = vals[i].clamp(0.0, 1.0);
+    }
+  }
+
+  void _ensureFields() {
+    final chart = controller.selectedChart;
+    if (chart != null &&
+        ChartOps.chartKind(chart) == 'trafficRow' &&
+        _labels.isEmpty) {
+      syncFields(chart);
+    }
+  }
+
+  void _commit() {
+    markDirty();
+    controller.setChartSpecialtyData(
+      values: List<double>.of(_status),
+      labels: <String>[
+        for (var i = 0; i < _labels.length; i++)
+          _labels[i].text.trim().isEmpty
+              ? 'Item ${i + 1}'
+              : _labels[i].text.trim(),
+      ],
+    );
+  }
+
+  void _add() {
+    if (_labels.length >= 8) return;
+    _labels.add(TextEditingController(text: 'Item ${_labels.length + 1}'));
+    _status.add(1);
+    _commit();
+  }
+
+  void _remove(int i) {
+    if (_labels.length <= 1) return;
+    _labels.removeAt(i).dispose();
+    _status.removeAt(i);
+    _commit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _ensureFields();
+    final el = EditorL10n.of(context);
+    final statuses = <(double, String)>[
+      (1, el.chartStatusOk),
+      (0.5, el.chartStatusWarn),
+      (0, el.chartStatusBad),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SpecialtyHeader(
+          title: el.stencil('Traffic Row'),
+          hint: el.chartSpecialtyTrafficRowHint,
+        ),
+        for (var i = 0; i < _labels.length; i++) ...[
+          TextField(
+            controller: _labels[i],
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: el.chartItemLabel,
+              border: const OutlineInputBorder(),
+            ),
+            onEditingComplete: _commit,
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<double>(
+                  initialValue: _status[i] >= 0.99
+                      ? 1
+                      : _status[i] >= 0.4
+                          ? 0.5
+                          : 0,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: el.chartStepStatus,
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final s in statuses)
+                      DropdownMenuItem(value: s.$1, child: Text(s.$2)),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _status[i] = v);
+                    _commit();
+                  },
+                ),
+              ),
+              IconButton(
+                onPressed: _labels.length > 1 ? () => _remove(i) : null,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextButton.icon(
+          onPressed: _labels.length < 8 ? _add : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(el.chartAddItem),
+        ),
       ],
     );
   }

@@ -369,6 +369,30 @@ final List<StencilGroup> kChartStencilGroups = <StencilGroup>[
       'Cycle Flow',
       (id, cx, cy) => ChartOps.cycleFlowChart(id: id, pinX: cx, pinY: cy),
     ),
+    Stencil(
+      'Checklist',
+      (id, cx, cy) => ChartOps.checkboxListChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Gap Analysis',
+      (id, cx, cy) => ChartOps.gapAnalysisChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Stage Funnel',
+      (id, cx, cy) => ChartOps.stageFunnelChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Rhythm Bars',
+      (id, cx, cy) => ChartOps.rhythmBarsChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Vote Stack',
+      (id, cx, cy) => ChartOps.voteStackChart(id: id, pinX: cx, pinY: cy),
+    ),
+    Stencil(
+      'Traffic Row',
+      (id, cx, cy) => ChartOps.trafficRowChart(id: id, pinX: cx, pinY: cy),
+    ),
   ], expandAtWidth: 900),
 ];
 

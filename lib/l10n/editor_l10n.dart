@@ -267,6 +267,12 @@ class EditorL10n {
   String get chartSpecialtyMeterClusterHint => _t('chartSpecialtyMeterClusterHint');
   String get chartSpecialtyPriorityMatrixHint => _t('chartSpecialtyPriorityMatrixHint');
   String get chartSpecialtyCycleFlowHint => _t('chartSpecialtyCycleFlowHint');
+  String get chartSpecialtyCheckboxListHint => _t('chartSpecialtyCheckboxListHint');
+  String get chartSpecialtyGapAnalysisHint => _t('chartSpecialtyGapAnalysisHint');
+  String get chartSpecialtyStageFunnelHint => _t('chartSpecialtyStageFunnelHint');
+  String get chartSpecialtyRhythmBarsHint => _t('chartSpecialtyRhythmBarsHint');
+  String get chartSpecialtyVoteStackHint => _t('chartSpecialtyVoteStackHint');
+  String get chartSpecialtyTrafficRowHint => _t('chartSpecialtyTrafficRowHint');
   String get chartQuadrant => _t('chartQuadrant');
   String get chartCells => _t('chartCells');
   String get chartSegment => _t('chartSegment');
