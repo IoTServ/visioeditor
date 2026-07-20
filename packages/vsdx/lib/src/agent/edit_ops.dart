@@ -144,11 +144,20 @@ ApplyResult applyOps(
                     clearThemeForegroundIndex: true,
                     clearThemeBackgroundIndex: true,
                   ),
+                  geometries: [
+                    for (final g in next.geometries) g.copyWith(noFill: true),
+                  ],
                 );
               } else {
                 final c = parseColorOrNull(fillHex);
                 if (c != null) {
-                  next = next.copyWith(fill: next.fill.withSolidForeground(c));
+                  next = next.copyWith(
+                    fill: next.fill.withSolidForeground(c),
+                    geometries: [
+                      for (final g in next.geometries)
+                        g.copyWith(noFill: false),
+                    ],
+                  );
                 } else {
                   log.add(
                     'set_style: invalid fill color "$fillHex" on shape $id',
@@ -165,11 +174,20 @@ ApplyResult applyOps(
                     gradient: null,
                     clearThemeColorIndex: true,
                   ),
+                  geometries: [
+                    for (final g in next.geometries) g.copyWith(noLine: true),
+                  ],
                 );
               } else {
                 final c = parseColorOrNull(lineHex);
                 if (c != null) {
-                  next = next.copyWith(line: next.line.withSolidColor(c));
+                  next = next.copyWith(
+                    line: next.line.withSolidColor(c),
+                    geometries: [
+                      for (final g in next.geometries)
+                        g.copyWith(noLine: false),
+                    ],
+                  );
                 } else {
                   log.add(
                     'set_style: invalid line color "$lineHex" on shape $id',

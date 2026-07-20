@@ -599,6 +599,11 @@ class PageParser {
     'FillForegnd',
     'FillBkgnd',
     'LineColor',
+    // Foreign image crop — keep F= through group rebuild.
+    'ImgOffsetX',
+    'ImgOffsetY',
+    'ImgWidth',
+    'ImgHeight',
   };
 
   /// Collect parametric `F=` for XForm / 1-D / trigger / text-block cells.

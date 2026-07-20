@@ -4293,7 +4293,12 @@ class EditorController extends ChangeNotifier {
   void setFillColor(VsdxColor color) => _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
-          return s.copyWith(fill: s.fill.withSolidForeground(color));
+          return s.copyWith(
+            fill: s.fill.withSolidForeground(color),
+            geometries: [
+              for (final g in s.geometries) g.copyWith(noFill: false),
+            ],
+          );
         },
         rememberStyle: true,
       );
@@ -4322,6 +4327,9 @@ class EditorController extends ChangeNotifier {
               clearThemeForegroundIndex: true,
               clearThemeBackgroundIndex: true,
             ),
+            geometries: [
+              for (final g in s.geometries) g.copyWith(noFill: true),
+            ],
           );
         },
         rememberStyle: true,
@@ -4338,7 +4346,12 @@ class EditorController extends ChangeNotifier {
       );
 
   void setLineColor(VsdxColor color) => _updateSelectedShapes(
-        (s) => s.copyWith(line: s.line.withSolidColor(color)),
+        (s) => s.copyWith(
+          line: s.line.withSolidColor(color),
+          geometries: [
+            for (final g in s.geometries) g.copyWith(noLine: false),
+          ],
+        ),
         rememberStyle: true,
       );
 
@@ -4399,6 +4412,9 @@ class EditorController extends ChangeNotifier {
             gradient: null,
             clearThemeColorIndex: true,
           ),
+          geometries: [
+            for (final g in s.geometries) g.copyWith(noLine: true),
+          ],
         ),
         rememberStyle: true,
       );
@@ -4413,6 +4429,10 @@ class EditorController extends ChangeNotifier {
             gradient: pattern == 0 ? null : VsdxLine.keepGradient,
             clearThemeColorIndex: pattern == 0,
           ),
+          geometries: [
+            for (final g in s.geometries)
+              g.copyWith(noLine: pattern == 0),
+          ],
         ),
         rememberStyle: true,
       );
@@ -4488,6 +4508,10 @@ class EditorController extends ChangeNotifier {
               // Match [setNoFill]: drop FG theme so it cannot revive later.
               clearThemeForegroundIndex: pattern == 0,
             ),
+            geometries: [
+              for (final g in s.geometries)
+                g.copyWith(noFill: pattern == 0),
+            ],
           );
         },
         rememberStyle: true,

@@ -113,6 +113,27 @@ void main() {
     expect(fill.themeForegroundIndex, isNull);
   });
 
+  test('setNoFill / setNoLine sync Geometry NoFill / NoLine', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setNoFill()
+      ..setNoLine();
+    final s = c.currentPage!.shapes.single;
+    expect(s.fill.pattern, 0);
+    expect(s.line.pattern, 0);
+    expect(s.geometries, isNotEmpty);
+    expect(s.geometries.every((g) => g.noFill), isTrue);
+    expect(s.geometries.every((g) => g.noLine), isTrue);
+    c
+      ..setFillColor(const VsdxColor(0xFFFF0000))
+      ..setLineColor(const VsdxColor(0xFF0000FF));
+    final restored = c.currentPage!.shapes.single;
+    expect(restored.geometries.every((g) => !g.noFill), isTrue);
+    expect(restored.geometries.every((g) => !g.noLine), isTrue);
+  });
+
   test('setFillPattern(0) clears foreground theme like setNoFill', () {
     final c = EditorController()..newDocument();
     c

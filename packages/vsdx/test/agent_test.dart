@@ -177,6 +177,10 @@ void main() {
       expect(fill.foregroundTransparency, closeTo(0.25, 1e-9));
       expect(fill.themeForegroundIndex, isNull);
       expect(fill.gradient, isNull);
+      expect(
+        r.document.pages.first.findShapeById(id)!.geometries.every((g) => g.noFill),
+        isTrue,
+      );
     });
 
     test('add_connector line none hides the stroke', () {

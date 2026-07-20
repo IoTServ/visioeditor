@@ -2115,6 +2115,21 @@ class VsdxWriter {
     }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
+      // Companion can still carry F=Inh after Size is scrubbed.
+      changed |=
+          _forceLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
+    }
+    if (!edited.shadow.enabled) {
+      // Keep companion V= (re-enable), but scrub F=Inh so StyleSheet cannot
+      // override offsets / blur while the pattern is off.
+      changed |= _forceLiteralLength(
+          el, 'ShadowOffsetX', edited.shadow.offsetXInches);
+      changed |= _forceLiteralLength(
+          el, 'ShadowOffsetY', edited.shadow.offsetYInches);
+      changed |=
+          _forceLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
+      changed |= _forceLiteralLength(
+          el, 'ShadowForegndTrans', edited.shadow.transparency);
     }
     if (!edited.reflection.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
@@ -4647,8 +4662,9 @@ class VsdxWriter {
     return changed;
   }
 
-  /// Write Geometry NoFill/NoLine when absent. Edraw treats missing NoFill as
-  /// 1 (no fill), so filled shapes export hollow unless we emit V="0".
+  /// Sync Geometry NoFill/NoLine to the model. Edraw treats missing NoFill as
+  /// 1 (no fill), so filled shapes export hollow unless we emit V="0". Also
+  /// force-updates stale cells after UI setNoFill / setNoLine.
   bool _ensureGeometryNoFillNoLine(XmlElement el, VsdxShape s) {
     final sections = <XmlElement>[
       for (final child in el.childElements)
@@ -4663,39 +4679,34 @@ class VsdxWriter {
       final g = i < s.geometries.length ? s.geometries[i] : null;
       final wantFill = g?.noFill ?? false;
       final wantLine = g?.noLine ?? false;
-      if (!_hasCell(section, 'NoFill')) {
-        // Insert before first Row so flags stay section-level.
-        var insertAt = 0;
-        for (var j = 0; j < section.children.length; j++) {
-          final n = section.children[j];
-          if (n is XmlElement && n.name.local == 'Row') {
-            insertAt = j;
-            break;
-          }
-        }
-        section.children.insert(
-          insertAt,
-          _cell('NoFill', wantFill ? '1' : '0'),
-        );
-        changed = true;
-      }
-      if (!_hasCell(section, 'NoLine')) {
-        var insertAt = 0;
-        for (var j = 0; j < section.children.length; j++) {
-          final n = section.children[j];
-          if (n is XmlElement && n.name.local == 'Row') {
-            insertAt = j;
-            break;
-          }
-        }
-        section.children.insert(
-          insertAt,
-          _cell('NoLine', wantLine ? '1' : '0'),
-        );
-        changed = true;
-      }
+      changed |= _syncGeometryFlagCell(section, 'NoFill', wantFill);
+      changed |= _syncGeometryFlagCell(section, 'NoLine', wantLine);
     }
     return changed;
+  }
+
+  bool _syncGeometryFlagCell(XmlElement section, String name, bool want) {
+    final wantV = want ? '1' : '0';
+    final existing = _findCell(section, name);
+    if (existing != null) {
+      if (existing.getAttribute('V') == wantV &&
+          existing.getAttribute('F') == null) {
+        return false;
+      }
+      _writeValue(existing, wantV);
+      return true;
+    }
+    // Insert before first Row so flags stay section-level.
+    var insertAt = 0;
+    for (var j = 0; j < section.children.length; j++) {
+      final n = section.children[j];
+      if (n is XmlElement && n.name.local == 'Row') {
+        insertAt = j;
+        break;
+      }
+    }
+    section.children.insert(insertAt, _cell(name, wantV));
+    return true;
   }
 
   /// Write LocPinX/Y when absent so Edraw/libvisio don't default to (0,0).
@@ -5118,7 +5129,8 @@ class VsdxWriter {
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     } else {
       // Edraw StyleSheet defaults can leave a residual shadow unless the shape
-      // explicitly disables it.
+      // explicitly disables it. Emit both aliases (patch path already does).
+      children.add(_cell('ShadowPattern', '0'));
       children.add(_cell('ShdwPattern', '0'));
     }
     if (s.glow.enabled) {
@@ -5277,10 +5289,7 @@ class VsdxWriter {
       children.add(_buildConnectionSection(cps));
     }
     // Unmodelled cells / sections from the prior XML (group rebuild).
-    final opaque = opaqueById[s.id];
-    if (opaque != null && opaque.isNotEmpty) {
-      children.addAll(opaque.map((n) => n.copy()));
-    }
+    _appendOpaqueChildren(children, s, opaqueById);
     // --- Text ----------------------------------------------------------------
     // Always emit <pp>/<cp> markers (Edraw / Visio do even for a single run).
     if (textRuns.isNotEmpty) {
@@ -5528,7 +5537,27 @@ class VsdxWriter {
     return out;
   }
 
+  /// Append opaque nodes for [s]. When locked, skip Lock* (builder emits them).
+  void _appendOpaqueChildren(
+    List<XmlNode> children,
+    VsdxShape s,
+    Map<int, List<XmlNode>> opaqueById,
+  ) {
+    final opaque = opaqueById[s.id];
+    if (opaque == null || opaque.isEmpty) return;
+    for (final n in opaque) {
+      if (s.locked && n is XmlElement && n.name.local == 'Cell') {
+        final name = n.getAttribute('N');
+        if (name != null && name.startsWith('Lock')) continue;
+      }
+      children.add(n.copy());
+    }
+  }
+
   /// Cells that `_buildShapeElement` may emit (everything else is opaque).
+  ///
+  /// Fine-grained Lock* (except LockMoveX ↔ [VsdxShape.locked]) stay opaque so
+  /// Visio-only protections (LockTextEdit / LockFormat / …) survive grouping.
   static const _modeledShapeCells = <String>{
     'PinX', 'PinY', 'Width', 'Height', 'LocPinX', 'LocPinY', 'Angle',
     'FlipX', 'FlipY', 'BeginX', 'BeginY', 'EndX', 'EndY',
@@ -5553,14 +5582,8 @@ class VsdxWriter {
     'TxtAngle', 'VerticalAlign', 'LeftMargin', 'RightMargin', 'TopMargin',
     'BottomMargin', 'HideText', 'TextBkgnd', 'TextBkgndTrans', 'TextDirection',
     'DefaultTabStop',
-    'LockMoveX', 'LockMoveY', 'LockWidth', 'LockHeight', 'LockAspect',
-    'LockRotate', 'LockDelete', 'LockTextEdit',
-    'LockGroup', 'LockCalcWH', 'LockFormat', 'LockBegin', 'LockEnd',
-    'LockVtxEdit', 'LockSelect',
-    'LockCrop', 'LockCustProp', 'LockFromGroupFormat',
-    'LockThemeColors', 'LockThemeEffects', 'LockThemeConnectors',
-    'LockThemeFonts', 'LockThemeIndex', 'LockReplace', 'LockVariation',
-    'LockPreview',
+    // Only LockMoveX is modeled (↔ locked). Other Lock* survive via opaque.
+    'LockMoveX',
     'ObjType', 'ResizeMode', 'EventDblClick', 'NoAlignBox', 'ShapeSplittable',
     'ThemeIndex', 'QuickStyleFillMatrix', 'QuickStyleLineMatrix',
     'QuickStyleEffectsMatrix', 'QuickStyleFontMatrix',
@@ -5615,32 +5638,50 @@ class VsdxWriter {
               )
             : null);
     final children = <XmlNode>[
-      _cell('PinX', _fmt(s.pinX)),
-      _cell('PinY', _fmt(s.pinY)),
-      _cell('Width', _fmt(s.width)),
-      _cell('Height', _fmt(s.height)),
-      _cell('LocPinX', _fmt(s.width / 2), formula: 'Width*0.5'),
-      _cell('LocPinY', _fmt(s.height / 2), formula: 'Height*0.5'),
-      _cell('Angle', _fmt(s.angleRad)),
+      _cell('PinX', _fmt(s.pinX), formula: s.formulas['PinX']),
+      _cell('PinY', _fmt(s.pinY), formula: s.formulas['PinY']),
+      _cell('Width', _fmt(s.width), formula: s.formulas['Width']),
+      _cell('Height', _fmt(s.height), formula: s.formulas['Height']),
+      _cell(
+        'LocPinX',
+        _fmt(s.effectiveLocPinX),
+        formula: s.formulas['LocPinX'] ??
+            ((s.effectiveLocPinX - s.width / 2).abs() <= _epsilon
+                ? 'Width*0.5'
+                : null),
+      ),
+      _cell(
+        'LocPinY',
+        _fmt(s.effectiveLocPinY),
+        formula: s.formulas['LocPinY'] ??
+            ((s.effectiveLocPinY - s.height / 2).abs() <= _epsilon
+                ? 'Height*0.5'
+                : null),
+      ),
+      _cell('Angle', _fmt(s.angleRad), formula: s.formulas['Angle']),
       // MS-VSDX §2.2.6 Image — Edraw / Visio use these to place the bitmap
       // inside the Foreign shape. Without them many hosts show an empty box.
-      _cell('ImgOffsetX', _fmt(s.imgOffsetXInches)),
-      _cell('ImgOffsetY', _fmt(s.imgOffsetYInches)),
+      _cell('ImgOffsetX', _fmt(s.imgOffsetXInches),
+          formula: s.formulas['ImgOffsetX']),
+      _cell('ImgOffsetY', _fmt(s.imgOffsetYInches),
+          formula: s.formulas['ImgOffsetY']),
       _cell(
         'ImgWidth',
         _fmt(s.effectiveImgWidth),
-        formula: s.imgWidthInches == null ||
-                (s.imgWidthInches! - s.width).abs() <= _epsilon
-            ? 'Width*1'
-            : null,
+        formula: s.formulas['ImgWidth'] ??
+            (s.imgWidthInches == null ||
+                    (s.imgWidthInches! - s.width).abs() <= _epsilon
+                ? 'Width*1'
+                : null),
       ),
       _cell(
         'ImgHeight',
         _fmt(s.effectiveImgHeight),
-        formula: s.imgHeightInches == null ||
-                (s.imgHeightInches! - s.height).abs() <= _epsilon
-            ? 'Height*1'
-            : null,
+        formula: s.formulas['ImgHeight'] ??
+            (s.imgHeightInches == null ||
+                    (s.imgHeightInches! - s.height).abs() <= _epsilon
+                ? 'Height*1'
+                : null),
       ),
       if (s.imageTransparency > _epsilon)
         _cell('Transparency', _fmt(s.imageTransparency)),
@@ -5652,8 +5693,19 @@ class VsdxWriter {
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', s.fill.pattern.toString()),
+      if (s.fill.foreground != null)
+        _cell('FillForegnd', _hex(s.fill.foreground!)),
       _cell('LinePattern', s.line.pattern.toString()),
-      _cell('LineCap', '0'),
+      _cell('LineWeight', _fmt(s.line.weightInches)),
+      _cell('LineCap', _lineCapInt(s.line.cap).toString()),
+      if (s.line.color != null)
+        _cell('LineColor', _hex(s.line.color!))
+      else if (s.line.themeColorIndex != null) ...[
+        _cell('LineColor', '0', formula: 'THEMEVAL()'),
+        _cell('QuickStyleLineColor', s.line.themeColorIndex!.toString()),
+      ],
+      if (s.line.transparency > _epsilon)
+        _cell('LineColorTrans', _fmt(s.line.transparency)),
       // SoftEdges / Rounding / CompoundType — always emit (incl. 0) so
       // StyleSheet inheritance cannot revive effects after Foreign rebuild.
       _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
@@ -5680,6 +5732,7 @@ class VsdxWriter {
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
         ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
     } else {
+      children.add(_cell('ShadowPattern', '0'));
       children.add(_cell('ShdwPattern', '0'));
     }
     if (s.glow.enabled) {
@@ -5704,6 +5757,25 @@ class VsdxWriter {
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
       children.add(_cell('ReflectionSize', '0'));
+    }
+    // Match Shape rebuild: always emit gradient enable flags (incl. 0).
+    if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
+      children
+        ..add(_cell('FillGradientEnabled', '1'))
+        ..add(_cell('FillGradientDir',
+            _gradientDirFromType(s.fill.gradient!.type).toString()))
+        ..add(_cell('FillGradientAngle', _fmt(s.fill.gradient!.angleRad)));
+    } else {
+      children.add(_cell('FillGradientEnabled', '0'));
+    }
+    if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
+      children
+        ..add(_cell('LineGradientEnabled', '1'))
+        ..add(_cell('LineGradientDir',
+            _gradientDirFromType(s.line.gradient!.type).toString()))
+        ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
+    } else {
+      children.add(_cell('LineGradientEnabled', '0'));
     }
     if (s.locked) {
       for (final name in _lockCells) {
@@ -5769,6 +5841,15 @@ class VsdxWriter {
       children
         ..add(_buildCharacterSection(pictureRuns))
         ..add(_buildParagraphSection(pictureRuns));
+      if (s.richText.tabSets.isNotEmpty) {
+        children.add(_buildTabsSection(s.richText.tabSets));
+      }
+      if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
+        children.add(_buildFillGradientSection(s.fill.gradient!));
+      }
+      if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
+        children.add(_buildLineGradientSection(s.line.gradient!));
+      }
       final textEl = XmlElement(XmlName('Text'));
       for (var i = 0; i < pictureRuns.length; i++) {
         textEl.children.add(XmlElement(
@@ -5782,6 +5863,16 @@ class VsdxWriter {
         _appendRunText(textEl.children, pictureRuns[i]);
       }
       children.add(textEl);
+    } else {
+      if (s.richText.tabSets.isNotEmpty) {
+        children.add(_buildTabsSection(s.richText.tabSets));
+      }
+      if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
+        children.add(_buildFillGradientSection(s.fill.gradient!));
+      }
+      if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
+        children.add(_buildLineGradientSection(s.line.gradient!));
+      }
     }
     // Emit frame Geometry (required by Edraw/Visio for Foreign hit-testing).
     // Fall back to a Width×Height rectangle when the model has none.
@@ -5854,10 +5945,7 @@ class VsdxWriter {
       ));
     }
     // Unmodelled cells / sections from the prior XML (group rebuild).
-    final opaque = opaqueById[s.id];
-    if (opaque != null && opaque.isNotEmpty) {
-      children.addAll(opaque.map((n) => n.copy()));
-    }
+    _appendOpaqueChildren(children, s, opaqueById);
     return XmlElement(
       XmlName('Shape'),
       <XmlAttribute>[
@@ -5865,6 +5953,16 @@ class VsdxWriter {
         XmlAttribute(XmlName('NameU'), s.name),
         XmlAttribute(XmlName('Name'), s.name),
         XmlAttribute(XmlName('Type'), 'Foreign'),
+        if (s.masterId != null)
+          XmlAttribute(XmlName('Master'), s.masterId!.toString()),
+        if (s.masterShapeId != null)
+          XmlAttribute(XmlName('MasterShape'), s.masterShapeId!.toString()),
+        if (s.lineStyleId != null)
+          XmlAttribute(XmlName('LineStyle'), s.lineStyleId!.toString()),
+        if (s.fillStyleId != null)
+          XmlAttribute(XmlName('FillStyle'), s.fillStyleId!.toString()),
+        if (s.textStyleId != null)
+          XmlAttribute(XmlName('TextStyle'), s.textStyleId!.toString()),
       ],
       children,
     );

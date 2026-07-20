@@ -7548,4 +7548,192 @@ void main() {
     expect(match!.group(0)!.contains('F='), isFalse);
     expect(match.group(0)!.contains('V="3"'), isTrue);
   });
+
+  test('disabled shadow rebuild emits ShadowPattern and ShdwPattern 0', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(shadow: const VsdxShadow(enabled: true)),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(shadow: VsdxShadow.disabled),
+      ),
+    );
+    // Force rebuild path via group+ungroup of two shapes.
+    final otherId = doc.pages.first.nextFreeShapeId();
+    final gid = otherId + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 4,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          )
+          .group({id, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ShadowPattern" V="0"'), isTrue);
+    expect(pageXml.contains('N="ShdwPattern" V="0"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.shadow.enabled, isFalse);
+  });
+
+  test('Foreign ImgWidth crop formula survives group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    final otherId = picId + 1;
+    final gid = otherId + 1;
+    const part = '/visio/media/image_crop_group.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 5, 6, 7, 8,
+    ]);
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(
+          0,
+          doc.pages.first.addShape(
+            VsdxShapeFactory.picture(
+              id: picId,
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: part,
+            ),
+          ),
+        );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    // Inject crop formula, reparse so formulas map picks it up.
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ImgWidth"[^/]*/>'),
+      '<Cell N="ImgWidth" V="1" F="Width*0.5"/>',
+    );
+    final cropped = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(cropped);
+    expect(doc.pages.first.findShapeById(picId)!.formulas['ImgWidth'],
+        'Width*0.5');
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: otherId,
+              pinX: 5,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+          )
+          .group({picId, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: cropped, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(outXml.contains('N="ImgWidth"'), isTrue);
+    expect(outXml.contains('F="Width*0.5"'), isTrue);
+    expect(outXml.contains('N="FillGradientEnabled" V="0"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.formulas['ImgWidth'], 'Width*0.5');
+    expect(after.hasImage, isTrue);
+  });
+
+  test('fine-grained LockTextEdit survives group rebuild when unlocked', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final a = doc.pages.first.nextFreeShapeId();
+    final b = a + 1;
+    final gid = b + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: a,
+              pinX: 1,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: b,
+              pinX: 3,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Inject LockTextEdit=1 on shape A without LockMoveX (not fully locked).
+    pageXml = pageXml.replaceFirst(
+      '<Shape ID="$a"',
+      '<Shape ID="$a"',
+    );
+    // Insert LockTextEdit after first Cell of shape A.
+    pageXml = pageXml.replaceFirst(
+      RegExp('<Shape ID="$a"[^>]*>\\s*<Cell '),
+      '<Shape ID="$a" NameU="Sheet.$a" Name="Sheet.$a" Type="Shape">'
+          '<Cell N="LockTextEdit" V="1"/><Cell ',
+    );
+    final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(tainted);
+    expect(doc.pages.first.findShapeById(a)!.locked, isFalse);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({a, b}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(outXml.contains('N="LockTextEdit" V="1"'), isTrue);
+  });
 }
