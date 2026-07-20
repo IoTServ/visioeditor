@@ -20,6 +20,7 @@ class VsdxShadow {
     this.blurInches = 0.04,
     this.transparency = 0.4,
     this.enabled = true,
+    this.pattern = 1,
   });
 
   /// Resolved colour. When `null` the renderer falls back to
@@ -42,8 +43,18 @@ class VsdxShadow {
   /// `true` when the shape's `ShadowPattern` cell is non-zero.
   final bool enabled;
 
+  /// Visio `ShadowPattern` / `ShdwPattern` id. Non-zero values select the
+  /// shadow style (1 = solid is the common default). While [enabled] is
+  /// false the last non-zero id is kept so toggle-on / save → reopen can
+  /// restore patterned shadows instead of collapsing to `1`.
+  final int pattern;
+
+  /// Pattern written to XML: `0` when disabled, else a positive Visio id.
+  int get xmlPattern =>
+      enabled ? (pattern <= 0 ? 1 : pattern) : 0;
+
   static const VsdxShadow disabled =
-      VsdxShadow(enabled: false, transparency: 1.0);
+      VsdxShadow(enabled: false, transparency: 1.0, pattern: 1);
 
   /// Sentinel for [copyWith] so callers can clear [color] to `null`.
   static const Object keepColor = Object();
@@ -63,18 +74,24 @@ class VsdxShadow {
     double? blurInches,
     double? transparency,
     bool? enabled,
-  }) =>
-      VsdxShadow(
-        color: identical(color, keepColor) ? this.color : color as VsdxColor?,
-        themeColorIndex: clearThemeColorIndex
-            ? null
-            : (themeColorIndex ?? this.themeColorIndex),
-        offsetXInches: offsetXInches ?? this.offsetXInches,
-        offsetYInches: offsetYInches ?? this.offsetYInches,
-        blurInches: blurInches ?? this.blurInches,
-        transparency: transparency ?? this.transparency,
-        enabled: enabled ?? this.enabled,
-      );
+    int? pattern,
+  }) {
+    final nextEnabled = enabled ?? this.enabled;
+    var nextPattern = pattern ?? this.pattern;
+    if (nextEnabled && nextPattern <= 0) nextPattern = 1;
+    return VsdxShadow(
+      color: identical(color, keepColor) ? this.color : color as VsdxColor?,
+      themeColorIndex: clearThemeColorIndex
+          ? null
+          : (themeColorIndex ?? this.themeColorIndex),
+      offsetXInches: offsetXInches ?? this.offsetXInches,
+      offsetYInches: offsetYInches ?? this.offsetYInches,
+      blurInches: blurInches ?? this.blurInches,
+      transparency: transparency ?? this.transparency,
+      enabled: nextEnabled,
+      pattern: nextPattern,
+    );
+  }
 }
 
 /// Soft "outer glow" effect (`Glow*` cells).
@@ -185,20 +202,27 @@ class VsdxGradientStop {
   final double transparency;
 }
 
-/// Gradient fill descriptor (linear / radial / rectangular).
+/// Gradient fill descriptor (linear / radial / rectangular / path).
 @immutable
 class VsdxGradient {
   const VsdxGradient({
     required this.stops,
     this.type = VsdxGradientType.linear,
     this.angleRad = 0.0,
+    this.dir,
   });
 
   final List<VsdxGradientStop> stops;
   final VsdxGradientType type;
 
-  /// Direction angle (radians, CCW from page +X). Ignored for radial.
+  /// Direction angle (radians, CCW from page +X). Used for linear gradients.
   final double angleRad;
+
+  /// Visio `FillGradientDir` / `LineGradientDir` (MS: 0 linear, 1–7 radial,
+  /// 8–12 rectangular, 13 path). When `null`, the writer emits a canonical
+  /// value for [type]. Preserving the original keeps origin presets (1–7 /
+  /// 8–12) across round-trips.
+  final int? dir;
 }
 
 enum VsdxGradientType { linear, radial, rectangular, path }

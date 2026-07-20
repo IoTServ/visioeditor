@@ -1716,6 +1716,48 @@ void main() {
     expect(after.layers.single.name, 'A');
   });
 
+  test('fill gradient type change can keep theme stop bindings', () {
+    final e = EditorController()..newDocument();
+    addTearDown(e.dispose);
+    const themeStops = <VsdxGradientStop>[
+      VsdxGradientStop(position: 0, themeColorIndex: 1),
+      VsdxGradientStop(position: 1, themeColorIndex: 4),
+    ];
+    e.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 2,
+        height: 1,
+      ).copyWith(
+        fill: const VsdxFill(
+          pattern: 1,
+          gradient: VsdxGradient(
+            type: VsdxGradientType.linear,
+            dir: 0,
+            stops: themeStops,
+          ),
+        ),
+      ),
+      3,
+      3,
+    );
+    // Mimic Format panel: change type without rebuilding solid colours.
+    e.setFillGradient(
+      const VsdxGradient(
+        type: VsdxGradientType.radial,
+        stops: themeStops,
+      ),
+    );
+    final g = e.selectedFill!.gradient!;
+    expect(g.type, VsdxGradientType.radial);
+    expect(g.stops.first.themeColorIndex, 1);
+    expect(g.stops.first.color, isNull);
+    expect(g.stops.last.themeColorIndex, 4);
+    expect(g.stops.last.color, isNull);
+  });
+
   test('setShadow toggles restore colour/offset; setLinePattern(0) clears gradient',
       () {
     final e = EditorController()..newDocument();

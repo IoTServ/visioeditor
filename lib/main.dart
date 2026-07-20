@@ -4129,16 +4129,55 @@ class _PropertyPanel extends StatelessWidget {
       double? angleRad,
     }) {
       final t = newType ?? type ?? VsdxGradientType.linear;
-      final c0 = VsdxColor(color0 ?? stop0 ?? 0xFF1E88E5);
-      final c1 = VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF);
+      final existing = g?.stops ?? const <VsdxGradientStop>[];
+      List<VsdxGradientStop> stops;
+      if (existing.isEmpty) {
+        stops = <VsdxGradientStop>[
+          VsdxGradientStop(
+            position: 0,
+            color: VsdxColor(color0 ?? stop0 ?? 0xFF1E88E5),
+          ),
+          VsdxGradientStop(
+            position: 1,
+            color: VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF),
+          ),
+        ];
+      } else {
+        stops = List<VsdxGradientStop>.from(existing);
+        if (color0 != null) {
+          final s0 = stops.first;
+          stops[0] = VsdxGradientStop(
+            position: s0.position,
+            color: VsdxColor(color0),
+            transparency: s0.transparency,
+          );
+        }
+        if (color1 != null) {
+          if (stops.length > 1) {
+            final s1 = stops[1];
+            stops[1] = VsdxGradientStop(
+              position: s1.position,
+              color: VsdxColor(color1),
+              transparency: s1.transparency,
+            );
+          } else {
+            stops.add(VsdxGradientStop(
+              position: 1,
+              color: VsdxColor(color1),
+            ));
+          }
+        }
+      }
+      // Changing type clears a preserved Visio Dir so the writer emits the
+      // canonical MS enum for the new type; angle-only edits keep Dir.
+      final keepDir =
+          newType == null || newType == g?.type ? g?.dir : null;
       controller.setFillGradient(
         VsdxGradient(
           type: t,
           angleRad: angleRad ?? g?.angleRad ?? 0,
-          stops: <VsdxGradientStop>[
-            VsdxGradientStop(position: 0, color: c0),
-            VsdxGradientStop(position: 1, color: c1),
-          ],
+          dir: keepDir,
+          stops: stops,
         ),
       );
     }
@@ -4248,16 +4287,53 @@ class _PropertyPanel extends StatelessWidget {
       double? angleRad,
     }) {
       final t = newType ?? type ?? VsdxGradientType.linear;
-      final c0 = VsdxColor(color0 ?? stop0 ?? 0xFF212121);
-      final c1 = VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF);
+      final existing = g?.stops ?? const <VsdxGradientStop>[];
+      List<VsdxGradientStop> stops;
+      if (existing.isEmpty) {
+        stops = <VsdxGradientStop>[
+          VsdxGradientStop(
+            position: 0,
+            color: VsdxColor(color0 ?? stop0 ?? 0xFF212121),
+          ),
+          VsdxGradientStop(
+            position: 1,
+            color: VsdxColor(color1 ?? stop1 ?? 0xFFFFFFFF),
+          ),
+        ];
+      } else {
+        stops = List<VsdxGradientStop>.from(existing);
+        if (color0 != null) {
+          final s0 = stops.first;
+          stops[0] = VsdxGradientStop(
+            position: s0.position,
+            color: VsdxColor(color0),
+            transparency: s0.transparency,
+          );
+        }
+        if (color1 != null) {
+          if (stops.length > 1) {
+            final s1 = stops[1];
+            stops[1] = VsdxGradientStop(
+              position: s1.position,
+              color: VsdxColor(color1),
+              transparency: s1.transparency,
+            );
+          } else {
+            stops.add(VsdxGradientStop(
+              position: 1,
+              color: VsdxColor(color1),
+            ));
+          }
+        }
+      }
+      final keepDir =
+          newType == null || newType == g?.type ? g?.dir : null;
       controller.setLineGradient(
         VsdxGradient(
           type: t,
           angleRad: angleRad ?? g?.angleRad ?? 0,
-          stops: <VsdxGradientStop>[
-            VsdxGradientStop(position: 0, color: c0),
-            VsdxGradientStop(position: 1, color: c1),
-          ],
+          dir: keepDir,
+          stops: stops,
         ),
       );
     }

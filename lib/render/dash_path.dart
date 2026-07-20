@@ -55,8 +55,38 @@ List<double>? dashPatternFor(int linePattern) {
       return const [0.12, 0.05, 0.02, 0.05];
     case 5: // dash-dot-dot
       return const [0.12, 0.05, 0.02, 0.05, 0.02, 0.05];
+    case 6: // short dash
+      return const [0.06, 0.04];
+    case 7: // dash long-gap
+      return const [0.10, 0.10];
+    case 8: // sparse dash
+      return const [0.08, 0.12];
     case 9: // long-dash
       return const [0.20, 0.05];
+    case 10: // long-dash-dot
+      return const [0.20, 0.05, 0.02, 0.05];
+    case 11: // long-dash-dot-dot
+      return const [0.20, 0.05, 0.02, 0.05, 0.02, 0.05];
+    case 12: // medium dash
+      return const [0.14, 0.06];
+    case 13: // medium dash-dot
+      return const [0.14, 0.05, 0.02, 0.05];
+    case 14: // medium dash-dot-dot
+      return const [0.14, 0.05, 0.02, 0.05, 0.02, 0.05];
+    case 15: // fine dots
+      return const [0.015, 0.03];
+    case 16: // dash-gap-dash
+      return const [0.10, 0.04, 0.04, 0.04];
+    case 17:
+    case 18:
+      return const [0.16, 0.06];
+    case 19:
+    case 20:
+      return const [0.10, 0.05, 0.03, 0.05];
+    case 21:
+    case 22:
+    case 23:
+      return const [0.08, 0.04, 0.02, 0.04];
     default:
       return const [0.08, 0.04];
   }

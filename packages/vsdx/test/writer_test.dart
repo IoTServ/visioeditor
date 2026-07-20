@@ -6252,6 +6252,158 @@ void main() {
     expect(style.parseShadow(el).enabled, isTrue);
   });
 
+  test('ShadowPattern id > 1 survives export round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            pattern: 3,
+            offsetXInches: 0.1,
+          ),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="ShadowPattern" V="3"'), isTrue);
+    expect(pageXml.contains('N="ShdwPattern" V="3"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.shadow.enabled, isTrue);
+    expect(after.shadow.pattern, 3);
+  });
+
+  test('MS FillGradientDir radial/rectangular/path round-trip', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              type: VsdxGradientType.radial,
+              dir: 4,
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    var out = writer.write(originalBytes: blank, edited: doc);
+    var pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="FillGradientDir" V="4"'), isTrue);
+    expect(pageXml.contains('N="FillGradientDir" V="35"'), isFalse);
+    var after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.gradient!.type, VsdxGradientType.radial);
+    expect(after.fill.gradient!.dir, 4);
+
+    // Rectangular origin preset 9 and path 13.
+    doc = parser.parse(out);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(
+            gradient: VsdxGradient(
+              type: VsdxGradientType.rectangular,
+              dir: 9,
+              stops: s.fill.gradient!.stops,
+            ),
+          ),
+        ),
+      ),
+    );
+    out = writer.write(originalBytes: out, edited: doc);
+    after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.gradient!.type, VsdxGradientType.rectangular);
+    expect(after.fill.gradient!.dir, 9);
+
+    doc = parser.parse(out);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(
+            gradient: VsdxGradient(
+              type: VsdxGradientType.path,
+              dir: 13,
+              stops: s.fill.gradient!.stops,
+            ),
+          ),
+        ),
+      ),
+    );
+    out = writer.write(originalBytes: out, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="FillGradientDir" V="13"'), isTrue);
+    after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.fill.gradient!.type, VsdxGradientType.path);
+    expect(after.fill.gradient!.dir, 13);
+  });
+
+  test('legacy FillGradientDir 35 still parses as radial', () {
+    const style = StyleParser();
+    final el = XmlDocument.parse('''
+      <Shape ID="1" Type="Shape">
+        <Cell N="FillGradientEnabled" V="1"/>
+        <Cell N="FillGradientDir" V="35"/>
+        <Cell N="FillGradientAngle" V="0"/>
+        <Section N="FillGradient">
+          <Row IX="0">
+            <Cell N="GradientStopPosition" V="0"/>
+            <Cell N="GradientStopColor" V="#FF0000"/>
+          </Row>
+          <Row IX="1">
+            <Cell N="GradientStopPosition" V="1"/>
+            <Cell N="GradientStopColor" V="#0000FF"/>
+          </Row>
+        </Section>
+      </Shape>''').rootElement;
+    final fill = style.parseFill(el);
+    expect(fill.gradient, isNotNull);
+    expect(fill.gradient!.type, VsdxGradientType.radial);
+    expect(fill.gradient!.dir, 35);
+  });
+
   test('SpLine=0 solid writes V="0" not omitted', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);

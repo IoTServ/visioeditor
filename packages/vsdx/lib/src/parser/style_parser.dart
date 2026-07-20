@@ -87,19 +87,25 @@ class StyleParser {
       stops: List.unmodifiable(stops),
       type: _gradientTypeFromDir(dir),
       angleRad: angle,
+      dir: dir,
     );
   }
 
-  VsdxGradientType _gradientTypeFromDir(int dir) => switch (dir) {
-        // Visio's `FillGradientDir` codes are messy in the spec; map the
-        // common buckets to our four categories. 0..30 = linear at
-        // different angles, 31..34 = rectangular, 35..38 = radial,
-        // 39..42 = path.
-        >= 31 && < 35 => VsdxGradientType.rectangular,
-        >= 35 && < 39 => VsdxGradientType.radial,
-        >= 39 && < 43 => VsdxGradientType.path,
-        _ => VsdxGradientType.linear,
-      };
+  /// Map Visio `FillGradientDir` / `LineGradientDir` to our type enum.
+  ///
+  /// MS docs: 0 = linear, 1–7 = radial, 8–12 = rectangular, 13 = path.
+  /// Also recognise legacy buckets (31–42) that older builds of this writer
+  /// incorrectly emitted so those files still open with the right type.
+  VsdxGradientType _gradientTypeFromDir(int dir) {
+    if (dir >= 1 && dir <= 7) return VsdxGradientType.radial;
+    if (dir >= 8 && dir <= 12) return VsdxGradientType.rectangular;
+    if (dir == 13) return VsdxGradientType.path;
+    // Legacy incorrect buckets (pre MS-enum fix).
+    if (dir >= 31 && dir < 35) return VsdxGradientType.rectangular;
+    if (dir >= 35 && dir < 39) return VsdxGradientType.radial;
+    if (dir >= 39 && dir < 43) return VsdxGradientType.path;
+    return VsdxGradientType.linear;
+  }
 
   /// Glow* cells → [VsdxGlow].
   ///
@@ -234,6 +240,7 @@ class StyleParser {
       if (!hasCompanion) return VsdxShadow.disabled;
       return VsdxShadow(
         enabled: false,
+        pattern: defaults.pattern <= 0 ? 1 : defaults.pattern,
         color: col.color ?? defaults.color,
         themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
         offsetXInches: ox ?? fallbackOx,
@@ -243,8 +250,10 @@ class StyleParser {
       );
     }
 
+    final patternId = pat ?? (defaults.pattern <= 0 ? 1 : defaults.pattern);
     return VsdxShadow(
       enabled: true,
+      pattern: patternId <= 0 ? 1 : patternId,
       color: col.color ?? defaults.color,
       themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
       offsetXInches: ox ?? fallbackOx,
@@ -334,6 +343,7 @@ class StyleParser {
       stops: List.unmodifiable(stops),
       type: _gradientTypeFromDir(dir),
       angleRad: angle,
+      dir: dir,
     );
   }
 

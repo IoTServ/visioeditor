@@ -4077,6 +4077,7 @@ class VsdxWriter {
 
   bool _patchShadow(XmlElement el, VsdxShadow base, VsdxShadow edited) {
     if (base.enabled == edited.enabled &&
+        base.pattern == edited.pattern &&
         base.color?.value == edited.color?.value &&
         base.themeColorIndex == edited.themeColorIndex &&
         (base.offsetXInches - edited.offsetXInches).abs() <= _epsilon &&
@@ -4087,9 +4088,9 @@ class VsdxWriter {
     }
     var changed = false;
     changed |= _patchInt(
-        el, 'ShadowPattern', base.enabled ? 1 : 0, edited.enabled ? 1 : 0);
+        el, 'ShadowPattern', base.xmlPattern, edited.xmlPattern);
     changed |= _patchInt(
-        el, 'ShdwPattern', base.enabled ? 1 : 0, edited.enabled ? 1 : 0);
+        el, 'ShdwPattern', base.xmlPattern, edited.xmlPattern);
     if (edited.enabled) {
       // Re-enable after Pattern=0: model defaults match so _patchLength /
       // _patchColorOrTheme would skip and leave stale Offset/Foregnd in XML.
@@ -4277,7 +4278,7 @@ class VsdxWriter {
         // Literal V=1 — do not keep F="Inh" / parametric, which would ignore V.
         _writeValue(_ensureCell(el, 'FillGradientEnabled'), '1');
         _writeValue(_ensureCell(el, 'FillGradientDir'),
-            _gradientDirFromType(eg.type).toString());
+            _gradientDirFor(eg).toString());
         _writeValue(_ensureCell(el, 'FillGradientAngle'), _fmt(eg.angleRad));
         _insertBeforeTextOrShapes(el, _buildFillGradientSection(eg));
       } else {
@@ -4311,7 +4312,7 @@ class VsdxWriter {
       if (eg != null && eg.stops.isNotEmpty) {
         _writeValue(_ensureCell(el, 'LineGradientEnabled'), '1');
         _writeValue(_ensureCell(el, 'LineGradientDir'),
-            _gradientDirFromType(eg.type).toString());
+            _gradientDirFor(eg).toString());
         _writeValue(_ensureCell(el, 'LineGradientAngle'), _fmt(eg.angleRad));
         _insertBeforeTextOrShapes(el, _buildLineGradientSection(eg));
       } else {
@@ -4343,6 +4344,7 @@ class VsdxWriter {
     if (identical(a, b)) return true;
     if (a == null || b == null) return a == b;
     if (a.type != b.type ||
+        _gradientDirFor(a) != _gradientDirFor(b) ||
         (a.angleRad - b.angleRad).abs() > 1e-9 ||
         a.stops.length != b.stops.length) {
       return false;
@@ -4360,11 +4362,15 @@ class VsdxWriter {
   }
 
   static int _gradientDirFromType(VsdxGradientType t) => switch (t) {
+        // MS FillGradientDir / LineGradientDir canonical defaults.
         VsdxGradientType.linear => 0,
-        VsdxGradientType.rectangular => 31,
-        VsdxGradientType.radial => 35,
-        VsdxGradientType.path => 39,
+        VsdxGradientType.radial => 4, // mid of 1–7 (centre-ish)
+        VsdxGradientType.rectangular => 10, // mid of 8–12
+        VsdxGradientType.path => 13,
       };
+
+  static int _gradientDirFor(VsdxGradient g) =>
+      g.dir ?? _gradientDirFromType(g.type);
 
   /// Patch text-block transform cells so TxtPin / TxtWidth / TxtAngle / margins
   /// survive a save (parser already reads them; previously only VerticalAlign
@@ -4921,7 +4927,7 @@ class VsdxWriter {
     // Default 3 (reroute on crossover) — matches Visio fixtures. Never use 0
     // (reroute freely): 万兴图示 then discards multi-segment Geometry.
     put('ConFixedCode', (s.connectorProps?.conFixedCode ?? 3).toString());
-    put('ShdwPattern', s.shadow.enabled ? '1' : '0');
+    put('ShdwPattern', s.shadow.xmlPattern.toString());
     // Honour model NoAlignBox / ShapeSplittable / NoLiveDynamics (do not force
     // Edraw defaults over cleared false — rebuild already emits literal 0/1).
     final noLive = s.connectorProps?.noLiveDynamics ?? true;
@@ -5493,8 +5499,8 @@ class VsdxWriter {
     children.add(_cell('LayerMember', s.layerMemberIds.join(';')));
     // --- Effects / text block ------------------------------------------------
     if (s.shadow.enabled) {
-      children.add(_cell('ShadowPattern', '1'));
-      children.add(_cell('ShdwPattern', '1'));
+      children.add(_cell('ShadowPattern', s.shadow.xmlPattern.toString()));
+      children.add(_cell('ShdwPattern', s.shadow.xmlPattern.toString()));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
       } else if (s.shadow.themeColorIndex != null) {
@@ -5553,7 +5559,7 @@ class VsdxWriter {
       children
         ..add(_cell('FillGradientEnabled', '1'))
         ..add(_cell('FillGradientDir',
-            _gradientDirFromType(s.fill.gradient!.type).toString()))
+            _gradientDirFor(s.fill.gradient!).toString()))
         ..add(_cell('FillGradientAngle', _fmt(s.fill.gradient!.angleRad)));
     } else {
       children.add(_cell('FillGradientEnabled', '0'));
@@ -5562,7 +5568,7 @@ class VsdxWriter {
       children
         ..add(_cell('LineGradientEnabled', '1'))
         ..add(_cell('LineGradientDir',
-            _gradientDirFromType(s.line.gradient!.type).toString()))
+            _gradientDirFor(s.line.gradient!).toString()))
         ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
     } else {
       children.add(_cell('LineGradientEnabled', '0'));
@@ -6109,8 +6115,8 @@ class VsdxWriter {
       _cell('FlipY', s.flipY ? '1' : '0'),
     ];
     if (s.shadow.enabled) {
-      children.add(_cell('ShadowPattern', '1'));
-      children.add(_cell('ShdwPattern', '1'));
+      children.add(_cell('ShadowPattern', s.shadow.xmlPattern.toString()));
+      children.add(_cell('ShdwPattern', s.shadow.xmlPattern.toString()));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
       } else if (s.shadow.themeColorIndex != null) {
@@ -6167,7 +6173,7 @@ class VsdxWriter {
       children
         ..add(_cell('FillGradientEnabled', '1'))
         ..add(_cell('FillGradientDir',
-            _gradientDirFromType(s.fill.gradient!.type).toString()))
+            _gradientDirFor(s.fill.gradient!).toString()))
         ..add(_cell('FillGradientAngle', _fmt(s.fill.gradient!.angleRad)));
     } else {
       children.add(_cell('FillGradientEnabled', '0'));
@@ -6176,7 +6182,7 @@ class VsdxWriter {
       children
         ..add(_cell('LineGradientEnabled', '1'))
         ..add(_cell('LineGradientDir',
-            _gradientDirFromType(s.line.gradient!.type).toString()))
+            _gradientDirFor(s.line.gradient!).toString()))
         ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
     } else {
       children.add(_cell('LineGradientEnabled', '0'));
