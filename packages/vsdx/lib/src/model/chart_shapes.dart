@@ -7568,12 +7568,16 @@ abstract final class ChartOps {
     List<String>? labels,
     int Function()? allocId,
   }) {
-    final raw = values ?? _defaultValuesForKind('ranking', null);
-    final order = <int>[for (var i = 0; i < raw.length; i++) i]
-      ..sort((a, b) => raw[b].compareTo(raw[a]));
-    final vals = <double>[for (final i in order) raw[i].clamp(0.0, 1.0)];
-    final baseLabs = padLabels(labels ?? defaultLabels(raw.length), raw.length);
-    final labs = <String>[for (final i in order) baseLabs[i]];
+    // Keep userCells order stable for the side-panel editor; sort only for paint.
+    final stored = <double>[
+      for (final v in values ?? _defaultValuesForKind('ranking', null))
+        v.clamp(0.0, 1.0),
+    ];
+    final storedLabs = padLabels(labels ?? defaultLabels(stored.length), stored.length);
+    final order = <int>[for (var i = 0; i < stored.length; i++) i]
+      ..sort((a, b) => stored[b].compareTo(stored[a]));
+    final vals = <double>[for (final i in order) stored[i]];
+    final labs = <String>[for (final i in order) storedLabs[i]];
     final w = width.abs();
     final h = height.abs();
     final next = _seq(id + 1, allocId);
@@ -7645,8 +7649,8 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'ranking',
-      values: vals,
-      labels: labs,
+      values: stored,
+      labels: storedLabs,
     );
   }
 
@@ -8828,9 +8832,13 @@ abstract final class ChartOps {
   }) {
     final raw = values ?? _defaultValuesForKind('cycleFlow', null);
     final n = math.max(3, math.min(8, raw.isEmpty ? 4 : raw.length));
-    final vals = <double>[
+    // Persist user weights as-is (0–1); only drawing uses a non-zero floor.
+    final stored = <double>[
       for (var i = 0; i < n; i++)
-        (i < raw.length ? raw[i] : 1.0).clamp(0.2, 1.0),
+        (i < raw.length ? raw[i] : 1.0).clamp(0.0, 1.0),
+    ];
+    final vals = <double>[
+      for (final v in stored) math.max(v, 0.05),
     ];
     final labs = padLabels(labels ?? defaultLabels(n), n);
     final w = width.abs();
@@ -8909,7 +8917,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'cycleFlow',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
@@ -9684,7 +9692,9 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     final raw = values ?? _defaultValuesForKind('pipeline', null);
-    final vals = <double>[for (final v in raw) v.clamp(0.15, 1.0)];
+    // Persist configured weights; geometry uses a visible minimum height.
+    final stored = <double>[for (final v in raw) v.clamp(0.0, 1.0)];
+    final vals = <double>[for (final v in stored) math.max(v, 0.15)];
     final n = math.max(1, vals.length);
     final labs = padLabels(labels ?? defaultLabels(n), n);
     final w = width.abs();
@@ -9701,13 +9711,14 @@ abstract final class ChartOps {
       final color = seriesColors[i % seriesColors.length];
       final x0 = pad + i * (stageW + gap);
       final body = math.max(stageW - tip, 0.1);
+      final stageHeight = stageH * vals[i].clamp(0.5, 1.0);
       kids.add(VsdxShape(
         id: next(),
         name: _sheetName(id),
         pinX: x0 + stageW / 2,
         pinY: cy,
         width: stageW,
-        height: stageH * vals[i].clamp(0.5, 1.0),
+        height: stageHeight,
         text: labs[i],
         richText: VsdxRichText(runs: <VsdxTextRun>[
           VsdxTextRun(
@@ -9726,9 +9737,9 @@ abstract final class ChartOps {
           VsdxGeometry(commands: <VsdxPathCommand>[
             const MoveTo(0, 0),
             LineTo(body, 0),
-            LineTo(stageW, stageH * vals[i].clamp(0.5, 1.0) / 2),
-            LineTo(body, stageH * vals[i].clamp(0.5, 1.0)),
-            LineTo(0, stageH * vals[i].clamp(0.5, 1.0)),
+            LineTo(stageW, stageHeight / 2),
+            LineTo(body, stageHeight),
+            LineTo(0, stageHeight),
             const LineTo(0, 0),
           ]),
         ],
@@ -9744,7 +9755,7 @@ abstract final class ChartOps {
       height: h,
       children: kids,
       kind: 'pipeline',
-      values: vals,
+      values: stored,
       labels: labs,
     );
   }
