@@ -215,6 +215,9 @@ class EditorL10n {
   String get panelImage => _t('panelImage');
   String get panelData => _t('panelData');
   String get panelChart => _t('panelChart');
+  String get panelIcon => _t('panelIcon');
+  String get iconConfigHint => _t('iconConfigHint');
+  String get iconProvider => _t('iconProvider');
   String get chartValues => _t('chartValues');
   String get chartValuesHint => _t('chartValuesHint');
   String get applyChart => _t('applyChart');

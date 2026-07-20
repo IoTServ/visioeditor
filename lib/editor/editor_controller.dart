@@ -8,6 +8,7 @@ import 'package:vsdx/vsdx.dart';
 import '../render/shape_bounds.dart';
 import 'shape_clipboard.dart';
 import 'snap_guides.dart';
+import 'third_party_icons.dart';
 
 /// Editing tools the canvas can be in.
 enum EditorTool {
@@ -2448,6 +2449,8 @@ class EditorController extends ChangeNotifier {
     double? heightInches,
     double? cx,
     double? cy,
+    String? name,
+    List<VsdxUserCell>? userCells,
   }) {
     final doc = _document;
     final page = currentPage;
@@ -2475,7 +2478,11 @@ class EditorController extends ChangeNotifier {
       width: w,
       height: h,
       imagePartName: minted.partName,
+      name: name,
     );
+    if (userCells != null && userCells.isNotEmpty) {
+      shape = shape.copyWith(userCells: userCells);
+    }
     if (shape.connectionPoints.isEmpty) {
       shape = shape.copyWith(
         connectionPoints: VsdxPage.defaultConnectionPoints(
@@ -2507,6 +2514,8 @@ class EditorController extends ChangeNotifier {
     int shapeId,
     Uint8List bytes, {
     required String fileExtension,
+    List<VsdxUserCell>? userCells,
+    bool clearIconMeta = false,
   }) {
     final doc = _document;
     final page = currentPage;
@@ -2524,11 +2533,25 @@ class EditorController extends ChangeNotifier {
     final oldPart = shape.imagePartName;
     final next = page.updateShapeById(
       shapeId,
-      (s) => s.copyWith(
-        imagePartName: minted.partName,
-        foreignType: minted.foreignType,
-        foreignCompressionType: minted.compressionType,
-      ),
+      (s) {
+        var cells = userCells ?? s.userCells;
+        if (clearIconMeta && userCells == null) {
+          cells = [
+            for (final c in s.userCells)
+              if (c.name != IconOps.userIcon &&
+                  c.name != IconOps.userProvider &&
+                  c.name != IconOps.userId &&
+                  c.name != IconOps.userColor)
+                c,
+          ];
+        }
+        return s.copyWith(
+          imagePartName: minted.partName,
+          foreignType: minted.foreignType,
+          foreignCompressionType: minted.compressionType,
+          userCells: cells,
+        );
+      },
     );
     final undoSel = Set<int>.of(_selection);
     _selection
@@ -5465,6 +5488,66 @@ class EditorController extends ChangeNotifier {
     final index = series.indexWhere((s) => s.id == seriesId);
     if (index < 0) return;
     updateChartItem(index, color: color);
+  }
+
+  // --- Third-party icons (picture + IconOps userCells) -----------------------
+
+  int _iconRebuildSerial = 0;
+
+  /// Selected picture that carries [IconOps] metadata, or null.
+  int? get selectedIconId {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return null;
+    final s = page.findShapeById(id);
+    if (s == null || !s.hasImage || !IconOps.isIcon(s)) return null;
+    return id;
+  }
+
+  /// The selected icon picture shape, or null.
+  VsdxShape? get selectedIcon {
+    final id = selectedIconId;
+    if (id == null) return null;
+    return currentPage?.findShapeById(id);
+  }
+
+  /// Re-rasterise the selected icon (pack / glyph / colour). One undo step.
+  Future<void> setSelectedIcon({
+    String? providerId,
+    String? iconId,
+    int? colorArgb,
+  }) async {
+    final shapeId = selectedIconId;
+    if (shapeId == null) return;
+    final page = currentPage;
+    final shape = page?.findShapeById(shapeId);
+    if (shape == null || shape.locked || isOnLockedLayer(shapeId)) return;
+
+    final p = providerId ?? IconOps.providerId(shape);
+    final i = iconId ?? IconOps.iconId(shape);
+    if (p == null || i == null) return;
+    final entry = findThirdPartyIcon(p, i);
+    if (entry == null) return;
+    final argb = colorArgb ?? IconOps.colorArgb(shape);
+    final color = Color(argb);
+
+    final serial = ++_iconRebuildSerial;
+    final bytes = await rasterizeThirdPartyIcon(entry.icon, color: color);
+    if (serial != _iconRebuildSerial) return;
+    if (bytes.isEmpty) return;
+    // Selection may have changed while awaiting.
+    if (selectedIconId != shapeId) return;
+
+    replaceImage(
+      shapeId,
+      bytes,
+      fileExtension: 'png',
+      userCells: IconOps.meta(
+        providerId: p,
+        iconId: i,
+        colorArgb: argb,
+      ),
+    );
   }
 
   /// The custom properties (`<Section N="Property">`, Visio "Shape Data") of

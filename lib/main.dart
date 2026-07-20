@@ -18,6 +18,7 @@ import 'editor/edit_link_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_shortcuts.dart';
 import 'editor/editor_workspace.dart';
+import 'editor/icon_config_panel.dart';
 import 'editor/image_materials.dart';
 import 'editor/layers_panel.dart';
 import 'editor/third_party_icons.dart';
@@ -381,7 +382,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     if (c == null || !c.hasDocument) return;
     try {
-      final bytes = await rasterizeThirdPartyIcon(entry.icon);
+      final providerId = findProviderIdForIcon(entry);
+      final colorArgb = IconOps.defaultColorArgb;
+      final bytes = await rasterizeThirdPartyIcon(
+        entry.icon,
+        color: const Color(IconOps.defaultColorArgb),
+      );
       if (bytes.isEmpty || !mounted) return;
       c.insertImage(
         bytes,
@@ -390,6 +396,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
         heightInches: kThirdPartyIconMaxInches,
         cx: pagePt?.dx,
         cy: pagePt?.dy,
+        name: entry.name,
+        userCells: providerId == null
+            ? null
+            : IconOps.meta(
+                providerId: providerId,
+                iconId: entry.id,
+                colorArgb: colorArgb,
+              ),
       );
       _snack(EditorL10n.of(context).insertedNamed(entry.name));
     } catch (_) {
@@ -566,6 +580,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         c.singleSelectedId!,
         bytes,
         fileExtension: fileExtension,
+        clearIconMeta: true,
       );
       _snack(el.replacedWith(label));
       return;
@@ -574,7 +589,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
     if (pagePt != null) {
       final hit = c.pictureShapeAt(pagePt.dx, pagePt.dy);
       if (hit != null) {
-        c.replaceImage(hit, bytes, fileExtension: fileExtension);
+        c.replaceImage(
+          hit,
+          bytes,
+          fileExtension: fileExtension,
+          clearIconMeta: true,
+        );
         _snack(el.replacedWith(label));
         return;
       }
@@ -3085,8 +3105,9 @@ class _PropertyPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final count = controller.selection.length;
     final isChart = controller.selectedChartId != null;
+    final isIcon = controller.selectedIconId != null;
     return SizedBox(
-      width: isChart ? 300 : 232,
+      width: (isChart || isIcon) ? 300 : 232,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -3126,6 +3147,10 @@ class _PropertyPanel extends StatelessWidget {
           if (isChart) ...[
             const SizedBox(height: 16),
             ChartConfigPanel(controller: controller),
+          ],
+          if (isIcon) ...[
+            const SizedBox(height: 16),
+            IconConfigPanel(controller: controller),
           ],
           const SizedBox(height: 16),
           _section(context, EditorL10n.of(context).panelArrange),
@@ -3468,6 +3493,7 @@ class _PropertyPanel extends StatelessWidget {
               id,
               picked.bytes,
               fileExtension: picked.extension,
+              clearIconMeta: true,
             );
           },
           icon: const Icon(Icons.image_outlined, size: 18),
