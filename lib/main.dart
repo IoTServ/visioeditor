@@ -133,8 +133,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
   bool _stencilsUserAdjusted = false;
   bool _showImageMaterials = false;
   bool _showThirdPartyIcons = false;
-  /// When true, newly inserted third-party icons get a caption under the glyph.
-  bool _addIconLabel = true;
   bool _showCharts = false;
   bool _showFind = false;
   bool _findShowReplace = false;
@@ -377,8 +375,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   /// Rasterise a third-party [IconData] and insert it as a picture shape.
-  /// When [_addIconLabel] is true, places [entry.name] as a caption below the
-  /// icon (not overlaid on the glyph via the shape-name fallback).
+  /// When [AppSettings.addIconLabel] is true, places [entry.name] as a caption
+  /// below the icon (not overlaid on the glyph via the shape-name fallback).
   Future<void> _insertThirdPartyIcon(
     ThirdPartyIcon entry, {
     Offset? pagePt,
@@ -410,7 +408,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 colorArgb: colorArgb,
               ),
       );
-      if (_addIconLabel) {
+      if (widget.settings.addIconLabel) {
         final id = c.singleSelectedId;
         if (id != null) {
           c.setIconCaptionBelow(id, entry.name, transient: true);
@@ -1142,9 +1140,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                 : _showThirdPartyIcons
                     ? _ThirdPartyIconsPanel(
                         key: const ValueKey<String>('third-party-icons-panel'),
-                        addLabel: _addIconLabel,
-                        onAddLabelChanged: (v) =>
-                            setState(() => _addIconLabel = v),
+                        addLabel: widget.settings.addIconLabel,
+                        onAddLabelChanged: (v) {
+                          widget.settings.setAddIconLabel(v);
+                        },
                         onInsert: _insertThirdPartyIcon,
                       )
                     : _showCharts

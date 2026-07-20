@@ -7,11 +7,13 @@ class AppSettings extends ChangeNotifier {
     required this._themeMode,
     required this._seedColorValue,
     this._localeCode,
+    required this._addIconLabel,
   });
 
   static const String _kThemeMode = 'settings.theme_mode';
   static const String _kSeedColor = 'settings.seed_color';
   static const String _kLocale = 'settings.locale';
+  static const String _kAddIconLabel = 'settings.add_icon_label';
 
   static const int defaultSeedColorValue = 0xFF1F6FEB;
 
@@ -30,10 +32,15 @@ class AppSettings extends ChangeNotifier {
   ThemeMode _themeMode;
   int _seedColorValue;
   String? _localeCode; // null = follow system; else language code (en/zh/ja/…)
+  bool _addIconLabel;
 
   ThemeMode get themeMode => _themeMode;
   Color get seedColor => Color(_seedColorValue);
   int get seedColorValue => _seedColorValue;
+
+  /// When true, newly inserted third-party icons get a caption under the glyph.
+  /// Defaults to false; remembered across sessions.
+  bool get addIconLabel => _addIconLabel;
 
   /// Explicit app locale, or `null` to follow the OS.
   Locale? get locale {
@@ -58,10 +65,13 @@ class AppSettings extends ChangeNotifier {
         (localeRaw == null || localeRaw.isEmpty || localeRaw == 'system')
             ? null
             : localeRaw;
+    // Default off — captions are optional; only true when the user opted in.
+    final addIconLabel = prefs.getBool(_kAddIconLabel) ?? false;
     return AppSettings._(
       themeMode: mode,
       seedColorValue: seed,
       localeCode: localeCode,
+      addIconLabel: addIconLabel,
     );
   }
 
@@ -97,14 +107,24 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
+  Future<void> setAddIconLabel(bool value) async {
+    if (_addIconLabel == value) return;
+    _addIconLabel = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kAddIconLabel, value);
+  }
+
   Future<void> resetToDefaults() async {
     _themeMode = ThemeMode.system;
     _seedColorValue = defaultSeedColorValue;
     _localeCode = null;
+    _addIconLabel = false;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kThemeMode, ThemeMode.system.name);
     await prefs.setInt(_kSeedColor, defaultSeedColorValue);
     await prefs.setString(_kLocale, 'system');
+    await prefs.setBool(_kAddIconLabel, false);
   }
 }

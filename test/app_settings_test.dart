@@ -18,24 +18,29 @@ void main() {
     expect(s.seedColorValue, AppSettings.defaultSeedColorValue);
     expect(s.locale, isNull);
     expect(s.localePreference, 'system');
+    expect(s.addIconLabel, isFalse);
 
     await s.setThemeMode(ThemeMode.dark);
     await s.setSeedColor(const Color(0xFFC62828));
     await s.setLocalePreference('zh');
+    await s.setAddIconLabel(true);
 
     expect(s.themeMode, ThemeMode.dark);
     expect(s.seedColorValue, 0xFFC62828);
     expect(s.locale, const Locale('zh'));
+    expect(s.addIconLabel, isTrue);
 
     final again = await AppSettings.load();
     expect(again.themeMode, ThemeMode.dark);
     expect(again.seedColorValue, 0xFFC62828);
     expect(again.locale?.languageCode, 'zh');
+    expect(again.addIconLabel, isTrue);
 
     await again.resetToDefaults();
     expect(again.themeMode, ThemeMode.system);
     expect(again.seedColorValue, AppSettings.defaultSeedColorValue);
     expect(again.locale, isNull);
+    expect(again.addIconLabel, isFalse);
   });
 
   test('AppLocalizations tables cover all supported locales', () {
