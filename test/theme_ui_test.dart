@@ -58,4 +58,43 @@ void main() {
     expect(fill.foreground?.value, 0xFF00FF00);
     expect(fill.themeForegroundIndex, isNull);
   });
+
+  test('solid fill clears stale hatch FillBkgnd theme', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setFillPattern(2)
+      ..setFillBackgroundThemeSlot(ThemeSlot.accent2)
+      ..setFillPattern(1)
+      ..setFillColor(const VsdxColor(0xFF112233));
+    final fill = c.currentPage!.shapes.single.fill;
+    expect(fill.themeBackgroundIndex, isNull);
+    expect(fill.pattern, 1);
+  });
+
+  test('setFillOpacity mirrors FillBkgndTrans on hatch', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setFillPattern(2)
+      ..setFillOpacity(0.4);
+    final fill = c.currentPage!.shapes.single.fill;
+    expect(fill.foregroundTransparency, closeTo(0.6, 1e-9));
+    expect(fill.backgroundTransparency, closeTo(0.6, 1e-9));
+  });
+
+  test('setFillBackground enables hatch and clears bg theme', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 2, 2)
+      ..setFillBackgroundThemeSlot(ThemeSlot.accent3)
+      ..setFillBackground(const VsdxColor(0xFFFFCC00));
+    final fill = c.currentPage!.shapes.single.fill;
+    expect(fill.pattern, greaterThan(1));
+    expect(fill.background?.value, 0xFFFFCC00);
+    expect(fill.themeBackgroundIndex, isNull);
+  });
 }

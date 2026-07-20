@@ -2977,6 +2977,29 @@ class _PropertyPanel extends StatelessWidget {
                 : null,
           ),
           _fillPatternControls(context, controller),
+          if ((controller.selectedFill?.pattern ?? 1) > 1) ...[
+            const SizedBox(height: 6),
+            Text(
+              EditorL10n.of(context).background,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            const SizedBox(height: 4),
+            _swatchRow(
+              onColor: (v) => controller.setFillBackground(VsdxColor(v)),
+              onNone: () => controller.setFillBackground(
+                const VsdxColor(0xFFFFFFFF),
+              ),
+            ),
+            const SizedBox(height: 6),
+            _themeSwatchRow(
+              context,
+              controller: controller,
+              onSlot: controller.setFillBackgroundThemeSlot,
+              selectedSlot: controller.selectedFill?.background == null
+                  ? controller.selectedFill?.themeBackgroundIndex
+                  : null,
+            ),
+          ],
           _OpacitySlider(
             label: EditorL10n.of(context).opacity,
             opacity: 1 - (controller.selectedFill?.foregroundTransparency ?? 0),

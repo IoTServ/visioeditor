@@ -1372,7 +1372,7 @@ void main() {
     expect(svg, contains('fill="#1565c0"'));
   });
 
-  test('SVG compound-line mask honours LineCap', () {
+  test('SVG compound-line rails honour LineCap', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1390,11 +1390,12 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg, contains('<mask '));
+    // Parallel rails (no concentric mask) still honour LineCap=extended → butt.
+    expect(svg, isNot(contains('<mask ')));
     expect(svg, contains('stroke-linecap="butt"'));
   });
 
-  test('SVG compound line keeps EndArrow outside the mask', () {
+  test('SVG compound line keeps EndArrow on a separate marker carrier', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1412,13 +1413,13 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg, contains('<mask '));
+    expect(svg, isNot(contains('<mask ')));
     expect(svg, contains('marker-end='));
-    // Masked rail must not carry markers; overlay path has stroke-opacity="0".
+    // Rail strokes must not carry markers; overlay path has stroke-opacity="0".
     expect(
-      RegExp(r'mask="url\(#cmp-[^"]+\)"[^>]*marker-').hasMatch(svg),
+      RegExp(r'stroke-width="0\.025"[^>]*marker-').hasMatch(svg),
       isFalse,
-      reason: 'compound mask would clip arrowheads outside the stroke pipe',
+      reason: 'compound rails must not host arrow markers',
     );
     expect(svg, contains('stroke-opacity="0"'));
     expect(svg, contains('marker-end='));

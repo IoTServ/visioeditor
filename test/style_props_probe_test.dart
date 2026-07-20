@@ -488,7 +488,7 @@ void main() {
     expect(svg.contains('filter="url(#fx-p0-4-0)"'), isTrue);
   });
 
-  test('SVG exports CompoundType as transparent mask gap', () {
+  test('SVG exports CompoundType as parallel offset rails', () {
     final page = VsdxPage(
       id: 0,
       name: 'Page-1',
@@ -510,9 +510,38 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('mask="url(#cmp-p0-5-0)"'), isTrue);
-    expect(svg.contains('stroke="black"'), isTrue); // gap punch in mask
+    // Dual rails (not a concentric mask) — two stroked paths with rail widths.
+    expect(svg.contains('mask="url(#cmp-'), isFalse);
+    // rail = (0.06 - 0.38*0.06)/2 = 0.0186 → _n rounds to 0.019
+    expect(svg.contains('stroke-width="0.019"'), isTrue);
+    expect(RegExp(r'stroke-width="0\.019"').allMatches(svg).length, 2);
     expect(svg.contains('stroke="#ffffff"'), isFalse);
+  });
+
+  test('SVG thick-thin CompoundType uses unequal rail widths', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(
+          id: 6,
+          ax: 1,
+          ay: 2,
+          bx: 4,
+          by: 2,
+          line: const VsdxLine(
+            compoundType: 2,
+            weightInches: 0.10,
+            color: VsdxColor.black,
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('stroke-width="0.055"'), isTrue); // thick 55%
+    expect(svg.contains('stroke-width="0.025"'), isTrue); // thin 25%
   });
 
   test('SVG compound+shadow applies filter once on wrapper', () {
@@ -543,7 +572,8 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('mask="url(#cmp-'), isTrue);
+    // Parallel rails (no concentric mask) under a single SoftEdges/shadow wrapper.
+    expect(svg.contains('mask="url(#cmp-'), isFalse);
     // Shadow is a single fill-only path (not feDropShadow on fill+stroke).
     expect(svg.contains('filter="url(#shadow-'), isTrue);
     expect(

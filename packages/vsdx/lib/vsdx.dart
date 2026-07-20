@@ -66,6 +66,7 @@ export 'src/parser/vsd/cfb/compound_file.dart';
 export 'src/writer/vsdx_writer.dart';
 
 // export (interop)
+export 'src/export/compound_stroke.dart';
 export 'src/export/line_jumps.dart';
 export 'src/export/svg_serializer.dart';
 export 'src/export/theme_serializer.dart';

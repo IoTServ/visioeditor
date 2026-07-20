@@ -456,11 +456,9 @@ class VsdxPainter extends CustomPainter {
   /// Draw a stroke honouring Visio `CompoundType`
   /// (0=single, 1=double, 2=thick-thin, 3=thin-thick).
   ///
-  /// Every compound type is approximated as a clean double line: a full-width
-  /// stroke with a concentric transparent gap, preserving the stored total
-  /// width. A faithful thick-thin / thin-thick would require offsetting
-  /// arbitrary geometry, so we render the same double rail for 1–3 (the model
-  /// value still round-trips through the writer).
+  /// Types 1–3 are drawn as two parallel offset rails (see [compoundRails])
+  /// so thick-thin / thin-thick are visually distinct. Falls back to a
+  /// concentric clear-gap double when the path cannot be sampled.
   void _drawCompoundStroke(
     Canvas canvas,
     Path path,
@@ -473,6 +471,27 @@ class VsdxPainter extends CustomPainter {
       canvas.drawPath(path, paint);
       return;
     }
+    final rails = compoundRails(compoundType, w);
+    if (rails.isNotEmpty) {
+      var drew = false;
+      for (final rail in rails) {
+        final offset = _parallelPath(path, rail.offset);
+        if (offset == null) continue;
+        canvas.drawPath(
+          offset,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeCap = paint.strokeCap
+            ..strokeJoin = paint.strokeJoin
+            ..color = paint.color
+            ..shader = paint.shader
+            ..strokeWidth = rail.width,
+        );
+        drew = true;
+      }
+      if (drew) return;
+    }
+    // Fallback: concentric double with a transparent gap.
     final bounds = path.getBounds().inflate(w * 2);
     canvas.saveLayer(bounds, Paint());
     canvas.drawPath(path, paint..strokeWidth = w);
@@ -486,6 +505,49 @@ class VsdxPainter extends CustomPainter {
         ..blendMode = BlendMode.clear,
     );
     canvas.restore();
+  }
+
+  /// Offset [source] along the left normal by [distance] (path units).
+  Path? _parallelPath(Path source, double distance) {
+    if (distance.abs() < 1e-12) return source;
+    final out = Path();
+    var any = false;
+    for (final metric in source.computeMetrics()) {
+      if (metric.length < 1e-9) continue;
+      final step = math.max(metric.length / 48.0, 0.01);
+      Offset? prev;
+      for (var d = 0.0; d <= metric.length + 1e-9; d += step) {
+        final dist = d.clamp(0.0, metric.length);
+        final tan = metric.getTangentForOffset(dist);
+        if (tan == null) continue;
+        final v = tan.vector;
+        final len = v.distance;
+        if (len < 1e-12) continue;
+        final n = Offset(-v.dy / len, v.dx / len);
+        final p = tan.position + n * distance;
+        if (prev == null) {
+          out.moveTo(p.dx, p.dy);
+        } else {
+          out.lineTo(p.dx, p.dy);
+        }
+        prev = p;
+        any = true;
+      }
+      if (metric.isClosed && prev != null) {
+        // Close the offset contour approximately.
+        final tan = metric.getTangentForOffset(0);
+        if (tan != null) {
+          final v = tan.vector;
+          final len = v.distance;
+          if (len > 1e-12) {
+            final n = Offset(-v.dy / len, v.dx / len);
+            final p = tan.position + n * distance;
+            out.lineTo(p.dx, p.dy);
+          }
+        }
+      }
+    }
+    return any ? out : null;
   }
 
   /// Stroke path for connector [shape]'s polyline [geom] with a small arc over

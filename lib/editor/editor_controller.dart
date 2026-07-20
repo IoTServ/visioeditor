@@ -4460,26 +4460,55 @@ class EditorController extends ChangeNotifier {
           if (s.is1D) return s;
           // pattern=0 is NoFill — clear gradient like [setNoFill] so writer
           // does not leave FillGradientEnabled=1 with an invisible solid.
+          // Solid/none also drop hatch-only FillBkgnd theme so it cannot
+          // revive when the user later picks a hatch again.
           return s.copyWith(
             fill: s.fill.copyWith(
               pattern: pattern,
               gradient: pattern == 0 || pattern > 1
                   ? null
                   : VsdxFill.keepGradient,
+              clearThemeBackgroundIndex: pattern <= 1,
             ),
           );
         },
         rememberStyle: true,
       );
 
+  /// Hatch background colour (`FillBkgnd`). Enables a hatch when the fill is
+  /// currently solid / none so the background is visible.
+  void setFillBackground(VsdxColor color) => _updateSelectedShapes(
+        (s) {
+          if (s.is1D) return s;
+          return s.copyWith(fill: s.fill.withSolidBackground(color));
+        },
+        rememberStyle: true,
+      );
+
+  /// Bind hatch background to a document theme slot (`FillBkgnd` THEMEVAL).
+  void setFillBackgroundThemeSlot(int slot) {
+    _applyThemeSlotToSelection(
+      slot,
+      (s) {
+        if (s.is1D) return s;
+        return s.copyWith(fill: s.fill.withThemeBackground(slot));
+      },
+    );
+  }
+
   /// Fill opacity in 0..1 (1 = opaque). Stored as `FillForegndTrans = 1-opacity`.
+  /// For hatch fills also mirrors into `FillBkgndTrans` so the gap colour fades
+  /// with the same slider (canvas already honours both).
   void setFillOpacity(double opacity, {bool transient = false}) =>
       _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
+          final t = (1 - opacity).clamp(0.0, 1.0);
           return s.copyWith(
             fill: s.fill.copyWith(
-              foregroundTransparency: (1 - opacity).clamp(0.0, 1.0),
+              foregroundTransparency: t,
+              backgroundTransparency:
+                  s.fill.pattern > 1 ? t : s.fill.backgroundTransparency,
             ),
           );
         },

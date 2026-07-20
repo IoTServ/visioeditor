@@ -142,6 +142,7 @@ class VsdxLine {
     LineCap? cap,
     double? transparency,
     int? themeColorIndex,
+    bool clearThemeColorIndex = false,
     int? beginArrow,
     int? endArrow,
     double? beginArrowSizeInches,
@@ -157,7 +158,9 @@ class VsdxLine {
       pattern: pattern ?? this.pattern,
       cap: cap ?? this.cap,
       transparency: transparency ?? this.transparency,
-      themeColorIndex: themeColorIndex ?? this.themeColorIndex,
+      themeColorIndex: clearThemeColorIndex
+          ? null
+          : (themeColorIndex ?? this.themeColorIndex),
       beginArrow: beginArrow ?? this.beginArrow,
       endArrow: endArrow ?? this.endArrow,
       beginArrowSizeInches: beginArrowSizeInches ?? this.beginArrowSizeInches,

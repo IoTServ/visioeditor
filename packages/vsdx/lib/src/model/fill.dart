@@ -53,6 +53,9 @@ class VsdxFill {
 
   /// Solid foreground colour, clearing any theme-slot binding and any gradient
   /// so the painted colour is exactly [color] (draw.io palette swatch behaviour).
+  ///
+  /// For solid / no-fill patterns the hatch-only `FillBkgnd` theme slot is also
+  /// cleared so a later hatch switch cannot revive a stale AccentColor.
   VsdxFill withSolidForeground(VsdxColor color) => VsdxFill(
         foreground: color,
         background: background,
@@ -60,7 +63,19 @@ class VsdxFill {
         backgroundTransparency: backgroundTransparency,
         pattern: pattern == 0 ? 1 : pattern,
         themeForegroundIndex: null,
-        themeBackgroundIndex: themeBackgroundIndex,
+        themeBackgroundIndex: pattern > 1 ? themeBackgroundIndex : null,
+      );
+
+  /// Solid hatch background colour (`FillBkgnd`), clearing any theme binding.
+  VsdxFill withSolidBackground(VsdxColor color) => VsdxFill(
+        foreground: foreground,
+        background: color,
+        foregroundTransparency: foregroundTransparency,
+        backgroundTransparency: backgroundTransparency,
+        pattern: pattern <= 1 ? 2 : pattern,
+        themeForegroundIndex: themeForegroundIndex,
+        themeBackgroundIndex: null,
+        gradient: null,
       );
 
   /// Bind fill to a document theme slot ([ThemeSlot]), clearing the explicit
@@ -74,6 +89,18 @@ class VsdxFill {
         pattern: pattern == 0 ? 1 : pattern,
         themeForegroundIndex: slot,
         themeBackgroundIndex: themeBackgroundIndex,
+      );
+
+  /// Bind hatch background to a document theme slot (`FillBkgnd` THEMEVAL).
+  VsdxFill withThemeBackground(int slot) => VsdxFill(
+        foreground: foreground,
+        background: null,
+        foregroundTransparency: foregroundTransparency,
+        backgroundTransparency: backgroundTransparency,
+        pattern: pattern <= 1 ? 2 : pattern,
+        themeForegroundIndex: themeForegroundIndex,
+        themeBackgroundIndex: slot,
+        gradient: null,
       );
 
   /// Install (or clear, when [gradient] is `null`) a fill gradient. Enables
@@ -100,6 +127,8 @@ class VsdxFill {
     int? pattern,
     int? themeForegroundIndex,
     int? themeBackgroundIndex,
+    bool clearThemeForegroundIndex = false,
+    bool clearThemeBackgroundIndex = false,
     Object? gradient = keepGradient,
   }) {
     return VsdxFill(
@@ -110,8 +139,12 @@ class VsdxFill {
       backgroundTransparency:
           backgroundTransparency ?? this.backgroundTransparency,
       pattern: pattern ?? this.pattern,
-      themeForegroundIndex: themeForegroundIndex ?? this.themeForegroundIndex,
-      themeBackgroundIndex: themeBackgroundIndex ?? this.themeBackgroundIndex,
+      themeForegroundIndex: clearThemeForegroundIndex
+          ? null
+          : (themeForegroundIndex ?? this.themeForegroundIndex),
+      themeBackgroundIndex: clearThemeBackgroundIndex
+          ? null
+          : (themeBackgroundIndex ?? this.themeBackgroundIndex),
       gradient: identical(gradient, keepGradient)
           ? this.gradient
           : gradient as VsdxGradient?,

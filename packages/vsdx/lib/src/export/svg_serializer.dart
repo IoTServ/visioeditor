@@ -31,6 +31,7 @@ import '../model/theme.dart';
 import '../parser/metafile.dart';
 import '../parser/metafile_drawing.dart';
 import '../utils/color.dart';
+import 'compound_stroke.dart';
 import 'line_jumps.dart';
 
 /// Which layer flags the SVG serializer honours when filtering shapes.
@@ -675,30 +676,14 @@ class VsdxToSvgSerializer {
     final filter = softFilter == null ? '' : ' filter="$softFilter"';
     final compound = !noLine && shape.line.compoundType > 0;
     if (compound) {
-      // Match canvas BlendMode.clear double-rail: mask punches a transparent
-      // gap so fill / page background shows through (not a hard-coded white).
       final weight =
           shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
-      final gap = weight * 0.38;
-      final mid = 'cmp-$paintId';
-      // Honour LineCap / Rounding on the mask paths (same mapping as
-      // [_strokeAttr]) so square/butt ends are not forced to round.
       final linecap = switch (shape.line.cap) {
         LineCap.round => 'round',
         LineCap.square => 'square',
         LineCap.extended => 'butt',
       };
       final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
-      buf.writeln(
-        '$indent<defs><mask id="$mid" maskUnits="userSpaceOnUse">'
-        '<path d="$sD" fill="none" stroke="white" '
-        'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
-        'stroke-linejoin="$linejoin"/>'
-        '<path d="$sD" fill="none" stroke="black" '
-        'stroke-width="${_n(gap)}" stroke-linecap="$linecap" '
-        'stroke-linejoin="$linejoin"/>'
-        '</mask></defs>',
-      );
       // SoftEdges once on a wrapper — markers stay outside (canvas paints
       // arrows after soft/shadow/glow in _paintLineEndings).
       if (filter.isNotEmpty) {
@@ -707,10 +692,52 @@ class VsdxToSvgSerializer {
       if (!noFill && fillAttr != 'fill="none"') {
         buf.writeln('$indent<path d="$d" $fillAttr stroke="none"/>');
       }
-      buf.writeln(
-        '$indent<path d="$sD" fill="none" ${stroke.paint} '
-        'mask="url(#$mid)"/>',
-      );
+      final rails = compoundRails(shape.line.compoundType, weight);
+      final sampled = samplePathD(sD);
+      final usedRails = rails.isNotEmpty && sampled.points.length >= 2;
+      if (usedRails) {
+        // Parallel offset rails (matches canvas thick-thin / thin-thick).
+        final strokePaint = stroke.paint;
+        for (final rail in rails) {
+          final off = offsetPolyline(
+            sampled.points,
+            rail.offset,
+            closed: sampled.closed,
+          );
+          if (off.length < 2) continue;
+          final od = polylineToPathD(off, closed: sampled.closed);
+          // Replace stroke-width on the paint attrs with the rail width.
+          final railPaint = strokePaint.replaceAll(
+            RegExp(r'stroke-width="[^"]*"'),
+            'stroke-width="${_n(rail.width)}"',
+          );
+          final withCap = railPaint.contains('stroke-linecap=')
+              ? railPaint
+              : '$railPaint stroke-linecap="$linecap" '
+                  'stroke-linejoin="$linejoin"';
+          buf.writeln(
+            '$indent<path d="$od" fill="none" $withCap/>',
+          );
+        }
+      } else {
+        // Fallback: concentric mask gap (double-rail approximation).
+        final gap = weight * 0.38;
+        final mid = 'cmp-$paintId';
+        buf.writeln(
+          '$indent<defs><mask id="$mid" maskUnits="userSpaceOnUse">'
+          '<path d="$sD" fill="none" stroke="white" '
+          'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
+          'stroke-linejoin="$linejoin"/>'
+          '<path d="$sD" fill="none" stroke="black" '
+          'stroke-width="${_n(gap)}" stroke-linecap="$linecap" '
+          'stroke-linejoin="$linejoin"/>'
+          '</mask></defs>',
+        );
+        buf.writeln(
+          '$indent<path d="$sD" fill="none" ${stroke.paint} '
+          'mask="url(#$mid)"/>',
+        );
+      }
       if (filter.isNotEmpty) {
         buf.writeln('$indent</g>');
       }
