@@ -253,4 +253,67 @@ void main() {
     expect(other, isNotNull);
     expect(office!.value == other!.value, isFalse);
   });
+
+  test('theme→solid survives group rebuild without THEMEVAL', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final a = doc.pages.first.nextFreeShapeId();
+    final b = a + 1;
+    final gid = b + 1;
+    doc = doc.replacePage(
+      0,
+      doc.pages.first
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: a,
+              pinX: 1,
+              pinY: 1,
+              width: 1,
+              height: 1,
+              fill: const VsdxFill(themeForegroundIndex: ThemeSlot.accent1),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: b,
+              pinX: 3,
+              pinY: 1,
+              width: 1,
+              height: 1,
+            ),
+          ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    // Override to solid while leaving stale formulas map (THEMEVAL).
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        a,
+        (s) => s.copyWith(
+          fill: s.fill.withSolidForeground(const VsdxColor(0xFF00AA55)),
+        ),
+      ),
+    );
+    // Group forces rebuild of child shape XML.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({a, b}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="FillForegnd"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isFalse,
+      reason: 'group rebuild must not resurrect THEMEVAL over solid V',
+    );
+    final after = parser.parse(out).pages.first.findShapeById(a)!;
+    expect(after.fill.foreground?.value, 0xFF00AA55);
+    expect(after.fill.themeForegroundIndex, isNull);
+  });
 }

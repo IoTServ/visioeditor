@@ -407,10 +407,14 @@ class VsdxPainter extends CustomPainter {
       );
       // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
       // offscreen layer. Skip 1D connectors — jumps / arrows stay crisp.
+      // Match glow: NoFill+NoLine (non-image) has nothing to feather.
       // ImageFilter.blur sigma is in layer pixels (not page inches), so scale
       // by pxPerInch to match SVG feGaussianBlur in the inch→px page group.
       final soft = shape.line.softEdgesInches;
-      final useSoft = soft > 0 && !shape.is1D;
+      final softHollow = (geom.noFill || !shape.fill.hasFill) &&
+          (geom.noLine || !shape.line.hasLine) &&
+          !shape.hasImage;
+      final useSoft = soft > 0 && !shape.is1D && !softHollow;
       if (useSoft) {
         final sigma = _blurSigmaPx(soft);
         final bounds = path.getBounds().inflate(soft * 3);

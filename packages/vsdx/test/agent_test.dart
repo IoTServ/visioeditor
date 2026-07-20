@@ -142,6 +142,43 @@ void main() {
       expect(r.log.any((m) => m.contains('invalid fill')), isTrue);
     });
 
+    test('set_style fill none keeps colour like UI setNoFill', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 2,
+            pinY: 2,
+            width: 1,
+            height: 1,
+            fill: const VsdxFill(
+              foreground: VsdxColor(0xFF123456),
+              foregroundTransparency: 0.25,
+              themeForegroundIndex: ThemeSlot.accent1,
+            ),
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fill': 'none',
+        },
+      ]);
+      final fill = r.document.pages.first.findShapeById(id)!.fill;
+      expect(fill.pattern, 0);
+      expect(fill.hasFill, isFalse);
+      expect(fill.foreground?.value, 0xFF123456);
+      expect(fill.foregroundTransparency, closeTo(0.25, 1e-9));
+      expect(fill.themeForegroundIndex, isNull);
+      expect(fill.gradient, isNull);
+    });
+
     test('add_connector line none hides the stroke', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

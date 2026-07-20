@@ -1553,8 +1553,12 @@ class VsdxToSvgSerializer {
   }) {
     // package:pdf ignores filters — SoftEdges would silently vanish.
     if (pdfCompat) return null;
+    // Match glow: hollow non-image shapes have nothing to feather.
+    final softHollow = !shape.fill.hasFill &&
+        !shape.line.hasLine &&
+        !shape.hasImage;
     final soft =
-        (!shape.is1D && shape.line.softEdgesInches > 0)
+        (!shape.is1D && !softHollow && shape.line.softEdgesInches > 0)
             ? shape.line.softEdgesInches
             : 0.0;
     if (soft <= 0) return null;

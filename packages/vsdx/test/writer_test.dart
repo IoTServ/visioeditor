@@ -5871,6 +5871,166 @@ void main() {
     expect(soft.getAttribute('F'), isNull);
   });
 
+  test('GlowSize F=Inh scrubs to literal 0 when glow disabled', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            sizeInches: 0.1,
+            transparency: 0.2,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="GlowSize"[^/]*/>'),
+      '<Cell N="GlowSize" V="0.1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    // Inh → disabled model; write must still scrub F=.
+    expect(doc.pages.first.findShapeById(id)!.glow.enabled, isFalse);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final glow = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'GlowSize',
+        );
+    expect(glow.getAttribute('V'), '0');
+    expect(glow.getAttribute('F'), isNull);
+  });
+
+  test('FillGradientEnabled V=0 F=Inh scrubs when model has no gradient', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '</Shape>',
+      '<Cell N="FillGradientEnabled" V="0" F="Inh"/></Shape>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.fill.gradient, isNull);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'FillGradientEnabled',
+        );
+    expect(cell.getAttribute('V'), '0');
+    expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('Foreign SoftEdges survives group rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final picId = doc.pages.first.nextFreeShapeId();
+    final otherId = picId + 1;
+    final gid = otherId + 1;
+    const part = '/visio/media/image_soft_group.png';
+    final payload = Uint8List.fromList(<int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+    ]);
+    final pic = VsdxShapeFactory.picture(
+      id: picId,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(line: const VsdxLine(softEdgesInches: 0.06));
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: payload, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(
+          0,
+          doc.pages.first
+              .addShape(pic)
+              .addShape(
+                VsdxShapeFactory.rectangle(
+                  id: otherId,
+                  pinX: 4,
+                  pinY: 2,
+                  width: 1,
+                  height: 1,
+                ),
+              ),
+        );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(
+      doc.pages.first.findShapeById(picId)!.line.softEdgesInches,
+      closeTo(0.06, 1e-6),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.group({picId, otherId}, groupId: gid),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
+    final after = parser.parse(out).pages.first.findShapeById(picId)!;
+    expect(after.line.softEdgesInches, closeTo(0.06, 1e-6));
+    expect(after.hasImage, isTrue);
+  });
+
   test('clearing FillGradient drops Inh formula on FillGradientEnabled', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -6305,9 +6465,9 @@ void main() {
     expect(after.status, 1);
   });
 
-  test('FillPattern / LineColor F= formulas round-trip on rebuild', () {
+  test('theme colours keep THEMEVAL on rebuild; stale pattern formulas scrub', () {
     final blank = writer.emptyDocument();
-    var doc = parser.parse(blank);
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
     final id = doc.pages.first.nextFreeShapeId();
     final shape = VsdxShapeFactory.rectangle(
       id: id,
@@ -6316,11 +6476,14 @@ void main() {
       width: 2,
       height: 1,
     ).copyWith(
+      fill: const VsdxFill(themeForegroundIndex: ThemeSlot.accent1),
+      line: const VsdxLine(themeColorIndex: ThemeSlot.accent2),
       formulas: const {
+        // Stale pattern THEMEVAL must not survive rebuild.
         'FillPattern': 'THEMEVAL()',
-        'LineColor': 'THEMEVAL()',
         'LinePattern': 'THEMEVAL()',
         'FillForegnd': 'THEMEVAL()',
+        'LineColor': 'THEMEVAL()',
       },
     );
     doc = doc.replacePage(0, doc.pages.first.addShape(shape));
@@ -6331,13 +6494,29 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('N="FillPattern"'), isTrue);
-    expect(pageXml.contains('N="LineColor"'), isTrue);
-    expect(pageXml.contains('F="THEMEVAL()"'), isTrue);
+    expect(
+      RegExp(r'N="FillForegnd"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isTrue,
+    );
+    expect(
+      RegExp(r'N="LineColor"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isTrue,
+    );
+    expect(
+      RegExp(r'N="FillPattern"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isFalse,
+      reason: 'pattern cells are literal ints — THEMEVAL must not rebuild',
+    );
+    expect(
+      RegExp(r'N="LinePattern"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isFalse,
+    );
     final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.formulas['FillPattern'], 'THEMEVAL()');
-    expect(after.formulas['LineColor'], 'THEMEVAL()');
-    expect(after.formulas['LinePattern'], 'THEMEVAL()');
-    expect(after.formulas['FillForegnd'], 'THEMEVAL()');
+    expect(after.fill.themeForegroundIndex, ThemeSlot.accent1);
+    expect(after.line.themeColorIndex, ThemeSlot.accent2);
+    expect(after.formulas['FillForegnd'], contains('THEMEVAL'));
+    expect(after.formulas['LineColor'], contains('THEMEVAL'));
+    expect(after.formulas['FillPattern'], isNull);
+    expect(after.formulas['LinePattern'], isNull);
   });
 }

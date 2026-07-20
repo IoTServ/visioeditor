@@ -2083,6 +2083,14 @@ class VsdxWriter {
     changed |= _patchShadow(el, base.shadow, edited.shadow);
     changed |= _patchGlow(el, base.glow, edited.glow);
     changed |= _patchReflection(el, base.reflection, edited.reflection);
+    // Disabled effects: force literal V=0 even when base/edited already match
+    // as "off" so F=Inh cannot revive Glow/Reflection via StyleSheet inherit.
+    if (!edited.glow.enabled) {
+      changed |= _forceLiteralZeroLength(el, 'GlowSize');
+    }
+    if (!edited.reflection.enabled) {
+      changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
+    }
     changed |= _patchGradient(el, base.fill, edited.fill);
     changed |= _patchLineGradient(el, base.line, edited.line);
     // Text content — only rewrite `<Text>` when the plain string changes so
@@ -3942,6 +3950,10 @@ class VsdxWriter {
       }
       return true;
     }
+    // Models already agree on "no gradient" but XML may still say V=0 F=Inh.
+    if (eg == null || eg.stops.isEmpty) {
+      return _scrubDisabledFlagCell(el, 'FillGradientEnabled');
+    }
     return false;
   }
 
@@ -3970,7 +3982,24 @@ class VsdxWriter {
       }
       return true;
     }
+    if (eg == null || eg.stops.isEmpty) {
+      return _scrubDisabledFlagCell(el, 'LineGradientEnabled');
+    }
     return false;
+  }
+
+  /// When the model has a flag off, force literal `V=0` without `F=` so
+  /// stylesheet `Inh` cannot revive the feature on reopen.
+  bool _scrubDisabledFlagCell(XmlElement shape, String cell) {
+    final c = _findCell(shape, cell);
+    if (c == null) return false;
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final already =
+        (v == '0' || v == '0.0') && (f == null || f.isEmpty);
+    if (already) return false;
+    _writeValue(c, '0');
+    return true;
   }
 
   static bool _gradientsEqual(VsdxGradient? a, VsdxGradient? b) {
@@ -4717,7 +4746,14 @@ class VsdxWriter {
     Map<int, List<XmlNode>> opaqueById = const <int, List<XmlNode>>{},
   }) {
     s = s.persistRouteState();
-    if (s.hasImage) return _buildPictureElement(s, imageRels);
+    if (s.hasImage) {
+      return _buildPictureElement(s, imageRels, opaqueById: opaqueById);
+    }
+    // Drop stale THEMEVAL keys left after theme→solid / no-fill edits so a
+    // group rebuild cannot resurrect them (patch path already scrubbed).
+    final staleTheme = _staleThemeFormulaKeys(s);
+    String? formulaOf(String key) =>
+        staleTheme.contains(key) ? null : s.formulas[key];
     // --- XForm ---------------------------------------------------------------
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX), formula: s.formulas['PinX']),
@@ -4807,14 +4843,14 @@ class VsdxWriter {
     // --- Fill ----------------------------------------------------------------
     if (s.fill.foreground != null) {
       children.add(_cell('FillForegnd', _hex(s.fill.foreground!),
-          formula: s.formulas['FillForegnd']));
+          formula: formulaOf('FillForegnd')));
     } else if (s.fill.themeForegroundIndex != null) {
       children.add(_cell('FillForegnd', '0',
-          formula: s.formulas['FillForegnd'] ?? 'THEMEVAL()'));
+          formula: formulaOf('FillForegnd') ?? 'THEMEVAL()'));
       children.add(
           _cell('QuickStyleFillColor', s.fill.themeForegroundIndex!.toString()));
-    } else if (s.formulas.containsKey('FillForegnd')) {
-      children.add(_cell('FillForegnd', '0', formula: s.formulas['FillForegnd']));
+    } else if (formulaOf('FillForegnd') != null) {
+      children.add(_cell('FillForegnd', '0', formula: formulaOf('FillForegnd')));
     } else if (s.fill.pattern != 0 && s.children.isEmpty) {
       // VSD import / defaultFill often leave foreground null while pattern=1.
       // Visio resolves via StyleSheets; 万兴图示 treats missing FillForegnd as
@@ -4824,7 +4860,7 @@ class VsdxWriter {
     }
     if (s.fill.background != null) {
       children.add(_cell('FillBkgnd', _hex(s.fill.background!),
-          formula: s.formulas['FillBkgnd']));
+          formula: formulaOf('FillBkgnd')));
     } else if (s.fill.themeBackgroundIndex != null) {
       final bgSlot = s.fill.themeBackgroundIndex!;
       final fgSlot = s.fill.themeForegroundIndex;
@@ -4833,7 +4869,7 @@ class VsdxWriter {
       final named = (fgSlot != null && fgSlot != bgSlot)
           ? ThemeSlot.themeValName(bgSlot)
           : null;
-      final bgFormula = s.formulas['FillBkgnd'] ??
+      final bgFormula = formulaOf('FillBkgnd') ??
           (named != null ? 'THEMEVAL("$named")' : 'THEMEVAL()');
       children.add(_cell('FillBkgnd', '0', formula: bgFormula));
       // When only the background is theme-bound, emit QuickStyleFillColor so
@@ -4842,12 +4878,12 @@ class VsdxWriter {
         children.add(
             _cell('QuickStyleFillColor', bgSlot.toString()));
       }
-    } else if (s.formulas.containsKey('FillBkgnd')) {
-      children.add(_cell('FillBkgnd', '0', formula: s.formulas['FillBkgnd']));
+    } else if (formulaOf('FillBkgnd') != null) {
+      children.add(_cell('FillBkgnd', '0', formula: formulaOf('FillBkgnd')));
     }
     // FillBkgnd default comes from document StyleSheets (No Style) when omitted.
     children.add(_cell('FillPattern', s.fill.pattern.toString(),
-        formula: s.formulas['FillPattern']));
+        formula: formulaOf('FillPattern')));
     if (s.fill.foregroundTransparency > _epsilon) {
       children.add(
           _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)));
@@ -4859,19 +4895,19 @@ class VsdxWriter {
     // --- Line ----------------------------------------------------------------
     if (s.line.color != null) {
       children.add(_cell('LineColor', _hex(s.line.color!),
-          formula: s.formulas['LineColor']));
+          formula: formulaOf('LineColor')));
     } else if (s.line.themeColorIndex != null) {
       children.add(_cell('LineColor', '0',
-          formula: s.formulas['LineColor'] ?? 'THEMEVAL()'));
+          formula: formulaOf('LineColor') ?? 'THEMEVAL()'));
       children
           .add(_cell('QuickStyleLineColor', s.line.themeColorIndex!.toString()));
-    } else if (s.formulas.containsKey('LineColor')) {
-      children.add(_cell('LineColor', '0', formula: s.formulas['LineColor']));
+    } else if (formulaOf('LineColor') != null) {
+      children.add(_cell('LineColor', '0', formula: formulaOf('LineColor')));
     }
     children
       ..add(_cell('LineWeight', _fmt(s.line.weightInches)))
       ..add(_cell('LinePattern', s.line.pattern.toString(),
-          formula: s.formulas['LinePattern']))
+          formula: formulaOf('LinePattern')))
       // Always emit LineCap (Visio/Edraw "No Style" default is 0 = round).
       ..add(_cell('LineCap', _lineCapInt(s.line.cap).toString()));
     if (s.line.transparency > _epsilon) {
@@ -5382,7 +5418,11 @@ class VsdxWriter {
   /// Build a Visio `Type="Foreign"` picture shape: XForm cells plus the
   /// `<ForeignData>` element pointing (via [imageRels]) at the embedded media
   /// relationship. Round-trips back through [PageParser._resolveForeignDataPart].
-  XmlElement _buildPictureElement(VsdxShape s, Map<String, String> imageRels) {
+  XmlElement _buildPictureElement(
+    VsdxShape s,
+    Map<String, String> imageRels, {
+    Map<int, List<XmlNode>> opaqueById = const <int, List<XmlNode>>{},
+  }) {
     final part = s.imagePartName;
     final rId = part == null
         ? null
@@ -5441,9 +5481,52 @@ class VsdxWriter {
       _cell('FillPattern', s.fill.pattern.toString()),
       _cell('LinePattern', s.line.pattern.toString()),
       _cell('LineCap', '0'),
+      // SoftEdges / effects survive group rebuild (patch path already writes
+      // them; fresh Foreign emit previously dropped them).
+      if (s.line.softEdgesInches > _epsilon)
+        _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
+      if (s.line.roundingInches > _epsilon)
+        _cell('Rounding', _fmt(s.line.roundingInches)),
+      if (s.line.compoundType != 0)
+        _cell('CompoundType', s.line.compoundType.toString()),
       if (s.flipX) _cell('FlipX', '1'),
       if (s.flipY) _cell('FlipY', '1'),
     ];
+    if (s.shadow.enabled) {
+      children.add(_cell('ShadowPattern', '1'));
+      children.add(_cell('ShdwPattern', '1'));
+      if (s.shadow.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+      } else if (s.shadow.themeColorIndex != null) {
+        children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
+      }
+      children
+        ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+    }
+    if (s.glow.enabled) {
+      children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
+      if (s.glow.color != null) {
+        children.add(_cell('GlowColor', _hex(s.glow.color!)));
+      } else if (s.glow.themeColorIndex != null) {
+        children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
+        children.add(_cell(
+            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+      }
+      children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
+    }
+    if (s.reflection.enabled) {
+      children
+        ..add(_cell('ReflectionSize', _fmt(s.reflection.sizeInches)))
+        ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
+        ..add(_cell(
+            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
+    }
     if (s.locked) {
       for (final name in _lockCells) {
         children.add(_cell(name, '1'));
@@ -5513,6 +5596,11 @@ class VsdxWriter {
               <XmlAttribute>[XmlAttribute(XmlName('id', 'r'), rId)]),
         ],
       ));
+    }
+    // Unmodelled cells / sections from the prior XML (group rebuild).
+    final opaque = opaqueById[s.id];
+    if (opaque != null && opaque.isNotEmpty) {
+      children.addAll(opaque.map((n) => n.copy()));
     }
     return XmlElement(
       XmlName('Shape'),

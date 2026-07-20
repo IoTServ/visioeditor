@@ -135,8 +135,16 @@ ApplyResult applyOps(
             // Match UI setFillColor: 1-D strokes never take a fill.
             if (fillHex != null && !s.is1D) {
               if (fillHex.trim().toLowerCase() == 'none') {
-                // Whole-fill replace clears theme slots (matches UI setNoFill).
-                next = next.copyWith(fill: const VsdxFill(pattern: 0));
+                // Match UI setNoFill: keep colours/transparency, clear
+                // gradient + theme slots so they cannot revive later.
+                next = next.copyWith(
+                  fill: next.fill.copyWith(
+                    pattern: 0,
+                    gradient: null,
+                    clearThemeForegroundIndex: true,
+                    clearThemeBackgroundIndex: true,
+                  ),
+                );
               } else {
                 final c = parseColorOrNull(fillHex);
                 if (c != null) {

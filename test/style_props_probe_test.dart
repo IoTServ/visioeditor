@@ -953,6 +953,30 @@ void main() {
         reason: 'hollow shapes must not paint a ghost glow halo');
   });
 
+  test('SVG skips SoftEdges filter when NoFill and LinePattern=0', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 8.5,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 23,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg.contains('fx-'), isFalse,
+        reason: 'hollow shapes must not hang SoftEdges blur filters');
+  });
+
   test('SVG skips stroke shadow when NoFill and LinePattern=0', () {
     final page = VsdxPage(
       id: 0,
