@@ -246,4 +246,59 @@ void main() {
     expect(restored.pinX, closeTo(before.pinX, 1e-9));
     expect(restored.pinY, closeTo(before.pinY, 1e-9));
   });
+
+  testWidgets('marquee drag selects shapes whose bounds intersect',
+      (tester) async {
+    late int a;
+    late int b;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 1.5,
+            height: 1,
+          ),
+          2,
+          8,
+        );
+        a = c.singleSelectedId!;
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 1.5,
+            height: 1,
+          ),
+          5,
+          8,
+        );
+        b = c.singleSelectedId!;
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    expect(controller.selection, isEmpty);
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    // Empty page space above both shapes, then drag a box covering both.
+    final start = _pagePoint(origin, camera, page, 0.5, 9.5);
+    final end = _pagePoint(origin, camera, page, 6.5, 6.5);
+
+    final gesture = await tester.startGesture(start);
+    await gesture.moveTo(end);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(controller.selection, unorderedEquals(<int>[a, b]));
+  });
 }

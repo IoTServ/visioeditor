@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | 静态分析 | DONE | `flutter analyze` / `dart analyze packages/vsdx` 无告警（本轮验证前已绿） |
 | 单元/集成测试 | DONE | vsdx `1030` 通过；Flutter test / macOS debug 构建通过 |
-| 画布手势 | DONE | `DragStartBehavior.down`；移动/缩放/旋转/Esc 取消 |
+| 画布手势 | DONE | `DragStartBehavior.down`；移动/缩放/旋转/Esc；框选多选 |
 | Master 文本继承 | DONE | Character 字号优先链 + 无本地 Text 时继承 Master 富文本 |
 | 连接器 Pin | DONE | 仅 Begin/End 公式时规范化；字面量 Pin 不被中点公式覆盖 |
 | Ranking 图标签 | DONE | 排序后补标签；空 values 兜底 |
@@ -33,6 +33,7 @@
 | 缩放手柄 | DONE | 同上 |
 | 旋转手柄 | DONE | 同上 |
 | Esc 取消拖动 | DONE | 同上 |
+| 框选多选 | DONE | `page_canvas_test` marquee |
 | 撤销 / 重做 | DONE | 既有 Controller 测试 |
 | 锁定 / 图层 | DONE | 既有测试；Color-by-Layer 视图已接 |
 | 组合 / 取消组合 | DONE | `page.group` 无填充容器；往返不污染 Group Fill |
@@ -111,7 +112,7 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 
 | ID | 问题 | 标记 | 下次动作 |
 | --- | --- | --- | --- |
-| QA-01 | LibreOffice/Visio 实机打开导出文件 | BLOCKED | 安装 soffice 或 CI 交叉验证 |
+| QA-01 | LibreOffice/Visio 实机打开导出文件 | BLOCKED | 本机无 soffice；CI `libreoffice-crosscheck`（`REQUIRE_SOFFICE=1`）覆盖；进度：本地仍待装 LO |
 | QA-02 | 双圆角属性语义 | DONE | `setCornerRadius` → `Rounding`；弧圆角展平 |
 | QA-03a | 页阴影斜切 / 缩放 | DONE | Canvas + SVG `_pageShadowTransform` |
 | QA-03b | 图层色绘制 | DONE | Color-by-Layer 开关；填充/描边/文字染色 |

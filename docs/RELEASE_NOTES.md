@@ -101,11 +101,13 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
   back to a labelled placeholder.
 - **Text editing applies to a whole shape label** (no per-character selection
   ranges yet); connectors route straight or orthogonal (with draggable
-  waypoints) but not obstacle-avoiding; PDF export is rasterised (not vector);
-  formulas are preserved but not recomputed.
+  waypoints) but not obstacle-avoiding; PDF export is SVG→PDF vector
+  (with `pdfCompat` approximations for filters/patterns); formulas are
+  preserved but not recomputed.
 - Interop is proven by open → save → reopen round-trip tests and by CI
   LibreOffice `soffice --headless --convert-to pdf` on a writer `.vsdx`
-  (`REQUIRE_SOFFICE=1`; local runs skip when soffice is absent).
+  (`REQUIRE_SOFFICE=1` / job `libreoffice-crosscheck`; local runs skip when
+  soffice is absent).
 
 ## Verification
 
