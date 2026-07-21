@@ -432,15 +432,53 @@ ApplyResult applyOps(
                 (op['textColor'] ?? op['fontColor'])?.toString();
             final bold =
                 op.containsKey('bold') ? op['bold'] == true : null;
+            final italic =
+                op.containsKey('italic') ? op['italic'] == true : null;
             final pt = _d(op['pt'] ?? op['fontSize']);
-            if (textColor != null || bold != null || pt != null) {
+            if (textColor != null ||
+                bold != null ||
+                italic != null ||
+                pt != null) {
               next = withLabel(
                 next,
                 next.text ?? '',
                 bold: bold,
+                italic: italic,
                 colorHex: textColor,
                 pt: pt,
               );
+            }
+            if (op.containsKey('hideText')) {
+              next = next.copyWith(
+                richText: next.richText.copyWith(
+                  textBlock: next.richText.textBlock.copyWith(
+                    hideText: op['hideText'] == true,
+                  ),
+                ),
+              );
+            }
+            final lineCapRaw = op['lineCap'] ?? op['cap'];
+            if (lineCapRaw != null) {
+              LineCap? cap;
+              if (lineCapRaw is num) {
+                cap = switch (lineCapRaw.toInt()) {
+                  0 => LineCap.round,
+                  1 => LineCap.square,
+                  2 => LineCap.extended,
+                  _ => null,
+                };
+              } else {
+                final s = lineCapRaw.toString().trim().toLowerCase();
+                cap = switch (s) {
+                  'round' || '0' => LineCap.round,
+                  'square' || '1' => LineCap.square,
+                  'extended' || 'flat' || '2' => LineCap.extended,
+                  _ => null,
+                };
+              }
+              if (cap != null) {
+                next = next.copyWith(line: next.line.copyWith(cap: cap));
+              }
             }
             final valign = op['verticalAlign']?.toString().toLowerCase();
             if (valign != null && valign.isNotEmpty) {
@@ -455,6 +493,37 @@ ApplyResult applyOps(
                   richText: next.richText.copyWith(
                     textBlock: next.richText.textBlock
                         .copyWith(verticalAlign: align),
+                  ),
+                );
+              }
+            }
+            final halign = (op['align'] ??
+                    op['horizontalAlign'] ??
+                    op['horzAlign'])
+                ?.toString()
+                .toLowerCase();
+            if (halign != null && halign.isNotEmpty) {
+              final align = switch (halign) {
+                'left' => VsdxHorzAlign.left,
+                'center' || 'centre' || 'middle' => VsdxHorzAlign.center,
+                'right' => VsdxHorzAlign.right,
+                'justify' => VsdxHorzAlign.justify,
+                _ => null,
+              };
+              if (align != null) {
+                final runs = next.richText.runs;
+                if (runs.isEmpty) {
+                  next = withLabel(next, next.text ?? '');
+                }
+                next = next.copyWith(
+                  richText: next.richText.copyWith(
+                    runs: [
+                      for (final r in next.richText.runs)
+                        r.copyWith(
+                          paraStyle: r.paraStyle
+                              .copyWith(horizontalAlign: align),
+                        ),
+                    ],
                   ),
                 );
               }

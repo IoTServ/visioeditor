@@ -357,10 +357,36 @@ class VsdxPainter extends CustomPainter {
               tileMode: TileMode.decal,
             ),
         );
-        canvas.drawRect(
-          Rect.fromLTWH(0, 0, w, h),
-          Paint()..color = const Color(0xFFFFFFFF),
-        );
+        // Match SVG SourceAlpha: feather the visible silhouette (geometry
+        // clip when present), not the full shape box.
+        Path? clipPath;
+        for (final geom in shape.geometries) {
+          if (geom.noShow) continue;
+          final p = buildPath(
+            geom,
+            widthInches: shape.width,
+            heightInches: shape.height,
+            roundingInches: shape.line.roundingInches,
+          );
+          if (!p.getBounds().isEmpty) {
+            clipPath = p;
+            break;
+          }
+        }
+        final maskPaint = Paint()..color = const Color(0xFFFFFFFF);
+        if (clipPath != null) {
+          canvas.drawPath(clipPath, maskPaint);
+        } else {
+          canvas.drawRect(
+            Rect.fromLTWH(
+              shape.imgOffsetXInches,
+              shape.imgOffsetYInches,
+              shape.effectiveImgWidth,
+              shape.effectiveImgHeight,
+            ),
+            maskPaint,
+          );
+        }
         canvas.restore();
         canvas.restore();
       } else {

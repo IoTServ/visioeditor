@@ -348,20 +348,23 @@ class PageParser {
     final foreignCompressionType =
         foreignMeta.$2 ?? proto?.foreignCompressionType;
     // Image Properties (MS-VSDX §2.2.6) — top-level cells on Foreign shapes.
+    // F=Inh without a master must use model defaults (not stale V=).
     final imgOffsetX = readLengthInches(
           shapeEl,
           'ImgOffsetX',
-          inheritFrom: proto?.imgOffsetXInches,
+          inheritFrom: proto?.imgOffsetXInches ?? 0.0,
         ) ??
-        _double(shapeEl, 'ImgOffsetX', inheritFrom: proto?.imgOffsetXInches) ??
+        _double(shapeEl, 'ImgOffsetX',
+            inheritFrom: proto?.imgOffsetXInches ?? 0.0) ??
         proto?.imgOffsetXInches ??
         0.0;
     final imgOffsetY = readLengthInches(
           shapeEl,
           'ImgOffsetY',
-          inheritFrom: proto?.imgOffsetYInches,
+          inheritFrom: proto?.imgOffsetYInches ?? 0.0,
         ) ??
-        _double(shapeEl, 'ImgOffsetY', inheritFrom: proto?.imgOffsetYInches) ??
+        _double(shapeEl, 'ImgOffsetY',
+            inheritFrom: proto?.imgOffsetYInches ?? 0.0) ??
         proto?.imgOffsetYInches ??
         0.0;
     final imgWidth = readLengthInches(
@@ -382,7 +385,7 @@ class PageParser {
     final imageTransparency = (_double(
               shapeEl,
               'Transparency',
-              inheritFrom: proto?.imageTransparency,
+              inheritFrom: proto?.imageTransparency ?? 0.0,
             ) ??
             proto?.imageTransparency ??
             0.0)
@@ -390,7 +393,7 @@ class PageParser {
     final imageBlur = (_double(
               shapeEl,
               'Blur',
-              inheritFrom: proto?.imageBlur,
+              inheritFrom: proto?.imageBlur ?? 0.0,
             ) ??
             proto?.imageBlur ??
             0.0)
@@ -398,7 +401,7 @@ class PageParser {
     final imageBrightness = (_double(
               shapeEl,
               'Brightness',
-              inheritFrom: proto?.imageBrightness,
+              inheritFrom: proto?.imageBrightness ?? 0.5,
             ) ??
             proto?.imageBrightness ??
             0.5)
@@ -406,7 +409,7 @@ class PageParser {
     final imageContrast = (_double(
               shapeEl,
               'Contrast',
-              inheritFrom: proto?.imageContrast,
+              inheritFrom: proto?.imageContrast ?? 0.5,
             ) ??
             proto?.imageContrast ??
             0.5)

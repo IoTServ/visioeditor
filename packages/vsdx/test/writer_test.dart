@@ -10377,6 +10377,14 @@ void main() {
     }
     final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(tainted);
+    // Without master, Inh must not adopt stale V=0.5.
+    final parsed = doc.pages.first.findShapeById(picId)!;
+    expect(parsed.imageTransparency, closeTo(0, 1e-6));
+    expect(parsed.imageBlur, closeTo(0, 1e-6));
+    expect(parsed.imageBrightness, closeTo(0.5, 1e-6));
+    expect(parsed.imageContrast, closeTo(0.5, 1e-6));
+    expect(parsed.imgOffsetXInches, closeTo(0, 1e-6));
+    expect(parsed.imgOffsetYInches, closeTo(0, 1e-6));
     // Re-apply model values so patch syncs + scrubs Inh.
     doc = doc.replacePage(
       0,
@@ -11187,6 +11195,98 @@ void main() {
         RegExp(r'<Cell N="ShdwOffsetX"[^/]*/>').firstMatch(pagesXml);
     expect(shdw, isNotNull);
     expect(shdw!.group(0)!.contains('F="Inh"'), isFalse);
+  });
+
+  test('PageColor F=Inh dropped when model background is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    expect(doc.pages.first.backgroundColor, isNull);
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    if (pagesXml.contains('N="PageColor"')) {
+      pagesXml = pagesXml.replaceFirst(
+        RegExp(r'<Cell N="PageColor"[^/]*/>'),
+        '<Cell N="PageColor" V="#ffcccc" F="Inh"/>',
+      );
+    } else {
+      pagesXml = pagesXml.replaceFirst(
+        '<PageSheet>',
+        '<PageSheet><Cell N="PageColor" V="#ffcccc" F="Inh"/>',
+      );
+    }
+    final tainted = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(tainted);
+    expect(doc.pages.first.backgroundColor, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: doc.pages.first.widthInches + 0.1,
+      ),
+    );
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="PageColor"[^>]*F="Inh"').hasMatch(pagesXml),
+      isFalse,
+    );
+  });
+
+  test('DocumentSettings PageColor/GlueType round-trip and Inh scrub', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(
+          settings: const VsdxDocumentSettings(
+            defaultPageBackgroundColor: VsdxColor(0xFFEEFFEE),
+            glueType: 9,
+            snapEnabled: false,
+            gridDensityX: 2,
+            gridDensityY: 3,
+          ),
+        );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.settings.defaultPageBackgroundColor?.value, 0xFFEEFFEE);
+    expect(doc.settings.glueType, 9);
+    expect(doc.settings.snapEnabled, isFalse);
+    expect(doc.settings.gridDensityX, 2);
+    expect(doc.settings.gridDensityY, 3);
+
+    final archive = ZipDecoder().decodeBytes(mid);
+    final docFile =
+        archive.firstWhere((f) => f.name.endsWith('document.xml'));
+    var docXml = utf8.decode(docFile.content as List<int>);
+    docXml = docXml.replaceFirst(
+      RegExp(r'<Cell N="PageColor"[^/]*/>'),
+      '<Cell N="PageColor" V="#eeffee" F="Inh"/>',
+    );
+    docXml = docXml.replaceFirst(
+      RegExp(r'<Cell N="GlueType"[^/]*/>'),
+      '<Cell N="GlueType" V="9" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, docFile.name, utf8.encode(docXml));
+    doc = parser.parse(mid);
+    // PageColor Inh → null; GlueType Inh → default 0.
+    expect(doc.settings.defaultPageBackgroundColor, isNull);
+    expect(doc.settings.glueType, 0);
+    final out = writer.write(originalBytes: mid, edited: doc);
+    docXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('document.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="PageColor"').hasMatch(docXml), isFalse);
+    final glue = RegExp(r'<Cell N="GlueType"[^/]*/>').firstMatch(docXml);
+    expect(glue, isNotNull);
+    expect(glue!.group(0)!.contains('F="Inh"'), isFalse);
+    expect(glue.group(0)!.contains('V="0"'), isTrue);
   });
 
   test('PageWidth F=Inh scrubbed when size unchanged', () {

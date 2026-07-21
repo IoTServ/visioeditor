@@ -20,6 +20,7 @@ import 'package:xml/xml.dart';
 import '../export/theme_serializer.dart';
 import '../model/connect.dart';
 import '../model/document.dart';
+import '../model/document_settings.dart';
 import '../model/effects.dart';
 import '../model/fill.dart';
 import '../model/geometry.dart';
@@ -64,10 +65,19 @@ class VsdxWriter {
     final docPart = pkg.resolveDocumentPartName();
     // Back-fill minimal StyleSheets / FaceNames on legacy blank exports so
     // Edraw can resolve Default*Style (otherwise fills/text look wrong).
+    // Also patch DocumentSettings cells (PageColor / Glue / Snap / grid).
     final docXml = pkg.readPartXml(docPart);
-    if (docXml != null && _ensureDocumentStyles(docXml)) {
-      patched[_noSlash(docPart)] =
-          Uint8List.fromList(utf8.encode(docXml.toXmlString()));
+    if (docXml != null) {
+      var docDirty = false;
+      if (_ensureDocumentStyles(docXml)) docDirty = true;
+      if (_patchDocumentSettings(
+          docXml, baseline.settings, edited.settings)) {
+        docDirty = true;
+      }
+      if (docDirty) {
+        patched[_noSlash(docPart)] =
+            Uint8List.fromList(utf8.encode(docXml.toXmlString()));
+      }
     }
     final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
     final pagesXml = pagesPart == null ? null : pkg.readPartXml(pagesPart);
@@ -635,12 +645,13 @@ class VsdxWriter {
       } else {
         // Cleared PageColor — remove the cell so reopen inherits default white
         // (same model as null [VsdxPage.backgroundColor]).
-        for (final el in sheet.childElements.toList()) {
-          if (el.name.local == 'Cell' && el.getAttribute('N') == 'PageColor') {
-            el.parent?.children.remove(el);
-            changed = true;
-          }
-        }
+        changed |= _removePageSheetCells(sheet, const ['PageColor']);
+      }
+    } else if (ep.backgroundColor == null) {
+      // Model has no colour — still drop residual F=Inh (same as Layer Color).
+      final f = _pageSheetCellF(sheet, 'PageColor');
+      if (isInhFormula(f)) {
+        changed |= _removePageSheetCells(sheet, const ['PageColor']);
       }
     }
     if (needSheet || hasInh) {
@@ -1576,6 +1587,93 @@ class VsdxWriter {
       }
     }
     return true;
+  }
+
+  /// Patch `<DocumentSettings>` cells / Default*Style attrs in document.xml.
+  ///
+  /// Scrubs residual `F=Inh` and writes model literals; drops `PageColor` when
+  /// the model has no document background colour.
+  bool _patchDocumentSettings(
+    XmlDocument docXml,
+    VsdxDocumentSettings base,
+    VsdxDocumentSettings edited,
+  ) {
+    final root = docXml.rootElement;
+    if (root.name.local != 'VisioDocument') return false;
+    XmlElement? settings;
+    for (final c in root.childElements) {
+      if (c.name.local == 'DocumentSettings') {
+        settings = c;
+        break;
+      }
+    }
+    final hasInh = settings != null &&
+        settings.childElements.any(
+          (e) =>
+              e.name.local == 'Cell' && isInhFormula(e.getAttribute('F')),
+        );
+    final need = base != edited || hasInh;
+    if (!need) return false;
+
+    if (settings == null) {
+      settings = XmlElement(XmlName('DocumentSettings'));
+      // Prefer before StyleSheets / FaceNames when present.
+      XmlNode? insertBefore;
+      for (final c in root.childElements) {
+        if (c.name.local == 'StyleSheets' || c.name.local == 'FaceNames') {
+          insertBefore = c;
+          break;
+        }
+      }
+      if (insertBefore != null) {
+        root.children.insert(root.children.indexOf(insertBefore), settings);
+      } else {
+        root.children.add(settings);
+      }
+    }
+    final sheet = settings;
+
+    var changed = false;
+    void patchAttr(String name, int? want) {
+      final cur = int.tryParse(sheet.getAttribute(name) ?? '');
+      if (cur == want) return;
+      if (want == null) {
+        sheet.removeAttribute(name);
+      } else {
+        sheet.setAttribute(name, want.toString());
+      }
+      changed = true;
+    }
+
+    patchAttr('DefaultTextStyle', edited.defaultTextStyleId);
+    patchAttr('DefaultLineStyle', edited.defaultLineStyleId);
+    patchAttr('DefaultFillStyle', edited.defaultFillStyleId);
+
+    if (edited.defaultPageBackgroundColor != null) {
+      final want = _hex(edited.defaultPageBackgroundColor!);
+      final c = _ensureCell(sheet, 'PageColor');
+      if (c.getAttribute('V') != want ||
+          isInhFormula(c.getAttribute('F'))) {
+        _writeValue(c, want);
+        changed = true;
+      }
+    } else {
+      final colorCell = _findCell(sheet, 'PageColor');
+      if (colorCell != null) {
+        _removeNamedCells(sheet, const ['PageColor']);
+        changed = true;
+      }
+    }
+
+    changed |=
+        _ensureLiteralInt(sheet, 'GlueType', edited.glueType);
+    changed |= _ensureLiteralInt(
+        sheet, 'SnapEnabled', edited.snapEnabled ? 1 : 0);
+    changed |=
+        _ensureLiteralInt(sheet, 'GridDensityX', edited.gridDensityX);
+    changed |=
+        _ensureLiteralInt(sheet, 'GridDensityY', edited.gridDensityY);
+    return changed;
   }
 
   /// Generate a minimal, valid blank `.vsdx` (one empty page). Used as the

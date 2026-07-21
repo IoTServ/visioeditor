@@ -66,6 +66,7 @@ VsdxShape withLabel(
   VsdxShape s,
   String text, {
   bool? bold,
+  bool? italic,
   String? colorHex,
   double? pt,
 }) {
@@ -86,11 +87,11 @@ VsdxShape withLabel(
   final fontSize = pt != null
       ? pt / 72.0
       : (prev?.fontSizeInches ?? 11 / 72.0);
-  final fontStyle = bold == true
-      ? VsdxFontStyle.boldStyle
-      : bold == false
-          ? VsdxFontStyle.regular
-          : (prev?.style ?? VsdxFontStyle.regular);
+  final prevStyle = prev?.style ?? VsdxFontStyle.regular;
+  final fontStyle = prevStyle.copyWith(
+    bold: bold ?? prevStyle.bold,
+    italic: italic ?? prevStyle.italic,
+  );
   // Preserve theme-bound text (color=null + themeColorIndex) unless the op
   // supplies an explicit colour — injecting kInk would paint solid ink and
   // writer would drop THEMEVAL on save. textColor:"none" clears solid/theme.

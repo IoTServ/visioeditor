@@ -48,4 +48,63 @@ class VsdxDocumentSettings {
   final int? defaultFillStyleId;
 
   static const VsdxDocumentSettings defaults = VsdxDocumentSettings();
+
+  VsdxDocumentSettings copyWith({
+    VsdxColor? defaultPageBackgroundColor,
+    bool clearDefaultPageBackgroundColor = false,
+    int? glueType,
+    bool? snapEnabled,
+    int? gridDensityX,
+    int? gridDensityY,
+    int? defaultTextStyleId,
+    int? defaultLineStyleId,
+    int? defaultFillStyleId,
+    bool clearDefaultTextStyleId = false,
+    bool clearDefaultLineStyleId = false,
+    bool clearDefaultFillStyleId = false,
+  }) =>
+      VsdxDocumentSettings(
+        defaultPageBackgroundColor: clearDefaultPageBackgroundColor
+            ? null
+            : (defaultPageBackgroundColor ?? this.defaultPageBackgroundColor),
+        glueType: glueType ?? this.glueType,
+        snapEnabled: snapEnabled ?? this.snapEnabled,
+        gridDensityX: gridDensityX ?? this.gridDensityX,
+        gridDensityY: gridDensityY ?? this.gridDensityY,
+        defaultTextStyleId: clearDefaultTextStyleId
+            ? null
+            : (defaultTextStyleId ?? this.defaultTextStyleId),
+        defaultLineStyleId: clearDefaultLineStyleId
+            ? null
+            : (defaultLineStyleId ?? this.defaultLineStyleId),
+        defaultFillStyleId: clearDefaultFillStyleId
+            ? null
+            : (defaultFillStyleId ?? this.defaultFillStyleId),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VsdxDocumentSettings &&
+          defaultPageBackgroundColor?.value ==
+              other.defaultPageBackgroundColor?.value &&
+          glueType == other.glueType &&
+          snapEnabled == other.snapEnabled &&
+          gridDensityX == other.gridDensityX &&
+          gridDensityY == other.gridDensityY &&
+          defaultTextStyleId == other.defaultTextStyleId &&
+          defaultLineStyleId == other.defaultLineStyleId &&
+          defaultFillStyleId == other.defaultFillStyleId;
+
+  @override
+  int get hashCode => Object.hash(
+        defaultPageBackgroundColor?.value,
+        glueType,
+        snapEnabled,
+        gridDensityX,
+        gridDensityY,
+        defaultTextStyleId,
+        defaultLineStyleId,
+        defaultFillStyleId,
+      );
 }
