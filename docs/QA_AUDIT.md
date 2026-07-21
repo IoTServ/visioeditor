@@ -55,7 +55,7 @@
 | 双圆角（Rounding vs setCornerRadius） | DONE | UI 写入 `Line.Rounding`；弧烘焙圆角会被展平 |
 | 页阴影斜切 | DONE | Canvas/SVG 应用 PageSheet scale+oblique |
 | 图层色参与绘制 | LATER | 无 Color-by-Layer 视图模式；色仅往返 |
-| FontScale / 虚线近似 | LATER | 渲染近似 |
+| FontScale / 虚线近似 | DONE | 虚线按线宽缩放；FontScale 用 0.55×字号 tracking + 宽度估算乘 scale |
 
 ---
 
@@ -115,6 +115,6 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 | QA-02 | 双圆角属性语义 | DONE | `setCornerRadius` → `Rounding`；弧圆角展平 |
 | QA-03a | 页阴影斜切 / 缩放 | DONE | Canvas + SVG `_pageShadowTransform` |
 | QA-03b | 图层色绘制 | LATER | 需 Color-by-Layer 模式；当前仅可见性 |
-| QA-04 | FontScale、虚线样式近似 | LATER | 渲染保真 |
+| QA-04 | FontScale、虚线样式近似 | DONE | 共享 `dash_pattern.dart`（按 LineWeight）；FontScale tracking 对齐布局 |
 | QA-05 | SVG→VSDX、二进制 VSD 写回 | LATER | 产品范围外 |
 | QA-06 | Agent ops 覆盖面 < UI | LATER | 非本轮范围 |

@@ -36,8 +36,8 @@ class VsdxLine {
   final double weightInches;
 
   /// `0` = no line. `1` = solid. `2..` = dashed/dotted variants — the
-  /// renderer maps the integer onto a dash pattern (see
-  /// `lib/render/dash_path.dart`).
+  /// renderer maps the integer onto a weight-scaled dash pattern (see
+  /// `dash_pattern.dart`).
   final int pattern;
 
   final LineCap cap;

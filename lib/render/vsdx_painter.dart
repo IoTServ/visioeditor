@@ -425,7 +425,7 @@ class VsdxPainter extends CustomPainter {
   }
 
   void _paintGeometries(Canvas canvas, VsdxShape shape) {
-    final dashes = dashPatternFor(shape.line.pattern);
+    final dashes = dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches);
 
     for (final geom in shape.geometries) {
       if (geom.noShow) continue;
@@ -816,7 +816,7 @@ class VsdxPainter extends CustomPainter {
       stroke,
       shape.line.compoundType,
       shape.line.weightInches,
-      dashes: dashPatternFor(shape.line.pattern),
+      dashes: dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches),
     );
   }
 
@@ -1089,7 +1089,7 @@ class VsdxPainter extends CustomPainter {
         stroke,
         shape.line.compoundType,
         shape.line.weightInches,
-        dashes: dashPatternFor(shape.line.pattern),
+        dashes: dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches),
       );
     }
     if (paintImage) {
@@ -1207,7 +1207,7 @@ class VsdxPainter extends CustomPainter {
         paint,
         shape.line.compoundType,
         shape.line.weightInches,
-        dashes: dashPatternFor(shape.line.pattern),
+        dashes: dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches),
       );
     } else {
       canvas.drawPath(path, paint);
@@ -2662,12 +2662,12 @@ class VsdxPainter extends CustomPainter {
         final base = run.charStyle.letterSpacingInches == 0
             ? 0.0
             : run.charStyle.letterSpacingInches * scale;
-        // Approximate FontScale as extra tracking (true glyph width scale
-        // isn't available on TextStyle without a transform).
+        // Approximate FontScale as extra tracking. Use the same mean Latin
+        // advance (0.55×size) as SVG [_estSvgTextWidth] / letter-spacing.
         if ((widthScale - 1.0).abs() < 1e-6) {
           return base == 0 ? null : base;
         }
-        return base + scaledSize * (widthScale - 1.0) * 0.15;
+        return base + scaledSize * (widthScale - 1.0) * 0.55;
       }(),
       height: lineHeight,
       fontFeatures: features.isEmpty ? null : features,

@@ -2026,8 +2026,8 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    // Combined ≈ 0.05 + 0.2*(2-1)*0.15 = 0.08
-    expect(svg, contains('letter-spacing="0.08"'));
+    // Combined ≈ 0.05 + 0.2*(2-1)*0.55 = 0.16 (mean Latin advance)
+    expect(svg, contains('letter-spacing="0.16"'));
     expect(
       RegExp(r'letter-spacing="').allMatches(svg).length,
       1,

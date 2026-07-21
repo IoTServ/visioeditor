@@ -24,6 +24,7 @@ export 'src/utils/xml_extensions.dart';
 export 'src/model/connect.dart';
 export 'src/model/chart_shapes.dart';
 export 'src/model/custom_property.dart';
+export 'src/model/dash_pattern.dart';
 export 'src/model/document.dart';
 export 'src/model/document_settings.dart';
 export 'src/model/effects.dart';

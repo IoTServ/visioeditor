@@ -1753,10 +1753,10 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg, contains('stroke-dasharray="0.10 0.05"'));
+    expect(svg, contains('stroke-dasharray="0.4 0.2"'));
     // Shadow path also dashed (not only the main stroke).
     expect(
-      RegExp(r'stroke-dasharray="0\.10 0\.05"').allMatches(svg).length,
+      RegExp(r'stroke-dasharray="0\.4 0\.2"').allMatches(svg).length,
       greaterThanOrEqualTo(2),
     );
   });

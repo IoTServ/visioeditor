@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import '../model/dash_pattern.dart';
 import '../model/document.dart';
 import '../model/effects.dart';
 import '../model/elliptical_arc.dart';
@@ -1367,7 +1368,7 @@ class VsdxToSvgSerializer {
       LineCap.extended => 'butt',
     };
     final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
-    final dash = _dashAttr(line.pattern);
+    final dash = _dashAttr(line.pattern, line.weightInches);
     final dashAttr = dash.isEmpty ? '' : ' stroke-dasharray="$dash"';
     final rails = compoundRails(line.compoundType, weight);
     final sampled = samplePathD(d);
@@ -2160,7 +2161,7 @@ class VsdxToSvgSerializer {
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
     final alpha = _combinedOpacity(c, line.transparency);
     final hex = c == null ? '#000000' : _hex(c);
-    final dash = _dashAttr(line.pattern);
+    final dash = _dashAttr(line.pattern, line.weightInches);
     // Match canvas [_flutterCap]: Visio LineCap → SVG stroke-linecap.
     final linecap = switch (line.cap) {
       LineCap.round => 'round',
@@ -2465,29 +2466,12 @@ class VsdxToSvgSerializer {
     return (colourA * (1 - transparency)).clamp(0.0, 1.0);
   }
 
-  String _dashAttr(int linePattern) {
-    if (linePattern <= 1) return '';
-    return switch (linePattern) {
-      2 => '0.10 0.05',
-      3 => '0.02 0.04',
-      4 => '0.12 0.05 0.02 0.05',
-      5 => '0.12 0.05 0.02 0.05 0.02 0.05',
-      6 => '0.06 0.04',
-      7 => '0.10 0.10',
-      8 => '0.08 0.12',
-      9 => '0.20 0.05',
-      10 => '0.20 0.05 0.02 0.05',
-      11 => '0.20 0.05 0.02 0.05 0.02 0.05',
-      12 => '0.14 0.06',
-      13 => '0.14 0.05 0.02 0.05',
-      14 => '0.14 0.05 0.02 0.05 0.02 0.05',
-      15 => '0.015 0.03',
-      16 => '0.10 0.04 0.04 0.04',
-      17 || 18 => '0.16 0.06',
-      19 || 20 => '0.10 0.05 0.03 0.05',
-      21 || 22 || 23 => '0.08 0.04 0.02 0.04',
-      _ => '0.08 0.04',
-    };
+  String _dashAttr(int linePattern, [double weightInches = 0.01]) {
+    return dashArrayAttr(
+      linePattern,
+      weightInches: weightInches,
+      format: _n,
+    );
   }
 
   void _writeImage(
@@ -3423,9 +3407,9 @@ class VsdxToSvgSerializer {
     }
     var tracking = style.letterSpacingInches;
     final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
-    if ((scale - 1.0).abs() > 1e-6) {
-      tracking += fs * (scale - 1.0) * 0.15;
-    }
+    // Visio FontScale stretches glyph *width*. Scale the summed advances,
+    // then apply true Letterspace between glyphs (not a fake FontScale track).
+    w *= scale;
     // Flutter letterSpacing applies between glyphs ≈ (n-1) gaps.
     if (n > 1 && tracking.abs() > 1e-12) {
       w += tracking * (n - 1);
@@ -3675,10 +3659,12 @@ class VsdxToSvgSerializer {
     }
     if (fontSizeOverride != null) fs = fontSizeOverride;
     // FontScale is a *width* scale in Visio — do not multiply font-size (that
-    // also grows glyph height). Match canvas: approximate with letter-spacing.
+    // also grows glyph height). Approximate with letter-spacing using the same
+    // mean Latin advance (0.55×size) used by [_estSvgTextWidth].
     var letterSpacing = c.letterSpacingInches;
-    if ((c.fontScale - 1.0).abs() > 1e-6) {
-      letterSpacing += fs * (c.fontScale.clamp(0.1, 4.0) - 1.0) * 0.15;
+    final fontScale = c.fontScale <= 0 ? 1.0 : c.fontScale.clamp(0.1, 4.0);
+    if ((fontScale - 1.0).abs() > 1e-6) {
+      letterSpacing += fs * (fontScale - 1.0) * 0.55;
     }
     // Match canvas fontFallback: Latin face then AsianFont for CJK glyphs.
     final family = _svgFontFamily(c.fontFamily, c.asianFont);
