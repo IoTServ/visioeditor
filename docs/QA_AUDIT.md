@@ -18,7 +18,7 @@
 | Ranking 图标签 | DONE | 排序后补标签；空 values 兜底 |
 | VSDX equal-path 填充 | DONE | 叶子缺 `FillForegnd` 注入；Group 不误注入 `FillPattern=1` |
 | Edraw 往返探针 | DONE | fixtures（含中文样例）均为 `[ok]` |
-| LibreOffice 交叉打开 | BLOCKED | 本机无 `soffice`；CI `libreoffice-crosscheck` 覆盖（见 fixtures.md） |
+| LibreOffice 交叉打开 | DONE | 本机 `soffice` + `REQUIRE_SOFFICE=1 dart test test/libreoffice_crosscheck_test.dart` 通过 |
 | 架构/fixture 文档 | DONE | `ARCHITECTURE.md` / `references/fixtures.md` 已与仓库对齐 |
 | SVG→VSDX | LATER | 无此路径 |
 | 二进制 `.vsd` 写回 | LATER | 仅 VSD→VSDX |
