@@ -528,6 +528,9 @@ ApplyResult applyOps(
             final doubleUnderline = op.containsKey('doubleUnderline')
                 ? op['doubleUnderline'] == true
                 : null;
+            final doubleStrikethrough = op.containsKey('doubleStrikethrough')
+                ? op['doubleStrikethrough'] == true
+                : null;
             final overline =
                 op.containsKey('overline') ? op['overline'] == true : null;
             final smallCaps =
@@ -541,8 +544,14 @@ ApplyResult applyOps(
                 : _d(op['letterSpacing']);
             final textTransparency = _d(
                 op['textTransparency'] ?? op['charTransparency']);
+            final fontScale = _d(op['fontScale']);
+            final complexScriptSizePt = _d(op['complexScriptSizePt']);
+            final complexScriptSizeInches = complexScriptSizePt != null
+                ? complexScriptSizePt / 72.0
+                : _d(op['complexScriptSizeInches'] ?? op['complexScriptSize']);
             final langId = op['langId']?.toString() ?? op['langID']?.toString();
             final asianFont = op['asianFont']?.toString();
+            final complexScriptFont = op['complexScriptFont']?.toString();
             VsdxTextCase? textCase;
             if (op.containsKey('textCase')) {
               final raw = op['textCase'];
@@ -568,12 +577,34 @@ ApplyResult applyOps(
                 };
               }
             }
+            VsdxTextPosition? textPosition;
+            if (op.containsKey('textPosition') || op.containsKey('position')) {
+              final raw = op['textPosition'] ?? op['position'];
+              if (raw is num) {
+                textPosition = switch (raw.toInt()) {
+                  0 => VsdxTextPosition.normal,
+                  1 => VsdxTextPosition.superscript,
+                  2 => VsdxTextPosition.subscript,
+                  _ => null,
+                };
+              } else if (raw != null) {
+                final s = raw.toString().trim().toLowerCase();
+                textPosition = switch (s) {
+                  'normal' || '0' => VsdxTextPosition.normal,
+                  'superscript' || 'super' || '1' =>
+                    VsdxTextPosition.superscript,
+                  'subscript' || 'sub' || '2' => VsdxTextPosition.subscript,
+                  _ => null,
+                };
+              }
+            }
             if (textColor != null ||
                 bold != null ||
                 italic != null ||
                 underline != null ||
                 strikethrough != null ||
                 doubleUnderline != null ||
+                doubleStrikethrough != null ||
                 overline != null ||
                 smallCaps != null ||
                 fontFamily != null ||
@@ -581,8 +612,12 @@ ApplyResult applyOps(
                 letterSpacing != null ||
                 textTransparency != null ||
                 textCase != null ||
+                textPosition != null ||
+                fontScale != null ||
                 langId != null ||
-                asianFont != null) {
+                asianFont != null ||
+                complexScriptFont != null ||
+                complexScriptSizeInches != null) {
               next = applyCharStyle(
                 next,
                 bold: bold,
@@ -590,6 +625,7 @@ ApplyResult applyOps(
                 underline: underline,
                 strikethrough: strikethrough,
                 doubleUnderline: doubleUnderline,
+                doubleStrikethrough: doubleStrikethrough,
                 overline: overline,
                 smallCaps: smallCaps,
                 colorHex: textColor,
@@ -598,8 +634,12 @@ ApplyResult applyOps(
                 letterSpacingInches: letterSpacing,
                 textTransparency: textTransparency,
                 textCase: textCase,
+                textPosition: textPosition,
+                fontScale: fontScale,
                 langId: langId,
                 asianFont: asianFont,
+                complexScriptFont: complexScriptFont,
+                complexScriptSizeInches: complexScriptSizeInches,
               );
             }
             if (op.containsKey('hideText')) {

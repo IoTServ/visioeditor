@@ -12768,4 +12768,218 @@ void main() {
       isFalse,
     );
   });
+
+  test('Connection X/Prompt F=Inh scrubbed when points equal', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          connectionPoints: const [
+            VsdxConnectionPoint(1, 0.5, dirX: 1, dirY: 0),
+          ],
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '<Section N="Connection"><Row IX="0"><Cell N="X" V="1"/>',
+      '<Section N="Connection"><Row IX="0">'
+          '<Cell N="Prompt" V="tip" F="Inh"/>'
+          '<Cell N="X" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Connection"[\s\S]*?N="X"[^>]*F="Inh"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+    expect(
+      RegExp(r'<Section N="Connection"[\s\S]*?N="Prompt"[^>]*F="Inh"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+  });
+
+  test('Control Prompt F=Inh scrubbed when model prompt is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          controls: const [
+            VsdxControlRow(name: 'Row_1', x: 0.5, y: 0.5),
+          ],
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '<Row N="Row_1">',
+      '<Row N="Row_1"><Cell N="Prompt" V="tip" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Control"[\s\S]*?N="Prompt"[^>]*F="Inh"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+  });
+
+  test('Field UICat F=Inh scrubbed when model uiCat is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: '42',
+          fields: const [VsdxFieldRow(ix: 0, value: '42', type: 0)],
+          richText: VsdxRichText(runs: [
+            VsdxTextRun(
+              text: '42',
+              fieldSpans: const [VsdxFieldSpan(ix: 0, start: 0, length: 2)],
+            ),
+          ]),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.fields.first.uiCat, isNull);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '<Section N="Field"><Row IX="0">',
+      '<Section N="Field"><Row IX="0"><Cell N="UICat" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Field"[\s\S]*?N="UICat"[^>]*F="Inh"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+  });
+
+  test('ConLineJumpCode F=Inh dropped when connector prop is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final conn = VsdxShapeFactory.line(id: id, ax: 1, ay: 2, bx: 4, by: 2);
+    doc = doc.replacePage(0, doc.pages.first.addShape(conn));
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.connectorProps?.conLineJumpCode,
+        isNull);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="ConLineJumpCode"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="ConLineJumpCode"[^/]*/>'),
+        '<Cell N="ConLineJumpCode" V="1" F="Inh"/>',
+      );
+    } else {
+      final close = pageXml.lastIndexOf('</Shape>');
+      pageXml =
+          '${pageXml.substring(0, close)}<Cell N="ConLineJumpCode" V="1" F="Inh"/>${pageXml.substring(close)}';
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.01),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="ConLineJumpCode"[^>]*F="Inh"').hasMatch(outXml),
+      isFalse,
+    );
+  });
 }

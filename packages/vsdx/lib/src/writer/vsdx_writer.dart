@@ -2737,54 +2737,54 @@ class VsdxWriter {
   bool _patchConnectorProps(XmlElement el, VsdxShape base, VsdxShape edited) {
     final b = base.connectorProps;
     final e = edited.connectorProps;
-    if (e == null) return false;
     var changed = false;
     // BegTrigger / EndTrigger are formula cells (`_XFTRIGGER(...)`) — only
     // rewrite when the model value changes. Never scrub residual F= on equal
     // (would flatten `_XFTRIGGER` into a bare V=).
-    if (e.begTrigger != null) {
+    if (e?.begTrigger != null) {
       changed |=
-          _patchStringCell(el, 'BegTrigger', b?.begTrigger, e.begTrigger!);
+          _patchStringCell(el, 'BegTrigger', b?.begTrigger, e!.begTrigger!);
     }
-    if (e.endTrigger != null) {
+    if (e?.endTrigger != null) {
       changed |=
-          _patchStringCell(el, 'EndTrigger', b?.endTrigger, e.endTrigger!);
+          _patchStringCell(el, 'EndTrigger', b?.endTrigger, e!.endTrigger!);
     }
-    if (e.glueType != null) {
-      changed |= _ensureLiteralInt(el, 'GlueType', e.glueType!);
+    // Optional ints: write literal when set; when null still drop residual
+    // F=Inh (same as PageSheet LineJump* / ThemeIndex).
+    changed |= _dropOptionalConnectorInt(el, 'GlueType', e?.glueType);
+    changed |= _dropOptionalConnectorInt(el, 'ConFixedCode', e?.conFixedCode);
+    changed |= _dropOptionalConnectorInt(el, 'DynFeedback', e?.dynFeedback);
+    if (e != null) {
+      changed |= _patchBool(el, 'NoLiveDynamics', b?.noLiveDynamics ?? false,
+          e.noLiveDynamics);
+      changed |= _forceLiteralInt(
+          el, 'NoLiveDynamics', e.noLiveDynamics ? 1 : 0);
     }
-    if (e.conFixedCode != null) {
-      changed |= _ensureLiteralInt(el, 'ConFixedCode', e.conFixedCode!);
-    }
-    if (e.dynFeedback != null) {
-      changed |= _ensureLiteralInt(el, 'DynFeedback', e.dynFeedback!);
-    }
-    changed |= _patchBool(el, 'NoLiveDynamics', b?.noLiveDynamics ?? false,
-        e.noLiveDynamics);
-    changed |= _forceLiteralInt(
-        el, 'NoLiveDynamics', e.noLiveDynamics ? 1 : 0);
-    if (e.conLineJumpCode != null) {
-      changed |= _ensureLiteralInt(el, 'ConLineJumpCode', e.conLineJumpCode!);
-    }
-    if (e.conLineRouteExt != null) {
-      changed |= _ensureLiteralInt(el, 'ConLineRouteExt', e.conLineRouteExt!);
-    }
-    if (e.conLineJumpStyle != null) {
-      changed |= _ensureLiteralInt(el, 'ConLineJumpStyle', e.conLineJumpStyle!);
-    }
-    if (e.conLineJumpDirX != null) {
-      changed |= _ensureLiteralInt(el, 'ConLineJumpDirX', e.conLineJumpDirX!);
-    }
-    if (e.conLineJumpDirY != null) {
-      changed |= _ensureLiteralInt(el, 'ConLineJumpDirY', e.conLineJumpDirY!);
-    }
-    if (e.shapeRouteStyle != null) {
-      changed |= _ensureLiteralInt(el, 'ShapeRouteStyle', e.shapeRouteStyle!);
-    }
-    if (e.shapePlaceFlip != null) {
-      changed |= _ensureLiteralInt(el, 'ShapePlaceFlip', e.shapePlaceFlip!);
-    }
+    changed |=
+        _dropOptionalConnectorInt(el, 'ConLineJumpCode', e?.conLineJumpCode);
+    changed |=
+        _dropOptionalConnectorInt(el, 'ConLineRouteExt', e?.conLineRouteExt);
+    changed |=
+        _dropOptionalConnectorInt(el, 'ConLineJumpStyle', e?.conLineJumpStyle);
+    changed |=
+        _dropOptionalConnectorInt(el, 'ConLineJumpDirX', e?.conLineJumpDirX);
+    changed |=
+        _dropOptionalConnectorInt(el, 'ConLineJumpDirY', e?.conLineJumpDirY);
+    changed |=
+        _dropOptionalConnectorInt(el, 'ShapeRouteStyle', e?.shapeRouteStyle);
+    changed |=
+        _dropOptionalConnectorInt(el, 'ShapePlaceFlip', e?.shapePlaceFlip);
     return changed;
+  }
+
+  /// Write a connector optional int, or drop the cell when null + residual Inh.
+  bool _dropOptionalConnectorInt(XmlElement el, String name, int? value) {
+    if (value != null) return _ensureLiteralInt(el, name, value);
+    final cell = _findCell(el, name);
+    if (cell != null && isInhFormula(cell.getAttribute('F'))) {
+      return _removeNamedCells(el, [name]);
+    }
+    return false;
   }
 
   bool _patchStringCell(
@@ -2912,6 +2912,10 @@ class VsdxWriter {
     var changed = false;
     for (var i = 0; i < edited.connectionPoints.length && i < rows.length; i++) {
       final p = edited.connectionPoints[i];
+      changed |= _scrubFormulaOrLiteral(
+          rows[i], 'X', _fmt(p.x), formula: p.xFormula);
+      changed |= _scrubFormulaOrLiteral(
+          rows[i], 'Y', _fmt(p.y), formula: p.yFormula);
       final dirXCell = _ensureCell(rows[i], 'DirX');
       final dirYCell = _ensureCell(rows[i], 'DirY');
       changed |= _writeValueIfNeeded(dirXCell, _fmt(p.dirX));
@@ -2920,6 +2924,12 @@ class VsdxWriter {
           _writeValueIfNeeded(_ensureCell(rows[i], 'Type'), p.type.toString());
       changed |= _writeValueIfNeeded(
           _ensureCell(rows[i], 'AutoGen'), p.autoGen ? '1' : '0');
+      if (p.prompt != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(rows[i], 'Prompt'), p.prompt!);
+      } else {
+        changed |= _removeInhOrDrop(rows[i], 'Prompt');
+      }
     }
     return changed;
   }
@@ -3219,6 +3229,8 @@ class VsdxWriter {
           _ensureCell(row, 'CanGlue'), r.canGlue ? '1' : '0');
       if (r.prompt != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Prompt'), r.prompt!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Prompt');
       }
     }
     return changed;
@@ -3335,22 +3347,32 @@ class VsdxWriter {
       if (r.uiCat != null) {
         changed |=
             _writeValueIfNeeded(_ensureCell(row, 'UICat'), r.uiCat.toString());
+      } else {
+        changed |= _removeInhOrDrop(row, 'UICat');
       }
       if (r.uiCod != null) {
         changed |=
             _writeValueIfNeeded(_ensureCell(row, 'UICod'), r.uiCod.toString());
+      } else {
+        changed |= _removeInhOrDrop(row, 'UICod');
       }
       if (r.uiFmt != null) {
         changed |=
             _writeValueIfNeeded(_ensureCell(row, 'UIFmt'), r.uiFmt.toString());
+      } else {
+        changed |= _removeInhOrDrop(row, 'UIFmt');
       }
       if (r.calendar != null) {
         changed |= _writeValueIfNeeded(
             _ensureCell(row, 'Calendar'), r.calendar.toString());
+      } else {
+        changed |= _removeInhOrDrop(row, 'Calendar');
       }
       if (r.objectKind != null) {
         changed |= _writeValueIfNeeded(
             _ensureCell(row, 'ObjectKind'), r.objectKind.toString());
+      } else {
+        changed |= _removeInhOrDrop(row, 'ObjectKind');
       }
     }
     return changed;

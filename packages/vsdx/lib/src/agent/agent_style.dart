@@ -70,6 +70,7 @@ VsdxShape withLabel(
   bool? underline,
   bool? strikethrough,
   bool? doubleUnderline,
+  bool? doubleStrikethrough,
   bool? overline,
   bool? smallCaps,
   String? colorHex,
@@ -78,8 +79,12 @@ VsdxShape withLabel(
   double? letterSpacingInches,
   double? textTransparency,
   VsdxTextCase? textCase,
+  VsdxTextPosition? textPosition,
+  double? fontScale,
   String? langId,
   String? asianFont,
+  String? complexScriptFont,
+  double? complexScriptSizeInches,
 }) {
   if (text.isEmpty) {
     // Clear label (set_text "" must round-trip as empty, not no-op).
@@ -115,14 +120,21 @@ VsdxShape withLabel(
       underline: underline ?? prev.underline,
       strikethrough: strikethrough ?? prev.strikethrough,
       doubleUnderline: doubleUnderline ?? prev.doubleUnderline,
+      doubleStrikethrough:
+          doubleStrikethrough ?? prev.doubleStrikethrough,
       overline: overline ?? prev.overline,
       fontFamily: fontFamily ?? prev.fontFamily,
       letterSpacingInches:
           letterSpacingInches ?? prev.letterSpacingInches,
       transparency: textTransparency ?? prev.transparency,
       textCase: textCase ?? prev.textCase,
+      position: textPosition ?? prev.position,
+      fontScale: fontScale ?? prev.fontScale,
       langId: langId ?? prev.langId,
       asianFont: asianFont ?? prev.asianFont,
+      complexScriptFont: complexScriptFont ?? prev.complexScriptFont,
+      complexScriptSizeInches:
+          complexScriptSizeInches ?? prev.complexScriptSizeInches,
     );
     if (clearColor) {
       next = next.copyWith(clearColor: true, clearThemeColorIndex: true);
@@ -137,13 +149,18 @@ VsdxShape withLabel(
       underline: underline ?? false,
       strikethrough: strikethrough ?? false,
       doubleUnderline: doubleUnderline ?? false,
+      doubleStrikethrough: doubleStrikethrough ?? false,
       overline: overline ?? false,
       fontFamily: fontFamily,
       letterSpacingInches: letterSpacingInches ?? 0.0,
       transparency: textTransparency ?? 0.0,
       textCase: textCase ?? VsdxTextCase.normal,
+      position: textPosition ?? VsdxTextPosition.normal,
+      fontScale: fontScale ?? 1.0,
       langId: langId,
       asianFont: asianFont,
+      complexScriptFont: complexScriptFont,
+      complexScriptSizeInches: complexScriptSizeInches,
     ).withSolidColor(parsed);
   } else if (clearColor) {
     style = VsdxCharStyle(
@@ -152,13 +169,18 @@ VsdxShape withLabel(
       underline: underline ?? false,
       strikethrough: strikethrough ?? false,
       doubleUnderline: doubleUnderline ?? false,
+      doubleStrikethrough: doubleStrikethrough ?? false,
       overline: overline ?? false,
       fontFamily: fontFamily,
       letterSpacingInches: letterSpacingInches ?? 0.0,
       transparency: textTransparency ?? 0.0,
       textCase: textCase ?? VsdxTextCase.normal,
+      position: textPosition ?? VsdxTextPosition.normal,
+      fontScale: fontScale ?? 1.0,
       langId: langId,
       asianFont: asianFont,
+      complexScriptFont: complexScriptFont,
+      complexScriptSizeInches: complexScriptSizeInches,
     );
   } else {
     style = VsdxCharStyle(
@@ -168,13 +190,18 @@ VsdxShape withLabel(
       underline: underline ?? false,
       strikethrough: strikethrough ?? false,
       doubleUnderline: doubleUnderline ?? false,
+      doubleStrikethrough: doubleStrikethrough ?? false,
       overline: overline ?? false,
       fontFamily: fontFamily,
       letterSpacingInches: letterSpacingInches ?? 0.0,
       transparency: textTransparency ?? 0.0,
       textCase: textCase ?? VsdxTextCase.normal,
+      position: textPosition ?? VsdxTextPosition.normal,
+      fontScale: fontScale ?? 1.0,
       langId: langId,
       asianFont: asianFont,
+      complexScriptFont: complexScriptFont,
+      complexScriptSizeInches: complexScriptSizeInches,
     );
   }
   final prevRun =
@@ -210,6 +237,7 @@ VsdxShape applyCharStyle(
   bool? underline,
   bool? strikethrough,
   bool? doubleUnderline,
+  bool? doubleStrikethrough,
   bool? overline,
   bool? smallCaps,
   String? colorHex,
@@ -218,8 +246,12 @@ VsdxShape applyCharStyle(
   double? letterSpacingInches,
   double? textTransparency,
   VsdxTextCase? textCase,
+  VsdxTextPosition? textPosition,
+  double? fontScale,
   String? langId,
   String? asianFont,
+  String? complexScriptFont,
+  double? complexScriptSizeInches,
 }) {
   final fromText = s.text;
   final plain = (fromText != null && fromText.isNotEmpty)
@@ -234,6 +266,7 @@ VsdxShape applyCharStyle(
       underline: underline,
       strikethrough: strikethrough,
       doubleUnderline: doubleUnderline,
+      doubleStrikethrough: doubleStrikethrough,
       overline: overline,
       smallCaps: smallCaps,
       colorHex: colorHex,
@@ -242,8 +275,12 @@ VsdxShape applyCharStyle(
       letterSpacingInches: letterSpacingInches,
       textTransparency: textTransparency,
       textCase: textCase,
+      textPosition: textPosition,
+      fontScale: fontScale,
       langId: langId,
       asianFont: asianFont,
+      complexScriptFont: complexScriptFont,
+      complexScriptSizeInches: complexScriptSizeInches,
     );
   }
   VsdxCharStyle merge(VsdxCharStyle prev) {
@@ -263,14 +300,21 @@ VsdxShape applyCharStyle(
       underline: underline ?? prev.underline,
       strikethrough: strikethrough ?? prev.strikethrough,
       doubleUnderline: doubleUnderline ?? prev.doubleUnderline,
+      doubleStrikethrough:
+          doubleStrikethrough ?? prev.doubleStrikethrough,
       overline: overline ?? prev.overline,
       fontFamily: fontFamily ?? prev.fontFamily,
       letterSpacingInches:
           letterSpacingInches ?? prev.letterSpacingInches,
       transparency: textTransparency ?? prev.transparency,
       textCase: textCase ?? prev.textCase,
+      position: textPosition ?? prev.position,
+      fontScale: fontScale ?? prev.fontScale,
       langId: langId ?? prev.langId,
       asianFont: asianFont ?? prev.asianFont,
+      complexScriptFont: complexScriptFont ?? prev.complexScriptFont,
+      complexScriptSizeInches:
+          complexScriptSizeInches ?? prev.complexScriptSizeInches,
     );
     if (clearColor) {
       next = next.copyWith(clearColor: true, clearThemeColorIndex: true);

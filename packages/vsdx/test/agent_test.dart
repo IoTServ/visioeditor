@@ -674,6 +674,11 @@ void main() {
           'langId': 'zh-CN',
           'asianFont': 'SimSun',
           'fillBackgroundTransparency': 0.4,
+          'doubleStrikethrough': true,
+          'textPosition': 'superscript',
+          'fontScale': 0.85,
+          'complexScriptFont': 'Arial',
+          'complexScriptSizePt': 10,
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -687,6 +692,11 @@ void main() {
       expect(c.langId, 'zh-CN');
       expect(c.asianFont, 'SimSun');
       expect(after.fill.backgroundTransparency, closeTo(0.4, 1e-9));
+      expect(c.doubleStrikethrough, isTrue);
+      expect(c.position, VsdxTextPosition.superscript);
+      expect(c.fontScale, closeTo(0.85, 1e-9));
+      expect(c.complexScriptFont, 'Arial');
+      expect(c.complexScriptSizeInches, closeTo(10 / 72.0, 1e-9));
     });
 
     test('withLabel style-only keeps Field rows', () {
