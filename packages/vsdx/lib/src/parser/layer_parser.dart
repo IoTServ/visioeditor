@@ -38,9 +38,11 @@ class LayerParser {
           snap: (_cellInt(row, 'Snap') ?? 1) != 0,
           glue: (_cellInt(row, 'Glue') ?? 1) != 0,
           color: VsdxColor.tryParse(_cellString(row, 'Color')),
-          colorTrans: _cellDouble(row, 'ColorTrans') ?? 0,
+          // ColorTrans / Status: keep cached V= even when F=Inh so a non-zero
+          // transparency / status is not forced to the Visio default 0.
+          colorTrans: _cellDoubleCached(row, 'ColorTrans') ?? 0,
           nameUniv: _cellString(row, 'NameUniv'),
-          status: _cellInt(row, 'Status') ?? 0,
+          status: _cellIntCached(row, 'Status') ?? 0,
         ));
       }
     }
@@ -93,6 +95,27 @@ class LayerParser {
 
   double? _cellDouble(XmlElement parent, String name) {
     final s = _cellString(parent, name);
+    if (s == null) return null;
+    return double.tryParse(s);
+  }
+
+  /// Read `V=` even when `F=Inh` (cached value Visio still stores).
+  String? _cellStringCached(XmlElement parent, String name) {
+    final cell = findCell(parent, name);
+    if (cell == null) return null;
+    final v = cell.getAttribute('V');
+    if (v == null || v.isEmpty) return null;
+    return v;
+  }
+
+  int? _cellIntCached(XmlElement parent, String name) {
+    final s = _cellStringCached(parent, name);
+    if (s == null) return null;
+    return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+  }
+
+  double? _cellDoubleCached(XmlElement parent, String name) {
+    final s = _cellStringCached(parent, name);
     if (s == null) return null;
     return double.tryParse(s);
   }

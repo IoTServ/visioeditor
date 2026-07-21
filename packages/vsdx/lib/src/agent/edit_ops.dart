@@ -714,13 +714,15 @@ ApplyResult applyOps(
                     runs = next.richText.runs;
                   } else {
                     next = next.copyWith(
-                      richText: VsdxRichText(runs: [
-                        VsdxTextRun(
-                          text: '',
-                          paraStyle: VsdxParaStyle.defaults
-                              .copyWith(horizontalAlign: align),
-                        ),
-                      ]),
+                      richText: next.richText.copyWith(
+                        runs: [
+                          VsdxTextRun(
+                            text: '',
+                            paraStyle: VsdxParaStyle.defaults
+                                .copyWith(horizontalAlign: align),
+                          ),
+                        ],
+                      ),
                     );
                     runs = next.richText.runs;
                   }
@@ -835,7 +837,40 @@ ApplyResult applyOps(
             final indentRight = _d(op['indentRight'] ?? op['rightIndent']);
             final spaceBefore = _d(op['spaceBefore']);
             final spaceAfter = _d(op['spaceAfter']);
-            final lineSpacing = _d(op['lineSpacing'] ?? op['spLine']);
+            final textPosAfterBullet = _d(
+                op['textPosAfterBullet'] ?? op['textPosAfterBulletInches']);
+            // Relative multiplier (lineSpacing) vs absolute inches / Visio SpLine.
+            double? lineSpacingMult;
+            double? lineSpacingAbs;
+            var clearAbsolute = false;
+            if (op.containsKey('lineSpacingAbsolute') ||
+                op.containsKey('lineSpacingAbsoluteInches') ||
+                op.containsKey('lineSpacingAbsolutePt')) {
+              final pt = _d(op['lineSpacingAbsolutePt']);
+              lineSpacingAbs = pt != null
+                  ? pt / 72.0
+                  : _d(op['lineSpacingAbsolute'] ??
+                      op['lineSpacingAbsoluteInches']);
+            }
+            if (op.containsKey('spLine')) {
+              final sp = _d(op['spLine']);
+              if (sp != null) {
+                if (sp < 0) {
+                  lineSpacingMult = -sp;
+                  clearAbsolute = true;
+                } else if (sp > 0) {
+                  lineSpacingAbs = sp;
+                } else {
+                  // SpLine=0 → solid.
+                  lineSpacingAbs = 0;
+                  clearAbsolute = false;
+                }
+              }
+            }
+            if (op.containsKey('lineSpacing')) {
+              lineSpacingMult = _d(op['lineSpacing']);
+              clearAbsolute = true;
+            }
             final bullet = op.containsKey('bullet')
                 ? (op['bullet'] is num
                     ? (op['bullet'] as num).toInt()
@@ -847,29 +882,55 @@ ApplyResult applyOps(
             final bulletFontSize = bulletFontSizePt != null
                 ? bulletFontSizePt / 72.0
                 : _d(op['bulletFontSize'] ?? op['bulletFontSizeInches']);
+            final solidLine = op.containsKey('spLine') && _d(op['spLine']) == 0;
             if (indentFirst != null ||
                 indentLeft != null ||
                 indentRight != null ||
                 spaceBefore != null ||
                 spaceAfter != null ||
-                lineSpacing != null ||
+                lineSpacingMult != null ||
+                lineSpacingAbs != null ||
+                solidLine ||
+                textPosAfterBullet != null ||
                 bullet != null ||
                 bulletStr != null ||
                 bulletFont != null ||
                 bulletFontSize != null) {
-              VsdxParaStyle mapPara(VsdxParaStyle p) => p.copyWith(
-                    indentFirstInches: indentFirst ?? p.indentFirstInches,
-                    indentLeftInches: indentLeft ?? p.indentLeftInches,
-                    indentRightInches: indentRight ?? p.indentRightInches,
-                    spaceBeforeInches: spaceBefore ?? p.spaceBeforeInches,
-                    spaceAfterInches: spaceAfter ?? p.spaceAfterInches,
-                    lineSpacing: lineSpacing ?? p.lineSpacing,
-                    bullet: bullet ?? p.bullet,
-                    bulletStr: bulletStr ?? p.bulletStr,
-                    bulletFont: bulletFont ?? p.bulletFont,
-                    bulletFontSizeInches:
-                        bulletFontSize ?? p.bulletFontSizeInches,
+              VsdxParaStyle mapPara(VsdxParaStyle p) {
+                var next = p.copyWith(
+                  indentFirstInches: indentFirst ?? p.indentFirstInches,
+                  indentLeftInches: indentLeft ?? p.indentLeftInches,
+                  indentRightInches: indentRight ?? p.indentRightInches,
+                  spaceBeforeInches: spaceBefore ?? p.spaceBeforeInches,
+                  spaceAfterInches: spaceAfter ?? p.spaceAfterInches,
+                  bullet: bullet ?? p.bullet,
+                  bulletStr: bulletStr ?? p.bulletStr,
+                  bulletFont: bulletFont ?? p.bulletFont,
+                  bulletFontSizeInches:
+                      bulletFontSize ?? p.bulletFontSizeInches,
+                  textPosAfterBulletInches: textPosAfterBullet ??
+                      p.textPosAfterBulletInches,
+                );
+                if (solidLine) {
+                  next = next.copyWith(
+                    lineSpacingSolid: true,
+                    lineSpacingAbsoluteInches: 0,
+                    lineSpacing: 1.0,
                   );
+                } else if (lineSpacingAbs != null) {
+                  next = next.copyWith(
+                    lineSpacingAbsoluteInches: lineSpacingAbs,
+                    lineSpacingSolid: false,
+                  );
+                } else if (lineSpacingMult != null || clearAbsolute) {
+                  next = next.copyWith(
+                    lineSpacing: lineSpacingMult ?? p.lineSpacing,
+                    lineSpacingAbsoluteInches: 0,
+                    lineSpacingSolid: false,
+                  );
+                }
+                return next;
+              }
               var runs = next.richText.runs;
               if (runs.isEmpty) {
                 final plain = next.text;

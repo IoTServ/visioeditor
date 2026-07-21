@@ -2157,6 +2157,7 @@ class VsdxWriter {
     // so hosts that ignore F= (notably Edraw) still show the resized bitmap.
     if (edited.hasImage) {
       changed |= _syncImageSizeCells(el, edited);
+      changed |= _syncForeignDataAttrs(el, edited);
     }
     changed |= _ensureLineFillBasics(el, edited);
     changed |= _patchAngle(el, 'Angle', base.angleRad, edited.angleRad);
@@ -6240,6 +6241,47 @@ class VsdxWriter {
         _writeValue(cell, next);
         changed = true;
       }
+    }
+    return changed;
+  }
+
+  /// Keep `<ForeignData ForeignType=… CompressionType=…>` in sync on the
+  /// patch path (rebuild already emits them from the model).
+  bool _syncForeignDataAttrs(XmlElement el, VsdxShape s) {
+    XmlElement? foreign;
+    for (final c in el.childElements) {
+      if (c.name.local == 'ForeignData') {
+        foreign = c;
+        break;
+      }
+    }
+    if (foreign == null) return false;
+    final part = s.imagePartName;
+    final wantType = s.foreignType ??
+        VsdxImage.foreignTypeFor(
+          mimeType: '',
+          partName: part ?? '',
+        );
+    final wantCompression = s.foreignCompressionType ??
+        (wantType == 'Bitmap'
+            ? VsdxImage.compressionTypeFor(
+                mimeType: '',
+                partName: part ?? '',
+              )
+            : null);
+    var changed = false;
+    if (foreign.getAttribute('ForeignType') != wantType) {
+      foreign.setAttribute('ForeignType', wantType);
+      changed = true;
+    }
+    if (wantCompression == null) {
+      if (foreign.getAttribute('CompressionType') != null) {
+        foreign.removeAttribute('CompressionType');
+        changed = true;
+      }
+    } else if (foreign.getAttribute('CompressionType') != wantCompression) {
+      foreign.setAttribute('CompressionType', wantCompression);
+      changed = true;
     }
     return changed;
   }

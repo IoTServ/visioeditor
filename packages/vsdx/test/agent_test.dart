@@ -796,6 +796,64 @@ void main() {
       );
     });
 
+    test('set_style lineSpacing clears absolute; applyCharStyle keeps textBlock',
+        () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(
+            richText: VsdxRichText(
+              textBlock: const VsdxTextBlock(
+                textDirection: 1,
+                marginLeftInches: 0.15,
+              ),
+              runs: [
+                VsdxTextRun(
+                  text: '',
+                  paraStyle: const VsdxParaStyle(
+                    lineSpacingAbsoluteInches: 0.2,
+                    lineSpacing: 1.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      final styled = applyCharStyle(
+        doc.pages.first.findShapeById(id)!,
+        bold: true,
+      );
+      expect(styled.richText.textBlock.textDirection, 1);
+      expect(styled.richText.textBlock.marginLeftInches, closeTo(0.15, 1e-9));
+      expect(styled.richText.runs.first.charStyle.style.bold, isTrue);
+
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'lineSpacing': 1.5,
+          'textPosAfterBullet': 0.08,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      final p = after.richText.runs.first.paraStyle;
+      expect(p.lineSpacing, closeTo(1.5, 1e-9));
+      expect(p.lineSpacingAbsoluteInches, 0);
+      expect(p.lineSpacingSolid, isFalse);
+      expect(p.textPosAfterBulletInches, closeTo(0.08, 1e-9));
+      expect(after.richText.textBlock.textDirection, 1);
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

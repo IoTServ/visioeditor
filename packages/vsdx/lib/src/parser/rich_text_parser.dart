@@ -809,6 +809,16 @@ class RichTextParser {
           }
         }
         final keys = byIndex.keys.toList()..sort();
+        // Prefer Visio 1-based stops. When both Position0 and Position1 exist
+        // for the same row (legacy dual-write), drop the 0-based twin so we
+        // do not invent an extra stop on open→save.
+        if (keys.contains(0) && keys.contains(1)) {
+          byIndex.remove(0);
+          keys
+            ..clear()
+            ..addAll(byIndex.keys)
+            ..sort();
+        }
         out.add(VsdxTabSet(
           ix: ix,
           stops: [for (final k in keys) byIndex[k]!],

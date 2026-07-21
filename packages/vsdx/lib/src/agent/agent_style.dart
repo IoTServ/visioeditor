@@ -343,12 +343,14 @@ VsdxShape applyCharStyle(
     );
   }
   return s.copyWith(
-    richText: VsdxRichText(runs: [
-      VsdxTextRun(
-        text: '',
-        charStyle: merge(VsdxCharStyle.defaults),
-      ),
-    ]),
+    richText: s.richText.copyWith(
+      runs: [
+        VsdxTextRun(
+          text: '',
+          charStyle: merge(VsdxCharStyle.defaults),
+        ),
+      ],
+    ),
   );
 }
 

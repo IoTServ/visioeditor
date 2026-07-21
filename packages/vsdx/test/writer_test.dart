@@ -13200,4 +13200,160 @@ void main() {
     expect(pageXml.contains('N="Position0"'), isFalse);
     expect(pageXml.contains('N="Position1"'), isTrue);
   });
+
+  test('Tabs dual Position0+Position1 parses as one stop', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: VsdxRichText(
+            runs: const [VsdxTextRun(text: 'Hi')],
+            tabSets: [
+              VsdxTabSet(
+                ix: 0,
+                stops: const [
+                  VsdxTabStop(positionInches: 0.5, alignment: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Section N="Tabs"><Row IX="0">[\s\S]*?</Row></Section>'),
+      '<Section N="Tabs"><Row IX="0">'
+          '<Cell N="Position0" V="0.5"/>'
+          '<Cell N="Alignment0" V="0"/>'
+          '<Cell N="Position1" V="0.5"/>'
+          '<Cell N="Alignment1" V="0"/>'
+          '</Row></Section>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(
+      doc.pages.first.findShapeById(id)!.richText.tabSets.first.stops,
+      hasLength(1),
+    );
+  });
+
+  test('Layer ColorTrans/Status F=Inh keep cached V', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: const [
+          VsdxLayer(
+            id: 0,
+            name: 'Default',
+            colorTrans: 0.25,
+            status: 1,
+          ),
+        ],
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="ColorTrans"[^/]*/>'),
+      '<Cell N="ColorTrans" V="0.25" F="Inh"/>',
+    );
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="Status"[^/]*/>'),
+      '<Cell N="Status" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.layers.first.colorTrans, closeTo(0.25, 1e-6));
+    expect(doc.pages.first.layers.first.status, 1);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: doc.pages.first.widthInches + 0.1,
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="ColorTrans"[^>]*F="Inh"').hasMatch(pagesXml), isFalse);
+    expect(RegExp(r'N="Status"[^>]*F="Inh"').hasMatch(pagesXml), isFalse);
+    final after = parser.parse(out).pages.first.layers.first;
+    expect(after.colorTrans, closeTo(0.25, 1e-6));
+    expect(after.status, 1);
+  });
+
+  test('ForeignType patch updates ForeignData attrs without rebuild', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_emf_patch.emf';
+    final payload = Uint8List.fromList(<int>[0x01, 0x00, 0x00, 0x00, 0xEE]);
+    final pic = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(foreignType: 'EnhMetaFile');
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(
+              partName: part,
+              bytes: payload,
+              mimeType: 'image/x-emf',
+            ),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.foreignType, 'EnhMetaFile');
+    // Patch-only change: switch ForeignType while keeping the same media.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          foreignType: 'Bitmap',
+          foreignCompressionType: 'PNG',
+          pinX: s.pinX + 0.01,
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('ForeignType="Bitmap"'), isTrue);
+    expect(pageXml.contains('CompressionType="PNG"'), isTrue);
+    expect(pageXml.contains('ForeignType="EnhMetaFile"'), isFalse);
+  });
 }
