@@ -14062,4 +14062,162 @@ void main() {
     expect(cell.getAttribute('V')!.toUpperCase(), '#FFCC00');
     expect(cell.getAttribute('F'), isNull);
   });
+
+  test('LockMoveX=0 injected when cell missing on unlocked equal-path', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="LockMoveX"[^/]*/>'),
+      '',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.locked, isFalse);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'LockMoveX',
+        );
+    expect(cell.getAttribute('V'), '0');
+    expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('EventDblClick injected when cell missing on equal-path', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(eventDblClick: 'OPENTEXTWIN()'),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="EventDblClick"[^/]*/>'),
+      '',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'EventDblClick',
+        );
+    expect(cell.getAttribute('V'), 'OPENTEXTWIN()');
+  });
+
+  test('FillForegnd #FFFFFF injected when pattern=1 and foreground null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(pattern: 1), // null foreground
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    // Strip FillForegnd if rebuild emitted it, then pin-patch.
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="FillForegnd"[^/]*/>'),
+      '',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'FillForegnd',
+        );
+    expect(cell.getAttribute('V')!.toUpperCase(), '#FFFFFF');
+    expect(cell.getAttribute('F'), isNull);
+  });
 }

@@ -576,12 +576,49 @@ void main() {
           'noAlignBox': true,
           'shapeSplittable': true,
           'selectMode': 1,
+          'isTextEditTarget': true,
+          'dontMoveChildren': true,
+          'eventDblClick': 'OPENTEXTWIN()',
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
       expect(after.noAlignBox, isTrue);
       expect(after.shapeSplittable, isTrue);
       expect(after.selectMode, 1);
+      expect(after.isTextEditTarget, isTrue);
+      expect(after.dontMoveChildren, isTrue);
+      expect(after.eventDblClick, 'OPENTEXTWIN()');
+    });
+
+    test('set_style fillTheme and lineTheme', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fillTheme': 3,
+          'lineTheme': 4,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.fill.themeForegroundIndex, 3);
+      expect(after.fill.foreground, isNull);
+      expect(after.line.themeColorIndex, 4);
+      expect(after.line.color, isNull);
     });
 
     test('set_style flipX/Y and locked unlock', () {

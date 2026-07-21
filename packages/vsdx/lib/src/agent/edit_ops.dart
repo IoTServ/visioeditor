@@ -234,6 +234,24 @@ ApplyResult applyOps(
                 }
               }
             }
+            final fillTheme = _i(op['fillTheme'] ??
+                op['themeForegroundIndex'] ??
+                op['fillThemeIndex']);
+            if (fillTheme != null && !next.is1D) {
+              next = next.copyWith(
+                fill: next.fill.withThemeForeground(fillTheme),
+                geometries:
+                    syncGeometryNoFill(next.geometries, hollow: false),
+              );
+            }
+            final fillBkgndTheme = _i(op['fillBackgroundTheme'] ??
+                op['themeBackgroundIndex'] ??
+                op['fillBkgndTheme']);
+            if (fillBkgndTheme != null && !next.is1D) {
+              next = next.copyWith(
+                fill: next.fill.withThemeBackground(fillBkgndTheme),
+              );
+            }
             if (lineHex != null) {
               if (lineHex.trim().toLowerCase() == 'none') {
                 // Match UI setNoLine: clear dash, gradient, and line theme.
@@ -259,6 +277,16 @@ ApplyResult applyOps(
                   );
                 }
               }
+            }
+            final lineTheme = _i(op['lineTheme'] ??
+                op['lineThemeIndex'] ??
+                op['themeLineIndex']);
+            if (lineTheme != null) {
+              next = next.copyWith(
+                line: next.line.withThemeColor(lineTheme),
+                geometries:
+                    syncGeometryNoLine(next.geometries, hollow: false),
+              );
             }
             final fillPattern = _i(op['fillPattern'] ?? op['pattern']);
             if (fillPattern != null && !next.is1D) {
@@ -1145,6 +1173,34 @@ ApplyResult applyOps(
                 selectMode: selectMode ?? next.selectMode,
                 displayMode: displayMode ?? next.displayMode,
               );
+            }
+            final isTextEditTarget = op.containsKey('isTextEditTarget')
+                ? _b(op['isTextEditTarget'])
+                : null;
+            final dontMoveChildren = op.containsKey('dontMoveChildren')
+                ? _b(op['dontMoveChildren'])
+                : null;
+            if (isTextEditTarget != null || dontMoveChildren != null) {
+              next = next.copyWith(
+                isTextEditTarget:
+                    isTextEditTarget ?? next.isTextEditTarget,
+                dontMoveChildren:
+                    dontMoveChildren ?? next.dontMoveChildren,
+              );
+            }
+            final objType = _i(op['objType']);
+            final resizeMode = _i(op['resizeMode']);
+            if (objType != null || resizeMode != null) {
+              next = next.copyWith(
+                objType: objType ?? next.objType,
+                resizeMode: resizeMode ?? next.resizeMode,
+              );
+            }
+            if (op.containsKey('eventDblClick')) {
+              final raw = op['eventDblClick']?.toString();
+              if (raw != null && raw.isNotEmpty) {
+                next = next.copyWith(eventDblClick: raw);
+              }
             }
             return next;
           });

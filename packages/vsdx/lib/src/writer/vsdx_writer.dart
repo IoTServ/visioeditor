@@ -2246,6 +2246,16 @@ class VsdxWriter {
         baseTheme: base.fill.themeForegroundIndex,
         editedColor: edited.fill.foreground,
         editedTheme: edited.fill.themeForegroundIndex);
+    // Match rebuild: pattern!=0 leaf with no fg/theme still needs opaque white
+    // so Edraw does not treat a missing FillForegnd as hollow.
+    if (edited.fill.pattern != 0 &&
+        edited.children.isEmpty &&
+        edited.fill.foreground == null &&
+        edited.fill.themeForegroundIndex == null &&
+        !_hasCell(el, 'FillForegnd')) {
+      _writeValue(_ensureCell(el, 'FillForegnd'), '#FFFFFF');
+      changed = true;
+    }
     // Pattern / theme FillBkgnd. Only touch QuickStyleFillColor when the
     // foreground is not theme-bound (same rule as fresh shape emission) so a
     // theme FillBkgnd patch cannot overwrite FillForegnd's slot. When both
@@ -2545,18 +2555,23 @@ class VsdxWriter {
         el, 'ShapeSplittable', base.shapeSplittable, edited.shapeSplittable);
     changed |= _patchOptionalStringCell(
         el, 'EventDblClick', base.eventDblClick, edited.eventDblClick);
-    // Scrub F=Inh on EventDblClick when the model holds a literal (keep real
-    // formulas like OPENTEXTWIN()).
-    if (edited.eventDblClick != null) {
-      final modelF = edited.formulas['EventDblClick'];
-      final keepFormula =
-          modelF != null && modelF.isNotEmpty && modelF != 'Inh';
-      if (!keepFormula) {
-        final c = _findCell(el, 'EventDblClick');
-        if (c != null && (c.getAttribute('F') ?? '').isNotEmpty) {
-          _writeValue(c, edited.eventDblClick!);
+    // Ensure EventDblClick when model holds a literal or formula (rebuild emits
+    // it; equal-path previously skipped a missing cell).
+    if (edited.eventDblClick != null ||
+        edited.formulas.containsKey('EventDblClick')) {
+      final modelF = _nonInhFormula(edited.formulas['EventDblClick']);
+      final wantV = edited.eventDblClick ?? '0';
+      final c = _ensureCell(el, 'EventDblClick');
+      if (modelF != null) {
+        if (c.getAttribute('V') != wantV || c.getAttribute('F') != modelF) {
+          _writeValue(c, wantV, preserveFormula: true);
+          c.setAttribute('F', modelF);
           changed = true;
         }
+      } else if (c.getAttribute('V') != wantV ||
+          (c.getAttribute('F') ?? '').isNotEmpty) {
+        _writeValue(c, wantV);
+        changed = true;
       }
     }
     return changed;
@@ -2588,6 +2603,12 @@ class VsdxWriter {
         if (existing != null && isInhFormula(existing.getAttribute('F'))) {
           return _removeNamedCells(shape, [cell]);
         }
+        return false;
+      }
+      // Equal non-null: still inject when the cell is missing.
+      if (!_hasCell(shape, cell)) {
+        _writeValue(_ensureCell(shape, cell), edited);
+        return true;
       }
       return false;
     }
@@ -5988,8 +6009,10 @@ class VsdxWriter {
           changed |= _ensureLiteralInt(el, name, 1);
         }
       } else {
-        changed |= _forceLiteralInt(el, 'LockMoveX', 0);
-        changed |= _forceLiteralInt(el, 'LockMoveY', 0);
+        // Ensure (not force) so missing LockMove* cells are injected — Master
+        // LockMoveX can otherwise revive after unlock + pin-only save.
+        changed |= _ensureLiteralInt(el, 'LockMoveX', 0);
+        changed |= _ensureLiteralInt(el, 'LockMoveY', 0);
       }
       return changed;
     }
