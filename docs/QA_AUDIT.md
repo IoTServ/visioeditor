@@ -34,7 +34,7 @@
 | 旋转手柄 | DONE | 同上 |
 | Esc 取消拖动 | DONE | 同上 |
 | 撤销 / 重做 | DONE | 既有 Controller 测试 |
-| 锁定 / 图层 | DONE | 既有测试；图层色参与绘制 → LATER |
+| 锁定 / 图层 | DONE | 既有测试；Color-by-Layer 视图已接 |
 | 组合 / 取消组合 | DONE | `page.group` 无填充容器；往返不污染 Group Fill |
 | 连接器路由 / 粘附 | DONE | Pin 往返回归（`connector_preserve` / Writer） |
 | 表格 / 泳道 | DONE | 既有模型测试（本轮未新发现 P0） |
@@ -54,7 +54,7 @@
 | 图片 / ForeignData | DONE | PNG 导出图像测试 |
 | 双圆角（Rounding vs setCornerRadius） | DONE | UI 写入 `Line.Rounding`；弧烘焙圆角会被展平 |
 | 页阴影斜切 | DONE | Canvas/SVG 应用 PageSheet scale+oblique |
-| 图层色参与绘制 | LATER | 无 Color-by-Layer 视图模式；色仅往返 |
+| 图层色参与绘制 | DONE | Color-by-Layer 会话开关；Canvas/SVG 共用 `layerColorSource` |
 | FontScale / 虚线近似 | DONE | 虚线按线宽缩放；FontScale 用 0.55×字号 tracking + 宽度估算乘 scale |
 
 ---
@@ -114,7 +114,7 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 | QA-01 | LibreOffice/Visio 实机打开导出文件 | BLOCKED | 安装 soffice 或 CI 交叉验证 |
 | QA-02 | 双圆角属性语义 | DONE | `setCornerRadius` → `Rounding`；弧圆角展平 |
 | QA-03a | 页阴影斜切 / 缩放 | DONE | Canvas + SVG `_pageShadowTransform` |
-| QA-03b | 图层色绘制 | LATER | 需 Color-by-Layer 模式；当前仅可见性 |
+| QA-03b | 图层色绘制 | DONE | Color-by-Layer 开关；填充/描边/文字染色 |
 | QA-04 | FontScale、虚线样式近似 | DONE | 共享 `dash_pattern.dart`（按 LineWeight）；FontScale tracking 对齐布局 |
 | QA-05 | SVG→VSDX、二进制 VSD 写回 | LATER | 产品范围外 |
 | QA-06 | Agent ops 覆盖面 < UI | LATER | 非本轮范围 |

@@ -59,6 +59,7 @@ class VsdxPainter extends CustomPainter {
     this.drawLineJumps = true,
     this.lineJumpRadiusInches = 0.07,
     this.drawEditorChrome = true,
+    this.colorByLayer = false,
   }) : super(repaint: imageCache);
 
   final VsdxPage? page;
@@ -125,6 +126,10 @@ class VsdxPainter extends CustomPainter {
   /// Jump arc radius, in page inches.
   final double lineJumpRadiusInches;
 
+  /// When `true`, paint shapes with their layer [VsdxLayer.color] (Visio
+  /// Color-by-Layer view). Session-only — not written to `.vsdx`.
+  final bool colorByLayer;
+
   /// When `true` (editor canvas), paint foldable/annotative chrome (dashed
   /// kind hint + collapse chevron). Export PNG/SVG should pass `false`.
   final bool drawEditorChrome;
@@ -140,6 +145,10 @@ class VsdxPainter extends CustomPainter {
   /// [drawLineJumps] switch with the page's `LineJumpCode` (0 = None disables
   /// jumps, so crossing connectors draw straight through).
   bool _lineJumpsActive = false;
+
+  /// Active Color-by-Layer tint while painting a shape subtree.
+  Color? _layerTint;
+  double _layerTintTrans = 0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -310,6 +319,26 @@ class VsdxPainter extends CustomPainter {
     final localPinX = shape.effectiveLocPinX;
     final localPinY = shape.effectiveLocPinY;
 
+    final prevTint = _layerTint;
+    final prevTrans = _layerTintTrans;
+    if (colorByLayer) {
+      final src = layerColorSource(
+        (_paintTarget ?? page)?.layers ?? const <VsdxLayer>[],
+        shape.layerMemberIds,
+      );
+      final c = src?.color;
+      if (c != null) {
+        _layerTint = Color(c.value);
+        _layerTintTrans = src!.colorTrans.clamp(0.0, 1.0);
+      } else {
+        _layerTint = null;
+        _layerTintTrans = 0;
+      }
+    } else {
+      _layerTint = null;
+      _layerTintTrans = 0;
+    }
+
     canvas.save();
     canvas.translate(shape.pinX, shape.pinY);
     if (shape.angleRad != 0) canvas.rotate(shape.angleRad);
@@ -422,6 +451,8 @@ class VsdxPainter extends CustomPainter {
     }
 
     canvas.restore();
+    _layerTint = prevTint;
+    _layerTintTrans = prevTrans;
   }
 
   void _paintGeometries(Canvas canvas, VsdxShape shape) {
@@ -1631,6 +1662,10 @@ class VsdxPainter extends CustomPainter {
   }
 
   Color? _colourOrTheme(VsdxColor? raw, int? themeIndex) {
+    if (_layerTint != null) {
+      final t = _layerTint!;
+      return t.withValues(alpha: t.a * (1.0 - _layerTintTrans));
+    }
     if (raw != null) return Color(raw.value);
     if (themeIndex == null) return null;
     final c = theme.resolve(themeIndex);
@@ -2910,7 +2945,8 @@ class VsdxPainter extends CustomPainter {
       old.fontFallback != fontFallback ||
       old.drawLineJumps != drawLineJumps ||
       old.lineJumpRadiusInches != lineJumpRadiusInches ||
-      old.drawEditorChrome != drawEditorChrome;
+      old.drawEditorChrome != drawEditorChrome ||
+      old.colorByLayer != colorByLayer;
 }
 
 class _LineEndpoints {

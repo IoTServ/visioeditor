@@ -119,3 +119,21 @@ class VsdxLayer {
   String toString() =>
       'VsdxLayer(#$id $name, visible=$visible print=$print)';
 }
+
+/// First layer with a non-null [VsdxLayer.color] among [layerMemberIds]
+/// (membership order). Used by Visio "Color by Layer" display mode.
+VsdxLayer? layerColorSource(
+  Iterable<VsdxLayer> layers,
+  List<int> layerMemberIds,
+) {
+  if (layerMemberIds.isEmpty) return null;
+  final byId = <int, VsdxLayer>{
+    for (final layer in layers) layer.id: layer,
+  };
+  for (final id in layerMemberIds) {
+    final layer = byId[id];
+    if (layer?.color != null) return layer;
+  }
+  return null;
+}
+

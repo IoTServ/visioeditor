@@ -46,6 +46,7 @@ class EditorController extends ChangeNotifier {
   bool _showGrid = true;
   bool _snapToGrid = true;
   bool _showLineJumps = true;
+  bool _colorByLayer = false;
   double _lineJumpRadiusInches = 0.07;
   final double _gridInches = 0.25;
   final Set<int> _selection = <int>{};
@@ -415,6 +416,7 @@ class EditorController extends ChangeNotifier {
   bool get showGrid => _showGrid;
   bool get snapToGrid => _snapToGrid;
   bool get showLineJumps => _showLineJumps;
+  bool get colorByLayer => _colorByLayer;
   double get lineJumpRadiusInches => _lineJumpRadiusInches;
   double get gridInches => _gridInches;
 
@@ -431,6 +433,18 @@ class EditorController extends ChangeNotifier {
   /// Toggle drawio-style line jumps (arc connectors over the ones they cross).
   void toggleLineJumps() {
     _showLineJumps = !_showLineJumps;
+    notifyListeners();
+  }
+
+  /// Toggle Visio Color-by-Layer view (session-only; not written to `.vsdx`).
+  void toggleColorByLayer() {
+    _colorByLayer = !_colorByLayer;
+    notifyListeners();
+  }
+
+  void setColorByLayer(bool enabled) {
+    if (_colorByLayer == enabled) return;
+    _colorByLayer = enabled;
     notifyListeners();
   }
 

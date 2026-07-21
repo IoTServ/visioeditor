@@ -471,6 +471,7 @@ class EditorL10n {
   String get visible => _t('visible');
   String get locked => _t('locked');
   String get print => _t('print');
+  String get colorByLayer => _t('colorByLayer');
   String get assignSelection => _t('assignSelection');
   String get deleteLayer => _t('deleteLayer');
   String get addLayer => _t('addLayer');

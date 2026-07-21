@@ -20,6 +20,7 @@ import '../model/elliptical_arc.dart';
 import '../model/fill.dart';
 import '../model/geometry.dart';
 import '../model/image.dart';
+import '../model/layer.dart';
 import '../model/line.dart';
 import '../model/nurbs.dart';
 import '../model/page.dart';
@@ -58,6 +59,7 @@ class VsdxToSvgSerializer {
     this.lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
     this.bakeArrowMarkers = false,
     this.pdfCompat = false,
+    this.colorByLayer = false,
   });
 
   final double pxPerInch;
@@ -79,17 +81,18 @@ class VsdxToSvgSerializer {
   /// `LineJumpCode` allows them (matches [VsdxPainter.drawLineJumps]).
   final bool drawLineJumps;
 
-  /// Arc radius for connector line jumps (matches canvas
-  /// [VsdxPainter.lineJumpRadiusInches]).
+  /// Jump arc radius in page inches (matches canvas).
   final double lineJumpRadiusInches;
 
-  /// When `true`, emit arrowheads as transformed `<path>` geometry instead of
-  /// SVG `<marker>` (needed for PDF via `package:pdf`, which ignores markers).
+  /// Bake arrow markers into path geometry (PDF-friendly).
   final bool bakeArrowMarkers;
 
-  /// Approximate features that `package:pdf` SvgImage cannot render: no SVG
-  /// filters/patterns/`textPath`/`dominant-baseline`. Implies [bakeArrowMarkers].
+  /// Approximate filters for package:pdf SVG subset.
   final bool pdfCompat;
+
+  /// Visio Color-by-Layer: paint with [VsdxLayer.color] when the shape is
+  /// a member of a coloured layer (matches [VsdxPainter.colorByLayer]).
+  final bool colorByLayer;
 
   bool get _bakeArrows => bakeArrowMarkers || pdfCompat;
 
@@ -101,6 +104,10 @@ class VsdxToSvgSerializer {
   List<List<Offset2D>> _jumpRoutes = const <List<Offset2D>>[];
   List<int?> _jumpCodes = const <int?>[];
   Map<int, int> _jumpZ = const <int, int>{};
+
+  /// Active Color-by-Layer tint while writing a shape subtree.
+  VsdxColor? _layerTint;
+  double _layerTintTrans = 0;
 
   /// Serialize the entire document into a single multi-page SVG with each
   /// page wrapped in a `<g class="page-N">` translated downward. Use
@@ -403,6 +410,41 @@ class VsdxToSvgSerializer {
         !shape.isOnAnyLayer(visibleLayers)) {
       return;
     }
+    final prevTint = _layerTint;
+    final prevTrans = _layerTintTrans;
+    if (colorByLayer) {
+      final src = layerColorSource(page.layers, shape.layerMemberIds);
+      _layerTint = src?.color;
+      _layerTintTrans = (src?.colorTrans ?? 0).clamp(0.0, 1.0);
+    } else {
+      _layerTint = null;
+      _layerTintTrans = 0;
+    }
+    try {
+      _writeShapeBody(
+        buf,
+        shape,
+        theme,
+        page,
+        visibleLayers,
+        paintIdScope: paintIdScope,
+        indent: indent,
+      );
+    } finally {
+      _layerTint = prevTint;
+      _layerTintTrans = prevTrans;
+    }
+  }
+
+  void _writeShapeBody(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme,
+    VsdxPage page,
+    Set<int>? visibleLayers, {
+    required String paintIdScope,
+    required String indent,
+  }) {
     final transforms = <String>[];
     transforms.add('translate(${_n(shape.pinX)} ${_n(shape.pinY)})');
     if (shape.angleRad != 0) {
@@ -2462,8 +2504,12 @@ class VsdxToSvgSerializer {
   /// Combine Visio `*Trans` (0..1) with the colour's own ARGB alpha
   /// (libvisio / `#RRGGBBAA` colours carry opacity in the colour cell).
   double _combinedOpacity(VsdxColor? c, double transparency) {
+    var t = transparency;
+    if (_layerTint != null) {
+      t = 1 - (1 - t) * (1 - _layerTintTrans);
+    }
     final colourA = c == null ? 1.0 : c.alpha / 255.0;
-    return (colourA * (1 - transparency)).clamp(0.0, 1.0);
+    return (colourA * (1 - t)).clamp(0.0, 1.0);
   }
 
   String _dashAttr(int linePattern, [double weightInches = 0.01]) {
@@ -3725,6 +3771,7 @@ class VsdxToSvgSerializer {
   }
 
   VsdxColor? _resolveColor(VsdxColor? raw, int? themeIdx, VsdxTheme theme) {
+    if (_layerTint != null) return _layerTint;
     if (raw != null) return raw;
     if (themeIdx == null) return null;
     return theme.resolve(themeIdx);

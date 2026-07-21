@@ -181,6 +181,15 @@ class LayersPanel extends StatelessWidget {
                   ),
                 ),
                 Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: FilterChip(
+                    label: Text(el.colorByLayer),
+                    selected: controller.colorByLayer,
+                    onSelected: (_) => controller.toggleColorByLayer(),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+                Padding(
                   padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
                   child: OutlinedButton(
                     onPressed: () => controller.addLayer(

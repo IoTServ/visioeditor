@@ -3139,6 +3139,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       patternBuilder: PatternFillBuilder.shared,
                                       pxPerInch: widget.pxPerInch,
                                       drawLineJumps: _c.showLineJumps,
+                                      colorByLayer: _c.colorByLayer,
                                       lineJumpRadiusInches:
                                           _c.lineJumpRadiusInches,
                                       backgroundColor: _c.showGrid
