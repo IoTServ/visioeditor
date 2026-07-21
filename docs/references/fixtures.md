@@ -1,103 +1,56 @@
 # 测试样本（Fixtures）
 
-> 测试 fixture 是验证解析与渲染的基石。本文档记录每个样本的**来源、特性、合规性**，
-> 以及如何生成新的样本。
-
-样本统一放在：`test/fixtures/<feature>_<variant>.vsdx`（合成）或 `assets/examples/dave-howard-vsdx/`（真实 Visio 样例，随应用发布）
+> 以仓库内**实际文件**为准。早期 M0 规划名（如 `geometry_rect_basic.vsdx`）大多未落地；
+> 勿按旧表查找。
 
 ---
 
-## 1. 现有 fixture（M0 完成后补全）
+## 1. 引擎包：`packages/vsdx/test/fixtures/`
 
-| 文件名 | 来源 | 许可证 | 测试目标 |
-|---|---|---|---|
-| `empty_minimal.vsdx` | LibreOffice Draw 导出 | 自有 ✅ | OPC 结构最小合法 |
-| `geometry_rect_basic.vsdx` | 同上 | 自有 ✅ | 单矩形 + 默认填充 |
-| `geometry_arc_basic.vsdx` | 同上 | 自有 ✅ | ArcTo / EllipticalArcTo |
-| `text_singleline.vsdx` | 同上 | 自有 ✅ | 单行文本 + 字符格式 |
-| `text_multiline_richtext.vsdx` | 同上 | 自有 ✅ | 多段 `<cp>` 富文本 |
-| `master_inheritance_basic.vsdx` | 同上 | 自有 ✅ | Master 继承 + 多实例 |
-| `connector_straight.vsdx` | 同上 | 自有 ✅ | 1D 形状 + `<Connect>` |
-| `theme_office_default.vsdx` | 同上 | 自有 ✅ | 默认主题色映射 |
-| `image_embed_png.vsdx` | 同上 | 自有 ✅ | 嵌入 PNG |
-| `image_embed_emf.vsdx` | 同上 | 自有 ✅ | 嵌入 EMF（占位回退） |
-| `flowchart_classic.vsdx` | 同上 | 自有 ✅ | 端到端：流程图典型 |
+权威说明见同目录 [`README.md`](../../packages/vsdx/test/fixtures/README.md)。
 
-> 上述 fixture 在 M0 任务 [M0-09](../PLAN.md#3-m0--项目脚手架bootstrap) 中创建。
+| 类别 | 文件 | 来源 / 用途 |
+| --- | --- | --- |
+| Dave Howard BSD 样例 | `test1.vsdx` … `test12_*.vsdx`、`test_jinja*.vsdx`、`test_master*.vsdx` | 解析 / Writer / 连接器 / Master |
+| 应用镜像样例 | `workflow.vsdx` | 与 `assets/examples/workflow.vsdx` 对齐 |
+| 中文 Edraw 样例 | `人才招聘冰山模型.vsdx`、`数据治理.vsdx` | Edraw 往返探针（填充愈合等） |
+| 遗留 VSD | `vsd/`、`vsd/external/` | `.vsd` → `.vsdx` 导入与合成基线 |
 
----
-
-## 2. 制作流程
-
-### 2.1 使用 LibreOffice Draw（推荐）
+运行 Edraw 结构往返：
 
 ```bash
-# Linux/macOS：命令行批量另存
+cd packages/vsdx
+HOME=/tmp/visioeditor-qa-home dart run tool/edraw_roundtrip_check.dart
+```
+
+---
+
+## 2. 应用样例：`assets/examples/`
+
+编辑器「打开示例」与部分 Flutter / stress 探针使用（约数十个 `.vsdx` 模板）。引擎
+`stress_props_roundtrip_probe` 会对其中一部分做 identity rewrite。
+
+---
+
+## 3. LibreOffice 交叉验证
+
+本机可选；CI 任务 `libreoffice-crosscheck`（`REQUIRE_SOFFICE=1`）安装 `soffice` 后执行：
+
+```bash
+cd packages/vsdx
+REQUIRE_SOFFICE=1 dart test test/libreoffice_crosscheck_test.dart
+```
+
+无 `soffice` 时测试会 skip（不失败）。验收进度见 [`QA_AUDIT.md`](./QA_AUDIT.md) QA-01。
+
+---
+
+## 4. 制作新样本（可选）
+
+```bash
+# 需已安装 LibreOffice
 soffice --headless --convert-to vsdx my_drawing.odg
-
-# 或在 Draw 中：文件 → 另存为 → Visio 2013 (.vsdx)
 ```
 
-LibreOffice 的 .vsdx 输出已被 libvisio 验证可被 Microsoft Visio 打开，结构干净。
-
-### 2.2 使用 Microsoft Visio Trial
-
-- 30 天试用 → <https://www.microsoft.com/microsoft-365/visio/>
-- 只用来**生成自己绘制的图形**，不分发 Microsoft 自带模板
-- 注意：把 `Backstage → 文档属性` 中的作者信息清空，避免泄露隐私
-
-### 2.3 使用 Python `vsdx` 库程序化生成
-
-```python
-# 仅做 fixture 生成，不打包进项目运行时
-from vsdx import VisioFile
-with VisioFile('template.vsdx') as v:
-    page = v.pages[0]
-    shape = page.find_shape_by_text('Hello')
-    shape.text = 'New text'
-    v.save_vsdx('test/fixtures/text_modified.vsdx')
-```
-
-### 2.4 程序化构造（最终）
-
-未来当我们实现 SVG ↔ VSDX 互转后，可用 `bin/svg2vsdx.dart` 生成定制 fixture。
-
----
-
-## 3. fixture 的 README 模板
-
-每个 fixture 在 `test/fixtures/README.md` 中登记：
-
-```markdown
-### geometry_arc_basic.vsdx
-
-- 制作工具：LibreOffice Draw 24.8.4 (Linux)
-- 创建日期：2026-05-22
-- 描述：一个椭圆 + 一段椭圆弧，验证 EllipticalArcTo 的 6 参数解析
-- 期望渲染：见 test/golden/geometry_arc_basic.png
-- 关联用例：test/parser/geometry_parser_test.dart::testArcBasic
-- 许可：项目自有（MIT）
-```
-
----
-
-## 4. 合规检查清单
-
-新增 fixture 前自查：
-
-- [ ] 是否包含他人著作权图形（如 Visio 自带的 "Network Shapes" 模具）？→ ❌ 删除
-- [ ] 是否包含个人 / 公司隐私（作者名、文件路径、注释）？→ ❌ 清理
-- [ ] 是否能在 LibreOffice 与 Visio 中都正常打开？→ ✅ 必须
-- [ ] 是否提供期望渲染基线（golden PNG）？→ ✅ 必须
-
----
-
-## 5. 大型 / 复杂样本（M8 性能基准用）
-
-| 文件名 | 规模 | 来源 |
-|---|---|---|
-| `perf_100pages_simple.vsdx` | 100 页 × 5 形状 | 程序化生成 |
-| `perf_1000shapes_singlepage.vsdx` | 1 页 × 1000 形状 | 程序化生成 |
-| `perf_50mb_realistic.vsdx` | 真实流程图 | LibreOffice 拼接 |
-
-> 大文件不入 git，放 `test/fixtures/large/` 并加入 `.gitignore`；由 CI 从 release 下载。
+或在 Microsoft Visio / 万兴图示中另存为 `.vsdx` 后放入
+`packages/vsdx/test/fixtures/`（注明来源与许可证）。

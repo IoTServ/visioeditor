@@ -18,7 +18,8 @@
 | Ranking 图标签 | DONE | 排序后补标签；空 values 兜底 |
 | VSDX equal-path 填充 | DONE | 叶子缺 `FillForegnd` 注入；Group 不误注入 `FillPattern=1` |
 | Edraw 往返探针 | DONE | fixtures（含中文样例）均为 `[ok]` |
-| LibreOffice 交叉打开 | BLOCKED | 本机无 `soffice`；待外部/CI 验证 |
+| LibreOffice 交叉打开 | BLOCKED | 本机无 `soffice`；CI `libreoffice-crosscheck` 覆盖（见 fixtures.md） |
+| 架构/fixture 文档 | DONE | `ARCHITECTURE.md` / `references/fixtures.md` 已与仓库对齐 |
 | SVG→VSDX | LATER | 无此路径 |
 | 二进制 `.vsd` 写回 | LATER | 仅 VSD→VSDX |
 
@@ -119,3 +120,4 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 | QA-04 | FontScale、虚线样式近似 | DONE | 共享 `dash_pattern.dart`（按 LineWeight）；FontScale tracking 对齐布局 |
 | QA-05 | SVG→VSDX、二进制 VSD 写回 | LATER | 产品范围外 |
 | QA-06 | Agent ops 覆盖面 < UI | LATER | 非本轮范围 |
+| QA-07 | ARCHITECTURE / fixtures 文档漂移 | DONE | 目录与真实 fixture 清单已纠正 |
