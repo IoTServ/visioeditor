@@ -1079,8 +1079,12 @@ ApplyResult applyOps(
               final conFixedCode = _i(op['conFixedCode']);
               final dynFeedback = _i(op['dynFeedback']);
               final shapeRouteStyle = _i(op['shapeRouteStyle']);
+              final shapePlaceFlip = _i(op['shapePlaceFlip']);
               final conLineJumpCode = _i(op['conLineJumpCode']);
               final conLineRouteExt = _i(op['conLineRouteExt']);
+              final conLineJumpStyle = _i(op['conLineJumpStyle']);
+              final conLineJumpDirX = _i(op['conLineJumpDirX']);
+              final conLineJumpDirY = _i(op['conLineJumpDirY']);
               final noLiveDynamics = op.containsKey('noLiveDynamics')
                   ? _b(op['noLiveDynamics'])
                   : null;
@@ -1088,8 +1092,12 @@ ApplyResult applyOps(
                   conFixedCode != null ||
                   dynFeedback != null ||
                   shapeRouteStyle != null ||
+                  shapePlaceFlip != null ||
                   conLineJumpCode != null ||
                   conLineRouteExt != null ||
+                  conLineJumpStyle != null ||
+                  conLineJumpDirX != null ||
+                  conLineJumpDirY != null ||
                   noLiveDynamics != null) {
                 final props =
                     next.connectorProps ?? const VsdxConnectorProps();
@@ -1100,15 +1108,43 @@ ApplyResult applyOps(
                     dynFeedback: dynFeedback ?? props.dynFeedback,
                     shapeRouteStyle:
                         shapeRouteStyle ?? props.shapeRouteStyle,
+                    shapePlaceFlip:
+                        shapePlaceFlip ?? props.shapePlaceFlip,
                     conLineJumpCode:
                         conLineJumpCode ?? props.conLineJumpCode,
                     conLineRouteExt:
                         conLineRouteExt ?? props.conLineRouteExt,
+                    conLineJumpStyle:
+                        conLineJumpStyle ?? props.conLineJumpStyle,
+                    conLineJumpDirX:
+                        conLineJumpDirX ?? props.conLineJumpDirX,
+                    conLineJumpDirY:
+                        conLineJumpDirY ?? props.conLineJumpDirY,
                     noLiveDynamics:
                         noLiveDynamics ?? props.noLiveDynamics,
                   ),
                 );
               }
+            }
+            final noAlignBox = op.containsKey('noAlignBox')
+                ? _b(op['noAlignBox'])
+                : null;
+            final shapeSplittable = op.containsKey('shapeSplittable')
+                ? _b(op['shapeSplittable'])
+                : null;
+            if (noAlignBox != null || shapeSplittable != null) {
+              next = next.copyWith(
+                noAlignBox: noAlignBox ?? next.noAlignBox,
+                shapeSplittable: shapeSplittable ?? next.shapeSplittable,
+              );
+            }
+            final selectMode = _i(op['selectMode']);
+            final displayMode = _i(op['displayMode']);
+            if (selectMode != null || displayMode != null) {
+              next = next.copyWith(
+                selectMode: selectMode ?? next.selectMode,
+                displayMode: displayMode ?? next.displayMode,
+              );
             }
             return next;
           });
@@ -1469,7 +1505,13 @@ VsdxGradient? _parseGradientOp(Object? raw) {
     _ => VsdxGradientType.linear,
   };
   final dir = _i(map['dir']);
-  final angle = _d(map['angle'] ?? map['angleRad']) ?? 0.0;
+  // angle = degrees (same as set_style shape angle); angleRad = radians.
+  final angleRad = _d(map['angleRad']);
+  final angleDeg = _d(map['angle']);
+  final angle = angleRad ??
+      (angleDeg != null
+          ? angleDeg * (3.141592653589793 / 180.0)
+          : 0.0);
   return VsdxGradient(
     stops: List.unmodifiable(stops),
     type: type,

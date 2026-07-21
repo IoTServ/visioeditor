@@ -539,6 +539,8 @@ void main() {
           'glueType': 3,
           'conFixedCode': 1,
           'shapeRouteStyle': 16,
+          'conLineJumpDirX': 1,
+          'shapePlaceFlip': 2,
           'noLiveDynamics': true,
         },
       ]);
@@ -546,7 +548,40 @@ void main() {
       expect(props.glueType, 3);
       expect(props.conFixedCode, 1);
       expect(props.shapeRouteStyle, 16);
+      expect(props.conLineJumpDirX, 1);
+      expect(props.shapePlaceFlip, 2);
       expect(props.noLiveDynamics, isTrue);
+    });
+
+    test('set_style noAlignBox and selectMode', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'noAlignBox': true,
+          'shapeSplittable': true,
+          'selectMode': 1,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.noAlignBox, isTrue);
+      expect(after.shapeSplittable, isTrue);
+      expect(after.selectMode, 1);
     });
 
     test('set_style flipX/Y and locked unlock', () {
@@ -736,6 +771,7 @@ void main() {
           'ids': <String>['shape:$id'],
           'fillGradient': <String, dynamic>{
             'type': 'linear',
+            'angle': 90, // degrees
             'stops': <Map<String, dynamic>>[
               <String, dynamic>{'pos': 0, 'color': '#FF0000'},
               <String, dynamic>{'pos': 1, 'color': '#0000FF'},
@@ -748,6 +784,10 @@ void main() {
       expect(after.fill.hasGradient, isTrue);
       expect(after.fill.gradient!.stops, hasLength(2));
       expect(after.fill.gradient!.stops.first.color?.value, 0xFFFF0000);
+      expect(
+        after.fill.gradient!.angleRad,
+        closeTo(3.141592653589793 / 2, 1e-9),
+      );
       expect(after.line.hasGradient, isTrue);
       final cleared = applyOps(r.document, <Map<String, dynamic>>[
         <String, dynamic>{

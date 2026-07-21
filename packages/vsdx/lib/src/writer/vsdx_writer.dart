@@ -2222,21 +2222,21 @@ class VsdxWriter {
     // Group behaviour (libvisio IsTextEditTarget / DontMoveChildren / …).
     changed |= _patchBool(
         el, 'IsTextEditTarget', base.isTextEditTarget, edited.isTextEditTarget);
-    changed |= _forceLiteralInt(
+    changed |= _ensureLiteralInt(
         el, 'IsTextEditTarget', edited.isTextEditTarget ? 1 : 0);
     changed |= _patchBool(
         el, 'DontMoveChildren', base.dontMoveChildren, edited.dontMoveChildren);
-    changed |= _forceLiteralInt(
+    changed |= _ensureLiteralInt(
         el, 'DontMoveChildren', edited.dontMoveChildren ? 1 : 0);
     changed |= _patchOptionalIntCell(
         el, 'SelectMode', base.selectMode, edited.selectMode);
     changed |= _patchOptionalIntCell(
         el, 'DisplayMode', base.displayMode, edited.displayMode);
     if (edited.selectMode != null) {
-      changed |= _forceLiteralInt(el, 'SelectMode', edited.selectMode!);
+      changed |= _ensureLiteralInt(el, 'SelectMode', edited.selectMode!);
     }
     if (edited.displayMode != null) {
-      changed |= _forceLiteralInt(el, 'DisplayMode', edited.displayMode!);
+      changed |= _ensureLiteralInt(el, 'DisplayMode', edited.displayMode!);
     }
     // Protection (drawio "Lock/Unlock").
     changed |= _patchLock(el, base, edited);
@@ -2501,7 +2501,7 @@ class VsdxWriter {
     changed |= _patchOptionalIntCell(
         el, 'ThemeIndex', base.themeIndex, edited.themeIndex);
     if (edited.themeIndex != null) {
-      changed |= _forceLiteralInt(el, 'ThemeIndex', edited.themeIndex!);
+      changed |= _ensureLiteralInt(el, 'ThemeIndex', edited.themeIndex!);
     }
     changed |= _patchOptionalIntCell(el, 'QuickStyleFillMatrix',
         base.quickStyleFillMatrix, edited.quickStyleFillMatrix);
@@ -2512,19 +2512,19 @@ class VsdxWriter {
     changed |= _patchOptionalIntCell(el, 'QuickStyleFontMatrix',
         base.quickStyleFontMatrix, edited.quickStyleFontMatrix);
     if (edited.quickStyleFillMatrix != null) {
-      changed |= _forceLiteralInt(
+      changed |= _ensureLiteralInt(
           el, 'QuickStyleFillMatrix', edited.quickStyleFillMatrix!);
     }
     if (edited.quickStyleLineMatrix != null) {
-      changed |= _forceLiteralInt(
+      changed |= _ensureLiteralInt(
           el, 'QuickStyleLineMatrix', edited.quickStyleLineMatrix!);
     }
     if (edited.quickStyleEffectsMatrix != null) {
-      changed |= _forceLiteralInt(
+      changed |= _ensureLiteralInt(
           el, 'QuickStyleEffectsMatrix', edited.quickStyleEffectsMatrix!);
     }
     if (edited.quickStyleFontMatrix != null) {
-      changed |= _forceLiteralInt(
+      changed |= _ensureLiteralInt(
           el, 'QuickStyleFontMatrix', edited.quickStyleFontMatrix!);
     }
     // ObjType / NoAlignBox / etc. — rebuild emits them; patch must too so
@@ -2534,10 +2534,10 @@ class VsdxWriter {
     changed |= _patchOptionalIntCell(
         el, 'ResizeMode', base.resizeMode, edited.resizeMode);
     if (edited.objType != null) {
-      changed |= _forceLiteralInt(el, 'ObjType', edited.objType!);
+      changed |= _ensureLiteralInt(el, 'ObjType', edited.objType!);
     }
     if (edited.resizeMode != null) {
-      changed |= _forceLiteralInt(el, 'ResizeMode', edited.resizeMode!);
+      changed |= _ensureLiteralInt(el, 'ResizeMode', edited.resizeMode!);
     }
     changed |=
         _patchFlagCell(el, 'NoAlignBox', base.noAlignBox, edited.noAlignBox);
@@ -4803,12 +4803,16 @@ class VsdxWriter {
       final hasThemeF = curF != null &&
           RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(curF);
       final hasInh = isInhFormula(curF);
+      final cellMissing = !_hasCell(shape, cell);
       var changed = false;
+      // Also inject when the colour cell is absent (FillPattern/Trans already
+      // ensure; Edraw is picky about a missing FillForegnd).
       if (!(baseTheme == null &&
           editedTheme == null &&
           baseColor?.value == editedColor.value &&
           !hasThemeF &&
-          !hasInh)) {
+          !hasInh &&
+          !cellMissing)) {
         _writeValue(_ensureCell(shape, cell), _hex(editedColor));
         changed = true;
       }
@@ -4827,7 +4831,10 @@ class VsdxWriter {
               (curF == null ||
                   RegExp(r'^THEMEVAL\s*\(\s*\)$', caseSensitive: false)
                       .hasMatch(curF)));
-      if (baseTheme == editedTheme && baseColor == null && formulaOk) {
+      if (baseTheme == editedTheme &&
+          baseColor == null &&
+          formulaOk &&
+          _hasCell(shape, cell)) {
         // Colour binding unchanged — still scrub QuickStyle* F=Inh.
         if (writeQuickStyle) {
           return _ensureLiteralInt(shape, quickStyleCell, editedTheme);
@@ -5618,7 +5625,8 @@ class VsdxWriter {
     if (edited.backgroundColor != null) {
       changed |= _patchColor(
           el, 'TextBkgnd', base.backgroundColor, edited.backgroundColor);
-      changed |= _forceLiteralColor(el, 'TextBkgnd', edited.backgroundColor!);
+      changed |=
+          _ensureLiteralColor(el, 'TextBkgnd', edited.backgroundColor!);
     } else {
       // Always literal 0 when transparent — scrub F=Inh / match rebuild.
       final c = _ensureCell(el, 'TextBkgnd');
@@ -5851,7 +5859,22 @@ class VsdxWriter {
   bool _forceLiteralRatio(XmlElement shape, String cell, double value) =>
       _forceLiteralLength(shape, cell, value);
 
+  /// Ensure a colour cell exists as literal hex without `F=`.
+  bool _ensureLiteralColor(XmlElement shape, String cell, VsdxColor color) {
+    final c = _ensureCell(shape, cell);
+    final f = c.getAttribute('F');
+    final v = c.getAttribute('V');
+    final want = _hex(color);
+    final already = (f == null || f.isEmpty) &&
+        v != null &&
+        v.toUpperCase() == want.toUpperCase();
+    if (already) return false;
+    _writeValue(c, want);
+    return true;
+  }
+
   /// Ensure a colour cell is literal hex without `F=`.
+  /// No-op when the cell is absent (use [_ensureLiteralColor] to inject).
   bool _forceLiteralColor(XmlElement shape, String cell, VsdxColor color) {
     final c = _findCell(shape, cell);
     if (c == null) return false;
