@@ -416,6 +416,34 @@ void main() {
     expect(ChartOps.chartValues(resized), hasLength(6));
   });
 
+  test('ranking chart paints sorted labels and tolerates empty data', () {
+    var next = 100;
+    final ranking = ChartOps.rankingChart(
+      id: 7,
+      pinX: 2,
+      pinY: 2,
+      values: const <double>[0.2, 0.9],
+      labels: const <String>['Low', 'High'],
+      allocId: () => next++,
+    );
+    final text = ranking.children
+        .map((shape) => shape.richText.plainText)
+        .where((value) => value.isNotEmpty)
+        .toList();
+    expect(text, containsAllInOrder(<String>['High', '1', 'Low', '2']));
+
+    next = 200;
+    final empty = ChartOps.rankingChart(
+      id: 8,
+      pinX: 2,
+      pinY: 2,
+      values: const <double>[],
+      allocId: () => next++,
+    );
+    expect(ChartOps.chartValues(empty), <double>[0]);
+    expect(empty.children, isNotEmpty);
+  });
+
   test('data table respects grid extras and cell labels', () {
     final table = ChartOps.dataTableChart(
       id: 5,

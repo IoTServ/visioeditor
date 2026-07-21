@@ -35,7 +35,7 @@ DiagramSpec openapiToSpec(String source, {int maxNodes = 200}) {
     ...?(_asMap(_asMap(spec['components'])?['schemas'])),
     ...?_asMap(spec['definitions']),
   };
-  final schemaNames = schemas.keys.map((k) => '$k').toSet();
+  final schemaNames = schemas.keys.toSet();
 
   final nodes = <NodeSpec>[];
   final edges = <EdgeSpec>[];

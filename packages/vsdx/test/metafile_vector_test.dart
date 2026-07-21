@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
-import 'package:vsdx/src/parser/vsd/cfb/compound_file.dart';
 
 Uint8List _fixture(String name) =>
     File('test/fixtures/metafile/$name').readAsBytesSync();

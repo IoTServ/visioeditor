@@ -47,7 +47,7 @@ void main() {
       // Dark primary fill on the service node.
       final fills = doc.pages.single.shapes
           .where((s) => !s.is1D)
-          .map((s) => s.fill?.foreground?.value)
+          .map((s) => s.fill.foreground?.value)
           .whereType<int>()
           .toSet();
       expect(fills, contains(0xFF004870));

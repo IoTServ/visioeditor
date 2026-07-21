@@ -126,7 +126,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final oy = winOrgY;
       final ex = winExtX;
       final ey = winExtY;
-      if (!haveBounds && ox != null && oy != null && ex != null && ey != null) {
+      if (!haveBounds && ox != null && oy != null) {
         minX = math.min(ox, ox + ex);
         maxX = math.max(ox, ox + ex);
         minY = math.min(oy, oy + ey);

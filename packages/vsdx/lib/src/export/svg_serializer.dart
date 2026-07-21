@@ -29,7 +29,6 @@ import '../model/shape.dart';
 import '../model/table.dart';
 import '../model/theme.dart';
 import '../parser/metafile.dart';
-import '../parser/metafile_drawing.dart';
 import '../utils/color.dart';
 import '../utils/gradient_math.dart';
 import 'compound_stroke.dart';
@@ -925,8 +924,9 @@ class VsdxToSvgSerializer {
         nums.clear();
         return;
       }
-      final rel = cmd == cmd!.toLowerCase();
-      final op = cmd!.toUpperCase();
+      final current = cmd;
+      final rel = current == current.toLowerCase();
+      final op = current.toUpperCase();
       switch (op) {
         case 'M':
         case 'L':
@@ -1398,8 +1398,9 @@ class VsdxToSvgSerializer {
         nums.clear();
         return;
       }
-      final rel = cmd == cmd!.toLowerCase();
-      final op = cmd!.toUpperCase();
+      final current = cmd;
+      final rel = current == current.toLowerCase();
+      final op = current.toUpperCase();
       switch (op) {
         case 'M':
         case 'L':
@@ -1541,23 +1542,6 @@ class VsdxToSvgSerializer {
         sweep: sweep,
         steps: steps,
       );
-
-  /// Page-inch → shape-local (inverse of the XForm written in [_writeShape]).
-  Offset2D _pageToLocal(VsdxShape shape, double pageX, double pageY) {
-    var x = pageX - shape.pinX;
-    var y = pageY - shape.pinY;
-    if (shape.angleRad != 0) {
-      final cosA = math.cos(-shape.angleRad);
-      final sinA = math.sin(-shape.angleRad);
-      final rx = x * cosA - y * sinA;
-      final ry = x * sinA + y * cosA;
-      x = rx;
-      y = ry;
-    }
-    if (shape.flipX) x = -x;
-    if (shape.flipY) y = -y;
-    return Offset2D(x + shape.effectiveLocPinX, y + shape.effectiveLocPinY);
-  }
 
   /// SoftEdges blur only (shadow is [_writeDropShadow]). Skip 1D like canvas.
   String? _softEdgesFilterAttr(

@@ -525,10 +525,10 @@ class VsdxWriter {
       // Value-unchanged still scrubs residual F=Inh (same as PageWidth).
       bool sync(String name, String want, bool modelChanged) {
         if (modelChanged) {
-          _writeValue(_ensureCell(row!, name), want);
+          _writeValue(_ensureCell(row, name), want);
           return true;
         }
-        final cell = _findCell(row!, name);
+        final cell = _findCell(row, name);
         if (cell == null) return false;
         final f = cell.getAttribute('F');
         if (cell.getAttribute('V') == want && (f == null || f.isEmpty)) {
@@ -2246,14 +2246,21 @@ class VsdxWriter {
         baseTheme: base.fill.themeForegroundIndex,
         editedColor: edited.fill.foreground,
         editedTheme: edited.fill.themeForegroundIndex);
-    // Match rebuild: pattern!=0 leaf with no fg/theme still needs opaque white
-    // so Edraw does not treat a missing FillForegnd as hollow.
+    // Match rebuild: a standalone filled leaf needs an explicit foreground so
+    // Edraw does not treat a missing FillForegnd as hollow. Materialise the
+    // resolved model colour on equal-path saves too; keep genuine
+    // Master/FillStyle inheritance untouched.
+    final inheritsFill = el.getAttribute('Master') != null ||
+        el.getAttribute('MasterShape') != null ||
+        el.getAttribute('FillStyle') != null;
     if (edited.fill.pattern != 0 &&
         edited.children.isEmpty &&
-        edited.fill.foreground == null &&
         edited.fill.themeForegroundIndex == null &&
+        !inheritsFill &&
         !_hasCell(el, 'FillForegnd')) {
-      _writeValue(_ensureCell(el, 'FillForegnd'), '#FFFFFF');
+      final foreground =
+          edited.fill.foreground ?? const VsdxColor(0xFFFFFFFF);
+      _writeValue(_ensureCell(el, 'FillForegnd'), _hex(foreground));
       changed = true;
     }
     // Pattern / theme FillBkgnd. Only touch QuickStyleFillColor when the
@@ -2274,7 +2281,13 @@ class VsdxWriter {
           return name == null ? null : 'THEMEVAL("$name")';
         }());
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
-    changed |= _ensureLiteralInt(el, 'FillPattern', edited.fill.pattern);
+    // Groups often omit Fill* entirely and inherit via StyleSheet. Materialising
+    // the parser default pattern=1 without FillForegnd makes Edraw treat the
+    // container as a hollow phantom fill. Only ensure when the cell already
+    // exists (scrub Inh) or the shape is a leaf (rebuild always emits pattern).
+    if (edited.children.isEmpty || _hasCell(el, 'FillPattern')) {
+      changed |= _ensureLiteralInt(el, 'FillPattern', edited.fill.pattern);
+    }
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
         baseTheme: base.line.themeColorIndex,
@@ -5471,20 +5484,6 @@ class VsdxWriter {
     return changed;
   }
 
-  /// When the model has a flag off, force literal `V=0` without `F=` so
-  /// stylesheet `Inh` cannot revive the feature on reopen.
-  bool _scrubDisabledFlagCell(XmlElement shape, String cell) {
-    final c = _findCell(shape, cell);
-    if (c == null) return false;
-    final f = c.getAttribute('F');
-    final v = c.getAttribute('V');
-    final already =
-        (v == '0' || v == '0.0') && (f == null || f.isEmpty);
-    if (already) return false;
-    _writeValue(c, '0');
-    return true;
-  }
-
   /// When the model has a flag on, force literal `V=1` without `F=` so
   /// stylesheet `Inh` cannot replace the local enable bit.
   bool _scrubEnabledFlagCell(XmlElement shape, String cell) {
@@ -5720,7 +5719,7 @@ class VsdxWriter {
       if (f != null &&
           value != null &&
           shapeForDefaults != null &&
-          !_txtFormulaAgreesWithValue(f, value, shapeForDefaults!)) {
+          !_txtFormulaAgreesWithValue(f, value, shapeForDefaults)) {
         f = null;
       }
       children.add(_cell(name, _fmt(value ?? 0), formula: f));
@@ -5859,26 +5858,6 @@ class VsdxWriter {
     _writeValue(c, want);
     return true;
   }
-
-  /// Ensure a length cell is literal [value] without `F=`.
-  /// No-op when the cell is absent (use [_ensureLiteralLength] to inject).
-  bool _forceLiteralLength(XmlElement shape, String cell, double value) {
-    final c = _findCell(shape, cell);
-    if (c == null) return false;
-    final f = c.getAttribute('F');
-    final v = c.getAttribute('V');
-    final parsed = v == null ? null : double.tryParse(v);
-    final already = (f == null || f.isEmpty) &&
-        parsed != null &&
-        (parsed - value).abs() <= _epsilon;
-    if (already) return false;
-    _writeValue(c, _fmt(value));
-    return true;
-  }
-
-  /// Ensure a 0..1 ratio cell is literal [value] without `F=`.
-  bool _forceLiteralRatio(XmlElement shape, String cell, double value) =>
-      _forceLiteralLength(shape, cell, value);
 
   /// Ensure a colour cell exists as literal hex without `F=`.
   bool _ensureLiteralColor(XmlElement shape, String cell, VsdxColor color) {
@@ -6164,8 +6143,23 @@ class VsdxWriter {
       }
     }
     // Pin centred on Begin/End — Edraw samples always carry these formulas.
-    void putPinFormula(String name, String fallback, double value) {
+    void putPinFormula(
+      String name,
+      String fallback,
+      double value, {
+      required bool relationHolds,
+    }) {
       final cell = _ensureCell(el, name);
+      if (!relationHolds) {
+        final parsed = double.tryParse(cell.getAttribute('V') ?? '');
+        if (cell.getAttribute('F') != null ||
+            parsed == null ||
+            (parsed - value).abs() > _epsilon) {
+          _writeValue(cell, _fmt(value));
+          changed = true;
+        }
+        return;
+      }
       final formula = _nonInhFormula(s.formulas[name]) ?? fallback;
       if (cell.getAttribute('F') != formula) {
         cell.setAttribute('F', formula);
@@ -6177,14 +6171,50 @@ class VsdxWriter {
       }
     }
 
-    putPinFormula('PinX', '(BeginX+EndX)*0.5', s.pinX);
-    putPinFormula('PinY', '(BeginY+EndY)*0.5', s.pinY);
+    final bx = s.beginX ?? 0;
+    final by = s.beginY ?? 0;
+    final ex = s.endX ?? 0;
+    final ey = s.endY ?? 0;
+    putPinFormula(
+      'PinX',
+      '(BeginX+EndX)*0.5',
+      s.pinX,
+      relationHolds: (s.pinX - (bx + ex) * 0.5).abs() <= _epsilon,
+    );
+    putPinFormula(
+      'PinY',
+      '(BeginY+EndY)*0.5',
+      s.pinY,
+      relationHolds: (s.pinY - (by + ey) * 0.5).abs() <= _epsilon,
+    );
     // Visio 1-D size / LocPin — required so Geometry rooted at Begin (0,0)
     // places correctly when Width/Height are signed End−Begin deltas.
-    putPinFormula('Width', 'EndX-BeginX', s.width);
-    putPinFormula('Height', 'EndY-BeginY', s.height);
-    putPinFormula('LocPinX', '(EndX-BeginX)/2', s.effectiveLocPinX);
-    putPinFormula('LocPinY', '(EndY-BeginY)/2', s.effectiveLocPinY);
+    final dx = ex - bx;
+    final dy = ey - by;
+    putPinFormula(
+      'Width',
+      'EndX-BeginX',
+      s.width,
+      relationHolds: (s.width - dx).abs() <= _epsilon,
+    );
+    putPinFormula(
+      'Height',
+      'EndY-BeginY',
+      s.height,
+      relationHolds: (s.height - dy).abs() <= _epsilon,
+    );
+    putPinFormula(
+      'LocPinX',
+      '(EndX-BeginX)/2',
+      s.effectiveLocPinX,
+      relationHolds: (s.effectiveLocPinX - dx * 0.5).abs() <= _epsilon,
+    );
+    putPinFormula(
+      'LocPinY',
+      '(EndY-BeginY)/2',
+      s.effectiveLocPinY,
+      relationHolds: (s.effectiveLocPinY - dy * 0.5).abs() <= _epsilon,
+    );
     // If an older export left ConFixedCode=0, force it up to the model value.
     final wantFixed = s.connectorProps?.conFixedCode ?? 3;
     final fixedCell = _ensureCell(el, 'ConFixedCode');
@@ -6326,7 +6356,7 @@ class VsdxWriter {
           changed = true;
         }
         if (cell.getAttribute('F') != modelF) {
-          cell.setAttribute('F', modelF!);
+          cell.setAttribute('F', modelF);
           changed = true;
         }
       } else if (treatAsDefault) {

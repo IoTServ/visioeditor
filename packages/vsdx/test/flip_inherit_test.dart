@@ -1,5 +1,4 @@
 import 'package:test/test.dart';
-import 'package:vsdx/src/model/master.dart';
 import 'package:vsdx/src/parser/page_parser.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';

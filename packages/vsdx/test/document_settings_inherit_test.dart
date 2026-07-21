@@ -1,6 +1,5 @@
 import 'package:test/test.dart';
 import 'package:vsdx/src/parser/document_settings_parser.dart';
-import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
 void main() {

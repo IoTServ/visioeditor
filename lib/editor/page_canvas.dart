@@ -3073,6 +3073,11 @@ class _PageCanvasState extends State<PageCanvas> {
                           : MouseCursor.defer,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
+                // Hit-test handles and measure movement from the pointer-down
+                // position. With the default `start` behaviour, Flutter
+                // reports onPanStart only after touch slop, so shapes lag the
+                // pointer and a 12 px resize/rotate handle is already missed.
+                dragStartBehavior: DragStartBehavior.down,
                 onTapUp: _onTapUp,
                 onSecondaryTapUp: _onSecondaryTapUp,
                 onDoubleTapDown: (d) => _doubleTapPos = d.localPosition,

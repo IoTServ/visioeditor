@@ -291,16 +291,22 @@ class PageParser {
     final ownTextStyleId =
         int.tryParse(shapeEl.getAttribute('TextStyle') ?? '');
     final textStyleId = ownTextStyleId ?? proto?.textStyleId;
-    // Resolve TextStyle from the instance or Master (FillStyle/LineStyle
-    // already resolve proto ids — Character must too for stencil fonts).
-    final sheetChar = textStyleId != null
-        ? _stylesheets.resolveCharStyle(textStyleId)
-        : null;
+    final ownSheetChar = ownTextStyleId == null
+        ? null
+        : _stylesheets.resolveCharStyle(ownTextStyleId);
+    final inheritedSheetChar = proto?.textStyleId == null
+        ? null
+        : _stylesheets.resolveCharStyle(proto!.textStyleId!);
     final protoChar = proto?.richText.runs.isNotEmpty == true
         ? proto!.richText.runs.first.charStyle
         : null;
-    final defaultChar = sheetChar ??
+    // An instance's explicit TextStyle wins. Otherwise a Character row on the
+    // Master is more specific than the Master's own TextStyle stylesheet.
+    // Choosing the inherited stylesheet first flattened 10 pt stencil text to
+    // the document's 12 pt default in common Visio fixtures.
+    final defaultChar = ownSheetChar ??
         protoChar ??
+        inheritedSheetChar ??
         _stylesheets.resolveCharStyle(null) ??
         VsdxCharStyle.defaults;
     final defaultPara = proto?.richText.runs.isNotEmpty == true
@@ -321,16 +327,16 @@ class PageParser {
     // instance shapes that inherit the prototype pick up the stylesheet size
     // (libvisio does the same via the master's TextStyle attribute).
     // (Character-without-Text is already seeded inside RichTextParser.)
-    if (richText.runs.isEmpty && sheetChar != null) {
+    if (richText.runs.isEmpty && ownSheetChar != null) {
       richText = VsdxRichText(
-        runs: <VsdxTextRun>[VsdxTextRun(text: '', charStyle: sheetChar)],
+        runs: <VsdxTextRun>[VsdxTextRun(text: '', charStyle: ownSheetChar)],
         textBlock: richText.textBlock,
+        tabSets: richText.tabSets,
       );
     }
-    final effectiveRich = richText.runs.isEmpty &&
-            proto != null &&
-            proto.richText.runs.isNotEmpty
-        ? proto.richText
+    final hasLocalText = _firstChildLocal(shapeEl, 'Text') != null;
+    final effectiveRich = !hasLocalText && proto != null
+        ? _inheritMasterText(richText, proto, defaultChar, defaultPara)
         : richText;
     final plain = readShapeText(shapeEl) ??
         (effectiveRich.runs.isEmpty
@@ -452,6 +458,24 @@ class PageParser {
         : proto?.masterName;
 
     final formulas = _readFormulas(shapeEl, proto?.formulas);
+    final objType =
+        _int(shapeEl, 'ObjType', inheritFrom: proto?.objType) ?? proto?.objType;
+    // XForm1D midpoint formulas are authoritative over their cached V values.
+    // Several real files carry stale Pin caches; using them shifts the line
+    // until the first save. Do not canonicalise a literal Pin edit: Writer
+    // intentionally removes the formula when the model moves Pin directly.
+    final connectorFrame = is1D &&
+        (objType == null || objType == 2) &&
+        beginX != null &&
+        beginY != null &&
+        endX != null &&
+        endY != null;
+    final canonicalPinX = connectorFrame &&
+        _referencesBoth(formulas['PinX'], 'BeginX', 'EndX');
+    final canonicalPinY = connectorFrame &&
+        _referencesBoth(formulas['PinY'], 'BeginY', 'EndY');
+    final shapePinX = canonicalPinX ? (beginX + endX) * 0.5 : pinX;
+    final shapePinY = canonicalPinY ? (beginY + endY) * 0.5 : pinY;
     final connectorProps = _readConnectorProps(
           shapeEl,
           inherit: proto?.connectorProps,
@@ -472,8 +496,8 @@ class PageParser {
     return VsdxShape(
       id: id,
       name: nameU,
-      pinX: pinX,
-      pinY: pinY,
+      pinX: shapePinX,
+      pinY: shapePinY,
       width: width,
       height: height,
       locPinXInches: locPinX,
@@ -510,8 +534,7 @@ class PageParser {
       imageContrast: imageContrast,
       foreignType: foreignType,
       foreignCompressionType: foreignCompressionType,
-      objType: _int(shapeEl, 'ObjType', inheritFrom: proto?.objType) ??
-          proto?.objType,
+      objType: objType,
       resizeMode: _int(shapeEl, 'ResizeMode', inheritFrom: proto?.resizeMode) ??
           proto?.resizeMode,
       eventDblClick: () {
@@ -729,6 +752,12 @@ class PageParser {
     return f;
   }
 
+  static bool _referencesBoth(String? formula, String a, String b) {
+    if (formula == null) return false;
+    final upper = formula.toUpperCase();
+    return upper.contains(a.toUpperCase()) && upper.contains(b.toUpperCase());
+  }
+
   static const _formulaCellNames = <String>{
     'PinX',
     'PinY',
@@ -763,6 +792,66 @@ class PageParser {
     'ImgWidth',
     'ImgHeight',
   };
+
+  /// Inherit a Master's label when the instance has no local `<Text>`.
+  ///
+  /// A local Character/Paragraph section may still override the inherited
+  /// label's formatting. [RichTextParser] represents that case as one or more
+  /// empty, style-only runs; attach the Master's text to those styles instead
+  /// of leaving an empty rich-text body that renderers treat as unstyled text.
+  VsdxRichText _inheritMasterText(
+    VsdxRichText local,
+    VsdxShape proto,
+    VsdxCharStyle defaultChar,
+    VsdxParaStyle defaultPara,
+  ) {
+    final protoRich = proto.richText;
+    final inheritedText = protoRich.plainText.isNotEmpty
+        ? protoRich.plainText
+        : (proto.text ?? '');
+    if (inheritedText.isEmpty) return local;
+
+    final localStyleOnly =
+        local.runs.isNotEmpty && local.runs.every((run) => run.text.isEmpty);
+    final List<VsdxTextRun> runs;
+    if (localStyleOnly) {
+      final style = local.runs.first;
+      if (protoRich.plainText.isNotEmpty) {
+        runs = <VsdxTextRun>[
+          for (final run in protoRich.runs)
+            run.copyWith(
+              charStyle: style.charStyle,
+              paraStyle: style.paraStyle,
+            ),
+        ];
+      } else {
+        runs = <VsdxTextRun>[
+          style.copyWith(
+            text: inheritedText,
+            fieldSpans: const <VsdxFieldSpan>[],
+            tabIndices: const <int>[],
+          ),
+        ];
+      }
+    } else if (protoRich.plainText.isNotEmpty) {
+      runs = <VsdxTextRun>[...protoRich.runs];
+    } else {
+      final style = protoRich.runs.isNotEmpty ? protoRich.runs.first : null;
+      runs = <VsdxTextRun>[
+        VsdxTextRun(
+          text: inheritedText,
+          charStyle: style?.charStyle ?? defaultChar,
+          paraStyle: style?.paraStyle ?? defaultPara,
+        ),
+      ];
+    }
+
+    return VsdxRichText(
+      runs: List<VsdxTextRun>.unmodifiable(runs),
+      textBlock: local.textBlock,
+      tabSets: local.tabSets,
+    );
+  }
 
   /// Collect parametric `F=` for XForm / 1-D / trigger / text-block cells.
   Map<String, String> _readFormulas(

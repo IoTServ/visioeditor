@@ -54,7 +54,7 @@ class VsdxLine {
   final int endArrow;
 
   /// `BeginArrowSize` / `EndArrowSize` — Visio stores these as one of
-  /// 7 named buckets (`1..7`). The parser pre-converts to a length in
+  /// 7 named buckets (`0..6`). The parser pre-converts to a length in
   /// inches so the renderer just reads it.
   final double beginArrowSizeInches;
   final double endArrowSizeInches;

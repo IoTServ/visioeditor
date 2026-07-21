@@ -7,7 +7,7 @@ void main() {
   const writer = VsdxWriter();
   const parser = DocumentParser();
 
-  List<double> _mutatedValues(String kind, List<double> original) {
+  List<double> mutatedValues(String kind, List<double> original) {
     switch (kind) {
       case 'candlestick':
         return <double>[
@@ -78,7 +78,7 @@ void main() {
     }
   }
 
-  String? _mutatedExtras(String kind) {
+  String? mutatedExtras(String kind) {
     switch (kind) {
       case 'heatmap':
         return ChartOps.formatHeatmapGrid(2, 3);
@@ -104,7 +104,7 @@ void main() {
     }
   }
 
-  List<String>? _mutatedLabels(String kind, List<double> values, String? extras) {
+  List<String>? mutatedLabels(String kind, List<double> values, String? extras) {
     final n = ChartOps.logicalSeriesCount(kind, values, extras);
     switch (kind) {
       case 'dataTable':
@@ -151,9 +151,9 @@ void main() {
     for (final kind in ChartOps.customEditorKinds) {
       final chart = ChartOps.buildKind(kind, id: 21, pinX: 1.5, pinY: 2.5);
       final original = ChartOps.chartValues(chart);
-      final values = _mutatedValues(kind, original);
-      final extras = _mutatedExtras(kind) ?? ChartOps.chartExtras(chart);
-      final labels = _mutatedLabels(kind, values, extras);
+      final values = mutatedValues(kind, original);
+      final extras = mutatedExtras(kind) ?? ChartOps.chartExtras(chart);
+      final labels = mutatedLabels(kind, values, extras);
       var next = 500;
       final rebuilt = ChartOps.rebuild(
         chart,
@@ -199,9 +199,9 @@ void main() {
         pinX: 1 + (id % 7) * 0.1,
         pinY: 1 + (id % 5) * 0.1,
       );
-      final values = _mutatedValues(kind, ChartOps.chartValues(chart0));
-      final extras = _mutatedExtras(kind) ?? ChartOps.chartExtras(chart0);
-      final labels = _mutatedLabels(kind, values, extras);
+      final values = mutatedValues(kind, ChartOps.chartValues(chart0));
+      final extras = mutatedExtras(kind) ?? ChartOps.chartExtras(chart0);
+      final labels = mutatedLabels(kind, values, extras);
       var next = id + 1;
       final chart = ChartOps.rebuild(
         chart0,

@@ -2,6 +2,8 @@
 ///
 /// Output: `~/Desktop/vsd_edraw_export/`
 // ignore_for_file: avoid_print
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

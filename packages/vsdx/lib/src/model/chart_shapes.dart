@@ -6454,7 +6454,7 @@ abstract final class ChartOps {
       final mx = sorted[4].clamp(0.0, 1.0);
       final color = seriesColors[i % seriesColors.length];
       final cx = padL + gap + slot / 2 + i * (slot + gap);
-      final y = (double t) => padB + plotH * t;
+      double y(double t) => padB + plotH * t;
       kids.add(VsdxShape(
         id: next(),
         name: _sheetName(id),
@@ -7278,7 +7278,6 @@ abstract final class ChartOps {
       for (var i = 0; i < 3; i++)
         (i < raw.length ? raw[i] : 0.3).clamp(0.0, 1.0),
     ];
-    final vals = <double>[for (final v in stored) math.max(v, 0.05)];
     final labs = padLabels(
       labels ?? const <String>['A', 'B', 'A∩B'],
       3,
@@ -7582,8 +7581,9 @@ abstract final class ChartOps {
     int Function()? allocId,
   }) {
     // Keep userCells order stable for the side-panel editor; sort only for paint.
+    final source = values ?? _defaultValuesForKind('ranking', null);
     final stored = <double>[
-      for (final v in values ?? _defaultValuesForKind('ranking', null))
+      for (final v in source.isEmpty ? const <double>[0] : source)
         v.clamp(0.0, 1.0),
     ];
     final storedLabs = padLabels(labels ?? defaultLabels(stored.length), stored.length);
@@ -7614,6 +7614,44 @@ abstract final class ChartOps {
         width: math.max(plotW * vals[i], 0.06),
         height: barH * 0.7,
         fill: color,
+      ));
+      kids.add(VsdxShape(
+        id: next(),
+        name: _sheetName(id),
+        pinX: padL + plotW / 2,
+        pinY: cy,
+        width: plotW * 0.92,
+        height: barH * 0.8,
+        text: labs[i],
+        richText: VsdxRichText(runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: labs[i],
+            charStyle: const VsdxCharStyle(
+              fontSizeInches: 0.07,
+              color: VsdxColor(0xFFFFFFFF),
+              style: VsdxFontStyle.boldStyle,
+            ),
+            paraStyle: const VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.left,
+            ),
+          ),
+        ]),
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            noLine: true,
+            commands: <VsdxPathCommand>[
+              const MoveTo(0, 0),
+              LineTo(plotW * 0.92, 0),
+              LineTo(plotW * 0.92, barH * 0.8),
+              LineTo(0, barH * 0.8),
+              const LineTo(0, 0),
+            ],
+          ),
+        ],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        userCells: _chromeMeta,
       ));
       final badge = '${i + 1}';
       kids.add(VsdxShape(

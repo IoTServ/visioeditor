@@ -387,8 +387,9 @@ void main() {
     final pkg = VsdxPackage.open(out);
     final core = pkg.readPartBytes('/docProps/core.xml');
     expect(core, isNotNull);
-    expect(utf8.decode(core!), contains('coreProperties'));
-    expect(utf8.decode(core!), contains('dc:creator'));
+    final coreBytes = core!;
+    expect(utf8.decode(coreBytes), contains('coreProperties'));
+    expect(utf8.decode(coreBytes), contains('dc:creator'));
   });
 
   test('save adds Character when Text has pp but no Character section', () {
@@ -14219,5 +14220,111 @@ void main() {
         );
     expect(cell.getAttribute('V')!.toUpperCase(), '#FFFFFF');
     expect(cell.getAttribute('F'), isNull);
+  });
+
+  test('group without FillPattern cell does not get pattern=1 injected', () {
+    // Chinese Edraw fixtures use bare groups (no Fill* cells). Parser defaults
+    // pattern=1; equal-path must not materialise FillPattern alone or Edraw
+    // reports fill-no-Foregnd on the container.
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final a = doc.pages.first.nextFreeShapeId();
+    final b = a + 1;
+    final gid = b + 1;
+    var page = doc.pages.first
+        .addShape(VsdxShapeFactory.rectangle(
+            id: a, pinX: 1, pinY: 1, width: 1, height: 1))
+        .addShape(VsdxShapeFactory.rectangle(
+            id: b, pinX: 3, pinY: 1, width: 1, height: 1));
+    page = page.group({a, b}, groupId: gid);
+    doc = doc.replacePage(0, page);
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    final pageXml = utf8.decode(pageFile.content as List<int>);
+    final docXml = XmlDocument.parse(pageXml);
+    final groupEl = docXml.descendants.whereType<XmlElement>().firstWhere(
+          (e) =>
+              e.name.local == 'Shape' &&
+              e.getAttribute('ID') == '$gid' &&
+              e.getAttribute('Type') == 'Group',
+        );
+    for (final c in groupEl.childElements.toList()) {
+      if (c.name.local == 'Cell' &&
+          (c.getAttribute('N') == 'FillPattern' ||
+              c.getAttribute('N') == 'FillForegnd')) {
+        groupEl.children.remove(c);
+      }
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(docXml.toXmlString()));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(gid)!.fill.pattern, 1);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        gid,
+        (s) => s.copyWith(pinX: s.pinX + 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final outGroup = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Shape' &&
+              e.getAttribute('ID') == '$gid' &&
+              e.getAttribute('Type') == 'Group',
+        );
+    final hasPattern = outGroup.childElements.any(
+      (c) =>
+          c.name.local == 'Cell' && c.getAttribute('N') == 'FillPattern',
+    );
+    expect(hasPattern, isFalse);
+  });
+
+  test('literal connector Pin edit is not overwritten by midpoint formula', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 2, bx: 4, by: 5),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    final before = doc.pages.first.findShapeById(id)!;
+    final edited = before.copyWith(
+      pinX: before.pinX + 0.5,
+      pinY: before.pinY + 0.25,
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(id, (_) => edited),
+    );
+
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.pinX, closeTo(edited.pinX, 1e-6));
+    expect(after.pinY, closeTo(edited.pinY, 1e-6));
+
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!;
+    XmlElement pin(String name) => pageXml.descendants
+        .whereType<XmlElement>()
+        .firstWhere((element) =>
+            element.name.local == 'Cell' &&
+            element.getAttribute('N') == name);
+    expect(pin('PinX').getAttribute('F'), isNull);
+    expect(pin('PinY').getAttribute('F'), isNull);
   });
 }

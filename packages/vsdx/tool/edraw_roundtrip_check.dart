@@ -8,11 +8,14 @@
 /// Note: binary `.vsd` *write-back* is not implemented (libvisio is read-only;
 /// no OLE2 ShapeSheet writer). Save path is always `.vsdx`.
 // ignore_for_file: avoid_print
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:vsdx/src/parser/cell_helpers.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
@@ -217,12 +220,16 @@ List<String> _edrawStructuralChecks(Uint8List vsdx) {
         (c) =>
             c.name.local == 'Cell' &&
             c.getAttribute('N') == 'FillPattern' &&
-            c.getAttribute('V') != '0',
+            c.getAttribute('V') != '0' &&
+            !isInhFormula(c.getAttribute('F')),
       );
       final hasFg = sh.childElements.any(
         (c) => c.name.local == 'Cell' && c.getAttribute('N') == 'FillForegnd',
       );
-      if (hasPattern && !hasFg) missingFg++;
+      final inheritsFill = sh.getAttribute('Master') != null ||
+          sh.getAttribute('MasterShape') != null ||
+          sh.getAttribute('FillStyle') != null;
+      if (hasPattern && !hasFg && !inheritsFill) missingFg++;
       final texts = sh.findElements('Text');
       if (texts.isNotEmpty && texts.first.innerText.trim().isNotEmpty) {
         withText++;

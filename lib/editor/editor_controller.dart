@@ -3412,11 +3412,13 @@ class EditorController extends ChangeNotifier {
     VsdxPage page,
     List<int> ids,
   ) {
-    return <int, (double, double, double, double)>{
-      for (final id in ids)
-        if (page.findShapeById(id)?.isGlueableConnector != true)
-          if (_pageBounds(page, id) case final b?) id: b,
-    };
+    final out = <int, (double, double, double, double)>{};
+    for (final id in ids) {
+      if (page.findShapeById(id)?.isGlueableConnector == true) continue;
+      final bounds = _pageBounds(page, id);
+      if (bounds != null) out[id] = bounds;
+    }
+    return out;
   }
 
   void alignLeft() {
@@ -3907,16 +3909,6 @@ class EditorController extends ChangeNotifier {
     final dy = targetTop - aabb.top;
     if (dy.abs() < 1e-12) return;
     moveSelectionBy(0, dy);
-  }
-
-  void _moveSingle(VsdxShape s, double pinX, double pinY) {
-    if (s.locked || isOnLockedLayer(s.id)) return;
-    final movedIds = _subtreeIds(<int>{s.id});
-    updateCurrentPage(
-      (page) => page
-          .updateShapeById(s.id, (sh) => _translated(sh, pinX - sh.pinX, pinY - sh.pinY))
-          .rerouteConnectors(movedShapeIds: movedIds),
-    );
   }
 
   /// Resize the single selection to [w] inches wide, keeping its page-AABB
@@ -6134,7 +6126,7 @@ class EditorController extends ChangeNotifier {
     if (doc == null || page == null) return;
     final nextDoc =
         doc.theme.isEmpty ? doc.copyWith(theme: VsdxTheme.office) : doc;
-    final char = (VsdxCharStyle c) => c.withThemeColor(slot);
+    VsdxCharStyle char(VsdxCharStyle c) => c.withThemeColor(slot);
 
     final editId = _textEditShapeId;
     final sel = _textEditSelection;
@@ -6675,11 +6667,10 @@ class EditorController extends ChangeNotifier {
     final reflowPool = SwimlaneOps.isPool(s);
     final reflowLane = SwimlaneOps.isLane(s);
     final reflowTable = TableOps.isTable(s);
-    final lanePoolId = reflowLane ? page!.findParentId(id) : null;
-    final movedIds = _subtreeIds(<int>{
-      id,
-      if (lanePoolId != null) lanePoolId,
-    });
+    final lanePoolId = reflowLane ? page.findParentId(id) : null;
+    final movedRoots = <int>{id};
+    if (lanePoolId != null) movedRoots.add(lanePoolId);
+    final movedIds = _subtreeIds(movedRoots);
     updateCurrentPage(
       (p) {
         var next = p.updateShapeById(
@@ -6856,9 +6847,6 @@ class EditorController extends ChangeNotifier {
   /// BegTrigger / EndTrigger XFTRIGGER cells.
   static VsdxPage _pruneConnectsReferencing(VsdxPage page, Set<int> ids) =>
       page.pruneConnectsReferencing(ids);
-
-  static VsdxShape _translated(VsdxShape s, double dx, double dy) =>
-      VsdxPage.translateShape(s, dx, dy);
 
   // --- Reveal / find (drawio Ctrl+F, "Zoom to selection") --------------------
 

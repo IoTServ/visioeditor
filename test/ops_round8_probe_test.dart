@@ -224,7 +224,6 @@ void main() {
     e.setSelection([a]);
     e.bringSelectionForward();
     final order = e.currentPage!.shapes.map((s) => s.id).toList();
-    expect(order.indexOf(a), greaterThan(order.indexOf(b) == -1 ? -1 : 0));
     // a should move past b
     expect(order, [b, a, d]);
   });

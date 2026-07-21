@@ -286,12 +286,6 @@ class VsdxPainter extends CustomPainter {
     return pts;
   }
 
-  /// Map a shape-local point (origin bottom-left, Y-up) to page inches.
-  Offset _localToPageOffset(VsdxShape s, Offset local) {
-    final p = VsdxPage.localToPage(s, Offset2D(local.dx, local.dy));
-    return Offset(p.x, p.y);
-  }
-
   void _paintShape(
     Canvas canvas,
     VsdxShape shape,

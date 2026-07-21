@@ -20,11 +20,11 @@ void main() {
   late AgentBridge bridge;
   late WebSocket socket;
   late Stream<Map<String, dynamic>> incoming;
-  var _id = 0;
+  var requestIdSeed = 0;
 
   Future<Map<String, dynamic>> call(String method,
       [Map<String, dynamic>? params]) async {
-    final id = ++_id;
+    final id = ++requestIdSeed;
     socket.add(jsonEncode(<String, dynamic>{
       'id': id,
       'method': method,

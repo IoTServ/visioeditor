@@ -3521,7 +3521,7 @@ class VsdBinaryParser {
     final uPos = f.indexOf('U');
     final currencyPrefix = currency != null &&
         uPos >= 0 &&
-        (f.indexOf('#') < 0 || uPos < f.indexOf('#'));
+        (!f.contains('#') || uPos < f.indexOf('#'));
     f = f.replaceAll('U', '').trim();
     if (f.isEmpty && currency == null) return null;
 

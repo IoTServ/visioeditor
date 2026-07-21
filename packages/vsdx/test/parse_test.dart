@@ -209,4 +209,58 @@ void main() {
       expect(s.height, greaterThan(0.2));
     });
   });
+
+  test('Master Character and inherited labels remain rich text', () {
+    List<VsdxShape> flatten(VsdxDocument doc) {
+      final out = <VsdxShape>[];
+      void walk(VsdxShape shape) {
+        out.add(shape);
+        shape.children.forEach(walk);
+      }
+
+      for (final page in doc.pages) {
+        page.shapes.forEach(walk);
+      }
+      return out;
+    }
+
+    for (final name in <String>[
+      'test3_house.vsdx',
+      'test4_connectors.vsdx',
+    ]) {
+      final sizes = <double>{
+        for (final shape in flatten(parser.parse(_fixture(name))))
+          for (final run in shape.richText.runs)
+            if (run.text.trim().isNotEmpty)
+              (run.charStyle.fontSizeInches * 72 * 2).round() / 2,
+      };
+      expect(sizes, contains(10.0), reason: '$name Master Character size');
+    }
+
+    for (final name in <String>[
+      'test_master.vsdx',
+      'test_master_multiple_child_shapes.vsdx',
+    ]) {
+      final inherited = flatten(parser.parse(_fixture(name)))
+          .where((shape) =>
+              (shape.masterId != null || shape.masterShapeId != null) &&
+              (shape.text?.isNotEmpty ?? false))
+          .toList();
+      expect(inherited, isNotEmpty, reason: '$name inherited labels');
+      for (final shape in inherited) {
+        expect(shape.richText.plainText, shape.text,
+            reason: '$name shape ${shape.id} should retain Master text style');
+      }
+    }
+  });
+
+  test('connector Pin follows authoritative Begin/End cells', () {
+    final page = parser.parse(_fixture('test4_connectors.vsdx')).pages.first;
+    final connectors = page.shapes.where((shape) => shape.is1D).toList();
+    expect(connectors, isNotEmpty);
+    for (final shape in connectors) {
+      expect(shape.pinX, closeTo((shape.beginX! + shape.endX!) * 0.5, 1e-9));
+      expect(shape.pinY, closeTo((shape.beginY! + shape.endY!) * 0.5, 1e-9));
+    }
+  });
 }

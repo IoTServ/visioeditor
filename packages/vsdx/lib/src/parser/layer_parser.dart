@@ -95,12 +95,6 @@ class LayerParser {
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
   }
 
-  double? _cellDouble(XmlElement parent, String name) {
-    final s = _cellString(parent, name);
-    if (s == null) return null;
-    return double.tryParse(s);
-  }
-
   /// Read `V=` even when `F=Inh` (cached value Visio still stores).
   String? _cellStringCached(XmlElement parent, String name) {
     final cell = findCell(parent, name);

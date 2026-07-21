@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+
 import 'dart:io';
 
 import 'package:vsdx/src/parser/vsd/cfb/compound_file.dart';
