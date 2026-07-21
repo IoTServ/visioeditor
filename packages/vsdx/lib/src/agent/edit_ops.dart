@@ -153,6 +153,22 @@ ApplyResult applyOps(
                 flipY: flipY ?? next.flipY,
               );
             }
+            final angleRad = _d(op['angleRad'] ?? op['angle']);
+            final rotateDeg = _d(op['rotateDeg'] ?? op['rotate']);
+            if (angleRad != null) {
+              next = next.copyWith(angleRad: angleRad);
+            } else if (rotateDeg != null) {
+              next = next.copyWith(angleRad: rotateDeg * (3.141592653589793 / 180.0));
+            }
+            if (op.containsKey('layerMember') || op.containsKey('layers')) {
+              final layers = _parseLayerMembers(
+                  op.containsKey('layerMember')
+                      ? op['layerMember']
+                      : op['layers']);
+              if (layers != null) {
+                next = next.copyWith(layerMemberIds: layers);
+              }
+            }
             // Match UI setFillColor: 1-D strokes never take a fill.
             if (fillHex != null && !s.is1D) {
               if (fillHex.trim().toLowerCase() == 'none') {
@@ -353,23 +369,22 @@ ApplyResult applyOps(
               );
             }
             // Glow: glow:true|false|"none", or glowSize / glowColor / glowTransparency.
-            // Disable/enable via copyWith so colour / transparency companions survive.
+            // Disable keeps size so re-enable restores it; enable falls back to
+            // Visio default 0.05" when size is still 0 (disabled sentinel).
             if (op.containsKey('glow')) {
               final g = op['glow'];
               if (g == false ||
                   (g is String && g.trim().toLowerCase() == 'none')) {
                 next = next.copyWith(
-                  glow: next.glow.copyWith(enabled: false, sizeInches: 0),
+                  glow: next.glow.copyWith(enabled: false),
                 );
               } else if (g == true) {
-                next = next.copyWith(
-                  glow: next.glow.copyWith(enabled: true),
-                );
+                next = next.copyWith(glow: _enableGlow(next.glow));
               } else if (g is num) {
                 final size = g.toDouble();
                 next = next.copyWith(
                   glow: size <= 0
-                      ? next.glow.copyWith(enabled: false, sizeInches: 0)
+                      ? next.glow.copyWith(enabled: false)
                       : next.glow.copyWith(enabled: true, sizeInches: size),
                 );
               }
@@ -378,7 +393,7 @@ ApplyResult applyOps(
             if (glowSize != null) {
               next = next.copyWith(
                 glow: glowSize <= 0
-                    ? next.glow.copyWith(enabled: false, sizeInches: 0)
+                    ? next.glow.copyWith(enabled: false)
                     : next.glow.copyWith(
                         enabled: true,
                         sizeInches: glowSize,
@@ -388,9 +403,7 @@ ApplyResult applyOps(
             final glowColor = parseColorOrNull(op['glowColor']?.toString());
             if (glowColor != null) {
               next = next.copyWith(
-                glow: next.glow
-                    .copyWith(enabled: true)
-                    .withSolidColor(glowColor),
+                glow: _enableGlow(next.glow).withSolidColor(glowColor),
               );
             }
             final glowTrans = _d(op['glowTransparency']);
@@ -472,19 +485,17 @@ ApplyResult applyOps(
               if (r == false ||
                   (r is String && r.trim().toLowerCase() == 'none')) {
                 next = next.copyWith(
-                  reflection:
-                      next.reflection.copyWith(enabled: false, sizeInches: 0),
+                  reflection: next.reflection.copyWith(enabled: false),
                 );
               } else if (r == true) {
                 next = next.copyWith(
-                  reflection: next.reflection.copyWith(enabled: true),
+                  reflection: _enableReflection(next.reflection),
                 );
               } else if (r is num) {
                 final size = r.toDouble();
                 next = next.copyWith(
                   reflection: size <= 0
-                      ? next.reflection
-                          .copyWith(enabled: false, sizeInches: 0)
+                      ? next.reflection.copyWith(enabled: false)
                       : next.reflection
                           .copyWith(enabled: true, sizeInches: size),
                 );
@@ -494,7 +505,7 @@ ApplyResult applyOps(
             if (reflSize != null) {
               next = next.copyWith(
                 reflection: reflSize <= 0
-                    ? next.reflection.copyWith(enabled: false, sizeInches: 0)
+                    ? next.reflection.copyWith(enabled: false)
                     : next.reflection.copyWith(
                         enabled: true,
                         sizeInches: reflSize,
@@ -504,8 +515,7 @@ ApplyResult applyOps(
             final reflDist = _d(op['reflectionDist'] ?? op['reflectionDistance']);
             if (reflDist != null) {
               next = next.copyWith(
-                reflection: next.reflection.copyWith(
-                  enabled: true,
+                reflection: _enableReflection(next.reflection).copyWith(
                   distanceInches: reflDist,
                 ),
               );
@@ -513,8 +523,7 @@ ApplyResult applyOps(
             final reflBlur = _d(op['reflectionBlur']);
             if (reflBlur != null) {
               next = next.copyWith(
-                reflection: next.reflection.copyWith(
-                  enabled: true,
+                reflection: _enableReflection(next.reflection).copyWith(
                   blurInches: reflBlur,
                 ),
               );
@@ -555,24 +564,24 @@ ApplyResult applyOps(
             final textColor =
                 (op['textColor'] ?? op['fontColor'])?.toString();
             final bold =
-                op.containsKey('bold') ? op['bold'] == true : null;
+                op.containsKey('bold') ? _b(op['bold']) : null;
             final italic =
-                op.containsKey('italic') ? op['italic'] == true : null;
+                op.containsKey('italic') ? _b(op['italic']) : null;
             final underline =
-                op.containsKey('underline') ? op['underline'] == true : null;
+                op.containsKey('underline') ? _b(op['underline']) : null;
             final strikethrough = op.containsKey('strikethrough')
-                ? op['strikethrough'] == true
+                ? _b(op['strikethrough'])
                 : null;
             final doubleUnderline = op.containsKey('doubleUnderline')
-                ? op['doubleUnderline'] == true
+                ? _b(op['doubleUnderline'])
                 : null;
             final doubleStrikethrough = op.containsKey('doubleStrikethrough')
-                ? op['doubleStrikethrough'] == true
+                ? _b(op['doubleStrikethrough'])
                 : null;
             final overline =
-                op.containsKey('overline') ? op['overline'] == true : null;
+                op.containsKey('overline') ? _b(op['overline']) : null;
             final smallCaps =
-                op.containsKey('smallCaps') ? op['smallCaps'] == true : null;
+                op.containsKey('smallCaps') ? _b(op['smallCaps']) : null;
             final fontFamily = op['fontFamily']?.toString() ??
                 op['font']?.toString();
             final pt = _d(op['pt'] ?? op['fontSize']);
@@ -681,13 +690,16 @@ ApplyResult applyOps(
               );
             }
             if (op.containsKey('hideText')) {
-              next = next.copyWith(
-                richText: next.richText.copyWith(
-                  textBlock: next.richText.textBlock.copyWith(
-                    hideText: op['hideText'] == true,
+              final hide = _b(op['hideText']);
+              if (hide != null) {
+                next = next.copyWith(
+                  richText: next.richText.copyWith(
+                    textBlock: next.richText.textBlock.copyWith(
+                      hideText: hide,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             }
             final lineCapRaw = op['lineCap'] ?? op['cap'];
             if (lineCapRaw != null) {
@@ -1308,6 +1320,36 @@ bool? _b(Object? v) {
   if (s == 'true' || s == '1' || s == 'yes') return true;
   if (s == 'false' || s == '0' || s == 'no') return false;
   return null;
+}
+
+/// Enable glow, restoring Visio default size when still at the disabled 0.
+VsdxGlow _enableGlow(VsdxGlow g) => g.copyWith(
+      enabled: true,
+      sizeInches: g.sizeInches > 1e-12 ? g.sizeInches : 0.05,
+    );
+
+/// Enable reflection, restoring Visio default size when still at 0.
+VsdxReflection _enableReflection(VsdxReflection r) => r.copyWith(
+      enabled: true,
+      sizeInches: r.sizeInches > 1e-12 ? r.sizeInches : 0.3,
+    );
+
+/// Parse set_style layerMember / layers as int list (null = absent key value).
+List<int>? _parseLayerMembers(Object? raw) {
+  if (raw == null) return const <int>[];
+  if (raw is List) {
+    return <int>[
+      for (final e in raw)
+        if (_i(e) case final int id) id,
+    ];
+  }
+  final s = '$raw'.trim();
+  if (s.isEmpty) return const <int>[];
+  return <int>[
+    for (final t in s.split(RegExp(r'[;,\s]+')))
+      if (t.isNotEmpty)
+        if (int.tryParse(t) case final int id) id,
+  ];
 }
 
 VsdxGradient _defaultTwoStopGradient(VsdxColor? a, VsdxColor? b) {

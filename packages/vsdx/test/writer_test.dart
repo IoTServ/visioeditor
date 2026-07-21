@@ -13664,4 +13664,121 @@ void main() {
     expect(cell.getAttribute('V'), '4');
     expect(cell.getAttribute('F'), isNull);
   });
+
+  test('FillGradientEnabled=0 injected when cell missing on equal-path', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="FillGradientEnabled"[^/]*/>'),
+      '',
+    );
+    // Leave a residual FillGradient section that equal-path must drop.
+    if (!pageXml.contains('N="FillGradient"')) {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Section N="FillGradient">'
+            '<Row IX="0"><Cell N="GradientStopColor" V="#FF0000"/>'
+            '<Cell N="Pos" V="0"/></Row></Section></Shape>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'FillGradientEnabled',
+        );
+    expect(cell.getAttribute('V'), '0');
+    expect(cell.getAttribute('F'), isNull);
+    expect(outXml.contains('N="FillGradient"'), isFalse);
+  });
+
+  test('FillPattern injected when cell missing on equal-path', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(pattern: 1, foreground: VsdxColor(0xFF336699)),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="FillPattern"[^/]*/>'),
+      '',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    // Keep in-memory model (pattern 1); do not re-parse.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'FillPattern',
+        );
+    expect(cell.getAttribute('V'), '1');
+    expect(cell.getAttribute('F'), isNull);
+  });
 }

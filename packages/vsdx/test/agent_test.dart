@@ -407,12 +407,13 @@ void main() {
       ]);
       final cleared = off.document.pages.first.findShapeById(id)!;
       expect(cleared.glow.enabled, isFalse);
+      expect(cleared.glow.sizeInches, closeTo(0.12, 1e-9));
       expect(cleared.glow.color?.value, 0xFF00AADD);
       expect(cleared.shadow.enabled, isFalse);
       expect(cleared.shadow.pattern, 2);
       expect(cleared.shadow.color?.value, 0xFF333333);
       expect(cleared.shadow.offsetXInches, closeTo(0.1, 1e-9));
-      // Re-enable restores companions.
+      // Re-enable restores companions and prior glow size.
       final on = applyOps(off.document, <Map<String, dynamic>>[
         <String, dynamic>{
           'op': 'set_style',
@@ -423,10 +424,89 @@ void main() {
       ]);
       final restored = on.document.pages.first.findShapeById(id)!;
       expect(restored.glow.enabled, isTrue);
+      expect(restored.glow.sizeInches, closeTo(0.12, 1e-9));
       expect(restored.glow.color?.value, 0xFF00AADD);
       expect(restored.shadow.enabled, isTrue);
       expect(restored.shadow.pattern, 2);
       expect(restored.shadow.color?.value, 0xFF333333);
+    });
+
+    test('set_style glow:true from disabled uses default size', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'glow': true,
+          'reflection': true,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.glow.enabled, isTrue);
+      expect(after.glow.sizeInches, closeTo(0.05, 1e-9));
+      expect(after.reflection.enabled, isTrue);
+      expect(after.reflection.sizeInches, closeTo(0.3, 1e-9));
+    });
+
+    test('set_style angle and layerMember', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first
+            .copyWith(
+              layers: const [
+                VsdxLayer(id: 0, name: 'Default'),
+                VsdxLayer(id: 1, name: 'Extra'),
+              ],
+            )
+            .addShape(
+              VsdxShapeFactory.rectangle(
+                id: id,
+                pinX: 1,
+                pinY: 1,
+                width: 2,
+                height: 1,
+              ),
+            ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'rotateDeg': 90,
+          'layerMember': '0;1',
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.angleRad, closeTo(3.141592653589793 / 2, 1e-9));
+      expect(after.layerMemberIds, [0, 1]);
+      final cleared = applyOps(r.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'layers': <int>[],
+        },
+      ]);
+      expect(
+        cleared.document.pages.first.findShapeById(id)!.layerMemberIds,
+        isEmpty,
+      );
     });
 
     test('set_style flipX/Y and locked unlock', () {

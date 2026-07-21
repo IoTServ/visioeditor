@@ -2216,8 +2216,9 @@ class VsdxWriter {
     changed |= _patchBool(el, 'FlipX', base.flipX, edited.flipX);
     changed |= _patchBool(el, 'FlipY', base.flipY, edited.flipY);
     // Always literal Flip* (scrub F=Inh) — matches rebuild emit of 0/1.
-    changed |= _forceLiteralInt(el, 'FlipX', edited.flipX ? 1 : 0);
-    changed |= _forceLiteralInt(el, 'FlipY', edited.flipY ? 1 : 0);
+    // Ensure (not force) so missing Flip* cells are injected.
+    changed |= _ensureLiteralInt(el, 'FlipX', edited.flipX ? 1 : 0);
+    changed |= _ensureLiteralInt(el, 'FlipY', edited.flipY ? 1 : 0);
     // Group behaviour (libvisio IsTextEditTarget / DontMoveChildren / …).
     changed |= _patchBool(
         el, 'IsTextEditTarget', base.isTextEditTarget, edited.isTextEditTarget);
@@ -2263,22 +2264,22 @@ class VsdxWriter {
           return name == null ? null : 'THEMEVAL("$name")';
         }());
     changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
-    changed |= _forceLiteralInt(el, 'FillPattern', edited.fill.pattern);
+    changed |= _ensureLiteralInt(el, 'FillPattern', edited.fill.pattern);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
         baseTheme: base.line.themeColorIndex,
         editedColor: edited.line.color,
         editedTheme: edited.line.themeColorIndex);
     changed |= _patchLength(el, 'LineWeight', base.line.weightInches, edited.line.weightInches);
-    changed |= _forceLiteralLength(el, 'LineWeight', edited.line.weightInches);
+    changed |= _ensureLiteralLength(el, 'LineWeight', edited.line.weightInches);
     changed |= _patchInt(el, 'LinePattern', base.line.pattern, edited.line.pattern);
-    changed |= _forceLiteralInt(el, 'LinePattern', edited.line.pattern);
+    changed |= _ensureLiteralInt(el, 'LinePattern', edited.line.pattern);
     changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
-    changed |= _forceLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
+    changed |= _ensureLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
     changed |= _patchInt(el, 'BeginArrow', base.line.beginArrow, edited.line.beginArrow);
-    changed |= _forceLiteralInt(el, 'BeginArrow', edited.line.beginArrow);
+    changed |= _ensureLiteralInt(el, 'BeginArrow', edited.line.beginArrow);
     changed |= _patchInt(el, 'EndArrow', base.line.endArrow, edited.line.endArrow);
-    changed |= _forceLiteralInt(el, 'EndArrow', edited.line.endArrow);
+    changed |= _ensureLiteralInt(el, 'EndArrow', edited.line.endArrow);
     changed |= _patchInt(
         el,
         'BeginArrowSize',
@@ -5312,9 +5313,21 @@ class VsdxWriter {
       return true;
     }
     // Models already agree on "no gradient" but XML may still say V=0 F=Inh
-    // (and leftover Dir/Angle with F=Inh from a prior enabled state).
+    // (and leftover Dir/Angle / section from a prior enabled state). Rebuild
+    // always emits Enabled=0 and omits Dir/Angle / section — match that.
     if (eg == null || eg.stops.isEmpty) {
-      var changed = _scrubDisabledFlagCell(el, 'FillGradientEnabled');
+      var changed = false;
+      final residual = <XmlElement>[
+        for (final child in el.childElements)
+          if (child.name.local == 'Section' &&
+              child.getAttribute('N') == 'FillGradient')
+            child,
+      ];
+      for (final s in residual) {
+        el.children.remove(s);
+        changed = true;
+      }
+      changed |= _ensureLiteralInt(el, 'FillGradientEnabled', 0);
       changed |= _removeNamedCells(
           el, const ['FillGradientDir', 'FillGradientAngle']);
       return changed;
@@ -5358,7 +5371,18 @@ class VsdxWriter {
       return true;
     }
     if (eg == null || eg.stops.isEmpty) {
-      var changed = _scrubDisabledFlagCell(el, 'LineGradientEnabled');
+      var changed = false;
+      final residual = <XmlElement>[
+        for (final child in el.childElements)
+          if (child.name.local == 'Section' &&
+              child.getAttribute('N') == 'LineGradient')
+            child,
+      ];
+      for (final s in residual) {
+        el.children.remove(s);
+        changed = true;
+      }
+      changed |= _ensureLiteralInt(el, 'LineGradientEnabled', 0);
       changed |= _removeNamedCells(
           el, const ['LineGradientDir', 'LineGradientAngle']);
       return changed;
