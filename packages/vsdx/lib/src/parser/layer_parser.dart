@@ -27,7 +27,9 @@ class LayerParser {
         final idStr = row.getAttribute('IX') ?? row.getAttribute('N');
         final id = idStr == null ? null : int.tryParse(idStr);
         if (id == null) continue;
-        final name = _cellString(row, 'Name') ?? 'Layer-$id';
+        // Name: keep cached V= when F=Inh so equal-path sync does not rewrite
+        // a Visio-cached layer name as the synthetic Layer-$id fallback.
+        final name = _cellStringCached(row, 'Name') ?? 'Layer-$id';
         out.add(VsdxLayer(
           id: id,
           name: name,

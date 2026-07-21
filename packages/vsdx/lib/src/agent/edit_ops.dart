@@ -430,6 +430,19 @@ ApplyResult applyOps(
                 ),
               );
             }
+            if (op.containsKey('shadowPattern')) {
+              final raw = op['shadowPattern'];
+              final pat = raw is num
+                  ? raw.toInt()
+                  : int.tryParse(raw?.toString() ?? '');
+              if (pat != null) {
+                next = next.copyWith(
+                  shadow: pat <= 0
+                      ? VsdxShadow.disabled
+                      : next.shadow.copyWith(enabled: true, pattern: pat),
+                );
+              }
+            }
             // Reflection: reflection:true|false|"none", plus size/dist/blur.
             if (op.containsKey('reflection')) {
               final r = op['reflection'];
@@ -911,21 +924,23 @@ ApplyResult applyOps(
                   textPosAfterBulletInches: textPosAfterBullet ??
                       p.textPosAfterBulletInches,
                 );
+                // Relative lineSpacing / clearAbsolute wins over absolute so a
+                // single op that sets both does not leave stale SpLine inches.
                 if (solidLine) {
                   next = next.copyWith(
                     lineSpacingSolid: true,
                     lineSpacingAbsoluteInches: 0,
                     lineSpacing: 1.0,
                   );
-                } else if (lineSpacingAbs != null) {
-                  next = next.copyWith(
-                    lineSpacingAbsoluteInches: lineSpacingAbs,
-                    lineSpacingSolid: false,
-                  );
                 } else if (lineSpacingMult != null || clearAbsolute) {
                   next = next.copyWith(
                     lineSpacing: lineSpacingMult ?? p.lineSpacing,
                     lineSpacingAbsoluteInches: 0,
+                    lineSpacingSolid: false,
+                  );
+                } else if (lineSpacingAbs != null) {
+                  next = next.copyWith(
+                    lineSpacingAbsoluteInches: lineSpacingAbs,
                     lineSpacingSolid: false,
                   );
                 }

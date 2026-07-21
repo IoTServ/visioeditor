@@ -2368,6 +2368,8 @@ class VsdxWriter {
         el, 'ShadowForegndTrans', edited.shadow.transparency);
     // Colour companions: scrub F=Inh even when the effect model is unchanged
     // (Trans/Size already scrubbed above; colour was previously skipped).
+    // Unbound (null color + null theme): drop residual cells / Inh so a
+    // stylesheet cannot revive ShadowForegnd on reopen (rebuild omits them).
     if (edited.shadow.color != null) {
       changed |=
           _forceLiteralColor(el, 'ShadowForegnd', edited.shadow.color!);
@@ -2381,6 +2383,16 @@ class VsdxWriter {
         baseTheme: edited.shadow.themeColorIndex,
         editedColor: null,
         editedTheme: edited.shadow.themeColorIndex,
+      );
+    } else {
+      changed |= _patchColorOrTheme(
+        el,
+        'ShadowForegnd',
+        'QuickStyleShadowColor',
+        baseColor: null,
+        baseTheme: null,
+        editedColor: null,
+        editedTheme: null,
       );
     }
     if (!edited.glow.enabled) {
@@ -2402,6 +2414,16 @@ class VsdxWriter {
         baseTheme: edited.glow.themeColorIndex,
         editedColor: null,
         editedTheme: edited.glow.themeColorIndex,
+      );
+    } else {
+      changed |= _patchColorOrTheme(
+        el,
+        'GlowColor',
+        'QuickStyleEffectColor',
+        baseColor: null,
+        baseTheme: null,
+        editedColor: null,
+        editedTheme: null,
       );
     }
     if (!edited.reflection.enabled) {

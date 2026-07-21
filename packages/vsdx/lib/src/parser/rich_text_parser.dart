@@ -809,15 +809,22 @@ class RichTextParser {
           }
         }
         final keys = byIndex.keys.toList()..sort();
-        // Prefer Visio 1-based stops. When both Position0 and Position1 exist
-        // for the same row (legacy dual-write), drop the 0-based twin so we
-        // do not invent an extra stop on open→save.
+        // Prefer Visio 1-based stops. When Position0 and Position1 are a
+        // legacy dual-write of the *same* stop (matching position + align),
+        // drop the 0-based twin. Distinct 0-based multi-stop rows
+        // (Position0/1/2 as three stops) must keep index 0.
         if (keys.contains(0) && keys.contains(1)) {
-          byIndex.remove(0);
-          keys
-            ..clear()
-            ..addAll(byIndex.keys)
-            ..sort();
+          final a = byIndex[0]!;
+          final b = byIndex[1]!;
+          final samePos =
+              (a.positionInches - b.positionInches).abs() < 1e-9;
+          if (samePos && a.alignment == b.alignment) {
+            byIndex.remove(0);
+            keys
+              ..clear()
+              ..addAll(byIndex.keys)
+              ..sort();
+          }
         }
         out.add(VsdxTabSet(
           ix: ix,

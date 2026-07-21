@@ -13356,4 +13356,165 @@ void main() {
     expect(pageXml.contains('CompressionType="PNG"'), isTrue);
     expect(pageXml.contains('ForeignType="EnhMetaFile"'), isFalse);
   });
+
+  test('unbound ShadowForegnd/GlowColor F=Inh dropped on equal-path', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          // Enabled effects with no solid/theme colour — rebuild omits
+          // ShadowForegnd / GlowColor; residual F=Inh must still be scrubbed.
+          shadow: const VsdxShadow(enabled: true, pattern: 1),
+          glow: const VsdxGlow(enabled: true, sizeInches: 0.08),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Inject residual Inh colour cells that rebuild would not emit.
+    // Empty V= so parse keeps color=null (non-empty V would become solid
+    // when honorInh is false on a shape without an enabled master shadow).
+    if (!pageXml.contains('N="ShadowForegnd"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'(<Cell N="ShadowPattern"[^/]*/>)'),
+        r'$1<Cell N="ShadowForegnd" V="" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="ShadowForegnd"[^/]*/>'),
+        '<Cell N="ShadowForegnd" V="" F="Inh"/>',
+      );
+    }
+    if (!pageXml.contains('N="GlowColor"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'(<Cell N="GlowSize"[^/]*/>)'),
+        r'$1<Cell N="GlowColor" V="" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="GlowColor"[^/]*/>'),
+        '<Cell N="GlowColor" V="" F="Inh"/>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final shape = doc.pages.first.findShapeById(id)!;
+    expect(shape.shadow.color, isNull);
+    expect(shape.glow.color, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="ShadowForegnd"[^>]*F="Inh"').hasMatch(outXml), isFalse);
+    expect(RegExp(r'N="GlowColor"[^>]*F="Inh"').hasMatch(outXml), isFalse);
+  });
+
+  test('Tabs Position0/1/2 distinct stops keep all three', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: const VsdxRichText(
+            runs: [VsdxTextRun(text: 'Hi')],
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Pure 0-based multi-stop row — must not drop Position0.
+    if (pageXml.contains('N="Tabs"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Section N="Tabs">[\s\S]*?</Section>'),
+        '<Section N="Tabs"><Row IX="0">'
+            '<Cell N="Position0" V="0.25"/>'
+            '<Cell N="Alignment0" V="0"/>'
+            '<Cell N="Position1" V="0.5"/>'
+            '<Cell N="Alignment1" V="1"/>'
+            '<Cell N="Position2" V="0.75"/>'
+            '<Cell N="Alignment2" V="2"/>'
+            '</Row></Section>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Section N="Tabs"><Row IX="0">'
+            '<Cell N="Position0" V="0.25"/>'
+            '<Cell N="Alignment0" V="0"/>'
+            '<Cell N="Position1" V="0.5"/>'
+            '<Cell N="Alignment1" V="1"/>'
+            '<Cell N="Position2" V="0.75"/>'
+            '<Cell N="Alignment2" V="2"/>'
+            '</Row></Section></Shape>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    final stops =
+        doc.pages.first.findShapeById(id)!.richText.tabSets.first.stops;
+    expect(stops, hasLength(3));
+    expect(stops[0].positionInches, closeTo(0.25, 1e-9));
+    expect(stops[1].positionInches, closeTo(0.5, 1e-9));
+    expect(stops[2].positionInches, closeTo(0.75, 1e-9));
+  });
+
+  test('Layer Name F=Inh keeps cached V', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: const [
+          VsdxLayer(id: 0, name: 'CachedLayer'),
+        ],
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="Name"[^/]*/>'),
+      '<Cell N="Name" V="CachedLayer" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.layers.first.name, 'CachedLayer');
+  });
 }

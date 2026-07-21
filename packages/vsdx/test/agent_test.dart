@@ -384,6 +384,7 @@ void main() {
           'shadowBlur': 0.08,
           'shadowOffsetX': 0.1,
           'shadowOffsetY': 0.15,
+          'shadowPattern': 2,
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -395,6 +396,7 @@ void main() {
       expect(after.shadow.blurInches, closeTo(0.08, 1e-9));
       expect(after.shadow.offsetXInches, closeTo(0.1, 1e-9));
       expect(after.shadow.offsetYInches, closeTo(0.15, 1e-9));
+      expect(after.shadow.pattern, 2);
       final off = applyOps(r.document, <Map<String, dynamic>>[
         <String, dynamic>{
           'op': 'set_style',
@@ -852,6 +854,20 @@ void main() {
       expect(p.lineSpacingSolid, isFalse);
       expect(p.textPosAfterBulletInches, closeTo(0.08, 1e-9));
       expect(after.richText.textBlock.textDirection, 1);
+
+      // Both relative + absolute in one op: relative must clear absolute.
+      final both = applyOps(r.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'lineSpacingAbsolute': 0.3,
+          'lineSpacing': 1.2,
+        },
+      ]);
+      final p2 =
+          both.document.pages.first.findShapeById(id)!.richText.runs.first.paraStyle;
+      expect(p2.lineSpacing, closeTo(1.2, 1e-9));
+      expect(p2.lineSpacingAbsoluteInches, 0);
     });
 
     test('withLabel style-only keeps Field rows', () {
