@@ -489,13 +489,20 @@ void main() {
         <String, dynamic>{
           'op': 'set_style',
           'ids': <String>['shape:$id'],
-          'rotateDeg': 90,
+          'angle': 90, // degrees (not radians)
           'layerMember': '0;1',
+          'themeIndex': 2,
+          'textAngle': 45,
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
       expect(after.angleRad, closeTo(3.141592653589793 / 2, 1e-9));
       expect(after.layerMemberIds, [0, 1]);
+      expect(after.themeIndex, 2);
+      expect(
+        after.richText.textBlock.angleRad,
+        closeTo(3.141592653589793 / 4, 1e-9),
+      );
       final cleared = applyOps(r.document, <Map<String, dynamic>>[
         <String, dynamic>{
           'op': 'set_style',
@@ -507,6 +514,39 @@ void main() {
         cleared.document.pages.first.findShapeById(id)!.layerMemberIds,
         isEmpty,
       );
+    });
+
+    test('set_style connector dynamics on 1-D', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.line(
+            id: id,
+            ax: 1,
+            ay: 1,
+            bx: 3,
+            by: 2,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'glueType': 3,
+          'conFixedCode': 1,
+          'shapeRouteStyle': 16,
+          'noLiveDynamics': true,
+        },
+      ]);
+      final props = r.document.pages.first.findShapeById(id)!.connectorProps!;
+      expect(props.glueType, 3);
+      expect(props.conFixedCode, 1);
+      expect(props.shapeRouteStyle, 16);
+      expect(props.noLiveDynamics, isTrue);
     });
 
     test('set_style flipX/Y and locked unlock', () {

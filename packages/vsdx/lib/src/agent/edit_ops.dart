@@ -153,12 +153,15 @@ ApplyResult applyOps(
                 flipY: flipY ?? next.flipY,
               );
             }
-            final angleRad = _d(op['angleRad'] ?? op['angle']);
-            final rotateDeg = _d(op['rotateDeg'] ?? op['rotate']);
+            // angle / rotateDeg = degrees; angleRad = radians.
+            final angleRad = _d(op['angleRad']);
+            final angleDeg =
+                _d(op['angle'] ?? op['rotateDeg'] ?? op['rotate']);
             if (angleRad != null) {
               next = next.copyWith(angleRad: angleRad);
-            } else if (rotateDeg != null) {
-              next = next.copyWith(angleRad: rotateDeg * (3.141592653589793 / 180.0));
+            } else if (angleDeg != null) {
+              next = next.copyWith(
+                  angleRad: angleDeg * (3.141592653589793 / 180.0));
             }
             if (op.containsKey('layerMember') || op.containsKey('layers')) {
               final layers = _parseLayerMembers(
@@ -168,6 +171,39 @@ ApplyResult applyOps(
               if (layers != null) {
                 next = next.copyWith(layerMemberIds: layers);
               }
+            }
+            final themeIndex = _i(op['themeIndex']);
+            if (themeIndex != null) {
+              next = next.copyWith(themeIndex: themeIndex);
+            }
+            final qsFill = _i(op['quickStyleFillMatrix']);
+            final qsLine = _i(op['quickStyleLineMatrix']);
+            final qsEffects = _i(op['quickStyleEffectsMatrix']);
+            final qsFont = _i(op['quickStyleFontMatrix']);
+            if (qsFill != null ||
+                qsLine != null ||
+                qsEffects != null ||
+                qsFont != null) {
+              next = next.copyWith(
+                quickStyleFillMatrix: qsFill ?? next.quickStyleFillMatrix,
+                quickStyleLineMatrix: qsLine ?? next.quickStyleLineMatrix,
+                quickStyleEffectsMatrix:
+                    qsEffects ?? next.quickStyleEffectsMatrix,
+                quickStyleFontMatrix: qsFont ?? next.quickStyleFontMatrix,
+              );
+            }
+            final textAngleRad = _d(op['textAngleRad'] ?? op['txtAngleRad']);
+            final textAngleDeg = _d(
+                op['textAngle'] ?? op['txtAngle'] ?? op['textAngleDeg']);
+            if (textAngleRad != null || textAngleDeg != null) {
+              final rad = textAngleRad ??
+                  textAngleDeg! * (3.141592653589793 / 180.0);
+              next = next.copyWith(
+                richText: next.richText.copyWith(
+                  textBlock:
+                      next.richText.textBlock.copyWith(angleRad: rad),
+                ),
+              );
             }
             // Match UI setFillColor: 1-D strokes never take a fill.
             if (fillHex != null && !s.is1D) {
@@ -1036,6 +1072,43 @@ ApplyResult applyOps(
                 imageContrast:
                     imgContrast?.clamp(0.0, 1.0) ?? next.imageContrast,
               );
+            }
+            // Connector dynamics (1-D only).
+            if (next.is1D) {
+              final glueType = _i(op['glueType']);
+              final conFixedCode = _i(op['conFixedCode']);
+              final dynFeedback = _i(op['dynFeedback']);
+              final shapeRouteStyle = _i(op['shapeRouteStyle']);
+              final conLineJumpCode = _i(op['conLineJumpCode']);
+              final conLineRouteExt = _i(op['conLineRouteExt']);
+              final noLiveDynamics = op.containsKey('noLiveDynamics')
+                  ? _b(op['noLiveDynamics'])
+                  : null;
+              if (glueType != null ||
+                  conFixedCode != null ||
+                  dynFeedback != null ||
+                  shapeRouteStyle != null ||
+                  conLineJumpCode != null ||
+                  conLineRouteExt != null ||
+                  noLiveDynamics != null) {
+                final props =
+                    next.connectorProps ?? const VsdxConnectorProps();
+                next = next.copyWith(
+                  connectorProps: props.copyWith(
+                    glueType: glueType ?? props.glueType,
+                    conFixedCode: conFixedCode ?? props.conFixedCode,
+                    dynFeedback: dynFeedback ?? props.dynFeedback,
+                    shapeRouteStyle:
+                        shapeRouteStyle ?? props.shapeRouteStyle,
+                    conLineJumpCode:
+                        conLineJumpCode ?? props.conLineJumpCode,
+                    conLineRouteExt:
+                        conLineRouteExt ?? props.conLineRouteExt,
+                    noLiveDynamics:
+                        noLiveDynamics ?? props.noLiveDynamics,
+                  ),
+                );
+              }
             }
             return next;
           });

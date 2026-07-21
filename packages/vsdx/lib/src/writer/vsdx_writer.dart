@@ -2303,15 +2303,16 @@ class VsdxWriter {
         _arrowSizeToBucket(edited.line.endArrowSizeInches));
     changed |= _patchRatio(el, 'FillForegndTrans',
         base.fill.foregroundTransparency, edited.fill.foregroundTransparency);
-    changed |= _forceLiteralRatio(
+    changed |= _ensureLiteralLength(
         el, 'FillForegndTrans', edited.fill.foregroundTransparency);
     changed |= _patchRatio(el, 'FillBkgndTrans',
         base.fill.backgroundTransparency, edited.fill.backgroundTransparency);
-    changed |= _forceLiteralRatio(
+    changed |= _ensureLiteralLength(
         el, 'FillBkgndTrans', edited.fill.backgroundTransparency);
     changed |= _patchRatio(
         el, 'LineColorTrans', base.line.transparency, edited.line.transparency);
-    changed |= _forceLiteralRatio(el, 'LineColorTrans', edited.line.transparency);
+    changed |=
+        _ensureLiteralLength(el, 'LineColorTrans', edited.line.transparency);
     changed |= _patchLength(
         el, 'Rounding', base.line.roundingInches, edited.line.roundingInches);
     // Ensure missing SoftEdges/Rounding/CompoundType cells (rebuild always
@@ -2566,7 +2567,8 @@ class VsdxWriter {
   bool _patchFlagCell(XmlElement shape, String cell, bool base, bool edited) {
     if (base == edited) {
       // Scrub F=Inh whether the flag is on or off (cleared false must stick).
-      return _forceLiteralInt(shape, cell, edited ? 1 : 0);
+      // Ensure so a missing NoAlignBox / ShapeSplittable is injected.
+      return _ensureLiteralInt(shape, cell, edited ? 1 : 0);
     }
     _writeValue(_ensureCell(shape, cell), edited ? '1' : '0');
     return true;
@@ -5582,7 +5584,7 @@ class VsdxWriter {
     // Scrub F=Inh / ensure cell even when angle stays 0 (Master π/2 revive).
     // Do not re-apply formulas['TxtAngle']=Inh via sync below.
     if (_nonInhFormula(shape.formulas['TxtAngle']) == null) {
-      changed |= _forceLiteralLength(el, 'TxtAngle', edited.angleRad);
+      changed |= _ensureLiteralLength(el, 'TxtAngle', edited.angleRad);
     }
     // Same for TxtPin*/Width/Height when model holds a literal (no SETATREF…).
     for (final entry in <(String, double?)>[
@@ -5596,22 +5598,22 @@ class VsdxWriter {
       final v = entry.$2;
       if (v == null) continue;
       if (_nonInhFormula(shape.formulas[entry.$1]) != null) continue;
-      changed |= _forceLiteralLength(el, entry.$1, v);
+      changed |= _ensureLiteralLength(el, entry.$1, v);
     }
     changed |= _patchInt(el, 'VerticalAlign', _vAlignInt(base.verticalAlign),
         _vAlignInt(edited.verticalAlign));
     // Model verticalAlign is authoritative — scrub F=Inh even when value matches.
-    changed |= _forceLiteralInt(
+    changed |= _ensureLiteralInt(
         el, 'VerticalAlign', _vAlignInt(edited.verticalAlign));
     changed |= _patchInt(
         el, 'HideText', base.hideText ? 1 : 0, edited.hideText ? 1 : 0);
-    changed |= _forceLiteralInt(el, 'HideText', edited.hideText ? 1 : 0);
+    changed |= _ensureLiteralInt(el, 'HideText', edited.hideText ? 1 : 0);
     changed |= _patchInt(
         el, 'TextDirection', base.textDirection, edited.textDirection);
-    changed |= _forceLiteralInt(el, 'TextDirection', edited.textDirection);
+    changed |= _ensureLiteralInt(el, 'TextDirection', edited.textDirection);
     changed |= _patchLength(el, 'DefaultTabStop', base.defaultTabStopInches,
         edited.defaultTabStopInches);
-    changed |= _forceLiteralLength(
+    changed |= _ensureLiteralLength(
         el, 'DefaultTabStop', edited.defaultTabStopInches);
     if (edited.backgroundColor != null) {
       changed |= _patchColor(
@@ -5631,23 +5633,23 @@ class VsdxWriter {
         'TextBkgndTrans',
         base.backgroundTransparency,
         edited.backgroundTransparency);
-    changed |= _forceLiteralRatio(
+    changed |= _ensureLiteralLength(
         el, 'TextBkgndTrans', edited.backgroundTransparency);
     changed |= _patchLength(
         el, 'LeftMargin', base.marginLeftInches, edited.marginLeftInches);
     changed |=
-        _forceLiteralLength(el, 'LeftMargin', edited.marginLeftInches);
+        _ensureLiteralLength(el, 'LeftMargin', edited.marginLeftInches);
     changed |= _patchLength(
         el, 'RightMargin', base.marginRightInches, edited.marginRightInches);
     changed |=
-        _forceLiteralLength(el, 'RightMargin', edited.marginRightInches);
+        _ensureLiteralLength(el, 'RightMargin', edited.marginRightInches);
     changed |= _patchLength(
         el, 'TopMargin', base.marginTopInches, edited.marginTopInches);
-    changed |= _forceLiteralLength(el, 'TopMargin', edited.marginTopInches);
+    changed |= _ensureLiteralLength(el, 'TopMargin', edited.marginTopInches);
     changed |= _patchLength(
         el, 'BottomMargin', base.marginBottomInches, edited.marginBottomInches);
     changed |=
-        _forceLiteralLength(el, 'BottomMargin', edited.marginBottomInches);
+        _ensureLiteralLength(el, 'BottomMargin', edited.marginBottomInches);
     // Honour the *edited* model for Txt* F= (like Begin/End): clearing
     // formulas in setIconCaptionBelow must scrub SETATREF/TEXTWIDTH/Height*
     // from XML even when V= is unchanged. Never re-emit Master F=Inh.
