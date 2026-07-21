@@ -1581,10 +1581,13 @@ class VsdxToSvgSerializer {
     if (soft <= 0) return null;
     final id = 'fx-$paintId';
     final region = _filterRegionAttr(bounds, _softEdgesPad(shape.line, soft));
+    // Feather edges only: blur SourceAlpha, then mask SourceGraphic so
+    // interiors (and Foreign bitmap detail) stay sharp — matches Visio SoftEdges.
     defs.write(
       '<filter id="$id" $region>'
-      '<feGaussianBlur in="SourceGraphic" '
-      'stdDeviation="${_n(soft)}" result="soft"/>'
+      '<feGaussianBlur in="SourceAlpha" '
+      'stdDeviation="${_n(soft)}" result="softAlpha"/>'
+      '<feComposite in="SourceGraphic" in2="softAlpha" operator="in"/>'
       '</filter>',
     );
     return 'url(#$id)';
@@ -2667,7 +2670,7 @@ class VsdxToSvgSerializer {
     }
     final boxId = 'img-box-${shape.id}';
     // SoftEdges blur extends past the image box — pad the clip so the feather
-    // is not cut off (matches canvas imgRect.inflate(soft*3)).
+    // is not cut off (same pad as geometry SoftEdges / [_softEdgesPad]).
     final softIn = shape.line.softEdgesInches;
     final softPad =
         softIn > 1e-9 ? _softEdgesPad(shape.line, softIn) : 0.0;

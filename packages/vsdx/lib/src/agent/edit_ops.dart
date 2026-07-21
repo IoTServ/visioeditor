@@ -255,6 +255,105 @@ ApplyResult applyOps(
                 line: next.line.copyWith(compoundType: compoundType),
               );
             }
+            // Glow: glow:true|false|"none", or glowSize / glowColor / glowTransparency.
+            if (op.containsKey('glow')) {
+              final g = op['glow'];
+              if (g == false ||
+                  (g is String && g.trim().toLowerCase() == 'none')) {
+                next = next.copyWith(glow: VsdxGlow.disabled);
+              } else if (g == true) {
+                next = next.copyWith(
+                  glow: next.glow.enabled
+                      ? next.glow
+                      : const VsdxGlow(enabled: true),
+                );
+              } else if (g is num) {
+                final size = g.toDouble();
+                next = next.copyWith(
+                  glow: size <= 0
+                      ? VsdxGlow.disabled
+                      : next.glow.copyWith(enabled: true, sizeInches: size),
+                );
+              }
+            }
+            final glowSize = _d(op['glowSize']);
+            if (glowSize != null) {
+              next = next.copyWith(
+                glow: glowSize <= 0
+                    ? VsdxGlow.disabled
+                    : next.glow.copyWith(
+                        enabled: true,
+                        sizeInches: glowSize,
+                      ),
+              );
+            }
+            final glowColor = parseColorOrNull(op['glowColor']?.toString());
+            if (glowColor != null) {
+              next = next.copyWith(
+                glow: next.glow
+                    .copyWith(enabled: true)
+                    .withSolidColor(glowColor),
+              );
+            }
+            final glowTrans = _d(op['glowTransparency']);
+            if (glowTrans != null) {
+              next = next.copyWith(
+                glow: next.glow.copyWith(
+                  transparency: glowTrans.clamp(0.0, 1.0),
+                ),
+              );
+            }
+            // Shadow: shadow:true|false|"none", plus offset/blur/color helpers.
+            if (op.containsKey('shadow')) {
+              final sh = op['shadow'];
+              if (sh == false ||
+                  (sh is String && sh.trim().toLowerCase() == 'none')) {
+                next = next.copyWith(shadow: VsdxShadow.disabled);
+              } else if (sh == true) {
+                next = next.copyWith(
+                  shadow: next.shadow.enabled
+                      ? next.shadow
+                      : const VsdxShadow(enabled: true),
+                );
+              }
+            }
+            final shadowColor =
+                parseColorOrNull(op['shadowColor']?.toString());
+            if (shadowColor != null) {
+              next = next.copyWith(
+                shadow: next.shadow
+                    .copyWith(enabled: true)
+                    .withSolidColor(shadowColor),
+              );
+            }
+            final shadowBlur = _d(op['shadowBlur']);
+            if (shadowBlur != null) {
+              next = next.copyWith(
+                shadow: next.shadow.copyWith(
+                  enabled: true,
+                  blurInches: shadowBlur,
+                ),
+              );
+            }
+            final shadowOffX = _d(op['shadowOffsetX']);
+            final shadowOffY = _d(op['shadowOffsetY']);
+            if (shadowOffX != null || shadowOffY != null) {
+              next = next.copyWith(
+                shadow: next.shadow.copyWith(
+                  enabled: true,
+                  offsetXInches: shadowOffX ?? next.shadow.offsetXInches,
+                  offsetYInches: shadowOffY ?? next.shadow.offsetYInches,
+                ),
+              );
+            }
+            final shadowTrans = _d(op['shadowTransparency']);
+            if (shadowTrans != null) {
+              next = next.copyWith(
+                shadow: next.shadow.copyWith(
+                  transparency: shadowTrans.clamp(0.0, 1.0),
+                ),
+              );
+            }
             final fillTrans = _d(op['fillTransparency'] ?? op['transparency']);
             final opacity = _d(op['opacity']);
             if (fillTrans != null && !next.is1D) {

@@ -356,6 +356,58 @@ void main() {
       expect(after.richText.textBlock.verticalAlign, VsdxVertAlign.top);
     });
 
+    test('set_style glow and shadow', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'glow': true,
+          'glowSize': 0.12,
+          'glowColor': '#00AADD',
+          'shadow': true,
+          'shadowColor': '#333333',
+          'shadowBlur': 0.08,
+          'shadowOffsetX': 0.1,
+          'shadowOffsetY': 0.15,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.glow.enabled, isTrue);
+      expect(after.glow.sizeInches, closeTo(0.12, 1e-9));
+      expect(after.glow.color?.value, 0xFF00AADD);
+      expect(after.shadow.enabled, isTrue);
+      expect(after.shadow.color?.value, 0xFF333333);
+      expect(after.shadow.blurInches, closeTo(0.08, 1e-9));
+      expect(after.shadow.offsetXInches, closeTo(0.1, 1e-9));
+      expect(after.shadow.offsetYInches, closeTo(0.15, 1e-9));
+      final off = applyOps(r.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'glow': 'none',
+          'shadow': false,
+        },
+      ]);
+      final cleared = off.document.pages.first.findShapeById(id)!;
+      expect(cleared.glow.enabled, isFalse);
+      expect(cleared.shadow.enabled, isFalse);
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

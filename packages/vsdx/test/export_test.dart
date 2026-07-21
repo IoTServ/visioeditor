@@ -1053,6 +1053,8 @@ void main() {
     expect(svg.contains('x="-50%"'), isFalse);
     // pad = soft*3 + weight/2 = 0.08*3 + 0.01/2 = 0.245; height 0.2 → 0.69
     expect(svg, contains('height="0.69"'));
+    expect(svg, contains('feGaussianBlur in="SourceAlpha"'));
+    expect(svg, contains('feComposite'));
   });
 
   test('SVG SoftEdges filter pad includes line weight so thick strokes are not clipped',

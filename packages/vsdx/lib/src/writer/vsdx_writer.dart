@@ -2061,9 +2061,16 @@ class VsdxWriter {
         }
       }
     }
-    // PinX/Y / size: scrub Inh on the cell (formulas map may omit PinX Inh
-    // after some parses); keep real parametric (GUARD, EndX-BeginX, …).
-    for (final name in const ['PinX', 'PinY', 'Width', 'Height']) {
+    // PinX/Y / LocPin / size: scrub Inh on the cell (formulas map may omit
+    // PinX Inh after some parses); keep real parametric (GUARD, Width*0.5, …).
+    for (final name in const [
+      'PinX',
+      'PinY',
+      'Width',
+      'Height',
+      'LocPinX',
+      'LocPinY',
+    ]) {
       final f = _nonInhFormula(edited.formulas[name]);
       if (f != null) {
         changed |= _syncCellFormulaAttr(el, name, f);
@@ -4010,7 +4017,9 @@ class VsdxWriter {
   }
 
   bool _patchGeometry(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_geometriesEqual(base.geometries, edited.geometries)) return false;
+    if (_geometriesEqual(base.geometries, edited.geometries)) {
+      return _scrubGeometryInh(el, edited);
+    }
     if (!edited.geometries.every(_canRebuild)) return false;
     // Prefer in-place V= updates so Width*/Height*/Scratch formulas and
     // unmodelled cells (NoSnap, A–D on NURBS, …) survive resize.
@@ -4042,6 +4051,42 @@ class VsdxWriter {
     ];
     el.children.insertAll(insertAt, sections);
     return true;
+  }
+
+  /// When geometry model is unchanged, still drop residual F=Inh on numeric
+  /// cells (keep Width*/Height*/Scratch parametric formulas).
+  bool _scrubGeometryInh(XmlElement el, VsdxShape edited) {
+    if (edited.geometries.isEmpty) return false;
+    if (!edited.geometries.every(_canRebuild)) return false;
+    final sections = <XmlElement>[
+      for (final child in el.childElements)
+        if (child.name.local == 'Section' &&
+            child.getAttribute('N') == 'Geometry')
+          child,
+    ];
+    if (sections.length != edited.geometries.length) return false;
+    var changed = false;
+    for (var si = 0; si < edited.geometries.length; si++) {
+      final ge = edited.geometries[si];
+      final rows = sections[si]
+          .childElements
+          .where((r) => r.name.local == 'Row')
+          .toList();
+      if (rows.length != ge.commands.length) continue;
+      for (var ri = 0; ri < ge.commands.length; ri++) {
+        final vals = _commandNumericCells(ge.commands[ri]);
+        if (vals == null) continue;
+        final row = rows[ri];
+        for (final e in vals.entries) {
+          final cell = _findCell(row, e.key);
+          if (cell == null) continue;
+          if (!isInhFormula(cell.getAttribute('F'))) continue;
+          _writeValue(cell, _fmt(e.value));
+          changed = true;
+        }
+      }
+    }
+    return changed;
   }
 
   /// Updates existing Geometry rows' numeric `V=` when command topology matches.
@@ -4088,7 +4133,13 @@ class VsdxWriter {
           final cell = _ensureCell(row, name);
           final oldV = oldVals[name]!;
           final newV = newVals[name]!;
-          if ((oldV - newV).abs() <= _epsilon) continue;
+          if ((oldV - newV).abs() <= _epsilon) {
+            // Value unchanged — still scrub residual F=Inh (keep Width* etc.).
+            if (isInhFormula(cell.getAttribute('F'))) {
+              _writeValue(cell, _fmt(newV));
+            }
+            continue;
+          }
           var keep = _formulaFitsScale(
               cell.getAttribute('F'), oldV, newV, sx: sx, sy: sy);
           // C (angle) / D (eccentricity) are not Width/Height scales — keeping
@@ -4097,6 +4148,8 @@ class VsdxWriter {
               (name == 'C' || name == 'D')) {
             keep = false;
           }
+          // Never preserve Master inherit as a "scale formula".
+          if (isInhFormula(cell.getAttribute('F'))) keep = false;
           _writeValue(cell, _fmt(newV), preserveFormula: keep);
         }
         // Formula-bearing A/E payloads (POLYLINE / NURBS) — only when the

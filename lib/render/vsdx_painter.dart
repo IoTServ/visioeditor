@@ -335,18 +335,37 @@ class VsdxPainter extends CustomPainter {
       final softImage = soft > 0 && !shape.is1D;
       if (softImage) {
         final sigma = _blurSigmaPx(soft);
+        final weight =
+            shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+        var extent = weight / 2;
+        for (final r in compoundRails(shape.line.compoundType, weight)) {
+          extent = math.max(extent, r.offset.abs() + r.width / 2);
+        }
+        final pad = soft * 3 + extent;
+        final bounds = Rect.fromLTWH(0, 0, w, h).inflate(pad);
+        // Edge feather: draw image, then dstIn with a blurred opaque rect so
+        // interiors stay sharp (matches SVG SourceAlpha SoftEdges).
+        canvas.saveLayer(bounds, Paint());
+        _paintImage(canvas, shape, Rect.fromLTWH(0, 0, w, h));
         canvas.saveLayer(
-          Rect.fromLTWH(0, 0, w, h).inflate(soft * 3),
+          bounds,
           Paint()
+            ..blendMode = BlendMode.dstIn
             ..imageFilter = ui.ImageFilter.blur(
               sigmaX: sigma,
               sigmaY: sigma,
               tileMode: TileMode.decal,
             ),
         );
+        canvas.drawRect(
+          Rect.fromLTWH(0, 0, w, h),
+          Paint()..color = const Color(0xFFFFFFFF),
+        );
+        canvas.restore();
+        canvas.restore();
+      } else {
+        _paintImage(canvas, shape, Rect.fromLTWH(0, 0, w, h));
       }
-      _paintImage(canvas, shape, Rect.fromLTWH(0, 0, w, h));
-      if (softImage) canvas.restore();
     } else if (!shape.hasGeometry && shape.isGlueableConnector) {
       _paint1DFallback(canvas, shape);
     }
@@ -424,15 +443,60 @@ class VsdxPainter extends CustomPainter {
           extent = math.max(extent, r.offset.abs() + r.width / 2);
         }
         final bounds = path.getBounds().inflate(soft * 3 + extent);
+        // Edge feather (not whole-layer blur): draw fill/stroke, then dstIn
+        // with a blurred opaque silhouette — matches SVG SourceAlpha SoftEdges.
+        canvas.saveLayer(bounds, Paint());
+        if (!geom.noFill && shape.fill.hasFill) {
+          _drawFill(canvas, shape, path);
+        }
+        if (!geom.noLine && shape.line.hasLine) {
+          final strokePaint = _resolveStrokePaint(shape);
+          if (strokePaint != null) {
+            _applyLineGradient(strokePaint, shape, path.getBounds());
+            var strokeSrc = path;
+            if (shape.isGlueableConnector && _lineJumpsActive) {
+              final jumped = _lineJumpsPath(shape, geom);
+              if (jumped != null) strokeSrc = jumped;
+            }
+            _drawCompoundStroke(
+              canvas,
+              strokeSrc,
+              strokePaint,
+              shape.line.compoundType,
+              shape.line.weightInches,
+              dashes: dashes,
+            );
+          }
+        }
         canvas.saveLayer(
           bounds,
           Paint()
+            ..blendMode = BlendMode.dstIn
             ..imageFilter = ui.ImageFilter.blur(
               sigmaX: sigma,
               sigmaY: sigma,
               tileMode: TileMode.decal,
             ),
         );
+        if (!geom.noFill && shape.fill.hasFill) {
+          canvas.drawPath(path, Paint()..color = const Color(0xFFFFFFFF));
+        }
+        if (!geom.noLine && shape.line.hasLine) {
+          final w =
+              shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+          canvas.drawPath(
+            path,
+            Paint()
+              ..color = const Color(0xFFFFFFFF)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = w
+              ..strokeCap = _flutterCap(shape)
+              ..strokeJoin = StrokeJoin.round,
+          );
+        }
+        canvas.restore();
+        canvas.restore();
+        continue;
       }
       if (!geom.noFill && shape.fill.hasFill) {
         _drawFill(canvas, shape, path);
@@ -460,7 +524,6 @@ class VsdxPainter extends CustomPainter {
           );
         }
       }
-      if (useSoft) canvas.restore();
     }
   }
 
