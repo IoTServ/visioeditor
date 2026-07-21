@@ -629,7 +629,7 @@ void _registerEditTools(McpServer server) {
   server.addTool(McpTool(
     name: 'set_style',
     description:
-        'Set fill/line/weight/arrows/textColor/opacity on one or more shapes (ids).',
+        'Set fill/line/weight/arrows/text/dash/rounding and related style on shapes.',
     inputSchema: withPath(<String, dynamic>{
       'ids': <String, dynamic>{
         'type': 'array',
@@ -640,10 +640,20 @@ void _registerEditTools(McpServer server) {
       'weight': <String, dynamic>{'type': 'number'},
       'beginArrow': <String, dynamic>{'type': 'integer'},
       'endArrow': <String, dynamic>{'type': 'integer'},
+      'beginArrowSize': <String, dynamic>{'type': 'number'},
+      'endArrowSize': <String, dynamic>{'type': 'number'},
+      'linePattern': <String, dynamic>{'type': 'integer'},
+      'lineTransparency': <String, dynamic>{'type': 'number'},
+      'rounding': <String, dynamic>{'type': 'number'},
+      'softEdges': <String, dynamic>{'type': 'number'},
+      'compoundType': <String, dynamic>{'type': 'integer'},
       'textColor': <String, dynamic>{'type': 'string'},
       'bold': <String, dynamic>{'type': 'boolean'},
+      'pt': <String, dynamic>{'type': 'number'},
+      'fontSize': <String, dynamic>{'type': 'number'},
       'opacity': <String, dynamic>{'type': 'number'},
       'fillTransparency': <String, dynamic>{'type': 'number'},
+      'verticalAlign': <String, dynamic>{'type': 'string'},
     })
       ..['required'] = <String>['ids'],
     handler: (args) => applyOne(
@@ -655,10 +665,20 @@ void _registerEditTools(McpServer server) {
           'weight',
           'beginArrow',
           'endArrow',
+          'beginArrowSize',
+          'endArrowSize',
+          'linePattern',
+          'lineTransparency',
+          'rounding',
+          'softEdges',
+          'compoundType',
           'textColor',
           'bold',
+          'pt',
+          'fontSize',
           'opacity',
           'fillTransparency',
+          'verticalAlign',
         ])),
   ));
 

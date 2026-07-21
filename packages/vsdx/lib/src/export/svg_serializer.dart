@@ -31,6 +31,7 @@ import '../model/theme.dart';
 import '../parser/metafile.dart';
 import '../parser/metafile_drawing.dart';
 import '../utils/color.dart';
+import '../utils/gradient_math.dart';
 import 'compound_stroke.dart';
 import 'line_jumps.dart';
 
@@ -1990,24 +1991,19 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
-      } else if (g.type == VsdxGradientType.radial) {
-        final origin = _radialOrigin(g.dir, bounds);
+      } else {
+        // Radial / rectangular / path: match canvas radial disc + FillGradientDir.
+        final origin = radialGradientOrigin(
+          dir: g.dir,
+          minX: bounds.minX,
+          minY: bounds.minY,
+          width: bounds.width,
+          height: bounds.height,
+        );
         defs.write(
           '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
-          'cx="${_n(origin.$1)}" cy="${_n(origin.$2)}" r="${_n(r)}">'
+          'cx="${_n(origin.x)}" cy="${_n(origin.y)}" r="${_n(r)}">'
           '$stops</radialGradient>',
-        );
-      } else {
-        // Rectangular / path: SVG has no direct equivalent — approximate with
-        // an axis-aligned linear gradient along the Visio angle (better than
-        // painting a radial disc for square/path fills).
-        final dx = math.cos(g.angleRad) * r;
-        final dy = math.sin(g.angleRad) * r;
-        defs.write(
-          '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
-          'x1="${_n(cx - dx)}" y1="${_n(cy - dy)}" '
-          'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
-          '$stops</linearGradient>',
         );
       }
       return 'fill="url(#$id)"';
@@ -2196,24 +2192,19 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
-      } else if (g.type == VsdxGradientType.radial) {
-        final origin = _radialOrigin(g.dir, bounds);
+      } else {
+        // Radial / rectangular / path: match canvas radial disc + LineGradientDir.
+        final origin = radialGradientOrigin(
+          dir: g.dir,
+          minX: bounds.minX,
+          minY: bounds.minY,
+          width: bounds.width,
+          height: bounds.height,
+        );
         defs.write(
           '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
-          'cx="${_n(origin.$1)}" cy="${_n(origin.$2)}" r="${_n(r)}">'
+          'cx="${_n(origin.x)}" cy="${_n(origin.y)}" r="${_n(r)}">'
           '$stops</radialGradient>',
-        );
-      } else {
-        // Rectangular / path: SVG has no direct equivalent — approximate with
-        // an axis-aligned linear gradient along the Visio angle (better than
-        // painting a radial disc for square/path fills).
-        final dx = math.cos(g.angleRad) * r;
-        final dy = math.sin(g.angleRad) * r;
-        defs.write(
-          '<linearGradient id="$id" gradientUnits="userSpaceOnUse" '
-          'x1="${_n(cx - dx)}" y1="${_n(cy - dy)}" '
-          'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
-          '$stops</linearGradient>',
         );
       }
       strokePaint =
@@ -2451,29 +2442,6 @@ class VsdxToSvgSerializer {
   double _combinedOpacity(VsdxColor? c, double transparency) {
     final colourA = c == null ? 1.0 : c.alpha / 255.0;
     return (colourA * (1 - transparency)).clamp(0.0, 1.0);
-  }
-
-  /// Visio `FillGradientDir` / `LineGradientDir` 1–7 radial origins
-  /// (corners / edges / centre). 4 and unknown → centre.
-  (double, double) _radialOrigin(
-    int? dir,
-    ({double minX, double minY, double width, double height}) bounds,
-  ) {
-    final left = bounds.minX;
-    final right = bounds.minX + bounds.width;
-    final top = bounds.minY;
-    final bottom = bounds.minY + bounds.height;
-    final cx = left + bounds.width / 2;
-    final cy = top + bounds.height / 2;
-    return switch (dir) {
-      1 => (left, top),
-      2 => (cx, top),
-      3 => (right, top),
-      5 => (left, bottom),
-      6 => (cx, bottom),
-      7 => (right, bottom),
-      _ => (cx, cy), // 4 / null / legacy
-    };
   }
 
   String _dashAttr(int linePattern) {

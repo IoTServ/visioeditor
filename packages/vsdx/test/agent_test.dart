@@ -312,6 +312,50 @@ void main() {
       expect(after.text, 'Label');
     });
 
+    test('set_style dash / rounding / softEdges / pt / verticalAlign', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(text: 'Label'),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'linePattern': 2,
+          'rounding': 0.1,
+          'softEdges': 0.05,
+          'compoundType': 1,
+          'beginArrowSize': 0.2,
+          'endArrowSize': 0.25,
+          'lineTransparency': 0.3,
+          'pt': 14,
+          'verticalAlign': 'top',
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.line.pattern, 2);
+      expect(after.line.roundingInches, closeTo(0.1, 1e-9));
+      expect(after.line.softEdgesInches, closeTo(0.05, 1e-9));
+      expect(after.line.compoundType, 1);
+      expect(after.line.beginArrowSizeInches, closeTo(0.2, 1e-9));
+      expect(after.line.endArrowSizeInches, closeTo(0.25, 1e-9));
+      expect(after.line.transparency, closeTo(0.3, 1e-9));
+      expect(after.richText.runs.first.charStyle.fontSizeInches,
+          closeTo(14 / 72, 1e-9));
+      expect(after.richText.textBlock.verticalAlign, VsdxVertAlign.top);
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

@@ -205,6 +205,56 @@ ApplyResult applyOps(
                 line: next.line.copyWith(endArrow: endArrow),
               );
             }
+            final beginArrowSize =
+                _d(op['beginArrowSize'] ?? op['beginArrowSizeInches']);
+            if (beginArrowSize != null && beginArrowSize > 0) {
+              next = next.copyWith(
+                line: next.line.copyWith(beginArrowSizeInches: beginArrowSize),
+              );
+            }
+            final endArrowSize =
+                _d(op['endArrowSize'] ?? op['endArrowSizeInches']);
+            if (endArrowSize != null && endArrowSize > 0) {
+              next = next.copyWith(
+                line: next.line.copyWith(endArrowSizeInches: endArrowSize),
+              );
+            }
+            final linePattern = _i(op['linePattern'] ?? op['dash']);
+            if (linePattern != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(pattern: linePattern),
+                geometries: syncGeometryNoLine(
+                  next.geometries,
+                  hollow: linePattern == 0,
+                ),
+              );
+            }
+            final lineTrans = _d(op['lineTransparency']);
+            if (lineTrans != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(
+                  transparency: lineTrans.clamp(0.0, 1.0),
+                ),
+              );
+            }
+            final rounding = _d(op['rounding'] ?? op['roundingInches']);
+            if (rounding != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(roundingInches: rounding),
+              );
+            }
+            final softEdges = _d(op['softEdges'] ?? op['softEdgesInches']);
+            if (softEdges != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(softEdgesInches: softEdges),
+              );
+            }
+            final compoundType = _i(op['compoundType']);
+            if (compoundType != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(compoundType: compoundType),
+              );
+            }
             final fillTrans = _d(op['fillTransparency'] ?? op['transparency']);
             final opacity = _d(op['opacity']);
             if (fillTrans != null && !next.is1D) {
@@ -224,13 +274,32 @@ ApplyResult applyOps(
                 (op['textColor'] ?? op['fontColor'])?.toString();
             final bold =
                 op.containsKey('bold') ? op['bold'] == true : null;
-            if (textColor != null || bold != null) {
+            final pt = _d(op['pt'] ?? op['fontSize']);
+            if (textColor != null || bold != null || pt != null) {
               next = withLabel(
                 next,
                 next.text ?? '',
                 bold: bold,
                 colorHex: textColor,
+                pt: pt,
               );
+            }
+            final valign = op['verticalAlign']?.toString().toLowerCase();
+            if (valign != null && valign.isNotEmpty) {
+              final align = switch (valign) {
+                'top' => VsdxVertAlign.top,
+                'bottom' => VsdxVertAlign.bottom,
+                'middle' || 'center' || 'centre' => VsdxVertAlign.middle,
+                _ => null,
+              };
+              if (align != null) {
+                next = next.copyWith(
+                  richText: next.richText.copyWith(
+                    textBlock: next.richText.textBlock
+                        .copyWith(verticalAlign: align),
+                  ),
+                );
+              }
             }
             return next;
           });

@@ -23,4 +23,22 @@ void main() {
     ).rootElement;
     expect(LayerParser.parseLayerMembersOrNull(el), [0, 2, 5]);
   });
+
+  test('Layer Visible F=Inh uses default visible=true', () {
+    const parser = LayerParser();
+    final sheet = XmlDocument.parse('''
+      <PageSheet>
+        <Section N="Layer">
+          <Row IX="0">
+            <Cell N="Name" V="Default"/>
+            <Cell N="Visible" V="0" F="Inh"/>
+            <Cell N="Lock" V="1" F="Inh"/>
+          </Row>
+        </Section>
+      </PageSheet>
+    ''').rootElement;
+    final layer = parser.parseLayers(sheet).single;
+    expect(layer.visible, isTrue); // Inh → default 1
+    expect(layer.locked, isFalse); // Inh → default 0
+  });
 }

@@ -78,6 +78,8 @@ class LayerParser {
   String? _cellString(XmlElement parent, String name) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
+    // F=Inh → treat as absent (use Visio defaults), same as LayerMember.
+    if (isInhFormula(cell.getAttribute('F'))) return null;
     final v = cell.getAttribute('V');
     if (v == null || v.isEmpty) return null;
     return v;

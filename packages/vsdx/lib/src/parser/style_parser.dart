@@ -591,7 +591,10 @@ class StyleParser {
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
     if (isInhFormula(f)) {
-      return _ColorResolution(inheritColor, inheritThemeIndex);
+      if (inheritColor != null || inheritThemeIndex != null) {
+        return _ColorResolution(inheritColor, inheritThemeIndex);
+      }
+      // No Master/prototype stop — fall through and honour cached V=.
     }
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // Prefer cached slot in V (writer emits V=slot + F=THEMEVAL()), then

@@ -2975,7 +2975,9 @@ class VsdxWriter {
   /// Rebuild `<Section N="Control">` when the model list changes (group rebuild
   /// / handle edit). Empty list removes the section.
   bool _patchControls(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_listEqual(base.controls, edited.controls)) return false;
+    if (_listEqual(base.controls, edited.controls)) {
+      return _scrubControlsInh(el, edited);
+    }
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Control') {
@@ -2993,9 +2995,63 @@ class VsdxWriter {
     return true;
   }
 
+  /// When Control rows are unchanged, still drop F=Inh on modeled cells.
+  bool _scrubControlsInh(XmlElement el, VsdxShape edited) {
+    if (edited.controls.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Control') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByName = <String, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final n = row.getAttribute('N');
+      if (n != null) rowByName[n] = row;
+    }
+    var changed = false;
+    for (final r in edited.controls) {
+      final row = rowByName[r.name];
+      if (row == null) continue;
+      changed |= _scrubFormulaOrLiteral(
+          row, 'X', _fmt(r.x), formula: r.xFormula);
+      changed |= _scrubFormulaOrLiteral(
+          row, 'Y', _fmt(r.y), formula: r.yFormula);
+      if (r.useVisioDynNames) {
+        changed |= _scrubFormulaOrLiteral(
+            row, 'XDyn', _fmt(r.dynX), formula: r.dynXFormula);
+        changed |= _scrubFormulaOrLiteral(
+            row, 'YDyn', _fmt(r.dynY), formula: r.dynYFormula);
+        changed |= _scrubFormulaOrLiteral(
+            row, 'XCon', _fmt(r.conX), formula: r.conXFormula);
+        changed |= _scrubFormulaOrLiteral(
+            row, 'YCon', _fmt(r.conY), formula: r.conYFormula);
+      } else {
+        changed |= _scrubFormulaOrLiteral(
+            row, 'DynX', _fmt(r.dynX), formula: r.dynXFormula);
+        changed |= _scrubFormulaOrLiteral(
+            row, 'DynY', _fmt(r.dynY), formula: r.dynYFormula);
+        changed |= _scrubFormulaOrLiteral(
+            row, 'ConX', _fmt(r.conX), formula: r.conXFormula);
+        changed |= _scrubFormulaOrLiteral(
+            row, 'ConY', _fmt(r.conY), formula: r.conYFormula);
+      }
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'CanGlue'), r.canGlue ? '1' : '0');
+      if (r.prompt != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Prompt'), r.prompt!);
+      }
+    }
+    return changed;
+  }
+
   /// Rebuild `<Section N="Scratch">` when rows change.
   bool _patchScratch(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_listEqual(base.scratch, edited.scratch)) return false;
+    if (_listEqual(base.scratch, edited.scratch)) {
+      return _scrubScratchInh(el, edited);
+    }
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Scratch') {
@@ -3013,9 +3069,50 @@ class VsdxWriter {
     return true;
   }
 
+  bool _scrubScratchInh(XmlElement el, VsdxShape edited) {
+    if (edited.scratch.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Scratch') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByIx = <int, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final ix = int.tryParse(row.getAttribute('IX') ?? '');
+      if (ix != null) rowByIx[ix] = row;
+    }
+    var changed = false;
+    for (final r in edited.scratch) {
+      final row = rowByIx[r.ix];
+      if (row == null) continue;
+      changed |= _scrubFormulaOrLiteral(
+          row, 'X', _fmt(r.x), formula: r.xFormula);
+      changed |= _scrubFormulaOrLiteral(
+          row, 'Y', _fmt(r.y), formula: r.yFormula);
+      changed |= _scrubFormulaOrLiteral(
+          row, 'A', _fmt(r.a), formula: r.aFormula);
+      changed |= _scrubFormulaOrLiteral(
+          row, 'B', _fmt(r.b), formula: r.bFormula);
+      if (r.c != 0 || r.cFormula != null || _findCell(row, 'C') != null) {
+        changed |= _scrubFormulaOrLiteral(
+            row, 'C', _fmt(r.c), formula: r.cFormula);
+      }
+      if (r.d != 0 || r.dFormula != null || _findCell(row, 'D') != null) {
+        changed |= _scrubFormulaOrLiteral(
+            row, 'D', _fmt(r.d), formula: r.dFormula);
+      }
+    }
+    return changed;
+  }
+
   /// Rebuild `<Section N="Field">` when rows change.
   bool _patchFields(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_listEqual(base.fields, edited.fields)) return false;
+    if (_listEqual(base.fields, edited.fields)) {
+      return _scrubFieldsInh(el, edited);
+    }
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Field') {
@@ -3031,6 +3128,79 @@ class VsdxWriter {
     if (section != null) section.parent?.children.remove(section);
     _insertBeforeTextOrShapes(el, _buildFieldSection(edited.fields));
     return true;
+  }
+
+  bool _scrubFieldsInh(XmlElement el, VsdxShape edited) {
+    if (edited.fields.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Field') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByIx = <int, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final ix = int.tryParse(row.getAttribute('IX') ?? '');
+      if (ix != null) rowByIx[ix] = row;
+    }
+    var changed = false;
+    for (final r in edited.fields) {
+      final row = rowByIx[r.ix];
+      if (row == null) continue;
+      changed |= _scrubFormulaOrLiteral(
+          row, 'Value', r.value ?? '', formula: r.valueFormula);
+      changed |= _scrubFormulaOrLiteral(
+          row, 'Format', r.format ?? '', formula: r.formatFormula);
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Type'), r.type.toString());
+      if (r.uiCat != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'UICat'), r.uiCat.toString());
+      }
+      if (r.uiCod != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'UICod'), r.uiCod.toString());
+      }
+      if (r.uiFmt != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'UIFmt'), r.uiFmt.toString());
+      }
+      if (r.calendar != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Calendar'), r.calendar.toString());
+      }
+      if (r.objectKind != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'ObjectKind'), r.objectKind.toString());
+      }
+    }
+    return changed;
+  }
+
+  /// Scrub F=Inh (or restore non-Inh formula) on an existing/ensured cell.
+  bool _scrubFormulaOrLiteral(
+    XmlElement row,
+    String name,
+    String value, {
+    String? formula,
+  }) {
+    final cell = _ensureCell(row, name);
+    final wantF = _nonInhFormula(formula);
+    if (wantF != null) {
+      var changed = false;
+      if (cell.getAttribute('F') != wantF) {
+        cell.setAttribute('F', wantF);
+        changed = true;
+      }
+      if (cell.getAttribute('V') != value) {
+        cell.setAttribute('V', value);
+        changed = true;
+      }
+      return changed;
+    }
+    return _writeValueIfNeeded(cell, value);
   }
 
   static bool _listEqual<T>(List<T> a, List<T> b) {
@@ -3292,7 +3462,9 @@ class VsdxWriter {
   }
 
   bool _patchActions(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_actionsEqual(base.actions, edited.actions)) return false;
+    if (_actionsEqual(base.actions, edited.actions)) {
+      return _scrubActionsInh(el, edited);
+    }
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Actions') {
@@ -3312,6 +3484,60 @@ class VsdxWriter {
     return true;
   }
 
+  bool _scrubActionsInh(XmlElement el, VsdxShape edited) {
+    if (edited.actions.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Actions') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByName = <String, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final n = row.getAttribute('N');
+      if (n != null) rowByName[n] = row;
+    }
+    var changed = false;
+    for (final r in edited.actions) {
+      final row = rowByName[r.name];
+      if (row == null) continue;
+      if (r.menu != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Menu'), r.menu!);
+      }
+      changed |= _scrubFormulaOrLiteral(
+          row, 'Action', r.action ?? '0', formula: r.actionFormula);
+      if (r.checked || _findCell(row, 'Checked') != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Checked'), r.checked ? '1' : '0');
+      }
+      if (r.disabled || _findCell(row, 'Disabled') != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Disabled'), r.disabled ? '1' : '0');
+      }
+      if (r.readOnly || _findCell(row, 'ReadOnly') != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'ReadOnly'), r.readOnly ? '1' : '0');
+      }
+      if (r.invisible || _findCell(row, 'Invisible') != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Invisible'), r.invisible ? '1' : '0');
+      }
+      if (r.tag != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Tag'), r.tag!);
+      }
+      if (r.buttonFace != 0 || _findCell(row, 'ButtonFace') != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'ButtonFace'), r.buttonFace.toString());
+      }
+      if (r.sortKey != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'SortKey'), r.sortKey!);
+      }
+    }
+    return changed;
+  }
+
   static bool _actionsEqual(List<VsdxActionRow> a, List<VsdxActionRow> b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
@@ -3321,7 +3547,9 @@ class VsdxWriter {
   }
 
   bool _patchRichText(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_richTextEqual(base.richText, edited.richText)) return false;
+    if (_richTextEqual(base.richText, edited.richText)) {
+      return _scrubRichTextInh(el, edited);
+    }
     final runs = edited.richText.runs;
     if (runs.isEmpty) {
       // Align with rebuild: no text runs → drop Character / Paragraph.
@@ -3355,6 +3583,105 @@ class VsdxWriter {
     return true;
   }
 
+  /// When rich text model is unchanged, still scrub F=Inh on Character /
+  /// Paragraph managed cells (Size/Color/HorzAlign/…).
+  bool _scrubRichTextInh(XmlElement el, VsdxShape edited) {
+    final runs = edited.richText.runs;
+    if (runs.isEmpty) return false;
+    XmlElement? charSection;
+    XmlElement? paraSection;
+    for (final s in el.childElements) {
+      if (s.name.local != 'Section') continue;
+      final n = s.getAttribute('N');
+      if (n == 'Character') charSection = s;
+      if (n == 'Paragraph') paraSection = s;
+    }
+    if (charSection == null && paraSection == null) return false;
+    var changed = false;
+    final charRows = charSection == null ? const <XmlElement>[] : _rowsOf(charSection);
+    final paraRows = paraSection == null ? const <XmlElement>[] : _rowsOf(paraSection);
+    for (var i = 0; i < runs.length; i++) {
+      if (i < charRows.length) {
+        changed |= _scrubCharRowInh(charRows[i], runs[i].charStyle);
+      }
+      if (i < paraRows.length) {
+        changed |= _scrubParaRowInh(paraRows[i], runs[i].paraStyle);
+      }
+    }
+    return changed;
+  }
+
+  bool _scrubCharRowInh(XmlElement row, VsdxCharStyle c) {
+    var changed = false;
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Size'), _fmt(c.fontSizeInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Style'), _charStyleBits(c).toString());
+    if (c.color != null) {
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Color'), _hex(c.color!));
+    } else if (c.themeColorIndex != null) {
+      final cell = _ensureCell(row, 'Color');
+      if (cell.getAttribute('F') != 'THEMEVAL()' ||
+          cell.getAttribute('V') != c.themeColorIndex!.toString()) {
+        _writeValue(cell, c.themeColorIndex!.toString(), preserveFormula: true);
+        cell.setAttribute('F', 'THEMEVAL()');
+        changed = true;
+      }
+    }
+    if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Font'), c.fontFamily!);
+    }
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Strikethru'), c.strikethrough ? '1' : '0');
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'DblUnderline'), c.doubleUnderline ? '1' : '0');
+    changed |= _writeValueIfNeeded(_ensureCell(row, 'DoubleStrikethrough'),
+        c.doubleStrikethrough ? '1' : '0');
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Overline'), c.overline ? '1' : '0');
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
+    changed |=
+        _writeValueIfNeeded(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
+    if (c.langId != null && c.langId!.isNotEmpty) {
+      changed |= _writeValueIfNeeded(_ensureCell(row, 'LangID'), c.langId!);
+    }
+    return changed;
+  }
+
+  bool _scrubParaRowInh(XmlElement row, VsdxParaStyle p) {
+    var changed = false;
+    changed |= _writeValueIfNeeded(
+      _ensureCell(row, 'HorzAlign'),
+      _alignToInt(p.horizontalAlign).toString(),
+    );
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'IndFirst'), _fmt(p.indentFirstInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'IndLeft'), _fmt(p.indentLeftInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'IndRight'), _fmt(p.indentRightInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'SpBefore'), _fmt(p.spaceBeforeInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'SpAfter'), _fmt(p.spaceAfterInches));
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'SpLine'), _fmt(_spLineValue(p) ?? -1));
+    changed |=
+        _writeValueIfNeeded(_ensureCell(row, 'Bullet'), p.bullet.toString());
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'Flags'), p.flags.toString());
+    return changed;
+  }
+
   /// Drop local Character / Paragraph sections (empty label / clear text).
   bool _removeCharacterParagraphSections(XmlElement el) {
     var changed = false;
@@ -3371,7 +3698,7 @@ class VsdxWriter {
 
   bool _patchTabs(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_tabSetsEqual(base.richText.tabSets, edited.richText.tabSets)) {
-      return false;
+      return _scrubTabsInh(el, edited);
     }
     XmlElement? section;
     for (final s in el.childElements) {
@@ -3388,6 +3715,35 @@ class VsdxWriter {
     if (section != null) section.parent?.children.remove(section);
     _insertBeforeTextOrShapes(el, _buildTabsSection(edited.richText.tabSets));
     return true;
+  }
+
+  bool _scrubTabsInh(XmlElement el, VsdxShape edited) {
+    if (edited.richText.tabSets.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Tabs') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByIx = <int, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final ix = int.tryParse(row.getAttribute('IX') ?? '');
+      if (ix != null) rowByIx[ix] = row;
+    }
+    var changed = false;
+    for (final set in edited.richText.tabSets) {
+      final row = rowByIx[set.ix];
+      if (row == null) continue;
+      for (var i = 0; i < set.stops.length; i++) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Position$i'), _fmt(set.stops[i].positionInches));
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Alignment$i'),
+            set.stops[i].alignment.toString());
+      }
+    }
+    return changed;
   }
 
   void _writeCharRow(XmlElement row, VsdxCharStyle c) {
@@ -4546,6 +4902,7 @@ class VsdxWriter {
         _ensureLiteralInt(el, 'FillGradientDir', _gradientDirFor(eg));
     scrubbed |=
         _ensureLiteralLength(el, 'FillGradientAngle', eg.angleRad);
+    scrubbed |= _scrubGradientStopInh(el, 'FillGradient', eg);
     return scrubbed;
   }
 
@@ -4582,7 +4939,53 @@ class VsdxWriter {
         _ensureLiteralInt(el, 'LineGradientDir', _gradientDirFor(eg));
     scrubbed |=
         _ensureLiteralLength(el, 'LineGradientAngle', eg.angleRad);
+    scrubbed |= _scrubGradientStopInh(el, 'LineGradient', eg);
     return scrubbed;
+  }
+
+  /// Scrub F=Inh on FillGradient / LineGradient stop cells while the model
+  /// gradient is unchanged.
+  bool _scrubGradientStopInh(
+      XmlElement el, String sectionName, VsdxGradient eg) {
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == sectionName) {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rows = _rowsOf(section);
+    var changed = false;
+    for (var i = 0; i < eg.stops.length && i < rows.length; i++) {
+      final stop = eg.stops[i];
+      final row = rows[i];
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'GradientStopPosition'), _fmt(stop.position));
+      if (stop.color != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'GradientStopColor'), _hex(stop.color!));
+      } else if (stop.themeColorIndex != null) {
+        final cell = _ensureCell(row, 'GradientStopColor');
+        if (cell.getAttribute('F') != 'THEMEVAL()' ||
+            cell.getAttribute('V') != stop.themeColorIndex.toString()) {
+          _writeValue(cell, stop.themeColorIndex.toString(),
+              preserveFormula: true);
+          cell.setAttribute('F', 'THEMEVAL()');
+          changed = true;
+        } else if (isInhFormula(cell.getAttribute('F'))) {
+          cell.setAttribute('F', 'THEMEVAL()');
+          changed = true;
+        }
+      }
+      if (stop.transparency > _epsilon ||
+          _findCell(row, 'GradientStopColorTrans') != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'GradientStopColorTrans'),
+            _fmt(stop.transparency));
+      }
+    }
+    return changed;
   }
 
   /// When the model has a flag off, force literal `V=0` without `F=` so

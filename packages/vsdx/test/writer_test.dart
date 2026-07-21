@@ -9400,6 +9400,165 @@ void main() {
     }
   });
 
+  test('Control / Scratch / Field / Character F=Inh scrubbed when model equal', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          controls: const [
+            VsdxControlRow(name: 'TextPosition', x: 0.5, y: 0.5),
+          ],
+          scratch: const [
+            VsdxScratchRow(ix: 0, x: 1, y: 2, a: 3, b: 4),
+          ],
+          fields: const [
+            VsdxFieldRow(ix: 0, value: '42', type: 0),
+          ],
+          richText: VsdxRichText(runs: [
+            VsdxTextRun(
+              text: 'Hi',
+              charStyle: VsdxCharStyle(fontSizeInches: 12 / 72),
+            ),
+          ]),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '<Cell N="CanGlue" V="0"/>',
+      '<Cell N="CanGlue" V="0" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="A" V="3"[^/]*/>'),
+      '<Cell N="A" V="3" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="Value" V="42"[^/]*/>'),
+      '<Cell N="Value" V="42" U="STR" F="Inh"/>',
+    );
+    final sizeMatch = RegExp(r'<Section N="Character">[\s\S]*?<Cell N="Size"[^/]*/>')
+        .firstMatch(pageXml);
+    if (sizeMatch != null) {
+      final old = sizeMatch.group(0)!;
+      pageXml = pageXml.replaceFirst(
+        old,
+        old.contains('F=')
+            ? old.replaceFirst(RegExp(r'F="[^"]*"'), 'F="Inh"')
+            : old.replaceFirst('/>', ' F="Inh"/>'),
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(outXml.contains('N="CanGlue" V="0" F="Inh"'), isFalse);
+    expect(
+      RegExp(r'<Cell N="A" V="3"[^>]*F="Inh"').hasMatch(outXml),
+      isFalse,
+    );
+    expect(
+      RegExp(r'<Cell N="Value" V="42"[^>]*F="Inh"').hasMatch(outXml),
+      isFalse,
+    );
+    expect(
+      RegExp(r'<Section N="Character">[\s\S]*?<Cell N="Size"[^>]*F="Inh"')
+          .hasMatch(outXml),
+      isFalse,
+    );
+  });
+
+  test('FillGradient stop Color F=Inh scrubbed when gradient unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            gradient: VsdxGradient(
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Taint only the first stop colour cell inside FillGradient.
+    final stopMatch = RegExp(
+      r'<Section N="FillGradient">[\s\S]*?<Cell N="GradientStopColor"[^/]*/>',
+    ).firstMatch(pageXml);
+    expect(stopMatch, isNotNull);
+    final oldStop = stopMatch!.group(0)!;
+    final taintedStop = oldStop.replaceFirst(
+      RegExp(r'<Cell N="GradientStopColor"[^/]*/>'),
+      '<Cell N="GradientStopColor" V="#FF0000" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(oldStop, taintedStop);
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.fill.hasGradient, isTrue);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(
+        r'<Section N="FillGradient">[\s\S]*?<Cell N="GradientStopColor"[^>]*F="Inh"',
+      ).hasMatch(outXml),
+      isFalse,
+    );
+  });
+
   test('disabled shadow rebuild emits ShadowPattern and ShdwPattern 0', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

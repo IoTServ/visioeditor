@@ -886,8 +886,15 @@ class VsdxPainter extends CustomPainter {
       case VsdxGradientType.radial:
       case VsdxGradientType.path:
       case VsdxGradientType.rectangular:
+        final origin = radialGradientOrigin(
+          dir: gradient.dir,
+          minX: bounds.left,
+          minY: bounds.top,
+          width: bounds.width,
+          height: bounds.height,
+        );
         return ui.Gradient.radial(
-          bounds.center,
+          Offset(origin.x, origin.y),
           math.max(bounds.width, bounds.height) * 0.6,
           colors,
           stops,

@@ -16,6 +16,7 @@ export 'src/core/version.dart';
 // utils
 export 'src/utils/units.dart';
 export 'src/utils/color.dart';
+export 'src/utils/gradient_math.dart';
 export 'src/utils/transform.dart';
 export 'src/utils/xml_extensions.dart';
 
