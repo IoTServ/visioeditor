@@ -2375,7 +2375,8 @@ class VsdxToSvgSerializer {
         ? math.max(0.4, 10.0 * lineWeightInches / markerSizeInches)
         : 1.2;
     return '<path d="$pathD" fill="none" $strokePaint '
-        'stroke-width="${_n(sw)}" stroke-linejoin="round"/>';
+        'stroke-width="${_n(sw)}" stroke-linejoin="round" '
+        'stroke-linecap="round"/>';
   }
 
   /// Rough mirror of simple marker paths about x=5 (for start arrows).

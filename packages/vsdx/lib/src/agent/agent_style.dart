@@ -71,8 +71,13 @@ VsdxShape withLabel(
 }) {
   if (text.isEmpty) {
     // Clear label (set_text "" must round-trip as empty, not no-op).
-    return s.copyWith(text: '', richText: VsdxRichText.empty);
+    return s.copyWith(
+      text: '',
+      richText: VsdxRichText.empty,
+      fields: const <VsdxFieldRow>[],
+    );
   }
+  final textChanged = text != (s.text ?? '');
   final prev =
       s.richText.runs.isNotEmpty ? s.richText.runs.first.charStyle : null;
   final clearColor =
@@ -118,18 +123,23 @@ VsdxShape withLabel(
       style: fontStyle,
     );
   }
+  final prevRun =
+      s.richText.runs.isNotEmpty ? s.richText.runs.first : null;
   return s.copyWith(
     text: text,
     // Plain label rewrite drops field spans — also drop Field rows so the
     // writer cannot leave an orphan `<Section N="Field">` without `<fld>`.
-    fields: const <VsdxFieldRow>[],
+    // Style-only edits (same text) keep Field / fieldSpans intact.
+    fields: textChanged ? const <VsdxFieldRow>[] : null,
     richText: VsdxRichText(runs: <VsdxTextRun>[
       VsdxTextRun(
         text: text,
         charStyle: style,
-        paraStyle: s.richText.runs.isNotEmpty
-            ? s.richText.runs.first.paraStyle
-            : VsdxParaStyle.defaults,
+        paraStyle: prevRun?.paraStyle ?? VsdxParaStyle.defaults,
+        fieldSpans:
+            textChanged ? const <VsdxFieldSpan>[] : (prevRun?.fieldSpans ?? const []),
+        tabIndices:
+            textChanged ? const <int>[] : (prevRun?.tabIndices ?? const []),
       ),
     ]),
   );

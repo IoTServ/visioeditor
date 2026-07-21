@@ -9231,6 +9231,175 @@ void main() {
     expect(match.group(0)!.contains('V="3"'), isTrue);
   });
 
+  test('GlueType / DynFeedback F=Inh scrubbed when connector props unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final conn = VsdxShapeFactory.line(id: id, ax: 1, ay: 2, bx: 4, by: 2);
+    doc = doc.replacePage(0, doc.pages.first.addShape(conn));
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="GlueType"[^/]*/>'),
+      '<Cell N="GlueType" V="2" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="DynFeedback"[^/]*/>'),
+      '<Cell N="DynFeedback" V="2" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    // Touch pin only — connectorProps model stays equal.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.01),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['GlueType', 'DynFeedback']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('F'), isNull, reason: name);
+      expect(cell.getAttribute('V'), '2', reason: name);
+    }
+  });
+
+  test('Layer Visible F=Inh scrubbed when layers model unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: const [
+          VsdxLayer(id: 0, name: 'Default', visible: true),
+        ],
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.contains('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="Visible"[^/]*/>'),
+      '<Cell N="Visible" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.layers.single.visible, isTrue);
+    // Shape touch forces a write; layers model stays equal.
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outPages = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/pages.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outPages)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'Visible',
+        );
+    expect(cell.getAttribute('F'), isNull);
+    expect(cell.getAttribute('V'), '1');
+  });
+
+  test('GlowColor / ShadowForegnd F=Inh scrubbed while effects stay on', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            sizeInches: 0.1,
+            color: VsdxColor(0xFF00AADD),
+          ),
+          shadow: const VsdxShadow(
+            enabled: true,
+            pattern: 1,
+            color: VsdxColor(0xFF334455),
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="GlowColor"[^/]*/>'),
+      '<Cell N="GlowColor" V="#00aadd" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ShadowForegnd"[^/]*/>'),
+      '<Cell N="ShadowForegnd" V="#334455" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['GlowColor', 'ShadowForegnd']) {
+      final cell = XmlDocument.parse(outXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('F'), isNull, reason: name);
+    }
+  });
+
   test('disabled shadow rebuild emits ShadowPattern and ShdwPattern 0', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

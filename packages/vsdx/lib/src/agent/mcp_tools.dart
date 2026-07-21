@@ -628,7 +628,8 @@ void _registerEditTools(McpServer server) {
 
   server.addTool(McpTool(
     name: 'set_style',
-    description: 'Set fill/line on one or more shapes (ids).',
+    description:
+        'Set fill/line/weight/arrows/textColor/opacity on one or more shapes (ids).',
     inputSchema: withPath(<String, dynamic>{
       'ids': <String, dynamic>{
         'type': 'array',
@@ -636,10 +637,29 @@ void _registerEditTools(McpServer server) {
       },
       'fill': <String, dynamic>{'type': 'string'},
       'line': <String, dynamic>{'type': 'string'},
+      'weight': <String, dynamic>{'type': 'number'},
+      'beginArrow': <String, dynamic>{'type': 'integer'},
+      'endArrow': <String, dynamic>{'type': 'integer'},
+      'textColor': <String, dynamic>{'type': 'string'},
+      'bold': <String, dynamic>{'type': 'boolean'},
+      'opacity': <String, dynamic>{'type': 'number'},
+      'fillTransparency': <String, dynamic>{'type': 'number'},
     })
       ..['required'] = <String>['ids'],
-    handler: (args) =>
-        applyOne(args, op('set_style', args, <String>['ids', 'fill', 'line'])),
+    handler: (args) => applyOne(
+        args,
+        op('set_style', args, <String>[
+          'ids',
+          'fill',
+          'line',
+          'weight',
+          'beginArrow',
+          'endArrow',
+          'textColor',
+          'bold',
+          'opacity',
+          'fillTransparency',
+        ])),
   ));
 
   server.addTool(McpTool(

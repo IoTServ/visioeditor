@@ -464,7 +464,6 @@ class VsdxWriter {
   // --- pages.xml helpers -----------------------------------------------------
 
   bool _patchLayerRows(XmlElement pageEl, VsdxPage bp, VsdxPage ep) {
-    if (_layersEqual(bp.layers, ep.layers)) return false;
     final pageSheet = _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
     XmlElement? section;
     for (final s in pageSheet.childElements) {
@@ -513,34 +512,33 @@ class VsdxWriter {
         continue;
       }
       if (base == null) continue;
-      if (layer.name != base.name) {
-        _writeValue(_ensureCell(row, 'Name'), layer.name);
-        changed = true;
+      // Value-unchanged still scrubs residual F=Inh (same as PageWidth).
+      bool sync(String name, String want, bool modelChanged) {
+        if (modelChanged) {
+          _writeValue(_ensureCell(row!, name), want);
+          return true;
+        }
+        final cell = _findCell(row!, name);
+        if (cell == null) return false;
+        final f = cell.getAttribute('F');
+        if (cell.getAttribute('V') == want && (f == null || f.isEmpty)) {
+          return false;
+        }
+        _writeValue(cell, want);
+        return true;
       }
-      if (layer.visible != base.visible) {
-        _writeValue(_ensureCell(row, 'Visible'), layer.visible ? '1' : '0');
-        changed = true;
-      }
-      if (layer.locked != base.locked) {
-        _writeValue(_ensureCell(row, 'Lock'), layer.locked ? '1' : '0');
-        changed = true;
-      }
-      if (layer.print != base.print) {
-        _writeValue(_ensureCell(row, 'Print'), layer.print ? '1' : '0');
-        changed = true;
-      }
-      if (layer.active != base.active) {
-        _writeValue(_ensureCell(row, 'Active'), layer.active ? '1' : '0');
-        changed = true;
-      }
-      if (layer.snap != base.snap) {
-        _writeValue(_ensureCell(row, 'Snap'), layer.snap ? '1' : '0');
-        changed = true;
-      }
-      if (layer.glue != base.glue) {
-        _writeValue(_ensureCell(row, 'Glue'), layer.glue ? '1' : '0');
-        changed = true;
-      }
+
+      changed |= sync('Name', layer.name, layer.name != base.name);
+      changed |= sync(
+          'Visible', layer.visible ? '1' : '0', layer.visible != base.visible);
+      changed |=
+          sync('Lock', layer.locked ? '1' : '0', layer.locked != base.locked);
+      changed |=
+          sync('Print', layer.print ? '1' : '0', layer.print != base.print);
+      changed |=
+          sync('Active', layer.active ? '1' : '0', layer.active != base.active);
+      changed |= sync('Snap', layer.snap ? '1' : '0', layer.snap != base.snap);
+      changed |= sync('Glue', layer.glue ? '1' : '0', layer.glue != base.glue);
       if (layer.color?.value != base.color?.value) {
         if (layer.color != null) {
           _writeValue(_ensureCell(row, 'Color'), _hex(layer.color!));
@@ -548,6 +546,8 @@ class VsdxWriter {
           _removeNamedCells(row, const ['Color']);
         }
         changed = true;
+      } else if (layer.color != null) {
+        changed |= sync('Color', _hex(layer.color!), false);
       }
       if (layer.nameUniv != base.nameUniv) {
         if (layer.nameUniv != null) {
@@ -556,15 +556,16 @@ class VsdxWriter {
           _removeNamedCells(row, const ['NameUniv']);
         }
         changed = true;
+      } else if (layer.nameUniv != null) {
+        changed |= sync('NameUniv', layer.nameUniv!, false);
       }
-      if ((layer.colorTrans - base.colorTrans).abs() > _epsilon) {
-        _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(layer.colorTrans));
-        changed = true;
-      }
-      if (layer.status != base.status) {
-        _writeValue(_ensureCell(row, 'Status'), layer.status.toString());
-        changed = true;
-      }
+      changed |= sync(
+        'ColorTrans',
+        _fmt(layer.colorTrans),
+        (layer.colorTrans - base.colorTrans).abs() > _epsilon,
+      );
+      changed |= sync(
+          'Status', layer.status.toString(), layer.status != base.status);
     }
     // Drop Layer rows that no longer exist in the edited model (delete layer).
     final keep = <int>{for (final l in ep.layers) l.id};
@@ -1696,27 +1697,6 @@ class VsdxWriter {
     return out;
   }
 
-  static bool _layersEqual(List<VsdxLayer> a, List<VsdxLayer> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i].id != b[i].id ||
-          a[i].name != b[i].name ||
-          a[i].nameUniv != b[i].nameUniv ||
-          a[i].visible != b[i].visible ||
-          a[i].locked != b[i].locked ||
-          a[i].print != b[i].print ||
-          a[i].active != b[i].active ||
-          a[i].snap != b[i].snap ||
-          a[i].glue != b[i].glue ||
-          a[i].status != b[i].status ||
-          a[i].color != b[i].color ||
-          (a[i].colorTrans - b[i].colorTrans).abs() > _epsilon) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   static VsdxLayer? _findLayer(List<VsdxLayer> list, int id) {
     for (final l in list) {
       if (l.id == id) return l;
@@ -2248,6 +2228,12 @@ class VsdxWriter {
         _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
     changed |= _ensureLiteralLength(
         el, 'ShadowForegndTrans', edited.shadow.transparency);
+    // Colour companions: scrub F=Inh even when the effect model is unchanged
+    // (Trans/Size already scrubbed above; colour was previously skipped).
+    if (edited.shadow.color != null) {
+      changed |=
+          _forceLiteralColor(el, 'ShadowForegnd', edited.shadow.color!);
+    }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
     } else {
@@ -2256,6 +2242,9 @@ class VsdxWriter {
     }
     changed |=
         _ensureLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
+    if (edited.glow.color != null) {
+      changed |= _forceLiteralColor(el, 'GlowColor', edited.glow.color!);
+    }
     if (!edited.reflection.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
     } else {
@@ -2571,57 +2560,52 @@ class VsdxWriter {
   bool _patchConnectorProps(XmlElement el, VsdxShape base, VsdxShape edited) {
     final b = base.connectorProps;
     final e = edited.connectorProps;
-    if (b == e) return false;
     if (e == null) return false;
     var changed = false;
+    // BegTrigger / EndTrigger are formula cells (`_XFTRIGGER(...)`) — only
+    // rewrite when the model value changes. Never scrub residual F= on equal
+    // (would flatten `_XFTRIGGER` into a bare V=).
     if (e.begTrigger != null) {
-      changed |= _patchStringCell(el, 'BegTrigger', b?.begTrigger, e.begTrigger!);
+      changed |=
+          _patchStringCell(el, 'BegTrigger', b?.begTrigger, e.begTrigger!);
     }
     if (e.endTrigger != null) {
-      changed |= _patchStringCell(el, 'EndTrigger', b?.endTrigger, e.endTrigger!);
+      changed |=
+          _patchStringCell(el, 'EndTrigger', b?.endTrigger, e.endTrigger!);
     }
     if (e.glueType != null) {
-      changed |= _patchInt(el, 'GlueType', b?.glueType ?? -1, e.glueType!);
+      changed |= _ensureLiteralInt(el, 'GlueType', e.glueType!);
     }
     if (e.conFixedCode != null) {
-      changed |=
-          _patchInt(el, 'ConFixedCode', b?.conFixedCode ?? -1, e.conFixedCode!);
+      changed |= _ensureLiteralInt(el, 'ConFixedCode', e.conFixedCode!);
     }
     if (e.dynFeedback != null) {
-      changed |=
-          _patchInt(el, 'DynFeedback', b?.dynFeedback ?? -1, e.dynFeedback!);
+      changed |= _ensureLiteralInt(el, 'DynFeedback', e.dynFeedback!);
     }
     changed |= _patchBool(el, 'NoLiveDynamics', b?.noLiveDynamics ?? false,
         e.noLiveDynamics);
     changed |= _forceLiteralInt(
         el, 'NoLiveDynamics', e.noLiveDynamics ? 1 : 0);
     if (e.conLineJumpCode != null) {
-      changed |= _patchInt(
-          el, 'ConLineJumpCode', b?.conLineJumpCode ?? -1, e.conLineJumpCode!);
+      changed |= _ensureLiteralInt(el, 'ConLineJumpCode', e.conLineJumpCode!);
     }
     if (e.conLineRouteExt != null) {
-      changed |= _patchInt(
-          el, 'ConLineRouteExt', b?.conLineRouteExt ?? -1, e.conLineRouteExt!);
+      changed |= _ensureLiteralInt(el, 'ConLineRouteExt', e.conLineRouteExt!);
     }
     if (e.conLineJumpStyle != null) {
-      changed |= _patchInt(
-          el, 'ConLineJumpStyle', b?.conLineJumpStyle ?? -1, e.conLineJumpStyle!);
+      changed |= _ensureLiteralInt(el, 'ConLineJumpStyle', e.conLineJumpStyle!);
     }
     if (e.conLineJumpDirX != null) {
-      changed |= _patchInt(
-          el, 'ConLineJumpDirX', b?.conLineJumpDirX ?? -1, e.conLineJumpDirX!);
+      changed |= _ensureLiteralInt(el, 'ConLineJumpDirX', e.conLineJumpDirX!);
     }
     if (e.conLineJumpDirY != null) {
-      changed |= _patchInt(
-          el, 'ConLineJumpDirY', b?.conLineJumpDirY ?? -1, e.conLineJumpDirY!);
+      changed |= _ensureLiteralInt(el, 'ConLineJumpDirY', e.conLineJumpDirY!);
     }
     if (e.shapeRouteStyle != null) {
-      changed |= _patchInt(
-          el, 'ShapeRouteStyle', b?.shapeRouteStyle ?? -1, e.shapeRouteStyle!);
+      changed |= _ensureLiteralInt(el, 'ShapeRouteStyle', e.shapeRouteStyle!);
     }
     if (e.shapePlaceFlip != null) {
-      changed |= _patchInt(
-          el, 'ShapePlaceFlip', b?.shapePlaceFlip ?? -1, e.shapePlaceFlip!);
+      changed |= _ensureLiteralInt(el, 'ShapePlaceFlip', e.shapePlaceFlip!);
     }
     return changed;
   }
@@ -5229,9 +5213,12 @@ class VsdxWriter {
     // Freehand / ink strokes are 1-D but not glueable connectors.
     if (s.objType != null && s.objType != 2) return false;
     var changed = false;
+    // Inject missing cells *and* scrub residual F=Inh on present ones.
     void put(String name, String value) {
-      if (!_hasCell(el, name)) {
-        _ensureCell(el, name).setAttribute('V', value);
+      final cell = _ensureCell(el, name);
+      if (cell.getAttribute('V') != value ||
+          (cell.getAttribute('F') ?? '').isNotEmpty) {
+        _writeValue(cell, value);
         changed = true;
       }
     }

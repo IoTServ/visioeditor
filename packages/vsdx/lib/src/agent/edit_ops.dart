@@ -187,6 +187,51 @@ ApplyResult applyOps(
                 }
               }
             }
+            final weight = _d(op['weight'] ?? op['lineWeight']);
+            if (weight != null && weight > 0) {
+              next = next.copyWith(
+                line: next.line.copyWith(weightInches: weight),
+              );
+            }
+            final beginArrow = _i(op['beginArrow']);
+            if (beginArrow != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(beginArrow: beginArrow),
+              );
+            }
+            final endArrow = _i(op['endArrow']);
+            if (endArrow != null) {
+              next = next.copyWith(
+                line: next.line.copyWith(endArrow: endArrow),
+              );
+            }
+            final fillTrans = _d(op['fillTransparency'] ?? op['transparency']);
+            final opacity = _d(op['opacity']);
+            if (fillTrans != null && !next.is1D) {
+              next = next.copyWith(
+                fill: next.fill.copyWith(
+                  foregroundTransparency: fillTrans.clamp(0.0, 1.0),
+                ),
+              );
+            } else if (opacity != null && !next.is1D) {
+              next = next.copyWith(
+                fill: next.fill.copyWith(
+                  foregroundTransparency: (1.0 - opacity).clamp(0.0, 1.0),
+                ),
+              );
+            }
+            final textColor =
+                (op['textColor'] ?? op['fontColor'])?.toString();
+            final bold =
+                op.containsKey('bold') ? op['bold'] == true : null;
+            if (textColor != null || bold != null) {
+              next = withLabel(
+                next,
+                next.text ?? '',
+                bold: bold,
+                colorHex: textColor,
+              );
+            }
             return next;
           });
         }
@@ -458,6 +503,9 @@ Uint8List applyOpsBytes(Uint8List original, String opsJson, {int pageIndex = 0})
 }
 
 double? _d(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));
+
+int? _i(Object? v) =>
+    v == null ? null : (v is int ? v : (v is num ? v.toInt() : int.tryParse('$v')));
 
 /// Resolve a shape id from an op field.
 ///

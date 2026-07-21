@@ -631,6 +631,27 @@ void main() {
     expect(svg, contains('stroke-linecap="square"'));
   });
 
+  test('SVG open arrow markers use stroke-linecap round', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(
+                endArrow: 3,
+                weightInches: 0.03,
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('stroke-linejoin="round"'));
+    expect(svg, contains('stroke-linecap="round"'));
+  });
+
   test('SVG arrow markers use userSpaceOnUse absolute inches', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

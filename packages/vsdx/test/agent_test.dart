@@ -274,6 +274,83 @@ void main() {
       expect(after.line.weightInches, closeTo(0.02, 1e-9));
     });
 
+    test('set_style weight / arrows / textColor / opacity', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(text: 'Label'),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'weight': 0.04,
+          'beginArrow': 1,
+          'endArrow': 4,
+          'textColor': '#FF0000',
+          'bold': true,
+          'opacity': 0.5,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.line.weightInches, closeTo(0.04, 1e-9));
+      expect(after.line.beginArrow, 1);
+      expect(after.line.endArrow, 4);
+      expect(after.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+      expect(after.richText.runs.first.charStyle.color?.value, 0xFFFF0000);
+      expect(after.richText.runs.first.charStyle.style.bold, isTrue);
+      expect(after.text, 'Label');
+    });
+
+    test('withLabel style-only keeps Field rows', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      final field = const VsdxFieldRow(ix: 0, value: '42', type: 0);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(
+            text: '42',
+            fields: <VsdxFieldRow>[field],
+            richText: VsdxRichText(runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '42',
+                fieldSpans: const <VsdxFieldSpan>[
+                  VsdxFieldSpan(ix: 0, start: 0, length: 2),
+                ],
+              ),
+            ]),
+          ),
+        ),
+      );
+      final before = doc.pages.first.findShapeById(id)!;
+      final styled = withLabel(before, '42', bold: true, colorHex: '#00AA00');
+      expect(styled.fields, hasLength(1));
+      expect(styled.fields.first.ix, 0);
+      expect(styled.richText.runs.first.fieldSpans, hasLength(1));
+      expect(styled.richText.runs.first.charStyle.style.bold, isTrue);
+      final rewritten = withLabel(before, 'Hello');
+      expect(rewritten.fields, isEmpty);
+      expect(rewritten.richText.runs.first.fieldSpans, isEmpty);
+    });
+
     test('delete_shape removes the shape and prunes its connects', () {
       final doc = built();
       final victim = doc.pages.single.shapes.firstWhere((s) => s.text == 'OK?');
