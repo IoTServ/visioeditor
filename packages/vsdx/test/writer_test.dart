@@ -12982,4 +12982,142 @@ void main() {
       isFalse,
     );
   });
+
+  test('Property Format formula preserved and DataLinked Inh scrubbed', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          userProperties: const [
+            VsdxUserProperty(
+              name: 'Prop.Cost',
+              value: '10',
+              format: '0.00',
+              formatFormula: 'FIELDPICTURE(0)',
+              dataLinked: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    final prop = doc.pages.first.findShapeById(id)!.userProperties.first;
+    expect(prop.formatFormula, isNotNull);
+    expect(prop.dataLinked, isTrue);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="DataLinked"[^/]*/>'),
+      '<Cell N="DataLinked" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="DataLinked"[^>]*F="Inh"').hasMatch(pageXml),
+      isFalse,
+    );
+    final formatCell = XmlDocument.parse(pageXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere((e) =>
+            e.name.local == 'Cell' &&
+            e.getAttribute('N') == 'Format' &&
+            e.parent?.parent?.getAttribute('N') == 'Property');
+    expect(formatCell.getAttribute('F'), 'FIELDPICTURE(0)');
+  });
+
+  test('Tabs Position1 F=Inh scrubbed when stops equal', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: VsdxRichText(
+            runs: const [VsdxTextRun(text: 'Hi')],
+            tabSets: [
+              VsdxTabSet(
+                ix: 0,
+                stops: const [
+                  VsdxTabStop(positionInches: 0.5, alignment: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Inject Visio-native 1-based Position1 with F=Inh alongside any Position0.
+    if (pageXml.contains('N="Position1"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="Position1"[^/]*/>'),
+        '<Cell N="Position1" V="0.5" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '<Section N="Tabs"><Row IX="0">',
+        '<Section N="Tabs"><Row IX="0"><Cell N="Position1" V="0.5" F="Inh"/>'
+            '<Cell N="Alignment1" V="0"/>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Tabs"[\s\S]*?N="Position1"[^>]*F="Inh"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+  });
 }

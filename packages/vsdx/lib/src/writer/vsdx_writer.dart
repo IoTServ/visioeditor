@@ -3562,8 +3562,9 @@ class VsdxWriter {
       } else {
         changed |= _removeInhOrDrop(row, 'Prompt');
       }
-      if (p.format != null) {
-        changed |= _writeValueIfNeeded(_ensureCell(row, 'Format'), p.format!);
+      if (p.format != null || p.formatFormula != null) {
+        changed |= _scrubFormulaOrLiteral(
+            row, 'Format', p.format ?? '', formula: p.formatFormula);
       } else {
         changed |= _removeInhOrDrop(row, 'Format');
       }
@@ -3592,6 +3593,8 @@ class VsdxWriter {
           _writeValueIfNeeded(_ensureCell(row, 'Verify'), p.verify ? '1' : '0');
       changed |=
           _writeValueIfNeeded(_ensureCell(row, 'Ask'), p.ask ? '1' : '0');
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'DataLinked'), p.dataLinked ? '1' : '0');
     }
     return changed;
   }
@@ -4026,13 +4029,18 @@ class VsdxWriter {
   }
 
   bool _scrubTabsInh(XmlElement el, VsdxShape edited) {
-    if (edited.richText.tabSets.isEmpty) return false;
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Tabs') {
         section = s;
         break;
       }
+    }
+    if (edited.richText.tabSets.isEmpty) {
+      // Equal-path must still drop residual Tabs (incl. F=Inh rows).
+      if (section == null) return false;
+      section.parent?.children.remove(section);
+      return true;
     }
     if (section == null) return false;
     final rowByIx = <int, XmlElement>{};
@@ -4045,10 +4053,38 @@ class VsdxWriter {
       final row = rowByIx[set.ix];
       if (row == null) continue;
       for (var i = 0; i < set.stops.length; i++) {
-        changed |= _writeValueIfNeeded(
-            _ensureCell(row, 'Position$i'), _fmt(set.stops[i].positionInches));
-        changed |= _writeValueIfNeeded(_ensureCell(row, 'Alignment$i'),
-            set.stops[i].alignment.toString());
+        // Visio native cells are 1-based (Position1); our rebuild emits
+        // 0-based (Position0). Scrub whichever already exists; prefer writing
+        // 1-based when neither is present so Master Inh cannot revive.
+        final n0 = i;
+        final n1 = i + 1;
+        final has0 = _findCell(row, 'Position$n0') != null ||
+            _findCell(row, 'Alignment$n0') != null;
+        final has1 = _findCell(row, 'Position$n1') != null ||
+            _findCell(row, 'Alignment$n1') != null;
+        final indices = <int>[
+          if (has1 || !has0) n1,
+          if (has0) n0,
+        ];
+        for (final n in indices) {
+          changed |= _writeValueIfNeeded(_ensureCell(row, 'Position$n'),
+              _fmt(set.stops[i].positionInches));
+          changed |= _writeValueIfNeeded(_ensureCell(row, 'Alignment$n'),
+              set.stops[i].alignment.toString());
+        }
+      }
+      // Drop leftover PositionN/AlignmentN beyond the model stop count when
+      // they still carry F=Inh (Visio 1-based N > length, or stale 0-based).
+      for (final cell in row.childElements.toList()) {
+        final name = cell.getAttribute('N') ?? '';
+        final m = RegExp(r'^(Position|Alignment)(\d+)$').firstMatch(name);
+        if (m == null) continue;
+        final n = int.parse(m.group(2)!);
+        final inRange0 = n >= 0 && n < set.stops.length;
+        final inRange1 = n >= 1 && n <= set.stops.length;
+        if (!inRange0 && !inRange1 && isInhFormula(cell.getAttribute('F'))) {
+          changed |= _removeNamedCells(row, [name]);
+        }
       }
     }
     return changed;

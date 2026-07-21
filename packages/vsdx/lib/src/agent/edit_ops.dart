@@ -740,6 +740,133 @@ ApplyResult applyOps(
                 }
               }
             }
+            // Text block background / margins.
+            final textBkgnd = (op['textBackground'] ?? op['textBkgnd'])
+                ?.toString();
+            if (textBkgnd != null) {
+              if (textBkgnd.trim().toLowerCase() == 'none') {
+                next = next.copyWith(
+                  richText: next.richText.copyWith(
+                    textBlock:
+                        next.richText.textBlock.withoutBackgroundColor(),
+                  ),
+                );
+              } else {
+                final c = parseColorOrNull(textBkgnd);
+                if (c != null) {
+                  next = next.copyWith(
+                    richText: next.richText.copyWith(
+                      textBlock: next.richText.textBlock
+                          .copyWith(backgroundColor: c),
+                    ),
+                  );
+                }
+              }
+            }
+            final textBkgndTrans = _d(op['textBackgroundTransparency'] ??
+                op['textBkgndTrans']);
+            if (textBkgndTrans != null) {
+              next = next.copyWith(
+                richText: next.richText.copyWith(
+                  textBlock: next.richText.textBlock.copyWith(
+                    backgroundTransparency: textBkgndTrans.clamp(0.0, 1.0),
+                  ),
+                ),
+              );
+            }
+            final marginL = _d(op['marginLeft'] ?? op['leftMargin']);
+            final marginR = _d(op['marginRight'] ?? op['rightMargin']);
+            final marginT = _d(op['marginTop'] ?? op['topMargin']);
+            final marginB = _d(op['marginBottom'] ?? op['bottomMargin']);
+            if (marginL != null ||
+                marginR != null ||
+                marginT != null ||
+                marginB != null) {
+              next = next.copyWith(
+                richText: next.richText.copyWith(
+                  textBlock: next.richText.textBlock.copyWith(
+                    marginLeftInches:
+                        marginL ?? next.richText.textBlock.marginLeftInches,
+                    marginRightInches:
+                        marginR ?? next.richText.textBlock.marginRightInches,
+                    marginTopInches:
+                        marginT ?? next.richText.textBlock.marginTopInches,
+                    marginBottomInches: marginB ??
+                        next.richText.textBlock.marginBottomInches,
+                  ),
+                ),
+              );
+            }
+            // Paragraph indent / spacing / bullet.
+            final indentFirst = _d(op['indentFirst'] ?? op['firstIndent']);
+            final indentLeft = _d(op['indentLeft'] ?? op['leftIndent']);
+            final indentRight = _d(op['indentRight'] ?? op['rightIndent']);
+            final spaceBefore = _d(op['spaceBefore']);
+            final spaceAfter = _d(op['spaceAfter']);
+            final lineSpacing = _d(op['lineSpacing'] ?? op['spLine']);
+            final bullet = op.containsKey('bullet')
+                ? (op['bullet'] is num
+                    ? (op['bullet'] as num).toInt()
+                    : int.tryParse(op['bullet'].toString()))
+                : null;
+            final bulletStr = op['bulletStr']?.toString();
+            if (indentFirst != null ||
+                indentLeft != null ||
+                indentRight != null ||
+                spaceBefore != null ||
+                spaceAfter != null ||
+                lineSpacing != null ||
+                bullet != null ||
+                bulletStr != null) {
+              VsdxParaStyle mapPara(VsdxParaStyle p) => p.copyWith(
+                    indentFirstInches: indentFirst ?? p.indentFirstInches,
+                    indentLeftInches: indentLeft ?? p.indentLeftInches,
+                    indentRightInches: indentRight ?? p.indentRightInches,
+                    spaceBeforeInches: spaceBefore ?? p.spaceBeforeInches,
+                    spaceAfterInches: spaceAfter ?? p.spaceAfterInches,
+                    lineSpacing: lineSpacing ?? p.lineSpacing,
+                    bullet: bullet ?? p.bullet,
+                    bulletStr: bulletStr ?? p.bulletStr,
+                  );
+              var runs = next.richText.runs;
+              if (runs.isEmpty) {
+                final plain = next.text;
+                if (plain != null && plain.isNotEmpty) {
+                  next = withLabel(next, plain);
+                  runs = next.richText.runs;
+                } else {
+                  next = next.copyWith(
+                    richText: VsdxRichText(runs: [
+                      VsdxTextRun(
+                        text: '',
+                        paraStyle: mapPara(VsdxParaStyle.defaults),
+                      ),
+                    ]),
+                  );
+                  runs = next.richText.runs;
+                }
+              }
+              if (runs.isNotEmpty) {
+                next = next.copyWith(
+                  richText: next.richText.copyWith(
+                    runs: [
+                      for (final r in next.richText.runs)
+                        r.copyWith(paraStyle: mapPara(r.paraStyle)),
+                    ],
+                  ),
+                );
+              }
+            }
+            // Image tone (foreign data shapes only).
+            final imgTrans = _d(op['imageTransparency']);
+            final imgBlur = _d(op['imageBlur']);
+            if (next.hasImage && (imgTrans != null || imgBlur != null)) {
+              next = next.copyWith(
+                imageTransparency:
+                    imgTrans?.clamp(0.0, 1.0) ?? next.imageTransparency,
+                imageBlur: imgBlur ?? next.imageBlur,
+              );
+            }
             return next;
           });
         }

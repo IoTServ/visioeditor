@@ -212,17 +212,21 @@ VsdxShape withLabel(
     // writer cannot leave an orphan `<Section N="Field">` without `<fld>`.
     // Style-only edits (same text) keep Field / fieldSpans intact.
     fields: textChanged ? const <VsdxFieldRow>[] : null,
-    richText: VsdxRichText(runs: <VsdxTextRun>[
-      VsdxTextRun(
-        text: text,
-        charStyle: style,
-        paraStyle: prevRun?.paraStyle ?? VsdxParaStyle.defaults,
-        fieldSpans:
-            textChanged ? const <VsdxFieldSpan>[] : (prevRun?.fieldSpans ?? const []),
-        tabIndices:
-            textChanged ? const <int>[] : (prevRun?.tabIndices ?? const []),
-      ),
-    ]),
+    richText: s.richText.copyWith(
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: text,
+          charStyle: style,
+          paraStyle: prevRun?.paraStyle ?? VsdxParaStyle.defaults,
+          fieldSpans: textChanged
+              ? const <VsdxFieldSpan>[]
+              : (prevRun?.fieldSpans ?? const []),
+          tabIndices: textChanged
+              ? const <int>[]
+              : (prevRun?.tabIndices ?? const []),
+        ),
+      ],
+    ),
   );
 }
 

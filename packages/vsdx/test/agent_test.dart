@@ -699,6 +699,49 @@ void main() {
       expect(c.complexScriptSizeInches, closeTo(10 / 72.0, 1e-9));
     });
 
+    test('set_style textBackground margins and paragraph indent', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(text: 'Hi'),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'textBackground': '#FFEEDD',
+          'textBackgroundTransparency': 0.2,
+          'marginLeft': 0.1,
+          'marginRight': 0.12,
+          'indentFirst': 0.25,
+          'spaceBefore': 0.05,
+          'lineSpacing': 1.5,
+          'bullet': 1,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      final tb = after.richText.textBlock;
+      expect(tb.backgroundColor?.value, 0xFFFFEEDD);
+      expect(tb.backgroundTransparency, closeTo(0.2, 1e-9));
+      expect(tb.marginLeftInches, closeTo(0.1, 1e-9));
+      expect(tb.marginRightInches, closeTo(0.12, 1e-9));
+      final p = after.richText.runs.first.paraStyle;
+      expect(p.indentFirstInches, closeTo(0.25, 1e-9));
+      expect(p.spaceBeforeInches, closeTo(0.05, 1e-9));
+      expect(p.lineSpacing, closeTo(1.5, 1e-9));
+      expect(p.bullet, 1);
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);
