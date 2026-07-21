@@ -69,9 +69,17 @@ VsdxShape withLabel(
   bool? italic,
   bool? underline,
   bool? strikethrough,
+  bool? doubleUnderline,
+  bool? overline,
+  bool? smallCaps,
   String? colorHex,
   double? pt,
   String? fontFamily,
+  double? letterSpacingInches,
+  double? textTransparency,
+  VsdxTextCase? textCase,
+  String? langId,
+  String? asianFont,
 }) {
   if (text.isEmpty) {
     // Clear label (set_text "" must round-trip as empty, not no-op).
@@ -94,6 +102,7 @@ VsdxShape withLabel(
   final fontStyle = prevStyle.copyWith(
     bold: bold ?? prevStyle.bold,
     italic: italic ?? prevStyle.italic,
+    smallCaps: smallCaps ?? prevStyle.smallCaps,
   );
   // Preserve theme-bound text (color=null + themeColorIndex) unless the op
   // supplies an explicit colour — injecting kInk would paint solid ink and
@@ -105,7 +114,15 @@ VsdxShape withLabel(
       style: fontStyle,
       underline: underline ?? prev.underline,
       strikethrough: strikethrough ?? prev.strikethrough,
+      doubleUnderline: doubleUnderline ?? prev.doubleUnderline,
+      overline: overline ?? prev.overline,
       fontFamily: fontFamily ?? prev.fontFamily,
+      letterSpacingInches:
+          letterSpacingInches ?? prev.letterSpacingInches,
+      transparency: textTransparency ?? prev.transparency,
+      textCase: textCase ?? prev.textCase,
+      langId: langId ?? prev.langId,
+      asianFont: asianFont ?? prev.asianFont,
     );
     if (clearColor) {
       next = next.copyWith(clearColor: true, clearThemeColorIndex: true);
@@ -119,7 +136,14 @@ VsdxShape withLabel(
       style: fontStyle,
       underline: underline ?? false,
       strikethrough: strikethrough ?? false,
+      doubleUnderline: doubleUnderline ?? false,
+      overline: overline ?? false,
       fontFamily: fontFamily,
+      letterSpacingInches: letterSpacingInches ?? 0.0,
+      transparency: textTransparency ?? 0.0,
+      textCase: textCase ?? VsdxTextCase.normal,
+      langId: langId,
+      asianFont: asianFont,
     ).withSolidColor(parsed);
   } else if (clearColor) {
     style = VsdxCharStyle(
@@ -127,7 +151,14 @@ VsdxShape withLabel(
       style: fontStyle,
       underline: underline ?? false,
       strikethrough: strikethrough ?? false,
+      doubleUnderline: doubleUnderline ?? false,
+      overline: overline ?? false,
       fontFamily: fontFamily,
+      letterSpacingInches: letterSpacingInches ?? 0.0,
+      transparency: textTransparency ?? 0.0,
+      textCase: textCase ?? VsdxTextCase.normal,
+      langId: langId,
+      asianFont: asianFont,
     );
   } else {
     style = VsdxCharStyle(
@@ -136,7 +167,14 @@ VsdxShape withLabel(
       style: fontStyle,
       underline: underline ?? false,
       strikethrough: strikethrough ?? false,
+      doubleUnderline: doubleUnderline ?? false,
+      overline: overline ?? false,
       fontFamily: fontFamily,
+      letterSpacingInches: letterSpacingInches ?? 0.0,
+      transparency: textTransparency ?? 0.0,
+      textCase: textCase ?? VsdxTextCase.normal,
+      langId: langId,
+      asianFont: asianFont,
     );
   }
   final prevRun =
@@ -171,9 +209,17 @@ VsdxShape applyCharStyle(
   bool? italic,
   bool? underline,
   bool? strikethrough,
+  bool? doubleUnderline,
+  bool? overline,
+  bool? smallCaps,
   String? colorHex,
   double? pt,
   String? fontFamily,
+  double? letterSpacingInches,
+  double? textTransparency,
+  VsdxTextCase? textCase,
+  String? langId,
+  String? asianFont,
 }) {
   final fromText = s.text;
   final plain = (fromText != null && fromText.isNotEmpty)
@@ -187,9 +233,17 @@ VsdxShape applyCharStyle(
       italic: italic,
       underline: underline,
       strikethrough: strikethrough,
+      doubleUnderline: doubleUnderline,
+      overline: overline,
+      smallCaps: smallCaps,
       colorHex: colorHex,
       pt: pt,
       fontFamily: fontFamily,
+      letterSpacingInches: letterSpacingInches,
+      textTransparency: textTransparency,
+      textCase: textCase,
+      langId: langId,
+      asianFont: asianFont,
     );
   }
   VsdxCharStyle merge(VsdxCharStyle prev) {
@@ -201,13 +255,22 @@ VsdxShape applyCharStyle(
     final fontStyle = prev.style.copyWith(
       bold: bold ?? prev.style.bold,
       italic: italic ?? prev.style.italic,
+      smallCaps: smallCaps ?? prev.style.smallCaps,
     );
     var next = prev.copyWith(
       fontSizeInches: fontSize,
       style: fontStyle,
       underline: underline ?? prev.underline,
       strikethrough: strikethrough ?? prev.strikethrough,
+      doubleUnderline: doubleUnderline ?? prev.doubleUnderline,
+      overline: overline ?? prev.overline,
       fontFamily: fontFamily ?? prev.fontFamily,
+      letterSpacingInches:
+          letterSpacingInches ?? prev.letterSpacingInches,
+      transparency: textTransparency ?? prev.transparency,
+      textCase: textCase ?? prev.textCase,
+      langId: langId ?? prev.langId,
+      asianFont: asianFont ?? prev.asianFont,
     );
     if (clearColor) {
       next = next.copyWith(clearColor: true, clearThemeColorIndex: true);

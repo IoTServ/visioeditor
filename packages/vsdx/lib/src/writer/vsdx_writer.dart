@@ -784,51 +784,65 @@ class VsdxWriter {
     raw('ShdwScaleFactor', _fmt(base.shadowScaleFactor),
         _fmt(edited.shadowScaleFactor));
     flag('PageShapeSplit', base.pageShapeSplit, edited.pageShapeSplit);
+    // Optional PageSheet cells: when model is null, still drop residual F=Inh
+    // (parser treats Inh-without-master as absent — same as PageColor).
+    bool dropOptional(String name, Object? editedVal, Object? baseVal) {
+      if (editedVal != null) return false;
+      if (baseVal != null || isInhFormula(_pageSheetCellF(sheet, name))) {
+        return _removePageSheetCells(sheet, [name]);
+      }
+      return false;
+    }
+
     if (edited.lineJumpCode != null) {
       raw('LineJumpCode', (base.lineJumpCode ?? -1).toString(),
           edited.lineJumpCode.toString());
-    } else if (base.lineJumpCode != null) {
-      changed |= _removePageSheetCells(sheet, const ['LineJumpCode']);
+    } else {
+      changed |= dropOptional('LineJumpCode', null, base.lineJumpCode);
     }
     if (edited.lineJumpStyle != null) {
       raw('LineJumpStyle', (base.lineJumpStyle ?? -1).toString(),
           edited.lineJumpStyle.toString());
-    } else if (base.lineJumpStyle != null) {
-      changed |= _removePageSheetCells(sheet, const ['LineJumpStyle']);
+    } else {
+      changed |= dropOptional('LineJumpStyle', null, base.lineJumpStyle);
     }
     if (edited.lineJumpDirX != null) {
       raw('PageLineJumpDirX', (base.lineJumpDirX ?? -1).toString(),
           edited.lineJumpDirX.toString());
-    } else if (base.lineJumpDirX != null) {
-      changed |= _removePageSheetCells(sheet, const ['PageLineJumpDirX']);
+    } else {
+      changed |= dropOptional('PageLineJumpDirX', null, base.lineJumpDirX);
     }
     if (edited.lineJumpDirY != null) {
       raw('PageLineJumpDirY', (base.lineJumpDirY ?? -1).toString(),
           edited.lineJumpDirY.toString());
-    } else if (base.lineJumpDirY != null) {
-      changed |= _removePageSheetCells(sheet, const ['PageLineJumpDirY']);
+    } else {
+      changed |= dropOptional('PageLineJumpDirY', null, base.lineJumpDirY);
     }
     if (edited.lineToLineXInches != null) {
       len('LineToLineX', base.lineToLineXInches ?? 0, edited.lineToLineXInches!);
-    } else if (base.lineToLineXInches != null) {
-      changed |= _removePageSheetCells(sheet, const ['LineToLineX']);
+    } else {
+      changed |=
+          dropOptional('LineToLineX', null, base.lineToLineXInches);
     }
     if (edited.lineToLineYInches != null) {
       len('LineToLineY', base.lineToLineYInches ?? 0, edited.lineToLineYInches!);
-    } else if (base.lineToLineYInches != null) {
-      changed |= _removePageSheetCells(sheet, const ['LineToLineY']);
+    } else {
+      changed |=
+          dropOptional('LineToLineY', null, base.lineToLineYInches);
     }
     if (edited.lineJumpFactorX != null) {
       raw('LineJumpFactorX', _fmt(base.lineJumpFactorX ?? -1),
           _fmt(edited.lineJumpFactorX!));
-    } else if (base.lineJumpFactorX != null) {
-      changed |= _removePageSheetCells(sheet, const ['LineJumpFactorX']);
+    } else {
+      changed |=
+          dropOptional('LineJumpFactorX', null, base.lineJumpFactorX);
     }
     if (edited.lineJumpFactorY != null) {
       raw('LineJumpFactorY', _fmt(base.lineJumpFactorY ?? -1),
           _fmt(edited.lineJumpFactorY!));
-    } else if (base.lineJumpFactorY != null) {
-      changed |= _removePageSheetCells(sheet, const ['LineJumpFactorY']);
+    } else {
+      changed |=
+          dropOptional('LineJumpFactorY', null, base.lineJumpFactorY);
     }
     len('PageLeftMargin', base.marginLeftInches, edited.marginLeftInches);
     len('PageRightMargin', base.marginRightInches, edited.marginRightInches);
@@ -839,14 +853,16 @@ class VsdxWriter {
     if (edited.variationColorIndex != null) {
       raw('VariationColorIndex', (base.variationColorIndex ?? -1).toString(),
           edited.variationColorIndex.toString());
-    } else if (base.variationColorIndex != null) {
-      changed |= _removePageSheetCells(sheet, const ['VariationColorIndex']);
+    } else {
+      changed |= dropOptional(
+          'VariationColorIndex', null, base.variationColorIndex);
     }
     if (edited.variationStyleIndex != null) {
       raw('VariationStyleIndex', (base.variationStyleIndex ?? -1).toString(),
           edited.variationStyleIndex.toString());
-    } else if (base.variationStyleIndex != null) {
-      changed |= _removePageSheetCells(sheet, const ['VariationStyleIndex']);
+    } else {
+      changed |= dropOptional(
+          'VariationStyleIndex', null, base.variationStyleIndex);
     }
     return changed;
   }
@@ -2538,7 +2554,16 @@ class VsdxWriter {
     String? base,
     String? edited,
   ) {
-    if (base == edited) return false;
+    if (base == edited) {
+      // Equal null still drops residual F=Inh (EventDblClick etc.).
+      if (edited == null) {
+        final existing = _findCell(shape, cell);
+        if (existing != null && isInhFormula(existing.getAttribute('F'))) {
+          return _removeNamedCells(shape, [cell]);
+        }
+      }
+      return false;
+    }
     if (edited == null) return _removeNamedCells(shape, [cell]);
     _writeValue(_ensureCell(shape, cell), edited);
     return true;
@@ -2551,7 +2576,17 @@ class VsdxWriter {
     int? base,
     int? edited,
   ) {
-    if (base == edited) return false;
+    if (base == edited) {
+      // Equal null still drops residual F=Inh (ThemeIndex / SelectMode / …).
+      if (edited == null) {
+        final existing = _findCell(shape, cell);
+        if (existing != null && isInhFormula(existing.getAttribute('F'))) {
+          existing.parent?.children.remove(existing);
+          return true;
+        }
+      }
+      return false;
+    }
     if (edited == null) {
       final existing = _findCell(shape, cell);
       if (existing == null) return false;
@@ -3497,9 +3532,35 @@ class VsdxWriter {
       }
       if (p.label != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Label'), p.label!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Label');
+      }
+      if (p.prompt != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Prompt'), p.prompt!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Prompt');
       }
       if (p.format != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Format'), p.format!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Format');
+      }
+      if (p.sortKey != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'SortKey'), p.sortKey!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'SortKey');
+      }
+      if (p.langId != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'LangID'), p.langId!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'LangID');
+      }
+      if (p.calendar != null) {
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Calendar'), p.calendar.toString());
+      } else {
+        changed |= _removeInhOrDrop(row, 'Calendar');
       }
       changed |=
           _writeValueIfNeeded(_ensureCell(row, 'Type'), p.type.toString());
@@ -3551,6 +3612,8 @@ class VsdxWriter {
       }
       if (c.prompt != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Prompt'), c.prompt!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Prompt');
       }
     }
     return changed;
@@ -3669,6 +3732,8 @@ class VsdxWriter {
       if (row == null) continue;
       if (r.menu != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Menu'), r.menu!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Menu');
       }
       changed |= _scrubFormulaOrLiteral(
           row, 'Action', r.action ?? '0', formula: r.actionFormula);
@@ -3690,6 +3755,8 @@ class VsdxWriter {
       }
       if (r.tag != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Tag'), r.tag!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Tag');
       }
       if (r.buttonFace != 0 || _findCell(row, 'ButtonFace') != null) {
         changed |= _writeValueIfNeeded(
@@ -3697,6 +3764,8 @@ class VsdxWriter {
       }
       if (r.sortKey != null) {
         changed |= _writeValueIfNeeded(_ensureCell(row, 'SortKey'), r.sortKey!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'SortKey');
       }
     }
     return changed;

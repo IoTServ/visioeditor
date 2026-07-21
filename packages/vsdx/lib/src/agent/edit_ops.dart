@@ -504,6 +504,16 @@ ApplyResult applyOps(
                 ),
               );
             }
+            final fillBkgndTrans = _d(op['fillBackgroundTransparency'] ??
+                op['fillBkgndTrans'] ??
+                op['backgroundTransparency']);
+            if (fillBkgndTrans != null && !next.is1D) {
+              next = next.copyWith(
+                fill: next.fill.copyWith(
+                  backgroundTransparency: fillBkgndTrans.clamp(0.0, 1.0),
+                ),
+              );
+            }
             final textColor =
                 (op['textColor'] ?? op['fontColor'])?.toString();
             final bold =
@@ -515,25 +525,81 @@ ApplyResult applyOps(
             final strikethrough = op.containsKey('strikethrough')
                 ? op['strikethrough'] == true
                 : null;
+            final doubleUnderline = op.containsKey('doubleUnderline')
+                ? op['doubleUnderline'] == true
+                : null;
+            final overline =
+                op.containsKey('overline') ? op['overline'] == true : null;
+            final smallCaps =
+                op.containsKey('smallCaps') ? op['smallCaps'] == true : null;
             final fontFamily = op['fontFamily']?.toString() ??
                 op['font']?.toString();
             final pt = _d(op['pt'] ?? op['fontSize']);
+            final letterSpacingPt = _d(op['letterSpacingPt']);
+            final letterSpacing = letterSpacingPt != null
+                ? letterSpacingPt / 72.0
+                : _d(op['letterSpacing']);
+            final textTransparency = _d(
+                op['textTransparency'] ?? op['charTransparency']);
+            final langId = op['langId']?.toString() ?? op['langID']?.toString();
+            final asianFont = op['asianFont']?.toString();
+            VsdxTextCase? textCase;
+            if (op.containsKey('textCase')) {
+              final raw = op['textCase'];
+              if (raw is num) {
+                textCase = switch (raw.toInt()) {
+                  0 => VsdxTextCase.normal,
+                  1 => VsdxTextCase.allCaps,
+                  2 => VsdxTextCase.initialCaps,
+                  _ => null,
+                };
+              } else if (raw != null) {
+                final s = raw.toString().trim().toLowerCase();
+                textCase = switch (s) {
+                  'normal' || '0' => VsdxTextCase.normal,
+                  'allcaps' || 'all_caps' || 'caps' || '1' =>
+                    VsdxTextCase.allCaps,
+                  'initialcaps' ||
+                  'initial_caps' ||
+                  'title' ||
+                  '2' =>
+                    VsdxTextCase.initialCaps,
+                  _ => null,
+                };
+              }
+            }
             if (textColor != null ||
                 bold != null ||
                 italic != null ||
                 underline != null ||
                 strikethrough != null ||
+                doubleUnderline != null ||
+                overline != null ||
+                smallCaps != null ||
                 fontFamily != null ||
-                pt != null) {
+                pt != null ||
+                letterSpacing != null ||
+                textTransparency != null ||
+                textCase != null ||
+                langId != null ||
+                asianFont != null) {
               next = applyCharStyle(
                 next,
                 bold: bold,
                 italic: italic,
                 underline: underline,
                 strikethrough: strikethrough,
+                doubleUnderline: doubleUnderline,
+                overline: overline,
+                smallCaps: smallCaps,
                 colorHex: textColor,
                 pt: pt,
                 fontFamily: fontFamily,
+                letterSpacingInches: letterSpacing,
+                textTransparency: textTransparency,
+                textCase: textCase,
+                langId: langId,
+                asianFont: asianFont,
               );
             }
             if (op.containsKey('hideText')) {

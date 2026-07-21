@@ -12585,4 +12585,187 @@ void main() {
       isNull,
     );
   });
+
+  test('PageSheet LineJumpCode F=Inh dropped when model is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    if (pagesXml.contains('N="LineJumpCode"')) {
+      pagesXml = pagesXml.replaceFirst(
+        RegExp(r'<Cell N="LineJumpCode"[^/]*/>'),
+        '<Cell N="LineJumpCode" V="1" F="Inh"/>',
+      );
+    } else {
+      pagesXml = pagesXml.replaceFirst(
+        '<PageSheet>',
+        '<PageSheet><Cell N="LineJumpCode" V="1" F="Inh"/>',
+      );
+    }
+    mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.pageSheet.lineJumpCode, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: doc.pages.first.widthInches + 0.1,
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="LineJumpCode"[^>]*F="Inh"').hasMatch(pagesXml), isFalse);
+  });
+
+  test('ThemeIndex F=Inh scrubbed when value unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(themeIndex: 1),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.themeIndex, 1);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ThemeIndex"[^/]*/>'),
+      '<Cell N="ThemeIndex" V="1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    // Keep pre-mutation model (themeIndex: 1); pin bump triggers equal-path scrub.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="ThemeIndex"[^>]*F="Inh"').hasMatch(pageXml), isFalse);
+    expect(RegExp(r'N="ThemeIndex"[^>]*V="1"').hasMatch(pageXml), isTrue);
+  });
+
+  test('ThemeIndex F=Inh dropped when model themeIndex is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.themeIndex, isNull);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Inject before </Shape> without re-parse so model stays null.
+    final close = pageXml.lastIndexOf('</Shape>');
+    pageXml =
+        '${pageXml.substring(0, close)}<Cell N="ThemeIndex" V="1" F="Inh"/>${pageXml.substring(close)}';
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="ThemeIndex"[^>]*F="Inh"').hasMatch(pageXml), isFalse);
+  });
+
+  test('Property Label F=Inh scrubbed when model label is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          userProperties: const [
+            VsdxUserProperty(name: 'Prop.Cost', value: '10'),
+          ],
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.userProperties.first.label, isNull);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      '<Row N="Prop.Cost" IX="1">',
+      '<Row N="Prop.Cost" IX="1"><Cell N="Label" V="Cost" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Property"[\s\S]*?N="Label"[^>]*F="Inh"')
+          .hasMatch(pageXml),
+      isFalse,
+    );
+  });
 }
