@@ -893,6 +893,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         layerFilter: SvgLayerFilter.print,
         drawLineJumps: c.showLineJumps,
         lineJumpRadiusInches: c.lineJumpRadiusInches,
+        colorByLayer: c.colorByLayer,
       ).serializeDocument(doc);
       await writeBytesToFile(path, Uint8List.fromList(utf8.encode(svg)));
       if (!mounted) return;
@@ -922,6 +923,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         underlayPage: doc.backgroundFor(page),
         drawLineJumps: c.showLineJumps,
         lineJumpRadiusInches: c.lineJumpRadiusInches,
+        colorByLayer: c.colorByLayer,
       );
       if (bytes == null) {
         if (!mounted) return;
@@ -1022,6 +1024,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         doc,
         drawLineJumps: c.showLineJumps,
         lineJumpRadiusInches: c.lineJumpRadiusInches,
+        colorByLayer: c.colorByLayer,
       );
       await writeBytesToFile(path, bytes);
       if (!mounted) return;

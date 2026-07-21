@@ -11,14 +11,14 @@
 | 域 | 状态 | 备注 |
 | --- | --- | --- |
 | 静态分析 | DONE | `flutter analyze` / `dart analyze packages/vsdx` 无告警（本轮验证前已绿） |
-| 单元/集成测试 | DONE | vsdx `1030` 通过；Flutter test / macOS debug 构建通过 |
-| 画布手势 | DONE | `DragStartBehavior.down`；移动/缩放/旋转/Esc；框选多选 |
+| 单元/集成测试 | DONE | vsdx `+1040 ~2`；Flutter `+691`；macOS debug 构建通过 |
+| 画布手势 | DONE | 移动/缩放/旋转/Esc/框选；连接器端点与航点拖动 |
 | Master 文本继承 | DONE | Character 字号优先链 + 无本地 Text 时继承 Master 富文本 |
 | 连接器 Pin | DONE | 仅 Begin/End 公式时规范化；字面量 Pin 不被中点公式覆盖 |
 | Ranking 图标签 | DONE | 排序后补标签；空 values 兜底 |
 | VSDX equal-path 填充 | DONE | 叶子缺 `FillForegnd` 注入；Group 不误注入 `FillPattern=1` |
 | Edraw 往返探针 | DONE | fixtures（含中文样例）均为 `[ok]` |
-| LibreOffice 交叉打开 | DONE | 本机 `soffice` + `REQUIRE_SOFFICE=1 dart test test/libreoffice_crosscheck_test.dart` 通过 |
+| LibreOffice 交叉打开 | DONE | 生成图、连接器 fixture、中文 fixture 均经 soffice 转 PDF |
 | 架构/fixture 文档 | DONE | `ARCHITECTURE.md` / `references/fixtures.md` 已与仓库对齐 |
 | SVG→VSDX | LATER | 无此路径 |
 | 二进制 `.vsd` 写回 | LATER | 仅 VSD→VSDX |
@@ -38,6 +38,8 @@
 | 撤销 / 重做 | DONE | 既有 Controller 测试 |
 | 锁定 / 图层 | DONE | 既有测试；Color-by-Layer 视图已接 |
 | 组合 / 取消组合 | DONE | `page.group` 无填充容器；往返不污染 Group Fill |
+| 特殊结构取消组合 | DONE | 表格 / 泳道池 / 图表禁止当普通 Group 拆解 |
+| 手势中途离散命令 | DONE | 保持同一 transaction，整段操作一次 undo |
 | 连接器路由 / 粘附 | DONE | Pin 往返回归（`connector_preserve` / Writer） |
 | 表格 / 泳道 | DONE | 既有模型测试（本轮未新发现 P0） |
 
@@ -57,7 +59,7 @@
 | 双圆角（Rounding vs setCornerRadius） | DONE | UI 写入 `Line.Rounding`；弧烘焙圆角会被展平 |
 | 页阴影斜切 | DONE | Canvas/SVG 应用 PageSheet scale+oblique |
 | 图层色参与绘制 | DONE | Color-by-Layer 会话开关；Canvas/SVG 共用 `layerColorSource` |
-| FontScale / 虚线近似 | DONE | 虚线按线宽缩放；FontScale 用 0.55×字号 tracking + 宽度估算乘 scale |
+| FontScale / 虚线近似 | DONE | 虚线按线宽缩放；SVG wrap 与 Canvas 共用 tracking 估算 |
 
 ---
 
@@ -66,12 +68,13 @@
 | 路径 | 状态 | 进度 / 证据 |
 | --- | --- | --- |
 | 打开 `.vsdx` → 保存 → 重开 | DONE | Writer 测试 + Edraw 探针 |
+| 1D/XForm 公式保真 | DONE | SQRT / GUARD(DL) / Inh / `(FALSE)` / TextBkgnd 公式 identity 保存不漂移 |
 | 打开 `.vsd` → 另存 `.vsdx` | DONE | `edraw_roundtrip_check` VSD 段全 `[ok]` |
 | 导出 SVG | DONE | 结构序列化 + 既有测试 |
 | 导出 PNG | DONE | `png_export_image_test` |
 | 导出 PDF | DONE | 依赖 Flutter 打印链路；自动化覆盖有限 → 记为 DONE（结构）/ 外部像素 LATER |
-| Edraw 结构探针 | DONE | `tool/edraw_roundtrip_check.dart`；中文样例 `fill-no-Foregnd` 已清零 |
-| Visio / LibreOffice 打开 | BLOCKED | 无本机 soffice；进度：待 CI 或装 LibreOffice 后重跑 |
+| Edraw 结构探针 | DONE | 含关键公式存活；中文样例 `fill-no-Foregnd` / `formula-drift` 均清零 |
+| Visio / LibreOffice 打开 | DONE | 本机 soffice 打开 Writer 往返 `.vsdx` 并转 PDF（exit 0） |
 
 ### 本轮关键并修复的往返缺陷
 
@@ -81,6 +84,11 @@
 4. **Ranking 缺标签** — `chart_shapes.dart`
 5. **叶子缺 FillForegnd → Edraw 空心** — Writer equal-path 注入
 6. **裸 Group 被注入 FillPattern=1 无 Foregnd** — equal-path 对 Group 跳过缺失 `FillPattern` 的 ensure（`人才招聘冰山模型` / `数据治理`）
+7. **identity 保存清除连接器 XForm / TextBkgnd / Flip 公式** — 仅在模型值实际变化时字面化
+8. **取消组合拆坏表格 / 泳道池 / 图表** — 特殊结构从 ungroup 资格中排除
+9. **拖动中执行样式命令破坏 undo 边界** — 离散编辑并入当前 transaction；切页取消 transient
+10. **Color-by-Layer 只影响画布、不进入导出** — SVG / PNG / PDF / live snapshot 接入会话状态
+11. **Color-by-Layer / FontScale 本地化与布局** — 37 语言完整；组子项继承；SVG wrap 对齐 Canvas
 
 ---
 
@@ -102,8 +110,8 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 | --- | --- |
 | `dart analyze` (vsdx) | DONE |
 | `dart test` (vsdx writer 相关) | DONE |
-| `dart test` (vsdx 全量) | DONE (`+1030 ~3`) |
-| `flutter analyze` / `flutter test` | DONE |
+| `dart test` (vsdx 全量) | DONE (`+1040 ~2`) |
+| `flutter analyze` / `flutter test` | DONE (`+691`) |
 | `flutter build macos --debug` | DONE |
 | Edraw 探针（含中文） | DONE |
 
@@ -113,7 +121,7 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 
 | ID | 问题 | 标记 | 下次动作 |
 | --- | --- | --- | --- |
-| QA-01 | LibreOffice/Visio 实机打开导出文件 | BLOCKED | 本机无 soffice；CI `libreoffice-crosscheck`（`REQUIRE_SOFFICE=1`）覆盖；进度：本地仍待装 LO |
+| QA-01 | LibreOffice/Visio 实机打开导出文件 | DONE | 本机安装 LibreOffice；`REQUIRE_SOFFICE=1` 交叉验证通过 |
 | QA-02 | 双圆角属性语义 | DONE | `setCornerRadius` → `Rounding`；弧圆角展平 |
 | QA-03a | 页阴影斜切 / 缩放 | DONE | Canvas + SVG `_pageShadowTransform` |
 | QA-03b | 图层色绘制 | DONE | Color-by-Layer 开关；填充/描边/文字染色 |
@@ -121,3 +129,9 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 | QA-05 | SVG→VSDX、二进制 VSD 写回 | LATER | 产品范围外 |
 | QA-06 | Agent ops 覆盖面 < UI | LATER | 非本轮范围 |
 | QA-07 | ARCHITECTURE / fixtures 文档漂移 | DONE | 目录与真实 fixture 清单已纠正 |
+| QA-08 | PDF `pdfCompat` 压平 SoftEdges / hatch / CurvedText 等 | LATER | 需逐项 bake 或更换 PDF SVG 后端 |
+| QA-09 | EMF/WMF：Canvas 光栅化、SVG 矢量 replay | LATER | 建立视觉 golden 后决定统一路径 |
+| QA-10 | 普通 SVG 字宽与 CurvedText 仍为启发式 | LATER | 需共享真实字体度量 / 逐字弧布局 |
+| QA-11 | VSD 非空 ConnectList 胶合导入 | BLOCKED | 无公开非空 fixture / 无可参考字段布局 |
+| QA-12 | strict identity 仍会为 Edraw 物化部分缺失 Cell | LATER | 评估独立 `healForEdraw` 模式 |
+| QA-13 | `desktop_drop` 尚不支持 macOS Swift Package Manager | LATER | 当前 debug 构建通过；升级 Flutter 前跟进插件兼容 |

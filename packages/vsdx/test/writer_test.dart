@@ -26,9 +26,94 @@ Uint8List _rezipWith(Uint8List src, String partName, List<int> newBytes) {
   return Uint8List.fromList(ZipEncoder().encode(out)!);
 }
 
+Map<String, String?> _shapeCellFormulas(
+  Uint8List bytes,
+  int shapeId,
+  Iterable<String> names,
+) {
+  final pkg = VsdxPackage.open(bytes);
+  final pagePart =
+      pkg.allPartNames.firstWhere((p) => p.endsWith('pages/page1.xml'));
+  final xml = pkg.readPartXml(pagePart)!;
+  final shape = xml.descendants.whereType<XmlElement>().firstWhere(
+        (e) =>
+            e.name.local == 'Shape' &&
+            e.getAttribute('ID') == shapeId.toString(),
+      );
+  final cells = <String, XmlElement>{
+    for (final e in shape.childElements)
+      if (e.name.local == 'Cell' && e.getAttribute('N') != null)
+        e.getAttribute('N')!: e,
+  };
+  return <String, String?>{
+    for (final name in names) name: cells[name]?.getAttribute('F'),
+  };
+}
+
 void main() {
   const parser = DocumentParser();
   const writer = VsdxWriter();
+
+  test('identity save preserves 1D XForm and theme formulas', () {
+    final cases = <({
+      String fixture,
+      int shapeId,
+      List<String> cells,
+    })>[
+      (
+        fixture: 'test9_rect_and_line.vsdx',
+        shapeId: 2,
+        cells: <String>[
+          'PinX',
+          'PinY',
+          'Width',
+          'LocPinX',
+          'LocPinY',
+          'TextBkgnd',
+        ],
+      ),
+      (
+        fixture: 'test4_connectors.vsdx',
+        shapeId: 6,
+        cells: <String>[
+          'PinX',
+          'PinY',
+          'Width',
+          'Height',
+          'LocPinX',
+          'LocPinY',
+        ],
+      ),
+      (
+        fixture: '数据治理.vsdx',
+        shapeId: 137,
+        cells: <String>[
+          'PinX',
+          'PinY',
+          'Width',
+          'Height',
+          'LocPinX',
+          'LocPinY',
+          'FlipX',
+          'FlipY',
+        ],
+      ),
+    ];
+
+    for (final testCase in cases) {
+      final raw = _fixture(testCase.fixture);
+      final before =
+          _shapeCellFormulas(raw, testCase.shapeId, testCase.cells);
+      final out = writer.write(originalBytes: raw, edited: parser.parse(raw));
+      final after =
+          _shapeCellFormulas(out, testCase.shapeId, testCase.cells);
+      expect(
+        after,
+        before,
+        reason: '${testCase.fixture} shape ${testCase.shapeId}',
+      );
+    }
+  });
 
   // Regression: the writer must serialise a cell's `V` in Visio's internal
   // units (inches), leaving the `U` *display* attribute alone — mirroring the

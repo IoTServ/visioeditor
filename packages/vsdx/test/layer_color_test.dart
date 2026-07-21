@@ -59,4 +59,49 @@ void main() {
     expect(tinted.toLowerCase().contains('#00ff00'), isFalse);
     expect(tinted.toLowerCase().contains('#0000ff'), isFalse);
   });
+
+  test('SVG Color-by-Layer inherits a group layer tint into children', () {
+    var page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      layers: const <VsdxLayer>[
+        VsdxLayer(
+          id: 0,
+          name: 'Red',
+          color: VsdxColor(0xFFCC0000),
+        ),
+      ],
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 1,
+          fill: const VsdxFill(foreground: VsdxColor(0xFF00FF00)),
+        ),
+        VsdxShapeFactory.rectangle(
+          id: 2,
+          pinX: 4,
+          pinY: 2,
+          width: 1,
+          height: 1,
+          fill: const VsdxFill(foreground: VsdxColor(0xFF0000FF)),
+        ),
+      ],
+    );
+    page = page.group(const <int>{1, 2}, groupId: 3);
+    page = page.updateShapeById(
+      3,
+      (group) => group.copyWith(layerMemberIds: const <int>[0]),
+    );
+
+    final tinted =
+        VsdxToSvgSerializer(colorByLayer: true).serializePage(page);
+    expect(tinted.toLowerCase(), contains('#cc0000'));
+    expect(tinted.toLowerCase().contains('#00ff00'), isFalse);
+    expect(tinted.toLowerCase().contains('#0000ff'), isFalse);
+  });
 }

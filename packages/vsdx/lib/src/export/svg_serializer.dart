@@ -414,8 +414,15 @@ class VsdxToSvgSerializer {
     final prevTrans = _layerTintTrans;
     if (colorByLayer) {
       final src = layerColorSource(page.layers, shape.layerMemberIds);
-      _layerTint = src?.color;
-      _layerTintTrans = (src?.colorTrans ?? 0).clamp(0.0, 1.0);
+      if (src?.color != null) {
+        _layerTint = src!.color;
+        _layerTintTrans = src.colorTrans.clamp(0.0, 1.0);
+      } else if (shape.layerMemberIds.isNotEmpty) {
+        // Explicit uncoloured membership resets an ancestor group's tint;
+        // children without membership inherit it.
+        _layerTint = null;
+        _layerTintTrans = 0;
+      }
     } else {
       _layerTint = null;
       _layerTintTrans = 0;
@@ -3453,9 +3460,10 @@ class VsdxToSvgSerializer {
     }
     var tracking = style.letterSpacingInches;
     final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
-    // Visio FontScale stretches glyph *width*. Scale the summed advances,
-    // then apply true Letterspace between glyphs (not a fake FontScale track).
-    w *= scale;
+    // SVG/Canvas currently approximate FontScale with tracking (TextStyle has
+    // no horizontal glyph transform). Layout must use that exact formula or
+    // wrap/alignment diverges from the emitted letter-spacing.
+    tracking += fs * (scale - 1.0) * 0.55;
     // Flutter letterSpacing applies between glyphs ≈ (n-1) gaps.
     if (n > 1 && tracking.abs() > 1e-12) {
       w += tracking * (n - 1);

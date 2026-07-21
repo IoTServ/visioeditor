@@ -2192,8 +2192,20 @@ class VsdxWriter {
         }
       }
     }
-    // PinX/Y / LocPin / size: scrub Inh on the cell (formulas map may omit
-    // PinX Inh after some parses); keep real parametric (GUARD, Width*0.5, …).
+    bool xformValueUnchanged(String name) => switch (name) {
+          'PinX' => (base.pinX - edited.pinX).abs() <= _epsilon,
+          'PinY' => (base.pinY - edited.pinY).abs() <= _epsilon,
+          'Width' => (base.width - edited.width).abs() <= _epsilon,
+          'Height' => (base.height - edited.height).abs() <= _epsilon,
+          'LocPinX' =>
+            (base.effectiveLocPinX - edited.effectiveLocPinX).abs() <= _epsilon,
+          'LocPinY' =>
+            (base.effectiveLocPinY - edited.effectiveLocPinY).abs() <= _epsilon,
+          _ => false,
+        };
+    // PinX/Y / LocPin / size: keep real parametric formulas. For unchanged
+    // 1-D shapes also retain local F=Inh — it is part of the original XForm
+    // contract and must not be materialised merely by open→save.
     for (final name in const [
       'PinX',
       'PinY',
@@ -2202,12 +2214,17 @@ class VsdxWriter {
       'LocPinX',
       'LocPinY',
     ]) {
+      final c = _findCell(el, name);
+      final raw = (c?.getAttribute('F') ?? '').trim().toUpperCase();
+      if ((raw == 'INH' || raw.startsWith('INH(')) &&
+          edited.is1D &&
+          xformValueUnchanged(name)) {
+        continue;
+      }
       final f = _nonInhFormula(edited.formulas[name]);
       if (f != null) {
         changed |= _syncCellFormulaAttr(el, name, f);
       } else {
-        final c = _findCell(el, name);
-        final raw = (c?.getAttribute('F') ?? '').trim().toUpperCase();
         if (raw == 'INH' || raw.startsWith('INH(')) {
           changed |= _clearCellFormulaAttr(el, name);
         }
@@ -2215,10 +2232,19 @@ class VsdxWriter {
     }
     changed |= _patchBool(el, 'FlipX', base.flipX, edited.flipX);
     changed |= _patchBool(el, 'FlipY', base.flipY, edited.flipY);
-    // Always literal Flip* (scrub F=Inh) — matches rebuild emit of 0/1.
-    // Ensure (not force) so missing Flip* cells are injected.
-    changed |= _ensureLiteralInt(el, 'FlipX', edited.flipX ? 1 : 0);
-    changed |= _ensureLiteralInt(el, 'FlipY', edited.flipY ? 1 : 0);
+    // Preserve meaningful formulas such as `(FALSE)` on identity saves;
+    // F=Inh is still scrubbed (the model has already resolved inheritance).
+    bool preserveFlipFormula(String name, bool unchanged) {
+      final raw = (_cellFormula(el, name) ?? '').trim();
+      return unchanged && raw.isNotEmpty && !isInhFormula(raw);
+    }
+
+    if (!preserveFlipFormula('FlipX', base.flipX == edited.flipX)) {
+      changed |= _ensureLiteralInt(el, 'FlipX', edited.flipX ? 1 : 0);
+    }
+    if (!preserveFlipFormula('FlipY', base.flipY == edited.flipY)) {
+      changed |= _ensureLiteralInt(el, 'FlipY', edited.flipY ? 1 : 0);
+    }
     // Group behaviour (libvisio IsTextEditTarget / DontMoveChildren / …).
     changed |= _patchBool(
         el, 'IsTextEditTarget', base.isTextEditTarget, edited.isTextEditTarget);
@@ -2486,7 +2512,7 @@ class VsdxWriter {
     // Edge glue points for 2-D shapes (Edraw attaches oddly without them).
     changed |= _ensureConnectionPoints(el, edited);
     // 1-D dynamics Edraw expects on every connector (GlueType / route style).
-    changed |= _ensureConnectorDynamics(el, edited);
+    changed |= _ensureConnectorDynamics(el, base, edited);
     // Text formatting (Character size/color/style + Paragraph alignment).
     changed |= _patchRichText(el, base, edited);
     // Tabs section (libvisio PositionN / AlignmentN).
@@ -5642,12 +5668,19 @@ class VsdxWriter {
         edited.defaultTabStopInches);
     changed |= _ensureLiteralLength(
         el, 'DefaultTabStop', edited.defaultTabStopInches);
+    final textBkgndFormula = (_cellFormula(el, 'TextBkgnd') ?? '').trim();
+    final preserveTextBkgndFormula =
+        base.backgroundColor?.value == edited.backgroundColor?.value &&
+            textBkgndFormula.isNotEmpty &&
+            !isInhFormula(textBkgndFormula);
     if (edited.backgroundColor != null) {
       changed |= _patchColor(
           el, 'TextBkgnd', base.backgroundColor, edited.backgroundColor);
-      changed |=
-          _ensureLiteralColor(el, 'TextBkgnd', edited.backgroundColor!);
-    } else {
+      if (!preserveTextBkgndFormula) {
+        changed |=
+            _ensureLiteralColor(el, 'TextBkgnd', edited.backgroundColor!);
+      }
+    } else if (!preserveTextBkgndFormula) {
       // Always literal 0 when transparent — scrub F=Inh / match rebuild.
       final c = _ensureCell(el, 'TextBkgnd');
       if (c.getAttribute('V') != '0' ||
@@ -6103,7 +6136,11 @@ class VsdxWriter {
   /// Write Edraw-default connector dynamics when a 1-D **connector** lacks them.
   /// Skips freehand ink (`ObjType=1`) which uses an AABB local frame, not the
   /// Visio Begin-origin Width=EndX-BeginX convention.
-  bool _ensureConnectorDynamics(XmlElement el, VsdxShape s) {
+  bool _ensureConnectorDynamics(
+    XmlElement el,
+    VsdxShape base,
+    VsdxShape s,
+  ) {
     if (!s.is1D) return false;
     // Freehand / ink strokes are 1-D but not glueable connectors.
     if (s.objType != null && s.objType != 2) return false;
@@ -6148,7 +6185,11 @@ class VsdxWriter {
       String fallback,
       double value, {
       required bool relationHolds,
+      required bool modelUnchanged,
     }) {
+      // Equal-path saves preserve original SQRT/GUARD/DL/Inh formulas.
+      // Missing cells are still healed below for old Edraw exports.
+      if (modelUnchanged && _findCell(el, name) != null) return;
       final cell = _ensureCell(el, name);
       if (!relationHolds) {
         final parsed = double.tryParse(cell.getAttribute('V') ?? '');
@@ -6180,12 +6221,14 @@ class VsdxWriter {
       '(BeginX+EndX)*0.5',
       s.pinX,
       relationHolds: (s.pinX - (bx + ex) * 0.5).abs() <= _epsilon,
+      modelUnchanged: (base.pinX - s.pinX).abs() <= _epsilon,
     );
     putPinFormula(
       'PinY',
       '(BeginY+EndY)*0.5',
       s.pinY,
       relationHolds: (s.pinY - (by + ey) * 0.5).abs() <= _epsilon,
+      modelUnchanged: (base.pinY - s.pinY).abs() <= _epsilon,
     );
     // Visio 1-D size / LocPin — required so Geometry rooted at Begin (0,0)
     // places correctly when Width/Height are signed End−Begin deltas.
@@ -6196,24 +6239,30 @@ class VsdxWriter {
       'EndX-BeginX',
       s.width,
       relationHolds: (s.width - dx).abs() <= _epsilon,
+      modelUnchanged: (base.width - s.width).abs() <= _epsilon,
     );
     putPinFormula(
       'Height',
       'EndY-BeginY',
       s.height,
       relationHolds: (s.height - dy).abs() <= _epsilon,
+      modelUnchanged: (base.height - s.height).abs() <= _epsilon,
     );
     putPinFormula(
       'LocPinX',
       '(EndX-BeginX)/2',
       s.effectiveLocPinX,
       relationHolds: (s.effectiveLocPinX - dx * 0.5).abs() <= _epsilon,
+      modelUnchanged:
+          (base.effectiveLocPinX - s.effectiveLocPinX).abs() <= _epsilon,
     );
     putPinFormula(
       'LocPinY',
       '(EndY-BeginY)/2',
       s.effectiveLocPinY,
       relationHolds: (s.effectiveLocPinY - dy * 0.5).abs() <= _epsilon,
+      modelUnchanged:
+          (base.effectiveLocPinY - s.effectiveLocPinY).abs() <= _epsilon,
     );
     // If an older export left ConFixedCode=0, force it up to the model value.
     final wantFixed = s.connectorProps?.conFixedCode ?? 3;

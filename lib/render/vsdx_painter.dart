@@ -330,7 +330,9 @@ class VsdxPainter extends CustomPainter {
       if (c != null) {
         _layerTint = Color(c.value);
         _layerTintTrans = src!.colorTrans.clamp(0.0, 1.0);
-      } else {
+      } else if (shape.layerMemberIds.isNotEmpty) {
+        // An explicit uncoloured membership overrides an ancestor group's
+        // tint. No membership inherits the group's Color-by-Layer view.
         _layerTint = null;
         _layerTintTrans = 0;
       }

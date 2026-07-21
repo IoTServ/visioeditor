@@ -2,12 +2,11 @@
 """Regenerate lib/l10n/editor_l10n_maps.dart for all AppLocalizations languages.
 
 Sources (in priority order per language):
-  1. /tmp/all_banks.json  — key→string UI banks (cache)
+  0. Existing generated tables — offline baseline / missing-key fallback
+  1. /tmp/all_banks.json — key→string UI banks (cache)
   2. /tmp/phrase_maps_v4.json — English-phrase→translation maps
   3. tool/editor_vocabs.json — compact vocabs expanded via from_vocab()
-     (merged onto existing bank so incomplete vocabs keep prior NEW keys)
-  4. tool/ui_banks/<lang>.json — curated full UI banks (highest priority)
-  5. en/zh extracted from existing editor_l10n_maps.dart
+  4. tool/ui_banks/<lang>.json — curated UI banks (highest priority)
 
 Stencil names: en + zh always; other langs from tool/stencil_maps +
 /tmp/stencil_name_maps.json. Missing stencils fall back to English.
@@ -38,12 +37,54 @@ BANKS_JSON = Path("/tmp/all_banks.json")
 PHRASE_JSON = Path("/tmp/phrase_maps_v4.json")
 STENCIL_JSON = Path("/tmp/stencil_name_maps.json")
 
+# Small, explicit bank for UI keys added after the bulk translation pass.
+# Keeping this here lets regeneration preserve full locale coverage even when
+# cached phrase maps predate the new key.
+COLOR_BY_LAYER = {
+    "en": "Color by Layer",
+    "zh": "按图层着色",
+    "ja": "レイヤー別に色分け",
+    "ko": "레이어별 색상",
+    "es": "Color por capa",
+    "fr": "Couleur par calque",
+    "de": "Farbe nach Ebene",
+    "pt": "Cor por camada",
+    "ru": "Цвет по слою",
+    "it": "Colore per livello",
+    "ar": "اللون حسب الطبقة",
+    "id": "Warna menurut lapisan",
+    "hi": "परत के अनुसार रंग",
+    "nl": "Kleur per laag",
+    "tr": "Katmana göre renk",
+    "pl": "Kolor według warstwy",
+    "vi": "Tô màu theo lớp",
+    "th": "สีตามเลเยอร์",
+    "sv": "Färg efter lager",
+    "uk": "Колір за шаром",
+    "he": "צבע לפי שכבה",
+    "cs": "Barva podle vrstvy",
+    "ro": "Culoare după strat",
+    "el": "Χρώμα ανά επίπεδο",
+    "hu": "Szín rétegenként",
+    "da": "Farve efter lag",
+    "ms": "Warna mengikut lapisan",
+    "fi": "Väri tason mukaan",
+    "nb": "Farge etter lag",
+    "sk": "Farba podľa vrstvy",
+    "bn": "স্তর অনুযায়ী রঙ",
+    "fa": "رنگ بر اساس لایه",
+    "bg": "Цвят по слой",
+    "hr": "Boja prema sloju",
+    "ca": "Color per capa",
+    "fil": "Kulay ayon sa layer",
+    "sw": "Rangi kwa safu",
+}
 
-def load_en_zh() -> tuple[dict[str, str], dict[str, str]]:
-    """Load en/zh full tables (UI + stencils) from generated maps if present."""
+
+def load_existing() -> dict[str, dict[str, str]]:
+    """Load all generated tables as the offline regeneration baseline."""
     if MAPS.exists():
         text = MAPS.read_text()
-        # Maps use top-level const _en / _zh
         import re
 
         def grab(name: str) -> dict[str, str]:
@@ -57,13 +98,31 @@ def load_en_zh() -> tuple[dict[str, str], dict[str, str]]:
             body = m.group(1)
             body2 = re.sub(r"'([^']*)'\s*\n\s*'([^']*)'", r"'\1\2'", body)
             body2 = re.sub(r"'([^']*)'\s*\n\s*'([^']*)'", r"'\1\2'", body2)
-            return dict(re.findall(r"'([^']+)':\s*'([^']*)'", body2))
+            entry = re.compile(
+                r"'((?:\\.|[^'])+)'\s*:\s*"
+                r"(?:'((?:\\.|[^'])*)'|\"((?:\\.|[^\"])*)\")"
+            )
 
-        return grab("_en"), grab("_zh")
+            def unescape(value: str) -> str:
+                return value.replace("\\'", "'").replace("\\\\", "\\")
+
+            return {
+                unescape(match.group(1)): unescape(
+                    match.group(2)
+                    if match.group(2) is not None
+                    else match.group(3)
+                )
+                for match in entry.finditer(body2)
+            }
+
+        return {lang: grab(f"_{lang}") for lang in LANGS}
 
     # Fallback: legacy inline tables in editor_l10n.dart
     src = (ROOT / "lib/l10n/editor_l10n.dart").read_text()
-    return extract_map(src, "_en"), extract_map(src, "_zh")
+    return {
+        "en": extract_map(src, "_en"),
+        "zh": extract_map(src, "_zh"),
+    }
 
 
 def phrase_to_bank(en_ui: dict[str, str], phrases: dict[str, str]) -> dict[str, str]:
@@ -74,7 +133,9 @@ def phrase_to_bank(en_ui: dict[str, str], phrases: dict[str, str]) -> dict[str, 
 
 
 def main() -> None:
-    en_all, zh_all = load_en_zh()
+    existing = load_existing()
+    en_all = existing["en"]
+    zh_all = existing["zh"]
     en_ui = {k: v for k, v in en_all.items() if not k.startswith("st_")}
     en_st = {k: v for k, v in en_all.items() if k.startswith("st_")}
     zh_ui = {k: zh_all[k] for k in en_ui if k in zh_all}
@@ -82,6 +143,10 @@ def main() -> None:
     if len(zh_ui) != len(en_ui):
         raise SystemExit(f"zh UI incomplete: {len(zh_ui)} vs {len(en_ui)}")
 
+    existing_banks: dict[str, dict[str, str]] = {
+        lang: {k: v for k, v in table.items() if not k.startswith("st_")}
+        for lang, table in existing.items()
+    }
     banks: dict[str, dict[str, str]] = {"en": en_ui, "zh": zh_ui}
 
     if BANKS_JSON.exists():
@@ -105,7 +170,7 @@ def main() -> None:
         # Merge onto existing bank so NEW2 keys already present are kept
         # when from_vocab is incomplete.
         expanded = from_vocab(vocab)
-        base = banks.get(lang, {})
+        base = banks.get(lang, existing_banks.get(lang, {}))
         banks[lang] = {**base, **{k: v for k, v in expanded.items() if v is not None}}
 
     # Curated full UI banks (tool/ui_banks/<lang>.json) win over cache/vocabs.
@@ -113,13 +178,30 @@ def main() -> None:
         for path in sorted(UI_BANKS_DIR.glob("*.json")):
             lang = path.stem
             bank = json.loads(path.read_text())
-            if all(k in bank for k in en_ui):
-                banks[lang] = {k: bank[k] for k in en_ui}
-                print(f"ui_bank {lang}: {len(en_ui)} keys")
+            curated = {k: bank[k] for k in en_ui if k in bank}
+            if curated:
+                base = banks.get(lang, existing_banks.get(lang, {}))
+                banks[lang] = {**base, **curated}
+                print(f"ui_bank {lang}: {len(curated)} keys")
+
+    for lang, bank in existing_banks.items():
+        banks.setdefault(lang, bank)
+
+    for lang, value in COLOR_BY_LAYER.items():
+        if lang in banks:
+            banks[lang]["colorByLayer"] = value
 
     missing = [l for l in LANGS if l not in banks]
     if missing:
         raise SystemExit(f"Missing UI banks for: {missing}")
+    incomplete = {
+        lang: [key for key in en_ui if key not in banks[lang]]
+        for lang in LANGS
+        if any(key not in banks[lang] for key in en_ui)
+    }
+    if incomplete:
+        lang, keys = next(iter(incomplete.items()))
+        raise SystemExit(f"{lang} UI incomplete: {keys[:8]}")
 
     for lang in LANGS:
         if lang == "en":

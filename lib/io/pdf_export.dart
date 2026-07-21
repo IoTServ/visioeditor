@@ -29,6 +29,7 @@ Future<Uint8List> exportDocumentToPdf(
   VsdxDocument doc, {
   bool drawLineJumps = true,
   double lineJumpRadiusInches = kDefaultLineJumpRadiusInches,
+  bool colorByLayer = false,
 }) async {
   final unicode = await loadPdfUnicodeFont();
   final theme = unicode == null
@@ -46,6 +47,7 @@ Future<Uint8List> exportDocumentToPdf(
     skipBackgroundPages: true,
     drawLineJumps: drawLineJumps,
     lineJumpRadiusInches: lineJumpRadiusInches,
+    colorByLayer: colorByLayer,
     // package:pdf SvgImage ignores markers/filters/patterns/textPath/baseline.
     pdfCompat: true,
   );

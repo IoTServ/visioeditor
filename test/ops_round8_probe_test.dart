@@ -153,18 +153,17 @@ void main() {
     expect(e.selection, equals({conn}));
   });
 
-  test('applyEdit during transaction commits gesture first', () {
+  test('applyEdit during transaction stays in one gesture undo', () {
     final e = ctrl();
     final a = rect(e, 2, 4);
     e.beginTransaction();
     e.moveSelectionBy(1, 0, transient: true);
     e.setFillColor(const VsdxColor(0xFFFF0000)); // discrete applyEdit
+    e.commitTransaction();
     expect(e.currentPage!.findShapeById(a)!.pinX, closeTo(3, 1e-6));
-    e.undo(); // undo fill
+    e.undo(); // undo the move + fill transaction
     expect(e.currentPage!.findShapeById(a)!.fill.foreground,
         isNot(const VsdxColor(0xFFFF0000)));
-    expect(e.currentPage!.findShapeById(a)!.pinX, closeTo(3, 1e-6));
-    e.undo(); // undo move
     expect(e.currentPage!.findShapeById(a)!.pinX, closeTo(2, 1e-6));
   });
 

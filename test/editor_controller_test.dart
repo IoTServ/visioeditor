@@ -38,6 +38,114 @@ void main() {
     expect(c.canGroup, isTrue);
   });
 
+  test('table, swimlane pool, and chart cannot be ungrouped', () {
+    final builders = <VsdxShape Function(int, double, double)>[
+      (id, x, y) => TableOps.assembleTable(
+            tableId: id,
+            pinX: x,
+            pinY: y,
+            width: 3,
+            height: 2,
+            rows: 2,
+            cols: 2,
+          ),
+      (id, x, y) => SwimlaneOps.assemblePool(
+            poolId: id,
+            pinX: x,
+            pinY: y,
+            width: 4,
+            height: 3,
+            laneCount: 2,
+          ),
+      (id, x, y) => ChartOps.columnChart(id: id, pinX: x, pinY: y),
+    ];
+
+    for (final build in builders) {
+      final c = EditorController()..newDocument();
+      c.addShapeFromBuilderAt(build, 4, 5);
+      final hostId = c.singleSelectedId!;
+      final childCount = c.currentPage!.findShapeById(hostId)!.children.length;
+      expect(childCount, greaterThan(0));
+      expect(c.canUngroup, isFalse);
+      c.ungroupSelection();
+      expect(c.currentPage!.findShapeById(hostId), isNotNull);
+      expect(
+        c.currentPage!.findShapeById(hostId)!.children,
+        hasLength(childCount),
+      );
+    }
+  });
+
+  test('discrete edit during a drag stays in one undo transaction', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.singleSelectedId!;
+    final before = c.currentPage!.findShapeById(id)!;
+
+    c.beginTransaction();
+    c.moveSelectionBy(1, 0, transient: true);
+    c.toggleBold();
+    c.moveSelectionBy(1, 0, transient: true);
+    c.commitTransaction();
+
+    expect(
+      c.currentPage!.findShapeById(id)!.pinX,
+      closeTo(before.pinX + 2, 1e-9),
+    );
+    expect(c.selectedCharStyle?.style.bold, isTrue);
+    c.undo();
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(before.pinX, 1e-9));
+    expect(c.selectedCharStyle?.style.bold, isFalse);
+    c.redo();
+    expect(
+      c.currentPage!.findShapeById(id)!.pinX,
+      closeTo(before.pinX + 2, 1e-9),
+    );
+    expect(c.selectedCharStyle?.style.bold, isTrue);
+  });
+
+  test('undo during a transient gesture cancels only that gesture', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.singleSelectedId!;
+    final before = c.currentPage!.findShapeById(id)!;
+
+    c.beginTransaction();
+    c.moveSelectionBy(1, 0, transient: true);
+    c.undo();
+    expect(c.currentPage!.findShapeById(id)!.pinX, closeTo(before.pinX, 1e-9));
+    // The prior shape-creation history step is still available.
+    c.undo();
+    expect(c.currentPage!.findShapeById(id), isNull);
+  });
+
+  test('switching page cancels an open transient gesture', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.singleSelectedId!;
+    final before = c.currentPage!.findShapeById(id)!;
+    c.addPage();
+    c.selectPage(0);
+    c.selectOnly(id);
+
+    c.beginTransaction();
+    c.moveSelectionBy(1, 0, transient: true);
+    expect(c.currentPage!.findShapeById(id)!.pinX, isNot(before.pinX));
+    c.selectPage(1);
+
+    expect(c.currentPageIndex, 1);
+    expect(
+      c.document!.pages.first.findShapeById(id)!.pinX,
+      closeTo(before.pinX, 1e-9),
+    );
+  });
+
   test('grouping is a single undo step', () {
     final c = newDocWithTwoRects()..selectAll();
     c.groupSelection();

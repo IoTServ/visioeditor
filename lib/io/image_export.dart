@@ -11,7 +11,8 @@ import '../render/vsdx_painter.dart';
 /// Rasterise a single [page] to PNG bytes at [pxPerInch] using the same
 /// [VsdxPainter] the on-screen canvas uses. Pass [underlayPage] to composite
 /// a Visio BackPage; [visibleLayerIdsOverride] defaults to printable layers
-/// when the page has layers (export honouring Visio `Print`).
+/// when the page has layers (export honouring Visio `Print`). [colorByLayer]
+/// mirrors the editor's session-level Color-by-Layer view.
 ///
 /// Embedded pictures in [images] are decoded before paint so the one-shot
 /// export path does not fall back to placeholders.
@@ -24,6 +25,7 @@ Future<Uint8List?> renderPageToPng(
   double pxPerInch = 150.0,
   bool drawLineJumps = true,
   double lineJumpRadiusInches = 0.07,
+  bool colorByLayer = false,
 }) async {
   final w = (page.widthInches <= 0 ? 8.5 : page.widthInches) * pxPerInch;
   final h = (page.heightInches <= 0 ? 11.0 : page.heightInches) * pxPerInch;
@@ -52,6 +54,7 @@ Future<Uint8List?> renderPageToPng(
       underlayVisibleLayerIdsOverride: underlayLayerIds,
       drawLineJumps: drawLineJumps,
       lineJumpRadiusInches: lineJumpRadiusInches,
+      colorByLayer: colorByLayer,
       // Match SVG export: no fold chevrons / kind-hint dashed frames.
       drawEditorChrome: false,
     ).paint(canvas, Size(w, h));

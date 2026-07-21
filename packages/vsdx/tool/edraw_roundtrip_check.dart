@@ -94,6 +94,12 @@ String _checkVsdx(File f, Directory outDir) {
     final reopened = parseVisio(written);
     expectTrue(!reopened.importedFromVsd, 'reopen OPC');
     final checks = _edrawStructuralChecks(written);
+    final movedId = parsed.document.pages.first.shapes.isEmpty
+        ? null
+        : parsed.document.pages.first.shapes.first.id;
+    final formulaDrift =
+        _criticalFormulaDrift(bytes, written, skipPage1ShapeId: movedId);
+    if (formulaDrift > 0) checks.add('formula-drift:$formulaDrift');
     final line =
         '- OK $name → vsdx_$stem.vsdx pages=${reopened.document.pages.length} '
         'shapes=${_countShapes(reopened.document)} edraw=[${checks.join(", ")}]';
@@ -171,6 +177,61 @@ int _countShapes(VsdxDocument doc) {
     }
   }
   return n;
+}
+
+int _criticalFormulaDrift(
+  Uint8List before,
+  Uint8List after, {
+  int? skipPage1ShapeId,
+}) {
+  const names = <String>{
+    'PinX',
+    'PinY',
+    'Width',
+    'Height',
+    'LocPinX',
+    'LocPinY',
+    'FlipX',
+    'FlipY',
+    'TextBkgnd',
+  };
+
+  Map<String, String> collect(Uint8List bytes) {
+    final out = <String, String>{};
+    final zip = ZipDecoder().decodeBytes(bytes);
+    for (final part in zip) {
+      if (!RegExp(r'visio/pages/page\d+\.xml$').hasMatch(part.name)) continue;
+      final xml = XmlDocument.parse(
+        utf8.decode(part.content as List<int>),
+      );
+      for (final shape in xml.findAllElements('Shape')) {
+        final id = int.tryParse(shape.getAttribute('ID') ?? '');
+        if (id == null) continue;
+        if (skipPage1ShapeId == id &&
+            part.name.endsWith('visio/pages/page1.xml')) {
+          continue;
+        }
+        final cells = <String, XmlElement>{
+          for (final cell in shape.childElements)
+            if (cell.name.local == 'Cell' && cell.getAttribute('N') != null)
+              cell.getAttribute('N')!: cell,
+        };
+        final is1D =
+            cells.containsKey('BeginX') && cells.containsKey('EndX');
+        for (final name in names) {
+          final formula = cells[name]?.getAttribute('F');
+          if (formula == null || formula.trim().isEmpty) continue;
+          if (isInhFormula(formula) && !is1D) continue;
+          out['${part.name}/$id/$name'] = formula;
+        }
+      }
+    }
+    return out;
+  }
+
+  final a = collect(before);
+  final b = collect(after);
+  return a.entries.where((entry) => b[entry.key] != entry.value).length;
 }
 
 List<String> _edrawStructuralChecks(Uint8List vsdx) {

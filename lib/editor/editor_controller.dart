@@ -116,6 +116,9 @@ class EditorController extends ChangeNotifier {
 
   void selectPage(int index) {
     if (index < 0 || index >= pageCount || index == _currentPageIndex) return;
+    // A page switch cannot continue a canvas gesture on the old page. Revert
+    // the transient frame so [_txnBase] never leaks into the new page.
+    if (_txnBase != null) cancelTransaction();
     _leaveConnectionPointEdit();
     _leaveTextEditSession();
     _currentPageIndex = index;
@@ -831,11 +834,19 @@ class EditorController extends ChangeNotifier {
     int? undoPageIndex,
     Set<int>? undoSelection,
   }) {
-    // Close any open drag/slider gesture so a discrete edit does not leave a
-    // stale [_txnBase] that [commitTransaction] would later push as junk.
-    if (_txnBase != null) commitTransaction();
     final cur = _document;
     if (cur == null || identical(cur, next)) return;
+    if (_txnBase != null) {
+      // A shortcut/property edit can arrive while a pointer gesture is still
+      // active. Keep it inside that transaction so subsequent transient
+      // updates and the discrete edit form one coherent undo step.
+      _redo.clear();
+      _document = next;
+      _pruneSelection();
+      _dirty = !identical(next, _cleanDocument);
+      notifyListeners();
+      return;
+    }
     _undo.add(_HistoryEntry(
       cur,
       undoPageIndex ?? _currentPageIndex,
@@ -916,7 +927,10 @@ class EditorController extends ChangeNotifier {
   }
 
   void undo() {
-    if (_txnBase != null) cancelTransaction();
+    if (_txnBase != null) {
+      cancelTransaction();
+      return;
+    }
     if (_undo.isEmpty || _document == null) return;
     _leaveConnectionPointEdit();
     _leaveTextEditSession();
@@ -938,7 +952,10 @@ class EditorController extends ChangeNotifier {
   }
 
   void redo() {
-    if (_txnBase != null) cancelTransaction();
+    if (_txnBase != null) {
+      cancelTransaction();
+      return;
+    }
     if (_redo.isEmpty || _document == null) return;
     _leaveConnectionPointEdit();
     _leaveTextEditSession();
@@ -5741,12 +5758,20 @@ class EditorController extends ChangeNotifier {
 
   /// Whether the selection contains an unlocked group to ungroup (top-level or
   /// nested — matches [ungroupSelection]).
+  static bool _isStructuredGroup(VsdxShape shape) =>
+      TableOps.isTable(shape) ||
+      SwimlaneOps.isPool(shape) ||
+      ChartOps.isChart(shape);
+
+  static bool _canUngroupShape(VsdxShape shape) =>
+      shape.children.isNotEmpty && !_isStructuredGroup(shape);
+
   bool get canUngroup {
     final page = currentPage;
     if (page == null) return false;
     for (final id in _selection) {
       if (page.findShapeById(id) case final s?
-          when s.children.isNotEmpty &&
+          when _canUngroupShape(s) &&
               !s.locked &&
               !isOnLockedLayer(id)) {
         return true;
@@ -5795,7 +5820,7 @@ class EditorController extends ChangeNotifier {
     final groups = <VsdxShape>[
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
-            when s.children.isNotEmpty &&
+            when _canUngroupShape(s) &&
                 !s.locked &&
                 !isOnLockedLayer(id))
           s,

@@ -91,4 +91,47 @@ void main() {
         reason: 'expected solid-red embedded image around ($cx,$cy) '
             'on ${w}x$h export; got $redPixels red pixels');
   });
+
+  test('PNG export honours Color-by-Layer view', () async {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 4,
+      heightInches: 4,
+      layers: const <VsdxLayer>[
+        VsdxLayer(
+          id: 0,
+          name: 'Red',
+          color: VsdxColor(0xFFFF0000),
+        ),
+      ],
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 1,
+          height: 1,
+          fill: const VsdxFill(foreground: VsdxColor(0xFF00FF00)),
+        ).copyWith(layerMemberIds: const <int>[0]),
+      ],
+    );
+
+    final exported = await renderPageToPng(
+      page,
+      pxPerInch: 96,
+      colorByLayer: true,
+    );
+    expect(exported, isNotNull);
+    final codec = await ui.instantiateImageCodec(exported!);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(rgba, isNotNull);
+    final offset = ((2 * 96) * image.width + (2 * 96)) * 4;
+    expect(rgba!.getUint8(offset), greaterThan(220));
+    expect(rgba.getUint8(offset + 1), lessThan(40));
+    expect(rgba.getUint8(offset + 2), lessThan(40));
+    image.dispose();
+  });
 }

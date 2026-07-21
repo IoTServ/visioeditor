@@ -274,6 +274,7 @@ class AgentBridge {
       underlayPage: doc.backgroundFor(page),
       drawLineJumps: c!.showLineJumps,
       lineJumpRadiusInches: c.lineJumpRadiusInches,
+      colorByLayer: c.colorByLayer,
     );
     if (png == null) throw StateError('render failed');
     return base64Encode(png);

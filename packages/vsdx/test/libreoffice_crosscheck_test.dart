@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
@@ -48,13 +49,26 @@ void main() {
         ),
       ),
     );
-    final vsdxBytes = writer.write(originalBytes: blank, edited: doc);
+    final generated = writer.write(originalBytes: blank, edited: doc);
+    final inputs = <String, Uint8List>{'generated': generated};
+    for (final entry in const <(String, String)>[
+      ('connectors', 'test/fixtures/test4_connectors.vsdx'),
+      ('zh_data', 'test/fixtures/数据治理.vsdx'),
+    ]) {
+      final raw = await File(entry.$2).readAsBytes();
+      inputs[entry.$1] =
+          writer.write(originalBytes: raw, edited: parser.parse(raw));
+    }
 
     final dir = await Directory.systemTemp.createTemp('vsdx_lo_');
     final profile = Directory('${dir.path}/lo_profile')..createSync();
     try {
-      final input = File('${dir.path}/in.vsdx');
-      await input.writeAsBytes(vsdxBytes);
+      final paths = <String>[];
+      for (final entry in inputs.entries) {
+        final input = File('${dir.path}/${entry.key}.vsdx');
+        await input.writeAsBytes(entry.value);
+        paths.add(input.path);
+      }
       final result = await Process.run(
         soffice,
         <String>[
@@ -66,7 +80,7 @@ void main() {
           'pdf',
           '--outdir',
           dir.path,
-          input.path,
+          ...paths,
         ],
         workingDirectory: dir.path,
         environment: <String, String>{
@@ -78,16 +92,15 @@ void main() {
       expect(result.exitCode, 0,
           reason: 'soffice stderr: ${result.stderr}\nstdout: ${result.stdout}');
 
-      final pdf = File('${dir.path}/in.pdf');
-      expect(pdf.existsSync(), isTrue,
-          reason: 'expected in.pdf from soffice convert-to pdf; '
-              'dir=${dir.listSync().map((e) => e.path).toList()}');
-      expect(pdf.lengthSync(), greaterThan(100));
-
-      // Still parseable as a package after our write (independent of LO).
-      final reparsed = parser.parse(vsdxBytes);
-      expect(reparsed.pages, isNotEmpty);
-      expect(reparsed.pages.first.shapes, isNotEmpty);
+      for (final entry in inputs.entries) {
+        final pdf = File('${dir.path}/${entry.key}.pdf');
+        expect(pdf.existsSync(), isTrue,
+            reason: 'expected ${entry.key}.pdf from soffice; '
+                'dir=${dir.listSync().map((e) => e.path).toList()}');
+        expect(pdf.lengthSync(), greaterThan(100));
+        // Still parseable after our write (independent of LibreOffice).
+        expect(parser.parse(entry.value).pages, isNotEmpty);
+      }
     } finally {
       await dir.delete(recursive: true);
     }

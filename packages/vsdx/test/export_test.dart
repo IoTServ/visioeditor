@@ -190,6 +190,45 @@ void main() {
     expect(textTags, greaterThanOrEqualTo(3));
   });
 
+  test('SVG FontScale wrap estimate matches emitted letter-spacing', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 0.82,
+      height: 1,
+    ).copyWith(
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'MMMM',
+            charStyle: VsdxCharStyle(
+              fontSizeInches: 0.2,
+              fontScale: 2,
+            ),
+          ),
+        ],
+        textBlock: VsdxTextBlock(
+          widthInches: 0.82,
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+        ),
+      ),
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[shape],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('letter-spacing="0.11"'));
+    expect(RegExp(r'<text\b').allMatches(svg), hasLength(1));
+  });
+
   test('SVG horizontal line gradient centres on path not shape height', () {
     final blank = const VsdxWriter().emptyDocument();
     var doc = parser.parse(blank);

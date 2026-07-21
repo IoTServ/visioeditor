@@ -37,7 +37,20 @@ def extract_map(text: str, name: str) -> dict[str, str]:
     body = m.group(1)
     body2 = re.sub(r"'([^']*)'\s*\n\s*'([^']*)'", r"'\1\2'", body)
     body2 = re.sub(r"'([^']*)'\s*\n\s*'([^']*)'", r"'\1\2'", body2)
-    return dict(re.findall(r"'([^']+)':\s*'([^']*)'", body2))
+    entry = re.compile(
+        r"'((?:\\.|[^'])+)'\s*:\s*"
+        r"(?:'((?:\\.|[^'])*)'|\"((?:\\.|[^\"])*)\")"
+    )
+
+    def unescape(value: str) -> str:
+        return value.replace("\\'", "'").replace("\\\\", "\\")
+
+    return {
+        unescape(match.group(1)): unescape(
+            match.group(2) if match.group(2) is not None else match.group(3)
+        )
+        for match in entry.finditer(body2)
+    }
 
 
 def dart_esc(s: str) -> str:

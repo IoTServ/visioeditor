@@ -301,4 +301,115 @@ void main() {
 
     expect(controller.selection, unorderedEquals(<int>[a, b]));
   });
+
+  testWidgets('connector endpoint drag detaches once and undo restores glue',
+      (tester) async {
+    late int target;
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        final source = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        target = c.singleSelectedId!;
+        c.createConnector(
+          2,
+          5,
+          6,
+          5,
+          beginTarget: source,
+          endTarget: target,
+        );
+        connector = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    var page = controller.currentPage!;
+    final shape = page.findShapeById(connector)!;
+    final route = VsdxPage.connectorRoute(shape);
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(
+      origin,
+      camera,
+      page,
+      route.last.x,
+      route.last.y,
+    );
+    final destination = _pagePoint(origin, camera, page, 7.5, 2.5);
+
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    page = controller.currentPage!;
+    expect(
+      page.connects.where((c) => c.fromSheetId == connector && c.isEnd),
+      isEmpty,
+    );
+    final moved = VsdxPage.connectorRoute(page.findShapeById(connector)!).last;
+    expect(moved.x, closeTo(7.5, 0.05));
+    expect(moved.y, closeTo(2.5, 0.05));
+
+    controller.undo();
+    page = controller.currentPage!;
+    expect(
+      page.connects
+          .singleWhere((c) => c.fromSheetId == connector && c.isEnd)
+          .toSheetId,
+      target,
+    );
+  });
+
+  testWidgets('connector segment midpoint drag creates one undoable waypoint',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c.createConnector(2, 5, 6, 5);
+        connector = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final route =
+        VsdxPage.connectorRoute(page.findShapeById(connector)!);
+    expect(route, hasLength(2));
+    final midpoint = Offset2D(
+      (route.first.x + route.last.x) / 2,
+      (route.first.y + route.last.y) / 2,
+    );
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(
+      origin,
+      camera,
+      page,
+      midpoint.x,
+      midpoint.y,
+    );
+    final destination =
+        _pagePoint(origin, camera, page, midpoint.x, midpoint.y + 1);
+
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    final waypoints = controller.connectorWaypoints(connector);
+    expect(waypoints, hasLength(1));
+    expect(waypoints.single.x, closeTo(midpoint.x, 0.05));
+    expect(waypoints.single.y, closeTo(midpoint.y + 1, 0.05));
+    controller.undo();
+    expect(controller.connectorWaypoints(connector), isEmpty);
+  });
 }
