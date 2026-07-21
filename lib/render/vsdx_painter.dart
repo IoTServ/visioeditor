@@ -1198,6 +1198,7 @@ class VsdxPainter extends CustomPainter {
     canvas.save();
     // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
     canvas.translate(shadow.offsetXInches, shadow.offsetYInches);
+    _applyPageShadowXform(canvas, shape);
     if (lineOnly) {
       // Match body stroke: compound rails + dash (blur via paint.maskFilter).
       _drawCompoundStroke(
@@ -1212,6 +1213,31 @@ class VsdxPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
     canvas.restore();
+  }
+
+  /// PageSheet `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` — skew and
+  /// scale the drop shadow about the shape LocPin (Visio oblique page shadow).
+  void _applyPageShadowXform(Canvas canvas, VsdxShape shape) {
+    final sheet = (_paintTarget ?? page)?.pageSheet;
+    if (sheet == null) return;
+    final scale = sheet.shadowScaleFactor;
+    final oblique = sheet.shadowObliqueAngle;
+    if (sheet.shadowType == 0 &&
+        oblique.abs() <= 1e-9 &&
+        (scale - 1.0).abs() <= 1e-9) {
+      return;
+    }
+    final cx = shape.effectiveLocPinX;
+    final cy = shape.effectiveLocPinY;
+    canvas.translate(cx, cy);
+    if ((scale - 1.0).abs() > 1e-9) {
+      canvas.scale(scale);
+    }
+    if (oblique.abs() > 1e-9) {
+      final m = Matrix4.identity()..setEntry(0, 1, math.tan(oblique));
+      canvas.transform(m.storage);
+    }
+    canvas.translate(-cx, -cy);
   }
 
   void _paintLineEndings(Canvas canvas, VsdxShape shape) {

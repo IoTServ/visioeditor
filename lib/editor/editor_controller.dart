@@ -4295,34 +4295,50 @@ class EditorController extends ChangeNotifier {
 
   /// Current corner radius (inches) of the single selection when it is a
   /// rectangle, or `null` when corner-rounding doesn't apply.
+  ///
+  /// Prefers Visio `Line.Rounding` (filleted polyline). Legacy factory
+  /// rounded-rects that baked corners into `EllipticalArcTo` still report the
+  /// arc inset so the inspector stays truthful until the next edit.
   double? get selectedCornerRadius {
     final s = singleSelected;
     if (s == null || !_isRectangleLike(s)) return null;
     final g = s.geometries.first;
-    if (!g.commands.any((c) => c is EllipticalArcTo)) return 0;
-    final first = g.commands.first;
-    return first is MoveTo ? first.x : 0;
+    if (g.commands.any((c) => c is EllipticalArcTo)) {
+      final first = g.commands.first;
+      return first is MoveTo ? first.x : 0;
+    }
+    return s.line.roundingInches;
   }
 
   /// Round the single (rectangular) selection's corners to [radiusInches]
-  /// (0 = square), regenerating its geometry. Round-trips as `EllipticalArcTo`.
+  /// (0 = square). Writes Visio `Rounding` so Canvas/SVG/`VsdxWriter` share one
+  /// semantic; flattens any prior arc-baked corners back to a sharp rect.
   void setCornerRadius(double radiusInches, {bool transient = false}) {
     final s = singleSelected;
     if (s == null || !_isRectangleLike(s)) return;
     if (s.locked || isOnLockedLayer(s.id)) return;
-    final geom =
-        VsdxShapeFactory.roundedRectGeometry(s.width, s.height, radiusInches);
+    final r = radiusInches.clamp(0.0, math.min(s.width, s.height) / 2);
     final movedIds = _subtreeIds(<int>{s.id});
     updateCurrentPage(
       (page) => page
           .updateShapeById(
             s.id,
             (sh) {
-              // Preserve NoFill/NoLine after regenerating corner geometry.
-              var geos = <VsdxGeometry>[geom];
-              geos = syncGeometryNoFill(geos, hollow: sh.fill.pattern == 0);
-              geos = syncGeometryNoLine(geos, hollow: !sh.line.hasLine);
-              return sh.copyWith(geometries: geos);
+              var next = sh;
+              final hasArcCorners =
+                  sh.geometries.first.commands.any((c) => c is EllipticalArcTo);
+              if (hasArcCorners) {
+                // One semantic: sharp polyline + Rounding (not EllipticalArcTo).
+                var geos = <VsdxGeometry>[
+                  VsdxShapeFactory.roundedRectGeometry(sh.width, sh.height, 0),
+                ];
+                geos = syncGeometryNoFill(geos, hollow: sh.fill.pattern == 0);
+                geos = syncGeometryNoLine(geos, hollow: !sh.line.hasLine);
+                next = next.copyWith(geometries: geos);
+              }
+              return next.copyWith(
+                line: next.line.copyWith(roundingInches: r),
+              );
             },
           )
           .recalculateFormulas(changedShapeIds: movedIds)

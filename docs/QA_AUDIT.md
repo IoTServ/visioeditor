@@ -52,9 +52,9 @@
 | 主题色 THEMEVAL | DONE | 既有 theme roundtrip |
 | 阴影 / 发光 / 渐变 | DONE | equal-path scrub；细项见 LATER |
 | 图片 / ForeignData | DONE | PNG 导出图像测试 |
-| 双圆角（Rounding vs setCornerRadius） | LATER | UI/模型语义未统一 |
-| 页阴影斜切 | LATER | |
-| 图层色参与绘制 | LATER | |
+| 双圆角（Rounding vs setCornerRadius） | DONE | UI 写入 `Line.Rounding`；弧烘焙圆角会被展平 |
+| 页阴影斜切 | DONE | Canvas/SVG 应用 PageSheet scale+oblique |
+| 图层色参与绘制 | LATER | 无 Color-by-Layer 视图模式；色仅往返 |
 | FontScale / 虚线近似 | LATER | 渲染近似 |
 
 ---
@@ -112,8 +112,9 @@ HOME=/tmp/visioeditor-qa-home dart run packages/vsdx/tool/edraw_roundtrip_check.
 | ID | 问题 | 标记 | 下次动作 |
 | --- | --- | --- | --- |
 | QA-01 | LibreOffice/Visio 实机打开导出文件 | BLOCKED | 安装 soffice 或 CI 交叉验证 |
-| QA-02 | 双圆角属性语义 | LATER | 统一 Rounding 与 UI setCornerRadius |
-| QA-03 | 页阴影斜切 / 图层色绘制 | LATER | painter 对齐模型 |
+| QA-02 | 双圆角属性语义 | DONE | `setCornerRadius` → `Rounding`；弧圆角展平 |
+| QA-03a | 页阴影斜切 / 缩放 | DONE | Canvas + SVG `_pageShadowTransform` |
+| QA-03b | 图层色绘制 | LATER | 需 Color-by-Layer 模式；当前仅可见性 |
 | QA-04 | FontScale、虚线样式近似 | LATER | 渲染保真 |
 | QA-05 | SVG→VSDX、二进制 VSD 写回 | LATER | 产品范围外 |
 | QA-06 | Agent ops 覆盖面 < UI | LATER | 非本轮范围 |

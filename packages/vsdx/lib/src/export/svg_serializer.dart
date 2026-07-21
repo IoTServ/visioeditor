@@ -451,6 +451,7 @@ class VsdxToSvgSerializer {
         buf,
         shape,
         theme,
+        page,
         d: d,
         strokeD: strokeD,
         noFill: geom.noFill,
@@ -490,6 +491,7 @@ class VsdxToSvgSerializer {
           buf,
           shape,
           theme,
+          page,
           d: d,
           noFill: true,
           noLine: false,
@@ -560,7 +562,8 @@ class VsdxToSvgSerializer {
   void _writePath(
     StringBuffer buf,
     VsdxShape shape,
-    VsdxTheme theme, {
+    VsdxTheme theme,
+    VsdxPage page, {
     required String d,
     /// When set (line jumps), stroke uses this path; fill keeps [d].
     String? strokeD,
@@ -618,6 +621,7 @@ class VsdxToSvgSerializer {
       buf,
       shape,
       theme,
+      page,
       d: d,
       noFill: noFill,
       noLine: noLine,
@@ -1018,7 +1022,8 @@ class VsdxToSvgSerializer {
   void _writeDropShadow(
     StringBuffer buf,
     VsdxShape shape,
-    VsdxTheme theme, {
+    VsdxTheme theme,
+    VsdxPage page, {
     required String d,
     required bool noFill,
     required bool noLine,
@@ -1045,6 +1050,7 @@ class VsdxToSvgSerializer {
     final dx = shadow.offsetXInches;
     final dy = shadow.offsetYInches;
     final blur = math.max(shadow.blurInches, 0.001);
+    final xform = _pageShadowTransform(page, shape, dx, dy);
     var filterAttr = '';
     if (!pdfCompat) {
       final sid = 'shadow-$paintId';
@@ -1080,16 +1086,44 @@ class VsdxToSvgSerializer {
         strokePaint: 'stroke="$hex"',
         strokeOpacity: alpha,
         indent: indent,
-        extraAttrs:
-            ' transform="translate(${_n(dx)} ${_n(dy)})"$filterAttr',
+        extraAttrs: ' transform="$xform"$filterAttr',
       );
     } else {
       buf.writeln(
         '$indent<path d="$d" fill="$hex" fill-opacity="${_n(alpha)}" '
-        'stroke="none" transform="translate(${_n(dx)} ${_n(dy)})"'
+        'stroke="none" transform="$xform"'
         '$filterAttr/>',
       );
     }
+  }
+
+  /// Compose offset + optional page oblique/scale about LocPin (canvas parity).
+  String _pageShadowTransform(
+    VsdxPage page,
+    VsdxShape shape,
+    double dx,
+    double dy,
+  ) {
+    final parts = <String>['translate(${_n(dx)} ${_n(dy)})'];
+    final sheet = page.pageSheet;
+    final scale = sheet.shadowScaleFactor;
+    final oblique = sheet.shadowObliqueAngle;
+    if (sheet.shadowType != 0 ||
+        oblique.abs() > 1e-9 ||
+        (scale - 1.0).abs() > 1e-9) {
+      final cx = shape.effectiveLocPinX;
+      final cy = shape.effectiveLocPinY;
+      parts.add('translate(${_n(cx)} ${_n(cy)})');
+      if ((scale - 1.0).abs() > 1e-9) {
+        parts.add('scale(${_n(scale)})');
+      }
+      if (oblique.abs() > 1e-9) {
+        final k = math.tan(oblique);
+        parts.add('matrix(1 0 ${_n(k)} 1 0 0)');
+      }
+      parts.add('translate(${_n(-cx)} ${_n(-cy)})');
+    }
+    return parts.join(' ');
   }
 
   /// Filter region in shape-local inches (canvas inflate(blur×3) parity).

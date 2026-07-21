@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
@@ -2065,6 +2066,44 @@ void main() {
       ).hasMatch(svg),
       isTrue,
     );
+  });
+
+  test('SVG page oblique shadow scales and shears about LocPin', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final page = doc.pages.first.addShape(
+      VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 1,
+      ).copyWith(
+        shadow: const VsdxShadow(
+          enabled: true,
+          offsetXInches: 0.1,
+          offsetYInches: 0.05,
+          blurInches: 0.02,
+        ),
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      page.copyWith(
+        pageSheet: page.pageSheet.copyWith(
+          shadowType: 1,
+          shadowObliqueAngle: math.pi / 6,
+          shadowScaleFactor: 0.85,
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('translate(0.1 0.05)'));
+    expect(svg, contains('scale(0.85)'));
+    // tan(π/6) ≈ 0.57735…
+    expect(RegExp(r'matrix\(1 0 0\.577').hasMatch(svg), isTrue);
   });
 
   test('SVG reflection mirrors about path min-Y not always y=0', () {

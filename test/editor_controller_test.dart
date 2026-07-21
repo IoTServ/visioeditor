@@ -601,28 +601,60 @@ void main() {
 
     c.setCornerRadius(0.3);
     expect(c.selectedCornerRadius, closeTo(0.3, 1e-9));
+    final rounded = c.currentPage!.findShapeById(id)!;
+    // Visio Rounding cell — not arc-baked geometry.
+    expect(rounded.line.roundingInches, closeTo(0.3, 1e-9));
     expect(
-      c.currentPage!
-          .findShapeById(id)!
-          .geometries
-          .first
-          .commands
-          .whereType<EllipticalArcTo>()
-          .length,
-      4,
+      rounded.geometries.first.commands.whereType<EllipticalArcTo>(),
+      isEmpty,
     );
 
     c.setCornerRadius(0); // back to square
     expect(c.selectedCornerRadius, 0);
+    expect(c.currentPage!.findShapeById(id)!.line.roundingInches, 0);
+  });
+
+  test('selectedCornerRadius reads Visio Rounding on sharp rectangles', () {
+    final c = EditorController()..newDocument();
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 4, 3);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    c.updateCurrentPage(
+      (page) => page.updateShapeById(
+        id,
+        (s) => s.copyWith(line: s.line.copyWith(roundingInches: 0.18)),
+      ),
+    );
+    expect(c.selectedCornerRadius, closeTo(0.18, 1e-9));
+  });
+
+  test('setCornerRadius flattens arc-baked corners onto Rounding', () {
+    final c = EditorController()..newDocument();
+    final id = c.currentPage!.nextFreeShapeId();
+    c.updateCurrentPage(
+      (page) => page.addShape(
+        VsdxShapeFactory.roundedRectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 2,
+          radius: 0.4,
+        ),
+      ),
+    );
+    c.setSelection(<int>{id});
+    expect(c.selectedCornerRadius, closeTo(0.4, 1e-9));
+    c.setCornerRadius(0.25);
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.line.roundingInches, closeTo(0.25, 1e-9));
     expect(
-      c.currentPage!
-          .findShapeById(id)!
-          .geometries
-          .first
-          .commands
-          .whereType<EllipticalArcTo>(),
+      after.geometries.first.commands.whereType<EllipticalArcTo>(),
       isEmpty,
     );
+    expect(c.selectedCornerRadius, closeTo(0.25, 1e-9));
   });
 
   test('setCornerRadius preserves NoFill/NoLine geometry flags', () {
