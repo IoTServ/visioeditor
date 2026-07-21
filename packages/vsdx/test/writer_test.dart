@@ -6998,7 +6998,7 @@ void main() {
     expect(soft.getAttribute('F'), isNull);
   });
 
-  test('Rounding V= F=Inh keeps cached radius across save', () {
+  test('Rounding V= F=Inh inherits zero default (not stale V)', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -7025,31 +7025,20 @@ void main() {
     );
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
+    // No master/stylesheet Rounding → Inh resolves to 0 (SoftEdges-style).
     expect(doc.pages.first.findShapeById(id)!.line.roundingInches,
-        closeTo(0.15, 1e-6));
-    doc = doc.replacePage(
-      0,
-      doc.pages.first.updateShapeById(
-        id,
-        (s) => s.copyWith(pinX: s.pinX + 0.1),
-      ),
+        closeTo(0.0, 1e-9));
+  });
+
+  test('Rounding F=Inh inherits Master radius', () {
+    const style = StyleParser();
+    final line = style.parseLine(
+      XmlDocument.parse(
+        '<Shape><Cell N="Rounding" V="0" F="Inh"/></Shape>',
+      ).rootElement,
+      defaults: const VsdxLine(roundingInches: 0.25),
     );
-    final out = writer.write(originalBytes: mid, edited: doc);
-    final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.line.roundingInches, closeTo(0.15, 1e-6));
-    final cell = XmlDocument.parse(utf8.decode(
-      ZipDecoder()
-          .decodeBytes(out)
-          .firstWhere((f) => f.name.contains('pages/page1.xml'))
-          .content as List<int>,
-    ))
-        .descendants
-        .whereType<XmlElement>()
-        .firstWhere(
-          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'Rounding',
-        );
-    expect(double.parse(cell.getAttribute('V')!), closeTo(0.15, 1e-6));
-    expect(cell.getAttribute('F'), isNull);
+    expect(line.roundingInches, closeTo(0.25, 1e-9));
   });
 
   test('ReflectionDist/Blur F=Inh keep cached V while reflection stays on', () {
@@ -7486,12 +7475,8 @@ void main() {
     final pageFile =
         archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
     var pageXml = utf8.decode(pageFile.content as List<int>);
-    for (final name in ['ShadowPattern', 'ShdwPattern']) {
-      pageXml = pageXml.replaceFirst(
-        RegExp('<Cell N="$name"[^/]*/>'),
-        '<Cell N="$name" V="1" F="Inh"/>',
-      );
-    }
+    // Keep Pattern as a literal enable bit; only companions carry F=Inh
+    // (Pattern F=Inh without a master resolves to 0 — disabled).
     pageXml = pageXml.replaceFirst(
       RegExp(r'<Cell N="ShadowForegndTrans"[^/]*/>'),
       '<Cell N="ShadowForegndTrans" V="0.35" F="Inh"/>',

@@ -1991,9 +1991,10 @@ class VsdxToSvgSerializer {
           '$stops</linearGradient>',
         );
       } else if (g.type == VsdxGradientType.radial) {
+        final origin = _radialOrigin(g.dir, bounds);
         defs.write(
           '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
-          'cx="${_n(cx)}" cy="${_n(cy)}" r="${_n(r)}">'
+          'cx="${_n(origin.$1)}" cy="${_n(origin.$2)}" r="${_n(r)}">'
           '$stops</radialGradient>',
         );
       } else {
@@ -2196,9 +2197,10 @@ class VsdxToSvgSerializer {
           '$stops</linearGradient>',
         );
       } else if (g.type == VsdxGradientType.radial) {
+        final origin = _radialOrigin(g.dir, bounds);
         defs.write(
           '<radialGradient id="$id" gradientUnits="userSpaceOnUse" '
-          'cx="${_n(cx)}" cy="${_n(cy)}" r="${_n(r)}">'
+          'cx="${_n(origin.$1)}" cy="${_n(origin.$2)}" r="${_n(r)}">'
           '$stops</radialGradient>',
         );
       } else {
@@ -2448,6 +2450,29 @@ class VsdxToSvgSerializer {
   double _combinedOpacity(VsdxColor? c, double transparency) {
     final colourA = c == null ? 1.0 : c.alpha / 255.0;
     return (colourA * (1 - transparency)).clamp(0.0, 1.0);
+  }
+
+  /// Visio `FillGradientDir` / `LineGradientDir` 1–7 radial origins
+  /// (corners / edges / centre). 4 and unknown → centre.
+  (double, double) _radialOrigin(
+    int? dir,
+    ({double minX, double minY, double width, double height}) bounds,
+  ) {
+    final left = bounds.minX;
+    final right = bounds.minX + bounds.width;
+    final top = bounds.minY;
+    final bottom = bounds.minY + bounds.height;
+    final cx = left + bounds.width / 2;
+    final cy = top + bounds.height / 2;
+    return switch (dir) {
+      1 => (left, top),
+      2 => (cx, top),
+      3 => (right, top),
+      5 => (left, bottom),
+      6 => (cx, bottom),
+      7 => (right, bottom),
+      _ => (cx, cy), // 4 / null / legacy
+    };
   }
 
   String _dashAttr(int linePattern) {

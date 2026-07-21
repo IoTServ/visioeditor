@@ -268,16 +268,17 @@ class StyleParser {
     final pat = _int(
           shape,
           'ShadowPattern',
+          // Disabled master → Inh means "no shadow" (0), not stale V=1.
           inheritFrom: defaults.enabled
               ? (defaults.pattern <= 0 ? 1 : defaults.pattern)
-              : null,
+              : 0,
         ) ??
         _int(
           shape,
           'ShdwPattern',
           inheritFrom: defaults.enabled
               ? (defaults.pattern <= 0 ? 1 : defaults.pattern)
-              : null,
+              : 0,
         );
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
@@ -392,10 +393,8 @@ class StyleParser {
     final rounding = readLengthInches(
           shape,
           'Rounding',
-          // Stylesheets do not yet resolve Rounding; avoid Inh→0 wiping the
-          // cached V when defaults are the zero defaultLine.
-          inheritFrom:
-              defaults.roundingInches > 1e-12 ? defaults.roundingInches : null,
+          // Always honour Inh from LineStyle/Master (incl. 0), matching SoftEdges.
+          inheritFrom: defaults.roundingInches,
         ) ??
         defaults.roundingInches;
     final softEdges = readLengthInches(
@@ -644,9 +643,9 @@ class StyleParser {
   double? _double(XmlElement shape, String name, {double? inheritFrom}) {
     final cell = findCell(shape, name);
     if (cell == null) return null;
-    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
-    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
+      // No inherit source → keep Visio's cached V=.
     }
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
@@ -654,9 +653,9 @@ class StyleParser {
   int? _int(XmlElement shape, String name, {int? inheritFrom}) {
     final cell = findCell(shape, name);
     if (cell == null) return null;
-    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
-    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
+      // No inherit source → keep Visio's cached V=.
     }
     final s = cell.getAttribute('V');
     if (s == null) return null;

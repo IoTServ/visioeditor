@@ -229,4 +229,35 @@ void main() {
     );
     expect(rich.textBlock.backgroundColor?.value, 0xFFFFFF00);
   });
+
+  test('Tabs Alignment F=Inh inherits master stop', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Tabs">'
+        '<Row IX="0">'
+        '<Cell N="Position1" V="0" F="Inh"/>'
+        '<Cell N="Alignment1" V="0" F="Inh"/>'
+        '<Cell N="Position2" V="1.5"/>'
+        '<Cell N="Alignment2" V="2"/>'
+        '</Row>'
+        '</Section>'
+        '<Text>A\tB</Text>',
+      ),
+      inheritTabs: const [
+        VsdxTabSet(
+          ix: 0,
+          stops: [
+            VsdxTabStop(positionInches: 0.5, alignment: 1),
+            VsdxTabStop(positionInches: 1.0, alignment: 0),
+          ],
+        ),
+      ],
+    );
+    expect(rich.tabSets, hasLength(1));
+    expect(rich.tabSets.single.stops, hasLength(2));
+    expect(rich.tabSets.single.stops[0].positionInches, closeTo(0.5, 1e-9));
+    expect(rich.tabSets.single.stops[0].alignment, 1);
+    expect(rich.tabSets.single.stops[1].positionInches, closeTo(1.5, 1e-9));
+    expect(rich.tabSets.single.stops[1].alignment, 2);
+  });
 }

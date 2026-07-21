@@ -189,12 +189,13 @@ class RichTextParser {
     VsdxCharStyle defaultChar = VsdxCharStyle.defaults,
     VsdxParaStyle defaultPara = VsdxParaStyle.defaults,
     VsdxTextBlock defaultBlock = VsdxTextBlock.defaults,
+    List<VsdxTabSet> inheritTabs = const <VsdxTabSet>[],
   }) {
     final textEl = _firstChildLocal(shape, 'Text');
     final block = _readTextBlock(shape, defaultBlock);
     final charStyles = _readCharSection(shape, defaultChar);
     final paraStyles = _readParaSection(shape, defaultPara);
-    final tabSets = _readTabsSection(shape);
+    final tabSets = _readTabsSection(shape, inherit: inheritTabs);
 
     if (textEl == null) {
       if (charStyles.isEmpty) {
@@ -745,36 +746,64 @@ class RichTextParser {
   }
 
   /// `<Section N="Tabs">` — libvisio `PositionN` / `AlignmentN` cells per row.
-  List<VsdxTabSet> _readTabsSection(XmlElement shape) {
+  ///
+  /// When [inherit] is supplied, rows with the same IX merge `F=Inh` cells from
+  /// the master tab set (Position / Alignment).
+  List<VsdxTabSet> _readTabsSection(
+    XmlElement shape, {
+    List<VsdxTabSet> inherit = const <VsdxTabSet>[],
+  }) {
+    final byIx = <int, VsdxTabSet>{
+      for (final t in inherit) t.ix: t,
+    };
     final out = <VsdxTabSet>[];
+    var sawSection = false;
     for (final section in shape.childElements) {
       if (section.name.local != 'Section') continue;
       if (section.getAttribute('N') != 'Tabs') continue;
+      sawSection = true;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
         final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? out.length;
-        final byIndex = <int, VsdxTabStop>{};
+        final proto = byIx[ix];
+        final byIndex = <int, VsdxTabStop>{
+          if (proto != null)
+            // Visio PositionN / AlignmentN are 1-based.
+            for (var i = 0; i < proto.stops.length; i++)
+              i + 1: proto.stops[i],
+        };
         for (final cell in row.childElements) {
           if (cell.name.local != 'Cell') continue;
           final n = cell.getAttribute('N') ?? '';
           if (n.startsWith('Position') && n.length > 8) {
             final idx = int.tryParse(n.substring(8));
             if (idx == null) continue;
-            final pos = readLengthInches(row, n) ??
+            final protoStop = byIndex[idx];
+            final pos = readLengthInches(row, n,
+                    inheritFrom: protoStop?.positionInches) ??
+                (isInhFormula(cell.getAttribute('F'))
+                    ? protoStop?.positionInches
+                    : null) ??
                 double.tryParse(cell.getAttribute('V') ?? '') ??
+                protoStop?.positionInches ??
                 0;
             final prev = byIndex[idx];
             byIndex[idx] = VsdxTabStop(
               positionInches: pos,
-              alignment: prev?.alignment ?? 0,
+              alignment: prev?.alignment ?? protoStop?.alignment ?? 0,
             );
           } else if (n.startsWith('Alignment') && n.length > 9) {
             final idx = int.tryParse(n.substring(9));
             if (idx == null) continue;
-            final align = int.tryParse(cell.getAttribute('V') ?? '') ?? 0;
+            final protoStop = byIndex[idx];
+            final align = isInhFormula(cell.getAttribute('F'))
+                ? (protoStop?.alignment ?? 0)
+                : (int.tryParse(cell.getAttribute('V') ?? '') ??
+                    protoStop?.alignment ??
+                    0);
             final prev = byIndex[idx];
             byIndex[idx] = VsdxTabStop(
-              positionInches: prev?.positionInches ?? 0,
+              positionInches: prev?.positionInches ?? protoStop?.positionInches ?? 0,
               alignment: align,
             );
           }
@@ -785,6 +814,9 @@ class RichTextParser {
           stops: [for (final k in keys) byIndex[k]!],
         ));
       }
+    }
+    if (!sawSection && inherit.isNotEmpty) {
+      return List.unmodifiable(inherit);
     }
     return List.unmodifiable(out);
   }
@@ -857,9 +889,8 @@ class RichTextParser {
   int? _cellInt(XmlElement parent, String name, {int? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
-    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
-    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
     }
     final s = cell.getAttribute('V');
     if (s == null || s.isEmpty) return null;
@@ -869,9 +900,8 @@ class RichTextParser {
   double? _cellDouble(XmlElement parent, String name, {double? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
-    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
-    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
     }
     final s = cell.getAttribute('V');
     if (s == null || s.isEmpty) return null;

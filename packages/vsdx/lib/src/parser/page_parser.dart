@@ -315,6 +315,7 @@ class PageParser {
       // vertical align, …) so shapes that leave their text orientation on the
       // Master aren't forced back to horizontal.
       defaultBlock: proto?.richText.textBlock ?? VsdxTextBlock.defaults,
+      inheritTabs: proto?.richText.tabSets ?? const <VsdxTabSet>[],
     );
     // Masters often carry TextStyle but no <Text>. Seed an empty run so
     // instance shapes that inherit the prototype pick up the stylesheet size
@@ -513,10 +514,7 @@ class PageParser {
       eventDblClick: () {
         final cell = findCell(shapeEl, 'EventDblClick');
         if (cell == null) return proto?.eventDblClick;
-        if (isInhFormula(cell.getAttribute('F')) &&
-            proto?.eventDblClick != null) {
-          return proto!.eventDblClick;
-        }
+        if (isInhFormula(cell.getAttribute('F'))) return proto?.eventDblClick;
         return cell.getAttribute('V') ?? proto?.eventDblClick;
       }(),
       noAlignBox: _readBoolCell(shapeEl, 'NoAlignBox',
@@ -1035,8 +1033,8 @@ class PageParser {
   static double? _double(XmlElement parent, String name, {double? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
-    if (isInhFormula(cell.getAttribute('F')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
     }
     return double.tryParse(cell.getAttribute('V') ?? '');
   }
@@ -1044,8 +1042,8 @@ class PageParser {
   static int? _int(XmlElement parent, String name, {int? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
-    if (isInhFormula(cell.getAttribute('F')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
     }
     return int.tryParse(cell.getAttribute('V') ?? '');
   }
@@ -1053,9 +1051,8 @@ class PageParser {
   bool? _readBoolCell(XmlElement parent, String name, {bool? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
-    final f = (cell.getAttribute('F') ?? '').trim().toUpperCase();
-    if ((f == 'INH' || f.startsWith('INH(')) && inheritFrom != null) {
-      return inheritFrom;
+    if (isInhFormula(cell.getAttribute('F'))) {
+      if (inheritFrom != null) return inheritFrom;
     }
     final v = cell.getAttribute('V');
     if (v == null) return null;

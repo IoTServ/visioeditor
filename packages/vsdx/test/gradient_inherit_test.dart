@@ -193,6 +193,16 @@ void main() {
     expect(shadow.pattern, 2);
   });
 
+  test('ShadowPattern F=Inh with disabled master stays off (not stale V=1)', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="ShadowPattern" V="1" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final shadow = style.parseShadow(el);
+    expect(shadow.enabled, isFalse);
+  });
+
   test('FillGradientDir F=Inh inherits Master dir/angle', () {
     final el = XmlDocument.parse(
       '<Shape>'
