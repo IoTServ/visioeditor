@@ -615,6 +615,36 @@ void main() {
       expect(after.richText.runs.first.charStyle.fontFamily, 'Arial');
     });
 
+    test('set_style strikethrough', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(text: 'Hi'),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'strikethrough': true,
+        },
+      ]);
+      expect(
+        r.document.pages.first.findShapeById(id)!
+            .richText.runs.first.charStyle.strikethrough,
+        isTrue,
+      );
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

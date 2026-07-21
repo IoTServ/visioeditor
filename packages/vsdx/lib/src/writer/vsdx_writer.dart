@@ -576,6 +576,14 @@ class VsdxWriter {
         changed = true;
       } else if (layer.nameUniv != null) {
         changed |= sync('NameUniv', layer.nameUniv!, false);
+      } else {
+        // Model has no NameUniv — still scrub residual F=Inh (same as Color).
+        final univCell = _findCell(row, 'NameUniv');
+        if (univCell != null &&
+            isInhFormula(univCell.getAttribute('F'))) {
+          _removeNamedCells(row, const ['NameUniv']);
+          changed = true;
+        }
       }
       changed |= sync(
         'ColorTrans',
@@ -3548,7 +3556,8 @@ class VsdxWriter {
     return changed;
   }
 
-  /// When Hyperlink rows are unchanged, still drop F=Inh on Address/flags.
+  /// When Hyperlink rows are unchanged, still drop F=Inh on Address/flags /
+  /// SubAddress/ExtraInfo/Frame/SortKey/Description.
   bool _scrubHyperlinkInh(XmlElement el, VsdxShape edited) {
     if (edited.hyperlinks.isEmpty) return false;
     XmlElement? section;
@@ -3581,9 +3590,30 @@ class VsdxWriter {
         addr.removeAttribute('F');
         changed = true;
       }
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'SubAddress'), h.subAddress ?? '');
       if (h.description != null) {
         changed |=
             _writeValueIfNeeded(_ensureCell(row, 'Description'), h.description!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Description');
+      }
+      if (h.extraInfo != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'ExtraInfo'), h.extraInfo!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'ExtraInfo');
+      }
+      if (h.frame != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Frame'), h.frame!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Frame');
+      }
+      if (h.sortKey != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'SortKey'), h.sortKey!);
+      } else {
+        changed |= _removeInhOrDrop(row, 'SortKey');
       }
       changed |= _writeValueIfNeeded(
           _ensureCell(row, 'NewWindow'), h.newWindow ? '1' : '0');
@@ -4690,6 +4720,16 @@ class VsdxWriter {
       }
       if (writeQuickStyle) {
         if (_removeNamedCells(shape, [quickStyleCell])) changed = true;
+      }
+      return changed;
+    }
+    // Unbound colour (null color + null theme) — still drop residual F=Inh
+    // so stylesheet cannot revive FillBkgnd / LineColor on reopen.
+    final curF = _cellFormula(shape, cell);
+    if (isInhFormula(curF)) {
+      var changed = _removeNamedCells(shape, [cell]);
+      if (writeQuickStyle) {
+        changed |= _removeNamedCells(shape, [quickStyleCell]);
       }
       return changed;
     }

@@ -68,6 +68,7 @@ VsdxShape withLabel(
   bool? bold,
   bool? italic,
   bool? underline,
+  bool? strikethrough,
   String? colorHex,
   double? pt,
   String? fontFamily,
@@ -103,6 +104,7 @@ VsdxShape withLabel(
       fontSizeInches: fontSize,
       style: fontStyle,
       underline: underline ?? prev.underline,
+      strikethrough: strikethrough ?? prev.strikethrough,
       fontFamily: fontFamily ?? prev.fontFamily,
     );
     if (clearColor) {
@@ -116,6 +118,7 @@ VsdxShape withLabel(
       fontSizeInches: fontSize,
       style: fontStyle,
       underline: underline ?? false,
+      strikethrough: strikethrough ?? false,
       fontFamily: fontFamily,
     ).withSolidColor(parsed);
   } else if (clearColor) {
@@ -123,6 +126,7 @@ VsdxShape withLabel(
       fontSizeInches: fontSize,
       style: fontStyle,
       underline: underline ?? false,
+      strikethrough: strikethrough ?? false,
       fontFamily: fontFamily,
     );
   } else {
@@ -131,6 +135,7 @@ VsdxShape withLabel(
       color: kInk,
       style: fontStyle,
       underline: underline ?? false,
+      strikethrough: strikethrough ?? false,
       fontFamily: fontFamily,
     );
   }
@@ -165,6 +170,7 @@ VsdxShape applyCharStyle(
   bool? bold,
   bool? italic,
   bool? underline,
+  bool? strikethrough,
   String? colorHex,
   double? pt,
   String? fontFamily,
@@ -180,6 +186,7 @@ VsdxShape applyCharStyle(
       bold: bold,
       italic: italic,
       underline: underline,
+      strikethrough: strikethrough,
       colorHex: colorHex,
       pt: pt,
       fontFamily: fontFamily,
@@ -199,6 +206,7 @@ VsdxShape applyCharStyle(
       fontSizeInches: fontSize,
       style: fontStyle,
       underline: underline ?? prev.underline,
+      strikethrough: strikethrough ?? prev.strikethrough,
       fontFamily: fontFamily ?? prev.fontFamily,
     );
     if (clearColor) {

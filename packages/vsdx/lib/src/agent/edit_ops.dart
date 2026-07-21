@@ -512,6 +512,9 @@ ApplyResult applyOps(
                 op.containsKey('italic') ? op['italic'] == true : null;
             final underline =
                 op.containsKey('underline') ? op['underline'] == true : null;
+            final strikethrough = op.containsKey('strikethrough')
+                ? op['strikethrough'] == true
+                : null;
             final fontFamily = op['fontFamily']?.toString() ??
                 op['font']?.toString();
             final pt = _d(op['pt'] ?? op['fontSize']);
@@ -519,6 +522,7 @@ ApplyResult applyOps(
                 bold != null ||
                 italic != null ||
                 underline != null ||
+                strikethrough != null ||
                 fontFamily != null ||
                 pt != null) {
               next = applyCharStyle(
@@ -526,6 +530,7 @@ ApplyResult applyOps(
                 bold: bold,
                 italic: italic,
                 underline: underline,
+                strikethrough: strikethrough,
                 colorHex: textColor,
                 pt: pt,
                 fontFamily: fontFamily,

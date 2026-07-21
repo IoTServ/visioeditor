@@ -12041,6 +12041,56 @@ void main() {
     );
   });
 
+  test('Layer NameUniv F=Inh dropped when model nameUniv is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: const [
+          VsdxLayer(id: 0, name: 'Default'),
+        ],
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (!pageXml.contains('N="NameUniv"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'(<Section N="Layer">\s*<Row[^>]*>)'),
+        r'$1<Cell N="NameUniv" V="Default" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="NameUniv"[^/]*/>'),
+        '<Cell N="NameUniv" V="Default" F="Inh"/>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.layers.first.nameUniv, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: doc.pages.first.widthInches + 0.1,
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Layer"[\s\S]*?N="NameUniv"[^>]*F="Inh"')
+          .hasMatch(outXml),
+      isFalse,
+    );
+  });
+
   test('Layer Color/NameUniv clear on patch', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -12264,6 +12314,134 @@ void main() {
           .description,
       isNull,
     );
+  });
+
+  test('Hyperlink SubAddress/ExtraInfo F=Inh scrubbed when model equal', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          hyperlinks: const [
+            VsdxHyperlink(
+              id: 1,
+              address: 'https://example.com',
+              subAddress: 'page2',
+              extraInfo: 'utm=1',
+            ),
+          ],
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.hyperlinks.first.subAddress,
+        'page2');
+    expect(doc.pages.first.findShapeById(id)!.hyperlinks.first.extraInfo,
+        'utm=1');
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="SubAddress"[^/]*/>'),
+      '<Cell N="SubAddress" V="page2" F="Inh"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="ExtraInfo"[^/]*/>'),
+      '<Cell N="ExtraInfo" V="utm=1" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    // Keep pre-mutation model (values still set); only bump pinX so equal-path
+    // scrub runs against originalBytes that still carry F=Inh.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    for (final name in ['SubAddress', 'ExtraInfo']) {
+      final cell = XmlDocument.parse(pageXml)
+          .descendants
+          .whereType<XmlElement>()
+          .firstWhere(
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == name,
+          );
+      expect(cell.getAttribute('F'), isNull, reason: name);
+      expect(cell.getAttribute('V'), name == 'SubAddress' ? 'page2' : 'utm=1');
+    }
+  });
+
+  test('unbound FillBkgnd F=Inh dropped when model background is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(
+            pattern: 1,
+            foreground: VsdxColor(0xFFFF0000),
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    if (pageXml.contains('N="FillBkgnd"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="FillBkgnd"[^/]*/>'),
+        '<Cell N="FillBkgnd" V="#00ff00" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        '</Shape>',
+        '<Cell N="FillBkgnd" V="#00ff00" F="Inh"/></Shape>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.findShapeById(id)!.fill.background, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="FillBkgnd"[^>]*F="Inh"').hasMatch(pageXml), isFalse);
   });
 
   test('Character Color clear + AsianFont stays cleared after group rebuild',
