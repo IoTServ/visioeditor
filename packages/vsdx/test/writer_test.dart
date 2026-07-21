@@ -9660,6 +9660,64 @@ void main() {
     );
   });
 
+  test('theme GlowColor F=Inh scrubbed to THEMEVAL when model unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          glow: const VsdxGlow(
+            enabled: true,
+            sizeInches: 0.1,
+            themeColorIndex: ThemeSlot.accent1,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="GlowColor"[^/]*/>'),
+      '<Cell N="GlowColor" V="0" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'N="GlowColor"[^>]*F="Inh"').hasMatch(outXml),
+      isFalse,
+    );
+    expect(
+      RegExp(r'N="GlowColor"[^>]*F="THEMEVAL').hasMatch(outXml) ||
+          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GlowColor"').hasMatch(outXml),
+      isTrue,
+    );
+  });
+
   test('disabled shadow rebuild emits ShadowPattern and ShdwPattern 0', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -11576,6 +11634,57 @@ void main() {
     expect(after.userProperties.first.sortKey, isNull);
     expect(after.userProperties.first.langId, isNull);
     expect(after.userProperties.first.calendar, isNull);
+  });
+
+  test('Layer Color F=Inh dropped when model color is null', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        layers: const [
+          VsdxLayer(id: 0, name: 'Default'),
+        ],
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Inject stale Color F=Inh (model has no colour).
+    if (!pageXml.contains('N="Color"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'(<Section N="Layer">\s*<Row[^>]*>)'),
+        r'$1<Cell N="Color" V="#ff0000" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="Color"[^/]*/>'),
+        '<Cell N="Color" V="#ff0000" F="Inh"/>',
+      );
+    }
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    expect(doc.pages.first.layers.first.color, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        widthInches: doc.pages.first.widthInches + 0.1,
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(
+      RegExp(r'<Section N="Layer"[\s\S]*?N="Color"[^>]*F="Inh"')
+          .hasMatch(outXml),
+      isFalse,
+    );
   });
 
   test('Layer Color/NameUniv clear on patch', () {

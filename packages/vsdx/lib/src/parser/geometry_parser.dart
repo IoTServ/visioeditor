@@ -65,20 +65,31 @@ class GeometryParser {
           final inherits = f == 'INH' || f.startsWith('INH(');
           switch (n) {
             case 'NoFill':
-              noFill = v == '1';
-              if (!inherits) definedFlagCells.add('NoFill');
+              // F=Inh → leave default false; master merge supplies the value.
+              if (!inherits) {
+                noFill = v == '1';
+                definedFlagCells.add('NoFill');
+              }
             case 'NoLine':
-              noLine = v == '1';
-              if (!inherits) definedFlagCells.add('NoLine');
+              if (!inherits) {
+                noLine = v == '1';
+                definedFlagCells.add('NoLine');
+              }
             case 'NoShow':
-              noShow = v == '1';
-              if (!inherits) definedFlagCells.add('NoShow');
+              if (!inherits) {
+                noShow = v == '1';
+                definedFlagCells.add('NoShow');
+              }
             case 'NoSnap':
-              noSnap = v == '1';
-              if (!inherits) definedFlagCells.add('NoSnap');
+              if (!inherits) {
+                noSnap = v == '1';
+                definedFlagCells.add('NoSnap');
+              }
             case 'NoQuickDrag':
-              noQuickDrag = v == '1';
-              if (!inherits) definedFlagCells.add('NoQuickDrag');
+              if (!inherits) {
+                noQuickDrag = v == '1';
+                definedFlagCells.add('NoQuickDrag');
+              }
           }
         case 'Row':
           final rowIx = int.tryParse(child.getAttribute('IX') ?? '');

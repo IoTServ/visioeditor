@@ -629,7 +629,7 @@ void _registerEditTools(McpServer server) {
   server.addTool(McpTool(
     name: 'set_style',
     description:
-        'Set fill/line/weight/arrows/text/dash/rounding/glow/shadow and related style on shapes.',
+        'Set fill/line/weight/arrows/text/dash/rounding/glow/shadow/reflection and related style on shapes.',
     inputSchema: withPath(<String, dynamic>{
       'ids': <String, dynamic>{
         'type': 'array',
@@ -657,6 +657,11 @@ void _registerEditTools(McpServer server) {
       'shadowOffsetX': <String, dynamic>{'type': 'number'},
       'shadowOffsetY': <String, dynamic>{'type': 'number'},
       'shadowTransparency': <String, dynamic>{'type': 'number'},
+      'reflection': <String, dynamic>{},
+      'reflectionSize': <String, dynamic>{'type': 'number'},
+      'reflectionDist': <String, dynamic>{'type': 'number'},
+      'reflectionBlur': <String, dynamic>{'type': 'number'},
+      'reflectionTransparency': <String, dynamic>{'type': 'number'},
       'textColor': <String, dynamic>{'type': 'string'},
       'bold': <String, dynamic>{'type': 'boolean'},
       'pt': <String, dynamic>{'type': 'number'},
@@ -692,6 +697,11 @@ void _registerEditTools(McpServer server) {
           'shadowOffsetX',
           'shadowOffsetY',
           'shadowTransparency',
+          'reflection',
+          'reflectionSize',
+          'reflectionDist',
+          'reflectionBlur',
+          'reflectionTransparency',
           'textColor',
           'bold',
           'pt',

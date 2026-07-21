@@ -548,6 +548,14 @@ class VsdxWriter {
         changed = true;
       } else if (layer.color != null) {
         changed |= sync('Color', _hex(layer.color!), false);
+      } else {
+        // Model has no colour — still scrub residual F=Inh or drop the cell.
+        final colorCell = _findCell(row, 'Color');
+        if (colorCell != null &&
+            isInhFormula(colorCell.getAttribute('F'))) {
+          _removeNamedCells(row, const ['Color']);
+          changed = true;
+        }
       }
       if (layer.nameUniv != base.nameUniv) {
         if (layer.nameUniv != null) {
@@ -2240,6 +2248,17 @@ class VsdxWriter {
     if (edited.shadow.color != null) {
       changed |=
           _forceLiteralColor(el, 'ShadowForegnd', edited.shadow.color!);
+    } else if (edited.shadow.themeColorIndex != null) {
+      // Theme-bound: rewrite THEMEVAL if F=Inh (solid path uses forceLiteral).
+      changed |= _patchColorOrTheme(
+        el,
+        'ShadowForegnd',
+        'QuickStyleShadowColor',
+        baseColor: null,
+        baseTheme: edited.shadow.themeColorIndex,
+        editedColor: null,
+        editedTheme: edited.shadow.themeColorIndex,
+      );
     }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
@@ -2251,6 +2270,16 @@ class VsdxWriter {
         _ensureLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
     if (edited.glow.color != null) {
       changed |= _forceLiteralColor(el, 'GlowColor', edited.glow.color!);
+    } else if (edited.glow.themeColorIndex != null) {
+      changed |= _patchColorOrTheme(
+        el,
+        'GlowColor',
+        'QuickStyleEffectColor',
+        baseColor: null,
+        baseTheme: edited.glow.themeColorIndex,
+        editedColor: null,
+        editedTheme: edited.glow.themeColorIndex,
+      );
     }
     if (!edited.reflection.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');

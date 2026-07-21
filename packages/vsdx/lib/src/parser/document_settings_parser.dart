@@ -17,6 +17,7 @@ import 'package:xml/xml.dart';
 
 import '../model/document_settings.dart';
 import '../utils/color.dart';
+import 'cell_helpers.dart';
 
 class DocumentSettingsParser {
   const DocumentSettingsParser();
@@ -53,6 +54,8 @@ class DocumentSettingsParser {
     for (final el in parent.childElements) {
       if (el.name.local != 'Cell') continue;
       if (el.getAttribute('N') != name) continue;
+      // F=Inh → treat as absent (use DocumentSettings defaults).
+      if (isInhFormula(el.getAttribute('F'))) return null;
       final v = el.getAttribute('V');
       if (v == null || v.isEmpty) return null;
       return v;

@@ -482,16 +482,27 @@ class VsdxPainter extends CustomPainter {
           canvas.drawPath(path, Paint()..color = const Color(0xFFFFFFFF));
         }
         if (!geom.noLine && shape.line.hasLine) {
+          // Match content rails (compound + dash) so the alpha silhouette
+          // covers the same pixels SVG SourceAlpha would feather.
           final w =
               shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
-          canvas.drawPath(
-            path,
+          var strokeSrc = path;
+          if (shape.isGlueableConnector && _lineJumpsActive) {
+            final jumped = _lineJumpsPath(shape, geom);
+            if (jumped != null) strokeSrc = jumped;
+          }
+          _drawCompoundStroke(
+            canvas,
+            strokeSrc,
             Paint()
               ..color = const Color(0xFFFFFFFF)
               ..style = PaintingStyle.stroke
-              ..strokeWidth = w
               ..strokeCap = _flutterCap(shape)
-              ..strokeJoin = StrokeJoin.round,
+              ..strokeJoin = StrokeJoin.round
+              ..strokeWidth = w,
+            shape.line.compoundType,
+            w,
+            dashes: dashes,
           );
         }
         canvas.restore();

@@ -354,6 +354,65 @@ ApplyResult applyOps(
                 ),
               );
             }
+            // Reflection: reflection:true|false|"none", plus size/dist/blur.
+            if (op.containsKey('reflection')) {
+              final r = op['reflection'];
+              if (r == false ||
+                  (r is String && r.trim().toLowerCase() == 'none')) {
+                next = next.copyWith(reflection: VsdxReflection.disabled);
+              } else if (r == true) {
+                next = next.copyWith(
+                  reflection: next.reflection.enabled
+                      ? next.reflection
+                      : const VsdxReflection(enabled: true),
+                );
+              } else if (r is num) {
+                final size = r.toDouble();
+                next = next.copyWith(
+                  reflection: size <= 0
+                      ? VsdxReflection.disabled
+                      : next.reflection
+                          .copyWith(enabled: true, sizeInches: size),
+                );
+              }
+            }
+            final reflSize = _d(op['reflectionSize']);
+            if (reflSize != null) {
+              next = next.copyWith(
+                reflection: reflSize <= 0
+                    ? VsdxReflection.disabled
+                    : next.reflection.copyWith(
+                        enabled: true,
+                        sizeInches: reflSize,
+                      ),
+              );
+            }
+            final reflDist = _d(op['reflectionDist'] ?? op['reflectionDistance']);
+            if (reflDist != null) {
+              next = next.copyWith(
+                reflection: next.reflection.copyWith(
+                  enabled: true,
+                  distanceInches: reflDist,
+                ),
+              );
+            }
+            final reflBlur = _d(op['reflectionBlur']);
+            if (reflBlur != null) {
+              next = next.copyWith(
+                reflection: next.reflection.copyWith(
+                  enabled: true,
+                  blurInches: reflBlur,
+                ),
+              );
+            }
+            final reflTrans = _d(op['reflectionTransparency']);
+            if (reflTrans != null) {
+              next = next.copyWith(
+                reflection: next.reflection.copyWith(
+                  transparency: reflTrans.clamp(0.0, 1.0),
+                ),
+              );
+            }
             final fillTrans = _d(op['fillTransparency'] ?? op['transparency']);
             final opacity = _d(op['opacity']);
             if (fillTrans != null && !next.is1D) {

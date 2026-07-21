@@ -408,6 +408,50 @@ void main() {
       expect(cleared.shadow.enabled, isFalse);
     });
 
+    test('set_style reflection enable and size', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'reflection': true,
+          'reflectionSize': 0.4,
+          'reflectionDist': 0.05,
+          'reflectionBlur': 0.02,
+          'reflectionTransparency': 0.5,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.reflection.enabled, isTrue);
+      expect(after.reflection.sizeInches, closeTo(0.4, 1e-9));
+      expect(after.reflection.distanceInches, closeTo(0.05, 1e-9));
+      expect(after.reflection.blurInches, closeTo(0.02, 1e-9));
+      expect(after.reflection.transparency, closeTo(0.5, 1e-9));
+      final off = applyOps(r.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'reflection': 'none',
+        },
+      ]);
+      expect(off.document.pages.first.findShapeById(id)!.reflection.enabled,
+          isFalse);
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

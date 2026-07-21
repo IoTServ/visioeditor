@@ -209,6 +209,19 @@ void main() {
       expect(g.noShow, isTrue);
     });
 
+    test('NoFill F=Inh ignores stale V= (default false without master)', () {
+      final g = parseGeom(
+        '<Cell N="NoFill" V="1" F="Inh"/>'
+        '<Cell N="NoLine" V="1" F="Inh"/>'
+        '<Cell N="NoShow" V="1" F="Inh"/>'
+        '<Row IX="1" T="MoveTo"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>',
+      );
+      expect(g.noFill, isFalse);
+      expect(g.noLine, isFalse);
+      expect(g.noShow, isFalse);
+      expect(g.definedFlagCells.contains('NoFill'), isFalse);
+    });
+
     test('section-level NoSnap / NoQuickDrag flags are read', () {
       final g = parseGeom(
         '<Cell N="NoSnap" V="1"/><Cell N="NoQuickDrag" V="1"/>'

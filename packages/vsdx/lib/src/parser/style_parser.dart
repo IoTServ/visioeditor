@@ -534,8 +534,9 @@ class StyleParser {
   /// theme index. Returns both `null` when the cell is absent or `F=Inh`
   /// (caller falls back to Master defaults via `??`).
   ///
-  /// When [honorInh] is false, `F=Inh` keeps the cached `V=` (used for
-  /// disabled effect companions so re-enable can restore a local colour).
+  /// When [honorInh] is false, `F=Inh` keeps a local binding: prefer an
+  /// explicit [quickStyleCell] theme slot (theme glow/shadow with stale
+  /// `V="0" F=Inh`), else the cached solid `V=` (disabled-effect companions).
   _ColorResolution _resolveColor(
     XmlElement shape,
     String colorCell,
@@ -548,6 +549,16 @@ class StyleParser {
     final f = cell.getAttribute('F') ?? '';
     if (honorInh && isInhFormula(f)) {
       return const _ColorResolution(null, null);
+    }
+    if (isInhFormula(f) && !honorInh) {
+      // Stale Inh with a local QuickStyle* → still theme-bound (writer will
+      // scrub F back to THEMEVAL). Solid companions keep cached V=.
+      final qsCell = findCell(shape, quickStyleCell);
+      if (qsCell != null && !isInhFormula(qsCell.getAttribute('F'))) {
+        final idx = _int(shape, quickStyleCell);
+        if (idx != null) return _ColorResolution(null, idx);
+      }
+      return _ColorResolution(VsdxColor.tryParse(v), null);
     }
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // Prefer an explicit THEMEVAL("AccentColor2") / THEMEVAL(3) argument so
