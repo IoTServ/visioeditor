@@ -622,8 +622,8 @@ class VsdxWriter {
     }
     final sheet = sheetEl ?? _ensurePageSheet(pageEl);
     var changed = false;
-    final widthInh = _pageSheetCellF(sheet, 'PageWidth') == 'Inh';
-    final heightInh = _pageSheetCellF(sheet, 'PageHeight') == 'Inh';
+    final widthInh = isInhFormula(_pageSheetCellF(sheet, 'PageWidth'));
+    final heightInh = isInhFormula(_pageSheetCellF(sheet, 'PageHeight'));
     if (needWidth || widthInh) {
       // `V` is written in Visio's internal units (inches); the existing `U`
       // display attribute is left untouched. See readLengthInches.
@@ -727,7 +727,7 @@ class VsdxWriter {
       XmlElement sheet, VsdxPageSheet base, VsdxPageSheet edited) {
     var changed = false;
     void len(String name, double b, double e) {
-      final inh = _pageSheetCellF(sheet, name) == 'Inh';
+      final inh = isInhFormula(_pageSheetCellF(sheet, name));
       if ((b - e).abs() <= _epsilon && !inh) return;
       _writeValue(_ensurePageSheetCell(sheet, name), _fmt(e),
           preserveFormula: _pageSheetCellHasFormula(sheet, name));
@@ -735,7 +735,7 @@ class VsdxWriter {
     }
 
     void raw(String name, String b, String e, {String? unit}) {
-      final inh = _pageSheetCellF(sheet, name) == 'Inh';
+      final inh = isInhFormula(_pageSheetCellF(sheet, name));
       if (b == e && !inh) return;
       final cell = _ensurePageSheetCell(sheet, name);
       _writeValue(cell, e,
@@ -747,7 +747,7 @@ class VsdxWriter {
     }
 
     void flag(String name, bool b, bool e) {
-      final inh = _pageSheetCellF(sheet, name) == 'Inh';
+      final inh = isInhFormula(_pageSheetCellF(sheet, name));
       if (b == e && !inh) return;
       _writeValue(_ensurePageSheetCell(sheet, name), e ? '1' : '0');
       changed = true;
@@ -854,7 +854,7 @@ class VsdxWriter {
 
   static bool _pageSheetHasInh(XmlElement sheet) {
     for (final el in sheet.childElements) {
-      if (el.name.local == 'Cell' && el.getAttribute('F') == 'Inh') {
+      if (el.name.local == 'Cell' && isInhFormula(el.getAttribute('F'))) {
         return true;
       }
     }
@@ -3762,10 +3762,14 @@ class VsdxWriter {
         cell.setAttribute('F', 'THEMEVAL()');
         changed = true;
       }
+    } else {
+      changed |= _removeInhOrDrop(row, 'Color');
     }
     if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
       changed |=
           _writeValueIfNeeded(_ensureCell(row, 'Font'), c.fontFamily!);
+    } else {
+      changed |= _removeInhOrDrop(row, 'Font');
     }
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Strikethru'), c.strikethrough ? '1' : '0');
@@ -3787,6 +3791,8 @@ class VsdxWriter {
         _ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
     if (c.langId != null && c.langId!.isNotEmpty) {
       changed |= _writeValueIfNeeded(_ensureCell(row, 'LangID'), c.langId!);
+    } else {
+      changed |= _removeInhOrDrop(row, 'LangID');
     }
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
       changed |=
@@ -4623,7 +4629,7 @@ class VsdxWriter {
       final curF = _cellFormula(shape, cell);
       final hasThemeF = curF != null &&
           RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(curF);
-      final hasInh = curF == 'Inh';
+      final hasInh = isInhFormula(curF);
       var changed = false;
       if (!(baseTheme == null &&
           editedTheme == null &&

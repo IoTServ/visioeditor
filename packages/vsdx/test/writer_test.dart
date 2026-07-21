@@ -9872,6 +9872,106 @@ void main() {
     expect(cell.getAttribute('V'), 'Microsoft YaHei');
   });
 
+  test('Font / LangID F=Inh dropped when unbound in model', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: VsdxRichText(runs: [
+            VsdxTextRun(
+              text: 'Hi',
+              charStyle: const VsdxCharStyle(
+                fontFamily: 'Arial',
+                langId: 'en-US',
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    expect(pageXml.contains('N="Font"'), isTrue);
+    expect(pageXml.contains('N="LangID"'), isTrue);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="Font"[^/]*/>'),
+      '<Cell N="Font" V="Arial" F="INH"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="LangID"[^/]*/>'),
+      '<Cell N="LangID" V="en-US" F="Inh()"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    // Clear unbound fonts in model so equal-path scrub drops Inh cells.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          pinX: s.pinX + 0.1,
+          richText: VsdxRichText(runs: [
+            for (final r in s.richText.runs)
+              r.copyWith(
+                charStyle: r.charStyle.copyWith(
+                  clearFontFamily: true,
+                  clearLangId: true,
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(RegExp(r'N="Font"[^>]*F=').hasMatch(outXml), isFalse);
+    expect(RegExp(r'N="LangID"[^>]*F=').hasMatch(outXml), isFalse);
+  });
+
+  test('PageWidth F=INH scrubbed via isInhFormula', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="PageWidth"[^/]*/>'),
+      '<Cell N="PageWidth" V="8.5" F="INH"/>',
+    );
+    final tainted = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(tainted);
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    final cell = RegExp(r'<Cell N="PageWidth"[^/]*/>').firstMatch(pagesXml);
+    expect(cell, isNotNull);
+    expect(cell!.group(0)!.toUpperCase().contains('F="INH"'), isFalse);
+  });
+
   test('disabled shadow rebuild emits ShadowPattern and ShdwPattern 0', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

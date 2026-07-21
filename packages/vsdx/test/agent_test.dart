@@ -536,6 +536,85 @@ void main() {
       expect(done.line.hasGradient, isFalse);
     });
 
+    test('set_style bold on empty text keeps Character style', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(
+            // Master-like: Character present, no visible text.
+            richText: VsdxRichText(runs: [
+              VsdxTextRun(
+                text: '',
+                charStyle: const VsdxCharStyle(
+                  fontSizeInches: 14 / 72,
+                  color: VsdxColor(0xFF336699),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'bold': true,
+          'italic': true,
+          'underline': true,
+          'pt': 18,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.richText.runs, isNotEmpty);
+      expect(after.richText.runs.first.charStyle.style.bold, isTrue);
+      expect(after.richText.runs.first.charStyle.style.italic, isTrue);
+      expect(after.richText.runs.first.charStyle.underline, isTrue);
+      expect(after.richText.runs.first.charStyle.fontSizeInches,
+          closeTo(18 / 72, 1e-9));
+      expect(after.richText.runs.first.charStyle.color?.value, 0xFF336699);
+    });
+
+    test('set_style fillPattern and fillBackground', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fillPattern': 3,
+          'fillBackground': '#00AA00',
+          'fontFamily': 'Arial',
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.fill.pattern, 3);
+      expect(after.fill.background?.value, 0xFF00AA00);
+      expect(after.fill.gradient, isNull);
+      expect(after.richText.runs.first.charStyle.fontFamily, 'Arial');
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

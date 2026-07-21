@@ -67,8 +67,10 @@ VsdxShape withLabel(
   String text, {
   bool? bold,
   bool? italic,
+  bool? underline,
   String? colorHex,
   double? pt,
+  String? fontFamily,
 }) {
   if (text.isEmpty) {
     // Clear label (set_text "" must round-trip as empty, not no-op).
@@ -100,6 +102,8 @@ VsdxShape withLabel(
     var next = prev.copyWith(
       fontSizeInches: fontSize,
       style: fontStyle,
+      underline: underline ?? prev.underline,
+      fontFamily: fontFamily ?? prev.fontFamily,
     );
     if (clearColor) {
       next = next.copyWith(clearColor: true, clearThemeColorIndex: true);
@@ -111,17 +115,23 @@ VsdxShape withLabel(
     style = VsdxCharStyle(
       fontSizeInches: fontSize,
       style: fontStyle,
+      underline: underline ?? false,
+      fontFamily: fontFamily,
     ).withSolidColor(parsed);
   } else if (clearColor) {
     style = VsdxCharStyle(
       fontSizeInches: fontSize,
       style: fontStyle,
+      underline: underline ?? false,
+      fontFamily: fontFamily,
     );
   } else {
     style = VsdxCharStyle(
       fontSizeInches: fontSize,
       color: kInk,
       style: fontStyle,
+      underline: underline ?? false,
+      fontFamily: fontFamily,
     );
   }
   final prevRun =
@@ -141,6 +151,79 @@ VsdxShape withLabel(
             textChanged ? const <VsdxFieldSpan>[] : (prevRun?.fieldSpans ?? const []),
         tabIndices:
             textChanged ? const <int>[] : (prevRun?.tabIndices ?? const []),
+      ),
+    ]),
+  );
+}
+
+/// Apply character style without wiping Character when the label is empty.
+///
+/// Masters often have Character runs with no `<Text>` / empty [VsdxShape.text].
+/// [withLabel] would clear richText on `""`; this keeps / injects style runs.
+VsdxShape applyCharStyle(
+  VsdxShape s, {
+  bool? bold,
+  bool? italic,
+  bool? underline,
+  String? colorHex,
+  double? pt,
+  String? fontFamily,
+}) {
+  final fromText = s.text;
+  final plain = (fromText != null && fromText.isNotEmpty)
+      ? fromText
+      : (s.richText.plainText.isNotEmpty ? s.richText.plainText : null);
+  if (plain != null) {
+    return withLabel(
+      s,
+      plain,
+      bold: bold,
+      italic: italic,
+      underline: underline,
+      colorHex: colorHex,
+      pt: pt,
+      fontFamily: fontFamily,
+    );
+  }
+  VsdxCharStyle merge(VsdxCharStyle prev) {
+    final clearColor =
+        colorHex != null && colorHex.trim().toLowerCase() == 'none';
+    final parsed = clearColor ? null : parseColorOrNull(colorHex);
+    final fontSize =
+        pt != null ? pt / 72.0 : prev.fontSizeInches;
+    final fontStyle = prev.style.copyWith(
+      bold: bold ?? prev.style.bold,
+      italic: italic ?? prev.style.italic,
+    );
+    var next = prev.copyWith(
+      fontSizeInches: fontSize,
+      style: fontStyle,
+      underline: underline ?? prev.underline,
+      fontFamily: fontFamily ?? prev.fontFamily,
+    );
+    if (clearColor) {
+      next = next.copyWith(clearColor: true, clearThemeColorIndex: true);
+    } else if (parsed != null) {
+      next = next.withSolidColor(parsed);
+    }
+    return next;
+  }
+
+  final runs = s.richText.runs;
+  if (runs.isNotEmpty) {
+    return s.copyWith(
+      richText: s.richText.copyWith(
+        runs: [
+          for (final r in runs) r.copyWith(charStyle: merge(r.charStyle)),
+        ],
+      ),
+    );
+  }
+  return s.copyWith(
+    richText: VsdxRichText(runs: [
+      VsdxTextRun(
+        text: '',
+        charStyle: merge(VsdxCharStyle.defaults),
       ),
     ]),
   );

@@ -187,6 +187,40 @@ ApplyResult applyOps(
                 }
               }
             }
+            final fillPattern = _i(op['fillPattern'] ?? op['pattern']);
+            if (fillPattern != null && !next.is1D) {
+              next = next.copyWith(
+                fill: next.fill.copyWith(
+                  pattern: fillPattern,
+                  gradient: fillPattern == 0 || fillPattern > 1
+                      ? null
+                      : VsdxFill.keepGradient,
+                  clearThemeBackgroundIndex: fillPattern <= 1,
+                  clearThemeForegroundIndex: fillPattern == 0,
+                ),
+                geometries: syncGeometryNoFill(
+                  next.geometries,
+                  hollow: fillPattern == 0,
+                ),
+              );
+            }
+            final fillBg =
+                (op['fillBackground'] ?? op['fillBkgnd'] ?? op['background'])
+                    ?.toString();
+            if (fillBg != null && !next.is1D) {
+              final c = parseColorOrNull(fillBg);
+              if (c != null) {
+                next = next.copyWith(
+                  fill: next.fill.withSolidBackground(c),
+                  geometries:
+                      syncGeometryNoFill(next.geometries, hollow: false),
+                );
+              } else {
+                log.add(
+                  'set_style: invalid fillBackground "$fillBg" on shape $id',
+                );
+              }
+            }
             if (op.containsKey('fillGradient') && !next.is1D) {
               final raw = op['fillGradient'];
               if (raw == false ||
@@ -476,18 +510,25 @@ ApplyResult applyOps(
                 op.containsKey('bold') ? op['bold'] == true : null;
             final italic =
                 op.containsKey('italic') ? op['italic'] == true : null;
+            final underline =
+                op.containsKey('underline') ? op['underline'] == true : null;
+            final fontFamily = op['fontFamily']?.toString() ??
+                op['font']?.toString();
             final pt = _d(op['pt'] ?? op['fontSize']);
             if (textColor != null ||
                 bold != null ||
                 italic != null ||
+                underline != null ||
+                fontFamily != null ||
                 pt != null) {
-              next = withLabel(
+              next = applyCharStyle(
                 next,
-                next.text ?? '',
                 bold: bold,
                 italic: italic,
+                underline: underline,
                 colorHex: textColor,
                 pt: pt,
+                fontFamily: fontFamily,
               );
             }
             if (op.containsKey('hideText')) {
@@ -553,21 +594,39 @@ ApplyResult applyOps(
                 _ => null,
               };
               if (align != null) {
-                final runs = next.richText.runs;
+                var runs = next.richText.runs;
                 if (runs.isEmpty) {
-                  next = withLabel(next, next.text ?? '');
-                }
-                next = next.copyWith(
-                  richText: next.richText.copyWith(
-                    runs: [
-                      for (final r in next.richText.runs)
-                        r.copyWith(
-                          paraStyle: r.paraStyle
+                  // Do not call withLabel("") — that clears Character.
+                  final plain = next.text;
+                  if (plain != null && plain.isNotEmpty) {
+                    next = withLabel(next, plain);
+                    runs = next.richText.runs;
+                  } else {
+                    next = next.copyWith(
+                      richText: VsdxRichText(runs: [
+                        VsdxTextRun(
+                          text: '',
+                          paraStyle: VsdxParaStyle.defaults
                               .copyWith(horizontalAlign: align),
                         ),
-                    ],
-                  ),
-                );
+                      ]),
+                    );
+                    runs = next.richText.runs;
+                  }
+                }
+                if (runs.isNotEmpty) {
+                  next = next.copyWith(
+                    richText: next.richText.copyWith(
+                      runs: [
+                        for (final r in next.richText.runs)
+                          r.copyWith(
+                            paraStyle: r.paraStyle
+                                .copyWith(horizontalAlign: align),
+                          ),
+                      ],
+                    ),
+                  );
+                }
               }
             }
             return next;
