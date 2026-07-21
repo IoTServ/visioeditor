@@ -407,7 +407,111 @@ void main() {
       ]);
       final cleared = off.document.pages.first.findShapeById(id)!;
       expect(cleared.glow.enabled, isFalse);
+      expect(cleared.glow.color?.value, 0xFF00AADD);
       expect(cleared.shadow.enabled, isFalse);
+      expect(cleared.shadow.pattern, 2);
+      expect(cleared.shadow.color?.value, 0xFF333333);
+      expect(cleared.shadow.offsetXInches, closeTo(0.1, 1e-9));
+      // Re-enable restores companions.
+      final on = applyOps(off.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'glow': true,
+          'shadow': true,
+        },
+      ]);
+      final restored = on.document.pages.first.findShapeById(id)!;
+      expect(restored.glow.enabled, isTrue);
+      expect(restored.glow.color?.value, 0xFF00AADD);
+      expect(restored.shadow.enabled, isTrue);
+      expect(restored.shadow.pattern, 2);
+      expect(restored.shadow.color?.value, 0xFF333333);
+    });
+
+    test('set_style flipX/Y and locked unlock', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(locked: true),
+        ),
+      );
+      final blocked = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fill': '#FF0000',
+        },
+      ]);
+      expect(blocked.log.any((m) => m.contains('locked')), isTrue);
+      expect(
+        blocked.document.pages.first.findShapeById(id)!.fill.foreground?.value,
+        isNot(0xFFFF0000),
+      );
+
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'locked': false,
+          'flipX': true,
+          'flipY': true,
+          'fill': '#00AA00',
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.locked, isFalse);
+      expect(after.flipX, isTrue);
+      expect(after.flipY, isTrue);
+      expect(after.fill.foreground?.value, 0xFF00AA00);
+    });
+
+    test('set_style lineSpacing null does not clear absolute', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(
+            richText: VsdxRichText(
+              runs: [
+                VsdxTextRun(
+                  text: 'Hi',
+                  paraStyle: const VsdxParaStyle(
+                    lineSpacingAbsoluteInches: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'lineSpacing': 'not-a-number',
+        },
+      ]);
+      final p =
+          r.document.pages.first.findShapeById(id)!.richText.runs.first.paraStyle;
+      expect(p.lineSpacingAbsoluteInches, closeTo(0.2, 1e-9));
     });
 
     test('set_style reflection enable and size', () {

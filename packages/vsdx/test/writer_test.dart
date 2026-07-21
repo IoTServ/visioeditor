@@ -13517,4 +13517,151 @@ void main() {
     doc = parser.parse(mid);
     expect(doc.pages.first.layers.first.name, 'CachedLayer');
   });
+
+  test('FillGradientDir/Angle dropped when gradient cleared on equal-path', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: VsdxFill(
+            pattern: 1,
+            foreground: const VsdxColor(0xFF336699),
+            gradient: VsdxGradient(
+              stops: const [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+              angleRad: 0.5,
+              dir: 4,
+            ),
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    // Clear gradient in model but leave Dir/Angle Inh cells in XML.
+    doc = parser.parse(mid);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          fill: s.fill.copyWith(gradient: null),
+          pinX: s.pinX + 0.01,
+        ),
+      ),
+    );
+    var mid2 = writer.write(originalBytes: mid, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid2);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Re-inject residual Dir/Angle with F=Inh while model stays gradient-free.
+    if (!pageXml.contains('N="FillGradientDir"')) {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'(<Cell N="FillGradientEnabled"[^/]*/>)'),
+        r'$1<Cell N="FillGradientDir" V="4" F="Inh"/>'
+            '<Cell N="FillGradientAngle" V="0.5" F="Inh"/>',
+      );
+    } else {
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="FillGradientDir"[^/]*/>'),
+        '<Cell N="FillGradientDir" V="4" F="Inh"/>',
+      );
+      pageXml = pageXml.replaceFirst(
+        RegExp(r'<Cell N="FillGradientAngle"[^/]*/>'),
+        '<Cell N="FillGradientAngle" V="0.5" F="Inh"/>',
+      );
+    }
+    mid2 = _rezipWith(mid2, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid2);
+    expect(doc.pages.first.findShapeById(id)!.fill.gradient, isNull);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid2, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(outXml.contains('N="FillGradientDir"'), isFalse);
+    expect(outXml.contains('N="FillGradientAngle"'), isFalse);
+    expect(
+      RegExp(r'N="FillGradientEnabled"[^>]*F="Inh"').hasMatch(outXml),
+      isFalse,
+    );
+  });
+
+  test('BeginArrowSize injects model bucket when cell missing', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: id,
+          ax: 1,
+          ay: 1,
+          bx: 3,
+          by: 1,
+        ).copyWith(
+          line: const VsdxLine(
+            beginArrow: 4,
+            beginArrowSizeInches: 0.225, // bucket 4
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Strip BeginArrowSize so ensure path must re-inject from the in-memory
+    // model (do not re-parse, or the size would fall back to Visio default).
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="BeginArrowSize"[^/]*/>'),
+      '',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.05),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'BeginArrowSize',
+        );
+    expect(cell.getAttribute('V'), '4');
+    expect(cell.getAttribute('F'), isNull);
+  });
 }

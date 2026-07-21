@@ -2291,11 +2291,12 @@ class VsdxWriter {
         _arrowSizeToBucket(edited.line.endArrowSizeInches));
     // Arrow sizes: scrub Inh whether the arrow is on or off (StyleSheet can
     // still revive size companions when Begin/EndArrow is literal 0).
-    changed |= _forceLiteralInt(
+    // Use ensure (not force) so a missing cell is injected from the model.
+    changed |= _ensureLiteralInt(
         el,
         'BeginArrowSize',
         _arrowSizeToBucket(edited.line.beginArrowSizeInches));
-    changed |= _forceLiteralInt(
+    changed |= _ensureLiteralInt(
         el,
         'EndArrowSize',
         _arrowSizeToBucket(edited.line.endArrowSizeInches));
@@ -5304,12 +5305,19 @@ class VsdxWriter {
         // Clearing must drop Inh/parametric F= so Visio cannot revive the
         // deleted FillGradient section via inheritance.
         _writeValue(_ensureCell(el, 'FillGradientEnabled'), '0');
+        // Rebuild omits Dir/Angle when gradient is off — drop residual cells.
+        _removeNamedCells(
+            el, const ['FillGradientDir', 'FillGradientAngle']);
       }
       return true;
     }
-    // Models already agree on "no gradient" but XML may still say V=0 F=Inh.
+    // Models already agree on "no gradient" but XML may still say V=0 F=Inh
+    // (and leftover Dir/Angle with F=Inh from a prior enabled state).
     if (eg == null || eg.stops.isEmpty) {
-      return _scrubDisabledFlagCell(el, 'FillGradientEnabled');
+      var changed = _scrubDisabledFlagCell(el, 'FillGradientEnabled');
+      changed |= _removeNamedCells(
+          el, const ['FillGradientDir', 'FillGradientAngle']);
+      return changed;
     }
     // Gradient still on — drop F=Inh on Enabled/Dir/Angle so stylesheet
     // inheritance cannot override the local literals.
@@ -5344,11 +5352,16 @@ class VsdxWriter {
         _insertBeforeTextOrShapes(el, _buildLineGradientSection(eg));
       } else {
         _writeValue(_ensureCell(el, 'LineGradientEnabled'), '0');
+        _removeNamedCells(
+            el, const ['LineGradientDir', 'LineGradientAngle']);
       }
       return true;
     }
     if (eg == null || eg.stops.isEmpty) {
-      return _scrubDisabledFlagCell(el, 'LineGradientEnabled');
+      var changed = _scrubDisabledFlagCell(el, 'LineGradientEnabled');
+      changed |= _removeNamedCells(
+          el, const ['LineGradientDir', 'LineGradientAngle']);
+      return changed;
     }
     var scrubbed = _scrubEnabledFlagCell(el, 'LineGradientEnabled');
     scrubbed |=
@@ -5989,16 +6002,28 @@ class VsdxWriter {
     }
     if (s.line.beginArrow != 0) {
       final cell = _findCell(el, 'BeginArrowSize');
-      if (cell == null || (cell.getAttribute('V') ?? '0') == '0') {
-        _ensureCell(el, 'BeginArrowSize').setAttribute('V', '2');
-        changed = true;
+      final v = cell?.getAttribute('V') ?? '0';
+      if (cell == null ||
+          v == '0' ||
+          isInhFormula(cell.getAttribute('F'))) {
+        changed |= _ensureLiteralInt(
+          el,
+          'BeginArrowSize',
+          _arrowSizeToBucket(s.line.beginArrowSizeInches),
+        );
       }
     }
     if (s.line.endArrow != 0) {
       final cell = _findCell(el, 'EndArrowSize');
-      if (cell == null || (cell.getAttribute('V') ?? '0') == '0') {
-        _ensureCell(el, 'EndArrowSize').setAttribute('V', '2');
-        changed = true;
+      final v = cell?.getAttribute('V') ?? '0';
+      if (cell == null ||
+          v == '0' ||
+          isInhFormula(cell.getAttribute('F'))) {
+        changed |= _ensureLiteralInt(
+          el,
+          'EndArrowSize',
+          _arrowSizeToBucket(s.line.endArrowSizeInches),
+        );
       }
     }
     return changed;

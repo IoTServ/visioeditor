@@ -127,11 +127,32 @@ ApplyResult applyOps(
             continue;
           }
           if (_isProtected(page, target)) {
-            log.add('set_style: shape $id is locked');
-            continue;
+            // Allow unlock via locked:false when only the shape lock is set
+            // (layer locks still block). Other style keys apply after unlock.
+            final unlock = op.containsKey('locked') && _b(op['locked']) == false;
+            if (!(unlock &&
+                target.locked &&
+                !page.isShapeTreeOnLockedLayer(target.id))) {
+              log.add('set_style: shape $id is locked');
+              continue;
+            }
           }
           page = page.updateShapeById(id, (s) {
             var next = s;
+            if (op.containsKey('locked')) {
+              final locked = _b(op['locked']);
+              if (locked != null) {
+                next = next.copyWith(locked: locked);
+              }
+            }
+            final flipX = op.containsKey('flipX') ? _b(op['flipX']) : null;
+            final flipY = op.containsKey('flipY') ? _b(op['flipY']) : null;
+            if (flipX != null || flipY != null) {
+              next = next.copyWith(
+                flipX: flipX ?? next.flipX,
+                flipY: flipY ?? next.flipY,
+              );
+            }
             // Match UI setFillColor: 1-D strokes never take a fill.
             if (fillHex != null && !s.is1D) {
               if (fillHex.trim().toLowerCase() == 'none') {
@@ -332,22 +353,23 @@ ApplyResult applyOps(
               );
             }
             // Glow: glow:true|false|"none", or glowSize / glowColor / glowTransparency.
+            // Disable/enable via copyWith so colour / transparency companions survive.
             if (op.containsKey('glow')) {
               final g = op['glow'];
               if (g == false ||
                   (g is String && g.trim().toLowerCase() == 'none')) {
-                next = next.copyWith(glow: VsdxGlow.disabled);
+                next = next.copyWith(
+                  glow: next.glow.copyWith(enabled: false, sizeInches: 0),
+                );
               } else if (g == true) {
                 next = next.copyWith(
-                  glow: next.glow.enabled
-                      ? next.glow
-                      : const VsdxGlow(enabled: true),
+                  glow: next.glow.copyWith(enabled: true),
                 );
               } else if (g is num) {
                 final size = g.toDouble();
                 next = next.copyWith(
                   glow: size <= 0
-                      ? VsdxGlow.disabled
+                      ? next.glow.copyWith(enabled: false, sizeInches: 0)
                       : next.glow.copyWith(enabled: true, sizeInches: size),
                 );
               }
@@ -356,7 +378,7 @@ ApplyResult applyOps(
             if (glowSize != null) {
               next = next.copyWith(
                 glow: glowSize <= 0
-                    ? VsdxGlow.disabled
+                    ? next.glow.copyWith(enabled: false, sizeInches: 0)
                     : next.glow.copyWith(
                         enabled: true,
                         sizeInches: glowSize,
@@ -380,16 +402,17 @@ ApplyResult applyOps(
               );
             }
             // Shadow: shadow:true|false|"none", plus offset/blur/color helpers.
+            // Disable via copyWith so pattern / colour / offsets survive toggle.
             if (op.containsKey('shadow')) {
               final sh = op['shadow'];
               if (sh == false ||
                   (sh is String && sh.trim().toLowerCase() == 'none')) {
-                next = next.copyWith(shadow: VsdxShadow.disabled);
+                next = next.copyWith(
+                  shadow: next.shadow.copyWith(enabled: false),
+                );
               } else if (sh == true) {
                 next = next.copyWith(
-                  shadow: next.shadow.enabled
-                      ? next.shadow
-                      : const VsdxShadow(enabled: true),
+                  shadow: next.shadow.copyWith(enabled: true),
                 );
               }
             }
@@ -438,7 +461,7 @@ ApplyResult applyOps(
               if (pat != null) {
                 next = next.copyWith(
                   shadow: pat <= 0
-                      ? VsdxShadow.disabled
+                      ? next.shadow.copyWith(enabled: false)
                       : next.shadow.copyWith(enabled: true, pattern: pat),
                 );
               }
@@ -448,18 +471,20 @@ ApplyResult applyOps(
               final r = op['reflection'];
               if (r == false ||
                   (r is String && r.trim().toLowerCase() == 'none')) {
-                next = next.copyWith(reflection: VsdxReflection.disabled);
+                next = next.copyWith(
+                  reflection:
+                      next.reflection.copyWith(enabled: false, sizeInches: 0),
+                );
               } else if (r == true) {
                 next = next.copyWith(
-                  reflection: next.reflection.enabled
-                      ? next.reflection
-                      : const VsdxReflection(enabled: true),
+                  reflection: next.reflection.copyWith(enabled: true),
                 );
               } else if (r is num) {
                 final size = r.toDouble();
                 next = next.copyWith(
                   reflection: size <= 0
-                      ? VsdxReflection.disabled
+                      ? next.reflection
+                          .copyWith(enabled: false, sizeInches: 0)
                       : next.reflection
                           .copyWith(enabled: true, sizeInches: size),
                 );
@@ -469,7 +494,7 @@ ApplyResult applyOps(
             if (reflSize != null) {
               next = next.copyWith(
                 reflection: reflSize <= 0
-                    ? VsdxReflection.disabled
+                    ? next.reflection.copyWith(enabled: false, sizeInches: 0)
                     : next.reflection.copyWith(
                         enabled: true,
                         sizeInches: reflSize,
@@ -881,8 +906,11 @@ ApplyResult applyOps(
               }
             }
             if (op.containsKey('lineSpacing')) {
-              lineSpacingMult = _d(op['lineSpacing']);
-              clearAbsolute = true;
+              final mult = _d(op['lineSpacing']);
+              if (mult != null) {
+                lineSpacingMult = mult;
+                clearAbsolute = true;
+              }
             }
             final bullet = op.containsKey('bullet')
                 ? (op['bullet'] is num
@@ -1271,6 +1299,16 @@ double? _d(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tr
 
 int? _i(Object? v) =>
     v == null ? null : (v is int ? v : (v is num ? v.toInt() : int.tryParse('$v')));
+
+bool? _b(Object? v) {
+  if (v == null) return null;
+  if (v is bool) return v;
+  if (v is num) return v != 0;
+  final s = '$v'.trim().toLowerCase();
+  if (s == 'true' || s == '1' || s == 'yes') return true;
+  if (s == 'false' || s == '0' || s == 'no') return false;
+  return null;
+}
 
 VsdxGradient _defaultTwoStopGradient(VsdxColor? a, VsdxColor? b) {
   final c0 = a ?? const VsdxColor(0xFFFFFFFF);
