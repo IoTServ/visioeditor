@@ -187,6 +187,48 @@ ApplyResult applyOps(
                 }
               }
             }
+            if (op.containsKey('fillGradient') && !next.is1D) {
+              final raw = op['fillGradient'];
+              if (raw == false ||
+                  (raw is String && raw.trim().toLowerCase() == 'none')) {
+                next = next.copyWith(fill: next.fill.withGradient(null));
+              } else if (raw == true) {
+                next = next.copyWith(
+                  fill: next.fill.withGradient(_defaultTwoStopGradient(
+                    next.fill.foreground,
+                    next.fill.background,
+                  )),
+                );
+              } else {
+                final g = _parseGradientOp(raw);
+                if (g == null) {
+                  log.add('set_style: invalid fillGradient on shape $id');
+                } else {
+                  next = next.copyWith(fill: next.fill.withGradient(g));
+                }
+              }
+            }
+            if (op.containsKey('lineGradient')) {
+              final raw = op['lineGradient'];
+              if (raw == false ||
+                  (raw is String && raw.trim().toLowerCase() == 'none')) {
+                next = next.copyWith(line: next.line.withGradient(null));
+              } else if (raw == true) {
+                next = next.copyWith(
+                  line: next.line.withGradient(_defaultTwoStopGradient(
+                    next.line.color,
+                    next.fill.background,
+                  )),
+                );
+              } else {
+                final g = _parseGradientOp(raw);
+                if (g == null) {
+                  log.add('set_style: invalid lineGradient on shape $id');
+                } else {
+                  next = next.copyWith(line: next.line.withGradient(g));
+                }
+              }
+            }
             final weight = _d(op['weight'] ?? op['lineWeight']);
             if (weight != null && weight > 0) {
               next = next.copyWith(
@@ -802,6 +844,59 @@ double? _d(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tr
 
 int? _i(Object? v) =>
     v == null ? null : (v is int ? v : (v is num ? v.toInt() : int.tryParse('$v')));
+
+VsdxGradient _defaultTwoStopGradient(VsdxColor? a, VsdxColor? b) {
+  final c0 = a ?? const VsdxColor(0xFFFFFFFF);
+  final c1 = b ?? a ?? const VsdxColor(0xFF000000);
+  return VsdxGradient(
+    type: VsdxGradientType.linear,
+    stops: [
+      VsdxGradientStop(position: 0, color: c0),
+      VsdxGradientStop(position: 1, color: c1),
+    ],
+  );
+}
+
+/// Parse a set_style fillGradient / lineGradient object.
+///
+/// Accepts `{stops:[{pos|position, color},…], dir?, angle|angleRad?, type?}`.
+VsdxGradient? _parseGradientOp(Object? raw) {
+  if (raw is! Map) return null;
+  final map = raw is Map<String, dynamic>
+      ? raw
+      : Map<String, dynamic>.from(raw);
+  final stopsRaw = map['stops'];
+  if (stopsRaw is! List || stopsRaw.length < 2) return null;
+  final stops = <VsdxGradientStop>[];
+  for (final s in stopsRaw) {
+    if (s is! Map) return null;
+    final sm = s is Map<String, dynamic> ? s : Map<String, dynamic>.from(s);
+    final pos = _d(sm['pos'] ?? sm['position']);
+    final color = parseColorOrNull(sm['color']?.toString());
+    if (pos == null || color == null) return null;
+    stops.add(VsdxGradientStop(
+      position: pos.clamp(0.0, 1.0),
+      color: color,
+      transparency: (_d(sm['transparency']) ?? 0).clamp(0.0, 1.0),
+    ));
+  }
+  stops.sort((a, b) => a.position.compareTo(b.position));
+  final typeStr = map['type']?.toString().toLowerCase();
+  final type = switch (typeStr) {
+    'radial' => VsdxGradientType.radial,
+    'rectangular' || 'rect' => VsdxGradientType.rectangular,
+    'path' => VsdxGradientType.path,
+    _ => VsdxGradientType.linear,
+  };
+  final dir = _i(map['dir']);
+  final angle = _d(map['angle'] ?? map['angleRad']) ?? 0.0;
+  return VsdxGradient(
+    stops: List.unmodifiable(stops),
+    type: type,
+    angleRad: angle,
+    dir: dir,
+  );
+}
 
 /// Resolve a shape id from an op field.
 ///

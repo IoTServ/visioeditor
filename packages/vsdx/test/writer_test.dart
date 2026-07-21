@@ -7346,13 +7346,21 @@ void main() {
     }
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
-    expect(doc.pages.first.findShapeById(id)!.fill.hasGradient, isTrue);
-    // Unrelated edit (move) — gradient model unchanged.
+    // F=Inh without Master → no local gradient (ignore stale Enabled V=1).
+    expect(doc.pages.first.findShapeById(id)!.fill.hasGradient, isFalse);
+    const grad = VsdxGradient(
+      type: VsdxGradientType.linear,
+      stops: [
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    // Re-apply gradient so writer scrubs Enabled Inh while keeping it on.
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
         id,
-        (s) => s.copyWith(pinX: s.pinX + 0.25),
+        (s) => s.copyWith(fill: s.fill.withGradient(grad), pinX: s.pinX + 0.25),
       ),
     );
     final out = writer.write(originalBytes: mid, edited: doc);
@@ -7420,12 +7428,19 @@ void main() {
     }
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
-    expect(doc.pages.first.findShapeById(id)!.line.hasGradient, isTrue);
+    expect(doc.pages.first.findShapeById(id)!.line.hasGradient, isFalse);
+    const grad = VsdxGradient(
+      type: VsdxGradientType.linear,
+      stops: [
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
         id,
-        (s) => s.copyWith(pinX: s.pinX + 0.25),
+        (s) => s.copyWith(line: s.line.withGradient(grad), pinX: s.pinX + 0.25),
       ),
     );
     final out = writer.write(originalBytes: mid, edited: doc);
@@ -9716,6 +9731,145 @@ void main() {
           RegExp(r'F="THEMEVAL\(\)"[^>]*N="GlowColor"').hasMatch(outXml),
       isTrue,
     );
+  });
+
+  test('QuickStyleFillColor F=Inh scrubbed when theme fill unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            pattern: 1,
+            themeForegroundIndex: ThemeSlot.accent1,
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="QuickStyleFillColor"[^/]*/>'),
+      '<Cell N="QuickStyleFillColor" V="${ThemeSlot.accent1}" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    // QuickStyle Inh without Master → theme slot cleared (not forced to lt1).
+    expect(
+      doc.pages.first.findShapeById(id)!.fill.themeForegroundIndex,
+      isNull,
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          pinX: s.pinX + 0.1,
+          fill: s.fill.copyWith(themeForegroundIndex: ThemeSlot.accent1),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' &&
+              e.getAttribute('N') == 'QuickStyleFillColor',
+        );
+    expect(cell.getAttribute('F'), isNull);
+    expect(cell.getAttribute('V'), ThemeSlot.accent1.toString());
+  });
+
+  test('AsianFont F=Inh scrubbed when rich text model unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: '你好',
+          richText: VsdxRichText(runs: [
+            VsdxTextRun(
+              text: '你好',
+              charStyle: const VsdxCharStyle(
+                fontFamily: 'Arial',
+                asianFont: 'Microsoft YaHei',
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    expect(pageXml.contains('N="AsianFont"'), isTrue);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="AsianFont"[^/]*/>'),
+      '<Cell N="AsianFont" V="Microsoft YaHei" F="Inh"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = parser.parse(mid);
+    // Re-apply asianFont (Inh without Master clears it) then scrub on save.
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(
+          pinX: s.pinX + 0.1,
+          richText: VsdxRichText(runs: [
+            for (final r in s.richText.runs)
+              r.copyWith(
+                charStyle: r.charStyle.copyWith(asianFont: 'Microsoft YaHei'),
+              ),
+          ]),
+        ),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final outXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final cell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Cell' && e.getAttribute('N') == 'AsianFont',
+        );
+    expect(cell.getAttribute('F'), isNull);
+    expect(cell.getAttribute('V'), 'Microsoft YaHei');
   });
 
   test('disabled shadow rebuild emits ShadowPattern and ShdwPattern 0', () {

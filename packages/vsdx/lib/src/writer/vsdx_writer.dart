@@ -3788,6 +3788,24 @@ class VsdxWriter {
     if (c.langId != null && c.langId!.isNotEmpty) {
       changed |= _writeValueIfNeeded(_ensureCell(row, 'LangID'), c.langId!);
     }
+    if (c.asianFont != null && c.asianFont!.isNotEmpty) {
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'AsianFont'), c.asianFont!);
+    } else {
+      changed |= _removeInhOrDrop(row, 'AsianFont');
+    }
+    if (c.complexScriptFont != null && c.complexScriptFont!.isNotEmpty) {
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'ComplexScriptFont'), c.complexScriptFont!);
+    } else {
+      changed |= _removeInhOrDrop(row, 'ComplexScriptFont');
+    }
+    if (c.complexScriptSizeInches != null) {
+      changed |= _writeValueIfNeeded(_ensureCell(row, 'ComplexScriptSize'),
+          _fmt(c.complexScriptSizeInches!));
+    } else {
+      changed |= _removeInhOrDrop(row, 'ComplexScriptSize');
+    }
     return changed;
   }
 
@@ -3811,9 +3829,38 @@ class VsdxWriter {
         _ensureCell(row, 'SpLine'), _fmt(_spLineValue(p) ?? -1));
     changed |=
         _writeValueIfNeeded(_ensureCell(row, 'Bullet'), p.bullet.toString());
+    if (p.bulletStr != null) {
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'BulletStr'), p.bulletStr!);
+    } else {
+      changed |= _removeInhOrDrop(row, 'BulletStr');
+    }
+    if (p.bulletFont != null) {
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'BulletFont'), p.bulletFont!);
+    } else {
+      changed |= _removeInhOrDrop(row, 'BulletFont');
+    }
+    if (p.bulletFontSizeInches != null) {
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'BulletFontSize'), _fmt(p.bulletFontSizeInches!));
+    } else {
+      changed |= _removeInhOrDrop(row, 'BulletFontSize');
+    }
+    changed |= _writeValueIfNeeded(
+        _ensureCell(row, 'TextPosAfterBullet'),
+        _fmt(p.textPosAfterBulletInches));
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Flags'), p.flags.toString());
     return changed;
+  }
+
+  /// Drop a cell that still carries residual `F=Inh` (equal-path scrub).
+  bool _removeInhOrDrop(XmlElement row, String name) {
+    final cell = _findCell(row, name);
+    if (cell == null) return false;
+    if (!isInhFormula(cell.getAttribute('F'))) return false;
+    return _removeNamedCells(row, [name]);
   }
 
   /// Drop local Character / Paragraph sections (empty label / clear text).
@@ -4602,6 +4649,10 @@ class VsdxWriter {
                   RegExp(r'^THEMEVAL\s*\(\s*\)$', caseSensitive: false)
                       .hasMatch(curF)));
       if (baseTheme == editedTheme && baseColor == null && formulaOk) {
+        // Colour binding unchanged — still scrub QuickStyle* F=Inh.
+        if (writeQuickStyle) {
+          return _ensureLiteralInt(shape, quickStyleCell, editedTheme);
+        }
         return false;
       }
       final c = _ensureCell(shape, cell);

@@ -488,6 +488,54 @@ void main() {
           VsdxHorzAlign.center);
     });
 
+    test('set_style fillGradient and lineGradient', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ),
+        ),
+      );
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fillGradient': <String, dynamic>{
+            'type': 'linear',
+            'stops': <Map<String, dynamic>>[
+              <String, dynamic>{'pos': 0, 'color': '#FF0000'},
+              <String, dynamic>{'pos': 1, 'color': '#0000FF'},
+            ],
+          },
+          'lineGradient': true,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.fill.hasGradient, isTrue);
+      expect(after.fill.gradient!.stops, hasLength(2));
+      expect(after.fill.gradient!.stops.first.color?.value, 0xFFFF0000);
+      expect(after.line.hasGradient, isTrue);
+      final cleared = applyOps(r.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'fillGradient': 'none',
+          'lineGradient': false,
+        },
+      ]);
+      final done = cleared.document.pages.first.findShapeById(id)!;
+      expect(done.fill.hasGradient, isFalse);
+      expect(done.line.hasGradient, isFalse);
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

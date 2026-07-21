@@ -175,6 +175,71 @@ void main() {
     expect(fill.gradient!.stops, hasLength(2));
   });
 
+  test('FillGradientEnabled V=1 F=Inh ignores local stops (uses Master)', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="FillGradientEnabled" V="1" F="Inh"/>'
+      '<Section N="FillGradient">'
+      '<Row IX="0">'
+      '<Cell N="GradientStopPosition" V="0"/>'
+      '<Cell N="GradientStopColor" V="#111111"/>'
+      '</Row>'
+      '<Row IX="1">'
+      '<Cell N="GradientStopPosition" V="1"/>'
+      '<Cell N="GradientStopColor" V="#222222"/>'
+      '</Row>'
+      '</Section>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: VsdxFill(pattern: 1, gradient: masterGrad),
+    );
+    expect(fill.gradient, isNotNull);
+    expect(fill.gradient!.stops.first.color?.value, masterGrad.stops.first.color?.value);
+    expect(fill.gradient!.stops.last.color?.value, masterGrad.stops.last.color?.value);
+  });
+
+  test('FillGradientEnabled V=1 F=Inh without Master clears gradient', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="FillGradientEnabled" V="1" F="Inh"/>'
+      '<Section N="FillGradient">'
+      '<Row IX="0">'
+      '<Cell N="GradientStopPosition" V="0"/>'
+      '<Cell N="GradientStopColor" V="#111111"/>'
+      '</Row>'
+      '<Row IX="1">'
+      '<Cell N="GradientStopPosition" V="1"/>'
+      '<Cell N="GradientStopColor" V="#222222"/>'
+      '</Row>'
+      '</Section>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(el);
+    expect(fill.gradient, isNull);
+  });
+
+  test('THEMEVAL + QuickStyleFillColor F=Inh uses Master theme slot', () {
+    final el = XmlDocument.parse(
+      '<Shape>'
+      '<Cell N="FillPattern" V="1"/>'
+      '<Cell N="FillForegnd" V="0" F="THEMEVAL()"/>'
+      '<Cell N="QuickStyleFillColor" V="1" F="Inh"/>'
+      '</Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: const VsdxFill(
+        pattern: 1,
+        themeForegroundIndex: ThemeSlot.accent1,
+      ),
+    );
+    expect(fill.themeForegroundIndex, ThemeSlot.accent1);
+  });
+
   test('ShadowPattern F=Inh inherits Master pattern', () {
     final el = XmlDocument.parse(
       '<Shape>'

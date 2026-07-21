@@ -45,13 +45,19 @@ class StyleParser {
 
     // Explicit FillGradientEnabled=0 must clear the gradient — do not fall
     // back to Master defaults (writer emits V=0 on clear / group rebuild).
-    // F=Inh is not a local override — treat like a missing cell.
+    // F=Inh is not a local override — use Master/stylesheet only (ignore
+    // stale local Enabled V= and FillGradient stops).
     final fillGradEnabledCell = findCell(shape, 'FillGradientEnabled');
     final parsedFillGrad = _parseGradient(shape, inherit: defaults.gradient);
-    final gradient =
-        (fillGradEnabledCell != null && !isInhFormula(fillGradEnabledCell.getAttribute('F')))
-            ? parsedFillGrad
-            : (parsedFillGrad ?? defaults.gradient);
+    final VsdxGradient? gradient;
+    if (fillGradEnabledCell != null &&
+        isInhFormula(fillGradEnabledCell.getAttribute('F'))) {
+      gradient = defaults.gradient;
+    } else if (fillGradEnabledCell != null) {
+      gradient = parsedFillGrad;
+    } else {
+      gradient = parsedFillGrad ?? defaults.gradient;
+    }
 
     return VsdxFill(
       foreground: fgRes.color ?? defaults.foreground,
@@ -404,13 +410,18 @@ class StyleParser {
         _int(shape, 'CompoundType', inheritFrom: defaults.compoundType) ??
             defaults.compoundType;
     // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
-    // F=Inh is not a local override — treat like a missing cell.
+    // F=Inh is not a local override — use Master/stylesheet only.
     final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');
     final parsedLineGrad = _parseLineGradient(shape, inherit: defaults.gradient);
-    final gradient =
-        (lineGradEnabledCell != null && !isInhFormula(lineGradEnabledCell.getAttribute('F')))
-            ? parsedLineGrad
-            : (parsedLineGrad ?? defaults.gradient);
+    final VsdxGradient? gradient;
+    if (lineGradEnabledCell != null &&
+        isInhFormula(lineGradEnabledCell.getAttribute('F'))) {
+      gradient = defaults.gradient;
+    } else if (lineGradEnabledCell != null) {
+      gradient = parsedLineGrad;
+    } else {
+      gradient = parsedLineGrad ?? defaults.gradient;
+    }
 
     return VsdxLine(
       color: colorRes.color ?? defaults.color,
@@ -565,13 +576,17 @@ class StyleParser {
       // FillBkgnd can differ from FillForegnd's QuickStyleFillColor slot.
       final named = _themeValArgSlot(f.isNotEmpty ? f : v);
       if (named != null) return _ColorResolution(null, named);
-      // Visio defaults QuickStyle*Color to 1 (lt1) when the cell is absent.
-      // F=Inh on QuickStyle* → treat as absent (caller / ThemeSlot.lt1).
+      // F=Inh on QuickStyle* → absent (caller uses Master theme*Index via ??).
+      // Do NOT force ThemeSlot.lt1 — that blocks master accent slots.
       final qsCell = findCell(shape, quickStyleCell);
+      if (qsCell != null && isInhFormula(qsCell.getAttribute('F'))) {
+        return const _ColorResolution(null, null);
+      }
       int? idx;
-      if (qsCell != null && !isInhFormula(qsCell.getAttribute('F'))) {
+      if (qsCell != null) {
         idx = _int(shape, quickStyleCell);
       }
+      // Visio defaults QuickStyle*Color to lt1 when the cell is absent.
       return _ColorResolution(null, idx ?? ThemeSlot.lt1);
     }
     return _ColorResolution(VsdxColor.tryParse(v), null);
