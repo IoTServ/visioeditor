@@ -87,10 +87,14 @@ VsdxShape withLabel(
   double? complexScriptSizeInches,
 }) {
   if (text.isEmpty) {
-    // Clear label (set_text "" must round-trip as empty, not no-op).
+    // Clear label (set_text "" must round-trip as empty, not no-op) but keep
+    // textBlock (margins / TextBkgnd / hideText / textDirection / …).
     return s.copyWith(
       text: '',
-      richText: VsdxRichText.empty,
+      richText: s.richText.copyWith(
+        runs: const <VsdxTextRun>[],
+        tabSets: const <VsdxTabSet>[],
+      ),
       fields: const <VsdxFieldRow>[],
     );
   }

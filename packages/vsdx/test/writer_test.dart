@@ -5645,7 +5645,7 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('N="Tabs"'), isTrue);
-    expect(pageXml.contains('N="Position0"'), isTrue);
+    expect(pageXml.contains('N="Position1"'), isTrue);
     expect(pageXml.contains('N="Alignment1"'), isTrue);
     expect(pageXml.contains('<tp IX="0"/>') || pageXml.contains('tp IX="0"'),
         isTrue);
@@ -13119,5 +13119,85 @@ void main() {
           .hasMatch(pageXml),
       isFalse,
     );
+    // Dual Position0+Position1 must not remain (would parse as two stops).
+    expect(pageXml.contains('N="Position0"'), isFalse);
+    expect(
+      parser
+          .parse(out)
+          .pages
+          .first
+          .findShapeById(id)!
+          .richText
+          .tabSets
+          .first
+          .stops,
+      hasLength(1),
+    );
+  });
+
+  test('Tabs dual Position0+Position1 collapses to one stop', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hi',
+          richText: VsdxRichText(
+            runs: const [VsdxTextRun(text: 'Hi')],
+            tabSets: [
+              VsdxTabSet(
+                ix: 0,
+                stops: const [
+                  VsdxTabStop(positionInches: 0.5, alignment: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    doc = parser.parse(mid);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    // Force both 0-based and 1-based cells for the same stop.
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Section N="Tabs"><Row IX="0">[\s\S]*?</Row></Section>'),
+      '<Section N="Tabs"><Row IX="0">'
+          '<Cell N="Position0" V="0.5"/>'
+          '<Cell N="Alignment0" V="0"/>'
+          '<Cell N="Position1" V="0.5" F="Inh"/>'
+          '<Cell N="Alignment1" V="0"/>'
+          '</Row></Section>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(after.richText.tabSets.first.stops, hasLength(1));
+    pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="Position0"'), isFalse);
+    expect(pageXml.contains('N="Position1"'), isTrue);
   });
 }

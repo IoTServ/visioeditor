@@ -4053,36 +4053,25 @@ class VsdxWriter {
       final row = rowByIx[set.ix];
       if (row == null) continue;
       for (var i = 0; i < set.stops.length; i++) {
-        // Visio native cells are 1-based (Position1); our rebuild emits
-        // 0-based (Position0). Scrub whichever already exists; prefer writing
-        // 1-based when neither is present so Master Inh cannot revive.
-        final n0 = i;
+        // Visio PositionN / AlignmentN are 1-based. Always scrub to that
+        // scheme so a Position0+Position1 pair cannot parse as two stops.
         final n1 = i + 1;
-        final has0 = _findCell(row, 'Position$n0') != null ||
-            _findCell(row, 'Alignment$n0') != null;
-        final has1 = _findCell(row, 'Position$n1') != null ||
-            _findCell(row, 'Alignment$n1') != null;
-        final indices = <int>[
-          if (has1 || !has0) n1,
-          if (has0) n0,
-        ];
-        for (final n in indices) {
-          changed |= _writeValueIfNeeded(_ensureCell(row, 'Position$n'),
-              _fmt(set.stops[i].positionInches));
-          changed |= _writeValueIfNeeded(_ensureCell(row, 'Alignment$n'),
-              set.stops[i].alignment.toString());
-        }
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Position$n1'),
+            _fmt(set.stops[i].positionInches));
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Alignment$n1'),
+            set.stops[i].alignment.toString());
       }
-      // Drop leftover PositionN/AlignmentN beyond the model stop count when
-      // they still carry F=Inh (Visio 1-based N > length, or stale 0-based).
+      // Drop legacy 0-based twins and any surplus beyond 1..stops.length.
+      if (_findCell(row, 'Position0') != null ||
+          _findCell(row, 'Alignment0') != null) {
+        changed |= _removeNamedCells(row, const ['Position0', 'Alignment0']);
+      }
       for (final cell in row.childElements.toList()) {
         final name = cell.getAttribute('N') ?? '';
         final m = RegExp(r'^(Position|Alignment)(\d+)$').firstMatch(name);
         if (m == null) continue;
         final n = int.parse(m.group(2)!);
-        final inRange0 = n >= 0 && n < set.stops.length;
-        final inRange1 = n >= 1 && n <= set.stops.length;
-        if (!inRange0 && !inRange1 && isInhFormula(cell.getAttribute('F'))) {
+        if (n < 1 || n > set.stops.length) {
           changed |= _removeNamedCells(row, [name]);
         }
       }
@@ -7007,8 +6996,8 @@ class VsdxWriter {
           <XmlAttribute>[XmlAttribute(XmlName('IX'), set.ix.toString())],
           <XmlNode>[
             for (var i = 0; i < set.stops.length; i++) ...[
-              _cell('Position$i', _fmt(set.stops[i].positionInches)),
-              _cell('Alignment$i', set.stops[i].alignment.toString()),
+              _cell('Position${i + 1}', _fmt(set.stops[i].positionInches)),
+              _cell('Alignment${i + 1}', set.stops[i].alignment.toString()),
             ],
           ],
         ),

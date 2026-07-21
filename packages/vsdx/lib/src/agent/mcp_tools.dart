@@ -711,8 +711,15 @@ void _registerEditTools(McpServer server) {
       'lineSpacing': <String, dynamic>{'type': 'number'},
       'bullet': <String, dynamic>{'type': 'integer'},
       'bulletStr': <String, dynamic>{'type': 'string'},
+      'bulletFont': <String, dynamic>{'type': 'string'},
+      'bulletFontSize': <String, dynamic>{'type': 'number'},
+      'bulletFontSizePt': <String, dynamic>{'type': 'number'},
+      'textDirection': <String, dynamic>{'type': 'string'},
+      'defaultTabStop': <String, dynamic>{'type': 'number'},
       'imageTransparency': <String, dynamic>{'type': 'number'},
       'imageBlur': <String, dynamic>{'type': 'number'},
+      'imageBrightness': <String, dynamic>{'type': 'number'},
+      'imageContrast': <String, dynamic>{'type': 'number'},
     })
       ..['required'] = <String>['ids'],
     handler: (args) => applyOne(
@@ -795,8 +802,15 @@ void _registerEditTools(McpServer server) {
           'lineSpacing',
           'bullet',
           'bulletStr',
+          'bulletFont',
+          'bulletFontSize',
+          'bulletFontSizePt',
+          'textDirection',
+          'defaultTabStop',
           'imageTransparency',
           'imageBlur',
+          'imageBrightness',
+          'imageContrast',
         ])),
   ));
 

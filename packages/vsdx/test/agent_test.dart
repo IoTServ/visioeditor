@@ -742,6 +742,60 @@ void main() {
       expect(p.bullet, 1);
     });
 
+    test('withLabel empty keeps textBlock; set_style textDirection/bulletFont',
+        () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(
+            text: 'Hi',
+            richText: VsdxRichText(
+              runs: const [VsdxTextRun(text: 'Hi')],
+              textBlock: const VsdxTextBlock(
+                textDirection: 1,
+                defaultTabStopInches: 0.75,
+                marginLeftInches: 0.2,
+              ),
+            ),
+          ),
+        ),
+      );
+      final cleared = withLabel(doc.pages.first.findShapeById(id)!, '');
+      expect(cleared.text, isEmpty);
+      expect(cleared.richText.runs, isEmpty);
+      expect(cleared.richText.textBlock.textDirection, 1);
+      expect(cleared.richText.textBlock.defaultTabStopInches, closeTo(0.75, 1e-9));
+      expect(cleared.richText.textBlock.marginLeftInches, closeTo(0.2, 1e-9));
+
+      final r = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'ids': <String>['shape:$id'],
+          'textDirection': 'horizontal',
+          'defaultTabStop': 0.6,
+          'bulletFont': 'Segoe UI Symbol',
+          'bulletFontSizePt': 12,
+        },
+      ]);
+      final after = r.document.pages.first.findShapeById(id)!;
+      expect(after.richText.textBlock.textDirection, 0);
+      expect(after.richText.textBlock.defaultTabStopInches, closeTo(0.6, 1e-9));
+      expect(after.richText.runs.first.paraStyle.bulletFont, 'Segoe UI Symbol');
+      expect(
+        after.richText.runs.first.paraStyle.bulletFontSizeInches,
+        closeTo(12 / 72.0, 1e-9),
+      );
+    });
+
     test('withLabel style-only keeps Field rows', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

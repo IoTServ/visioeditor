@@ -774,6 +774,38 @@ ApplyResult applyOps(
                 ),
               );
             }
+            if (op.containsKey('textDirection')) {
+              final raw = op['textDirection'];
+              int? dir;
+              if (raw is num) {
+                dir = raw.toInt();
+              } else if (raw != null) {
+                final s = raw.toString().trim().toLowerCase();
+                dir = switch (s) {
+                  'horizontal' || '0' || 'ltr' => 0,
+                  'vertical' || '1' => 1,
+                  _ => int.tryParse(s),
+                };
+              }
+              if (dir != null) {
+                next = next.copyWith(
+                  richText: next.richText.copyWith(
+                    textBlock: next.richText.textBlock
+                        .copyWith(textDirection: dir),
+                  ),
+                );
+              }
+            }
+            final defaultTabStop = _d(
+                op['defaultTabStop'] ?? op['defaultTabStopInches']);
+            if (defaultTabStop != null) {
+              next = next.copyWith(
+                richText: next.richText.copyWith(
+                  textBlock: next.richText.textBlock
+                      .copyWith(defaultTabStopInches: defaultTabStop),
+                ),
+              );
+            }
             final marginL = _d(op['marginLeft'] ?? op['leftMargin']);
             final marginR = _d(op['marginRight'] ?? op['rightMargin']);
             final marginT = _d(op['marginTop'] ?? op['topMargin']);
@@ -810,6 +842,11 @@ ApplyResult applyOps(
                     : int.tryParse(op['bullet'].toString()))
                 : null;
             final bulletStr = op['bulletStr']?.toString();
+            final bulletFont = op['bulletFont']?.toString();
+            final bulletFontSizePt = _d(op['bulletFontSizePt']);
+            final bulletFontSize = bulletFontSizePt != null
+                ? bulletFontSizePt / 72.0
+                : _d(op['bulletFontSize'] ?? op['bulletFontSizeInches']);
             if (indentFirst != null ||
                 indentLeft != null ||
                 indentRight != null ||
@@ -817,7 +854,9 @@ ApplyResult applyOps(
                 spaceAfter != null ||
                 lineSpacing != null ||
                 bullet != null ||
-                bulletStr != null) {
+                bulletStr != null ||
+                bulletFont != null ||
+                bulletFontSize != null) {
               VsdxParaStyle mapPara(VsdxParaStyle p) => p.copyWith(
                     indentFirstInches: indentFirst ?? p.indentFirstInches,
                     indentLeftInches: indentLeft ?? p.indentLeftInches,
@@ -827,6 +866,9 @@ ApplyResult applyOps(
                     lineSpacing: lineSpacing ?? p.lineSpacing,
                     bullet: bullet ?? p.bullet,
                     bulletStr: bulletStr ?? p.bulletStr,
+                    bulletFont: bulletFont ?? p.bulletFont,
+                    bulletFontSizeInches:
+                        bulletFontSize ?? p.bulletFontSizeInches,
                   );
               var runs = next.richText.runs;
               if (runs.isEmpty) {
@@ -836,12 +878,14 @@ ApplyResult applyOps(
                   runs = next.richText.runs;
                 } else {
                   next = next.copyWith(
-                    richText: VsdxRichText(runs: [
-                      VsdxTextRun(
-                        text: '',
-                        paraStyle: mapPara(VsdxParaStyle.defaults),
-                      ),
-                    ]),
+                    richText: next.richText.copyWith(
+                      runs: [
+                        VsdxTextRun(
+                          text: '',
+                          paraStyle: mapPara(VsdxParaStyle.defaults),
+                        ),
+                      ],
+                    ),
                   );
                   runs = next.richText.runs;
                 }
@@ -860,11 +904,21 @@ ApplyResult applyOps(
             // Image tone (foreign data shapes only).
             final imgTrans = _d(op['imageTransparency']);
             final imgBlur = _d(op['imageBlur']);
-            if (next.hasImage && (imgTrans != null || imgBlur != null)) {
+            final imgBright = _d(op['imageBrightness']);
+            final imgContrast = _d(op['imageContrast']);
+            if (next.hasImage &&
+                (imgTrans != null ||
+                    imgBlur != null ||
+                    imgBright != null ||
+                    imgContrast != null)) {
               next = next.copyWith(
                 imageTransparency:
                     imgTrans?.clamp(0.0, 1.0) ?? next.imageTransparency,
                 imageBlur: imgBlur ?? next.imageBlur,
+                imageBrightness:
+                    imgBright?.clamp(0.0, 1.0) ?? next.imageBrightness,
+                imageContrast:
+                    imgContrast?.clamp(0.0, 1.0) ?? next.imageContrast,
               );
             }
             return next;
