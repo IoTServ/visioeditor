@@ -2697,10 +2697,16 @@ class VsdxToSvgSerializer {
       }
     }
     final boxId = 'img-box-${shape.id}';
+    // SoftEdges blur extends past the image box — pad the clip so the feather
+    // is not cut off (matches canvas imgRect.inflate(soft*3)).
+    final softIn = shape.line.softEdgesInches;
+    final softPad =
+        softIn > 1e-9 ? _softEdgesPad(shape.line, softIn) : 0.0;
     buf.writeln(
       '$indent<defs><clipPath id="$boxId">'
-      '<rect x="0" y="0" width="${_n(shape.width)}" '
-      'height="${_n(shape.height)}"/></clipPath></defs>',
+      '<rect x="${_n(-softPad)}" y="${_n(-softPad)}" '
+      'width="${_n(shape.width + 2 * softPad)}" '
+      'height="${_n(shape.height + 2 * softPad)}"/></clipPath></defs>',
     );
     buf.writeln('$indent<g clip-path="url(#$boxId)">');
     if (clipD != null) {

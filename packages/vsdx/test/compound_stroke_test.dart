@@ -19,6 +19,17 @@ void main() {
     expect(tn[1].width, closeTo(0.055, 1e-9));
   });
 
+  test('compoundRails type 4 emits three rails (triple)', () {
+    final t = compoundRails(4, 0.10);
+    expect(t.length, 3);
+    expect(t[1].offset, closeTo(0, 1e-9));
+    expect(t[0].offset, greaterThan(0));
+    expect(t[2].offset, lessThan(0));
+    final sumW = t[0].width + t[1].width + t[2].width;
+    expect(sumW, lessThan(0.10));
+    expect(sumW, greaterThan(0.05));
+  });
+
   test('offsetPolyline shifts an open segment along the left normal', () {
     final pts = <Offset2D>[
       const Offset2D(0, 0),

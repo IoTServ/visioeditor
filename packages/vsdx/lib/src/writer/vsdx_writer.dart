@@ -33,6 +33,7 @@ import '../model/shape.dart';
 import '../model/sheet_sections.dart';
 import '../model/theme.dart';
 import '../model/user_property.dart';
+import '../parser/cell_helpers.dart' show isInhFormula;
 import '../parser/document_parser.dart';
 import '../parser/package_reader.dart';
 import '../parser/relationships.dart';
@@ -602,14 +603,17 @@ class VsdxWriter {
     }
     final sheet = sheetEl ?? _ensurePageSheet(pageEl);
     var changed = false;
-    if (needWidth) {
+    final widthInh = _pageSheetCellF(sheet, 'PageWidth') == 'Inh';
+    final heightInh = _pageSheetCellF(sheet, 'PageHeight') == 'Inh';
+    if (needWidth || widthInh) {
       // `V` is written in Visio's internal units (inches); the existing `U`
       // display attribute is left untouched. See readLengthInches.
+      // Value-unchanged but F=Inh still scrubs (same as ShdwOffset*).
       _writeValue(
           _ensurePageSheetCell(sheet, 'PageWidth'), _fmt(ep.widthInches));
       changed = true;
     }
-    if (needHeight) {
+    if (needHeight || heightInh) {
       _writeValue(
           _ensurePageSheetCell(sheet, 'PageHeight'), _fmt(ep.heightInches));
       changed = true;
@@ -2812,7 +2816,7 @@ class VsdxWriter {
   /// empty edited set removes the section entirely.
   bool _patchUserProperties(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_userPropsEqual(base.userProperties, edited.userProperties)) {
-      return false;
+      return _scrubUserPropertyInh(el, edited);
     }
     XmlElement? section;
     for (final s in el.childElements) {
@@ -2925,7 +2929,9 @@ class VsdxWriter {
   /// Patch `<Section N="User">` to match [edited.userCells] (symmetric to
   /// Property). Empty edited list drops the section.
   bool _patchUserCells(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_userCellsEqual(base.userCells, edited.userCells)) return false;
+    if (_userCellsEqual(base.userCells, edited.userCells)) {
+      return _scrubUserCellInh(el, edited);
+    }
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'User') {
@@ -3079,7 +3085,9 @@ class VsdxWriter {
   /// cell and only get the standard cells rewritten; new links append fresh
   /// rows; dropped ones are removed. An empty edited set removes the section.
   bool _patchHyperlinks(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_hyperlinksEqual(base.hyperlinks, edited.hyperlinks)) return false;
+    if (_hyperlinksEqual(base.hyperlinks, edited.hyperlinks)) {
+      return _scrubHyperlinkInh(el, edited);
+    }
     XmlElement? section;
     for (final s in el.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Hyperlink') {
@@ -3152,6 +3160,151 @@ class VsdxWriter {
       if (a[i] != b[i]) return false;
     }
     return true;
+  }
+
+  /// When Property rows are unchanged, still drop F=Inh on modelled cells.
+  bool _scrubUserPropertyInh(XmlElement el, VsdxShape edited) {
+    if (edited.userProperties.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Property') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByName = <String, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final n =
+          row.getAttribute('N') ?? 'Row${row.getAttribute('IX') ?? ''}';
+      rowByName[n] = row;
+    }
+    var changed = false;
+    for (final p in edited.userProperties) {
+      final row = rowByName[p.name];
+      if (row == null) continue;
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'Value'), p.value ?? '');
+      if (p.valueFormula != null) {
+        final cell = _ensureCell(row, 'Value');
+        final f = _nonInhFormula(p.valueFormula);
+        if (f != null && cell.getAttribute('F') != f) {
+          cell.setAttribute('F', f);
+          changed = true;
+        } else if (f == null && isInhFormula(cell.getAttribute('F'))) {
+          cell.removeAttribute('F');
+          changed = true;
+        }
+      } else if (isInhFormula(_ensureCell(row, 'Value').getAttribute('F'))) {
+        _writeValue(_ensureCell(row, 'Value'), p.value ?? '');
+        changed = true;
+      }
+      if (p.label != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Label'), p.label!);
+      }
+      if (p.format != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Format'), p.format!);
+      }
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Type'), p.type.toString());
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'Invisible'), p.invisible ? '1' : '0');
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Verify'), p.verify ? '1' : '0');
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Ask'), p.ask ? '1' : '0');
+    }
+    return changed;
+  }
+
+  /// When User rows are unchanged, still drop F=Inh on Value/Prompt.
+  bool _scrubUserCellInh(XmlElement el, VsdxShape edited) {
+    if (edited.userCells.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'User') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByName = <String, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final n = row.getAttribute('N');
+      if (n != null) rowByName[n] = row;
+    }
+    var changed = false;
+    for (final c in edited.userCells) {
+      final row = rowByName[c.name];
+      if (row == null) continue;
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Value'), c.value ?? '');
+      if (c.valueFormula != null) {
+        final cell = _ensureCell(row, 'Value');
+        final f = _nonInhFormula(c.valueFormula);
+        if (f != null && cell.getAttribute('F') != f) {
+          cell.setAttribute('F', f);
+          changed = true;
+        } else if (f == null && isInhFormula(cell.getAttribute('F'))) {
+          cell.removeAttribute('F');
+          changed = true;
+        }
+      } else if (isInhFormula(_ensureCell(row, 'Value').getAttribute('F'))) {
+        _writeValue(_ensureCell(row, 'Value'), c.value ?? '');
+        changed = true;
+      }
+      if (c.prompt != null) {
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'Prompt'), c.prompt!);
+      }
+    }
+    return changed;
+  }
+
+  /// When Hyperlink rows are unchanged, still drop F=Inh on Address/flags.
+  bool _scrubHyperlinkInh(XmlElement el, VsdxShape edited) {
+    if (edited.hyperlinks.isEmpty) return false;
+    XmlElement? section;
+    for (final s in el.childElements) {
+      if (s.name.local == 'Section' && s.getAttribute('N') == 'Hyperlink') {
+        section = s;
+        break;
+      }
+    }
+    if (section == null) return false;
+    final rowByIx = <int, XmlElement>{};
+    for (final row in _rowsOf(section)) {
+      final ix = int.tryParse(row.getAttribute('IX') ?? '');
+      if (ix != null) rowByIx[ix] = row;
+    }
+    var changed = false;
+    for (final h in edited.hyperlinks) {
+      final row = rowByIx[h.id];
+      if (row == null) continue;
+      changed |=
+          _writeValueIfNeeded(_ensureCell(row, 'Address'), h.address ?? '');
+      final addr = _ensureCell(row, 'Address');
+      final af = _nonInhFormula(h.addressFormula);
+      if (af != null) {
+        if (addr.getAttribute('F') != af) {
+          addr.setAttribute('F', af);
+          changed = true;
+        }
+      } else if (isInhFormula(addr.getAttribute('F'))) {
+        addr.removeAttribute('F');
+        changed = true;
+      }
+      if (h.description != null) {
+        changed |=
+            _writeValueIfNeeded(_ensureCell(row, 'Description'), h.description!);
+      }
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'NewWindow'), h.newWindow ? '1' : '0');
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'Default'), h.isDefault ? '1' : '0');
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'Invisible'), h.invisible ? '1' : '0');
+    }
+    return changed;
   }
 
   bool _patchActions(XmlElement el, VsdxShape base, VsdxShape edited) {

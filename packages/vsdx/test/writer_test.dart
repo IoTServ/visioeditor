@@ -10702,6 +10702,38 @@ void main() {
     expect(shdw!.group(0)!.contains('F="Inh"'), isFalse);
   });
 
+  test('PageWidth F=Inh scrubbed when size unchanged', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    final widthMatch =
+        RegExp(r'<Cell N="PageWidth"[^/]*/>').firstMatch(pagesXml);
+    expect(widthMatch, isNotNull);
+    final v = RegExp(r'V="([^"]*)"').firstMatch(widthMatch!.group(0)!)!.group(1)!;
+    pagesXml = pagesXml.replaceFirst(
+      RegExp(r'<Cell N="PageWidth"[^/]*/>'),
+      '<Cell N="PageWidth" V="$v" F="Inh"/>',
+    );
+    final tainted = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
+    doc = parser.parse(tainted);
+    expect(doc.pages.first.widthInches, closeTo(double.parse(v), 1e-6));
+    final out = writer.write(originalBytes: tainted, edited: doc);
+    pagesXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(out)
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
+          .content as List<int>,
+    );
+    final cell =
+        RegExp(r'<Cell N="PageWidth"[^/]*/>').firstMatch(pagesXml);
+    expect(cell, isNotNull);
+    expect(cell!.group(0)!.contains('F="Inh"'), isFalse);
+  });
+
   test('cleared connection points stay empty across second save', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

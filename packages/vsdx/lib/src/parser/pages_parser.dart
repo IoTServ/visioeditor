@@ -112,8 +112,10 @@ class PagesParser {
     var sheet = VsdxPageSheet.defaults;
     final pageSheet = _firstChildLocal(pageEl, 'PageSheet');
     if (pageSheet != null) {
-      width = readLengthInches(pageSheet, 'PageWidth') ?? width;
-      height = readLengthInches(pageSheet, 'PageHeight') ?? height;
+      width = readLengthInches(pageSheet, 'PageWidth', inheritFrom: width) ??
+          width;
+      height = readLengthInches(pageSheet, 'PageHeight', inheritFrom: height) ??
+          height;
       layers = const LayerParser().parseLayers(pageSheet);
       bgColor = _readPageColor(pageSheet);
       sheet = _readPageSheet(pageSheet);

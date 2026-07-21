@@ -26,6 +26,7 @@ class CompoundRail {
 /// - `1` double — two equal rails with a transparent gap (~38% of width)
 /// - `2` thick-thin — thick on the left normal, thin on the right
 /// - `3` thin-thick — reverse of `2`
+/// - `4` triple — thin / thick / thin
 List<CompoundRail> compoundRails(int compoundType, double width) {
   final w = width;
   if (compoundType <= 0 || w < 1e-9) return const <CompoundRail>[];
@@ -57,8 +58,19 @@ List<CompoundRail> compoundRails(int compoundType, double width) {
         CompoundRail(width: thin, offset: gap / 2 + thin / 2),
         CompoundRail(width: thick, offset: -(gap / 2 + thick / 2)),
       ];
+    case 4:
+      // triple — thin / thick / thin, total width conserved
+      final outer = w * 0.18;
+      final mid = w * 0.28;
+      final gap = (w - mid - 2 * outer) / 2;
+      final outerOff = mid / 2 + gap + outer / 2;
+      return <CompoundRail>[
+        CompoundRail(width: outer, offset: outerOff),
+        CompoundRail(width: mid, offset: 0),
+        CompoundRail(width: outer, offset: -outerOff),
+      ];
     default:
-      // Triple / unknown — fall back to double proportions.
+      // Unknown — fall back to double proportions.
       final gap = w * 0.38;
       final rail = (w - gap) / 2;
       final off = gap / 2 + rail / 2;
