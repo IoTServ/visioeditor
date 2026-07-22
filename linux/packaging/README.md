@@ -25,7 +25,11 @@ update-mime-database ~/.local/share/mime
 #    absolute path to the built bundle's binary)
 install -Dm644 visioeditor.desktop \
   ~/.local/share/applications/visioeditor.desktop
+# App icon (Icon=visioeditor in the desktop entry)
+install -Dm644 visioeditor.png \
+  ~/.local/share/icons/hicolor/512x512/apps/visioeditor.png
 update-desktop-database ~/.local/share/applications
+gtk-update-icon-cache -f ~/.local/share/icons/hicolor 2>/dev/null || true
 ```
 
 For a system-wide install use `/usr/share/mime/packages/` and

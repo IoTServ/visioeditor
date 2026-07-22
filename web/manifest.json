@@ -3,9 +3,9 @@
     "short_name": "visioeditor",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#3B82F6",
+    "theme_color": "#3B82F6",
+    "description": "Editor for Visio Diagrams — open and edit Microsoft Visio (.vsdx) drawings.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -44,7 +44,8 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   test: ^1.25.0
   mocktail: ^1.0.4
-  # Used by tool/gen_app_icon.dart to render the macOS app icon PNGs.
+  # Used by tool/gen_app_icon.dart to render branded app icons for every
+  # platform (macOS / Android / iOS / Web / Windows / Linux).
   image: ^4.3.0
   archive: ^3.6.1
 

@@ -1,4 +1,4 @@
-// Generates the macOS app icon PNGs for `Editor for Visio Diagrams`.
+// Generates the branded app icon for every Flutter platform.
 //
 // The icon is a rounded blue tile carrying a white flow-diagram motif (two
 // nodes joined by an orthogonal connector with an arrowhead) — a nod to the
@@ -6,10 +6,12 @@
 // boolean fills, then box-downsampled to every required size so the edges come
 // out anti-aliased without hand-rolling coverage maths.
 //
+// macOS keeps the rounded tile with a transparent margin (desktop dock).
+// Android / iOS / Web / Windows / Linux use a full-bleed square so the OS
+// (or adaptive-icon mask) can apply its own shape.
+//
 // Run from the project root:
 //   dart run tool/gen_app_icon.dart
-//
-// Output: macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_<n>.png
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -17,12 +19,6 @@ import 'package:image/image.dart' as img;
 
 /// Supersampled master resolution; downsampling from here yields the AA.
 const int kMaster = 2048;
-
-/// Icon sizes referenced by the asset catalog's Contents.json.
-const List<int> kSizes = <int>[16, 32, 64, 128, 256, 512, 1024];
-
-const String kOutDir =
-    'macos/Runner/Assets.xcassets/AppIcon.appiconset';
 
 class _Rgb {
   const _Rgb(this.r, this.g, this.b);
@@ -81,39 +77,176 @@ bool _insidePoly(double px, double py, List<List<double>> verts) {
   return true;
 }
 
-void main() {
-  final master = _renderMaster();
-
-  final dir = Directory(kOutDir);
-  if (!dir.existsSync()) {
-    stderr.writeln('Output directory not found: $kOutDir\n'
-        'Run this from the project root.');
-    exitCode = 1;
-    return;
-  }
-
-  for (final size in kSizes) {
-    final resized = img.copyResize(
-      master,
+img.Image _resize(img.Image src, int size) => img.copyResize(
+      src,
       width: size,
       height: size,
       interpolation: img.Interpolation.average,
     );
-    final path = '$kOutDir/app_icon_$size.png';
-    File(path).writeAsBytesSync(img.encodePng(resized));
-    stdout.writeln('wrote $path');
+
+void _writePng(String path, img.Image image) {
+  final file = File(path);
+  file.parent.createSync(recursive: true);
+  file.writeAsBytesSync(img.encodePng(image));
+  stdout.writeln('wrote $path');
+}
+
+void main() {
+  final rounded = _renderMaster(roundedTile: true);
+  final square = _renderMaster(roundedTile: false);
+
+  _writeMacos(rounded);
+  _writeAndroid(square);
+  _writeIos(square);
+  _writeWeb(square);
+  _writeWindows(square);
+  _writeLinux(square);
+}
+
+void _writeMacos(img.Image master) {
+  const outDir = 'macos/Runner/Assets.xcassets/AppIcon.appiconset';
+  if (!Directory(outDir).existsSync()) {
+    stderr.writeln('Missing $outDir — run from the project root.');
+    exitCode = 1;
+    return;
+  }
+  for (final size in <int>[16, 32, 64, 128, 256, 512, 1024]) {
+    _writePng('$outDir/app_icon_$size.png', _resize(master, size));
   }
 }
 
-img.Image _renderMaster() {
+void _writeAndroid(img.Image master) {
+  // Classic density mipmaps (full-bleed; the launcher applies its own mask).
+  const densities = <(String, int)>[
+    ('mipmap-mdpi', 48),
+    ('mipmap-hdpi', 72),
+    ('mipmap-xhdpi', 96),
+    ('mipmap-xxhdpi', 144),
+    ('mipmap-xxxhdpi', 192),
+  ];
+  for (final (dir, size) in densities) {
+    _writePng(
+      'android/app/src/main/res/$dir/ic_launcher.png',
+      _resize(master, size),
+    );
+  }
+
+  // Adaptive icon layers (API 26+): solid brand blue + full-bleed artwork.
+  // Foreground is inset slightly so the motif stays inside the safe zone.
+  const fgSizes = <(String, int)>[
+    ('drawable-mdpi', 108),
+    ('drawable-hdpi', 162),
+    ('drawable-xhdpi', 216),
+    ('drawable-xxhdpi', 324),
+    ('drawable-xxxhdpi', 432),
+  ];
+  for (final (dir, size) in fgSizes) {
+    final inset = (size * 0.12).round();
+    final fg = img.Image(width: size, height: size, numChannels: 4);
+    final scaled = _resize(master, size - inset * 2);
+    img.compositeImage(fg, scaled, dstX: inset, dstY: inset);
+    _writePng(
+      'android/app/src/main/res/$dir/ic_launcher_foreground.png',
+      fg,
+    );
+  }
+
+  File('android/app/src/main/res/values/ic_launcher_background.xml')
+    ..createSync(recursive: true)
+    ..writeAsStringSync('''<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#3B82F6</color>
+</resources>
+''');
+  stdout.writeln(
+      'wrote android/app/src/main/res/values/ic_launcher_background.xml');
+
+  File('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml')
+    ..createSync(recursive: true)
+    ..writeAsStringSync('''<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>
+''');
+  stdout.writeln(
+      'wrote android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml');
+}
+
+void _writeIos(img.Image master) {
+  const outDir = 'ios/Runner/Assets.xcassets/AppIcon.appiconset';
+  if (!Directory(outDir).existsSync()) {
+    stderr.writeln('Missing $outDir');
+    exitCode = 1;
+    return;
+  }
+  // (filename, pixel size) — matches Contents.json.
+  const entries = <(String, int)>[
+    ('Icon-App-20x20@1x.png', 20),
+    ('Icon-App-20x20@2x.png', 40),
+    ('Icon-App-20x20@3x.png', 60),
+    ('Icon-App-29x29@1x.png', 29),
+    ('Icon-App-29x29@2x.png', 58),
+    ('Icon-App-29x29@3x.png', 87),
+    ('Icon-App-40x40@1x.png', 40),
+    ('Icon-App-40x40@2x.png', 80),
+    ('Icon-App-40x40@3x.png', 120),
+    ('Icon-App-60x60@2x.png', 120),
+    ('Icon-App-60x60@3x.png', 180),
+    ('Icon-App-76x76@1x.png', 76),
+    ('Icon-App-76x76@2x.png', 152),
+    ('Icon-App-83.5x83.5@2x.png', 167),
+    ('Icon-App-1024x1024@1x.png', 1024),
+  ];
+  for (final (name, size) in entries) {
+    _writePng('$outDir/$name', _resize(master, size));
+  }
+}
+
+void _writeWeb(img.Image master) {
+  _writePng('web/favicon.png', _resize(master, 32));
+  _writePng('web/icons/Icon-192.png', _resize(master, 192));
+  _writePng('web/icons/Icon-512.png', _resize(master, 512));
+
+  // Maskable icons: keep content inside the center ~80% safe zone.
+  for (final size in <int>[192, 512]) {
+    final pad = (size * 0.1).round();
+    final canvas = img.Image(width: size, height: size, numChannels: 4);
+    // Fill with brand blue so the maskable safe-zone background is solid.
+    img.fill(canvas, color: img.ColorRgba8(59, 130, 246, 255));
+    final scaled = _resize(master, size - pad * 2);
+    img.compositeImage(canvas, scaled, dstX: pad, dstY: pad);
+    _writePng('web/icons/Icon-maskable-$size.png', canvas);
+  }
+}
+
+void _writeWindows(img.Image master) {
+  final sizes = <int>[16, 32, 48, 64, 128, 256];
+  final ico = _resize(master, sizes.first);
+  for (final size in sizes.skip(1)) {
+    ico.addFrame(_resize(master, size));
+  }
+  const path = 'windows/runner/resources/app_icon.ico';
+  File(path).writeAsBytesSync(img.encodeIco(ico));
+  stdout.writeln('wrote $path');
+}
+
+void _writeLinux(img.Image master) {
+  // Desktop entry Icon=visioeditor → install as visioeditor.png / .svg into
+  // hicolor; ship a 512px PNG next to the packaging files.
+  _writePng('linux/packaging/visioeditor.png', _resize(master, 512));
+}
+
+/// [roundedTile]: macOS-style continuous corner with a transparent margin.
+/// Otherwise fills the whole square (Android / iOS / Web / Windows / Linux).
+img.Image _renderMaster({required bool roundedTile}) {
   final n = kMaster;
   final im = img.Image(width: n, height: n, numChannels: 4);
 
-  // Tile geometry (a rounded square with a small transparent margin).
-  final margin = n * 0.055;
+  final margin = roundedTile ? n * 0.055 : 0.0;
   final tileHalf = n / 2 - margin;
   final cx = n / 2, cy = n / 2;
-  final tileRadius = n * 0.2237; // Apple-ish continuous-corner radius.
+  final tileRadius = roundedTile ? n * 0.2237 : 0.0;
 
   // Diagonal brand gradient (top-left bright blue -> bottom-right deep indigo).
   const top = _Rgb(59, 130, 246); // #3B82F6
@@ -143,7 +276,8 @@ img.Image _renderMaster() {
     final py = y + 0.5;
     for (var x = 0; x < n; x++) {
       final px = x + 0.5;
-      if (!_insideRoundRect(px, py, cx, cy, tileHalf, tileHalf, tileRadius)) {
+      if (roundedTile &&
+          !_insideRoundRect(px, py, cx, cy, tileHalf, tileHalf, tileRadius)) {
         continue; // transparent outside the tile
       }
       // White motif on top of the gradient?
