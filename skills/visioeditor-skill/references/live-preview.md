@@ -8,8 +8,11 @@ you build it.
 1. Launch the app: `flutter run -d macos` (or the built `visioeditor.app`).
 2. Open the More (⋯) menu → check **"Agent live preview"**.
 3. The app starts a loopback (127.0.0.1) WebSocket on a random port and writes
-   a handshake file to `~/.visioeditor/agent-bridge.json` (`{port, token}`,
-   `chmod 600`). It's removed when you turn the toggle off.
+   a handshake file to `~/.visioeditor/agent-bridge.json` (or, on sandboxed
+   macOS, under
+   `~/Library/Containers/<bundle-id>/Data/.visioeditor/agent-bridge.json`).
+   Clients probe both locations. The file is `chmod 600` and removed when you
+   turn the toggle off.
 
 Security: loopback-only, random port, one-time token, **off by default**.
 

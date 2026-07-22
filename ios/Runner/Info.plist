@@ -26,6 +26,16 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Uses only HTTPS/system crypto (TLS) and local loopback; no custom
+	     encryption that requires export-compliance documentation. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!--
+	  No NS*UsageDescription keys: open/save/insert use UIDocumentPicker
+	  (system Files UI). No camera, photo library, microphone, location, or
+	  local-network APIs. App Store category is set in App Store Connect
+	  (Graphics & Design / Productivity) — iOS has no LSApplicationCategoryType.
+	-->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

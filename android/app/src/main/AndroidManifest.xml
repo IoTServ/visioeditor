@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Loopback WebSocket for optional "Agent live preview" (HttpServer.bind).
+         File open/save uses the system document picker (SAF) and does not need
+         READ/WRITE_EXTERNAL_STORAGE. Debug/profile also declare INTERNET for
+         Flutter tooling (hot reload / observatory). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="Editor for Visio Diagrams"
         android:name="${applicationName}"

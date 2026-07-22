@@ -4,7 +4,14 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Open / Save panels and security-scoped access to chosen files. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- desktop_drop creates security-scoped bookmarks for dropped paths. -->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<!-- Agent live preview: loopback HttpServer / WebSocket on 127.0.0.1. -->
+	<key>com.apple.security.network.server</key>
 	<true/>
 </dict>
 </plist>

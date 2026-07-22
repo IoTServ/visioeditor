@@ -5,9 +5,10 @@
 ///   (unless the user has unsaved edits), so `vsdxtool patch out.vsdx` is
 ///   reflected in the app within ~1s.
 /// * **L2** — a loopback (127.0.0.1) WebSocket control channel. A handshake
-///   file (`~/.visioeditor/agent-bridge.json`, `0600`) publishes the random
-///   port + one-time token; clients call `open` / `reload` / `applyOps` /
-///   `select` / `snapshot` / `getState` / `save` and receive change events.
+///   file (`~/.visioeditor/agent-bridge.json`, or under the macOS App Sandbox
+///   container; `0600`) publishes the random port + one-time token; clients
+///   call `open` / `reload` / `applyOps` / `select` / `snapshot` / `getState` /
+///   `save` and receive change events.
 ///   `applyOps` edits the in-memory model (instant repaint, no disk write);
 ///   `select` updates the editor selection so the user can see what the Agent
 ///   is targeting.
@@ -52,12 +53,7 @@ class AgentBridge {
   String get token => _token;
 
   /// The handshake file an Agent / CLI reads to discover the port + token.
-  static String handshakePath() {
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        Directory.systemTemp.path;
-    return '$home/.visioeditor/agent-bridge.json';
-  }
+  static String handshakePath() => BridgeClient.handshakePath();
 
   Future<void> start() async {
     if (_server != null) return;

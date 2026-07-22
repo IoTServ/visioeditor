@@ -30,6 +30,18 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Mac App Store / Launchpad category: diagram / vector graphics editor. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.graphics-design</string>
+	<!-- Uses only HTTPS/system crypto (TLS) and local loopback; no custom
+	     encryption that requires export-compliance documentation. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!--
+	  No NS*UsageDescription keys: file access goes through Open/Save panels
+	  and security-scoped bookmarks (user-selected.read-write). Agent live
+	  preview binds 127.0.0.1 only (no local-network / Bonjour prompt).
+	-->
 	<!--
 	  Bind to the system / Microsoft Visio UTIs that Launch Services already
 	  assigns to these extensions (see `mdls` / UTType):

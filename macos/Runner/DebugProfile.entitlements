@@ -4,11 +4,17 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Flutter debug / profile JIT. -->
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
-	<key>com.apple.security.network.server</key>
-	<true/>
+	<!-- Open / Save panels and security-scoped access to chosen files. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- desktop_drop creates security-scoped bookmarks for dropped paths. -->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<!-- Agent live preview + Flutter observatory / hot reload tooling. -->
+	<key>com.apple.security.network.server</key>
 	<true/>
 </dict>
 </plist>

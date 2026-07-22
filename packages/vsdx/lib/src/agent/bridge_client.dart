@@ -1,14 +1,48 @@
 /// Client for the app's live-preview bridge (see `lib/agent_bridge/`).
 ///
-/// Discovers the running editor via the handshake file
-/// (`~/.visioeditor/agent-bridge.json`), opens the loopback WebSocket, and does
-/// request/response calls (`open` / `reload` / `applyOps` / `snapshot` /
-/// `getState` / `save`). Used by the MCP server's "live" tools.
+/// Discovers the running editor via a handshake file, opens the loopback
+/// WebSocket, and does request/response calls (`open` / `reload` / `applyOps` /
+/// `snapshot` / `getState` / `save`). Used by the MCP server's "live" tools.
+///
+/// Handshake locations (first hit wins):
+/// * `~/.visioeditor/agent-bridge.json` — Linux / Windows / unsandboxed macOS
+/// * `~/Library/Containers/<bundle>/Data/.visioeditor/agent-bridge.json` —
+///   sandboxed macOS app (no temporary-exception entitlement required; the
+///   CLI runs unsandboxed and can read the container path)
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+/// Bundle IDs whose App Sandbox containers may hold the handshake file.
+const List<String> kAgentBridgeMacContainerBundleIds = <String>[
+  'cloud.iothub.visioeditor.visioeditor',
+  'cloud.iothub.visioeditor.visioeditor.debug',
+];
+
+/// Process home for publishing the handshake (`AgentBridge` in the app).
+///
+/// Under macOS App Sandbox this is the container Data directory — that is
+/// intentional so we do not need a home-relative temporary exception.
+String agentBridgeHomeDirectory() {
+  final home = Platform.environment['HOME'] ??
+      Platform.environment['USERPROFILE'];
+  if (home == null || home.isEmpty) return Directory.systemTemp.path;
+  return home;
+}
+
+/// Real user home as seen by an unsandboxed CLI / MCP client.
+String agentBridgeClientHomeDirectory() {
+  final home = Platform.environment['HOME'] ??
+      Platform.environment['USERPROFILE'];
+  if (home == null || home.isEmpty) return Directory.systemTemp.path;
+  // Defensive: if a client somehow runs sandboxed, climb out of the container.
+  const marker = '/Library/Containers/';
+  final idx = home.indexOf(marker);
+  if (idx > 0) return home.substring(0, idx);
+  return home;
+}
 
 class BridgeClient {
   BridgeClient._(this._socket, this._stream);
@@ -17,22 +51,48 @@ class BridgeClient {
   final Stream<Map<String, dynamic>> _stream;
   int _id = 0;
 
-  /// Location the app publishes its port + token to.
+  /// Path where **this process** should publish the handshake (app side).
   static String handshakePath() {
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        Directory.systemTemp.path;
-    return '$home/.visioeditor/agent-bridge.json';
+    return '${agentBridgeHomeDirectory()}/.visioeditor/agent-bridge.json';
+  }
+
+  /// Candidate paths a CLI / MCP client should probe (macOS sandbox-aware).
+  static List<String> handshakeSearchPaths() {
+    final home = agentBridgeClientHomeDirectory();
+    final paths = <String>[
+      '$home/.visioeditor/agent-bridge.json',
+    ];
+    if (Platform.isMacOS) {
+      for (final id in kAgentBridgeMacContainerBundleIds) {
+        paths.add(
+          '$home/Library/Containers/$id/Data/.visioeditor/agent-bridge.json',
+        );
+      }
+    }
+    return paths;
+  }
+
+  /// First existing handshake file, or `null`.
+  static String? findHandshakePath() {
+    for (final path in handshakeSearchPaths()) {
+      if (File(path).existsSync()) return path;
+    }
+    return null;
   }
 
   /// `true` if a handshake file exists (the app *may* be running with the
   /// bridge enabled).
-  static bool get available => File(handshakePath()).existsSync();
+  static bool get available => findHandshakePath() != null;
 
   /// Connect to the running app. Throws a helpful [StateError] if the bridge
   /// isn't enabled.
   static Future<BridgeClient> connect({String? handshakeFile}) async {
-    final path = handshakeFile ?? handshakePath();
+    final path = handshakeFile ?? findHandshakePath();
+    if (path == null) {
+      throw StateError(
+          'Agent live preview is not running. Open the editor and enable '
+          '"Agent live preview" from the More (⋯) menu, then retry.');
+    }
     final f = File(path);
     if (!f.existsSync()) {
       throw StateError(

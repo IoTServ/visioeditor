@@ -79,7 +79,8 @@ Skip clarification for simple, clear asks ("draw a flowchart of X").
 
 1. **Check tool** — resolve `VSDXTOOL` (above). Detect live preview: if the
    user wants it, ensure the app is running with "Agent live preview" on
-   (a handshake file at `~/.visioeditor/agent-bridge.json` means it's ready).
+   (a handshake file at `~/.visioeditor/agent-bridge.json`, or the macOS
+   App Sandbox container path, means it's ready).
 2. **Plan** — pick the diagram type preset (`references/diagram-types.md`):
    shapes, relationships, layout direction (`TB` for flow/org, `LR` for
    pipelines), grouping. For unfamiliar shapes, `search_shapes "<keywords>"`.
