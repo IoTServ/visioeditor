@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="visioeditor"
+        android:label="Editor for Visio Diagrams"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
