@@ -12,7 +12,7 @@ PRODUCT_NAME = visioeditor
 VISIOEDITOR_DISPLAY_NAME = Editor for Visio Diagrams
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = cloud.iothub.visioeditor.visioeditor
+PRODUCT_BUNDLE_IDENTIFIER = cloud.iothub.visioeditor
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 Editor for Visio Diagrams contributors. All rights reserved.

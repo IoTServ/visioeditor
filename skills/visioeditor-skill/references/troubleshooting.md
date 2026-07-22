@@ -27,7 +27,7 @@
 - Error "Agent live preview is not running": open the app and enable **More ⋯
   → Agent live preview**. Confirm a handshake exists at
   `~/.visioeditor/agent-bridge.json` or (sandboxed macOS)
-  `~/Library/Containers/cloud.iothub.visioeditor.visioeditor/Data/.visioeditor/agent-bridge.json`
+  `~/Library/Containers/cloud.iothub.visioeditor/Data/.visioeditor/agent-bridge.json`
   (Debug builds use the `.debug` bundle id).
 - One app instance owns the bridge at a time; the handshake file holds the
   current port + token. Toggle off/on to refresh it.

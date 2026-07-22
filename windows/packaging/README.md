@@ -12,7 +12,7 @@ associations in `pubspec.yaml`:
 ```yaml
 msix_config:
   display_name: Editor for Visio Diagrams
-  identity_name: com.example.visioeditor
+  identity_name: cloud.iothub.visioeditor
   file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd
 ```
 

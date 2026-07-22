@@ -17,8 +17,8 @@ import 'dart:io';
 
 /// Bundle IDs whose App Sandbox containers may hold the handshake file.
 const List<String> kAgentBridgeMacContainerBundleIds = <String>[
-  'cloud.iothub.visioeditor.visioeditor',
-  'cloud.iothub.visioeditor.visioeditor.debug',
+  'cloud.iothub.visioeditor',
+  'cloud.iothub.visioeditor.debug',
 ];
 
 /// Process home for publishing the handshake (`AgentBridge` in the app).
