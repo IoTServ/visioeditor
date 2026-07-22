@@ -109,7 +109,9 @@ bool hasVisioAssociatedExtension(String path) {
 bool isLegacyVisioBinary(String path) {
   final lower = path.toLowerCase();
   // Exact `.vsd` only — do not match `.vsdx` / `.vsdm`.
-  return lower.endsWith('.vsd') && !lower.endsWith('.vsdx') && !lower.endsWith('.vsdm');
+  return lower.endsWith('.vsd') &&
+      !lower.endsWith('.vsdx') &&
+      !lower.endsWith('.vsdm');
 }
 
 /// `true` when [path] looks like a raster image the editor can embed.
@@ -125,10 +127,19 @@ String extensionOfPath(String path) {
   return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
 }
 
-/// Prompt for a save location. Returns a `.vsdx` path, or `null` if cancelled.
+bool get _mobileSaveNeedsBytes => Platform.isIOS || Platform.isAndroid;
+
+/// Prompt for a save location and persist [bytes] as `.vsdx`.
 ///
-/// Legacy `.vsd` is import-only; persistence is always OPC `.vsdx`.
-Future<String?> pickSaveLocation({String suggestedName = 'drawing.vsdx'}) async {
+/// Returns the chosen path, or `null` if cancelled.
+///
+/// On iOS/Android, [FilePicker.saveFile] **requires** [bytes] and writes them
+/// itself (UIDocumentPicker export / SAF). On desktop it only returns a path,
+/// so this helper writes the file afterwards.
+Future<String?> pickSaveLocation({
+  required Uint8List bytes,
+  String suggestedName = 'drawing.vsdx',
+}) async {
   var suggested = suggestedName;
   if (isLegacyVisioBinary(suggested)) {
     suggested = suggested.replaceFirst(
@@ -138,33 +149,67 @@ Future<String?> pickSaveLocation({String suggestedName = 'drawing.vsdx'}) async 
   } else if (!suggested.toLowerCase().endsWith('.vsdx')) {
     suggested = '$suggested.vsdx';
   }
-  final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Save Visio drawing (.vsdx)',
+  return _saveBytesWithPicker(
+    bytes: bytes,
     fileName: suggested,
-    type: FileType.custom,
-    allowedExtensions: <String>['vsdx'],
+    dialogTitle: 'Save Visio drawing (.vsdx)',
+    allowedExtensions: const <String>['vsdx'],
+    ensureExtension: (path) =>
+        path.toLowerCase().endsWith('.vsdx') ? path : '$path.vsdx',
   );
-  if (path == null) return null;
-  return path.toLowerCase().endsWith('.vsdx') ? path : '$path.vsdx';
 }
 
 Future<void> writeBytesToFile(String path, Uint8List bytes) async {
   await File(path).writeAsBytes(bytes, flush: true);
 }
 
-/// Prompt for an export location with a specific [ext] (e.g. `svg`, `png`).
+/// Prompt for an export location and persist [bytes] with extension [ext].
+///
+/// Returns the chosen path, or `null` if cancelled. See [pickSaveLocation] for
+/// why [bytes] must be supplied on iOS/Android.
 Future<String?> pickExportLocation({
   required String ext,
   required String suggestedName,
-}) async {
-  final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Export',
+  required Uint8List bytes,
+}) {
+  return _saveBytesWithPicker(
+    bytes: bytes,
     fileName: suggestedName,
-    type: FileType.custom,
+    dialogTitle: 'Export',
     allowedExtensions: <String>[ext],
+    ensureExtension: (path) =>
+        path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext',
   );
-  if (path == null) return null;
-  return path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext';
+}
+
+/// Shared save/export dialog. Passes [bytes] on every platform (required on
+/// mobile); only writes to [File] afterwards on desktop.
+Future<String?> _saveBytesWithPicker({
+  required Uint8List bytes,
+  required String fileName,
+  required String dialogTitle,
+  required List<String> allowedExtensions,
+  required String Function(String path) ensureExtension,
+}) async {
+  // Popup menus / sheets on iPad must finish dismissing before another
+  // UIViewController (UIDocumentPicker) can present — otherwise the save
+  // dialog never appears and the export looks like a no-op.
+  if (Platform.isIOS) {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  }
+  final picked = await FilePicker.platform.saveFile(
+    dialogTitle: dialogTitle,
+    fileName: fileName,
+    type: FileType.custom,
+    allowedExtensions: allowedExtensions,
+    bytes: bytes,
+  );
+  if (picked == null) return null;
+  final path = ensureExtension(picked);
+  if (!_mobileSaveNeedsBytes) {
+    await writeBytesToFile(path, bytes);
+  }
+  return path;
 }
 
 String baseName(String? fileName) {

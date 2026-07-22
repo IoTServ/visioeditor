@@ -837,17 +837,22 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     if (c == null || !c.hasDocument) return;
     final el = EditorL10n.of(context);
-    var path = c.filePath;
-    // Never overwrite a legacy .vsd with OPC bytes.
-    if (path != null && isLegacyVisioBinary(path)) {
-      path = null;
-    }
-    path ??=
-        await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
-    if (path == null) return;
     try {
       final bytes = c.exportToBytes();
-      await writeBytesToFile(path, bytes);
+      var path = c.filePath;
+      // Never overwrite a legacy .vsd with OPC bytes.
+      if (path != null && isLegacyVisioBinary(path)) {
+        path = null;
+      }
+      if (path != null) {
+        await writeBytesToFile(path, bytes);
+      } else {
+        path = await pickSaveLocation(
+          bytes: bytes,
+          suggestedName: c.fileName ?? 'drawing.vsdx',
+        );
+        if (path == null) return;
+      }
       c.markSaved(bytes, path: path);
       await _addRecent(path);
       if (!mounted) return;
@@ -862,12 +867,13 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     if (c == null || !c.hasDocument) return;
     final el = EditorL10n.of(context);
-    final path =
-        await pickSaveLocation(suggestedName: c.fileName ?? 'drawing.vsdx');
-    if (path == null) return;
     try {
       final bytes = c.exportToBytes();
-      await writeBytesToFile(path, bytes);
+      final path = await pickSaveLocation(
+        bytes: bytes,
+        suggestedName: c.fileName ?? 'drawing.vsdx',
+      );
+      if (path == null) return;
       c.markSaved(bytes, path: path);
       await _addRecent(path);
       if (!mounted) return;
@@ -883,11 +889,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final doc = c?.document;
     if (c == null || doc == null) return;
     final el = EditorL10n.of(context);
-    final path = await pickExportLocation(
-      ext: 'svg',
-      suggestedName: '${baseName(c.fileName)}.svg',
-    );
-    if (path == null) return;
     try {
       final svg = VsdxToSvgSerializer(
         layerFilter: SvgLayerFilter.print,
@@ -895,7 +896,13 @@ class _EditorHomePageState extends State<EditorHomePage> {
         lineJumpRadiusInches: c.lineJumpRadiusInches,
         colorByLayer: c.colorByLayer,
       ).serializeDocument(doc);
-      await writeBytesToFile(path, Uint8List.fromList(utf8.encode(svg)));
+      final bytes = Uint8List.fromList(utf8.encode(svg));
+      final path = await pickExportLocation(
+        ext: 'svg',
+        suggestedName: '${baseName(c.fileName)}.svg',
+        bytes: bytes,
+      );
+      if (path == null) return;
       if (!mounted) return;
       _snack(el.exportedSvg(path));
     } catch (e) {
@@ -910,11 +917,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final page = c?.currentPage;
     if (c == null || doc == null || page == null) return;
     final el = EditorL10n.of(context);
-    final path = await pickExportLocation(
-      ext: 'png',
-      suggestedName: '${baseName(c.fileName)}.png',
-    );
-    if (path == null) return;
     try {
       final bytes = await renderPageToPng(
         page,
@@ -930,7 +932,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
         _snack(el.pngExportFailed);
         return;
       }
-      await writeBytesToFile(path, bytes);
+      final path = await pickExportLocation(
+        ext: 'png',
+        suggestedName: '${baseName(c.fileName)}.png',
+        bytes: bytes,
+      );
+      if (path == null) return;
       if (!mounted) return;
       _snack(el.exportedPng(path));
     } catch (e) {
@@ -1014,11 +1021,6 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final doc = c?.document;
     if (c == null || doc == null) return;
     final el = EditorL10n.of(context);
-    final path = await pickExportLocation(
-      ext: 'pdf',
-      suggestedName: '${baseName(c.fileName)}.pdf',
-    );
-    if (path == null) return;
     try {
       final bytes = await exportDocumentToPdf(
         doc,
@@ -1026,7 +1028,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
         lineJumpRadiusInches: c.lineJumpRadiusInches,
         colorByLayer: c.colorByLayer,
       );
-      await writeBytesToFile(path, bytes);
+      final path = await pickExportLocation(
+        ext: 'pdf',
+        suggestedName: '${baseName(c.fileName)}.pdf',
+        bytes: bytes,
+      );
+      if (path == null) return;
       if (!mounted) return;
       _snack(el.exportedPdf(path));
     } catch (e) {

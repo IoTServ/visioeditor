@@ -88,6 +88,9 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<!-- Lets UIDocumentPicker export (Save / Export) present reliably on iPad. -->
+	<key>UISupportsDocumentBrowser</key>
+	<true/>
 	<!--
 	  Match system Visio UTIs (.vsdx → drawing.opc, .vsd → drawing).
 	  See macos/Runner/Info.plist for the full rationale.
