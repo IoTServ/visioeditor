@@ -31,11 +31,19 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!--
-	  No NS*UsageDescription keys: open/save/insert use UIDocumentPicker
-	  (system Files UI). No camera, photo library, microphone, location, or
-	  local-network APIs. App Store category is set in App Store Connect
-	  (Graphics & Design / Productivity) — iOS has no LSApplicationCategoryType.
+	  Purpose strings required by App Store (ITMS-90683). Open/save primarily
+	  use the system document picker; file_picker still links Photo Library /
+	  Camera (and may touch photo location metadata), so these keys are required
+	  even when those paths are unused. App Store category is set in App Store
+	  Connect (Graphics & Design / Productivity) — iOS has no
+	  LSApplicationCategoryType.
 	-->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Editor for Visio Diagrams needs access to your photo library so you can choose photos and images to insert into diagrams.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Editor for Visio Diagrams needs camera access so you can capture a photo and insert it into a diagram.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Editor for Visio Diagrams may read location metadata from photos you insert into diagrams. It does not track your location.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
