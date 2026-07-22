@@ -458,7 +458,56 @@ class VsdxPainter extends CustomPainter {
   }
 
   void _paintGeometries(Canvas canvas, VsdxShape shape) {
-    final dashes = dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches);
+    final dashes =
+        dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches);
+    final rounding = shape.line.roundingInches;
+
+    // Visio / libvisio: every Geometry with NoFill=0 is one even-odd fill path
+    // (frames/donuts). Paint that fill once, then stroke each section.
+    final compoundPath = shape.fill.hasFill
+        ? buildCompoundFillPath(
+            shape.geometries,
+            widthInches: shape.width,
+            heightInches: shape.height,
+            roundingInches: rounding,
+          )
+        : null;
+    final compoundFill = compoundPath != null;
+    if (compoundFill) {
+      final fillGeom = shape.geometries.firstWhere((g) => !g.noShow && !g.noFill);
+      _drawShadow(canvas, shape, compoundPath, geom: fillGeom);
+      _drawGlow(canvas, shape, compoundPath, geom: fillGeom);
+      _drawReflection(
+        canvas,
+        shape,
+        compoundPath,
+        noFill: false,
+        noLine: true,
+      );
+      final soft = shape.line.softEdgesInches;
+      final useSoft = soft > 0 && !shape.is1D;
+      if (useSoft) {
+        final sigma = _blurSigmaPx(soft);
+        final bounds = compoundPath.getBounds().inflate(soft * 3);
+        canvas.saveLayer(bounds, Paint());
+        _drawFill(canvas, shape, compoundPath);
+        canvas.saveLayer(
+          bounds,
+          Paint()
+            ..blendMode = BlendMode.dstIn
+            ..imageFilter = ui.ImageFilter.blur(
+              sigmaX: sigma,
+              sigmaY: sigma,
+              tileMode: TileMode.decal,
+            ),
+        );
+        canvas.drawPath(compoundPath, Paint()..color = const Color(0xFFFFFFFF));
+        canvas.restore();
+        canvas.restore();
+      } else {
+        _drawFill(canvas, shape, compoundPath);
+      }
+    }
 
     for (final geom in shape.geometries) {
       if (geom.noShow) continue;
@@ -466,24 +515,39 @@ class VsdxPainter extends CustomPainter {
         geom,
         widthInches: shape.width,
         heightInches: shape.height,
-        roundingInches: shape.line.roundingInches,
+        roundingInches: rounding,
       );
-      _drawShadow(canvas, shape, path, geom: geom);
-      _drawGlow(canvas, shape, path, geom: geom);
-      _drawReflection(
-        canvas,
-        shape,
-        path,
-        noFill: geom.noFill,
-        noLine: geom.noLine,
-      );
+      // Compound fill already painted effects+fill; skip re-fill. Still paint
+      // effects for NoFill stroke decorations (dividers, inner borders).
+      if (!compoundFill) {
+        _drawShadow(canvas, shape, path, geom: geom);
+        _drawGlow(canvas, shape, path, geom: geom);
+        _drawReflection(
+          canvas,
+          shape,
+          path,
+          noFill: geom.noFill,
+          noLine: geom.noLine,
+        );
+      } else if (geom.noFill) {
+        _drawShadow(canvas, shape, path, geom: geom);
+        _drawGlow(canvas, shape, path, geom: geom);
+        _drawReflection(
+          canvas,
+          shape,
+          path,
+          noFill: true,
+          noLine: geom.noLine,
+        );
+      }
       // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
       // offscreen layer. Skip 1D connectors — jumps / arrows stay crisp.
       // Match glow: NoFill+NoLine (non-image) has nothing to feather.
       // ImageFilter.blur sigma is in layer pixels (not page inches), so scale
       // by pxPerInch to match SVG feGaussianBlur in the inch→px page group.
       final soft = shape.line.softEdgesInches;
-      final softHollow = (geom.noFill || !shape.fill.hasFill) &&
+      final paintFill = !compoundFill && !geom.noFill && shape.fill.hasFill;
+      final softHollow = !paintFill &&
           (geom.noLine || !shape.line.hasLine) &&
           !shape.hasImage;
       final useSoft = soft > 0 && !shape.is1D && !softHollow;
@@ -499,7 +563,7 @@ class VsdxPainter extends CustomPainter {
         // Edge feather (not whole-layer blur): draw fill/stroke, then dstIn
         // with a blurred opaque silhouette — matches SVG SourceAlpha SoftEdges.
         canvas.saveLayer(bounds, Paint());
-        if (!geom.noFill && shape.fill.hasFill) {
+        if (paintFill) {
           _drawFill(canvas, shape, path);
         }
         if (!geom.noLine && shape.line.hasLine) {
@@ -531,7 +595,7 @@ class VsdxPainter extends CustomPainter {
               tileMode: TileMode.decal,
             ),
         );
-        if (!geom.noFill && shape.fill.hasFill) {
+        if (paintFill) {
           canvas.drawPath(path, Paint()..color = const Color(0xFFFFFFFF));
         }
         if (!geom.noLine && shape.line.hasLine) {
@@ -562,7 +626,7 @@ class VsdxPainter extends CustomPainter {
         canvas.restore();
         continue;
       }
-      if (!geom.noFill && shape.fill.hasFill) {
+      if (paintFill) {
         _drawFill(canvas, shape, path);
       }
       if (!geom.noLine && shape.line.hasLine) {

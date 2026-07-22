@@ -13,6 +13,38 @@ import 'dart:ui';
 
 import 'package:vsdx/vsdx.dart';
 
+/// Combine every Geometry section with `NoFill=0` into one even-odd path.
+///
+/// Visio / libvisio fill all non-NoFill sections of a shape as a single
+/// compound path (`svg:fill-rule=evenodd`). That punches holes for frames /
+/// donuts (e.g. sample.vsd's page border). Returns `null` when fewer than two
+/// fillable sections exist — callers then paint each Geometry separately.
+Path? buildCompoundFillPath(
+  List<VsdxGeometry> geometries, {
+  required double widthInches,
+  required double heightInches,
+  double roundingInches = 0,
+}) {
+  final fillable = <VsdxGeometry>[
+    for (final g in geometries)
+      if (!g.noShow && !g.noFill) g,
+  ];
+  if (fillable.length < 2) return null;
+  final path = Path()..fillType = PathFillType.evenOdd;
+  for (final g in fillable) {
+    path.addPath(
+      buildPath(
+        g,
+        widthInches: widthInches,
+        heightInches: heightInches,
+        roundingInches: roundingInches,
+      ),
+      Offset.zero,
+    );
+  }
+  return path;
+}
+
 /// Build a single Flutter [Path] from one [VsdxGeometry], given the shape's
 /// width and height (used by the `Rel*` commands).
 ///

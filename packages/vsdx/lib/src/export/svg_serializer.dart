@@ -480,6 +480,38 @@ class VsdxToSvgSerializer {
     // Geometry — do not attach markers/bake on every section.
     var arrowsAttached = false;
     final jumpD = _connectorJumpD(page, shape);
+    // Match canvas / libvisio: ≥2 NoFill=0 sections → one evenodd fill path.
+    final fillParts = <String>[];
+    if (shape.fill.hasFill) {
+      for (final geom in shape.geometries) {
+        if (geom.noShow || geom.noFill) continue;
+        final part = _geometryToD(
+          geom,
+          shape.width,
+          shape.height,
+          roundingInches: shape.line.roundingInches,
+        );
+        if (part.isNotEmpty) fillParts.add(part);
+      }
+    }
+    final compoundFill = fillParts.length >= 2;
+    if (compoundFill) {
+      wroteGeom = true;
+      _writePath(
+        buf,
+        shape,
+        theme,
+        page,
+        d: fillParts.join(' '),
+        noFill: false,
+        noLine: true,
+        fillRule: 'evenodd',
+        attachArrows: false,
+        paintId: '$paintIdScope-${shape.id}-fill',
+        indent: '$indent  ',
+      );
+      geomIndex++;
+    }
     for (final geom in shape.geometries) {
       if (geom.noShow) continue;
       final d = _geometryToD(
@@ -489,6 +521,9 @@ class VsdxToSvgSerializer {
         roundingInches: shape.line.roundingInches,
       );
       if (d.isEmpty) continue;
+      // Compound fill already emitted; skip fill-only sections with no stroke.
+      final skipFill = compoundFill && !geom.noFill;
+      if (skipFill && (geom.noLine || !shape.line.hasLine)) continue;
       // Match canvas: line jumps affect stroke only; fill keeps the raw
       // geometry. Do not break — later Geometry sections still paint.
       final strokeD = (jumpD != null && !geom.noLine) ? jumpD : null;
@@ -504,7 +539,7 @@ class VsdxToSvgSerializer {
         page,
         d: d,
         strokeD: strokeD,
-        noFill: geom.noFill,
+        noFill: skipFill || geom.noFill,
         noLine: geom.noLine,
         attachArrows: attachArrows,
         // paintIdScope is page- (and underlay-) scoped so multi-page SVG
@@ -619,6 +654,8 @@ class VsdxToSvgSerializer {
     String? strokeD,
     required bool noFill,
     required bool noLine,
+    /// Visio compound fill (libvisio `svg:fill-rule=evenodd`).
+    String? fillRule,
     bool attachArrows = true,
     required String paintId,
     required String indent,
@@ -635,8 +672,10 @@ class VsdxToSvgSerializer {
       fallbackH: shape.height.abs() < 1e-9 ? 1.0 : shape.height.abs(),
       degeneratePad: linePad,
     );
+    final fillRuleAttr =
+        (!noFill && fillRule != null) ? ' fill-rule="$fillRule"' : '';
     final fillAttr = !noFill
-        ? _fillAttr(shape.fill, theme, paintId, defs, bounds: fillBounds)
+        ? '${_fillAttr(shape.fill, theme, paintId, defs, bounds: fillBounds)}$fillRuleAttr'
         : 'fill="none"';
     // Line gradients follow the unjumped geometry (canvas path bounds).
     // Jump hops must not shift the gradient centre.
