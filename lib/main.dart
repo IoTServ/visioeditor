@@ -3600,8 +3600,9 @@ class _ThumbGeom {
   _ThumbGeom(
     this.width,
     this.height,
-    this.paths,
-  );
+    this.paths, {
+    this.label,
+  });
 
   final double width;
   final double height;
@@ -3613,6 +3614,11 @@ class _ThumbGeom {
         Color fillColor,
         Color strokeColor,
       })> paths;
+
+  /// Shape text used when the geometry has no fill/line (e.g. the Text stencil).
+  final String? label;
+
+  bool get hasVisiblePaths => paths.any((p) => p.fill || p.line);
 }
 
 /// Paints a stencil's real geometry into a thumbnail box. Builds the shape once
@@ -3646,7 +3652,13 @@ class _StencilThumbPainter extends CustomPainter {
     if (w > 0 && h > 0) {
       _collectThumbPaths(shape, paths, root: true);
     }
-    return _geomCache[stencil] = _ThumbGeom(w, h, paths);
+    final label = shape.text?.trim();
+    return _geomCache[stencil] = _ThumbGeom(
+      w,
+      h,
+      paths,
+      label: (label != null && label.isNotEmpty) ? label : null,
+    );
   }
 
   void _collectThumbPaths(
@@ -3704,7 +3716,7 @@ class _StencilThumbPainter extends CustomPainter {
     final geom = _geom();
     final w = geom.width;
     final h = geom.height;
-    if (w > 0 && h > 0 && geom.paths.isNotEmpty) {
+    if (w > 0 && h > 0 && geom.hasVisiblePaths) {
       const pad = 5.0;
       final s = math.min(
         (size.width - 2 * pad) / w,
@@ -3739,6 +3751,31 @@ class _StencilThumbPainter extends CustomPainter {
         }
         canvas.restore();
       }
+    } else if (geom.label != null) {
+      // Text-only stencils (fill/line off): show the label as the icon.
+      final tp = TextPainter(
+        text: TextSpan(
+          text: geom.label,
+          style: const TextStyle(
+            color: Color(0xFF374151),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+            height: 1.05,
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+        maxLines: 2,
+        ellipsis: '…',
+      )..layout(maxWidth: math.max(8.0, size.width - 4));
+      tp.paint(
+        canvas,
+        Offset(
+          (size.width - tp.width) / 2,
+          (size.height - tp.height) / 2,
+        ),
+      );
     }
     return _pictureCache[key] = recorder.endRecording();
   }

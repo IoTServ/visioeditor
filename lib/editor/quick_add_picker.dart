@@ -229,33 +229,68 @@ class _WireframeThumbPainter extends CustomPainter {
           if (g.noShow) continue;
           // Outline even fill-only geometries so wireframe thumbs stay visible.
           if (g.noLine && g.noFill) continue;
+          // Skip invisible text-box frames (no fill & no line on the shape).
+          if (!shape.fill.hasFill && !shape.line.hasLine) continue;
           paths.add(buildPath(g, widthInches: w, heightInches: h));
         }
       }
-      return _Geom(w, h, paths);
+      final label = shape.text?.trim();
+      return _Geom(
+        w,
+        h,
+        paths,
+        label: (label != null && label.isNotEmpty) ? label : null,
+      );
     });
     final w = geom.width;
     final h = geom.height;
-    if (w <= 0 || h <= 0 || geom.paths.isEmpty) return;
-    const pad = 7.0;
-    final s = math.min((size.width - 2 * pad) / w, (size.height - 2 * pad) / h);
-    if (s <= 0) return;
-    final dx = (size.width - w * s) / 2;
-    final dy = (size.height - h * s) / 2;
-    canvas
-      ..save()
-      ..translate(dx, size.height - dy)
-      ..scale(s, -s);
-    final stroke = Paint()
-      ..color = const Color(0xFF5A6A7A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.15 / s
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-    for (final p in geom.paths) {
-      canvas.drawPath(p, stroke);
+    if (w > 0 && h > 0 && geom.paths.isNotEmpty) {
+      const pad = 7.0;
+      final s =
+          math.min((size.width - 2 * pad) / w, (size.height - 2 * pad) / h);
+      if (s <= 0) return;
+      final dx = (size.width - w * s) / 2;
+      final dy = (size.height - h * s) / 2;
+      canvas
+        ..save()
+        ..translate(dx, size.height - dy)
+        ..scale(s, -s);
+      final stroke = Paint()
+        ..color = const Color(0xFF5A6A7A)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.15 / s
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round;
+      for (final p in geom.paths) {
+        canvas.drawPath(p, stroke);
+      }
+      canvas.restore();
+      return;
     }
-    canvas.restore();
+    final label = geom.label;
+    if (label == null) return;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Color(0xFF5A6A7A),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          height: 1.05,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+      maxLines: 2,
+      ellipsis: '…',
+    )..layout(maxWidth: math.max(8.0, size.width - 4));
+    tp.paint(
+      canvas,
+      Offset(
+        (size.width - tp.width) / 2,
+        (size.height - tp.height) / 2,
+      ),
+    );
   }
 
   @override
@@ -264,10 +299,11 @@ class _WireframeThumbPainter extends CustomPainter {
 }
 
 class _Geom {
-  _Geom(this.width, this.height, this.paths);
+  _Geom(this.width, this.height, this.paths, {this.label});
   final double width;
   final double height;
   final List<Path> paths;
+  final String? label;
 }
 
 /// Inserts [QuickAddPicker] into the nearest [Overlay] and returns a disposer.

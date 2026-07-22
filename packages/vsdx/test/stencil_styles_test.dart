@@ -40,6 +40,8 @@ void main() {
           .build(1, 0, 0);
       expect(s.fill.hasFill, isFalse);
       expect(s.line.hasLine, isFalse);
+      // Thumbnail painters fall back to this label when fill/line are off.
+      expect(s.text, 'Text');
     });
 
     test('every group stamps group name onto stencils', () {
