@@ -22,6 +22,7 @@ import 'quick_add_picker.dart';
 import 'snap_guides.dart';
 import 'stencils.dart';
 import 'third_party_icons.dart';
+import 'touch_ui.dart';
 
 /// Interactive editing canvas for the controller's current page.
 ///
@@ -112,6 +113,14 @@ class _PageCanvasState extends State<PageCanvas> {
   double _viewPinchStartDistance = 0;
   final Map<int, Offset> _viewPointers = <int, Offset>{};
 
+  /// True while a two-finger pinch is driving zoom in view-only mode.
+  bool _pinchActive = false;
+
+  /// Touch empty-canvas pan that may still become a marquee if held still.
+  DateTime? _emptyTouchPanAt;
+  Offset? _emptyTouchPanOrigin;
+  Offset _emptyTouchPanAccum = Offset.zero;
+
   // Reveal ("scroll into view") — tracks the controller's revealSerial.
   int _lastRevealSerial = 0;
   // Fit-to-window requests (toolbar / zoom controls) — tracks fitSerial.
@@ -195,8 +204,47 @@ class _PageCanvasState extends State<PageCanvas> {
   static const double _connectArrowGapPx = 22;
   static const double _connectArrowHitPx = 15;
 
+  /// Touch: push arrows farther out so they clear larger resize handles.
+  static const double _connectArrowGapTouchPx = 38;
+  static const double _connectArrowHitTouchPx = 26;
+
   /// Screen-px radius within which an endpoint snaps to a connection point.
   static const double _connSnapPx = 13;
+
+  /// Touch / phone chrome: selection quick-add arrows, larger hit targets, and
+  /// empty-canvas pan.
+  ///
+  /// Native Android/iOS use [isNativeMobileOs] (not [defaultTargetPlatform]) so
+  /// `flutter test` on a desktop host keeps mouse chrome. Compact width covers
+  /// phone browsers and the responsive layout breakpoint.
+  bool get _isTouchUi {
+    if (isNativeMobileOs) return true;
+    final size = MediaQuery.maybeSizeOf(context);
+    return size != null && size.width < 720;
+  }
+
+  double get _connectArrowGapPxEffective =>
+      _isTouchUi ? _connectArrowGapTouchPx : _connectArrowGapPx;
+
+  double get _connectArrowHitPxEffective =>
+      _isTouchUi ? _connectArrowHitTouchPx : _connectArrowHitPx;
+
+  /// Screen-px hit radius for resize / rotate / endpoint knobs.
+  double get _handleHitPx => _isTouchUi ? 22 : 12;
+
+  /// Shape that should show directional quick-add arrows right now.
+  ///
+  /// Touch layouts prefer the single selection (no reliable hover). Mouse
+  /// hover still wins on desktop so unselected shapes keep draw.io parity.
+  int? get _connectAffordanceShapeId {
+    if (!_connectAffordanceActive) return null;
+    if (_isTouchUi) {
+      final selected = _singleSelectedShape();
+      if (selected != null && _canConnectFrom(selected)) return selected.id;
+    }
+    if (_hoverShapeId != null) return _hoverShapeId;
+    return null;
+  }
 
   // Creation preview, in content-px space.
   Offset? _previewStart;
@@ -707,7 +755,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final dx = top.x - pin.x;
     final dy = top.y - pin.y;
     final len = math.sqrt(dx * dx + dy * dy);
-    final offIn = 22 / (_scale * widget.pxPerInch);
+    final offIn = (_isTouchUi ? 52.0 : 22.0) / (_scale * widget.pxPerInch);
     final ux = len > 1e-9 ? dx / len : 0.0;
     final uy = len > 1e-9 ? dy / len : 1.0;
     final knobX = top.x + ux * offIn;
@@ -781,9 +829,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// If [viewportPos] is on one of [s]'s connect arrows, return its direction.
   int? _connectArrowHitDir(VsdxShape s, Offset viewportPos) {
-    final gap = _connectArrowGapPx / _scale;
+    final gap = _connectArrowGapPxEffective / _scale;
     final anchors = _connectArrows(_exactContentBox(s), gap);
-    final hit = _connectArrowHitPx * _connectArrowHitPx;
+    final hit = _connectArrowHitPxEffective * _connectArrowHitPxEffective;
     for (final (c, dir) in anchors) {
       if ((_offset + c * _scale - viewportPos).distanceSquared <= hit) {
         return dir;
@@ -807,7 +855,8 @@ class _PageCanvasState extends State<PageCanvas> {
     );
     // Reach a little past the arrow hit-circles (gap + hit) so there's no dead
     // zone against the shape and a bit of slack beyond the triangles.
-    const margin = _connectArrowGapPx + _connectArrowHitPx + 8;
+    final margin =
+        _connectArrowGapPxEffective + _connectArrowHitPxEffective + 8;
     return screen.inflate(margin).contains(viewportPos);
   }
 
@@ -896,19 +945,22 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_c.tool == EditorTool.pan) return;
     // Click a directional arrow → EdrawMax / draw.io quick-add picker (choose
     // the next shape and auto-connect). Shift+click still clones the source.
-    if (_connectAffordanceActive && _hoverShapeId != null) {
-      final s = _page?.findShapeById(_hoverShapeId!);
-      if (s != null && _canConnectFrom(s)) {
-        final dir = _connectArrowHitDir(s, d.localPosition);
-        if (dir != null) {
-          // Tap won the arena — don't also fire from a pending pan release.
-          _pendingQuickAdd = null;
-          if (HardwareKeyboard.instance.isShiftPressed) {
-            _connectInDirection(s, dir);
-          } else {
-            _showQuickAddFor(s, dir, d.localPosition);
+    if (_connectAffordanceActive) {
+      final affordanceId = _connectAffordanceShapeId;
+      if (affordanceId != null) {
+        final s = _page?.findShapeById(affordanceId);
+        if (s != null && _canConnectFrom(s)) {
+          final dir = _connectArrowHitDir(s, d.localPosition);
+          if (dir != null) {
+            // Tap won the arena — don't also fire from a pending pan release.
+            _pendingQuickAdd = null;
+            if (HardwareKeyboard.instance.isShiftPressed) {
+              _connectInDirection(s, dir);
+            } else {
+              _showQuickAddFor(s, dir, d.localPosition);
+            }
+            return;
           }
-          return;
         }
       }
     }
@@ -1480,10 +1532,15 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.none;
       return;
     }
+    // Two-finger pinch (view-only) owns the gesture.
+    if (_pinchActive) {
+      _mode = _DragMode.none;
+      return;
+    }
     _ensureCanvasFocus();
     if (_viewOnlyGestures) {
       // View-only: drag pans the canvas; editing gestures are disabled.
-      // (Pinch-zoom uses [_onViewScale*] when those handlers are wired.)
+      // (Pinch-zoom uses [_onCanvasPointer*] when those handlers are wired.)
       _lastPointer = d.localPosition;
       _mode = _DragMode.panCanvas;
       return;
@@ -1535,11 +1592,25 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return;
     }
-    // Hover affordances: arrows → quick-add (click); blue CPs / perimeter →
-    // drag out a connector glued to the shape.
-    final hover = _hoverShapeId;
-    if (hover != null) {
-      final s = _page?.findShapeById(hover);
+    // Rotate handle before quick-add arrows: on touch both sit above the
+    // selected shape and the north arrow would otherwise steal the knob.
+    final rotatable = _rotatableSelection();
+    if (rotatable != null) {
+      final (_, knob) = _rotateAnchors(rotatable);
+      final hit = _handleHitPx * _handleHitPx;
+      if ((_offset + knob * _scale - d.localPosition).distanceSquared <= hit) {
+        _resizeShapeId = rotatable.id;
+        _mode = _DragMode.rotate;
+        _c.beginTransaction();
+        return;
+      }
+    }
+    // Connect affordances: arrows → quick-add (click); blue CPs / perimeter →
+    // drag out a connector glued to the shape. On touch the arrows sit on the
+    // selected shape (no hover), so hit-test that too.
+    final affordanceId = _connectAffordanceShapeId;
+    if (affordanceId != null) {
+      final s = _page?.findShapeById(affordanceId);
       if (s != null && _canConnectFrom(s)) {
         // Directional arrows are quick-add only — do not start a connector.
         // Remember the press so a pan that wins the gesture arena (tiny
@@ -1555,7 +1626,7 @@ class _PageCanvasState extends State<PageCanvas> {
           if (cpIndex != null) {
             final pts = VsdxPage.effectiveConnectionPoints(s);
             final pg = _connPointPage(s, pts[cpIndex].offset);
-            _connectSourceId = hover;
+            _connectSourceId = affordanceId;
             _connectSourceConnIndex = cpIndex;
             _connectTargetId = null;
             _mode = _DragMode.connect;
@@ -1567,7 +1638,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
           final peri = _nearestPerimeterPage(s, d.localPosition);
           if (peri != null) {
-            _connectSourceId = hover;
+            _connectSourceId = affordanceId;
             _connectSourceConnIndex = null;
             _connectTargetId = null;
             _mode = _DragMode.connect;
@@ -1580,24 +1651,16 @@ class _PageCanvasState extends State<PageCanvas> {
         }
       }
     }
-    // Rotate handle takes top priority for a single 2-D selection.
-    final rotatable = _rotatableSelection();
-    if (rotatable != null) {
-      final (_, knob) = _rotateAnchors(rotatable);
-      if ((_offset + knob * _scale - d.localPosition).distanceSquared <= 144) {
-        _resizeShapeId = rotatable.id;
-        _mode = _DragMode.rotate;
-        _c.beginTransaction();
-        return;
-      }
-    }
 
-    // Resize handles take priority over move/pan when one shape is selected.
+    // Resize handles take priority over move/pan when one shape is selected,
+    // but only near the edge — on touch the larger hit radius would otherwise
+    // swallow drags that start in the middle of a small on-screen shape.
     final resizable = _resizableSelection();
-    if (resizable != null) {
+    if (resizable != null && !_pointerInsideShapeBody(resizable, d.localPosition)) {
       final handles = _handleScreens(_exactContentBox(resizable));
+      final hit = _handleHitPx * _handleHitPx;
       for (final entry in handles.entries) {
-        if ((entry.value - d.localPosition).distanceSquared <= 144) {
+        if ((entry.value - d.localPosition).distanceSquared <= hit) {
           _activeHandle = entry.key;
           _resizeShapeId = resizable.id;
           _resizeStartShape = resizable;
@@ -1631,6 +1694,13 @@ class _PageCanvasState extends State<PageCanvas> {
     } else if (HardwareKeyboard.instance.logicalKeysPressed
         .contains(LogicalKeyboardKey.space)) {
       _mode = _DragMode.panCanvas;
+    } else if (_isTouchUi) {
+      // Touch: empty-canvas drag pans. Holding still ~400ms converts to
+      // marquee (see [_onPanUpdate]) so multi-select stays available.
+      _mode = _DragMode.panCanvas;
+      _emptyTouchPanAt = DateTime.now();
+      _emptyTouchPanOrigin = d.localPosition;
+      _emptyTouchPanAccum = Offset.zero;
     } else {
       _mode = _DragMode.marquee;
       setState(() {
@@ -1638,6 +1708,24 @@ class _PageCanvasState extends State<PageCanvas> {
         _marqueeEnd = _marqueeStart;
       });
     }
+  }
+
+  /// Whether [viewportPos] sits inside [s]'s box, inset by the handle hit
+  /// radius — used so touch-sized resize targets don't steal body drags.
+  bool _pointerInsideShapeBody(VsdxShape s, Offset viewportPos) {
+    final box = _normaliseRect(_exactContentBox(s));
+    final screen = Rect.fromLTRB(
+      _offset.dx + box.left * _scale,
+      _offset.dy + box.top * _scale,
+      _offset.dx + box.right * _scale,
+      _offset.dy + box.bottom * _scale,
+    );
+    final inset = screen.deflate(_handleHitPx);
+    if (inset.width <= 0 || inset.height <= 0) {
+      // Tiny on-screen shape: treat the centre third as the body.
+      return screen.deflate(screen.shortestSide / 3).contains(viewportPos);
+    }
+    return inset.contains(viewportPos);
   }
 
   /// Connection-point edit mode: drag existing points, or click the shape to
@@ -1666,22 +1754,25 @@ class _PageCanvasState extends State<PageCanvas> {
     _mode = _DragMode.none;
   }
 
-  /// Index of the connection point under [localPos], or `null` (~12 px hit).
+  /// Index of the connection point under [localPos], or `null`.
   int? _connPointHitIndex(VsdxShape s, Offset localPos) {
     final pts = VsdxPage.effectiveConnectionPoints(s);
+    final hit = _handleHitPx * _handleHitPx;
     for (var i = 0; i < pts.length; i++) {
       final pg = _connPointPage(s, pts[i].offset);
       final screen = _offset + _pageToContent(pg.x, pg.y) * _scale;
-      if ((screen - localPos).distanceSquared <= 144) return i;
+      if ((screen - localPos).distanceSquared <= hit) return i;
     }
     return null;
   }
 
   void _onPanUpdate(DragUpdateDetails d) {
+    if (_pinchActive) return;
     final pos = d.localPosition;
     // Abandon a pending arrow click once the pointer clearly dragged away.
     final pending = _pendingQuickAdd;
-    if (pending != null && (pos - pending.start).distance > 8) {
+    if (pending != null &&
+        (pos - pending.start).distance > (_isTouchUi ? 16 : 8)) {
       _pendingQuickAdd = null;
     }
     switch (_mode) {
@@ -1708,7 +1799,32 @@ class _PageCanvasState extends State<PageCanvas> {
           setState(() => _dropContainerId = drop);
         }
       case _DragMode.panCanvas:
-        setState(() => _offset += pos - _lastPointer);
+        final delta = pos - _lastPointer;
+        // Touch empty-canvas: hold still briefly → marquee multi-select.
+        if (_emptyTouchPanAt != null && _emptyTouchPanOrigin != null) {
+          _emptyTouchPanAccum += delta;
+          final held = DateTime.now().difference(_emptyTouchPanAt!);
+          if (_emptyTouchPanAccum.distance >= 14) {
+            // Confirmed pan — stop watching for marquee conversion.
+            _emptyTouchPanAt = null;
+            _emptyTouchPanOrigin = null;
+          } else if (held >= const Duration(milliseconds: 400)) {
+            final origin = _emptyTouchPanOrigin!;
+            final undo = _emptyTouchPanAccum;
+            _emptyTouchPanAt = null;
+            _emptyTouchPanOrigin = null;
+            _emptyTouchPanAccum = Offset.zero;
+            setState(() {
+              _offset -= undo;
+              _mode = _DragMode.marquee;
+              _marqueeStart = _viewportToContent(origin);
+              _marqueeEnd = _viewportToContent(pos);
+            });
+            _lastPointer = pos;
+            return;
+          }
+        }
+        setState(() => _offset += delta);
       case _DragMode.createShape:
         if (_c.tool == EditorTool.freehand) {
           final p = _viewportToContent(pos);
@@ -2329,7 +2445,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     // Anchor at the arrow centre (more stable than the raw pointer).
-    final gap = _connectArrowGapPx / _scale;
+    final gap = _connectArrowGapPxEffective / _scale;
     Offset content = localPos;
     for (final (c, d) in _connectArrows(_exactContentBox(s), gap)) {
       if (d == dir) {
@@ -2370,10 +2486,11 @@ class _PageCanvasState extends State<PageCanvas> {
     if (conn == null || !_canEditConnector(conn)) return false;
     final route = _connectorRoutePage(conn);
     if (route.length < 2) return false;
+    final hit = _handleHitPx * _handleHitPx;
     final ends = <bool>[true, false]; // begin, end
     for (final begin in ends) {
       final p = begin ? route.first : route.last;
-      if ((_pageToScreen(p.x, p.y) - localPos).distanceSquared <= 144) {
+      if ((_pageToScreen(p.x, p.y) - localPos).distanceSquared <= hit) {
         _c.beginTransaction();
         _endpointConnId = conn.id;
         _endpointIsBegin = begin;
@@ -2404,10 +2521,11 @@ class _PageCanvasState extends State<PageCanvas> {
     }
 
     // Existing interior vertices → move that bend point.
+    final hit = _handleHitPx * _handleHitPx;
     for (var r = 1; r < pageRoute.length - 1; r++) {
       if ((_pageToScreen(pageRoute[r].x, pageRoute[r].y) - localPos)
               .distanceSquared <=
-          100) {
+          hit) {
         _c.beginTransaction();
         promote();
         _waypointConnId = conn.id;
@@ -2420,7 +2538,7 @@ class _PageCanvasState extends State<PageCanvas> {
     for (var r = 0; r < pageRoute.length - 1; r++) {
       final mx = (pageRoute[r].x + pageRoute[r + 1].x) / 2;
       final my = (pageRoute[r].y + pageRoute[r + 1].y) / 2;
-      if ((_pageToScreen(mx, my) - localPos).distanceSquared <= 100) {
+      if ((_pageToScreen(mx, my) - localPos).distanceSquared <= hit) {
         _c.beginTransaction();
         promote();
         _c.addWaypoint(conn.id, r, Offset2D(mx, my), transient: true);
@@ -2445,7 +2563,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.isOnLockedLayer(tableId)) {
       return false;
     }
-    const hitPx = 6.0;
+    const hitPxMouse = 6.0;
+    final hitPx = _isTouchUi ? 14.0 : hitPxMouse;
     final hit2 = hitPx * hitPx;
 
     final colDivs = TableOps.colDividerLocals(table);
@@ -2673,6 +2792,9 @@ class _PageCanvasState extends State<PageCanvas> {
         break;
     }
     _mode = _DragMode.none;
+    _emptyTouchPanAt = null;
+    _emptyTouchPanOrigin = null;
+    _emptyTouchPanAccum = Offset.zero;
     _finishPendingQuickAdd();
   }
 
@@ -2735,6 +2857,9 @@ class _PageCanvasState extends State<PageCanvas> {
       _snapConnIndex = null;
       _guides = const <SnapGuide>[];
       _moveStartBounds = null;
+      _emptyTouchPanAt = null;
+      _emptyTouchPanOrigin = null;
+      _emptyTouchPanAccum = Offset.zero;
     });
   }
 
@@ -2949,7 +3074,10 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// View-only pan / pinch via raw pointers (no gesture-arena slop), so a
   /// one-finger drag tracks 1:1 and a two-finger pinch zooms around the focal.
-  void _onViewPointerDown(PointerDownEvent e) {
+  ///
+  /// Edit-mode gestures stay on [GestureDetector] — tracking pointers here
+  /// while editing prevented pan/tap recognition on touch layouts.
+  void _onCanvasPointerDown(PointerDownEvent e) {
     if (!_viewOnlyGestures) return;
     if (_editingShapeId != null) {
       _commitTextEdit();
@@ -2960,6 +3088,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_viewPointers.length == 1) {
       _lastPointer = e.localPosition;
       _mode = _DragMode.panCanvas;
+      _pinchActive = false;
     } else if (_viewPointers.length == 2) {
       final pts = _viewPointers.values.toList(growable: false);
       final focal = Offset(
@@ -2970,10 +3099,11 @@ class _PageCanvasState extends State<PageCanvas> {
       _viewScaleContentFocal = _viewportToContent(focal);
       _viewPinchStartDistance = (pts[0] - pts[1]).distance;
       _mode = _DragMode.panCanvas;
+      _pinchActive = true;
     }
   }
 
-  void _onViewPointerMove(PointerMoveEvent e) {
+  void _onCanvasPointerMove(PointerMoveEvent e) {
     if (!_viewOnlyGestures || !_viewPointers.containsKey(e.pointer)) return;
     _viewPointers[e.pointer] = e.localPosition;
     if (_viewPointers.length == 1 && _mode == _DragMode.panCanvas) {
@@ -3001,17 +3131,18 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
-  void _onViewPointerUp(PointerEvent e) {
+  void _onCanvasPointerUp(PointerEvent e) {
     if (!_viewPointers.containsKey(e.pointer)) return;
     _viewPointers.remove(e.pointer);
     if (_viewPointers.isEmpty) {
       if (_mode == _DragMode.panCanvas) _mode = _DragMode.none;
+      _pinchActive = false;
       return;
     }
     if (_viewPointers.length == 1) {
-      // Resume single-finger pan from the remaining pointer.
       _lastPointer = _viewPointers.values.first;
       _mode = _DragMode.panCanvas;
+      _pinchActive = false;
     }
   }
 
@@ -3116,10 +3247,12 @@ class _PageCanvasState extends State<PageCanvas> {
                 ? Rect.fromPoints(_marqueeStart!, _marqueeEnd!)
                 : null;
             // Hover-connect arrows (idle select mode) and the glue-target
-            // highlight shown while wiring a connector.
+            // highlight shown while wiring a connector. On touch there is no
+            // hover — arrows sit on the single selected 2-D shape instead.
             Rect? hoverBox;
-            if (_connectAffordanceActive && _hoverShapeId != null) {
-              final s = page.findShapeById(_hoverShapeId!);
+            final affordanceId = _connectAffordanceShapeId;
+            if (affordanceId != null) {
+              final s = page.findShapeById(affordanceId);
               if (s != null && !s.is1D) hoverBox = _exactContentBox(s);
             }
             final targetId = _connectTargetId ?? _dropContainerId;
@@ -3142,6 +3275,9 @@ class _PageCanvasState extends State<PageCanvas> {
                         _c.tool == EditorTool.connector))) {
               cpShape = page.findShapeById(targetId);
             } else if (_connectAffordanceActive && _hoverShapeId != null) {
+              // Blue CPs only for true hover (unselected source). Selection-
+              // based touch arrows stay triangle-only so they don't fight
+              // resize handles.
               cpShape = page.findShapeById(_hoverShapeId!);
             }
             if (cpShape != null && _canConnectFrom(cpShape)) {
@@ -3207,10 +3343,10 @@ class _PageCanvasState extends State<PageCanvas> {
               onKeyEvent: _onKey,
               child: Listener(
               onPointerSignal: _onPointerSignal,
-              onPointerDown: _onViewPointerDown,
-              onPointerMove: _onViewPointerMove,
-              onPointerUp: _onViewPointerUp,
-              onPointerCancel: _onViewPointerUp,
+              onPointerDown: _onCanvasPointerDown,
+              onPointerMove: _onCanvasPointerMove,
+              onPointerUp: _onCanvasPointerUp,
+              onPointerCancel: _onCanvasPointerUp,
               child: MouseRegion(
               onHover: _onHover,
               onExit: (_) => _clearHover(),
@@ -3318,7 +3454,8 @@ class _PageCanvasState extends State<PageCanvas> {
                                           ? const Color(0xFFE53935) // drawio locked = red
                                           : Theme.of(context).colorScheme.primary,
                                       strokeWidth: 1.5 / _scale,
-                                      handleSize: 7 / _scale,
+                                      handleSize: (_isTouchUi ? 11.0 : 7.0) /
+                                          _scale,
                                       previewStart: _previewStart,
                                       previewEnd: _previewEnd,
                                       previewTool: previewTool,
@@ -3334,7 +3471,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                       endpointHandles: endpointHandles,
                                       hoverBox: hoverBox,
                                       hoverArrowGap:
-                                          _connectArrowGapPx / _scale,
+                                          _connectArrowGapPxEffective / _scale,
                                       connectTargetRect: connectTargetRect,
                                       connectionPoints: connectionPointDots,
                                       snappedConnectionPoint:

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/editor_l10n.dart';
 import '../render/path_builder.dart';
 import 'stencils.dart';
+import 'touch_ui.dart';
 
 /// Stencils offered in the hover-arrow quick-add menu (EdrawMax / draw.io).
 ///
@@ -53,6 +54,7 @@ class QuickAddPicker extends StatelessWidget {
 
   static const double _panelWidth = 292;
   static const double _cell = 44;
+  static const double _cellTouch = 52;
   static const int _cols = 6;
 
   @override
@@ -61,18 +63,25 @@ class QuickAddPicker extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final el = EditorL10n.of(context);
     final stencils = quickAddStencils();
+    final touchUi = isNativeMobileOs || media.size.width < 720;
+    final cell = touchUi ? _cellTouch : _cell;
+    final cols = touchUi && media.size.width < 400 ? 5 : _cols;
 
     // Prefer opening beside the arrow; clamp so the panel stays on-screen.
-    final panelWidth = math.min(_panelWidth, media.size.width - 16);
+    final pad = media.padding;
+    final panelWidth = math.min(
+      touchUi ? media.size.width - 24 : _panelWidth,
+      media.size.width - 16 - pad.horizontal,
+    );
     var left = anchorGlobal.dx + 18;
     var top = anchorGlobal.dy - 40;
-    final maxLeft = media.size.width - panelWidth - 8;
+    final maxLeft = media.size.width - panelWidth - 8 - pad.right;
     final estimatedH =
-        48.0 + ((stencils.length + _cols - 1) ~/ _cols) * (_cell + 4) + 16;
-    final maxTop = media.size.height - estimatedH - 8;
+        48.0 + ((stencils.length + cols - 1) ~/ cols) * (cell + 4) + 16;
+    final maxTop = media.size.height - estimatedH - 8 - pad.bottom;
     if (left > maxLeft) left = anchorGlobal.dx - panelWidth - 18;
-    left = left.clamp(8.0, math.max(8.0, maxLeft));
-    top = top.clamp(8.0, math.max(8.0, maxTop));
+    left = left.clamp(8.0 + pad.left, math.max(8.0 + pad.left, maxLeft));
+    top = top.clamp(8.0 + pad.top, math.max(8.0 + pad.top, maxTop));
 
     return Stack(
       children: [
@@ -92,58 +101,64 @@ class QuickAddPicker extends StatelessWidget {
             color: scheme.surface,
             shadowColor: Colors.black54,
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: panelWidth),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    InkWell(
-                      onTap: onDuplicate,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.copy_outlined,
-                                size: 16, color: scheme.primary),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                el.duplicate,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: scheme.onSurface,
+              constraints: BoxConstraints(
+                maxWidth: panelWidth,
+                maxHeight: media.size.height - pad.vertical - 24,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      InkWell(
+                        onTap: onDuplicate,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: touchUi ? 12 : 6,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.copy_outlined,
+                                  size: touchUi ? 20 : 16,
+                                  color: scheme.primary),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  el.duplicate,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: touchUi ? 15 : 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: scheme.onSurface,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Divider(height: 1, color: scheme.outlineVariant),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: [
-                        for (final s in stencils)
-                          _QuickAddCell(
-                            stencil: s,
-                            size: _cell,
-                            onTap: () => onSelect(s),
-                          ),
-                      ],
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Divider(height: 1, color: scheme.outlineVariant),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          for (final s in stencils)
+                            _QuickAddCell(
+                              stencil: s,
+                              size: cell,
+                              onTap: () => onSelect(s),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

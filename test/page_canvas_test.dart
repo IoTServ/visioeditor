@@ -524,4 +524,44 @@ void main() {
     expect(contentAfter.dx, closeTo(contentBefore.dx, 2));
     expect(contentAfter.dy, closeTo(contentBefore.dy, 2));
   });
+
+  testWidgets('compact layout keeps selection for touch quick-add chrome',
+      (tester) async {
+    // Compact width enables touch chrome (selection-based quick-add arrows).
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(400, 800),
+      setUp: (c) => id = _addRect(c),
+      camera: camera,
+    );
+    expect(MediaQuery.sizeOf(tester.element(find.byType(PageCanvas))).width,
+        lessThan(720));
+    expect(controller.selection, <int>{id});
+
+    // Sanity: directional quick-add still creates a connected neighbour
+    // (same controller path the arrow picker uses after a stencil tap).
+    final before = controller.currentPage!.shapes.length;
+    controller.quickAddInDirection(
+      id,
+      1, // east
+      build: (nid, cx, cy) => VsdxShapeFactory.rectangle(
+        id: nid,
+        pinX: cx,
+        pinY: cy,
+        width: 1.5,
+        height: 1,
+      ),
+      cx: 5.5,
+      cy: 5,
+    );
+    expect(controller.currentPage!.shapes.length, greaterThan(before));
+    expect(controller.currentPage!.connects, isNotEmpty);
+  });
 }
