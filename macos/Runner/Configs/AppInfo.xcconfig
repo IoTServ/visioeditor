@@ -8,7 +8,6 @@
 PRODUCT_NAME = visioeditor
 
 // Finder / Dock display name (Info.plist CFBundleDisplayName).
-// Debug overrides this in Xcode build settings to append " (Debug)".
 VISIOEDITOR_DISPLAY_NAME = Editor for Visio Diagrams
 
 // The application's bundle identifier
