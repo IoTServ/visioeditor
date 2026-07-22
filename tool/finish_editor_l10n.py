@@ -80,6 +80,47 @@ COLOR_BY_LAYER = {
     "sw": "Rangi kwa safu",
 }
 
+# Pan / zoom canvas tool (touch-friendly view mode).
+TOOL_PAN = {
+    "en": "Pan / zoom canvas",
+    "zh": "平移 / 缩放画布",
+    "ja": "キャンバスをパン / ズーム",
+    "ko": "캔버스 이동 / 확대·축소",
+    "es": "Desplazar / zoom del lienzo",
+    "fr": "Panoramique / zoom du canevas",
+    "de": "Zeichenfläche verschieben / zoomen",
+    "pt": "Deslocar / zoom da tela",
+    "ru": "Панорама / масштаб холста",
+    "it": "Pan / zoom area di disegno",
+    "ar": "تحريك / تكبير اللوحة",
+    "id": "Geser / zum kanvas",
+    "hi": "कैनवास पैन / ज़ूम",
+    "nl": "Canvas verschuiven / zoomen",
+    "tr": "Tuvali kaydır / yakınlaştır",
+    "pl": "Przesuń / powiększ płótno",
+    "vi": "Di chuyển / phóng to thu nhỏ canvas",
+    "th": "เลื่อน / ซูมแคนวาส",
+    "sv": "Panorera / zooma duken",
+    "uk": "Панорама / масштаб полотна",
+    "he": "הזזה / זום של הקנבס",
+    "cs": "Posun / zoom plátna",
+    "ro": "Panoramare / zoom pânză",
+    "el": "Μετακίνηση / ζουμ καμβά",
+    "hu": "Vászon mozgatása / nagyítása",
+    "da": "Panorér / zoom lærred",
+    "ms": "Pan / zum kanvas",
+    "fi": "Siirrä / zoomaa kangasta",
+    "nb": "Panorer / zoom lerret",
+    "sk": "Posun / zoom plátna",
+    "bn": "ক্যানভাস প্যান / জুম",
+    "fa": "جابه‌جایی / بزرگ‌نمایی بوم",
+    "bg": "Панорама / мащаб на платното",
+    "hr": "Pomicanje / zumiranje platna",
+    "ca": "Desplaçar / zoom del llenç",
+    "fil": "I-pan / i-zoom ang canvas",
+    "sw": "Sogeza / kukuza turubai",
+}
+
 
 def load_existing() -> dict[str, dict[str, str]]:
     """Load all generated tables as the offline regeneration baseline."""
@@ -190,6 +231,10 @@ def main() -> None:
     for lang, value in COLOR_BY_LAYER.items():
         if lang in banks:
             banks[lang]["colorByLayer"] = value
+
+    for lang, value in TOOL_PAN.items():
+        if lang in banks:
+            banks[lang]["toolPan"] = value
 
     missing = [l for l in LANGS if l not in banks]
     if missing:

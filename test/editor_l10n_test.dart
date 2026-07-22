@@ -13,6 +13,8 @@ void main() {
     expect(zh.cut, '剪切');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
+    expect(en.toolPan, 'Pan / zoom canvas');
+    expect(zh.toolPan, '平移 / 缩放画布');
     expect(en.stencilGroup('Flowchart'), 'Flowchart');
     expect(zh.stencilGroup('Flowchart'), '流程图');
     expect(zh.stencil('Rounded Rectangle'), '圆角矩形');

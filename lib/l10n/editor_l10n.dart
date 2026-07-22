@@ -142,6 +142,7 @@ class EditorL10n {
 
   // --- Tools ---
   String get toolSelect => _t('toolSelect');
+  String get toolPan => _t('toolPan');
   String get toolRectangle => _t('toolRectangle');
   String get toolEllipse => _t('toolEllipse');
   String get toolLine => _t('toolLine');

@@ -13,6 +13,9 @@ import 'third_party_icons.dart';
 /// Editing tools the canvas can be in.
 enum EditorTool {
   select,
+  /// Pan / pinch-zoom the canvas without selecting or editing shapes.
+  /// Intended for touch: drag moves the view; pinch changes zoom.
+  pan,
   rectangle,
   ellipse,
   line,
@@ -1983,6 +1986,7 @@ class EditorController extends ChangeNotifier {
     if (doc == null ||
         page == null ||
         _tool == EditorTool.select ||
+        _tool == EditorTool.pan ||
         _tool == EditorTool.freehand) {
       return;
     }

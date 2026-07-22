@@ -24,7 +24,7 @@ dependencies:
 
   # IO / files.
   file_picker: ^8.1.4
-  desktop_drop: ^0.4.4
+  desktop_drop: ^0.7.1
   shared_preferences: ^2.5.3
 
   # Misc.

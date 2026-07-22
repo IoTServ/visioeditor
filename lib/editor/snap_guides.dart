@@ -47,7 +47,13 @@ class SnapGuide {
 /// The nudge (in inches) to align a moving box to its neighbours, plus the
 /// guide lines to draw.
 class SnapResult {
-  const SnapResult(this.dx, this.dy, this.guides);
+  const SnapResult(
+    this.dx,
+    this.dy,
+    this.guides, {
+    this.snappedX = false,
+    this.snappedY = false,
+  });
 
   static const SnapResult none = SnapResult(0, 0, <SnapGuide>[]);
 
@@ -55,7 +61,16 @@ class SnapResult {
   final double dy;
   final List<SnapGuide> guides;
 
-  bool get isEmpty => dx == 0 && dy == 0 && guides.isEmpty;
+  /// True when an X-axis neighbour / magnet / page guide claimed this frame
+  /// (even if [dx] is already 0 because the box sits on the guide).
+  final bool snappedX;
+
+  /// True when a Y-axis neighbour / magnet / page guide claimed this frame
+  /// (even if [dy] is already 0 because the box sits on the guide).
+  final bool snappedY;
+
+  bool get isEmpty =>
+      dx == 0 && dy == 0 && guides.isEmpty && !snappedX && !snappedY;
 }
 
 /// A permanent page guide (drawio guide): a full-span vertical or horizontal
@@ -206,7 +221,9 @@ SnapResult computeSnap({
 
   final guides = <SnapGuide>[];
   final snapped = moving.shifted(bestDx, bestDy);
-  if (xFromPageGuide || xMatch != null) {
+  final snappedX = xFromPageGuide || xMatch != null;
+  final snappedY = yFromPageGuide || yMatch != null;
+  if (snappedX) {
     guides.add(SnapGuide(
       vertical: true,
       pos: xLinePos,
@@ -218,7 +235,7 @@ SnapResult computeSnap({
           : math.max(snapped.t, xMatch.t),
     ));
   }
-  if (yFromPageGuide || yMatch != null) {
+  if (snappedY) {
     guides.add(SnapGuide(
       vertical: false,
       pos: yLinePos,
@@ -230,5 +247,11 @@ SnapResult computeSnap({
           : math.max(snapped.r, yMatch.r),
     ));
   }
-  return SnapResult(bestDx, bestDy, guides);
+  return SnapResult(
+    bestDx,
+    bestDy,
+    guides,
+    snappedX: snappedX,
+    snappedY: snappedY,
+  );
 }

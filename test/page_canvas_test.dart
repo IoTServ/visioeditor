@@ -412,4 +412,116 @@ void main() {
     controller.undo();
     expect(controller.connectorWaypoints(connector), isEmpty);
   });
+
+  testWidgets(
+      'connector tool snaps to a blue point approached from outside the AABB',
+      (tester) async {
+    late int target;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        // Pin centre (3,5), 2×1 box → right edge at x=4, right CP at (4, 5).
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          3,
+          5,
+        );
+        target = c.singleSelectedId!;
+        c.setTool(EditorTool.connector);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    // Start in empty space; end just outside the right CP so AABB miss + CP hit.
+    final start = _pagePoint(origin, camera, page, 0.5, 5.0);
+    final end = _pagePoint(origin, camera, page, 4.08, 5.0);
+
+    final gesture = await tester.startGesture(start);
+    await gesture.moveTo(end);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final conn = controller.currentPage!;
+    final glue = conn.connects.where((c) => c.isEnd).toList();
+    expect(glue, isNotEmpty);
+    expect(glue.single.toSheetId, target);
+    expect(glue.single.toPart, greaterThanOrEqualTo(100));
+  });
+
+  testWidgets('pan tool drags the viewport without moving shapes',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        id = _addRect(c);
+        c.setTool(EditorTool.pan);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final before = page.findShapeById(id)!;
+    final offsetBefore = camera.offset;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(origin, camera, page, before.pinX, before.pinY);
+    const delta = Offset(48, -30);
+
+    await tester.dragFrom(start, delta);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.findShapeById(id)!.pinX, before.pinX);
+    expect(controller.currentPage!.findShapeById(id)!.pinY, before.pinY);
+    expect(camera.offset.dx - offsetBefore.dx, closeTo(delta.dx, 0.5));
+    expect(camera.offset.dy - offsetBefore.dy, closeTo(delta.dy, 0.5));
+    expect(controller.tool, EditorTool.pan);
+  });
+
+  testWidgets('pan tool pinch zooms around the focal point', (tester) async {
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) => c.setTool(EditorTool.pan),
+      camera: camera,
+    );
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final focal = origin + const Offset(500, 400);
+    final scaleBefore = camera.scale;
+    final contentBefore =
+        (focal - origin - camera.offset) / camera.scale;
+
+    final gesture = await tester.createGesture();
+    await gesture.down(focal + const Offset(-40, 0));
+    final gesture2 = await tester.createGesture();
+    await gesture2.down(focal + const Offset(40, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-40, 0));
+    await gesture2.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await gesture.up();
+    await gesture2.up();
+    await tester.pumpAndSettle();
+
+    expect(camera.scale, greaterThan(scaleBefore * 1.05));
+    final contentAfter =
+        (focal - origin - camera.offset) / camera.scale;
+    expect(contentAfter.dx, closeTo(contentBefore.dx, 2));
+    expect(contentAfter.dy, closeTo(contentBefore.dy, 2));
+  });
 }

@@ -106,6 +106,12 @@ class _PageCanvasState extends State<PageCanvas> {
   _DragMode _mode = _DragMode.none;
   Offset _lastPointer = Offset.zero;
 
+  /// View-only (pan tool / presentation) pinch-zoom baseline.
+  double _viewScaleStart = 1;
+  Offset _viewScaleContentFocal = Offset.zero;
+  double _viewPinchStartDistance = 0;
+  final Map<int, Offset> _viewPointers = <int, Offset>{};
+
   // Reveal ("scroll into view") — tracks the controller's revealSerial.
   int _lastRevealSerial = 0;
   // Fit-to-window requests (toolbar / zoom controls) — tracks fitSerial.
@@ -866,6 +872,10 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  /// Pan tool or presentation: drag/pinch the viewport, no shape editing.
+  bool get _viewOnlyGestures =>
+      widget.presentationMode || _c.tool == EditorTool.pan;
+
   void _onTapUp(TapUpDetails d) {
     if (_editingShapeId != null) {
       _commitTextEdit(); // a click outside the editor applies the edit
@@ -883,6 +893,7 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return;
     }
+    if (_c.tool == EditorTool.pan) return;
     // Click a directional arrow → EdrawMax / draw.io quick-add picker (choose
     // the next shape and auto-connect). Shift+click still clones the source.
     if (_connectAffordanceActive && _hoverShapeId != null) {
@@ -926,7 +937,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onDoubleTap() {
-    if (widget.presentationMode) return;
+    if (widget.presentationMode || _c.tool == EditorTool.pan) return;
     // Double-clicking a connector's bend point removes it.
     final conn = _selectedConnector();
     if (conn != null &&
@@ -949,7 +960,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // --- Context menu (right-click) --------------------------------------------
 
   void _onSecondaryTapUp(TapUpDetails d) {
-    if (widget.presentationMode) return;
+    if (widget.presentationMode || _c.tool == EditorTool.pan) return;
     if (_editingShapeId != null) _commitTextEdit();
     _ensureCanvasFocus();
     final hit = _hitTest(d.localPosition);
@@ -1470,8 +1481,9 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     _ensureCanvasFocus();
-    if (widget.presentationMode) {
+    if (_viewOnlyGestures) {
       // View-only: drag pans the canvas; editing gestures are disabled.
+      // (Pinch-zoom uses [_onViewScale*] when those handlers are wired.)
       _lastPointer = d.localPosition;
       _mode = _DragMode.panCanvas;
       return;
@@ -1504,13 +1516,23 @@ class _PageCanvasState extends State<PageCanvas> {
             (beginShape != null && _canConnectFrom(beginShape))
                 ? _connSnapIndex(beginShape, d.localPosition)
                 : null;
+        setState(() {
+          _previewStart = _previewEndForSnap(
+            beginShape,
+            _connectSourceConnIndex,
+            _viewportToContent(d.localPosition),
+          );
+          _previewEnd = _previewStart;
+          _connectTargetId = beginId;
+          _snapConnIndex = _connectSourceConnIndex;
+        });
       } else {
         _connectSourceConnIndex = null;
+        setState(() {
+          _previewStart = _viewportToContent(d.localPosition);
+          _previewEnd = _previewStart;
+        });
       }
-      setState(() {
-        _previewStart = _viewportToContent(d.localPosition);
-        _previewEnd = _previewStart;
-      });
       return;
     }
     // Hover affordances: arrows → quick-add (click); blue CPs / perimeter →
@@ -1708,23 +1730,31 @@ class _PageCanvasState extends State<PageCanvas> {
             : null;
         final connTs =
             connTarget == null ? null : _page?.findShapeById(connTarget);
+        final snap = connTs != null ? _connSnapIndex(connTs, pos) : null;
         setState(() {
-          _previewEnd = _viewportToContent(pos);
+          _previewEnd = _previewEndForSnap(
+            connTs,
+            snap,
+            _viewportToContent(pos),
+          );
           // Highlight the shape the connector would glue to on drop, snapping
           // its end to a fixed connection point when the pointer is near one.
           _connectTargetId = connTarget;
-          _snapConnIndex =
-              connTs != null ? _connSnapIndex(connTs, pos) : null;
+          _snapConnIndex = snap;
         });
       case _DragMode.connect:
         final src = _connectSourceId;
         final target = _glueTargetAt(pos, excludeId: src);
         final ts = target == null ? null : _page?.findShapeById(target);
+        final snap = ts != null ? _connSnapIndex(ts, pos) : null;
         setState(() {
-          _previewEnd = _viewportToContent(pos);
+          _previewEnd = _previewEndForSnap(
+            ts,
+            snap,
+            _viewportToContent(pos),
+          );
           _connectTargetId = target;
-          _snapConnIndex =
-              ts != null ? _connSnapIndex(ts, pos) : null;
+          _snapConnIndex = snap;
         });
       case _DragMode.resize:
         _applyResize(pos);
@@ -1753,6 +1783,16 @@ class _PageCanvasState extends State<PageCanvas> {
           final target = _endpointTargetAt(pos, id);
           final ts = target == null ? null : _page?.findShapeById(target);
           final snap = ts == null ? null : _connSnapIndex(ts, pos);
+          var x = _c.snap(p.dx);
+          var y = _c.snap(p.dy);
+          if (ts != null && snap != null) {
+            final pts = VsdxPage.effectiveConnectionPoints(ts);
+            if (snap >= 0 && snap < pts.length) {
+              final pg = _connPointPage(ts, pts[snap].offset);
+              x = pg.x;
+              y = pg.y;
+            }
+          }
           setState(() {
             _connectTargetId = target;
             _snapConnIndex = snap;
@@ -1762,8 +1802,8 @@ class _PageCanvasState extends State<PageCanvas> {
             begin: _endpointIsBegin,
             targetShapeId: target,
             connectionPointIndex: snap,
-            x: _c.snap(p.dx),
-            y: _c.snap(p.dy),
+            x: x,
+            y: y,
             transient: true,
           );
         }
@@ -1970,7 +2010,10 @@ class _PageCanvasState extends State<PageCanvas> {
     return out;
   }
 
-  /// Connection-point magnets on non-selected 2-D shapes (page inches).
+  /// Connection-point magnets on non-selected shapes (page inches).
+  ///
+  /// 2-D shapes contribute their effective (blue) connection points; glueable
+  /// connectors contribute begin/end so moving boxes can H/V-align to a line.
   List<SnapMagnet> _otherConnectionMagnets() {
     final page = _page;
     if (page == null) return const <SnapMagnet>[];
@@ -1978,11 +2021,21 @@ class _PageCanvasState extends State<PageCanvas> {
     final out = <SnapMagnet>[];
     void walk(VsdxShape s) {
       if (!page.isShapeVisible(s)) return;
-      if (!blocked.contains(s.id) && !s.is1D) {
-        final pts = VsdxPage.effectiveConnectionPoints(s);
-        for (final p in pts) {
-          final pg = page.localToPageDeep(s.id, p.offset);
-          out.add(SnapMagnet(pg.x, pg.y));
+      if (!blocked.contains(s.id)) {
+        if (s.isGlueableConnector) {
+          final route = _connectorRoutePage(s);
+          if (route.isNotEmpty) {
+            out.add(SnapMagnet(route.first.x, route.first.y));
+            if (route.length > 1) {
+              out.add(SnapMagnet(route.last.x, route.last.y));
+            }
+          }
+        } else if (!s.is1D) {
+          final pts = VsdxPage.effectiveConnectionPoints(s);
+          for (final p in pts) {
+            final pg = page.localToPageDeep(s.id, p.offset);
+            out.add(SnapMagnet(pg.x, pg.y));
+          }
         }
       }
       if (s.collapsed) return;
@@ -2031,14 +2084,15 @@ class _PageCanvasState extends State<PageCanvas> {
       snapDx = res.dx;
       snapDy = res.dy;
       guides = res.guides;
-      // Fall back to grid snapping on any axis a neighbour didn't already
-      // align (drawio snaps to the grid while dragging).
+      // Fall back to grid snapping on any axis a neighbour / magnet / page
+      // guide did not claim. Do not use `snapDx == 0` alone — once a box sits
+      // on a guide the nudge is 0, and grid must not yank it off the align.
       if (_c.snapToGrid) {
         final g = _c.gridInches;
-        if (snapDx == 0) {
+        if (!res.snappedX) {
           snapDx = (moving.l / g).roundToDouble() * g - moving.l;
         }
-        if (snapDy == 0) {
+        if (!res.snappedY) {
           snapDy = (moving.b / g).roundToDouble() * g - moving.b;
         }
       }
@@ -2072,23 +2126,50 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _endpointTargetAt(Offset pos, int connId) =>
       _glueTargetAt(pos, excludeId: connId);
 
-  /// Deepest visible 2-D shape under [pos] (nested children included).
+  /// Deepest visible 2-D shape under [pos] (nested children included), or the
+  /// shape owning the nearest connection point within [_connSnapPx].
+  ///
   /// Skips 1-D strokes entirely so a connector's AABB cannot block glue to a
   /// shape underneath (create-by-drag / endpoint attach / hover-connect).
+  /// Connection-point proximity is checked even when the pointer is *outside*
+  /// the AABB so edge blue points stay sticky (draw.io parity).
   int? _glueTargetAt(Offset pos, {int? excludeId}) {
     final page = _page;
     if (page == null) return null;
     final pt = _contentToPageInches(_viewportToContent(pos));
     final bounds = buildShapeBounds(page);
-    int? best;
+    int? bestInside;
+    int? bestCp;
+    var bestCpD = _connSnapPx * _connSnapPx;
     for (final id in _drawOrder(page)) {
       if (id == excludeId) continue;
       final s = page.findShapeById(id);
       if (s == null || !page.isShapeVisible(s) || s.is1D) continue;
       final r = bounds[id];
-      if (r != null && r.contains(pt)) best = id;
+      if (r != null && r.contains(pt)) bestInside = id;
+      final pts = VsdxPage.effectiveConnectionPoints(s);
+      for (final p in pts) {
+        final pg = _connPointPage(s, p.offset);
+        final d = (_pageToScreen(pg.x, pg.y) - pos).distanceSquared;
+        if (d <= bestCpD) {
+          bestCpD = d;
+          bestCp = id;
+        }
+      }
     }
-    return best;
+    // Prefer a nearby connection point over a deep AABB hit so an outer blue
+    // point is not stolen by an overlapping neighbour's interior.
+    return bestCp ?? bestInside;
+  }
+
+  /// Content-px end for a live connector preview: sticks to a snapped blue
+  /// connection point when one is active, otherwise follows the pointer.
+  Offset _previewEndForSnap(VsdxShape? target, int? snapIndex, Offset pointerContent) {
+    if (target == null || snapIndex == null) return pointerContent;
+    final pts = VsdxPage.effectiveConnectionPoints(target);
+    if (snapIndex < 0 || snapIndex >= pts.length) return pointerContent;
+    final pg = _connPointPage(target, pts[snapIndex].offset);
+    return _pageToContent(pg.x, pg.y);
   }
 
   /// Drawn / obstacle-aware connector polyline in **page** inches (matches
@@ -2866,6 +2947,74 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  /// View-only pan / pinch via raw pointers (no gesture-arena slop), so a
+  /// one-finger drag tracks 1:1 and a two-finger pinch zooms around the focal.
+  void _onViewPointerDown(PointerDownEvent e) {
+    if (!_viewOnlyGestures) return;
+    if (_editingShapeId != null) {
+      _commitTextEdit();
+      _mode = _DragMode.none;
+    }
+    _ensureCanvasFocus();
+    _viewPointers[e.pointer] = e.localPosition;
+    if (_viewPointers.length == 1) {
+      _lastPointer = e.localPosition;
+      _mode = _DragMode.panCanvas;
+    } else if (_viewPointers.length == 2) {
+      final pts = _viewPointers.values.toList(growable: false);
+      final focal = Offset(
+        (pts[0].dx + pts[1].dx) / 2,
+        (pts[0].dy + pts[1].dy) / 2,
+      );
+      _viewScaleStart = _scale;
+      _viewScaleContentFocal = _viewportToContent(focal);
+      _viewPinchStartDistance = (pts[0] - pts[1]).distance;
+      _mode = _DragMode.panCanvas;
+    }
+  }
+
+  void _onViewPointerMove(PointerMoveEvent e) {
+    if (!_viewOnlyGestures || !_viewPointers.containsKey(e.pointer)) return;
+    _viewPointers[e.pointer] = e.localPosition;
+    if (_viewPointers.length == 1 && _mode == _DragMode.panCanvas) {
+      final pos = e.localPosition;
+      setState(() => _offset += pos - _lastPointer);
+      _lastPointer = pos;
+      return;
+    }
+    if (_viewPointers.length >= 2 && _mode == _DragMode.panCanvas) {
+      final pts = _viewPointers.values.toList(growable: false);
+      final focal = Offset(
+        (pts[0].dx + pts[1].dx) / 2,
+        (pts[0].dy + pts[1].dy) / 2,
+      );
+      final dist = (pts[0] - pts[1]).distance;
+      final factor = _viewPinchStartDistance > 1e-6
+          ? dist / _viewPinchStartDistance
+          : 1.0;
+      final target =
+          (_viewScaleStart * factor).clamp(widget.minScale, widget.maxScale);
+      setState(() {
+        _scale = target.toDouble();
+        _offset = focal - _viewScaleContentFocal * _scale;
+      });
+    }
+  }
+
+  void _onViewPointerUp(PointerEvent e) {
+    if (!_viewPointers.containsKey(e.pointer)) return;
+    _viewPointers.remove(e.pointer);
+    if (_viewPointers.isEmpty) {
+      if (_mode == _DragMode.panCanvas) _mode = _DragMode.none;
+      return;
+    }
+    if (_viewPointers.length == 1) {
+      // Resume single-finger pan from the remaining pointer.
+      _lastPointer = _viewPointers.values.first;
+      _mode = _DragMode.panCanvas;
+    }
+  }
+
   /// Resolve [page]'s Visio `BackPage` underlay from [doc], or `null`.
   VsdxPage? _resolvedUnderlay(VsdxDocument doc, VsdxPage page) {
     final id = page.backgroundPageId;
@@ -3058,19 +3207,27 @@ class _PageCanvasState extends State<PageCanvas> {
               onKeyEvent: _onKey,
               child: Listener(
               onPointerSignal: _onPointerSignal,
+              onPointerDown: _onViewPointerDown,
+              onPointerMove: _onViewPointerMove,
+              onPointerUp: _onViewPointerUp,
+              onPointerCancel: _onViewPointerUp,
               child: MouseRegion(
               onHover: _onHover,
               onExit: (_) => _clearHover(),
-              cursor: _c.tool == EditorTool.text
-                  ? SystemMouseCursors.text
-                  : _hoverOnQuickAddArrow
-                      ? SystemMouseCursors.click
-                      : (_c.tool == EditorTool.freehand ||
-                              _c.tool == EditorTool.connector ||
-                              _mode == _DragMode.connect ||
-                              _hoverOnConnectPoint)
-                          ? SystemMouseCursors.precise
-                          : MouseCursor.defer,
+              cursor: _c.tool == EditorTool.pan
+                  ? (_mode == _DragMode.panCanvas
+                      ? SystemMouseCursors.grabbing
+                      : SystemMouseCursors.grab)
+                  : _c.tool == EditorTool.text
+                      ? SystemMouseCursors.text
+                      : _hoverOnQuickAddArrow
+                          ? SystemMouseCursors.click
+                          : (_c.tool == EditorTool.freehand ||
+                                  _c.tool == EditorTool.connector ||
+                                  _mode == _DragMode.connect ||
+                                  _hoverOnConnectPoint)
+                              ? SystemMouseCursors.precise
+                              : MouseCursor.defer,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 // Hit-test handles and measure movement from the pointer-down
@@ -3082,9 +3239,11 @@ class _PageCanvasState extends State<PageCanvas> {
                 onSecondaryTapUp: _onSecondaryTapUp,
                 onDoubleTapDown: (d) => _doubleTapPos = d.localPosition,
                 onDoubleTap: _onDoubleTap,
-                onPanStart: _onPanStart,
-                onPanUpdate: _onPanUpdate,
-                onPanEnd: _onPanEnd,
+                // View-only pan/pinch is handled by the outer Listener so
+                // single-finger pans track 1:1 (no scale-gesture slop).
+                onPanStart: _viewOnlyGestures ? null : _onPanStart,
+                onPanUpdate: _viewOnlyGestures ? null : _onPanUpdate,
+                onPanEnd: _viewOnlyGestures ? null : _onPanEnd,
                 child: ClipRect(
                   key: _canvasBoxKey,
                   child: Stack(
@@ -3493,6 +3652,7 @@ class _SelectionPainter extends CustomPainter {
       case EditorTool.rectangle:
       case EditorTool.text:
       case EditorTool.select:
+      case EditorTool.pan:
       case EditorTool.freehand:
         canvas.drawRect(Rect.fromPoints(a, b), outline);
     }

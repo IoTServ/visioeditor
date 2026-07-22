@@ -2523,6 +2523,7 @@ class _ToolStrip extends StatelessWidget {
 
     final tools = <Widget>[
       tool(EditorTool.select, Icons.near_me_outlined, el.toolSelect),
+      tool(EditorTool.pan, Icons.pan_tool_alt_outlined, el.toolPan),
       tool(EditorTool.rectangle, Icons.crop_square, el.toolRectangle),
       tool(EditorTool.ellipse, Icons.circle_outlined, el.toolEllipse),
       tool(EditorTool.line, Icons.horizontal_rule, el.toolLine),

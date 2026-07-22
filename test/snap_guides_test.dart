@@ -116,5 +116,31 @@ void main() {
       );
       expect(r.dx, closeTo(0.02, 1e-9)); // right edge → magnet x=2
     });
+
+    test('already-aligned axis still reports snappedX so grid must not override',
+        () {
+      // Left edges already coincide (dx=0) but still within threshold — the
+      // guide claim must stick so callers do not grid-yank the box off.
+      final r = computeSnap(
+        moving: const SnapBox(2.0, 0, 2.7, 1),
+        others: const <SnapBox>[SnapBox(2.0, 5, 3.0, 6)],
+        threshold: 0.1,
+      );
+      expect(r.dx, 0);
+      expect(r.snappedX, isTrue);
+      expect(r.snappedY, isFalse);
+      expect(r.guides.singleWhere((g) => g.vertical).pos, closeTo(2.0, 1e-9));
+    });
+
+    test('already-aligned horizontal centre reports snappedY', () {
+      final r = computeSnap(
+        moving: const SnapBox(0, 1.0, 1, 3.0), // cy = 2
+        others: const <SnapBox>[SnapBox(4, 1.0, 5, 3.0)], // cy = 2
+        threshold: 0.1,
+      );
+      expect(r.dy, 0);
+      expect(r.snappedY, isTrue);
+      expect(r.snappedX, isFalse);
+    });
   });
 }
