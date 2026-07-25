@@ -41,13 +41,54 @@ void main() {
 
   Future<Map<String, dynamic>> callTool(
       String name, Map<String, dynamic> args) async {
-    final resp = await rpc('tools/call',
-        <String, dynamic>{'name': name, 'arguments': args});
+    final resp = await rpc(
+        'tools/call', <String, dynamic>{'name': name, 'arguments': args});
     return resp['result'] as Map<String, dynamic>;
   }
 
   String firstText(Map<String, dynamic> result) =>
       (result['content'] as List).first['text'] as String;
+
+  void writeTwoPageDocument(String path) {
+    final original = const VsdxWriter().emptyDocument();
+    var doc = const DocumentParser().parse(original);
+    final first = doc.pages.first.copyWith(
+      shapes: <VsdxShape>[
+        withLabel(
+          VsdxShapeFactory.rectangle(
+            id: 1,
+            pinX: 2,
+            pinY: 2,
+            width: 1,
+            height: 1,
+          ),
+          'First page',
+        ),
+      ],
+    );
+    final second = VsdxPage(
+      id: doc.nextPageId(),
+      name: 'Page-2',
+      widthInches: first.widthInches,
+      heightInches: first.heightInches,
+      shapes: <VsdxShape>[
+        withLabel(
+          VsdxShapeFactory.rectangle(
+            id: 1,
+            pinX: 4,
+            pinY: 4,
+            width: 1,
+            height: 1,
+          ),
+          'Second page',
+        ),
+      ],
+    );
+    doc = doc.copyWith(pages: <VsdxPage>[first, second]);
+    File(path).writeAsBytesSync(
+      const VsdxWriter().write(originalBytes: original, edited: doc),
+    );
+  }
 
   test('initialize returns serverInfo + tools capability', () async {
     final r = await rpc('initialize', <String, dynamic>{
@@ -60,8 +101,10 @@ void main() {
   });
 
   test('notifications/initialized yields no response', () async {
-    final r = await server
-        .handle(<String, dynamic>{'jsonrpc': '2.0', 'method': 'notifications/initialized'});
+    final r = await server.handle(<String, dynamic>{
+      'jsonrpc': '2.0',
+      'method': 'notifications/initialized'
+    });
     expect(r, isNull);
   });
 
@@ -118,8 +161,8 @@ void main() {
 
   test('create_diagram builds + validates a .vsdx', () async {
     final path = '${tmp.path}/flow.vsdx';
-    final result = await callTool('create_diagram',
-        <String, dynamic>{'spec': _spec, 'path': path});
+    final result = await callTool(
+        'create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
     expect(result['isError'], isFalse);
     expect(firstText(result), contains('validation: clean'));
     expect(File(path).existsSync(), isTrue);
@@ -127,22 +170,92 @@ void main() {
 
   test('apply_ops then explain reflects the edit', () async {
     final path = '${tmp.path}/flow.vsdx';
-    await callTool('create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
+    await callTool(
+        'create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
     await callTool('apply_ops', <String, dynamic>{
       'path': path,
       'ops': <dynamic>[
-        <String, dynamic>{'op': 'add_shape', 'text': 'Cache', 'x': 1.0, 'y': 1.0},
+        <String, dynamic>{
+          'op': 'add_shape',
+          'text': 'Cache',
+          'x': 1.0,
+          'y': 1.0
+        },
       ],
     });
-    final explained = await callTool('explain', <String, dynamic>{'path': path});
+    final explained =
+        await callTool('explain', <String, dynamic>{'path': path});
     expect(firstText(explained), contains('Cache'));
+  });
+
+  test('apply_ops page edits only the requested page', () async {
+    final path = '${tmp.path}/pages.vsdx';
+    writeTwoPageDocument(path);
+
+    final result = await callTool('apply_ops', <String, dynamic>{
+      'path': path,
+      'page': 1,
+      'ops': <dynamic>[
+        <String, dynamic>{
+          'op': 'set_text',
+          'id': 1,
+          'text': 'Edited second page',
+        },
+      ],
+    });
+
+    expect(firstText(result), contains('page 1'));
+    final pages =
+        const DocumentParser().parse(File(path).readAsBytesSync()).pages;
+    expect(pages[0].findShapeById(1)!.text, 'First page');
+    expect(pages[1].findShapeById(1)!.text, 'Edited second page');
+  });
+
+  test('rejected apply_ops neither rewrites nor claims to patch the file',
+      () async {
+    final path = '${tmp.path}/no-op.vsdx';
+    await callTool(
+        'create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
+    final file = File(path);
+    final fixed = DateTime.utc(2001, 2, 3, 4, 5, 6);
+    file.setLastModifiedSync(fixed);
+
+    final result = await callTool('apply_ops', <String, dynamic>{
+      'path': path,
+      'ops': <dynamic>[
+        <String, dynamic>{'op': 'delete_shape', 'id': 999999},
+      ],
+    });
+
+    expect(firstText(result), startsWith('No changes to'));
+    expect(firstText(result),
+        contains('Skipped: delete_shape: shape 999999 not found'));
+    expect(file.lastModifiedSync(), fixed.toLocal());
+  });
+
+  test('list_shapes reports the effective clamped page', () async {
+    final path = '${tmp.path}/pages.vsdx';
+    writeTwoPageDocument(path);
+
+    final result = await callTool('list_shapes', <String, dynamic>{
+      'path': path,
+      'page': 99,
+    });
+    final decoded = jsonDecode(firstText(result)) as Map<String, dynamic>;
+
+    expect(decoded['page'], 1);
+    expect(
+      (decoded['shapes'] as List).single['text'],
+      'Second page',
+    );
   });
 
   test('export writes SVG', () async {
     final path = '${tmp.path}/flow.vsdx';
-    await callTool('create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
-    final result =
-        await callTool('export', <String, dynamic>{'path': path, 'format': 'svg'});
+    await callTool(
+        'create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
+    final result = await callTool(
+        'export', <String, dynamic>{'path': path, 'format': 'svg'});
     expect(result['isError'], isFalse);
     expect(File('${tmp.path}/flow.svg').existsSync(), isTrue);
   });
@@ -198,8 +311,8 @@ void main() {
       });
       expect(shapes().any((s) => s.text == 'C'), isTrue);
       final id = idOf('C');
-      await callTool('set_text',
-          <String, dynamic>{'path': path, 'id': id, 'text': 'C2'});
+      await callTool(
+          'set_text', <String, dynamic>{'path': path, 'id': id, 'text': 'C2'});
       expect(shapes().any((s) => s.text == 'C2'), isTrue);
       await callTool('delete_shape', <String, dynamic>{'path': path, 'id': id});
       expect(shapes().any((s) => s.id == id), isFalse);
@@ -218,11 +331,27 @@ void main() {
 
     test('move_shape sets the centre', () async {
       final id = idOf('A');
-      await callTool(
-          'move_shape', <String, dynamic>{'path': path, 'id': id, 'x': 6.0, 'y': 5.0});
+      await callTool('move_shape',
+          <String, dynamic>{'path': path, 'id': id, 'x': 6.0, 'y': 5.0});
       final s = shapes().firstWhere((s) => s.id == id);
       expect(s.pinX, closeTo(6.0, 1e-6));
       expect(s.pinY, closeTo(5.0, 1e-6));
+    });
+
+    test('convenience tools accept a page index', () async {
+      writeTwoPageDocument(path);
+      await callTool('move_shape', <String, dynamic>{
+        'path': path,
+        'page': 1,
+        'id': 1,
+        'x': 7.0,
+        'y': 6.0,
+      });
+      final pages =
+          const DocumentParser().parse(File(path).readAsBytesSync()).pages;
+      expect(pages[0].findShapeById(1)!.pinX, closeTo(2.0, 1e-6));
+      expect(pages[1].findShapeById(1)!.pinX, closeTo(7.0, 1e-6));
+      expect(pages[1].findShapeById(1)!.pinY, closeTo(6.0, 1e-6));
     });
 
     test('add_connector links two shapes', () async {
@@ -237,7 +366,8 @@ void main() {
     });
 
     test('list_shapes returns ids + text as JSON', () async {
-      final result = await callTool('list_shapes', <String, dynamic>{'path': path});
+      final result =
+          await callTool('list_shapes', <String, dynamic>{'path': path});
       final text = firstText(result);
       final decoded = jsonDecode(text) as Map<String, dynamic>;
       final list = decoded['shapes'] as List;

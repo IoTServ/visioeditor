@@ -37,7 +37,8 @@ void registerVsdxMcpTools(McpServer server, {bool includeLiveTools = true}) {
   if (includeLiveTools) _registerLiveTools(server);
 }
 
-Uint8List _read(String path) => Uint8List.fromList(File(path).readAsBytesSync());
+Uint8List _read(String path) =>
+    Uint8List.fromList(File(path).readAsBytesSync());
 
 String _abs(String path) => File(path).absolute.path;
 
@@ -82,8 +83,8 @@ void _registerFileTools(McpServer server) {
           'type': 'object',
           'description':
               'Diagram Spec v0: {title?, style?, layout?:{direction,spacing}, '
-              'page?, nodes:[{id,stencil,text,role?,x?,y?,w?,h?,fill?,line?,'
-              'bold?}], edges:[{from,to,label?,arrow?,line?}]}',
+                  'page?, nodes:[{id,stencil,text,role?,x?,y?,w?,h?,fill?,line?,'
+                  'bold?}], edges:[{from,to,label?,arrow?,line?}]}',
         },
         'style': <String, dynamic>{
           'type': 'string',
@@ -137,7 +138,10 @@ void _registerFileTools(McpServer server) {
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
-        'text': <String, dynamic>{'type': 'string', 'description': 'Mermaid source.'},
+        'text': <String, dynamic>{
+          'type': 'string',
+          'description': 'Mermaid source.'
+        },
         'path': <String, dynamic>{'type': 'string'},
         'open': <String, dynamic>{'type': 'boolean'},
       },
@@ -307,7 +311,10 @@ void _registerFileTools(McpServer server) {
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
-        'sql': <String, dynamic>{'type': 'string', 'description': 'SQL DDL text.'},
+        'sql': <String, dynamic>{
+          'type': 'string',
+          'description': 'SQL DDL text.'
+        },
         'path': <String, dynamic>{'type': 'string'},
         'open': <String, dynamic>{'type': 'boolean'},
       },
@@ -350,18 +357,31 @@ void _registerFileTools(McpServer server) {
           'type': 'array',
           'description': 'Array of Edit Op objects.',
         },
+        'page': <String, dynamic>{
+          'type': 'integer',
+          'default': 0,
+          'description': 'Zero-based page index.',
+        },
       },
       'required': <String>['path', 'ops'],
     },
     handler: (args) async {
       final path = args['path'] as String;
       final ops = _asList(args['ops']);
-      final patched =
-          applyOpsBytes(_read(path), jsonEncode(<String, dynamic>{'ops': ops}));
-      File(path).writeAsBytesSync(patched);
+      final page = (args['page'] as num?)?.toInt() ?? 0;
+      final original = _read(path);
+      final applied = applyOpsBytesResult(
+        original,
+        jsonEncode(<String, dynamic>{'ops': ops}),
+        pageIndex: page,
+      );
+      if (applied.changed) File(path).writeAsBytesSync(applied.bytes);
       return <McpContent>[
-        McpContent.text('Patched ${_abs(path)} (${patched.length} bytes)\n'
-            '${_validationSummary(patched)}'),
+        McpContent.text(
+            '${applied.changed ? 'Patched' : 'No changes to'} ${_abs(path)} '
+            '(page ${applied.pageIndex}, ${applied.bytes.length} bytes)\n'
+            '${_validationSummary(applied.bytes)}'
+            '${applied.log.isEmpty ? '' : '\nSkipped: ${applied.log.join('; ')}'}'),
       ];
     },
   ));
@@ -475,7 +495,9 @@ void _registerFileTools(McpServer server) {
       final path = args['path'] as String?;
       if (path != null) {
         final doc = const DocumentParser().parse(_read(path));
-        final page = (args['page'] as num?)?.toInt() ?? 0;
+        final requested = (args['page'] as num?)?.toInt() ?? 0;
+        final page =
+            doc.pages.isEmpty ? 0 : requested.clamp(0, doc.pages.length - 1);
         return <McpContent>[
           McpContent.text(enc.convert(<String, dynamic>{
             'page': page,
@@ -522,7 +544,8 @@ void _registerFileTools(McpServer server) {
 
   server.addTool(McpTool(
     name: 'list_styles',
-    description: 'List Diagram Spec style presets (default / corporate / dark). '
+    description:
+        'List Diagram Spec style presets (default / corporate / dark). '
         'Use with create_diagram({ style }) or put "style" / node "role" in the '
         'spec (roles: service, database, queue, gateway, error, external, '
         'security).',
@@ -560,31 +583,53 @@ void _registerEditTools(McpServer server) {
   Future<List<McpContent>> applyOne(
       Map<String, dynamic> args, Map<String, dynamic> single) async {
     final path = args['path'] as String?;
+    final page = (args['page'] as num?)?.toInt();
     if (path != null) {
-      final patched =
-          applyOpsBytes(_read(path), jsonEncode(<String, dynamic>{'ops': <dynamic>[single]}));
-      File(path).writeAsBytesSync(patched);
+      final original = _read(path);
+      final pageIndex = page ?? 0;
+      final applied = applyOpsBytesResult(
+        original,
+        jsonEncode(<String, dynamic>{
+          'ops': <dynamic>[single]
+        }),
+        pageIndex: pageIndex,
+      );
+      if (applied.changed) File(path).writeAsBytesSync(applied.bytes);
       return <McpContent>[
-        McpContent.text('Applied to ${_abs(path)}\n${_validationSummary(patched)}'),
+        McpContent.text(
+          '${applied.changed ? 'Applied to' : 'No changes to'} ${_abs(path)} '
+          '(page ${applied.pageIndex})\n${_validationSummary(applied.bytes)}'
+          '${applied.log.isEmpty ? '' : '\nSkipped: ${applied.log.join('; ')}'}',
+        ),
       ];
     }
     final client = await BridgeClient.connect();
     try {
-      final state =
-          await client.call('applyOps', <String, dynamic>{'ops': <dynamic>[single]});
-      return <McpContent>[McpContent.text('Applied live. ${jsonEncode(state)}')];
+      final state = await client.call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[single],
+        if (page != null) 'page': page,
+      });
+      return <McpContent>[
+        McpContent.text('Applied live. ${jsonEncode(state)}')
+      ];
     } finally {
       await client.close();
     }
   }
 
   // Shared: an optional file path; omit to edit the running app's active doc.
-  Map<String, dynamic> withPath(Map<String, dynamic> props) => <String, dynamic>{
+  Map<String, dynamic> withPath(Map<String, dynamic> props) =>
+      <String, dynamic>{
         'type': 'object',
         'properties': <String, dynamic>{
           'path': <String, dynamic>{
             'type': 'string',
             'description': 'Target .vsdx file; omit to edit the running app.',
+          },
+          'page': <String, dynamic>{
+            'type': 'integer',
+            'description':
+                'Zero-based page index (default: page 0 for files, current page live).',
           },
           ...props,
         },
@@ -607,8 +652,18 @@ void _registerEditTools(McpServer server) {
       ..['required'] = <String>['stencil'],
     handler: (args) => applyOne(
         args,
-        op('add_shape', args,
-            <String>['stencil', 'text', 'x', 'y', 'w', 'h', 'fill', 'line', 'bold', 'textColor'])),
+        op('add_shape', args, <String>[
+          'stencil',
+          'text',
+          'x',
+          'y',
+          'w',
+          'h',
+          'fill',
+          'line',
+          'bold',
+          'textColor'
+        ])),
   ));
 
   server.addTool(McpTool(
@@ -622,8 +677,10 @@ void _registerEditTools(McpServer server) {
       'line': <String, dynamic>{'type': 'string'},
     })
       ..['required'] = <String>['from', 'to'],
-    handler: (args) => applyOne(args,
-        op('add_connector', args, <String>['from', 'to', 'label', 'arrow', 'line'])),
+    handler: (args) => applyOne(
+        args,
+        op('add_connector', args,
+            <String>['from', 'to', 'label', 'arrow', 'line'])),
   ));
 
   server.addTool(McpTool(
@@ -918,8 +975,8 @@ void _registerEditTools(McpServer server) {
       'bold': <String, dynamic>{'type': 'boolean'},
     })
       ..['required'] = <String>['id', 'text'],
-    handler: (args) => applyOne(
-        args, op('set_text', args, <String>['id', 'text', 'bold', 'textColor'])),
+    handler: (args) => applyOne(args,
+        op('set_text', args, <String>['id', 'text', 'bold', 'textColor'])),
   ));
 
   server.addTool(McpTool(
@@ -942,8 +999,7 @@ void _registerEditTools(McpServer server) {
       'id': <String, dynamic>{'type': 'string'},
     })
       ..['required'] = <String>['id'],
-    handler: (args) =>
-        applyOne(args, op('delete_shape', args, <String>['id'])),
+    handler: (args) => applyOne(args, op('delete_shape', args, <String>['id'])),
   ));
 }
 
@@ -969,8 +1025,8 @@ void _registerLiveTools(McpServer server) {
       'required': <String>['path'],
     },
     handler: (args) async => withBridge((c) async {
-      final state = await c
-          .call('open', <String, dynamic>{'path': _abs(args['path'] as String)});
+      final state = await c.call(
+          'open', <String, dynamic>{'path': _abs(args['path'] as String)});
       return <McpContent>[McpContent.text('Opened. ${jsonEncode(state)}')];
     }),
   ));
@@ -983,12 +1039,18 @@ void _registerLiveTools(McpServer server) {
       'type': 'object',
       'properties': <String, dynamic>{
         'ops': <String, dynamic>{'type': 'array'},
+        'page': <String, dynamic>{
+          'type': 'integer',
+          'description': 'Zero-based page index (default: current page).',
+        },
       },
       'required': <String>['ops'],
     },
     handler: (args) async => withBridge((c) async {
-      final state =
-          await c.call('applyOps', <String, dynamic>{'ops': _asList(args['ops'])});
+      final state = await c.call('applyOps', <String, dynamic>{
+        'ops': _asList(args['ops']),
+        if (args['page'] != null) 'page': args['page'],
+      });
       return <McpContent>[McpContent.text('Applied. ${jsonEncode(state)}')];
     }),
   ));

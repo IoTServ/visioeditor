@@ -111,8 +111,9 @@ save is round-trip faithful (only changed cells are rewritten; formulas and
 unknown structure pass through untouched):
 
 ```bash
-VSDXTOOL patch -i diagram.vsdx --ops ops.json     # file
-# or MCP: apply_ops({ path, ops })  /  live_apply_ops({ ops })  for the live app
+VSDXTOOL patch -i diagram.vsdx --ops ops.json --page 0  # file
+# or MCP: apply_ops({ path, page?, ops }) /
+#         live_apply_ops({ page?, ops }) for the live app
 ```
 
 Get current shape ids with `list_shapes` (MCP; JSON of id/text/x/y/w/h, file or
@@ -123,7 +124,8 @@ highlights those shapes in the editor (empty list clears).
 **Convenience single-step tools** (MCP) avoid hand-building op arrays:
 `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
 `delete_shape`. Each takes an optional `path` — give it to edit a **file**,
-omit it to edit the **running app** live.
+omit it to edit the **running app** live. Use optional zero-based `page` for
+multi-page drawings (file default: page 0; live default: current page).
 
 ## Importers (structure in → editable .vsdx)
 

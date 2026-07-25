@@ -24,14 +24,18 @@ void main() {
   late Future<void> Function(String path) openPathHandler;
   var requestIdSeed = 0;
 
-  Future<Map<String, dynamic>> call(String method,
-      [Map<String, dynamic>? params]) async {
+  Future<Map<String, dynamic>> call(
+    String method, [
+    Map<String, dynamic>? params,
+  ]) async {
     final id = ++requestIdSeed;
-    socket.add(jsonEncode(<String, dynamic>{
-      'id': id,
-      'method': method,
-      'params': params ?? const <String, dynamic>{},
-    }));
+    socket.add(
+      jsonEncode(<String, dynamic>{
+        'id': id,
+        'method': method,
+        'params': params ?? const <String, dynamic>{},
+      }),
+    );
     return incoming.firstWhere((m) => m['id'] == id);
   }
 
@@ -41,8 +45,11 @@ void main() {
     await file.writeAsBytes(DiagramSpec.parse(_spec).build());
 
     workspace = EditorWorkspace();
-    await workspace.openBytes(await file.readAsBytes(),
-        path: file.path, name: 'diagram.vsdx');
+    await workspace.openBytes(
+      await file.readAsBytes(),
+      path: file.path,
+      name: 'diagram.vsdx',
+    );
 
     openPathHandler = (p) async {};
     bridge = AgentBridge(
@@ -52,7 +59,8 @@ void main() {
     await bridge.start();
 
     socket = await WebSocket.connect(
-        'ws://127.0.0.1:${bridge.port}/?token=${bridge.token}');
+      'ws://127.0.0.1:${bridge.port}/?token=${bridge.token}',
+    );
     incoming = socket
         .map((d) => (jsonDecode(d as String) as Map).cast<String, dynamic>())
         .asBroadcastStream();
@@ -126,8 +134,9 @@ void main() {
 
     final listed = await call('listShapes');
     final shapes = (listed['result'] as Map)['shapes'] as List;
-    final nested =
-        shapes.cast<Map>().firstWhere((s) => s.containsKey('parentId'));
+    final nested = shapes.cast<Map>().firstWhere(
+      (s) => s.containsKey('parentId'),
+    );
     final nestedId = nested['id'] as int;
 
     final selected = await call('select', <String, dynamic>{
@@ -224,20 +233,24 @@ void main() {
     final openReply = incoming.firstWhere((m) => m['id'] == openId);
     final applyReply = incoming.firstWhere((m) => m['id'] == applyId);
     socket
-      ..add(jsonEncode(<String, dynamic>{
-        'id': openId,
-        'method': 'open',
-        'params': <String, dynamic>{'path': next.path},
-      }))
-      ..add(jsonEncode(<String, dynamic>{
-        'id': applyId,
-        'method': 'applyOps',
-        'params': <String, dynamic>{
-          'ops': <dynamic>[
-            <String, dynamic>{'op': 'add_shape', 'text': 'After open'},
-          ],
-        },
-      }));
+      ..add(
+        jsonEncode(<String, dynamic>{
+          'id': openId,
+          'method': 'open',
+          'params': <String, dynamic>{'path': next.path},
+        }),
+      )
+      ..add(
+        jsonEncode(<String, dynamic>{
+          'id': applyId,
+          'method': 'applyOps',
+          'params': <String, dynamic>{
+            'ops': <dynamic>[
+              <String, dynamic>{'op': 'add_shape', 'text': 'After open'},
+            ],
+          },
+        }),
+      );
 
     await Future<void>.delayed(const Duration(milliseconds: 20));
     gate.complete();
@@ -245,27 +258,74 @@ void main() {
     expect((await applyReply)['ok'], isTrue);
     expect(workspace.active!.filePath, next.path);
     expect(
-      workspace.active!.document!.pages.single.shapes
-          .any((s) => s.text == 'After open'),
+      workspace.active!.document!.pages.single.shapes.any(
+        (s) => s.text == 'After open',
+      ),
       isTrue,
     );
   });
 
-  test('applyOps is L3 co-editing: one undoable step, history preserved', () async {
+  test(
+    'applyOps is L3 co-editing: one undoable step, history preserved',
+    () async {
+      final c = workspace.active!;
+      final beforeShapes = c.document!.pages.single.shapes.length;
+      expect(c.canUndo, isFalse); // freshly opened document
+      await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'add_shape',
+            'text': 'Live',
+            'x': 1.0,
+            'y': 1.0,
+          },
+        ],
+      });
+      expect(c.canUndo, isTrue);
+      expect(c.document!.pages.single.shapes.length, beforeShapes + 1);
+      // The user can undo the Agent's edit.
+      c.undo();
+      expect(c.document!.pages.single.shapes.length, beforeShapes);
+      expect(
+        c.document!.pages.single.shapes.any((s) => s.text == 'Live'),
+        isFalse,
+      );
+    },
+  );
+
+  test('applyOps page targets a non-active page and reports it', () async {
     final c = workspace.active!;
-    final beforeShapes = c.document!.pages.single.shapes.length;
-    expect(c.canUndo, isFalse); // freshly opened document
-    await call('applyOps', <String, dynamic>{
+    c.addPage();
+    c.selectPage(0);
+    expect(c.currentPageIndex, 0);
+
+    final r = await call('applyOps', <String, dynamic>{
+      'page': 1,
       'ops': <dynamic>[
-        <String, dynamic>{'op': 'add_shape', 'text': 'Live', 'x': 1.0, 'y': 1.0},
+        <String, dynamic>{'op': 'add_shape', 'text': 'Page two'},
       ],
     });
-    expect(c.canUndo, isTrue);
-    expect(c.document!.pages.single.shapes.length, beforeShapes + 1);
-    // The user can undo the Agent's edit.
+
+    expect(r['ok'], isTrue);
+    final result = r['result'] as Map;
+    expect(result['page'], 1);
+    expect(result['changed'], isTrue);
+    expect(c.currentPageIndex, 0);
+    expect(
+      c.document!.pages[0].shapes.any((s) => s.text == 'Page two'),
+      isFalse,
+    );
+    expect(
+      c.document!.pages[1].shapes.any((s) => s.text == 'Page two'),
+      isTrue,
+    );
+
     c.undo();
-    expect(c.document!.pages.single.shapes.length, beforeShapes);
-    expect(c.document!.pages.single.shapes.any((s) => s.text == 'Live'), isFalse);
+    expect(c.currentPageIndex, 0);
+    expect(
+      c.document!.pages[1].shapes.any((s) => s.text == 'Page two'),
+      isFalse,
+    );
   });
 
   test('snapshot returns a PNG', () async {
@@ -279,13 +339,17 @@ void main() {
   test('save writes the current model back to disk', () async {
     await call('applyOps', <String, dynamic>{
       'ops': <dynamic>[
-        <String, dynamic>{'op': 'add_shape', 'text': 'Saved', 'x': 1.0, 'y': 1.0},
+        <String, dynamic>{
+          'op': 'add_shape',
+          'text': 'Saved',
+          'x': 1.0,
+          'y': 1.0,
+        },
       ],
     });
     final r = await call('save');
     expect(r['ok'], isTrue);
-    final reopened =
-        const DocumentParser().parse(await file.readAsBytes());
+    final reopened = const DocumentParser().parse(await file.readAsBytes());
     expect(reopened.pages.single.shapes.any((s) => s.text == 'Saved'), isTrue);
   });
 
@@ -313,8 +377,10 @@ void main() {
     var reloaded = false;
     for (var i = 0; i < 20 && !reloaded; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
-      reloaded = workspace.active?.document?.pages.single.shapes
-              .any((s) => s.text == 'Reloaded') ??
+      reloaded =
+          workspace.active?.document?.pages.single.shapes.any(
+            (s) => s.text == 'Reloaded',
+          ) ??
           false;
     }
     expect(reloaded, isTrue);

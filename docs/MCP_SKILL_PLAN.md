@@ -159,7 +159,8 @@
 
 **A. 文件类（后端 = CLI，无需应用运行）**
 - `create_diagram(spec, path?) → {path, preview_png}`：Spec 建图 + 返回预览。
-- `apply_ops(path, ops[]) → {path, preview_png}`：对文件应用 Edit Ops（往返保真）。
+- `apply_ops(path, ops[], page?) → {path, preview_png}`：对指定页应用 Edit Ops
+  （`page` 为从 0 开始的页索引，默认 0；往返保真）。
 - `export(path, format, out?) → {out}`：导出 svg/png/pdf。
 - `validate(path) → {issues[]}`：结构 lint。
 - `explain(path) → {markdown}`：反向描述。
@@ -169,8 +170,8 @@
 
 **B. 实时/应用类（后端 = 应用桥 §5.3，需应用运行）**
 - `open_in_app(path) → {ok}`：在运行中的应用打开该文档。
-- `live_apply_ops(ops[]) → {ok, selection}`：对**当前活动文档**实时应用 Edit Ops（每步一个
-  undo 步），应用即时重绘。
+- `live_apply_ops(ops[], page?) → {ok, selection}`：对**当前活动文档**指定页实时应用
+  Edit Ops（默认当前页；每批一个 undo 步），应用即时重绘。
 - `snapshot(page?) → {image}`：让应用回传当前画布 PNG（真·所见）。
 - `select(ids[]) / get_state() → {pages, selection, dirty}`：选中/读状态。
 

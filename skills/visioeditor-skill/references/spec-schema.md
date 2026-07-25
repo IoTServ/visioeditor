@@ -92,7 +92,7 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.
 - **Ids of existing shapes**: get them from `explain` (CLI/MCP) or
-  `get_app_state` (live). New shapes get the next free id automatically.
+  `list_shapes` (file/live). New shapes get the next free id automatically.
 - **Fidelity**: only changed cells are rewritten; unmodified shapes, formulas,
   themes, and unknown parts pass through byte-for-byte.
 - Unknown ops / bad references are logged and skipped, never fatal.
@@ -100,7 +100,12 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
 ### CLI / MCP
 
 ```bash
-vsdxtool patch -i diagram.vsdx --ops ops.json [-o out.vsdx]
+vsdxtool patch -i diagram.vsdx --ops ops.json [--page 0] [-o out.vsdx]
 ```
-MCP file: `apply_ops({ "path": "diagram.vsdx", "ops": [ … ] })`
-MCP live (running app, in-memory, instant): `live_apply_ops({ "ops": [ … ] })`
+MCP file: `apply_ops({ "path": "diagram.vsdx", "page": 0, "ops": [ … ] })`
+MCP live (running app, in-memory, instant):
+`live_apply_ops({ "page": 0, "ops": [ … ] })`
+
+`page` is a zero-based page index. It defaults to page 0 for file edits and
+the current page for live edits. The convenience edit tools accept the same
+optional `page`.

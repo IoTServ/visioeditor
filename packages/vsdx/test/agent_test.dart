@@ -207,7 +207,10 @@ void main() {
       expect(fill.themeForegroundIndex, isNull);
       expect(fill.gradient, isNull);
       expect(
-        r.document.pages.first.findShapeById(id)!.geometries.every((g) => g.noFill),
+        r.document.pages.first
+            .findShapeById(id)!
+            .geometries
+            .every((g) => g.noFill),
         isTrue,
       );
     });
@@ -255,13 +258,15 @@ void main() {
 
     test('set_style + set_text mutate the target shape', () {
       final doc = built();
-      final target = doc.pages.single.shapes.firstWhere((s) => s.text == 'Do work');
+      final target =
+          doc.pages.single.shapes.firstWhere((s) => s.text == 'Do work');
       final r = applyOps(doc, _ops('''
         { "ops": [
           { "op": "set_style", "ids": ["shape:${target.id}"], "fill": "#F8CECC" },
           { "op": "set_text", "id": ${target.id}, "text": "Renamed" }
         ] }'''));
-      final s = r.document.pages.single.shapes.firstWhere((s) => s.id == target.id);
+      final s =
+          r.document.pages.single.shapes.firstWhere((s) => s.id == target.id);
       expect(s.text, 'Renamed');
       expect(s.fill.foreground?.value, 0xFFF8CECC);
     });
@@ -497,22 +502,20 @@ void main() {
       final id = doc.pages.first.nextFreeShapeId();
       doc = doc.replacePage(
         0,
-        doc.pages.first
-            .copyWith(
-              layers: const [
-                VsdxLayer(id: 0, name: 'Default'),
-                VsdxLayer(id: 1, name: 'Extra'),
-              ],
-            )
-            .addShape(
-              VsdxShapeFactory.rectangle(
-                id: id,
-                pinX: 1,
-                pinY: 1,
-                width: 2,
-                height: 1,
-              ),
-            ),
+        doc.pages.first.copyWith(
+          layers: const [
+            VsdxLayer(id: 0, name: 'Default'),
+            VsdxLayer(id: 1, name: 'Extra'),
+          ],
+        ).addShape(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: 1,
+            pinY: 1,
+            width: 2,
+            height: 1,
+          ).copyWith(formulas: const <String, String>{'Angle': 'Inh'}),
+        ),
       );
       final r = applyOps(doc, <Map<String, dynamic>>[
         <String, dynamic>{
@@ -526,6 +529,7 @@ void main() {
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
       expect(after.angleRad, closeTo(3.141592653589793 / 2, 1e-9));
+      expect(after.formulas, isNot(contains('Angle')));
       expect(after.layerMemberIds, [0, 1]);
       expect(after.themeIndex, 2);
       expect(
@@ -543,6 +547,58 @@ void main() {
         cleared.document.pages.first.findShapeById(id)!.layerMemberIds,
         isEmpty,
       );
+    });
+
+    test('set_style rotation reroutes glued connectors like the canvas', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      var page = doc.pages.first;
+      final a = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 3,
+        pinY: 3,
+        width: 4,
+        height: 1,
+      );
+      final b = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 8,
+        pinY: 3,
+        width: 1,
+        height: 1,
+      );
+      page = page.copyWith(shapes: <VsdxShape>[a, b]);
+      final link = buildConnector(id: 3, page: page, a: a, b: b);
+      page = page
+          .addShape(link.connector)
+          .copyWith(connects: link.connects)
+          .rerouteConnectors();
+      doc = doc.replacePage(0, page);
+      final before = page.findShapeById(3)!.beginX!;
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_style',
+          'id': 1,
+          'angle': 90,
+        },
+      ]);
+      final after = result.document.pages.first.findShapeById(3)!.beginX!;
+
+      // A 4×1 box rotated 90° has a different right-hand perimeter. Keeping
+      // the old BeginX would leave the connector visibly floating inside it.
+      expect((after - before).abs(), greaterThan(0.5));
+
+      final saved = const VsdxWriter().write(
+        originalBytes: blank,
+        edited: result.document,
+      );
+      final reopened = const DocumentParser().parse(saved).pages.first;
+      expect(
+        reopened.findShapeById(1)!.angleRad,
+        closeTo(3.141592653589793 / 2, 1e-9),
+      );
+      expect(reopened.findShapeById(3)!.beginX, closeTo(after, 1e-6));
     });
 
     test('set_style connector dynamics on 1-D', () {
@@ -730,8 +786,12 @@ void main() {
           'lineSpacing': 'not-a-number',
         },
       ]);
-      final p =
-          r.document.pages.first.findShapeById(id)!.richText.runs.first.paraStyle;
+      final p = r.document.pages.first
+          .findShapeById(id)!
+          .richText
+          .runs
+          .first
+          .paraStyle;
       expect(p.lineSpacingAbsoluteInches, closeTo(0.2, 1e-9));
     });
 
@@ -971,8 +1031,13 @@ void main() {
         },
       ]);
       expect(
-        r.document.pages.first.findShapeById(id)!
-            .richText.runs.first.charStyle.strikethrough,
+        r.document.pages.first
+            .findShapeById(id)!
+            .richText
+            .runs
+            .first
+            .charStyle
+            .strikethrough,
         isTrue,
       );
     });
@@ -1105,7 +1170,8 @@ void main() {
       expect(cleared.text, isEmpty);
       expect(cleared.richText.runs, isEmpty);
       expect(cleared.richText.textBlock.textDirection, 1);
-      expect(cleared.richText.textBlock.defaultTabStopInches, closeTo(0.75, 1e-9));
+      expect(
+          cleared.richText.textBlock.defaultTabStopInches, closeTo(0.75, 1e-9));
       expect(cleared.richText.textBlock.marginLeftInches, closeTo(0.2, 1e-9));
 
       final r = applyOps(doc, <Map<String, dynamic>>[
@@ -1128,7 +1194,8 @@ void main() {
       );
     });
 
-    test('set_style lineSpacing clears absolute; applyCharStyle keeps textBlock',
+    test(
+        'set_style lineSpacing clears absolute; applyCharStyle keeps textBlock',
         () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);
@@ -1194,8 +1261,12 @@ void main() {
           'lineSpacing': 1.2,
         },
       ]);
-      final p2 =
-          both.document.pages.first.findShapeById(id)!.richText.runs.first.paraStyle;
+      final p2 = both.document.pages.first
+          .findShapeById(id)!
+          .richText
+          .runs
+          .first
+          .paraStyle;
       expect(p2.lineSpacing, closeTo(1.2, 1e-9));
       expect(p2.lineSpacingAbsoluteInches, 0);
     });
@@ -1290,9 +1361,12 @@ void main() {
 
     test('applyOpsBytes does not rewrite a rejected batch', () {
       final original = DiagramSpec.parse(_spec).build();
-      final out = applyOpsBytes(original, '''
+      final result = applyOpsBytesResult(original, '''
         { "ops": [ { "op": "delete_shape", "id": 99999 } ] }''');
-      expect(out, same(original));
+      expect(result.bytes, same(original));
+      expect(result.changed, isFalse);
+      expect(result.pageIndex, 0);
+      expect(result.log.single, contains('not found'));
     });
 
     test('rejects trailing-digit node labels as shape ids', () {
@@ -1446,7 +1520,12 @@ void main() {
       final r = applyOps(doc, <Map<String, dynamic>>[
         <String, dynamic>{'op': 'set_text', 'id': id, 'text': 'New'},
       ]);
-      final style = r.document.pages.first.findShapeById(id)!.richText.runs.single.charStyle;
+      final style = r.document.pages.first
+          .findShapeById(id)!
+          .richText
+          .runs
+          .single
+          .charStyle;
       expect(style.color, isNull);
       expect(style.themeColorIndex, ThemeSlot.accent1);
     });
@@ -1588,7 +1667,8 @@ void main() {
         fill: const VsdxFill(pattern: 0),
         line: const VsdxLine(pattern: 0),
       );
-      doc = doc.replacePage(0, doc.pages.first.copyWith(shapes: <VsdxShape>[group]));
+      doc = doc.replacePage(
+          0, doc.pages.first.copyWith(shapes: <VsdxShape>[group]));
       final r = applyOps(doc, <Map<String, dynamic>>[
         <String, dynamic>{
           'op': 'resize_shape',
@@ -1911,11 +1991,11 @@ void main() {
     });
 
     test('move_shape does not re-route unrelated glued connectors', () {
-        final bytes = File(
-          File('test/fixtures/test4_connectors.vsdx').existsSync()
-              ? 'test/fixtures/test4_connectors.vsdx'
-              : 'packages/vsdx/test/fixtures/test4_connectors.vsdx',
-        ).readAsBytesSync();
+      final bytes = File(
+        File('test/fixtures/test4_connectors.vsdx').existsSync()
+            ? 'test/fixtures/test4_connectors.vsdx'
+            : 'packages/vsdx/test/fixtures/test4_connectors.vsdx',
+      ).readAsBytesSync();
       final doc = const DocumentParser().parse(bytes);
       final page = doc.pages.first;
       String sig(VsdxShape s) {
@@ -1967,7 +2047,10 @@ void main() {
       final broken = page.copyWith(connects: <VsdxConnect>[
         ...page.connects,
         const VsdxConnect(
-            fromSheetId: 999, fromCell: 'BeginX', toSheetId: 998, toCell: 'PinX'),
+            fromSheetId: 999,
+            fromCell: 'BeginX',
+            toSheetId: 998,
+            toCell: 'PinX'),
       ]);
       final issues = validateDocument(doc.replacePage(0, broken));
       expect(issues.any((i) => i.severity == 'error'), isTrue);
@@ -2037,7 +2120,8 @@ void main() {
       doc = doc.removePageAt(1);
       expect(doc.pages, hasLength(1));
       expect(doc.pages.first.backgroundPageId, isNull);
-      expect(validateDocument(doc).where((i) => i.severity == 'error'), isEmpty);
+      expect(
+          validateDocument(doc).where((i) => i.severity == 'error'), isEmpty);
     });
 
     test('explain lists shapes and connections', () {

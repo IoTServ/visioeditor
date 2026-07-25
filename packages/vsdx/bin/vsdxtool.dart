@@ -50,7 +50,8 @@ Uint8List _readBytes(String path) =>
 class _BuildCommand extends Command<int> {
   _BuildCommand() {
     argParser
-      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true)
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path.', mandatory: true)
       ..addOption('spec',
           abbr: 's', help: 'Diagram Spec JSON path (or read stdin if omitted).')
       ..addOption('style',
@@ -109,7 +110,8 @@ class _ImportMermaidCommand extends Command<int> {
     argParser
       ..addOption('input',
           abbr: 'i', help: 'Mermaid (.mmd) path (or read stdin if omitted).')
-      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }
   @override
   String get name => 'import-mermaid';
@@ -120,7 +122,8 @@ class _ImportMermaidCommand extends Command<int> {
   @override
   int run() {
     final input = argResults!['input'] as String?;
-    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final text =
+        input != null ? File(input).readAsStringSync() : _readAllStdin();
     final spec = mermaidToSpec(text);
     final bytes = spec.build();
     final out = argResults!['output'] as String;
@@ -136,7 +139,8 @@ class _ImportSqlCommand extends Command<int> {
     argParser
       ..addOption('input',
           abbr: 'i', help: 'SQL DDL (.sql) path (or read stdin if omitted).')
-      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }
   @override
   String get name => 'import-sql';
@@ -147,7 +151,8 @@ class _ImportSqlCommand extends Command<int> {
   @override
   int run() {
     final input = argResults!['input'] as String?;
-    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final text =
+        input != null ? File(input).readAsStringSync() : _readAllStdin();
     final spec = sqlToSpec(text);
     final bytes = spec.build();
     final out = argResults!['output'] as String;
@@ -166,7 +171,8 @@ class _ImportCodeCommand extends Command<int> {
       ..addOption('lang',
           help: 'dart | python | js | go | rust (auto-detected if omitted).')
       ..addOption('max', help: 'Max source files.', defaultsTo: '300')
-      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }
   @override
   String get name => 'import-code';
@@ -196,7 +202,8 @@ class _ImportOpenapiCommand extends Command<int> {
     argParser
       ..addOption('input',
           abbr: 'i', help: 'OpenAPI/Swagger spec (.yaml/.json), or stdin.')
-      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }
   @override
   String get name => 'import-openapi';
@@ -207,7 +214,8 @@ class _ImportOpenapiCommand extends Command<int> {
   @override
   int run() {
     final input = argResults!['input'] as String?;
-    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final text =
+        input != null ? File(input).readAsStringSync() : _readAllStdin();
     final spec = openapiToSpec(text);
     final bytes = spec.build();
     final out = argResults!['output'] as String;
@@ -223,8 +231,10 @@ class _ImportIacCommand extends Command<int> {
     argParser
       ..addOption('input',
           abbr: 'i',
-          help: 'docker-compose / Kubernetes YAML / Terraform .tf path, or stdin.')
-      ..addOption('output', abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
+          help:
+              'docker-compose / Kubernetes YAML / Terraform .tf path, or stdin.')
+      ..addOption('output',
+          abbr: 'o', help: 'Output .vsdx path.', mandatory: true);
   }
   @override
   String get name => 'import-iac';
@@ -236,7 +246,8 @@ class _ImportIacCommand extends Command<int> {
   @override
   int run() {
     final input = argResults!['input'] as String?;
-    final text = input != null ? File(input).readAsStringSync() : _readAllStdin();
+    final text =
+        input != null ? File(input).readAsStringSync() : _readAllStdin();
     final spec = iacToSpec(text);
     final bytes = spec.build();
     final out = argResults!['output'] as String;
@@ -250,24 +261,45 @@ class _ImportIacCommand extends Command<int> {
 class _PatchCommand extends Command<int> {
   _PatchCommand() {
     argParser
-      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('input',
+          abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
       ..addOption('ops', help: 'Edit Ops JSON path.', mandatory: true)
+      ..addOption(
+        'page',
+        abbr: 'p',
+        help: 'Zero-based page index.',
+        defaultsTo: '0',
+      )
       ..addOption('output',
-          abbr: 'o', help: 'Output .vsdx path (defaults to overwriting input).');
+          abbr: 'o',
+          help: 'Output .vsdx path (defaults to overwriting input).');
   }
   @override
   String get name => 'patch';
   @override
-  String get description => 'Apply Edit Ops JSON to a .vsdx (round-trip faithful).';
+  String get description =>
+      'Apply Edit Ops JSON to a .vsdx (round-trip faithful).';
 
   @override
   int run() {
     final input = argResults!['input'] as String;
     final opsJson = File(argResults!['ops'] as String).readAsStringSync();
     final out = (argResults!['output'] as String?) ?? input;
-    final bytes = applyOpsBytes(_readBytes(input), opsJson);
-    File(out).writeAsBytesSync(bytes);
-    stdout.writeln('patched $out (${bytes.length} bytes)');
+    final page = int.tryParse(argResults!['page'] as String) ?? 0;
+    final original = _readBytes(input);
+    final applied = applyOpsBytesResult(original, opsJson, pageIndex: page);
+    // A rejected/no-op in-place patch must not bump mtime and trigger a false
+    // live-reload. An explicit different output still needs to be created.
+    if (applied.changed || out != input) {
+      File(out).writeAsBytesSync(applied.bytes);
+    }
+    stdout.writeln(
+      '${applied.changed ? 'patched' : 'no changes to'} $out '
+      '(page ${applied.pageIndex}, ${applied.bytes.length} bytes)',
+    );
+    for (final note in applied.log) {
+      stdout.writeln('skipped: $note');
+    }
     return 0;
   }
 }
@@ -275,8 +307,10 @@ class _PatchCommand extends Command<int> {
 class _RenderCommand extends Command<int> {
   _RenderCommand() {
     argParser
-      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
-      ..addOption('output', abbr: 'o', help: 'Output .svg path.', mandatory: true);
+      ..addOption('input',
+          abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('output',
+          abbr: 'o', help: 'Output .svg path.', mandatory: true);
   }
   @override
   String get name => 'render';
@@ -285,13 +319,15 @@ class _RenderCommand extends Command<int> {
 
   @override
   int run() {
-    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final doc = const DocumentParser()
+        .parse(_readBytes(argResults!['input'] as String));
     // Match editor Export SVG: print layers only (skip non-printable).
     final svg = VsdxToSvgSerializer(layerFilter: SvgLayerFilter.print)
         .serializeDocument(doc);
     final out = argResults!['output'] as String;
     File(out).writeAsStringSync(svg);
-    stdout.writeln('rendered $out (${svg.length} bytes, ${doc.pages.length} pages)');
+    stdout.writeln(
+        'rendered $out (${svg.length} bytes, ${doc.pages.length} pages)');
     return 0;
   }
 }
@@ -299,7 +335,8 @@ class _RenderCommand extends Command<int> {
 class _ToMermaidCommand extends Command<int> {
   _ToMermaidCommand() {
     argParser
-      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('input',
+          abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
       ..addOption('output',
           abbr: 'o', help: 'Output .md path (prints to stdout if omitted).')
       ..addFlag('fenced',
@@ -308,11 +345,13 @@ class _ToMermaidCommand extends Command<int> {
   @override
   String get name => 'to-mermaid';
   @override
-  String get description => 'Convert a .vsdx to a Mermaid flowchart (structural).';
+  String get description =>
+      'Convert a .vsdx to a Mermaid flowchart (structural).';
 
   @override
   int run() {
-    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final doc = const DocumentParser()
+        .parse(_readBytes(argResults!['input'] as String));
     final mmd = documentToMermaid(doc, fenced: argResults!['fenced'] as bool);
     final out = argResults!['output'] as String?;
     if (out == null) {
@@ -328,7 +367,8 @@ class _ToMermaidCommand extends Command<int> {
 class _ValidateCommand extends Command<int> {
   _ValidateCommand() {
     argParser
-      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('input',
+          abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
       ..addFlag('strict',
           help: 'Exit non-zero on warnings too (default: errors only).',
           defaultsTo: false);
@@ -340,7 +380,8 @@ class _ValidateCommand extends Command<int> {
 
   @override
   int run() {
-    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final doc = const DocumentParser()
+        .parse(_readBytes(argResults!['input'] as String));
     final issues = validateDocument(doc);
     for (final i in issues) {
       stdout.writeln(i);
@@ -356,7 +397,8 @@ class _ValidateCommand extends Command<int> {
 class _ExplainCommand extends Command<int> {
   _ExplainCommand() {
     argParser
-      ..addOption('input', abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
+      ..addOption('input',
+          abbr: 'i', help: 'Input .vsdx path.', mandatory: true)
       ..addOption('output',
           abbr: 'o', help: 'Output .md path (prints to stdout if omitted).');
   }
@@ -367,7 +409,8 @@ class _ExplainCommand extends Command<int> {
 
   @override
   int run() {
-    final doc = const DocumentParser().parse(_readBytes(argResults!['input'] as String));
+    final doc = const DocumentParser()
+        .parse(_readBytes(argResults!['input'] as String));
     final md = explainDocument(doc);
     final out = argResults!['output'] as String?;
     if (out == null) {
@@ -387,7 +430,8 @@ class _ShapesCommand extends Command<int> {
   @override
   String get name => 'shapes';
   @override
-  String get description => 'Search the stencil catalog (e.g. `shapes search db`).';
+  String get description =>
+      'Search the stencil catalog (e.g. `shapes search db`).';
 
   @override
   int run() {

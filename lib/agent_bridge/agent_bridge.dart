@@ -129,7 +129,8 @@ class AgentBridge {
       id = req['id'];
       final method = '${req['method']}';
       final params =
-          (req['params'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+          (req['params'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{};
       final result = await _dispatch(method, params);
       _reply(ws, <String, dynamic>{'id': id, 'ok': true, 'result': result});
       if (_server != null) {
@@ -161,12 +162,10 @@ class AgentBridge {
         final doc = workspace.active?.document;
         if (doc == null) throw StateError('no active document');
         if (doc.pages.isEmpty) {
-          return <String, dynamic>{
-            'page': 0,
-            'shapes': const <dynamic>[],
-          };
+          return <String, dynamic>{'page': 0, 'shapes': const <dynamic>[]};
         }
-        final requested = (params['page'] as num?)?.toInt() ??
+        final requested =
+            (params['page'] as num?)?.toInt() ??
             workspace.active!.currentPageIndex;
         final page = requested.clamp(0, doc.pages.length - 1);
         return <String, dynamic>{
@@ -199,7 +198,8 @@ class AgentBridge {
         return _state();
       case 'applyOps':
         final ops = (params['ops'] as List?) ?? const [];
-        return await _applyOps(ops);
+        final page = (params['page'] as num?)?.toInt();
+        return await _applyOps(ops, pageIndex: page);
       case 'save':
         return await _save();
       case 'snapshot':
@@ -269,12 +269,22 @@ class AgentBridge {
     };
   }
 
-  Future<Map<String, dynamic>> _applyOps(List<dynamic> ops) async {
+  Future<Map<String, dynamic>> _applyOps(
+    List<dynamic> ops, {
+    int? pageIndex,
+  }) async {
     final c = workspace.active;
     final doc = c?.document;
     if (c == null || doc == null) {
       throw StateError('no active document');
     }
+    if (doc.pages.isEmpty) {
+      throw StateError('document has no pages');
+    }
+    final page = (pageIndex ?? c.currentPageIndex).clamp(
+      0,
+      doc.pages.length - 1,
+    );
     // L3 co-editing: apply the ops to the LIVE in-memory model and commit as a
     // single undo step (via the editor's own history). The user's undo stack
     // and selection are preserved — the Agent edits alongside them, and any
@@ -282,18 +292,20 @@ class AgentBridge {
     final opsList = <Map<String, dynamic>>[
       for (final o in ops) (o as Map).cast<String, dynamic>(),
     ];
-    final result = applyOps(doc, opsList, pageIndex: c.currentPageIndex);
+    final result = applyOps(doc, opsList, pageIndex: page);
     final changed = !identical(result.document, doc);
     if (changed) {
       c.applyEdit(result.document);
       _emit('documentChanged', <String, dynamic>{
         'reason': 'applyOps',
+        'page': page,
         'created': result.createdIds,
         if (result.log.isNotEmpty) 'log': result.log,
       });
     }
     return <String, dynamic>{
       ..._state(),
+      'page': page,
       'changed': changed,
       'created': result.createdIds,
       if (result.log.isNotEmpty) 'log': result.log,
@@ -302,9 +314,13 @@ class AgentBridge {
 
   Future<Map<String, dynamic>> _save() async {
     final c = workspace.active;
-    if (c == null || c.document == null) throw StateError('no active document');
+    if (c == null || c.document == null) {
+      throw StateError('no active document');
+    }
     final path = c.filePath;
-    if (path == null) throw StateError('document has no file path; use Save As');
+    if (path == null) {
+      throw StateError('document has no file path; use Save As');
+    }
     final bytes = c.exportToBytes();
     await File(path).writeAsBytes(bytes, flush: true);
     c.markSaved(bytes, path: path);
@@ -315,9 +331,13 @@ class AgentBridge {
   Future<String> _snapshot(int pageArg) async {
     final c = workspace.active;
     final doc = c?.document;
-    if (doc == null || doc.pages.isEmpty) throw StateError('no active document');
-    final idx = (pageArg < 0 ? c!.currentPageIndex : pageArg)
-        .clamp(0, doc.pages.length - 1);
+    if (doc == null || doc.pages.isEmpty) {
+      throw StateError('no active document');
+    }
+    final idx = (pageArg < 0 ? c!.currentPageIndex : pageArg).clamp(
+      0,
+      doc.pages.length - 1,
+    );
     final page = doc.pages[idx];
     final png = await renderPageToPng(
       page,
@@ -425,8 +445,19 @@ class AgentBridge {
 
   void _emit(String event, Map<String, dynamic> data) {
     final msg = jsonEncode(<String, dynamic>{'event': event, 'data': data});
-    for (final c in _clients) {
-      c.add(msg);
+    for (final c in _clients.toList()) {
+      if (c.readyState != WebSocket.open) {
+        _clients.remove(c);
+        continue;
+      }
+      try {
+        c.add(msg);
+      } catch (_) {
+        // A client can disconnect while an edit is being committed. Event
+        // delivery is best-effort and must never turn a successful mutation
+        // into a protocol error for the requesting client.
+        _clients.remove(c);
+      }
     }
   }
 
@@ -435,12 +466,14 @@ class AgentBridge {
   Future<void> _writeHandshake() async {
     final file = File(handshakePath());
     await file.parent.create(recursive: true);
-    await file.writeAsString(jsonEncode(<String, dynamic>{
-      'port': _server!.port,
-      'token': _token,
-      'pid': pid,
-      'startedAt': DateTime.now().toIso8601String(),
-    }));
+    await file.writeAsString(
+      jsonEncode(<String, dynamic>{
+        'port': _server!.port,
+        'token': _token,
+        'pid': pid,
+        'startedAt': DateTime.now().toIso8601String(),
+      }),
+    );
     // Best-effort tighten perms (POSIX only).
     if (!Platform.isWindows) {
       try {
@@ -453,8 +486,8 @@ class AgentBridge {
     try {
       final f = File(handshakePath());
       if (!await f.exists()) return;
-      final contents =
-          (jsonDecode(await f.readAsString()) as Map).cast<String, dynamic>();
+      final contents = (jsonDecode(await f.readAsString()) as Map)
+          .cast<String, dynamic>();
       // A second app instance may have replaced the shared handshake. Never
       // delete a file that advertises somebody else's token.
       if (contents['token'] == _token) await f.delete();
@@ -464,7 +497,9 @@ class AgentBridge {
   String _randomToken() {
     final r = Random.secure();
     return List<String>.generate(
-        32, (_) => r.nextInt(16).toRadixString(16)).join();
+      32,
+      (_) => r.nextInt(16).toRadixString(16),
+    ).join();
   }
 
   void dispose() {

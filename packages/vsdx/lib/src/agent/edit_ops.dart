@@ -34,6 +34,24 @@ class ApplyResult {
   final List<String> log;
 }
 
+/// File-mode outcome, including the effective page and skipped-op diagnostics
+/// needed by CLI/MCP callers to report the actual result truthfully.
+class ApplyBytesResult {
+  ApplyBytesResult({
+    required this.bytes,
+    required this.pageIndex,
+    required this.changed,
+    required this.createdIds,
+    required this.log,
+  });
+
+  final Uint8List bytes;
+  final int pageIndex;
+  final bool changed;
+  final List<int> createdIds;
+  final List<String> log;
+}
+
 /// Apply [ops] to [doc]'s page [pageIndex]. Returns the edited document plus a
 /// log; unknown ops or bad references are recorded, not thrown.
 ApplyResult applyOps(
@@ -88,7 +106,8 @@ ApplyResult applyOps(
         final a = aId == null ? null : page.findShapeById(aId);
         final b = bId == null ? null : page.findShapeById(bId);
         if (a == null || b == null) {
-          log.add('add_connector: unresolved from=${op['from']} to=${op['to']}');
+          log.add(
+              'add_connector: unresolved from=${op['from']} to=${op['to']}');
           break;
         }
         if (a.is1D || b.is1D) {
@@ -111,9 +130,8 @@ ApplyResult applyOps(
               : (op['arrow'].toString().toLowerCase() != 'none' &&
                   op['arrow'] != false),
         );
-        page = page
-            .addShape(link.connector)
-            .copyWith(connects: <VsdxConnect>[...page.connects, ...link.connects]);
+        page = page.addShape(link.connector).copyWith(
+            connects: <VsdxConnect>[...page.connects, ...link.connects]);
         created.add(id);
         movedForReroute.add(id);
       case 'set_style':
@@ -124,6 +142,13 @@ ApplyResult applyOps(
         }
         final fillHex = op['fill']?.toString();
         final lineHex = (op['line'] ?? op['stroke'])?.toString();
+        final flipX = op.containsKey('flipX') ? _b(op['flipX']) : null;
+        final flipY = op.containsKey('flipY') ? _b(op['flipY']) : null;
+        // angle / rotateDeg = degrees; angleRad = radians.
+        final angleRad = _d(op['angleRad']);
+        final angleDeg = _d(op['angle'] ?? op['rotateDeg'] ?? op['rotate']);
+        final literalAngle = angleRad ??
+            (angleDeg == null ? null : angleDeg * (3.141592653589793 / 180.0));
         for (final id in ids) {
           final target = page.findShapeById(id);
           if (target == null) {
@@ -133,7 +158,8 @@ ApplyResult applyOps(
           if (_isProtected(page, target)) {
             // Allow unlock via locked:false when only the shape lock is set
             // (layer locks still block). Other style keys apply after unlock.
-            final unlock = op.containsKey('locked') && _b(op['locked']) == false;
+            final unlock =
+                op.containsKey('locked') && _b(op['locked']) == false;
             if (!(unlock &&
                 target.locked &&
                 !page.isShapeTreeOnLockedLayer(target.id))) {
@@ -149,29 +175,21 @@ ApplyResult applyOps(
                 next = next.copyWith(locked: locked);
               }
             }
-            final flipX = op.containsKey('flipX') ? _b(op['flipX']) : null;
-            final flipY = op.containsKey('flipY') ? _b(op['flipY']) : null;
             if (flipX != null || flipY != null) {
-              next = next.copyWith(
-                flipX: flipX ?? next.flipX,
-                flipY: flipY ?? next.flipY,
-              );
+              next = next
+                  .copyWith(
+                    flipX: flipX ?? next.flipX,
+                    flipY: flipY ?? next.flipY,
+                  )
+                  .syncInkEndpoints();
             }
-            // angle / rotateDeg = degrees; angleRad = radians.
-            final angleRad = _d(op['angleRad']);
-            final angleDeg =
-                _d(op['angle'] ?? op['rotateDeg'] ?? op['rotate']);
-            if (angleRad != null) {
-              next = next.copyWith(angleRad: angleRad);
-            } else if (angleDeg != null) {
-              next = next.copyWith(
-                  angleRad: angleDeg * (3.141592653589793 / 180.0));
+            if (literalAngle != null) {
+              next = _withLiteralAngle(next, literalAngle);
             }
             if (op.containsKey('layerMember') || op.containsKey('layers')) {
-              final layers = _parseLayerMembers(
-                  op.containsKey('layerMember')
-                      ? op['layerMember']
-                      : op['layers']);
+              final layers = _parseLayerMembers(op.containsKey('layerMember')
+                  ? op['layerMember']
+                  : op['layers']);
               if (layers != null) {
                 next = next.copyWith(layerMemberIds: layers);
               }
@@ -197,15 +215,14 @@ ApplyResult applyOps(
               );
             }
             final textAngleRad = _d(op['textAngleRad'] ?? op['txtAngleRad']);
-            final textAngleDeg = _d(
-                op['textAngle'] ?? op['txtAngle'] ?? op['textAngleDeg']);
+            final textAngleDeg =
+                _d(op['textAngle'] ?? op['txtAngle'] ?? op['textAngleDeg']);
             if (textAngleRad != null || textAngleDeg != null) {
-              final rad = textAngleRad ??
-                  textAngleDeg! * (3.141592653589793 / 180.0);
+              final rad =
+                  textAngleRad ?? textAngleDeg! * (3.141592653589793 / 180.0);
               next = next.copyWith(
                 richText: next.richText.copyWith(
-                  textBlock:
-                      next.richText.textBlock.copyWith(angleRad: rad),
+                  textBlock: next.richText.textBlock.copyWith(angleRad: rad),
                 ),
               );
             }
@@ -244,8 +261,7 @@ ApplyResult applyOps(
             if (fillTheme != null && !next.is1D) {
               next = next.copyWith(
                 fill: next.fill.withThemeForeground(fillTheme),
-                geometries:
-                    syncGeometryNoFill(next.geometries, hollow: false),
+                geometries: syncGeometryNoFill(next.geometries, hollow: false),
               );
             }
             final fillBkgndTheme = _i(op['fillBackgroundTheme'] ??
@@ -288,8 +304,7 @@ ApplyResult applyOps(
             if (lineTheme != null) {
               next = next.copyWith(
                 line: next.line.withThemeColor(lineTheme),
-                geometries:
-                    syncGeometryNoLine(next.geometries, hollow: false),
+                geometries: syncGeometryNoLine(next.geometries, hollow: false),
               );
             }
             final fillPattern = _i(op['fillPattern'] ?? op['pattern']);
@@ -497,8 +512,7 @@ ApplyResult applyOps(
                 );
               }
             }
-            final shadowColor =
-                parseColorOrNull(op['shadowColor']?.toString());
+            final shadowColor = parseColorOrNull(op['shadowColor']?.toString());
             if (shadowColor != null) {
               next = next.copyWith(
                 shadow: next.shadow
@@ -580,7 +594,8 @@ ApplyResult applyOps(
                       ),
               );
             }
-            final reflDist = _d(op['reflectionDist'] ?? op['reflectionDistance']);
+            final reflDist =
+                _d(op['reflectionDist'] ?? op['reflectionDistance']);
             if (reflDist != null) {
               next = next.copyWith(
                 reflection: _enableReflection(next.reflection).copyWith(
@@ -629,12 +644,9 @@ ApplyResult applyOps(
                 ),
               );
             }
-            final textColor =
-                (op['textColor'] ?? op['fontColor'])?.toString();
-            final bold =
-                op.containsKey('bold') ? _b(op['bold']) : null;
-            final italic =
-                op.containsKey('italic') ? _b(op['italic']) : null;
+            final textColor = (op['textColor'] ?? op['fontColor'])?.toString();
+            final bold = op.containsKey('bold') ? _b(op['bold']) : null;
+            final italic = op.containsKey('italic') ? _b(op['italic']) : null;
             final underline =
                 op.containsKey('underline') ? _b(op['underline']) : null;
             final strikethrough = op.containsKey('strikethrough')
@@ -650,15 +662,15 @@ ApplyResult applyOps(
                 op.containsKey('overline') ? _b(op['overline']) : null;
             final smallCaps =
                 op.containsKey('smallCaps') ? _b(op['smallCaps']) : null;
-            final fontFamily = op['fontFamily']?.toString() ??
-                op['font']?.toString();
+            final fontFamily =
+                op['fontFamily']?.toString() ?? op['font']?.toString();
             final pt = _d(op['pt'] ?? op['fontSize']);
             final letterSpacingPt = _d(op['letterSpacingPt']);
             final letterSpacing = letterSpacingPt != null
                 ? letterSpacingPt / 72.0
                 : _d(op['letterSpacing']);
-            final textTransparency = _d(
-                op['textTransparency'] ?? op['charTransparency']);
+            final textTransparency =
+                _d(op['textTransparency'] ?? op['charTransparency']);
             final fontScale = _d(op['fontScale']);
             final complexScriptSizePt = _d(op['complexScriptSizePt']);
             final complexScriptSizeInches = complexScriptSizePt != null
@@ -681,7 +693,10 @@ ApplyResult applyOps(
                 final s = raw.toString().trim().toLowerCase();
                 textCase = switch (s) {
                   'normal' || '0' => VsdxTextCase.normal,
-                  'allcaps' || 'all_caps' || 'caps' || '1' =>
+                  'allcaps' ||
+                  'all_caps' ||
+                  'caps' ||
+                  '1' =>
                     VsdxTextCase.allCaps,
                   'initialcaps' ||
                   'initial_caps' ||
@@ -706,7 +721,9 @@ ApplyResult applyOps(
                 final s = raw.toString().trim().toLowerCase();
                 textPosition = switch (s) {
                   'normal' || '0' => VsdxTextPosition.normal,
-                  'superscript' || 'super' || '1' =>
+                  'superscript' ||
+                  'super' ||
+                  '1' =>
                     VsdxTextPosition.superscript,
                   'subscript' || 'sub' || '2' => VsdxTextPosition.subscript,
                   _ => null,
@@ -803,17 +820,16 @@ ApplyResult applyOps(
               if (align != null) {
                 next = next.copyWith(
                   richText: next.richText.copyWith(
-                    textBlock: next.richText.textBlock
-                        .copyWith(verticalAlign: align),
+                    textBlock:
+                        next.richText.textBlock.copyWith(verticalAlign: align),
                   ),
                 );
               }
             }
-            final halign = (op['align'] ??
-                    op['horizontalAlign'] ??
-                    op['horzAlign'])
-                ?.toString()
-                .toLowerCase();
+            final halign =
+                (op['align'] ?? op['horizontalAlign'] ?? op['horzAlign'])
+                    ?.toString()
+                    .toLowerCase();
             if (halign != null && halign.isNotEmpty) {
               final align = switch (halign) {
                 'left' => VsdxHorzAlign.left,
@@ -851,8 +867,8 @@ ApplyResult applyOps(
                       runs: [
                         for (final r in next.richText.runs)
                           r.copyWith(
-                            paraStyle: r.paraStyle
-                                .copyWith(horizontalAlign: align),
+                            paraStyle:
+                                r.paraStyle.copyWith(horizontalAlign: align),
                           ),
                       ],
                     ),
@@ -861,14 +877,13 @@ ApplyResult applyOps(
               }
             }
             // Text block background / margins.
-            final textBkgnd = (op['textBackground'] ?? op['textBkgnd'])
-                ?.toString();
+            final textBkgnd =
+                (op['textBackground'] ?? op['textBkgnd'])?.toString();
             if (textBkgnd != null) {
               if (textBkgnd.trim().toLowerCase() == 'none') {
                 next = next.copyWith(
                   richText: next.richText.copyWith(
-                    textBlock:
-                        next.richText.textBlock.withoutBackgroundColor(),
+                    textBlock: next.richText.textBlock.withoutBackgroundColor(),
                   ),
                 );
               } else {
@@ -876,15 +891,15 @@ ApplyResult applyOps(
                 if (c != null) {
                   next = next.copyWith(
                     richText: next.richText.copyWith(
-                      textBlock: next.richText.textBlock
-                          .copyWith(backgroundColor: c),
+                      textBlock:
+                          next.richText.textBlock.copyWith(backgroundColor: c),
                     ),
                   );
                 }
               }
             }
-            final textBkgndTrans = _d(op['textBackgroundTransparency'] ??
-                op['textBkgndTrans']);
+            final textBkgndTrans =
+                _d(op['textBackgroundTransparency'] ?? op['textBkgndTrans']);
             if (textBkgndTrans != null) {
               next = next.copyWith(
                 richText: next.richText.copyWith(
@@ -910,14 +925,14 @@ ApplyResult applyOps(
               if (dir != null) {
                 next = next.copyWith(
                   richText: next.richText.copyWith(
-                    textBlock: next.richText.textBlock
-                        .copyWith(textDirection: dir),
+                    textBlock:
+                        next.richText.textBlock.copyWith(textDirection: dir),
                   ),
                 );
               }
             }
-            final defaultTabStop = _d(
-                op['defaultTabStop'] ?? op['defaultTabStopInches']);
+            final defaultTabStop =
+                _d(op['defaultTabStop'] ?? op['defaultTabStopInches']);
             if (defaultTabStop != null) {
               next = next.copyWith(
                 richText: next.richText.copyWith(
@@ -943,8 +958,8 @@ ApplyResult applyOps(
                         marginR ?? next.richText.textBlock.marginRightInches,
                     marginTopInches:
                         marginT ?? next.richText.textBlock.marginTopInches,
-                    marginBottomInches: marginB ??
-                        next.richText.textBlock.marginBottomInches,
+                    marginBottomInches:
+                        marginB ?? next.richText.textBlock.marginBottomInches,
                   ),
                 ),
               );
@@ -955,8 +970,8 @@ ApplyResult applyOps(
             final indentRight = _d(op['indentRight'] ?? op['rightIndent']);
             final spaceBefore = _d(op['spaceBefore']);
             final spaceAfter = _d(op['spaceAfter']);
-            final textPosAfterBullet = _d(
-                op['textPosAfterBullet'] ?? op['textPosAfterBulletInches']);
+            final textPosAfterBullet =
+                _d(op['textPosAfterBullet'] ?? op['textPosAfterBulletInches']);
             // Relative multiplier (lineSpacing) vs absolute inches / Visio SpLine.
             double? lineSpacingMult;
             double? lineSpacingAbs;
@@ -1029,8 +1044,8 @@ ApplyResult applyOps(
                   bulletFont: bulletFont ?? p.bulletFont,
                   bulletFontSizeInches:
                       bulletFontSize ?? p.bulletFontSizeInches,
-                  textPosAfterBulletInches: textPosAfterBullet ??
-                      p.textPosAfterBulletInches,
+                  textPosAfterBulletInches:
+                      textPosAfterBullet ?? p.textPosAfterBulletInches,
                 );
                 // Relative lineSpacing / clearAbsolute wins over absolute so a
                 // single op that sets both does not leave stale SpLine inches.
@@ -1054,6 +1069,7 @@ ApplyResult applyOps(
                 }
                 return next;
               }
+
               var runs = next.richText.runs;
               if (runs.isEmpty) {
                 final plain = next.text;
@@ -1131,36 +1147,27 @@ ApplyResult applyOps(
                   conLineJumpDirX != null ||
                   conLineJumpDirY != null ||
                   noLiveDynamics != null) {
-                final props =
-                    next.connectorProps ?? const VsdxConnectorProps();
+                final props = next.connectorProps ?? const VsdxConnectorProps();
                 next = next.copyWith(
                   connectorProps: props.copyWith(
                     glueType: glueType ?? props.glueType,
                     conFixedCode: conFixedCode ?? props.conFixedCode,
                     dynFeedback: dynFeedback ?? props.dynFeedback,
-                    shapeRouteStyle:
-                        shapeRouteStyle ?? props.shapeRouteStyle,
-                    shapePlaceFlip:
-                        shapePlaceFlip ?? props.shapePlaceFlip,
-                    conLineJumpCode:
-                        conLineJumpCode ?? props.conLineJumpCode,
-                    conLineRouteExt:
-                        conLineRouteExt ?? props.conLineRouteExt,
+                    shapeRouteStyle: shapeRouteStyle ?? props.shapeRouteStyle,
+                    shapePlaceFlip: shapePlaceFlip ?? props.shapePlaceFlip,
+                    conLineJumpCode: conLineJumpCode ?? props.conLineJumpCode,
+                    conLineRouteExt: conLineRouteExt ?? props.conLineRouteExt,
                     conLineJumpStyle:
                         conLineJumpStyle ?? props.conLineJumpStyle,
-                    conLineJumpDirX:
-                        conLineJumpDirX ?? props.conLineJumpDirX,
-                    conLineJumpDirY:
-                        conLineJumpDirY ?? props.conLineJumpDirY,
-                    noLiveDynamics:
-                        noLiveDynamics ?? props.noLiveDynamics,
+                    conLineJumpDirX: conLineJumpDirX ?? props.conLineJumpDirX,
+                    conLineJumpDirY: conLineJumpDirY ?? props.conLineJumpDirY,
+                    noLiveDynamics: noLiveDynamics ?? props.noLiveDynamics,
                   ),
                 );
               }
             }
-            final noAlignBox = op.containsKey('noAlignBox')
-                ? _b(op['noAlignBox'])
-                : null;
+            final noAlignBox =
+                op.containsKey('noAlignBox') ? _b(op['noAlignBox']) : null;
             final shapeSplittable = op.containsKey('shapeSplittable')
                 ? _b(op['shapeSplittable'])
                 : null;
@@ -1186,10 +1193,8 @@ ApplyResult applyOps(
                 : null;
             if (isTextEditTarget != null || dontMoveChildren != null) {
               next = next.copyWith(
-                isTextEditTarget:
-                    isTextEditTarget ?? next.isTextEditTarget,
-                dontMoveChildren:
-                    dontMoveChildren ?? next.dontMoveChildren,
+                isTextEditTarget: isTextEditTarget ?? next.isTextEditTarget,
+                dontMoveChildren: dontMoveChildren ?? next.dontMoveChildren,
               );
             }
             final objType = _i(op['objType']);
@@ -1208,6 +1213,13 @@ ApplyResult applyOps(
             }
             return next;
           });
+          // Rotation / reflection moves connection points on 2-D shapes.
+          // Match the canvas commands by refreshing formula caches and glued
+          // connector endpoints after the whole batch has been applied.
+          if ((flipX != null || flipY != null || literalAngle != null) &&
+              !target.is1D) {
+            _addSubtreeIds(page, id, movedForReroute);
+          }
         }
       case 'set_text':
         final id = _resolveId(op['id']);
@@ -1423,6 +1435,16 @@ ApplyResult applyOps(
 bool _isProtected(VsdxPage page, VsdxShape s) =>
     s.locked || page.isShapeTreeOnLockedLayer(s.id);
 
+/// Set a literal angle like the canvas rotate commands: inherited/formula
+/// Angle must not overwrite the visible edit after save + reopen.
+VsdxShape _withLiteralAngle(VsdxShape s, double angleRad) {
+  if (!s.formulas.containsKey('Angle')) {
+    return s.copyWith(angleRad: angleRad).syncInkEndpoints();
+  }
+  final formulas = Map<String, String>.from(s.formulas)..remove('Angle');
+  return s.copyWith(angleRad: angleRad, formulas: formulas).syncInkEndpoints();
+}
+
 /// Add [id] and every descendant shape id into [out] (group move / resize).
 void _addSubtreeIds(VsdxPage page, int id, Set<int> out) {
   void walk(VsdxShape s) {
@@ -1439,7 +1461,6 @@ void _addSubtreeIds(VsdxPage page, int id, Set<int> out) {
     out.add(id);
   }
 }
-
 
 /// Move [id] so its page pin lands at ([pageX],[pageY]). Nested shapes convert
 /// through the parent frame (matches editor [_nudgeShapeOnPage]).
@@ -1471,7 +1492,14 @@ VsdxPage _moveShapeToPagePin(
 
 /// Parse [opsJson] (an array, or an object with `ops:[...]`), apply to
 /// [original] `.vsdx` bytes, and write the result back (round-trip faithful).
-Uint8List applyOpsBytes(Uint8List original, String opsJson, {int pageIndex = 0}) {
+Uint8List applyOpsBytes(Uint8List original, String opsJson,
+        {int pageIndex = 0}) =>
+    applyOpsBytesResult(original, opsJson, pageIndex: pageIndex).bytes;
+
+/// Detailed file-mode variant used by protocol frontends. Unlike the
+/// byte-only wrapper, this preserves skipped-op logs and the clamped page.
+ApplyBytesResult applyOpsBytesResult(Uint8List original, String opsJson,
+    {int pageIndex = 0}) {
   final decoded = jsonDecode(opsJson);
   final rawOps = decoded is List
       ? decoded
@@ -1480,9 +1508,22 @@ Uint8List applyOpsBytes(Uint8List original, String opsJson, {int pageIndex = 0})
     for (final o in rawOps) (o as Map).cast<String, dynamic>(),
   ];
   final doc = const DocumentParser().parse(original);
-  final result = applyOps(doc, ops, pageIndex: pageIndex);
-  if (identical(result.document, doc)) return original;
-  return const VsdxWriter().write(originalBytes: original, edited: result.document);
+  final effectivePage =
+      doc.pages.isEmpty ? 0 : pageIndex.clamp(0, doc.pages.length - 1);
+  final result = applyOps(doc, ops, pageIndex: effectivePage);
+  final changed = !identical(result.document, doc);
+  return ApplyBytesResult(
+    bytes: changed
+        ? const VsdxWriter().write(
+            originalBytes: original,
+            edited: result.document,
+          )
+        : original,
+    pageIndex: effectivePage,
+    changed: changed,
+    createdIds: result.createdIds,
+    log: result.log,
+  );
 }
 
 double? _d(Object? v) {
@@ -1555,9 +1596,8 @@ VsdxGradient _defaultTwoStopGradient(VsdxColor? a, VsdxColor? b) {
 /// Accepts `{stops:[{pos|position, color},…], dir?, angle|angleRad?, type?}`.
 VsdxGradient? _parseGradientOp(Object? raw) {
   if (raw is! Map) return null;
-  final map = raw is Map<String, dynamic>
-      ? raw
-      : Map<String, dynamic>.from(raw);
+  final map =
+      raw is Map<String, dynamic> ? raw : Map<String, dynamic>.from(raw);
   final stopsRaw = map['stops'];
   if (stopsRaw is! List || stopsRaw.length < 2) return null;
   final stops = <VsdxGradientStop>[];
@@ -1586,9 +1626,7 @@ VsdxGradient? _parseGradientOp(Object? raw) {
   final angleRad = _d(map['angleRad']);
   final angleDeg = _d(map['angle']);
   final angle = angleRad ??
-      (angleDeg != null
-          ? angleDeg * (3.141592653589793 / 180.0)
-          : 0.0);
+      (angleDeg != null ? angleDeg * (3.141592653589793 / 180.0) : 0.0);
   return VsdxGradient(
     stops: List.unmodifiable(stops),
     type: type,
@@ -1619,7 +1657,10 @@ int? _resolveId(Object? v) {
 
 List<int> _resolveIds(Object? v) {
   if (v is List) {
-    return <int>[for (final e in v) if (_resolveId(e) case final int id) id];
+    return <int>[
+      for (final e in v)
+        if (_resolveId(e) case final int id) id
+    ];
   }
   final id = _resolveId(v);
   return id == null ? const <int>[] : <int>[id];
