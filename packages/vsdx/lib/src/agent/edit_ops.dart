@@ -59,6 +59,10 @@ ApplyResult applyOps(
         final id = page.nextFreeShapeId();
         final w = _d(op['w'] ?? op['width']) ?? 1.7;
         final h = _d(op['h'] ?? op['height']) ?? 0.9;
+        if (w <= 0 || h <= 0) {
+          log.add('add_shape: w and h must be positive');
+          break;
+        }
         var s = resolveStencilShape(
           stencil: (op['stencil'] ?? op['shape'] ?? 'rectangle').toString(),
           id: id,
@@ -1269,6 +1273,10 @@ ApplyResult applyOps(
           log.add('resize_shape: shape $id is locked');
           break;
         }
+        if (!resizing.isGlueableConnector && (w <= 0 || h <= 0)) {
+          log.add('resize_shape: w and h must be positive');
+          break;
+        }
         if (resizing.isGlueableConnector &&
             resizing.beginX != null &&
             resizing.beginY != null &&
@@ -1404,7 +1412,11 @@ ApplyResult applyOps(
         .recalculateFormulas(changedShapeIds: movedForReroute)
         .rerouteConnectors(movedShapeIds: movedForReroute);
   }
-  return ApplyResult(doc.replacePage(idx, page), created, log);
+  return ApplyResult(
+    identical(page, doc.pages[idx]) ? doc : doc.replacePage(idx, page),
+    created,
+    log,
+  );
 }
 
 /// True when the shape or its layer tree is locked (matches EditorController).
@@ -1469,13 +1481,22 @@ Uint8List applyOpsBytes(Uint8List original, String opsJson, {int pageIndex = 0})
   ];
   final doc = const DocumentParser().parse(original);
   final result = applyOps(doc, ops, pageIndex: pageIndex);
+  if (identical(result.document, doc)) return original;
   return const VsdxWriter().write(originalBytes: original, edited: result.document);
 }
 
-double? _d(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));
+double? _d(Object? v) {
+  if (v == null) return null;
+  final value = v is num ? v.toDouble() : double.tryParse('$v');
+  return value != null && value.isFinite ? value : null;
+}
 
-int? _i(Object? v) =>
-    v == null ? null : (v is int ? v : (v is num ? v.toInt() : int.tryParse('$v')));
+int? _i(Object? v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is num) return v.isFinite ? v.toInt() : null;
+  return int.tryParse('$v');
+}
 
 bool? _b(Object? v) {
   if (v == null) return null;
@@ -1585,7 +1606,7 @@ VsdxGradient? _parseGradientOp(Object? raw) {
 int? _resolveId(Object? v) {
   if (v == null) return null;
   if (v is int) return v;
-  if (v is num) return v.toInt();
+  if (v is num) return v.isFinite ? v.toInt() : null;
   final s = '$v'.trim();
   if (s.isEmpty) return null;
   final asInt = int.tryParse(s);

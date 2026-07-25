@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,6 +21,7 @@ void main() {
   late AgentBridge bridge;
   late WebSocket socket;
   late Stream<Map<String, dynamic>> incoming;
+  late Future<void> Function(String path) openPathHandler;
   var requestIdSeed = 0;
 
   Future<Map<String, dynamic>> call(String method,
@@ -42,7 +44,11 @@ void main() {
     await workspace.openBytes(await file.readAsBytes(),
         path: file.path, name: 'diagram.vsdx');
 
-    bridge = AgentBridge(workspace: workspace, openPath: (p) async {});
+    openPathHandler = (p) async {};
+    bridge = AgentBridge(
+      workspace: workspace,
+      openPath: (p) => openPathHandler(p),
+    );
     await bridge.start();
 
     socket = await WebSocket.connect(
@@ -89,6 +95,49 @@ void main() {
     expect(texts, containsAll(<String>['A', 'B']));
   });
 
+  test('select accepts nested ids returned by listShapes', () async {
+    final c = workspace.active!;
+    c.addShapeFromBuilderAt(
+      (id, x, y) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 1,
+        height: 1,
+      ),
+      2,
+      2,
+    );
+    final a = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, x, y) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 1,
+        height: 1,
+      ),
+      4,
+      2,
+    );
+    final b = c.singleSelectedId!;
+    c.setSelection(<int>[a, b]);
+    c.groupSelection();
+
+    final listed = await call('listShapes');
+    final shapes = (listed['result'] as Map)['shapes'] as List;
+    final nested =
+        shapes.cast<Map>().firstWhere((s) => s.containsKey('parentId'));
+    final nestedId = nested['id'] as int;
+
+    final selected = await call('select', <String, dynamic>{
+      'ids': <dynamic>[nestedId],
+    });
+    expect(selected['ok'], isTrue);
+    expect((selected['result'] as Map)['selection'], <int>[nestedId]);
+    expect((selected['result'] as Map).containsKey('unknown'), isFalse);
+  });
+
   test('select highlights shapes and clears with an empty list', () async {
     final listed = await call('listShapes');
     final shapes = (listed['result'] as Map)['shapes'] as List;
@@ -123,6 +172,83 @@ void main() {
     expect(doc.pages.single.shapes.any((s) => s.text == 'C'), isTrue);
     // …but the file on disk is untouched (in-memory preview).
     expect(File(file.path).statSync().modified, before);
+  });
+
+  test('applyOps returns created ids and invalid batches stay clean', () async {
+    final c = workspace.active!;
+    final added = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{'op': 'add_shape', 'text': 'Created'},
+      ],
+    });
+    final addedResult = added['result'] as Map;
+    expect(addedResult['changed'], isTrue);
+    expect(addedResult['created'], hasLength(1));
+
+    // Return to the clean baseline, then prove a rejected op is a true no-op:
+    // no dirty flag and no junk undo entry.
+    c.undo();
+    expect(c.isDirty, isFalse);
+    expect(c.canUndo, isFalse);
+    final invalid = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{'op': 'move_shape', 'id': 99999, 'x': 1, 'y': 1},
+      ],
+    });
+    final invalidResult = invalid['result'] as Map;
+    expect(invalidResult['changed'], isFalse);
+    expect(invalidResult['log'], isNotEmpty);
+    expect(c.isDirty, isFalse);
+    expect(c.canUndo, isFalse);
+  });
+
+  test('requests execute in WebSocket order across async open', () async {
+    final next = File('${tmp.path}/next.vsdx');
+    await next.writeAsBytes(
+      DiagramSpec.parse(
+        '{"nodes":[{"id":"next","text":"Next document"}]}',
+      ).build(),
+    );
+    final gate = Completer<void>();
+    openPathHandler = (path) async {
+      await gate.future;
+      await workspace.openBytes(
+        await File(path).readAsBytes(),
+        path: path,
+        name: 'next.vsdx',
+      );
+    };
+
+    final openId = ++requestIdSeed;
+    final applyId = ++requestIdSeed;
+    final openReply = incoming.firstWhere((m) => m['id'] == openId);
+    final applyReply = incoming.firstWhere((m) => m['id'] == applyId);
+    socket
+      ..add(jsonEncode(<String, dynamic>{
+        'id': openId,
+        'method': 'open',
+        'params': <String, dynamic>{'path': next.path},
+      }))
+      ..add(jsonEncode(<String, dynamic>{
+        'id': applyId,
+        'method': 'applyOps',
+        'params': <String, dynamic>{
+          'ops': <dynamic>[
+            <String, dynamic>{'op': 'add_shape', 'text': 'After open'},
+          ],
+        },
+      }));
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    gate.complete();
+    expect((await openReply)['ok'], isTrue);
+    expect((await applyReply)['ok'], isTrue);
+    expect(workspace.active!.filePath, next.path);
+    expect(
+      workspace.active!.document!.pages.single.shapes
+          .any((s) => s.text == 'After open'),
+      isTrue,
+    );
   });
 
   test('applyOps is L3 co-editing: one undoable step, history preserved', () async {
@@ -161,6 +287,17 @@ void main() {
     final reopened =
         const DocumentParser().parse(await file.readAsBytes());
     expect(reopened.pages.single.shapes.any((s) => s.text == 'Saved'), isTrue);
+  });
+
+  test('reload rejects corrupt bytes without clearing the canvas', () async {
+    final c = workspace.active!;
+    final before = c.document;
+    await file.writeAsString('not a vsdx');
+
+    final r = await call('reload');
+    expect(r['ok'], isFalse);
+    expect(c.document, same(before));
+    expect(c.error, isNull);
   });
 
   test('L1: external file change auto-reloads a clean document', () async {

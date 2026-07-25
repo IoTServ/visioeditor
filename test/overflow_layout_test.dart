@@ -122,6 +122,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.tune), findsOneWidget);
 
+      // Pan/zoom added another mobile tool, so library toggles may start just
+      // beyond the narrow horizontal rail's viewport. Scroll them into view.
+      final horizontalRails = find.byWidgetPredicate(
+        (w) => w is ListView && w.scrollDirection == Axis.horizontal,
+      );
+      await tester.drag(horizontalRails.last, const Offset(-320, 0));
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.category_outlined));
       await tester.pumpAndSettle();
       expect(find.byType(FloatingActionButton), findsOneWidget);

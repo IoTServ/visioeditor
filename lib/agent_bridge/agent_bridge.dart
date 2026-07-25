@@ -43,6 +43,8 @@ class AgentBridge {
   final Set<WebSocket> _clients = <WebSocket>{};
   Timer? _watchTimer;
   final Map<String, DateTime> _mtimes = <String, DateTime>{};
+  Future<void> _requestQueue = Future<void>.value();
+  bool _pollingActiveFile = false;
   String _token = '';
 
   /// Human-readable status for the UI (null when stopped).
@@ -61,8 +63,10 @@ class AgentBridge {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server!.listen(_handleRequest);
     await _writeHandshake();
-    _watchTimer =
-        Timer.periodic(const Duration(milliseconds: 800), (_) => _pollActiveFile());
+    _watchTimer = Timer.periodic(
+      const Duration(milliseconds: 800),
+      (_) => unawaited(_pollActiveFile()),
+    );
     status.value = 'Agent preview on · 127.0.0.1:${_server!.port}';
   }
 
@@ -102,7 +106,16 @@ class AgentBridge {
     final ws = await WebSocketTransformer.upgrade(req);
     _clients.add(ws);
     ws.listen(
-      (data) => _onMessage(ws, data),
+      (data) {
+        // WebSocket preserves message order, but an async listen callback does
+        // not: `open`/`save` can yield while a later `applyOps` runs. Serialize
+        // every request globally so multiple clients also observe one coherent
+        // editor timeline.
+        _requestQueue = _requestQueue
+            .then((_) => _onMessage(ws, data))
+            .catchError((Object _, StackTrace _) {});
+        unawaited(_requestQueue);
+      },
       onDone: () => _clients.remove(ws),
       onError: (_) => _clients.remove(ws),
       cancelOnError: true,
@@ -118,11 +131,23 @@ class AgentBridge {
       final params =
           (req['params'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
       final result = await _dispatch(method, params);
-      ws.add(jsonEncode(<String, dynamic>{'id': id, 'ok': true, 'result': result}));
-      status.value =
-          'Agent preview · $method · 127.0.0.1:${_server?.port ?? 0}';
+      _reply(ws, <String, dynamic>{'id': id, 'ok': true, 'result': result});
+      if (_server != null) {
+        status.value =
+            'Agent preview · $method · 127.0.0.1:${_server?.port ?? 0}';
+      }
     } catch (e) {
-      ws.add(jsonEncode(<String, dynamic>{'id': id, 'ok': false, 'error': '$e'}));
+      _reply(ws, <String, dynamic>{'id': id, 'ok': false, 'error': '$e'});
+    }
+  }
+
+  void _reply(WebSocket ws, Map<String, dynamic> message) {
+    if (ws.readyState != WebSocket.open) return;
+    try {
+      ws.add(jsonEncode(message));
+    } catch (_) {
+      // The peer may close between the readyState check and add. A dead peer
+      // must not poison the global request queue for the remaining clients.
     }
   }
 
@@ -135,8 +160,15 @@ class AgentBridge {
       case 'listShapes':
         final doc = workspace.active?.document;
         if (doc == null) throw StateError('no active document');
-        final page = (params['page'] as num?)?.toInt() ??
+        if (doc.pages.isEmpty) {
+          return <String, dynamic>{
+            'page': 0,
+            'shapes': const <dynamic>[],
+          };
+        }
+        final requested = (params['page'] as num?)?.toInt() ??
             workspace.active!.currentPageIndex;
+        final page = requested.clamp(0, doc.pages.length - 1);
         return <String, dynamic>{
           'page': page,
           'shapes': listShapes(doc, pageIndex: page),
@@ -146,7 +178,19 @@ class AgentBridge {
       case 'open':
         final path = params['path']?.toString();
         if (path == null) throw ArgumentError('open: missing path');
+        final before = workspace.active;
+        final beforeEpoch = before?.documentEpoch;
         await openPath(path);
+        final opened = workspace.active;
+        if (opened == null ||
+            opened.document == null ||
+            opened.error != null ||
+            (identical(opened, before) &&
+                opened.documentEpoch == beforeEpoch) ||
+            opened.filePath == null ||
+            File(opened.filePath!).absolute.path != File(path).absolute.path) {
+          throw StateError('open failed: $path');
+        }
         final f = File(path);
         if (f.existsSync()) _mtimes[path] = f.statSync().modified;
         return _state();
@@ -173,15 +217,19 @@ class AgentBridge {
     final doc = c?.document;
     if (c == null || doc == null) throw StateError('no active document');
     final page = doc.pages[c.currentPageIndex];
-    final known = page.shapes.map((s) => s.id).toSet();
     final requested = <int>[
       for (final v in (idsRaw as List?) ?? const <dynamic>[])
         if (v is num) v.toInt() else if (v is String) int.tryParse(v) ?? -1,
     ].where((id) => id >= 0).toList();
-    final selected = <int>[for (final id in requested) if (known.contains(id)) id];
+    // listShapes deliberately exposes nested group children, so select must
+    // accept the same id universe rather than top-level page.shapes only.
+    final selected = <int>[
+      for (final id in requested)
+        if (page.findShapeById(id) != null) id,
+    ];
     final unknown = <int>[
       for (final id in requested)
-        if (!known.contains(id)) id,
+        if (page.findShapeById(id) == null) id,
     ];
     c.setSelection(selected);
     _emit('selectionChanged', <String, dynamic>{
@@ -235,13 +283,21 @@ class AgentBridge {
       for (final o in ops) (o as Map).cast<String, dynamic>(),
     ];
     final result = applyOps(doc, opsList, pageIndex: c.currentPageIndex);
-    c.applyEdit(result.document);
-    _emit('documentChanged', <String, dynamic>{
-      'reason': 'applyOps',
+    final changed = !identical(result.document, doc);
+    if (changed) {
+      c.applyEdit(result.document);
+      _emit('documentChanged', <String, dynamic>{
+        'reason': 'applyOps',
+        'created': result.createdIds,
+        if (result.log.isNotEmpty) 'log': result.log,
+      });
+    }
+    return <String, dynamic>{
+      ..._state(),
+      'changed': changed,
       'created': result.createdIds,
       if (result.log.isNotEmpty) 'log': result.log,
-    });
-    return _state();
+    };
   }
 
   Future<Map<String, dynamic>> _save() async {
@@ -283,34 +339,82 @@ class AgentBridge {
     final f = File(path);
     if (!f.existsSync()) throw StateError('file not found: $path');
     final bytes = await f.readAsBytes();
+    // openBytes reports parse errors on the controller instead of throwing and
+    // clears its current model. Validate first so an explicit bridge reload
+    // cannot destroy the open document when the on-disk file is partial/bad.
+    parseVisio(bytes);
     await c.openBytes(bytes, path: path, name: c.fileName);
+    if (c.error != null || c.document == null) {
+      throw StateError('reload failed: ${c.error ?? path}');
+    }
     _bumpMtime(path);
   }
 
   // --- L1 file watch ---------------------------------------------------------
 
   Future<void> _pollActiveFile() async {
-    final c = workspace.active;
-    final path = c?.filePath;
-    if (c == null || path == null) return;
-    final f = File(path);
-    if (!f.existsSync()) return;
-    final mtime = f.statSync().modified;
-    final last = _mtimes[path];
-    if (last == null) {
-      _mtimes[path] = mtime;
-      return;
+    if (_pollingActiveFile) return;
+    _pollingActiveFile = true;
+    try {
+      final c = workspace.active;
+      final path = c?.filePath;
+      if (c == null || path == null) return;
+      final f = File(path);
+      if (!f.existsSync()) return;
+      final mtime = f.statSync().modified;
+      final last = _mtimes[path];
+      if (last == null) {
+        _mtimes[path] = mtime;
+        return;
+      }
+      if (!mtime.isAfter(last)) return;
+      if (c.isDirty) {
+        // Don't clobber unsaved edits; let the client decide.
+        _mtimes[path] = mtime;
+        _emit('fileChangedOnDisk', <String, dynamic>{
+          'path': path,
+          'dirty': true,
+        });
+        return;
+      }
+
+      final bytes = await f.readAsBytes();
+      // Reading yields. The user may edit or switch tabs in the meantime; in
+      // either case this poll no longer owns the active clean document.
+      if (!identical(workspace.active, c) || c.filePath != path) return;
+      final latestMtime = f.existsSync() ? f.statSync().modified : mtime;
+      if (c.isDirty) {
+        _mtimes[path] = latestMtime;
+        _emit('fileChangedOnDisk', <String, dynamic>{
+          'path': path,
+          'dirty': true,
+        });
+        return;
+      }
+      if (latestMtime.isAfter(mtime)) {
+        // The file changed again while it was being read. Leave the old mtime
+        // in place and consume the stable latest version on the next poll.
+        return;
+      }
+
+      // A partially-written/corrupt file must not clear a valid open canvas.
+      parseVisio(bytes);
+      await c.openBytes(bytes, path: path, name: c.fileName);
+      if (c.error != null || c.document == null) {
+        throw StateError('file-watch reload failed: ${c.error ?? path}');
+      }
+      _mtimes[path] = latestMtime;
+      _emit('documentChanged', <String, dynamic>{
+        'reason': 'fileWatch',
+        'path': path,
+      });
+    } catch (e) {
+      if (_server != null) {
+        status.value = 'Agent preview · file watch error: $e';
+      }
+    } finally {
+      _pollingActiveFile = false;
     }
-    if (!mtime.isAfter(last)) return;
-    _mtimes[path] = mtime;
-    if (c.isDirty) {
-      // Don't clobber unsaved edits; let the client decide.
-      _emit('fileChangedOnDisk', <String, dynamic>{'path': path, 'dirty': true});
-      return;
-    }
-    final bytes = await f.readAsBytes();
-    await c.openBytes(bytes, path: path, name: c.fileName);
-    _emit('documentChanged', <String, dynamic>{'reason': 'fileWatch', 'path': path});
   }
 
   void _bumpMtime(String? path) {
@@ -348,7 +452,12 @@ class AgentBridge {
   Future<void> _removeHandshake() async {
     try {
       final f = File(handshakePath());
-      if (await f.exists()) await f.delete();
+      if (!await f.exists()) return;
+      final contents =
+          (jsonDecode(await f.readAsString()) as Map).cast<String, dynamic>();
+      // A second app instance may have replaced the shared handshake. Never
+      // delete a file that advertises somebody else's token.
+      if (contents['token'] == _token) await f.delete();
     } catch (_) {}
   }
 
@@ -359,7 +468,6 @@ class AgentBridge {
   }
 
   void dispose() {
-    unawaited(stop());
-    status.dispose();
+    unawaited(stop().whenComplete(status.dispose));
   }
 }

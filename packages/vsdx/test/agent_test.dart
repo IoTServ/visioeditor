@@ -81,6 +81,35 @@ void main() {
       expect(r.createdIds, hasLength(1));
     });
 
+    test('rejected and empty op batches preserve document identity', () {
+      final doc = built();
+      final target = doc.pages.single.shapes.firstWhere((s) => !s.is1D);
+
+      final empty = applyOps(doc, const <Map<String, dynamic>>[]);
+      expect(empty.document, same(doc));
+
+      final invalid = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'move_shape',
+          'id': target.id,
+          'x': 'NaN',
+          'y': target.pinY,
+        },
+        <String, dynamic>{'op': 'does_not_exist'},
+        <String, dynamic>{
+          'op': 'add_shape',
+          'w': -1,
+          'h': 1,
+        },
+        <String, dynamic>{
+          'op': 'delete_shape',
+          'id': double.nan,
+        },
+      ]);
+      expect(invalid.document, same(doc));
+      expect(invalid.log, hasLength(4));
+    });
+
     test('add_connector refuses 1-D from/to targets', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);
@@ -1257,6 +1286,13 @@ void main() {
         { "ops": [ { "op": "add_shape", "text": "Extra", "x": 1, "y": 1 } ] }''');
       final page = const DocumentParser().parse(out).pages.single;
       expect(page.shapes.any((s) => s.text == 'Extra'), isTrue);
+    });
+
+    test('applyOpsBytes does not rewrite a rejected batch', () {
+      final original = DiagramSpec.parse(_spec).build();
+      final out = applyOpsBytes(original, '''
+        { "ops": [ { "op": "delete_shape", "id": 99999 } ] }''');
+      expect(out, same(original));
     });
 
     test('rejects trailing-digit node labels as shape ids', () {
