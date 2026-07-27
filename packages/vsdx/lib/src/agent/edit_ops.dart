@@ -12,7 +12,7 @@
 /// (`add_layer`, `set_layer`, `delete_layer`, `assign_layer`), plus shape
 /// edits: `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
 /// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
-/// `distribute`, `delete_shape`.
+/// `distribute`, `set_data`, `set_links`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
@@ -1720,6 +1720,51 @@ ApplyResult applyOps(
                   bold: op.containsKey('bold') ? op['bold'] == true : null,
                   colorHex: (op['textColor'] ?? op['fontColor'])?.toString(),
                 ));
+      case 'set_data':
+      case 'set_shape_data':
+        final id = _resolveId(op['id']);
+        if (id == null) {
+          log.add('set_data: missing or invalid id=${op['id']}');
+          break;
+        }
+        final target = page.findShapeById(id);
+        if (target == null) {
+          log.add('set_data: shape $id not found');
+          break;
+        }
+        if (_isProtected(page, target)) {
+          log.add('set_data: shape $id is locked');
+          break;
+        }
+        final properties =
+            _parseUserProperties(op['properties'] ?? op['data'], log);
+        if (properties == null) break;
+        page = page.updateShapeById(
+          id,
+          (shape) => shape.copyWith(userProperties: properties),
+        );
+      case 'set_links':
+      case 'set_shape_links':
+        final id = _resolveId(op['id']);
+        if (id == null) {
+          log.add('set_links: missing or invalid id=${op['id']}');
+          break;
+        }
+        final target = page.findShapeById(id);
+        if (target == null) {
+          log.add('set_links: shape $id not found');
+          break;
+        }
+        if (_isProtected(page, target)) {
+          log.add('set_links: shape $id is locked');
+          break;
+        }
+        final links = _parseHyperlinks(op['links'], log);
+        if (links == null) break;
+        page = page.updateShapeById(
+          id,
+          (shape) => shape.copyWith(hyperlinks: links),
+        );
       case 'move_shape':
       case 'move':
         final id = _resolveId(op['id']);
@@ -2447,6 +2492,121 @@ VsdxShape _withoutLayerMembership(VsdxShape shape, int layerId) {
     );
   }
   return next;
+}
+
+List<VsdxUserProperty>? _parseUserProperties(
+  Object? raw,
+  List<String> log,
+) {
+  if (raw is! List) {
+    log.add('set_data: properties/data must be an array');
+    return null;
+  }
+  final properties = <VsdxUserProperty>[];
+  final seen = <String>{};
+  for (var i = 0; i < raw.length; i++) {
+    final item = raw[i];
+    if (item is! Map) {
+      log.add('set_data: property $i must be an object');
+      continue;
+    }
+    final property = item.cast<Object?, Object?>();
+    final name = property['name']?.toString().trim() ?? '';
+    if (name.isEmpty) {
+      log.add('set_data: property $i needs a non-empty name');
+      continue;
+    }
+    if (!seen.add(name)) {
+      log.add('set_data: duplicate property name "$name" skipped');
+      continue;
+    }
+    properties.add(
+      VsdxUserProperty(
+        name: name,
+        label: property['label']?.toString(),
+        value: property['value']?.toString(),
+        valueFormula: property['valueFormula']?.toString(),
+        prompt: property['prompt']?.toString(),
+        format: property['format']?.toString(),
+        formatFormula: property['formatFormula']?.toString(),
+        type: _i(property['type']) ?? 0,
+        sortKey: property['sortKey']?.toString(),
+        invisible: _b(property['invisible']) ?? false,
+        verify: _b(property['verify']) ?? false,
+        ask: _b(property['ask']) ?? false,
+        dataLinked: _b(property['dataLinked']) ?? false,
+        langId: property['langId']?.toString(),
+        calendar: _i(property['calendar']),
+      ),
+    );
+  }
+  if (raw.isNotEmpty && properties.isEmpty) return null;
+  return properties;
+}
+
+List<VsdxHyperlink>? _parseHyperlinks(Object? raw, List<String> log) {
+  if (raw is! List) {
+    log.add('set_links: links must be an array');
+    return null;
+  }
+  final links = <VsdxHyperlink>[];
+  final usedIds = <int>{};
+  var nextId = 0;
+  var hasDefault = false;
+  for (var i = 0; i < raw.length; i++) {
+    final item = raw[i];
+    if (item is! Map) {
+      log.add('set_links: link $i must be an object');
+      continue;
+    }
+    final link = item.cast<Object?, Object?>();
+    final address = link['address']?.toString().trim();
+    final addressFormula = link['addressFormula']?.toString().trim();
+    final subAddress = link['subAddress']?.toString().trim();
+    if ((address == null || address.isEmpty) &&
+        (addressFormula == null || addressFormula.isEmpty) &&
+        (subAddress == null || subAddress.isEmpty)) {
+      log.add(
+          'set_links: link $i needs address, addressFormula, or subAddress');
+      continue;
+    }
+    final requestedId = _i(link['id']);
+    var id = requestedId;
+    if (id == null || id < 0 || usedIds.contains(id)) {
+      while (usedIds.contains(nextId)) {
+        nextId++;
+      }
+      id = nextId++;
+      if (requestedId != null) {
+        log.add(
+            'set_links: duplicate/invalid id $requestedId reassigned to $id');
+      }
+    }
+    usedIds.add(id);
+    final requestedDefault = _b(link['default'] ?? link['isDefault']) ?? false;
+    final isDefault = requestedDefault && !hasDefault;
+    hasDefault = hasDefault || isDefault;
+    links.add(
+      VsdxHyperlink(
+        id: id,
+        description: link['description']?.toString(),
+        address: address?.isEmpty == true ? null : address,
+        addressFormula: addressFormula?.isEmpty == true ? null : addressFormula,
+        subAddress: subAddress?.isEmpty == true ? null : subAddress,
+        extraInfo: link['extraInfo']?.toString(),
+        frame: link['frame']?.toString(),
+        newWindow: _b(link['newWindow']) ?? false,
+        isDefault: isDefault,
+        invisible: _b(link['invisible']) ?? false,
+        sortKey: link['sortKey']?.toString(),
+      ),
+    );
+  }
+  if (raw.isNotEmpty && links.isEmpty) return null;
+  if (links.isNotEmpty && !hasDefault) {
+    links[0] = links[0].copyWith(isDefault: true);
+  }
+  return links;
 }
 
 String _uniquePageName(

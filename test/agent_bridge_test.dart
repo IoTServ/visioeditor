@@ -399,6 +399,59 @@ void main() {
   );
 
   test(
+    'draw.io shape data and links apply live as one undoable batch',
+    () async {
+      final c = workspace.active!;
+      final a = c.document!.pages.single.shapes
+          .firstWhere((shape) => shape.text == 'A')
+          .id;
+
+      final response = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'set_data',
+            'id': a,
+            'properties': <dynamic>[
+              <String, dynamic>{'name': 'Owner', 'value': 'Platform'},
+            ],
+          },
+          <String, dynamic>{
+            'op': 'set_links',
+            'id': a,
+            'links': <dynamic>[
+              <String, dynamic>{
+                'description': 'Docs',
+                'address': 'https://example.com/docs',
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(response['ok'], isTrue);
+      expect((response['result'] as Map)['changed'], isTrue);
+      final shape = c.document!.pages.single.findShapeById(a)!;
+      expect(shape.userProperties.single.value, 'Platform');
+      expect(
+        shape.primaryHyperlink?.effectiveTarget,
+        'https://example.com/docs',
+      );
+
+      final listed = await call('listShapes');
+      final listedShape = ((listed['result'] as Map)['shapes'] as List)
+          .firstWhere((entry) => entry['id'] == a);
+      expect((listedShape['data'] as List).single['name'], 'Owner');
+      expect((listedShape['links'] as List).single['default'], isTrue);
+
+      expect(c.canUndo, isTrue);
+      c.undo();
+      final restored = c.document!.pages.single.findShapeById(a)!;
+      expect(restored.userProperties, isEmpty);
+      expect(restored.hyperlinks, isEmpty);
+    },
+  );
+
+  test(
     'page ops switch live context, expose setup, and undo as one step',
     () async {
       final c = workspace.active!;

@@ -80,6 +80,15 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
     "color": "#336699", "ids": [8, 12] },
   { "op": "assign_layer",  "ids": [15], "layerId": 0, "mode": "add" },
   { "op": "set_layer",      "layerId": 0, "visible": true, "locked": false },
+  { "op": "set_data",       "id": 8, "properties": [
+    { "name": "Owner", "label": "Service owner", "value": "Platform" },
+    { "name": "Cost", "value": "42.50", "type": 2, "format": "#,##0.00" }
+  ] },
+  { "op": "set_links",      "id": 8, "links": [
+    { "description": "Docs", "address": "https://example.com/docs",
+      "newWindow": true, "default": true },
+    { "description": "Overview", "subAddress": "#Page-1" }
+  ] },
   { "op": "add_shape",     "stencil": "decision", "text": "Approved?",
     "x": 4, "y": 5, "w": 1.4, "h": 1, "fill": "#FFF2CC", "bold": true },
   { "op": "add_connector", "from": "shape:12", "to": "shape:8",
@@ -116,6 +125,13 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   membership recursively without deleting shapes. New shapes and connectors
   automatically join the active layer unless an explicit `layerId` is given.
   Making one layer active deactivates the previous active layer.
+- **Shape Data / links**: `set_data` replaces a shape's Visio Shape Data
+  (`Property` rows); every property needs a unique non-empty `name`, with
+  optional label/value/type/format/prompt flags. `set_links` replaces all
+  hyperlink rows and supports external `address` plus in-document
+  `subAddress` targets. At most one explicit default is kept; when none is
+  marked, the first link becomes primary. An empty array clears the section.
+  Use `list_shapes` to read the complete current arrays before replacing them.
 - **Shape references**: `"shape:<id>"`, a bare integer, or a numeric string —
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.

@@ -118,6 +118,15 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
         'w': r(s.width),
         'h': r(s.height),
         if (s.layerMemberIds.isNotEmpty) 'layerIds': s.layerMemberIds,
+        if (s.userProperties.isNotEmpty)
+          'data': <Map<String, dynamic>>[
+            for (final property in s.userProperties)
+              _userPropertyJson(property),
+          ],
+        if (s.hyperlinks.isNotEmpty)
+          'links': <Map<String, dynamic>>[
+            for (final link in s.hyperlinks) _hyperlinkJson(link),
+          ],
         if (parentId != null) 'parentId': parentId,
       });
       if (s.children.isNotEmpty) walk(s.children, s.id);
@@ -127,6 +136,41 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
   walk(page.shapes, null);
   return out;
 }
+
+Map<String, dynamic> _userPropertyJson(VsdxUserProperty property) =>
+    <String, dynamic>{
+      'name': property.name,
+      if (property.label != null) 'label': property.label,
+      if (property.value != null) 'value': property.value,
+      if (property.valueFormula != null) 'valueFormula': property.valueFormula,
+      if (property.prompt != null) 'prompt': property.prompt,
+      if (property.format != null) 'format': property.format,
+      if (property.formatFormula != null)
+        'formatFormula': property.formatFormula,
+      'type': property.type,
+      if (property.sortKey != null) 'sortKey': property.sortKey,
+      if (property.invisible) 'invisible': true,
+      if (property.verify) 'verify': true,
+      if (property.ask) 'ask': true,
+      if (property.dataLinked) 'dataLinked': true,
+      if (property.langId != null) 'langId': property.langId,
+      if (property.calendar != null) 'calendar': property.calendar,
+    };
+
+Map<String, dynamic> _hyperlinkJson(VsdxHyperlink link) => <String, dynamic>{
+      'id': link.id,
+      if (link.description != null) 'description': link.description,
+      if (link.address != null) 'address': link.address,
+      if (link.addressFormula != null) 'addressFormula': link.addressFormula,
+      if (link.subAddress != null) 'subAddress': link.subAddress,
+      if (link.effectiveTarget case final target?) 'target': target,
+      if (link.extraInfo != null) 'extraInfo': link.extraInfo,
+      if (link.frame != null) 'frame': link.frame,
+      if (link.newWindow) 'newWindow': true,
+      if (link.isDefault) 'default': true,
+      if (link.invisible) 'invisible': true,
+      if (link.sortKey != null) 'sortKey': link.sortKey,
+    };
 
 /// Machine-readable layer inventory for one page.
 ///

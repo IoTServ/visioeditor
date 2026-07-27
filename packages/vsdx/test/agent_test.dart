@@ -309,6 +309,118 @@ void main() {
       );
     });
 
+    test('shape data and hyperlinks mirror draw.io and round-trip', () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.rectangle(
+              id: 1,
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 1,
+            ),
+          ],
+        ),
+      );
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_data',
+          'id': 1,
+          'properties': <dynamic>[
+            <String, dynamic>{
+              'name': 'Owner',
+              'label': 'Service owner',
+              'value': 'Platform',
+              'prompt': 'Owning team',
+            },
+            <String, dynamic>{
+              'name': 'Cost',
+              'value': 42.5,
+              'type': 2,
+              'format': '#,##0.00',
+              'sortKey': '02',
+            },
+            <String, dynamic>{
+              'name': 'Owner',
+              'value': 'duplicate',
+            },
+          ],
+        },
+        <String, dynamic>{
+          'op': 'set_links',
+          'id': 1,
+          'links': <dynamic>[
+            <String, dynamic>{
+              'id': 5,
+              'description': 'Service docs',
+              'address': 'https://example.com/docs',
+              'newWindow': true,
+              'default': true,
+            },
+            <String, dynamic>{
+              'id': 5,
+              'description': 'Overview page',
+              'subAddress': '#Page-1',
+              'default': true,
+            },
+          ],
+        },
+      ]);
+
+      expect(result.log, <String>[
+        'set_data: duplicate property name "Owner" skipped',
+        'set_links: duplicate/invalid id 5 reassigned to 0',
+      ]);
+      final shape = result.document.pages.single.findShapeById(1)!;
+      expect(shape.userProperties, hasLength(2));
+      expect(shape.userProperties[0].label, 'Service owner');
+      expect(shape.userProperties[1].value, '42.5');
+      expect(shape.userProperties[1].type, 2);
+      expect(shape.hyperlinks.map((link) => link.id), <int>[5, 0]);
+      expect(shape.hyperlinks.first.isDefault, isTrue);
+      expect(shape.hyperlinks.last.isDefault, isFalse);
+      expect(
+          shape.primaryHyperlink?.effectiveTarget, 'https://example.com/docs');
+
+      final listed = listShapes(result.document).single;
+      expect((listed['data'] as List).first['name'], 'Owner');
+      expect((listed['links'] as List).first['target'],
+          'https://example.com/docs');
+      expect((listed['links'] as List).last['target'], '#Page-1');
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: original,
+          edited: result.document,
+        ),
+      );
+      final reopenedShape = reopened.pages.single.findShapeById(1)!;
+      expect(reopenedShape.userProperties, shape.userProperties);
+      expect(reopenedShape.hyperlinks, shape.hyperlinks);
+
+      final cleared = applyOps(reopened, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_shape_data',
+          'id': 1,
+          'data': <dynamic>[],
+        },
+        <String, dynamic>{
+          'op': 'set_shape_links',
+          'id': 1,
+          'links': <dynamic>[],
+        },
+      ]);
+      expect(cleared.document.pages.single.findShapeById(1)!.userProperties,
+          isEmpty);
+      expect(
+          cleared.document.pages.single.findShapeById(1)!.hyperlinks, isEmpty);
+    });
+
     test('rejected and empty op batches preserve document identity', () {
       final doc = built();
       final target = doc.pages.single.shapes.firstWhere((s) => !s.is1D);
@@ -345,9 +457,11 @@ void main() {
           'ids': <int>[target.id],
           'layerId': 999999,
         },
+        <String, dynamic>{'op': 'set_data', 'id': target.id},
+        <String, dynamic>{'op': 'set_links', 'id': target.id},
       ]);
       expect(invalid.document, same(doc));
-      expect(invalid.log, hasLength(9));
+      expect(invalid.log, hasLength(11));
     });
 
     test('add_connector refuses 1-D from/to targets', () {

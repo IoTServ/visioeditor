@@ -2,7 +2,8 @@
 ///
 /// **File tools** (no app needed): `create_diagram`, `apply_ops`, `export`,
 /// `validate`, `explain`, `list_pages`, `list_layers`, `list_shapes`,
-/// `search_shapes`, `list_styles`, plus page/layer/shape convenience edits.
+/// `search_shapes`, `list_styles`, plus page/layer/shape/metadata convenience
+/// edits.
 /// **Live tools** (drive the running editor via the bridge): `open_in_app`,
 /// `live_apply_ops`, `select_page`, `select_layer`, `select`, `snapshot`,
 /// `get_app_state`.
@@ -350,8 +351,8 @@ void _registerFileTools(McpServer server) {
     description:
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
         'add/duplicate/rename/delete/move/set page; add/set/delete/assign '
-        'layer; add/connect/style/text/move/resize/duplicate/group/ungroup/'
-        'z-order/align/distribute/delete shape.',
+        'layer; add/connect/style/text/data/links/move/resize/duplicate/group/'
+        'ungroup/z-order/align/distribute/delete shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -562,9 +563,9 @@ void _registerFileTools(McpServer server) {
 
   server.addTool(McpTool(
     name: 'list_shapes',
-    description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h) '
-        '— use it to find ids before editing. Give `path` for a file; omit to '
-        'read the running app.',
+    description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h, '
+        'layers, Shape Data, and hyperlinks). Use it to find ids and metadata '
+        'before editing. Give `path` for a file; omit to read the running app.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -1312,6 +1313,77 @@ void _registerEditTools(McpServer server) {
       ..['required'] = <String>['id', 'text'],
     handler: (args) => applyOne(args,
         op('set_text', args, <String>['id', 'text', 'bold', 'textColor'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_shape_data',
+    description: 'Replace a shape\'s draw.io-style custom data fields. '
+        'An empty properties array clears Shape Data.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'properties': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'name': <String, dynamic>{'type': 'string'},
+            'label': <String, dynamic>{'type': 'string'},
+            'value': <String, dynamic>{},
+            'valueFormula': <String, dynamic>{'type': 'string'},
+            'prompt': <String, dynamic>{'type': 'string'},
+            'format': <String, dynamic>{'type': 'string'},
+            'formatFormula': <String, dynamic>{'type': 'string'},
+            'type': <String, dynamic>{'type': 'integer'},
+            'sortKey': <String, dynamic>{'type': 'string'},
+            'invisible': <String, dynamic>{'type': 'boolean'},
+            'verify': <String, dynamic>{'type': 'boolean'},
+            'ask': <String, dynamic>{'type': 'boolean'},
+            'dataLinked': <String, dynamic>{'type': 'boolean'},
+            'langId': <String, dynamic>{'type': 'string'},
+            'calendar': <String, dynamic>{'type': 'integer'},
+          },
+          'required': <String>['name'],
+        },
+      },
+    })
+      ..['required'] = <String>['id', 'properties'],
+    handler: (args) => applyOne(
+      args,
+      op('set_data', args, <String>['id', 'properties']),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_shape_links',
+    description: 'Replace all hyperlinks on a shape (external URLs and '
+        'in-document subAddress targets). An empty links array clears them.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'links': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'id': <String, dynamic>{'type': 'integer'},
+            'description': <String, dynamic>{'type': 'string'},
+            'address': <String, dynamic>{'type': 'string'},
+            'addressFormula': <String, dynamic>{'type': 'string'},
+            'subAddress': <String, dynamic>{'type': 'string'},
+            'extraInfo': <String, dynamic>{'type': 'string'},
+            'frame': <String, dynamic>{'type': 'string'},
+            'newWindow': <String, dynamic>{'type': 'boolean'},
+            'default': <String, dynamic>{'type': 'boolean'},
+            'invisible': <String, dynamic>{'type': 'boolean'},
+            'sortKey': <String, dynamic>{'type': 'string'},
+          },
+        },
+      },
+    })
+      ..['required'] = <String>['id', 'links'],
+    handler: (args) => applyOne(
+      args,
+      op('set_links', args, <String>['id', 'links']),
+    ),
   ));
 
   server.addTool(McpTool(

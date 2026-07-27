@@ -129,6 +129,8 @@ void main() {
           'set_layer',
           'delete_layer',
           'assign_layer',
+          'set_shape_data',
+          'set_shape_links',
           'add_page',
           'duplicate_page',
           'rename_page',
@@ -178,6 +180,7 @@ void main() {
           'snapshot',
           'get_app_state',
         ]));
+    expect(names, hasLength(48));
   });
 
   test('create_diagram builds + validates a .vsdx', () async {
@@ -558,6 +561,62 @@ void main() {
       expect(reopened.pages.single.layers, isEmpty);
       expect(reopened.pages.single.findShapeById(a)!.layerMemberIds, isEmpty);
       expect(reopened.pages.single.findShapeById(b)!.layerMemberIds, isEmpty);
+    });
+
+    test('metadata convenience tools mirror draw.io Edit Data and Edit Link',
+        () async {
+      final a = idOf('A');
+
+      await callTool('set_shape_data', <String, dynamic>{
+        'path': path,
+        'id': '$a',
+        'properties': <dynamic>[
+          <String, dynamic>{
+            'name': 'Owner',
+            'label': 'Service owner',
+            'value': 'Platform',
+          },
+          <String, dynamic>{
+            'name': 'Cost',
+            'value': 42,
+            'type': 2,
+          },
+        ],
+      });
+      await callTool('set_shape_links', <String, dynamic>{
+        'path': path,
+        'id': '$a',
+        'links': <dynamic>[
+          <String, dynamic>{
+            'description': 'Docs',
+            'address': 'https://example.com/docs',
+            'newWindow': true,
+          },
+          <String, dynamic>{
+            'description': 'Page',
+            'subAddress': '#Page-1',
+          },
+        ],
+      });
+
+      final listed =
+          await callTool('list_shapes', <String, dynamic>{'path': path});
+      final decoded = jsonDecode(firstText(listed)) as Map<String, dynamic>;
+      final shape =
+          (decoded['shapes'] as List).firstWhere((entry) => entry['id'] == a);
+      expect((shape['data'] as List).first['name'], 'Owner');
+      expect((shape['data'] as List).last['value'], '42');
+      expect(
+          (shape['links'] as List).first['target'], 'https://example.com/docs');
+      expect((shape['links'] as List).first['default'], isTrue);
+      expect((shape['links'] as List).last['target'], '#Page-1');
+
+      final reopened =
+          const DocumentParser().parse(File(path).readAsBytesSync());
+      final persisted = reopened.pages.single.findShapeById(a)!;
+      expect(persisted.userProperties, hasLength(2));
+      expect(persisted.hyperlinks, hasLength(2));
+      expect(persisted.primaryHyperlink?.description, 'Docs');
     });
 
     test('convenience tools accept a page index', () async {
