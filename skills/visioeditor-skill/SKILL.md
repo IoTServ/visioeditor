@@ -67,9 +67,9 @@ dart compile exe bin/vsdxtool_mcp.dart -o vsdxtool-mcp
 
 If using the **MCP server** instead of the CLI, register it once (see
 `references/live-preview.md`) and call its tools (`create_diagram`,
-`apply_ops`, `export`, `validate`, `explain`, `search_shapes`, `list_styles`,
-and the live tools `open_in_app` / `live_apply_ops` / `select` / `snapshot` /
-`get_app_state`).
+`apply_ops`, `export`, `validate`, `explain`, `list_pages`, `list_shapes`,
+`search_shapes`, `list_styles`, and the live tools `open_in_app` /
+`live_apply_ops` / `select_page` / `select` / `snapshot` / `get_app_state`).
 
 ## Workflow
 
@@ -116,18 +116,20 @@ VSDXTOOL patch -i diagram.vsdx --ops ops.json --page 0  # file
 #         live_apply_ops({ page?, ops }) for the live app
 ```
 
-Get current shape ids with `list_shapes` (MCP; JSON of id/text/x/y/w/h, file or
-live) or `explain` (`VSDXTOOL explain -i file.vsdx`). Reference shapes as
-`"shape:<id>"` or the raw id. With live preview on, `select({ ids })`
-highlights those shapes in the editor (empty list clears).
+Get page indices/stable ids/setup with `list_pages`, then current shape ids with
+`list_shapes` (MCP; JSON of id/text/x/y/w/h, file or live) or `explain`
+(`VSDXTOOL explain -i file.vsdx`). Reference shapes as `"shape:<id>"` or the
+raw id. With live preview on, `select_page({ page })` switches tabs and
+`select({ ids })` highlights shapes (empty list clears).
 
 **Convenience single-step tools** (MCP) avoid hand-building op arrays:
-`add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
-`resize_shape`, `duplicate_shapes`, `group_shapes`, `ungroup_shapes`,
-`arrange_shape`, `align_shapes`, `distribute_shapes`, `delete_shape`. Each
-takes an optional `path` — give it to edit a **file**, omit it to edit the
-**running app** live. Use optional zero-based `page` for multi-page drawings
-(file default: page 0; live default: current page).
+`add_page`, `duplicate_page`, `rename_page`, `delete_page`, `move_page`,
+`set_page`, `add_shape`, `add_connector`, `set_style`, `set_text`,
+`move_shape`, `resize_shape`, `duplicate_shapes`, `group_shapes`,
+`ungroup_shapes`, `arrange_shape`, `align_shapes`, `distribute_shapes`,
+`delete_shape`. Each takes an optional `path` — give it to edit a **file**,
+omit it to edit the **running app** live. Use optional zero-based `page` for
+multi-page drawings (file default: page 0; live default: current page).
 
 ## Importers (structure in → editable .vsdx)
 
@@ -195,6 +197,7 @@ Use `search_shapes` to find exact names; details in `references/shape-catalog.md
 
 ```jsonc
 { "ops": [
+  { "op": "add_page",      "name": "Review", "landscape": true },
   { "op": "add_shape",     "stencil": "process", "text": "Ship", "x": 6, "y": 5 },
   { "op": "add_connector", "from": "shape:4", "to": "shape:7", "label": "ok" },
   { "op": "set_style",     "ids": ["shape:4"], "fill": "#D5E8D4", "line": "#82B366" },

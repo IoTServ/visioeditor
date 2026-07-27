@@ -164,6 +164,7 @@
 - `export(path, format, out?) → {out}`：导出 svg/png/pdf。
 - `validate(path) → {issues[]}`：结构 lint。
 - `explain(path) → {markdown}`：反向描述。
+- `list_pages(path?) → {currentPage, pages[]}`：列出页签、稳定页 id、尺寸与背景设置。
 - `search_shapes(query, limit?) → {stencils[]}`：形状检索（对齐 drawio `shape-search`）。
 - `render_preview(path, page?, width?) → {image}`：返回 PNG 图像内容，供 Agent 视觉自检 /
   聊天内联（对齐 drawio-mcp `mcp-app-server` 的内联渲染）。
@@ -173,9 +174,12 @@
 - `live_apply_ops(ops[], page?) → {ok, selection}`：对**当前活动文档**指定页实时应用
   Edit Ops（默认当前页；每批一个 undo 步），应用即时重绘。
 - `snapshot(page?) → {image}`：让应用回传当前画布 PNG（真·所见）。
-- `select(ids[]) / get_state() → {pages, selection, dirty}`：选中/读状态。
+- `select_page(page) / select(ids[]) / get_state() → {pages, selection, dirty}`：
+  切换页签、选中形状、读状态。
 
 **C. 高层便捷类（= A/B 的组合，降低 Agent 编排负担）**
+- `add_page` / `duplicate_page` / `rename_page` / `delete_page` /
+  `move_page` / `set_page`：页签结构、排序、纸张方向、颜色与背景页。
 - `add_shape` / `add_connector` / `set_style` / `set_text` / `move_shape` /
   `resize_shape` / `duplicate_shapes` / `group_shapes` / `ungroup_shapes` /
   `arrange_shape` / `align_shapes` / `distribute_shapes` / `delete_shape`：
@@ -306,8 +310,9 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] `render`：`.vsdx` → SVG（直接调 `VsdxToSvgSerializer`）。
 - [x] `build`：Diagram Spec → `.vsdx`（节点用 `VsdxShapeFactory`；边用连接器 + 胶合 +
       `rerouteConnectors`；缺坐标时走**分层自动布局** `layoutDiagram`，TB/LR）。
-- [x] `patch`：Edit Ops（add/connect/style/text/move/resize/duplicate/group/ungroup/
-      z-order/align/distribute/delete）→
+- [x] `patch`：Edit Ops（page add/duplicate/rename/delete/move/setup +
+      shape add/connect/style/text/move/resize/duplicate/group/ungroup/z-order/
+      align/distribute/delete）→
       往返保真写回（`DocumentParser` + `VsdxWriter`，只补丁改动 Cell）。
 - [x] `validate`（重复 id/悬空连线/越界/重叠）/ `explain`（反向 Markdown）。
 - [x] `shapes search`：curated core stencil 目录（`stencil_catalog.dart`，别名解析）。
@@ -327,7 +332,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
       脏时推 `fileChangedOnDisk` 事件不覆盖用户编辑。
 - [x] **L2**：应用内 `127.0.0.1` 随机端口 `HttpServer`/WebSocket；握手文件
       `~/.visioeditor/agent-bridge.json`（随机 token + `chmod 600`）；token 校验（无 token 拒连）。
-- [x] 协议：`ping/getState/open/reload/applyOps/snapshot/save` + 事件推送
+- [x] 协议：`ping/getState/listShapes/selectPage/select/open/reload/applyOps/
+      snapshot/save` + 事件推送
       （`documentChanged`/`fileChangedOnDisk`）。
 - [x] `snapshot`：复用 `image_export.dart` 的 `renderPageToPng` 回传 PNG（base64）。
 - [x] `applyOps`：**不落盘**改内存模型并重绘，支持 add/connect/style/text/move/resize/
@@ -353,20 +359,21 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 
 - [x] MCP stdio 服务骨架（`McpServer`：`initialize`/`notifications`/`ping`/
       `tools/list`/`tools/call`，newline-delimited JSON-RPC 2.0）。
-- [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_shapes/
-      search_shapes/list_styles`（后端调 agent 库；`list_shapes` 双模式；`list_styles` 列
-      样式预设）。
-- [x] 实时类工具：`open_in_app/live_apply_ops/select/snapshot/get_app_state`
-      （`BridgeClient` 连应用桥；`select` 按 id 高亮选中）。
+- [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_pages/
+      list_shapes/search_shapes/list_styles`（后端调 agent 库；页面/形状列举双模式；
+      `list_styles` 列样式预设）。
+- [x] 实时类工具：`open_in_app/live_apply_ops/select_page/select/snapshot/get_app_state`
+      （`BridgeClient` 连应用桥；可切页及按 id 高亮选中）。
 - [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
-- [x] **便捷单步工具**：基础增删改 + `resize_shape`/`duplicate_shapes`/`group_shapes`/
-      `ungroup_shapes`/`arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
+- [x] **便捷单步工具**：6 个页面操作 + 基础形状增删改 +
+      `resize_shape`/`duplicate_shapes`/`group_shapes`/`ungroup_shapes`/
+      `arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
       （给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op。
 - [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **32 个工具**；
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **40 个工具**；
 文件类端到端建图/校验/描述/导出/列举；便捷结构编辑支持文件/实时双模式；实时类经
 `BridgeClient` 驱动应用。
 
@@ -664,3 +671,8 @@ visioeditor/
   `distribute`（旋转感知 page AABB、单选相对页面、锁定形状只作锚点）；MCP 补
   `resize_shape` 及 6 个结构化便捷工具，文件/实时双模式共用实现，实时批次仍为一个
   undo 步。工具总数 **32**；协议与 Skill 文档同步。
+- 2026-07-27 — **draw.io 多页面对齐**：Edit Ops 新增 `add_page` /
+  `duplicate_page` / `rename_page` / `delete_page` / `move_page` / `set_page`，
+  批次内会把后续形状操作切到新页；新增双模式 `list_pages`、6 个页面便捷工具及实时
+  `select_page`。页面背景引用按稳定 id 管理，删除自动清悬空引用；实时整批仍为一个
+  undo 步。工具总数 **40**。

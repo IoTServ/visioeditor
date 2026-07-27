@@ -81,6 +81,93 @@ void main() {
       expect(r.createdIds, hasLength(1));
     });
 
+    test('page ops switch batch context and survive a writer round-trip', () {
+      final original = const VsdxWriter().emptyDocument();
+      final doc = const DocumentParser().parse(original);
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'add_page',
+          'name': 'Canvas',
+          'width': 12,
+          'height': 7,
+          'background': '#112233',
+        },
+        <String, dynamic>{
+          'op': 'add_shape',
+          'stencil': 'process',
+          'text': 'On the new page',
+        },
+        <String, dynamic>{'op': 'rename_page', 'name': 'Page-1'},
+        <String, dynamic>{'op': 'duplicate_page', 'name': 'Review'},
+        <String, dynamic>{
+          'op': 'set_page',
+          'width': 14,
+          'height': 8,
+          'landscape': true,
+          'background': 'none',
+        },
+      ]);
+
+      expect(result.document.pages, hasLength(3));
+      expect(result.createdPageIds, hasLength(2));
+      expect(result.createdIds, hasLength(1));
+      expect(result.pageIndex, 2);
+      expect(result.activatePage, isTrue);
+      expect(result.document.pages[0].shapes, isEmpty);
+      expect(result.document.pages[1].name, 'Page-1 2');
+      expect(result.document.pages[1].backgroundColor?.value, 0xFF112233);
+      expect(
+        result.document.pages[1].shapes.single.text,
+        'On the new page',
+      );
+      expect(result.document.pages[2].name, 'Review');
+      expect(result.document.pages[2].widthInches, 14);
+      expect(result.document.pages[2].heightInches, 8);
+      expect(result.document.pages[2].backgroundColor, isNull);
+      expect(
+        result.document.pages.map((page) => page.id).toSet(),
+        hasLength(3),
+      );
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: original,
+          edited: result.document,
+        ),
+      );
+      expect(reopened.pages, hasLength(3));
+      expect(reopened.pages[1].name, 'Page-1 2');
+      expect(reopened.pages[2].shapes.single.text, 'On the new page');
+      expect(validateDocument(reopened).where((i) => i.severity == 'error'),
+          isEmpty);
+    });
+
+    test('page move/delete preserve active id and clear background links', () {
+      final original = const VsdxWriter().emptyDocument();
+      final doc = const DocumentParser().parse(original);
+      final backgroundId = doc.nextPageId();
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'add_page',
+          'name': 'Background',
+          'isBackground': true,
+        },
+        <String, dynamic>{'op': 'add_page', 'name': 'Main'},
+        <String, dynamic>{
+          'op': 'set_page',
+          'backgroundPageId': backgroundId,
+        },
+        <String, dynamic>{'op': 'move_page', 'from': 2, 'to': 0},
+        <String, dynamic>{'op': 'delete_page', 'index': 2},
+      ]);
+
+      expect(
+          result.document.pages.map((p) => p.name), <String>['Main', 'Page-1']);
+      expect(result.pageIndex, 0);
+      expect(result.document.pages.first.backgroundPageId, isNull);
+      expect(result.log, isEmpty);
+    });
+
     test('rejected and empty op batches preserve document identity', () {
       final doc = built();
       final target = doc.pages.single.shapes.firstWhere((s) => !s.is1D);
@@ -105,9 +192,14 @@ void main() {
           'op': 'delete_shape',
           'id': double.nan,
         },
+        <String, dynamic>{'op': 'delete_page'},
+        <String, dynamic>{
+          'op': 'set_page',
+          'backgroundPageId': 999999,
+        },
       ]);
       expect(invalid.document, same(doc));
-      expect(invalid.log, hasLength(4));
+      expect(invalid.log, hasLength(6));
     });
 
     test('add_connector refuses 1-D from/to targets', () {

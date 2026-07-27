@@ -26,6 +26,9 @@ file is auto-reloaded within ~1s (unless you have unsaved edits).
 - `open_in_app({ path })` — open a file in the app.
 - `live_apply_ops({ ops })` — apply Edit Ops to the active doc in memory
   (instant repaint; no file write).
+- `list_pages()` / `select_page({ page })` — inspect page setup and switch the
+  visible page tab.
+- `list_shapes({ page? })` / `select({ ids })` — discover and highlight shapes.
 - `snapshot({ page? })` — get a PNG of the current page (for visual self-check).
 - `get_app_state()` — pages, selection, dirty flag, shape counts.
 
@@ -71,16 +74,16 @@ Or run from source without compiling:
 shape.
 
 After registering, the tools `create_diagram`, `apply_ops`, `export`,
-`validate`, `explain`, `search_shapes`, `open_in_app`, `live_apply_ops`,
-`snapshot`, `get_app_state`, plus the basic and structural convenience edits
-(`resize_shape`, `duplicate_shapes`, `group_shapes`, `ungroup_shapes`,
-`arrange_shape`, `align_shapes`, `distribute_shapes`) are available to the
+`validate`, `explain`, `list_pages`, `list_shapes`, `search_shapes`,
+`open_in_app`, `live_apply_ops`, `select_page`, `select`, `snapshot`,
+`get_app_state`, plus page and shape convenience edits are available to the
 Agent.
 
 ## Protocol (for reference)
 
 WebSocket JSON messages `{id, method, params}` → `{id, ok, result}`; the app
 also pushes `{event, data}` (`documentChanged`, `fileChangedOnDisk`). Methods:
-`ping`, `getState`, `open`, `reload`, `applyOps`, `snapshot` (PNG base64),
-`save`. Connect to `ws://127.0.0.1:<port>/?token=<token>` from the handshake
-file. The `BridgeClient` in `package:vsdx/agent.dart` implements this.
+`ping`, `getState`, `listShapes`, `selectPage`, `select`, `open`, `reload`,
+`applyOps`, `snapshot` (PNG base64), `save`. Connect to
+`ws://127.0.0.1:<port>/?token=<token>` from the handshake file. The
+`BridgeClient` in `package:vsdx/agent.dart` implements this.

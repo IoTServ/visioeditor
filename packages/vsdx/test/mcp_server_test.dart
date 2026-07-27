@@ -121,8 +121,15 @@ void main() {
           'export',
           'validate',
           'explain',
+          'list_pages',
           'search_shapes',
           'list_styles',
+          'add_page',
+          'duplicate_page',
+          'rename_page',
+          'delete_page',
+          'move_page',
+          'set_page',
           'resize_shape',
           'duplicate_shapes',
           'group_shapes',
@@ -159,6 +166,7 @@ void main() {
         names,
         containsAll(<String>[
           'select',
+          'select_page',
           'open_in_app',
           'live_apply_ops',
           'snapshot',
@@ -255,6 +263,55 @@ void main() {
       (decoded['shapes'] as List).single['text'],
       'Second page',
     );
+  });
+
+  test('page convenience tools manage tabs and list page setup', () async {
+    final path = '${tmp.path}/page-tools.vsdx';
+    await callTool(
+        'create_diagram', <String, dynamic>{'spec': _spec, 'path': path});
+
+    final added = await callTool('add_page', <String, dynamic>{
+      'path': path,
+      'name': 'Ops',
+      'width': 6,
+      'height': 10,
+      'background': '#ABCDEF',
+    });
+    expect(firstText(added), contains('Created page ids:'));
+    await callTool('rename_page', <String, dynamic>{
+      'path': path,
+      'index': 1,
+      'name': 'Canvas',
+    });
+    await callTool('set_page', <String, dynamic>{
+      'path': path,
+      'index': 1,
+      'landscape': true,
+    });
+    await callTool('duplicate_page', <String, dynamic>{
+      'path': path,
+      'index': 1,
+      'name': 'Copy',
+    });
+    await callTool('move_page', <String, dynamic>{
+      'path': path,
+      'from': 2,
+      'to': 0,
+    });
+    await callTool('delete_page', <String, dynamic>{
+      'path': path,
+      'index': 1,
+    });
+
+    final listed =
+        await callTool('list_pages', <String, dynamic>{'path': path});
+    final decoded = jsonDecode(firstText(listed)) as Map<String, dynamic>;
+    final pages = (decoded['pages'] as List).cast<Map<String, dynamic>>();
+    expect(pages.map((page) => page['name']), <String>['Copy', 'Canvas']);
+    expect(pages.first['width'], 10);
+    expect(pages.first['height'], 6);
+    expect(pages.first['background'], '#ABCDEF');
+    expect(pages.map((page) => page['id']).toSet(), hasLength(2));
   });
 
   test('export writes SVG', () async {

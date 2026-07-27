@@ -127,6 +127,38 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
   return out;
 }
 
+/// Machine-readable page-tab inventory for file and live Agent workflows.
+///
+/// Page ids are stable Visio ids (used by `backgroundPageId`); indices are the
+/// current draw.io-style tab order and therefore may change after move/delete.
+List<Map<String, dynamic>> listPages(VsdxDocument doc) {
+  double r(double v) => double.parse(v.toStringAsFixed(3));
+
+  return <Map<String, dynamic>>[
+    for (var i = 0; i < doc.pages.length; i++)
+      <String, dynamic>{
+        'index': i,
+        'id': doc.pages[i].id,
+        'name': doc.pages[i].name,
+        'width': r(doc.pages[i].widthInches),
+        'height': r(doc.pages[i].heightInches),
+        'shapes': listShapes(doc, pageIndex: i).length,
+        'isBackground': doc.pages[i].isBackgroundPage,
+        if (doc.pages[i].backgroundPageId != null)
+          'backgroundPageId': doc.pages[i].backgroundPageId,
+        if (doc.pages[i].backgroundColor case final color?)
+          'background': _colorHex(color),
+      },
+  ];
+}
+
+String _colorHex(VsdxColor color) {
+  String byte(int value) =>
+      value.toRadixString(16).padLeft(2, '0').toUpperCase();
+  final rgb = '${byte(color.red)}${byte(color.green)}${byte(color.blue)}';
+  return color.alpha == 0xFF ? '#$rgb' : '#$rgb${byte(color.alpha)}';
+}
+
 /// Reverse a document into structured Markdown (components + relations),
 /// suitable for a README / PR summary.
 String explainDocument(VsdxDocument doc) {

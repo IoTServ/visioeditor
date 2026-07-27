@@ -7,9 +7,11 @@
 ///     back through [VsdxWriter] (load-preserve-patch) — used by the CLI /
 ///     file-mode MCP tools.
 ///
-/// Supported ops: `add_shape`, `add_connector`, `set_style`, `set_text`,
-/// `move_shape`, `resize_shape`, `duplicate_shape`, `group`, `ungroup`,
-/// `z_order`, `align`, `distribute`, `delete_shape`.
+/// Supported ops include page-tab edits (`add_page`, `duplicate_page`,
+/// `rename_page`, `delete_page`, `move_page`, `set_page`) plus shape edits:
+/// `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
+/// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
+/// `distribute`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
@@ -24,13 +26,29 @@ import 'stencil_catalog.dart';
 
 /// Outcome of applying a batch of ops.
 class ApplyResult {
-  ApplyResult(this.document, this.createdIds, this.log);
+  ApplyResult(
+    this.document,
+    this.createdIds,
+    this.log, {
+    this.pageIndex = 0,
+    this.createdPageIds = const <int>[],
+    this.activatePage = false,
+  });
 
   /// The edited document.
   final VsdxDocument document;
 
   /// Root shape ids created by add / duplicate / group ops, in op order.
   final List<int> createdIds;
+
+  /// Page ids created by add / duplicate page ops, in op order.
+  final List<int> createdPageIds;
+
+  /// Page context after the batch. Later shape ops in the same batch use it.
+  final int pageIndex;
+
+  /// Whether a successful page op asks the live editor to show [pageIndex].
+  final bool activatePage;
 
   /// Human-readable notes (skipped ops, unresolved ids, …).
   final List<String> log;
@@ -44,6 +62,7 @@ class ApplyBytesResult {
     required this.pageIndex,
     required this.changed,
     required this.createdIds,
+    this.createdPageIds = const <int>[],
     required this.log,
   });
 
@@ -51,6 +70,7 @@ class ApplyBytesResult {
   final int pageIndex;
   final bool changed;
   final List<int> createdIds;
+  final List<int> createdPageIds;
   final List<String> log;
 }
 
@@ -62,18 +82,266 @@ ApplyResult applyOps(
   int pageIndex = 0,
 }) {
   final created = <int>[];
+  final createdPages = <int>[];
   final log = <String>[];
   if (doc.pages.isEmpty) {
-    return ApplyResult(doc, created, <String>['document has no pages']);
+    return ApplyResult(
+      doc,
+      created,
+      <String>['document has no pages'],
+      pageIndex: 0,
+    );
   }
-  final idx = pageIndex.clamp(0, doc.pages.length - 1);
-  var page = doc.pages[idx];
+  var workingDoc = doc;
+  var idx = pageIndex.clamp(0, doc.pages.length - 1);
+  var page = workingDoc.pages[idx];
+  var activatePage = false;
   // Only re-route connectors glued to these shapes (never the whole page —
   // that scrambles unrelated authored routes).
   final movedForReroute = <int>{};
 
+  void flushPage() {
+    if (movedForReroute.isNotEmpty) {
+      // Match the editor: refresh Sheet.n! / Width* caches before glue
+      // re-route. A page-context change must flush these against the page
+      // where the shape edits happened.
+      page = page
+          .recalculateFormulas(changedShapeIds: movedForReroute)
+          .rerouteConnectors(movedShapeIds: movedForReroute);
+      movedForReroute.clear();
+    }
+    if (!identical(page, workingDoc.pages[idx])) {
+      workingDoc = workingDoc.replacePage(idx, page);
+    }
+  }
+
+  void loadPage(int index) {
+    idx = index;
+    page = workingDoc.pages[idx];
+  }
+
   for (final op in ops) {
     final kind = (op['op'] ?? op['type'] ?? '').toString();
+
+    // Page operations are handled before the shape switch because they mutate
+    // the document's page list and may change the context for later ops in the
+    // same batch (for example add_page followed by add_shape).
+    if (const <String>{
+      'add_page',
+      'duplicate_page',
+      'rename_page',
+      'delete_page',
+      'move_page',
+      'set_page',
+    }.contains(kind)) {
+      flushPage();
+      switch (kind) {
+        case 'add_page':
+          final rawAt = _i(op['index']);
+          final at = rawAt ?? idx + 1;
+          if (at < 0 || at > workingDoc.pages.length) {
+            log.add('add_page: index $at out of range');
+            break;
+          }
+          final width = _d(op['w'] ?? op['width']) ?? page.widthInches;
+          final height = _d(op['h'] ?? op['height']) ?? page.heightInches;
+          if (width <= 0 || height <= 0) {
+            log.add('add_page: width and height must be positive');
+            break;
+          }
+          final colorRaw = op['background']?.toString();
+          final color = colorRaw == null ? null : parseColorOrNull(colorRaw);
+          if (colorRaw != null &&
+              colorRaw.trim().toLowerCase() != 'none' &&
+              color == null) {
+            log.add('add_page: invalid background color "$colorRaw"');
+            break;
+          }
+          final pageId = workingDoc.nextPageId();
+          final name = _uniquePageName(
+            workingDoc,
+            (op['name'] ?? 'Page-${workingDoc.pages.length + 1}')
+                .toString()
+                .trim(),
+          );
+          final added = VsdxPage(
+            id: pageId,
+            name: name,
+            widthInches: width,
+            heightInches: height,
+            shapes: const <VsdxShape>[],
+            backgroundColor: color,
+            isBackgroundPage: _b(op['isBackground']) ?? false,
+          );
+          workingDoc = workingDoc.insertPage(at, added);
+          createdPages.add(pageId);
+          loadPage(at);
+          activatePage = true;
+        case 'duplicate_page':
+          final source = _i(op['index']) ?? idx;
+          if (source < 0 || source >= workingDoc.pages.length) {
+            log.add('duplicate_page: index $source out of range');
+            break;
+          }
+          final original = workingDoc.pages[source];
+          final pageId = workingDoc.nextPageId();
+          final requestedName =
+              (op['name'] ?? '${original.name} copy').toString().trim();
+          final copy = original.copyWith(
+            id: pageId,
+            name: _uniquePageName(workingDoc, requestedName),
+          );
+          final at = source + 1;
+          workingDoc = workingDoc.insertPage(at, copy);
+          createdPages.add(pageId);
+          loadPage(at);
+          activatePage = true;
+        case 'rename_page':
+          final target = _i(op['index']) ?? idx;
+          final name = op['name']?.toString().trim() ?? '';
+          if (target < 0 || target >= workingDoc.pages.length) {
+            log.add('rename_page: index $target out of range');
+            break;
+          }
+          if (name.isEmpty) {
+            log.add('rename_page: name must not be empty');
+            break;
+          }
+          final unique =
+              _uniquePageName(workingDoc, name, excludeIndex: target);
+          if (workingDoc.pages[target].name != unique) {
+            workingDoc = workingDoc.replacePage(
+              target,
+              workingDoc.pages[target].copyWith(name: unique),
+            );
+          }
+          loadPage(target);
+          activatePage = true;
+        case 'delete_page':
+          final target = _i(op['index']) ?? idx;
+          if (target < 0 || target >= workingDoc.pages.length) {
+            log.add('delete_page: index $target out of range');
+            break;
+          }
+          if (workingDoc.pages.length <= 1) {
+            log.add('delete_page: cannot delete the only page');
+            break;
+          }
+          final activeId = workingDoc.pages[idx].id;
+          final deletingActive = target == idx;
+          workingDoc = workingDoc.removePageAt(target);
+          final next = deletingActive
+              ? target.clamp(0, workingDoc.pages.length - 1)
+              : workingDoc.pages.indexWhere((p) => p.id == activeId);
+          loadPage(next < 0 ? 0 : next);
+          activatePage = true;
+        case 'move_page':
+          final from = _i(op['from']) ?? idx;
+          final to = _i(op['to']);
+          if (to == null) {
+            log.add('move_page: needs to');
+            break;
+          }
+          if (from < 0 ||
+              from >= workingDoc.pages.length ||
+              to < 0 ||
+              to >= workingDoc.pages.length) {
+            log.add('move_page: from=$from to=$to out of range');
+            break;
+          }
+          final activeId = workingDoc.pages[idx].id;
+          workingDoc = workingDoc.movePage(from, to);
+          final next = workingDoc.pages.indexWhere((p) => p.id == activeId);
+          loadPage(next < 0 ? 0 : next);
+          activatePage = true;
+        case 'set_page':
+          final target = _i(op['index']) ?? idx;
+          if (target < 0 || target >= workingDoc.pages.length) {
+            log.add('set_page: index $target out of range');
+            break;
+          }
+          var next = workingDoc.pages[target];
+          final width = _d(op['w'] ?? op['width']);
+          final height = _d(op['h'] ?? op['height']);
+          if ((width != null && width <= 0) ||
+              (height != null && height <= 0)) {
+            log.add('set_page: width and height must be positive');
+            break;
+          }
+          if (width != null || height != null) {
+            next = next.copyWith(
+              widthInches: width ?? next.widthInches,
+              heightInches: height ?? next.heightInches,
+            );
+          }
+          final landscape = _b(op['landscape']);
+          if (landscape != null &&
+              landscape != (next.widthInches > next.heightInches)) {
+            next = next.copyWith(
+              widthInches: next.heightInches,
+              heightInches: next.widthInches,
+            );
+          }
+          if (op.containsKey('background')) {
+            final raw = op['background']?.toString() ?? 'none';
+            if (raw.trim().toLowerCase() == 'none') {
+              next = next.withoutBackgroundColor();
+            } else {
+              final color = parseColorOrNull(raw);
+              if (color == null) {
+                log.add('set_page: invalid background color "$raw"');
+                break;
+              }
+              next = next.copyWith(backgroundColor: color);
+            }
+          }
+          final isBackground = _b(op['isBackground']);
+          if (isBackground != null) {
+            next = next.copyWith(
+              isBackgroundPage: isBackground,
+              backgroundPageId:
+                  isBackground ? null : VsdxPage.keepBackgroundPageId,
+            );
+          }
+          if (op.containsKey('backgroundPageId')) {
+            final raw = op['backgroundPageId'];
+            final clear = raw == null ||
+                raw == false ||
+                raw.toString().trim().toLowerCase() == 'none';
+            final backgroundId = clear ? null : _i(raw);
+            final background = workingDoc.pageById(backgroundId);
+            if (!clear &&
+                (backgroundId == null ||
+                    background == null ||
+                    backgroundId == next.id)) {
+              log.add('set_page: invalid backgroundPageId=$raw');
+              break;
+            }
+            next = next.copyWith(
+              isBackgroundPage: false,
+              backgroundPageId: backgroundId,
+            );
+            if (background != null) {
+              final backgroundIndex =
+                  workingDoc.pages.indexWhere((p) => p.id == backgroundId);
+              workingDoc = workingDoc.replacePage(
+                backgroundIndex,
+                background.copyWith(
+                  isBackgroundPage: true,
+                  backgroundPageId: null,
+                ),
+              );
+            }
+          }
+          if (!identical(next, workingDoc.pages[target])) {
+            workingDoc = workingDoc.replacePage(target, next);
+          }
+          loadPage(target);
+          activatePage = true;
+      }
+      continue;
+    }
+
     switch (kind) {
       case 'add_shape':
         final id = page.nextFreeShapeId();
@@ -1676,16 +1944,14 @@ ApplyResult applyOps(
     }
   }
 
-  if (movedForReroute.isNotEmpty) {
-    // Match the editor: refresh Sheet.n! / Width* caches before glue re-route.
-    page = page
-        .recalculateFormulas(changedShapeIds: movedForReroute)
-        .rerouteConnectors(movedShapeIds: movedForReroute);
-  }
+  flushPage();
   return ApplyResult(
-    identical(page, doc.pages[idx]) ? doc : doc.replacePage(idx, page),
+    workingDoc,
     created,
     log,
+    pageIndex: idx,
+    createdPageIds: createdPages,
+    activatePage: activatePage,
   );
 }
 
@@ -1930,11 +2196,30 @@ ApplyBytesResult applyOpsBytesResult(Uint8List original, String opsJson,
             edited: result.document,
           )
         : original,
-    pageIndex: effectivePage,
+    pageIndex: result.pageIndex,
     changed: changed,
     createdIds: result.createdIds,
+    createdPageIds: result.createdPageIds,
     log: result.log,
   );
+}
+
+String _uniquePageName(
+  VsdxDocument doc,
+  String requested, {
+  int? excludeIndex,
+}) {
+  final base = requested.isEmpty ? 'Page-${doc.pages.length + 1}' : requested;
+  final names = <String>{
+    for (var i = 0; i < doc.pages.length; i++)
+      if (i != excludeIndex) doc.pages[i].name,
+  };
+  if (!names.contains(base)) return base;
+  var suffix = 2;
+  while (names.contains('$base $suffix')) {
+    suffix++;
+  }
+  return '$base $suffix';
 }
 
 double? _d(Object? v) {

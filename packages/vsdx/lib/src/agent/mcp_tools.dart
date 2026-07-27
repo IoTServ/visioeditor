@@ -1,9 +1,10 @@
 /// Registers the visioeditor Agent toolset on an [McpServer].
 ///
 /// **File tools** (no app needed): `create_diagram`, `apply_ops`, `export`,
-/// `validate`, `explain`, `search_shapes`, `list_styles`.
+/// `validate`, `explain`, `list_pages`, `list_shapes`, `search_shapes`,
+/// `list_styles`, plus page/shape convenience edits.
 /// **Live tools** (drive the running editor via the bridge): `open_in_app`,
-/// `live_apply_ops`, `select`, `snapshot`, `get_app_state`.
+/// `live_apply_ops`, `select_page`, `select`, `snapshot`, `get_app_state`.
 ///
 /// Split out from the `bin/` entry so it can be unit-tested. See
 /// `docs/MCP_SKILL_PLAN.md` (M3).
@@ -347,9 +348,9 @@ void _registerFileTools(McpServer server) {
     name: 'apply_ops',
     description:
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
-        'add_shape, add_connector, set_style, set_text, move_shape, '
-        'resize_shape, duplicate_shape, group, ungroup, z_order, align, '
-        'distribute, delete_shape.',
+        'add/duplicate/rename/delete/move/set page; add/connect/style/text/'
+        'move/resize/duplicate/group/ungroup/z-order/align/distribute/delete '
+        'shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -382,6 +383,7 @@ void _registerFileTools(McpServer server) {
             '${applied.changed ? 'Patched' : 'No changes to'} ${_abs(path)} '
             '(page ${applied.pageIndex}, ${applied.bytes.length} bytes)\n'
             '${_validationSummary(applied.bytes)}'
+            '${applied.createdPageIds.isEmpty ? '' : '\nCreated page ids: ${applied.createdPageIds.join(', ')}'}'
             '${applied.log.isEmpty ? '' : '\nSkipped: ${applied.log.join('; ')}'}'),
       ];
     },
@@ -476,6 +478,44 @@ void _registerFileTools(McpServer server) {
       final doc = const DocumentParser().parse(_read(args['path'] as String));
       final mmd = documentToMermaid(doc, fenced: args['fenced'] == true);
       return <McpContent>[McpContent.text(mmd)];
+    },
+  ));
+
+  server.addTool(McpTool(
+    name: 'list_pages',
+    description: 'List page tabs and page setup as JSON (stable id, current '
+        'index/name, size, shape count, background settings). Give `path` for '
+        'a file; omit to read the running app.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'path': <String, dynamic>{'type': 'string'},
+      },
+    },
+    handler: (args) async {
+      const enc = JsonEncoder.withIndent('  ');
+      final path = args['path'] as String?;
+      if (path != null) {
+        final doc = const DocumentParser().parse(_read(path));
+        return <McpContent>[
+          McpContent.text(enc.convert(<String, dynamic>{
+            'currentPage': 0,
+            'pages': listPages(doc),
+          })),
+        ];
+      }
+      final client = await BridgeClient.connect();
+      try {
+        final state = await client.call('getState');
+        return <McpContent>[
+          McpContent.text(enc.convert(<String, dynamic>{
+            'currentPage': state['currentPage'],
+            'pages': state['pages'],
+          })),
+        ];
+      } finally {
+        await client.close();
+      }
     },
   ));
 
@@ -600,6 +640,7 @@ void _registerEditTools(McpServer server) {
         McpContent.text(
           '${applied.changed ? 'Applied to' : 'No changes to'} ${_abs(path)} '
           '(page ${applied.pageIndex})\n${_validationSummary(applied.bytes)}'
+          '${applied.createdPageIds.isEmpty ? '' : '\nCreated page ids: ${applied.createdPageIds.join(', ')}'}'
           '${applied.log.isEmpty ? '' : '\nSkipped: ${applied.log.join('; ')}'}',
         ),
       ];
@@ -635,6 +676,132 @@ void _registerEditTools(McpServer server) {
           ...props,
         },
       };
+
+  server.addTool(McpTool(
+    name: 'add_page',
+    description: 'Add a blank page tab and make it the batch/live context. '
+        'Defaults to immediately after the current page and copies its size.',
+    inputSchema: withPath(<String, dynamic>{
+      'index': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Insertion index (default: after current page).',
+      },
+      'name': <String, dynamic>{'type': 'string'},
+      'width': <String, dynamic>{'type': 'number'},
+      'height': <String, dynamic>{'type': 'number'},
+      'background': <String, dynamic>{
+        'type': 'string',
+        'description': 'Page color (#RRGGBB) or none.',
+      },
+      'isBackground': <String, dynamic>{'type': 'boolean'},
+    }),
+    handler: (args) => applyOne(
+      args,
+      op('add_page', args, <String>[
+        'index',
+        'name',
+        'width',
+        'height',
+        'background',
+        'isBackground',
+      ]),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'duplicate_page',
+    description: 'Duplicate a page tab with a fresh stable page id and switch '
+        'the batch/live context to the copy.',
+    inputSchema: withPath(<String, dynamic>{
+      'index': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Page to copy (default: current context).',
+      },
+      'name': <String, dynamic>{'type': 'string'},
+    }),
+    handler: (args) =>
+        applyOne(args, op('duplicate_page', args, <String>['index', 'name'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'rename_page',
+    description: 'Rename a page tab; duplicate names are disambiguated.',
+    inputSchema: withPath(<String, dynamic>{
+      'index': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Page to rename (default: current context).',
+      },
+      'name': <String, dynamic>{'type': 'string'},
+    })
+      ..['required'] = <String>['name'],
+    handler: (args) =>
+        applyOne(args, op('rename_page', args, <String>['index', 'name'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'delete_page',
+    description: 'Delete a page tab while keeping at least one page. '
+        'Dangling background-page references are cleared.',
+    inputSchema: withPath(<String, dynamic>{
+      'index': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Page to delete (default: current context).',
+      },
+    }),
+    handler: (args) =>
+        applyOne(args, op('delete_page', args, <String>['index'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'move_page',
+    description: 'Move a page tab to another zero-based position while '
+        'preserving the active page by stable id.',
+    inputSchema: withPath(<String, dynamic>{
+      'from': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Source index (default: current context).',
+      },
+      'to': <String, dynamic>{'type': 'integer'},
+    })
+      ..['required'] = <String>['to'],
+    handler: (args) =>
+        applyOne(args, op('move_page', args, <String>['from', 'to'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_page',
+    description: 'Set page size/orientation/color/background role or assign a '
+        'background page by stable page id.',
+    inputSchema: withPath(<String, dynamic>{
+      'index': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Page to edit (default: current context).',
+      },
+      'width': <String, dynamic>{'type': 'number'},
+      'height': <String, dynamic>{'type': 'number'},
+      'landscape': <String, dynamic>{'type': 'boolean'},
+      'background': <String, dynamic>{
+        'type': 'string',
+        'description': 'Page color (#RRGGBB) or none.',
+      },
+      'isBackground': <String, dynamic>{'type': 'boolean'},
+      'backgroundPageId': <String, dynamic>{
+        'description': 'Stable page id, or "none" to clear.',
+      },
+    }),
+    handler: (args) => applyOne(
+      args,
+      op('set_page', args, <String>[
+        'index',
+        'width',
+        'height',
+        'landscape',
+        'background',
+        'isBackground',
+        'backgroundPageId',
+      ]),
+    ),
+  ));
 
   server.addTool(McpTool(
     name: 'add_shape',
@@ -1178,6 +1345,26 @@ void _registerLiveTools(McpServer server) {
         if (args['page'] != null) 'page': args['page'],
       });
       return <McpContent>[McpContent.text('Applied. ${jsonEncode(state)}')];
+    }),
+  ));
+
+  server.addTool(McpTool(
+    name: 'select_page',
+    description: 'Switch the visible page tab in the running editor by '
+        'zero-based index. Use list_pages/get_app_state to discover pages.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'page': <String, dynamic>{'type': 'integer'},
+      },
+      'required': <String>['page'],
+    },
+    handler: (args) async => withBridge((c) async {
+      final state =
+          await c.call('selectPage', <String, dynamic>{'page': args['page']});
+      return <McpContent>[
+        McpContent.text(const JsonEncoder.withIndent('  ').convert(state)),
+      ];
     }),
   ));
 

@@ -339,6 +339,52 @@ void main() {
     );
   });
 
+  test(
+    'page ops switch live context, expose setup, and undo as one step',
+    () async {
+      final c = workspace.active!;
+      final beforeShapes = c.document!.pages.single.shapes.length;
+
+      final response = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'add_page',
+            'name': 'Live page',
+            'width': 13,
+            'height': 7,
+            'background': '#E1F5FE',
+          },
+          <String, dynamic>{'op': 'add_shape', 'text': 'Created on page two'},
+        ],
+      });
+
+      expect(response['ok'], isTrue);
+      final result = response['result'] as Map;
+      expect(result['changed'], isTrue);
+      expect(result['page'], 1);
+      expect(result['currentPage'], 1);
+      expect(result['createdPages'], hasLength(1));
+      expect(c.currentPageIndex, 1);
+      expect(c.document!.pages, hasLength(2));
+      expect(c.document!.pages[1].shapes.single.text, 'Created on page two');
+      final livePage = (result['pages'] as List)[1] as Map;
+      expect(livePage['name'], 'Live page');
+      expect(livePage['width'], 13);
+      expect(livePage['height'], 7);
+      expect(livePage['background'], '#E1F5FE');
+
+      final selected = await call('selectPage', <String, dynamic>{'page': 0});
+      expect(selected['ok'], isTrue);
+      expect((selected['result'] as Map)['currentPage'], 0);
+      expect(c.currentPageIndex, 0);
+
+      c.undo();
+      expect(c.currentPageIndex, 0);
+      expect(c.document!.pages, hasLength(1));
+      expect(c.document!.pages.single.shapes, hasLength(beforeShapes));
+    },
+  );
+
   test('applyOps page targets a non-active page and reports it', () async {
     final c = workspace.active!;
     c.addPage();

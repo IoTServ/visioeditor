@@ -75,6 +75,7 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
 
 ```jsonc
 { "ops": [
+  { "op": "add_page",      "name": "Review", "width": 11, "height": 8.5 },
   { "op": "add_shape",     "stencil": "decision", "text": "Approved?",
     "x": 4, "y": 5, "w": 1.4, "h": 1, "fill": "#FFF2CC", "bold": true },
   { "op": "add_connector", "from": "shape:12", "to": "shape:8",
@@ -94,6 +95,16 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
 ] }
 ```
 
+- **Pages**: `add_page` inserts after the current context by default;
+  `duplicate_page` copies a page with a fresh stable page id; `rename_page`,
+  `delete_page`, and `set_page` accept optional `index`; `move_page` accepts
+  `from` / `to`. `set_page` supports `width`, `height`, `landscape`,
+  `background` (`#RRGGBB` or `"none"`), `isBackground`, and
+  `backgroundPageId` (stable id from `list_pages`, or `"none"`).
+- **Batch page context**: successful page ops switch the context for later ops
+  in the same batch. Thus `add_page` followed by `add_shape` creates the shape
+  on the new page. `delete_page` always keeps at least one page; page moves
+  preserve the active page by stable id.
 - **Shape references**: `"shape:<id>"`, a bare integer, or a numeric string —
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.
@@ -126,4 +137,5 @@ MCP live (running app, in-memory, instant):
 
 `page` is a zero-based page index. It defaults to page 0 for file edits and
 the current page for live edits. The convenience edit tools accept the same
-optional `page`.
+optional `page`. Use `list_pages` to discover tab indices/stable ids and
+`select_page` to switch the visible tab in the running app.

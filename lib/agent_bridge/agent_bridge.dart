@@ -7,8 +7,8 @@
 /// * **L2** — a loopback (127.0.0.1) WebSocket control channel. A handshake
 ///   file (`~/.visioeditor/agent-bridge.json`, or under the macOS App Sandbox
 ///   container; `0600`) publishes the random port + one-time token; clients
-///   call `open` / `reload` / `applyOps` / `select` / `snapshot` / `getState` /
-///   `save` and receive change events.
+///   call `open` / `reload` / `applyOps` / `selectPage` / `select` /
+///   `snapshot` / `getState` / `save` and receive change events.
 ///   `applyOps` edits the in-memory model (instant repaint, no disk write);
 ///   `select` updates the editor selection so the user can see what the Agent
 ///   is targeting.
@@ -174,6 +174,8 @@ class AgentBridge {
         };
       case 'select':
         return _select(params['ids']);
+      case 'selectPage':
+        return _selectPage(params['page']);
       case 'open':
         final path = params['path']?.toString();
         if (path == null) throw ArgumentError('open: missing path');
@@ -243,6 +245,22 @@ class AgentBridge {
     };
   }
 
+  /// Switch the visible draw.io-style page tab by zero-based index.
+  Map<String, dynamic> _selectPage(Object? pageRaw) {
+    final c = workspace.active;
+    final doc = c?.document;
+    if (c == null || doc == null) throw StateError('no active document');
+    final page = pageRaw is num
+        ? pageRaw.toInt()
+        : int.tryParse(pageRaw?.toString() ?? '');
+    if (page == null || page < 0 || page >= doc.pages.length) {
+      throw ArgumentError('selectPage: invalid page=$pageRaw');
+    }
+    c.selectPage(page);
+    _emit('pageChanged', <String, dynamic>{'page': page});
+    return _state();
+  }
+
   // --- Operations ------------------------------------------------------------
 
   Map<String, dynamic> _state() {
@@ -256,16 +274,7 @@ class AgentBridge {
       'currentPage': c?.currentPageIndex ?? 0,
       'selection': c?.selection.toList() ?? const <int>[],
       'openTabs': workspace.docs.length,
-      'pages': doc == null
-          ? const <dynamic>[]
-          : <dynamic>[
-              for (var i = 0; i < doc.pages.length; i++)
-                <String, dynamic>{
-                  'index': i,
-                  'name': doc.pages[i].name,
-                  'shapes': doc.pages[i].shapes.length,
-                },
-            ],
+      'pages': doc == null ? const <dynamic>[] : listPages(doc),
     };
   }
 
@@ -294,20 +303,35 @@ class AgentBridge {
     ];
     final result = applyOps(doc, opsList, pageIndex: page);
     final changed = !identical(result.document, doc);
+    final undoPage = c.currentPageIndex;
+    final undoSelection = Set<int>.of(c.selection);
     if (changed) {
-      c.applyEdit(result.document);
+      c.applyEdit(
+        result.document,
+        undoPageIndex: undoPage,
+        undoSelection: undoSelection,
+      );
+    }
+    if (result.activatePage && result.pageIndex != c.currentPageIndex) {
+      c.selectPage(result.pageIndex);
+    }
+    if (changed) {
       _emit('documentChanged', <String, dynamic>{
         'reason': 'applyOps',
-        'page': page,
+        'page': result.pageIndex,
         'created': result.createdIds,
+        if (result.createdPageIds.isNotEmpty)
+          'createdPages': result.createdPageIds,
         if (result.log.isNotEmpty) 'log': result.log,
       });
     }
     return <String, dynamic>{
       ..._state(),
-      'page': page,
+      'page': result.pageIndex,
       'changed': changed,
       'created': result.createdIds,
+      if (result.createdPageIds.isNotEmpty)
+        'createdPages': result.createdPageIds,
       if (result.log.isNotEmpty) 'log': result.log,
     };
   }
