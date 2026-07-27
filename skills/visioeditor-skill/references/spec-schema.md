@@ -76,6 +76,10 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
 ```jsonc
 { "ops": [
   { "op": "add_page",      "name": "Review", "width": 11, "height": 8.5 },
+  { "op": "add_layer",     "name": "Infrastructure", "active": true,
+    "color": "#336699", "ids": [8, 12] },
+  { "op": "assign_layer",  "ids": [15], "layerId": 0, "mode": "add" },
+  { "op": "set_layer",      "layerId": 0, "visible": true, "locked": false },
   { "op": "add_shape",     "stencil": "decision", "text": "Approved?",
     "x": 4, "y": 5, "w": 1.4, "h": 1, "fill": "#FFF2CC", "bold": true },
   { "op": "add_connector", "from": "shape:12", "to": "shape:8",
@@ -105,6 +109,13 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   in the same batch. Thus `add_page` followed by `add_shape` creates the shape
   on the new page. `delete_page` always keeps at least one page; page moves
   preserve the active page by stable id.
+- **Layers**: `add_layer` creates a stable per-page layer id and can assign
+  `ids` immediately. `set_layer` updates `name`, `visible`, `locked`, `print`,
+  `active`, `snap`, `glue`, `color`, and color transparency. `assign_layer`
+  accepts `replace`, `add`, `remove`, or `clear`; `delete_layer` removes the
+  membership recursively without deleting shapes. New shapes and connectors
+  automatically join the active layer unless an explicit `layerId` is given.
+  Making one layer active deactivates the previous active layer.
 - **Shape references**: `"shape:<id>"`, a bare integer, or a numeric string —
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.
@@ -138,4 +149,6 @@ MCP live (running app, in-memory, instant):
 `page` is a zero-based page index. It defaults to page 0 for file edits and
 the current page for live edits. The convenience edit tools accept the same
 optional `page`. Use `list_pages` to discover tab indices/stable ids and
-`select_page` to switch the visible tab in the running app.
+`select_page` to switch the visible tab in the running app. Use `list_layers`
+to discover stable layer ids and memberships; `select_layer` selects all
+visible, editable objects explicitly assigned to one layer in the live app.

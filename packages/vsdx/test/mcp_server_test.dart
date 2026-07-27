@@ -122,8 +122,13 @@ void main() {
           'validate',
           'explain',
           'list_pages',
+          'list_layers',
           'search_shapes',
           'list_styles',
+          'add_layer',
+          'set_layer',
+          'delete_layer',
+          'assign_layer',
           'add_page',
           'duplicate_page',
           'rename_page',
@@ -167,6 +172,7 @@ void main() {
         containsAll(<String>[
           'select',
           'select_page',
+          'select_layer',
           'open_in_app',
           'live_apply_ops',
           'snapshot',
@@ -493,6 +499,65 @@ void main() {
         'action': 'front',
       });
       expect(shapes().last.id, a);
+    });
+
+    test('layer convenience tools mirror draw.io layer controls', () async {
+      final a = idOf('A');
+      final b = idOf('B');
+
+      final added = await callTool('add_layer', <String, dynamic>{
+        'path': path,
+        'name': 'Domain',
+        'ids': <int>[a],
+        'active': true,
+        'color': '#336699',
+      });
+      expect(firstText(added), contains('Created layer ids: 0'));
+
+      await callTool('assign_layer', <String, dynamic>{
+        'path': path,
+        'ids': <int>[b],
+        'layerId': 0,
+        'mode': 'add',
+      });
+      await callTool('set_layer', <String, dynamic>{
+        'path': path,
+        'layerId': 0,
+        'name': 'Infrastructure',
+        'visible': false,
+        'print': false,
+        'locked': true,
+      });
+
+      final listed =
+          await callTool('list_layers', <String, dynamic>{'path': path});
+      final decoded = jsonDecode(firstText(listed)) as Map<String, dynamic>;
+      final layers = decoded['layers'] as List;
+      expect(layers, hasLength(1));
+      expect(layers.single['name'], 'Infrastructure');
+      expect(layers.single['visible'], isFalse);
+      expect(layers.single['print'], isFalse);
+      expect(layers.single['locked'], isTrue);
+      expect(layers.single['shapeIds'], containsAll(<int>[a, b]));
+
+      final listedShapes =
+          await callTool('list_shapes', <String, dynamic>{'path': path});
+      final shapeJson = (jsonDecode(firstText(listedShapes))
+          as Map<String, dynamic>)['shapes'] as List;
+      expect(
+        shapeJson.firstWhere((shape) => shape['id'] == a)['layerIds'],
+        <int>[0],
+      );
+
+      await callTool('delete_layer', <String, dynamic>{
+        'path': path,
+        'layerId': 0,
+      });
+      final reopened =
+          const DocumentParser().parse(File(path).readAsBytesSync());
+      expect(reopened.pages.single.layers, isEmpty);
+      expect(reopened.pages.single.findShapeById(a)!.layerMemberIds, isEmpty);
+      expect(reopened.pages.single.findShapeById(b)!.layerMemberIds, isEmpty);
     });
 
     test('convenience tools accept a page index', () async {

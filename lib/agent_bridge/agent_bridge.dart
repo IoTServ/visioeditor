@@ -7,8 +7,8 @@
 /// * **L2** — a loopback (127.0.0.1) WebSocket control channel. A handshake
 ///   file (`~/.visioeditor/agent-bridge.json`, or under the macOS App Sandbox
 ///   container; `0600`) publishes the random port + one-time token; clients
-///   call `open` / `reload` / `applyOps` / `selectPage` / `select` /
-///   `snapshot` / `getState` / `save` and receive change events.
+///   call `open` / `reload` / `applyOps` / `selectPage` / `selectLayer` /
+///   `select` / `snapshot` / `getState` / `save` and receive change events.
 ///   `applyOps` edits the in-memory model (instant repaint, no disk write);
 ///   `select` updates the editor selection so the user can see what the Agent
 ///   is targeting.
@@ -172,10 +172,26 @@ class AgentBridge {
           'page': page,
           'shapes': listShapes(doc, pageIndex: page),
         };
+      case 'listLayers':
+        final doc = workspace.active?.document;
+        if (doc == null) throw StateError('no active document');
+        if (doc.pages.isEmpty) {
+          return <String, dynamic>{'page': 0, 'layers': const <dynamic>[]};
+        }
+        final requested =
+            (params['page'] as num?)?.toInt() ??
+            workspace.active!.currentPageIndex;
+        final page = requested.clamp(0, doc.pages.length - 1);
+        return <String, dynamic>{
+          'page': page,
+          'layers': listLayers(doc, pageIndex: page),
+        };
       case 'select':
         return _select(params['ids']);
       case 'selectPage':
         return _selectPage(params['page']);
+      case 'selectLayer':
+        return _selectLayer(params['layerId'], params['page']);
       case 'open':
         final path = params['path']?.toString();
         if (path == null) throw ArgumentError('open: missing path');
@@ -261,6 +277,65 @@ class AgentBridge {
     return _state();
   }
 
+  /// Select visible, editable roots explicitly assigned to a layer.
+  Map<String, dynamic> _selectLayer(Object? layerRaw, Object? pageRaw) {
+    final c = workspace.active;
+    final doc = c?.document;
+    if (c == null || doc == null || doc.pages.isEmpty) {
+      throw StateError('no active document');
+    }
+    final requestedPage = pageRaw is num
+        ? pageRaw.toInt()
+        : int.tryParse(pageRaw?.toString() ?? '');
+    final pageIndex = requestedPage ?? c.currentPageIndex;
+    if (pageIndex < 0 || pageIndex >= doc.pages.length) {
+      throw ArgumentError('selectLayer: invalid page=$pageRaw');
+    }
+    final layerId = layerRaw is num
+        ? layerRaw.toInt()
+        : int.tryParse(layerRaw?.toString() ?? '');
+    final page = doc.pages[pageIndex];
+    final layer = layerId == null
+        ? null
+        : page.layers.where((l) => l.id == layerId);
+    if (layerId == null || layer == null || layer.isEmpty) {
+      throw ArgumentError('selectLayer: invalid layerId=$layerRaw');
+    }
+    if (pageIndex != c.currentPageIndex) c.selectPage(pageIndex);
+
+    final selected = <int>[];
+    void walk(VsdxShape shape) {
+      if (!page.isShapeVisible(shape)) return;
+      if (shape.layerMemberIds.contains(layerId) &&
+          !shape.locked &&
+          !page.isShapeTreeOnLockedLayer(shape.id)) {
+        selected.add(shape.id);
+        return;
+      }
+      if (shape.collapsed) return;
+      for (final child in shape.children) {
+        walk(child);
+      }
+    }
+
+    if (layer.first.visible && !layer.first.locked) {
+      for (final shape in page.shapes) {
+        walk(shape);
+      }
+    }
+    c.setSelection(selected);
+    _emit('selectionChanged', <String, dynamic>{
+      'selection': selected,
+      'layerId': layerId,
+      'page': pageIndex,
+    });
+    return <String, dynamic>{
+      ..._state(),
+      'page': pageIndex,
+      'layerId': layerId,
+    };
+  }
+
   // --- Operations ------------------------------------------------------------
 
   Map<String, dynamic> _state() {
@@ -275,6 +350,9 @@ class AgentBridge {
       'selection': c?.selection.toList() ?? const <int>[],
       'openTabs': workspace.docs.length,
       'pages': doc == null ? const <dynamic>[] : listPages(doc),
+      'layers': doc == null || doc.pages.isEmpty
+          ? const <dynamic>[]
+          : listLayers(doc, pageIndex: c!.currentPageIndex),
     };
   }
 
@@ -315,6 +393,19 @@ class AgentBridge {
     if (result.activatePage && result.pageIndex != c.currentPageIndex) {
       c.selectPage(result.pageIndex);
     }
+    if (changed && c.currentPage != null && c.selection.isNotEmpty) {
+      final active = c.currentPage!;
+      final selectable = <int>[
+        for (final id in c.selection)
+          if (active.isShapeTreeVisible(id) &&
+              !active.isShapeTreeOnLockedLayer(id) &&
+              active.findShapeById(id)?.locked != true)
+            id,
+      ];
+      if (selectable.length != c.selection.length) {
+        c.setSelection(selectable);
+      }
+    }
     if (changed) {
       _emit('documentChanged', <String, dynamic>{
         'reason': 'applyOps',
@@ -322,6 +413,8 @@ class AgentBridge {
         'created': result.createdIds,
         if (result.createdPageIds.isNotEmpty)
           'createdPages': result.createdPageIds,
+        if (result.createdLayerIds.isNotEmpty)
+          'createdLayers': result.createdLayerIds,
         if (result.log.isNotEmpty) 'log': result.log,
       });
     }
@@ -332,6 +425,8 @@ class AgentBridge {
       'created': result.createdIds,
       if (result.createdPageIds.isNotEmpty)
         'createdPages': result.createdPageIds,
+      if (result.createdLayerIds.isNotEmpty)
+        'createdLayers': result.createdLayerIds,
       if (result.log.isNotEmpty) 'log': result.log,
     };
   }

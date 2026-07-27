@@ -117,6 +117,7 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
         'y': r(pin.y),
         'w': r(s.width),
         'h': r(s.height),
+        if (s.layerMemberIds.isNotEmpty) 'layerIds': s.layerMemberIds,
         if (parentId != null) 'parentId': parentId,
       });
       if (s.children.isNotEmpty) walk(s.children, s.id);
@@ -125,6 +126,47 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
 
   walk(page.shapes, null);
   return out;
+}
+
+/// Machine-readable layer inventory for one page.
+///
+/// Layer ids are stable Visio row ids; [index] is the current display order.
+/// [shapeIds] contains explicit memberships (including nested group members).
+List<Map<String, dynamic>> listLayers(
+  VsdxDocument doc, {
+  int pageIndex = 0,
+}) {
+  if (doc.pages.isEmpty) return const <Map<String, dynamic>>[];
+  final page = doc.pages[pageIndex.clamp(0, doc.pages.length - 1)];
+  final allShapes = _flattenShapes(page.shapes).toList();
+
+  return <Map<String, dynamic>>[
+    for (var i = 0; i < page.layers.length; i++)
+      () {
+        final layer = page.layers[i];
+        final ids = <int>[
+          for (final shape in allShapes)
+            if (shape.layerMemberIds.contains(layer.id)) shape.id,
+        ];
+        return <String, dynamic>{
+          'index': i,
+          'id': layer.id,
+          'name': layer.name,
+          'visible': layer.visible,
+          'locked': layer.locked,
+          'print': layer.print,
+          'active': layer.active,
+          'snap': layer.snap,
+          'glue': layer.glue,
+          'shapes': ids.length,
+          'shapeIds': ids,
+          if (layer.color case final color?) 'color': _colorHex(color),
+          if (layer.colorTrans != 0) 'colorTransparency': layer.colorTrans,
+          if (layer.nameUniv != null) 'nameUniv': layer.nameUniv,
+          if (layer.status != 0) 'status': layer.status,
+        };
+      }(),
+  ];
 }
 
 /// Machine-readable page-tab inventory for file and live Agent workflows.

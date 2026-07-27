@@ -165,6 +165,8 @@
 - `validate(path) → {issues[]}`：结构 lint。
 - `explain(path) → {markdown}`：反向描述。
 - `list_pages(path?) → {currentPage, pages[]}`：列出页签、稳定页 id、尺寸与背景设置。
+- `list_layers(path?, page?) → {page, layers[]}`：列出稳定图层 id、显示/锁定/打印状态、
+  颜色及成员形状。
 - `search_shapes(query, limit?) → {stencils[]}`：形状检索（对齐 drawio `shape-search`）。
 - `render_preview(path, page?, width?) → {image}`：返回 PNG 图像内容，供 Agent 视觉自检 /
   聊天内联（对齐 drawio-mcp `mcp-app-server` 的内联渲染）。
@@ -174,12 +176,14 @@
 - `live_apply_ops(ops[], page?) → {ok, selection}`：对**当前活动文档**指定页实时应用
   Edit Ops（默认当前页；每批一个 undo 步），应用即时重绘。
 - `snapshot(page?) → {image}`：让应用回传当前画布 PNG（真·所见）。
-- `select_page(page) / select(ids[]) / get_state() → {pages, selection, dirty}`：
-  切换页签、选中形状、读状态。
+- `select_page(page) / select_layer(layerId, page?) / select(ids[]) /
+  get_state() → {pages, layers, selection, dirty}`：切换页签、选中图层对象/指定形状、读状态。
 
 **C. 高层便捷类（= A/B 的组合，降低 Agent 编排负担）**
 - `add_page` / `duplicate_page` / `rename_page` / `delete_page` /
   `move_page` / `set_page`：页签结构、排序、纸张方向、颜色与背景页。
+- `add_layer` / `set_layer` / `delete_layer` / `assign_layer`：图层生命周期、
+  显示/锁定/打印/活动状态和形状成员关系。
 - `add_shape` / `add_connector` / `set_style` / `set_text` / `move_shape` /
   `resize_shape` / `duplicate_shapes` / `group_shapes` / `ungroup_shapes` /
   `arrange_shape` / `align_shapes` / `distribute_shapes` / `delete_shape`：
@@ -360,20 +364,21 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] MCP stdio 服务骨架（`McpServer`：`initialize`/`notifications`/`ping`/
       `tools/list`/`tools/call`，newline-delimited JSON-RPC 2.0）。
 - [x] 文件类工具：`create_diagram/import_*/apply_ops/export/validate/explain/list_pages/
-      list_shapes/search_shapes/list_styles`（后端调 agent 库；页面/形状列举双模式；
-      `list_styles` 列样式预设）。
-- [x] 实时类工具：`open_in_app/live_apply_ops/select_page/select/snapshot/get_app_state`
-      （`BridgeClient` 连应用桥；可切页及按 id 高亮选中）。
+      list_layers/list_shapes/search_shapes/list_styles`（后端调 agent 库；页面/图层/形状
+      列举双模式；`list_styles` 列样式预设）。
+- [x] 实时类工具：`open_in_app/live_apply_ops/select_page/select_layer/select/snapshot/
+      get_app_state`（`BridgeClient` 连应用桥；可切页、选择图层对象及按 id 高亮选中）。
 - [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
 - [x] **便捷单步工具**：6 个页面操作 + 基础形状增删改 +
+      4 个图层操作 +
       `resize_shape`/`duplicate_shapes`/`group_shapes`/`ungroup_shapes`/
       `arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
       （给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op。
 - [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **40 个工具**；
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **46 个工具**；
 文件类端到端建图/校验/描述/导出/列举；便捷结构编辑支持文件/实时双模式；实时类经
 `BridgeClient` 驱动应用。
 
@@ -676,3 +681,8 @@ visioeditor/
   批次内会把后续形状操作切到新页；新增双模式 `list_pages`、6 个页面便捷工具及实时
   `select_page`。页面背景引用按稳定 id 管理，删除自动清悬空引用；实时整批仍为一个
   undo 步。工具总数 **40**。
+- 2026-07-27 — **draw.io 图层对齐**：Edit Ops 新增 `add_layer` / `set_layer` /
+  `delete_layer` / `assign_layer`，支持显示、锁定、打印、活动层、吸附/胶合、颜色及成员
+  管理；活动层自动承接新形状和连接器，删层递归清理成员而不删对象。新增双模式
+  `list_layers`、4 个图层便捷工具及实时 `select_layer`；实时隐藏/锁定会清理不可编辑
+  选区，整批仍为一个 undo 步。工具总数 **46**。

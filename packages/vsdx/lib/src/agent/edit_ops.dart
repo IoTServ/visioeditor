@@ -8,8 +8,9 @@
 ///     file-mode MCP tools.
 ///
 /// Supported ops include page-tab edits (`add_page`, `duplicate_page`,
-/// `rename_page`, `delete_page`, `move_page`, `set_page`) plus shape edits:
-/// `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
+/// `rename_page`, `delete_page`, `move_page`, `set_page`), layer edits
+/// (`add_layer`, `set_layer`, `delete_layer`, `assign_layer`), plus shape
+/// edits: `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
 /// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
 /// `distribute`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
@@ -32,6 +33,7 @@ class ApplyResult {
     this.log, {
     this.pageIndex = 0,
     this.createdPageIds = const <int>[],
+    this.createdLayerIds = const <int>[],
     this.activatePage = false,
   });
 
@@ -43,6 +45,9 @@ class ApplyResult {
 
   /// Page ids created by add / duplicate page ops, in op order.
   final List<int> createdPageIds;
+
+  /// Layer ids created by add-layer ops, in op order.
+  final List<int> createdLayerIds;
 
   /// Page context after the batch. Later shape ops in the same batch use it.
   final int pageIndex;
@@ -63,6 +68,7 @@ class ApplyBytesResult {
     required this.changed,
     required this.createdIds,
     this.createdPageIds = const <int>[],
+    this.createdLayerIds = const <int>[],
     required this.log,
   });
 
@@ -71,6 +77,7 @@ class ApplyBytesResult {
   final bool changed;
   final List<int> createdIds;
   final List<int> createdPageIds;
+  final List<int> createdLayerIds;
   final List<String> log;
 }
 
@@ -83,6 +90,7 @@ ApplyResult applyOps(
 }) {
   final created = <int>[];
   final createdPages = <int>[];
+  final createdLayers = <int>[];
   final log = <String>[];
   if (doc.pages.isEmpty) {
     return ApplyResult(
@@ -343,6 +351,174 @@ ApplyResult applyOps(
     }
 
     switch (kind) {
+      case 'add_layer':
+        final id = _nextLayerId(page);
+        final rawName = (op['name'] ?? 'Layer $id').toString().trim();
+        final colorRaw = op['color']?.toString();
+        final color = colorRaw == null ? null : parseColorOrNull(colorRaw);
+        if (rawName.isEmpty) {
+          log.add('add_layer: name must not be empty');
+          break;
+        }
+        if (colorRaw != null &&
+            colorRaw.trim().toLowerCase() != 'none' &&
+            color == null) {
+          log.add('add_layer: invalid color "$colorRaw"');
+          break;
+        }
+        final colorTrans = _d(op['colorTransparency'] ?? op['colorTrans']);
+        final layer = VsdxLayer(
+          id: id,
+          name: rawName,
+          visible: _b(op['visible']) ?? true,
+          print: _b(op['print']) ?? true,
+          active: _b(op['active']) ?? false,
+          locked: _b(op['locked']) ?? false,
+          snap: _b(op['snap']) ?? true,
+          glue: _b(op['glue']) ?? true,
+          color: color,
+          colorTrans: colorTrans?.clamp(0.0, 1.0) ?? 0,
+          nameUniv: op['nameUniv']?.toString(),
+          status: _i(op['status']) ?? 0,
+        );
+        final editable = <int>{
+          for (final shapeId in _resolveIds(op['ids']))
+            if (page.findShapeById(shapeId) case final shape?
+                when !_isProtected(page, shape))
+              shapeId,
+        };
+        page = page.copyWith(
+          layers: <VsdxLayer>[
+            for (final existing in page.layers)
+              if (layer.active && existing.active)
+                existing.copyWith(active: false)
+              else
+                existing,
+            layer,
+          ],
+        );
+        for (final shapeId in editable) {
+          page = page.updateShapeById(
+            shapeId,
+            (shape) => shape.copyWith(layerMemberIds: <int>[id]),
+          );
+        }
+        createdLayers.add(id);
+      case 'set_layer':
+        final id = _resolveLayerId(op);
+        final at = id == null ? -1 : page.layers.indexWhere((l) => l.id == id);
+        if (id == null || at < 0) {
+          log.add(
+              'set_layer: missing or unknown layer id=${op['id'] ?? op['layerId']}');
+          break;
+        }
+        final name =
+            op.containsKey('name') ? op['name']?.toString().trim() : null;
+        if (name != null && name.isEmpty) {
+          log.add('set_layer: name must not be empty');
+          break;
+        }
+        final colorRaw =
+            op.containsKey('color') ? op['color']?.toString() : null;
+        final clearColor =
+            colorRaw != null && colorRaw.trim().toLowerCase() == 'none';
+        final color =
+            colorRaw == null || clearColor ? null : parseColorOrNull(colorRaw);
+        if (colorRaw != null && !clearColor && color == null) {
+          log.add('set_layer: invalid color "$colorRaw"');
+          break;
+        }
+        final nameUnivRaw =
+            op.containsKey('nameUniv') ? op['nameUniv']?.toString() : null;
+        final clearNameUniv =
+            nameUnivRaw != null && nameUnivRaw.trim().toLowerCase() == 'none';
+        final colorTrans = _d(op['colorTransparency'] ?? op['colorTrans']);
+        final current = page.layers[at];
+        final next = current.copyWith(
+          name: name,
+          visible: _b(op['visible']),
+          print: _b(op['print']),
+          active: _b(op['active']),
+          locked: _b(op['locked']),
+          snap: _b(op['snap']),
+          glue: _b(op['glue']),
+          color: color,
+          colorTrans: colorTrans?.clamp(0.0, 1.0),
+          nameUniv: clearNameUniv ? null : nameUnivRaw,
+          status: _i(op['status']),
+          clearColor: clearColor,
+          clearNameUniv: clearNameUniv,
+        );
+        final activate = _b(op['active']) == true;
+        page = page.copyWith(
+          layers: <VsdxLayer>[
+            for (var i = 0; i < page.layers.length; i++)
+              if (i == at)
+                next
+              else if (activate && page.layers[i].active)
+                page.layers[i].copyWith(active: false)
+              else
+                page.layers[i],
+          ],
+        );
+      case 'delete_layer':
+        final id = _resolveLayerId(op);
+        if (id == null || page.layers.every((layer) => layer.id != id)) {
+          log.add(
+              'delete_layer: missing or unknown layer id=${op['id'] ?? op['layerId']}');
+          break;
+        }
+        page = page.copyWith(
+          layers: <VsdxLayer>[
+            for (final layer in page.layers)
+              if (layer.id != id) layer,
+          ],
+          shapes: <VsdxShape>[
+            for (final shape in page.shapes) _withoutLayerMembership(shape, id),
+          ],
+        );
+      case 'assign_layer':
+        final mode = (op['mode'] ?? 'replace').toString().trim().toLowerCase();
+        if (!const <String>{'replace', 'add', 'remove', 'clear'}
+            .contains(mode)) {
+          log.add('assign_layer: unknown mode="$mode"');
+          break;
+        }
+        final id = _resolveLayerId(op);
+        if (mode != 'clear' &&
+            (id == null || page.layers.every((layer) => layer.id != id))) {
+          log.add(
+              'assign_layer: missing or unknown layer id=${op['id'] ?? op['layerId']}');
+          break;
+        }
+        final ids = _resolveIds(op['ids'] ?? op['shapeIds']);
+        if (ids.isEmpty) {
+          log.add('assign_layer: no shape ids');
+          break;
+        }
+        for (final shapeId in ids.toSet()) {
+          final shape = page.findShapeById(shapeId);
+          if (shape == null) {
+            log.add('assign_layer: shape $shapeId not found');
+            continue;
+          }
+          if (_isProtected(page, shape)) {
+            log.add('assign_layer: shape $shapeId is locked');
+            continue;
+          }
+          page = page.updateShapeById(shapeId, (current) {
+            final memberships = switch (mode) {
+              'add' => <int>{...current.layerMemberIds, id!}.toList(),
+              'remove' => <int>[
+                  for (final layerId in current.layerMemberIds)
+                    if (layerId != id) layerId,
+                ],
+              'clear' => const <int>[],
+              _ => <int>[id!],
+            };
+            return current.copyWith(layerMemberIds: memberships);
+          });
+        }
       case 'add_shape':
         final id = page.nextFreeShapeId();
         final w = _d(op['w'] ?? op['width']) ?? 1.7;
@@ -367,6 +543,19 @@ ApplyResult applyOps(
               bold: op['bold'] == true,
               colorHex: (op['textColor'] ?? op['fontColor'])?.toString());
         }
+        final explicitLayerId =
+            op.containsKey('layerId') ? _i(op['layerId']) : null;
+        final activeLayerId = _activeLayerId(page);
+        final layerId = explicitLayerId ?? activeLayerId;
+        if (op.containsKey('layerId') &&
+            (explicitLayerId == null ||
+                page.layers.every((layer) => layer.id != explicitLayerId))) {
+          log.add('add_shape: unknown layerId=${op['layerId']}');
+          break;
+        }
+        if (layerId != null) {
+          s = s.copyWith(layerMemberIds: <int>[layerId]);
+        }
         page = page.addShape(s);
         created.add(id);
       case 'add_connector':
@@ -388,7 +577,17 @@ ApplyResult applyOps(
           break;
         }
         final id = page.nextFreeShapeId();
-        final link = buildConnector(
+        final explicitLayerId =
+            op.containsKey('layerId') ? _i(op['layerId']) : null;
+        final activeLayerId = _activeLayerId(page);
+        final layerId = explicitLayerId ?? activeLayerId;
+        if (op.containsKey('layerId') &&
+            (explicitLayerId == null ||
+                page.layers.every((layer) => layer.id != explicitLayerId))) {
+          log.add('add_connector: unknown layerId=${op['layerId']}');
+          break;
+        }
+        var connector = buildConnector(
           id: id,
           page: page,
           a: a,
@@ -400,8 +599,15 @@ ApplyResult applyOps(
               : (op['arrow'].toString().toLowerCase() != 'none' &&
                   op['arrow'] != false),
         );
-        page = page.addShape(link.connector).copyWith(
-            connects: <VsdxConnect>[...page.connects, ...link.connects]);
+        if (layerId != null) {
+          connector = (
+            connector:
+                connector.connector.copyWith(layerMemberIds: <int>[layerId]),
+            connects: connector.connects,
+          );
+        }
+        page = page.addShape(connector.connector).copyWith(
+            connects: <VsdxConnect>[...page.connects, ...connector.connects]);
         created.add(id);
         movedForReroute.add(id);
       case 'set_style':
@@ -1951,6 +2157,7 @@ ApplyResult applyOps(
     log,
     pageIndex: idx,
     createdPageIds: createdPages,
+    createdLayerIds: createdLayers,
     activatePage: activatePage,
   );
 }
@@ -2200,8 +2407,46 @@ ApplyBytesResult applyOpsBytesResult(Uint8List original, String opsJson,
     changed: changed,
     createdIds: result.createdIds,
     createdPageIds: result.createdPageIds,
+    createdLayerIds: result.createdLayerIds,
     log: result.log,
   );
+}
+
+int _nextLayerId(VsdxPage page) {
+  var maxId = -1;
+  for (final layer in page.layers) {
+    if (layer.id > maxId) maxId = layer.id;
+  }
+  return maxId + 1;
+}
+
+int? _activeLayerId(VsdxPage page) {
+  for (var i = page.layers.length - 1; i >= 0; i--) {
+    if (page.layers[i].active) return page.layers[i].id;
+  }
+  return null;
+}
+
+int? _resolveLayerId(Map<String, dynamic> op) => _i(op['layerId'] ?? op['id']);
+
+VsdxShape _withoutLayerMembership(VsdxShape shape, int layerId) {
+  var next = shape.layerMemberIds.contains(layerId)
+      ? shape.copyWith(
+          layerMemberIds: <int>[
+            for (final id in shape.layerMemberIds)
+              if (id != layerId) id,
+          ],
+        )
+      : shape;
+  if (next.children.isNotEmpty) {
+    next = next.copyWith(
+      children: <VsdxShape>[
+        for (final child in next.children)
+          _withoutLayerMembership(child, layerId),
+      ],
+    );
+  }
+  return next;
 }
 
 String _uniquePageName(

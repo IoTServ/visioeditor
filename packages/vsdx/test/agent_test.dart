@@ -168,6 +168,147 @@ void main() {
       expect(result.log, isEmpty);
     });
 
+    test('layer ops mirror draw.io and survive a writer round-trip', () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.rectangle(
+              id: 1,
+              pinX: 2,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+            VsdxShapeFactory.rectangle(
+              id: 2,
+              pinX: 4,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+          ],
+        ),
+      );
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'add_layer',
+          'name': 'Architecture',
+          'ids': <int>[1],
+          'active': true,
+          'color': '#336699',
+          'colorTransparency': 0.25,
+        },
+        <String, dynamic>{
+          'op': 'add_shape',
+          'text': 'Active layer shape',
+        },
+        <String, dynamic>{
+          'op': 'assign_layer',
+          'ids': <int>[2],
+          'layerId': 0,
+          'mode': 'add',
+        },
+        <String, dynamic>{
+          'op': 'set_layer',
+          'id': 0,
+          'name': 'Infrastructure',
+          'visible': false,
+          'print': false,
+          'locked': true,
+          'snap': false,
+        },
+      ]);
+
+      expect(result.log, isEmpty);
+      expect(result.createdLayerIds, <int>[0]);
+      expect(result.createdIds, hasLength(1));
+      final page = result.document.pages.single;
+      final layer = page.layers.single;
+      expect(layer.name, 'Infrastructure');
+      expect(layer.active, isTrue);
+      expect(layer.visible, isFalse);
+      expect(layer.print, isFalse);
+      expect(layer.locked, isTrue);
+      expect(layer.snap, isFalse);
+      expect(layer.color?.value, 0xFF336699);
+      expect(layer.colorTrans, closeTo(0.25, 1e-9));
+      expect(page.findShapeById(1)!.layerMemberIds, <int>[0]);
+      expect(page.findShapeById(2)!.layerMemberIds, <int>[0]);
+      expect(
+        page.findShapeById(result.createdIds.single)!.layerMemberIds,
+        <int>[0],
+      );
+
+      final listed = listLayers(result.document);
+      expect(listed.single['shapeIds'], containsAll(<int>[1, 2]));
+      expect(listed.single['shapes'], 3);
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: original,
+          edited: result.document,
+        ),
+      );
+      expect(reopened.pages.single.layers.single.name, 'Infrastructure');
+      expect(reopened.pages.single.layers.single.visible, isFalse);
+      expect(reopened.pages.single.findShapeById(1)!.layerMemberIds, <int>[0]);
+      expect(
+        validateDocument(reopened).where((i) => i.severity == 'error'),
+        isEmpty,
+      );
+    });
+
+    test('delete_layer removes nested shape membership recursively', () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      final child = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 1,
+        pinY: 0.5,
+        width: 1,
+        height: 0.5,
+      ).copyWith(layerMemberIds: const <int>[3]);
+      final group = VsdxShape(
+        id: 1,
+        name: 'Group.1',
+        pinX: 3,
+        pinY: 4,
+        width: 2,
+        height: 1,
+        shapeKind: VsdxShapeKind.group,
+        children: <VsdxShape>[child],
+        layerMemberIds: const <int>[3],
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+      );
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          layers: const <VsdxLayer>[VsdxLayer(id: 3, name: 'Nested')],
+          shapes: <VsdxShape>[group],
+        ),
+      );
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'delete_layer', 'layerId': 3},
+      ]);
+
+      expect(result.log, isEmpty);
+      expect(result.document.pages.single.layers, isEmpty);
+      expect(
+        result.document.pages.single.findShapeById(1)!.layerMemberIds,
+        isEmpty,
+      );
+      expect(
+        result.document.pages.single.findShapeById(2)!.layerMemberIds,
+        isEmpty,
+      );
+    });
+
     test('rejected and empty op batches preserve document identity', () {
       final doc = built();
       final target = doc.pages.single.shapes.firstWhere((s) => !s.is1D);
@@ -197,9 +338,16 @@ void main() {
           'op': 'set_page',
           'backgroundPageId': 999999,
         },
+        <String, dynamic>{'op': 'set_layer', 'layerId': 999999},
+        <String, dynamic>{'op': 'delete_layer', 'layerId': 999999},
+        <String, dynamic>{
+          'op': 'assign_layer',
+          'ids': <int>[target.id],
+          'layerId': 999999,
+        },
       ]);
       expect(invalid.document, same(doc));
-      expect(invalid.log, hasLength(6));
+      expect(invalid.log, hasLength(9));
     });
 
     test('add_connector refuses 1-D from/to targets', () {

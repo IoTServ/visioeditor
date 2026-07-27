@@ -1,10 +1,11 @@
 /// Registers the visioeditor Agent toolset on an [McpServer].
 ///
 /// **File tools** (no app needed): `create_diagram`, `apply_ops`, `export`,
-/// `validate`, `explain`, `list_pages`, `list_shapes`, `search_shapes`,
-/// `list_styles`, plus page/shape convenience edits.
+/// `validate`, `explain`, `list_pages`, `list_layers`, `list_shapes`,
+/// `search_shapes`, `list_styles`, plus page/layer/shape convenience edits.
 /// **Live tools** (drive the running editor via the bridge): `open_in_app`,
-/// `live_apply_ops`, `select_page`, `select`, `snapshot`, `get_app_state`.
+/// `live_apply_ops`, `select_page`, `select_layer`, `select`, `snapshot`,
+/// `get_app_state`.
 ///
 /// Split out from the `bin/` entry so it can be unit-tested. See
 /// `docs/MCP_SKILL_PLAN.md` (M3).
@@ -348,9 +349,9 @@ void _registerFileTools(McpServer server) {
     name: 'apply_ops',
     description:
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
-        'add/duplicate/rename/delete/move/set page; add/connect/style/text/'
-        'move/resize/duplicate/group/ungroup/z-order/align/distribute/delete '
-        'shape.',
+        'add/duplicate/rename/delete/move/set page; add/set/delete/assign '
+        'layer; add/connect/style/text/move/resize/duplicate/group/ungroup/'
+        'z-order/align/distribute/delete shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -384,6 +385,7 @@ void _registerFileTools(McpServer server) {
             '(page ${applied.pageIndex}, ${applied.bytes.length} bytes)\n'
             '${_validationSummary(applied.bytes)}'
             '${applied.createdPageIds.isEmpty ? '' : '\nCreated page ids: ${applied.createdPageIds.join(', ')}'}'
+            '${applied.createdLayerIds.isEmpty ? '' : '\nCreated layer ids: ${applied.createdLayerIds.join(', ')}'}'
             '${applied.log.isEmpty ? '' : '\nSkipped: ${applied.log.join('; ')}'}'),
       ];
     },
@@ -520,6 +522,45 @@ void _registerFileTools(McpServer server) {
   ));
 
   server.addTool(McpTool(
+    name: 'list_layers',
+    description: 'List a page\'s layers as JSON (stable id, name, visibility, '
+        'lock/print flags, color, and assigned shape ids). Give `path` for a '
+        'file; omit to read the running app.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'path': <String, dynamic>{'type': 'string'},
+        'page': <String, dynamic>{'type': 'integer', 'default': 0},
+      },
+    },
+    handler: (args) async {
+      const enc = JsonEncoder.withIndent('  ');
+      final path = args['path'] as String?;
+      if (path != null) {
+        final doc = const DocumentParser().parse(_read(path));
+        final requested = (args['page'] as num?)?.toInt() ?? 0;
+        final page =
+            doc.pages.isEmpty ? 0 : requested.clamp(0, doc.pages.length - 1);
+        return <McpContent>[
+          McpContent.text(enc.convert(<String, dynamic>{
+            'page': page,
+            'layers': listLayers(doc, pageIndex: page),
+          })),
+        ];
+      }
+      final client = await BridgeClient.connect();
+      try {
+        final result = await client.call('listLayers', <String, dynamic>{
+          if (args['page'] != null) 'page': args['page'],
+        });
+        return <McpContent>[McpContent.text(enc.convert(result))];
+      } finally {
+        await client.close();
+      }
+    },
+  ));
+
+  server.addTool(McpTool(
     name: 'list_shapes',
     description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h) '
         '— use it to find ids before editing. Give `path` for a file; omit to '
@@ -641,6 +682,7 @@ void _registerEditTools(McpServer server) {
           '${applied.changed ? 'Applied to' : 'No changes to'} ${_abs(path)} '
           '(page ${applied.pageIndex})\n${_validationSummary(applied.bytes)}'
           '${applied.createdPageIds.isEmpty ? '' : '\nCreated page ids: ${applied.createdPageIds.join(', ')}'}'
+          '${applied.createdLayerIds.isEmpty ? '' : '\nCreated layer ids: ${applied.createdLayerIds.join(', ')}'}'
           '${applied.log.isEmpty ? '' : '\nSkipped: ${applied.log.join('; ')}'}',
         ),
       ];
@@ -676,6 +718,122 @@ void _registerEditTools(McpServer server) {
           ...props,
         },
       };
+
+  server.addTool(McpTool(
+    name: 'add_layer',
+    description: 'Add a layer on a page, optionally assigning existing '
+        'editable shapes to it.',
+    inputSchema: withPath(<String, dynamic>{
+      'name': <String, dynamic>{'type': 'string'},
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{},
+      },
+      'visible': <String, dynamic>{'type': 'boolean'},
+      'locked': <String, dynamic>{'type': 'boolean'},
+      'print': <String, dynamic>{'type': 'boolean'},
+      'active': <String, dynamic>{'type': 'boolean'},
+      'snap': <String, dynamic>{'type': 'boolean'},
+      'glue': <String, dynamic>{'type': 'boolean'},
+      'color': <String, dynamic>{'type': 'string'},
+      'colorTransparency': <String, dynamic>{'type': 'number'},
+      'nameUniv': <String, dynamic>{'type': 'string'},
+      'status': <String, dynamic>{'type': 'integer'},
+    }),
+    handler: (args) => applyOne(
+      args,
+      op('add_layer', args, <String>[
+        'name',
+        'ids',
+        'visible',
+        'locked',
+        'print',
+        'active',
+        'snap',
+        'glue',
+        'color',
+        'colorTransparency',
+        'nameUniv',
+        'status',
+      ]),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_layer',
+    description: 'Rename or update visibility, lock, print, snap/glue, color '
+        'and other properties of a layer.',
+    inputSchema: withPath(<String, dynamic>{
+      'layerId': <String, dynamic>{'type': 'integer'},
+      'name': <String, dynamic>{'type': 'string'},
+      'visible': <String, dynamic>{'type': 'boolean'},
+      'locked': <String, dynamic>{'type': 'boolean'},
+      'print': <String, dynamic>{'type': 'boolean'},
+      'active': <String, dynamic>{'type': 'boolean'},
+      'snap': <String, dynamic>{'type': 'boolean'},
+      'glue': <String, dynamic>{'type': 'boolean'},
+      'color': <String, dynamic>{
+        'type': 'string',
+        'description': '#RRGGBB or none.',
+      },
+      'colorTransparency': <String, dynamic>{'type': 'number'},
+      'nameUniv': <String, dynamic>{'type': 'string'},
+      'status': <String, dynamic>{'type': 'integer'},
+    })
+      ..['required'] = <String>['layerId'],
+    handler: (args) => applyOne(
+      args,
+      op('set_layer', args, <String>[
+        'layerId',
+        'name',
+        'visible',
+        'locked',
+        'print',
+        'active',
+        'snap',
+        'glue',
+        'color',
+        'colorTransparency',
+        'nameUniv',
+        'status',
+      ]),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'delete_layer',
+    description: 'Delete a layer and remove its id from every shape '
+        'membership without deleting the shapes.',
+    inputSchema: withPath(<String, dynamic>{
+      'layerId': <String, dynamic>{'type': 'integer'},
+    })
+      ..['required'] = <String>['layerId'],
+    handler: (args) =>
+        applyOne(args, op('delete_layer', args, <String>['layerId'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'assign_layer',
+    description: 'Replace, add, remove, or clear layer membership for shapes. '
+        'Locked shapes and locked-layer shapes are skipped.',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{},
+      },
+      'layerId': <String, dynamic>{'type': 'integer'},
+      'mode': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['replace', 'add', 'remove', 'clear'],
+        'default': 'replace',
+      },
+    })
+      ..['required'] = <String>['ids'],
+    handler: (args) => applyOne(
+      args,
+      op('assign_layer', args, <String>['ids', 'layerId', 'mode']),
+    ),
+  ));
 
   server.addTool(McpTool(
     name: 'add_page',
@@ -816,6 +974,10 @@ void _registerEditTools(McpServer server) {
       'fill': <String, dynamic>{'type': 'string'},
       'line': <String, dynamic>{'type': 'string'},
       'bold': <String, dynamic>{'type': 'boolean'},
+      'layerId': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Layer id; defaults to the active layer, if any.',
+      },
     })
       ..['required'] = <String>['stencil'],
     handler: (args) => applyOne(
@@ -830,7 +992,8 @@ void _registerEditTools(McpServer server) {
           'fill',
           'line',
           'bold',
-          'textColor'
+          'textColor',
+          'layerId',
         ])),
   ));
 
@@ -843,12 +1006,16 @@ void _registerEditTools(McpServer server) {
       'label': <String, dynamic>{'type': 'string'},
       'arrow': <String, dynamic>{'type': 'boolean'},
       'line': <String, dynamic>{'type': 'string'},
+      'layerId': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Layer id; defaults to the active layer, if any.',
+      },
     })
       ..['required'] = <String>['from', 'to'],
     handler: (args) => applyOne(
         args,
         op('add_connector', args,
-            <String>['from', 'to', 'label', 'arrow', 'line'])),
+            <String>['from', 'to', 'label', 'arrow', 'line', 'layerId'])),
   ));
 
   server.addTool(McpTool(
@@ -1362,6 +1529,29 @@ void _registerLiveTools(McpServer server) {
     handler: (args) async => withBridge((c) async {
       final state =
           await c.call('selectPage', <String, dynamic>{'page': args['page']});
+      return <McpContent>[
+        McpContent.text(const JsonEncoder.withIndent('  ').convert(state)),
+      ];
+    }),
+  ));
+
+  server.addTool(McpTool(
+    name: 'select_layer',
+    description: 'Select visible, editable objects assigned to a layer in the '
+        'running editor. Optionally switches to the requested page first.',
+    inputSchema: <String, dynamic>{
+      'type': 'object',
+      'properties': <String, dynamic>{
+        'layerId': <String, dynamic>{'type': 'integer'},
+        'page': <String, dynamic>{'type': 'integer'},
+      },
+      'required': <String>['layerId'],
+    },
+    handler: (args) async => withBridge((c) async {
+      final state = await c.call('selectLayer', <String, dynamic>{
+        'layerId': args['layerId'],
+        if (args['page'] != null) 'page': args['page'],
+      });
       return <McpContent>[
         McpContent.text(const JsonEncoder.withIndent('  ').convert(state)),
       ];

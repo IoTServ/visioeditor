@@ -92,6 +92,7 @@ void main() {
     expect(state['hasDocument'], isTrue);
     expect((state['pages'] as List), hasLength(1));
     expect((state['pages'] as List).first['shapes'], greaterThanOrEqualTo(3));
+    expect(state['layers'], isEmpty);
   });
 
   test('listShapes returns the active page shapes with ids', () async {
@@ -338,6 +339,64 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'draw.io layer controls apply live, select objects, and undo cleanly',
+    () async {
+      final c = workspace.active!;
+      final page = c.document!.pages.single;
+      final a = page.shapes.firstWhere((shape) => shape.text == 'A').id;
+      final b = page.shapes.firstWhere((shape) => shape.text == 'B').id;
+
+      final added = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'add_layer',
+            'name': 'Live layer',
+            'ids': <int>[a, b],
+            'active': true,
+            'color': '#336699',
+          },
+        ],
+      });
+      expect(added['ok'], isTrue);
+      final addedResult = added['result'] as Map;
+      expect(addedResult['createdLayers'], <int>[0]);
+      expect((addedResult['layers'] as List).single['name'], 'Live layer');
+
+      final listed = await call('listLayers');
+      final layers = (listed['result'] as Map)['layers'] as List;
+      expect(layers, hasLength(1));
+      expect(layers.single['shapeIds'], containsAll(<int>[a, b]));
+
+      final selected = await call('selectLayer', <String, dynamic>{
+        'layerId': 0,
+      });
+      expect(selected['ok'], isTrue);
+      expect(
+        (selected['result'] as Map)['selection'],
+        containsAll(<int>[a, b]),
+      );
+      expect(c.selection, containsAll(<int>[a, b]));
+
+      final hidden = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{'op': 'set_layer', 'layerId': 0, 'visible': false},
+        ],
+      });
+      expect(hidden['ok'], isTrue);
+      expect(c.selection, isEmpty);
+
+      final hiddenSelection = await call('selectLayer', <String, dynamic>{
+        'layerId': 0,
+      });
+      expect((hiddenSelection['result'] as Map)['selection'], isEmpty);
+
+      c.undo();
+      expect(c.document!.pages.single.layers.single.visible, isTrue);
+      expect(c.selection, containsAll(<int>[a, b]));
+    },
+  );
 
   test(
     'page ops switch live context, expose setup, and undo as one step',
