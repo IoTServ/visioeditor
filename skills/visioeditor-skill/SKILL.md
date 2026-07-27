@@ -118,8 +118,9 @@ VSDXTOOL patch -i diagram.vsdx --ops ops.json --page 0  # file
 ```
 
 Get page indices/stable ids/setup with `list_pages`, then current shape ids with
-`list_shapes` (MCP; JSON of id/text/x/y/w/h/layerIds plus optional Shape Data
-and hyperlinks, file or live) or `explain` (`VSDXTOOL explain -i file.vsdx`).
+`list_shapes` (MCP; JSON of id/text/x/y/w/h/layerIds plus optional Shape Data,
+hyperlinks, and connector route/endpoints/waypoints, file or live) or `explain`
+(`VSDXTOOL explain -i file.vsdx`).
 Use `list_layers` for stable layer ids, flags, colors, and assigned shape ids.
 Reference shapes as `"shape:<id>"` or the raw id. With live preview on,
 `select_page({ page })` switches tabs, `select_layer({ layerId })` selects the
@@ -130,12 +131,12 @@ ids (empty list clears).
 `add_page`, `duplicate_page`, `rename_page`, `delete_page`, `move_page`,
 `set_page`, `add_layer`, `set_layer`, `delete_layer`, `assign_layer`,
 `add_shape`, `add_connector`, `set_style`, `set_text`, `set_shape_data`,
-`set_shape_links`, `move_shape`, `resize_shape`, `duplicate_shapes`,
-`group_shapes`, `ungroup_shapes`, `arrange_shape`, `align_shapes`,
-`distribute_shapes`, `delete_shape`. Each takes an optional `path` — give it
-to edit a **file**, omit it to edit the **running app** live. Use optional
-zero-based `page` for multi-page drawings (file default: page 0; live default:
-current page).
+`set_shape_links`, `set_connector`, `reconnect_connector`, `move_shape`,
+`resize_shape`, `duplicate_shapes`, `group_shapes`, `ungroup_shapes`,
+`arrange_shape`, `align_shapes`, `distribute_shapes`, `delete_shape`. Each
+takes an optional `path` — give it to edit a **file**, omit it to edit the
+**running app** live. Use optional zero-based `page` for multi-page drawings
+(file default: page 0; live default: current page).
 
 ## Importers (structure in → editable .vsdx)
 

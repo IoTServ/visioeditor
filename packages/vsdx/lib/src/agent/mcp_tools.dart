@@ -351,8 +351,8 @@ void _registerFileTools(McpServer server) {
     description:
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
         'add/duplicate/rename/delete/move/set page; add/set/delete/assign '
-        'layer; add/connect/style/text/data/links/move/resize/duplicate/group/'
-        'ungroup/z-order/align/distribute/delete shape.',
+        'layer; add/configure/reconnect connector; style/text/data/links/move/'
+        'resize/duplicate/group/ungroup/z-order/align/distribute/delete shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -1017,6 +1017,80 @@ void _registerEditTools(McpServer server) {
         args,
         op('add_connector', args,
             <String>['from', 'to', 'label', 'arrow', 'line', 'layerId'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_connector',
+    description: 'Set a connector route (straight/orthogonal/curved), rounded '
+        'corners, and page-coordinate bend points. An empty waypoints array '
+        'implements draw.io Clear Waypoints.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'route': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['straight', 'orthogonal', 'curved'],
+      },
+      'rounded': <String, dynamic>{'type': 'boolean'},
+      'waypoints': <String, dynamic>{
+        'type': 'array',
+        'description': 'Interior bend points in page inches.',
+        'items': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'x': <String, dynamic>{'type': 'number'},
+            'y': <String, dynamic>{'type': 'number'},
+          },
+          'required': <String>['x', 'y'],
+        },
+      },
+    })
+      ..['required'] = <String>['id'],
+    handler: (args) => applyOne(
+      args,
+      op(
+        'set_connector',
+        args,
+        <String>['id', 'route', 'rounded', 'waypoints'],
+      ),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'reconnect_connector',
+    description: 'Reconnect one connector endpoint to a 2-D shape, optionally '
+        'at a fixed connection point. Omit target and provide x/y to detach.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'end': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['begin', 'end'],
+      },
+      'target': <String, dynamic>{
+        'type': 'string',
+        'description': 'Target shape id; omit or use none to detach.',
+      },
+      'connectionPoint': <String, dynamic>{
+        'type': 'integer',
+        'description': 'Optional zero-based fixed connection-point index.',
+      },
+      'x': <String, dynamic>{
+        'type': 'number',
+        'description': 'Detached endpoint x in page inches.',
+      },
+      'y': <String, dynamic>{
+        'type': 'number',
+        'description': 'Detached endpoint y in page inches.',
+      },
+    })
+      ..['required'] = <String>['id', 'end'],
+    handler: (args) => applyOne(
+      args,
+      op(
+        'reconnect_connector',
+        args,
+        <String>['id', 'end', 'target', 'connectionPoint', 'x', 'y'],
+      ),
+    ),
   ));
 
   server.addTool(McpTool(

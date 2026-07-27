@@ -190,6 +190,8 @@
   单步语义工具，内部转 `apply_ops` 或 `live_apply_ops`（依据是否连到应用）。
 - `set_shape_data` / `set_shape_links`：对齐 draw.io Edit Data / Edit Link，
   结构化替换形状数据字段、外部 URL 与页内跳转。
+- `set_connector` / `reconnect_connector`：对齐 draw.io 连接器路由、圆角、
+  bend points / Clear Waypoints，以及端点重连、固定连接点与自由端点拖放。
 
 > **智能路由**：MCP 启动时探测应用桥握手文件；连上则「实时类」直达应用（真 · 实时预览），
 > 否则「文件类」落盘 + `render_preview` 出图（无应用也可用）。对 Agent 透明。
@@ -374,13 +376,13 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
 - [x] **便捷单步工具**：6 个页面操作 + 基础形状增删改 +
-      4 个图层操作 + 2 个形状元数据操作 +
+      4 个图层操作 + 2 个形状元数据操作 + 2 个连接器精修操作 +
       `resize_shape`/`duplicate_shapes`/`group_shapes`/`ungroup_shapes`/
       `arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
       （给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op。
 - [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **48 个工具**；
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **50 个工具**；
 文件类端到端建图/校验/描述/导出/列举；便捷结构编辑支持文件/实时双模式；实时类经
 `BridgeClient` 驱动应用。
 
@@ -693,3 +695,8 @@ visioeditor/
   `subAddress`、主链接规范化及锁定保护；`list_shapes` 同步返回结构化 `data` / `links`。
   MCP 新增双模式 `set_shape_data` / `set_shape_links`，文件与实时路径共享往返保真实现，
   实时整批仍为一个 undo 步。工具总数 **48**。
+- 2026-07-27 — **draw.io 连接器精修对齐**：Edit Ops 新增 `set_connector` /
+  `reconnect_connector`，支持直线/正交/曲线路由、圆角、page-coordinate bend points、
+  Clear Waypoints、端点重连/脱离及固定连接点；`list_shapes` 同步返回 route、rounded、
+  begin/end glue 与 waypoints。MCP 新增同名双模式便捷工具，文件写回与实时单步撤销均有
+  回归覆盖。工具总数 **50**。

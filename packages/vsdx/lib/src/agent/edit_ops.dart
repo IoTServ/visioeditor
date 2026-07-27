@@ -12,7 +12,8 @@
 /// (`add_layer`, `set_layer`, `delete_layer`, `assign_layer`), plus shape
 /// edits: `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
 /// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
-/// `distribute`, `set_data`, `set_links`, `delete_shape`.
+/// `distribute`, `set_data`, `set_links`, `set_connector`,
+/// `reconnect_connector`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
@@ -1765,6 +1766,141 @@ ApplyResult applyOps(
           id,
           (shape) => shape.copyWith(hyperlinks: links),
         );
+      case 'set_connector':
+        final id = _resolveId(op['id']);
+        if (id == null) {
+          log.add('set_connector: missing or invalid id=${op['id']}');
+          break;
+        }
+        final connector = page.findShapeById(id);
+        if (connector == null || !connector.isGlueableConnector) {
+          log.add('set_connector: shape $id is not a connector');
+          break;
+        }
+        if (_isProtected(page, connector)) {
+          log.add('set_connector: connector $id is locked');
+          break;
+        }
+        final hasRoute = op.containsKey('route');
+        final route =
+            hasRoute ? op['route']?.toString().trim().toLowerCase() : null;
+        if (hasRoute &&
+            !const <String>{'straight', 'orthogonal', 'elbow', 'curved'}
+                .contains(route)) {
+          log.add('set_connector: unknown route="${op['route']}"');
+          break;
+        }
+        final hasRounded = op.containsKey('rounded');
+        final rounded = hasRounded ? _b(op['rounded']) : null;
+        if (hasRounded && rounded == null) {
+          log.add('set_connector: rounded must be boolean');
+          break;
+        }
+        final hasWaypoints = op.containsKey('waypoints');
+        final waypoints = hasWaypoints
+            ? _parseWaypoints(op['waypoints'], log, opName: 'set_connector')
+            : null;
+        if (hasWaypoints && waypoints == null) break;
+        if (!hasRoute && !hasRounded && !hasWaypoints) {
+          log.add('set_connector: needs route, rounded, or waypoints');
+          break;
+        }
+        if (route != null) {
+          page = page.setConnectorStyle(
+            <int>{id},
+            straight: route == 'straight',
+            curved: route == 'curved',
+          );
+        }
+        if (rounded != null) {
+          page = page.setConnectorRounded(<int>{id}, rounded);
+        }
+        if (waypoints != null) {
+          final parentId = page.findParentId(id);
+          page = page.setConnectorWaypoints(
+            id,
+            <Offset2D>[
+              for (final point in waypoints)
+                parentId == null
+                    ? point
+                    : page.pageToLocalDeep(parentId, point),
+            ],
+          );
+        }
+      case 'reconnect_connector':
+        final id = _resolveId(op['id']);
+        if (id == null) {
+          log.add('reconnect_connector: missing or invalid id=${op['id']}');
+          break;
+        }
+        final connector = page.findShapeById(id);
+        if (connector == null || !connector.isGlueableConnector) {
+          log.add('reconnect_connector: shape $id is not a connector');
+          break;
+        }
+        if (_isProtected(page, connector)) {
+          log.add('reconnect_connector: connector $id is locked');
+          break;
+        }
+        final end = op['end']?.toString().trim().toLowerCase();
+        final begin = switch (end) {
+          'begin' || 'start' || 'source' => true,
+          'end' || 'target' => false,
+          _ => null,
+        };
+        if (begin == null) {
+          log.add('reconnect_connector: end must be begin or end');
+          break;
+        }
+        final targetRaw = op['target'] ?? op['targetId'];
+        final detach = targetRaw == null ||
+            targetRaw.toString().trim().toLowerCase() == 'none';
+        final targetId = detach ? null : _resolveId(targetRaw);
+        final target = targetId == null ? null : page.findShapeById(targetId);
+        if (!detach &&
+            (targetId == null ||
+                target == null ||
+                target.is1D ||
+                !page.isShapeTreeVisible(targetId))) {
+          log.add('reconnect_connector: invalid target=$targetRaw');
+          break;
+        }
+        final connectionPoint = _i(
+          op['connectionPoint'] ?? op['connectionPointIndex'],
+        );
+        if (connectionPoint != null &&
+            (target == null ||
+                connectionPoint < 0 ||
+                connectionPoint >=
+                    VsdxPage.effectiveConnectionPoints(target).length)) {
+          log.add(
+            'reconnect_connector: invalid connectionPoint=$connectionPoint',
+          );
+          break;
+        }
+        var x = _d(op['x']);
+        var y = _d(op['y']);
+        if (targetId != null && (x == null || y == null)) {
+          final pin = page.shapePinPage(targetId);
+          x ??= pin.x;
+          y ??= pin.y;
+        }
+        if (x == null || y == null) {
+          log.add('reconnect_connector: detached endpoint needs x and y');
+          break;
+        }
+        final parentId = page.findParentId(id);
+        final point = parentId == null
+            ? Offset2D(x, y)
+            : page.pageToLocalDeep(parentId, Offset2D(x, y));
+        page = page.setConnectorEndpoint(
+          id,
+          begin: begin,
+          targetShapeId: targetId,
+          connectionPointIndex: connectionPoint,
+          x: point.x,
+          y: point.y,
+        );
       case 'move_shape':
       case 'move':
         final id = _resolveId(op['id']);
@@ -2607,6 +2743,36 @@ List<VsdxHyperlink>? _parseHyperlinks(Object? raw, List<String> log) {
     links[0] = links[0].copyWith(isDefault: true);
   }
   return links;
+}
+
+List<Offset2D>? _parseWaypoints(
+  Object? raw,
+  List<String> log, {
+  required String opName,
+}) {
+  if (raw is! List) {
+    log.add('$opName: waypoints must be an array');
+    return null;
+  }
+  final points = <Offset2D>[];
+  for (var i = 0; i < raw.length; i++) {
+    final item = raw[i];
+    double? x;
+    double? y;
+    if (item is Map) {
+      x = _d(item['x']);
+      y = _d(item['y']);
+    } else if (item is List && item.length >= 2) {
+      x = _d(item[0]);
+      y = _d(item[1]);
+    }
+    if (x == null || y == null) {
+      log.add('$opName: waypoint $i needs finite x and y');
+      return null;
+    }
+    points.add(Offset2D(x, y));
+  }
+  return points;
 }
 
 String _uniquePageName(

@@ -131,6 +131,8 @@ void main() {
           'assign_layer',
           'set_shape_data',
           'set_shape_links',
+          'set_connector',
+          'reconnect_connector',
           'add_page',
           'duplicate_page',
           'rename_page',
@@ -180,7 +182,7 @@ void main() {
           'snapshot',
           'get_app_state',
         ]));
-    expect(names, hasLength(48));
+    expect(names, hasLength(50));
   });
 
   test('create_diagram builds + validates a .vsdx', () async {
@@ -617,6 +619,61 @@ void main() {
       expect(persisted.userProperties, hasLength(2));
       expect(persisted.hyperlinks, hasLength(2));
       expect(persisted.primaryHyperlink?.description, 'Docs');
+    });
+
+    test('connector convenience tools mirror draw.io route editing', () async {
+      final a = idOf('A');
+      final b = idOf('B');
+      await callTool('add_connector', <String, dynamic>{
+        'path': path,
+        'from': '$a',
+        'to': '$b',
+      });
+      final connector = shapes().singleWhere((shape) => shape.is1D);
+
+      await callTool('set_connector', <String, dynamic>{
+        'path': path,
+        'id': '${connector.id}',
+        'route': 'curved',
+        'rounded': true,
+        'waypoints': <dynamic>[
+          <String, dynamic>{'x': 3, 'y': 4},
+        ],
+      });
+      await callTool('reconnect_connector', <String, dynamic>{
+        'path': path,
+        'id': '${connector.id}',
+        'end': 'begin',
+        'x': 1,
+        'y': 1,
+      });
+
+      final listed =
+          await callTool('list_shapes', <String, dynamic>{'path': path});
+      final decoded = jsonDecode(firstText(listed)) as Map<String, dynamic>;
+      final listedConnector = (decoded['shapes'] as List)
+          .singleWhere((entry) => entry['id'] == connector.id);
+      expect(listedConnector['route'], 'curved');
+      expect(listedConnector['rounded'], isTrue);
+      expect(listedConnector['waypoints'], hasLength(1));
+      expect(
+        (listedConnector['begin'] as Map).containsKey('targetId'),
+        isFalse,
+      );
+      expect((listedConnector['end'] as Map)['targetId'], b);
+
+      final reopened =
+          const DocumentParser().parse(File(path).readAsBytesSync());
+      final persisted = reopened.pages.single.findShapeById(connector.id)!;
+      expect(persisted.curved, isTrue);
+      expect(persisted.rounded, isTrue);
+      expect(persisted.waypoints, hasLength(1));
+      expect(
+        reopened.pages.single.connects
+            .where((connect) => connect.fromSheetId == connector.id)
+            .where((connect) => connect.isBegin),
+        isEmpty,
+      );
     });
 
     test('convenience tools accept a page index', () async {

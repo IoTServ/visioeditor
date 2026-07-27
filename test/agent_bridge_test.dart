@@ -451,6 +451,94 @@ void main() {
     },
   );
 
+  test('draw.io connector edits apply live as one undoable batch', () async {
+    final c = workspace.active!;
+    final page = c.document!.pages.single;
+    final connector = page.shapes.singleWhere(
+      (shape) => shape.isGlueableConnector,
+    );
+    final originalCurved = connector.curved;
+    final originalRounded = connector.rounded;
+    final originalWaypoints = connector.waypoints;
+    final originalBeginTarget = page.connects
+        .singleWhere(
+          (connect) => connect.fromSheetId == connector.id && connect.isBegin,
+        )
+        .toSheetId;
+    final originalEndTarget = page.connects
+        .singleWhere(
+          (connect) => connect.fromSheetId == connector.id && connect.isEnd,
+        )
+        .toSheetId;
+
+    final response = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{
+          'op': 'set_connector',
+          'id': connector.id,
+          'route': 'curved',
+          'rounded': true,
+          'waypoints': <dynamic>[
+            <String, dynamic>{'x': 3, 'y': 4},
+          ],
+        },
+        <String, dynamic>{
+          'op': 'reconnect_connector',
+          'id': connector.id,
+          'end': 'begin',
+          'x': 1,
+          'y': 1,
+        },
+      ],
+    });
+
+    expect(response['ok'], isTrue);
+    expect((response['result'] as Map)['changed'], isTrue);
+    final editedPage = c.document!.pages.single;
+    final edited = editedPage.findShapeById(connector.id)!;
+    expect(edited.curved, isTrue);
+    expect(edited.rounded, isTrue);
+    expect(edited.waypoints, hasLength(1));
+    expect(
+      editedPage.connects.where(
+        (connect) => connect.fromSheetId == connector.id && connect.isBegin,
+      ),
+      isEmpty,
+    );
+
+    final listed = await call('listShapes');
+    final listedConnector = ((listed['result'] as Map)['shapes'] as List)
+        .singleWhere((entry) => entry['id'] == connector.id);
+    expect(listedConnector['route'], 'curved');
+    expect(listedConnector['waypoints'], hasLength(1));
+    expect((listedConnector['begin'] as Map).containsKey('targetId'), isFalse);
+    expect((listedConnector['end'] as Map)['targetId'], originalEndTarget);
+
+    expect(c.canUndo, isTrue);
+    c.undo();
+    final restoredPage = c.document!.pages.single;
+    final restored = restoredPage.findShapeById(connector.id)!;
+    expect(restored.curved, originalCurved);
+    expect(restored.rounded, originalRounded);
+    expect(restored.waypoints, originalWaypoints);
+    expect(
+      restoredPage.connects
+          .singleWhere(
+            (connect) => connect.fromSheetId == connector.id && connect.isBegin,
+          )
+          .toSheetId,
+      originalBeginTarget,
+    );
+    expect(
+      restoredPage.connects
+          .singleWhere(
+            (connect) => connect.fromSheetId == connector.id && connect.isEnd,
+          )
+          .toSheetId,
+      originalEndTarget,
+    );
+  });
+
   test(
     'page ops switch live context, expose setup, and undo as one step',
     () async {

@@ -132,6 +132,14 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   `subAddress` targets. At most one explicit default is kept; when none is
   marked, the first link becomes primary. An empty array clears the section.
   Use `list_shapes` to read the complete current arrays before replacing them.
+- **Connector editing**: `set_connector` changes `route`
+  (`straight`/`orthogonal`/`curved`), `rounded`, and interior `waypoints`
+  expressed in page inches; `waypoints: []` performs draw.io **Clear
+  Waypoints**. `reconnect_connector` moves `begin` or `end` to a target shape,
+  optionally at a zero-based `connectionPoint`; omit `target` and provide
+  page-coordinate `x`/`y` to detach the endpoint. `list_shapes` reports each
+  connector's route, rounded flag, endpoints, glue targets, fixed connection
+  points, and bend points.
 - **Shape references**: `"shape:<id>"`, a bare integer, or a numeric string —
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.

@@ -111,6 +111,7 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
         'id': s.id,
         'text': (s.text ?? s.richText.plainText).trim().replaceAll('\n', ' '),
         'connector': s.isGlueableConnector,
+        if (s.isGlueableConnector) ..._connectorJson(page, s, r),
         if (s.isInk) 'ink': true,
         'group': s.children.isNotEmpty,
         'x': r(pin.x),
@@ -135,6 +136,62 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
 
   walk(page.shapes, null);
   return out;
+}
+
+Map<String, dynamic> _connectorJson(
+  VsdxPage page,
+  VsdxShape connector,
+  double Function(double) round,
+) {
+  final parentId = page.findParentId(connector.id);
+  Offset2D toPage(double x, double y) => parentId == null
+      ? Offset2D(x, y)
+      : page.localToPageDeep(parentId, Offset2D(x, y));
+  final beginPoint = toPage(
+    connector.beginX ?? connector.pinX,
+    connector.beginY ?? connector.pinY,
+  );
+  final endPoint = toPage(
+    connector.endX ?? connector.pinX,
+    connector.endY ?? connector.pinY,
+  );
+  final connects = page.connectIndex.forConnector(connector.id);
+  final beginConnect = connects.where((connect) => connect.isBegin).firstOrNull;
+  final endConnect = connects.where((connect) => connect.isEnd).firstOrNull;
+
+  Map<String, dynamic> endpoint(
+    Offset2D point,
+    VsdxConnect? connect,
+  ) =>
+      <String, dynamic>{
+        'x': round(point.x),
+        'y': round(point.y),
+        if (connect != null) 'targetId': connect.toSheetId,
+        if (VsdxPage.fixedConnectionIndex(connect) case final index?)
+          'connectionPoint': index,
+      };
+
+  return <String, dynamic>{
+    'route': connector.curved
+        ? 'curved'
+        : connector.straightRoute
+            ? 'straight'
+            : 'orthogonal',
+    'rounded': connector.rounded,
+    'begin': endpoint(beginPoint, beginConnect),
+    'end': endpoint(endPoint, endConnect),
+    'waypoints': <Map<String, dynamic>>[
+      for (final point in connector.waypoints)
+        () {
+          final pagePoint =
+              parentId == null ? point : page.localToPageDeep(parentId, point);
+          return <String, dynamic>{
+            'x': round(pagePoint.x),
+            'y': round(pagePoint.y),
+          };
+        }(),
+    ],
+  };
 }
 
 Map<String, dynamic> _userPropertyJson(VsdxUserProperty property) =>
