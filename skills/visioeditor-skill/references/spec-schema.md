@@ -140,6 +140,14 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   page-coordinate `x`/`y` to detach the endpoint. `list_shapes` reports each
   connector's route, rounded flag, endpoints, glue targets, fixed connection
   points, and bend points.
+- **Edit Connection Points**: `set_connection_points` replaces a 2-D shape's
+  explicit fixed points. Each point needs `x`/`y`, with optional `dirX`,
+  `dirY`, `type`, `autoGen`, and `prompt`. Coordinates default to shape-local
+  inches; set `coordinateSpace: "page"` for page inches. An empty list clears
+  explicit points. If the new list is shorter, glue to a removed index safely
+  falls back to whole-shape glue; surviving indices remain fixed. Read
+  `connectionPoints` from `list_shapes` first (it includes both local and page
+  coordinates).
 - **Shape references**: `"shape:<id>"`, a bare integer, or a numeric string —
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.

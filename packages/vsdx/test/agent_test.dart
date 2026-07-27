@@ -535,6 +535,128 @@ void main() {
       expect(straight.waypoints, isEmpty);
     });
 
+    test('connection points mirror draw.io editing and preserve fixed glue',
+        () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      var page = doc.pages.first;
+      final a = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4,
+        pinY: 3,
+        width: 2,
+        height: 2,
+      );
+      final b = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 8,
+        pinY: 3,
+        width: 2,
+        height: 1,
+      );
+      page = page.copyWith(shapes: <VsdxShape>[a, b]);
+      final link = buildConnector(id: 3, page: page, a: a, b: b);
+      page = page
+          .addShape(link.connector)
+          .copyWith(connects: link.connects)
+          .rerouteConnectors();
+      doc = doc.replacePage(0, page);
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_connection_points',
+          'id': 1,
+          'coordinateSpace': 'page',
+          'points': <dynamic>[
+            <String, dynamic>{
+              'x': 4,
+              'y': 4,
+              'dirX': 0,
+              'dirY': 1,
+              'type': 2,
+              'prompt': 'North',
+            },
+            <String, dynamic>{'x': 5, 'y': 3},
+          ],
+        },
+        <String, dynamic>{
+          'op': 'reconnect_connector',
+          'id': 3,
+          'end': 'begin',
+          'target': 1,
+          'connectionPoint': 1,
+        },
+      ]);
+
+      expect(result.log, isEmpty);
+      final editedPage = result.document.pages.single;
+      final shape = editedPage.findShapeById(1)!;
+      expect(shape.connectionPoints, hasLength(2));
+      expect(shape.connectionPoints[0].x, closeTo(1, 1e-6));
+      expect(shape.connectionPoints[0].y, closeTo(2, 1e-6));
+      expect(shape.connectionPoints[0].type, 2);
+      expect(shape.connectionPoints[0].prompt, 'North');
+      expect(shape.connectionPoints[1].x, closeTo(2, 1e-6));
+      expect(shape.connectionPoints[1].y, closeTo(1, 1e-6));
+      final beginConnect = editedPage.connects.singleWhere(
+          (connect) => connect.fromSheetId == 3 && connect.isBegin);
+      expect(beginConnect.toPart, 101);
+
+      final listed =
+          listShapes(result.document).singleWhere((entry) => entry['id'] == 1);
+      final listedPoints = listed['connectionPoints'] as List;
+      expect(listedPoints, hasLength(2));
+      expect(listedPoints.first['index'], 0);
+      expect(listedPoints.first['x'], 1);
+      expect(listedPoints.first['pageX'], 4);
+      expect(listedPoints.first['pageY'], 4);
+      expect(listedPoints.first['prompt'], 'North');
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: original,
+          edited: result.document,
+        ),
+      );
+      expect(reopened.pages.single.findShapeById(1)!.connectionPoints,
+          shape.connectionPoints);
+      expect(
+        reopened.pages.single.connects
+            .singleWhere(
+              (connect) => connect.fromSheetId == 3 && connect.isBegin,
+            )
+            .toPart,
+        101,
+      );
+
+      final shortened = applyOps(reopened, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_connection_points',
+          'id': 1,
+          'points': <dynamic>[
+            <String, dynamic>{'x': 1, 'y': 2},
+          ],
+        },
+      ]);
+      final remapped = shortened.document.pages.single.connects.singleWhere(
+        (connect) => connect.fromSheetId == 3 && connect.isBegin,
+      );
+      expect(remapped.toPart, 3);
+      expect(remapped.toCell, 'PinX');
+
+      final cleared = applyOps(shortened.document, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_connection_points',
+          'id': 1,
+          'points': <dynamic>[],
+        },
+      ]);
+      expect(
+        cleared.document.pages.single.findShapeById(1)!.connectionPoints,
+        isEmpty,
+      );
+    });
+
     test('rejected and empty op batches preserve document identity', () {
       final doc = built();
       final target = doc.pages.single.shapes.firstWhere((s) => !s.is1D);
@@ -579,9 +701,13 @@ void main() {
           'id': target.id,
           'end': 'end',
         },
+        <String, dynamic>{
+          'op': 'set_connection_points',
+          'id': target.id,
+        },
       ]);
       expect(invalid.document, same(doc));
-      expect(invalid.log, hasLength(13));
+      expect(invalid.log, hasLength(14));
     });
 
     test('add_connector refuses 1-D from/to targets', () {

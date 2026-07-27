@@ -31,8 +31,8 @@ file is auto-reloaded within ~1s (unless you have unsaved edits).
 - `list_layers({ page? })` / `select_layer({ layerId, page? })` — inspect layer
   flags/membership and select every visible, editable object on a layer.
 - `list_shapes({ page? })` / `select({ ids })` — discover/highlight shapes and
-  inspect their optional Shape Data/hyperlink arrays plus connector route,
-  rounded corners, endpoints, glue targets, and bend points.
+  inspect Shape Data/hyperlinks, editable fixed connection points, and
+  connector route, rounded corners, endpoints, glue targets, and bend points.
 - `snapshot({ page? })` — get a PNG of the current page (for visual self-check).
 - `get_app_state()` — pages, selection, dirty flag, shape counts.
 
@@ -82,7 +82,8 @@ After registering, the tools `create_diagram`, `apply_ops`, `export`,
 `search_shapes`, `open_in_app`, `live_apply_ops`, `select_page`,
 `select_layer`, `select`, `snapshot`, `get_app_state`, plus page, layer, and
 shape convenience edits (including `set_shape_data` / `set_shape_links` and
-`set_connector` / `reconnect_connector`) are available to the Agent.
+`set_connection_points`, `set_connector`, and `reconnect_connector`) are
+available to the Agent.
 
 ## Protocol (for reference)
 

@@ -131,6 +131,7 @@ void main() {
           'assign_layer',
           'set_shape_data',
           'set_shape_links',
+          'set_connection_points',
           'set_connector',
           'reconnect_connector',
           'add_page',
@@ -182,7 +183,7 @@ void main() {
           'snapshot',
           'get_app_state',
         ]));
-    expect(names, hasLength(50));
+    expect(names, hasLength(51));
   });
 
   test('create_diagram builds + validates a .vsdx', () async {
@@ -673,6 +674,60 @@ void main() {
             .where((connect) => connect.fromSheetId == connector.id)
             .where((connect) => connect.isBegin),
         isEmpty,
+      );
+    });
+
+    test('connection-point tool mirrors draw.io fixed points', () async {
+      final a = idOf('A');
+      final b = idOf('B');
+      await callTool('set_connection_points', <String, dynamic>{
+        'path': path,
+        'id': '$a',
+        'points': <dynamic>[
+          <String, dynamic>{'x': 0, 'y': 0, 'prompt': 'Corner'},
+          <String, dynamic>{'x': 1, 'y': 0.5, 'dirX': 1, 'dirY': 0},
+        ],
+      });
+      await callTool('add_connector', <String, dynamic>{
+        'path': path,
+        'from': '$a',
+        'to': '$b',
+      });
+      final connector = shapes().singleWhere((shape) => shape.is1D);
+      await callTool('reconnect_connector', <String, dynamic>{
+        'path': path,
+        'id': '${connector.id}',
+        'end': 'begin',
+        'target': '$a',
+        'connectionPoint': 1,
+      });
+
+      final listed =
+          await callTool('list_shapes', <String, dynamic>{'path': path});
+      final decoded = jsonDecode(firstText(listed)) as Map<String, dynamic>;
+      final listedShapes = decoded['shapes'] as List;
+      final listedA = listedShapes.singleWhere((entry) => entry['id'] == a);
+      expect(listedA['connectionPoints'], hasLength(2));
+      expect((listedA['connectionPoints'] as List).first['prompt'], 'Corner');
+      final listedConnector =
+          listedShapes.singleWhere((entry) => entry['id'] == connector.id);
+      expect((listedConnector['begin'] as Map)['targetId'], a);
+      expect((listedConnector['begin'] as Map)['connectionPoint'], 1);
+
+      final reopened =
+          const DocumentParser().parse(File(path).readAsBytesSync());
+      expect(
+        reopened.pages.single.findShapeById(a)!.connectionPoints,
+        hasLength(2),
+      );
+      expect(
+        reopened.pages.single.connects
+            .singleWhere(
+              (connect) =>
+                  connect.fromSheetId == connector.id && connect.isBegin,
+            )
+            .toPart,
+        101,
       );
     });
 

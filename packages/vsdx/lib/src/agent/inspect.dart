@@ -128,6 +128,8 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
           'links': <Map<String, dynamic>>[
             for (final link in s.hyperlinks) _hyperlinkJson(link),
           ],
+        if (s.connectionPoints.isNotEmpty)
+          'connectionPoints': _connectionPointsJson(page, s, r),
         if (parentId != null) 'parentId': parentId,
       });
       if (s.children.isNotEmpty) walk(s.children, s.id);
@@ -137,6 +139,31 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
   walk(page.shapes, null);
   return out;
 }
+
+List<Map<String, dynamic>> _connectionPointsJson(
+  VsdxPage page,
+  VsdxShape shape,
+  double Function(double) round,
+) =>
+    <Map<String, dynamic>>[
+      for (var i = 0; i < shape.connectionPoints.length; i++)
+        () {
+          final point = shape.connectionPoints[i];
+          final pagePoint = page.localToPageDeep(shape.id, point.offset);
+          return <String, dynamic>{
+            'index': i,
+            'x': round(point.x),
+            'y': round(point.y),
+            'pageX': round(pagePoint.x),
+            'pageY': round(pagePoint.y),
+            'dirX': round(point.dirX),
+            'dirY': round(point.dirY),
+            'type': point.type,
+            'autoGen': point.autoGen,
+            if (point.prompt != null) 'prompt': point.prompt,
+          };
+        }(),
+    ];
 
 Map<String, dynamic> _connectorJson(
   VsdxPage page,

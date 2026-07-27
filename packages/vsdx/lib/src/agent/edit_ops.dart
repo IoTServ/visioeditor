@@ -13,7 +13,7 @@
 /// edits: `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
 /// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
 /// `distribute`, `set_data`, `set_links`, `set_connector`,
-/// `reconnect_connector`, `delete_shape`.
+/// `reconnect_connector`, `set_connection_points`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
@@ -1766,6 +1766,50 @@ ApplyResult applyOps(
           id,
           (shape) => shape.copyWith(hyperlinks: links),
         );
+      case 'set_connection_points':
+        final id = _resolveId(op['id']);
+        if (id == null) {
+          log.add(
+            'set_connection_points: missing or invalid id=${op['id']}',
+          );
+          break;
+        }
+        final target = page.findShapeById(id);
+        if (target == null || target.is1D) {
+          log.add('set_connection_points: shape $id is not a 2-D shape');
+          break;
+        }
+        if (_isProtected(page, target) || !page.isShapeTreeVisible(id)) {
+          log.add('set_connection_points: shape $id is not editable');
+          break;
+        }
+        final coordinateSpace =
+            (op['coordinateSpace'] ?? 'local').toString().trim().toLowerCase();
+        if (!const <String>{'local', 'page'}.contains(coordinateSpace)) {
+          log.add(
+            'set_connection_points: coordinateSpace must be local or page',
+          );
+          break;
+        }
+        final points = _parseConnectionPoints(
+          op['points'] ?? op['connectionPoints'],
+          page: page,
+          target: target,
+          pageCoordinates: coordinateSpace == 'page',
+          log: log,
+        );
+        if (points == null) break;
+        final nextConnects = <VsdxConnect>[
+          for (final connect in page.connects)
+            _remapConnectionPointConnect(connect, id, points.length),
+        ];
+        page = page
+            .updateShapeById(
+              id,
+              (shape) => shape.copyWith(connectionPoints: points),
+            )
+            .copyWith(connects: nextConnects)
+            .rerouteConnectors(movedShapeIds: <int>{id});
       case 'set_connector':
         final id = _resolveId(op['id']);
         if (id == null) {
@@ -2743,6 +2787,84 @@ List<VsdxHyperlink>? _parseHyperlinks(Object? raw, List<String> log) {
     links[0] = links[0].copyWith(isDefault: true);
   }
   return links;
+}
+
+List<VsdxConnectionPoint>? _parseConnectionPoints(
+  Object? raw, {
+  required VsdxPage page,
+  required VsdxShape target,
+  required bool pageCoordinates,
+  required List<String> log,
+}) {
+  if (raw is! List) {
+    log.add('set_connection_points: points must be an array');
+    return null;
+  }
+  final points = <VsdxConnectionPoint>[];
+  for (var i = 0; i < raw.length; i++) {
+    final item = raw[i];
+    if (item is! Map) {
+      log.add('set_connection_points: point $i must be an object');
+      return null;
+    }
+    final point = item.cast<Object?, Object?>();
+    final x = _d(point['x']);
+    final y = _d(point['y']);
+    if (x == null || y == null) {
+      log.add('set_connection_points: point $i needs finite x and y');
+      return null;
+    }
+    final local = pageCoordinates
+        ? page.pageToLocalDeep(target.id, Offset2D(x, y))
+        : Offset2D(x, y);
+    final inferred = VsdxPage.connectionPointAt(
+      local.x,
+      local.y,
+      target.width,
+      target.height,
+    );
+    final dirX = point.containsKey('dirX') ? _d(point['dirX']) : inferred.dirX;
+    final dirY = point.containsKey('dirY') ? _d(point['dirY']) : inferred.dirY;
+    final type = point.containsKey('type') ? _i(point['type']) : 0;
+    final autoGen = point.containsKey('autoGen') ? _b(point['autoGen']) : false;
+    if (dirX == null || dirY == null || type == null || autoGen == null) {
+      log.add('set_connection_points: point $i has invalid metadata');
+      return null;
+    }
+    points.add(
+      VsdxConnectionPoint(
+        local.x,
+        local.y,
+        dirX: dirX,
+        dirY: dirY,
+        type: type,
+        autoGen: autoGen,
+        prompt: point['prompt']?.toString(),
+        xFormula: inferred.xFormula,
+        yFormula: inferred.yFormula,
+      ),
+    );
+  }
+  return points;
+}
+
+VsdxConnect _remapConnectionPointConnect(
+  VsdxConnect connect,
+  int targetId,
+  int pointCount,
+) {
+  final index = VsdxPage.fixedConnectionIndex(connect);
+  if (connect.toSheetId != targetId || index == null || index < pointCount) {
+    return connect;
+  }
+  return VsdxConnect(
+    fromSheetId: connect.fromSheetId,
+    fromCell: connect.fromCell,
+    fromPart: connect.fromPart,
+    toSheetId: connect.toSheetId,
+    toCell: 'PinX',
+    toPart: 3,
+  );
 }
 
 List<Offset2D>? _parseWaypoints(

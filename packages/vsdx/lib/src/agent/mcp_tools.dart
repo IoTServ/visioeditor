@@ -351,8 +351,9 @@ void _registerFileTools(McpServer server) {
     description:
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
         'add/duplicate/rename/delete/move/set page; add/set/delete/assign '
-        'layer; add/configure/reconnect connector; style/text/data/links/move/'
-        'resize/duplicate/group/ungroup/z-order/align/distribute/delete shape.',
+        'layer; add/configure/reconnect connector; style/text/data/links/'
+        'connection-points/move/resize/duplicate/group/ungroup/z-order/align/'
+        'distribute/delete shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -564,8 +565,9 @@ void _registerFileTools(McpServer server) {
   server.addTool(McpTool(
     name: 'list_shapes',
     description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h, '
-        'layers, Shape Data, and hyperlinks). Use it to find ids and metadata '
-        'before editing. Give `path` for a file; omit to read the running app.',
+        'layers, Shape Data, hyperlinks, connection points, and connector '
+        'routing). Use it to find ids and metadata before editing. Give `path` '
+        'for a file; omit to read the running app.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -1457,6 +1459,47 @@ void _registerEditTools(McpServer server) {
     handler: (args) => applyOne(
       args,
       op('set_links', args, <String>['id', 'links']),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_connection_points',
+    description: 'Replace a 2-D shape\'s draw.io-style fixed connection '
+        'points. Coordinates are shape-local inches by default; use '
+        'coordinateSpace=page for page inches. An empty points array removes '
+        'the explicit points and safely falls fixed glue back to the shape.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'coordinateSpace': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['local', 'page'],
+        'default': 'local',
+      },
+      'points': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'x': <String, dynamic>{'type': 'number'},
+            'y': <String, dynamic>{'type': 'number'},
+            'dirX': <String, dynamic>{'type': 'number'},
+            'dirY': <String, dynamic>{'type': 'number'},
+            'type': <String, dynamic>{'type': 'integer'},
+            'autoGen': <String, dynamic>{'type': 'boolean'},
+            'prompt': <String, dynamic>{'type': 'string'},
+          },
+          'required': <String>['x', 'y'],
+        },
+      },
+    })
+      ..['required'] = <String>['id', 'points'],
+    handler: (args) => applyOne(
+      args,
+      op(
+        'set_connection_points',
+        args,
+        <String>['id', 'coordinateSpace', 'points'],
+      ),
     ),
   ));
 

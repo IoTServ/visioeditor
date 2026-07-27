@@ -539,6 +539,83 @@ void main() {
     );
   });
 
+  test('draw.io connection points apply live as one undoable batch', () async {
+    final c = workspace.active!;
+    final page = c.document!.pages.single;
+    final a = page.shapes.firstWhere((shape) => shape.text == 'A');
+    final connector = page.shapes.singleWhere(
+      (shape) => shape.isGlueableConnector,
+    );
+    final originalPoints = a.connectionPoints;
+    final originalBegin = page.connects.singleWhere(
+      (connect) => connect.fromSheetId == connector.id && connect.isBegin,
+    );
+    final corner = page.localToPageDeep(a.id, const Offset2D(0, 0));
+    final rightMiddle = page.localToPageDeep(
+      a.id,
+      Offset2D(a.width, a.height / 2),
+    );
+
+    final response = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{
+          'op': 'set_connection_points',
+          'id': a.id,
+          'coordinateSpace': 'page',
+          'points': <dynamic>[
+            <String, dynamic>{'x': corner.x, 'y': corner.y, 'prompt': 'Corner'},
+            <String, dynamic>{
+              'x': rightMiddle.x,
+              'y': rightMiddle.y,
+              'dirX': 1,
+              'dirY': 0,
+            },
+          ],
+        },
+        <String, dynamic>{
+          'op': 'reconnect_connector',
+          'id': connector.id,
+          'end': 'begin',
+          'target': a.id,
+          'connectionPoint': 1,
+        },
+      ],
+    });
+
+    expect(response['ok'], isTrue);
+    expect((response['result'] as Map)['changed'], isTrue);
+    final editedPage = c.document!.pages.single;
+    expect(editedPage.findShapeById(a.id)!.connectionPoints, hasLength(2));
+    expect(
+      editedPage.connects
+          .singleWhere(
+            (connect) => connect.fromSheetId == connector.id && connect.isBegin,
+          )
+          .toPart,
+      101,
+    );
+
+    final listed = await call('listShapes');
+    final listedShapes = (listed['result'] as Map)['shapes'] as List;
+    final listedA = listedShapes.singleWhere((entry) => entry['id'] == a.id);
+    expect(listedA['connectionPoints'], hasLength(2));
+    expect((listedA['connectionPoints'] as List).first['prompt'], 'Corner');
+    final listedConnector = listedShapes.singleWhere(
+      (entry) => entry['id'] == connector.id,
+    );
+    expect((listedConnector['begin'] as Map)['connectionPoint'], 1);
+
+    expect(c.canUndo, isTrue);
+    c.undo();
+    final restoredPage = c.document!.pages.single;
+    expect(restoredPage.findShapeById(a.id)!.connectionPoints, originalPoints);
+    final restoredBegin = restoredPage.connects.singleWhere(
+      (connect) => connect.fromSheetId == connector.id && connect.isBegin,
+    );
+    expect(restoredBegin.toSheetId, originalBegin.toSheetId);
+    expect(restoredBegin.toPart, originalBegin.toPart);
+  });
+
   test(
     'page ops switch live context, expose setup, and undo as one step',
     () async {
