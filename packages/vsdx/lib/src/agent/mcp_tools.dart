@@ -353,7 +353,7 @@ void _registerFileTools(McpServer server) {
         'add/duplicate/rename/delete/move/set page; add/set/delete/assign '
         'layer; add/configure/reconnect connector; style/text/data/links/'
         'connection-points/move/resize/duplicate/reparent/group/ungroup/'
-        'z-order/align/distribute/delete shape.',
+        'collapse/z-order/align/distribute/delete shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -565,9 +565,10 @@ void _registerFileTools(McpServer server) {
   server.addTool(McpTool(
     name: 'list_shapes',
     description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h, '
-        'parent hierarchy, layers, Shape Data, hyperlinks, connection points, '
-        'and connector routing). Use it to find ids and metadata before '
-        'editing. Give `path` for a file; omit to read the running app.',
+        'parent/container/collapse state, layers, Shape Data, hyperlinks, '
+        'connection points, and connector routing). Use it to find ids and '
+        'metadata before editing. Give `path` for a file; omit to read the '
+        'running app.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -1571,6 +1572,22 @@ void _registerEditTools(McpServer server) {
     handler: (args) => applyOne(
       args,
       op('reparent_shapes', args, <String>['ids', 'parent']),
+    ),
+  ));
+
+  server.addTool(McpTool(
+    name: 'set_container_collapsed',
+    description: 'Collapse or expand a draw.io-style container/swimlane. '
+        'Hidden children remain in the model; glue to them is restored on '
+        'expand when both endpoints still exist.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'collapsed': <String, dynamic>{'type': 'boolean'},
+    })
+      ..['required'] = <String>['id', 'collapsed'],
+    handler: (args) => applyOne(
+      args,
+      op('set_collapsed', args, <String>['id', 'collapsed']),
     ),
   ));
 

@@ -405,6 +405,105 @@ void main() {
   });
 
   test(
+    'draw.io container collapse applies live and restores hidden glue',
+    () async {
+      final c = workspace.active!;
+      final added = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'add_shape',
+            'stencil': 'Container',
+            'text': 'Fold host',
+            'x': 5,
+            'y': 4,
+            'w': 5,
+            'h': 3,
+          },
+        ],
+      });
+      final host = ((added['result'] as Map)['created'] as List).single as int;
+      final page = c.document!.pages.single;
+      final a = page.shapes.firstWhere((shape) => shape.text == 'A').id;
+      final connector = page.shapes.singleWhere(
+        (shape) => shape.isGlueableConnector,
+      );
+      final nested = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'reparent_shapes',
+            'ids': <int>[a],
+            'parent': host,
+          },
+        ],
+      });
+      expect((nested['result'] as Map)['changed'], isTrue);
+      final expandedPage = c.document!.pages.single;
+      final expandedHeight = expandedPage.findShapeById(host)!.height;
+      expect(expandedPage.findParentId(a), host);
+      expect(
+        expandedPage.connects.any(
+          (connect) =>
+              connect.fromSheetId == connector.id && connect.toSheetId == a,
+        ),
+        isTrue,
+      );
+
+      final selected = await call('select', <String, dynamic>{
+        'ids': <int>[a],
+      });
+      expect((selected['result'] as Map)['selection'], <int>[a]);
+
+      final response = await call('applyOps', <String, dynamic>{
+        'ops': <dynamic>[
+          <String, dynamic>{
+            'op': 'set_collapsed',
+            'id': host,
+            'collapsed': true,
+          },
+        ],
+      });
+
+      expect(response['ok'], isTrue);
+      expect((response['result'] as Map)['changed'], isTrue);
+      expect((response['result'] as Map)['selection'], isEmpty);
+      final foldedPage = c.document!.pages.single;
+      expect(foldedPage.findShapeById(host)!.collapsed, isTrue);
+      expect(foldedPage.findShapeById(host)!.height, lessThan(expandedHeight));
+      expect(foldedPage.findParentId(a), host);
+      expect(
+        foldedPage.connects.any(
+          (connect) =>
+              connect.fromSheetId == connector.id && connect.toSheetId == a,
+        ),
+        isFalse,
+      );
+
+      final listed = await call('listShapes');
+      final listedShapes = (listed['result'] as Map)['shapes'] as List;
+      final listedHost = listedShapes.singleWhere(
+        (shape) => shape['id'] == host,
+      );
+      expect(listedHost['container'], isTrue);
+      expect(listedHost['foldable'], isTrue);
+      expect(listedHost['collapsed'], isTrue);
+
+      c.undo();
+      final restoredPage = c.document!.pages.single;
+      expect(restoredPage.findShapeById(host)!.collapsed, isFalse);
+      expect(restoredPage.findShapeById(host)!.height, expandedHeight);
+      expect(restoredPage.findParentId(a), host);
+      expect(
+        restoredPage.connects.any(
+          (connect) =>
+              connect.fromSheetId == connector.id && connect.toSheetId == a,
+        ),
+        isTrue,
+      );
+      expect(c.selection, <int>{a});
+    },
+  );
+
+  test(
     'draw.io layer controls apply live, select objects, and undo cleanly',
     () async {
       final c = workspace.active!;

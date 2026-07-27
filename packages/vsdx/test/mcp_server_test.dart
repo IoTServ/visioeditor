@@ -143,6 +143,7 @@ void main() {
           'resize_shape',
           'duplicate_shapes',
           'reparent_shapes',
+          'set_container_collapsed',
           'group_shapes',
           'ungroup_shapes',
           'arrange_shape',
@@ -184,7 +185,7 @@ void main() {
           'snapshot',
           'get_app_state',
         ]));
-    expect(names, hasLength(52));
+    expect(names, hasLength(53));
   });
 
   test('create_diagram builds + validates a .vsdx', () async {
@@ -487,6 +488,74 @@ void main() {
       expect(page.findParentId(b), isNull);
       expect(page.shapePinPage(b).x, closeTo(beforeB.x, 1e-6));
       expect(page.shapePinPage(b).y, closeTo(beforeB.y, 1e-6));
+    });
+
+    test('set_container_collapsed preserves hidden-child glue in file mode',
+        () async {
+      await callTool('add_shape', <String, dynamic>{
+        'path': path,
+        'stencil': 'Container',
+        'text': 'Fold host',
+        'x': 5.0,
+        'y': 4.0,
+        'w': 5.0,
+        'h': 3.0,
+      });
+      final a = idOf('A');
+      final b = idOf('B');
+      final host = idOf('Fold host');
+      await callTool('reparent_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <dynamic>['shape:$a'],
+        'parent': '$host',
+      });
+      await callTool('add_connector', <String, dynamic>{
+        'path': path,
+        'from': 'shape:$a',
+        'to': 'shape:$b',
+      });
+      VsdxPage readPage() => const DocumentParser()
+          .parse(File(path).readAsBytesSync())
+          .pages
+          .single;
+      final expandedHeight = readPage().findShapeById(host)!.height;
+
+      final folded =
+          await callTool('set_container_collapsed', <String, dynamic>{
+        'path': path,
+        'id': '$host',
+        'collapsed': true,
+      });
+      expect(folded['isError'], isFalse);
+      var page = readPage();
+      expect(page.findShapeById(host)!.collapsed, isTrue);
+      expect(page.findShapeById(host)!.height, lessThan(expandedHeight));
+      expect(page.findParentId(a), host);
+      expect(page.connects.any((connect) => connect.toSheetId == a), isFalse);
+
+      final listed = await callTool(
+        'list_shapes',
+        <String, dynamic>{'path': path},
+      );
+      final listedShapes =
+          jsonDecode(firstText(listed))['shapes'] as List<dynamic>;
+      final listedHost =
+          listedShapes.singleWhere((shape) => shape['id'] == host);
+      expect(listedHost['container'], isTrue);
+      expect(listedHost['foldable'], isTrue);
+      expect(listedHost['collapsed'], isTrue);
+
+      final expanded =
+          await callTool('set_container_collapsed', <String, dynamic>{
+        'path': path,
+        'id': 'shape:$host',
+        'collapsed': false,
+      });
+      expect(expanded['isError'], isFalse);
+      page = readPage();
+      expect(page.findShapeById(host)!.collapsed, isFalse);
+      expect(page.findShapeById(host)!.height, closeTo(expandedHeight, 1e-6));
+      expect(page.connects.any((connect) => connect.toSheetId == a), isTrue);
     });
 
     test('structural convenience tools mirror draw.io arrange commands',

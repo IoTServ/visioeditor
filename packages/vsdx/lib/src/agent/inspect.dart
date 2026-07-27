@@ -114,6 +114,11 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
         if (s.isGlueableConnector) ..._connectorJson(page, s, r),
         if (s.isInk) 'ink': true,
         'group': s.children.isNotEmpty,
+        if (VsdxPage.isDropContainer(s)) 'container': true,
+        if (s.shapeKind.isFoldable) ...<String, dynamic>{
+          'foldable': true,
+          'collapsed': s.collapsed,
+        },
         'x': r(pin.x),
         'y': r(pin.y),
         'w': r(s.width),

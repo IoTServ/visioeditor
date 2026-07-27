@@ -160,6 +160,12 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   connector glue are preserved; cyclic nesting, hidden targets, and locked
   shapes are rejected. Read `parentId` from `list_shapes` to inspect the
   resulting hierarchy.
+- **Collapse / expand**: `set_container_collapsed` sets `collapsed` to `true`
+  or `false` for a foldable container/swimlane. Collapsing keeps descendants
+  in the model, shrinks the host to its header, and temporarily detaches glue
+  to hidden descendants. Expanding restores the previous height and only
+  restores glue whose connector and target still exist. Inspect `container`,
+  `foldable`, and `collapsed` in `list_shapes`.
 - **Group / ungroup**: grouping requires at least two editable top-level
   shapes. Ungroup only unwraps ordinary groups; tables, charts, and swimlanes
   retain their structure.

@@ -16,6 +16,7 @@ import 'obstacle_router.dart';
 import 'perimeter.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
+import 'user_property.dart';
 
 /// PageSheet cells beyond width/height/colour (scale, page shadow, jumps,
 /// margins). Required so newly-created pages round-trip like Visio / libvisio.
@@ -361,14 +362,19 @@ class VsdxPage {
     return s.isOnAnyLayer(visibleLayerIds);
   }
 
-  /// Whether [shapeId] is painted: [isShapeVisible] for it and every ancestor.
-  /// Children of a hidden-layer group are not interactive even if they have no
-  /// layer membership of their own (matches [VsdxPainter] early-out).
+  /// Whether [shapeId] is painted: [isShapeVisible] for it and every ancestor,
+  /// with descendants of collapsed hosts excluded. Children of a hidden-layer
+  /// group are not interactive even if they have no layer membership of their
+  /// own (matches [VsdxPainter] early-out).
   bool isShapeTreeVisible(int shapeId) {
     int? id = shapeId;
+    var isTarget = true;
     while (id != null) {
       final s = findShapeById(id);
       if (s == null || !isShapeVisible(s)) return false;
+      // A collapsed host remains visible; only its descendants are hidden.
+      if (!isTarget && s.collapsed) return false;
+      isTarget = false;
       id = findParentId(id);
     }
     return true;
@@ -2581,6 +2587,151 @@ class VsdxPage {
             : p.shapeKind,
       ),
     );
+  }
+
+  /// Collapse or expand a draw.io-style container / swimlane.
+  ///
+  /// Children remain in the model. Collapsing keeps the host's top edge fixed,
+  /// detaches glue aimed at now-hidden descendants, and stores those Connect
+  /// rows on the host. Expanding restores only rows whose connector and target
+  /// still exist, so deleting objects while folded cannot create zombie glue.
+  VsdxPage setCollapsed(int shapeId, bool value) {
+    final host = findShapeById(shapeId);
+    if (host == null ||
+        !host.shapeKind.isFoldable ||
+        host.collapsed == value) {
+      return this;
+    }
+
+    final changedIds = <int>{shapeId};
+    _collectDescendantIds(host, changedIds);
+    final nextHost = value ? host.fold() : host.unfold();
+    var next = updateShapeById(shapeId, (_) => nextHost);
+
+    if (value) {
+      final hidden = <int>{};
+      _collectDescendantIds(nextHost, hidden);
+      final detached = <VsdxConnect>[
+        for (final connect in next.connects)
+          if (hidden.contains(connect.toSheetId)) connect,
+      ];
+      if (detached.isNotEmpty) {
+        final affectedConnectors = <int>{
+          for (final connect in detached) connect.fromSheetId,
+        };
+        next = next.copyWith(
+          connects: <VsdxConnect>[
+            for (final connect in next.connects)
+              if (!hidden.contains(connect.toSheetId)) connect,
+          ],
+        );
+        next = next
+            .clearStaleGlueTriggers(hidden)
+            .syncGlueTriggers(connectorIds: affectedConnectors)
+            .updateShapeById(
+              shapeId,
+              (shape) => _withCollapsedGlue(shape, detached),
+            );
+      }
+    } else {
+      final detached = <VsdxConnect>[
+        for (final connect in _readCollapsedGlue(host))
+          if (next.findShapeById(connect.fromSheetId) != null &&
+              next.findShapeById(connect.toSheetId) != null)
+            connect,
+      ];
+      if (detached.isNotEmpty) {
+        final affectedConnectors = <int>{
+          for (final connect in detached) connect.fromSheetId,
+        };
+        next = next
+            .copyWith(
+              connects: <VsdxConnect>[...next.connects, ...detached],
+            )
+            .syncGlueTriggers(connectorIds: affectedConnectors);
+      }
+      next = next.updateShapeById(shapeId, _withoutCollapsedGlue);
+    }
+
+    return next
+        .recalculateFormulas(changedShapeIds: changedIds)
+        .rerouteConnectors(movedShapeIds: changedIds);
+  }
+
+  static VsdxShape _withCollapsedGlue(
+    VsdxShape shape,
+    List<VsdxConnect> detached,
+  ) {
+    final otherCells = <VsdxUserCell>[
+      for (final cell in shape.userCells)
+        if (cell.name != VsdxShape.userCollapsedGlue) cell,
+    ];
+    return shape.copyWith(
+      userCells: <VsdxUserCell>[
+        ...otherCells,
+        VsdxUserCell(
+          name: VsdxShape.userCollapsedGlue,
+          value: _encodeCollapsedGlue(detached),
+        ),
+      ],
+    );
+  }
+
+  static VsdxShape _withoutCollapsedGlue(VsdxShape shape) {
+    final otherCells = <VsdxUserCell>[
+      for (final cell in shape.userCells)
+        if (cell.name != VsdxShape.userCollapsedGlue) cell,
+    ];
+    if (otherCells.length == shape.userCells.length) return shape;
+    return shape.copyWith(userCells: otherCells);
+  }
+
+  static List<VsdxConnect> _readCollapsedGlue(VsdxShape shape) {
+    for (final cell in shape.userCells) {
+      if (cell.name == VsdxShape.userCollapsedGlue) {
+        return _decodeCollapsedGlue(cell.value);
+      }
+    }
+    return const <VsdxConnect>[];
+  }
+
+  static String _encodeCollapsedGlue(List<VsdxConnect> connects) => connects
+      .map(
+        (connect) => <String>[
+          '${connect.fromSheetId}',
+          connect.fromCell,
+          connect.fromPart?.toString() ?? '',
+          '${connect.toSheetId}',
+          connect.toCell,
+          connect.toPart?.toString() ?? '',
+        ].join('\t'),
+      )
+      .join('\n');
+
+  static List<VsdxConnect> _decodeCollapsedGlue(String? raw) {
+    if (raw == null || raw.isEmpty) return const <VsdxConnect>[];
+    final decoded = <VsdxConnect>[];
+    for (final line in raw.split('\n')) {
+      if (line.isEmpty) continue;
+      final fields = line.split('\t');
+      if (fields.length < 5) continue;
+      final fromId = int.tryParse(fields[0]);
+      final toId = int.tryParse(fields[3]);
+      if (fromId == null || toId == null) continue;
+      decoded.add(
+        VsdxConnect(
+          fromSheetId: fromId,
+          fromCell: fields[1],
+          fromPart: fields[2].isEmpty ? null : int.tryParse(fields[2]),
+          toSheetId: toId,
+          toCell: fields[4],
+          toPart: fields.length > 5 && fields[5].isNotEmpty
+              ? int.tryParse(fields[5])
+              : null,
+        ),
+      );
+    }
+    return decoded;
   }
 
   /// Materialize [shapeId] as a top-level shape (page pin / angle / flip).

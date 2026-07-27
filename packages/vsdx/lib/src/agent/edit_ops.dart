@@ -14,7 +14,7 @@
 /// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
 /// `distribute`, `set_data`, `set_links`, `set_connector`,
 /// `reconnect_connector`, `set_connection_points`, `reparent_shapes`,
-/// `delete_shape`.
+/// `set_collapsed`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
@@ -2234,6 +2234,47 @@ ApplyResult applyOps(
         }
         if (!changed && !rejected) {
           log.add('reparent_shapes: hierarchy unchanged');
+        }
+      case 'set_collapsed':
+      case 'set_container_collapsed':
+        final collapsed = _b(op['collapsed']);
+        if (!op.containsKey('collapsed') || collapsed == null) {
+          log.add('set_collapsed: collapsed must be true or false');
+          break;
+        }
+        final ids = _resolveIds(op['ids'] ?? op['id']);
+        if (ids.isEmpty) {
+          log.add('set_collapsed: id or ids is required');
+          break;
+        }
+        var changed = false;
+        var rejected = false;
+        for (final id in ids.toSet()) {
+          final host = page.findShapeById(id);
+          if (host == null) {
+            log.add('set_collapsed: shape $id not found');
+            rejected = true;
+            continue;
+          }
+          if (!host.shapeKind.isFoldable) {
+            log.add('set_collapsed: shape $id is not a foldable container');
+            rejected = true;
+            continue;
+          }
+          if (_isProtected(page, host) || !page.isShapeTreeVisible(id)) {
+            log.add('set_collapsed: shape $id is locked or hidden');
+            rejected = true;
+            continue;
+          }
+          if (host.collapsed == collapsed) continue;
+          final next = page.setCollapsed(id, collapsed);
+          if (!identical(next, page)) {
+            page = next;
+            changed = true;
+          }
+        }
+        if (!changed && !rejected) {
+          log.add('set_collapsed: state unchanged');
         }
       case 'group':
       case 'group_shapes':

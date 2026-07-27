@@ -709,9 +709,13 @@ void main() {
           'op': 'reparent_shapes',
           'ids': <int>[target.id],
         },
+        <String, dynamic>{
+          'op': 'set_collapsed',
+          'id': target.id,
+        },
       ]);
       expect(invalid.document, same(doc));
-      expect(invalid.log, hasLength(15));
+      expect(invalid.log, hasLength(16));
     });
 
     test('add_connector refuses 1-D from/to targets', () {
@@ -2890,6 +2894,140 @@ void main() {
                 ))
             .toList(),
       );
+    });
+
+    test('set_collapsed hides children and restores their connector glue', () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      var page = doc.pages.first;
+      final container = VsdxShapeFactory.container(
+        id: 1,
+        pinX: 5,
+        pinY: 4,
+        width: 4,
+        height: 3,
+      );
+      final child = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 4.5,
+        pinY: 3.5,
+        width: 1,
+        height: 1,
+      );
+      final outside = VsdxShapeFactory.rectangle(
+        id: 3,
+        pinX: 8,
+        pinY: 4,
+        width: 1,
+        height: 1,
+      );
+      page = page.copyWith(shapes: <VsdxShape>[
+        container,
+        child,
+        outside
+      ]).reparentShape(child.id, container.id);
+      final link = buildConnector(
+        id: 4,
+        page: page,
+        a: page.findShapeById(child.id)!,
+        b: outside,
+      );
+      page = page
+          .addShape(link.connector)
+          .copyWith(connects: link.connects)
+          .rerouteConnectors();
+      doc = doc.replacePage(0, page);
+
+      final folded = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_collapsed',
+          'id': container.id,
+          'collapsed': true,
+        },
+      ]);
+
+      expect(folded.log, isEmpty);
+      final foldedPage = folded.document.pages.first;
+      final foldedHost = foldedPage.findShapeById(container.id)!;
+      expect(foldedHost.collapsed, isTrue);
+      expect(foldedHost.height, lessThan(container.height));
+      expect(foldedPage.findParentId(child.id), container.id);
+      expect(
+        foldedPage.connects.any((connect) => connect.toSheetId == child.id),
+        isFalse,
+      );
+      expect(
+        foldedPage.findShapeById(link.connector.id)!.formulas['BegTrigger'],
+        isNull,
+      );
+      final listed = listShapes(folded.document)
+          .singleWhere((entry) => entry['id'] == container.id);
+      expect(listed['container'], isTrue);
+      expect(listed['foldable'], isTrue);
+      expect(listed['collapsed'], isTrue);
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: original,
+          edited: folded.document,
+        ),
+      );
+      expect(
+        reopened.pages.first.findShapeById(container.id)!.shapeKind,
+        VsdxShapeKind.container,
+      );
+      expect(
+          reopened.pages.first.findShapeById(container.id)!.collapsed, isTrue);
+      expect(
+        reopened.pages.first.connects
+            .any((connect) => connect.toSheetId == child.id),
+        isFalse,
+      );
+
+      final expanded = applyOps(reopened, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_container_collapsed',
+          'id': 'shape:${container.id}',
+          'collapsed': false,
+        },
+      ]);
+      expect(expanded.log, isEmpty);
+      final expandedPage = expanded.document.pages.first;
+      final expandedHost = expandedPage.findShapeById(container.id)!;
+      expect(expandedHost.collapsed, isFalse);
+      expect(expandedHost.height, closeTo(container.height, 1e-6));
+      expect(
+        expandedPage.connects.any((connect) =>
+            connect.fromSheetId == link.connector.id &&
+            connect.toSheetId == child.id),
+        isTrue,
+      );
+      expect(
+        expandedPage.findShapeById(link.connector.id)!.formulas['BegTrigger'],
+        contains('Sheet.${child.id}!'),
+      );
+      expect(
+        expandedHost.userCells
+            .any((cell) => cell.name == VsdxShape.userCollapsedGlue),
+        isFalse,
+      );
+
+      final locked = expanded.document.replacePage(
+        0,
+        expandedPage.updateShapeById(
+          container.id,
+          (shape) => shape.copyWith(locked: true),
+        ),
+      );
+      final blocked = applyOps(locked, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'set_collapsed',
+          'id': container.id,
+          'collapsed': true,
+        },
+      ]);
+      expect(blocked.document, same(locked));
+      expect(blocked.log.single, contains('locked'));
     });
 
     test('align and distribute use rotation-aware page bounds', () {

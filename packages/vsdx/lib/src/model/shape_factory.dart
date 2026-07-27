@@ -3360,7 +3360,9 @@ abstract final class VsdxShapeFactory {
     final r = math.min(w, h) * 0.06;
     return VsdxShape(
       id: id,
-      name: name ?? 'Sheet.$id',
+      // Keep the semantic type detectable after a VSDX writer round-trip.
+      // Empty containers have neither a Master nor nested <Shapes> to hint it.
+      name: name ?? 'Container.$id',
       pinX: pinX,
       pinY: pinY,
       width: w,
