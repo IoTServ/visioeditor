@@ -103,6 +103,13 @@ VsdxShape resolveStencilShape({
   final cat = _catalogByNorm[_norm(stencil)];
   if (cat != null) {
     var s = cat.build(id, cx, cy).resizeTo(pinX: cx, pinY: cy, width: w, height: h);
+    // Empty containers have no nested `<Shapes>` for the parser to classify
+    // after a writer round-trip. Keep a semantic NameU hint, matching Visio
+    // stencil naming, so later file-mode edits can still accept dropped shapes.
+    if (s.shapeKind == VsdxShapeKind.container &&
+        !s.name.toLowerCase().contains('container')) {
+      s = s.copyWith(name: 'Container.$id');
+    }
     // resizeTo does not reflow structural children — retile pools/tables so
     // lanes/cells match the requested box after agent sizing.
     if (SwimlaneOps.isPool(s)) {

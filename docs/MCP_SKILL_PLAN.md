@@ -185,9 +185,12 @@
 - `add_layer` / `set_layer` / `delete_layer` / `assign_layer`：图层生命周期、
   显示/锁定/打印/活动状态和形状成员关系。
 - `add_shape` / `add_connector` / `set_style` / `set_text` / `move_shape` /
-  `resize_shape` / `duplicate_shapes` / `group_shapes` / `ungroup_shapes` /
-  `arrange_shape` / `align_shapes` / `distribute_shapes` / `delete_shape`：
-  单步语义工具，内部转 `apply_ops` 或 `live_apply_ops`（依据是否连到应用）。
+  `resize_shape` / `duplicate_shapes` / `reparent_shapes` / `group_shapes` /
+  `ungroup_shapes` / `arrange_shape` / `align_shapes` / `distribute_shapes` /
+  `delete_shape`：单步语义工具，内部转 `apply_ops` 或 `live_apply_ops`
+  （依据是否连到应用）。
+- `reparent_shapes`：对齐 draw.io 容器拖放，把形状批量移入可见且未锁定的容器/组，
+  或以 `parent:"none"` 移回页面根级；保持页面坐标、连接器胶合并拒绝循环层级。
 - `set_shape_data` / `set_shape_links`：对齐 draw.io Edit Data / Edit Link，
   结构化替换形状数据字段、外部 URL 与页内跳转。
 - `set_connector` / `reconnect_connector`：对齐 draw.io 连接器路由、圆角、
@@ -379,13 +382,13 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
 - [x] **便捷单步工具**：6 个页面操作 + 基础形状增删改 +
       4 个图层操作 + 2 个形状元数据操作 + 2 个连接器精修操作 +
-      1 个固定连接点操作 +
-      `resize_shape`/`duplicate_shapes`/`group_shapes`/`ungroup_shapes`/
-      `arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
+      1 个固定连接点操作 + 1 个容器层级操作 +
+      `resize_shape`/`duplicate_shapes`/`reparent_shapes`/`group_shapes`/
+      `ungroup_shapes`/`arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
       （给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op。
 - [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **51 个工具**；
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **52 个工具**；
 文件类端到端建图/校验/描述/导出/列举；便捷结构编辑支持文件/实时双模式；实时类经
 `BridgeClient` 驱动应用。
 
@@ -707,3 +710,8 @@ visioeditor/
   `set_connection_points`，支持局部/页面坐标、方向、类型、AutoGen、Prompt 与清空；
   `list_shapes` 返回本地及页面坐标。缩短列表会保留仍有效的固定胶合，并把被删除索引
   安全降级为整形状胶合。文件往返与实时单步撤销均有回归覆盖。工具总数 **51**。
+- 2026-07-27 — **draw.io 容器层级对齐**：Edit Ops / MCP 新增
+  `reparent_shapes`，支持批量移入容器/组及以 `parent:"none"` 移回页面根级；
+  选择根去重、循环层级、隐藏目标和锁定对象均安全处理，且保持页面位置和 connector
+  glue。`list_shapes.parentId` 可检查嵌套结果；空容器的语义名称可跨 VSDX 写入/重开
+  保留。文件模式、实时桥与单步撤销均有回归覆盖。工具总数 **52**。

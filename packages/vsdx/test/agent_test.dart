@@ -705,9 +705,13 @@ void main() {
           'op': 'set_connection_points',
           'id': target.id,
         },
+        <String, dynamic>{
+          'op': 'reparent_shapes',
+          'ids': <int>[target.id],
+        },
       ]);
       expect(invalid.document, same(doc));
-      expect(invalid.log, hasLength(14));
+      expect(invalid.log, hasLength(15));
     });
 
     test('add_connector refuses 1-D from/to targets', () {
@@ -2762,6 +2766,130 @@ void main() {
       expect(ungrouped.document.pages.first.findShapeById(groupId), isNull);
       expect(
           ungrouped.document.pages.first.shapes.map((s) => s.id), <int>[1, 2]);
+    });
+
+    test('reparent_shapes preserves page geometry and connector glue', () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      var page = doc.pages.first;
+      final container = VsdxShapeFactory.container(
+        id: 1,
+        pinX: 5,
+        pinY: 4,
+        width: 4,
+        height: 3,
+      );
+      final child = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 4,
+        pinY: 4,
+        width: 1,
+        height: 1,
+      );
+      final outside = VsdxShapeFactory.rectangle(
+        id: 3,
+        pinX: 8,
+        pinY: 4,
+        width: 1,
+        height: 1,
+      );
+      page = page.copyWith(shapes: <VsdxShape>[container, child, outside]);
+      final link = buildConnector(id: 4, page: page, a: child, b: outside);
+      page = page
+          .addShape(link.connector)
+          .copyWith(connects: link.connects)
+          .rerouteConnectors();
+      doc = doc.replacePage(0, page);
+      final beforePin = page.shapePinPage(child.id);
+      final beforeConnects = page.connects;
+
+      final nested = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'reparent_shapes',
+          'ids': <dynamic>[child.id],
+          'parent': container.id,
+        },
+      ]);
+
+      expect(nested.log, isEmpty);
+      final nestedPage = nested.document.pages.first;
+      expect(nestedPage.findParentId(child.id), container.id);
+      expect(nestedPage.shapePinPage(child.id).x, closeTo(beforePin.x, 1e-6));
+      expect(nestedPage.shapePinPage(child.id).y, closeTo(beforePin.y, 1e-6));
+      expect(nestedPage.connects, beforeConnects);
+      expect(
+        listShapes(nested.document)
+            .singleWhere((entry) => entry['id'] == child.id)['parentId'],
+        container.id,
+      );
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: original,
+          edited: nested.document,
+        ),
+      );
+      final reopenedPage = reopened.pages.first;
+      expect(reopenedPage.findParentId(child.id), container.id);
+      expect(reopenedPage.shapePinPage(child.id).x, closeTo(beforePin.x, 1e-6));
+      expect(reopenedPage.shapePinPage(child.id).y, closeTo(beforePin.y, 1e-6));
+      expect(
+        reopenedPage.connects
+            .map((connect) => (
+                  connect.fromSheetId,
+                  connect.fromCell,
+                  connect.fromPart,
+                  connect.toSheetId,
+                  connect.toCell,
+                  connect.toPart,
+                ))
+            .toList(),
+        beforeConnects
+            .map((connect) => (
+                  connect.fromSheetId,
+                  connect.fromCell,
+                  connect.fromPart,
+                  connect.toSheetId,
+                  connect.toCell,
+                  connect.toPart,
+                ))
+            .toList(),
+      );
+
+      final ejected = applyOps(reopened, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'reparent_shapes',
+          'ids': <dynamic>['shape:${child.id}'],
+          'parent': 'none',
+        },
+      ]);
+      final ejectedPage = ejected.document.pages.first;
+      expect(ejected.log, isEmpty);
+      expect(ejectedPage.findParentId(child.id), isNull);
+      expect(ejectedPage.shapePinPage(child.id).x, closeTo(beforePin.x, 1e-6));
+      expect(ejectedPage.shapePinPage(child.id).y, closeTo(beforePin.y, 1e-6));
+      expect(
+        ejectedPage.connects
+            .map((connect) => (
+                  connect.fromSheetId,
+                  connect.fromCell,
+                  connect.fromPart,
+                  connect.toSheetId,
+                  connect.toCell,
+                  connect.toPart,
+                ))
+            .toList(),
+        beforeConnects
+            .map((connect) => (
+                  connect.fromSheetId,
+                  connect.fromCell,
+                  connect.fromPart,
+                  connect.toSheetId,
+                  connect.toCell,
+                  connect.toPart,
+                ))
+            .toList(),
+      );
     });
 
     test('align and distribute use rotation-aware page bounds', () {

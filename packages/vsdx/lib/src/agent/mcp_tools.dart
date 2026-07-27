@@ -352,8 +352,8 @@ void _registerFileTools(McpServer server) {
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
         'add/duplicate/rename/delete/move/set page; add/set/delete/assign '
         'layer; add/configure/reconnect connector; style/text/data/links/'
-        'connection-points/move/resize/duplicate/group/ungroup/z-order/align/'
-        'distribute/delete shape.',
+        'connection-points/move/resize/duplicate/reparent/group/ungroup/'
+        'z-order/align/distribute/delete shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -565,9 +565,9 @@ void _registerFileTools(McpServer server) {
   server.addTool(McpTool(
     name: 'list_shapes',
     description: 'List a page\'s shapes as JSON (id, text, connector, x/y/w/h, '
-        'layers, Shape Data, hyperlinks, connection points, and connector '
-        'routing). Use it to find ids and metadata before editing. Give `path` '
-        'for a file; omit to read the running app.',
+        'parent hierarchy, layers, Shape Data, hyperlinks, connection points, '
+        'and connector routing). Use it to find ids and metadata before '
+        'editing. Give `path` for a file; omit to read the running app.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -1550,6 +1550,28 @@ void _registerEditTools(McpServer server) {
       ..['required'] = <String>['ids'],
     handler: (args) => applyOne(
         args, op('duplicate_shape', args, <String>['ids', 'dx', 'dy'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'reparent_shapes',
+    description: 'Move shapes into a draw.io-style container/group while '
+        'preserving their page positions and connector glue. Use parent=none '
+        'to move them back to the page root.',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+      'parent': <String, dynamic>{
+        'type': 'string',
+        'description': 'Container shape id, or "none" for the page root.',
+      },
+    })
+      ..['required'] = <String>['ids', 'parent'],
+    handler: (args) => applyOne(
+      args,
+      op('reparent_shapes', args, <String>['ids', 'parent']),
+    ),
   ));
 
   server.addTool(McpTool(

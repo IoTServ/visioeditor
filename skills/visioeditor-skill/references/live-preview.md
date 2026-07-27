@@ -83,7 +83,9 @@ After registering, the tools `create_diagram`, `apply_ops`, `export`,
 `select_layer`, `select`, `snapshot`, `get_app_state`, plus page, layer, and
 shape convenience edits (including `set_shape_data` / `set_shape_links` and
 `set_connection_points`, `set_connector`, and `reconnect_connector`) are
-available to the Agent.
+available to the Agent. `list_shapes` exposes nested `parentId` values, and
+`reparent_shapes` can move shapes into a draw.io-style container/group or
+eject them with `parent: "none"`.
 
 ## Protocol (for reference)
 

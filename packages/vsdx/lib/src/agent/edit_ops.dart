@@ -13,7 +13,8 @@
 /// edits: `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
 /// `resize_shape`, `duplicate_shape`, `group`, `ungroup`, `z_order`, `align`,
 /// `distribute`, `set_data`, `set_links`, `set_connector`,
-/// `reconnect_connector`, `set_connection_points`, `delete_shape`.
+/// `reconnect_connector`, `set_connection_points`, `reparent_shapes`,
+/// `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
@@ -2168,6 +2169,72 @@ ApplyResult applyOps(
         final clonedIds = idMap.values.toSet();
         page = page.syncGlueTriggers(connectorIds: clonedIds);
         movedForReroute.addAll(clonedIds);
+      case 'reparent':
+      case 'reparent_shapes':
+        final hasParent = op.containsKey('parent') ||
+            op.containsKey('parentId') ||
+            op.containsKey('containerId');
+        if (!hasParent) {
+          log.add('reparent_shapes: parent is required (use none for page)');
+          break;
+        }
+        final parentRaw = op['parent'] ?? op['parentId'] ?? op['containerId'];
+        final parentName = parentRaw?.toString().trim().toLowerCase();
+        final eject = parentRaw == null ||
+            const <String>{'none', 'page', 'root', 'top'}.contains(parentName);
+        final parentId = eject ? null : _resolveId(parentRaw);
+        final parent = parentId == null ? null : page.findShapeById(parentId);
+        if (!eject &&
+            (parentId == null ||
+                parent == null ||
+                !VsdxPage.isDropContainer(parent) ||
+                _isProtected(page, parent) ||
+                !page.isShapeTreeVisible(parentId))) {
+          log.add('reparent_shapes: invalid container=$parentRaw');
+          break;
+        }
+        final requested = _selectionRoots(
+          page,
+          _resolveIds(op['ids'] ?? op['id']),
+        );
+        final movable = <int>[
+          for (final id in requested)
+            if (id != parentId)
+              if (page.findShapeById(id) case final shape?
+                  when !_isProtected(page, shape) &&
+                      page.isShapeTreeVisible(id))
+                id,
+        ];
+        if (movable.isEmpty) {
+          log.add('reparent_shapes: no editable shapes');
+          break;
+        }
+        var changed = false;
+        var rejected = false;
+        for (final id in movable) {
+          if (parentId != null && _isAncestorOf(page, id, parentId)) {
+            log.add(
+              'reparent_shapes: shape $id cannot contain itself',
+            );
+            rejected = true;
+            continue;
+          }
+          if (page.findParentId(id) == parentId) continue;
+          final affected = <int>{};
+          _addSubtreeIds(page, id, affected);
+          if (parentId != null) {
+            _addSubtreeIds(page, parentId, affected);
+          }
+          final next = page.reparentShape(id, parentId);
+          if (!identical(next, page)) {
+            page = next;
+            movedForReroute.addAll(affected);
+            changed = true;
+          }
+        }
+        if (!changed && !rejected) {
+          log.add('reparent_shapes: hierarchy unchanged');
+        }
       case 'group':
       case 'group_shapes':
         final requested = _resolveIds(op['ids'] ?? op['id']);
@@ -2465,6 +2532,15 @@ bool _hasSelectedAncestor(VsdxPage page, int id, Set<int> selected) {
   var parent = page.findParentId(id);
   while (parent != null) {
     if (selected.contains(parent)) return true;
+    parent = page.findParentId(parent);
+  }
+  return false;
+}
+
+bool _isAncestorOf(VsdxPage page, int ancestorId, int id) {
+  var parent = page.findParentId(id);
+  while (parent != null) {
+    if (parent == ancestorId) return true;
     parent = page.findParentId(parent);
   }
   return false;

@@ -154,6 +154,12 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
 - **Duplicate**: accepts `id` or `ids`; allocates fresh ids for every
   descendant, rewrites internal `Sheet.n!` formulas and connector glue, and
   defaults to draw.io's `dx=0.25`, `dy=-0.25` inch offset.
+- **Container hierarchy**: `reparent_shapes` moves the selection roots in
+  `ids` into the visible, editable container/group named by `parent`. Use
+  `parent: "none"` to eject them to the page root. Page-space position and
+  connector glue are preserved; cyclic nesting, hidden targets, and locked
+  shapes are rejected. Read `parentId` from `list_shapes` to inspect the
+  resulting hierarchy.
 - **Group / ungroup**: grouping requires at least two editable top-level
   shapes. Ungroup only unwraps ordinary groups; tables, charts, and swimlanes
   retain their structure.

@@ -142,6 +142,7 @@ void main() {
           'set_page',
           'resize_shape',
           'duplicate_shapes',
+          'reparent_shapes',
           'group_shapes',
           'ungroup_shapes',
           'arrange_shape',
@@ -183,7 +184,7 @@ void main() {
           'snapshot',
           'get_app_state',
         ]));
-    expect(names, hasLength(51));
+    expect(names, hasLength(52));
   });
 
   test('create_diagram builds + validates a .vsdx', () async {
@@ -426,6 +427,66 @@ void main() {
       final s = shapes().firstWhere((shape) => shape.id == id);
       expect(s.width, closeTo(2.5, 1e-6));
       expect(s.height, closeTo(1.25, 1e-6));
+    });
+
+    test('reparent_shapes mirrors draw.io container hierarchy controls',
+        () async {
+      await callTool('add_shape', <String, dynamic>{
+        'path': path,
+        'stencil': 'Container',
+        'text': 'Host',
+        'x': 5.0,
+        'y': 4.0,
+        'w': 5.0,
+        'h': 3.0,
+      });
+      final a = idOf('A');
+      final b = idOf('B');
+      final host = idOf('Host');
+      VsdxPage readPage() => const DocumentParser()
+          .parse(File(path).readAsBytesSync())
+          .pages
+          .single;
+      final beforeA = readPage().shapePinPage(a);
+      final beforeB = readPage().shapePinPage(b);
+
+      final nested = await callTool('reparent_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <dynamic>['shape:$a', b],
+        'parent': '$host',
+      });
+      expect(nested['isError'], isFalse);
+      var page = readPage();
+      expect(VsdxPage.isDropContainer(page.findShapeById(host)!), isTrue);
+      expect(page.findParentId(a), host);
+      expect(page.findParentId(b), host);
+      expect(page.shapePinPage(a).x, closeTo(beforeA.x, 1e-6));
+      expect(page.shapePinPage(a).y, closeTo(beforeA.y, 1e-6));
+      expect(page.shapePinPage(b).x, closeTo(beforeB.x, 1e-6));
+      expect(page.shapePinPage(b).y, closeTo(beforeB.y, 1e-6));
+
+      final listed = await callTool(
+        'list_shapes',
+        <String, dynamic>{'path': path},
+      );
+      final listedShapes =
+          jsonDecode(firstText(listed))['shapes'] as List<dynamic>;
+      expect(
+        listedShapes.singleWhere((shape) => shape['id'] == a)['parentId'],
+        host,
+      );
+
+      final ejected = await callTool('reparent_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <int>[b],
+        'parent': 'none',
+      });
+      expect(ejected['isError'], isFalse);
+      page = readPage();
+      expect(page.findParentId(a), host);
+      expect(page.findParentId(b), isNull);
+      expect(page.shapePinPage(b).x, closeTo(beforeB.x, 1e-6));
+      expect(page.shapePinPage(b).y, closeTo(beforeB.y, 1e-6));
     });
 
     test('structural convenience tools mirror draw.io arrange commands',

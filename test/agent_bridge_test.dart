@@ -340,6 +340,70 @@ void main() {
     );
   });
 
+  test('draw.io container hierarchy applies live and undoes cleanly', () async {
+    final c = workspace.active!;
+    final added = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{
+          'op': 'add_shape',
+          'stencil': 'Container',
+          'text': 'Live host',
+          'x': 5,
+          'y': 4,
+          'w': 5,
+          'h': 3,
+        },
+      ],
+    });
+    expect(added['ok'], isTrue);
+    final host = ((added['result'] as Map)['created'] as List).single as int;
+    final beforePage = c.document!.pages.single;
+    final a = beforePage.shapes.firstWhere((shape) => shape.text == 'A').id;
+    final b = beforePage.shapes.firstWhere((shape) => shape.text == 'B').id;
+    final beforeA = beforePage.shapePinPage(a);
+    final beforeB = beforePage.shapePinPage(b);
+    final beforeConnects = beforePage.connects;
+
+    final response = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{
+          'op': 'reparent_shapes',
+          'ids': <dynamic>[a, 'shape:$b'],
+          'parent': '$host',
+        },
+      ],
+    });
+
+    expect(response['ok'], isTrue);
+    expect((response['result'] as Map)['changed'], isTrue);
+    final editedPage = c.document!.pages.single;
+    expect(VsdxPage.isDropContainer(editedPage.findShapeById(host)!), isTrue);
+    expect(editedPage.findParentId(a), host);
+    expect(editedPage.findParentId(b), host);
+    expect(editedPage.shapePinPage(a).x, closeTo(beforeA.x, 1e-6));
+    expect(editedPage.shapePinPage(a).y, closeTo(beforeA.y, 1e-6));
+    expect(editedPage.shapePinPage(b).x, closeTo(beforeB.x, 1e-6));
+    expect(editedPage.shapePinPage(b).y, closeTo(beforeB.y, 1e-6));
+    expect(editedPage.connects, beforeConnects);
+
+    final listed = await call('listShapes');
+    final listedShapes = (listed['result'] as Map)['shapes'] as List;
+    expect(
+      listedShapes.singleWhere((shape) => shape['id'] == a)['parentId'],
+      host,
+    );
+
+    expect(c.canUndo, isTrue);
+    c.undo();
+    final restoredPage = c.document!.pages.single;
+    expect(restoredPage.findShapeById(host), isNotNull);
+    expect(restoredPage.findParentId(a), isNull);
+    expect(restoredPage.findParentId(b), isNull);
+    expect(restoredPage.shapePinPage(a).x, closeTo(beforeA.x, 1e-6));
+    expect(restoredPage.shapePinPage(b).x, closeTo(beforeB.x, 1e-6));
+    expect(restoredPage.connects, beforeConnects);
+  });
+
   test(
     'draw.io layer controls apply live, select objects, and undo cleanly',
     () async {
