@@ -8,11 +8,13 @@
 ///     file-mode MCP tools.
 ///
 /// Supported ops: `add_shape`, `add_connector`, `set_style`, `set_text`,
-/// `move_shape`, `resize_shape`, `delete_shape`.
+/// `move_shape`, `resize_shape`, `duplicate_shape`, `group`, `ungroup`,
+/// `z_order`, `align`, `distribute`, `delete_shape`.
 /// Schema: `skills/visioeditor-skill/references/spec-schema.md`.
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:vsdx/vsdx.dart';
@@ -27,7 +29,7 @@ class ApplyResult {
   /// The edited document.
   final VsdxDocument document;
 
-  /// Shape ids created by `add_shape` / `add_connector`, in op order.
+  /// Root shape ids created by add / duplicate / group ops, in op order.
   final List<int> createdIds;
 
   /// Human-readable notes (skipped ops, unresolved ids, …).
@@ -1395,6 +1397,262 @@ ApplyResult applyOps(
           });
           _addSubtreeIds(page, id, movedForReroute);
         }
+      case 'duplicate_shape':
+      case 'duplicate':
+        final requested = _resolveIds(op['ids'] ?? op['id']);
+        final roots = _selectionRoots(page, requested).where((id) {
+          final s = page.findShapeById(id);
+          return s != null && !_isProtected(page, s);
+        }).toList();
+        if (roots.isEmpty) {
+          log.add('duplicate_shape: no editable shapes in ids=$requested');
+          break;
+        }
+        final sourceIds = <int>{};
+        for (final id in roots) {
+          _addSubtreeIds(page, id, sourceIds);
+        }
+        final sourceConnects = <VsdxConnect>[
+          for (final c in page.connects)
+            if (sourceIds.contains(c.fromSheetId) &&
+                sourceIds.contains(c.toSheetId))
+              c,
+        ];
+        final dx = _d(op['dx']) ?? 0.25;
+        final dy = _d(op['dy']) ?? -0.25;
+        final idMap = <int, int>{};
+        final newRootIds = <int>[];
+        var nextId = page.nextFreeShapeId();
+        for (final id in roots) {
+          final source = page.findShapeById(id)!;
+          final clone = _withTreeUnlocked(
+            VsdxPage.translateShape(
+              source.withRemappedIds(
+                () => nextId++,
+                idMap: idMap,
+              ),
+              dx,
+              dy,
+              honourDontMoveChildren: false,
+            ),
+          );
+          page = page.addShape(clone);
+          created.add(clone.id);
+          newRootIds.add(clone.id);
+        }
+        // A clone encountered before another selected root could not rewrite a
+        // cross-root Sheet.n! reference until the complete id map existed.
+        for (final id in newRootIds) {
+          page = page.updateShapeById(
+            id,
+            (s) => VsdxShape.rewriteSheetRefsInTree(s, idMap),
+          );
+        }
+        final remappedConnects = <VsdxConnect>[
+          for (final c in sourceConnects)
+            if (idMap.containsKey(c.fromSheetId) &&
+                idMap.containsKey(c.toSheetId))
+              VsdxConnect(
+                fromSheetId: idMap[c.fromSheetId]!,
+                fromCell: c.fromCell,
+                fromPart: c.fromPart,
+                toSheetId: idMap[c.toSheetId]!,
+                toCell: c.toCell,
+                toPart: c.toPart,
+              ),
+        ];
+        if (remappedConnects.isNotEmpty) {
+          page = page.copyWith(
+            connects: <VsdxConnect>[...page.connects, ...remappedConnects],
+          );
+        }
+        final clonedIds = idMap.values.toSet();
+        page = page.syncGlueTriggers(connectorIds: clonedIds);
+        movedForReroute.addAll(clonedIds);
+      case 'group':
+      case 'group_shapes':
+        final requested = _resolveIds(op['ids'] ?? op['id']);
+        final ids = <int>{
+          for (final id in requested)
+            if (page.findParentId(id) == null)
+              if (page.findShapeById(id) case final s?
+                  when !_isProtected(page, s))
+                id,
+        };
+        if (ids.length < 2) {
+          log.add('group: needs at least two editable top-level shapes');
+          break;
+        }
+        final groupId = page.nextFreeShapeId();
+        final affected = <int>{groupId};
+        for (final id in ids) {
+          _addSubtreeIds(page, id, affected);
+        }
+        final next = page.group(
+          ids,
+          groupId: groupId,
+          name: (op['name'] ?? '').toString(),
+        );
+        if (identical(next, page)) {
+          log.add('group: could not group ids=$ids');
+          break;
+        }
+        page = next;
+        created.add(groupId);
+        movedForReroute.addAll(affected);
+      case 'ungroup':
+      case 'ungroup_shapes':
+        final requested = _resolveIds(op['ids'] ?? op['id']);
+        final groups = <VsdxShape>[
+          for (final id in requested)
+            if (page.findShapeById(id) case final s?
+                when s.children.isNotEmpty &&
+                    s.shapeKind == VsdxShapeKind.group &&
+                    !_isProtected(page, s))
+              s,
+        ];
+        if (groups.isEmpty) {
+          log.add('ungroup: no editable ordinary groups in ids=$requested');
+          break;
+        }
+        int depth(int id) {
+          var value = 0;
+          var parent = page.findParentId(id);
+          while (parent != null) {
+            value++;
+            parent = page.findParentId(parent);
+          }
+          return value;
+        }
+
+        groups.sort((a, b) => depth(b.id).compareTo(depth(a.id)));
+        for (final group in groups) {
+          _addSubtreeIds(page, group.id, movedForReroute);
+          page = page.ungroup(group.id);
+        }
+      case 'z_order':
+      case 'arrange':
+        final id = _resolveId(op['id']);
+        final target = id == null ? null : page.findShapeById(id);
+        if (id == null || target == null) {
+          log.add('z_order: missing or unknown id=${op['id']}');
+          break;
+        }
+        if (_isProtected(page, target)) {
+          log.add('z_order: shape $id is locked');
+          break;
+        }
+        final action =
+            (op['action'] ?? op['order'] ?? '').toString().toLowerCase();
+        final next = switch (action) {
+          'front' ||
+          'bring_to_front' ||
+          'bringtofront' =>
+            page.bringToFront(id),
+          'forward' ||
+          'bring_forward' ||
+          'bringforward' =>
+            page.bringForward(id),
+          'back' || 'send_to_back' || 'sendtoback' => page.sendToBack(id),
+          'backward' ||
+          'send_backward' ||
+          'sendbackward' =>
+            page.sendBackward(id),
+          _ => page,
+        };
+        if (identical(next, page)) {
+          if (!const <String>{
+            'front',
+            'bring_to_front',
+            'bringtofront',
+            'forward',
+            'bring_forward',
+            'bringforward',
+            'back',
+            'send_to_back',
+            'sendtoback',
+            'backward',
+            'send_backward',
+            'sendbackward',
+          }.contains(action)) {
+            log.add('z_order: unknown action="$action"');
+          }
+          break;
+        }
+        page = next;
+      case 'align':
+      case 'align_shapes':
+        final requested = _selectionRoots(
+          page,
+          _resolveIds(op['ids'] ?? op['id']),
+        );
+        final ids = <int>[
+          for (final id in requested)
+            if (page.findShapeById(id)?.isGlueableConnector != true &&
+                page.shapePageAabb(id) != null)
+              id,
+        ];
+        if (ids.isEmpty) {
+          log.add('align: no alignable shapes');
+          break;
+        }
+        final mode = (op['mode'] ?? op['align'] ?? '').toString().toLowerCase();
+        final deltas = _alignmentDeltas(page, ids, mode);
+        if (deltas == null) {
+          log.add('align: unknown mode="$mode"');
+          break;
+        }
+        for (final e in deltas.entries) {
+          final s = page.findShapeById(e.key);
+          if (s == null || _isProtected(page, s)) continue;
+          final d = e.value;
+          if (d.x.abs() < 1e-12 && d.y.abs() < 1e-12) continue;
+          final pin = page.shapePinPage(e.key);
+          page = _moveShapeToPagePin(
+            page,
+            e.key,
+            pin.x + d.x,
+            pin.y + d.y,
+          );
+          _addSubtreeIds(page, e.key, movedForReroute);
+        }
+      case 'distribute':
+      case 'distribute_shapes':
+        final requested = _selectionRoots(
+          page,
+          _resolveIds(op['ids'] ?? op['id']),
+        );
+        final ids = <int>[
+          for (final id in requested)
+            if (page.findShapeById(id)?.isGlueableConnector != true &&
+                page.shapePageAabb(id) != null)
+              id,
+        ];
+        if (ids.length < 3) {
+          log.add('distribute: needs at least three alignable shapes');
+          break;
+        }
+        final axis =
+            (op['axis'] ?? op['direction'] ?? '').toString().toLowerCase();
+        final deltas = _distributionDeltas(page, ids, axis);
+        if (deltas == null) {
+          log.add('distribute: unknown axis="$axis"');
+          break;
+        }
+        for (final e in deltas.entries) {
+          final s = page.findShapeById(e.key);
+          if (s == null || _isProtected(page, s)) continue;
+          final d = e.value;
+          if (d.x.abs() < 1e-12 && d.y.abs() < 1e-12) continue;
+          final pin = page.shapePinPage(e.key);
+          page = _moveShapeToPagePin(
+            page,
+            e.key,
+            pin.x + d.x,
+            pin.y + d.y,
+          );
+          _addSubtreeIds(page, e.key, movedForReroute);
+        }
       case 'delete_shape':
       case 'delete':
         final id = _resolveId(op['id']);
@@ -1488,6 +1746,159 @@ VsdxPage _moveShapeToPagePin(
       local.y - sh.pinY,
     ),
   );
+}
+
+/// Remove duplicate ids and descendants whose ancestor is also selected.
+///
+/// This mirrors draw.io's selection-root semantics: moving/duplicating both a
+/// group and one of its children must transform the child exactly once.
+List<int> _selectionRoots(VsdxPage page, Iterable<int> ids) {
+  final selected = <int>{
+    for (final id in ids)
+      if (page.findShapeById(id) != null) id,
+  };
+  return <int>[
+    for (final id in selected)
+      if (!_hasSelectedAncestor(page, id, selected)) id,
+  ];
+}
+
+bool _hasSelectedAncestor(VsdxPage page, int id, Set<int> selected) {
+  var parent = page.findParentId(id);
+  while (parent != null) {
+    if (selected.contains(parent)) return true;
+    parent = page.findParentId(parent);
+  }
+  return false;
+}
+
+/// Copies are always editable, matching the app's draw.io-style Duplicate.
+VsdxShape _withTreeUnlocked(VsdxShape shape) => shape.copyWith(
+      locked: false,
+      children: <VsdxShape>[
+        for (final child in shape.children) _withTreeUnlocked(child),
+      ],
+    );
+
+Map<int, Offset2D>? _alignmentDeltas(
+  VsdxPage page,
+  List<int> ids,
+  String mode,
+) {
+  final bounds =
+      <int, ({double left, double bottom, double right, double top})>{
+    for (final id in ids)
+      if (page.shapePageAabb(id) case final b?) id: b,
+  };
+  if (bounds.isEmpty) return const <int, Offset2D>{};
+  final single = bounds.length == 1;
+  final left = bounds.values.map((b) => b.left).reduce(math.min);
+  final right = bounds.values.map((b) => b.right).reduce(math.max);
+  final bottom = bounds.values.map((b) => b.bottom).reduce(math.min);
+  final top = bounds.values.map((b) => b.top).reduce(math.max);
+  final normalized = mode.replaceAll('-', '_').replaceAll(' ', '_');
+  return switch (normalized) {
+    'left' => <int, Offset2D>{
+        for (final e in bounds.entries)
+          e.key: Offset2D((single ? 0.0 : left) - e.value.left, 0),
+      },
+    'right' => <int, Offset2D>{
+        for (final e in bounds.entries)
+          e.key: Offset2D(
+            (single ? page.widthInches : right) - e.value.right,
+            0,
+          ),
+      },
+    'center' ||
+    'center_h' ||
+    'horizontal' ||
+    'horizontal_center' =>
+      <int, Offset2D>{
+        for (final e in bounds.entries)
+          e.key: Offset2D(
+            (single ? page.widthInches / 2 : (left + right) / 2) -
+                (e.value.left + e.value.right) / 2,
+            0,
+          ),
+      },
+    'top' => <int, Offset2D>{
+        for (final e in bounds.entries)
+          e.key: Offset2D(
+            0,
+            (single ? page.heightInches : top) - e.value.top,
+          ),
+      },
+    'bottom' => <int, Offset2D>{
+        for (final e in bounds.entries)
+          e.key: Offset2D(0, (single ? 0.0 : bottom) - e.value.bottom),
+      },
+    'middle' ||
+    'center_v' ||
+    'vertical' ||
+    'vertical_center' =>
+      <int, Offset2D>{
+        for (final e in bounds.entries)
+          e.key: Offset2D(
+            0,
+            (single ? page.heightInches / 2 : (bottom + top) / 2) -
+                (e.value.bottom + e.value.top) / 2,
+          ),
+      },
+    _ => null,
+  };
+}
+
+Map<int, Offset2D>? _distributionDeltas(
+  VsdxPage page,
+  List<int> ids,
+  String axis,
+) {
+  final bounds =
+      <int, ({double left, double bottom, double right, double top})>{
+    for (final id in ids)
+      if (page.shapePageAabb(id) case final b?) id: b,
+  };
+  if (bounds.length < 3) return const <int, Offset2D>{};
+  final normalized = axis.replaceAll('-', '_').replaceAll(' ', '_');
+  if (const <String>{'horizontal', 'h', 'x'}.contains(normalized)) {
+    final sorted = bounds.keys.toList()
+      ..sort((a, b) => bounds[a]!.left.compareTo(bounds[b]!.left));
+    final first = bounds[sorted.first]!;
+    final last = bounds[sorted.last]!;
+    final totalWidth = sorted.fold<double>(
+      0,
+      (sum, id) => sum + bounds[id]!.right - bounds[id]!.left,
+    );
+    final gap = (last.right - first.left - totalWidth) / (sorted.length - 1);
+    var cursor = first.left;
+    final out = <int, Offset2D>{};
+    for (final id in sorted) {
+      final b = bounds[id]!;
+      out[id] = Offset2D(cursor - b.left, 0);
+      cursor += b.right - b.left + gap;
+    }
+    return out;
+  }
+  if (const <String>{'vertical', 'v', 'y'}.contains(normalized)) {
+    final sorted = bounds.keys.toList()
+      ..sort((a, b) => bounds[a]!.bottom.compareTo(bounds[b]!.bottom));
+    final first = bounds[sorted.first]!;
+    final last = bounds[sorted.last]!;
+    final totalHeight = sorted.fold<double>(
+      0,
+      (sum, id) => sum + bounds[id]!.top - bounds[id]!.bottom,
+    );
+    final gap = (last.top - first.bottom - totalHeight) / (sorted.length - 1);
+    var cursor = first.bottom;
+    final out = <int, Offset2D>{};
+    for (final id in sorted) {
+      final b = bounds[id]!;
+      out[id] = Offset2D(0, cursor - b.bottom);
+      cursor += b.top - b.bottom + gap;
+    }
+    return out;
+  }
+  return null;
 }
 
 /// Parse [opsJson] (an array, or an object with `ops:[...]`), apply to

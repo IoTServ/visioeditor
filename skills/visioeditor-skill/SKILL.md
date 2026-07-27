@@ -123,9 +123,11 @@ highlights those shapes in the editor (empty list clears).
 
 **Convenience single-step tools** (MCP) avoid hand-building op arrays:
 `add_shape`, `add_connector`, `set_style`, `set_text`, `move_shape`,
-`delete_shape`. Each takes an optional `path` — give it to edit a **file**,
-omit it to edit the **running app** live. Use optional zero-based `page` for
-multi-page drawings (file default: page 0; live default: current page).
+`resize_shape`, `duplicate_shapes`, `group_shapes`, `ungroup_shapes`,
+`arrange_shape`, `align_shapes`, `distribute_shapes`, `delete_shape`. Each
+takes an optional `path` — give it to edit a **file**, omit it to edit the
+**running app** live. Use optional zero-based `page` for multi-page drawings
+(file default: page 0; live default: current page).
 
 ## Importers (structure in → editable .vsdx)
 
@@ -199,6 +201,11 @@ Use `search_shapes` to find exact names; details in `references/shape-catalog.md
   { "op": "set_text",      "id": 7, "text": "Ship order" },
   { "op": "move_shape",    "id": 7, "x": 8, "y": 5 },
   { "op": "resize_shape",  "id": 7, "w": 2.0, "h": 1.0 },
+  { "op": "duplicate_shape", "ids": [4, 7], "dx": 0.25, "dy": -0.25 },
+  { "op": "group",         "ids": [4, 7], "name": "Fulfilment" },
+  { "op": "z_order",       "id": 7, "action": "front" },
+  { "op": "align",         "ids": [4, 7], "mode": "middle" },
+  { "op": "distribute",    "ids": [4, 7, 9], "axis": "horizontal" },
   { "op": "delete_shape",  "id": 3 }
 ] }
 ```

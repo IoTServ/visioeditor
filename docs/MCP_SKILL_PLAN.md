@@ -177,8 +177,9 @@
 
 **C. 高层便捷类（= A/B 的组合，降低 Agent 编排负担）**
 - `add_shape` / `add_connector` / `set_style` / `set_text` / `move_shape` /
-  `resize_shape` / `delete_shape` / `add_page` …：单步语义工具，内部转 `apply_ops` 或
-  `live_apply_ops`（依据是否连到应用）。
+  `resize_shape` / `duplicate_shapes` / `group_shapes` / `ungroup_shapes` /
+  `arrange_shape` / `align_shapes` / `distribute_shapes` / `delete_shape`：
+  单步语义工具，内部转 `apply_ops` 或 `live_apply_ops`（依据是否连到应用）。
 
 > **智能路由**：MCP 启动时探测应用桥握手文件；连上则「实时类」直达应用（真 · 实时预览），
 > 否则「文件类」落盘 + `render_preview` 出图（无应用也可用）。对 Agent 透明。
@@ -305,7 +306,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] `render`：`.vsdx` → SVG（直接调 `VsdxToSvgSerializer`）。
 - [x] `build`：Diagram Spec → `.vsdx`（节点用 `VsdxShapeFactory`；边用连接器 + 胶合 +
       `rerouteConnectors`；缺坐标时走**分层自动布局** `layoutDiagram`，TB/LR）。
-- [x] `patch`：Edit Ops（add_shape/add_connector/set_style/set_text/move/resize/delete）→
+- [x] `patch`：Edit Ops（add/connect/style/text/move/resize/duplicate/group/ungroup/
+      z-order/align/distribute/delete）→
       往返保真写回（`DocumentParser` + `VsdxWriter`，只补丁改动 Cell）。
 - [x] `validate`（重复 id/悬空连线/越界/重叠）/ `explain`（反向 Markdown）。
 - [x] `shapes search`：curated core stencil 目录（`stencil_catalog.dart`，别名解析）。
@@ -328,8 +330,8 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] 协议：`ping/getState/open/reload/applyOps/snapshot/save` + 事件推送
       （`documentChanged`/`fileChangedOnDisk`）。
 - [x] `snapshot`：复用 `image_export.dart` 的 `renderPageToPng` 回传 PNG（base64）。
-- [x] `applyOps`：**不落盘**（export→`applyOpsBytes`→`openBytes` 原地）改内存模型并重绘，
-      支持 add_shape/add_connector/set_style/set_text/move/resize/delete。
+- [x] `applyOps`：**不落盘**改内存模型并重绘，支持 add/connect/style/text/move/resize/
+      duplicate/group/ungroup/z-order/align/distribute/delete。
 - [x] 状态 `ValueNotifier`（端口/最近操作），`stop()` 清握手文件。
 - [x] 集成测试 `test/agent_bridge_test.dart` 7 例（token 拒连 / ping / getState /
       applyOps 不落盘 / snapshot PNG / save / L1 自动重载）。
@@ -359,12 +361,14 @@ M2 先用（1）打通；M4 补（3）用于纯无头 CI。
 - [x] 便捷路由：`create_diagram`/`import_*` 带 `open:true` 时探测握手文件并在应用打开。
 - [x] `snapshot` 返回 MCP image content（Agent 内联视觉自检）。
 - [x] 配置样例（Cursor `.cursor/mcp.json` / Claude）写入 `skills/.../references/live-preview.md`。
-- [x] **便捷单步工具**：`add_shape`/`add_connector`/`set_style`/`set_text`/`move_shape`/`delete_shape`
-      ——**双模式**（给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op；单测 4 例。
+- [x] **便捷单步工具**：基础增删改 + `resize_shape`/`duplicate_shapes`/`group_shapes`/
+      `ungroup_shapes`/`arrange_shape`/`align_shapes`/`distribute_shapes` ——**双模式**
+      （给 `path` 走文件、省略走运行中应用），内部转单条 Edit Op。
 - [x] 协议 + 工具单测 `mcp_server_test` 13 例；`dart run bin/vsdxtool_mcp.dart` stdio 冒烟。
 
-验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **23 个工具**（13 文件/导入 +
-6 便捷编辑 + 4 实时）；文件类端到端建图/校验/描述/导出/列举；实时类经 `BridgeClient` 驱动应用。
+验收（已达成）：`initialize`/`tools/list` 经真实 stdio 返回 serverInfo + **32 个工具**；
+文件类端到端建图/校验/描述/导出/列举；便捷结构编辑支持文件/实时双模式；实时类经
+`BridgeClient` 驱动应用。
 
 ### M4 —— Skill  `DONE`
 
@@ -497,6 +501,11 @@ IaC（docker-compose / Kubernetes / Terraform HCL）；
     { "op": "set_style", "ids": ["shape:12"], "fill": "#D5E8D4", "line": "#82B366" },
     { "op": "set_text", "id": "shape:8", "text": "Ship order" },
     { "op": "move_shape", "id": "shape:8", "x": 6.0, "y": 5.0 },
+    { "op": "duplicate_shape", "ids": ["shape:8", "shape:12"], "dx": 0.25, "dy": -0.25 },
+    { "op": "group", "ids": ["shape:8", "shape:12"], "name": "Approval" },
+    { "op": "align", "ids": ["shape:8", "shape:12"], "mode": "middle" },
+    { "op": "distribute", "ids": ["shape:8", "shape:12", "shape:15"], "axis": "horizontal" },
+    { "op": "z_order", "id": "shape:8", "action": "front" },
     { "op": "delete_shape", "id": "shape:3" }
   ]
 }
@@ -650,3 +659,8 @@ visioeditor/
   role→色/形）；Spec `"style"` / CLI `build --style` + `styles` / MCP `list_styles`；
   skill `styles/` + `scripts/` 薄封装。工具总数 **25**。`style_presets_test` 4 例。
   仍待：发布二进制/`npx`、l10n 菜单文案。
+- 2026-07-27 — **draw.io 结构编辑对齐**：Edit Ops 新增 `duplicate_shape`（子树 fresh ids +
+  `Sheet.n!` / Connect 胶合重映射）、`group` / `ungroup`、`z_order`、`align` /
+  `distribute`（旋转感知 page AABB、单选相对页面、锁定形状只作锚点）；MCP 补
+  `resize_shape` 及 6 个结构化便捷工具，文件/实时双模式共用实现，实时批次仍为一个
+  undo 步。工具总数 **32**；协议与 Skill 文档同步。

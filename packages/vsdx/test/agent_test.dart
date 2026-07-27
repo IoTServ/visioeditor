@@ -2037,6 +2037,233 @@ void main() {
       expect(drifted, isEmpty,
           reason: 'unrelated move changed connectors $drifted');
     });
+
+    test('duplicate_shape remaps ids, formulas, and internal connector glue',
+        () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      var page = doc.pages.first.copyWith(
+        shapes: <VsdxShape>[
+          VsdxShapeFactory.rectangle(
+            id: 1,
+            pinX: 2,
+            pinY: 3,
+            width: 1,
+            height: 1,
+          ),
+          VsdxShapeFactory.rectangle(
+            id: 2,
+            pinX: 6,
+            pinY: 3,
+            width: 1,
+            height: 1,
+          ).copyWith(
+            formulas: const <String, String>{'PinX': 'Sheet.1!PinX+4'},
+          ),
+        ],
+      );
+      final link = buildConnector(
+        id: 3,
+        page: page,
+        a: page.findShapeById(1)!,
+        b: page.findShapeById(2)!,
+      );
+      page = page
+          .addShape(link.connector)
+          .copyWith(connects: link.connects)
+          .syncGlueTriggers()
+          .rerouteConnectors();
+      doc = doc.replacePage(0, page);
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'duplicate_shape',
+          'ids': <int>[1, 2, 3],
+          'dx': 0.5,
+          'dy': -0.25,
+        },
+      ]);
+      final after = result.document.pages.first;
+      expect(result.createdIds, hasLength(3));
+      expect(after.shapes, hasLength(6));
+      expect(after.connects, hasLength(4));
+      expect(after.shapes.map((s) => s.id).toSet(), hasLength(6));
+
+      final newConnector = after.findShapeById(result.createdIds.last)!;
+      final newRows = after.connects
+          .where((c) => c.fromSheetId == newConnector.id)
+          .toList();
+      expect(newRows, hasLength(2));
+      expect(
+        newRows.map((c) => c.toSheetId).toSet(),
+        result.createdIds.take(2).toSet(),
+      );
+      final newTarget = after.findShapeById(result.createdIds[1])!;
+      expect(
+        newTarget.formulas['PinX'],
+        contains('Sheet.${result.createdIds.first}!'),
+      );
+      expect(newTarget.formulas['PinX'], isNot(contains('Sheet.1!')));
+
+      final reopened = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: blank,
+          edited: result.document,
+        ),
+      );
+      expect(validateDocument(reopened).where((i) => i.severity == 'error'),
+          isEmpty);
+      expect(reopened.pages.first.connects, hasLength(4));
+    });
+
+    test('group and ungroup provide draw.io structural edits', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.rectangle(
+              id: 1,
+              pinX: 2,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+            VsdxShapeFactory.rectangle(
+              id: 2,
+              pinX: 4,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+          ],
+        ),
+      );
+
+      final grouped = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'group',
+          'ids': <int>[1, 2],
+          'name': 'Pair',
+        },
+      ]);
+      expect(grouped.createdIds, hasLength(1));
+      final groupId = grouped.createdIds.single;
+      final group = grouped.document.pages.first.findShapeById(groupId)!;
+      expect(group.shapeKind, VsdxShapeKind.group);
+      expect(group.name, 'Pair');
+      expect(group.children.map((s) => s.id), <int>[1, 2]);
+      expect(grouped.document.pages.first.shapes, hasLength(1));
+
+      final ungrouped = applyOps(grouped.document, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'ungroup', 'id': groupId},
+      ]);
+      expect(ungrouped.document.pages.first.findShapeById(groupId), isNull);
+      expect(
+          ungrouped.document.pages.first.shapes.map((s) => s.id), <int>[1, 2]);
+    });
+
+    test('align and distribute use rotation-aware page bounds', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.rectangle(
+              id: 1,
+              pinX: 1.5,
+              pinY: 2,
+              width: 1,
+              height: 1,
+            ),
+            VsdxShapeFactory.rectangle(
+              id: 2,
+              pinX: 5,
+              pinY: 4,
+              width: 2,
+              height: 1,
+            ).copyWith(angleRad: 0.35),
+            VsdxShapeFactory.rectangle(
+              id: 3,
+              pinX: 8.5,
+              pinY: 6,
+              width: 1,
+              height: 1,
+            ),
+          ],
+        ),
+      );
+
+      final aligned = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'align',
+          'ids': <int>[1, 2, 3],
+          'mode': 'middle',
+        },
+      ]).document.pages.first;
+      final centres = <double>[
+        for (final id in <int>[1, 2, 3])
+          () {
+            final b = aligned.shapePageAabb(id)!;
+            return (b.bottom + b.top) / 2;
+          }(),
+      ];
+      expect(centres[1], closeTo(centres[0], 1e-9));
+      expect(centres[2], closeTo(centres[0], 1e-9));
+
+      final distributed = applyOps(
+        doc.replacePage(
+          0,
+          doc.pages.first.updateShapeById(
+            2,
+            (s) => VsdxPage.translateShape(s, -1.3, 0),
+          ),
+        ),
+        <Map<String, dynamic>>[
+          <String, dynamic>{
+            'op': 'distribute',
+            'ids': <int>[1, 2, 3],
+            'axis': 'horizontal',
+          },
+        ],
+      ).document.pages.first;
+      final boxes = <dynamic>[
+        for (final id in <int>[1, 2, 3]) distributed.shapePageAabb(id)!,
+      ]..sort((a, b) => a.left.compareTo(b.left));
+      final gapA = boxes[1].left - boxes[0].right;
+      final gapB = boxes[2].left - boxes[1].right;
+      expect(gapA, closeTo(gapB, 1e-9));
+    });
+
+    test('z_order supports draw.io front/back/step actions', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.copyWith(
+          shapes: <VsdxShape>[
+            for (var id = 1; id <= 3; id++)
+              VsdxShapeFactory.rectangle(
+                id: id,
+                pinX: id.toDouble(),
+                pinY: 2,
+                width: 1,
+                height: 1,
+              ),
+          ],
+        ),
+      );
+      final front = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'z_order', 'id': 1, 'action': 'front'},
+      ]).document;
+      expect(front.pages.first.shapes.map((s) => s.id), <int>[2, 3, 1]);
+      final backward = applyOps(front, <Map<String, dynamic>>[
+        <String, dynamic>{'op': 'z_order', 'id': 1, 'action': 'backward'},
+      ]).document;
+      expect(backward.pages.first.shapes.map((s) => s.id), <int>[2, 1, 3]);
+    });
   });
 
   group('inspect', () {

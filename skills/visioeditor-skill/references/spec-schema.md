@@ -84,6 +84,12 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
   { "op": "set_text",      "id": 8, "text": "Ship order", "bold": false },
   { "op": "move_shape",    "id": 8, "x": 6.0, "y": 5.0 },
   { "op": "resize_shape",  "id": 8, "w": 2.0, "h": 1.0 },
+  { "op": "duplicate_shape", "ids": [8, 12], "dx": 0.25, "dy": -0.25 },
+  { "op": "group",         "ids": [8, 12], "name": "Approval" },
+  { "op": "ungroup",       "id": 20 },
+  { "op": "z_order",       "id": 8, "action": "front" },
+  { "op": "align",         "ids": [8, 12], "mode": "middle" },
+  { "op": "distribute",    "ids": [8, 12, 15], "axis": "horizontal" },
   { "op": "delete_shape",  "id": 3 }
 ] }
 ```
@@ -91,6 +97,18 @@ MCP: `create_diagram({ "spec": {…}, "path": "out.vsdx", "open": true })`
 - **Shape references**: `"shape:<id>"`, a bare integer, or a numeric string —
   all resolve to the Visio shape id. `from`/`to` for connectors must reference
   existing shapes.
+- **Duplicate**: accepts `id` or `ids`; allocates fresh ids for every
+  descendant, rewrites internal `Sheet.n!` formulas and connector glue, and
+  defaults to draw.io's `dx=0.25`, `dy=-0.25` inch offset.
+- **Group / ungroup**: grouping requires at least two editable top-level
+  shapes. Ungroup only unwraps ordinary groups; tables, charts, and swimlanes
+  retain their structure.
+- **Arrange**: `z_order.action` is `front`, `forward`, `backward`, or `back`.
+  `align.mode` is `left`, `right`, `center`, `top`, `bottom`, or `middle`;
+  a single shape aligns to the page. `distribute.axis` is `horizontal` or
+  `vertical` and needs at least three shapes. Bounds are rotation-aware.
+- **Protection**: shape locks and locked layers are honored. Locked shapes may
+  anchor an alignment/distribution but are never moved or structurally edited.
 - **Ids of existing shapes**: get them from `explain` (CLI/MCP) or
   `list_shapes` (file/live). New shapes get the next free id automatically.
 - **Fidelity**: only changed cells are rewritten; unmodified shapes, formulas,

@@ -293,6 +293,52 @@ void main() {
     },
   );
 
+  test('draw.io structural ops apply live as one undoable batch', () async {
+    final c = workspace.active!;
+    final page = c.document!.pages.single;
+    final a = page.shapes.firstWhere((s) => s.text == 'A').id;
+    final b = page.shapes.firstWhere((s) => s.text == 'B').id;
+    final before = page.shapes.length;
+
+    final response = await call('applyOps', <String, dynamic>{
+      'ops': <dynamic>[
+        <String, dynamic>{
+          'op': 'duplicate_shape',
+          'ids': <int>[a, b],
+          'dx': 0.4,
+          'dy': 0.4,
+        },
+        <String, dynamic>{
+          'op': 'group',
+          'ids': <int>[a, b],
+          'name': 'Live group',
+        },
+      ],
+    });
+
+    expect(response['ok'], isTrue);
+    final result = response['result'] as Map;
+    expect(result['changed'], isTrue);
+    expect(result['created'], hasLength(3));
+    expect(
+      c.document!.pages.single.shapes
+          .where((s) => s.shapeKind == VsdxShapeKind.group)
+          .single
+          .name,
+      'Live group',
+    );
+    expect(c.canUndo, isTrue);
+
+    c.undo();
+    expect(c.document!.pages.single.shapes, hasLength(before));
+    expect(
+      c.document!.pages.single.shapes.where(
+        (s) => s.shapeKind == VsdxShapeKind.group,
+      ),
+      isEmpty,
+    );
+  });
+
   test('applyOps page targets a non-active page and reports it', () async {
     final c = workspace.active!;
     c.addPage();

@@ -123,6 +123,13 @@ void main() {
           'explain',
           'search_shapes',
           'list_styles',
+          'resize_shape',
+          'duplicate_shapes',
+          'group_shapes',
+          'ungroup_shapes',
+          'arrange_shape',
+          'align_shapes',
+          'distribute_shapes',
         ]));
     // Live tools excluded in this configuration.
     expect(names, isNot(contains('snapshot')));
@@ -336,6 +343,99 @@ void main() {
       final s = shapes().firstWhere((s) => s.id == id);
       expect(s.pinX, closeTo(6.0, 1e-6));
       expect(s.pinY, closeTo(5.0, 1e-6));
+    });
+
+    test('resize_shape exposes the existing Edit Op as a convenience tool',
+        () async {
+      final id = idOf('A');
+      await callTool('resize_shape', <String, dynamic>{
+        'path': path,
+        'id': id,
+        'w': 2.5,
+        'h': 1.25,
+      });
+      final s = shapes().firstWhere((shape) => shape.id == id);
+      expect(s.width, closeTo(2.5, 1e-6));
+      expect(s.height, closeTo(1.25, 1e-6));
+    });
+
+    test('structural convenience tools mirror draw.io arrange commands',
+        () async {
+      await callTool('add_shape', <String, dynamic>{
+        'path': path,
+        'stencil': 'process',
+        'text': 'C',
+        'x': 4.5,
+        'y': 5.5,
+      });
+      final a = idOf('A');
+      final b = idOf('B');
+      final c = idOf('C');
+
+      await callTool('align_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <int>[a, b, c],
+        'mode': 'middle',
+      });
+      final aligned = shapes();
+      final centres = <double>[
+        for (final id in <int>[a, b, c])
+          aligned.firstWhere((s) => s.id == id).pinY,
+      ];
+      expect(centres[1], closeTo(centres[0], 1e-6));
+      expect(centres[2], closeTo(centres[0], 1e-6));
+
+      await callTool('distribute_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <int>[a, b, c],
+        'axis': 'horizontal',
+      });
+      final distributed = shapes()
+          .where((s) => <int>{a, b, c}.contains(s.id))
+          .toList()
+        ..sort((x, y) => x.pinX.compareTo(y.pinX));
+      final gap1 = distributed[1].pinX -
+          distributed[1].width / 2 -
+          (distributed[0].pinX + distributed[0].width / 2);
+      final gap2 = distributed[2].pinX -
+          distributed[2].width / 2 -
+          (distributed[1].pinX + distributed[1].width / 2);
+      expect(gap1, closeTo(gap2, 1e-6));
+
+      final beforeDuplicate = shapes().length;
+      await callTool('duplicate_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <int>[a, b],
+        'dx': 0.5,
+        'dy': 0.5,
+      });
+      expect(shapes(), hasLength(beforeDuplicate + 2));
+
+      await callTool('group_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <int>[a, b],
+        'name': 'AB',
+      });
+      final group =
+          shapes().firstWhere((s) => s.shapeKind == VsdxShapeKind.group);
+      expect(group.name, 'AB');
+      expect(group.children.map((s) => s.id).toSet(), <int>{a, b});
+
+      await callTool('ungroup_shapes', <String, dynamic>{
+        'path': path,
+        'ids': <int>[group.id],
+      });
+      expect(
+        shapes().where((s) => s.shapeKind == VsdxShapeKind.group),
+        isEmpty,
+      );
+
+      await callTool('arrange_shape', <String, dynamic>{
+        'path': path,
+        'id': a,
+        'action': 'front',
+      });
+      expect(shapes().last.id, a);
     });
 
     test('convenience tools accept a page index', () async {

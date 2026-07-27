@@ -72,7 +72,10 @@ shape.
 
 After registering, the tools `create_diagram`, `apply_ops`, `export`,
 `validate`, `explain`, `search_shapes`, `open_in_app`, `live_apply_ops`,
-`snapshot`, `get_app_state` are available to the Agent.
+`snapshot`, `get_app_state`, plus the basic and structural convenience edits
+(`resize_shape`, `duplicate_shapes`, `group_shapes`, `ungroup_shapes`,
+`arrange_shape`, `align_shapes`, `distribute_shapes`) are available to the
+Agent.
 
 ## Protocol (for reference)
 

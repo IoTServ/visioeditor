@@ -348,7 +348,8 @@ void _registerFileTools(McpServer server) {
     description:
         'Apply Edit Ops to an existing .vsdx (round-trip faithful). Ops: '
         'add_shape, add_connector, set_style, set_text, move_shape, '
-        'resize_shape, delete_shape.',
+        'resize_shape, duplicate_shape, group, ungroup, z_order, align, '
+        'distribute, delete_shape.',
     inputSchema: <String, dynamic>{
       'type': 'object',
       'properties': <String, dynamic>{
@@ -990,6 +991,131 @@ void _registerEditTools(McpServer server) {
       ..['required'] = <String>['id', 'x', 'y'],
     handler: (args) =>
         applyOne(args, op('move_shape', args, <String>['id', 'x', 'y'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'resize_shape',
+    description: 'Resize a shape to w×h inches, preserving its centre.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'w': <String, dynamic>{'type': 'number'},
+      'h': <String, dynamic>{'type': 'number'},
+    })
+      ..['required'] = <String>['id', 'w', 'h'],
+    handler: (args) =>
+        applyOne(args, op('resize_shape', args, <String>['id', 'w', 'h'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'duplicate_shapes',
+    description: 'Duplicate one or more shapes with fresh ids. Internal '
+        'connector glue and Sheet.n! references are remapped.',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+      'dx': <String, dynamic>{
+        'type': 'number',
+        'description': 'Horizontal offset in inches (default 0.25).',
+      },
+      'dy': <String, dynamic>{
+        'type': 'number',
+        'description': 'Vertical offset in inches (default -0.25).',
+      },
+    })
+      ..['required'] = <String>['ids'],
+    handler: (args) => applyOne(
+        args, op('duplicate_shape', args, <String>['ids', 'dx', 'dy'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'group_shapes',
+    description: 'Group at least two editable top-level shapes.',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+      'name': <String, dynamic>{'type': 'string'},
+    })
+      ..['required'] = <String>['ids'],
+    handler: (args) =>
+        applyOne(args, op('group', args, <String>['ids', 'name'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'ungroup_shapes',
+    description: 'Ungroup one or more ordinary groups (tables, charts, and '
+        'swimlanes remain structured).',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+    })
+      ..['required'] = <String>['ids'],
+    handler: (args) => applyOne(args, op('ungroup', args, <String>['ids'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'arrange_shape',
+    description: 'Change one shape in the sibling z-order.',
+    inputSchema: withPath(<String, dynamic>{
+      'id': <String, dynamic>{'type': 'string'},
+      'action': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['front', 'forward', 'backward', 'back'],
+      },
+    })
+      ..['required'] = <String>['id', 'action'],
+    handler: (args) =>
+        applyOne(args, op('z_order', args, <String>['id', 'action'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'align_shapes',
+    description: 'Align shapes by rotation-aware page bounds. A single shape '
+        'aligns to the page; multiple shapes align to their selection bounds.',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+      'mode': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>[
+          'left',
+          'right',
+          'center',
+          'top',
+          'bottom',
+          'middle',
+        ],
+      },
+    })
+      ..['required'] = <String>['ids', 'mode'],
+    handler: (args) =>
+        applyOne(args, op('align', args, <String>['ids', 'mode'])),
+  ));
+
+  server.addTool(McpTool(
+    name: 'distribute_shapes',
+    description: 'Equalize horizontal or vertical gaps between at least three '
+        'shapes using rotation-aware page bounds.',
+    inputSchema: withPath(<String, dynamic>{
+      'ids': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'string'},
+      },
+      'axis': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['horizontal', 'vertical'],
+      },
+    })
+      ..['required'] = <String>['ids', 'axis'],
+    handler: (args) =>
+        applyOne(args, op('distribute', args, <String>['ids', 'axis'])),
   ));
 
   server.addTool(McpTool(
