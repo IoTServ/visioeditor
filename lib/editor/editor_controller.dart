@@ -3560,6 +3560,83 @@ class EditorController extends ChangeNotifier {
         return out;
       });
 
+  /// Exactly two unlocked 2-D selection roots can trade page-space centres.
+  bool get canSwapSelection {
+    final page = currentPage;
+    if (page == null) return false;
+    final roots = _selectionRoots(page, _selection.toList());
+    if (roots.length != 2) return false;
+    return roots.every((id) {
+      final s = page.findShapeById(id);
+      return s != null &&
+          !s.is1D &&
+          !s.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Exchange the page-space positions of two shapes (draw.io Arrange → Swap).
+  ///
+  /// Page centres are used so differently-sized and nested shapes swap
+  /// intuitively while preserving their own size, rotation and parent.
+  void swapSelectionPositions() {
+    if (!canSwapSelection) return;
+    _align((page, ids) {
+      if (ids.length != 2) return const {};
+      final a = _pageBounds(page, ids[0]);
+      final b = _pageBounds(page, ids[1]);
+      if (a == null || b == null) return const {};
+      final ac = ((a.$1 + a.$3) / 2, (a.$2 + a.$4) / 2);
+      final bc = ((b.$1 + b.$3) / 2, (b.$2 + b.$4) / 2);
+      return <int, (double, double)>{
+        ids[0]: (bc.$1 - ac.$1, bc.$2 - ac.$2),
+        ids[1]: (ac.$1 - bc.$1, ac.$2 - bc.$2),
+      };
+    });
+  }
+
+  // Session-local draw.io Copy Size / Paste Size clipboard.
+  ({double width, double height})? _sizeClipboard;
+
+  bool get canCopySize {
+    final id = singleSelectedId;
+    final s = id == null ? null : currentPage?.findShapeById(id);
+    return s != null && !s.is1D && s.width > 0 && s.height > 0;
+  }
+
+  bool get canPasteSize {
+    if (_sizeClipboard == null) return false;
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any((id) {
+      final s = page.findShapeById(id);
+      return s != null &&
+          !s.is1D &&
+          !s.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Capture the selected shape's dimensions without changing the document.
+  void copySelectionSize() {
+    if (!canCopySize) return;
+    final s = currentPage!.findShapeById(singleSelectedId!)!;
+    _sizeClipboard = (width: s.width, height: s.height);
+    notifyListeners();
+  }
+
+  /// Resize all unlocked 2-D selection roots to the copied dimensions.
+  void pasteSelectionSize() {
+    final clip = _sizeClipboard;
+    if (clip == null || !canPasteSize) return;
+    _resizeSelectionTo(
+      targetWidth: clip.width,
+      targetHeight: clip.height,
+      width: true,
+      height: true,
+    );
+  }
+
   /// Make every other selected shape match the first selection's width
   /// (draw.io Arrange → Same width). Keeps each shape's left edge.
   void matchSelectionWidth() => _matchSelectionSize(width: true, height: false);
@@ -3584,6 +3661,28 @@ class EditorController extends ChangeNotifier {
     final tw = ref.width;
     final th = ref.height;
     if ((width && tw <= 0) || (height && th <= 0)) return;
+    _resizeSelectionTo(
+      targetWidth: tw,
+      targetHeight: th,
+      width: width,
+      height: height,
+      skipId: ref.id,
+    );
+  }
+
+  void _resizeSelectionTo({
+    required double targetWidth,
+    required double targetHeight,
+    required bool width,
+    required bool height,
+    int? skipId,
+  }) {
+    final page0 = currentPage;
+    if (page0 == null ||
+        (width && targetWidth <= 0) ||
+        (height && targetHeight <= 0)) {
+      return;
+    }
     // Resize selection roots only (group+child co-selection must not double-
     // apply width/height to the nested child).
     final roots = _selectionRoots(page0, <int>[
@@ -3598,13 +3697,13 @@ class EditorController extends ChangeNotifier {
       var next = page;
       var changed = false;
       for (final id in roots) {
-        if (id == ref.id) continue;
+        if (id == skipId) continue;
         final s = next.findShapeById(id);
         if (s == null || s.locked || isOnLockedLayer(id) || s.is1D) {
           continue;
         }
-        final nw = width ? tw : s.width;
-        final nh = height ? th : s.height;
+        final nw = width ? targetWidth : s.width;
+        final nh = height ? targetHeight : s.height;
         if ((nw - s.width).abs() < 1e-9 && (nh - s.height).abs() < 1e-9) {
           continue;
         }
@@ -4744,6 +4843,41 @@ class EditorController extends ChangeNotifier {
       if (s != null && s.isGlueableConnector) return true;
     }
     return false;
+  }
+
+  /// Whether at least one selected connector can be semantically reversed.
+  bool get canReverseConnector {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any((id) {
+      final s = page.findShapeById(id);
+      return s != null &&
+          s.isGlueableConnector &&
+          !s.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Reverse every unlocked selected connector in one undo step.
+  void reverseSelectedConnectors() {
+    final page = currentPage;
+    if (page == null) return;
+    final targets = <int>[
+      for (final id in _selection)
+        if (page.findShapeById(id) case final s?
+            when s.isGlueableConnector &&
+                !s.locked &&
+                !isOnLockedLayer(id))
+          id,
+    ];
+    if (targets.isEmpty) return;
+    updateCurrentPage((p) {
+      var next = p;
+      for (final id in targets) {
+        next = next.reverseConnector(id);
+      }
+      return next;
+    });
   }
 
   /// Whether the first selected connector is drawn as a straight segment.

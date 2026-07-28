@@ -443,6 +443,14 @@ class EditorL10n {
   String get sameSize => _t('sameSize');
   String get sameWidth => _t('sameWidth');
   String get sameHeight => _t('sameHeight');
+  String get swapShapes =>
+      locale.languageCode == 'zh' ? '交换形状位置' : 'Swap Shapes';
+  String get copySize =>
+      locale.languageCode == 'zh' ? '复制尺寸' : 'Copy Size';
+  String get pasteSize =>
+      locale.languageCode == 'zh' ? '粘贴尺寸' : 'Paste Size';
+  String get reverseConnector =>
+      locale.languageCode == 'zh' ? '反向连接线' : 'Reverse Connector';
   String get grid => _t('grid');
   String get background => _t('background');
   String get backgroundPage => _t('backgroundPage');

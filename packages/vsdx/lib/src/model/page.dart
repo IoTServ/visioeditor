@@ -1119,6 +1119,72 @@ class VsdxPage {
     return next.rerouteConnectors(movedShapeIds: <int>{id});
   }
 
+  /// Reverse a connector from end to begin (draw.io Arrange → Reverse).
+  ///
+  /// This is a semantic reversal, not merely an arrowhead swap: glued
+  /// endpoints (including fixed connection points), route direction,
+  /// waypoints, arrowheads and trigger formulas all trade places.
+  VsdxPage reverseConnector(int id) {
+    final s = findShapeById(id);
+    if (s == null || !s.isGlueableConnector) return this;
+    final route = connectorRoute(s);
+    if (route.length < 2) return this;
+
+    final reversedRoute = route.reversed.toList(growable: false);
+    // Preserve authored/baked interior bends even when the imported connector
+    // did not already expose them as editable waypoint rows.
+    final reversedWaypoints = s.waypoints.isNotEmpty
+        ? s.waypoints.reversed.toList(growable: false)
+        : reversedRoute.length > 2
+            ? reversedRoute.sublist(1, reversedRoute.length - 1)
+            : const <Offset2D>[];
+    final nextConnects = <VsdxConnect>[
+      for (final c in connects)
+        if (c.fromSheetId == id && (c.isBegin || c.isEnd))
+          VsdxConnect(
+            fromSheetId: c.fromSheetId,
+            fromCell: c.isBegin ? 'EndX' : 'BeginX',
+            fromPart: c.isBegin ? 12 : 9,
+            toSheetId: c.toSheetId,
+            toCell: c.toCell,
+            toPart: c.toPart,
+          )
+        else
+          c,
+    ];
+
+    var next = updateShapeById(id, (sh) {
+      final reversed = sh
+          .copyWith(
+            waypoints: reversedWaypoints,
+            line: sh.line.copyWith(
+              beginArrow: sh.line.endArrow,
+              endArrow: sh.line.beginArrow,
+              beginArrowSizeInches: sh.line.endArrowSizeInches,
+              endArrowSizeInches: sh.line.beginArrowSizeInches,
+            ),
+            connectorProps: sh.connectorProps?.reverseEndpoints(),
+          )
+          .reshapeAsPolyline(reversedRoute);
+      final formulas = Map<String, String>.from(reversed.formulas);
+
+      void swapFormula(String begin, String end) {
+        final a = formulas.remove(begin);
+        final b = formulas.remove(end);
+        if (b != null) formulas[begin] = b;
+        if (a != null) formulas[end] = a;
+      }
+
+      swapFormula('BeginX', 'EndX');
+      swapFormula('BeginY', 'EndY');
+      swapFormula('BegTrigger', 'EndTrigger');
+      return reversed.copyWith(formulas: formulas);
+    }).copyWith(connects: nextConnects);
+    // Re-resolve perimeter and fixed-point glue after the Connect rows swap.
+    next = next.rerouteConnectors(movedShapeIds: <int>{id});
+    return next;
+  }
+
   /// Move / reconnect one end of connector [id] (drawio endpoint editing).
   ///
   /// When [targetShapeId] is non-null the affected end is **glued** to that

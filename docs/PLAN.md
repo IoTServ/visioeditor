@@ -223,8 +223,9 @@ setConnectorWaypoints`，路由经折点且随重路由/移动保持（移动连
 均往返（`Font`/`Style` 下划线位/`VerticalAlign`/`ShadowPattern`）。
 
 已补：**Arrange 面板对齐 drawio** —— 数值位置/尺寸（X/Y/W/H）与旋转角输入、水平/垂直翻转、
-旋转 90°（Cmd+R/Cmd+Shift+R）、单步 Bring Forward/Send Backward（补足既有置顶/置底）；均往返
-（`PinX/PinY/Width/Height/Angle`、`FlipX/FlipY`、`<Shape>` 重排）。
+旋转 90°（Cmd+R/Cmd+Shift+R）、单步 Bring Forward/Send Backward（补足既有置顶/置底）、
+双形状交换位置、复制/粘贴尺寸及连接线反向；均往返（`PinX/PinY/Width/Height/Angle`、
+`FlipX/FlipY`、`<Shape>` 重排、`<Connect>` 与 1-D 起止端）。
 
 已补：**查找（Cmd+F）** —— 浮动查找条按当前页形状文本/名匹配，计数并循环（Enter/Shift+Enter），
 选中并居中命中形状；**缩放到选区**（reveal 机制：控制器请求、画布 `_handleReveal` 居中/适配）。
@@ -1342,3 +1343,8 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   连接对应方向已有邻居，否则克隆当前形状并自动胶合，整体单步撤销。Tab/Shift+Tab
   改为按绘制顺序进入展开容器的可见子对象，Alt+Tab 选择直接父容器；文本输入聚焦时
   保留系统光标/选区快捷键。新增控制器、快捷键、选择器与画布组件回归。
+- 2026-07-28 — **对齐 draw.io Arrange 进阶操作**：新增 Swap Shapes，按页面空间中心
+  交换两个不同尺寸或不同父级形状的位置；新增会话级 Copy Size / Paste Size，复用分组、
+  泳道与表格的保真缩放并保持目标左上角；新增连接线 Reverse，完整交换起止胶合目标、
+  固定连接点、折点、箭头及 Beg/End trigger 公式，整体单步撤销。Format 面板同步提供入口，
+  并新增三个控制器及一个模型回归测试。

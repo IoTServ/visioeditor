@@ -237,8 +237,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   in inches, top-left anchored) and **rotation** (degrees) for a single
   selection; **flip horizontal / vertical**; **rotate 90°** either way
   (Cmd+R / Cmd+Shift+R); and one-step **bring forward / send backward** in
-  addition to to-front / to-back. All round-trip (`PinX/PinY/Width/Height/Angle`,
-  `FlipX/FlipY`, `<Shape>` reorder).
+  addition to to-front / to-back. It also matches draw.io's **Swap Shapes**,
+  **Copy Size / Paste Size**, and connector **Reverse** commands; reversing an
+  edge swaps its glue targets, fixed connection points, waypoints, trigger
+  formulas and arrowheads as one undoable edit. All round-trip
+  (`PinX/PinY/Width/Height/Angle`, `FlipX/FlipY`, `<Shape>` reorder, `<Connect>`
+  rows and 1-D endpoint cells).
 - **Lock / unlock** (drawio Lock/Unlock, Cmd+L): lock the selection so it can
   still be selected but not moved, resized, rotated, deleted or text-edited; a
   locked shape's selection box turns red and its resize / rotation handles are

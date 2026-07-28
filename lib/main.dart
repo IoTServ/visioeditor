@@ -3969,6 +3969,24 @@ class _PropertyPanel extends StatelessWidget {
                 controller.selectionLocked ? EditorL10n.of(context).unlockShortcut : EditorL10n.of(context).lockShortcut,
                 controller.toggleLock,
               ),
+              if (controller.canSwapSelection)
+                _iconBtn(
+                  Icons.swap_horiz,
+                  EditorL10n.of(context).swapShapes,
+                  controller.swapSelectionPositions,
+                ),
+              if (controller.canCopySize)
+                _iconBtn(
+                  Icons.content_copy,
+                  EditorL10n.of(context).copySize,
+                  controller.copySelectionSize,
+                ),
+              if (controller.canPasteSize)
+                _iconBtn(
+                  Icons.content_paste,
+                  EditorL10n.of(context).pasteSize,
+                  controller.pasteSelectionSize,
+                ),
             ],
           ),
           if (!controller.selectionLocked) _arrangeFields(controller),
@@ -4163,6 +4181,14 @@ class _PropertyPanel extends StatelessWidget {
           if (controller.hasConnectorSelected) ...[
             const SizedBox(height: 16),
             _section(context, EditorL10n.of(context).panelConnector),
+            if (controller.canReverseConnector) ...[
+              _fullWidthOutlineButton(
+                onPressed: controller.reverseSelectedConnectors,
+                icon: Icons.swap_horiz,
+                label: EditorL10n.of(context).reverseConnector,
+              ),
+              const SizedBox(height: 8),
+            ],
             Wrap(
               spacing: 8,
               children: [

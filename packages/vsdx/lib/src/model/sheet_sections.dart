@@ -378,6 +378,26 @@ class VsdxConnectorProps {
         shapePlaceFlip: shapePlaceFlip ?? this.shapePlaceFlip,
       );
 
+  /// Swap the cached values associated with the begin/end connector cells.
+  ///
+  /// Unlike [copyWith], this can intentionally move a nullable trigger to the
+  /// other endpoint while clearing its old side.
+  VsdxConnectorProps reverseEndpoints() => VsdxConnectorProps(
+        begTrigger: endTrigger,
+        endTrigger: begTrigger,
+        glueType: glueType,
+        conFixedCode: conFixedCode,
+        dynFeedback: dynFeedback,
+        noLiveDynamics: noLiveDynamics,
+        conLineJumpCode: conLineJumpCode,
+        conLineRouteExt: conLineRouteExt,
+        conLineJumpStyle: conLineJumpStyle,
+        conLineJumpDirX: conLineJumpDirX,
+        conLineJumpDirY: conLineJumpDirY,
+        shapeRouteStyle: shapeRouteStyle,
+        shapePlaceFlip: shapePlaceFlip,
+      );
+
   @override
   bool operator ==(Object other) =>
       other is VsdxConnectorProps &&
