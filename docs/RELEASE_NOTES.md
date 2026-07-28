@@ -26,7 +26,8 @@ byte-for-byte, so formulas and structure survive a save.
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
   Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise
   shape, connector and ruler-guide edits. Ctrl/Cmd+Shift+Arrow adjusts size and
-  Alt+Shift+R clears connector waypoints.
+  Alt+Shift+R clears connector waypoints. Cmd/Ctrl+Shift+Y fits selected shapes
+  to their wrapped text.
 - **Arrange** with multi-select (Shift/Ctrl/Cmd-click, enclosed marquee, or
   Alt-marquee for intersecting items), Alt-click cycling through overlaps,
   align, distribute, same-size and copy/paste-size tools, two-shape position
@@ -34,7 +35,9 @@ byte-for-byte, so formulas and structure survive a save.
   z-order (bring to front / send to back) and **group / ungroup**. Dragging
   shows **smart alignment guides** that snap to nearby shapes, equal spacing,
   connection points and the orange page centre; Guides can be toggled
-  independently from the grid.
+  independently from the grid. Ctrl/Cmd-resizing a normal group changes only
+  its outer frame; Shift-clicking a stencil replaces selected atomic shapes
+  while preserving content, styling and connector glue.
 - **drawio-style interactions**: a right-click context menu, copy / paste style,
   and matching keyboard shortcuts (Select All, Cut, To Front/Back, Group /
   Ungroup, keyboard zoom). Space-drag pans from anywhere; Alt-wheel zooms and

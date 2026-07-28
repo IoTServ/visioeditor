@@ -138,6 +138,16 @@ void main() {
       ): c.selectParentShape,
       const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
+      const SingleActivator(
+        LogicalKeyboardKey.keyY,
+        meta: true,
+        shift: true,
+      ): c.autosizeSelection,
+      const SingleActivator(
+        LogicalKeyboardKey.keyY,
+        control: true,
+        shift: true,
+      ): c.autosizeSelection,
       const SingleActivator(LogicalKeyboardKey.keyB, meta: true): bold,
       const SingleActivator(LogicalKeyboardKey.keyB, control: true): bold,
       const SingleActivator(LogicalKeyboardKey.keyF, meta: true): find,
@@ -243,6 +253,26 @@ void main() {
     final after = c.currentPage!.findShapeById(id)!;
     expect(after.width, closeTo(before.width + 0.1, 1e-9));
     expect(after.height, before.height);
+  });
+
+  testWidgets('Cmd+Shift+Y autosizes the selected shape', (tester) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    c.setShapeText(id, 'First line\nSecond line\nThird line');
+    final beforeHeight = c.currentPage!.findShapeById(id)!.height;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    expect(
+      c.currentPage!.findShapeById(id)!.height,
+      isNot(closeTo(beforeHeight, 1e-9)),
+    );
   });
 
   testWidgets('Alt+Shift+R clears selected connector waypoints',

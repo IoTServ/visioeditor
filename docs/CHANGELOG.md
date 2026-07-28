@@ -240,9 +240,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   addition to to-front / to-back. It also matches draw.io's **Swap Shapes**,
   **Copy Size / Paste Size**, and connector **Reverse** commands; reversing an
   edge swaps its glue targets, fixed connection points, waypoints, trigger
-  formulas and arrowheads as one undoable edit. All round-trip
+  formulas and arrowheads as one undoable edit. **Autosize**
+  (Cmd/Ctrl+Shift+Y) fits selected atomic shapes to their wrapped text while
+  preserving width and top-left position. Ctrl/Cmd-resizing a normal group
+  changes only its outer boundary, leaving children untouched. All round-trip
   (`PinX/PinY/Width/Height/Angle`, `FlipX/FlipY`, `<Shape>` reorder, `<Connect>`
   rows and 1-D endpoint cells).
+- **Replace Shape** (draw.io-style): Shift-click any stencil while one or more
+  atomic shapes are selected to replace their geometry in a single undo step,
+  preserving each shape's size, position, rotation, label, style, data, links
+  and connector glue.
 - **Lock / unlock** (drawio Lock/Unlock, Cmd+L): lock the selection so it can
   still be selected but not moved, resized, rotated, deleted or text-edited; a
   locked shape's selection box turns red and its resize / rotation handles are

@@ -1169,6 +1169,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
     bindings[const SingleActivator(LogicalKeyboardKey.keyY, control: true)] =
         redo;
     bindings[const SingleActivator(LogicalKeyboardKey.keyY, meta: true)] = redo;
+    // draw.io Arrange → Autosize.
+    mod(LogicalKeyboardKey.keyY, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.canAutosizeSelection) {
+        cur.autosizeSelection();
+      }
+    }, shift: true);
     mod(LogicalKeyboardKey.keyD, () {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.duplicateSelection();
@@ -2756,7 +2764,14 @@ class _StencilPanelState extends State<_StencilPanel> {
       });
 
   void _dropStencil(Stencil s) {
-    widget.workspace.active?.addShapeFromBuilder(s.build);
+    final controller = widget.workspace.active;
+    if (controller == null) return;
+    if (HardwareKeyboard.instance.isShiftPressed &&
+        controller.canReplaceSelectionShapes) {
+      controller.replaceSelectionWithBuilder(s.build);
+    } else {
+      controller.addShapeFromBuilder(s.build);
+    }
   }
 
   @override
@@ -2924,7 +2939,8 @@ class _StencilPanelState extends State<_StencilPanel> {
 
   Widget _draggableTile(ColorScheme scheme, Stencil s) {
     return Tooltip(
-      message: EditorL10n.of(context).stencil(s.name),
+      message: '${EditorL10n.of(context).stencil(s.name)}\n'
+          '${EditorL10n.of(context).replaceShapeShortcutHint}',
       // Drag a stencil onto the canvas to drop it at the cursor (drawio); a
       // plain click still drops it at the centre.
       child: RepaintBoundary(
@@ -3986,6 +4002,12 @@ class _PropertyPanel extends StatelessWidget {
                   Icons.content_paste,
                   EditorL10n.of(context).pasteSize,
                   controller.pasteSelectionSize,
+                ),
+              if (controller.canAutosizeSelection)
+                _iconBtn(
+                  Icons.fit_screen,
+                  EditorL10n.of(context).autosizeShortcut,
+                  controller.autosizeSelection,
                 ),
             ],
           ),

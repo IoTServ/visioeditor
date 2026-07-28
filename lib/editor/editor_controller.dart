@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -2716,6 +2717,115 @@ class EditorController extends ChangeNotifier {
     applyDropContainmentAt(snap(cx), snap(cy), transient: true);
   }
 
+  /// Whether Shift-clicking a stencil can replace at least one selected shape.
+  bool get canReplaceSelectionShapes {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selectionRoots(page, _selection.toList()).any((id) {
+      final s = page.findShapeById(id);
+      return s != null &&
+          !s.is1D &&
+          s.children.isEmpty &&
+          !s.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Replace selected atomic shapes with [build] while preserving their
+  /// position, size, label, style, data, links and connector glue.
+  ///
+  /// Shape ids stay stable, so page-level `<Connect>` rows remain valid. This
+  /// implements draw.io's Shift-click shape-library replacement and supports
+  /// multiple selected shapes as one undoable edit.
+  void replaceSelectionWithBuilder(
+    VsdxShape Function(int id, double cx, double cy) build,
+  ) {
+    final page0 = currentPage;
+    if (page0 == null) return;
+    final targets = <int>[
+      for (final id in _selectionRoots(page0, _selection.toList()))
+        if (page0.findShapeById(id) case final s?
+            when !s.is1D &&
+                s.children.isEmpty &&
+                !s.locked &&
+                !isOnLockedLayer(id))
+          id,
+    ];
+    if (targets.isEmpty) return;
+    final movedIds = _subtreeIds(targets);
+    updateCurrentPage((page) {
+      var next = page;
+      var changed = false;
+      for (final id in targets) {
+        final old = next.findShapeById(id);
+        if (old == null) continue;
+        final template = build(id, old.pinX, old.pinY);
+        if (template.is1D || template.children.isNotEmpty) continue;
+        var replacement = template.resizeTo(
+          pinX: old.pinX,
+          pinY: old.pinY,
+          width: old.width,
+          height: old.height,
+        );
+        final geometries = syncGeometryNoLine(
+          syncGeometryNoFill(
+            replacement.geometries,
+            hollow: old.fill.pattern == 0,
+          ),
+          hollow: old.line.pattern == 0,
+        );
+        replacement = replacement.copyWith(
+          id: old.id,
+          name: old.name,
+          pinX: old.pinX,
+          pinY: old.pinY,
+          width: old.width,
+          height: old.height,
+          angleRad: old.angleRad,
+          text: old.text,
+          richText: old.richText,
+          geometries: geometries,
+          fill: old.fill,
+          line: old.line,
+          shadow: old.shadow,
+          glow: old.glow,
+          reflection: old.reflection,
+          layerMemberIds: old.layerMemberIds,
+          connectionPoints: replacement.connectionPoints.isEmpty
+              ? VsdxPage.defaultConnectionPoints(old.width, old.height)
+              : replacement.connectionPoints,
+          flipX: old.flipX,
+          flipY: old.flipY,
+          locked: old.locked,
+          resizeMode: old.resizeMode,
+          eventDblClick: old.eventDblClick,
+          noAlignBox: old.noAlignBox,
+          shapeSplittable: old.shapeSplittable,
+          themeIndex: old.themeIndex,
+          quickStyleFillMatrix: old.quickStyleFillMatrix,
+          quickStyleLineMatrix: old.quickStyleLineMatrix,
+          quickStyleEffectsMatrix: old.quickStyleEffectsMatrix,
+          quickStyleFontMatrix: old.quickStyleFontMatrix,
+          hyperlinks: old.hyperlinks,
+          userProperties: old.userProperties,
+          userCells: old.userCells,
+          fields: old.fields,
+          actions: old.actions,
+          lineStyleId: old.lineStyleId,
+          fillStyleId: old.fillStyleId,
+          textStyleId: old.textStyleId,
+        );
+        next = next.updateShapeById(id, (_) => replacement);
+        changed = true;
+      }
+      return changed
+          ? next
+              .recalculateFormulas(changedShapeIds: movedIds)
+              .rerouteConnectors(movedShapeIds: movedIds)
+          : page;
+    });
+  }
+
   /// Delete all selected shapes as a single undo step.
   void deleteSelection() {
     if (_editingConnectionPoints) {
@@ -3634,6 +3744,127 @@ class EditorController extends ChangeNotifier {
       targetHeight: clip.height,
       width: true,
       height: true,
+    );
+  }
+
+  bool get canAutosizeSelection {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any((id) {
+      final s = page.findShapeById(id);
+      return s != null &&
+          !s.is1D &&
+          s.children.isEmpty &&
+          !s.locked &&
+          !isOnLockedLayer(id) &&
+          _shapeLabel(s).trim().isNotEmpty;
+    });
+  }
+
+  /// Fit each selected atomic shape's height to its wrapped text label.
+  ///
+  /// This mirrors draw.io Arrange → Autosize: width stays fixed, proportion
+  /// constraints are ignored, and every eligible shape is resized in one undo
+  /// step while its page-space top-left remains anchored.
+  void autosizeSelection() {
+    final page = currentPage;
+    if (page == null) return;
+    final targets = <({int id, double height})>[];
+    for (final id in _selectionRoots(page, _selection.toList())) {
+      final s = page.findShapeById(id);
+      if (s == null ||
+          s.is1D ||
+          s.children.isNotEmpty ||
+          s.locked ||
+          isOnLockedLayer(id) ||
+          _shapeLabel(s).trim().isEmpty) {
+        continue;
+      }
+      final height = _autosizeHeight(s);
+      if ((height - s.height).abs() > 1e-6) {
+        targets.add((id: id, height: height));
+      }
+    }
+    if (targets.isEmpty) return;
+    beginTransaction();
+    for (final target in targets) {
+      final s = currentPage?.findShapeById(target.id);
+      if (s == null) continue;
+      resizeShape(
+        target.id,
+        pinX: s.pinX,
+        pinY: s.pinY,
+        width: s.width,
+        height: target.height,
+        transient: true,
+        preservePageTopLeft: true,
+      );
+    }
+    commitTransaction();
+  }
+
+  /// Measure a shape label in a stable 96px-per-inch layout frame.
+  static double _autosizeHeight(VsdxShape s) {
+    const dpi = 96.0;
+    final block = s.richText.textBlock;
+    final maxWidthInches = math.max(
+      0.05,
+      (block.widthInches ?? s.width) -
+          block.marginLeftInches -
+          block.marginRightInches,
+    );
+    TextStyle runStyle(VsdxTextRun run) {
+      final c = run.charStyle;
+      final p = run.paraStyle;
+      final size = math.max(c.fontSizeInches, 0.04) * dpi;
+      final height = p.lineSpacingAbsoluteInches > 0
+          ? p.lineSpacingAbsoluteInches * dpi / size
+          : (p.lineSpacing > 0 ? p.lineSpacing : 1.0);
+      return TextStyle(
+        fontFamily: c.fontFamily,
+        fontSize: size,
+        fontWeight: c.style.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: c.style.italic ? FontStyle.italic : FontStyle.normal,
+        height: height,
+        letterSpacing: c.letterSpacingInches * dpi,
+        decoration: TextDecoration.combine(<TextDecoration>[
+          if (c.underline || c.doubleUnderline) TextDecoration.underline,
+          if (c.strikethrough || c.doubleStrikethrough)
+            TextDecoration.lineThrough,
+          if (c.overline) TextDecoration.overline,
+        ]),
+      );
+    }
+
+    final spans = s.richText.isEmpty
+        ? <InlineSpan>[
+            TextSpan(
+              text: s.text ?? '',
+              style: const TextStyle(fontSize: 12.0 / 72.0 * dpi),
+            ),
+          ]
+        : <InlineSpan>[
+            for (final run in s.richText.runs)
+              TextSpan(text: run.text, style: runStyle(run)),
+          ];
+    final tp = TextPainter(
+      text: TextSpan(children: spans),
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    );
+    if (block.textDirection == 1) {
+      tp.layout();
+    } else {
+      tp.layout(maxWidth: maxWidthInches * dpi);
+    }
+    final contentHeight =
+        (block.textDirection == 1 ? tp.width : tp.height) / dpi;
+    return math.max(
+      0.05,
+      contentHeight +
+          block.marginTopInches +
+          block.marginBottomInches +
+          0.02,
     );
   }
 
@@ -6802,6 +7033,8 @@ class EditorController extends ChangeNotifier {
     required double width,
     required double height,
     bool transient = false,
+    bool resizeChildren = true,
+    bool preservePageTopLeft = false,
   }) {
     final page = currentPage;
     if (page == null) return;
@@ -6816,6 +7049,8 @@ class EditorController extends ChangeNotifier {
     final movedIds = _subtreeIds(movedRoots);
     updateCurrentPage(
       (p) {
+        final beforeAabb =
+            preservePageTopLeft ? p.shapePageAabb(id) : null;
         var next = p.updateShapeById(
           id,
           (sh) {
@@ -6871,7 +7106,8 @@ class EditorController extends ChangeNotifier {
             );
             // Groups: scale children with the box (draw.io). Skip pools/lanes/
             // tables (they reflow) and pure pin moves (sx≈sy≈1).
-            if (sh.shapeKind != VsdxShapeKind.group ||
+            if (!resizeChildren ||
+                sh.shapeKind != VsdxShapeKind.group ||
                 sh.children.isEmpty ||
                 ((sx - 1).abs() < 1e-12 && (sy - 1).abs() < 1e-12)) {
               return resized;
@@ -6926,6 +7162,16 @@ class EditorController extends ChangeNotifier {
           }
         } else if (reflowTable) {
           next = next.updateShapeById(id, TableOps.layoutCells);
+        }
+        if (beforeAabb != null) {
+          final afterAabb = next.shapePageAabb(id);
+          if (afterAabb != null) {
+            final dx = beforeAabb.left - afterAabb.left;
+            final dy = beforeAabb.top - afterAabb.top;
+            if (dx.abs() > 1e-9 || dy.abs() > 1e-9) {
+              next = _nudgeShapeOnPage(next, id, dx, dy);
+            }
+          }
         }
         // Direct Begin→End bake on a glueable connector must not be undone by
         // re-gluing that same connector (Arrange size / handles).

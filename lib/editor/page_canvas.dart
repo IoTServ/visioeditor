@@ -2108,6 +2108,12 @@ class _PageCanvasState extends State<PageCanvas> {
       width: newW,
       height: newH,
       transient: true,
+      // draw.io Ctrl/Cmd-resize changes only a normal group's outer boundary;
+      // structured containers keep their lane/table reflow semantics.
+      resizeChildren: !(_cloneDrag &&
+          s0.shapeKind == VsdxShapeKind.group &&
+          !SwimlaneOps.isPool(s0) &&
+          !TableOps.isTable(s0)),
     );
     final after = _c.currentPage?.shapePageAabb(id);
     if (after != null) {

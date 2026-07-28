@@ -451,6 +451,16 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '粘贴尺寸' : 'Paste Size';
   String get reverseConnector =>
       locale.languageCode == 'zh' ? '反向连接线' : 'Reverse Connector';
+  String get autosize =>
+      locale.languageCode == 'zh' ? '自动适配文本高度' : 'Autosize';
+  String get autosizeShortcut =>
+      locale.languageCode == 'zh'
+          ? '自动适配文本高度 (Cmd/Ctrl+Shift+Y)'
+          : 'Autosize (Cmd/Ctrl+Shift+Y)';
+  String get replaceShapeShortcutHint =>
+      locale.languageCode == 'zh'
+          ? 'Shift+点击：替换已选形状'
+          : 'Shift+click: replace selected shape';
   String get grid => _t('grid');
   String get background => _t('background');
   String get backgroundPage => _t('backgroundPage');
