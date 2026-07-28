@@ -66,6 +66,13 @@ class EditorCallbackShortcuts extends StatelessWidget {
           key.keyId <= LogicalKeyboardKey.keyZ.keyId;
     }
     if (alt) {
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowRight ||
+          key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.arrowDown ||
+          key == LogicalKeyboardKey.tab) {
+        return true;
+      }
       return key.keyId >= LogicalKeyboardKey.keyA.keyId &&
           key.keyId <= LogicalKeyboardKey.keyZ.keyId;
     }

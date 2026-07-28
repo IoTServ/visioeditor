@@ -35,13 +35,14 @@ List<Stencil> quickAddStencils() {
 
 /// Floating shape grid anchored near a hover-connect arrow.
 ///
-/// Choosing a stencil calls [onSelect]; [onDuplicate] clones the source shape
-/// (Shift-click / "same shape" shortcut). Tap outside dismisses via [onDismiss].
+/// Choosing a stencil calls [onSelect]. When [onDuplicate] is supplied, the
+/// first row clones the source shape (hover-arrow "same shape" shortcut);
+/// blank-canvas insertion omits that row. Tap outside calls [onDismiss].
 class QuickAddPicker extends StatelessWidget {
   const QuickAddPicker({
     required this.anchorGlobal,
     required this.onSelect,
-    required this.onDuplicate,
+    this.onDuplicate,
     required this.onDismiss,
     super.key,
   });
@@ -49,7 +50,7 @@ class QuickAddPicker extends StatelessWidget {
   /// Screen position of the directional arrow that opened the menu.
   final Offset anchorGlobal;
   final ValueChanged<Stencil> onSelect;
-  final VoidCallback onDuplicate;
+  final VoidCallback? onDuplicate;
   final VoidCallback onDismiss;
 
   static const double _panelWidth = 292;
@@ -112,39 +113,41 @@ class QuickAddPicker extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      InkWell(
-                        onTap: onDuplicate,
-                        borderRadius: BorderRadius.circular(6),
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: touchUi ? 12 : 6,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.copy_outlined,
-                                  size: touchUi ? 20 : 16,
-                                  color: scheme.primary),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  el.duplicate,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: touchUi ? 15 : 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: scheme.onSurface,
+                      if (onDuplicate != null) ...[
+                        InkWell(
+                          onTap: onDuplicate,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: touchUi ? 12 : 6,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.copy_outlined,
+                                    size: touchUi ? 20 : 16,
+                                    color: scheme.primary),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    el.duplicate,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: touchUi ? 15 : 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: scheme.onSurface,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Divider(height: 1, color: scheme.outlineVariant),
-                      const SizedBox(height: 6),
+                        const SizedBox(height: 4),
+                        Divider(height: 1, color: scheme.outlineVariant),
+                        const SizedBox(height: 6),
+                      ],
                       Wrap(
                         spacing: 4,
                         runSpacing: 4,
@@ -329,7 +332,7 @@ VoidCallback showQuickAddPicker({
   required BuildContext context,
   required Offset anchorGlobal,
   required ValueChanged<Stencil> onSelect,
-  required VoidCallback onDuplicate,
+  VoidCallback? onDuplicate,
   VoidCallback? onClosed,
 }) {
   final overlay = Overlay.of(context);
@@ -349,10 +352,12 @@ VoidCallback showQuickAddPicker({
         dismiss();
         onSelect(s);
       },
-      onDuplicate: () {
-        dismiss();
-        onDuplicate();
-      },
+      onDuplicate: onDuplicate == null
+          ? null
+          : () {
+              dismiss();
+              onDuplicate();
+            },
       onDismiss: dismiss,
     ),
   );

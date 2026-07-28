@@ -56,7 +56,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   **Ctrl/Cmd+Shift+Arrow** adjusts width/height, and **Alt+Shift+R** clears
   connector waypoints. **Esc cancels an in-progress drag**, reverting it.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
-  creation preview. New shapes **inherit the last-used fill / line style**
+  creation preview. Double-click blank canvas to choose a common shape at that
+  point; **Alt+Shift+Arrow** clones and connects the selected shape, or connects
+  an existing neighbour. New shapes **inherit the last-used fill / line style**
   (drawio's `currentVertexStyle`).
 - **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
   drops straight into in-place editing; an untyped box is discarded on commit
@@ -325,7 +327,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),
   Cmd+G / Cmd+Shift+U (group / ungroup), Cmd+Alt+C/V (copy/paste style),
   Cmd+R / Cmd+Shift+R (rotate 90°), Cmd+F (find), Delete, Esc, arrow keys to
-  nudge the selection, and canvas zoom (Cmd +/- , Cmd+0 = 100%,
+  nudge the selection, Tab/Shift+Tab to traverse visible nested shapes,
+  Alt+Tab to select the parent, and canvas zoom (Cmd +/- , Cmd+0 = 100%,
   Cmd+Shift+H = fit).
 - **macOS document integration**: the app declares the Visio drawing file
   types (`.vsdx` / `.vsdm` / `.vstx` / `.vstm` / `.vssx` / `.vssm`) so Finder

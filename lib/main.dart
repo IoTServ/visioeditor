@@ -1226,6 +1226,35 @@ class _EditorHomePageState extends State<EditorHomePage> {
         cur.selectNextShape(reverse: true);
       }
     };
+    bindings[const SingleActivator(LogicalKeyboardKey.tab, alt: true)] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.selectParentShape();
+    };
+    void connectSelection(int dir) {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.connectSelectionInDirection(dir);
+    }
+
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowUp,
+      alt: true,
+      shift: true,
+    )] = () => connectSelection(0);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowRight,
+      alt: true,
+      shift: true,
+    )] = () => connectSelection(1);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowDown,
+      alt: true,
+      shift: true,
+    )] = () => connectSelection(2);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowLeft,
+      alt: true,
+      shift: true,
+    )] = () => connectSelection(3);
     mod(LogicalKeyboardKey.keyF, () {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.bringSelectionToFront();

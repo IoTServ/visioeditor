@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/canvas_camera.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:visioeditor/editor/page_canvas.dart';
+import 'package:visioeditor/editor/quick_add_picker.dart';
 import 'package:vsdx/vsdx.dart';
 
 /// The white page "sheet" is the only DecoratedBox that carries a drop shadow.
@@ -68,6 +69,13 @@ Future<void> _tapCanvasAt(WidgetTester tester, Offset point) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _doubleTapCanvasAt(WidgetTester tester, Offset point) async {
+  await tester.tapAt(point);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tapAt(point);
+  await tester.pumpAndSettle();
+}
+
 int _addRect(EditorController controller) {
   controller.addShapeFromBuilderAt(
     (id, cx, cy) => VsdxShapeFactory.rectangle(
@@ -107,6 +115,37 @@ void main() {
     expect(_pageSheet, findsOneWidget);
     final r = tester.getRect(_pageSheet);
     expect(r.width / r.height, closeTo(pageAspect, 0.01));
+  });
+
+  testWidgets('double-click blank canvas inserts from the quick shape picker',
+      (tester) async {
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final point = _pagePoint(origin, camera, page, 2.2, 7.3);
+
+    await _doubleTapCanvasAt(tester, point);
+    expect(find.byType(QuickAddPicker), findsOneWidget);
+    expect(find.byIcon(Icons.copy_outlined), findsNothing);
+
+    final pickerCell = find.descendant(
+      of: find.byType(QuickAddPicker),
+      matching: find.byType(InkWell),
+    );
+    await tester.tap(pickerCell.first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(QuickAddPicker), findsNothing);
+    expect(controller.currentPage!.shapes, hasLength(1));
+    final inserted = controller.singleSelected!;
+    expect(inserted.pinX, closeTo(controller.snap(2.2), 0.01));
+    expect(inserted.pinY, closeTo(controller.snap(7.3), 0.01));
   });
 
   testWidgets('shape drag commits one undoable page-space move', (tester) async {

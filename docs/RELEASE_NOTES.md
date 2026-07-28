@@ -20,7 +20,8 @@ byte-for-byte, so formulas and structure survive a save.
   "Open With", or `open drawing.vsdx`. Multiple files open in their own tabs.
 - **Create** rectangles, ellipses, lines and glued connectors (routable
   straight or orthogonal, with draggable waypoints); drop flowchart shapes from
-  the stencil palette.
+  the stencil palette, or double-click blank canvas to open the common-shape
+  picker. Alt+Shift+Arrow clones/connects in any direction.
 - **Edit** with select / move / resize (8 handles) / rotate, duplicate,
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
   Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise
@@ -36,7 +37,8 @@ byte-for-byte, so formulas and structure survive a save.
 - **drawio-style interactions**: a right-click context menu, copy / paste style,
   and matching keyboard shortcuts (Select All, Cut, To Front/Back, Group /
   Ungroup, keyboard zoom). Space-drag pans from anywhere; Alt-wheel zooms and
-  Shift-wheel scrolls horizontally.
+  Shift-wheel scrolls horizontally. Tab/Shift+Tab traverses expanded container
+  children and Alt+Tab selects their parent.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical

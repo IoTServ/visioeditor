@@ -1048,7 +1048,11 @@ class _PageCanvasState extends State<PageCanvas> {
       }
     }
     final hit = _hitTest(_doubleTapPos);
-    if (hit != null) _beginTextEdit(hit);
+    if (hit != null) {
+      _beginTextEdit(hit);
+    } else if (_c.tool == EditorTool.select) {
+      _showQuickInsertAt(_doubleTapPos);
+    }
   }
 
   // --- Context menu (right-click) --------------------------------------------
@@ -2540,6 +2544,27 @@ class _PageCanvasState extends State<PageCanvas> {
     );
   }
 
+  /// draw.io blank-canvas double-click: choose a common shape and insert it at
+  /// the clicked page point using the current default style.
+  void _showQuickInsertAt(Offset localPos) {
+    _dismissQuickAdd?.call();
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final pagePoint = _pageInchesAt(localPos);
+    _dismissQuickAdd = showQuickAddPicker(
+      context: context,
+      anchorGlobal: box.localToGlobal(localPos),
+      onClosed: () => _dismissQuickAdd = null,
+      onSelect: (stencil) {
+        _c.addShapeFromBuilderAt(
+          stencil.build,
+          pagePoint.dx,
+          pagePoint.dy,
+        );
+      },
+    );
+  }
+
   /// Start dragging a selected connector's begin / end handle (drawio endpoint
   /// editing). Returns whether the drag was started.
   bool _tryStartEndpointDrag(Offset localPos) {
@@ -3130,6 +3155,20 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return KeyEventResult.handled;
     } else if (_c.hasSelection && !_c.editingConnectionPoints) {
+      if (HardwareKeyboard.instance.isAltPressed &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        final dir = switch (key) {
+          LogicalKeyboardKey.arrowUp => 0,
+          LogicalKeyboardKey.arrowRight => 1,
+          LogicalKeyboardKey.arrowDown => 2,
+          LogicalKeyboardKey.arrowLeft => 3,
+          _ => null,
+        };
+        if (dir != null) {
+          _c.connectSelectionInDirection(dir);
+          return KeyEventResult.handled;
+        }
+      }
       final step = _c.snapToGrid ? _c.gridInches : 0.1;
       if (key == LogicalKeyboardKey.arrowLeft) {
         _c.moveSelectionBy(-step, 0);

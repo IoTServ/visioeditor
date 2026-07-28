@@ -112,6 +112,30 @@ void main() {
         alt: true,
         shift: true,
       ): c.clearSelectedConnectorWaypoints,
+      const SingleActivator(
+        LogicalKeyboardKey.arrowUp,
+        alt: true,
+        shift: true,
+      ): () => c.connectSelectionInDirection(0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowRight,
+        alt: true,
+        shift: true,
+      ): () => c.connectSelectionInDirection(1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowDown,
+        alt: true,
+        shift: true,
+      ): () => c.connectSelectionInDirection(2),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowLeft,
+        alt: true,
+        shift: true,
+      ): () => c.connectSelectionInDirection(3),
+      const SingleActivator(
+        LogicalKeyboardKey.tab,
+        alt: true,
+      ): c.selectParentShape,
       const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyB, meta: true): bold,
@@ -238,6 +262,49 @@ void main() {
     await tester.pump();
 
     expect(c.currentPage!.findShapeById(connector)!.waypoints, isEmpty);
+  });
+
+  testWidgets('Alt+Shift+arrow clones and connects without canvas focus',
+      (tester) async {
+    final c = ctrlWithRect();
+    final before = c.currentPage!.shapes.length;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.shapes, hasLength(before + 2));
+    expect(c.currentPage!.connects, hasLength(2));
+  });
+
+  testWidgets('Alt+Shift+arrow is deferred while editing text',
+      (tester) async {
+    final c = ctrlWithRect();
+    final before = c.currentPage!.shapes.length;
+    final search = TextEditingController(text: 'hello');
+    addTearDown(search.dispose);
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(
+        controller: search,
+        autofocus: true,
+      ),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.shapes, hasLength(before));
   });
 
   testWidgets('Backspace edits search field instead of deleting shapes',

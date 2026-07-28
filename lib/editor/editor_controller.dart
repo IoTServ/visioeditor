@@ -639,29 +639,28 @@ class EditorController extends ChangeNotifier {
     setSelection(ids);
   }
 
-  /// Cycle the selection to the next top-level shape (Tab).
+  /// Cycle through every visible shape in paint order (draw.io Tab/Shift+Tab).
   ///
-  /// When the current selection is nested, Tab continues from its top-level
-  /// ancestor so the cycle does not jump back to the first page shape.
+  /// Expanded containers are followed by their children; collapsed subtrees
+  /// and hidden layers are skipped.
   void selectNextShape({bool reverse = false}) {
     final page = currentPage;
     if (page == null || page.shapes.isEmpty) return;
-    final ids = <int>[
-      for (final s in page.shapes)
-        if (page.isShapeVisible(s)) s.id,
-    ];
-    if (ids.isEmpty) return;
-    var cur = singleSelectedId;
-    if (cur != null && !ids.contains(cur)) {
-      var p = page.findParentId(cur);
-      while (p != null) {
-        if (ids.contains(p)) {
-          cur = p;
-          break;
-        }
-        p = page.findParentId(p);
+    final ids = <int>[];
+    void walk(VsdxShape s) {
+      if (!page.isShapeVisible(s)) return;
+      ids.add(s.id);
+      if (s.collapsed) return;
+      for (final child in s.children) {
+        walk(child);
       }
     }
+
+    for (final shape in page.shapes) {
+      walk(shape);
+    }
+    if (ids.isEmpty) return;
+    final cur = singleSelectedId;
     var idx = cur == null ? -1 : ids.indexOf(cur);
     if (idx < 0) {
       selectOnly(reverse ? ids.last : ids.first);
@@ -671,6 +670,16 @@ class EditorController extends ChangeNotifier {
         ? (idx - 1 + ids.length) % ids.length
         : (idx + 1) % ids.length;
     selectOnly(ids[idx]);
+  }
+
+  /// Select the immediate parent/container of the single selection
+  /// (draw.io Alt+Tab). Repeating the command walks toward the page root.
+  void selectParentShape() {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return;
+    final parent = page.findParentId(id);
+    if (parent != null) selectOnly(parent);
   }
 
   // --- Layers ----------------------------------------------------------------
@@ -2114,6 +2123,75 @@ class EditorController extends ChangeNotifier {
         next,
       ),
       undoSelection: undoSel,
+    );
+  }
+
+  /// Draw.io Alt+Shift+Arrow: connect the single selected shape to the visible
+  /// shape one step away, or clone the selection there when that spot is empty.
+  void connectSelectionInDirection(int dir) {
+    final page = currentPage;
+    final sourceId = singleSelectedId;
+    if (page == null || sourceId == null || dir < 0 || dir > 3) return;
+    final source = page.findShapeById(sourceId);
+    if (source == null ||
+        source.is1D ||
+        source.locked ||
+        isOnLockedLayer(sourceId)) {
+      return;
+    }
+
+    const gap = 0.5;
+    final aabb = page.shapePageAabb(sourceId);
+    final pin = page.shapePinPage(sourceId);
+    final width =
+        aabb == null ? source.width : aabb.right - aabb.left;
+    final height =
+        aabb == null ? source.height : aabb.top - aabb.bottom;
+    var cx = pin.x;
+    var cy = pin.y;
+    switch (dir) {
+      case 0:
+        cy += height + gap;
+      case 1:
+        cx += width + gap;
+      case 2:
+        cy -= height + gap;
+      case 3:
+        cx -= width + gap;
+    }
+    cx = snap(cx);
+    cy = snap(cy);
+
+    // Later shapes/children paint on top, so let the last matching visible 2-D
+    // shape win just like canvas hit testing.
+    int? existingTargetId;
+    void findTarget(VsdxShape shape) {
+      if (!page.isShapeVisible(shape)) return;
+      final bounds = page.shapePageAabb(shape.id);
+      if (shape.id != sourceId &&
+          !shape.is1D &&
+          bounds != null &&
+          cx >= bounds.left &&
+          cx <= bounds.right &&
+          cy >= bounds.bottom &&
+          cy <= bounds.top) {
+        existingTargetId = shape.id;
+      }
+      if (shape.collapsed) return;
+      for (final child in shape.children) {
+        findTarget(child);
+      }
+    }
+
+    for (final shape in page.shapes) {
+      findTarget(shape);
+    }
+    connectDirectional(
+      sourceId,
+      dir,
+      existingTargetId: existingTargetId,
+      cloneX: cx,
+      cloneY: cy,
     );
   }
 

@@ -90,7 +90,7 @@ void main() {
     );
   });
 
-  test('selectNextShape from nested child advances top-level sibling', () {
+  test('Tab cycles into expanded group children and Alt+Tab selects parent', () {
     final e = ctrl();
     final a = rect(e, 2, 4);
     final b = rect(e, 3, 4);
@@ -98,10 +98,52 @@ void main() {
     e.groupSelection();
     final g = e.singleSelectedId!;
     final c = rect(e, 6, 4);
-    final child = e.currentPage!.findShapeById(g)!.children.first.id;
-    e.setSelection([child]);
+    final children = e.currentPage!.findShapeById(g)!.children;
+
+    e.setSelection([g]);
     e.selectNextShape();
+    expect(e.singleSelectedId, children.first.id);
+    e.selectNextShape();
+    expect(e.singleSelectedId, children.last.id);
+    e.selectParentShape();
+    expect(e.singleSelectedId, g);
+
+    e.selectNextShape(reverse: true);
     expect(e.singleSelectedId, c);
+  });
+
+  test('Alt+Shift+Arrow clones and connects in one undo step', () {
+    final e = ctrl();
+    final source = rect(e, 2, 4);
+    final beforeCount = e.currentPage!.shapes.length;
+
+    e.connectSelectionInDirection(1);
+
+    final target = e.singleSelectedId!;
+    expect(target, isNot(source));
+    expect(e.currentPage!.shapes, hasLength(beforeCount + 2));
+    expect(e.currentPage!.connects, hasLength(2));
+    expect(
+      e.currentPage!.shapePinPage(target).x,
+      closeTo(3.5, 1e-9),
+    );
+
+    e.undo();
+    expect(e.currentPage!.shapes, hasLength(beforeCount));
+    expect(e.singleSelectedId, source);
+  });
+
+  test('Alt+Shift+Arrow connects an existing neighbour without cloning', () {
+    final e = ctrl();
+    final source = rect(e, 2, 4);
+    final target = rect(e, 3.5, 4);
+    e.setSelection([source]);
+
+    e.connectSelectionInDirection(1);
+
+    expect(e.currentPage!.shapes, hasLength(3));
+    expect(e.singleSelectedId, target);
+    expect(e.currentPage!.connects, hasLength(2));
   });
 
   test('find skips children of collapsed containers', () {

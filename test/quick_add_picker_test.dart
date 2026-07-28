@@ -89,4 +89,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(duplicated, isTrue);
   });
+
+  testWidgets('blank-canvas picker omits the duplicate row', (tester) async {
+    Stencil? chosen;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: QuickAddPicker(
+            anchorGlobal: const Offset(160, 160),
+            onSelect: (s) => chosen = s,
+            onDismiss: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.copy_outlined), findsNothing);
+    await tester.tap(find.byType(InkWell).first);
+    await tester.pumpAndSettle();
+    expect(chosen, isNotNull);
+  });
 }
