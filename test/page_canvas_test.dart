@@ -363,6 +363,131 @@ void main() {
     );
   });
 
+  testWidgets(
+      'stencil drop on direction arrow inserts and connects; Alt disables it',
+      (tester) async {
+    final controller = EditorController()..newDocument();
+    final camera = CanvasCamera();
+    addTearDown(controller.dispose);
+    addTearDown(camera.dispose);
+    controller.addShapeFromBuilderAt(
+      (id, x, y) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 2,
+        height: 1,
+      ),
+      4.25,
+      5.5,
+    );
+    final source = controller.singleSelectedId!;
+    final stencil = Stencil(
+      'Ellipse',
+      (id, x, y) => VsdxShapeFactory.ellipse(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 1.5,
+        height: 1,
+      ),
+    );
+    const dragKey = Key('test-direction-stencil-drag');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1000,
+            height: 800,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: PageCanvas(controller: controller, camera: camera),
+                ),
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Draggable<Stencil>(
+                    key: dragKey,
+                    data: stencil,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
+                    feedback: const ColoredBox(
+                      color: Colors.blue,
+                      child: SizedBox(width: 40, height: 40),
+                    ),
+                    child: const ColoredBox(
+                      color: Colors.blue,
+                      child: SizedBox(width: 40, height: 40),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final page = controller.currentPage!;
+    final sourceBounds = page.shapePageAabb(source)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final sourceEdge = _pagePoint(
+      origin,
+      camera,
+      page,
+      sourceBounds.right,
+      (sourceBounds.bottom + sourceBounds.top) / 2,
+    );
+    // Direction arrows use a fixed 22 logical-pixel gap on desktop.
+    final destination = sourceEdge + const Offset(22, 0);
+    final start = tester.getCenter(find.byKey(dragKey));
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    final inserted = controller.singleSelectedId!;
+    final connector = controller.currentPage!.shapes.singleWhere(
+      (shape) => shape.isGlueableConnector,
+    );
+    expect(controller.currentPage!.shapes, hasLength(3));
+    expect(
+      controller.currentPage!.shapePageAabb(inserted)!.left,
+      greaterThan(controller.currentPage!.shapePageAabb(source)!.right),
+    );
+    expect(
+      controller.currentPage!.connects.any(
+        (row) =>
+            row.fromSheetId == connector.id &&
+            row.isBegin &&
+            row.toSheetId == source,
+      ),
+      isTrue,
+    );
+    expect(
+      controller.currentPage!.connects.any(
+        (row) =>
+            row.fromSheetId == connector.id &&
+            row.isEnd &&
+            row.toSheetId == inserted,
+      ),
+      isTrue,
+    );
+
+    controller.undo();
+    expect(controller.currentPage!.shapes, hasLength(1));
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.dragFrom(start, destination - start);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.shapes, hasLength(2));
+    expect(controller.currentPage!.shapes.any((shape) => shape.is1D), isFalse);
+    expect(controller.currentPage!.connects, isEmpty);
+  });
+
   testWidgets('typing replaces a selected label and Enter commits it',
       (tester) async {
     late int shapeId;

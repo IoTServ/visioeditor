@@ -71,7 +71,9 @@ byte-for-byte, so formulas and structure survive a save.
   and container membership so shapes overlap. Clicking a palette shape while a
   connector with a free end is selected inserts and attaches it in one undo
   step. Dropping a palette shape on a free connector endpoint shows a blue
-  target and attaches it directly; Alt-drop disables that automatic connection.
+  target and attaches it directly. Dropping it on a shape's directional arrow
+  inserts the new neighbour and wires it in that direction in one undo step;
+  Alt-drop disables these automatic connections.
   Alt-click places a shape beneath the lower-left of the current drawing, and
   Alt+Shift/Ctrl-click inserts and connects beside the selected shape.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle

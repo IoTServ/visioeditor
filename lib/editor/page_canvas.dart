@@ -192,6 +192,11 @@ class _PageCanvasState extends State<PageCanvas> {
   ({int connectorId, bool begin, double x, double y})?
       _stencilConnectorEndTarget;
 
+  /// Shape and optional directional arrow under a stencil drag. Hovering a
+  /// shape keeps its quick-connect arrows visible; dropping on one inserts the
+  /// stencil in that direction and wires it in the same undo step (draw.io).
+  ({int sourceId, int? dir})? _stencilShapeConnectionTarget;
+
   // Whether the pointer sits on a shape connection point / perimeter (crosshair)
   // or a directional quick-add arrow (click cursor).
   bool _hoverOnConnectPoint = false;
@@ -750,47 +755,108 @@ class _PageCanvasState extends State<PageCanvas> {
     return best;
   }
 
+  ({int sourceId, int? dir})?
+      _stencilShapeConnectionTargetAt(Offset viewportPos) {
+    if (HardwareKeyboard.instance.isAltPressed) return null;
+    final page = _page;
+    if (page == null) return null;
+
+    // Arrows sit outside the shape hit area. Check every eligible shape first
+    // so a library drag can land directly on an arrow even if it did not pass
+    // over the shape body slowly enough to establish hover.
+    for (final id in _drawOrder(page).reversed) {
+      final shape = page.findShapeById(id);
+      if (shape == null ||
+          !_canConnectFrom(shape) ||
+          !page.isShapeVisible(shape)) {
+        continue;
+      }
+      final dir = _connectArrowHitDir(shape, viewportPos);
+      if (dir != null) return (sourceId: id, dir: dir);
+    }
+
+    // Preserve the source while crossing the small gap from its edge to an
+    // arrow, matching the stable hover affordance used for pointer wiring.
+    final previous = _stencilShapeConnectionTarget;
+    if (previous != null) {
+      final shape = page.findShapeById(previous.sourceId);
+      if (shape != null &&
+          _canConnectFrom(shape) &&
+          page.isShapeVisible(shape) &&
+          _withinConnectAffordance(shape, viewportPos)) {
+        return (sourceId: shape.id, dir: null);
+      }
+    }
+
+    for (final id in _hitTests(viewportPos).reversed) {
+      final shape = page.findShapeById(id);
+      if (shape != null &&
+          _canConnectFrom(shape) &&
+          page.isShapeVisible(shape)) {
+        return (sourceId: id, dir: null);
+      }
+    }
+    return null;
+  }
+
   void _onStencilMoved(DragTargetDetails<Stencil> details) {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final local = box.globalToLocal(details.offset);
     final connectorTarget = _stencilConnectorEndTargetAt(local);
-    final replaceTarget =
-        connectorTarget == null ? _stencilReplaceTargetAt(local) : null;
+    final shapeConnectionTarget = connectorTarget == null
+        ? _stencilShapeConnectionTargetAt(local)
+        : null;
+    final replaceTarget = connectorTarget == null &&
+            shapeConnectionTarget?.dir == null
+        ? _stencilReplaceTargetAt(local)
+        : null;
     if (replaceTarget != _stencilReplaceTargetId ||
-        connectorTarget != _stencilConnectorEndTarget) {
+        connectorTarget != _stencilConnectorEndTarget ||
+        shapeConnectionTarget != _stencilShapeConnectionTarget) {
       setState(() {
         _stencilReplaceTargetId = replaceTarget;
         _stencilConnectorEndTarget = connectorTarget;
+        _stencilShapeConnectionTarget = shapeConnectionTarget;
       });
     }
   }
 
   void _onStencilLeft(Stencil? _) {
     if (_stencilReplaceTargetId != null ||
-        _stencilConnectorEndTarget != null) {
+        _stencilConnectorEndTarget != null ||
+        _stencilShapeConnectionTarget != null) {
       setState(() {
         _stencilReplaceTargetId = null;
         _stencilConnectorEndTarget = null;
+        _stencilShapeConnectionTarget = null;
       });
     }
   }
 
   /// A stencil dropped from the shapes palette (drawio drag-and-drop): replace
-  /// an atomic shape under a plain drop, otherwise create at the drop point.
-  /// Alt/Shift force overlap and disable both replacement and containment.
+  /// an atomic shape under a plain drop, insert and connect on a directional
+  /// arrow, or otherwise create at the drop point. Alt disables automatic
+  /// connections; Alt/Shift force overlap and disable replacement/containment.
   void _onStencilDropped(DragTargetDetails<Stencil> details) {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final local = box.globalToLocal(details.offset);
     final connectorTarget = _stencilConnectorEndTargetAt(local);
-    final replaceTarget =
-        connectorTarget == null ? _stencilReplaceTargetAt(local) : null;
+    final shapeConnectionTarget = connectorTarget == null
+        ? _stencilShapeConnectionTargetAt(local)
+        : null;
+    final replaceTarget = connectorTarget == null &&
+            shapeConnectionTarget?.dir == null
+        ? _stencilReplaceTargetAt(local)
+        : null;
     if (_stencilReplaceTargetId != null ||
-        _stencilConnectorEndTarget != null) {
+        _stencilConnectorEndTarget != null ||
+        _stencilShapeConnectionTarget != null) {
       setState(() {
         _stencilReplaceTargetId = null;
         _stencilConnectorEndTarget = null;
+        _stencilShapeConnectionTarget = null;
       });
     }
     final keyboard = HardwareKeyboard.instance;
@@ -802,6 +868,23 @@ class _PageCanvasState extends State<PageCanvas> {
           inheritStyle: !keyboard.isShiftPressed,
         )) {
       return;
+    }
+    final direction = shapeConnectionTarget?.dir;
+    if (direction != null) {
+      final source =
+          _page?.findShapeById(shapeConnectionTarget!.sourceId);
+      if (source != null && _canConnectFrom(source)) {
+        final (cx, cy) = _neighbourCentre(source, direction);
+        _c.quickAddInDirection(
+          source.id,
+          direction,
+          build: details.data.build,
+          cx: cx,
+          cy: cy,
+          inheritStyle: !keyboard.isShiftPressed,
+        );
+        return;
+      }
     }
     if (replaceTarget != null &&
         _c.replaceShapeWithBuilder(replaceTarget, details.data.build)) {
@@ -3688,7 +3771,9 @@ class _PageCanvasState extends State<PageCanvas> {
             // highlight shown while wiring a connector. On touch there is no
             // hover — arrows sit on the single selected 2-D shape instead.
             Rect? hoverBox;
-            final affordanceId = _connectAffordanceShapeId;
+            final affordanceId =
+                _stencilShapeConnectionTarget?.sourceId ??
+                    _connectAffordanceShapeId;
             if (affordanceId != null) {
               final s = page.findShapeById(affordanceId);
               if (s != null && !s.is1D) hoverBox = _exactContentBox(s);
