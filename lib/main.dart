@@ -2864,6 +2864,11 @@ class _StencilPanelState extends State<_StencilPanel> {
         shift &&
         controller.canReplaceSelectionShapes) {
       controller.replaceSelectionWithBuilder(s.build);
+    } else if (!alt &&
+        !shift &&
+        !command &&
+        controller.canAttachShapeToSelectionConnector) {
+      controller.attachShapeToSelectionConnector(s.build);
     } else if (alt) {
       controller.addShapeFromBuilderBottomLeft(
         s.build,

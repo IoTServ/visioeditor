@@ -8,6 +8,7 @@ import 'package:visioeditor/editor/canvas_camera.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:visioeditor/editor/page_canvas.dart';
 import 'package:visioeditor/editor/quick_add_picker.dart';
+import 'package:visioeditor/editor/stencils.dart';
 import 'package:vsdx/vsdx.dart';
 
 /// The white page "sheet" is the only DecoratedBox that carries a drop shadow.
@@ -146,6 +147,109 @@ void main() {
     final inserted = controller.singleSelected!;
     expect(inserted.pinX, closeTo(controller.snap(2.2), 0.01));
     expect(inserted.pinY, closeTo(controller.snap(7.3), 0.01));
+  });
+
+  testWidgets('stencil drop replaces shape; Shift-drop overlaps it',
+      (tester) async {
+    final controller = EditorController()..newDocument();
+    final camera = CanvasCamera();
+    addTearDown(controller.dispose);
+    addTearDown(camera.dispose);
+    controller.addShapeFromBuilderAt(
+      (id, x, y) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 2,
+        height: 1,
+      ),
+      4.25,
+      5.5,
+    );
+    final target = controller.singleSelectedId!;
+    final stencil = Stencil(
+      'Ellipse',
+      (id, x, y) => VsdxShapeFactory.ellipse(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 1.5,
+        height: 1,
+      ),
+    );
+    const dragKey = Key('test-stencil-drag');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1000,
+            height: 800,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: PageCanvas(controller: controller, camera: camera),
+                ),
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Draggable<Stencil>(
+                    key: dragKey,
+                    data: stencil,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
+                    feedback: const ColoredBox(
+                      color: Colors.blue,
+                      child: SizedBox(width: 40, height: 40),
+                    ),
+                    child: const ColoredBox(
+                      color: Colors.blue,
+                      child: SizedBox(width: 40, height: 40),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final destination = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      controller.currentPage!,
+      4.25,
+      5.5,
+    );
+    await tester.dragFrom(
+      tester.getCenter(find.byKey(dragKey)),
+      destination - tester.getCenter(find.byKey(dragKey)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.shapes, hasLength(1));
+    expect(
+      controller.currentPage!
+          .findShapeById(target)!
+          .geometries
+          .first
+          .commands
+          .whereType<EllipseCmd>(),
+      isNotEmpty,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.dragFrom(
+      tester.getCenter(find.byKey(dragKey)),
+      destination - tester.getCenter(find.byKey(dragKey)),
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.shapes, hasLength(2));
+    expect(controller.currentPage!.shapes.every((shape) => !shape.is1D), isTrue);
   });
 
   testWidgets('typing replaces a selected label and Enter commits it',

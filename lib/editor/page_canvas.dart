@@ -185,6 +185,9 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Container under the pointer while dragging shapes (drop-into highlight).
   int? _dropContainerId;
 
+  /// Atomic shape under a stencil drag that will be replaced on drop.
+  int? _stencilReplaceTargetId;
+
   // Whether the pointer sits on a shape connection point / perimeter (crosshair)
   // or a directional quick-add arrow (click cursor).
   bool _hoverOnConnectPoint = false;
@@ -685,22 +688,56 @@ class _PageCanvasState extends State<PageCanvas> {
   /// a stencil drag-drop's global position into canvas-local coordinates.
   final GlobalKey _canvasBoxKey = GlobalKey();
 
-  /// A stencil dropped from the shapes palette (drawio drag-and-drop): create
-  /// it centred on the drop point, then reparent into a container / lane when
-  /// the drop lands inside one (same as canvas drag-drop containment).
+  int? _stencilReplaceTargetAt(Offset viewportPos) {
+    final keyboard = HardwareKeyboard.instance;
+    // Alt or Shift explicitly means overlap: do not replace or contain.
+    if (keyboard.isAltPressed || keyboard.isShiftPressed) return null;
+    for (final id in _hitTests(viewportPos).reversed) {
+      if (_c.canReplaceShape(id)) return id;
+    }
+    return null;
+  }
+
+  void _onStencilMoved(DragTargetDetails<Stencil> details) {
+    final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final next = _stencilReplaceTargetAt(box.globalToLocal(details.offset));
+    if (next != _stencilReplaceTargetId) {
+      setState(() => _stencilReplaceTargetId = next);
+    }
+  }
+
+  void _onStencilLeft(Stencil? _) {
+    if (_stencilReplaceTargetId != null) {
+      setState(() => _stencilReplaceTargetId = null);
+    }
+  }
+
+  /// A stencil dropped from the shapes palette (drawio drag-and-drop): replace
+  /// an atomic shape under a plain drop, otherwise create at the drop point.
+  /// Alt/Shift force overlap and disable both replacement and containment.
   void _onStencilDropped(DragTargetDetails<Stencil> details) {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
-    final p = _pageInchesAt(box.globalToLocal(details.offset));
+    final local = box.globalToLocal(details.offset);
+    final replaceTarget = _stencilReplaceTargetAt(local);
+    if (_stencilReplaceTargetId != null) {
+      setState(() => _stencilReplaceTargetId = null);
+    }
+    if (replaceTarget != null &&
+        _c.replaceShapeWithBuilder(replaceTarget, details.data.build)) {
+      return;
+    }
+    final p = _pageInchesAt(local);
     final keyboard = HardwareKeyboard.instance;
+    final overlay = keyboard.isAltPressed || keyboard.isShiftPressed;
     _c.addShapeFromBuilderAt(
       details.data.build,
       p.dx,
       p.dy,
-      // Shift-drag ignores a custom palette style; Alt-drop overlays a
-      // container instead of becoming its child (draw.io modifiers).
+      // Shift-drag also ignores a custom palette style.
       inheritStyle: !keyboard.isShiftPressed,
-      allowContainment: !keyboard.isAltPressed,
+      allowContainment: !overlay,
     );
   }
 
@@ -3572,7 +3609,8 @@ class _PageCanvasState extends State<PageCanvas> {
               final s = page.findShapeById(affordanceId);
               if (s != null && !s.is1D) hoverBox = _exactContentBox(s);
             }
-            final targetId = _connectTargetId ?? _dropContainerId;
+            final targetId =
+                _stencilReplaceTargetId ?? _connectTargetId ?? _dropContainerId;
             final Rect? connectTargetRect = (targetId != null &&
                     bounds[targetId] != null)
                 ? _boundsInchesToContent(bounds[targetId]!)
@@ -3667,6 +3705,8 @@ class _PageCanvasState extends State<PageCanvas> {
               builder: (context, imageCandidate, imageRejected) =>
                   DragTarget<Stencil>(
               onAcceptWithDetails: _onStencilDropped,
+              onMove: _onStencilMoved,
+              onLeave: _onStencilLeft,
               builder: (context, candidate, rejected) => Focus(
               focusNode: _canvasFocus,
               autofocus: true,

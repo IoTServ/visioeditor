@@ -64,9 +64,13 @@ byte-for-byte, so formulas and structure survive a save.
   outside any edge or centred, and displayed vertically.
 - **Shape-library modifiers** — Shift-click replaces a compatible selection or
   inserts with the original white/black style; Shift-drag also ignores the
-  custom default style. Alt-click places a shape beneath the lower-left of the
-  current drawing, Alt+Shift/Ctrl-click inserts and connects beside the selected
-  shape, and Alt-drop overlays containers without becoming their child.
+  custom default style. A plain drop on an atomic shape replaces it (or all
+  compatible selected shapes) while preserving labels, styles and connector
+  glue; the drop target is highlighted. Alt/Shift-drop disables replacement
+  and container membership so shapes overlap. Clicking a palette shape while a
+  connector with a free end is selected inserts and attaches it in one undo
+  step. Alt-click places a shape beneath the lower-left of the current drawing,
+  and Alt+Shift/Ctrl-click inserts and connects beside the selected shape.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle
   layer visibility.
 - **Save / Save As** with round-trip fidelity, plus **export** to SVG, PNG and

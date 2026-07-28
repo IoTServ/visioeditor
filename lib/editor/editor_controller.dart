@@ -2938,6 +2938,85 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// The preferred free end of the selected connector, in page inches.
+  ///
+  /// draw.io attaches a palette shape to the unconnected end of a selected
+  /// connector. When both ends are free, prefer the arrow/end side.
+  ({int connectorId, bool begin, double x, double y})?
+      get _selectedConnectorFreeEnd {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return null;
+    final connector = page.findShapeById(id);
+    if (connector == null ||
+        !connector.isGlueableConnector ||
+        connector.locked ||
+        isOnLockedLayer(id) ||
+        !page.isShapeVisible(connector)) {
+      return null;
+    }
+    final beginGlued =
+        page.connects.any((row) => row.fromSheetId == id && row.isBegin);
+    final endGlued =
+        page.connects.any((row) => row.fromSheetId == id && row.isEnd);
+    if (beginGlued && endGlued) return null;
+    final begin = endGlued;
+    final route = page.drawnConnectorPagePolyline(connector);
+    if (route.length < 2) return null;
+    final point = begin ? route.first : route.last;
+    return (
+      connectorId: id,
+      begin: begin,
+      x: point.x,
+      y: point.y,
+    );
+  }
+
+  /// Whether clicking a palette shape can attach it to the selected connector.
+  bool get canAttachShapeToSelectionConnector =>
+      _selectedConnectorFreeEnd != null;
+
+  /// Insert a palette shape at the selected connector's free end and glue it.
+  ///
+  /// The insert and endpoint reconnect are committed as one undo step. Returns
+  /// false when the selection has no free connector end or [build] is 1-D.
+  bool attachShapeToSelectionConnector(
+    VsdxShape Function(int id, double cx, double cy) build, {
+    bool inheritStyle = true,
+  }) {
+    final free = _selectedConnectorFreeEnd;
+    final page = currentPage;
+    if (free == null || page == null) return false;
+    final probe = build(page.nextFreeShapeId(), free.x, free.y);
+    if (probe.is1D) return false;
+
+    beginTransaction();
+    addShapeFromBuilderAt(
+      build,
+      free.x,
+      free.y,
+      inheritStyle: inheritStyle,
+      // A connector endpoint may sit over a container; attaching a shape must
+      // not silently change its parent as a side effect.
+      allowContainment: false,
+    );
+    final shapeId = singleSelectedId;
+    if (shapeId == null) {
+      cancelTransaction();
+      return false;
+    }
+    reconnectEndpoint(
+      free.connectorId,
+      begin: free.begin,
+      targetShapeId: shapeId,
+      x: free.x,
+      y: free.y,
+      transient: true,
+    );
+    commitTransaction();
+    return true;
+  }
+
   /// Whether Shift-clicking a stencil can replace at least one selected shape.
   bool get canReplaceSelectionShapes {
     final page = currentPage;
@@ -2952,28 +3031,75 @@ class EditorController extends ChangeNotifier {
     });
   }
 
+  /// Whether a palette drop may replace [shapeId].
+  bool canReplaceShape(int shapeId) {
+    final page = currentPage;
+    final shape = page?.findShapeById(shapeId);
+    return page != null &&
+        shape != null &&
+        !shape.is1D &&
+        shape.children.isEmpty &&
+        !shape.locked &&
+        !isOnLockedLayer(shapeId) &&
+        page.isShapeVisible(shape);
+  }
+
+  /// Replace the shape under a palette drop. Dropping on one member of a
+  /// multi-selection replaces all selected compatible shapes, like draw.io.
+  bool replaceShapeWithBuilder(
+    int shapeId,
+    VsdxShape Function(int id, double cx, double cy) build,
+  ) {
+    final page = currentPage;
+    if (page == null || !canReplaceShape(shapeId)) return false;
+    final wasSelected = _selection.contains(shapeId);
+    final candidates = wasSelected
+        ? _selectionRoots(page, _selection.toList())
+        : <int>[shapeId];
+    return _replaceShapesWithBuilder(
+      candidates,
+      build,
+      selectionAfter: wasSelected ? null : <int>{shapeId},
+    );
+  }
+
   /// Replace selected atomic shapes with [build] while preserving their
   /// position, size, label, style, data, links and connector glue.
   ///
   /// Shape ids stay stable, so page-level `<Connect>` rows remain valid. This
   /// implements draw.io's Shift-click shape-library replacement and supports
   /// multiple selected shapes as one undoable edit.
-  void replaceSelectionWithBuilder(
+  bool replaceSelectionWithBuilder(
     VsdxShape Function(int id, double cx, double cy) build,
   ) {
     final page0 = currentPage;
-    if (page0 == null) return;
+    if (page0 == null) return false;
+    return _replaceShapesWithBuilder(
+      _selectionRoots(page0, _selection.toList()),
+      build,
+    );
+  }
+
+  bool _replaceShapesWithBuilder(
+    Iterable<int> candidates,
+    VsdxShape Function(int id, double cx, double cy) build, {
+    Set<int>? selectionAfter,
+  }) {
+    final page0 = currentPage;
+    if (page0 == null) return false;
     final targets = <int>[
-      for (final id in _selectionRoots(page0, _selection.toList()))
+      for (final id in candidates)
         if (page0.findShapeById(id) case final s?
             when !s.is1D &&
                 s.children.isEmpty &&
                 !s.locked &&
-                !isOnLockedLayer(id))
+                !isOnLockedLayer(id) &&
+                page0.isShapeVisible(s))
           id,
     ];
-    if (targets.isEmpty) return;
+    if (targets.isEmpty) return false;
     final movedIds = _subtreeIds(targets);
+    var replaced = false;
     updateCurrentPage((page) {
       var next = page;
       var changed = false;
@@ -3039,12 +3165,21 @@ class EditorController extends ChangeNotifier {
         next = next.updateShapeById(id, (_) => replacement);
         changed = true;
       }
+      replaced = changed;
       return changed
           ? next
               .recalculateFormulas(changedShapeIds: movedIds)
               .rerouteConnectors(movedShapeIds: movedIds)
           : page;
     });
+    if (replaced && selectionAfter != null) {
+      _selection
+        ..clear()
+        ..addAll(selectionAfter);
+      _tool = EditorTool.select;
+      notifyListeners();
+    }
+    return replaced;
   }
 
   /// Delete all selected shapes as a single undo step.
