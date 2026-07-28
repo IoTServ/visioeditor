@@ -148,6 +148,48 @@ void main() {
     expect(inserted.pinY, closeTo(controller.snap(7.3), 0.01));
   });
 
+  testWidgets('typing replaces a selected label and Enter commits it',
+      (tester) async {
+    late int shapeId;
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(900, 700),
+      setUp: (c) {
+        shapeId = _addRect(c);
+        c.setShapeText(shapeId, 'Old label');
+      },
+    );
+    final inlineEditor = find.descendant(
+      of: find.byType(PageCanvas),
+      matching: find.byType(TextField),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN, character: 'N');
+    await tester.pumpAndSettle();
+
+    expect(inlineEditor, findsOneWidget);
+    expect(tester.widget<TextField>(inlineEditor).controller!.text, 'N');
+    await tester.enterText(inlineEditor, 'New label');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(inlineEditor, findsOneWidget);
+    expect(
+      tester.widget<TextField>(inlineEditor).controller!.text,
+      'New label\n',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(inlineEditor, findsNothing);
+    expect(
+      controller.currentPage!.findShapeById(shapeId)!.richText.plainText,
+      'New label\n',
+    );
+  });
+
   testWidgets('shape drag commits one undoable page-space move', (tester) async {
     late int id;
     final camera = CanvasCamera();

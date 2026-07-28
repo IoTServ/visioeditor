@@ -55,6 +55,10 @@ void main() {
     final de = EditorL10n(const Locale('de'));
     expect(zh.flipHorizontal, '水平翻转');
     expect(zh.justify, '两端对齐');
+    expect(zh.labelPosition, '标签位置');
+    expect(zh.verticalText, '竖排文字');
+    expect(EditorL10n(const Locale('en')).labelPositionRight,
+        'Position label right');
     expect(zh.openFileFailed('x'), contains('x'));
     expect(ja.stencil('Rounded Rectangle'), '角丸四角形');
     expect(de.stencil('Rectangle'), 'Rechteck');

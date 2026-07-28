@@ -250,6 +250,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   atomic shapes are selected to replace their geometry in a single undo step,
   preserving each shape's size, position, rotation, label, style, data, links
   and connector glue.
+- **Label editing** (draw.io-style): select a shape or connector and start
+  typing to replace its label immediately. Enter saves the inline edit;
+  Shift+Enter or Alt+Enter inserts a line break. The Text panel can position a
+  2-D shape's label to its left, top, centre, bottom or right, and toggle
+  vertical text. Label placement round-trips through Visio `TxtPin*`,
+  `TxtLocPin*`, `TxtWidth` / `TxtHeight` and `TextDirection` cells.
 - **Lock / unlock** (drawio Lock/Unlock, Cmd+L): lock the selection so it can
   still be selected but not moved, resized, rotated, deleted or text-edited; a
   locked shape's selection box turns red and its resize / rotation handles are

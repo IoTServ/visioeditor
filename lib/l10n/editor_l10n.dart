@@ -461,6 +461,20 @@ class EditorL10n {
       locale.languageCode == 'zh'
           ? 'Shift+点击：替换已选形状'
           : 'Shift+click: replace selected shape';
+  String get labelPosition =>
+      locale.languageCode == 'zh' ? '标签位置' : 'Label Position';
+  String get labelPositionLeft =>
+      locale.languageCode == 'zh' ? '标签置于左侧' : 'Position label left';
+  String get labelPositionTop =>
+      locale.languageCode == 'zh' ? '标签置于上方' : 'Position label above';
+  String get labelPositionCenter =>
+      locale.languageCode == 'zh' ? '标签居中' : 'Center label';
+  String get labelPositionBottom =>
+      locale.languageCode == 'zh' ? '标签置于下方' : 'Position label below';
+  String get labelPositionRight =>
+      locale.languageCode == 'zh' ? '标签置于右侧' : 'Position label right';
+  String get verticalText =>
+      locale.languageCode == 'zh' ? '竖排文字' : 'Vertical Text';
   String get grid => _t('grid');
   String get background => _t('background');
   String get backgroundPage => _t('backgroundPage');

@@ -46,7 +46,10 @@ byte-for-byte, so formulas and structure survive a save.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical
-  alignment).
+  alignment). Start typing with a shape or connector selected to replace its
+  label; Enter saves and Shift/Alt+Enter adds a line break. Labels on 2-D
+  shapes can be positioned outside any edge or centred, and displayed
+  vertically.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle
   layer visibility.
 - **Save / Save As** with round-trip fidelity, plus **export** to SVG, PNG and

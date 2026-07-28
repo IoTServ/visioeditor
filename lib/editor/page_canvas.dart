@@ -1266,7 +1266,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// Enter inline edit mode for shape [id]: select it, seed the field with its
   /// current label (all selected) and focus the overlaid editor.
-  void _beginTextEdit(int id) {
+  void _beginTextEdit(int id, {String? replacement}) {
     final s = _page?.findShapeById(id);
     if (s == null || s.locked || _c.isOnLockedLayer(id)) {
       return; // locked shapes / layers can't be text-edited
@@ -1274,10 +1274,13 @@ class _PageCanvasState extends State<PageCanvas> {
     _newTextBoxId = null; // editing an existing shape, not a fresh text box
     _c.selectOnly(id);
     final initial =
-        s.richText.runs.isNotEmpty ? s.richText.plainText : (s.text ?? '');
+        replacement ??
+        (s.richText.runs.isNotEmpty ? s.richText.plainText : (s.text ?? ''));
     _textController.value = TextEditingValue(
       text: initial,
-      selection: TextSelection(baseOffset: 0, extentOffset: initial.length),
+      selection: replacement == null
+          ? TextSelection(baseOffset: 0, extentOffset: initial.length)
+          : TextSelection.collapsed(offset: initial.length),
     );
     setState(() => _editingShapeId = id);
     _syncTextEditSession();
@@ -1326,9 +1329,24 @@ class _PageCanvasState extends State<PageCanvas> {
     if (wasNewBox) _c.discardAbandonedShape(id);
   }
 
+  void _insertTextEditLineBreak() {
+    final value = _textController.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    final a = math.min(start, end).clamp(0, value.text.length);
+    final b = math.max(start, end).clamp(0, value.text.length);
+    final text = value.text.replaceRange(a, b, '\n');
+    _textController.value = value.copyWith(
+      text: text,
+      selection: TextSelection.collapsed(offset: a + 1),
+      composing: TextRange.empty,
+    );
+  }
+
   /// The overlaid text editor for the shape being edited, positioned over its
-  /// box in screen space (`null` when not editing). Enter inserts a newline;
-  /// Cmd/Ctrl+Enter or clicking away applies; Esc cancels.
+  /// box in screen space (`null` when not editing). Enter applies,
+  /// Shift/Alt+Enter inserts a newline, and Esc cancels.
   ///
   /// When the shape has rich-text runs, a [Text.rich] preview mirrors bold /
   /// colour / size per run under a near-transparent [TextField] so typing and
@@ -1416,6 +1434,12 @@ class _PageCanvasState extends State<PageCanvas> {
     Widget editor = CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.escape): _cancelTextEdit,
+        // draw.io: Enter saves; Shift+Enter / Alt+Enter inserts a line break.
+        const SingleActivator(LogicalKeyboardKey.enter): _commitTextEdit,
+        const SingleActivator(LogicalKeyboardKey.enter, shift: true):
+            _insertTextEditLineBreak,
+        const SingleActivator(LogicalKeyboardKey.enter, alt: true):
+            _insertTextEditLineBreak,
         const SingleActivator(LogicalKeyboardKey.enter, meta: true):
             _commitTextEdit,
         const SingleActivator(LogicalKeyboardKey.enter, control: true):
@@ -3161,6 +3185,20 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return KeyEventResult.handled;
     } else if (_c.hasSelection && !_c.editingConnectionPoints) {
+      // draw.io: selecting a shape and typing replaces its entire label.
+      // Shift is allowed for capital letters; command/option modifiers remain
+      // available to app and platform shortcuts.
+      final character = event.character;
+      final id = _c.singleSelectedId;
+      if (id != null &&
+          character != null &&
+          character.trim().isNotEmpty &&
+          !HardwareKeyboard.instance.isMetaPressed &&
+          !HardwareKeyboard.instance.isControlPressed &&
+          !HardwareKeyboard.instance.isAltPressed) {
+        _beginTextEdit(id, replacement: character);
+        return KeyEventResult.handled;
+      }
       if (HardwareKeyboard.instance.isAltPressed &&
           HardwareKeyboard.instance.isShiftPressed) {
         final dir = switch (key) {

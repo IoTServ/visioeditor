@@ -5303,6 +5303,59 @@ class _PropertyPanel extends StatelessWidget {
                 EditorL10n.of(context).alignBottom, VsdxVertAlign.bottom),
           ],
         ),
+        if (controller.selectedTextLabelPosition != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            EditorL10n.of(context).labelPosition,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          Wrap(
+            spacing: 0,
+            runSpacing: 0,
+            children: [
+              _labelPositionBtn(
+                Icons.keyboard_arrow_left,
+                EditorL10n.of(context).labelPositionLeft,
+                TextLabelPosition.left,
+              ),
+              _labelPositionBtn(
+                Icons.keyboard_arrow_up,
+                EditorL10n.of(context).labelPositionTop,
+                TextLabelPosition.top,
+              ),
+              _labelPositionBtn(
+                Icons.filter_center_focus,
+                EditorL10n.of(context).labelPositionCenter,
+                TextLabelPosition.center,
+              ),
+              _labelPositionBtn(
+                Icons.keyboard_arrow_down,
+                EditorL10n.of(context).labelPositionBottom,
+                TextLabelPosition.bottom,
+              ),
+              _labelPositionBtn(
+                Icons.keyboard_arrow_right,
+                EditorL10n.of(context).labelPositionRight,
+                TextLabelPosition.right,
+              ),
+            ],
+          ),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                EditorL10n.of(context).verticalText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Switch(
+              value: controller.selectedVerticalText,
+              onChanged: controller.setVerticalText,
+            ),
+          ],
+        ),
         Row(
           children: [
             Expanded(
@@ -5445,6 +5498,19 @@ class _PropertyPanel extends StatelessWidget {
       IconButton(
         onPressed: () => controller.setTextVerticalAlign(v),
         isSelected: controller.selectedVerticalAlign == v,
+        icon: Icon(icon),
+        tooltip: tip,
+        visualDensity: VisualDensity.compact,
+      );
+
+  IconButton _labelPositionBtn(
+    IconData icon,
+    String tip,
+    TextLabelPosition position,
+  ) =>
+      IconButton(
+        onPressed: () => controller.setTextLabelPosition(position),
+        isSelected: controller.selectedTextLabelPosition == position,
         icon: Icon(icon),
         tooltip: tip,
         visualDensity: VisualDensity.compact,

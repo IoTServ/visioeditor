@@ -30,6 +30,9 @@ enum EditorTool {
 /// edge styles. [curved] smooths the orthogonal control points into a spline.
 enum ConnectorRouteStyle { straight, orthogonal, curved }
 
+/// Common draw.io label positions around a 2-D shape.
+enum TextLabelPosition { left, top, center, bottom, right }
+
 /// Central editor state: the parsed [VsdxDocument], current page, selection,
 /// and an undo/redo history built on immutable document snapshots.
 ///
@@ -6676,6 +6679,163 @@ class EditorController extends ChangeNotifier {
           ),
         ),
       );
+
+  /// Move selected 2-D labels inside or immediately outside their shapes.
+  ///
+  /// Visio represents this with the text block transform (`TxtPin*`,
+  /// `TxtLocPin*`, `TxtWidth/Height`). The block keeps the shape's size and is
+  /// pinned by the edge nearest the shape, matching draw.io's five common
+  /// Position choices while remaining stable under rotation and resize.
+  void setTextLabelPosition(TextLabelPosition position) =>
+      _updateSelectedShapes((s) {
+        if (s.is1D) return s;
+        final w = math.max(s.width.abs(), 0.05);
+        final h = math.max(s.height.abs(), 0.05);
+        final old = s.richText.textBlock;
+        final (pinX, pinY, locX, locY, verticalAlign, horizontalAlign) =
+            switch (position) {
+          TextLabelPosition.left => (
+              0.0,
+              h / 2,
+              w,
+              h / 2,
+              VsdxVertAlign.middle,
+              VsdxHorzAlign.right,
+            ),
+          TextLabelPosition.top => (
+              w / 2,
+              h,
+              w / 2,
+              0.0,
+              VsdxVertAlign.bottom,
+              VsdxHorzAlign.center,
+            ),
+          TextLabelPosition.center => (
+              w / 2,
+              h / 2,
+              w / 2,
+              h / 2,
+              VsdxVertAlign.middle,
+              VsdxHorzAlign.center,
+            ),
+          TextLabelPosition.bottom => (
+              w / 2,
+              0.0,
+              w / 2,
+              h,
+              VsdxVertAlign.top,
+              VsdxHorzAlign.center,
+            ),
+          TextLabelPosition.right => (
+              w,
+              h / 2,
+              0.0,
+              h / 2,
+              VsdxVertAlign.middle,
+              VsdxHorzAlign.left,
+            ),
+        };
+        final runs = s.richText.runs.isEmpty
+            ? <VsdxTextRun>[
+                VsdxTextRun(
+                  text: s.text ?? '',
+                  paraStyle: VsdxParaStyle(
+                    horizontalAlign: horizontalAlign,
+                  ),
+                ),
+              ]
+            : <VsdxTextRun>[
+                for (final run in s.richText.runs)
+                  run.copyWith(
+                    paraStyle: run.paraStyle.copyWith(
+                      horizontalAlign: horizontalAlign,
+                    ),
+                  ),
+              ];
+        final formulas = Map<String, String>.of(s.formulas);
+        for (final key in const <String>[
+          'TxtPinX',
+          'TxtPinY',
+          'TxtLocPinX',
+          'TxtLocPinY',
+          'TxtWidth',
+          'TxtHeight',
+        ]) {
+          formulas.remove(key);
+        }
+        return s.copyWith(
+          formulas: formulas,
+          richText: s.richText.copyWith(
+            runs: runs,
+            textBlock: VsdxTextBlock(
+              pinXInches: pinX,
+              pinYInches: pinY,
+              locPinXInches: locX,
+              locPinYInches: locY,
+              widthInches: w,
+              heightInches: h,
+              angleRad: old.angleRad,
+              verticalAlign: verticalAlign,
+              marginLeftInches: old.marginLeftInches,
+              marginRightInches: old.marginRightInches,
+              marginTopInches: old.marginTopInches,
+              marginBottomInches: old.marginBottomInches,
+              hideText: old.hideText,
+              backgroundColor: old.backgroundColor,
+              backgroundTransparency: old.backgroundTransparency,
+              textDirection: old.textDirection,
+              defaultTabStopInches: old.defaultTabStopInches,
+            ),
+          ),
+        );
+      });
+
+  TextLabelPosition? get selectedTextLabelPosition {
+    final s = _firstSelected2D;
+    if (s == null) return null;
+    final b = s.richText.textBlock;
+    final w = math.max(s.width.abs(), 0.05);
+    final h = math.max(s.height.abs(), 0.05);
+    final blockWidth = b.widthInches ?? w;
+    final blockHeight = b.heightInches ?? h;
+    final px = b.pinXInches ?? w / 2;
+    final py = b.pinYInches ?? h / 2;
+    final lx = b.locPinXInches ?? blockWidth / 2;
+    final ly = b.locPinYInches ?? blockHeight / 2;
+    bool near(double a, double value) => (a - value).abs() < 1e-6;
+    if (near(px, 0) && near(lx, blockWidth)) {
+      return TextLabelPosition.left;
+    }
+    if (near(py, h) && near(ly, 0)) return TextLabelPosition.top;
+    if (near(py, 0) && near(ly, blockHeight)) {
+      return TextLabelPosition.bottom;
+    }
+    if (near(px, w) && near(lx, 0)) return TextLabelPosition.right;
+    return TextLabelPosition.center;
+  }
+
+  void setVerticalText(bool enabled) => _updateSelectedShapes(
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.copyWith(
+              textDirection: enabled ? 1 : 0,
+            ),
+          ),
+        ),
+      );
+
+  bool get selectedVerticalText {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final s = page.findShapeById(id);
+      if (s == null) continue;
+      any = true;
+      if (s.richText.textBlock.textDirection != 1) return false;
+    }
+    return any;
+  }
 
   /// Toggle Curved Text (label along an arc) on selected 2-D shapes.
   void setCurvedText(bool value) => _updateSelectedShapes(
