@@ -21,7 +21,9 @@ byte-for-byte, so formulas and structure survive a save.
 - **Create** rectangles, ellipses, lines and glued connectors (routable
   straight or orthogonal, with draggable waypoints); drop flowchart shapes from
   the stencil palette, or double-click blank canvas to open the common-shape
-  picker. Alt+Shift+Arrow clones/connects in any direction.
+  picker. Drag from a shape's directional arrow to start a fixed connector;
+  hold Ctrl/Cmd while dragging to clone the shape at any drop point and connect
+  it. Alt+Shift+Arrow also clones/connects in any direction.
 - **Create with AI** using the built-in multi-turn diagram assistant. Configure
   OpenAI-compatible, Anthropic, Gemini or local Ollama engines, discuss and
   revise a process, then open the validated Diagram Spec or Mermaid result as

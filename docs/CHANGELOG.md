@@ -70,9 +70,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   one undoable edit.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview. Double-click blank canvas to choose a common shape at that
-  point; **Alt+Shift+Arrow** clones and connects the selected shape, or connects
-  an existing neighbour. New shapes **inherit the last-used fill / line style**
-  (drawio's `currentVertexStyle`).
+  point. A shape's directional arrow can be dragged to create a fixed connector;
+  **Ctrl/Cmd-dragging the arrow** clones the source at the drop point and
+  connects it. **Alt+Shift+Arrow** clones and connects the selected shape, or
+  connects an existing neighbour. New shapes **inherit the last-used fill /
+  line style** (drawio's `currentVertexStyle`).
 - **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
   drops straight into in-place editing; an untyped box is discarded on commit
   or cancel. It can still be given a background or border afterwards.

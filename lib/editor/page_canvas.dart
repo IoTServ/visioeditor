@@ -206,6 +206,11 @@ class _PageCanvasState extends State<PageCanvas> {
   // arrow / blue point it was dragged out of), or null for a whole-shape glue.
   int? _connectSourceConnIndex;
 
+  // Direction of a connector drag that started on a quick-connect arrow.
+  // Holding Ctrl/Cmd on release clones the source at the drop point and wires
+  // the clone instead of leaving a floating connector (draw.io).
+  int? _connectArrowDirection;
+
   // Fixed connection point (drawio blue point) the pointer is snapping to on
   // the current target while wiring / dragging an endpoint (index into the
   // target's effective connection points), or null for a whole-shape glue.
@@ -1137,8 +1142,8 @@ class _PageCanvasState extends State<PageCanvas> {
       final s = _page?.findShapeById(next);
       if (s == null || !_canConnectFrom(s)) next = null;
     }
-    // Cursor affordances: arrows → click (quick-add); blue CPs / perimeter →
-    // crosshair (draw a connector glued to the shape).
+    // Cursor affordances: arrows → click/drag (quick-add/connector); blue CPs
+    // and perimeter → crosshair (draw a connector glued to the shape).
     var onConnect = false;
     var onArrow = false;
     if (next != null) {
@@ -1920,16 +1925,15 @@ class _PageCanvasState extends State<PageCanvas> {
         return;
       }
     }
-    // Connect affordances: arrows → quick-add (click); blue CPs / perimeter →
-    // drag out a connector glued to the shape. On touch the arrows sit on the
-    // selected shape (no hover), so hit-test that too.
+    // Connect affordances: arrows → quick-add (click) or connector drag; blue
+    // CPs / perimeter → drag out a connector glued to the shape. On touch the
+    // arrows sit on the selected shape (no hover), so hit-test that too.
     final affordanceId = _connectAffordanceShapeId;
     if (affordanceId != null) {
       final s = _page?.findShapeById(affordanceId);
       if (s != null && _canConnectFrom(s)) {
-        // Directional arrows are quick-add only — do not start a connector.
-        // Remember the press so a pan that wins the gesture arena (tiny
-        // movement) still opens the picker on release.
+        // Remember the press so a click opens the picker, while movement can
+        // transition into a fixed directional connector drag.
         final arrowDir = _connectArrowHitDir(s, d.localPosition);
         if (arrowDir != null) {
           _pendingQuickAdd =
@@ -1943,6 +1947,7 @@ class _PageCanvasState extends State<PageCanvas> {
             final pg = _connPointPage(s, pts[cpIndex].offset);
             _connectSourceId = affordanceId;
             _connectSourceConnIndex = cpIndex;
+            _connectArrowDirection = null;
             _connectTargetId = null;
             _mode = _DragMode.connect;
             setState(() {
@@ -1955,6 +1960,7 @@ class _PageCanvasState extends State<PageCanvas> {
           if (peri != null) {
             _connectSourceId = affordanceId;
             _connectSourceConnIndex = null;
+            _connectArrowDirection = null;
             _connectTargetId = null;
             _mode = _DragMode.connect;
             setState(() {
@@ -2109,11 +2115,14 @@ class _PageCanvasState extends State<PageCanvas> {
   void _onPanUpdate(DragUpdateDetails d) {
     if (_pinchActive) return;
     final pos = d.localPosition;
-    // Abandon a pending arrow click once the pointer clearly dragged away.
+    // A directional-arrow click opens quick-add; once the pointer clearly
+    // moves, turn it into a connector drag. Ctrl/Cmd at release clones the
+    // source at the free drop point and connects it (draw.io).
     final pending = _pendingQuickAdd;
     if (pending != null &&
         (pos - pending.start).distance > (_isTouchUi ? 16 : 8)) {
       _pendingQuickAdd = null;
+      _beginDirectionalArrowDrag(pending, pos);
     }
     switch (_mode) {
       case _DragMode.moveConnectionPoint:
@@ -3162,17 +3171,35 @@ class _PageCanvasState extends State<PageCanvas> {
           final target = _bypassSnapping || _connectTargetId == src
               ? null
               : _connectTargetId;
-          _c.createConnector(a.dx, a.dy, b.dx, b.dy,
+          final arrowDirection = _connectArrowDirection;
+          if (arrowDirection != null && _cloneDrag) {
+            _c.connectDirectional(
+              src,
+              arrowDirection,
+              existingTargetId: target,
+              cloneX: _bypassSnapping ? b.dx : _c.snap(b.dx),
+              cloneY: _bypassSnapping ? b.dy : _c.snap(b.dy),
+            );
+          } else {
+            _c.createConnector(
+              a.dx,
+              a.dy,
+              b.dx,
+              b.dy,
               beginTarget: src,
               endTarget: target,
               beginConnectionPointIndex: _connectSourceConnIndex,
-              endConnectionPointIndex: target != null ? _snapConnIndex : null);
+              endConnectionPointIndex:
+                  target != null ? _snapConnIndex : null,
+            );
+          }
         }
         setState(() {
           _previewStart = null;
           _previewEnd = null;
           _connectSourceId = null;
           _connectSourceConnIndex = null;
+          _connectArrowDirection = null;
           _connectTargetId = null;
           _snapConnIndex = null;
         });
@@ -3206,6 +3233,30 @@ class _PageCanvasState extends State<PageCanvas> {
     } else {
       _showQuickAddFor(s, pending.dir, pending.start);
     }
+  }
+
+  /// Promote a directional-arrow press into a connector drag, fixing its begin
+  /// to the source's page-facing connection point.
+  void _beginDirectionalArrowDrag(
+    ({int id, int dir, Offset start}) pending,
+    Offset current,
+  ) {
+    final page = _page;
+    final source = page?.findShapeById(pending.id);
+    if (page == null || source == null || !_canConnectFrom(source)) return;
+    final points = VsdxPage.effectiveConnectionPoints(source);
+    if (points.isEmpty) return;
+    final index = page.connectionIndexForPageDir(source.id, pending.dir);
+    if (index < 0 || index >= points.length) return;
+    final begin = _connPointPage(source, points[index].offset);
+    _connectSourceId = source.id;
+    _connectSourceConnIndex = index;
+    _connectArrowDirection = pending.dir;
+    _connectTargetId = null;
+    _snapConnIndex = null;
+    _previewStart = _pageToContent(begin.x, begin.y);
+    _previewEnd = _viewportToContent(current);
+    _mode = _DragMode.connect;
   }
 
   /// Abort whatever drag is in progress and revert transient model changes
@@ -3245,6 +3296,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _areaVerticalIds = null;
       _connectSourceId = null;
       _connectSourceConnIndex = null;
+      _connectArrowDirection = null;
       _connectTargetId = null;
       _tableResizeId = null;
       _tableDividerIndex = null;

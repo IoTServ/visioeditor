@@ -1509,6 +1509,103 @@ void main() {
     expect(contentAfter.dy, closeTo(contentBefore.dy, 2));
   });
 
+  testWidgets(
+      'direction arrow drag connects; Ctrl-drag clones at the drop point',
+      (tester) async {
+    // Compact width exposes the selection-based direction arrows without
+    // relying on a desktop hover event.
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late int source;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(400, 800),
+      setUp: (c) {
+        source = _addRect(c);
+        c.setShapeText(source, 'Clone me');
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final sourceBounds = page.shapePageAabb(source)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final eastEdge = _pagePoint(
+      origin,
+      camera,
+      page,
+      sourceBounds.right,
+      (sourceBounds.bottom + sourceBounds.top) / 2,
+    );
+    // Compact/touch direction arrows use a fixed 38 logical-pixel gap.
+    final eastArrow = eastEdge + const Offset(38, 0);
+    final cloneDrop = _pagePoint(origin, camera, page, 7, 3.5);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.dragFrom(eastArrow, cloneDrop - eastArrow);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    final clone = controller.singleSelected!;
+    final connector = controller.currentPage!.shapes.singleWhere(
+      (shape) => shape.isGlueableConnector,
+    );
+    expect(controller.currentPage!.shapes, hasLength(3));
+    expect(clone.id, isNot(source));
+    expect(clone.richText.plainText, 'Clone me');
+    expect(clone.pinX, closeTo(controller.snap(7), 0.01));
+    expect(clone.pinY, closeTo(controller.snap(3.5), 0.01));
+    expect(
+      controller.currentPage!.connects.any(
+        (row) =>
+            row.fromSheetId == connector.id &&
+            row.isBegin &&
+            row.toSheetId == source,
+      ),
+      isTrue,
+    );
+    expect(
+      controller.currentPage!.connects.any(
+        (row) =>
+            row.fromSheetId == connector.id &&
+            row.isEnd &&
+            row.toSheetId == clone.id,
+      ),
+      isTrue,
+    );
+
+    controller.undo();
+    await tester.pumpAndSettle();
+    expect(controller.currentPage!.shapes, hasLength(1));
+    expect(controller.selection, <int>{source});
+
+    final floatingDrop = _pagePoint(origin, camera, page, 7, 7);
+    await tester.dragFrom(eastArrow, floatingDrop - eastArrow);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.shapes, hasLength(2));
+    final floatingConnector = controller.singleSelected!;
+    expect(floatingConnector.isGlueableConnector, isTrue);
+    expect(
+      controller.currentPage!.connects.any(
+        (row) =>
+            row.fromSheetId == floatingConnector.id &&
+            row.isBegin &&
+            row.toSheetId == source,
+      ),
+      isTrue,
+    );
+    expect(
+      controller.currentPage!.connects
+          .where((row) =>
+              row.fromSheetId == floatingConnector.id && row.isEnd),
+      isEmpty,
+    );
+  });
+
   testWidgets('compact layout keeps selection for touch quick-add chrome',
       (tester) async {
     // Compact width enables touch chrome (selection-based quick-add arrows).
