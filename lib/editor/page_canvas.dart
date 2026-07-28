@@ -86,6 +86,7 @@ enum _DragMode {
   resize,
   rotate,
   marquee,
+  moveArea,
   moveWaypoint,
   moveEndpoint,
   connect,
@@ -154,6 +155,7 @@ class _PageCanvasState extends State<PageCanvas> {
   ({double l, double b, double r, double t})? _moveStartBounds; // inches, y-up
   Offset _moveAccumInches = Offset.zero; // raw accumulated delta from start
   Offset _moveAppliedInches = Offset.zero; // snapped delta applied so far
+  bool _remoteMove = false; // Alt+Shift blank-canvas drag owns Shift itself
   List<SnapGuide> _guides = const <SnapGuide>[];
 
   // Connector waypoint drag (drawio bend points).
@@ -263,6 +265,14 @@ class _PageCanvasState extends State<PageCanvas> {
   // Marquee selection rectangle, in content-px space.
   Offset? _marqueeStart;
   Offset? _marqueeEnd;
+
+  // draw.io Alt+Ctrl/Cmd+Shift blank-canvas drag ("move area").
+  Offset? _areaOriginPage;
+  Offset? _areaStartContent;
+  Offset? _areaEndContent;
+  Offset _areaAppliedPage = Offset.zero;
+  Set<int>? _areaHorizontalIds;
+  Set<int>? _areaVerticalIds;
 
   /// Async decode cache for embedded pictures, keyed by media part name. The
   /// painter repaints when a decode lands (`super(repaint: imageCache)`).
@@ -1670,6 +1680,21 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       return;
     }
+    // Alt forces a selection box even when the drag starts over a shape.
+    // Together with Shift this is draw.io's subtract-from-selection gesture.
+    // Blank-canvas Alt+Shift remains the remote-move gesture below.
+    final altShiftMarquee = HardwareKeyboard.instance.isAltPressed &&
+        HardwareKeyboard.instance.isShiftPressed &&
+        !HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isMetaPressed;
+    if (altShiftMarquee && _hitTest(d.localPosition) != null) {
+      _mode = _DragMode.marquee;
+      setState(() {
+        _marqueeStart = _viewportToContent(d.localPosition);
+        _marqueeEnd = _marqueeStart;
+      });
+      return;
+    }
     // Rotate handle before quick-add arrows: on touch both sit above the
     // selected shape and the north arrow would otherwise steal the knob.
     final rotatable = _rotatableSelection();
@@ -1768,6 +1793,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _c.beginTransaction();
       _moveAccumInches = Offset.zero;
       _moveAppliedInches = Offset.zero;
+      _remoteMove = false;
       _moveStartBounds = _selectionUnionInches();
     } else if (_isTouchUi) {
       // Touch: empty-canvas drag pans. Holding still ~400ms converts to
@@ -1777,11 +1803,38 @@ class _PageCanvasState extends State<PageCanvas> {
       _emptyTouchPanOrigin = d.localPosition;
       _emptyTouchPanAccum = Offset.zero;
     } else {
-      _mode = _DragMode.marquee;
-      setState(() {
-        _marqueeStart = _viewportToContent(d.localPosition);
-        _marqueeEnd = _marqueeStart;
-      });
+      final alt = HardwareKeyboard.instance.isAltPressed;
+      final shift = HardwareKeyboard.instance.isShiftPressed;
+      final command = HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed;
+      if (alt && shift && command) {
+        _mode = _DragMode.moveArea;
+        _areaOriginPage = _pageInchesAt(d.localPosition);
+        _areaAppliedPage = Offset.zero;
+        _areaHorizontalIds = null;
+        _areaVerticalIds = null;
+        _c.beginTransaction();
+        setState(() {
+          _areaStartContent = _viewportToContent(d.localPosition);
+          _areaEndContent = _areaStartContent;
+        });
+      } else if (alt && shift && _c.hasSelection) {
+        // Move a selected shape from anywhere on blank canvas (draw.io remote
+        // move). Alt also gives the expected smooth, unsnapped movement.
+        _mode = _DragMode.moveShapes;
+        _c.beginTransaction();
+        _c.detachSelectionConnectorsFromStationaryShapes(transient: true);
+        _moveAccumInches = Offset.zero;
+        _moveAppliedInches = Offset.zero;
+        _remoteMove = true;
+        _moveStartBounds = _selectionUnionInches();
+      } else {
+        _mode = _DragMode.marquee;
+        setState(() {
+          _marqueeStart = _viewportToContent(d.localPosition);
+          _marqueeEnd = _marqueeStart;
+        });
+      }
     }
   }
 
@@ -1959,6 +2012,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _applyTableRowResize(pos);
       case _DragMode.marquee:
         setState(() => _marqueeEnd = _viewportToContent(pos));
+      case _DragMode.moveArea:
+        _applyAreaMove(pos);
       case _DragMode.moveWaypoint:
         final id = _waypointConnId;
         final idx = _waypointIndex;
@@ -2263,7 +2318,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
     // Holding Shift constrains movement to the dominant axis (drawio parity).
     var eff = _moveAccumInches;
-    if (HardwareKeyboard.instance.isShiftPressed) {
+    if (HardwareKeyboard.instance.isShiftPressed && !_remoteMove) {
       eff = eff.dx.abs() >= eff.dy.abs()
           ? Offset(eff.dx, 0)
           : Offset(0, eff.dy);
@@ -2321,6 +2376,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _clearMoveGuides() {
     _moveStartBounds = null;
+    _remoteMove = false;
     if (_guides.isNotEmpty) setState(() => _guides = const <SnapGuide>[]);
   }
 
@@ -2821,6 +2877,9 @@ class _PageCanvasState extends State<PageCanvas> {
         _tableDividerIndex = null;
         _clearMoveGuides();
         setState(() => _dropContainerId = null);
+      case _DragMode.moveArea:
+        _c.commitTransaction();
+        _clearAreaMove();
       case _DragMode.createShape:
         if (_c.tool == EditorTool.freehand) {
           final end = _previewEnd;
@@ -2950,6 +3009,7 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.moveConnectionPoint:
       case _DragMode.tableColResize:
       case _DragMode.tableRowResize:
+      case _DragMode.moveArea:
         _c.cancelTransaction();
       case _DragMode.none:
       case _DragMode.panCanvas:
@@ -2965,6 +3025,12 @@ class _PageCanvasState extends State<PageCanvas> {
       _freehandPoints.clear();
       _marqueeStart = null;
       _marqueeEnd = null;
+      _areaOriginPage = null;
+      _areaStartContent = null;
+      _areaEndContent = null;
+      _areaAppliedPage = Offset.zero;
+      _areaHorizontalIds = null;
+      _areaVerticalIds = null;
       _connectSourceId = null;
       _connectSourceConnIndex = null;
       _connectTargetId = null;
@@ -2981,6 +3047,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _snapConnIndex = null;
       _guides = const <SnapGuide>[];
       _moveStartBounds = null;
+      _remoteMove = false;
       _emptyTouchPanAt = null;
       _emptyTouchPanOrigin = null;
       _emptyTouchPanAccum = Offset.zero;
@@ -3042,10 +3109,14 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       ids.add(entry.key);
     }
+    final subtract = HardwareKeyboard.instance.isAltPressed &&
+        HardwareKeyboard.instance.isShiftPressed;
     final toggle = HardwareKeyboard.instance.isShiftPressed ||
         HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
-    if (toggle) {
+    if (subtract) {
+      _c.setSelection(Set<int>.of(_c.selection)..removeAll(ids));
+    } else if (toggle) {
       final next = Set<int>.of(_c.selection);
       for (final id in ids) {
         if (!next.remove(id)) next.add(id);
@@ -3054,6 +3125,67 @@ class _PageCanvasState extends State<PageCanvas> {
     } else {
       _c.setSelection(ids);
     }
+  }
+
+  void _applyAreaMove(Offset viewportPos) {
+    final page = _page;
+    final origin = _areaOriginPage;
+    if (page == null || origin == null) return;
+    final current = _pageInchesAt(viewportPos);
+    final total = current - origin;
+    setState(() => _areaEndContent = _viewportToContent(viewportPos));
+    if (_areaHorizontalIds == null || _areaVerticalIds == null) {
+      if (total.distance < 2 / (_scale * widget.pxPerInch)) return;
+      final bounds = buildShapeBounds(page);
+      final horizontal = <int>{};
+      final vertical = <int>{};
+      for (final shape in page.shapes) {
+        if (!page.isShapeVisible(shape) ||
+            shape.locked ||
+            _c.isOnLockedLayer(shape.id)) {
+          continue;
+        }
+        final box = bounds[shape.id];
+        if (box == null) continue;
+        if ((total.dx > 0 && box.left >= origin.dx) ||
+            (total.dx < 0 && box.right <= origin.dx)) {
+          horizontal.add(shape.id);
+        }
+        if ((total.dy > 0 && box.bottom >= origin.dy) ||
+            (total.dy < 0 && box.top <= origin.dy)) {
+          vertical.add(shape.id);
+        }
+      }
+      _areaHorizontalIds = horizontal;
+      _areaVerticalIds = vertical;
+    }
+    final dx = total.dx - _areaAppliedPage.dx;
+    final dy = total.dy - _areaAppliedPage.dy;
+    final horizontal = _areaHorizontalIds!;
+    final vertical = _areaVerticalIds!;
+    final ids = <int>{...horizontal, ...vertical};
+    _c.moveShapesBy(
+      <int, Offset2D>{
+        for (final id in ids)
+          id: Offset2D(
+            horizontal.contains(id) ? dx : 0,
+            vertical.contains(id) ? dy : 0,
+          ),
+      },
+      transient: true,
+    );
+    _areaAppliedPage = total;
+  }
+
+  void _clearAreaMove() {
+    setState(() {
+      _areaOriginPage = null;
+      _areaStartContent = null;
+      _areaEndContent = null;
+      _areaAppliedPage = Offset.zero;
+      _areaHorizontalIds = null;
+      _areaVerticalIds = null;
+    });
   }
 
   /// True when segment [a]→[b] intersects or lies inside axis-aligned [r].
@@ -3655,6 +3787,8 @@ class _PageCanvasState extends State<PageCanvas> {
                                           ? List<Offset>.of(_freehandPoints)
                                           : const <Offset>[],
                                       marquee: marquee,
+                                      areaStart: _areaStartContent,
+                                      areaEnd: _areaEndContent,
                                       guides: guideSegments,
                                       waypointHandles: waypointHandles,
                                       midpointHandles: midpointHandles,
@@ -3723,6 +3857,8 @@ class _SelectionPainter extends CustomPainter {
     this.previewTool,
     this.freehandPoints = const <Offset>[],
     this.marquee,
+    this.areaStart,
+    this.areaEnd,
     this.guides = const <(Offset, Offset, SnapGuideKind)>[],
     this.waypointHandles = const <Offset>[],
     this.midpointHandles = const <Offset>[],
@@ -3760,6 +3896,8 @@ class _SelectionPainter extends CustomPainter {
   final Offset? snappedConnectionPoint;
 
   final Rect? marquee;
+  final Offset? areaStart;
+  final Offset? areaEnd;
 
   /// Alignment guide lines (content-px), drawn while dragging a selection.
   final List<(Offset, Offset, SnapGuideKind)> guides;
@@ -3815,6 +3953,19 @@ class _SelectionPainter extends CustomPainter {
       canvas
         ..drawRect(rect, Paint()..color = color.withValues(alpha: 0.12))
         ..drawRect(rect, outline);
+    }
+    final areaA = areaStart;
+    final areaB = areaEnd;
+    if (areaA != null && areaB != null) {
+      final areaPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..color = const Color(0xFFFF9800);
+      canvas
+        ..drawLine(Offset(areaA.dx, 0), Offset(areaA.dx, size.height), areaPaint)
+        ..drawLine(Offset(0, areaA.dy), Offset(size.width, areaA.dy), areaPaint)
+        ..drawLine(Offset(areaB.dx, 0), Offset(areaB.dx, size.height), areaPaint)
+        ..drawLine(Offset(0, areaB.dy), Offset(size.width, areaB.dy), areaPaint);
     }
     if (guides.isNotEmpty) {
       final guidePaint = Paint()
@@ -4002,6 +4153,8 @@ class _SelectionPainter extends CustomPainter {
       old.previewEnd != previewEnd ||
       old.previewTool != previewTool ||
       old.marquee != marquee ||
+      old.areaStart != areaStart ||
+      old.areaEnd != areaEnd ||
       old.hoverBox != hoverBox ||
       old.hoverArrowGap != hoverArrowGap ||
       old.connectTargetRect != connectTargetRect ||

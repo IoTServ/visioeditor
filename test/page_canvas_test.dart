@@ -284,6 +284,118 @@ void main() {
     expect(controller.currentPage!.shapes, hasLength(1));
   });
 
+  testWidgets('Alt+Shift blank-canvas drag moves the selection remotely', (
+    tester,
+  ) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) => id = _addRect(c),
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final before = page.findShapeById(id)!;
+    final start = _pagePoint(origin, camera, page, 7.5, 8.5);
+    const delta = Offset(48, -30);
+    final dx = delta.dx /
+        (camera.scale * camera.content.width / page.widthInches);
+    final dy = -delta.dy /
+        (camera.scale * camera.content.height / page.heightInches);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.dragFrom(start, delta);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    final moved = controller.currentPage!.findShapeById(id)!;
+    expect(moved.pinX, closeTo(before.pinX + dx, 0.03));
+    expect(moved.pinY, closeTo(before.pinY + dy, 0.03));
+
+    controller.undo();
+    expect(controller.currentPage!.findShapeById(id)!.pinX, before.pinX);
+    expect(controller.currentPage!.findShapeById(id)!.pinY, before.pinY);
+  });
+
+  testWidgets('Alt+Ctrl+Shift blank-canvas drag displaces an area', (
+    tester,
+  ) async {
+    final ids = <String, int>{};
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        for (final entry in <String, Offset>{
+          'fixed': const Offset(2, 8),
+          'right': const Offset(6.5, 8),
+          'below': const Offset(2, 3),
+          'both': const Offset(6.5, 3),
+        }.entries) {
+          c.addShapeFromBuilderAt(
+            (id, cx, cy) => VsdxShapeFactory.rectangle(
+              id: id,
+              pinX: cx,
+              pinY: cy,
+              width: 1,
+              height: 0.6,
+            ),
+            entry.value.dx,
+            entry.value.dy,
+          );
+          ids[entry.key] = c.singleSelectedId!;
+        }
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final before = <String, VsdxShape>{
+      for (final entry in ids.entries)
+        entry.key: page.findShapeById(entry.value)!,
+    };
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(origin, camera, page, 4.25, 5.5);
+    const delta = Offset(60, 42);
+    final dx = delta.dx /
+        (camera.scale * camera.content.width / page.widthInches);
+    final dy = -delta.dy /
+        (camera.scale * camera.content.height / page.heightInches);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.dragFrom(start, delta);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    VsdxShape after(String name) =>
+        controller.currentPage!.findShapeById(ids[name]!)!;
+    expect(after('fixed').pinX, before['fixed']!.pinX);
+    expect(after('fixed').pinY, before['fixed']!.pinY);
+    expect(after('right').pinX, closeTo(before['right']!.pinX + dx, 0.03));
+    expect(after('right').pinY, before['right']!.pinY);
+    expect(after('below').pinX, before['below']!.pinX);
+    expect(after('below').pinY, closeTo(before['below']!.pinY + dy, 0.03));
+    expect(after('both').pinX, closeTo(before['both']!.pinX + dx, 0.03));
+    expect(after('both').pinY, closeTo(before['both']!.pinY + dy, 0.03));
+
+    controller.undo();
+    for (final entry in before.entries) {
+      expect(after(entry.key).pinX, entry.value.pinX);
+      expect(after(entry.key).pinY, entry.value.pinY);
+    }
+  });
+
   testWidgets('Ctrl drag clones instead of using Alt duplication', (
     tester,
   ) async {
@@ -662,6 +774,63 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
 
     expect(controller.singleSelectedId, id);
+  });
+
+  testWidgets('Alt+Shift marquee subtracts intersecting shapes only', (
+    tester,
+  ) async {
+    late int left;
+    late int right;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          3,
+          8,
+        );
+        left = c.singleSelectedId!;
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          7,
+          8,
+        );
+        right = c.singleSelectedId!;
+        c.setSelection(<int>{left, right});
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    // Starting on the left shape makes Alt force a marquee; the box only
+    // intersects that shape, so Alt+Shift removes it without toggling others.
+    final start = _pagePoint(origin, camera, page, 3, 8);
+    final end = _pagePoint(origin, camera, page, 4.5, 6.8);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.dragFrom(start, end - start);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    expect(controller.selection, <int>{right});
   });
 
   testWidgets('connector endpoint drag detaches once and undo restores glue',

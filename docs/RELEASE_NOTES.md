@@ -41,8 +41,11 @@ byte-for-byte, so formulas and structure survive a save.
 - **drawio-style interactions**: a right-click context menu, copy / paste style,
   and matching keyboard shortcuts (Select All, Cut, To Front/Back, Group /
   Ungroup, keyboard zoom). Space-drag pans from anywhere; Alt-wheel zooms and
-  Shift-wheel scrolls horizontally. Tab/Shift+Tab traverses expanded container
-  children and Alt+Tab selects their parent.
+  Shift-wheel scrolls horizontally. Alt+Shift-drag from blank canvas remotely
+  moves the selection; adding Ctrl/Cmd displaces shapes across horizontal and
+  vertical area cuts, while an Alt+Shift marquee subtracts intersecting shapes.
+  Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
+  parent.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical

@@ -55,6 +55,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   snapping** for shapes, connector points and ruler guides. Arrow keys nudge;
   **Ctrl/Cmd+Shift+Arrow** adjusts width/height, and **Alt+Shift+R** clears
   connector waypoints. **Esc cancels an in-progress drag**, reverting it.
+- **Advanced draw.io drag gestures**: **Alt+Shift-drag from blank canvas**
+  moves the current selection remotely; **Alt+Ctrl/Cmd+Shift-drag** opens or
+  closes an area along independent horizontal and vertical cuts, with orange
+  reference lines; and **Alt+Shift-marquee from a shape** subtracts intersecting
+  items from the selection. Remotely moved connectors detach from stationary
+  targets but keep glue to targets moved with them. Each model-changing drag is
+  one undoable edit.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview. Double-click blank canvas to choose a common shape at that
   point; **Alt+Shift+Arrow** clones and connects the selected shape, or connects

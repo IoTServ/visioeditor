@@ -1082,6 +1082,93 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Detach glue from connectors in the moving selection to shapes that are
+  /// not moving with them.
+  ///
+  /// draw.io applies this when Alt+Shift-dragging a remote selection: a
+  /// connector moved on its own becomes floating, while glue to any target
+  /// included in the same moving selection is preserved.
+  void detachSelectionConnectorsFromStationaryShapes({
+    bool transient = false,
+  }) {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty || page.connects.isEmpty) return;
+    final movingIds = _subtreeIds(_selection);
+    final movingConnectors = <int>{
+      for (final id in movingIds)
+        if (page.findShapeById(id) case final shape?
+            when shape.isGlueableConnector &&
+                !shape.locked &&
+                !isOnLockedLayer(id))
+          id,
+    };
+    if (movingConnectors.isEmpty) return;
+    updateCurrentPage(
+      (current) {
+        final connects = <VsdxConnect>[
+          for (final connect in current.connects)
+            if (!movingConnectors.contains(connect.fromSheetId) ||
+                movingIds.contains(connect.toSheetId))
+              connect,
+        ];
+        return connects.length == current.connects.length
+            ? current
+            : current.copyWith(connects: connects);
+      },
+      transient: transient,
+    );
+  }
+
+  /// Move arbitrary shape roots by individual page-space deltas.
+  ///
+  /// Used by draw.io's area-displacement gesture, where shapes on one side of
+  /// the vertical cut may move horizontally while shapes on one side of the
+  /// horizontal cut move vertically. All deltas are committed as one edit (or
+  /// folded into the active drag transaction when [transient]).
+  void moveShapesBy(
+    Map<int, Offset2D> deltas, {
+    bool transient = false,
+  }) {
+    if (deltas.isEmpty) return;
+    final page0 = currentPage;
+    if (page0 == null) return;
+    final movable = <int, Offset2D>{};
+    for (final entry in deltas.entries) {
+      if (entry.value.x == 0 && entry.value.y == 0) continue;
+      final shape = page0.findShapeById(entry.key);
+      if (shape == null || shape.locked || isOnLockedLayer(entry.key)) {
+        continue;
+      }
+      movable[entry.key] = entry.value;
+    }
+    if (movable.isEmpty) return;
+    final movedIds = _subtreeIds(movable.keys);
+    updateCurrentPage(
+      (page) {
+        var next = page;
+        var moved = false;
+        for (final entry in movable.entries) {
+          final after = _nudgeShapeOnPage(
+            next,
+            entry.key,
+            entry.value.x,
+            entry.value.y,
+          );
+          if (!identical(after, next)) {
+            next = after;
+            moved = true;
+          }
+        }
+        return moved
+            ? next
+                .recalculateFormulas(changedShapeIds: movedIds)
+                .rerouteConnectors(movedShapeIds: movedIds)
+            : page;
+      },
+      transient: transient,
+    );
+  }
+
   /// Nudge shape [id] by a page-space delta, converting into parent-local pins
   /// when nested (so rotated ancestors do not shear the move).
   static VsdxPage _nudgeShapeOnPage(
