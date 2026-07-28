@@ -13,5 +13,8 @@
 	<!-- Agent live preview: loopback HttpServer / WebSocket on 127.0.0.1. -->
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- Built-in AI chat calls the user-configured HTTPS or local endpoint. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

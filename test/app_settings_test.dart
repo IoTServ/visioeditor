@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visioeditor/ai/ai_engine.dart';
 import 'package:visioeditor/l10n/app_localizations.dart';
 import 'package:visioeditor/settings/app_settings.dart';
 
@@ -19,28 +20,47 @@ void main() {
     expect(s.locale, isNull);
     expect(s.localePreference, 'system');
     expect(s.addIconLabel, isFalse);
+    expect(s.aiEngine.provider, AiProvider.openAiCompatible);
+    expect(s.aiEngine.model, 'gpt-4.1-mini');
+    expect(s.aiEngine.apiKey, isEmpty);
 
     await s.setThemeMode(ThemeMode.dark);
     await s.setSeedColor(const Color(0xFFC62828));
     await s.setLocalePreference('zh');
     await s.setAddIconLabel(true);
+    await s.setAiEngine(
+      const AiEngineConfig(
+        provider: AiProvider.anthropic,
+        endpoint: 'https://gateway.example/v1/messages',
+        model: 'claude-test',
+        apiKey: 'secret-test-key',
+      ),
+    );
 
     expect(s.themeMode, ThemeMode.dark);
     expect(s.seedColorValue, 0xFFC62828);
     expect(s.locale, const Locale('zh'));
     expect(s.addIconLabel, isTrue);
+    expect(s.aiEngine.provider, AiProvider.anthropic);
 
     final again = await AppSettings.load();
     expect(again.themeMode, ThemeMode.dark);
     expect(again.seedColorValue, 0xFFC62828);
     expect(again.locale?.languageCode, 'zh');
     expect(again.addIconLabel, isTrue);
+    expect(again.aiEngine.provider, AiProvider.anthropic);
+    expect(again.aiEngine.endpoint, 'https://gateway.example/v1/messages');
+    expect(again.aiEngine.model, 'claude-test');
+    expect(again.aiEngine.apiKey, 'secret-test-key');
 
     await again.resetToDefaults();
     expect(again.themeMode, ThemeMode.system);
     expect(again.seedColorValue, AppSettings.defaultSeedColorValue);
     expect(again.locale, isNull);
     expect(again.addIconLabel, isFalse);
+    expect(again.aiEngine, isA<AiEngineConfig>());
+    expect(again.aiEngine.provider, AiProvider.openAiCompatible);
+    expect(again.aiEngine.apiKey, isEmpty);
   });
 
   test('AppLocalizations tables cover all supported locales', () {

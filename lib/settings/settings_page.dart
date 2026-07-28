@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../ai/ai_chat_dialog.dart';
+import '../ai/ai_engine.dart';
+import '../ai/ai_help_page.dart';
 import '../l10n/app_localizations.dart';
 import 'app_settings.dart';
 
@@ -126,6 +129,46 @@ class SettingsPage extends StatelessWidget {
                 child: Text(
                   l10n.languageHint,
                   style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const Divider(height: 32),
+              _sectionHeader(
+                context,
+                Localizations.localeOf(context).languageCode == 'zh'
+                    ? 'AI 与 Agent'
+                    : 'AI and agents',
+              ),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome_outlined),
+                title: Text(
+                  Localizations.localeOf(context).languageCode == 'zh'
+                      ? '内置对话引擎'
+                      : 'Built-in chat engine',
+                ),
+                subtitle: Text(
+                  '${settings.aiEngine.provider.label} · '
+                  '${settings.aiEngine.model}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => showAiEngineDialog(context, settings: settings),
+              ),
+              ListTile(
+                leading: const Icon(Icons.help_outline),
+                title: Text(
+                  Localizations.localeOf(context).languageCode == 'zh'
+                      ? 'AI 接入使用说明'
+                      : 'AI integration guide',
+                ),
+                subtitle: Text(
+                  Localizations.localeOf(context).languageCode == 'zh'
+                      ? '内置对话、实时预览、MCP、CLI 与 Agent Skill'
+                      : 'Chat, live preview, MCP, CLI and Agent Skill',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AiIntegrationHelpPage(),
+                  ),
                 ),
               ),
               const Divider(height: 32),

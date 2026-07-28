@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **Built-in AI diagram chat**: configure an OpenAI-compatible, Anthropic,
+  Gemini or Ollama endpoint, model and API key; discuss and revise a process in
+  a multi-turn conversation; validate Diagram Spec or Mermaid returned by the
+  model; and open the generated editable `.vsdx` in a new tab. Settings now
+  include an in-app guide for chat, Agent live preview, MCP, CLI and the Agent
+  Skill. macOS builds have outbound-network entitlement for configured engines.
 - **Legacy `.vsd` import (pure Dart)**: MS-CFB + VSD5/VSD6/VSD11 record parser →
   `VsdxDocument` (stencil/master inheritance, ForeignData bitmaps with DIB→BMP,
   InfiniteLine/Spline/NURBS/ShapeData, TextField expand with date/numeric formats,

@@ -49,6 +49,9 @@ flutter analyze
 （`skills/visioeditor-skill/`），以及运行中应用的**实时预览桥**。自然语言 / Mermaid /
 SQL DDL / 代码依赖图 → 可编辑保真 `.vsdx`，并可在桌面应用里**实时预览与协同编辑**。
 
+- **应用内 AI 对话**：首页「通过 AI 创建」或工具栏 AI 按钮；可配置 OpenAI-compatible、
+  Anthropic、Gemini、Ollama 的接口地址 / 模型 / API Key，对话生成 Diagram Spec /
+  Mermaid 后一键在新标签页创建可编辑流程图。
 - **Cursor 一键可用**：仓库已附 [`.cursor/mcp.json`](.cursor/mcp.json)（`dart run` 启动、免编译）。
   打开本仓即可调用 `create_diagram` / `import_mermaid` / `import_sql` / `import_code` /
   `apply_ops` / `to_mermaid` / `snapshot` 等工具。
@@ -56,6 +59,7 @@ SQL DDL / 代码依赖图 → 可编辑保真 `.vsdx`，并可在桌面应用里
   → `packages/vsdx/vsdxtool(-mcp)`。
 - 实时预览：应用 More（⋯）菜单勾选 **Agent live preview**（默认关，loopback + token）。
 - 设计与里程碑见 [`docs/MCP_SKILL_PLAN.md`](docs/MCP_SKILL_PLAN.md)；用法见
+  [`docs/AI_INTEGRATION.md`](docs/AI_INTEGRATION.md) 和
   [`skills/visioeditor-skill/SKILL.md`](skills/visioeditor-skill/SKILL.md)。
 
 ## License

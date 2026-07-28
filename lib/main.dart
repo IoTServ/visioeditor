@@ -11,6 +11,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:vsdx/vsdx.dart';
 
 import 'agent_bridge/agent_bridge.dart';
+import 'ai/ai_chat_dialog.dart';
 import 'editor/canvas_camera.dart';
 import 'editor/chart_editor_host.dart';
 import 'editor/edit_data_dialog.dart';
@@ -235,6 +236,23 @@ class _EditorHomePageState extends State<EditorHomePage> {
       MaterialPageRoute<void>(
         builder: (_) => SettingsPage(settings: widget.settings),
       ),
+    );
+  }
+
+  Future<void> _openAiChat() async {
+    await showAiChatDialog(
+      context,
+      settings: widget.settings,
+      onCreateDiagram: (draft) async {
+        final safeTitle = draft.title
+            .replaceAll(RegExp(r'[\\/:*?"<>|]+'), ' ')
+            .trim()
+            .replaceAll(RegExp(r'\s+'), ' ');
+        await _openBytes(
+          draft.build(),
+          name: '${safeTitle.isEmpty ? 'AI Diagram' : safeTitle}.vsdx',
+        );
+      },
     );
   }
 
@@ -1500,6 +1518,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
                       ],
                       if (toolbarWide) ...[
                         IconButton(
+                          key: const Key('open-ai-chat'),
+                          onPressed: _openAiChat,
+                          icon: const Icon(Icons.auto_awesome_outlined),
+                          tooltip: Localizations.localeOf(context).languageCode ==
+                                  'zh'
+                              ? 'AI 流程图助手'
+                              : 'AI diagram assistant',
+                        ),
+                        IconButton(
                           onPressed: _newDoc,
                           icon: const Icon(Icons.note_add_outlined),
                           tooltip: l10n.newDrawing,
@@ -1608,6 +1635,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.toggleLineJumps();
                               case 'agentPreview':
                                 _toggleAgentPreview();
+                              case 'aiChat':
+                                _openAiChat();
                               case 'settings':
                                 _openSettings();
                               case 'close':
@@ -1767,6 +1796,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'agentPreview',
                               checked: _agentBridge?.isRunning ?? false,
                               child: const Text('Agent live preview'),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'aiChat',
+                              child: Text(
+                                Localizations.localeOf(context).languageCode ==
+                                        'zh'
+                                    ? 'AI 流程图助手'
+                                    : 'AI diagram assistant',
+                              ),
                             ),
                             const PopupMenuDivider(),
                             PopupMenuItem<String>(
@@ -1962,6 +2000,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         onOpen: _open,
         onNew: _newDoc,
         onNewFromTemplate: _newFromTemplate,
+        onAiChat: _openAiChat,
         examples: _examples,
         onOpenExample: _openExample,
       );
@@ -1974,6 +2013,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
         onOpen: _open,
         onNew: _newDoc,
         onNewFromTemplate: _newFromTemplate,
+        onAiChat: _openAiChat,
         examples: _examples,
         onOpenExample: _openExample,
       );
@@ -2432,6 +2472,7 @@ class _EmptyState extends StatelessWidget {
     required this.onOpen,
     required this.onNew,
     required this.onNewFromTemplate,
+    required this.onAiChat,
     required this.examples,
     required this.onOpenExample,
   });
@@ -2439,6 +2480,7 @@ class _EmptyState extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onNew;
   final VoidCallback onNewFromTemplate;
+  final VoidCallback onAiChat;
   final List<String> examples;
   final void Function(String assetName) onOpenExample;
 
@@ -2488,6 +2530,16 @@ class _EmptyState extends StatelessWidget {
                         onPressed: onNew,
                         icon: const Icon(Icons.note_add_outlined),
                         label: Text(el.newDrawing),
+                      ),
+                      FilledButton.tonalIcon(
+                        key: const Key('empty-ai-chat'),
+                        onPressed: onAiChat,
+                        icon: const Icon(Icons.auto_awesome_outlined),
+                        label: Text(
+                          Localizations.localeOf(context).languageCode == 'zh'
+                              ? '通过 AI 创建'
+                              : 'Create with AI',
+                        ),
                       ),
                       OutlinedButton.icon(
                         onPressed: onOpen,

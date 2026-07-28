@@ -22,6 +22,11 @@ byte-for-byte, so formulas and structure survive a save.
   straight or orthogonal, with draggable waypoints); drop flowchart shapes from
   the stencil palette, or double-click blank canvas to open the common-shape
   picker. Alt+Shift+Arrow clones/connects in any direction.
+- **Create with AI** using the built-in multi-turn diagram assistant. Configure
+  OpenAI-compatible, Anthropic, Gemini or local Ollama engines, discuss and
+  revise a process, then open the validated Diagram Spec or Mermaid result as
+  an editable `.vsdx` tab. The Settings guide also documents Agent live
+  preview, MCP, CLI and Agent Skill workflows.
 - **Edit** with select / move / resize (8 handles) / rotate, duplicate,
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
   Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise

@@ -1366,3 +1366,10 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   起止参考线；Alt+Shift 从图形上强制框选并只从当前选择中减去相交对象。区域位移跳过
   锁定图形/图层，自动重算公式与连接线路由；远程移动连接线时解除未随动目标的胶合，
   与连接线共同移动的目标则保持胶合。所有模型拖拽均合并为单步撤销。
+- 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
+  Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
+  模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用
+  `DiagramSpec.build()` 自动布局并在新标签页创建可编辑 `.vsdx`。设置页增加 AI 引擎入口
+  和应用内帮助，覆盖旧有 Agent live preview、MCP、CLI、Agent Skill 的启用与使用方式；
+  新增独立 `docs/AI_INTEGRATION.md`。macOS 增加 outbound network entitlement，并补四类
+  协议封装、响应解析、错误脱敏、配置持久化、对话建图与窄屏布局回归。
