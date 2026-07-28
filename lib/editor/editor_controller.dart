@@ -2360,6 +2360,7 @@ class EditorController extends ChangeNotifier {
     required VsdxShape Function(int id, double cx, double cy) build,
     required double cx,
     required double cy,
+    bool inheritStyle = true,
   }) {
     final doc = _document;
     final page = currentPage;
@@ -2375,7 +2376,8 @@ class EditorController extends ChangeNotifier {
     final id = page.nextFreeShapeId();
     final built = build(id, snap(cx), snap(cy));
     if (built.is1D) return;
-    var shape = _withMemoStyle(built, includeFill: true);
+    var shape =
+        inheritStyle ? _withMemoStyle(built, includeFill: true) : built;
     if (shape.connectionPoints.isEmpty) {
       shape = shape.copyWith(
         connectionPoints: VsdxPage.defaultConnectionPoints(
@@ -2764,27 +2766,39 @@ class EditorController extends ChangeNotifier {
 
   /// Add a shape produced by [build] at the current page's centre, select it.
   void addShapeFromBuilder(
-    VsdxShape Function(int id, double cx, double cy) build,
-  ) {
+    VsdxShape Function(int id, double cx, double cy) build, {
+    bool inheritStyle = true,
+  }) {
     final page = currentPage;
     if (page == null) return;
-    addShapeFromBuilderAt(build, page.widthInches / 2, page.heightInches / 2);
+    addShapeFromBuilderAt(
+      build,
+      page.widthInches / 2,
+      page.heightInches / 2,
+      inheritStyle: inheritStyle,
+    );
   }
 
   /// Add a shape produced by [build] centred at page point ([cx],[cy])
-  /// (snapped to the grid), inheriting the remembered style and selecting it.
-  /// Used by drag-and-drop from the shapes palette (drawio drops at the cursor).
+  /// (snapped to the grid) and select it. [inheritStyle] applies the remembered
+  /// creation style; [allowContainment] reparents it into a container under the
+  /// drop point. Shape-library Shift and Alt modifiers disable those behaviours
+  /// respectively, matching draw.io.
   void addShapeFromBuilderAt(
     VsdxShape Function(int id, double cx, double cy) build,
     double cx,
-    double cy,
-  ) {
+    double cy, {
+    bool inheritStyle = true,
+    bool allowContainment = true,
+  }) {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null) return;
     final id = page.nextFreeShapeId();
     final built = build(id, snap(cx), snap(cy));
-    var shape = _withMemoStyle(built, includeFill: !built.is1D);
+    var shape = inheritStyle
+        ? _withMemoStyle(built, includeFill: !built.is1D)
+        : built;
     // Materialise default blue points like [createShapeByDrag] / quick-add so
     // exported diagrams keep glue targets (writer no longer invents them).
     if (!shape.is1D && shape.connectionPoints.isEmpty) {
@@ -2804,8 +2818,124 @@ class EditorController extends ChangeNotifier {
       doc.replacePage(_currentPageIndex, page.addShape(shape)),
       undoSelection: undoSel,
     );
-    // Fold containment into the same undo step as the insert (transient).
-    applyDropContainmentAt(snap(cx), snap(cy), transient: true);
+    if (allowContainment) {
+      // Fold containment into the same undo step as the insert (transient).
+      applyDropContainmentAt(snap(cx), snap(cy), transient: true);
+    }
+  }
+
+  /// Add a library shape beneath the lower-left of the existing drawing.
+  ///
+  /// This is draw.io's Alt+click palette placement: it avoids the normal
+  /// centre-page stack while keeping the finite Visio page bounds usable.
+  void addShapeFromBuilderBottomLeft(
+    VsdxShape Function(int id, double cx, double cy) build, {
+    bool inheritStyle = true,
+  }) {
+    final page = currentPage;
+    if (page == null) return;
+    final probe = build(page.nextFreeShapeId(), 0, 0);
+    const margin = 0.25;
+    const gap = 0.25;
+    final bounds =
+        <({double left, double bottom, double right, double top})>[
+      for (final shape in page.shapes)
+        if (page.isShapeVisible(shape))
+          ?page.shapePageAabb(shape.id),
+    ];
+    final left = bounds.isEmpty
+        ? margin
+        : bounds.map((box) => box.left).reduce(math.min);
+    final bottom = bounds.isEmpty
+        ? margin + probe.height.abs() + gap
+        : bounds.map((box) => box.bottom).reduce(math.min);
+    final halfW = probe.width.abs() / 2;
+    final halfH = probe.height.abs() / 2;
+    final minX = margin + halfW;
+    final maxX = math.max(minX, page.widthInches - margin - halfW);
+    final minY = margin + halfH;
+    final maxY = math.max(minY, page.heightInches - margin - halfH);
+    final cx = (left + halfW).clamp(minX, maxX).toDouble();
+    final cy = (bottom - gap - halfH).clamp(minY, maxY).toDouble();
+    addShapeFromBuilderAt(
+      build,
+      cx,
+      cy,
+      inheritStyle: inheritStyle,
+      // Alt means overlay rather than becoming a container child.
+      allowContainment: false,
+    );
+  }
+
+  /// Whether a palette Alt+Shift/Ctrl click can insert and connect a new shape.
+  bool get canQuickAddSelection {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return false;
+    final source = page.findShapeById(id);
+    return source != null &&
+        !source.is1D &&
+        !source.locked &&
+        !isOnLockedLayer(id) &&
+        page.isShapeVisible(source);
+  }
+
+  /// Insert a chosen palette shape beside the single selected shape and glue
+  /// them together. Prefers right, then below, left and above according to the
+  /// available page space (draw.io Alt+Shift/Ctrl+click).
+  void quickAddSelectionWithBuilder(
+    VsdxShape Function(int id, double cx, double cy) build,
+  ) {
+    if (!canQuickAddSelection) return;
+    final page = currentPage!;
+    final sourceId = singleSelectedId!;
+    final sourceBounds = page.shapePageAabb(sourceId);
+    if (sourceBounds == null) return;
+    final probe = build(page.nextFreeShapeId(), 0, 0);
+    if (probe.is1D) return;
+    const gap = 0.5;
+    const margin = 0.1;
+    final halfW = probe.width.abs() / 2;
+    final halfH = probe.height.abs() / 2;
+    final sourceCx = (sourceBounds.left + sourceBounds.right) / 2;
+    final sourceCy = (sourceBounds.bottom + sourceBounds.top) / 2;
+    final candidates = <({int dir, double x, double y})>[
+      (
+        dir: 1,
+        x: sourceBounds.right + gap + halfW,
+        y: sourceCy,
+      ),
+      (
+        dir: 2,
+        x: sourceCx,
+        y: sourceBounds.bottom - gap - halfH,
+      ),
+      (
+        dir: 3,
+        x: sourceBounds.left - gap - halfW,
+        y: sourceCy,
+      ),
+      (
+        dir: 0,
+        x: sourceCx,
+        y: sourceBounds.top + gap + halfH,
+      ),
+    ];
+    final chosen = candidates.firstWhere(
+      (candidate) =>
+          candidate.x - halfW >= margin &&
+          candidate.x + halfW <= page.widthInches - margin &&
+          candidate.y - halfH >= margin &&
+          candidate.y + halfH <= page.heightInches - margin,
+      orElse: () => candidates.first,
+    );
+    quickAddInDirection(
+      sourceId,
+      chosen.dir,
+      build: build,
+      cx: chosen.x,
+      cy: chosen.y,
+    );
   }
 
   /// Whether Shift-clicking a stencil can replace at least one selected shape.

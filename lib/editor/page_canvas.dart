@@ -692,8 +692,16 @@ class _PageCanvasState extends State<PageCanvas> {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final p = _pageInchesAt(box.globalToLocal(details.offset));
-    // Containment is applied inside [EditorController.addShapeFromBuilderAt].
-    _c.addShapeFromBuilderAt(details.data.build, p.dx, p.dy);
+    final keyboard = HardwareKeyboard.instance;
+    _c.addShapeFromBuilderAt(
+      details.data.build,
+      p.dx,
+      p.dy,
+      // Shift-drag ignores a custom palette style; Alt-drop overlays a
+      // container instead of becoming its child (draw.io modifiers).
+      inheritStyle: !keyboard.isShiftPressed,
+      allowContainment: !keyboard.isAltPressed,
+    );
   }
 
   /// A clipart tile dropped from the image-materials palette.

@@ -1377,6 +1377,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
     mod(LogicalKeyboardKey.keyK, () {
       if (c()?.singleSelectedId != null) _editLink();
     });
+    // draw.io: show / hide the Shapes sidebar in every editor theme.
+    mod(LogicalKeyboardKey.keyK, _toggleStencils, shift: true);
     mod(LogicalKeyboardKey.keyL, () {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.toggleLock();
@@ -2850,11 +2852,28 @@ class _StencilPanelState extends State<_StencilPanel> {
   void _dropStencil(Stencil s) {
     final controller = widget.workspace.active;
     if (controller == null) return;
-    if (HardwareKeyboard.instance.isShiftPressed &&
+    final keyboard = HardwareKeyboard.instance;
+    final shift = keyboard.isShiftPressed;
+    final alt = keyboard.isAltPressed;
+    final command = keyboard.isControlPressed || keyboard.isMetaPressed;
+    if (alt &&
+        (shift || command) &&
+        controller.canQuickAddSelection) {
+      controller.quickAddSelectionWithBuilder(s.build);
+    } else if (!alt &&
+        shift &&
         controller.canReplaceSelectionShapes) {
       controller.replaceSelectionWithBuilder(s.build);
+    } else if (alt) {
+      controller.addShapeFromBuilderBottomLeft(
+        s.build,
+        inheritStyle: !shift,
+      );
     } else {
-      controller.addShapeFromBuilder(s.build);
+      controller.addShapeFromBuilder(
+        s.build,
+        inheritStyle: !shift,
+      );
     }
   }
 
@@ -3024,7 +3043,7 @@ class _StencilPanelState extends State<_StencilPanel> {
   Widget _draggableTile(ColorScheme scheme, Stencil s) {
     return Tooltip(
       message: '${EditorL10n.of(context).stencil(s.name)}\n'
-          '${EditorL10n.of(context).replaceShapeShortcutHint}',
+          '${EditorL10n.of(context).stencilModifierShortcutHint}',
       // Drag a stencil onto the canvas to drop it at the cursor (drawio); a
       // plain click still drops it at the centre.
       child: RepaintBoundary(

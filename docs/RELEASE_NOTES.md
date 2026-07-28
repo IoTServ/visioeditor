@@ -52,7 +52,7 @@ byte-for-byte, so formulas and structure survive a save.
   moves the selection; adding Ctrl/Cmd displaces shapes across horizontal and
   vertical area cuts, while an Alt+Shift marquee subtracts intersecting shapes.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
-  parent.
+  parent. Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical
@@ -62,6 +62,11 @@ byte-for-byte, so formulas and structure survive a save.
   a shape or connector selected to replace its label; Enter saves and
   Shift/Alt+Enter adds a line break. Labels on 2-D shapes can be positioned
   outside any edge or centred, and displayed vertically.
+- **Shape-library modifiers** — Shift-click replaces a compatible selection or
+  inserts with the original white/black style; Shift-drag also ignores the
+  custom default style. Alt-click places a shape beneath the lower-left of the
+  current drawing, Alt+Shift/Ctrl-click inserts and connects beside the selected
+  shape, and Alt-drop overlays containers without becoming their child.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle
   layer visibility.
 - **Save / Save As** with round-trip fidelity, plus **export** to SVG, PNG and
@@ -100,6 +105,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Delete with connected lines | Hold `Shift` and click the Format-panel trash button |
 | Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` |
 | Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
+| Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
 | Cancel tool / clear selection | `Esc` |
 | Nudge selection | Arrow keys (by the grid step) |
 | Pan / zoom canvas | Scroll to pan · `Cmd`/`Ctrl`+scroll to zoom · Space-drag to pan |

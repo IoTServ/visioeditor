@@ -457,10 +457,12 @@ class EditorL10n {
       locale.languageCode == 'zh'
           ? '自动适配文本高度 (Cmd/Ctrl+Shift+Y)'
           : 'Autosize (Cmd/Ctrl+Shift+Y)';
-  String get replaceShapeShortcutHint =>
+  String get stencilModifierShortcutHint =>
       locale.languageCode == 'zh'
-          ? 'Shift+点击：替换已选形状'
-          : 'Shift+click: replace selected shape';
+          ? 'Shift：替换或忽略默认样式 · Alt：放到底部左侧\n'
+              'Alt+Shift/Ctrl：插入并连接'
+          : 'Shift: replace or ignore default style · Alt: bottom-left\n'
+              'Alt+Shift/Ctrl: insert and connect';
   String get deleteWithConnectionsHint =>
       locale.languageCode == 'zh'
           ? '删除；按住 Shift 点击可同时删除相关连接线'

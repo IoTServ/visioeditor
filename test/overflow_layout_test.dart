@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visioeditor/editor/outline_panel.dart';
@@ -133,6 +134,36 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(FloatingActionButton), findsOneWidget);
     });
+  });
+
+  testWidgets('Cmd+Shift+K toggles the Shapes sidebar', (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _setViewSize(tester, const Size(1280, 800));
+    final settings = await AppSettings.load();
+    await tester.pumpWidget(VisioEditorApp(settings: settings));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+    await tester.pumpAndSettle();
+
+    const panelKey = ValueKey<String>('stencil-panel');
+    expect(find.byKey(panelKey), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.byKey(panelKey), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(find.byKey(panelKey), findsOneWidget);
   });
 
   testWidgets('Chinese settings theme chips do not overflow when narrow',
