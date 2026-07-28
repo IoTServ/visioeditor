@@ -2976,25 +2976,44 @@ class EditorController extends ChangeNotifier {
   bool get canAttachShapeToSelectionConnector =>
       _selectedConnectorFreeEnd != null;
 
-  /// Insert a palette shape at the selected connector's free end and glue it.
+  /// Insert a palette shape at a specific free connector end and glue it.
   ///
-  /// The insert and endpoint reconnect are committed as one undo step. Returns
-  /// false when the selection has no free connector end or [build] is 1-D.
-  bool attachShapeToSelectionConnector(
-    VsdxShape Function(int id, double cx, double cy) build, {
+  /// Used by both palette-click attachment and canvas drop-on-endpoint. The
+  /// connector may be unselected, but it must be visible, editable and the
+  /// requested end must still be free.
+  bool attachShapeToConnectorEnd(
+    int connectorId, {
+    required bool begin,
+    required VsdxShape Function(int id, double cx, double cy) build,
     bool inheritStyle = true,
   }) {
-    final free = _selectedConnectorFreeEnd;
     final page = currentPage;
-    if (free == null || page == null) return false;
-    final probe = build(page.nextFreeShapeId(), free.x, free.y);
+    final connector = page?.findShapeById(connectorId);
+    if (page == null ||
+        connector == null ||
+        !connector.isGlueableConnector ||
+        connector.locked ||
+        isOnLockedLayer(connectorId) ||
+        !page.isShapeVisible(connector)) {
+      return false;
+    }
+    final endIsGlued = page.connects.any(
+      (row) =>
+          row.fromSheetId == connectorId &&
+          (begin ? row.isBegin : row.isEnd),
+    );
+    if (endIsGlued) return false;
+    final route = page.drawnConnectorPagePolyline(connector);
+    if (route.length < 2) return false;
+    final point = begin ? route.first : route.last;
+    final probe = build(page.nextFreeShapeId(), point.x, point.y);
     if (probe.is1D) return false;
 
     beginTransaction();
     addShapeFromBuilderAt(
       build,
-      free.x,
-      free.y,
+      point.x,
+      point.y,
       inheritStyle: inheritStyle,
       // A connector endpoint may sit over a container; attaching a shape must
       // not silently change its parent as a side effect.
@@ -3006,15 +3025,33 @@ class EditorController extends ChangeNotifier {
       return false;
     }
     reconnectEndpoint(
-      free.connectorId,
-      begin: free.begin,
+      connectorId,
+      begin: begin,
       targetShapeId: shapeId,
-      x: free.x,
-      y: free.y,
+      x: point.x,
+      y: point.y,
       transient: true,
     );
     commitTransaction();
     return true;
+  }
+
+  /// Insert a palette shape at the selected connector's free end and glue it.
+  ///
+  /// The insert and endpoint reconnect are committed as one undo step. Returns
+  /// false when the selection has no free connector end or [build] is 1-D.
+  bool attachShapeToSelectionConnector(
+    VsdxShape Function(int id, double cx, double cy) build, {
+    bool inheritStyle = true,
+  }) {
+    final free = _selectedConnectorFreeEnd;
+    if (free == null) return false;
+    return attachShapeToConnectorEnd(
+      free.connectorId,
+      begin: free.begin,
+      build: build,
+      inheritStyle: inheritStyle,
+    );
   }
 
   /// Whether Shift-clicking a stencil can replace at least one selected shape.

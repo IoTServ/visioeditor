@@ -37,6 +37,7 @@ byte-for-byte, so formulas and structure survive a save.
   floating lines.
 - **Arrange** with multi-select (Shift/Ctrl/Cmd-click, enclosed marquee, or
   Alt-marquee for intersecting items), Alt-click cycling through overlaps,
+  Alt+Shift-click deselection,
   align, distribute, same-size and copy/paste-size tools, two-shape position
   swapping, connector reversal,
   z-order (bring to front / send to back) and **group / ungroup**. Dragging
@@ -69,8 +70,10 @@ byte-for-byte, so formulas and structure survive a save.
   glue; the drop target is highlighted. Alt/Shift-drop disables replacement
   and container membership so shapes overlap. Clicking a palette shape while a
   connector with a free end is selected inserts and attaches it in one undo
-  step. Alt-click places a shape beneath the lower-left of the current drawing,
-  and Alt+Shift/Ctrl-click inserts and connects beside the selected shape.
+  step. Dropping a palette shape on a free connector endpoint shows a blue
+  target and attaches it directly; Alt-drop disables that automatic connection.
+  Alt-click places a shape beneath the lower-left of the current drawing, and
+  Alt+Shift/Ctrl-click inserts and connects beside the selected shape.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle
   layer visibility.
 - **Save / Save As** with round-trip fidelity, plus **export** to SVG, PNG and

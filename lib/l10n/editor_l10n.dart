@@ -459,10 +459,12 @@ class EditorL10n {
           : 'Autosize (Cmd/Ctrl+Shift+Y)';
   String get stencilModifierShortcutHint =>
       locale.languageCode == 'zh'
-          ? '拖到形状：替换 · 点击时选中悬空连接线：接入\n'
+          ? '拖到形状：替换 · 拖到连接线悬空端点：接入\n'
+              '点击时选中悬空连接线：接入\n'
               'Shift 点击/拖动：替换或原始样式 · Alt 点击：放到底部左侧\n'
               'Shift/Alt 拖动：重叠 · Alt+Shift/Ctrl 点击：插入并连接'
-          : 'Drop on shape: replace · Click with free connector selected: attach\n'
+          : 'Drop on shape: replace · Drop on free connector end: attach\n'
+              'Click with free connector selected: attach\n'
               'Shift click/drag: replace or original style · Alt click: bottom-left\n'
               'Shift/Alt drag: overlap · Alt+Shift/Ctrl click: insert & connect';
   String get deleteWithConnectionsHint =>

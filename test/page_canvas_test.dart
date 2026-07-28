@@ -252,6 +252,117 @@ void main() {
     expect(controller.currentPage!.shapes.every((shape) => !shape.is1D), isTrue);
   });
 
+  testWidgets('stencil drop attaches to free connector end; Alt disables it',
+      (tester) async {
+    final controller = EditorController()..newDocument();
+    final camera = CanvasCamera();
+    addTearDown(controller.dispose);
+    addTearDown(camera.dispose);
+    controller.addShapeFromBuilderAt(
+      (id, x, y) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 1.5,
+        height: 1,
+      ),
+      2,
+      5,
+    );
+    final source = controller.singleSelectedId!;
+    controller.createConnector(2, 5, 6, 5, beginTarget: source);
+    final connector = controller.singleSelectedId!;
+    final stencil = Stencil(
+      'Rectangle',
+      (id, x, y) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: x,
+        pinY: y,
+        width: 1.5,
+        height: 1,
+      ),
+    );
+    const dragKey = Key('test-connector-stencil-drag');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1000,
+            height: 800,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: PageCanvas(controller: controller, camera: camera),
+                ),
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Draggable<Stencil>(
+                    key: dragKey,
+                    data: stencil,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
+                    feedback: const ColoredBox(
+                      color: Colors.blue,
+                      child: SizedBox(width: 40, height: 40),
+                    ),
+                    child: const ColoredBox(
+                      color: Colors.blue,
+                      child: SizedBox(width: 40, height: 40),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final page = controller.currentPage!;
+    final route = page.drawnConnectorPagePolyline(
+      page.findShapeById(connector)!,
+    );
+    final destination = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      page,
+      route.last.x,
+      route.last.y,
+    );
+    final start = tester.getCenter(find.byKey(dragKey));
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    final attached = controller.singleSelectedId!;
+    expect(
+      controller.currentPage!.connects.any(
+        (row) =>
+            row.fromSheetId == connector &&
+            row.isEnd &&
+            row.toSheetId == attached,
+      ),
+      isTrue,
+    );
+
+    controller.undo();
+    expect(controller.currentPage!.findShapeById(attached), isNull);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.dragFrom(start, destination - start);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.shapes, hasLength(3));
+    expect(
+      controller.currentPage!.connects
+          .where((row) => row.fromSheetId == connector && row.isEnd),
+      isEmpty,
+    );
+  });
+
   testWidgets('typing replaces a selected label and Enter commits it',
       (tester) async {
     late int shapeId;
@@ -573,6 +684,50 @@ void main() {
     await _tapCanvasAt(tester, point);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
     expect(controller.singleSelectedId, top);
+  });
+
+  testWidgets('Alt+Shift click removes a shape from the selection',
+      (tester) async {
+    late int left;
+    late int right;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        left = _addRect(c);
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          7,
+          5,
+        );
+        right = c.singleSelectedId!;
+        c.setSelection(<int>[left, right]);
+      },
+      camera: camera,
+    );
+    final point = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      controller.currentPage!,
+      3,
+      5,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await _tapCanvasAt(tester, point);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    expect(controller.selection, equals(<int>{right}));
   });
 
   testWidgets('Ctrl click toggles shapes in a multi-selection', (tester) async {

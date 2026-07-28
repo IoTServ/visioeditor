@@ -188,6 +188,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Atomic shape under a stencil drag that will be replaced on drop.
   int? _stencilReplaceTargetId;
 
+  /// Free connector endpoint under a stencil drag (draw.io blue drop circle).
+  ({int connectorId, bool begin, double x, double y})?
+      _stencilConnectorEndTarget;
+
   // Whether the pointer sits on a shape connection point / perimeter (crosshair)
   // or a directional quick-add arrow (click cursor).
   bool _hoverOnConnectPoint = false;
@@ -698,18 +702,77 @@ class _PageCanvasState extends State<PageCanvas> {
     return null;
   }
 
+  ({int connectorId, bool begin, double x, double y})?
+      _stencilConnectorEndTargetAt(Offset viewportPos) {
+    if (HardwareKeyboard.instance.isAltPressed) return null;
+    final page = _page;
+    if (page == null) return null;
+    final threshold = _connSnapPx * 1.4;
+    var bestDistance = threshold * threshold;
+    ({int connectorId, bool begin, double x, double y})? best;
+    final gluedBegins = <int>{
+      for (final row in page.connects)
+        if (row.isBegin) row.fromSheetId,
+    };
+    final gluedEnds = <int>{
+      for (final row in page.connects)
+        if (row.isEnd) row.fromSheetId,
+    };
+    for (final id in _drawOrder(page)) {
+      final connector = page.findShapeById(id);
+      if (connector == null ||
+          !connector.isGlueableConnector ||
+          connector.locked ||
+          _c.isOnLockedLayer(id) ||
+          !page.isShapeVisible(connector)) {
+        continue;
+      }
+      final route = _connectorRoutePage(connector);
+      if (route.length < 2) continue;
+      for (final candidate in <({bool begin, Offset2D point})>[
+        if (!gluedBegins.contains(id)) (begin: true, point: route.first),
+        if (!gluedEnds.contains(id)) (begin: false, point: route.last),
+      ]) {
+        final point = candidate.point;
+        final distance =
+            (_pageToScreen(point.x, point.y) - viewportPos).distanceSquared;
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          best = (
+            connectorId: id,
+            begin: candidate.begin,
+            x: point.x,
+            y: point.y,
+          );
+        }
+      }
+    }
+    return best;
+  }
+
   void _onStencilMoved(DragTargetDetails<Stencil> details) {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
-    final next = _stencilReplaceTargetAt(box.globalToLocal(details.offset));
-    if (next != _stencilReplaceTargetId) {
-      setState(() => _stencilReplaceTargetId = next);
+    final local = box.globalToLocal(details.offset);
+    final connectorTarget = _stencilConnectorEndTargetAt(local);
+    final replaceTarget =
+        connectorTarget == null ? _stencilReplaceTargetAt(local) : null;
+    if (replaceTarget != _stencilReplaceTargetId ||
+        connectorTarget != _stencilConnectorEndTarget) {
+      setState(() {
+        _stencilReplaceTargetId = replaceTarget;
+        _stencilConnectorEndTarget = connectorTarget;
+      });
     }
   }
 
   void _onStencilLeft(Stencil? _) {
-    if (_stencilReplaceTargetId != null) {
-      setState(() => _stencilReplaceTargetId = null);
+    if (_stencilReplaceTargetId != null ||
+        _stencilConnectorEndTarget != null) {
+      setState(() {
+        _stencilReplaceTargetId = null;
+        _stencilConnectorEndTarget = null;
+      });
     }
   }
 
@@ -720,16 +783,31 @@ class _PageCanvasState extends State<PageCanvas> {
     final box = _canvasBoxKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final local = box.globalToLocal(details.offset);
-    final replaceTarget = _stencilReplaceTargetAt(local);
-    if (_stencilReplaceTargetId != null) {
-      setState(() => _stencilReplaceTargetId = null);
+    final connectorTarget = _stencilConnectorEndTargetAt(local);
+    final replaceTarget =
+        connectorTarget == null ? _stencilReplaceTargetAt(local) : null;
+    if (_stencilReplaceTargetId != null ||
+        _stencilConnectorEndTarget != null) {
+      setState(() {
+        _stencilReplaceTargetId = null;
+        _stencilConnectorEndTarget = null;
+      });
+    }
+    final keyboard = HardwareKeyboard.instance;
+    if (connectorTarget != null &&
+        _c.attachShapeToConnectorEnd(
+          connectorTarget.connectorId,
+          begin: connectorTarget.begin,
+          build: details.data.build,
+          inheritStyle: !keyboard.isShiftPressed,
+        )) {
+      return;
     }
     if (replaceTarget != null &&
         _c.replaceShapeWithBuilder(replaceTarget, details.data.build)) {
       return;
     }
     final p = _pageInchesAt(local);
-    final keyboard = HardwareKeyboard.instance;
     final overlay = keyboard.isAltPressed || keyboard.isShiftPressed;
     _c.addShapeFromBuilderAt(
       details.data.build,
@@ -1066,14 +1144,20 @@ class _PageCanvasState extends State<PageCanvas> {
       if (wasText) _startEditingNewTextBox();
       return;
     }
-    final alt = HardwareKeyboard.instance.isAltPressed;
-    final hit0 = alt ? _hitBelow(d.localPosition) : _hitTest(d.localPosition);
+    final keyboard = HardwareKeyboard.instance;
+    final alt = keyboard.isAltPressed;
+    final shift = keyboard.isShiftPressed;
+    final subtract = alt && shift;
+    final hit0 = alt && !subtract
+        ? _hitBelow(d.localPosition)
+        : _hitTest(d.localPosition);
     final hit = hit0 == null ? null : _chartAwareHit(hit0);
-    final toggle = HardwareKeyboard.instance.isShiftPressed ||
-        HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
+    final toggle =
+        shift || keyboard.isControlPressed || keyboard.isMetaPressed;
     if (hit != null) {
-      if (alt) {
+      if (subtract) {
+        if (_c.isSelected(hit)) _c.toggleSelection(hit);
+      } else if (alt) {
         _c.selectOnly(hit);
       } else if (toggle) {
         _c.toggleSelection(hit);
@@ -3649,6 +3733,12 @@ class _PageCanvasState extends State<PageCanvas> {
                 final pg = _connPointPage(t, pts[selIdx].offset);
                 snappedConnectionPoint = _pageToContent(pg.x, pg.y);
               }
+            }
+            final stencilEnd = _stencilConnectorEndTarget;
+            if (stencilEnd != null) {
+              final point = _pageToContent(stencilEnd.x, stencilEnd.y);
+              connectionPointDots = <Offset>[point];
+              snappedConnectionPoint = point;
             }
             final inlineEditor = _buildInlineEditor(context);
             final guideSegments = <(Offset, Offset, SnapGuideKind)>[
