@@ -127,6 +127,28 @@ void main() {
     expect(e.pageGuides, isEmpty);
   });
 
+  test('guides have an independent session toggle', () {
+    final e = ctrl();
+    expect(e.showGuides, isTrue);
+    expect(e.snapToGrid, isTrue);
+
+    e.toggleGuides();
+
+    expect(e.showGuides, isFalse);
+    expect(e.snapToGrid, isTrue);
+    e.toggleGuides();
+    expect(e.showGuides, isTrue);
+  });
+
+  test('page guides can bypass grid snapping for precise placement', () {
+    final e = ctrl();
+    e.addPageGuide(vertical: true, pos: 1.13, snapToGrid: false);
+    expect(e.pageGuides.single.pos, closeTo(1.13, 1e-9));
+
+    e.movePageGuide(0, 2.37, snapToGrid: false);
+    expect(e.pageGuides.single.pos, closeTo(2.37, 1e-9));
+  });
+
   test('setCurvedText skips 1D', () {
     final e = ctrl();
     final a = rect(e, 2, 4);

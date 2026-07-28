@@ -23,9 +23,13 @@ byte-for-byte, so formulas and structure survive a save.
   the stencil palette.
 - **Edit** with select / move / resize (8 handles) / rotate, duplicate,
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
+  Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise
+  shape, connector and ruler-guide edits.
 - **Arrange** with multi-select (shift-click + marquee), align, distribute,
   z-order (bring to front / send to back) and **group / ungroup**. Dragging
-  shows **smart alignment guides** that snap to nearby shapes.
+  shows **smart alignment guides** that snap to nearby shapes, equal spacing,
+  connection points and the orange page centre; Guides can be toggled
+  independently from the grid.
 - **drawio-style interactions**: a right-click context menu, copy / paste style,
   and matching keyboard shortcuts (Select All, Cut, To Front/Back, Group /
   Ungroup, keyboard zoom).

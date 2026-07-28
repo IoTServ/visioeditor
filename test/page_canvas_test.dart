@@ -144,6 +144,97 @@ void main() {
     expect(controller.currentPage!.findShapeById(id)!.pinY, moved.pinY);
   });
 
+  testWidgets('Alt drag bypasses page-centre, guide and grid snapping', (
+    tester,
+  ) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          2,
+          5.5,
+        );
+        id = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final before = page.findShapeById(id)!;
+    final start = _pagePoint(origin, camera, page, before.pinX, before.pinY);
+    final destination = _pagePoint(origin, camera, page, 4.22, before.pinY);
+
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+    expect(
+      controller.currentPage!.findShapeById(id)!.pinX,
+      closeTo(page.widthInches / 2, 0.01),
+    );
+
+    controller.undo();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    final precise = controller.currentPage!.findShapeById(id)!;
+    expect(precise.pinX, closeTo(4.22, 0.015));
+    expect(controller.currentPage!.shapes, hasLength(1));
+  });
+
+  testWidgets('Ctrl drag clones instead of using Alt duplication', (
+    tester,
+  ) async {
+    late int originalId;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) => originalId = _addRect(c),
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final original = page.findShapeById(originalId)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(
+      origin,
+      camera,
+      page,
+      original.pinX,
+      original.pinY,
+    );
+    final destination = _pagePoint(
+      origin,
+      camera,
+      page,
+      original.pinX + 1,
+      original.pinY,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    final next = controller.currentPage!;
+    expect(next.shapes, hasLength(2));
+    expect(next.findShapeById(originalId)!.pinX, original.pinX);
+    expect(controller.singleSelectedId, isNot(originalId));
+  });
+
   testWidgets('right resize handle changes geometry and undo restores it',
       (tester) async {
     late int id;
@@ -366,6 +457,75 @@ void main() {
           .toSheetId,
       target,
     );
+  });
+
+  testWidgets('Alt endpoint drop over a shape stays floating', (tester) async {
+    late int connector;
+    late int alternate;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        final source = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        final target = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 1, 7, 3);
+        alternate = c.singleSelectedId!;
+        c.createConnector(
+          2,
+          5,
+          6,
+          5,
+          beginTarget: source,
+          endTarget: target,
+        );
+        connector = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    var page = controller.currentPage!;
+    final route = VsdxPage.connectorRoute(page.findShapeById(connector)!);
+    final alternateShape = page.findShapeById(alternate)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(
+      origin,
+      camera,
+      page,
+      route.last.x,
+      route.last.y,
+    );
+    final destination = _pagePoint(
+      origin,
+      camera,
+      page,
+      alternateShape.pinX,
+      alternateShape.pinY,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    page = controller.currentPage!;
+    expect(
+      page.connects.where((c) => c.fromSheetId == connector && c.isEnd),
+      isEmpty,
+    );
+    final floating = VsdxPage.connectorRoute(
+      page.findShapeById(connector)!,
+    ).last;
+    expect(floating.x, closeTo(alternateShape.pinX, 0.05));
+    expect(floating.y, closeTo(alternateShape.pinY, 0.05));
   });
 
   testWidgets('connector segment midpoint drag creates one undoable waypoint',

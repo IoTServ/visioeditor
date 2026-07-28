@@ -77,6 +77,7 @@ class EditorL10n {
   String get exportPng => _t('exportPng');
   String get exportPdf => _t('exportPdf');
   String get snapToGrid => _t('snapToGrid');
+  String get guides => locale.languageCode == 'zh' ? '参考线' : 'Guides';
   String get lineJumps => _t('lineJumps');
   String get closeTab => _t('closeTab');
   String get closeTabShortcut => _t('closeTabShortcut');

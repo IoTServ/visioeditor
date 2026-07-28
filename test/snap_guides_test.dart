@@ -142,5 +142,74 @@ void main() {
       expect(r.snappedY, isTrue);
       expect(r.snappedX, isFalse);
     });
+
+    test(
+      'snaps the moving centre to the page centre with orange guide kind',
+      () {
+        final r = computeSnap(
+          moving: const SnapBox(3.72, 4.95, 4.72, 5.95),
+          others: const <SnapBox>[],
+          threshold: 0.1,
+          pageBounds: const SnapBox(0, 0, 8.5, 11),
+        );
+
+        expect(r.dx, closeTo(0.03, 1e-9));
+        expect(r.dy, closeTo(0.05, 1e-9));
+        expect(r.snappedX, isTrue);
+        expect(r.snappedY, isTrue);
+        expect(r.guides, hasLength(2));
+        expect(
+          r.guides.every((g) => g.kind == SnapGuideKind.pageCenter),
+          isTrue,
+        );
+        final vertical = r.guides.singleWhere((g) => g.vertical);
+        expect(vertical.start, 0);
+        expect(vertical.end, 11);
+      },
+    );
+
+    test('snaps a middle shape to equal horizontal spacing', () {
+      final r = computeSnap(
+        moving: const SnapBox(2.96, 0, 3.96, 1),
+        others: const <SnapBox>[SnapBox(0, 0, 1, 1), SnapBox(6, 0, 7, 1)],
+        threshold: 0.1,
+      );
+
+      expect(r.dx, closeTo(0.04, 1e-9));
+      expect(r.snappedX, isTrue);
+      expect(
+        r.guides.where((g) => g.kind == SnapGuideKind.spacing),
+        hasLength(2),
+      );
+    });
+
+    test('extends an existing horizontal gap with equal spacing', () {
+      final r = computeSnap(
+        moving: const SnapBox(4.04, 0, 5.04, 1),
+        others: const <SnapBox>[SnapBox(0, 0, 1, 1), SnapBox(2, 0, 3, 1)],
+        threshold: 0.1,
+      );
+
+      expect(r.dx, closeTo(-0.04, 1e-9));
+      expect(r.snappedX, isTrue);
+      expect(
+        r.guides.where((g) => g.kind == SnapGuideKind.spacing),
+        hasLength(2),
+      );
+    });
+
+    test('does not infer spacing from shapes in unrelated rows', () {
+      final r = computeSnap(
+        moving: const SnapBox(4.04, 0, 5.04, 1),
+        others: const <SnapBox>[
+          SnapBox(0, 4, 1, 5),
+          SnapBox(2, 4, 3, 5),
+        ],
+        threshold: 0.1,
+      );
+
+      expect(r.snappedX, isFalse);
+      expect(r.guides.where((g) => g.kind == SnapGuideKind.spacing), isEmpty);
+    });
   });
 }

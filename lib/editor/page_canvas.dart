@@ -223,6 +223,13 @@ class _PageCanvasState extends State<PageCanvas> {
     return size != null && size.width < 720;
   }
 
+  /// draw.io modifier semantics: Alt/Option bypasses all snapping for precise
+  /// placement; Ctrl/Cmd-drag clones the selection.
+  bool get _bypassSnapping => HardwareKeyboard.instance.isAltPressed;
+  bool get _cloneDrag =>
+      HardwareKeyboard.instance.isControlPressed ||
+      HardwareKeyboard.instance.isMetaPressed;
+
   double get _connectArrowGapPxEffective =>
       _isTouchUi ? _connectArrowGapTouchPx : _connectArrowGapPx;
 
@@ -1566,7 +1573,8 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.createShape;
       if (_c.tool == EditorTool.connector) {
         // Capture the begin glue point at press (deepest 2-D, matches drop).
-        final beginId = _glueTargetAt(d.localPosition);
+        final beginId =
+            _bypassSnapping ? null : _glueTargetAt(d.localPosition);
         final beginShape =
             beginId == null ? null : _page?.findShapeById(beginId);
         _connectSourceConnIndex =
@@ -1684,8 +1692,8 @@ class _PageCanvasState extends State<PageCanvas> {
     final hit = hit0 == null ? null : _chartAwareHit(hit0);
     if (hit != null) {
       if (!_c.isSelected(hit)) _c.selectOnly(hit);
-      // Alt/Option-drag leaves the originals behind and drags a copy (drawio).
-      if (HardwareKeyboard.instance.isAltPressed) _c.duplicateSelection();
+      // Ctrl/Cmd-drag leaves the originals behind and drags a copy (draw.io).
+      if (_cloneDrag) _c.duplicateSelection();
       _mode = _DragMode.moveShapes;
       _c.beginTransaction();
       _moveAccumInches = Offset.zero;
@@ -1790,11 +1798,13 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.moveShapes:
         _applyMove((pos - _lastPointer) / _scale);
         final pagePt = _contentToPageInches(_viewportToContent(pos));
-        final drop = _page?.findDropContainerAt(
-          pagePt.dx,
-          pagePt.dy,
-          excludeIds: Set<int>.of(_c.selection),
-        );
+        final drop = _bypassSnapping
+            ? null
+            : _page?.findDropContainerAt(
+                pagePt.dx,
+                pagePt.dy,
+                excludeIds: Set<int>.of(_c.selection),
+              );
         if (drop != _dropContainerId) {
           setState(() => _dropContainerId = drop);
         }
@@ -1841,7 +1851,8 @@ class _PageCanvasState extends State<PageCanvas> {
           }
           break;
         }
-        final connTarget = _c.tool == EditorTool.connector
+        final connTarget = _c.tool == EditorTool.connector &&
+                !_bypassSnapping
             ? _glueTargetAt(pos)
             : null;
         final connTs =
@@ -1860,7 +1871,8 @@ class _PageCanvasState extends State<PageCanvas> {
         });
       case _DragMode.connect:
         final src = _connectSourceId;
-        final target = _glueTargetAt(pos, excludeId: src);
+        final target =
+            _bypassSnapping ? null : _glueTargetAt(pos, excludeId: src);
         final ts = target == null ? null : _page?.findShapeById(target);
         final snap = ts != null ? _connSnapIndex(ts, pos) : null;
         setState(() {
@@ -1885,10 +1897,13 @@ class _PageCanvasState extends State<PageCanvas> {
         final idx = _waypointIndex;
         if (id != null && idx != null) {
           final p = _pageInchesAt(pos);
+          final point = _bypassSnapping
+              ? Offset2D(p.dx, p.dy)
+              : Offset2D(_c.snap(p.dx), _c.snap(p.dy));
           _c.moveWaypoint(
             id,
             idx,
-            Offset2D(_c.snap(p.dx), _c.snap(p.dy)),
+            point,
             transient: true,
           );
         }
@@ -1896,11 +1911,12 @@ class _PageCanvasState extends State<PageCanvas> {
         final id = _endpointConnId;
         if (id != null) {
           final p = _pageInchesAt(pos);
-          final target = _endpointTargetAt(pos, id);
+          final target =
+              _bypassSnapping ? null : _endpointTargetAt(pos, id);
           final ts = target == null ? null : _page?.findShapeById(target);
           final snap = ts == null ? null : _connSnapIndex(ts, pos);
-          var x = _c.snap(p.dx);
-          var y = _c.snap(p.dy);
+          var x = _bypassSnapping ? p.dx : _c.snap(p.dx);
+          var y = _bypassSnapping ? p.dy : _c.snap(p.dy);
           if (ts != null && snap != null) {
             final pts = VsdxPage.effectiveConnectionPoints(ts);
             if (snap >= 0 && snap < pts.length) {
@@ -1965,8 +1981,8 @@ class _PageCanvasState extends State<PageCanvas> {
     final page = _page;
     if (id == null || handle == null || s0 == null || page == null) return;
     final p = _pageInchesAt(pos);
-    final px = _c.snap(p.dx);
-    final py = _c.snap(p.dy);
+    final px = _bypassSnapping ? p.dx : _c.snap(p.dx);
+    final py = _bypassSnapping ? p.dy : _c.snap(p.dy);
     // Start from the page-space AABB so nested Group children resize correctly.
     final aabb0 = page.shapePageAabb(s0.id);
     final cx = aabb0 != null
@@ -1993,8 +2009,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (movesT) t = py;
     if (movesB) b = py;
 
-    // Alt / Option resizes symmetrically about the original centre.
-    final centered = HardwareKeyboard.instance.isAltPressed;
+    // Alt / Option resizes symmetrically and bypasses grid snapping.
+    final centered = _bypassSnapping;
     if (centered) {
       if (movesL) r = 2 * cx - l;
       if (movesR) l = 2 * cx - r;
@@ -2183,20 +2199,26 @@ class _PageCanvasState extends State<PageCanvas> {
     var snapDx = 0.0, snapDy = 0.0;
     var guides = const <SnapGuide>[];
     final start = _moveStartBounds;
-    if (start != null) {
+    if (start != null && !_bypassSnapping) {
       final moving = SnapBox(
         start.l + eff.dx,
         start.b + eff.dy,
         start.r + eff.dx,
         start.t + eff.dy,
       );
-      final res = computeSnap(
-        moving: moving,
-        others: _otherShapeBoxes(),
-        threshold: 6 / (_scale * ppi),
-        pageGuides: _c.pageGuides,
-        magnets: _otherConnectionMagnets(),
-      );
+      final page = _page;
+      final res = _c.showGuides
+          ? computeSnap(
+              moving: moving,
+              others: _otherShapeBoxes(),
+              threshold: 6 / (_scale * ppi),
+              pageGuides: _c.pageGuides,
+              magnets: _otherConnectionMagnets(),
+              pageBounds: page == null
+                  ? null
+                  : SnapBox(0, 0, page.widthInches, page.heightInches),
+            )
+          : SnapResult.none;
       snapDx = res.dx;
       snapDy = res.dy;
       guides = res.guides;
@@ -2693,7 +2715,9 @@ class _PageCanvasState extends State<PageCanvas> {
         if (_mode == _DragMode.moveShapes) {
           final end = _lastPointer;
           final pagePt = _contentToPageInches(_viewportToContent(end));
-          _c.applyDropContainmentAt(pagePt.dx, pagePt.dy, transient: true);
+          if (!_bypassSnapping) {
+            _c.applyDropContainmentAt(pagePt.dx, pagePt.dy, transient: true);
+          }
         }
         _c.commitTransaction();
         _activeHandle = null;
@@ -2732,9 +2756,13 @@ class _PageCanvasState extends State<PageCanvas> {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
           if (_c.tool == EditorTool.connector) {
-            final beginTarget = _glueTargetAt(_offset + start * _scale);
-            final endTarget = _connectTargetId ??
-                _glueTargetAt(_offset + end * _scale);
+            final beginTarget = _bypassSnapping
+                ? null
+                : _glueTargetAt(_offset + start * _scale);
+            final endTarget = _bypassSnapping
+                ? null
+                : _connectTargetId ??
+                    _glueTargetAt(_offset + end * _scale);
             _c.createConnector(
               a.dx,
               a.dy,
@@ -2766,7 +2794,9 @@ class _PageCanvasState extends State<PageCanvas> {
         if (start != null && end != null && src != null) {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
-          final target = _connectTargetId == src ? null : _connectTargetId;
+          final target = _bypassSnapping || _connectTargetId == src
+              ? null
+              : _connectTargetId;
           _c.createConnector(a.dx, a.dy, b.dx, b.dy,
               beginTarget: src,
               endTarget: target,
@@ -3296,12 +3326,25 @@ class _PageCanvasState extends State<PageCanvas> {
               }
             }
             final inlineEditor = _buildInlineEditor(context);
-            final guideSegments = <(Offset, Offset)>[
+            final guideSegments = <(Offset, Offset, SnapGuideKind)>[
               for (final g in _guides)
                 g.vertical
-                    ? (_pageToContent(g.pos, g.start), _pageToContent(g.pos, g.end))
-                    : (_pageToContent(g.start, g.pos), _pageToContent(g.end, g.pos)),
-              ..._tableDividerSegments(page),
+                    ? (
+                        _pageToContent(g.pos, g.start),
+                        _pageToContent(g.pos, g.end),
+                        g.kind,
+                      )
+                    : (
+                        _pageToContent(g.start, g.pos),
+                        _pageToContent(g.end, g.pos),
+                        g.kind,
+                      ),
+              for (final segment in _tableDividerSegments(page))
+                (
+                  segment.$1,
+                  segment.$2,
+                  SnapGuideKind.alignment,
+                ),
             ];
             final connector = _selectedConnector();
             var waypointHandles = const <Offset>[];
@@ -3533,7 +3576,7 @@ class _SelectionPainter extends CustomPainter {
     this.previewTool,
     this.freehandPoints = const <Offset>[],
     this.marquee,
-    this.guides = const <(Offset, Offset)>[],
+    this.guides = const <(Offset, Offset, SnapGuideKind)>[],
     this.waypointHandles = const <Offset>[],
     this.midpointHandles = const <Offset>[],
     this.endpointHandles = const <Offset>[],
@@ -3572,7 +3615,7 @@ class _SelectionPainter extends CustomPainter {
   final Rect? marquee;
 
   /// Alignment guide lines (content-px), drawn while dragging a selection.
-  final List<(Offset, Offset)> guides;
+  final List<(Offset, Offset, SnapGuideKind)> guides;
 
   /// Connector bend points (filled) and segment midpoints (hollow), content-px.
   final List<Offset> waypointHandles;
@@ -3629,9 +3672,13 @@ class _SelectionPainter extends CustomPainter {
     if (guides.isNotEmpty) {
       final guidePaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth
-        ..color = const Color(0xFFFF3B9E); // drawio-style magenta guide
-      for (final (a, b) in guides) {
+        ..strokeWidth = strokeWidth;
+      for (final (a, b, kind) in guides) {
+        guidePaint.color = switch (kind) {
+          SnapGuideKind.alignment => const Color(0xFF29B6F6),
+          SnapGuideKind.spacing => const Color(0xFF8E5CFF),
+          SnapGuideKind.pageCenter => const Color(0xFFFF9800),
+        };
         canvas.drawLine(a, b, guidePaint);
       }
     }

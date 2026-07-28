@@ -48,6 +48,7 @@ class EditorController extends ChangeNotifier {
   EditorTool _tool = EditorTool.select;
   bool _showGrid = true;
   bool _snapToGrid = true;
+  bool _showGuides = true;
   bool _showLineJumps = true;
   bool _colorByLayer = false;
   double _lineJumpRadiusInches = 0.07;
@@ -421,6 +422,7 @@ class EditorController extends ChangeNotifier {
 
   bool get showGrid => _showGrid;
   bool get snapToGrid => _snapToGrid;
+  bool get showGuides => _showGuides;
   bool get showLineJumps => _showLineJumps;
   bool get colorByLayer => _colorByLayer;
   double get lineJumpRadiusInches => _lineJumpRadiusInches;
@@ -433,6 +435,12 @@ class EditorController extends ChangeNotifier {
 
   void toggleSnap() {
     _snapToGrid = !_snapToGrid;
+    notifyListeners();
+  }
+
+  /// Toggle dynamic edge/centre/spacing/page-centre guides (draw.io Guides).
+  void toggleGuides() {
+    _showGuides = !_showGuides;
     notifyListeners();
   }
 
@@ -482,10 +490,17 @@ class EditorController extends ChangeNotifier {
   bool get hasPageGuides => pageGuides.isNotEmpty;
 
   /// Add a guide at [pos] page-inches. Snaps to the grid when enabled.
-  void addPageGuide({required bool vertical, required double pos}) {
+  void addPageGuide({
+    required bool vertical,
+    required double pos,
+    bool snapToGrid = true,
+  }) {
     final id = currentPage?.id;
     if (id == null) return;
-    final g = PageGuide(vertical: vertical, pos: snap(pos));
+    final g = PageGuide(
+      vertical: vertical,
+      pos: snapToGrid ? snap(pos) : pos,
+    );
     final list = List<PageGuide>.of(_pageGuides[id] ?? const <PageGuide>[]);
     // Ignore near-duplicates (within half a grid step).
     final eps = _gridInches * 0.25;
@@ -498,14 +513,15 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Move the guide at [index] to [pos] (snapped). No-op when out of range.
-  void movePageGuide(int index, double pos) {
+  void movePageGuide(int index, double pos, {bool snapToGrid = true}) {
     final id = currentPage?.id;
     final list = id == null ? null : _pageGuides[id];
     if (id == null || list == null || index < 0 || index >= list.length) {
       return;
     }
     final next = List<PageGuide>.of(list);
-    next[index] = next[index].copyWith(pos: snap(pos));
+    next[index] =
+        next[index].copyWith(pos: snapToGrid ? snap(pos) : pos);
     _pageGuides[id] = next;
     notifyListeners();
   }

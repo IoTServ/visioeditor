@@ -203,7 +203,8 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 `CFBundleDocumentTypes`）、Finder 双击 / “打开方式” / `open` 启动即打开（原生 open 事件经
 `MethodChannel` 交给 Dart）。
 
-已补：**对齐 drawio 交互** —— 智能对齐辅助线（拖拽吸附邻近形状边/中心 + 洋红辅助线，纯函数
+已补：**对齐 drawio 交互** —— 智能对齐辅助线（拖拽吸附邻近形状边/中心、连接点、等距间隔与页面中心，
+蓝/紫/橙参考线，纯函数
 `snap_guides.dart` 可单测）、右键上下文菜单、复制/粘贴样式、**分组/取消分组**（往返，Writer
 重建 `<Shape>` 子树）、drawio 快捷键（全选/剪切/置顶置底/分组/复制粘贴样式）与画布键盘缩放。
 
@@ -212,7 +213,7 @@ Writer 扩展为新增/删除 `<Shape>` + 样式/文本补丁；`VsdxFill/VsdxLi
 `LineColorTrans`）。移动拖拽按住 Shift 锁定单轴。
 
 已补：**连接器直线/正交路由**（每条连接器可选直线或正交肘形，`straightRoute` 标记随重路由保持）、
-Alt 拖拽复制。
+Ctrl/Cmd 拖拽复制；Alt/Option 在拖拽期间临时关闭吸附。
 
 已补：**连接器可拖拽折点（waypoints）** —— 选中连接器显示折点（实心）与线段中点（空心）手柄：
 拖中点新增折点、拖折点移动、双击折点删除；`VsdxShape.waypoints` + `VsdxPage.connectorRoute/
@@ -485,11 +486,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   与 `selectedLine/selectedFill`、**属性面板**（虚线下拉 / 起止箭头开关 / 填充·线条不透明度滑块）。
   画布移动拖拽按住 Shift 锁定主轴（`_applyMove`）。测试：引擎线型往返 1 例（共 32/32）、控制器线型
   设置 1 例（App 共 12/12）。`dart analyze` 干净、`flutter build macos` 成功。
-- 2026-07-11 — **对齐 drawio 交互（批次四）——连接器直线/正交路由 + Alt 拖拽复制**：模型加
+- 2026-07-11 — **对齐 drawio 交互（批次四）——连接器直线/正交路由 + 拖拽复制**：模型加
   `VsdxShape.straightRoute`（默认 false=正交肘形，保持既有默认）；`VsdxPage.rerouteConnectors`
   依据该标记选直线或肘形，新增 `setConnectorStyle/isConnectorStraight`；`EditorController`
   `hasConnectorSelected/selectedConnectorStraight/setConnectorStyle`；属性面板“Connector”区
-  （Straight/Orthogonal 选择）。画布 Alt 拖拽=复制后拖动副本。控制器单测（切换直/正交并经重路由保持）。
+  （Straight/Orthogonal 选择）。画布拖拽复制后续已校正为 draw.io 的 Ctrl/Cmd 拖拽；
+  Alt/Option 用于临时绕过吸附。控制器单测（切换直/正交并经重路由保持）。
   `dart analyze` 干净、引擎 32/32、App 13/13、`flutter build macos` 成功。
 - 2026-07-11 — **对齐 drawio 交互（批次五）——连接器可拖拽折点（waypoints）**：模型加
   `VsdxShape.waypoints`（页面英寸，默认空）；`VsdxPage.connectorRoute`（begin→waypoints→end 或
@@ -1325,3 +1327,8 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   pen/brush）+ OLE `\x02OlePres000` 提取 EMF 预览；`VsdxImageCache` 先试嵌入
   DIB，再光栅化矢量显示列表。LibreOffice 平面图 `.wmf` 与 `visio_with_embeded`
   OLE 预览可画。
+- 2026-07-28 — **对齐 draw.io 吸附编辑**：`computeSnap` 新增页面水平/垂直中心吸附
+  （橙色全页线）和三形状等距间隔吸附（紫色间隔线），保留蓝色边/中心/连接点对齐；
+  Diagram / More 增加独立 Guides 开关。修饰键校正为 Ctrl/Cmd 拖拽复制，Alt/Option
+  临时绕过网格、动态/永久参考线、连接点胶合和容器落入；覆盖形状移动/缩放、连接器端点/
+  路径点与标尺参考线。新增纯函数、控制器和画布组件回归。

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../render/shape_bounds.dart';
 import 'canvas_camera.dart';
@@ -153,9 +154,17 @@ class _RulerOverlayState extends State<RulerOverlay> {
     if (delete) {
       if (drag.index != null) _c.removePageGuide(drag.index!);
     } else if (drag.index != null) {
-      _c.movePageGuide(drag.index!, drag.pos);
+      _c.movePageGuide(
+        drag.index!,
+        drag.pos,
+        snapToGrid: !HardwareKeyboard.instance.isAltPressed,
+      );
     } else {
-      _c.addPageGuide(vertical: drag.vertical, pos: drag.pos);
+      _c.addPageGuide(
+        vertical: drag.vertical,
+        pos: drag.pos,
+        snapToGrid: !HardwareKeyboard.instance.isAltPressed,
+      );
     }
     if (mounted) setState(() {});
   }

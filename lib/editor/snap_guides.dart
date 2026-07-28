@@ -12,8 +12,23 @@ class SnapBox {
 
   double get cx => (l + r) / 2;
   double get cy => (b + t) / 2;
+  double get width => r - l;
+  double get height => t - b;
 
-  SnapBox shifted(double dx, double dy) => SnapBox(l + dx, b + dy, r + dx, t + dy);
+  SnapBox shifted(double dx, double dy) =>
+      SnapBox(l + dx, b + dy, r + dx, t + dy);
+}
+
+/// Visual meaning of a dynamic guide.
+enum SnapGuideKind {
+  /// Shape edge / centre, connection-point or permanent-guide alignment.
+  alignment,
+
+  /// Equal gap between three neighbouring shapes.
+  spacing,
+
+  /// Horizontal or vertical centre of the page.
+  pageCenter,
 }
 
 /// A single alignment guide line (in page inches). When [vertical] the line has
@@ -25,12 +40,14 @@ class SnapGuide {
     required this.pos,
     required this.start,
     required this.end,
+    this.kind = SnapGuideKind.alignment,
   });
 
   final bool vertical;
   final double pos;
   final double start;
   final double end;
+  final SnapGuideKind kind;
 
   @override
   bool operator ==(Object other) =>
@@ -38,10 +55,11 @@ class SnapGuide {
       other.vertical == vertical &&
       other.pos == pos &&
       other.start == start &&
-      other.end == end;
+      other.end == end &&
+      other.kind == kind;
 
   @override
-  int get hashCode => Object.hash(vertical, pos, start, end);
+  int get hashCode => Object.hash(vertical, pos, start, end, kind);
 }
 
 /// The nudge (in inches) to align a moving box to its neighbours, plus the
@@ -107,6 +125,8 @@ class SnapMagnet {
 ///
 /// Optional [pageGuides] (permanent ruler guides) and [magnets] (connection
 /// points / other hotspots) compete with neighbour alignments on the same axes.
+/// When [pageBounds] is supplied, the moving box also snaps its centre to the
+/// page centre. Equal gaps between three shapes are detected automatically.
 ///
 /// Pure and Flutter-free so it can be unit-tested directly.
 SnapResult computeSnap({
@@ -115,13 +135,16 @@ SnapResult computeSnap({
   required double threshold,
   List<PageGuide> pageGuides = const <PageGuide>[],
   List<SnapMagnet> magnets = const <SnapMagnet>[],
+  SnapBox? pageBounds,
 }) {
   if (threshold <= 0) return SnapResult.none;
-  if (others.isEmpty && pageGuides.isEmpty && magnets.isEmpty) {
+  if (others.isEmpty &&
+      pageGuides.isEmpty &&
+      magnets.isEmpty &&
+      pageBounds == null) {
     return SnapResult.none;
   }
 
-  // Candidate alignment values on each axis: near edge, centre, far edge.
   List<double> xs(SnapBox b) => <double>[b.l, b.cx, b.r];
   List<double> ys(SnapBox b) => <double>[b.b, b.cy, b.t];
 
@@ -130,39 +153,63 @@ SnapResult computeSnap({
   SnapBox? xMatch;
   var xLinePos = 0.0;
   var xFromPageGuide = false;
+  var xFromPageCenter = false;
+  List<SnapGuide>? xSpacingGuides;
 
   var bestDy = 0.0;
   var bestYDiff = threshold;
   SnapBox? yMatch;
   var yLinePos = 0.0;
   var yFromPageGuide = false;
+  var yFromPageCenter = false;
+  List<SnapGuide>? ySpacingGuides;
 
   final mxs = xs(moving);
   final mys = ys(moving);
 
+  void chooseXAlignment(
+    double diff,
+    double pos,
+    SnapBox? match, {
+    bool pageGuide = false,
+    bool pageCenter = false,
+  }) {
+    if (diff.abs() >= bestXDiff) return;
+    bestXDiff = diff.abs();
+    bestDx = diff;
+    xMatch = match;
+    xLinePos = pos;
+    xFromPageGuide = pageGuide;
+    xFromPageCenter = pageCenter;
+    xSpacingGuides = null;
+  }
+
+  void chooseYAlignment(
+    double diff,
+    double pos,
+    SnapBox? match, {
+    bool pageGuide = false,
+    bool pageCenter = false,
+  }) {
+    if (diff.abs() >= bestYDiff) return;
+    bestYDiff = diff.abs();
+    bestDy = diff;
+    yMatch = match;
+    yLinePos = pos;
+    yFromPageGuide = pageGuide;
+    yFromPageCenter = pageCenter;
+    ySpacingGuides = null;
+  }
+
   for (final o in others) {
     for (final ox in xs(o)) {
       for (final mx in mxs) {
-        final diff = ox - mx;
-        if (diff.abs() < bestXDiff) {
-          bestXDiff = diff.abs();
-          bestDx = diff;
-          xMatch = o;
-          xLinePos = ox;
-          xFromPageGuide = false;
-        }
+        chooseXAlignment(ox - mx, ox, o);
       }
     }
     for (final oy in ys(o)) {
       for (final my in mys) {
-        final diff = oy - my;
-        if (diff.abs() < bestYDiff) {
-          bestYDiff = diff.abs();
-          bestDy = diff;
-          yMatch = o;
-          yLinePos = oy;
-          yFromPageGuide = false;
-        }
+        chooseYAlignment(oy - my, oy, o);
       }
     }
   }
@@ -172,48 +219,218 @@ SnapResult computeSnap({
   for (final m in magnets) {
     final magnetBox = SnapBox(m.x, m.y, m.x, m.y);
     for (final mx in mxs) {
-      final diff = m.x - mx;
-      if (diff.abs() < bestXDiff) {
-        bestXDiff = diff.abs();
-        bestDx = diff;
-        xMatch = magnetBox;
-        xLinePos = m.x;
-        xFromPageGuide = false;
-      }
+      chooseXAlignment(m.x - mx, m.x, magnetBox);
     }
     for (final my in mys) {
-      final diff = m.y - my;
-      if (diff.abs() < bestYDiff) {
-        bestYDiff = diff.abs();
-        bestDy = diff;
-        yMatch = magnetBox;
-        yLinePos = m.y;
-        yFromPageGuide = false;
-      }
+      chooseYAlignment(m.y - my, m.y, magnetBox);
     }
   }
 
   for (final g in pageGuides) {
     if (g.vertical) {
       for (final mx in mxs) {
-        final diff = g.pos - mx;
-        if (diff.abs() < bestXDiff) {
-          bestXDiff = diff.abs();
-          bestDx = diff;
-          xMatch = null;
-          xLinePos = g.pos;
-          xFromPageGuide = true;
-        }
+        chooseXAlignment(g.pos - mx, g.pos, null, pageGuide: true);
       }
     } else {
       for (final my in mys) {
-        final diff = g.pos - my;
-        if (diff.abs() < bestYDiff) {
-          bestYDiff = diff.abs();
-          bestDy = diff;
-          yMatch = null;
-          yLinePos = g.pos;
-          yFromPageGuide = true;
+        chooseYAlignment(g.pos - my, g.pos, null, pageGuide: true);
+      }
+    }
+  }
+
+  // The page centre is a dedicated orange guide in draw.io. Only the moving
+  // centre participates; edges do not stick to the page centre.
+  if (pageBounds != null) {
+    chooseXAlignment(
+      pageBounds.cx - moving.cx,
+      pageBounds.cx,
+      null,
+      pageCenter: true,
+    );
+    chooseYAlignment(
+      pageBounds.cy - moving.cy,
+      pageBounds.cy,
+      null,
+      pageCenter: true,
+    );
+  }
+
+  void chooseXSpacing(double dx, List<SnapGuide> spacingGuides) {
+    if (dx.abs() >= bestXDiff) return;
+    bestXDiff = dx.abs();
+    bestDx = dx;
+    xMatch = null;
+    xFromPageGuide = false;
+    xFromPageCenter = false;
+    xSpacingGuides = spacingGuides;
+  }
+
+  void chooseYSpacing(double dy, List<SnapGuide> spacingGuides) {
+    if (dy.abs() >= bestYDiff) return;
+    bestYDiff = dy.abs();
+    bestDy = dy;
+    yMatch = null;
+    yFromPageGuide = false;
+    yFromPageCenter = false;
+    ySpacingGuides = spacingGuides;
+  }
+
+  // Equal-spacing guides. Handle both common arrangements:
+  //   A [gap] moving [gap] B
+  //   A [gap] B [same gap] moving
+  // and their vertical equivalents.
+  for (var i = 0; i < others.length; i++) {
+    for (var j = i + 1; j < others.length; j++) {
+      final first = others[i];
+      final second = others[j];
+      final firstIsLeft = first.l <= second.l;
+      final left = firstIsLeft ? first : second;
+      final right = firstIsLeft ? second : first;
+      final sharesRow =
+          math.min(left.t, right.t) >= math.max(left.b, right.b) - threshold &&
+          math.min(moving.t, left.t) >=
+              math.max(moving.b, left.b) - threshold &&
+          math.min(moving.t, right.t) >=
+              math.max(moving.b, right.b) - threshold;
+      if (left.r <= right.l && sharesRow) {
+        final available = right.l - left.r - moving.width;
+        if (available >= 0) {
+          final targetLeft = left.r + available / 2;
+          final dx = targetLeft - moving.l;
+          final snapped = moving.shifted(dx, 0);
+          chooseXSpacing(dx, <SnapGuide>[
+            SnapGuide(
+              vertical: false,
+              pos: snapped.cy,
+              start: left.r,
+              end: snapped.l,
+              kind: SnapGuideKind.spacing,
+            ),
+            SnapGuide(
+              vertical: false,
+              pos: snapped.cy,
+              start: snapped.r,
+              end: right.l,
+              kind: SnapGuideKind.spacing,
+            ),
+          ]);
+        }
+        final existingGap = right.l - left.r;
+        if (moving.l >= right.r - threshold) {
+          final dx = right.r + existingGap - moving.l;
+          final snapped = moving.shifted(dx, 0);
+          chooseXSpacing(dx, <SnapGuide>[
+            SnapGuide(
+              vertical: false,
+              pos: snapped.cy,
+              start: left.r,
+              end: right.l,
+              kind: SnapGuideKind.spacing,
+            ),
+            SnapGuide(
+              vertical: false,
+              pos: snapped.cy,
+              start: right.r,
+              end: snapped.l,
+              kind: SnapGuideKind.spacing,
+            ),
+          ]);
+        }
+        if (moving.r <= left.l + threshold) {
+          final dx = left.l - existingGap - moving.r;
+          final snapped = moving.shifted(dx, 0);
+          chooseXSpacing(dx, <SnapGuide>[
+            SnapGuide(
+              vertical: false,
+              pos: snapped.cy,
+              start: snapped.r,
+              end: left.l,
+              kind: SnapGuideKind.spacing,
+            ),
+            SnapGuide(
+              vertical: false,
+              pos: snapped.cy,
+              start: left.r,
+              end: right.l,
+              kind: SnapGuideKind.spacing,
+            ),
+          ]);
+        }
+      }
+
+      final firstIsBelow = first.b <= second.b;
+      final below = firstIsBelow ? first : second;
+      final above = firstIsBelow ? second : first;
+      final sharesColumn =
+          math.min(below.r, above.r) >=
+              math.max(below.l, above.l) - threshold &&
+          math.min(moving.r, below.r) >=
+              math.max(moving.l, below.l) - threshold &&
+          math.min(moving.r, above.r) >=
+              math.max(moving.l, above.l) - threshold;
+      if (below.t <= above.b && sharesColumn) {
+        final available = above.b - below.t - moving.height;
+        if (available >= 0) {
+          final targetBottom = below.t + available / 2;
+          final dy = targetBottom - moving.b;
+          final snapped = moving.shifted(0, dy);
+          chooseYSpacing(dy, <SnapGuide>[
+            SnapGuide(
+              vertical: true,
+              pos: snapped.cx,
+              start: below.t,
+              end: snapped.b,
+              kind: SnapGuideKind.spacing,
+            ),
+            SnapGuide(
+              vertical: true,
+              pos: snapped.cx,
+              start: snapped.t,
+              end: above.b,
+              kind: SnapGuideKind.spacing,
+            ),
+          ]);
+        }
+        final existingGap = above.b - below.t;
+        if (moving.b >= above.t - threshold) {
+          final dy = above.t + existingGap - moving.b;
+          final snapped = moving.shifted(0, dy);
+          chooseYSpacing(dy, <SnapGuide>[
+            SnapGuide(
+              vertical: true,
+              pos: snapped.cx,
+              start: below.t,
+              end: above.b,
+              kind: SnapGuideKind.spacing,
+            ),
+            SnapGuide(
+              vertical: true,
+              pos: snapped.cx,
+              start: above.t,
+              end: snapped.b,
+              kind: SnapGuideKind.spacing,
+            ),
+          ]);
+        }
+        if (moving.t <= below.b + threshold) {
+          final dy = below.b - existingGap - moving.t;
+          final snapped = moving.shifted(0, dy);
+          chooseYSpacing(dy, <SnapGuide>[
+            SnapGuide(
+              vertical: true,
+              pos: snapped.cx,
+              start: snapped.t,
+              end: below.b,
+              kind: SnapGuideKind.spacing,
+            ),
+            SnapGuide(
+              vertical: true,
+              pos: snapped.cx,
+              start: below.t,
+              end: above.b,
+              kind: SnapGuideKind.spacing,
+            ),
+          ]);
         }
       }
     }
@@ -221,31 +438,69 @@ SnapResult computeSnap({
 
   final guides = <SnapGuide>[];
   final snapped = moving.shifted(bestDx, bestDy);
-  final snappedX = xFromPageGuide || xMatch != null;
-  final snappedY = yFromPageGuide || yMatch != null;
+  final snappedX =
+      xFromPageGuide ||
+      xFromPageCenter ||
+      xMatch != null ||
+      xSpacingGuides != null;
+  final snappedY =
+      yFromPageGuide ||
+      yFromPageCenter ||
+      yMatch != null ||
+      ySpacingGuides != null;
   if (snappedX) {
-    guides.add(SnapGuide(
-      vertical: true,
-      pos: xLinePos,
-      start: xMatch == null
-          ? snapped.b
-          : math.min(snapped.b, xMatch.b),
-      end: xMatch == null
-          ? snapped.t
-          : math.max(snapped.t, xMatch.t),
-    ));
+    final spacing = xSpacingGuides;
+    final match = xMatch;
+    if (spacing != null) {
+      guides.addAll(spacing);
+    } else {
+      guides.add(
+        SnapGuide(
+          vertical: true,
+          pos: xLinePos,
+          start: xFromPageCenter
+              ? pageBounds!.b
+              : match == null
+              ? snapped.b
+              : math.min(snapped.b, match.b),
+          end: xFromPageCenter
+              ? pageBounds!.t
+              : match == null
+              ? snapped.t
+              : math.max(snapped.t, match.t),
+          kind: xFromPageCenter
+              ? SnapGuideKind.pageCenter
+              : SnapGuideKind.alignment,
+        ),
+      );
+    }
   }
   if (snappedY) {
-    guides.add(SnapGuide(
-      vertical: false,
-      pos: yLinePos,
-      start: yMatch == null
-          ? snapped.l
-          : math.min(snapped.l, yMatch.l),
-      end: yMatch == null
-          ? snapped.r
-          : math.max(snapped.r, yMatch.r),
-    ));
+    final spacing = ySpacingGuides;
+    final match = yMatch;
+    if (spacing != null) {
+      guides.addAll(spacing);
+    } else {
+      guides.add(
+        SnapGuide(
+          vertical: false,
+          pos: yLinePos,
+          start: yFromPageCenter
+              ? pageBounds!.l
+              : match == null
+              ? snapped.l
+              : math.min(snapped.l, match.l),
+          end: yFromPageCenter
+              ? pageBounds!.r
+              : match == null
+              ? snapped.r
+              : math.max(snapped.r, match.r),
+          kind: yFromPageCenter
+              ? SnapGuideKind.pageCenter
+              : SnapGuideKind.alignment,
+        ),
+      );
+    }
   }
   return SnapResult(
     bestDx,

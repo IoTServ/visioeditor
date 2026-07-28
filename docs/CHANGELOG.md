@@ -49,9 +49,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Editing**: select, move, resize (8 handles; geometry scales with the box;
   **Shift** locks the aspect ratio, **Alt** resizes from the centre),
   **rotate** (top handle), delete, snapshot-based undo / redo, duplicate,
-  copy / paste (Cmd+C / Cmd+V), and **Alt-drag to duplicate** on the canvas.
-  Dragging snaps to the grid (and to neighbours); **Esc cancels an in-progress
-  drag**, reverting it.
+  copy / paste (Cmd+C / Cmd+V), and **Ctrl/Cmd-drag to duplicate** on the canvas.
+  Dragging snaps to the grid, nearby edges/centres, connection points, equal
+  spacing and the orange page centre; **Alt/Option temporarily bypasses all
+  snapping** for shapes, connector points and ruler guides. **Esc cancels an
+  in-progress drag**, reverting it.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview. New shapes **inherit the last-used fill / line style**
   (drawio's `currentVertexStyle`).
@@ -301,8 +303,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   step forward / backward) from the inspector. Hold **Shift while dragging** to
   constrain the move to one axis.
 - **Smart alignment guides** (drawio-style): dragging a shape snaps its edges
-  and centre to nearby shapes and draws magenta guide lines to what it lined
-  up with.
+  and centre to nearby shapes, equal spacing, connection points and the page
+  centre. Blue/purple guides show shape/spacing alignment and the page-centre
+  guide is orange; the Diagram panel has an independent **Guides** toggle.
 - **Right-click context menu**: cut / copy / paste / duplicate / delete, bring
   to front / send to back, group / ungroup, copy & paste style, edit text; on
   empty canvas, paste / **paste here** (at the cursor) / select all / fit to

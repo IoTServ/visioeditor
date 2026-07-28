@@ -1528,6 +1528,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 _enterPresentation();
                               case 'snap':
                                 cur.toggleSnap();
+                              case 'guides':
+                                cur.toggleGuides();
                               case 'lineJumps':
                                 cur.toggleLineJumps();
                               case 'agentPreview':
@@ -1676,6 +1678,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'snap',
                               checked: cur.snapToGrid,
                               child: Text(el.snapToGrid),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'guides',
+                              checked: cur.showGuides,
+                              child: Text(el.guides),
                             ),
                             CheckedPopupMenuItem<String>(
                               value: 'lineJumps',
@@ -5715,6 +5722,13 @@ class _PageFormatPanel extends StatelessWidget {
             title: Text(EditorL10n.of(context).snapToGrid),
             value: controller.snapToGrid,
             onChanged: (_) => controller.toggleSnap(),
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(EditorL10n.of(context).guides),
+            value: controller.showGuides,
+            onChanged: (_) => controller.toggleGuides(),
           ),
           SwitchListTile(
             dense: true,
