@@ -49,6 +49,12 @@ class EditorCallbackShortcuts extends StatelessWidget {
     if (chord && !alt) {
       // Keep New/Open/Save/Close available while typing in a search box.
       if (_isDocumentChord(key)) return false;
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowRight ||
+          key == LogicalKeyboardKey.arrowUp ||
+          key == LogicalKeyboardKey.arrowDown) {
+        return true;
+      }
       // Defer every other Cmd/Ctrl(+Shift) letter and bracket chord so find,
       // rotate, duplicate, group, lock, bold, undo, etc. cannot steal keys
       // from the field (and so default text-editing shortcuts can run).
@@ -56,6 +62,10 @@ class EditorCallbackShortcuts extends StatelessWidget {
           key == LogicalKeyboardKey.bracketRight) {
         return true;
       }
+      return key.keyId >= LogicalKeyboardKey.keyA.keyId &&
+          key.keyId <= LogicalKeyboardKey.keyZ.keyId;
+    }
+    if (alt) {
       return key.keyId >= LogicalKeyboardKey.keyA.keyId &&
           key.keyId <= LogicalKeyboardKey.keyZ.keyId;
     }

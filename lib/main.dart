@@ -1126,6 +1126,32 @@ class _EditorHomePageState extends State<EditorHomePage> {
     bindings[const SingleActivator(LogicalKeyboardKey.arrowDown)] =
         () => nudge(0, -1);
 
+    // draw.io: Cmd/Ctrl+Shift+arrow adjusts the selected shape's right or
+    // lower edge by one grid step (Arrange-panel Width / Height).
+    void resizeSelection(double dw, double dh) {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      final geometry = cur?.selectedGeometry;
+      if (cur == null ||
+          geometry == null ||
+          cur.singleSelected?.is1D == true ||
+          cur.editingConnectionPoints) {
+        return;
+      }
+      final step = cur.snapToGrid ? cur.gridInches : 0.1;
+      if (dw != 0) cur.setSelectedWidth(geometry.w + dw * step);
+      if (dh != 0) cur.setSelectedHeight(geometry.h + dh * step);
+    }
+
+    mod(LogicalKeyboardKey.arrowLeft, () => resizeSelection(-1, 0),
+        shift: true);
+    mod(LogicalKeyboardKey.arrowRight, () => resizeSelection(1, 0),
+        shift: true);
+    mod(LogicalKeyboardKey.arrowUp, () => resizeSelection(0, -1),
+        shift: true);
+    mod(LogicalKeyboardKey.arrowDown, () => resizeSelection(0, 1),
+        shift: true);
+
     mod(LogicalKeyboardKey.keyN, _newDoc);
     mod(LogicalKeyboardKey.keyO, _open);
     mod(LogicalKeyboardKey.keyW, () {
@@ -1243,6 +1269,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
         cur.rotateSelection90(clockwise: false);
       }
     }, shift: true);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyR,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.canClearWaypoints) {
+        cur.clearSelectedConnectorWaypoints();
+      }
+    };
     mod(LogicalKeyboardKey.keyF, _openFind);
     mod(LogicalKeyboardKey.keyH, () {
       _openFind(replace: true);

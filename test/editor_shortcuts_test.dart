@@ -52,6 +52,19 @@ void main() {
       c.moveSelectionBy(dx * step, dy * step);
     }
 
+    void resizeSelection(double dw, double dh) {
+      if (isEditableTextFocused()) return;
+      final geometry = c.selectedGeometry;
+      if (geometry == null ||
+          c.singleSelected?.is1D == true ||
+          c.editingConnectionPoints) {
+        return;
+      }
+      final step = c.snapToGrid ? c.gridInches : 0.1;
+      if (dw != 0) c.setSelectedWidth(geometry.w + dw * step);
+      if (dh != 0) c.setSelectedHeight(geometry.h + dh * step);
+    }
+
     // Match app bindings: these do not themselves guard on text focus — the
     // host must defer the chords so EditableText receives them.
     void undo() {
@@ -69,6 +82,36 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => nudge(1, 0),
       const SingleActivator(LogicalKeyboardKey.arrowUp): () => nudge(0, 1),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowLeft,
+        meta: true,
+        shift: true,
+      ): () => resizeSelection(-1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowRight,
+        meta: true,
+        shift: true,
+      ): () => resizeSelection(1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowUp,
+        meta: true,
+        shift: true,
+      ): () => resizeSelection(0, -1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowDown,
+        meta: true,
+        shift: true,
+      ): () => resizeSelection(0, 1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowRight,
+        control: true,
+        shift: true,
+      ): () => resizeSelection(1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.keyR,
+        alt: true,
+        shift: true,
+      ): c.clearSelectedConnectorWaypoints,
       const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyB, meta: true): bold,
@@ -156,6 +199,45 @@ void main() {
     final after = c.currentPage!.findShapeById(id)!;
     expect(after.pinX, closeTo(before.pinX + 0.1, 1e-9));
     expect(after.pinY, closeTo(before.pinY, 1e-9));
+  });
+
+  testWidgets('Cmd+Shift+arrow resizes the selected shape',
+      (tester) async {
+    final c = ctrlWithRect();
+    if (c.snapToGrid) c.toggleSnap();
+    final id = c.selection.single;
+    final before = c.currentPage!.findShapeById(id)!;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.width, closeTo(before.width + 0.1, 1e-9));
+    expect(after.height, before.height);
+  });
+
+  testWidgets('Alt+Shift+R clears selected connector waypoints',
+      (tester) async {
+    final c = ctrlWithRect();
+    c.createConnector(2, 3, 6, 3);
+    final connector = c.singleSelectedId!;
+    c.addWaypoint(connector, 0, const Offset2D(4, 4));
+    expect(c.canClearWaypoints, isTrue);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.findShapeById(connector)!.waypoints, isEmpty);
   });
 
   testWidgets('Backspace edits search field instead of deleting shapes',

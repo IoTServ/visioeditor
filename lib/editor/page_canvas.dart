@@ -487,26 +487,56 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // --- Hit testing -----------------------------------------------------------
 
-  int? _hitTest(Offset viewportPos) {
+  List<int> _hitTests(Offset viewportPos) {
     final page = _page;
-    if (page == null) return null;
+    if (page == null) return const <int>[];
     final pt = _contentToPageInches(_viewportToContent(viewportPos));
     final bounds = buildShapeBounds(page);
     // Prefer the top-most shape in draw order (parents before children,
-    // siblings in list order), so we walk the flattened order and keep the
-    // last hit. Skip shapes on hidden layers (match paint).
+    // siblings in list order). Keep every hit in bottom-to-top order so
+    // Alt-click can cycle through overlapping shapes like draw.io.
     // 1-D strokes: AABB is only a coarse filter — require proximity to the
     // polyline so diagonal connectors do not steal hits from shapes below.
-    int? best;
+    final hits = <int>[];
     for (final id in _drawOrder(page)) {
       final s = page.findShapeById(id);
       if (s == null || !page.isShapeVisible(s)) continue;
       final r = bounds[id];
       if (r == null || !r.contains(pt)) continue;
       if (s.is1D && !_hit1DStroke(page, s, pt)) continue;
-      best = id;
+      hits.add(id);
     }
-    return best;
+    return hits;
+  }
+
+  int? _hitTest(Offset viewportPos) {
+    final hits = _hitTests(viewportPos);
+    return hits.isEmpty ? null : hits.last;
+  }
+
+  /// draw.io Alt-click: select the next object below the top-most selected hit.
+  ///
+  /// If the current selection is a group/chart root while a nested child is the
+  /// raw top hit, the first Alt-click drills into that child. Repeated clicks
+  /// then cycle down the local z-order and wrap.
+  int? _hitBelow(Offset viewportPos) {
+    final hits = _hitTests(viewportPos);
+    if (hits.isEmpty) return null;
+    final page = _page;
+    final top = hits.last;
+    for (var i = hits.length - 1; i >= 0; i--) {
+      final selected = hits[i];
+      if (!_c.isSelected(selected)) continue;
+      // A normal click may have selected a chart/group root while the raw hit
+      // is one of its children. Drill into that child before cycling below.
+      var parent = page?.findParentId(top);
+      while (parent != null) {
+        if (parent == selected) return top;
+        parent = page?.findParentId(parent);
+      }
+      return hits[(i - 1 + hits.length) % hits.length];
+    }
+    return top;
   }
 
   /// Prefer the chart group root when clicking a series child (Alt drills in).
@@ -981,16 +1011,21 @@ class _PageCanvasState extends State<PageCanvas> {
       if (wasText) _startEditingNewTextBox();
       return;
     }
-    final hit0 = _hitTest(d.localPosition);
+    final alt = HardwareKeyboard.instance.isAltPressed;
+    final hit0 = alt ? _hitBelow(d.localPosition) : _hitTest(d.localPosition);
     final hit = hit0 == null ? null : _chartAwareHit(hit0);
-    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final toggle = HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
     if (hit != null) {
-      if (shift) {
+      if (alt) {
+        _c.selectOnly(hit);
+      } else if (toggle) {
         _c.toggleSelection(hit);
       } else {
         _c.selectOnly(hit);
       }
-    } else if (!shift) {
+    } else if (!toggle) {
       _c.clearSelection();
     }
   }
@@ -1553,6 +1588,13 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     _lastPointer = d.localPosition;
+    // Space always owns the drag, even when it starts over a selected shape,
+    // resize handle or non-select tool (draw.io temporary hand tool).
+    if (HardwareKeyboard.instance.logicalKeysPressed
+        .contains(LogicalKeyboardKey.space)) {
+      _mode = _DragMode.panCanvas;
+      return;
+    }
     if (_c.editingConnectionPoints) {
       _onConnPointEditPanStart(d.localPosition);
       return;
@@ -1699,9 +1741,6 @@ class _PageCanvasState extends State<PageCanvas> {
       _moveAccumInches = Offset.zero;
       _moveAppliedInches = Offset.zero;
       _moveStartBounds = _selectionUnionInches();
-    } else if (HardwareKeyboard.instance.logicalKeysPressed
-        .contains(LogicalKeyboardKey.space)) {
-      _mode = _DragMode.panCanvas;
     } else if (_isTouchUi) {
       // Touch: empty-canvas drag pans. Holding still ~400ms converts to
       // marquee (see [_onPanUpdate]) so multi-select stays available.
@@ -2912,21 +2951,30 @@ class _PageCanvasState extends State<PageCanvas> {
       for (final sh in page.shapes)
         if (page.isShapeVisible(sh)) sh.id,
     };
+    final intersecting = HardwareKeyboard.instance.isAltPressed;
+    final candidates =
+        intersecting ? _drawOrder(page).toSet() : topLevel;
     final ids = <int>[];
     for (final entry in bounds.entries) {
-      if (!topLevel.contains(entry.key)) continue;
+      if (!candidates.contains(entry.key)) continue;
       final box = entry.value;
-      // Page inches are Y-up; [Rect.top]/[Rect.bottom] store minY/maxY.
-      if (box.left > r ||
+      // Default draw.io marquee selects only fully enclosed top-level shapes.
+      // Alt expands this to every visible shape/connector that intersects.
+      final misses = box.left > r ||
           box.right < l ||
           box.top > top ||
-          box.bottom < bottom) {
-        continue;
-      }
+          box.bottom < bottom;
+      final contained = box.left >= l &&
+          box.right <= r &&
+          box.top >= bottom &&
+          box.bottom <= top;
+      if (intersecting ? misses : !contained) continue;
       final sh = page.findShapeById(entry.key);
       if (sh == null) continue;
-      // 1-D: require the stroke (not the diagonal AABB) to meet the marquee.
-      if (sh.is1D) {
+      // For Alt-intersection, require the actual 1-D stroke (not its diagonal
+      // AABB) to meet the marquee. Default containment already checked the
+      // connector's complete routed bounds above.
+      if (intersecting && sh.is1D) {
         final segs = _strokePageSegments(page, sh);
         var hit = false;
         for (final (p0, p1) in segs) {
@@ -2939,7 +2987,18 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       ids.add(entry.key);
     }
-    _c.setSelection(ids);
+    final toggle = HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    if (toggle) {
+      final next = Set<int>.of(_c.selection);
+      for (final id in ids) {
+        if (!next.remove(id)) next.add(id);
+      }
+      _c.setSelection(next);
+    } else {
+      _c.setSelection(ids);
+    }
   }
 
   /// True when segment [a]→[b] intersects or lies inside axis-aligned [r].
@@ -3092,11 +3151,16 @@ class _PageCanvasState extends State<PageCanvas> {
   void _onPointerSignal(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
     if (_editingShapeId != null) _commitTextEdit();
-    final zoomModifier = HardwareKeyboard.instance.isControlPressed ||
+    final zoomModifier = HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (zoomModifier) {
       final factor = e.scrollDelta.dy < 0 ? 1.1 : 1 / 1.1;
       _zoomBy(factor, e.localPosition);
+    } else if (HardwareKeyboard.instance.isShiftPressed) {
+      final dx =
+          e.scrollDelta.dy != 0 ? e.scrollDelta.dy : e.scrollDelta.dx;
+      setState(() => _offset -= Offset(dx, 0));
     } else {
       setState(() => _offset -= e.scrollDelta);
     }

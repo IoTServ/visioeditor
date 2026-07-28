@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +58,14 @@ Offset _pagePoint(
     (page.heightInches - y) / page.heightInches * camera.content.height,
   );
   return canvasOrigin + camera.offset + content * camera.scale;
+}
+
+Future<void> _tapCanvasAt(WidgetTester tester, Offset point) async {
+  await tester.tapAt(point);
+  // PageCanvas also recognises double taps, so the single-tap callback waits
+  // for the double-tap window to expire.
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pumpAndSettle();
 }
 
 int _addRect(EditorController controller) {
@@ -235,6 +244,144 @@ void main() {
     expect(controller.singleSelectedId, isNot(originalId));
   });
 
+  testWidgets('Alt click cycles down through overlapping shapes',
+      (tester) async {
+    late int bottom;
+    late int top;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        bottom = _addRect(c);
+        top = _addRect(c);
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final point = _pagePoint(origin, camera, page, 3, 5);
+
+    await _tapCanvasAt(tester, point);
+    expect(controller.singleSelectedId, top);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await _tapCanvasAt(tester, point);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    expect(controller.singleSelectedId, bottom);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await _tapCanvasAt(tester, point);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    expect(controller.singleSelectedId, top);
+  });
+
+  testWidgets('Ctrl click toggles shapes in a multi-selection', (tester) async {
+    late int a;
+    late int b;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        a = _addRect(c);
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          6,
+          5,
+        );
+        b = c.singleSelectedId!;
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+
+    await _tapCanvasAt(tester, _pagePoint(origin, camera, page, 3, 5));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await _tapCanvasAt(tester, _pagePoint(origin, camera, page, 6, 5));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    expect(controller.selection, unorderedEquals(<int>[a, b]));
+  });
+
+  testWidgets('Space drag pans even when it starts on a selected shape',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) => id = _addRect(c),
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final beforeShape = page.findShapeById(id)!;
+    final beforeOffset = camera.offset;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start =
+        _pagePoint(origin, camera, page, beforeShape.pinX, beforeShape.pinY);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.dragFrom(start, const Offset(48, 24));
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+
+    final afterShape = controller.currentPage!.findShapeById(id)!;
+    expect(afterShape.pinX, beforeShape.pinX);
+    expect(afterShape.pinY, beforeShape.pinY);
+    expect(camera.offset, isNot(beforeOffset));
+  });
+
+  testWidgets('Alt wheel zooms and Shift wheel scrolls horizontally',
+      (tester) async {
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      camera: camera,
+    );
+    final point = tester.getCenter(find.byType(PageCanvas));
+    final beforeScale = camera.scale;
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: point,
+        scrollDelta: const Offset(0, -20),
+      ),
+    );
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    expect(camera.scale, greaterThan(beforeScale));
+
+    final beforeOffset = camera.offset;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: point,
+        scrollDelta: const Offset(0, 20),
+      ),
+    );
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+
+    expect(camera.offset.dx, isNot(beforeOffset.dx));
+    expect(camera.offset.dy, closeTo(beforeOffset.dy, 1e-9));
+  });
+
   testWidgets('right resize handle changes geometry and undo restores it',
       (tester) async {
     late int id;
@@ -338,7 +485,7 @@ void main() {
     expect(restored.pinY, closeTo(before.pinY, 1e-9));
   });
 
-  testWidgets('marquee drag selects shapes whose bounds intersect',
+  testWidgets('marquee drag selects fully enclosed shapes',
       (tester) async {
     late int a;
     late int b;
@@ -391,6 +538,49 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.selection, unorderedEquals(<int>[a, b]));
+  });
+
+  testWidgets('Alt marquee includes a partially intersecting shape',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          3,
+          8,
+        );
+        id = c.singleSelectedId!;
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(origin, camera, page, 0.5, 9.5);
+    final end = _pagePoint(origin, camera, page, 2.5, 6.5);
+
+    await tester.dragFrom(start, end - start);
+    await tester.pumpAndSettle();
+    expect(controller.selection, isEmpty);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.dragFrom(start, end - start);
+    await tester.pumpAndSettle();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+
+    expect(controller.singleSelectedId, id);
   });
 
   testWidgets('connector endpoint drag detaches once and undo restores glue',

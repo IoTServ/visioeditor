@@ -52,8 +52,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   copy / paste (Cmd+C / Cmd+V), and **Ctrl/Cmd-drag to duplicate** on the canvas.
   Dragging snaps to the grid, nearby edges/centres, connection points, equal
   spacing and the orange page centre; **Alt/Option temporarily bypasses all
-  snapping** for shapes, connector points and ruler guides. **Esc cancels an
-  in-progress drag**, reverting it.
+  snapping** for shapes, connector points and ruler guides. Arrow keys nudge;
+  **Ctrl/Cmd+Shift+Arrow** adjusts width/height, and **Alt+Shift+R** clears
+  connector waypoints. **Esc cancels an in-progress drag**, reverting it.
 - **Create shapes**: rectangle, ellipse, line (drag or click) with a dashed
   creation preview. New shapes **inherit the last-used fill / line style**
   (drawio's `currentVertexStyle`).
@@ -297,8 +298,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Recent files** (persisted) and an **unsaved-changes guard** on close.
 - **Multiple documents in tabs**: open several `.vsdx` files at once (top tab
   bar with dirty markers + close); drag-drop multiple files opens a tab each.
-- **Multi-select**: Shift-click to toggle, rubber-band marquee to box-select
-  (hold Space to pan); **align** (left/center/right/top/middle/bottom),
+- **Multi-select**: Shift/Ctrl/Cmd-click toggles items; Alt-click cycles through
+  overlapping shapes. Marquee selects fully enclosed items, while Alt-marquee
+  includes intersecting and nested items. Hold Space and drag anywhere to pan;
+  Alt-wheel zooms and Shift-wheel scrolls horizontally. **Align**
+  (left/center/right/top/middle/bottom),
   **distribute** (horizontal/vertical) and **z-order** (to front / back and one
   step forward / backward) from the inspector. Hold **Shift while dragging** to
   constrain the move to one axis.
