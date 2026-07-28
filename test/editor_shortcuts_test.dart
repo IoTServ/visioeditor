@@ -65,6 +65,12 @@ void main() {
       if (dh != 0) c.setSelectedHeight(geometry.h + dh * step);
     }
 
+    void adjustWholeLabelTextSize(double deltaPoints) {
+      if (!c.hasSelection) return;
+      if (isEditableTextFocused() && c.textEditShapeId == null) return;
+      c.adjustWholeLabelTextSizePoints(deltaPoints);
+    }
+
     // Match app bindings: these do not themselves guard on text focus — the
     // host must defer the chords so EditableText receives them.
     void undo() {
@@ -107,6 +113,16 @@ void main() {
         control: true,
         shift: true,
       ): () => resizeSelection(1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.numpadAdd,
+        meta: true,
+        shift: true,
+      ): () => adjustWholeLabelTextSize(1),
+      const SingleActivator(
+        LogicalKeyboardKey.numpadSubtract,
+        control: true,
+        shift: true,
+      ): () => adjustWholeLabelTextSize(-1),
       const SingleActivator(
         LogicalKeyboardKey.keyR,
         alt: true,
@@ -272,6 +288,82 @@ void main() {
     expect(
       c.currentPage!.findShapeById(id)!.height,
       isNot(closeTo(beforeHeight, 1e-9)),
+    );
+  });
+
+  testWidgets('Cmd+Shift+NumPad plus adjusts the whole selected label', (
+    tester,
+  ) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    c.setShapeText(id, 'Label');
+    final before =
+        c.currentPage!
+            .findShapeById(id)!
+            .richText
+            .runs
+            .first
+            .charStyle
+            .fontSizeInches *
+        72;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpadAdd);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final after =
+        c.currentPage!
+            .findShapeById(id)!
+            .richText
+            .runs
+            .first
+            .charStyle
+            .fontSizeInches *
+        72;
+    expect(after, closeTo(before + 1, 1e-9));
+  });
+
+  testWidgets('NumPad text-size chord is deferred in a regular text field', (
+    tester,
+  ) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    c.setShapeText(id, 'Label');
+    final before = c.currentPage!
+        .findShapeById(id)!
+        .richText
+        .runs
+        .first
+        .charStyle;
+    final input = TextEditingController(text: 'query');
+    addTearDown(input.dispose);
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(controller: input, autofocus: true),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpadSubtract);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(
+      c.currentPage!
+          .findShapeById(id)!
+          .richText
+          .runs
+          .first
+          .charStyle
+          .fontSizeInches,
+      before.fontSizeInches,
     );
   });
 

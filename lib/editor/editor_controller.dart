@@ -88,6 +88,7 @@ class EditorController extends ChangeNotifier {
   // shape, inherited by newly-created shapes. Reset per document.
   VsdxFill? _memoFill;
   VsdxLine? _memoLine;
+
   /// Last non-zero SoftEdgesSize so toggle off→on restores the user's radius.
   double _memoSoftEdgesInches = 0.05;
 
@@ -2917,7 +2918,12 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Delete all selected shapes as a single undo step.
-  void deleteSelection() {
+  ///
+  /// Plain deletion preserves incident connectors as floating lines, matching
+  /// draw.io's Delete / Backspace behaviour. When [includeConnected] is true,
+  /// every unlocked connector glued to a removed shape (or descendant) is
+  /// deleted too — draw.io's Shift+toolbar-delete gesture.
+  void deleteSelection({bool includeConnected = false}) {
     if (_editingConnectionPoints) {
       removeSelectedConnectionPoint();
       return;
@@ -2926,21 +2932,41 @@ class EditorController extends ChangeNotifier {
     final page = currentPage;
     if (doc == null || page == null || _selection.isEmpty) return;
     var next = page;
-    final removed = <int>[];
+    final removedRoots = <int>[];
     for (final id in _selection) {
       final s = page.findShapeById(id);
       if (s != null && (s.locked || isOnLockedLayer(id))) {
         continue; // locked shapes / layers can't be deleted
       }
+      if (s != null) removedRoots.add(id);
+    }
+    final removedIds = _subtreeIds(removedRoots);
+    final connectedIds = <int>{};
+    if (includeConnected && removedIds.isNotEmpty) {
+      for (final connect in page.connects) {
+        if (!removedIds.contains(connect.toSheetId) ||
+            removedIds.contains(connect.fromSheetId)) {
+          continue;
+        }
+        final connector = page.findShapeById(connect.fromSheetId);
+        if (connector == null ||
+            !connector.isGlueableConnector ||
+            connector.locked ||
+            isOnLockedLayer(connector.id)) {
+          continue;
+        }
+        connectedIds.add(connector.id);
+      }
+    }
+    for (final id in <int>[...removedRoots, ...connectedIds]) {
       next = next.removeShapeById(id);
-      removed.add(id);
     }
     if (identical(next, page)) return;
     final undoSel = Set<int>.of(_selection);
     // Removing a parent also deletes descendants — clear those ids too.
     _selection
-      ..removeAll(removed)
-      ..removeAll(_subtreeIds(removed));
+      ..removeAll(removedIds)
+      ..removeAll(connectedIds);
     applyEdit(
       doc.replacePage(_currentPageIndex, next),
       undoSelection: undoSel,
@@ -4791,6 +4817,26 @@ class EditorController extends ChangeNotifier {
         : line;
   }
 
+  /// Use the selected shape or connector's appearance for newly created
+  /// elements (draw.io Cmd/Ctrl+Shift+D, "Set as Default Style").
+  void setSelectionAsDefaultStyle() {
+    if (_selection.isEmpty) return;
+    _rememberStyle();
+    notifyListeners();
+  }
+
+  /// Restore the built-in white-fill / black-line creation style.
+  ///
+  /// This is session state rather than a document edit, so it does not dirty
+  /// the file or create an undo entry (draw.io Cmd/Ctrl+Shift+R with no
+  /// selection).
+  void clearDefaultStyle() {
+    if (_memoFill == null && _memoLine == null) return;
+    _memoFill = null;
+    _memoLine = null;
+    notifyListeners();
+  }
+
   /// Apply the remembered style to a freshly-created shape. Lines/connectors
   /// take only the stroke (never a fill / Soft Edges).
   VsdxShape _withMemoStyle(VsdxShape s, {required bool includeFill}) {
@@ -6559,6 +6605,38 @@ class EditorController extends ChangeNotifier {
 
   void setTextSizeInches(double inches) =>
       _updateText(char: (c) => c.copyWith(fontSizeInches: inches));
+
+  /// Increase or decrease every run in the selected label by [deltaPoints].
+  ///
+  /// Unlike the Text panel, this deliberately ignores an inline text range:
+  /// draw.io's Cmd/Ctrl+Shift+NumPad +/- shortcut always changes the entire
+  /// shape or connector label. Each run keeps its relative size.
+  void adjustWholeLabelTextSizePoints(double deltaPoints) {
+    if (!deltaPoints.isFinite || deltaPoints == 0) return;
+    final editId = _textEditShapeId;
+    _updateSelectedShapes((s) {
+      if (editId != null && s.id != editId) return s;
+      var runs = s.richText.runs;
+      if (runs.isEmpty) {
+        runs = <VsdxTextRun>[VsdxTextRun(text: s.text ?? '')];
+      }
+      final nextRuns = <VsdxTextRun>[
+        for (final run in runs)
+          run.copyWith(
+            charStyle: run.charStyle.copyWith(
+              fontSizeInches:
+                  ((run.charStyle.fontSizeInches * 72 + deltaPoints)
+                              .clamp(1.0, 999.0) /
+                          72)
+                      .toDouble(),
+            ),
+          ),
+      ];
+      return s.copyWith(
+        richText: s.richText.copyWith(runs: nextRuns),
+      );
+    });
+  }
 
   void setBold(bool value) =>
       _updateText(char: (c) => c.copyWith(style: c.style.copyWith(bold: value)));

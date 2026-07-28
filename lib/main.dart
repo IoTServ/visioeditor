@@ -1122,6 +1122,29 @@ class _EditorHomePageState extends State<EditorHomePage> {
     bindings[const SingleActivator(LogicalKeyboardKey.delete)] = deleteSel;
     bindings[const SingleActivator(LogicalKeyboardKey.backspace)] = deleteSel;
 
+    // draw.io: Cmd/Ctrl+Shift+NumPad +/- changes the entire selected label by
+    // one point, even when only part of the inline label is selected.
+    void adjustWholeLabelTextSize(double deltaPoints) {
+      if (_presentationMode) return;
+      final cur = c();
+      if (cur == null || !cur.hasSelection) return;
+      // Keep the shortcut available in the canvas inline editor, but never
+      // steal it from search fields, settings fields, or other text inputs.
+      if (_isEditableTextFocused() && cur.textEditShapeId == null) return;
+      cur.adjustWholeLabelTextSizePoints(deltaPoints);
+    }
+
+    mod(
+      LogicalKeyboardKey.numpadAdd,
+      () => adjustWholeLabelTextSize(1),
+      shift: true,
+    );
+    mod(
+      LogicalKeyboardKey.numpadSubtract,
+      () => adjustWholeLabelTextSize(-1),
+      shift: true,
+    );
+
     // Arrow-key nudge (same step as the canvas handler).
     void nudge(double dx, double dy) {
       if (_presentationMode || _isEditableTextFocused()) return;
@@ -1199,6 +1222,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.duplicateSelection();
     });
+    mod(LogicalKeyboardKey.keyD, () {
+      final cur = c();
+      if (cur != null && cur.hasSelection) {
+        cur.setSelectionAsDefaultStyle();
+      }
+    }, shift: true);
     mod(LogicalKeyboardKey.keyC, () {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.copySelection();
@@ -1320,8 +1349,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
     });
     mod(LogicalKeyboardKey.keyR, () {
       final cur = c();
-      if (cur != null && cur.hasSelection) {
+      if (cur == null) return;
+      if (cur.hasSelection) {
         cur.rotateSelection90(clockwise: false);
+      } else {
+        cur.clearDefaultStyle();
       }
     }, shift: true);
     bindings[const SingleActivator(
@@ -4357,10 +4389,15 @@ class _PropertyPanel extends StatelessWidget {
             _linkSection(context),
           ],
           const Divider(height: 32),
-          FilledButton.tonalIcon(
-            onPressed: controller.deleteSelection,
-            icon: const Icon(Icons.delete_outline),
-            label: Text(EditorL10n.of(context).delete),
+          Tooltip(
+            message: EditorL10n.of(context).deleteWithConnectionsHint,
+            child: FilledButton.tonalIcon(
+              onPressed: () => controller.deleteSelection(
+                includeConnected: HardwareKeyboard.instance.isShiftPressed,
+              ),
+              icon: const Icon(Icons.delete_outline),
+              label: Text(EditorL10n.of(context).delete),
+            ),
           ),
         ],
       ),

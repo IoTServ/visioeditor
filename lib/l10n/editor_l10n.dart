@@ -461,6 +461,10 @@ class EditorL10n {
       locale.languageCode == 'zh'
           ? 'Shift+点击：替换已选形状'
           : 'Shift+click: replace selected shape';
+  String get deleteWithConnectionsHint =>
+      locale.languageCode == 'zh'
+          ? '删除；按住 Shift 点击可同时删除相关连接线'
+          : 'Delete; Shift+click to also delete connected lines';
   String get labelPosition =>
       locale.languageCode == 'zh' ? '标签位置' : 'Label Position';
   String get labelPositionLeft =>

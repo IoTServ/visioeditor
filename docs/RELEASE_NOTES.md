@@ -32,7 +32,9 @@ byte-for-byte, so formulas and structure survive a save.
   Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise
   shape, connector and ruler-guide edits. Ctrl/Cmd+Shift+Arrow adjusts size and
   Alt+Shift+R clears connector waypoints. Cmd/Ctrl+Shift+Y fits selected shapes
-  to their wrapped text.
+  to their wrapped text. Shift-clicking the Format-panel trash button removes
+  a shape together with its incident connectors; plain Delete keeps them as
+  floating lines.
 - **Arrange** with multi-select (Shift/Ctrl/Cmd-click, enclosed marquee, or
   Alt-marquee for intersecting items), Alt-click cycling through overlaps,
   align, distribute, same-size and copy/paste-size tools, two-shape position
@@ -54,10 +56,12 @@ byte-for-byte, so formulas and structure survive a save.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical
-  alignment). Start typing with a shape or connector selected to replace its
-  label; Enter saves and Shift/Alt+Enter adds a line break. Labels on 2-D
-  shapes can be positioned outside any edge or centred, and displayed
-  vertically.
+  alignment). Cmd/Ctrl+Shift+NumPad +/- adjusts the whole label by 1pt.
+  Cmd/Ctrl+Shift+D remembers the selected shape or connector as the creation
+  style; Cmd/Ctrl+Shift+R clears it when nothing is selected. Start typing with
+  a shape or connector selected to replace its label; Enter saves and
+  Shift/Alt+Enter adds a line break. Labels on 2-D shapes can be positioned
+  outside any edge or centred, and displayed vertically.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle
   layer visibility.
 - **Save / Save As** with round-trip fidelity, plus **export** to SVG, PNG and
@@ -93,6 +97,9 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Undo / Redo | `Cmd+Z` / `Cmd+Shift+Z` |
 | Duplicate / Copy / Paste | `Cmd+D` / `Cmd+C` / `Cmd+V` |
 | Delete selection | `Delete` / `Backspace` |
+| Delete with connected lines | Hold `Shift` and click the Format-panel trash button |
+| Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` |
+| Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
 | Cancel tool / clear selection | `Esc` |
 | Nudge selection | Arrow keys (by the grid step) |
 | Pan / zoom canvas | Scroll to pan · `Cmd`/`Ctrl`+scroll to zoom · Space-drag to pan |
