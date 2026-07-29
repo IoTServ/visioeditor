@@ -383,6 +383,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Foldable containers can also be collapsed or expanded from their context
   menu or with draw.io's Ctrl/Cmd+Home and Ctrl/Cmd+End shortcuts. Multi-selected
   hosts fold as one undo step, while locked hosts and locked layers are skipped.
+- **Table duplication shortcuts** (draw.io): select a table cell and press
+  Enter to clone its row directly below, preserving cell styles, labels,
+  nested contents and row-internal connections. Ctrl/Cmd+Enter duplicates the
+  whole table even when a cell is selected. Both operations mint fresh IDs,
+  select the copy and undo in one step; text inputs retain their Enter keys.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

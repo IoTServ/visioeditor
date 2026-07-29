@@ -88,6 +88,16 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => nudge(1, 0),
       const SingleActivator(LogicalKeyboardKey.arrowUp): () => nudge(0, 1),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
+      const SingleActivator(LogicalKeyboardKey.enter):
+          c.duplicateSelectedTableRow,
+      const SingleActivator(
+        LogicalKeyboardKey.enter,
+        meta: true,
+      ): c.duplicateSelectedTable,
+      const SingleActivator(
+        LogicalKeyboardKey.enter,
+        control: true,
+      ): c.duplicateSelectedTable,
       const SingleActivator(
         LogicalKeyboardKey.arrowLeft,
         meta: true,
@@ -296,6 +306,46 @@ void main() {
     expect(c.isCollapsed(container.id), isFalse);
   });
 
+  testWidgets('Enter duplicates a table row and Cmd+Enter duplicates the table',
+      (tester) async {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.singleSelectedId!;
+    final cell = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!).first;
+    c.selectOnly(cell.id);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(
+      TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows,
+      3,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.currentPage!.shapes, hasLength(2));
+    expect(
+      TableOps.isTable(c.currentPage!.findShapeById(c.singleSelectedId!)!),
+      isTrue,
+    );
+  });
+
   testWidgets('Cmd+Shift+arrow resizes the selected shape',
       (tester) async {
     final c = ctrlWithRect();
@@ -497,6 +547,42 @@ void main() {
 
     expect(search.text, 'ab');
     expect(c.currentPage!.findShapeById(id), isNotNull);
+  });
+
+  testWidgets('Enter table shortcuts are deferred in a text field',
+      (tester) async {
+    final c = ctrlWithRect();
+    final search = TextEditingController(text: 'abc');
+    addTearDown(search.dispose);
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(controller: search, autofocus: true),
+    );
+    await tester.pump();
+
+    expect(
+      EditorCallbackShortcuts.isTextEditingShortcut(
+        const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.enter,
+          logicalKey: LogicalKeyboardKey.enter,
+          timeStamp: Duration.zero,
+        ),
+      ),
+      isTrue,
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    expect(
+      EditorCallbackShortcuts.isTextEditingShortcut(
+        const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.enter,
+          logicalKey: LogicalKeyboardKey.enter,
+          timeStamp: Duration.zero,
+        ),
+      ),
+      isTrue,
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
   });
 
   testWidgets('Cmd/Ctrl+Z with text focus does not undo the document',

@@ -1122,6 +1122,23 @@ class _EditorHomePageState extends State<EditorHomePage> {
     bindings[const SingleActivator(LogicalKeyboardKey.delete)] = deleteSel;
     bindings[const SingleActivator(LogicalKeyboardKey.backspace)] = deleteSel;
 
+    // draw.io table shortcuts: Enter duplicates the selected cell's row;
+    // Cmd/Ctrl+Enter duplicates the whole table, even when a cell is selected.
+    bindings[const SingleActivator(LogicalKeyboardKey.enter)] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.canDuplicateSelectedTableRow) {
+        cur.duplicateSelectedTableRow();
+      }
+    };
+    mod(LogicalKeyboardKey.enter, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.canDuplicateSelectedTable) {
+        cur.duplicateSelectedTable();
+      }
+    });
+
     // draw.io: Cmd/Ctrl+Shift+NumPad +/- changes the entire selected label by
     // one point, even when only part of the inline label is selected.
     void adjustWholeLabelTextSize(double deltaPoints) {

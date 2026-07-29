@@ -955,6 +955,116 @@ void main() {
     expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows, 2);
   });
 
+  test('table duplicate row and whole table are undoable with fresh ids', () {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.singleSelectedId!;
+    final originalTable = c.currentPage!.findShapeById(tableId)!;
+    final source = TableOps.cellsOf(originalTable).firstWhere(
+      (cell) => TableOps.cellRow(cell) == 0 && TableOps.cellCol(cell) == 0,
+    );
+    final peer = TableOps.cellsOf(originalTable).firstWhere(
+      (cell) => TableOps.cellRow(cell) == 0 && TableOps.cellCol(cell) == 1,
+    );
+    c.setShapeText(source.id, 'Duplicate me');
+    final sourcePin = c.currentPage!.shapePinPage(source.id);
+    final peerPin = c.currentPage!.shapePinPage(peer.id);
+    c.createConnector(
+      sourcePin.x,
+      sourcePin.y,
+      peerPin.x,
+      peerPin.y,
+      beginTarget: source.id,
+      endTarget: peer.id,
+    );
+    final originalConnectorId = c.singleSelectedId!;
+    c.selectOnly(source.id);
+
+    expect(c.canDuplicateSelectedTableRow, isTrue);
+    c.duplicateSelectedTableRow();
+
+    var table = c.currentPage!.findShapeById(tableId)!;
+    expect(TableOps.dimensions(table).rows, 3);
+    final duplicate = TableOps.cellsOf(table).firstWhere(
+      (cell) => TableOps.cellRow(cell) == 1 && TableOps.cellCol(cell) == 0,
+    );
+    expect(duplicate.id, isNot(source.id));
+    expect(duplicate.richText.plainText, 'Duplicate me');
+    expect(c.selection, hasLength(2));
+    expect(
+      c.selection.every(
+        (id) => TableOps.cellRow(c.currentPage!.findShapeById(id)!) == 1,
+      ),
+      isTrue,
+    );
+    final connectors = c.currentPage!.shapes
+        .where((shape) => shape.isGlueableConnector)
+        .toList();
+    expect(connectors, hasLength(2));
+    final copiedConnector =
+        connectors.singleWhere((shape) => shape.id != originalConnectorId);
+    final copiedTargets = <int>{
+      for (final connect in c.currentPage!.connects)
+        if (connect.fromSheetId == copiedConnector.id) connect.toSheetId,
+    };
+    expect(copiedTargets, hasLength(2));
+    expect(
+      copiedTargets.every(
+        (id) => TableOps.cellRow(c.currentPage!.findShapeById(id)!) == 1,
+      ),
+      isTrue,
+    );
+
+    c.undo();
+    table = c.currentPage!.findShapeById(tableId)!;
+    expect(TableOps.dimensions(table).rows, 2);
+    expect(c.selection, <int>{source.id});
+    expect(c.currentPage!.shapes, hasLength(2));
+
+    expect(c.canDuplicateSelectedTable, isTrue);
+    c.duplicateSelectedTable();
+    expect(c.currentPage!.shapes, hasLength(4));
+    final copiedTableId = c.currentPage!.shapes
+        .where(TableOps.isTable)
+        .singleWhere((shape) => shape.id != tableId)
+        .id;
+    final copiedTable = c.currentPage!.findShapeById(copiedTableId)!;
+    expect(TableOps.isTable(copiedTable), isTrue);
+    Set<int> treeIds(VsdxShape root) {
+      final ids = <int>{};
+      void visit(VsdxShape shape) {
+        ids.add(shape.id);
+        for (final child in shape.children) {
+          visit(child);
+        }
+      }
+
+      visit(root);
+      return ids;
+    }
+
+    final originalIds = treeIds(originalTable);
+    final copiedIds = treeIds(copiedTable);
+    expect(originalIds.intersection(copiedIds), isEmpty);
+
+    c.undo();
+    expect(c.currentPage!.shapes, hasLength(2));
+    expect(c.selection, <int>{source.id});
+  });
+
   test('mergeSelectedCells and unmergeSelectedCell', () {
     final c = EditorController()..newDocument();
     c.addShapeFromBuilderAt(

@@ -1556,12 +1556,69 @@ class EditorController extends ChangeNotifier {
     return tableId;
   }
 
+  /// Top-level or separately nested connectors whose glued endpoints all
+  /// terminate inside [targetIds]. Both ends must be glued, so free/cross-row
+  /// connectors are not accidentally copied with a duplicated table row.
+  Set<int> _fullyGluedConnectorsWithin(Set<int> targetIds) {
+    final page = currentPage;
+    if (page == null || targetIds.isEmpty) return const <int>{};
+    final rowsByConnector = <int, List<VsdxConnect>>{};
+    for (final connect in page.connects) {
+      final shape = page.findShapeById(connect.fromSheetId);
+      if (shape == null || !shape.isGlueableConnector) continue;
+      rowsByConnector
+          .putIfAbsent(connect.fromSheetId, () => <VsdxConnect>[])
+          .add(connect);
+    }
+    return <int>{
+      for (final entry in rowsByConnector.entries)
+        if (entry.value.any((row) => row.isBegin) &&
+            entry.value.any((row) => row.isEnd) &&
+            entry.value.every((row) => targetIds.contains(row.toSheetId)))
+          entry.key,
+    };
+  }
+
   bool get canAddTableRow {
     final tableId = selectedTableId;
     return tableId != null && !_isStructureLocked(tableId);
   }
 
   bool get canAddTableColumn {
+    final tableId = selectedTableId;
+    return tableId != null && !_isStructureLocked(tableId);
+  }
+
+  int? get _selectedTableRowIndex {
+    final cells = _selectedTableCells;
+    if (cells.isEmpty) return null;
+    final row = TableOps.cellRow(cells.first);
+    if (row == null) return null;
+    for (final cell in cells.skip(1)) {
+      if (TableOps.cellRow(cell) != row) return null;
+    }
+    return row;
+  }
+
+  /// draw.io Enter shortcut: a selected cell (or cells from one row) can
+  /// duplicate its whole row directly below itself.
+  bool get canDuplicateSelectedTableRow {
+    final tableId = selectedTableId;
+    final row = _selectedTableRowIndex;
+    if (tableId == null || row == null || _isStructureLocked(tableId)) {
+      return false;
+    }
+    final page = currentPage;
+    final table = page?.findShapeById(tableId);
+    if (page == null || table == null) return false;
+    return TableOps.cellsOf(table)
+        .where((cell) => TableOps.cellRow(cell) == row)
+        .every((cell) => !cell.locked && !isOnLockedLayer(cell.id));
+  }
+
+  /// draw.io Ctrl/Cmd+Enter shortcut: duplicate a selected table even when
+  /// the current selection is one of its cells.
+  bool get canDuplicateSelectedTable {
     final tableId = selectedTableId;
     return tableId != null && !_isStructureLocked(tableId);
   }
@@ -1630,6 +1687,122 @@ class EditorController extends ChangeNotifier {
       ..clear()
       ..add(tableId);
     notifyListeners();
+  }
+
+  void duplicateSelectedTableRow() {
+    if (!canDuplicateSelectedTableRow) return;
+    final page = currentPage;
+    final tableId = selectedTableId;
+    final rowIndex = _selectedTableRowIndex;
+    if (page == null || tableId == null || rowIndex == null) return;
+    final table = page.findShapeById(tableId)!;
+    final sourceCells = <VsdxShape>[
+      for (final cell in TableOps.cellsOf(table))
+        if (TableOps.cellRow(cell) == rowIndex) cell,
+    ];
+    final sourceIds = <int>{
+      for (final cell in sourceCells) ..._subtreeIds(<int>{cell.id}),
+    };
+    final connectorIds = _fullyGluedConnectorsWithin(sourceIds)
+      ..removeAll(sourceIds);
+    final movedIds = _subtreeIds(<int>{tableId});
+    final idMap = <int, int>{};
+    updateCurrentPage((p) {
+      final host = p.findShapeById(tableId);
+      if (host == null) return p;
+      var next = p.updateShapeById(
+        tableId,
+        (_) => TableOps.duplicateRow(
+          host,
+          rowIndex,
+          startId: p.nextFreeShapeId(),
+          idMap: idMap,
+        ),
+      );
+      var nextId = idMap.values.isEmpty
+          ? p.nextFreeShapeId()
+          : idMap.values.reduce((a, b) => a > b ? a : b) + 1;
+      final clonedConnectorIds = <int>[];
+      for (final connectorId in connectorIds) {
+        final connector = p.findShapeById(connectorId);
+        if (connector == null) continue;
+        final clone = _withTreeUnlocked(
+          _clipboardRoot(p, connectorId).withRemappedIds(
+            () => nextId++,
+            idMap: idMap,
+          ),
+        );
+        clonedConnectorIds.add(clone.id);
+        next = next.addShape(clone);
+      }
+      // Connector formulas may refer to ids mapped by a later clone.
+      for (final connectorId in clonedConnectorIds) {
+        next = next.updateShapeById(
+          connectorId,
+          (shape) => VsdxShape.rewriteSheetRefsInTree(shape, idMap),
+        );
+      }
+      final copiedConnects = <VsdxConnect>[
+        for (final connect in p.connects)
+          if (idMap.containsKey(connect.fromSheetId) &&
+              idMap.containsKey(connect.toSheetId))
+            VsdxConnect(
+              fromSheetId: idMap[connect.fromSheetId]!,
+              fromCell: connect.fromCell,
+              fromPart: connect.fromPart,
+              toSheetId: idMap[connect.toSheetId]!,
+              toCell: connect.toCell,
+              toPart: connect.toPart,
+            ),
+      ];
+      if (copiedConnects.isNotEmpty) {
+        next = next.copyWith(
+          connects: <VsdxConnect>[...next.connects, ...copiedConnects],
+        );
+      }
+      final changed = <int>{...movedIds, ...idMap.values};
+      return next
+          .syncGlueTriggers(connectorIds: idMap.values.toSet())
+          .recalculateFormulas(changedShapeIds: changed)
+          .rerouteConnectors(movedShapeIds: changed);
+    });
+    _selection.clear();
+    for (final cell in sourceCells) {
+      final clonedId = idMap[cell.id];
+      if (clonedId != null) _selection.add(clonedId);
+    }
+    notifyListeners();
+  }
+
+  void duplicateSelectedTable() {
+    if (!canDuplicateSelectedTable) return;
+    final page = currentPage;
+    final tableId = selectedTableId;
+    if (page == null || tableId == null) return;
+    final subtree = _subtreeIds(<int>{tableId});
+    final connectorIds = _fullyGluedConnectorsWithin(subtree)
+      ..removeAll(subtree);
+    final copiedIds = <int>{
+      ...subtree,
+      for (final connectorId in connectorIds)
+        ..._subtreeIds(<int>{connectorId}),
+    };
+    final connects = <VsdxConnect>[
+      for (final connect in page.connects)
+        if (copiedIds.contains(connect.fromSheetId) &&
+            copiedIds.contains(connect.toSheetId))
+          connect,
+    ];
+    _cloneShapesOntoPage(
+      <VsdxShape>[
+        _clipboardRoot(page, tableId),
+        for (final connectorId in connectorIds)
+          _clipboardRoot(page, connectorId),
+      ],
+      dx: 0.25,
+      dy: -0.25,
+      connects: connects,
+    );
   }
 
   void removeRowFromSelectedTable() {

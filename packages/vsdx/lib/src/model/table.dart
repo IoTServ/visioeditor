@@ -774,6 +774,89 @@ abstract final class TableOps {
     );
   }
 
+  /// Duplicate [rowIndex] directly below itself.
+  ///
+  /// Cell styles, labels and nested contents are deep-cloned with fresh ids.
+  /// [idMap] receives every source-to-clone mapping so page-level connection
+  /// rows can be copied by the caller. A merge crossing the duplicated row is
+  /// first expanded back to ordinary cells to keep the resulting grid valid.
+  static VsdxShape duplicateRow(
+    VsdxShape table,
+    int rowIndex, {
+    required int startId,
+    Map<int, int>? idMap,
+  }) {
+    final dim = dimensions(table);
+    if (rowIndex < 0 || rowIndex >= dim.rows) return table;
+    final map = idMap ?? <int, int>{};
+    final next = _unmergeIntersectingRows(table, rowIndex, rowIndex);
+    final source = <VsdxShape>[
+      for (final c in cellsOf(next))
+        if (cellRow(c) == rowIndex) c,
+    ];
+    if (source.isEmpty) return table;
+
+    final insertAt = rowIndex + 1;
+    final kept = <VsdxShape>[];
+    for (final c in cellsOf(next)) {
+      final row = cellRow(c);
+      if (row == null || row <= rowIndex) {
+        kept.add(c);
+        continue;
+      }
+      kept.add(
+        c.copyWith(
+          userCells: cellUserCells(
+            row: row + 1,
+            col: cellCol(c) ?? 0,
+            rowSpan: rowSpan(c),
+            colSpan: colSpan(c),
+            covered: isCovered(c),
+            preserve: c.userCells,
+          ),
+        ),
+      );
+    }
+
+    var nextId = startId;
+    final clones = <VsdxShape>[];
+    for (final c in source) {
+      final clone = c.withRemappedIds(() => nextId++, idMap: map);
+      clones.add(
+        clone.copyWith(
+          userCells: cellUserCells(
+            row: insertAt,
+            col: cellCol(c) ?? 0,
+            preserve: clone.userCells,
+          ),
+        ),
+      );
+    }
+    // Cross-cell formulas can only be fully rewritten after all source ids
+    // have been mapped.
+    final rewrittenClones = <VsdxShape>[
+      for (final c in clones) VsdxShape.rewriteSheetRefsInTree(c, map),
+    ];
+    final rowF = List<double>.of(rowFractions(next))
+      ..insert(insertAt, rowFractions(next)[rowIndex]);
+    return layoutCells(
+      next.copyWith(
+        children: <VsdxShape>[
+          ...nonCellChildren(next),
+          ...kept,
+          ...rewrittenClones,
+        ],
+        userCells: tableUserCells(
+          rows: dim.rows + 1,
+          cols: dim.cols,
+          colFractions: colFractions(next),
+          rowFractions: _normalize(rowF),
+          preserve: next.userCells,
+        ),
+      ),
+    );
+  }
+
   /// Append a column on the right. New cell ids start at [startId].
   static VsdxShape addColumn(VsdxShape table, {required int startId}) {
     final dim = dimensions(table);

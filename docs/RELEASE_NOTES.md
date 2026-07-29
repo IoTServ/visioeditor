@@ -72,7 +72,9 @@ byte-for-byte, so formulas and structure survive a save.
   the child beyond its group bounds. Foldable containers support context-menu
   Collapse / Expand and draw.io's Ctrl/Cmd+Home / Ctrl/Cmd+End shortcuts,
   including one-step multi-selection edits. Right-click blank canvas to select
-  all edges or all vertices.
+  all edges or all vertices. In tables, Enter duplicates the selected cell's
+  row and Ctrl/Cmd+Enter duplicates the whole table, with styles, nested
+  contents and internal connections preserved.
   Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
@@ -132,6 +134,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Duplicate / Copy / Paste | `Cmd+D` / `Cmd+C` / `Cmd+V` |
 | Delete selection | `Delete` / `Backspace` |
 | Delete with connected lines | Hold `Shift` and click the Format-panel trash button |
+| Duplicate table row / whole table | `Enter` / `Cmd/Ctrl+Enter` |
 | Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` |
 | Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |

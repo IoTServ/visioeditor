@@ -148,6 +148,68 @@ void main() {
       expect(TableOps.cellsOf(table), hasLength(9));
     });
 
+    test('duplicateRow clones styled contents with fresh ids below source', () {
+      var table = TableOps.assembleTable(
+        tableId: 1,
+        pinX: 0,
+        pinY: 0,
+        width: 2,
+        height: 2,
+        rows: 2,
+        cols: 2,
+      );
+      final source = TableOps.cellsOf(table).first;
+      final nested = VsdxShapeFactory.rectangle(
+        id: 50,
+        pinX: source.width / 2,
+        pinY: source.height / 2,
+        width: 0.25,
+        height: 0.25,
+      );
+      table = table.copyWith(
+        children: <VsdxShape>[
+          for (final cell in table.children)
+            if (cell.id == source.id)
+              cell.copyWith(
+                name: 'Styled source',
+                fill: const VsdxFill(
+                  foreground: VsdxColor(0xFFFF0000),
+                ),
+                children: <VsdxShape>[nested],
+              )
+            else
+              cell,
+        ],
+      );
+      final idMap = <int, int>{};
+
+      table = TableOps.duplicateRow(
+        table,
+        0,
+        startId: 100,
+        idMap: idMap,
+      );
+
+      expect(TableOps.dimensions(table).rows, 3);
+      expect(TableOps.cellsOf(table), hasLength(6));
+      final clone = TableOps.cellsOf(table).firstWhere(
+        (cell) =>
+            TableOps.cellRow(cell) == 1 && TableOps.cellCol(cell) == 0,
+      );
+      expect(clone.id, idMap[source.id]);
+      expect(clone.id, isNot(source.id));
+      expect(clone.name, 'Styled source');
+      expect(clone.fill.foreground, const VsdxColor(0xFFFF0000));
+      expect(clone.children, hasLength(1));
+      expect(clone.children.single.id, idMap[nested.id]);
+      expect(clone.children.single.id, isNot(nested.id));
+      expect(
+        TableOps.cellsOf(table)
+            .where((cell) => TableOps.cellRow(cell) == 2),
+        hasLength(2),
+      );
+    });
+
     test('removeRow / removeColumn refuse to go below 1×1', () {
       var table = TableOps.assembleTable(
         tableId: 1,

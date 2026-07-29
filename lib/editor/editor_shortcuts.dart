@@ -39,6 +39,7 @@ class EditorCallbackShortcuts extends StatelessWidget {
     if (!chord && !alt) {
       return key == LogicalKeyboardKey.backspace ||
           key == LogicalKeyboardKey.delete ||
+          key == LogicalKeyboardKey.enter ||
           key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight ||
           key == LogicalKeyboardKey.arrowUp ||
@@ -49,7 +50,8 @@ class EditorCallbackShortcuts extends StatelessWidget {
     if (chord && !alt) {
       // Keep New/Open/Save/Close available while typing in a search box.
       if (_isDocumentChord(key)) return false;
-      if (key == LogicalKeyboardKey.arrowLeft ||
+      if (key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight ||
           key == LogicalKeyboardKey.arrowUp ||
           key == LogicalKeyboardKey.arrowDown) {
