@@ -110,6 +110,12 @@ class _PageCanvasState extends State<PageCanvas> {
   _DragMode _mode = _DragMode.none;
   Offset _lastPointer = Offset.zero;
 
+  // draw.io temporary hand tool: right- or middle-button drag pans even while
+  // the select/edit tool is active. A stationary right click still belongs to
+  // the secondary-tap recognizer and opens the context menu.
+  int? _auxPanPointer;
+  Offset _auxPanLast = Offset.zero;
+
   /// View-only (pan tool / presentation) pinch-zoom baseline.
   double _viewScaleStart = 1;
   Offset _viewScaleContentFocal = Offset.zero;
@@ -4041,6 +4047,19 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Edit-mode gestures stay on [GestureDetector] — tracking pointers here
   /// while editing prevented pan/tap recognition on touch layouts.
   void _onCanvasPointerDown(PointerDownEvent e) {
+    final auxiliaryPan =
+        e.buttons & (kSecondaryMouseButton | kMiddleMouseButton) != 0;
+    if (auxiliaryPan && _auxPanPointer == null) {
+      if (_mode != _DragMode.none && !_viewOnlyGestures) return;
+      if (_editingShapeId != null) _commitTextEdit();
+      _ensureCanvasFocus();
+      setState(() {
+        _auxPanPointer = e.pointer;
+        _auxPanLast = e.localPosition;
+        _mode = _DragMode.panCanvas;
+      });
+      return;
+    }
     if (!_viewOnlyGestures) return;
     if (_editingShapeId != null) {
       _commitTextEdit();
@@ -4067,6 +4086,12 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onCanvasPointerMove(PointerMoveEvent e) {
+    if (e.pointer == _auxPanPointer) {
+      final pos = e.localPosition;
+      setState(() => _offset += pos - _auxPanLast);
+      _auxPanLast = pos;
+      return;
+    }
     if (!_viewOnlyGestures || !_viewPointers.containsKey(e.pointer)) return;
     _viewPointers[e.pointer] = e.localPosition;
     if (_viewPointers.length == 1 && _mode == _DragMode.panCanvas) {
@@ -4095,6 +4120,13 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onCanvasPointerUp(PointerEvent e) {
+    if (e.pointer == _auxPanPointer) {
+      setState(() {
+        _auxPanPointer = null;
+        _mode = _DragMode.none;
+      });
+      return;
+    }
     if (!_viewPointers.containsKey(e.pointer)) return;
     _viewPointers.remove(e.pointer);
     if (_viewPointers.isEmpty) {
@@ -4120,6 +4152,20 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   // --- Build -----------------------------------------------------------------
+
+  MouseCursor get _canvasCursor {
+    if (_mode == _DragMode.panCanvas) return SystemMouseCursors.grabbing;
+    if (_c.tool == EditorTool.pan) return SystemMouseCursors.grab;
+    if (_c.tool == EditorTool.text) return SystemMouseCursors.text;
+    if (_hoverOnQuickAddArrow) return SystemMouseCursors.click;
+    if (_c.tool == EditorTool.freehand ||
+        _c.tool == EditorTool.connector ||
+        _mode == _DragMode.connect ||
+        _hoverOnConnectPoint) {
+      return SystemMouseCursors.precise;
+    }
+    return MouseCursor.defer;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4344,20 +4390,7 @@ class _PageCanvasState extends State<PageCanvas> {
               child: MouseRegion(
               onHover: _onHover,
               onExit: (_) => _clearHover(),
-              cursor: _c.tool == EditorTool.pan
-                  ? (_mode == _DragMode.panCanvas
-                      ? SystemMouseCursors.grabbing
-                      : SystemMouseCursors.grab)
-                  : _c.tool == EditorTool.text
-                      ? SystemMouseCursors.text
-                      : _hoverOnQuickAddArrow
-                          ? SystemMouseCursors.click
-                          : (_c.tool == EditorTool.freehand ||
-                                  _c.tool == EditorTool.connector ||
-                                  _mode == _DragMode.connect ||
-                                  _hoverOnConnectPoint)
-                              ? SystemMouseCursors.precise
-                              : MouseCursor.defer,
+              cursor: _canvasCursor,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 // Hit-test handles and measure movement from the pointer-down

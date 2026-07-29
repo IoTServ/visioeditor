@@ -59,9 +59,12 @@ byte-for-byte, so formulas and structure survive a save.
 - **drawio-style interactions**: a right-click context menu, copy / paste style,
   and matching keyboard shortcuts (Select All, Cut, To Front/Back, Group /
   Ungroup, keyboard zoom). Space-drag pans from anywhere; Alt-wheel zooms and
-  Shift-wheel scrolls horizontally. Alt+Shift-drag from blank canvas remotely
-  moves the selection; adding Ctrl/Cmd displaces shapes across horizontal and
-  vertical area cuts, while an Alt+Shift marquee subtracts intersecting shapes.
+  Shift-wheel scrolls horizontally. Right-button and middle-button dragging
+  temporarily pans the canvas without changing tools or moving shapes, while a
+  stationary right-click still opens the context menu. Alt+Shift-drag from
+  blank canvas remotely moves the selection; adding Ctrl/Cmd displaces shapes
+  across horizontal and vertical area cuts, while an Alt+Shift marquee
+  subtracts intersecting shapes.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
   parent. Plain groups select/drag as a unit first, then repeated clicks drill
   into their children; Alt-click bypasses the group hierarchy. Right-click

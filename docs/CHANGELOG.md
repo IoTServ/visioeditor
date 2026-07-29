@@ -351,7 +351,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Multi-select**: Shift/Ctrl/Cmd-click toggles items; Alt-click cycles through
   overlapping shapes. Marquee selects fully enclosed items, while Alt-marquee
   includes intersecting and nested items. Hold Space and drag anywhere to pan;
-  Alt-wheel zooms and Shift-wheel scrolls horizontally. **Align**
+  right-button or middle-button drag also pans temporarily without changing
+  tools or moving shapes. A stationary right-click still opens the context
+  menu. Alt-wheel zooms and Shift-wheel scrolls horizontally. **Align**
   (left/center/right/top/middle/bottom),
   **distribute** (horizontal/vertical) and **z-order** (to front / back and one
   step forward / backward) from the inspector. Hold **Shift while dragging** to

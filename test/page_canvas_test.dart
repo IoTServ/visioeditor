@@ -2021,6 +2021,47 @@ void main() {
     expect(controller.tool, EditorTool.pan);
   });
 
+  testWidgets('right and middle mouse drags temporarily pan the canvas',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) => id = _addRect(c),
+      camera: camera,
+    );
+    final before = controller.currentPage!.findShapeById(id)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    const delta = Offset(54, -28);
+
+    for (final buttons in <int>[kSecondaryButton, kTertiaryButton]) {
+      final offsetBefore = camera.offset;
+      final start = _pagePoint(
+        origin,
+        camera,
+        controller.currentPage!,
+        before.pinX,
+        before.pinY,
+      );
+      final gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        buttons: buttons,
+      );
+      await gesture.down(start);
+      await gesture.moveBy(delta);
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(camera.offset.dx - offsetBefore.dx, closeTo(delta.dx, 0.5));
+      expect(camera.offset.dy - offsetBefore.dy, closeTo(delta.dy, 0.5));
+      expect(controller.currentPage!.findShapeById(id)!.pinX, before.pinX);
+      expect(controller.currentPage!.findShapeById(id)!.pinY, before.pinY);
+      expect(find.text('Paste Here'), findsNothing);
+    }
+  });
+
   testWidgets('pan tool pinch zooms around the focal point', (tester) async {
     final camera = CanvasCamera();
     addTearDown(camera.dispose);
