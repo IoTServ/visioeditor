@@ -3782,6 +3782,9 @@ class EditorController extends ChangeNotifier {
   /// Bumped on every copy/cut so a stale async [Clipboard.setData] cannot
   /// overwrite a newer in-app or external clipboard write.
   int _clipboardWriteSerial = 0;
+  /// Serializes platform clipboard writes so a later plain-text copy is the
+  /// last operation even when an earlier shape-envelope write is still busy.
+  Future<void> _clipboardWriteTail = Future<void>.value();
   /// Last envelope we wrote to the system clipboard (trimmed). Used so
   /// [syncClipboardFromSystem] does not replace a richer in-memory clipboard
   /// (Connect rows / images) with our own stripped system encode.
@@ -3790,6 +3793,38 @@ class EditorController extends ChangeNotifier {
   /// image-only copy that cannot encode) cannot clobber in-memory paste data.
   bool _preferMemoryClipboard = false;
   bool get hasClipboard => _clipboard.isNotEmpty;
+
+  /// Whether the first selected shape can be copied as plain label text.
+  bool get canCopySelectionAsText {
+    final page = currentPage;
+    return page != null &&
+        _selection.isNotEmpty &&
+        page.findShapeById(_selection.first) != null;
+  }
+
+  /// draw.io "Copy as Text": copy only the first selected shape's label.
+  ///
+  /// This deliberately makes the system clipboard authoritative so a pending
+  /// shape-envelope write cannot overwrite this newer plain-text copy.
+  Future<bool> copySelectionAsText() async {
+    if (!canCopySelectionAsText) return false;
+    final shape = currentPage!.findShapeById(_selection.first)!;
+    final writeSerial = ++_clipboardWriteSerial;
+    _preferMemoryClipboard = false;
+    _lastSystemEnvelope = null;
+    _pasteGeneration = 0;
+    final operation = _clipboardWriteTail.then((_) async {
+      if (writeSerial != _clipboardWriteSerial) return false;
+      try {
+        await Clipboard.setData(ClipboardData(text: _shapeLabel(shape)));
+        return writeSerial == _clipboardWriteSerial;
+      } catch (_) {
+        return false;
+      }
+    });
+    _clipboardWriteTail = operation.then<void>((_) {});
+    return operation;
+  }
 
   /// Selection ids that are not descendants of another selected shape — used
   /// so copy/paste of a group + child does not duplicate the child.
@@ -3835,12 +3870,15 @@ class EditorController extends ChangeNotifier {
     _lastSystemEnvelope = null;
     final writeSerial = ++_clipboardWriteSerial;
     notifyListeners();
-    unawaited(_writeSystemClipboard(
-      _clipboard,
-      _clipboardConnects,
-      images: _clipboardImages,
-      writeSerial: writeSerial,
-    ));
+    _clipboardWriteTail = _clipboardWriteTail.then(
+      (_) => _writeSystemClipboard(
+        _clipboard,
+        _clipboardConnects,
+        images: _clipboardImages,
+        writeSerial: writeSerial,
+      ),
+    );
+    unawaited(_clipboardWriteTail);
   }
 
   /// Shape tree ready for top-level paste: page pin / angle / flip when [id]
@@ -3968,12 +4006,15 @@ class EditorController extends ChangeNotifier {
     _preferMemoryClipboard = true;
     _lastSystemEnvelope = null;
     final writeSerial = ++_clipboardWriteSerial;
-    unawaited(_writeSystemClipboard(
-      _clipboard,
-      _clipboardConnects,
-      images: _clipboardImages,
-      writeSerial: writeSerial,
-    ));
+    _clipboardWriteTail = _clipboardWriteTail.then(
+      (_) => _writeSystemClipboard(
+        _clipboard,
+        _clipboardConnects,
+        images: _clipboardImages,
+        writeSerial: writeSerial,
+      ),
+    );
+    unawaited(_clipboardWriteTail);
 
     var next = page;
     for (final id in cuttable) {

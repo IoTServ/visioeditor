@@ -21,6 +21,10 @@ void main() {
     expect(zh.toolPan, '平移 / 缩放画布');
     expect(en.fitPageWidth, 'Fit Page Width');
     expect(zh.fitPageWidth, '适应页面宽度');
+    expect(en.copyAsText, 'Copy as Text');
+    expect(zh.copyAsText, '复制为文本');
+    expect(en.openLink, 'Open Link');
+    expect(zh.openLink, '打开链接');
     expect(en.stencilGroup('Flowchart'), 'Flowchart');
     expect(zh.stencilGroup('Flowchart'), '流程图');
     expect(zh.stencil('Rounded Rectangle'), '圆角矩形');

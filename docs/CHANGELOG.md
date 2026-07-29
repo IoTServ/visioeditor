@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io link/text action parity**: **Copy as Text** places the first
+  selected shape's plain label on the system clipboard and safely wins over an
+  in-flight rich shape copy. **Open Link** is available from the context menu,
+  compact More menu and Format panel; internal Visio page anchors switch pages
+  in-app, while safe external URL/mail/phone/file schemes open through the
+  platform. Both actions are localized across all 37 UI languages.
 - **draw.io zoom menu parity**: the live canvas percentage now opens draw.io's
   25%–400% preset list, whole-page fit, **Fit Page Width**, and a validated
   custom-percentage dialog. Page-width fitting fills the horizontal viewport

@@ -17,6 +17,7 @@ import 'edit_data_dialog.dart';
 import 'edit_link_dialog.dart';
 import 'editor_controller.dart';
 import 'image_materials.dart';
+import 'link_opener.dart';
 import '../l10n/editor_l10n.dart';
 import 'quick_add_picker.dart';
 import 'snap_guides.dart';
@@ -1535,6 +1536,10 @@ class _PageCanvasState extends State<PageCanvas> {
     if (hit != null && _c.hasSelection) {
       items.add(PopupMenuItem(value: 'cut', child: Text(el.cut)));
       items.add(PopupMenuItem(value: 'copy', child: Text(el.copy)));
+      if (_c.canCopySelectionAsText) {
+        items.add(PopupMenuItem(
+            value: 'copyAsText', child: Text(el.copyAsText)));
+      }
       items.add(PopupMenuItem(value: 'duplicate', child: Text(el.duplicate)));
       items.add(PopupMenuItem(value: 'paste', child: Text(el.paste)));
       items.add(PopupMenuItem(value: 'delete', child: Text(el.delete)));
@@ -1627,6 +1632,10 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_c.singleSelectedId != null) {
         items.add(PopupMenuItem(value: 'editData', child: Text(el.editData)));
         items.add(PopupMenuItem(value: 'editLink', child: Text(el.editLink)));
+        if (_c.selectedLink?.effectiveTarget?.isNotEmpty ?? false) {
+          items.add(PopupMenuItem(
+              value: 'openLink', child: Text(el.openLink)));
+        }
       }
       if (_c.canReplaceSelectedImage) {
         items.add(PopupMenuItem(
@@ -1712,6 +1721,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.cut();
       case 'copy':
         _c.copySelection();
+      case 'copyAsText':
+        unawaited(_c.copySelectionAsText());
       case 'duplicate':
         _c.duplicateSelection();
       case 'paste':
@@ -1777,6 +1788,8 @@ class _PageCanvasState extends State<PageCanvas> {
       case 'editLink':
         final id = _c.singleSelectedId;
         if (id != null) await showEditLinkDialog(context, _c, id);
+      case 'openLink':
+        unawaited(openPrimaryHyperlink(_c));
       case 'replaceImage':
         final id = _c.singleSelectedId;
         if (id == null) break;

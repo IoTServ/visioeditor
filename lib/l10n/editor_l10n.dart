@@ -64,6 +64,7 @@ class EditorL10n {
   String get editDataShortcut => _t('editDataShortcut');
   String get editLink => _t('editLink');
   String get editLinkShortcut => _t('editLinkShortcut');
+  String get openLink => _t('openLink');
   String get editConnectionPoints => _t('editConnectionPoints');
   String get doneEditingConnectionPoints => _t('doneEditingConnectionPoints');
   String get lock => _t('lock');
@@ -94,6 +95,7 @@ class EditorL10n {
   // --- Context menu ---
   String get cut => _t('cut');
   String get copy => _t('copy');
+  String get copyAsText => _t('copyAsText');
   String get paste => _t('paste');
   String get pasteHere => _t('pasteHere');
   String get duplicate => _t('duplicate');

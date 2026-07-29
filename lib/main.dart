@@ -22,6 +22,7 @@ import 'editor/editor_workspace.dart';
 import 'editor/icon_config_panel.dart';
 import 'editor/image_materials.dart';
 import 'editor/layers_panel.dart';
+import 'editor/link_opener.dart';
 import 'editor/third_party_icons.dart';
 import 'editor/outline_panel.dart';
 import 'editor/page_canvas.dart';
@@ -1734,6 +1735,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 _editData();
                               case 'editLink':
                                 _editLink();
+                              case 'copyAsText':
+                                unawaited(cur.copySelectionAsText());
+                              case 'openLink':
+                                unawaited(openPrimaryHyperlink(cur));
                               case 'editConnPts':
                                 if (cur.editingConnectionPoints) {
                                   cur.endEditConnectionPoints();
@@ -1859,6 +1864,18 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'editLink',
                               enabled: cur.singleSelectedId != null,
                               child: Text(el.editLinkShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'copyAsText',
+                              enabled: cur.canCopySelectionAsText,
+                              child: Text(el.copyAsText),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'openLink',
+                              enabled:
+                                  cur.selectedLink?.effectiveTarget?.isNotEmpty ??
+                                      false,
+                              child: Text(el.openLink),
                             ),
                             PopupMenuItem<String>(
                               value: 'editConnPts',
@@ -4674,8 +4691,8 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
-  /// Hyperlink (drawio "Edit Link"): show the single selection's current link
-  /// (if any) plus a button to open the editor (Cmd+K).
+  /// Hyperlink (drawio "Edit Link" / "Open Link"): show the single selection's
+  /// current target and expose both actions when applicable.
   Widget _linkSection(BuildContext context) {
     final id = controller.singleSelectedId;
     if (id == null) return const SizedBox.shrink();
@@ -4701,6 +4718,14 @@ class _PropertyPanel extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         const SizedBox(height: 8),
+        if (target != null && target.isNotEmpty) ...[
+          _fullWidthOutlineButton(
+            onPressed: () => unawaited(openPrimaryHyperlink(controller)),
+            icon: Icons.open_in_new,
+            label: EditorL10n.of(context).openLink,
+          ),
+          const SizedBox(height: 8),
+        ],
         _fullWidthOutlineButton(
           onPressed: () => showEditLinkDialog(context, controller, id),
           icon: Icons.link,

@@ -241,6 +241,86 @@ FIT_PAGE_WIDTH = {
     "sw": "Linganisha Upana wa Ukurasa",
 }
 
+COPY_AS_TEXT = {
+    "en": "Copy as Text",
+    "zh": "复制为文本",
+    "ja": "テキストとしてコピー",
+    "ko": "텍스트로 복사",
+    "es": "Copiar como texto",
+    "fr": "Copier en tant que texte",
+    "de": "Als Text kopieren",
+    "pt": "Copiar como texto",
+    "ru": "Копировать как текст",
+    "it": "Copia come testo",
+    "ar": "نسخ كنص",
+    "id": "Salin sebagai Teks",
+    "hi": "टेक्स्ट के रूप में कॉपी करें",
+    "nl": "Kopiëren als tekst",
+    "tr": "Metin olarak kopyala",
+    "pl": "Kopiuj jako tekst",
+    "vi": "Sao chép dưới dạng văn bản",
+    "th": "คัดลอกเป็นข้อความ",
+    "sv": "Kopiera som text",
+    "uk": "Копіювати як текст",
+    "he": "העתק כטקסט",
+    "cs": "Zkopírovat jako text",
+    "ro": "Copiază ca text",
+    "el": "Αντιγραφή ως Κείμενο",
+    "hu": "Másolás szövegként",
+    "da": "Kopier som tekst",
+    "ms": "Salin sebagai Teks",
+    "fi": "Kopioi tekstinä",
+    "nb": "Kopier som tekst",
+    "sk": "Kopírovať ako text",
+    "bn": "টেক্সট হিসাবে কপি করুন",
+    "fa": "کپی به عنوان متن",
+    "bg": "Копиране като текст",
+    "hr": "Kopiraj kao tekst",
+    "ca": "Copia com a text",
+    "fil": "Kopyahin bilang Teksto",
+    "sw": "Nakili kama Maandishi",
+}
+
+OPEN_LINK = {
+    "en": "Open Link",
+    "zh": "打开链接",
+    "ja": "リンクを開く",
+    "ko": "링크 열기",
+    "es": "Abrir enlace",
+    "fr": "Ouvrir le lien",
+    "de": "Verknüpfung öffnen",
+    "pt": "Abrir link",
+    "ru": "Открыть ссылку",
+    "it": "Apri collegamento",
+    "ar": "فتح رابط",
+    "id": "Buka Tautan",
+    "hi": "लिंक खोलें",
+    "nl": "Link openen",
+    "tr": "Linki aç",
+    "pl": "Otwórz hiperłącze",
+    "vi": "Mở đường dẫn",
+    "th": "เปิดลิงก์",
+    "sv": "Öppna länk",
+    "uk": "Відкрити посилання",
+    "he": "פתח קישור",
+    "cs": "Otevřít odkaz",
+    "ro": "Deschide legătură",
+    "el": "Άνοιγμα συνδέσμου",
+    "hu": "Link megnyitása",
+    "da": "Åbn link",
+    "ms": "Buka Pautan",
+    "fi": "Avaa linkki",
+    "nb": "Åpne lenke",
+    "sk": "Otvoriť odkaz",
+    "bn": "লিঙ্ক খুলুন",
+    "fa": "باز کردن لینک",
+    "bg": "Отваряне на линка",
+    "hr": "Otvori poveznicu",
+    "ca": "Obre enllaç",
+    "fil": "Buksan ang link",
+    "sw": "Fungua Kiungo",
+}
+
 
 def load_existing() -> dict[str, dict[str, str]]:
     """Load all generated tables as the offline regeneration baseline."""
@@ -297,6 +377,10 @@ def main() -> None:
     existing = load_existing()
     for lang, value in FIT_PAGE_WIDTH.items():
         existing[lang]["fitPageWidth"] = value
+    for lang, value in COPY_AS_TEXT.items():
+        existing[lang]["copyAsText"] = value
+    for lang, value in OPEN_LINK.items():
+        existing[lang]["openLink"] = value
     en_all = existing["en"]
     zh_all = existing["zh"]
     en_ui = {k: v for k, v in en_all.items() if not k.startswith("st_")}
