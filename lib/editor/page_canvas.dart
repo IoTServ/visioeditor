@@ -1459,13 +1459,21 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(value: 'back', child: Text(el.sendToBack)));
       items.add(PopupMenuItem(value: 'forward', child: Text(el.bringForward)));
       items.add(PopupMenuItem(value: 'backward', child: Text(el.sendBackward)));
-      if (_c.canGroup || _c.canUngroup) {
+      if (_c.canGroup ||
+          _c.canUngroup ||
+          _c.canRemoveSelectionFromGroup) {
         items.add(const PopupMenuDivider());
         if (_c.canGroup) {
           items.add(PopupMenuItem(value: 'group', child: Text(el.group)));
         }
         if (_c.canUngroup) {
           items.add(PopupMenuItem(value: 'ungroup', child: Text(el.ungroup)));
+        }
+        if (_c.canRemoveSelectionFromGroup) {
+          items.add(PopupMenuItem(
+            value: 'removeFromGroup',
+            child: Text(el.removeFromGroup),
+          ));
         }
       }
       items.add(const PopupMenuDivider());
@@ -1598,6 +1606,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.groupSelection();
       case 'ungroup':
         _c.ungroupSelection();
+      case 'removeFromGroup':
+        _c.removeSelectionFromGroup();
       case 'copyStyle':
         _c.copyStyle();
       case 'pasteStyle':

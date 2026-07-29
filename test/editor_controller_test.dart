@@ -38,6 +38,37 @@ void main() {
     expect(c.canGroup, isTrue);
   });
 
+  test('remove from group preserves page geometry and is undoable', () {
+    final c = newDocWithTwoRects();
+    c.selectAll();
+    c.groupSelection();
+    final groupId = c.singleSelectedId!;
+    final childId =
+        c.currentPage!.findShapeById(groupId)!.children.first.id;
+    final before = c.currentPage!.shapePageAabb(childId)!;
+
+    c.setSelection(<int>{childId});
+    expect(c.canRemoveSelectionFromGroup, isTrue);
+    c.removeSelectionFromGroup();
+
+    final removed = c.currentPage!.shapePageAabb(childId)!;
+    expect(c.currentPage!.findParentId(childId), isNull);
+    expect(c.selection, <int>{childId});
+    expect(removed.left, closeTo(before.left, 1e-9));
+    expect(removed.bottom, closeTo(before.bottom, 1e-9));
+    expect(removed.right, closeTo(before.right, 1e-9));
+    expect(removed.top, closeTo(before.top, 1e-9));
+    expect(c.canRemoveSelectionFromGroup, isFalse);
+
+    c.undo();
+    expect(c.currentPage!.findParentId(childId), groupId);
+    final restored = c.currentPage!.shapePageAabb(childId)!;
+    expect(restored.left, closeTo(before.left, 1e-9));
+    expect(restored.bottom, closeTo(before.bottom, 1e-9));
+    expect(restored.right, closeTo(before.right, 1e-9));
+    expect(restored.top, closeTo(before.top, 1e-9));
+  });
+
   test('table, swimlane pool, and chart cannot be ungrouped', () {
     final builders = <VsdxShape Function(int, double, double)>[
       (id, x, y) => TableOps.assembleTable(
@@ -73,6 +104,12 @@ void main() {
         c.currentPage!.findShapeById(hostId)!.children,
         hasLength(childCount),
       );
+      final childId =
+          c.currentPage!.findShapeById(hostId)!.children.first.id;
+      c.setSelection(<int>{childId});
+      expect(c.canRemoveSelectionFromGroup, isFalse);
+      c.removeSelectionFromGroup();
+      expect(c.currentPage!.findParentId(childId), hostId);
     }
   });
 

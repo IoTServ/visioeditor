@@ -1198,6 +1198,27 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  void _reparentShapesInto(
+    Iterable<int> shapeIds,
+    int? containerId,
+  ) {
+    final movable = List<int>.of(shapeIds);
+    if (movable.isEmpty) return;
+    final movedIds = <int>{
+      ..._subtreeIds(movable),
+      if (containerId != null) ..._subtreeIds(<int>{containerId}),
+    };
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in movable) {
+        next = next.reparentShape(id, containerId);
+      }
+      return next
+          .recalculateFormulas(changedShapeIds: movedIds)
+          .rerouteConnectors(movedShapeIds: movedIds);
+    });
+  }
+
   /// Reparent each selected shape into [containerId] (or out to the top level
   /// when [containerId] is `null`). Used by canvas drop-into-container.
   void reparentSelectionInto(int? containerId) {
@@ -1215,20 +1236,7 @@ class EditorController extends ChangeNotifier {
               when !s.locked && !isOnLockedLayer(id))
             id,
     ]);
-    if (movable.isEmpty) return;
-    final movedIds = <int>{
-      ..._subtreeIds(movable),
-      if (containerId != null) ..._subtreeIds(<int>{containerId}),
-    };
-    updateCurrentPage((page) {
-      var next = page;
-      for (final id in movable) {
-        next = next.reparentShape(id, containerId);
-      }
-      return next
-          .recalculateFormulas(changedShapeIds: movedIds)
-          .rerouteConnectors(movedShapeIds: movedIds);
-    });
+    _reparentShapesInto(movable, containerId);
   }
 
   /// Toggle draw.io-style fold on a foldable container / swimlane. Children
@@ -6774,6 +6782,39 @@ class EditorController extends ChangeNotifier {
       }
     }
     return false;
+  }
+
+  bool _canRemoveShapeFromGroup(VsdxPage page, int id) {
+    final shape = page.findShapeById(id);
+    final parentId = page.findParentId(id);
+    final parent = parentId == null ? null : page.findShapeById(parentId);
+    return shape != null &&
+        !shape.locked &&
+        !isOnLockedLayer(id) &&
+        parent != null &&
+        _canUngroupShape(parent) &&
+        !parent.locked &&
+        !isOnLockedLayer(parent.id);
+  }
+
+  /// Whether at least one selected root can be promoted out of an ordinary
+  /// group. Structured hosts (tables, swimlanes and charts) are intentionally
+  /// excluded so their internal rows/cells are not dismantled.
+  bool get canRemoveSelectionFromGroup {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    return _selectionRoots(page, _selection)
+        .any((id) => _canRemoveShapeFromGroup(page, id));
+  }
+
+  /// draw.io "Arrange > Remove from Group": promote selected direct children
+  /// to the page while preserving their page-space geometry.
+  void removeSelectionFromGroup() {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return;
+    final movable = _selectionRoots(page, _selection)
+        .where((id) => _canRemoveShapeFromGroup(page, id));
+    _reparentShapesInto(movable, null);
   }
 
   /// Group the selected top-level shapes into a new group and select it.

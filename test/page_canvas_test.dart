@@ -970,6 +970,66 @@ void main() {
     expect(secondDelta, closeTo(firstDelta, 1e-6));
   });
 
+  testWidgets('group child can be removed by menu or dragged out',
+      (tester) async {
+    late int groupId;
+    late int childId;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        c.selectAll();
+        c.groupSelection();
+        groupId = c.singleSelectedId!;
+        childId =
+            c.currentPage!.findShapeById(groupId)!.children.first.id;
+        c.setSelection(<int>{childId});
+      },
+      camera: camera,
+    );
+    var page = controller.currentPage!;
+    final before = page.shapePageAabb(childId)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final childCentre = _pagePoint(
+      origin,
+      camera,
+      page,
+      (before.left + before.right) / 2,
+      (before.bottom + before.top) / 2,
+    );
+
+    await tester.tapAt(childCentre, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Remove from Group'), findsOneWidget);
+    await tester.tap(find.text('Remove from Group'));
+    await tester.pumpAndSettle();
+    expect(controller.currentPage!.findParentId(childId), isNull);
+
+    controller.undo();
+    await tester.pumpAndSettle();
+    expect(controller.currentPage!.findParentId(childId), groupId);
+
+    await tester.dragFrom(childCentre, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    page = controller.currentPage!;
+    expect(page.findParentId(childId), isNull);
+    expect(page.shapePageAabb(childId)!.bottom, greaterThan(before.top));
+
+    controller.undo();
+    expect(controller.currentPage!.findParentId(childId), groupId);
+    final restored = controller.currentPage!.shapePageAabb(childId)!;
+    expect(restored.left, closeTo(before.left, 1e-6));
+    expect(restored.bottom, closeTo(before.bottom, 1e-6));
+  });
+
   testWidgets('Space drag pans even when it starts on a selected shape',
       (tester) async {
     late int id;

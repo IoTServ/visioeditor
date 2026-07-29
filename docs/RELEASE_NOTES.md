@@ -65,7 +65,9 @@ byte-for-byte, so formulas and structure survive a save.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
   parent. Plain groups select/drag as a unit first, then repeated clicks drill
   into their children; Alt-click bypasses the group hierarchy. Right-click
-  blank canvas to select all edges or all vertices.
+  a selected child or use the Arrange panel to **Remove from Group**, or drag
+  the child beyond its group bounds. Right-click blank canvas to select all
+  edges or all vertices.
   Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting

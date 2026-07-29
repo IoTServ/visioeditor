@@ -4056,6 +4056,14 @@ class _PropertyPanel extends StatelessWidget {
                 tooltip: EditorL10n.of(context).ungroupShortcut,
                 visualDensity: VisualDensity.compact,
               ),
+              IconButton(
+                onPressed: controller.canRemoveSelectionFromGroup
+                    ? controller.removeSelectionFromGroup
+                    : null,
+                icon: const Icon(Icons.arrow_outward),
+                tooltip: EditorL10n.of(context).removeFromGroup,
+                visualDensity: VisualDensity.compact,
+              ),
             ],
           ),
           if (isChart) ...[

@@ -374,6 +374,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Plain groups use draw.io's root-first drill-down selection: the first
   click/drag targets the group, repeated clicks descend one level, sibling
   clicks stay inside, and Alt-click reaches the deepest child directly.
+  A selected child can be promoted with **Remove from Group** in the Arrange
+  panel or context menu, or by dragging it beyond the group bounds; page-space
+  geometry is preserved and the whole edit is undoable. Structured tables,
+  swimlanes and charts are protected from accidental dismantling.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

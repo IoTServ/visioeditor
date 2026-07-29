@@ -109,6 +109,8 @@ class EditorL10n {
   String get sendBackwardShortcut => _t('sendBackwardShortcut');
   String get group => _t('group');
   String get ungroup => _t('ungroup');
+  String get removeFromGroup =>
+      locale.languageCode == 'zh' ? '移出组合' : 'Remove from Group';
   String get groupShortcut => _t('groupShortcut');
   String get ungroupShortcut => _t('ungroupShortcut');
   String get flipHorizontal => _t('flipHorizontal');
