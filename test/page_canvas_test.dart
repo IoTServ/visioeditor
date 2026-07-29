@@ -583,6 +583,52 @@ void main() {
     expect(controller.textEditShapeId, shapeId);
   });
 
+  testWidgets('inline Cmd+comma and Cmd+period toggle subscript and superscript',
+      (tester) async {
+    late int shapeId;
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(900, 700),
+      setUp: (c) {
+        shapeId = _addRect(c);
+        c.setShapeText(shapeId, 'H2O');
+      },
+    );
+    controller.requestEditSelectionLabel();
+    await tester.pumpAndSettle();
+    final inlineEditor = find.descendant(
+      of: find.byType(PageCanvas),
+      matching: find.byType(TextField),
+    );
+    final textController =
+        tester.widget<TextField>(inlineEditor).controller!;
+    textController.selection =
+        const TextSelection(baseOffset: 1, extentOffset: 2);
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.comma);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    var rich = controller.currentPage!.findShapeById(shapeId)!.richText;
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.subscript);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.comma);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    rich = controller.currentPage!.findShapeById(shapeId)!.richText;
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.normal);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.period);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    rich = controller.currentPage!.findShapeById(shapeId)!.richText;
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.superscript);
+    expect(rich.plainText, 'H2O');
+  });
+
   testWidgets('canvas Shift+Delete clears labels without deleting shapes',
       (tester) async {
     late int source;

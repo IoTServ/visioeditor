@@ -406,6 +406,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Ctrl/Cmd+Shift+G toggles the grid, Ctrl/Cmd+Shift+O toggles Outline, and
   Ctrl/Cmd+Shift+L toggles Layers. Home/End remain native cursor-navigation
   keys while a text field owns focus.
+- **Superscript / subscript / remove formatting** (draw.io): the Text panel
+  exposes baseline-position toggles backed by Visio `Char.Pos`, plus a Remove
+  Formatting action that preserves text and paragraph layout. During inline
+  editing, Ctrl/Cmd+. toggles superscript and Ctrl/Cmd+, toggles subscript for
+  the selected UTF-16 range; repeated use returns it to the normal baseline.
+  Each operation is undoable and round-trips through `.vsdx`.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

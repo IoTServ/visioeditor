@@ -1619,6 +1619,50 @@ void main() {
     expect(c.selectedCharStyle?.strikethrough, isFalse);
   });
 
+  test('superscript, subscript, and remove formatting target inline range', () {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(1, 1, 3, 2);
+    final id = c.currentPage!.shapes.single.id;
+    c.setSelection(<int>{id});
+    c.setShapeText(id, 'H2O');
+    c.setSpaceBeforeInches(0.2);
+    c.setTextEditSession(shapeId: id, start: 1, end: 2);
+
+    c.toggleSubscript();
+    var rich = c.currentPage!.findShapeById(id)!.richText;
+    expect(charStyleAt(rich, 0)!.position, VsdxTextPosition.normal);
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.subscript);
+    expect(charStyleAt(rich, 2)!.position, VsdxTextPosition.normal);
+
+    c.toggleSubscript();
+    rich = c.currentPage!.findShapeById(id)!.richText;
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.normal);
+
+    c.toggleSuperscript();
+    c.setBold(true);
+    rich = c.currentPage!.findShapeById(id)!.richText;
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.superscript);
+    expect(charStyleAt(rich, 1)!.style.bold, isTrue);
+
+    c.clearTextFormatting();
+    rich = c.currentPage!.findShapeById(id)!.richText;
+    expect(charStyleAt(rich, 1), VsdxCharStyle.defaults);
+    expect(rich.plainText, 'H2O');
+    expect(charStyleAt(rich, 0)!.position, VsdxTextPosition.normal);
+    expect(
+      rich.runs.firstWhere((run) => run.text == '2').paraStyle.spaceBeforeInches,
+      closeTo(0.2, 1e-9),
+    );
+
+    c.undo();
+    rich = c.currentPage!.findShapeById(id)!.richText;
+    expect(charStyleAt(rich, 1)!.position, VsdxTextPosition.superscript);
+    expect(charStyleAt(rich, 1)!.style.bold, isTrue);
+  });
+
   test('soft edges, line spacing, and line jump radius', () {
     final c = EditorController()..newDocument();
     c

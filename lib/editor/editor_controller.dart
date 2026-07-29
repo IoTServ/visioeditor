@@ -7749,6 +7749,33 @@ class EditorController extends ChangeNotifier {
   void toggleStrikethrough() =>
       setStrikethrough(!(selectedCharStyle?.strikethrough ?? false));
 
+  /// Apply Visio `Char.Pos` to the selected label or active inline range.
+  void setTextPosition(VsdxTextPosition position) =>
+      _updateText(char: (c) => c.copyWith(position: position));
+
+  /// draw.io Cmd/Ctrl+.: toggle superscript for the active inline selection.
+  void toggleSuperscript() {
+    setTextPosition(
+      selectedCharStyle?.position == VsdxTextPosition.superscript
+          ? VsdxTextPosition.normal
+          : VsdxTextPosition.superscript,
+    );
+  }
+
+  /// draw.io Cmd/Ctrl+,: toggle subscript for the active inline selection.
+  void toggleSubscript() {
+    setTextPosition(
+      selectedCharStyle?.position == VsdxTextPosition.subscript
+          ? VsdxTextPosition.normal
+          : VsdxTextPosition.subscript,
+    );
+  }
+
+  /// draw.io Remove Formatting: reset character styling while preserving text
+  /// and paragraph layout. Applies to the active inline range when non-empty.
+  void clearTextFormatting() =>
+      _updateText(char: (_) => VsdxCharStyle.defaults);
+
   /// Visio `CompoundType` (0=single, 1=double, 2=thick-thin, 3=thin-thick).
   void setCompoundType(int type) => _updateSelectedShapes(
         (s) => s.copyWith(

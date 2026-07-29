@@ -1938,6 +1938,23 @@ class _PageCanvasState extends State<PageCanvas> {
             _commitTextEdit,
         const SingleActivator(LogicalKeyboardKey.enter, control: true):
             _commitTextEdit,
+        // draw.io rich-text shortcuts are active only while content editing.
+        const SingleActivator(
+          LogicalKeyboardKey.period,
+          meta: true,
+        ): _c.toggleSuperscript,
+        const SingleActivator(
+          LogicalKeyboardKey.period,
+          control: true,
+        ): _c.toggleSuperscript,
+        const SingleActivator(
+          LogicalKeyboardKey.comma,
+          meta: true,
+        ): _c.toggleSubscript,
+        const SingleActivator(
+          LogicalKeyboardKey.comma,
+          control: true,
+        ): _c.toggleSubscript,
       },
       child: Material(
         type: MaterialType.transparency,

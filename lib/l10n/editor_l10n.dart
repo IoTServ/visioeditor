@@ -438,6 +438,14 @@ class EditorL10n {
   String get lineSpacing => _t('lineSpacing');
   String get curvedText => _t('curvedText');
   String get bulletList => _t('bulletList');
+  String get superscript => locale.languageCode == 'zh'
+      ? '上标 (Cmd/Ctrl+.)'
+      : 'Superscript (Cmd/Ctrl+.)';
+  String get subscript => locale.languageCode == 'zh'
+      ? '下标 (Cmd/Ctrl+,)'
+      : 'Subscript (Cmd/Ctrl+,)';
+  String get clearTextFormatting =>
+      locale.languageCode == 'zh' ? '清除文字格式' : 'Remove Formatting';
   String get noShapeData => _t('noShapeData');
   String get noLink => _t('noLink');
   String get alignLeft => _t('alignLeft');

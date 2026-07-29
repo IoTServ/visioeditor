@@ -86,7 +86,10 @@ byte-for-byte, so formulas and structure survive a save.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical
-  alignment). Cmd/Ctrl+Shift+NumPad +/- adjusts the whole label by 1pt.
+  alignment). The Text panel also toggles superscript/subscript and removes
+  character formatting without changing paragraph layout. While inline
+  editing, Cmd/Ctrl+. toggles superscript and Cmd/Ctrl+, toggles subscript for
+  the selected range. Cmd/Ctrl+Shift+NumPad +/- adjusts the whole label by 1pt.
   Cmd/Ctrl+Shift+D remembers the selected shape or connector as the creation
   style; Cmd/Ctrl+Shift+R clears it when nothing is selected. Start typing with
   a shape or connector selected to replace its label; Enter saves and
@@ -147,6 +150,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Duplicate selection (table cell → row) | `Cmd/Ctrl+Enter` |
 | Delete table row / complete column selection | `Delete` / `Backspace` |
 | Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` |
+| Superscript / subscript while editing | `Cmd/Ctrl+.` / `Cmd/Ctrl+,` |
 | Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
 | Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` |
