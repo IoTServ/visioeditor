@@ -19,11 +19,12 @@ byte-for-byte, so formulas and structure survive a save.
 - **Open & render** `.vsdx` via file picker, drag & drop, Finder double-click /
   "Open With", or `open drawing.vsdx`. Multiple files open in their own tabs.
 - **Create** rectangles, ellipses, lines and glued connectors (routable
-  straight or orthogonal, with draggable waypoints); drop flowchart shapes from
-  the stencil palette, or double-click blank canvas to open the common-shape
-  picker. Drag from a shape's directional arrow to start a fixed connector;
-  hold Ctrl/Cmd while dragging to clone the shape at any drop point and connect
-  it. Alt+Shift+Arrow also clones/connects in any direction.
+  straight or orthogonal, with draggable waypoints); right-click a connector
+  segment or waypoint to add, remove or clear routing points. Drop flowchart
+  shapes from the stencil palette, or double-click blank canvas to open the
+  common-shape picker. Drag from a shape's directional arrow to start a fixed
+  connector; hold Ctrl/Cmd while dragging to clone the shape at any drop point
+  and connect it. Alt+Shift+Arrow also clones/connects in any direction.
 - **Create with AI** using the built-in multi-turn diagram assistant. Configure
   OpenAI-compatible, Anthropic, Gemini or local Ollama engines, discuss and
   revise a process, then open the validated Diagram Spec or Mermaid result as

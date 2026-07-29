@@ -94,6 +94,10 @@ class EditorL10n {
   String get paste => _t('paste');
   String get pasteHere => _t('pasteHere');
   String get duplicate => _t('duplicate');
+  String get addWaypoint =>
+      locale.languageCode == 'zh' ? '添加路径点' : 'Add Waypoint';
+  String get removeWaypoint =>
+      locale.languageCode == 'zh' ? '移除路径点' : 'Remove Waypoint';
   String get clearWaypoints => _t('clearWaypoints');
   String get bringToFront => _t('bringToFront');
   String get sendToBack => _t('sendToBack');

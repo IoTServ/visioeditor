@@ -1397,6 +1397,69 @@ void main() {
     expect(controller.connectorWaypoints(connector), isEmpty);
   });
 
+  testWidgets('connector context menu adds and removes a waypoint',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c.createConnector(2, 5, 6, 5);
+        connector = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final route =
+        VsdxPage.connectorRoute(page.findShapeById(connector)!);
+    final midpoint = Offset2D(
+      (route.first.x + route.last.x) / 2,
+      (route.first.y + route.last.y) / 2,
+    );
+    final screenPoint = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      page,
+      midpoint.x,
+      midpoint.y,
+    );
+
+    await tester.tapAt(screenPoint, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Add Waypoint'), findsOneWidget);
+    expect(find.text('Remove Waypoint'), findsNothing);
+
+    await tester.tap(find.text('Add Waypoint'));
+    await tester.pumpAndSettle();
+    expect(controller.connectorWaypoints(connector), hasLength(1));
+    expect(
+      controller.connectorWaypoints(connector).single.x,
+      closeTo(midpoint.x, 0.05),
+    );
+    expect(
+      controller.connectorWaypoints(connector).single.y,
+      closeTo(midpoint.y, 0.05),
+    );
+
+    await tester.tapAt(screenPoint, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Remove Waypoint'), findsOneWidget);
+    expect(find.text('Add Waypoint'), findsNothing);
+    expect(find.text('Clear Waypoints'), findsOneWidget);
+
+    await tester.tap(find.text('Remove Waypoint'));
+    await tester.pumpAndSettle();
+    expect(controller.connectorWaypoints(connector), isEmpty);
+
+    controller.undo();
+    expect(controller.connectorWaypoints(connector), hasLength(1));
+    controller.undo();
+    expect(controller.connectorWaypoints(connector), isEmpty);
+  });
+
   testWidgets(
       'connector tool snaps to a blue point approached from outside the AABB',
       (tester) async {

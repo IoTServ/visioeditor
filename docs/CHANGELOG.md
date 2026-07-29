@@ -75,6 +75,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   connects it. **Alt+Shift+Arrow** clones and connects the selected shape, or
   connects an existing neighbour. New shapes **inherit the last-used fill /
   line style** (drawio's `currentVertexStyle`).
+- **Connector waypoints**: drag segment midpoint handles to add routing points,
+  drag existing points to move them, double-click or right-click a point to
+  remove it, and right-click any connector segment to add a point at that
+  position. Clear Waypoints and `Alt+Shift+R` restore the automatic route.
 - **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
   drops straight into in-place editing; an untyped box is discarded on commit
   or cancel. It can still be given a background or border afterwards.

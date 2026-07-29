@@ -1300,6 +1300,37 @@ class _PageCanvasState extends State<PageCanvas> {
     if (overlay == null) return;
     final el = EditorL10n.of(context);
     final items = <PopupMenuEntry<String>>[];
+    int? contextConnectorId;
+    int? contextAddWaypointIndex;
+    int? contextRemoveWaypointIndex;
+    final hitShape = hit == null ? null : _page?.findShapeById(hit);
+    if (hitShape != null &&
+        hitShape.isGlueableConnector &&
+        _canEditConnector(hitShape)) {
+      final route = _connectorControlRoutePage(hitShape);
+      if (route.length >= 2) {
+        contextConnectorId = hitShape.id;
+        // Only explicit interior points are removable. Automatically routed
+        // bends are promoted when an adjacent segment gets a new waypoint.
+        if (hitShape.waypoints.isNotEmpty) {
+          final hitInches =
+              _handleHitPx / (_scale * widget.pxPerInch);
+          final hitSquared = hitInches * hitInches;
+          for (var r = 1; r < route.length - 1; r++) {
+            final dx = route[r].x - pagePos.dx;
+            final dy = route[r].y - pagePos.dy;
+            if (dx * dx + dy * dy <= hitSquared) {
+              contextRemoveWaypointIndex = r - 1;
+              break;
+            }
+          }
+        }
+        if (contextRemoveWaypointIndex == null) {
+          contextAddWaypointIndex =
+              _nearestConnectorSegmentIndex(route, pagePos);
+        }
+      }
+    }
     if (_c.hasSelection) {
       items.add(PopupMenuItem(value: 'cut', child: Text(el.cut)));
       items.add(PopupMenuItem(value: 'copy', child: Text(el.copy)));
@@ -1309,6 +1340,13 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(
           value: 'lock',
           child: Text(_c.selectionLocked ? el.unlock : el.lock)));
+      if (contextRemoveWaypointIndex != null) {
+        items.add(PopupMenuItem(
+            value: 'removeWaypoint', child: Text(el.removeWaypoint)));
+      } else if (contextAddWaypointIndex != null) {
+        items.add(PopupMenuItem(
+            value: 'addWaypoint', child: Text(el.addWaypoint)));
+      }
       if (_c.canClearWaypoints) {
         items.add(PopupMenuItem(
             value: 'clearWaypoints', child: Text(el.clearWaypoints)));
@@ -1427,6 +1465,18 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.deleteSelection();
       case 'lock':
         _c.toggleLock();
+      case 'addWaypoint':
+        final connectorId = contextConnectorId;
+        final index = contextAddWaypointIndex;
+        if (connectorId != null && index != null) {
+          _addContextWaypoint(connectorId, index, pagePos);
+        }
+      case 'removeWaypoint':
+        final connectorId = contextConnectorId;
+        final index = contextRemoveWaypointIndex;
+        if (connectorId != null && index != null) {
+          _c.removeWaypoint(connectorId, index);
+        }
       case 'clearWaypoints':
         _c.clearSelectedConnectorWaypoints();
       case 'front':
@@ -1487,6 +1537,73 @@ class _PageCanvasState extends State<PageCanvas> {
       case 'clearGuides':
         _c.clearPageGuides();
     }
+  }
+
+  static int _nearestConnectorSegmentIndex(
+    List<Offset2D> route,
+    Offset point,
+  ) {
+    var bestIndex = 0;
+    var bestDistance = double.infinity;
+    for (var i = 0; i < route.length - 1; i++) {
+      final a = route[i];
+      final b = route[i + 1];
+      final dx = b.x - a.x;
+      final dy = b.y - a.y;
+      final lengthSquared = dx * dx + dy * dy;
+      final projection = lengthSquared <= 1e-12
+          ? 0.0
+          : (((point.dx - a.x) * dx + (point.dy - a.y) * dy) /
+                  lengthSquared)
+              .clamp(0.0, 1.0);
+      final px = a.x + dx * projection;
+      final py = a.y + dy * projection;
+      final ex = point.dx - px;
+      final ey = point.dy - py;
+      final distance = ex * ex + ey * ey;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+
+  /// Add a waypoint at a connector context-menu position. If the connector is
+  /// using an automatically generated elbow, promote those bends first so the
+  /// new point edits the visible route. Everything is one undo step.
+  void _addContextWaypoint(int connectorId, int segmentIndex, Offset pagePos) {
+    final page = _page;
+    final connector = page?.findShapeById(connectorId);
+    if (page == null ||
+        connector == null ||
+        !_canEditConnector(connector)) {
+      return;
+    }
+    final route = _connectorControlRoutePage(connector);
+    if (route.length < 2) return;
+    _c.beginTransaction();
+    if (connector.waypoints.isEmpty && route.length > 2) {
+      final parentId = page.findParentId(connectorId);
+      final promoted = <Offset2D>[
+        for (final point in route.sublist(1, route.length - 1))
+          parentId == null
+              ? point
+              : page.pageToLocalDeep(parentId, point),
+      ];
+      _c.setConnectorWaypoints(
+        connectorId,
+        promoted,
+        transient: true,
+      );
+    }
+    _c.addWaypoint(
+      connectorId,
+      segmentIndex,
+      Offset2D(pagePos.dx, pagePos.dy),
+      transient: true,
+    );
+    _c.commitTransaction();
   }
 
   // --- In-place text editing -------------------------------------------------
