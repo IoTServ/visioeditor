@@ -1686,6 +1686,12 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(value: 'back', child: Text(el.sendToBack)));
       items.add(PopupMenuItem(value: 'forward', child: Text(el.bringForward)));
       items.add(PopupMenuItem(value: 'backward', child: Text(el.sendBackward)));
+      if (_c.canSnapSelectionToGrid) {
+        items.add(PopupMenuItem(
+          value: 'snapSelection',
+          child: Text(el.snapSelectionToGrid),
+        ));
+      }
       if (_c.canGroup ||
           _c.canUngroup ||
           _c.canRemoveSelectionFromGroup ||
@@ -1885,6 +1891,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.bringSelectionForward();
       case 'backward':
         _c.sendSelectionBackward();
+      case 'snapSelection':
+        _c.snapSelectionToGrid();
       case 'group':
         _c.groupSelection();
       case 'ungroup':

@@ -5370,6 +5370,112 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  double _snapToGridLine(double value) =>
+      (value / _gridInches).roundToDouble() * _gridInches;
+
+  ({double pinX, double pinY, double width, double height})
+      _gridGeometry(VsdxShape shape) {
+    final width = _snapToGridLine(shape.width);
+    final height = _snapToGridLine(shape.height);
+    final left = _snapToGridLine(shape.pinX - shape.effectiveLocPinX);
+    final bottom = _snapToGridLine(shape.pinY - shape.effectiveLocPinY);
+    final locX = shape.locPinXInches == null
+        ? width / 2
+        : shape.width.abs() < _epsilon
+            ? shape.locPinXInches!
+            : shape.locPinXInches! * width / shape.width;
+    final locY = shape.locPinYInches == null
+        ? height / 2
+        : shape.height.abs() < _epsilon
+            ? shape.locPinYInches!
+            : shape.locPinYInches! * height / shape.height;
+    return (
+      pinX: left + locX,
+      pinY: bottom + locY,
+      width: width,
+      height: height,
+    );
+  }
+
+  bool _shapeNeedsGridSnap(VsdxShape shape) {
+    if (shape.isGlueableConnector) {
+      return shape.waypoints.any(
+        (point) =>
+            (point.x - _snapToGridLine(point.x)).abs() > _epsilon ||
+            (point.y - _snapToGridLine(point.y)).abs() > _epsilon,
+      );
+    }
+    if (shape.is1D) return false;
+    final target = _gridGeometry(shape);
+    return (shape.pinX - target.pinX).abs() > _epsilon ||
+        (shape.pinY - target.pinY).abs() > _epsilon ||
+        (shape.width - target.width).abs() > _epsilon ||
+        (shape.height - target.height).abs() > _epsilon;
+  }
+
+  /// Whether draw.io's one-shot "Snap to Grid" command can change an editable
+  /// selected vertex or an explicit connector waypoint.
+  bool get canSnapSelectionToGrid {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    return _selectionRoots(page, _selection).any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null &&
+          !shape.locked &&
+          !isOnLockedLayer(id) &&
+          _shapeNeedsGridSnap(shape);
+    });
+  }
+
+  /// Immediately quantise selected vertex position/size and connector bend
+  /// points to the document grid, matching `Graph.snapCellsToGrid`.
+  ///
+  /// This is independent from [snapToGrid], which only controls future drag
+  /// snapping. Mixed selections commit as one undo step.
+  void snapSelectionToGrid() {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return;
+    final roots = _selectionRoots(page, <int>[
+      for (final id in _selection)
+        if (page.findShapeById(id) case final shape?
+            when !shape.locked &&
+                !isOnLockedLayer(id) &&
+                _shapeNeedsGridSnap(shape))
+          id,
+    ]);
+    if (roots.isEmpty) return;
+    beginTransaction();
+    for (final id in roots) {
+      final shape = currentPage?.findShapeById(id);
+      if (shape == null) continue;
+      if (shape.isGlueableConnector) {
+        setConnectorWaypoints(
+          id,
+          <Offset2D>[
+            for (final point in shape.waypoints)
+              Offset2D(
+                _snapToGridLine(point.x),
+                _snapToGridLine(point.y),
+              ),
+          ],
+          transient: true,
+        );
+      } else if (!shape.is1D) {
+        final target = _gridGeometry(shape);
+        resizeShape(
+          id,
+          pinX: target.pinX,
+          pinY: target.pinY,
+          width: target.width,
+          height: target.height,
+          resizeChildren: false,
+          transient: true,
+        );
+      }
+    }
+    commitTransaction();
+  }
+
   /// Move the single selection so its page-AABB left edge sits at [x] inches.
   void setSelectedX(double x) {
     final s = singleSelected;

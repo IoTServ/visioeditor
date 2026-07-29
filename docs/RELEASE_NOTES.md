@@ -118,6 +118,11 @@ byte-for-byte, so formulas and structure survive a save.
   Enter intelligently toggles between those reset and fitted views.
   Cmd/Ctrl+Shift+G/O/L toggle the grid, Outline and Layers panels, while
   Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
+  Snap Selection to Grid immediately rounds selected shape position and size,
+  plus explicit connector waypoints, to the document grid in one undoable
+  operation. It is available from More, the shape context menu and Arrange,
+  independently of the switch that controls snapping during future drags.
+  Select None is available from More or with Cmd/Ctrl+Shift+A.
   Clicking the live zoom percentage opens draw.io's 25%–400% presets,
   whole-page fit, Fit Page Width, and a validated custom-percentage dialog.
   Cmd/Ctrl+0 opens the same dialog, while Cmd/Ctrl +/- zooms globally even
@@ -199,6 +204,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` or `Cmd/Ctrl+Shift+H` |
 | Custom zoom / zoom in / zoom out | `Cmd/Ctrl+0` / `Cmd/Ctrl++` / `Cmd/Ctrl+-` |
 | Toggle grid / Outline / Layers | `Cmd/Ctrl+Shift+G` / `Cmd/Ctrl+Shift+O` / `Cmd/Ctrl+Shift+L` |
+| Select all / select none | `Cmd/Ctrl+A` / `Cmd/Ctrl+Shift+A` |
 | Select connectors / vertices | `Cmd/Ctrl+Shift+E` / `Cmd/Ctrl+Shift+I` |
 | Select tree children / subtree / parent / siblings | `Alt+Shift+X` / `Alt+Shift+T` / `Alt+Shift+P` / `Alt+Shift+S` |
 | Copy Text Style / Copy Size / Paste Size | `Alt+Shift+C` / `Alt+Shift+F` / `Alt+Shift+V` |

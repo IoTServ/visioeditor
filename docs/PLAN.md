@@ -1473,6 +1473,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   Tooltips 开关可会话级隐藏而不删除文档内容。上游基础动作与 Trees 插件都占用
   `Alt+Shift+T`，本应用保留已对齐的 Select Subtree 有效键位，避免 Tooltip 覆盖关系树
   导航。补模型保留、换行往返、对话框、撤销、悬停延迟、关闭态及中英文回归。
+- 2026-07-29 — **对齐 draw.io Snap Selection to Grid / Select None**：按
+  `Graph.snapCellsToGrid` 增加一次性选区网格校正，将普通图形左下位置与宽高、连接器显式
+  折点分别取整到当前网格；锁定图形/图层不参与，混合选区合并为单次撤销。命令接入 More、
+  图形右键菜单与 Arrange，且与只控制后续拖拽的 Snap to Grid 开关明确分离。More 同步
+  补 Select None，并覆盖 draw.io 的 `Cmd/Ctrl+Shift+A` 应用级键位、中英文文案、
+  控制器几何/撤销和真实菜单点击回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

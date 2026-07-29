@@ -35,6 +35,10 @@ void main() {
     expect(zh.editTooltip, '编辑工具提示…');
     expect(en.tooltips, 'Tooltips');
     expect(zh.tooltips, '工具提示');
+    expect(en.selectNone, 'Select None');
+    expect(zh.selectNone, '取消全选');
+    expect(en.snapSelectionToGrid, 'Snap Selection to Grid');
+    expect(zh.snapSelectionToGrid, '所选内容对齐网格');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');

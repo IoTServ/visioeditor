@@ -378,6 +378,16 @@ void main() {
       ): c.selectParentShape,
       const SingleActivator(LogicalKeyboardKey.home): c.requestResetView,
       const SingleActivator(
+        LogicalKeyboardKey.keyA,
+        meta: true,
+        shift: true,
+      ): c.clearSelection,
+      const SingleActivator(
+        LogicalKeyboardKey.keyA,
+        control: true,
+        shift: true,
+      ): c.clearSelection,
+      const SingleActivator(
         LogicalKeyboardKey.digit0,
         meta: true,
       ): c.requestCustomZoom,
@@ -555,6 +565,30 @@ void main() {
     await tester.pump();
 
     expect(c.currentPage!.findShapeById(id), isNull);
+  });
+
+  testWidgets('Cmd/Ctrl+Shift+A clears selection without canvas focus',
+      (tester) async {
+    final c = ctrlWithRect();
+    await pumpHarness(tester, c);
+    expect(c.hasSelection, isTrue);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.hasSelection, isFalse);
+
+    c.selectAll();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(c.hasSelection, isFalse);
   });
 
   testWidgets('Ctrl+Delete removes selection and incident connectors',

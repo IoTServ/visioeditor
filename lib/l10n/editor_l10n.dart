@@ -99,6 +99,11 @@ class EditorL10n {
   // --- More menu ---
   String get selectAll => _t('selectAll');
   String get selectAllShortcut => _t('selectAllShortcut');
+  String get selectNone =>
+      locale.languageCode == 'zh' ? '取消全选' : 'Select None';
+  String get selectNoneShortcut => locale.languageCode == 'zh'
+      ? '取消全选 (Cmd+Shift+A)'
+      : 'Select None (Cmd+Shift+A)';
   String get selectEdges => _t('selectEdges');
   String get selectVertices => _t('selectVertices');
   String get selectChildren => _treeLabel(0);
@@ -150,6 +155,9 @@ class EditorL10n {
   String get exportPng => _t('exportPng');
   String get exportPdf => _t('exportPdf');
   String get snapToGrid => _t('snapToGrid');
+  String get snapSelectionToGrid => locale.languageCode == 'zh'
+      ? '所选内容对齐网格'
+      : 'Snap Selection to Grid';
   String get guides => locale.languageCode == 'zh' ? '参考线' : 'Guides';
   String get lineJumps => _t('lineJumps');
   String get closeTab => _t('closeTab');

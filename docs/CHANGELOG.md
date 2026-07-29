@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io one-shot grid alignment and Select None**: **Snap Selection to
+  Grid** now immediately quantises selected vertex position/size and connector
+  waypoints, skips locked content, and commits mixed selections as one undoable
+  edit. It is available from More, the shape context menu and Arrange, and is
+  deliberately separate from the persistent drag-snapping switch. **Select
+  None** is now exposed in More with draw.io's `Cmd/Ctrl+Shift+A` shortcut.
 - **draw.io custom shape tooltips**: **Edit Tooltip…** is now available from
   the More and shape context menus. Tooltip text is undoable, survives `.vsdx`
   saves through `User.veTooltip`, and appears in a delayed pointer-following

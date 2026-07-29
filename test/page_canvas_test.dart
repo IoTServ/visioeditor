@@ -159,6 +159,53 @@ void main() {
     expect(find.byKey(const ValueKey('shape-tooltip')), findsNothing);
   });
 
+  testWidgets('shape context menu snaps selection geometry to the grid',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.addShapeFromBuilderAt(
+          (shapeId, _, _) => VsdxShapeFactory.rectangle(
+            id: shapeId,
+            pinX: 0.745,
+            pinY: 0.68,
+            width: 1.13,
+            height: 0.62,
+          ),
+          0,
+          0,
+        );
+        id = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final shape = page.findShapeById(id)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final centre = _pagePoint(
+      origin,
+      camera,
+      page,
+      shape.pinX,
+      shape.pinY,
+    );
+
+    await tester.tapAt(centre, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Snap Selection to Grid'), findsOneWidget);
+    await tester.ensureVisible(find.text('Snap Selection to Grid'));
+    await tester.tap(find.text('Snap Selection to Grid'));
+    await tester.pumpAndSettle();
+
+    final snapped = controller.currentPage!.findShapeById(id)!;
+    expect(snapped.width, 1.25);
+    expect(snapped.height, 0.5);
+  });
+
   testWidgets('controller Home request restores a centred 100% canvas view',
       (tester) async {
     final camera = CanvasCamera();

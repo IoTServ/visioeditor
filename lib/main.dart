@@ -1960,6 +1960,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 _exportPdf();
                               case 'selectAll':
                                 cur.selectAll();
+                              case 'selectNone':
+                                cur.clearSelection();
+                              case 'snapSelection':
+                                cur.snapSelectionToGrid();
                               case 'find':
                                 _openFind();
                               case 'replace':
@@ -2093,6 +2097,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
                             PopupMenuItem<String>(
                               value: 'selectAll',
                               child: Text(el.selectAllShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'selectNone',
+                              enabled: cur.hasSelection,
+                              child: Text(el.selectNoneShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'snapSelection',
+                              enabled: cur.canSnapSelectionToGrid,
+                              child: Text(el.snapSelectionToGrid),
                             ),
                             PopupMenuItem<String>(
                               value: 'find',
@@ -4601,6 +4615,12 @@ class _PropertyPanel extends StatelessWidget {
                   _iconBtn(Icons.aspect_ratio, EditorL10n.of(context).sameSize,
                       controller.matchSelectionSize),
                 ],
+                if (controller.canSnapSelectionToGrid)
+                  _iconBtn(
+                    Icons.grid_4x4,
+                    EditorL10n.of(context).snapSelectionToGrid,
+                    controller.snapSelectionToGrid,
+                  ),
               ],
             ),
             const SizedBox(height: 16),
