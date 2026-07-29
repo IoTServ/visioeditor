@@ -25,6 +25,10 @@ void main() {
     expect(zh.copyAsText, '复制为文本');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
+    expect(en.copyTextStyle, 'Copy Text Style');
+    expect(zh.copyTextStyle, '复制文本样式');
+    expect(en.pasteTextStyle, 'Paste Text Style');
+    expect(zh.pasteTextStyle, '粘贴文本样式');
     expect(en.stencilGroup('Flowchart'), 'Flowchart');
     expect(zh.stencilGroup('Flowchart'), '流程图');
     expect(zh.stencil('Rounded Rectangle'), '圆角矩形');

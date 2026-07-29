@@ -1621,6 +1621,14 @@ class _PageCanvasState extends State<PageCanvas> {
         items.add(PopupMenuItem(
             value: 'pasteStyle', child: Text(el.pasteStyle)));
       }
+      if (_c.canCopyTextStyle) {
+        items.add(PopupMenuItem(
+            value: 'copyTextStyle', child: Text(el.copyTextStyle)));
+      }
+      if (_c.canPasteTextStyle) {
+        items.add(PopupMenuItem(
+            value: 'pasteTextStyle', child: Text(el.pasteTextStyle)));
+      }
       if (_c.canCopyShapeData) {
         items.add(PopupMenuItem(value: 'copyData', child: Text(el.copyData)));
       }
@@ -1775,6 +1783,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.copyStyle();
       case 'pasteStyle':
         _c.pasteStyle();
+      case 'copyTextStyle':
+        _c.copyTextStyle();
+      case 'pasteTextStyle':
+        _c.pasteTextStyle();
       case 'copyData':
         _c.copyShapeData();
       case 'pasteData':

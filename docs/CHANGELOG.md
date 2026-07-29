@@ -6,6 +6,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io text-style clipboard parity**: **Copy Text Style** /
+  **Paste Text Style** now transfer only label typography and layout—font,
+  size, colour, emphasis, paragraph alignment, text margins, background,
+  vertical alignment and direction—without touching label content, shape
+  fill/line/effects or text-box geometry. The actions use draw.io's
+  `Alt+Shift+C/V`, appear in the Text panel, More menu and context menu, apply
+  through group descendants while skipping locked parts, and are localized
+  across all 37 supported UI languages.
 - **draw.io link/text action parity**: **Copy as Text** places the first
   selected shape's plain label on the system clipboard and safely wins over an
   in-flight rich shape copy. **Open Link** is available from the context menu,

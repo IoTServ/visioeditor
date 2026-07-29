@@ -91,6 +91,10 @@ byte-for-byte, so formulas and structure survive a save.
   Open Link is available from the context menu, More menu and Format panel:
   internal page anchors navigate inside the drawing and safe external targets
   open through the platform.
+  Copy Text Style / Paste Text Style and their Alt+Shift+C/V shortcuts transfer
+  only label typography and layout, preserving target text, shape appearance
+  and text-box position; the same actions are available in the Text panel and
+  selection menus.
   F2 also edits a selected label; Home restores a centred 100% view and
   Cmd/Ctrl+J fits the current page. Cmd/Ctrl+Shift+G/O/L toggle the grid,
   Outline and Layers panels, while Cmd/Ctrl+Shift+K toggles the Shapes sidebar.

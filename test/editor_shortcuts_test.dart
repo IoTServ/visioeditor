@@ -177,6 +177,16 @@ void main() {
         shift: true,
       ): () => c.pasteShapeData(includeLabel: true),
       const SingleActivator(
+        LogicalKeyboardKey.keyC,
+        alt: true,
+        shift: true,
+      ): c.copyTextStyle,
+      const SingleActivator(
+        LogicalKeyboardKey.keyV,
+        alt: true,
+        shift: true,
+      ): c.pasteTextStyle,
+      const SingleActivator(
         LogicalKeyboardKey.arrowUp,
         alt: true,
         shift: true,
@@ -802,6 +812,52 @@ void main() {
     expect(pasted.userProperties.single.name, 'Owner');
     expect(pasted.userProperties.single.value, 'Alice');
     expect(pasted.richText.plainText, 'Source');
+  });
+
+  testWidgets('Alt+Shift+C/V copies and pastes only text style',
+      (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c
+      ..setShapeText(source, 'Source')
+      ..setBold(true);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1.5,
+        height: 1,
+      ),
+      5,
+      3,
+    );
+    final target = c.singleSelectedId!;
+    c
+      ..setShapeText(target, 'Target')
+      ..setFillColor(const VsdxColor(0xFF00AA00))
+      ..selectOnly(source);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    c.selectOnly(target);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    final pasted = c.currentPage!.findShapeById(target)!;
+    expect(pasted.richText.plainText, 'Target');
+    expect(pasted.richText.runs.first.charStyle.style.bold, isTrue);
+    expect(pasted.fill.foreground?.value, 0xFF00AA00);
   });
 
   testWidgets('Alt+Shift+arrow clones and connects without canvas focus',

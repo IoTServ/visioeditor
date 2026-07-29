@@ -1395,6 +1395,22 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       if (cur != null && cur.hasStyleClipboard) cur.pasteStyle();
     }, alt: true);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyC,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.copyTextStyle();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyV,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.pasteTextStyle();
+    };
     mod(LogicalKeyboardKey.keyG, () {
       final cur = c();
       if (cur != null && cur.canGroup) cur.groupSelection();
@@ -1753,6 +1769,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.copyStyle();
                               case 'pasteStyle':
                                 cur.pasteStyle();
+                              case 'copyTextStyle':
+                                cur.copyTextStyle();
+                              case 'pasteTextStyle':
+                                cur.pasteTextStyle();
                               case 'presentation':
                                 _enterPresentation();
                               case 'snap':
@@ -1906,6 +1926,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'pasteStyle',
                               enabled: cur.hasStyleClipboard && cur.hasSelection,
                               child: Text(el.pasteStyleShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'copyTextStyle',
+                              enabled: cur.canCopyTextStyle,
+                              child: Text(el.copyTextStyleShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'pasteTextStyle',
+                              enabled: cur.canPasteTextStyle,
+                              child: Text(el.pasteTextStyleShortcut),
                             ),
                             if (cur.hasDocument)
                               PopupMenuItem<String>(
@@ -4583,7 +4613,7 @@ class _PropertyPanel extends StatelessWidget {
   /// Full-width outline action that ellipsizes long locale labels inside the
   /// narrow Format panel / bottom sheet.
   Widget _fullWidthOutlineButton({
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     required IconData icon,
     required String label,
   }) {
@@ -5523,6 +5553,20 @@ class _PropertyPanel extends StatelessWidget {
               visualDensity: VisualDensity.compact,
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        _fullWidthOutlineButton(
+          onPressed:
+              controller.canCopyTextStyle ? controller.copyTextStyle : null,
+          icon: Icons.copy,
+          label: EditorL10n.of(context).copyTextStyle,
+        ),
+        const SizedBox(height: 4),
+        _fullWidthOutlineButton(
+          onPressed:
+              controller.canPasteTextStyle ? controller.pasteTextStyle : null,
+          icon: Icons.paste,
+          label: EditorL10n.of(context).pasteTextStyle,
         ),
         const SizedBox(height: 8),
         _fontDropdown(context, cs),

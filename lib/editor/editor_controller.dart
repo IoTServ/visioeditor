@@ -6863,6 +6863,133 @@ class EditorController extends ChangeNotifier {
     return next;
   }
 
+  // --- Copy / paste text style (draw.io Alt+Shift+C / Alt+Shift+V) -----------
+
+  ({
+    VsdxCharStyle char,
+    VsdxParaStyle para,
+    VsdxVertAlign verticalAlign,
+    double marginLeft,
+    double marginRight,
+    double marginTop,
+    double marginBottom,
+    VsdxColor? backgroundColor,
+    double backgroundTransparency,
+    int textDirection,
+  })? _textStyleClipboard;
+
+  bool get hasTextStyleClipboard => _textStyleClipboard != null;
+
+  bool get canCopyTextStyle {
+    final id = singleSelectedId;
+    return id != null && currentPage?.findShapeById(id) != null;
+  }
+
+  bool get canPasteTextStyle {
+    if (_textStyleClipboard == null) return false;
+    final page = currentPage;
+    if (page == null) return false;
+    return _subtreeIds(_selection).any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null &&
+          !shape.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Capture only label typography and layout, leaving shape appearance out.
+  void copyTextStyle() {
+    if (!canCopyTextStyle) return;
+    final shape = currentPage!.findShapeById(singleSelectedId!)!;
+    final run = shape.richText.runs.isEmpty
+        ? const VsdxTextRun(text: '')
+        : shape.richText.runs.first;
+    final block = shape.richText.textBlock;
+    _textStyleClipboard = (
+      char: run.charStyle,
+      para: run.paraStyle,
+      verticalAlign: block.verticalAlign,
+      marginLeft: block.marginLeftInches,
+      marginRight: block.marginRightInches,
+      marginTop: block.marginTopInches,
+      marginBottom: block.marginBottomInches,
+      backgroundColor: block.backgroundColor,
+      backgroundTransparency: block.backgroundTransparency,
+      textDirection: block.textDirection,
+    );
+    notifyListeners();
+  }
+
+  /// Apply copied label styling to the selection and its descendant parts.
+  ///
+  /// Fill, line, effects, label text and text-block geometry are preserved.
+  /// Every editable target is updated in one undo step.
+  void pasteTextStyle() {
+    final clip = _textStyleClipboard;
+    final doc = _document;
+    final page = currentPage;
+    if (clip == null || doc == null || page == null || _selection.isEmpty) {
+      return;
+    }
+    final ids = _subtreeIds(_selection);
+    var nextDoc = clip.char.themeColorIndex != null && doc.theme.isEmpty
+        ? doc.copyWith(theme: VsdxTheme.office)
+        : doc;
+    var nextPage = nextDoc.pages[_currentPageIndex];
+    var changed = false;
+    for (final id in ids) {
+      final shape = nextPage.findShapeById(id);
+      if (shape == null || shape.locked || isOnLockedLayer(id)) continue;
+      final runs = shape.richText.runs.isEmpty
+          ? <VsdxTextRun>[
+              VsdxTextRun(
+                text: shape.text ?? '',
+                charStyle: clip.char,
+                paraStyle: clip.para,
+              ),
+            ]
+          : <VsdxTextRun>[
+              for (final run in shape.richText.runs)
+                run.copyWith(
+                  charStyle: clip.char,
+                  paraStyle: clip.para,
+                ),
+            ];
+      final old = shape.richText.textBlock;
+      final styledBlock = VsdxTextBlock(
+        pinXInches: old.pinXInches,
+        pinYInches: old.pinYInches,
+        locPinXInches: old.locPinXInches,
+        locPinYInches: old.locPinYInches,
+        widthInches: old.widthInches,
+        heightInches: old.heightInches,
+        angleRad: old.angleRad,
+        verticalAlign: clip.verticalAlign,
+        marginLeftInches: clip.marginLeft,
+        marginRightInches: clip.marginRight,
+        marginTopInches: clip.marginTop,
+        marginBottomInches: clip.marginBottom,
+        hideText: old.hideText,
+        backgroundColor: clip.backgroundColor,
+        backgroundTransparency: clip.backgroundTransparency,
+        textDirection: clip.textDirection,
+        defaultTabStopInches: old.defaultTabStopInches,
+      );
+      nextPage = nextPage.updateShapeById(
+        id,
+        (target) => target.copyWith(
+          richText: target.richText.copyWith(
+            runs: runs,
+            textBlock: styledBlock,
+          ),
+        ),
+      );
+      changed = true;
+    }
+    if (!changed) return;
+    applyEdit(nextDoc.replacePage(_currentPageIndex, nextPage));
+  }
+
   // --- Shape data (drawio "Edit Data", Cmd+M) --------------------------------
 
   /// The id of the single selected shape, or `null` when zero / many are

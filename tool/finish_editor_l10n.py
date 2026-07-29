@@ -321,6 +321,86 @@ OPEN_LINK = {
     "sw": "Fungua Kiungo",
 }
 
+COPY_TEXT_STYLE = {
+    "en": "Copy Text Style",
+    "zh": "复制文本样式",
+    "ja": "テキストスタイルをコピー",
+    "ko": "텍스트 스타일 복사",
+    "es": "Copiar estilo de texto",
+    "fr": "Copier le style de texte",
+    "de": "Textstyle kopieren",
+    "pt": "Copiar estilo de texto",
+    "ru": "Копировать стиль текста",
+    "it": "Copia stile testo",
+    "ar": "نسخ نمط النص",
+    "id": "Salin Gaya Teks",
+    "hi": "टेक्स्ट स्टाइल कॉपी करें",
+    "nl": "Tekststijl kopiëren",
+    "tr": "Metin Stilini Kopyala",
+    "pl": "Kopiuj styl tekstu",
+    "vi": "Sao chép kiểu văn bản",
+    "th": "คัดลอกรูปแบบข้อความ",
+    "sv": "Kopiera textstil",
+    "uk": "Копіювати стиль тексту",
+    "he": "העתק סגנון טקסט",
+    "cs": "Zkopírovat styl textu",
+    "ro": "Copiază stil text",
+    "el": "Αντιγραφή Στυλ Κειμένου",
+    "hu": "Szövegstílus másolása",
+    "da": "Kopiér teksttypografi",
+    "ms": "Salin Gaya Teks",
+    "fi": "Kopioi tekstityyli",
+    "nb": "Kopier tekststil",
+    "sk": "Kopírovať štýl textu",
+    "bn": "টেক্সট স্টাইল কপি করুন",
+    "fa": "کپی سبک متن",
+    "bg": "Копиране на стил на текст",
+    "hr": "Kopiraj stil teksta",
+    "ca": "Copia l'estil de text",
+    "fil": "Kopyahin ang Istilo ng Teksto",
+    "sw": "Nakili Mtindo wa Maandishi",
+}
+
+PASTE_TEXT_STYLE = {
+    "en": "Paste Text Style",
+    "zh": "粘贴文本样式",
+    "ja": "テキストスタイルを貼り付け",
+    "ko": "텍스트 스타일 붙여넣기",
+    "es": "Pegar estilo de texto",
+    "fr": "Coller le style de texte",
+    "de": "Textstyle einfügen",
+    "pt": "Colar estilo de texto",
+    "ru": "Вставить стиль текста",
+    "it": "Incolla stile testo",
+    "ar": "لصق نمط النص",
+    "id": "Tempelkan Gaya Teks",
+    "hi": "टेक्स्ट शैली पेस्ट करें",
+    "nl": "Tekststijl plakken",
+    "tr": "Metin Stilini Yapıştır",
+    "pl": "Wklej styl tekstu",
+    "vi": "Dán kiểu văn bản",
+    "th": "วางรูปแบบข้อความ",
+    "sv": "Klistra in textstil",
+    "uk": "Вставити стиль тексту",
+    "he": "הדבק סגנון טקסט",
+    "cs": "Vložit styl textu",
+    "ro": "Lipește stil text",
+    "el": "Επικόλληση Στυλ Κειμένου",
+    "hu": "Szövegstílus beillesztése",
+    "da": "Indsæt teksttypografi",
+    "ms": "Tampal Gaya Teks",
+    "fi": "Liitä tekstityyli",
+    "nb": "Lim inn tekststil",
+    "sk": "Prilepiť štýl textu",
+    "bn": "টেক্সট স্টাইল পেস্ট করুন",
+    "fa": "سبک متن را بچسبانید",
+    "bg": "Поставяне на стил на текст",
+    "hr": "Zalijepi stil teksta",
+    "ca": "Enganxa l'estil de text",
+    "fil": "Idikit ang Istilo ng Teksto",
+    "sw": "Bandika Mtindo wa Maandishi",
+}
+
 
 def load_existing() -> dict[str, dict[str, str]]:
     """Load all generated tables as the offline regeneration baseline."""
@@ -381,6 +461,12 @@ def main() -> None:
         existing[lang]["copyAsText"] = value
     for lang, value in OPEN_LINK.items():
         existing[lang]["openLink"] = value
+    for lang, value in COPY_TEXT_STYLE.items():
+        existing[lang]["copyTextStyle"] = value
+        existing[lang]["copyTextStyleShortcut"] = f"{value}  Alt+Shift+C"
+    for lang, value in PASTE_TEXT_STYLE.items():
+        existing[lang]["pasteTextStyle"] = value
+        existing[lang]["pasteTextStyleShortcut"] = f"{value}  Alt+Shift+V"
     en_all = existing["en"]
     zh_all = existing["zh"]
     en_ui = {k: v for k, v in en_all.items() if not k.startswith("st_")}

@@ -76,6 +76,10 @@ class EditorL10n {
   String get copyStyleShortcut => _t('copyStyleShortcut');
   String get pasteStyle => _t('pasteStyle');
   String get pasteStyleShortcut => _t('pasteStyleShortcut');
+  String get copyTextStyle => _t('copyTextStyle');
+  String get copyTextStyleShortcut => _t('copyTextStyleShortcut');
+  String get pasteTextStyle => _t('pasteTextStyle');
+  String get pasteTextStyleShortcut => _t('pasteTextStyleShortcut');
   String get saveAs => _t('saveAs');
   String get exportSvg => _t('exportSvg');
   String get exportPng => _t('exportPng');
