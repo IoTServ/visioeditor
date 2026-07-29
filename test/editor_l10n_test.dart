@@ -31,6 +31,10 @@ void main() {
     expect(zh.copyOnConnect, '连线时复制');
     expect(en.collapseExpand, 'Collapse/Expand Controls');
     expect(zh.collapseExpand, '折叠/展开控件');
+    expect(en.editTooltip, 'Edit Tooltip…');
+    expect(zh.editTooltip, '编辑工具提示…');
+    expect(en.tooltips, 'Tooltips');
+    expect(zh.tooltips, '工具提示');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');

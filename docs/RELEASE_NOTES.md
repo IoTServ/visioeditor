@@ -102,6 +102,9 @@ byte-for-byte, so formulas and structure survive a save.
   connector reversal. Copy Data / Paste Data transfers complete Shape Data
   metadata; context-menu paste preserves target labels, while the draw.io
   Alt+Shift+B/E shortcuts also transfer the source label.
+  Edit Tooltip adds undoable, persistent custom hover text from the More or
+  shape context menu; the Extras Tooltips switch can hide it without deleting
+  it from the drawing.
   Copy as Text places a selected shape's plain label on the system clipboard.
   Open Link is available from the context menu, More menu and Format panel:
   internal page anchors navigate inside the drawing and safe external targets

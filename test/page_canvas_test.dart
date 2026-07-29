@@ -118,6 +118,47 @@ void main() {
     expect(r.width / r.height, closeTo(pageAspect, 0.01));
   });
 
+  testWidgets('custom shape tooltip appears after hover and can be disabled',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        id = _addRect(c);
+        c.setShapeTooltip(id, 'Owner: Alice\nStatus: Review');
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final shape = page.findShapeById(id)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final point = _pagePoint(
+      origin,
+      camera,
+      page,
+      shape.pinX,
+      shape.pinY,
+    );
+    final mouse =
+        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: origin + const Offset(4, 4));
+    await mouse.moveTo(point);
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(find.byKey(const ValueKey('shape-tooltip')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.byKey(const ValueKey('shape-tooltip')), findsOneWidget);
+    expect(find.text('Owner: Alice\nStatus: Review'), findsOneWidget);
+
+    controller.toggleTooltips();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('shape-tooltip')), findsNothing);
+  });
+
   testWidgets('controller Home request restores a centred 100% canvas view',
       (tester) async {
     final camera = CanvasCamera();

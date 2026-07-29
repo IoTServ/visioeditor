@@ -58,6 +58,7 @@ class EditorController extends ChangeNotifier {
   bool _connectionPointsEnabled = true;
   bool _copyOnConnectEnabled = false;
   bool _foldingControlsEnabled = true;
+  bool _tooltipsEnabled = true;
   bool _colorByLayer = false;
   double _lineJumpRadiusInches = 0.07;
   final double _gridInches = 0.25;
@@ -484,6 +485,7 @@ class EditorController extends ChangeNotifier {
   bool get connectionPointsEnabled => _connectionPointsEnabled;
   bool get copyOnConnectEnabled => _copyOnConnectEnabled;
   bool get foldingControlsEnabled => _foldingControlsEnabled;
+  bool get tooltipsEnabled => _tooltipsEnabled;
   bool get colorByLayer => _colorByLayer;
   double get lineJumpRadiusInches => _lineJumpRadiusInches;
   double get gridInches => _gridInches;
@@ -531,6 +533,12 @@ class EditorController extends ChangeNotifier {
   /// Toggle draw.io's fold controls and fold/unfold commands.
   void toggleFoldingControls() {
     _foldingControlsEnabled = !_foldingControlsEnabled;
+    notifyListeners();
+  }
+
+  /// Toggle custom shape hover tooltips (draw.io Extras > Tooltips).
+  void toggleTooltips() {
+    _tooltipsEnabled = !_tooltipsEnabled;
     notifyListeners();
   }
 
@@ -7749,6 +7757,31 @@ class EditorController extends ChangeNotifier {
         shapeId,
         (s) => s.copyWith(hyperlinks: links),
       ),
+    );
+  }
+
+  // --- Tooltips (draw.io "Edit Tooltip") -------------------------------------
+
+  bool get canEditTooltip {
+    final id = singleSelectedId;
+    final shape = singleSelected;
+    return id != null &&
+        shape != null &&
+        !shape.locked &&
+        !isOnLockedLayer(id);
+  }
+
+  /// Replace a shape's custom hover tooltip in one undo step. Empty text clears
+  /// the editor-owned `User.veTooltip` row.
+  void setShapeTooltip(int shapeId, String? value) {
+    final page = currentPage;
+    final shape = page?.findShapeById(shapeId);
+    if (shape == null || shape.locked || isOnLockedLayer(shapeId)) return;
+    final normalized = value?.trim() ?? '';
+    if (shape.tooltip == (normalized.isEmpty ? null : normalized)) return;
+    final next = shape.withTooltip(value);
+    updateCurrentPage(
+      (page) => page.updateShapeById(shapeId, (_) => next),
     );
   }
 

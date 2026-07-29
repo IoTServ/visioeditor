@@ -1467,6 +1467,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   Custom Zoom 百分比对话框，100% 重置继续由 Home 承担。`Cmd/Ctrl +/-` 通过控制器请求
   提升为应用级快捷键，工具栏/侧栏取得焦点后仍可缩放，同时保留画布聚焦时的直接响应。
   补控制器信号、画布双态判定、真实对话框与跨焦点快捷键回归。
+- 2026-07-29 — **对齐 draw.io Edit Tooltip 与 Tooltips 开关**：More 与图形右键菜单
+  增加多行 Tooltip 编辑/清空入口，控制器以单步撤销写入 `User.veTooltip`，通用 User
+  Section writer 保证 `.vsdx` 往返；画布在指针停留 500ms 后显示跟随式提示，Extras
+  Tooltips 开关可会话级隐藏而不删除文档内容。上游基础动作与 Trees 插件都占用
+  `Alt+Shift+T`，本应用保留已对齐的 Select Subtree 有效键位，避免 Tooltip 覆盖关系树
+  导航。补模型保留、换行往返、对话框、撤销、悬停延迟、关闭态及中英文回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

@@ -113,6 +113,14 @@ class EditorL10n {
   String get editDataShortcut => _t('editDataShortcut');
   String get editLink => _t('editLink');
   String get editLinkShortcut => _t('editLinkShortcut');
+  String get editTooltip =>
+      locale.languageCode == 'zh' ? '编辑工具提示…' : 'Edit Tooltip…';
+  String get tooltips => locale.languageCode == 'zh' ? '工具提示' : 'Tooltips';
+  String get tooltipText =>
+      locale.languageCode == 'zh' ? '工具提示文本' : 'Tooltip text';
+  String get tooltipHint => locale.languageCode == 'zh'
+      ? '指针停留在图形上时显示'
+      : 'Shown when the pointer rests over the shape';
   String get openLink => _t('openLink');
   String get editConnectionPoints => _t('editConnectionPoints');
   String get doneEditingConnectionPoints => _t('doneEditingConnectionPoints');

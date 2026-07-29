@@ -1709,12 +1709,14 @@ void main() {
           pinY: 2,
           width: 1,
           height: 1,
-        ).copyWith(
-          layerMemberIds: const <int>[0, 2],
-          userCells: const <VsdxUserCell>[
-            VsdxUserCell(name: 'visVersion', value: '1', prompt: 'ver'),
-          ],
-        ),
+        )
+            .copyWith(
+              layerMemberIds: const <int>[0, 2],
+              userCells: const <VsdxUserCell>[
+                VsdxUserCell(name: 'visVersion', value: '1', prompt: 'ver'),
+              ],
+            )
+            .withTooltip('Review owner\nbefore approval'),
       ),
     );
     final after = parser
@@ -1723,10 +1725,12 @@ void main() {
         .first
         .findShapeById(id)!;
     expect(after.layerMemberIds, <int>[0, 2]);
-    expect(after.userCells, hasLength(1));
-    expect(after.userCells.first.name, 'visVersion');
-    expect(after.userCells.first.value, '1');
-    expect(after.userCells.first.prompt, 'ver');
+    expect(after.userCells, hasLength(2));
+    final version =
+        after.userCells.firstWhere((cell) => cell.name == 'visVersion');
+    expect(version.value, '1');
+    expect(version.prompt, 'ver');
+    expect(after.tooltip, 'Review owner\nbefore approval');
   });
 
   test('Character Pos/Letterspace + Paragraph indents round-trip', () {

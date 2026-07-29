@@ -15,6 +15,7 @@ import '../render/vsdx_painter.dart';
 import 'canvas_camera.dart';
 import 'edit_data_dialog.dart';
 import 'edit_link_dialog.dart';
+import 'edit_tooltip_dialog.dart';
 import 'editor_controller.dart';
 import 'image_materials.dart';
 import 'link_opener.dart';
@@ -197,6 +198,13 @@ class _PageCanvasState extends State<PageCanvas> {
   int? _connectSourceId;
   int? _connectTargetId;
 
+  // draw.io custom shape tooltips. The pointer must rest over the same shape
+  // briefly before the overlay appears, avoiding flicker while traversing.
+  Timer? _shapeTooltipTimer;
+  int? _shapeTooltipCandidateId;
+  int? _visibleShapeTooltipId;
+  Offset? _shapeTooltipPosition;
+
   /// Dismisses an open quick-add shape picker, if any.
   VoidCallback? _dismissQuickAdd;
 
@@ -340,6 +348,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    _shapeTooltipTimer?.cancel();
     _dismissQuickAdd?.call();
     _dismissQuickAdd = null;
     _pendingQuickAdd = null;
@@ -1345,6 +1354,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onHover(PointerHoverEvent e) {
+    _updateShapeTooltip(e.localPosition);
     if (!_connectAffordanceActive) {
       if (_hoverShapeId != null) setState(() => _hoverShapeId = null);
       return;
@@ -1394,7 +1404,49 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  void _updateShapeTooltip(Offset position) {
+    if (!_c.tooltipsEnabled) {
+      _clearShapeTooltip();
+      return;
+    }
+    final id = _hitTest(position);
+    final text = id == null ? null : _page?.findShapeById(id)?.tooltip;
+    if (id == null || text == null) {
+      _clearShapeTooltip();
+      return;
+    }
+    if (_shapeTooltipCandidateId == id) {
+      _shapeTooltipPosition = position;
+      if (_visibleShapeTooltipId != null) setState(() {});
+      return;
+    }
+    _shapeTooltipTimer?.cancel();
+    final hadVisible = _visibleShapeTooltipId != null;
+    _shapeTooltipCandidateId = id;
+    _shapeTooltipPosition = position;
+    _visibleShapeTooltipId = null;
+    if (hadVisible) setState(() {});
+    _shapeTooltipTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted ||
+          !_c.tooltipsEnabled ||
+          _shapeTooltipCandidateId != id) {
+        return;
+      }
+      setState(() => _visibleShapeTooltipId = id);
+    });
+  }
+
+  void _clearShapeTooltip() {
+    _shapeTooltipTimer?.cancel();
+    _shapeTooltipTimer = null;
+    _shapeTooltipCandidateId = null;
+    _shapeTooltipPosition = null;
+    if (_visibleShapeTooltipId == null) return;
+    setState(() => _visibleShapeTooltipId = null);
+  }
+
   void _clearHover() {
+    _clearShapeTooltip();
     if (_hoverShapeId != null ||
         _hoverOnConnectPoint ||
         _hoverOnQuickAddArrow) {
@@ -1690,6 +1742,12 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_c.singleSelectedId != null) {
         items.add(PopupMenuItem(value: 'editData', child: Text(el.editData)));
         items.add(PopupMenuItem(value: 'editLink', child: Text(el.editLink)));
+        if (_c.canEditTooltip) {
+          items.add(PopupMenuItem(
+            value: 'editTooltip',
+            child: Text(el.editTooltip),
+          ));
+        }
         if (_c.selectedLink?.effectiveTarget?.isNotEmpty ?? false) {
           items.add(PopupMenuItem(
               value: 'openLink', child: Text(el.openLink)));
@@ -1858,6 +1916,9 @@ class _PageCanvasState extends State<PageCanvas> {
       case 'editLink':
         final id = _c.singleSelectedId;
         if (id != null) await showEditLinkDialog(context, _c, id);
+      case 'editTooltip':
+        final id = _c.singleSelectedId;
+        if (id != null) await showEditTooltipDialog(context, _c, id);
       case 'openLink':
         unawaited(openPrimaryHyperlink(_c));
       case 'replaceImage':
@@ -4320,6 +4381,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Edit-mode gestures stay on [GestureDetector] — tracking pointers here
   /// while editing prevented pan/tap recognition on touch layouts.
   void _onCanvasPointerDown(PointerDownEvent e) {
+    _clearShapeTooltip();
     final auxiliaryPan =
         e.buttons & (kSecondaryMouseButton | kMiddleMouseButton) != 0;
     if (auxiliaryPan && _auxPanPointer == null) {
@@ -4635,6 +4697,10 @@ class _PageCanvasState extends State<PageCanvas> {
               snappedConnectionPoint = point;
             }
             final inlineEditor = _buildInlineEditor(context);
+            final tooltipPosition = _shapeTooltipPosition;
+            final tooltipText = _visibleShapeTooltipId == null
+                ? null
+                : page.findShapeById(_visibleShapeTooltipId!)?.tooltip;
             final guideSegments = <(Offset, Offset, SnapGuideKind)>[
               for (final g in _guides)
                 g.vertical
@@ -4842,6 +4908,44 @@ class _PageCanvasState extends State<PageCanvas> {
                         ),
                       ),
                       ?inlineEditor,
+                      if (_c.tooltipsEnabled &&
+                          tooltipText != null &&
+                          tooltipPosition != null)
+                        Positioned(
+                          left: (tooltipPosition.dx + 14)
+                              .clamp(8.0, math.max(8.0, viewport.width - 268)),
+                          top: (tooltipPosition.dy + 18)
+                              .clamp(8.0, math.max(8.0, viewport.height - 96)),
+                          child: IgnorePointer(
+                            child: Material(
+                              key: const ValueKey('shape-tooltip'),
+                              elevation: 4,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .inverseSurface,
+                              borderRadius: BorderRadius.circular(4),
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 260),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 7,
+                                  ),
+                                  child: Text(
+                                    tooltipText,
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onInverseSurface,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       if (!widget.presentationMode)
                         Positioned(
                           right: 12,

@@ -16,6 +16,7 @@ import 'editor/canvas_camera.dart';
 import 'editor/chart_editor_host.dart';
 import 'editor/edit_data_dialog.dart';
 import 'editor/edit_link_dialog.dart';
+import 'editor/edit_tooltip_dialog.dart';
 import 'editor/editor_controller.dart';
 import 'editor/editor_shortcuts.dart';
 import 'editor/editor_workspace.dart';
@@ -271,6 +272,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final id = c?.singleSelectedId;
     if (c == null || id == null) return;
     await showEditLinkDialog(context, c, id);
+  }
+
+  /// Open draw.io's "Edit Tooltip" for the selected shape.
+  Future<void> _editTooltip() async {
+    final c = _c;
+    final id = c?.singleSelectedId;
+    if (c == null || id == null || !c.canEditTooltip) return;
+    await showEditTooltipDialog(context, c, id);
   }
 
   @override
@@ -1961,6 +1970,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 _editData();
                               case 'editLink':
                                 _editLink();
+                              case 'editTooltip':
+                                _editTooltip();
                               case 'copyAsText':
                                 unawaited(cur.copySelectionAsText());
                               case 'openLink':
@@ -1999,6 +2010,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.toggleCopyOnConnect();
                               case 'foldingControls':
                                 cur.toggleFoldingControls();
+                              case 'tooltips':
+                                cur.toggleTooltips();
                               case 'agentPreview':
                                 _toggleAgentPreview();
                               case 'aiChat':
@@ -2102,6 +2115,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'editLink',
                               enabled: cur.singleSelectedId != null,
                               child: Text(el.editLinkShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'editTooltip',
+                              enabled: cur.canEditTooltip,
+                              child: Text(el.editTooltip),
                             ),
                             PopupMenuItem<String>(
                               value: 'copyAsText',
@@ -2211,6 +2229,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'foldingControls',
                               checked: cur.foldingControlsEnabled,
                               child: Text(el.collapseExpand),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'tooltips',
+                              checked: cur.tooltipsEnabled,
+                              child: Text(el.tooltips),
                             ),
                             CheckedPopupMenuItem<String>(
                               value: 'agentPreview',

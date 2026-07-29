@@ -6,6 +6,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io custom shape tooltips**: **Edit Tooltip…** is now available from
+  the More and shape context menus. Tooltip text is undoable, survives `.vsdx`
+  saves through `User.veTooltip`, and appears in a delayed pointer-following
+  canvas overlay. The Extras-style **Tooltips** switch hides or restores all
+  custom hover text without modifying the document.
 - **draw.io Smart Fit and global zoom keys**: with no selection, `Enter` now
   toggles between a centred 100% view and Fit Window. `Cmd/Ctrl+0` opens the
   existing validated custom-percentage dialog, matching draw.io rather than

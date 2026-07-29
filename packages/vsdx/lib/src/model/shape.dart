@@ -724,6 +724,13 @@ class VsdxShape {
   /// block (editor "Curved Text"). Round-trips via `User.veCurvedText`.
   static const String userCurvedText = 'veCurvedText';
 
+  /// Custom hover text used by draw.io's "Edit Tooltip" action.
+  ///
+  /// Visio has no portable shape-tooltip cell, so the editor stores it in a
+  /// normal User row. Generic User-section parsing/writing keeps it intact
+  /// across `.vsdx` saves without affecting Visio rendering.
+  static const String userTooltip = 'veTooltip';
+
   /// Stored expanded height (inches) while [collapsed], so unfold restores size.
   static const String userExpandedHeight = 'veExpandedHeight';
 
@@ -752,6 +759,36 @@ class VsdxShape {
       if (c.name == userCurvedText) return c.value == '1';
     }
     return false;
+  }
+
+  /// User-authored hover tooltip, or `null` when none is configured.
+  String? get tooltip {
+    for (final c in userCells) {
+      if (c.name == userTooltip) {
+        final value = c.value?.trim() ?? '';
+        return value.isEmpty ? null : value;
+      }
+    }
+    return null;
+  }
+
+  /// Set or clear [tooltip] while preserving unrelated User rows.
+  VsdxShape withTooltip(String? value) {
+    final text = value?.trim() ?? '';
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userTooltip) c,
+    ];
+    if (text.isEmpty) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userTooltip, value: text),
+      ],
+    );
   }
 
   /// Set / clear Curved Text via [userCurvedText]. Round-trips as a `User` cell.
