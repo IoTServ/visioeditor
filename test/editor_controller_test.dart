@@ -1996,6 +1996,64 @@ void main() {
     );
   });
 
+  test('connector label position is page-based and one undoable drag', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(
+      a.pinX,
+      a.pinY,
+      b.pinX,
+      b.pinY,
+      beginTarget: a.id,
+      endTarget: b.id,
+    );
+    final connectorId = c.singleSelectedId!;
+    c.setShapeText(connectorId, 'Approval');
+    expect(
+      c.currentPage!
+          .findShapeById(connectorId)!
+          .richText
+          .textBlock
+          .pinXInches,
+      isNull,
+    );
+
+    c.beginTransaction();
+    c.moveConnectorLabel(connectorId, 3.5, 4.5, transient: true);
+    c.moveConnectorLabel(connectorId, 4.0, 5.0, transient: true);
+    c.commitTransaction();
+
+    var page = c.currentPage!;
+    var connector = page.findShapeById(connectorId)!;
+    final block = connector.richText.textBlock;
+    expect(block.widthInches, greaterThan(0));
+    expect(block.heightInches, greaterThan(0));
+    final label = page.localToPageDeep(
+      connectorId,
+      Offset2D(block.pinXInches!, block.pinYInches!),
+    );
+    expect(label.x, closeTo(4.0, 1e-6));
+    expect(label.y, closeTo(5.0, 1e-6));
+
+    final reopened = const DocumentParser().parse(c.exportToBytes());
+    final reopenedPage = reopened.pages.first;
+    final reopenedConnector = reopenedPage.findShapeById(connectorId)!;
+    final reopenedBlock = reopenedConnector.richText.textBlock;
+    final reopenedLabel = reopenedPage.localToPageDeep(
+      connectorId,
+      Offset2D(reopenedBlock.pinXInches!, reopenedBlock.pinYInches!),
+    );
+    expect(reopenedLabel.x, closeTo(4.0, 1e-6));
+    expect(reopenedLabel.y, closeTo(5.0, 1e-6));
+
+    c.undo();
+    page = c.currentPage!;
+    connector = page.findShapeById(connectorId)!;
+    expect(connector.richText.textBlock.pinXInches, isNull);
+    expect(connector.richText.textBlock.pinYInches, isNull);
+  });
+
   test('createConnector without CP index uses whole-shape perimeter glue', () {
     final c = newDocWithTwoRects();
     final rects = c.currentPage!.shapes.toList();

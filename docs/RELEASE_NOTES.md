@@ -25,6 +25,8 @@ byte-for-byte, so formulas and structure survive a save.
   common-shape picker. Drag from a shape's directional arrow to start a fixed
   connector; hold Alt/Option while dropping an endpoint inside a shape to add
   a custom fixed connection point, or Shift to force floating perimeter glue.
+  Labelled connectors expose a yellow diamond handle for freely positioning
+  their label with one-step undo.
   Hold Ctrl/Cmd while dragging a directional arrow to clone the shape at any
   drop point and connect it. Alt+Shift+Arrow also clones/connects in any
   direction.
@@ -60,7 +62,8 @@ byte-for-byte, so formulas and structure survive a save.
   moves the selection; adding Ctrl/Cmd displaces shapes across horizontal and
   vertical area cuts, while an Alt+Shift marquee subtracts intersecting shapes.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
-  parent. Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
+  parent. Right-click blank canvas to select all edges or all vertices.
+  Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical

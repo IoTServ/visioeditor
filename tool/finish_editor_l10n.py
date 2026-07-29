@@ -121,6 +121,86 @@ TOOL_PAN = {
     "sw": "Sogeza / kukuza turubai",
 }
 
+SELECT_EDGES = {
+    "en": "Select Edges",
+    "zh": "选择连接线",
+    "ja": "エッジを選択",
+    "ko": "연결선 선택",
+    "es": "Seleccionar conectores",
+    "fr": "Sélectionner les connecteurs",
+    "de": "Verbinder auswählen",
+    "pt": "Selecionar conectores",
+    "ru": "Выбрать соединители",
+    "it": "Seleziona connettori",
+    "ar": "تحديد الموصلات",
+    "id": "Pilih konektor",
+    "hi": "कनेक्टर चुनें",
+    "nl": "Selecteer verbindingslijnen",
+    "tr": "Bağlayıcıları seç",
+    "pl": "Zaznacz łączniki",
+    "vi": "Chọn đường nối",
+    "th": "เลือกเส้นเชื่อม",
+    "sv": "Markera kopplingar",
+    "uk": "Вибрати з’єднувачі",
+    "he": "בחר מחברים",
+    "cs": "Vybrat spojnice",
+    "ro": "Selectează conectorii",
+    "el": "Επιλογή συνδέσμων",
+    "hu": "Összekötők kijelölése",
+    "da": "Vælg forbindelser",
+    "ms": "Pilih penyambung",
+    "fi": "Valitse yhdysviivat",
+    "nb": "Velg koblinger",
+    "sk": "Vybrať spojnice",
+    "bn": "সংযোগকারী নির্বাচন করুন",
+    "fa": "انتخاب اتصال‌دهنده‌ها",
+    "bg": "Избери съединители",
+    "hr": "Odaberi poveznice",
+    "ca": "Selecciona connectors",
+    "fil": "Piliin ang mga connector",
+    "sw": "Chagua viunganishi",
+}
+
+SELECT_VERTICES = {
+    "en": "Select Vertices",
+    "zh": "选择图形",
+    "ja": "頂点を選択",
+    "ko": "도형 선택",
+    "es": "Seleccionar vértices",
+    "fr": "Sélectionner les sommets",
+    "de": "Formen auswählen",
+    "pt": "Selecionar vértices",
+    "ru": "Выбрать вершины",
+    "it": "Seleziona vertici",
+    "ar": "تحديد الرؤوس",
+    "id": "Pilih simpul",
+    "hi": "शीर्ष चुनें",
+    "nl": "Selecteer vormen",
+    "tr": "Köşeleri seç",
+    "pl": "Zaznacz wierzchołki",
+    "vi": "Chọn đỉnh",
+    "th": "เลือกจุดยอด",
+    "sv": "Markera hörn",
+    "uk": "Вибрати вершини",
+    "he": "בחר קודקודים",
+    "cs": "Vybrat vrcholy",
+    "ro": "Selectează vârfurile",
+    "el": "Επιλογή κορυφών",
+    "hu": "Csúcsok kijelölése",
+    "da": "Vælg knudepunkter",
+    "ms": "Pilih bucu",
+    "fi": "Valitse solmut",
+    "nb": "Velg hjørner",
+    "sk": "Vybrať vrcholy",
+    "bn": "শীর্ষবিন্দু নির্বাচন করুন",
+    "fa": "انتخاب رأس‌ها",
+    "bg": "Избери върхове",
+    "hr": "Odaberi vrhove",
+    "ca": "Selecciona vèrtexs",
+    "fil": "Piliin ang mga vertex",
+    "sw": "Chagua vipeo",
+}
+
 
 def load_existing() -> dict[str, dict[str, str]]:
     """Load all generated tables as the offline regeneration baseline."""
@@ -180,6 +260,14 @@ def main() -> None:
     en_ui = {k: v for k, v in en_all.items() if not k.startswith("st_")}
     en_st = {k: v for k, v in en_all.items() if k.startswith("st_")}
     zh_ui = {k: zh_all[k] for k in en_ui if k in zh_all}
+    en_ui.update(
+        selectEdges=SELECT_EDGES["en"],
+        selectVertices=SELECT_VERTICES["en"],
+    )
+    zh_ui.update(
+        selectEdges=SELECT_EDGES["zh"],
+        selectVertices=SELECT_VERTICES["zh"],
+    )
     zh_st = {k: v for k, v in zh_all.items() if k.startswith("st_")}
     if len(zh_ui) != len(en_ui):
         raise SystemExit(f"zh UI incomplete: {len(zh_ui)} vs {len(en_ui)}")
@@ -235,6 +323,14 @@ def main() -> None:
     for lang, value in TOOL_PAN.items():
         if lang in banks:
             banks[lang]["toolPan"] = value
+
+    for lang, value in SELECT_EDGES.items():
+        if lang in banks:
+            banks[lang]["selectEdges"] = value
+
+    for lang, value in SELECT_VERTICES.items():
+        if lang in banks:
+            banks[lang]["selectVertices"] = value
 
     missing = [l for l in LANGS if l not in banks]
     if missing:

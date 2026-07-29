@@ -53,6 +53,8 @@ class EditorL10n {
   // --- More menu ---
   String get selectAll => _t('selectAll');
   String get selectAllShortcut => _t('selectAllShortcut');
+  String get selectEdges => _t('selectEdges');
+  String get selectVertices => _t('selectVertices');
   String get find => _t('find');
   String get findShortcut => _t('findShortcut');
   String get findReplace => _t('findReplace');

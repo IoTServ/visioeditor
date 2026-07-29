@@ -1447,6 +1447,135 @@ void main() {
     );
   });
 
+  testWidgets('connector label diamond drags to an undoable page position',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        final source = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        final target = c.singleSelectedId!;
+        c.createConnector(
+          2,
+          5,
+          6,
+          5,
+          beginTarget: source,
+          endTarget: target,
+        );
+        connector = c.singleSelectedId!;
+        c.setShapeText(connector, 'Approval');
+      },
+      camera: camera,
+    );
+    var page = controller.currentPage!;
+    final shape = page.findShapeById(connector)!;
+    final midpoint = VsdxPage.connectorMidpoint(shape);
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(
+      origin,
+      camera,
+      page,
+      midpoint.x,
+      midpoint.y,
+    );
+    final destination = _pagePoint(origin, camera, page, 4.0, 3.0);
+
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    page = controller.currentPage!;
+    final moved = page.findShapeById(connector)!;
+    final block = moved.richText.textBlock;
+    final label = page.localToPageDeep(
+      connector,
+      Offset2D(block.pinXInches!, block.pinYInches!),
+    );
+    expect(label.x, closeTo(4.0, 0.05));
+    expect(label.y, closeTo(3.0, 0.05));
+
+    controller.undo();
+    expect(
+      controller.currentPage!
+          .findShapeById(connector)!
+          .richText
+          .textBlock
+          .pinXInches,
+      isNull,
+    );
+  });
+
+  testWidgets('blank context menu selects all edges or vertices',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        final source = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        final target = c.singleSelectedId!;
+        c.createConnector(
+          2,
+          5,
+          6,
+          5,
+          beginTarget: source,
+          endTarget: target,
+        );
+        connector = c.singleSelectedId!;
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final blank = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      page,
+      9,
+      1,
+    );
+
+    await tester.tapAt(blank, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Select Edges'), findsOneWidget);
+    expect(find.text('Select Vertices'), findsOneWidget);
+    await tester.tap(find.text('Select Edges'));
+    await tester.pumpAndSettle();
+    expect(controller.selection, <int>{connector});
+
+    // A blank-canvas right click exposes the page selection commands even
+    // while an edge is selected.
+    await tester.tapAt(blank, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Select Vertices'));
+    await tester.pumpAndSettle();
+    expect(controller.selection, hasLength(2));
+    expect(
+      controller.selection.every(
+        (id) => !controller.currentPage!.findShapeById(id)!.is1D,
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets('connector segment midpoint drag creates one undoable waypoint',
       (tester) async {
     late int connector;

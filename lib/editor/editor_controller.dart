@@ -5731,6 +5731,89 @@ class EditorController extends ChangeNotifier {
     setConnectorWaypoints(id, wps);
   }
 
+  /// Move a connector's single VSDX text block to a page-space point.
+  ///
+  /// Draw.io exposes this as the yellow diamond label handle. A connector
+  /// without an authored TextXForm starts as a compact text box centred on the
+  /// requested point; existing text-block size, rotation and styling survive.
+  void moveConnectorLabel(
+    int id,
+    double pageX,
+    double pageY, {
+    bool transient = false,
+  }) {
+    final page0 = currentPage;
+    final connector = page0?.findShapeById(id);
+    if (connector == null ||
+        !connector.isGlueableConnector ||
+        connector.locked ||
+        isOnLockedLayer(id)) {
+      return;
+    }
+    updateCurrentPage(
+      (page) {
+        final s = page.findShapeById(id);
+        if (s == null || !s.isGlueableConnector) return page;
+        final local =
+            page.pageToLocalDeep(id, Offset2D(pageX, pageY));
+        final old = s.richText.textBlock;
+        final plain = s.richText.plainText.isNotEmpty
+            ? s.richText.plainText
+            : s.text ?? '';
+        final lines = plain.split('\n');
+        final longest = lines.fold<int>(
+          0,
+          (best, line) => math.max(best, line.runes.length),
+        );
+        final fontSize = s.richText.runs.isEmpty
+            ? 0.14
+            : s.richText.runs.first.charStyle.fontSizeInches;
+        final width = old.widthInches ??
+            math.max(
+              0.35,
+              longest * fontSize * 0.62 +
+                  old.marginLeftInches +
+                  old.marginRightInches,
+            );
+        final height = old.heightInches ??
+            math.max(
+              0.24,
+              math.max(lines.length, 1) * fontSize * 1.35 +
+                  old.marginTopInches +
+                  old.marginBottomInches,
+            );
+        final formulas = Map<String, String>.of(s.formulas);
+        for (final key in const <String>[
+          'TxtPinX',
+          'TxtPinY',
+          'TxtLocPinX',
+          'TxtLocPinY',
+          'TxtWidth',
+          'TxtHeight',
+        ]) {
+          formulas.remove(key);
+        }
+        return page.updateShapeById(
+          id,
+          (shape) => shape.copyWith(
+            formulas: formulas,
+            richText: shape.richText.copyWith(
+              textBlock: old.copyWith(
+                pinXInches: local.x,
+                pinYInches: local.y,
+                locPinXInches: old.locPinXInches ?? width / 2,
+                locPinYInches: old.locPinYInches ?? height / 2,
+                widthInches: width,
+                heightInches: height,
+              ),
+            ),
+          ),
+        );
+      },
+      transient: transient,
+    );
+  }
+
   /// Reconnect (or detach) one end of connector [connectorId] — drawio's
   /// endpoint editing. When [targetShapeId] is non-null the end is glued to
   /// that shape; otherwise it floats at page point ([x],[y]). Pass

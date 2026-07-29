@@ -85,6 +85,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   whole-shape/perimeter glue even when an existing blue point is nearby. Custom
   point creation, glue and undo are atomic, and locked targets fall back to
   floating glue without being mutated.
+- **Movable connector labels**: a selected labelled connector now exposes the
+  draw.io-style yellow diamond handle. Drag it to place the label anywhere on
+  the page; the standard VSDX TextXForm is updated, nested connectors use the
+  correct coordinate space, and the whole drag is one undo step.
 - **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
   drops straight into in-place editing; an untyped box is discarded on commit
   or cancel. It can still be given a background or border afterwards.
@@ -357,7 +361,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Right-click context menu**: cut / copy / paste / duplicate / delete, bring
   to front / send to back, group / ungroup, copy & paste style, edit text; on
   empty canvas, paste / **paste here** (at the cursor) / select all / fit to
-  window.
+  window, plus draw.io's **Select Edges** / **Select Vertices** commands for
+  page-wide connector or shape styling.
 - **Copy / paste style** (drawio "Copy Style" / "Paste Style"): lift the fill,
   line and text formatting off one shape and apply it to others.
 - **Group / ungroup** (drawio "Group" / "Ungroup"): combine the selected

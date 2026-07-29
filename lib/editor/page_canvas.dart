@@ -89,6 +89,7 @@ enum _DragMode {
   moveArea,
   moveWaypoint,
   moveEndpoint,
+  moveConnectorLabel,
   connect,
   tableColResize,
   tableRowResize,
@@ -166,6 +167,9 @@ class _PageCanvasState extends State<PageCanvas> {
   // begin / end handle is being dragged to reconnect or detach.
   int? _endpointConnId;
   bool _endpointIsBegin = false;
+
+  // Connector label drag (draw.io yellow diamond handle).
+  int? _connectorLabelId;
 
   // Hover-to-connect (drawio HoverIcons / EdrawMax quick-add): the top-level
   // shape currently under the cursor in idle select mode (shows directional
@@ -1014,6 +1018,26 @@ class _PageCanvasState extends State<PageCanvas> {
     return (s != null && s.isGlueableConnector) ? s : null;
   }
 
+  bool _connectorHasLabel(VsdxShape connector) =>
+      connector.richText.plainText.isNotEmpty ||
+      (connector.text?.isNotEmpty ?? false);
+
+  /// Page-space anchor of the connector's single VSDX label.
+  Offset2D _connectorLabelPage(VsdxShape connector) {
+    final page = _page!;
+    final block = connector.richText.textBlock;
+    if (block.pinXInches != null || block.pinYInches != null) {
+      return page.localToPageDeep(
+        connector.id,
+        Offset2D(
+          block.pinXInches ?? connector.width / 2,
+          block.pinYInches ?? connector.height / 2,
+        ),
+      );
+    }
+    return _connectorMidpointPage(connector);
+  }
+
   /// Content-px positions of (rotate-line anchor at the shape's oriented top
   /// centre, rotate-handle knob just beyond it).
   (Offset anchor, Offset knob) _rotateAnchors(VsdxShape s) {
@@ -1342,7 +1366,7 @@ class _PageCanvasState extends State<PageCanvas> {
         }
       }
     }
-    if (_c.hasSelection) {
+    if (hit != null && _c.hasSelection) {
       items.add(PopupMenuItem(value: 'cut', child: Text(el.cut)));
       items.add(PopupMenuItem(value: 'copy', child: Text(el.copy)));
       items.add(PopupMenuItem(value: 'duplicate', child: Text(el.duplicate)));
@@ -1446,6 +1470,10 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(value: 'paste', child: Text(el.paste)));
       items.add(PopupMenuItem(value: 'pasteHere', child: Text(el.pasteHere)));
       items.add(PopupMenuItem(value: 'selectAll', child: Text(el.selectAll)));
+      items.add(PopupMenuItem(
+          value: 'selectEdges', child: Text(el.selectEdges)));
+      items.add(PopupMenuItem(
+          value: 'selectVertices', child: Text(el.selectVertices)));
       items.add(PopupMenuItem(value: 'fit', child: Text(el.fitToWindow)));
       if (_c.hasPageGuides) {
         items.add(PopupMenuItem(
@@ -1543,6 +1571,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.unmergeSelectedCell();
       case 'selectAll':
         _c.selectAll();
+      case 'selectEdges':
+        _c.selectConnectors();
+      case 'selectVertices':
+        _c.selectVertices();
       case 'fit':
         fitToScreen();
       case 'clearGuides':
@@ -1741,9 +1773,10 @@ class _PageCanvasState extends State<PageCanvas> {
     // in the page pin — applying Transform flip again would double-flip.
     var applyShapeFlip = true;
     if (s.isGlueableConnector) {
-      // Edge label: a compact editor centred on the connector's route midpoint.
-      final mid = _connectorMidpointPage(s);
-      final screen = _pageToScreen(mid.x, mid.y);
+      // Edge label: a compact editor centred on its yellow-diamond anchor
+      // (route midpoint until the label has been moved).
+      final label = _connectorLabelPage(s);
+      final screen = _pageToScreen(label.x, label.y);
       width = 140.0;
       height = math.max(fontPx + 14, 30.0);
       left = screen.dx - width / 2;
@@ -2134,6 +2167,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // Connector endpoint handles (reconnect / detach) then bend points take
     // priority over hit-testing (they sit on top of the connector).
     if (_tryToggleCollapse(d.localPosition)) return;
+    if (_tryStartConnectorLabelDrag(d.localPosition)) return;
     if (_tryStartEndpointDrag(d.localPosition)) return;
     if (_tryStartWaypointDrag(d.localPosition)) return;
 
@@ -2386,6 +2420,17 @@ class _PageCanvasState extends State<PageCanvas> {
             id,
             idx,
             point,
+            transient: true,
+          );
+        }
+      case _DragMode.moveConnectorLabel:
+        final id = _connectorLabelId;
+        if (id != null) {
+          final p = _pageInchesAt(pos);
+          _c.moveConnectorLabel(
+            id,
+            p.dx,
+            p.dy,
             transient: true,
           );
         }
@@ -3033,6 +3078,26 @@ class _PageCanvasState extends State<PageCanvas> {
     );
   }
 
+  /// Start dragging a selected connector's label anchor (draw.io yellow
+  /// diamond). Returns whether the drag was started.
+  bool _tryStartConnectorLabelDrag(Offset localPos) {
+    final conn = _selectedConnector();
+    if (conn == null ||
+        !_canEditConnector(conn) ||
+        !_connectorHasLabel(conn)) {
+      return false;
+    }
+    final label = _connectorLabelPage(conn);
+    final hit = _handleHitPx * _handleHitPx;
+    if ((_pageToScreen(label.x, label.y) - localPos).distanceSquared > hit) {
+      return false;
+    }
+    _c.beginTransaction();
+    _connectorLabelId = conn.id;
+    _mode = _DragMode.moveConnectorLabel;
+    return true;
+  }
+
   /// Start dragging a selected connector's begin / end handle (drawio endpoint
   /// editing). Returns whether the drag was started.
   bool _tryStartEndpointDrag(Offset localPos) {
@@ -3235,6 +3300,9 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.commitTransaction();
         _waypointConnId = null;
         _waypointIndex = null;
+      case _DragMode.moveConnectorLabel:
+        _c.commitTransaction();
+        _connectorLabelId = null;
       case _DragMode.moveEndpoint:
         final endpointId = _endpointConnId;
         final fixedTarget = _connectTargetId;
@@ -3458,6 +3526,7 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.rotate:
       case _DragMode.moveWaypoint:
       case _DragMode.moveEndpoint:
+      case _DragMode.moveConnectorLabel:
       case _DragMode.moveConnectionPoint:
       case _DragMode.tableColResize:
       case _DragMode.tableRowResize:
@@ -3498,6 +3567,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _waypointConnId = null;
       _waypointIndex = null;
       _endpointConnId = null;
+      _connectorLabelId = null;
       _connPointDragIndex = null;
       _snapConnIndex = null;
       _guides = const <SnapGuide>[];
@@ -4093,6 +4163,7 @@ class _PageCanvasState extends State<PageCanvas> {
             var waypointHandles = const <Offset>[];
             var midpointHandles = const <Offset>[];
             var endpointHandles = const <Offset>[];
+            Offset? connectorLabelHandle;
             if (connector != null && _canEditConnector(connector)) {
               final route = _connectorControlRoutePage(connector);
               waypointHandles = <Offset>[
@@ -4113,6 +4184,10 @@ class _PageCanvasState extends State<PageCanvas> {
                   _pageToContent(route.first.x, route.first.y),
                   _pageToContent(route.last.x, route.last.y),
                 ];
+              }
+              if (_connectorHasLabel(connector)) {
+                final label = _connectorLabelPage(connector);
+                connectorLabelHandle = _pageToContent(label.x, label.y);
               }
             }
             return DragTarget<ThirdPartyIcon>(
@@ -4259,6 +4334,8 @@ class _PageCanvasState extends State<PageCanvas> {
                                       waypointHandles: waypointHandles,
                                       midpointHandles: midpointHandles,
                                       endpointHandles: endpointHandles,
+                                      connectorLabelHandle:
+                                          connectorLabelHandle,
                                       hoverBox: hoverBox,
                                       hoverArrowGap:
                                           _connectArrowGapPxEffective / _scale,
@@ -4329,6 +4406,7 @@ class _SelectionPainter extends CustomPainter {
     this.waypointHandles = const <Offset>[],
     this.midpointHandles = const <Offset>[],
     this.endpointHandles = const <Offset>[],
+    this.connectorLabelHandle,
     this.hoverBox,
     this.hoverArrowGap = 0,
     this.connectTargetRect,
@@ -4374,6 +4452,9 @@ class _SelectionPainter extends CustomPainter {
 
   /// Connector begin / end handles (drawio endpoint editing), content-px.
   final List<Offset> endpointHandles;
+
+  /// Connector label anchor (draw.io yellow diamond), content-px.
+  final Offset? connectorLabelHandle;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -4475,6 +4556,19 @@ class _SelectionPainter extends CustomPainter {
           ..drawCircle(c, handleSize * 0.85, fill)
           ..drawCircle(c, handleSize * 0.85, ring);
       }
+    }
+    final labelHandle = connectorLabelHandle;
+    if (labelHandle != null) {
+      final radius = handleSize * 0.9;
+      final path = Path()
+        ..moveTo(labelHandle.dx, labelHandle.dy - radius)
+        ..lineTo(labelHandle.dx + radius, labelHandle.dy)
+        ..lineTo(labelHandle.dx, labelHandle.dy + radius)
+        ..lineTo(labelHandle.dx - radius, labelHandle.dy)
+        ..close();
+      canvas
+        ..drawPath(path, Paint()..color = const Color(0xFFFFC107))
+        ..drawPath(path, outline);
     }
     _paintConnectTarget(canvas);
     _paintConnectionPoints(canvas);
@@ -4629,6 +4723,7 @@ class _SelectionPainter extends CustomPainter {
       !listEquals(old.waypointHandles, waypointHandles) ||
       !listEquals(old.midpointHandles, midpointHandles) ||
       !listEquals(old.endpointHandles, endpointHandles) ||
+      old.connectorLabelHandle != connectorLabelHandle ||
       !listEquals(old.connectionPoints, connectionPoints) ||
       !listEquals(old.freehandPoints, freehandPoints);
 }

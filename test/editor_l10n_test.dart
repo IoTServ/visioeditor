@@ -11,6 +11,10 @@ void main() {
     expect(zh.undo, '撤销');
     expect(en.cut, 'Cut');
     expect(zh.cut, '剪切');
+    expect(en.selectEdges, 'Select Edges');
+    expect(zh.selectEdges, '选择连接线');
+    expect(en.selectVertices, 'Select Vertices');
+    expect(zh.selectVertices, '选择图形');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');
