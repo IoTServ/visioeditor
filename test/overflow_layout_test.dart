@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visioeditor/editor/layers_panel.dart';
 import 'package:visioeditor/editor/outline_panel.dart';
 import 'package:visioeditor/editor/ruler.dart';
 import 'package:visioeditor/main.dart';
@@ -164,6 +165,37 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pumpAndSettle();
     expect(find.byKey(panelKey), findsOneWidget);
+  });
+
+  testWidgets('Cmd+Shift+O and Cmd+Shift+L toggle draw.io navigation panels',
+      (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _setViewSize(tester, const Size(1280, 800));
+    final settings = await AppSettings.load();
+    await tester.pumpWidget(VisioEditorApp(settings: settings));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OutlinePanel), findsNothing);
+    expect(find.byType(LayersPanel), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyO);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(find.byType(OutlinePanel), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.byType(LayersPanel), findsOneWidget);
   });
 
   testWidgets('Chinese settings theme chips do not overflow when narrow',

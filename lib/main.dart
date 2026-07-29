@@ -1151,6 +1151,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       cur?.requestEditSelectionLabel();
     };
+    bindings[const SingleActivator(LogicalKeyboardKey.f2)] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.requestEditSelectionLabel();
+    };
     mod(LogicalKeyboardKey.enter, () {
       if (_presentationMode || _isEditableTextFocused()) return;
       final cur = c();
@@ -1322,6 +1326,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.selectParentShape();
     };
+    // draw.io view shortcuts: Home resets to 100%; Cmd/Ctrl+J fits one page.
+    bindings[const SingleActivator(LogicalKeyboardKey.home)] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.requestResetView();
+    };
+    mod(LogicalKeyboardKey.keyJ, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.requestFitToWindow();
+    });
     // draw.io: collapse / expand selected containers.
     mod(LogicalKeyboardKey.home, () {
       if (_presentationMode || _isEditableTextFocused()) return;
@@ -1425,6 +1438,18 @@ class _EditorHomePageState extends State<EditorHomePage> {
     });
     // draw.io: show / hide the Shapes sidebar in every editor theme.
     mod(LogicalKeyboardKey.keyK, _toggleStencils, shift: true);
+    mod(LogicalKeyboardKey.keyG, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.toggleGrid();
+    }, shift: true);
+    mod(LogicalKeyboardKey.keyO, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      setState(() => _showOutline = !_showOutline);
+    }, shift: true);
+    mod(LogicalKeyboardKey.keyL, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      setState(() => _showLayersPanel = !_showLayersPanel);
+    }, shift: true);
     mod(LogicalKeyboardKey.keyL, () {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.toggleLock();

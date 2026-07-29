@@ -1399,6 +1399,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   Shift+Delete/Backspace 仅清空选中图形标签，多选统一为一个历史记录。应用级快捷键与画布
   Focus 本地处理保持一致，普通与内联 TextField 聚焦时继续让系统处理按词/选区删除。
   新增普通多选标签、关联连接线、画布焦点和文本输入保护回归。
+- 2026-07-29 — **对齐 draw.io 视图与导航快捷键**：补 F2 编辑标签、Home 恢复
+  100% 并居中、Ctrl/Cmd+J 适配当前页、Ctrl/Cmd+Shift+G 切换网格、
+  Ctrl/Cmd+Shift+O 切换 Outline、Ctrl/Cmd+Shift+L 切换图层面板。新增控制器到画布的
+  单调序号重置视图请求，保证工具栏失焦时仍能驱动画布；同时把 Home/End 纳入文本输入
+  焦点保护，避免抢占行首/行尾导航。补应用快捷键、面板显隐和 camera 变换回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

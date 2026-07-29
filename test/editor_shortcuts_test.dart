@@ -116,6 +116,8 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
       const SingleActivator(LogicalKeyboardKey.enter):
           c.requestEditSelectionLabel,
+      const SingleActivator(LogicalKeyboardKey.f2):
+          c.requestEditSelectionLabel,
       const SingleActivator(
         LogicalKeyboardKey.enter,
         meta: true,
@@ -188,6 +190,25 @@ void main() {
         LogicalKeyboardKey.tab,
         alt: true,
       ): c.selectParentShape,
+      const SingleActivator(LogicalKeyboardKey.home): c.requestResetView,
+      const SingleActivator(
+        LogicalKeyboardKey.keyJ,
+        meta: true,
+      ): c.requestFitToWindow,
+      const SingleActivator(
+        LogicalKeyboardKey.keyJ,
+        control: true,
+      ): c.requestFitToWindow,
+      const SingleActivator(
+        LogicalKeyboardKey.keyG,
+        meta: true,
+        shift: true,
+      ): c.toggleGrid,
+      const SingleActivator(
+        LogicalKeyboardKey.keyG,
+        control: true,
+        shift: true,
+      ): c.toggleGrid,
       const SingleActivator(
         LogicalKeyboardKey.home,
         meta: true,
@@ -458,6 +479,38 @@ void main() {
       TableOps.isTable(c.currentPage!.findShapeById(c.singleSelectedId!)!),
       isTrue,
     );
+  });
+
+  testWidgets('F2, Home, Cmd+J and Cmd+Shift+G match draw.io view commands',
+      (tester) async {
+    final c = ctrlWithRect();
+    await pumpHarness(tester, c);
+
+    final editSerial = c.textEditRequestSerial;
+    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+    await tester.pump();
+    expect(c.textEditRequestSerial, editSerial + 1);
+
+    final resetSerial = c.resetViewSerial;
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pump();
+    expect(c.resetViewSerial, resetSerial + 1);
+
+    final fitSerial = c.fitSerial;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.fitSerial, fitSerial + 1);
+
+    final gridWasVisible = c.showGrid;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(c.showGrid, isNot(gridWasVisible));
   });
 
   testWidgets('Ctrl+Enter duplicates an ordinary multi-selection',
@@ -915,6 +968,16 @@ void main() {
         const KeyDownEvent(
           physicalKey: PhysicalKeyboardKey.keyF,
           logicalKey: LogicalKeyboardKey.keyF,
+          timeStamp: Duration.zero,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      EditorCallbackShortcuts.isTextEditingShortcut(
+        const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.home,
+          logicalKey: LogicalKeyboardKey.home,
           timeStamp: Duration.zero,
         ),
       ),

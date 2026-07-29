@@ -80,6 +80,10 @@ class EditorController extends ChangeNotifier {
   int _textEditRequestSerial = 0;
   int? _textEditRequestShapeId;
 
+  // View reset requests from app-level shortcuts. The canvas owns its
+  // transform, so Home signals it through this monotonic serial.
+  int _resetViewSerial = 0;
+
   // Find state (draw.io Ctrl+F): query, match-case / whole-word flags, and hits
   // across every page as (pageIndex, shapeId) pairs plus the current index.
   String _findQuery = '';
@@ -8554,6 +8558,14 @@ class EditorController extends ChangeNotifier {
   /// Ask the canvas to zoom so the whole page fits, centred in the viewport.
   void requestFitToWindow() {
     _fitSerial++;
+    notifyListeners();
+  }
+
+  /// Ask the canvas to restore draw.io's Home-key view: 100% and centred.
+  int get resetViewSerial => _resetViewSerial;
+
+  void requestResetView() {
+    _resetViewSerial++;
     notifyListeners();
   }
 

@@ -40,6 +40,8 @@ class EditorCallbackShortcuts extends StatelessWidget {
       return key == LogicalKeyboardKey.backspace ||
           key == LogicalKeyboardKey.delete ||
           key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.home ||
+          key == LogicalKeyboardKey.end ||
           key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight ||
           key == LogicalKeyboardKey.arrowUp ||
@@ -53,6 +55,8 @@ class EditorCallbackShortcuts extends StatelessWidget {
       if (key == LogicalKeyboardKey.backspace ||
           key == LogicalKeyboardKey.delete ||
           key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.home ||
+          key == LogicalKeyboardKey.end ||
           key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight ||
           key == LogicalKeyboardKey.arrowUp ||

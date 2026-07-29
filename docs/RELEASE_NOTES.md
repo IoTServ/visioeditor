@@ -80,7 +80,9 @@ byte-for-byte, so formulas and structure survive a save.
   selected, without leaving a broken cell grid. Ctrl/Cmd+Delete or Backspace
   also removes incident connectors; Shift+Delete or Backspace clears labels
   without deleting shapes.
-  Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
+  F2 also edits a selected label; Home restores a centred 100% view and
+  Cmd/Ctrl+J fits the current page. Cmd/Ctrl+Shift+G/O/L toggle the grid,
+  Outline and Layers panels, while Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical
@@ -141,12 +143,14 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Delete selection with incident connectors | `Cmd/Ctrl+Delete` / `Cmd/Ctrl+Backspace` |
 | Clear selected labels | `Shift+Delete` / `Shift+Backspace` |
 | Delete with connected lines | Hold `Shift` and click the Format-panel trash button |
-| Edit selected label | `Enter` |
+| Edit selected label | `Enter` / `F2` |
 | Duplicate selection (table cell → row) | `Cmd/Ctrl+Enter` |
 | Delete table row / complete column selection | `Delete` / `Backspace` |
 | Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` |
 | Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
+| Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` |
+| Toggle grid / Outline / Layers | `Cmd/Ctrl+Shift+G` / `Cmd/Ctrl+Shift+O` / `Cmd/Ctrl+Shift+L` |
 | Cancel tool / clear selection | `Esc` |
 | Nudge selection | Arrow keys (by the grid step) |
 | Pan / zoom canvas | Scroll to pan · `Cmd`/`Ctrl`+scroll to zoom · Space-drag to pan |

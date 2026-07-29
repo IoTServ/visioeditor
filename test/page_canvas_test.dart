@@ -118,6 +118,31 @@ void main() {
     expect(r.width / r.height, closeTo(pageAspect, 0.01));
   });
 
+  testWidgets('controller Home request restores a centred 100% canvas view',
+      (tester) async {
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(320, 240),
+      camera: camera,
+    );
+    expect(camera.scale, lessThan(1));
+
+    controller.requestResetView();
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    expect(camera.scale, 1);
+    expect(
+      camera.offset,
+      Offset(
+        (camera.viewport.width - camera.content.width) / 2,
+        (camera.viewport.height - camera.content.height) / 2,
+      ),
+    );
+  });
+
   testWidgets('double-click blank canvas inserts from the quick shape picker',
       (tester) async {
     final camera = CanvasCamera();

@@ -136,6 +136,8 @@ class _PageCanvasState extends State<PageCanvas> {
   int _lastTextEditRequestSerial = 0;
   // Fit-to-window requests (toolbar / zoom controls) — tracks fitSerial.
   int _lastFitSerial = 0;
+  // Reset-to-100% requests (draw.io Home) — tracks resetViewSerial.
+  int _lastResetViewSerial = 0;
   Offset _doubleTapPos = Offset.zero;
   _Handle? _activeHandle;
   int? _resizeShapeId;
@@ -4240,6 +4242,12 @@ class _PageCanvasState extends State<PageCanvas> {
               _lastFitSerial = _c.fitSerial;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) fitToScreen();
+              });
+            }
+            if (_c.resetViewSerial != _lastResetViewSerial) {
+              _lastResetViewSerial = _c.resetViewSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _resetZoom();
               });
             }
             // Publish the current view transform to the Outline minimap.

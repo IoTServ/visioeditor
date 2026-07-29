@@ -401,6 +401,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Shift+Delete or Backspace clears only the selected labels. Multi-selection
   edits undo in one step, and focused text fields retain their native word /
   selection deletion keys.
+- **View and navigation shortcuts** (draw.io): F2 is an alternate label-edit
+  key; Home restores a centred 100% view; Ctrl/Cmd+J fits the current page;
+  Ctrl/Cmd+Shift+G toggles the grid, Ctrl/Cmd+Shift+O toggles Outline, and
+  Ctrl/Cmd+Shift+L toggles Layers. Home/End remain native cursor-navigation
+  keys while a text field owns focus.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),
@@ -409,8 +414,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Shift+Delete (clear labels),
   Cmd+R / Cmd+Shift+R (rotate 90°), Cmd+F (find), Delete, Esc, arrow keys to
   nudge the selection, Tab/Shift+Tab to traverse visible nested shapes,
-  Alt+Tab to select the parent, and canvas zoom (Cmd +/- , Cmd+0 = 100%,
-  Cmd+Shift+H = fit).
+  Alt+Tab to select the parent, F2/Enter to edit labels, Home to reset the
+  view, Cmd+J to fit the page, Cmd+Shift+G/O/L to toggle grid/Outline/Layers,
+  and canvas zoom (Cmd +/- , Cmd+0 = 100%, Cmd+Shift+H = fit).
 - **macOS document integration**: the app declares the Visio drawing file
   types (`.vsdx` / `.vsdm` / `.vstx` / `.vstm` / `.vssx` / `.vssm`) so Finder
   offers "Open With → Editor for Visio Diagrams"; double-click, "Open With" and
