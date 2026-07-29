@@ -1600,6 +1600,66 @@ class EditorController extends ChangeNotifier {
     return row;
   }
 
+  /// Resolve a safe draw.io-style Delete target for the selected table cells.
+  ///
+  /// A single cell (or multiple cells in one row) means "delete row". A
+  /// column is only selected when every visible cell in that column is in the
+  /// selection, avoiding accidental column deletion from a sparse selection.
+  ({bool row, int index})? get _selectedTableDeleteBand {
+    final page = currentPage;
+    final tableId = selectedTableId;
+    final cells = _selectedTableCells;
+    if (page == null || tableId == null || cells.isEmpty) return null;
+    if (_selection.length != cells.length) return null;
+    final table = page.findShapeById(tableId);
+    if (table == null) return null;
+    final dim = TableOps.dimensions(table);
+    if (cells.any(
+      (cell) =>
+          TableOps.cellRow(cell) == null || TableOps.cellCol(cell) == null,
+    )) {
+      return null;
+    }
+    final rows = <int>{for (final cell in cells) TableOps.cellRow(cell)!};
+    final cols = <int>{for (final cell in cells) TableOps.cellCol(cell)!};
+    if (cells.length == 1) {
+      final row = rows.single;
+      if (dim.rows > 1) return (row: true, index: row);
+      final col = cols.single;
+      if (dim.cols > 1) return (row: false, index: col);
+      return null;
+    }
+    if (rows.length == 1) return (row: true, index: rows.single);
+    if (cols.length != 1) return null;
+    final col = cols.single;
+    final visibleColumn = <int>{
+      for (final cell in TableOps.cellsOf(table))
+        if (!TableOps.isCovered(cell) && TableOps.cellCol(cell) == col) cell.id,
+    };
+    return visibleColumn.length == cells.length &&
+            visibleColumn.containsAll(cells.map((cell) => cell.id))
+        ? (row: false, index: col)
+        : null;
+  }
+
+  bool get canDeleteSelectedTableBand {
+    final band = _selectedTableDeleteBand;
+    if (band == null) return false;
+    return band.row ? canRemoveTableRow : canRemoveTableColumn;
+  }
+
+  /// Delete the selected row/column instead of removing individual cell
+  /// children and leaving an invalid table grid.
+  void deleteSelectedTableBand() {
+    final band = _selectedTableDeleteBand;
+    if (band == null) return;
+    if (band.row) {
+      if (canRemoveTableRow) removeRowFromSelectedTable();
+    } else if (canRemoveTableColumn) {
+      removeColumnFromSelectedTable();
+    }
+  }
+
   /// draw.io Enter shortcut: a selected cell (or cells from one row) can
   /// duplicate its whole row directly below itself.
   bool get canDuplicateSelectedTableRow {
@@ -3479,6 +3539,13 @@ class EditorController extends ChangeNotifier {
     return replaced;
   }
 
+  static bool _isStructuralTableCell(VsdxPage page, VsdxShape shape) {
+    if (!TableOps.isCell(shape)) return false;
+    final parentId = page.findParentId(shape.id);
+    final parent = parentId == null ? null : page.findShapeById(parentId);
+    return parent != null && TableOps.isTable(parent);
+  }
+
   /// Delete all selected shapes as a single undo step.
   ///
   /// Plain deletion preserves incident connectors as floating lines, matching
@@ -3493,12 +3560,21 @@ class EditorController extends ChangeNotifier {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null || _selection.isEmpty) return;
+    // draw.io tables treat Delete as a row/column operation. Never remove a
+    // raw cell child: sparse/mixed cell selections are deliberately preserved.
+    if (_selectedTableDeleteBand != null) {
+      deleteSelectedTableBand();
+      return;
+    }
     var next = page;
     final removedRoots = <int>[];
     for (final id in _selection) {
       final s = page.findShapeById(id);
       if (s != null && (s.locked || isOnLockedLayer(id))) {
         continue; // locked shapes / layers can't be deleted
+      }
+      if (s != null && _isStructuralTableCell(page, s)) {
+        continue;
       }
       if (s != null) removedRoots.add(id);
     }
@@ -3542,8 +3618,10 @@ class EditorController extends ChangeNotifier {
     if (doc == null || page == null) return;
     final target = page.findShapeById(id);
     if (target != null &&
-        (target.locked || isOnLockedLayer(id))) {
-      return; // locked shapes / layers can't be deleted
+        (target.locked ||
+            isOnLockedLayer(id) ||
+            _isStructuralTableCell(page, target))) {
+      return; // locked shapes/layers and structural cells can't be deleted
     }
     final doomed = _subtreeIds(<int>{id});
     final next = page.removeShapeById(id);
@@ -3813,7 +3891,9 @@ class EditorController extends ChangeNotifier {
     final cuttable = _selectionRoots(page, <int>[
       for (final id in _selection)
         if (page.findShapeById(id) case final s?
-            when !s.locked && !isOnLockedLayer(id))
+            when !s.locked &&
+                !isOnLockedLayer(id) &&
+                !_isStructuralTableCell(page, s))
           id,
     ]);
     if (cuttable.isEmpty) return;

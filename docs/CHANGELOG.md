@@ -388,6 +388,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   nested contents and row-internal connections. Ctrl/Cmd+Enter duplicates the
   whole table even when a cell is selected. Both operations mint fresh IDs,
   select the copy and undo in one step; text inputs retain their Enter keys.
+- **Table deletion shortcuts** (draw.io): Delete/Backspace on one cell or a
+  same-row cell selection removes that row; selecting every visible cell in a
+  column removes that column. Both edits preserve a valid table, clean up
+  affected glue and undo in one step. Sparse/mixed cell selections, locked
+  structures and the final remaining row/column are protected from raw child
+  deletion.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

@@ -346,6 +346,39 @@ void main() {
     );
   });
 
+  testWidgets('Delete removes the row of a selected table cell',
+      (tester) async {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 3,
+        rows: 3,
+        cols: 2,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.singleSelectedId!;
+    final cell = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!)
+        .firstWhere((shape) => TableOps.cellRow(shape) == 1);
+    c.selectOnly(cell.id);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pump();
+
+    expect(
+      TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows,
+      2,
+    );
+    expect(c.selection, <int>{tableId});
+  });
+
   testWidgets('Cmd+Shift+arrow resizes the selected shape',
       (tester) async {
     final c = ctrlWithRect();

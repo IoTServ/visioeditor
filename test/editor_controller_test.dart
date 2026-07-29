@@ -955,6 +955,141 @@ void main() {
     expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows, 2);
   });
 
+  test('Delete removes a selected table row or complete column and undoes', () {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 3,
+        rows: 3,
+        cols: 3,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.singleSelectedId!;
+    var table = c.currentPage!.findShapeById(tableId)!;
+    final rowCell = TableOps.cellsOf(table).firstWhere(
+      (cell) => TableOps.cellRow(cell) == 1 && TableOps.cellCol(cell) == 1,
+    );
+    c.selectOnly(rowCell.id);
+
+    expect(c.canDeleteSelectedTableBand, isTrue);
+    c.deleteSelection();
+    table = c.currentPage!.findShapeById(tableId)!;
+    expect(TableOps.dimensions(table).rows, 2);
+    expect(TableOps.dimensions(table).cols, 3);
+    expect(c.selection, <int>{tableId});
+
+    c.undo();
+    table = c.currentPage!.findShapeById(tableId)!;
+    expect(TableOps.dimensions(table).rows, 3);
+    expect(c.selection, <int>{rowCell.id});
+
+    final columnIds = <int>{
+      for (final cell in TableOps.cellsOf(table))
+        if (TableOps.cellCol(cell) == 2) cell.id,
+    };
+    c.setSelection(columnIds);
+    expect(c.canDeleteSelectedTableBand, isTrue);
+    c.deleteSelection();
+    table = c.currentPage!.findShapeById(tableId)!;
+    expect(TableOps.dimensions(table).rows, 3);
+    expect(TableOps.dimensions(table).cols, 2);
+
+    c.undo();
+    table = c.currentPage!.findShapeById(tableId)!;
+    expect(TableOps.dimensions(table).cols, 3);
+    expect(c.selection, columnIds);
+  });
+
+  test('Delete and Cut protect sparse table cell selections', () {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 3,
+        rows: 3,
+        cols: 3,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.singleSelectedId!;
+    final table = c.currentPage!.findShapeById(tableId)!;
+    final cells = TableOps.cellsOf(table);
+    final first = cells.firstWhere(
+      (cell) => TableOps.cellRow(cell) == 0 && TableOps.cellCol(cell) == 0,
+    );
+    final second = cells.firstWhere(
+      (cell) => TableOps.cellRow(cell) == 1 && TableOps.cellCol(cell) == 1,
+    );
+    c.setSelection(<int>{first.id, second.id});
+
+    expect(c.canDeleteSelectedTableBand, isFalse);
+    c.deleteSelection();
+    expect(c.currentPage!.findShapeById(first.id), isNotNull);
+    expect(c.currentPage!.findShapeById(second.id), isNotNull);
+    expect(
+      TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!),
+      hasLength(9),
+    );
+
+    c
+      ..setTool(EditorTool.rectangle)
+      ..createShapeByDrag(5, 5, 6, 6);
+    final rectangleId = c.singleSelectedId!;
+    c.setSelection(<int>{first.id, rectangleId});
+    c.deleteSelection();
+    expect(c.currentPage!.findShapeById(first.id), isNotNull);
+    expect(c.currentPage!.findShapeById(rectangleId), isNull);
+
+    c.selectOnly(first.id);
+    c.deleteShapeById(first.id);
+    expect(c.currentPage!.findShapeById(first.id), isNotNull);
+    c.cut();
+    expect(c.currentPage!.findShapeById(first.id), isNotNull);
+    expect(
+      TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!),
+      hasLength(9),
+    );
+  });
+
+  test('Delete preserves the final row and column of a table', () {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => TableOps.assembleTable(
+        tableId: id,
+        pinX: cx,
+        pinY: cy,
+        width: 2,
+        height: 1,
+        rows: 1,
+        cols: 1,
+      ),
+      3,
+      4,
+    );
+    final tableId = c.singleSelectedId!;
+    final cell = TableOps.cellsOf(c.currentPage!.findShapeById(tableId)!).single;
+    c.selectOnly(cell.id);
+
+    expect(c.canDeleteSelectedTableBand, isFalse);
+    c.deleteSelection();
+    expect(c.currentPage!.findShapeById(cell.id), isNotNull);
+    expect(TableOps.dimensions(c.currentPage!.findShapeById(tableId)!),
+        (rows: 1, cols: 1));
+  });
+
   test('table duplicate row and whole table are undoable with fresh ids', () {
     final c = EditorController()..newDocument();
     addTearDown(c.dispose);
