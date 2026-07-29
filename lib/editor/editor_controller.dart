@@ -632,6 +632,49 @@ class EditorController extends ChangeNotifier {
     setSelection(ids);
   }
 
+  Set<int> _selectedAndIncidentConnectorIds(VsdxPage page) {
+    final ids = <int>{
+      for (final id in _selection)
+        if (page.findShapeById(id)?.isGlueableConnector ?? false) id,
+    };
+    for (final connect in page.connects) {
+      if (_selection.contains(connect.toSheetId)) {
+        ids.add(connect.fromSheetId);
+      }
+    }
+    return ids;
+  }
+
+  /// Whether draw.io's Select Connections can add an incident edge.
+  bool get canSelectConnections {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    return _selectedAndIncidentConnectorIds(page).any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null &&
+          shape.isGlueableConnector &&
+          page.isShapeVisible(shape) &&
+          !_selection.contains(id);
+    });
+  }
+
+  /// draw.io Select Connections: add every visible edge incident to the
+  /// current shape selection without dropping the selected vertices.
+  void selectConnections() {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return;
+    final ids = <int>{..._selection};
+    for (final id in _selectedAndIncidentConnectorIds(page)) {
+      final shape = page.findShapeById(id);
+      if (shape != null &&
+          shape.isGlueableConnector &&
+          page.isShapeVisible(shape)) {
+        ids.add(id);
+      }
+    }
+    setSelection(ids);
+  }
+
   /// Select every non-connector shape on the page, including nested ones and
   /// freehand ink (draw.io "Select Vertices", Cmd+Shift+I).
   void selectVertices() {
@@ -6470,6 +6513,76 @@ class EditorController extends ChangeNotifier {
       var next = p;
       for (final id in targets) {
         next = next.clearConnectorWaypoints(id);
+      }
+      return next;
+    });
+  }
+
+  /// Whether a selected connector, or an edge incident to a selected shape,
+  /// uses a fixed connection-point anchor that can be reset.
+  bool get canClearConnectorAnchors {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    final connectorIds = _selectedAndIncidentConnectorIds(page);
+    return page.connects.any((connect) {
+      if (!connectorIds.contains(connect.fromSheetId) ||
+          VsdxPage.fixedConnectionIndex(connect) == null) {
+        return false;
+      }
+      final connector = page.findShapeById(connect.fromSheetId);
+      return connector != null &&
+          connector.isGlueableConnector &&
+          !connector.locked &&
+          !isOnLockedLayer(connector.id);
+    });
+  }
+
+  /// draw.io Clear Anchors: change fixed-point glue on selected / incident
+  /// connectors back to whole-shape perimeter glue. Terminals stay connected,
+  /// routes are refreshed, and the batch is one undo step.
+  void clearSelectedConnectorAnchors() {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return;
+    final connectorIds = _selectedAndIncidentConnectorIds(page).where((id) {
+      final connector = page.findShapeById(id);
+      return connector != null &&
+          connector.isGlueableConnector &&
+          !connector.locked &&
+          !isOnLockedLayer(id);
+    }).toSet();
+    final anchored = <int>{
+      for (final connect in page.connects)
+        if (connectorIds.contains(connect.fromSheetId) &&
+            VsdxPage.fixedConnectionIndex(connect) != null)
+          connect.fromSheetId,
+    };
+    if (anchored.isEmpty) return;
+    updateCurrentPage((p) {
+      var next = p;
+      for (final id in anchored) {
+        final fixedRows = <VsdxConnect>[
+          for (final connect in next.connects)
+            if (connect.fromSheetId == id &&
+                VsdxPage.fixedConnectionIndex(connect) != null &&
+                (connect.isBegin || connect.isEnd))
+              connect,
+        ];
+        for (final connect in fixedRows) {
+          final connector = next.findShapeById(id);
+          if (connector == null) break;
+          final begin = connect.isBegin;
+          next = next.setConnectorEndpoint(
+            id,
+            begin: begin,
+            targetShapeId: connect.toSheetId,
+            x: begin
+                ? (connector.beginX ?? connector.pinX)
+                : (connector.endX ?? connector.pinX),
+            y: begin
+                ? (connector.beginY ?? connector.pinY)
+                : (connector.endY ?? connector.pinY),
+          );
+        }
       }
       return next;
     });

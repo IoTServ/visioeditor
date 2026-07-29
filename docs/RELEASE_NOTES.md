@@ -80,6 +80,9 @@ byte-for-byte, so formulas and structure survive a save.
   selected, without leaving a broken cell grid. Ctrl/Cmd+Delete or Backspace
   also removes incident connectors; Shift+Delete or Backspace clears labels
   without deleting shapes.
+  A shape's context menu can Select Connections, and Clear Anchors changes
+  fixed-point glue on selected or incident connectors back to automatic
+  perimeter attachment without disconnecting either terminal.
   F2 also edits a selected label; Home restores a centred 100% view and
   Cmd/Ctrl+J fits the current page. Cmd/Ctrl+Shift+G/O/L toggle the grid,
   Outline and Layers panels, while Cmd/Ctrl+Shift+K toggles the Shapes sidebar.

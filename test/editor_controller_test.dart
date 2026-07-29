@@ -2263,6 +2263,74 @@ void main() {
     expect(conn.endY, closeTo(top.y, 1e-6));
   });
 
+  test('Select Connections adds incident edges without dropping vertices', () {
+    final c = newDocWithTwoRects();
+    addTearDown(c.dispose);
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(
+      a.pinX,
+      a.pinY,
+      b.pinX,
+      b.pinY,
+      beginTarget: a.id,
+      endTarget: b.id,
+    );
+    final connectorId = c.singleSelectedId!;
+
+    c.selectOnly(a.id);
+    expect(c.canSelectConnections, isTrue);
+    c.selectConnections();
+
+    expect(c.selection, <int>{a.id, connectorId});
+    expect(c.canSelectConnections, isFalse);
+  });
+
+  test('Clear Anchors keeps glue but resets fixed points in one undo', () {
+    final c = newDocWithTwoRects();
+    addTearDown(c.dispose);
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(
+      a.pinX,
+      a.pinY,
+      b.pinX,
+      b.pinY,
+      beginTarget: a.id,
+      endTarget: b.id,
+      beginConnectionPointIndex: 1,
+      endConnectionPointIndex: 3,
+    );
+    final connectorId = c.singleSelectedId!;
+    c.selectOnly(a.id);
+
+    expect(c.canClearConnectorAnchors, isTrue);
+    c.clearSelectedConnectorAnchors();
+
+    var page = c.currentPage!;
+    final rows = page.connects
+        .where((connect) => connect.fromSheetId == connectorId)
+        .toList();
+    expect(rows, hasLength(2));
+    expect(rows.every((connect) => connect.toPart == 3), isTrue);
+    expect(rows.every((connect) => connect.toCell == 'PinX'), isTrue);
+    expect(
+      rows.map((connect) => connect.toSheetId),
+      containsAll(<int>[a.id, b.id]),
+    );
+    expect(c.canClearConnectorAnchors, isFalse);
+
+    c.undo();
+    page = c.currentPage!;
+    final restored = page.connects
+        .where((connect) => connect.fromSheetId == connectorId)
+        .toList();
+    expect(
+      restored.map(VsdxPage.fixedConnectionIndex),
+      containsAll(<int>[1, 3]),
+    );
+  });
+
   test('custom-position connector glue creates fixed points atomically', () {
     final c = newDocWithTwoRects();
     final rects = c.currentPage!.shapes.toList();

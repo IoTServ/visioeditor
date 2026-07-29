@@ -1453,6 +1453,12 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(
           value: 'lock',
           child: Text(_c.selectionLocked ? el.unlock : el.lock)));
+      if (_c.canSelectConnections) {
+        items.add(PopupMenuItem(
+          value: 'selectConnections',
+          child: Text(el.selectConnections),
+        ));
+      }
       if (contextRemoveWaypointIndex != null) {
         items.add(PopupMenuItem(
             value: 'removeWaypoint', child: Text(el.removeWaypoint)));
@@ -1463,6 +1469,12 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_c.canClearWaypoints) {
         items.add(PopupMenuItem(
             value: 'clearWaypoints', child: Text(el.clearWaypoints)));
+      }
+      if (_c.canClearConnectorAnchors) {
+        items.add(PopupMenuItem(
+          value: 'clearAnchors',
+          child: Text(el.clearAnchors),
+        ));
       }
       items.add(const PopupMenuDivider());
       items.add(PopupMenuItem(value: 'front', child: Text(el.bringToFront)));
@@ -1604,6 +1616,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.deleteSelection();
       case 'lock':
         _c.toggleLock();
+      case 'selectConnections':
+        _c.selectConnections();
       case 'addWaypoint':
         final connectorId = contextConnectorId;
         final index = contextAddWaypointIndex;
@@ -1618,6 +1632,8 @@ class _PageCanvasState extends State<PageCanvas> {
         }
       case 'clearWaypoints':
         _c.clearSelectedConnectorWaypoints();
+      case 'clearAnchors':
+        _c.clearSelectedConnectorAnchors();
       case 'front':
         _c.bringSelectionToFront();
       case 'back':

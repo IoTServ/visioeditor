@@ -2129,6 +2129,80 @@ void main() {
     expect(controller.connectorWaypoints(connector), isEmpty);
   });
 
+  testWidgets('shape context menu selects connections and clears anchors',
+      (tester) async {
+    late int source;
+    late int target;
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        source = _addRect(c);
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          7,
+          5,
+        );
+        target = c.singleSelectedId!;
+        c.createConnector(
+          3,
+          5,
+          7,
+          5,
+          beginTarget: source,
+          endTarget: target,
+          beginConnectionPointIndex: 1,
+          endConnectionPointIndex: 3,
+        );
+        connector = c.singleSelectedId!;
+        c.selectOnly(source);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final sourceShape = page.findShapeById(source)!;
+    final sourcePoint = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      page,
+      sourceShape.pinX,
+      sourceShape.pinY,
+    );
+
+    await tester.tapAt(sourcePoint, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Select Connections'), findsOneWidget);
+    expect(find.text('Clear Anchors'), findsOneWidget);
+
+    await tester.tap(find.text('Select Connections'));
+    await tester.pumpAndSettle();
+    expect(controller.selection, <int>{source, connector});
+
+    await tester.tapAt(sourcePoint, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear Anchors'));
+    await tester.pumpAndSettle();
+
+    final rows = controller.currentPage!.connects
+        .where((connect) => connect.fromSheetId == connector)
+        .toList();
+    expect(rows, hasLength(2));
+    expect(rows.every((connect) => connect.toPart == 3), isTrue);
+    expect(
+      rows.map((connect) => connect.toSheetId),
+      containsAll(<int>[source, target]),
+    );
+  });
+
   testWidgets(
       'connector tool snaps to a blue point approached from outside the AABB',
       (tester) async {

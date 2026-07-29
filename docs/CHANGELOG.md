@@ -412,6 +412,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   editing, Ctrl/Cmd+. toggles superscript and Ctrl/Cmd+, toggles subscript for
   the selected UTF-16 range; repeated use returns it to the normal baseline.
   Each operation is undoable and round-trips through `.vsdx`.
+- **Select Connections / Clear Anchors** (draw.io): a selected shape's context
+  menu can add its visible incident connectors to the selection. Clear Anchors
+  resets fixed-point glue on selected connectors, or connectors incident to
+  selected shapes, back to automatic perimeter attachment while keeping both
+  terminals connected. Locked connectors are skipped and the batch undoes in
+  one step.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

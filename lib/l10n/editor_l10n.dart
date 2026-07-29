@@ -101,6 +101,10 @@ class EditorL10n {
   String get removeWaypoint =>
       locale.languageCode == 'zh' ? '移除路径点' : 'Remove Waypoint';
   String get clearWaypoints => _t('clearWaypoints');
+  String get selectConnections =>
+      locale.languageCode == 'zh' ? '选择关联连接线' : 'Select Connections';
+  String get clearAnchors =>
+      locale.languageCode == 'zh' ? '清除固定锚点' : 'Clear Anchors';
   String get bringToFront => _t('bringToFront');
   String get sendToBack => _t('sendToBack');
   String get bringForward => _t('bringForward');

@@ -1409,6 +1409,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   支持整标签或内联 UTF-16 选区、再次切换恢复普通基线，并复用现有解析、画布/SVG 渲染和
   Writer 往返。内联编辑补 Ctrl/Cmd+. 上标、Ctrl/Cmd+, 下标，非编辑状态不抢占系统
   Cmd+,；清除格式只重置字符样式，保留文字和段落布局。补选区拆分、撤销及画布快捷键回归。
+- 2026-07-29 — **对齐 draw.io Select Connections / Clear Anchors**：形状右键菜单可把
+  当前选区的可见关联连接线追加进选择；固定锚点清除同时覆盖直接选择的连接线与所选形状的
+  关联连接线，把 `ToPart≥100` / `Connections.Xn` 恢复为 `ToPart=3` / `PinX` 自动边界
+  胶合，保留两端目标、刷新路由并合并为单步撤销。命令跳过锁定连接线和锁定图层，复用现有
+  Connect 与 Writer 往返。补控制器选择/锚点/撤销及画布右键菜单回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用
