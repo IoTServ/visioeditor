@@ -1108,7 +1108,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     // Delete / Backspace: remove selection (or a connection point while editing
     // glue). Bound at app level so they work even when the canvas Focus node
     // does not have primary focus (e.g. after clicking a toolstrip button).
-    void deleteSel() {
+    void deleteSel({bool includeConnected = false}) {
       if (_presentationMode || _isEditableTextFocused()) return;
       final cur = c();
       if (cur == null || !cur.hasDocument) return;
@@ -1116,26 +1116,46 @@ class _EditorHomePageState extends State<EditorHomePage> {
         cur.deleteSelection();
         return;
       }
-      if (cur.hasSelection) cur.deleteSelection();
+      if (cur.hasSelection) {
+        cur.deleteSelection(includeConnected: includeConnected);
+      }
     }
 
     bindings[const SingleActivator(LogicalKeyboardKey.delete)] = deleteSel;
     bindings[const SingleActivator(LogicalKeyboardKey.backspace)] = deleteSel;
+    mod(
+      LogicalKeyboardKey.delete,
+      () => deleteSel(includeConnected: true),
+    );
+    mod(
+      LogicalKeyboardKey.backspace,
+      () => deleteSel(includeConnected: true),
+    );
+    void clearLabels() {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.clearSelectionLabels();
+    }
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.delete,
+      shift: true,
+    )] = clearLabels;
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.backspace,
+      shift: true,
+    )] = clearLabels;
 
-    // draw.io table shortcuts: Enter duplicates the selected cell's row;
-    // Cmd/Ctrl+Enter duplicates the whole table, even when a cell is selected.
+    // draw.io: Enter edits the selected label. Cmd/Ctrl+Enter duplicates the
+    // selection; table cells are promoted to their containing row.
     bindings[const SingleActivator(LogicalKeyboardKey.enter)] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
       final cur = c();
-      if (cur != null && cur.canDuplicateSelectedTableRow) {
-        cur.duplicateSelectedTableRow();
-      }
+      cur?.requestEditSelectionLabel();
     };
     mod(LogicalKeyboardKey.enter, () {
       if (_presentationMode || _isEditableTextFocused()) return;
       final cur = c();
-      if (cur != null && cur.canDuplicateSelectedTable) {
-        cur.duplicateSelectedTable();
+      if (cur != null && cur.canDuplicateSelectionFromEnter) {
+        cur.duplicateSelectionFromEnter();
       }
     });
 

@@ -40,9 +40,11 @@ void main() {
     VoidCallback? onFind,
     VoidCallback? onRotate,
   }) {
-    void deleteSel() {
+    void deleteSel({bool includeConnected = false}) {
       if (isEditableTextFocused()) return;
-      if (c.hasSelection || c.editingConnectionPoints) c.deleteSelection();
+      if (c.hasSelection || c.editingConnectionPoints) {
+        c.deleteSelection(includeConnected: includeConnected);
+      }
     }
 
     void nudge(double dx, double dy) {
@@ -84,20 +86,44 @@ void main() {
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): deleteSel,
       const SingleActivator(LogicalKeyboardKey.backspace): deleteSel,
+      const SingleActivator(
+        LogicalKeyboardKey.delete,
+        meta: true,
+      ): () => deleteSel(includeConnected: true),
+      const SingleActivator(
+        LogicalKeyboardKey.delete,
+        control: true,
+      ): () => deleteSel(includeConnected: true),
+      const SingleActivator(
+        LogicalKeyboardKey.backspace,
+        meta: true,
+      ): () => deleteSel(includeConnected: true),
+      const SingleActivator(
+        LogicalKeyboardKey.backspace,
+        control: true,
+      ): () => deleteSel(includeConnected: true),
+      const SingleActivator(
+        LogicalKeyboardKey.delete,
+        shift: true,
+      ): c.clearSelectionLabels,
+      const SingleActivator(
+        LogicalKeyboardKey.backspace,
+        shift: true,
+      ): c.clearSelectionLabels,
       const SingleActivator(LogicalKeyboardKey.arrowLeft): () => nudge(-1, 0),
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => nudge(1, 0),
       const SingleActivator(LogicalKeyboardKey.arrowUp): () => nudge(0, 1),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
       const SingleActivator(LogicalKeyboardKey.enter):
-          c.duplicateSelectedTableRow,
+          c.requestEditSelectionLabel,
       const SingleActivator(
         LogicalKeyboardKey.enter,
         meta: true,
-      ): c.duplicateSelectedTable,
+      ): c.duplicateSelectionFromEnter,
       const SingleActivator(
         LogicalKeyboardKey.enter,
         control: true,
-      ): c.duplicateSelectedTable,
+      ): c.duplicateSelectionFromEnter,
       const SingleActivator(
         LogicalKeyboardKey.arrowLeft,
         meta: true,
@@ -261,6 +287,74 @@ void main() {
     expect(c.currentPage!.findShapeById(id), isNull);
   });
 
+  testWidgets('Ctrl+Delete removes selection and incident connectors',
+      (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1.5,
+        height: 1,
+      ),
+      5,
+      3,
+    );
+    final target = c.singleSelectedId!;
+    c.createConnector(2, 3, 5, 3,
+        beginTarget: source, endTarget: target);
+    final connector = c.singleSelectedId!;
+    c.selectOnly(source);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.findShapeById(source), isNull);
+    expect(c.currentPage!.findShapeById(target), isNotNull);
+    expect(c.currentPage!.findShapeById(connector), isNull);
+    c.undo();
+    expect(c.currentPage!.findShapeById(source), isNotNull);
+    expect(c.currentPage!.findShapeById(connector), isNotNull);
+  });
+
+  testWidgets('Shift+Backspace clears selected labels in one undo step',
+      (tester) async {
+    final c = ctrlWithRect();
+    final first = c.singleSelectedId!;
+    c.setShapeText(first, 'Alpha');
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.ellipse(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 1,
+      ),
+      5,
+      3,
+    );
+    final second = c.singleSelectedId!;
+    c.setShapeText(second, 'Beta');
+    c.setSelection(<int>{first, second});
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.findShapeById(first)!.richText.plainText, isEmpty);
+    expect(c.currentPage!.findShapeById(second)!.richText.plainText, isEmpty);
+    c.undo();
+    expect(c.currentPage!.findShapeById(first)!.richText.plainText, 'Alpha');
+    expect(c.currentPage!.findShapeById(second)!.richText.plainText, 'Beta');
+  });
+
   testWidgets('Arrow keys nudge selection without canvas focus',
       (tester) async {
     final c = ctrlWithRect();
@@ -306,7 +400,8 @@ void main() {
     expect(c.isCollapsed(container.id), isFalse);
   });
 
-  testWidgets('Enter duplicates a table row and Cmd+Enter duplicates the table',
+  testWidgets(
+      'Enter requests label edit and Cmd+Enter duplicates a table row',
       (tester) async {
     final c = EditorController()..newDocument();
     addTearDown(c.dispose);
@@ -328,13 +423,32 @@ void main() {
     c.selectOnly(cell.id);
     await pumpHarness(tester, c);
 
+    final requestSerial = c.textEditRequestSerial;
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(c.textEditRequestSerial, requestSerial + 1);
+    expect(c.textEditRequestShapeId, cell.id);
+    expect(
+      TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows,
+      2,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pump();
     expect(
       TableOps.dimensions(c.currentPage!.findShapeById(tableId)!).rows,
       3,
     );
+    expect(
+      c.selection.every(
+        (id) => TableOps.cellRow(c.currentPage!.findShapeById(id)!) == 1,
+      ),
+      isTrue,
+    );
 
+    c.selectOnly(tableId);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
@@ -344,6 +458,36 @@ void main() {
       TableOps.isTable(c.currentPage!.findShapeById(c.singleSelectedId!)!),
       isTrue,
     );
+  });
+
+  testWidgets('Ctrl+Enter duplicates an ordinary multi-selection',
+      (tester) async {
+    final c = ctrlWithRect();
+    final firstId = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.ellipse(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 1,
+      ),
+      5,
+      3,
+    );
+    final secondId = c.singleSelectedId!;
+    c.setSelection(<int>{firstId, secondId});
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.shapes, hasLength(4));
+    expect(c.selection, hasLength(2));
+    expect(c.selection, isNot(contains(firstId)));
+    expect(c.selection, isNot(contains(secondId)));
   });
 
   testWidgets('Delete removes the row of a selected table cell',
@@ -582,7 +726,42 @@ void main() {
     expect(c.currentPage!.findShapeById(id), isNotNull);
   });
 
-  testWidgets('Enter table shortcuts are deferred in a text field',
+  testWidgets('modified delete shortcuts are deferred in a text field',
+      (tester) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    final search = TextEditingController(text: 'alpha beta');
+    addTearDown(search.dispose);
+    await pumpHarness(
+      tester,
+      c,
+      body: TextField(controller: search, autofocus: true),
+    );
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    expect(
+      EditorCallbackShortcuts.isTextEditingShortcut(
+        const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.delete,
+          logicalKey: LogicalKeyboardKey.delete,
+          timeStamp: Duration.zero,
+        ),
+      ),
+      isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+
+    expect(c.currentPage!.findShapeById(id), isNotNull);
+  });
+
+  testWidgets('Enter edit and duplicate shortcuts are deferred in a text field',
       (tester) async {
     final c = ctrlWithRect();
     final search = TextEditingController(text: 'abc');

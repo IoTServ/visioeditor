@@ -530,6 +530,121 @@ void main() {
     );
   });
 
+  testWidgets('controller Enter request opens the selected inline label editor',
+      (tester) async {
+    late int shapeId;
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(900, 700),
+      setUp: (c) {
+        shapeId = _addRect(c);
+        c.setShapeText(shapeId, 'Edit me');
+      },
+    );
+    final inlineEditor = find.descendant(
+      of: find.byType(PageCanvas),
+      matching: find.byType(TextField),
+    );
+    expect(inlineEditor, findsNothing);
+
+    controller.requestEditSelectionLabel();
+    await tester.pumpAndSettle();
+
+    expect(inlineEditor, findsOneWidget);
+    final field = tester.widget<TextField>(inlineEditor);
+    expect(field.controller!.text, 'Edit me');
+    expect(field.controller!.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 7));
+    expect(controller.textEditShapeId, shapeId);
+  });
+
+  testWidgets('canvas Shift+Delete clears labels without deleting shapes',
+      (tester) async {
+    late int source;
+    late int target;
+    late int connector;
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(900, 700),
+      setUp: (c) {
+        source = _addRect(c);
+        c.setShapeText(source, 'Keep shape');
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.ellipse(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 1,
+            height: 1,
+          ),
+          6,
+          5,
+        );
+        target = c.singleSelectedId!;
+        c.createConnector(3, 5, 6, 5,
+            beginTarget: source, endTarget: target);
+        connector = c.singleSelectedId!;
+        c.selectOnly(source);
+      },
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(
+      controller.currentPage!.findShapeById(source)!.richText.plainText,
+      isEmpty,
+    );
+    expect(controller.currentPage!.findShapeById(connector), isNotNull);
+
+    controller.undo();
+    expect(
+      controller.currentPage!.findShapeById(source)!.richText.plainText,
+      'Keep shape',
+    );
+    expect(controller.currentPage!.findShapeById(target), isNotNull);
+    expect(controller.currentPage!.findShapeById(connector), isNotNull);
+  });
+
+  testWidgets('canvas Ctrl+Delete removes incident connectors', (tester) async {
+    late int source;
+    late int target;
+    late int connector;
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(900, 700),
+      setUp: (c) {
+        source = _addRect(c);
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.ellipse(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 1,
+            height: 1,
+          ),
+          6,
+          5,
+        );
+        target = c.singleSelectedId!;
+        c.createConnector(3, 5, 6, 5,
+            beginTarget: source, endTarget: target);
+        connector = c.singleSelectedId!;
+        c.selectOnly(source);
+      },
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+
+    expect(controller.currentPage!.findShapeById(source), isNull);
+    expect(controller.currentPage!.findShapeById(target), isNotNull);
+    expect(controller.currentPage!.findShapeById(connector), isNull);
+  });
+
   testWidgets('shape drag commits one undoable page-space move', (tester) async {
     late int id;
     final camera = CanvasCamera();

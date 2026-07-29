@@ -383,22 +383,30 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Foldable containers can also be collapsed or expanded from their context
   menu or with draw.io's Ctrl/Cmd+Home and Ctrl/Cmd+End shortcuts. Multi-selected
   hosts fold as one undo step, while locked hosts and locked layers are skipped.
-- **Table duplication shortcuts** (draw.io): select a table cell and press
-  Enter to clone its row directly below, preserving cell styles, labels,
-  nested contents and row-internal connections. Ctrl/Cmd+Enter duplicates the
-  whole table even when a cell is selected. Both operations mint fresh IDs,
-  select the copy and undo in one step; text inputs retain their Enter keys.
+- **Enter / duplicate-selection shortcuts** (draw.io): Enter starts inline
+  label editing for one selected shape. Ctrl/Cmd+Enter duplicates the current
+  selection; a selected table cell (or same-row cell selection) is promoted to
+  its whole row, while a selected table duplicates as a table. Row copies
+  preserve cell styles, labels, nested contents and row-internal connections.
+  Every copy mints fresh IDs, selects the result and undoes in one step; text
+  inputs retain their Enter keys.
 - **Table deletion shortcuts** (draw.io): Delete/Backspace on one cell or a
   same-row cell selection removes that row; selecting every visible cell in a
   column removes that column. Both edits preserve a valid table, clean up
   affected glue and undo in one step. Sparse/mixed cell selections, locked
   structures and the final remaining row/column are protected from raw child
   deletion.
+- **Modified deletion shortcuts** (draw.io): Ctrl/Cmd+Delete or Backspace
+  removes selected shapes together with their unlocked incident connectors;
+  Shift+Delete or Backspace clears only the selected labels. Multi-selection
+  edits undo in one step, and focused text fields retain their native word /
+  selection deletion keys.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),
   Cmd+G / Cmd+Shift+U (group / ungroup), Cmd+Home / Cmd+End (collapse / expand),
-  Cmd+Alt+C/V (copy/paste style),
+  Cmd+Alt+C/V (copy/paste style), Ctrl/Cmd+Delete (delete with connectors),
+  Shift+Delete (clear labels),
   Cmd+R / Cmd+Shift+R (rotate 90°), Cmd+F (find), Delete, Esc, arrow keys to
   nudge the selection, Tab/Shift+Tab to traverse visible nested shapes,
   Alt+Tab to select the parent, and canvas zoom (Cmd +/- , Cmd+0 = 100%,

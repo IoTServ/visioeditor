@@ -75,6 +75,11 @@ class EditorController extends ChangeNotifier {
   int? _revealShapeId;
   Offset2D? _revealPoint; // page-inch point to centre on (Outline navigation)
 
+  // Inline-label edit requests from app-level shortcuts. The canvas owns the
+  // actual TextField, so it watches this serial and opens the requested shape.
+  int _textEditRequestSerial = 0;
+  int? _textEditRequestShapeId;
+
   // Find state (draw.io Ctrl+F): query, match-case / whole-word flags, and hits
   // across every page as (pageIndex, shapeId) pairs plus the current index.
   String _findQuery = '';
@@ -3551,7 +3556,8 @@ class EditorController extends ChangeNotifier {
   /// Plain deletion preserves incident connectors as floating lines, matching
   /// draw.io's Delete / Backspace behaviour. When [includeConnected] is true,
   /// every unlocked connector glued to a removed shape (or descendant) is
-  /// deleted too — draw.io's Shift+toolbar-delete gesture.
+  /// deleted too — draw.io's Ctrl/Cmd+Delete shortcut and
+  /// Shift+toolbar-delete gesture.
   void deleteSelection({bool includeConnected = false}) {
     if (_editingConnectionPoints) {
       removeSelectedConnectionPoint();
@@ -4001,6 +4007,37 @@ class EditorController extends ChangeNotifier {
       dy: -0.25,
       connects: connects,
     );
+  }
+
+  /// Whether draw.io's Ctrl/Cmd+Enter duplicate command has a safe target.
+  ///
+  /// A table cell is promoted to its row, a selected table stays a whole-table
+  /// duplicate, and every other selection uses the normal duplicate command.
+  bool get canDuplicateSelectionFromEnter {
+    if (_selection.isEmpty) return false;
+    final tableId = selectedTableId;
+    if (tableId == null) return true;
+    if (_selectedTableRowIndex != null) return canDuplicateSelectedTableRow;
+    final selected = singleSelected;
+    return selected != null &&
+        TableOps.isTable(selected) &&
+        canDuplicateSelectedTable;
+  }
+
+  /// draw.io Ctrl/Cmd+Enter: duplicate the current selection, promoting a
+  /// selected table cell (or same-row cell selection) to the containing row.
+  void duplicateSelectionFromEnter() {
+    if (!canDuplicateSelectionFromEnter) return;
+    if (_selectedTableRowIndex != null) {
+      duplicateSelectedTableRow();
+      return;
+    }
+    final selected = singleSelected;
+    if (selected != null && TableOps.isTable(selected)) {
+      duplicateSelectedTable();
+      return;
+    }
+    duplicateSelection();
   }
 
   /// Clone [shapes] onto the current page with fresh ids, reminted image parts,
@@ -7223,6 +7260,12 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// draw.io Shift+Delete / Shift+Backspace: clear selected labels without
+  /// deleting their shapes. Multi-selection is committed as one undo step.
+  void clearSelectionLabels() {
+    _updateSelectedShapes((shape) => _withLabelText(shape, ''));
+  }
+
   /// Apply [text] to [s], preserving multi-run styles when possible.
   /// Clears Field rows when the label is rewritten (field spans are dropped
   /// by [replacePlainText] / a fresh single run).
@@ -8446,6 +8489,24 @@ class EditorController extends ChangeNotifier {
 
   /// Monotonic counter the canvas watches to know a reveal was requested.
   int get revealSerial => _revealSerial;
+
+  /// Monotonic counter the canvas watches for app-level Enter requests.
+  int get textEditRequestSerial => _textEditRequestSerial;
+
+  /// Shape whose label should enter inline edit mode.
+  int? get textEditRequestShapeId => _textEditRequestShapeId;
+
+  /// draw.io Enter: ask the canvas to edit the single selected shape's label.
+  void requestEditSelectionLabel() {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null || editingConnectionPoints) return;
+    final shape = page.findShapeById(id);
+    if (shape == null || shape.locked || isOnLockedLayer(id)) return;
+    _textEditRequestShapeId = id;
+    _textEditRequestSerial++;
+    notifyListeners();
+  }
 
   /// Target of the pending reveal: a shape id, or `null` to reveal the whole
   /// current selection.

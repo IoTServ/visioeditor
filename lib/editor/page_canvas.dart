@@ -132,6 +132,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Reveal ("scroll into view") — tracks the controller's revealSerial.
   int _lastRevealSerial = 0;
+  // App-level Enter requests — the inline editor itself belongs to this state.
+  int _lastTextEditRequestSerial = 0;
   // Fit-to-window requests (toolbar / zoom controls) — tracks fitSerial.
   int _lastFitSerial = 0;
   Offset _doubleTapPos = Offset.zero;
@@ -3901,7 +3903,12 @@ class _PageCanvasState extends State<PageCanvas> {
         fitToScreen();
         return KeyEventResult.handled;
       }
-      return KeyEventResult.ignored; // let app-level Cmd shortcuts run
+      // Modified Delete/Backspace is also handled locally when the canvas owns
+      // focus; every other Cmd/Ctrl chord bubbles to the app-level shortcuts.
+      if (key != LogicalKeyboardKey.delete &&
+          key != LogicalKeyboardKey.backspace) {
+        return KeyEventResult.ignored;
+      }
     }
     if (widget.presentationMode) {
       if (key == LogicalKeyboardKey.escape) {
@@ -3947,7 +3954,14 @@ class _PageCanvasState extends State<PageCanvas> {
         return KeyEventResult.handled; // don't delete the shape while editing
       }
       if (_c.hasSelection) {
-        _c.deleteSelection();
+        if (HardwareKeyboard.instance.isShiftPressed) {
+          _c.clearSelectionLabels();
+        } else {
+          _c.deleteSelection(
+            includeConnected: HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed,
+          );
+        }
         return KeyEventResult.handled;
       }
     } else if (key == LogicalKeyboardKey.escape) {
@@ -4211,6 +4225,15 @@ class _PageCanvasState extends State<PageCanvas> {
               _lastRevealSerial = _c.revealSerial;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) _handleReveal();
+              });
+            }
+            if (_c.textEditRequestSerial != _lastTextEditRequestSerial) {
+              _lastTextEditRequestSerial = _c.textEditRequestSerial;
+              final id = _c.textEditRequestShapeId;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && id != null && _editingShapeId == null) {
+                  _beginTextEdit(id);
+                }
               });
             }
             if (_c.fitSerial != _lastFitSerial) {
