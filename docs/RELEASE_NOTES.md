@@ -26,7 +26,8 @@ byte-for-byte, so formulas and structure survive a save.
   connector; hold Alt/Option while dropping an endpoint inside a shape to add
   a custom fixed connection point, or Shift to force floating perimeter glue.
   Labelled connectors expose a yellow diamond handle for freely positioning
-  their label with one-step undo.
+  their label and a circular handle for rotating the label independently
+  (Shift snaps to 15° increments), both with one-step undo.
   Hold Ctrl/Cmd while dragging a directional arrow to clone the shape at any
   drop point and connect it. Alt+Shift+Arrow also clones/connects in any
   direction.

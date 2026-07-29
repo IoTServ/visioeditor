@@ -88,7 +88,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - **Movable connector labels**: a selected labelled connector now exposes the
   draw.io-style yellow diamond handle. Drag it to place the label anywhere on
   the page; the standard VSDX TextXForm is updated, nested connectors use the
-  correct coordinate space, and the whole drag is one undo step.
+  correct coordinate space, and the whole drag is one undo step. A circular
+  grab handle rotates the label independently through standard VSDX
+  `TxtAngle`; hold Shift for 15° increments.
 - **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
   drops straight into in-place editing; an untyped box is discarded on commit
   or cancel. It can still be given a background or border afterwards.

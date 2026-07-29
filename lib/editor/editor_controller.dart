@@ -5814,6 +5814,96 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Arc-length midpoint of the connector's drawn route in page coordinates.
+  static Offset2D _connectorLabelMidpointPage(
+    VsdxPage page,
+    VsdxShape connector,
+  ) {
+    final route = page.drawnConnectorPagePolyline(connector);
+    if (route.isEmpty) return page.shapePinPage(connector.id);
+    if (route.length == 1) return route.first;
+    var total = 0.0;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      total += math.sqrt(dx * dx + dy * dy);
+    }
+    if (total <= 1e-12) return route.first;
+    var remaining = total / 2;
+    for (var i = 0; i < route.length - 1; i++) {
+      final dx = route[i + 1].x - route[i].x;
+      final dy = route[i + 1].y - route[i].y;
+      final length = math.sqrt(dx * dx + dy * dy);
+      if (length >= remaining) {
+        final t = length <= 1e-12 ? 0.0 : remaining / length;
+        return Offset2D(route[i].x + dx * t, route[i].y + dy * t);
+      }
+      remaining -= length;
+    }
+    return route.last;
+  }
+
+  /// Rotate a connector label so its local +Y axis points from the label pin
+  /// towards the page-space pointer ([pageX], [pageY]).
+  ///
+  /// This matches draw.io's label rotate grab handle while storing the result
+  /// in the standard VSDX `TxtAngle` cell. The page→connector-local conversion
+  /// keeps labels correct inside rotated or flipped groups.
+  void rotateConnectorLabelToward(
+    int id,
+    double pageX,
+    double pageY, {
+    bool snapTo15Degrees = false,
+    bool transient = false,
+  }) {
+    final page0 = currentPage;
+    if (page0 == null) return;
+    final connector = page0.findShapeById(id);
+    if (connector == null ||
+        !connector.isGlueableConnector ||
+        connector.locked ||
+        isOnLockedLayer(id)) {
+      return;
+    }
+    final block = connector.richText.textBlock;
+    final pinPage = block.pinXInches != null || block.pinYInches != null
+        ? page0.localToPageDeep(
+            id,
+            Offset2D(
+              block.pinXInches ?? connector.width / 2,
+              block.pinYInches ?? connector.height / 2,
+            ),
+          )
+        : _connectorLabelMidpointPage(page0, connector);
+    final pinLocal = page0.pageToLocalDeep(id, pinPage);
+    final pointerLocal =
+        page0.pageToLocalDeep(id, Offset2D(pageX, pageY));
+    final dx = pointerLocal.x - pinLocal.x;
+    final dy = pointerLocal.y - pinLocal.y;
+    if (dx * dx + dy * dy < 1e-12) return;
+    var angle = math.atan2(-dx, dy);
+    if (snapTo15Degrees) {
+      const step = math.pi / 12;
+      angle = (angle / step).round() * step;
+    }
+    updateCurrentPage(
+      (page) => page.updateShapeById(
+        id,
+        (shape) {
+          final formulas = Map<String, String>.of(shape.formulas)
+            ..remove('TxtAngle');
+          return shape.copyWith(
+            formulas: formulas,
+            richText: shape.richText.copyWith(
+              textBlock: shape.richText.textBlock.copyWith(angleRad: angle),
+            ),
+          );
+        },
+      ),
+      transient: transient,
+    );
+  }
+
   /// Reconnect (or detach) one end of connector [connectorId] — drawio's
   /// endpoint editing. When [targetShapeId] is non-null the end is glued to
   /// that shape; otherwise it floats at page point ([x],[y]). Pass

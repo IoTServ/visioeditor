@@ -90,6 +90,7 @@ enum _DragMode {
   moveWaypoint,
   moveEndpoint,
   moveConnectorLabel,
+  rotateConnectorLabel,
   connect,
   tableColResize,
   tableRowResize,
@@ -1036,6 +1037,29 @@ class _PageCanvasState extends State<PageCanvas> {
       );
     }
     return _connectorMidpointPage(connector);
+  }
+
+  /// Content-space label pin and rotate knob. The knob follows the text
+  /// block's rotated local +Y axis and keeps a constant on-screen distance.
+  (Offset anchor, Offset knob) _connectorLabelRotateAnchors(
+    VsdxShape connector,
+  ) {
+    final page = _page!;
+    final block = connector.richText.textBlock;
+    final pinPage = _connectorLabelPage(connector);
+    final pinLocal = page.pageToLocalDeep(connector.id, pinPage);
+    final tipLocal = Offset2D(
+      pinLocal.x - math.sin(block.angleRad),
+      pinLocal.y + math.cos(block.angleRad),
+    );
+    final tipPage = page.localToPageDeep(connector.id, tipLocal);
+    final anchor = _pageToContent(pinPage.x, pinPage.y);
+    final tip = _pageToContent(tipPage.x, tipPage.y);
+    final delta = tip - anchor;
+    final length = delta.distance;
+    final direction = length > 1e-9 ? delta / length : const Offset(0, -1);
+    final gap = (_isTouchUi ? 48.0 : 26.0) / _scale;
+    return (anchor, anchor + direction * gap);
   }
 
   /// Content-px positions of (rotate-line anchor at the shape's oriented top
@@ -2167,6 +2191,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // Connector endpoint handles (reconnect / detach) then bend points take
     // priority over hit-testing (they sit on top of the connector).
     if (_tryToggleCollapse(d.localPosition)) return;
+    if (_tryStartConnectorLabelRotate(d.localPosition)) return;
     if (_tryStartConnectorLabelDrag(d.localPosition)) return;
     if (_tryStartEndpointDrag(d.localPosition)) return;
     if (_tryStartWaypointDrag(d.localPosition)) return;
@@ -2431,6 +2456,18 @@ class _PageCanvasState extends State<PageCanvas> {
             id,
             p.dx,
             p.dy,
+            transient: true,
+          );
+        }
+      case _DragMode.rotateConnectorLabel:
+        final id = _connectorLabelId;
+        if (id != null) {
+          final p = _pageInchesAt(pos);
+          _c.rotateConnectorLabelToward(
+            id,
+            p.dx,
+            p.dy,
+            snapTo15Degrees: HardwareKeyboard.instance.isShiftPressed,
             transient: true,
           );
         }
@@ -3098,6 +3135,24 @@ class _PageCanvasState extends State<PageCanvas> {
     return true;
   }
 
+  /// Start rotating a selected connector label from its circular grab handle.
+  bool _tryStartConnectorLabelRotate(Offset localPos) {
+    final conn = _selectedConnector();
+    if (conn == null ||
+        !_canEditConnector(conn) ||
+        !_connectorHasLabel(conn)) {
+      return false;
+    }
+    final (_, knob) = _connectorLabelRotateAnchors(conn);
+    final knobScreen = _offset + knob * _scale;
+    final hit = _handleHitPx * _handleHitPx;
+    if ((knobScreen - localPos).distanceSquared > hit) return false;
+    _c.beginTransaction();
+    _connectorLabelId = conn.id;
+    _mode = _DragMode.rotateConnectorLabel;
+    return true;
+  }
+
   /// Start dragging a selected connector's begin / end handle (drawio endpoint
   /// editing). Returns whether the drag was started.
   bool _tryStartEndpointDrag(Offset localPos) {
@@ -3301,6 +3356,7 @@ class _PageCanvasState extends State<PageCanvas> {
         _waypointConnId = null;
         _waypointIndex = null;
       case _DragMode.moveConnectorLabel:
+      case _DragMode.rotateConnectorLabel:
         _c.commitTransaction();
         _connectorLabelId = null;
       case _DragMode.moveEndpoint:
@@ -3527,6 +3583,7 @@ class _PageCanvasState extends State<PageCanvas> {
       case _DragMode.moveWaypoint:
       case _DragMode.moveEndpoint:
       case _DragMode.moveConnectorLabel:
+      case _DragMode.rotateConnectorLabel:
       case _DragMode.moveConnectionPoint:
       case _DragMode.tableColResize:
       case _DragMode.tableRowResize:
@@ -4164,6 +4221,7 @@ class _PageCanvasState extends State<PageCanvas> {
             var midpointHandles = const <Offset>[];
             var endpointHandles = const <Offset>[];
             Offset? connectorLabelHandle;
+            Offset? connectorLabelRotateKnob;
             if (connector != null && _canEditConnector(connector)) {
               final route = _connectorControlRoutePage(connector);
               waypointHandles = <Offset>[
@@ -4186,8 +4244,9 @@ class _PageCanvasState extends State<PageCanvas> {
                 ];
               }
               if (_connectorHasLabel(connector)) {
-                final label = _connectorLabelPage(connector);
-                connectorLabelHandle = _pageToContent(label.x, label.y);
+                final anchors = _connectorLabelRotateAnchors(connector);
+                connectorLabelHandle = anchors.$1;
+                connectorLabelRotateKnob = anchors.$2;
               }
             }
             return DragTarget<ThirdPartyIcon>(
@@ -4336,6 +4395,8 @@ class _PageCanvasState extends State<PageCanvas> {
                                       endpointHandles: endpointHandles,
                                       connectorLabelHandle:
                                           connectorLabelHandle,
+                                      connectorLabelRotateKnob:
+                                          connectorLabelRotateKnob,
                                       hoverBox: hoverBox,
                                       hoverArrowGap:
                                           _connectArrowGapPxEffective / _scale,
@@ -4407,6 +4468,7 @@ class _SelectionPainter extends CustomPainter {
     this.midpointHandles = const <Offset>[],
     this.endpointHandles = const <Offset>[],
     this.connectorLabelHandle,
+    this.connectorLabelRotateKnob,
     this.hoverBox,
     this.hoverArrowGap = 0,
     this.connectTargetRect,
@@ -4455,6 +4517,9 @@ class _SelectionPainter extends CustomPainter {
 
   /// Connector label anchor (draw.io yellow diamond), content-px.
   final Offset? connectorLabelHandle;
+
+  /// Circular connector-label rotation handle, content-px.
+  final Offset? connectorLabelRotateKnob;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -4558,6 +4623,17 @@ class _SelectionPainter extends CustomPainter {
       }
     }
     final labelHandle = connectorLabelHandle;
+    final labelRotateKnob = connectorLabelRotateKnob;
+    if (labelHandle != null && labelRotateKnob != null) {
+      canvas
+        ..drawLine(labelHandle, labelRotateKnob, outline)
+        ..drawCircle(
+          labelRotateKnob,
+          handleSize * 0.72,
+          Paint()..color = Colors.white,
+        )
+        ..drawCircle(labelRotateKnob, handleSize * 0.72, outline);
+    }
     if (labelHandle != null) {
       final radius = handleSize * 0.9;
       final path = Path()
@@ -4724,6 +4800,7 @@ class _SelectionPainter extends CustomPainter {
       !listEquals(old.midpointHandles, midpointHandles) ||
       !listEquals(old.endpointHandles, endpointHandles) ||
       old.connectorLabelHandle != connectorLabelHandle ||
+      old.connectorLabelRotateKnob != connectorLabelRotateKnob ||
       !listEquals(old.connectionPoints, connectionPoints) ||
       !listEquals(old.freehandPoints, freehandPoints);
 }

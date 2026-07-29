@@ -2054,6 +2054,73 @@ void main() {
     expect(connector.richText.textBlock.pinYInches, isNull);
   });
 
+  test('connector label rotation writes TxtAngle and round-trips', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    c.createConnector(
+      a.pinX,
+      a.pinY,
+      b.pinX,
+      b.pinY,
+      beginTarget: a.id,
+      endTarget: b.id,
+    );
+    final connectorId = c.singleSelectedId!;
+    c.setShapeText(connectorId, 'Approval');
+    final midpoint = VsdxPage.connectorMidpoint(
+      c.currentPage!.findShapeById(connectorId)!,
+    );
+
+    c.beginTransaction();
+    c.rotateConnectorLabelToward(
+      connectorId,
+      midpoint.x + 1,
+      midpoint.y,
+      transient: true,
+    );
+    c.commitTransaction();
+
+    final rotated =
+        c.currentPage!.findShapeById(connectorId)!.richText.textBlock;
+    expect(rotated.angleRad, closeTo(-math.pi / 2, 1e-6));
+    final reopened = const DocumentParser().parse(c.exportToBytes());
+    expect(
+      reopened.pages.first
+          .findShapeById(connectorId)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(-math.pi / 2, 1e-6),
+    );
+
+    c.undo();
+    expect(
+      c.currentPage!
+          .findShapeById(connectorId)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(0, 1e-9),
+    );
+
+    const twentyDegrees = 20 * math.pi / 180;
+    c.rotateConnectorLabelToward(
+      connectorId,
+      midpoint.x - math.sin(twentyDegrees),
+      midpoint.y + math.cos(twentyDegrees),
+      snapTo15Degrees: true,
+    );
+    expect(
+      c.currentPage!
+          .findShapeById(connectorId)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(15 * math.pi / 180, 1e-6),
+    );
+  });
+
   test('createConnector without CP index uses whole-shape perimeter glue', () {
     final c = newDocWithTwoRects();
     final rects = c.currentPage!.shapes.toList();

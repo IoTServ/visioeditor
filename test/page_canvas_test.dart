@@ -1514,6 +1514,72 @@ void main() {
     );
   });
 
+  testWidgets('connector label rotate handle writes one undoable angle',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        final source = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        final target = c.singleSelectedId!;
+        c.createConnector(
+          2,
+          5,
+          6,
+          5,
+          beginTarget: source,
+          endTarget: target,
+        );
+        connector = c.singleSelectedId!;
+        c.setShapeText(connector, 'Approval');
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final shape = page.findShapeById(connector)!;
+    final midpoint = VsdxPage.connectorMidpoint(shape);
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final anchor = _pagePoint(
+      origin,
+      camera,
+      page,
+      midpoint.x,
+      midpoint.y,
+    );
+    final start = anchor + const Offset(0, -26);
+    final destination = anchor + const Offset(60, 0);
+
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.currentPage!
+          .findShapeById(connector)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(-math.pi / 2, 0.05),
+    );
+    controller.undo();
+    expect(
+      controller.currentPage!
+          .findShapeById(connector)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(0, 1e-9),
+    );
+  });
+
   testWidgets('blank context menu selects all edges or vertices',
       (tester) async {
     late int connector;
