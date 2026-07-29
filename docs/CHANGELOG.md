@@ -371,6 +371,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   top-level shapes into a group (members become group-local, Visio's group
   coordinate convention) and ungroup back to page-absolute coordinates; both
   round-trip through the writer (which reparents the `<Shape>` subtree).
+  Plain groups use draw.io's root-first drill-down selection: the first
+  click/drag targets the group, repeated clicks descend one level, sibling
+  clicks stay inside, and Alt-click reaches the deepest child directly.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

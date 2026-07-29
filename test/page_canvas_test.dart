@@ -892,6 +892,84 @@ void main() {
     expect(controller.selection, unorderedEquals(<int>[a, b]));
   });
 
+  testWidgets('plain groups select root first then drill into children',
+      (tester) async {
+    late int groupId;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        c.selectAll();
+        c.groupSelection();
+        groupId = c.singleSelectedId!;
+        c.clearSelection();
+      },
+      camera: camera,
+    );
+    var page = controller.currentPage!;
+    final group = page.findShapeById(groupId)!;
+    final firstId = group.children.first.id;
+    final secondId = group.children.last.id;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    Offset centreOf(int id) {
+      final bounds = page.shapePageAabb(id)!;
+      return _pagePoint(
+        origin,
+        camera,
+        page,
+        (bounds.left + bounds.right) / 2,
+        (bounds.bottom + bounds.top) / 2,
+      );
+    }
+
+    final first = centreOf(firstId);
+    final second = centreOf(secondId);
+    await _tapCanvasAt(tester, first);
+    expect(controller.selection, <int>{groupId});
+
+    await _tapCanvasAt(tester, first);
+    expect(controller.selection, <int>{firstId});
+
+    // Once inside a group, a sibling is selected directly.
+    await _tapCanvasAt(tester, second);
+    expect(controller.selection, <int>{secondId});
+
+    // Alt bypasses the root-first group selection.
+    controller.clearSelection();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    try {
+      await _tapCanvasAt(tester, first);
+    } finally {
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    }
+    expect(controller.selection, <int>{firstId});
+
+    // Starting a normal drag inside an unselected group moves the group root.
+    controller.clearSelection();
+    await tester.pump();
+    final beforeFirst = page.shapePageAabb(firstId)!;
+    final beforeSecond = page.shapePageAabb(secondId)!;
+    await tester.dragFrom(first, const Offset(96, 0));
+    await tester.pumpAndSettle();
+    page = controller.currentPage!;
+    final afterFirst = page.shapePageAabb(firstId)!;
+    final afterSecond = page.shapePageAabb(secondId)!;
+    expect(controller.selection, <int>{groupId});
+    final firstDelta = afterFirst.left - beforeFirst.left;
+    final secondDelta = afterSecond.left - beforeSecond.left;
+    expect(firstDelta, greaterThan(0.5));
+    expect(secondDelta, closeTo(firstDelta, 1e-6));
+  });
+
   testWidgets('Space drag pans even when it starts on a selected shape',
       (tester) async {
     late int id;

@@ -63,7 +63,9 @@ byte-for-byte, so formulas and structure survive a save.
   moves the selection; adding Ctrl/Cmd displaces shapes across horizontal and
   vertical area cuts, while an Alt+Shift marquee subtracts intersecting shapes.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
-  parent. Right-click blank canvas to select all edges or all vertices.
+  parent. Plain groups select/drag as a unit first, then repeated clicks drill
+  into their children; Alt-click bypasses the group hierarchy. Right-click
+  blank canvas to select all edges or all vertices.
   Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting

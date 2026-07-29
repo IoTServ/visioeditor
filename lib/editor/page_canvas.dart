@@ -582,19 +582,62 @@ class _PageCanvasState extends State<PageCanvas> {
     return top;
   }
 
-  /// Prefer the chart group root when clicking a series child (Alt drills in).
-  int _chartAwareHit(int hit) {
+  /// Resolve a raw deepest hit using draw.io's group drill-down semantics.
+  ///
+  /// The first click selects the outer plain group. Clicking the same point
+  /// again descends one level, while a selected sibling lets another sibling
+  /// be selected directly. Alt bypasses groups and keeps the deepest raw hit.
+  /// Charts retain their existing root-first behaviour.
+  int _selectionAwareHit(int hit) {
     if (HardwareKeyboard.instance.isAltPressed) return hit;
     final page = _page;
     if (page == null) return hit;
+
+    // Charts are edited as one semantic object unless Alt explicitly drills
+    // into their generated series children.
     var cur = hit;
     while (true) {
       final s = page.findShapeById(cur);
       if (s != null && ChartOps.isChart(s)) return cur;
       final p = page.findParentId(cur);
-      if (p == null) return hit;
+      if (p == null) break;
       cur = p;
     }
+
+    // Inner→outer path, including the raw hit.
+    final path = <int>[hit];
+    var parent = page.findParentId(hit);
+    while (parent != null) {
+      path.add(parent);
+      parent = page.findParentId(parent);
+    }
+
+    final selected = _c.singleSelectedId;
+    if (selected != null) {
+      // Once inside a group, clicking another child of that same group should
+      // switch siblings instead of jumping back out to the group.
+      final selectedParent = page.findParentId(selected);
+      if (selectedParent != null &&
+          page.findShapeById(selectedParent)?.shapeKind ==
+              VsdxShapeKind.group) {
+        final commonParentIndex = path.indexOf(selectedParent);
+        if (commonParentIndex > 0) return path[commonParentIndex - 1];
+      }
+
+      // A selected ancestor drills exactly one level towards the raw hit.
+      final selectedIndex = path.indexOf(selected);
+      if (selectedIndex > 0) return path[selectedIndex - 1];
+      if (selectedIndex == 0) return hit;
+    }
+
+    // With no active ancestor, select the outermost plain group first.
+    for (final id in path.reversed) {
+      if (id != hit &&
+          page.findShapeById(id)?.shapeKind == VsdxShapeKind.group) {
+        return id;
+      }
+    }
+    return hit;
   }
 
   /// True when [pt] (page inches) is within stroke hit distance of [s]'s path.
@@ -1298,7 +1341,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final hit0 = alt && !subtract
         ? _hitBelow(d.localPosition)
         : _hitTest(d.localPosition);
-    final hit = hit0 == null ? null : _chartAwareHit(hit0);
+    final hit = hit0 == null ? null : _selectionAwareHit(hit0);
     final toggle =
         shift || keyboard.isControlPressed || keyboard.isMetaPressed;
     if (hit != null) {
@@ -1347,7 +1390,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (widget.presentationMode || _c.tool == EditorTool.pan) return;
     if (_editingShapeId != null) _commitTextEdit();
     _ensureCanvasFocus();
-    final hit = _hitTest(d.localPosition);
+    final rawHit = _hitTest(d.localPosition);
+    final hit = rawHit == null ? null : _selectionAwareHit(rawHit);
     if (hit != null && !_c.isSelected(hit)) _c.selectOnly(hit);
     _showContextMenu(d.globalPosition, hit, _pageInchesAt(d.localPosition));
   }
@@ -2197,7 +2241,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_tryStartWaypointDrag(d.localPosition)) return;
 
     final hit0 = _hitTest(d.localPosition);
-    final hit = hit0 == null ? null : _chartAwareHit(hit0);
+    final hit = hit0 == null ? null : _selectionAwareHit(hit0);
     if (hit != null) {
       if (!_c.isSelected(hit)) _c.selectOnly(hit);
       // Ctrl/Cmd-drag leaves the originals behind and drags a copy (draw.io).
