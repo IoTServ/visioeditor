@@ -1457,6 +1457,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   蓝色固定点，禁止从固定点/轮廓起线及固定点吸附，但连接器工具仍可使用普通浮动边界胶合，
   显式 Edit Connection Points 模式不受影响。补控制器快捷键、本地化、画布关闭态与胶合
   语义回归。
+- 2026-07-29 — **对齐 draw.io Extras 与精确 Z 序键位**：新增 Copy on Connect 和
+  Collapse/Expand Controls 会话开关。前者让箭头拖线或连接器工具落到空白处时复制源图形、
+  自动胶合并合并为单次撤销；后者统一控制折叠箭头绘制、命中及 Ctrl/Cmd+Home/End 命令，
+  关闭时保留文档既有折叠状态。补源码定义的 `Cmd/Ctrl+Alt+Shift+F/B` 单层前移/后移，
+  并覆盖状态、本地化、真实画布拖拽与两平台快捷键回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

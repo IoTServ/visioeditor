@@ -59,6 +59,7 @@ class VsdxPainter extends CustomPainter {
     this.drawLineJumps = true,
     this.lineJumpRadiusInches = 0.07,
     this.drawEditorChrome = true,
+    this.foldingControlsEnabled = true,
     this.colorByLayer = false,
   }) : super(repaint: imageCache);
 
@@ -133,6 +134,9 @@ class VsdxPainter extends CustomPainter {
   /// When `true` (editor canvas), paint foldable/annotative chrome (dashed
   /// kind hint + collapse chevron). Export PNG/SVG should pass `false`.
   final bool drawEditorChrome;
+
+  /// Whether draw.io-style fold chevrons are visible on foldable shapes.
+  final bool foldingControlsEnabled;
 
   // Per-paint cache (filled at the top of [paint]): every connector's
   // page-space polyline in z-order, plus a shape-id → z-index lookup. Used so a
@@ -448,7 +452,9 @@ class VsdxPainter extends CustomPainter {
       }
     }
 
-    if (drawEditorChrome && shape.shapeKind.isFoldable) {
+    if (drawEditorChrome &&
+        foldingControlsEnabled &&
+        shape.shapeKind.isFoldable) {
       _paintCollapseChevron(canvas, shape, w, h);
     }
 
@@ -3012,6 +3018,7 @@ class VsdxPainter extends CustomPainter {
       old.drawLineJumps != drawLineJumps ||
       old.lineJumpRadiusInches != lineJumpRadiusInches ||
       old.drawEditorChrome != drawEditorChrome ||
+      old.foldingControlsEnabled != foldingControlsEnabled ||
       old.colorByLayer != colorByLayer;
 }
 

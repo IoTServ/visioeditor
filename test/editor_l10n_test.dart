@@ -27,6 +27,10 @@ void main() {
     expect(zh.connectionArrows, '连接箭头');
     expect(en.connectionPoints, 'Connection Points');
     expect(zh.connectionPoints, '连接点');
+    expect(en.copyOnConnect, 'Copy on Connect');
+    expect(zh.copyOnConnect, '连线时复制');
+    expect(en.collapseExpand, 'Collapse/Expand Controls');
+    expect(zh.collapseExpand, '折叠/展开控件');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');

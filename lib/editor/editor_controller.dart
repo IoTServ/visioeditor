@@ -56,6 +56,8 @@ class EditorController extends ChangeNotifier {
   bool _showLineJumps = true;
   bool _connectionArrowsEnabled = true;
   bool _connectionPointsEnabled = true;
+  bool _copyOnConnectEnabled = false;
+  bool _foldingControlsEnabled = true;
   bool _colorByLayer = false;
   double _lineJumpRadiusInches = 0.07;
   final double _gridInches = 0.25;
@@ -476,6 +478,8 @@ class EditorController extends ChangeNotifier {
   bool get showLineJumps => _showLineJumps;
   bool get connectionArrowsEnabled => _connectionArrowsEnabled;
   bool get connectionPointsEnabled => _connectionPointsEnabled;
+  bool get copyOnConnectEnabled => _copyOnConnectEnabled;
+  bool get foldingControlsEnabled => _foldingControlsEnabled;
   bool get colorByLayer => _colorByLayer;
   double get lineJumpRadiusInches => _lineJumpRadiusInches;
   double get gridInches => _gridInches;
@@ -511,6 +515,18 @@ class EditorController extends ChangeNotifier {
   /// Toggle draw.io fixed connection-point display, hit-testing and snapping.
   void toggleConnectionPoints() {
     _connectionPointsEnabled = !_connectionPointsEnabled;
+    notifyListeners();
+  }
+
+  /// Toggle draw.io's create-target behaviour for blank connector drops.
+  void toggleCopyOnConnect() {
+    _copyOnConnectEnabled = !_copyOnConnectEnabled;
+    notifyListeners();
+  }
+
+  /// Toggle draw.io's fold controls and fold/unfold commands.
+  void toggleFoldingControls() {
+    _foldingControlsEnabled = !_foldingControlsEnabled;
     notifyListeners();
   }
 
@@ -1557,6 +1573,7 @@ class EditorController extends ChangeNotifier {
   /// to invisible targets) and stashed on the host via
   /// [VsdxShape.userCollapsedGlue] so unfold — and undo — restore it.
   void toggleCollapsed(int id) {
+    if (!_foldingControlsEnabled) return;
     final page0 = currentPage;
     final host = page0?.findShapeById(id);
     if (host == null ||
@@ -1586,6 +1603,7 @@ class EditorController extends ChangeNotifier {
   }
 
   bool get canCollapseSelection {
+    if (!_foldingControlsEnabled) return false;
     final page = currentPage;
     if (page == null) return false;
     return _selection.any(
@@ -1594,6 +1612,7 @@ class EditorController extends ChangeNotifier {
   }
 
   bool get canExpandSelection {
+    if (!_foldingControlsEnabled) return false;
     final page = currentPage;
     if (page == null) return false;
     return _selection.any(
@@ -1604,6 +1623,7 @@ class EditorController extends ChangeNotifier {
   /// draw.io Ctrl/Cmd+Home / Ctrl/Cmd+End: fold or unfold every eligible
   /// selected container as one undoable edit.
   void setSelectionCollapsed(bool collapsed) {
+    if (!_foldingControlsEnabled) return;
     final page = currentPage;
     if (page == null || _selection.isEmpty) return;
     final ids = <int>[

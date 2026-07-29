@@ -93,6 +93,11 @@ byte-for-byte, so formulas and structure survive a save.
   quick-add/quick-connect hit regions; turning points off disables blue-point
   display and fixed-point snapping while ordinary perimeter glue remains
   available.
+  Copy on Connect can also be enabled from the More menu: dragging a connection
+  to empty canvas then clones the source at the drop point and connects it in
+  one undo step. Collapse/Expand Controls independently hides fold chevrons and
+  disables their click and keyboard commands without altering the drawing's
+  stored collapsed state.
   Turn / Reverse now uses Cmd/Ctrl+R for both 90° shape turns and semantic
   connector reversal. Copy Data / Paste Data transfers complete Shape Data
   metadata; context-menu paste preserves target labels, while the draw.io
@@ -191,6 +196,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Copy Text Style / Copy Size / Paste Size | `Alt+Shift+C` / `Alt+Shift+F` / `Alt+Shift+V` |
 | Edit Link / Edit Connection Points | `Alt+Shift+L` / `Alt+Shift+Q` |
 | Toggle Connection Arrows / Connection Points | `Alt+Shift+A` / `Alt+Shift+O` |
+| Bring forward / send backward one layer | `Cmd/Ctrl+Alt+Shift+F` / `Cmd/Ctrl+Alt+Shift+B` |
 | Select previous/next/first/last page (no shape selection) | `Cmd/Ctrl+Left` / `Right` / `Up` / `Down` |
 | Reorder current page (no shape selection) | `Shift+Left` / `Right` / `Up` / `Down` |
 | Previous / next page | `Cmd/Ctrl+Shift+PageUp` / `PageDown` |

@@ -1467,6 +1467,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.sendSelectionBackward();
     });
+    // draw.io's explicit single-layer ordering chords.
+    mod(LogicalKeyboardKey.keyF, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.bringSelectionForward();
+    }, shift: true, alt: true);
+    mod(LogicalKeyboardKey.keyB, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.hasSelection) cur.sendSelectionBackward();
+    }, shift: true, alt: true);
     mod(LogicalKeyboardKey.keyC, () {
       final cur = c();
       if (cur != null && cur.hasSelection) cur.copyStyle();
@@ -1945,6 +1956,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.toggleConnectionArrows();
                               case 'connectionPoints':
                                 cur.toggleConnectionPoints();
+                              case 'copyOnConnect':
+                                cur.toggleCopyOnConnect();
+                              case 'foldingControls':
+                                cur.toggleFoldingControls();
                               case 'agentPreview':
                                 _toggleAgentPreview();
                               case 'aiChat':
@@ -2147,6 +2162,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'connectionPoints',
                               checked: cur.connectionPointsEnabled,
                               child: Text(el.connectionPoints),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'copyOnConnect',
+                              checked: cur.copyOnConnectEnabled,
+                              child: Text(el.copyOnConnect),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'foldingControls',
+                              checked: cur.foldingControlsEnabled,
+                              child: Text(el.collapseExpand),
                             ),
                             CheckedPopupMenuItem<String>(
                               value: 'agentPreview',

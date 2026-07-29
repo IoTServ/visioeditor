@@ -827,6 +827,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// Click the fold chevron on a container / swimlane header (draw.io).
   bool _tryToggleCollapse(Offset viewportPos) {
+    if (!_c.foldingControlsEnabled) return false;
     final page = _page;
     if (page == null) return false;
     final pt = _contentToPageInches(_viewportToContent(viewportPos));
@@ -3335,6 +3336,14 @@ class _PageCanvasState extends State<PageCanvas> {
     return (_c.snap(cx), _c.snap(cy));
   }
 
+  /// Cardinal direction from one page-space point to another.
+  static int _directionBetween(Offset from, Offset to) {
+    final dx = to.dx - from.dx;
+    final dy = to.dy - from.dy;
+    if (dx.abs() >= dy.abs()) return dx >= 0 ? 1 : 3;
+    return dy >= 0 ? 0 : 2;
+  }
+
   /// drawio directional-arrow Shift+click: connect [s] to the shape one step
   /// over in [dir] — or clone [s] there and connect to it — then select it.
   void _connectInDirection(VsdxShape s, int dir) {
@@ -3735,21 +3744,33 @@ class _PageCanvasState extends State<PageCanvas> {
                 _connectorTargetAt(_offset + start * _scale);
             final endTarget = _connectTargetId ??
                 _connectorTargetAt(_offset + end * _scale);
-            _c.createConnector(
-              a.dx,
-              a.dy,
-              b.dx,
-              b.dy,
-              beginTarget: beginTarget,
-              endTarget: endTarget,
-              beginConnectionPointIndex:
-                  beginTarget != null ? _connectSourceConnIndex : null,
-              endConnectionPointIndex: endTarget != null ? _snapConnIndex : null,
-              beginFixedAtPosition:
-                  beginTarget != null && _connectSourceFixedAtPosition,
-              endFixedAtPosition:
-                  endTarget != null && _connectTargetFixedAtPosition,
-            );
+            if (beginTarget != null &&
+                endTarget == null &&
+                _c.copyOnConnectEnabled) {
+              _c.connectDirectional(
+                beginTarget,
+                _directionBetween(a, b),
+                cloneX: _bypassSnapping ? b.dx : _c.snap(b.dx),
+                cloneY: _bypassSnapping ? b.dy : _c.snap(b.dy),
+              );
+            } else {
+              _c.createConnector(
+                a.dx,
+                a.dy,
+                b.dx,
+                b.dy,
+                beginTarget: beginTarget,
+                endTarget: endTarget,
+                beginConnectionPointIndex:
+                    beginTarget != null ? _connectSourceConnIndex : null,
+                endConnectionPointIndex:
+                    endTarget != null ? _snapConnIndex : null,
+                beginFixedAtPosition:
+                    beginTarget != null && _connectSourceFixedAtPosition,
+                endFixedAtPosition:
+                    endTarget != null && _connectTargetFixedAtPosition,
+              );
+            }
           } else {
             final wasText = _c.tool == EditorTool.text;
             _c.createShapeByDrag(a.dx, a.dy, b.dx, b.dy);
@@ -3775,11 +3796,11 @@ class _PageCanvasState extends State<PageCanvas> {
           final target =
               _connectTargetId == src ? null : _connectTargetId;
           final arrowDirection = _connectArrowDirection;
-          if (arrowDirection != null && _cloneDrag) {
+          if (target == null &&
+              (_cloneDrag || _c.copyOnConnectEnabled)) {
             _c.connectDirectional(
               src,
-              arrowDirection,
-              existingTargetId: target,
+              arrowDirection ?? _directionBetween(a, b),
               cloneX: _bypassSnapping ? b.dx : _c.snap(b.dx),
               cloneY: _bypassSnapping ? b.dy : _c.snap(b.dy),
             );
@@ -4718,6 +4739,8 @@ class _PageCanvasState extends State<PageCanvas> {
                                       colorByLayer: _c.colorByLayer,
                                       lineJumpRadiusInches:
                                           _c.lineJumpRadiusInches,
+                                      foldingControlsEnabled:
+                                          _c.foldingControlsEnabled,
                                       backgroundColor: _c.showGrid
                                           ? const Color(0x00000000)
                                           : widget.pageColor,

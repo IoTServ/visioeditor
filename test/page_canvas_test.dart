@@ -2642,7 +2642,7 @@ void main() {
   });
 
   testWidgets(
-      'direction arrow drag connects; Ctrl-drag clones at the drop point',
+      'direction arrow drag supports modifier and Copy on Connect cloning',
       (tester) async {
     // Compact width exposes the selection-based direction arrows without
     // relying on a desktop hover event.
@@ -2735,6 +2735,26 @@ void main() {
           .where((row) =>
               row.fromSheetId == floatingConnector.id && row.isEnd),
       isEmpty,
+    );
+
+    controller.undo();
+    controller
+      ..selectOnly(source)
+      ..toggleCopyOnConnect();
+    await tester.pumpAndSettle();
+    final automaticDrop = _pagePoint(origin, camera, page, 6.5, 6);
+    await tester.dragFrom(eastArrow, automaticDrop - eastArrow);
+    await tester.pumpAndSettle();
+
+    final automaticClone = controller.singleSelected!;
+    expect(controller.currentPage!.shapes, hasLength(3));
+    expect(automaticClone.id, isNot(source));
+    expect(automaticClone.richText.plainText, 'Clone me');
+    expect(
+      controller.currentPage!.connects.any(
+        (row) => row.isEnd && row.toSheetId == automaticClone.id,
+      ),
+      isTrue,
     );
   });
 

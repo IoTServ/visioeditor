@@ -248,6 +248,30 @@ void main() {
         shift: true,
       ): () => adjustWholeLabelTextSize(-1),
       const SingleActivator(
+        LogicalKeyboardKey.keyF,
+        meta: true,
+        alt: true,
+        shift: true,
+      ): c.bringSelectionForward,
+      const SingleActivator(
+        LogicalKeyboardKey.keyF,
+        control: true,
+        alt: true,
+        shift: true,
+      ): c.bringSelectionForward,
+      const SingleActivator(
+        LogicalKeyboardKey.keyB,
+        meta: true,
+        alt: true,
+        shift: true,
+      ): c.sendSelectionBackward,
+      const SingleActivator(
+        LogicalKeyboardKey.keyB,
+        control: true,
+        alt: true,
+        shift: true,
+      ): c.sendSelectionBackward,
+      const SingleActivator(
         LogicalKeyboardKey.keyR,
         alt: true,
         shift: true,
@@ -949,6 +973,46 @@ void main() {
             .fontSizeInches *
         72;
     expect(after, closeTo(before + 2, 1e-9));
+  });
+
+  testWidgets('draw.io single-layer ordering chords move one z-step',
+      (tester) async {
+    final c = ctrlWithRect();
+    final first = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.ellipse(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 1,
+      ),
+      4,
+      3,
+    );
+    final second = c.singleSelectedId!;
+    c.selectOnly(first);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.currentPage!.shapes.map((s) => s.id), <int>[second, first]);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(c.currentPage!.shapes.map((s) => s.id), <int>[first, second]);
   });
 
   testWidgets('NumPad text-size chord is deferred in a regular text field', (

@@ -17,6 +17,37 @@ void main() {
     return c;
   }
 
+  test('draw.io Extras toggles copy-on-connect and folding commands', () {
+    final c = EditorController()..newDocument();
+    final page = c.currentPage!;
+    final container = VsdxShapeFactory.container(
+      id: page.nextFreeShapeId(),
+      pinX: 4,
+      pinY: 4,
+      width: 4,
+      height: 3,
+    );
+    c
+      ..updateCurrentPage((p) => p.addShape(container))
+      ..selectOnly(container.id);
+
+    expect(c.copyOnConnectEnabled, isFalse);
+    c.toggleCopyOnConnect();
+    expect(c.copyOnConnectEnabled, isTrue);
+
+    expect(c.foldingControlsEnabled, isTrue);
+    expect(c.canCollapseSelection, isTrue);
+    c.toggleFoldingControls();
+    expect(c.foldingControlsEnabled, isFalse);
+    expect(c.canCollapseSelection, isFalse);
+    c.toggleCollapsed(container.id);
+    expect(c.isCollapsed(container.id), isFalse);
+
+    c.toggleFoldingControls();
+    c.collapseSelection();
+    expect(c.isCollapsed(container.id), isTrue);
+  });
+
   test('group then ungroup round-trips through the controller', () {
     final c = newDocWithTwoRects();
     expect(c.currentPage!.shapes.length, 2);

@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io Extras controls and ordering chords**: the More menu now exposes
+  **Copy on Connect** and **Collapse/Expand Controls**. Copy on Connect clones
+  a connector's source at an empty drop point and wires the clone in the same
+  undoable edit; disabling fold controls removes both their chevrons and
+  command hit paths. `Cmd/Ctrl+Alt+Shift+F/B` now performs draw.io's exact
+  one-layer Bring Forward / Send Backward actions.
 - **draw.io connection-affordance controls**: **Connection Arrows** and
   **Connection Points** are now independent session toggles in the More menu,
   with draw.io's `Alt+Shift+A/O` shortcuts. Disabling arrows removes their

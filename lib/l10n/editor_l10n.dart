@@ -120,6 +120,10 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '连接箭头' : 'Connection Arrows';
   String get connectionPoints =>
       locale.languageCode == 'zh' ? '连接点' : 'Connection Points';
+  String get copyOnConnect =>
+      locale.languageCode == 'zh' ? '连线时复制' : 'Copy on Connect';
+  String get collapseExpand =>
+      locale.languageCode == 'zh' ? '折叠/展开控件' : 'Collapse/Expand Controls';
   String get lock => _t('lock');
   String get unlock => _t('unlock');
   String get lockShortcut => _t('lockShortcut');
