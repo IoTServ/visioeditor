@@ -779,7 +779,7 @@ class EditorController extends ChangeNotifier {
   /// back to the cell hierarchy. Keeping this helper in the controller lets
   /// imported Visio flowcharts participate without adding editor-only model
   /// metadata.
-  Iterable<({int source, int target})> _directedVertexRelations(
+  Iterable<({int connector, int source, int target})> _directedVertexRelations(
     VsdxPage page,
   ) sync* {
     final rowsByConnector = <int, List<VsdxConnect>>{};
@@ -812,7 +812,7 @@ class EditorController extends ChangeNotifier {
           !page.isShapeTreeVisible(target)) {
         continue;
       }
-      yield (source: source, target: target);
+      yield (connector: connector.id, source: source, target: target);
     }
   }
 
@@ -862,6 +862,8 @@ class EditorController extends ChangeNotifier {
     if (page == null || id == null) return false;
     return _relatedChildrenOf(page, id).isNotEmpty;
   }
+
+  bool get canSelectSubtree => canSelectDescendants;
 
   bool get canSelectRelatedParent {
     final page = currentPage;
@@ -919,6 +921,35 @@ class EditorController extends ChangeNotifier {
       }
     }
     if (selected.isNotEmpty) setSelection(selected);
+  }
+
+  /// Select the root, every reachable descendant and the connecting edges,
+  /// matching draw.io Trees.js `selectSubtree`.
+  void selectSubtree() {
+    final page = currentPage;
+    final root = singleSelectedId;
+    if (page == null || root == null) return;
+    final graphMode = _graphChildrenOf(page, root).isNotEmpty;
+    final selected = <int>{root};
+    final pending = <int>[root];
+    final visited = <int>{root};
+    while (pending.isNotEmpty) {
+      final current = pending.removeLast();
+      if (graphMode) {
+        for (final relation in _directedVertexRelations(page)) {
+          if (relation.source != current) continue;
+          selected.add(relation.connector);
+          selected.add(relation.target);
+          if (visited.add(relation.target)) pending.add(relation.target);
+        }
+      } else {
+        for (final child in _nestedChildrenOf(page, current)) {
+          selected.add(child);
+          if (visited.add(child)) pending.add(child);
+        }
+      }
+    }
+    if (selected.length > 1) setSelection(selected);
   }
 
   /// Select the incoming graph parent, or the containing group when no

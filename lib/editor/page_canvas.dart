@@ -1558,10 +1558,10 @@ class _PageCanvasState extends State<PageCanvas> {
           child: Text(el.selectChildren),
         ));
       }
-      if (_c.canSelectDescendants) {
+      if (_c.canSelectSubtree) {
         items.add(PopupMenuItem(
-          value: 'selectDescendants',
-          child: Text(el.selectDescendants),
+          value: 'selectSubtree',
+          child: Text(el.selectSubtree),
         ));
       }
       if (_c.canSelectRelatedParent) {
@@ -1769,8 +1769,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.selectConnections();
       case 'selectChildren':
         _c.selectChildren();
-      case 'selectDescendants':
-        _c.selectDescendants();
+      case 'selectSubtree':
+        _c.selectSubtree();
       case 'selectParent':
         _c.selectRelatedParent();
       case 'selectSiblings':

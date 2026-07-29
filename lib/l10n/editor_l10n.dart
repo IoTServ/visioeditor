@@ -17,11 +17,11 @@ class EditorL10n {
   static Map<String, String> get _en =>
       kEditorL10nTables['en'] ?? const <String, String>{};
 
-  // draw.io Trees.js labels, kept compact as [children, descendants, parent,
+  // draw.io Trees.js labels, kept compact as [children, subtree, parent,
   // siblings]. A few upstream locales intentionally fall back to English.
   static const Map<String, List<String>> _treeLabels = {
-    'en': ['Select Children', 'Select Descendants', 'Select Parent', 'Select Siblings'],
-    'zh': ['选择子元素', '选择所有子代元素', '选择父元素', '选择同级元素'],
+    'en': ['Select Children', 'Select Subtree', 'Select Parent', 'Select Siblings'],
+    'zh': ['选择子元素', '选择子树', '选择父元素', '选择同级元素'],
     'ja': ['子を選択', '子孫を選択', '親を選択', '兄弟を選択'],
     'ko': ['자식 선택', '자손 선택', '부모 선택', '형제 선택'],
     'es': ['Seleccionar Hijos', 'Seleccionar Descendientes', 'Seleccionar Padre', 'Seleccionar Hermanos'],
@@ -40,9 +40,9 @@ class EditorL10n {
     'th': ['เลือกรายการย่อย', 'เลือกรายการสืบทอด', 'เลือกรายการหลัก', 'เลือกรายการพี่น้อง'],
     'sv': ['Välj underordnade', 'Välj ättlingar', 'Välj överordnad', 'Välj på samma nivå'],
     'uk': ['Обрати дочірні елементи', 'Обрати нащадків', 'Обрати батьківський елемент', 'Обрати сусідні елементи'],
-    'he': ['Select Children', 'Select Descendants', 'Select Parent', 'Select Siblings'],
+    'he': ['Select Children', 'Select Subtree', 'Select Parent', 'Select Siblings'],
     'cs': ['Vybrat potomky', 'Vybrat potomky', 'Vybrat rodiče', 'Vybrat sourozence'],
-    'ro': ['Select Children', 'Select Descendants', 'Select Parent', 'Select Siblings'],
+    'ro': ['Select Children', 'Select Subtree', 'Select Parent', 'Select Siblings'],
     'el': ['Επιλογή Θυγατρικών', 'Επιλογή Απογόνων', 'Επιλογή Γονέα', 'Επιλογή Ισότιμων'],
     'hu': ['Gyermekelemek kiválasztása', 'Leszármazott elemek kiválasztása', 'Szülőelem kiválasztása', 'Testvérelemek kiválasztása'],
     'da': ['Vælg underordnede', 'Vælg efterkommere', 'Vælg overordnet', 'Vælg søskende'],
@@ -102,7 +102,7 @@ class EditorL10n {
   String get selectEdges => _t('selectEdges');
   String get selectVertices => _t('selectVertices');
   String get selectChildren => _treeLabel(0);
-  String get selectDescendants => _treeLabel(1);
+  String get selectSubtree => _treeLabel(1);
   String get selectParent => _treeLabel(2);
   String get selectSiblings => _treeLabel(3);
   String get find => _t('find');

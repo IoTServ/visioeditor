@@ -68,10 +68,11 @@ byte-for-byte, so formulas and structure survive a save.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
   parent. Plain groups select/drag as a unit first, then repeated clicks drill
   into their children; Alt-click bypasses the group hierarchy. Right-click
-  a flow-tree vertex to select its immediate children, all descendants, parent
-  or siblings. These commands follow Begin→End connector direction, fall back
+  a flow-tree vertex to select its immediate children, whole subtree, parent
+  or siblings. Whole-subtree selection includes the root and traversed edges.
+  These commands follow Begin→End connector direction, fall back
   to nested group/container relationships, and use draw.io's contextual
-  Alt+Shift+C/X/P/S shortcuts. Right-click
+  Alt+Shift+X/T/P/S shortcuts. Right-click
   a selected child or use the Arrange panel to **Remove from Group**, or drag
   the child beyond its group bounds. Foldable containers support context-menu
   Collapse / Expand and draw.io's Ctrl/Cmd+Home / Ctrl/Cmd+End shortcuts,
@@ -95,13 +96,14 @@ byte-for-byte, so formulas and structure survive a save.
   Open Link is available from the context menu, More menu and Format panel:
   internal page anchors navigate inside the drawing and safe external targets
   open through the platform.
-  Copy Text Style / Paste Text Style and their Alt+Shift+C/V shortcuts transfer
-  only label typography and layout, preserving target text, shape appearance
-  and text-box position; the same actions are available in the Text panel and
+  Copy Text Style / Paste Text Style transfer only label typography and layout,
+  preserving target text, shape appearance and text-box position. Copy Text
+  Style uses Alt+Shift+C; both actions are available in the Text panel and
   selection menus.
   F2 also edits a selected label; Home restores a centred 100% view and
-  Cmd/Ctrl+J fits the current page. Cmd/Ctrl+Shift+G/O/L toggle the grid,
-  Outline and Layers panels, while Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
+  Cmd/Ctrl+J or Cmd/Ctrl+Shift+H fits the current page.
+  Cmd/Ctrl+Shift+G/O/L toggle the grid, Outline and Layers panels, while
+  Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
   Clicking the live zoom percentage opens draw.io's 25%–400% presets,
   whole-page fit, Fit Page Width, and a validated custom-percentage dialog.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
@@ -163,7 +165,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Action | Shortcut |
 | --- | --- |
 | New / Open / Close tab | `Cmd+N` / `Cmd+O` / `Cmd+W` |
-| Save | `Cmd+S` |
+| Save / Save As | `Cmd+S` / `Cmd+Shift+S` |
 | Undo / Redo | `Cmd+Z` / `Cmd+Shift+Z` |
 | Duplicate / Copy / Paste | `Cmd+D` / `Cmd+C` / `Cmd+V` |
 | Delete selection | `Delete` / `Backspace` |
@@ -173,13 +175,16 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Edit selected label | `Enter` / `F2` |
 | Duplicate selection (table cell → row) | `Cmd/Ctrl+Enter` |
 | Delete table row / complete column selection | `Delete` / `Backspace` |
-| Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` |
+| Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` / `Cmd/Ctrl+}` / `{` |
 | Superscript / subscript while editing | `Cmd/Ctrl+.` / `Cmd/Ctrl+,` |
 | Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
-| Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` |
+| Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` or `Cmd/Ctrl+Shift+H` |
 | Toggle grid / Outline / Layers | `Cmd/Ctrl+Shift+G` / `Cmd/Ctrl+Shift+O` / `Cmd/Ctrl+Shift+L` |
-| Select tree children / descendants / parent / siblings | `Alt+Shift+C` / `Alt+Shift+X` / `Alt+Shift+P` / `Alt+Shift+S` |
+| Select connectors / vertices | `Cmd/Ctrl+Shift+E` / `Cmd/Ctrl+Shift+I` |
+| Select tree children / subtree / parent / siblings | `Alt+Shift+X` / `Alt+Shift+T` / `Alt+Shift+P` / `Alt+Shift+S` |
+| Copy Text Style / Copy Size / Paste Size | `Alt+Shift+C` / `Alt+Shift+F` / `Alt+Shift+V` |
+| Edit Link / Edit Connection Points | `Alt+Shift+L` / `Alt+Shift+Q` |
 | Select previous/next/first/last page (no shape selection) | `Cmd/Ctrl+Left` / `Right` / `Up` / `Down` |
 | Reorder current page (no shape selection) | `Shift+Left` / `Right` / `Up` / `Down` |
 | Previous / next page | `Cmd/Ctrl+Shift+PageUp` / `PageDown` |

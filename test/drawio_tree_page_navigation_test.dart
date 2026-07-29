@@ -61,6 +61,13 @@ void main() {
     c.selectDescendants();
     expect(c.selection, <int>{left, right, leaf});
 
+    c.selectOnly(root);
+    c.selectSubtree();
+    final connectors = c.currentPage!.shapes
+        .where((shape) => shape.isGlueableConnector)
+        .map((shape) => shape.id);
+    expect(c.selection, <int>{root, left, right, leaf, ...connectors});
+
     c.selectOnly(left);
     expect(c.canSelectRelatedParent, isTrue);
     c.selectRelatedParent();
@@ -121,6 +128,13 @@ void main() {
       c.selectOnly(root.id);
       c.selectDescendants();
       expect(c.selection, <int>{nested.id, leafA.id, leafB.id, peer.id});
+
+      c.selectOnly(root.id);
+      c.selectSubtree();
+      expect(
+        c.selection,
+        <int>{root.id, nested.id, leafA.id, leafB.id, peer.id},
+      );
 
       c.selectOnly(leafA.id);
       c.selectSiblings();

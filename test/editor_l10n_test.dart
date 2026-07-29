@@ -17,8 +17,8 @@ void main() {
     expect(zh.selectVertices, '选择图形');
     expect(en.selectChildren, 'Select Children');
     expect(zh.selectChildren, '选择子元素');
-    expect(en.selectDescendants, 'Select Descendants');
-    expect(zh.selectDescendants, '选择所有子代元素');
+    expect(en.selectSubtree, 'Select Subtree');
+    expect(zh.selectSubtree, '选择子树');
     expect(en.selectParent, 'Select Parent');
     expect(zh.selectParent, '选择父元素');
     expect(en.selectSiblings, 'Select Siblings');

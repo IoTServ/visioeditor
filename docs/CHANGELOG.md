@@ -6,11 +6,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io advanced shortcut parity**: the editor now follows the effective
+  core and Trees-plugin key map for Save As, Fit Window, Select Edges, whole
+  label font sizing, Copy / Paste Size, Edit Link, Edit Connection Points and
+  Select Children / Subtree / Parent / Siblings. In particular, tree selection
+  now uses `Alt+Shift+X/T/P/S`, while `Alt+Shift+C` remains Copy Text Style and
+  `Alt+Shift+F/V` operates the size clipboard; Select Subtree includes its root
+  and the traversed tree connectors.
 - **draw.io relationship and page-keyboard parity**: Select Children /
-  Descendants / Parent / Siblings now follows directed connector trees first
+  Subtree / Parent / Siblings now follows directed connector trees first
   and nested groups or containers as a fallback, with cycle and visibility
   protection, context-menu actions, and draw.io's contextual
-  `Alt+Shift+C/X/P/S` shortcuts. With no shape selected, Ctrl/Cmd+Arrow
+  `Alt+Shift+X/T/P/S` shortcuts. With no shape selected, Ctrl/Cmd+Arrow
   navigates pages and Shift+Arrow reorders them; Ctrl/Cmd+Shift+PageUp/PageDown
   moves between pages directly. With a shape selected, Ctrl/Cmd+Arrow performs
   draw.io's 1pt size adjustment. Relationship labels are localized across all
@@ -20,9 +27,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   size, colour, emphasis, paragraph alignment, text margins, background,
   vertical alignment and direction—without touching label content, shape
   fill/line/effects or text-box geometry. The actions use draw.io's
-  `Alt+Shift+C/V`, appear in the Text panel, More menu and context menu, apply
-  through group descendants while skipping locked parts, and are localized
-  across all 37 supported UI languages.
+  Copy action uses `Alt+Shift+C`; both actions appear in the Text panel, More
+  menu and context menu, apply through group descendants while skipping locked
+  parts, and are localized across all 37 supported UI languages.
 - **draw.io link/text action parity**: **Copy as Text** places the first
   selected shape's plain label on the system clipboard and safely wins over an
   in-flight rich shape copy. **Open Link** is available from the context menu,

@@ -2353,7 +2353,7 @@ void main() {
     await tester.tapAt(point, buttons: kSecondaryButton);
     await tester.pumpAndSettle();
     expect(find.text('Select Children'), findsOneWidget);
-    expect(find.text('Select Descendants'), findsOneWidget);
+    expect(find.text('Select Subtree'), findsOneWidget);
 
     await tester.tap(find.text('Select Children'));
     await tester.pumpAndSettle();

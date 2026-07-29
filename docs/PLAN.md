@@ -1431,18 +1431,26 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   定位页面，外部地址经安全协议白名单交给系统打开。两项操作补齐 37 种界面语言，并覆盖
   内外部链接、失败路径及剪贴板竞态回归。
 - 2026-07-29 — **对齐 draw.io Copy/Paste Text Style**：增加独立于图形样式剪贴板的文字
-  样式剪贴板，按 `Alt+Shift+C/V` 传递字体、字号、颜色、强调、段落对齐、文字边距、背景、
+  样式剪贴板，Copy 按 `Alt+Shift+C` 捕获字体、字号、颜色、强调、段落对齐、文字边距、背景、
   垂直对齐和文字方向；保留目标标签、填充、线条、效果及文字框位置。命令接入 Text 面板、
   更多菜单与右键菜单，组合粘贴覆盖后代并跳过锁定部件，单步撤销；文案直接对齐 draw.io
   的 37 种语言资源，并补控制器、快捷键、本地化与窄布局回归。
 - 2026-07-29 — **对齐 draw.io 关系树选择与多页键盘操作**：新增 Select Children /
-  Descendants / Parent / Siblings，优先按连接线 Begin→End 方向遍历流程树，无连线关系时
+  Subtree / Parent / Siblings，优先按连接线 Begin→End 方向遍历流程树，无连线关系时
   回退普通组/容器层级；循环图去重、折叠子树和隐藏图层不进入选择。右键菜单及上下文
-  `Alt+Shift+C/X/P/S` 接入，其中 `Alt+Shift+C` 仅在存在子关系时覆盖 Copy Text Style。
+  `Alt+Shift+X/T/P/S` 接入，`Alt+Shift+C` 保留给 Copy Text Style。
   无图形选择时 Ctrl/Cmd+方向键选择相邻/首尾页，Shift+方向键重排当前页，
   Ctrl/Cmd+Shift+PageUp/PageDown 切换相邻页；有 2-D 选区时 Ctrl/Cmd+方向键按 1pt
   精调尺寸，保留 Ctrl/Cmd+Shift+方向键按网格调整。新增控制器、应用快捷键、画布菜单、
   37 语言与撤销回归。
+- 2026-07-29 — **对齐 draw.io 高级快捷键有效映射**：直接核对 `Actions.js`、
+  `EditorUi.js` 与 Trees 插件，补 `Cmd/Ctrl+Shift+S` Save As、
+  `Cmd/Ctrl+Shift+H` Fit Window、`Cmd/Ctrl+Shift+E` Select Edges、
+  `Cmd/Ctrl+{/}` 整标签字号、`Alt+Shift+F/V` Copy/Paste Size、
+  `Alt+Shift+L` Edit Link 与 `Alt+Shift+Q` Edit Connection Points；同步将关系树键位
+  校正为 `Alt+Shift+X/T/P/S`，Select Subtree 同插件包含根节点、后代与遍历连接线，
+  使 `Alt+Shift+C` 不再被树命令抢占。补应用级快捷键、
+  编辑聚焦隔离、连接点模式与尺寸粘贴回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

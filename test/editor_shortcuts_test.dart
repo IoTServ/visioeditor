@@ -39,6 +39,8 @@ void main() {
     VoidCallback? onBold,
     VoidCallback? onFind,
     VoidCallback? onRotate,
+    VoidCallback? onSaveAs,
+    VoidCallback? onEditLink,
   }) {
     void deleteSel({bool includeConnected = false}) {
       if (isEditableTextFocused()) return;
@@ -112,6 +114,8 @@ void main() {
     final bold = onBold ?? () {};
     final find = onFind ?? () {};
     final rotate = onRotate ?? c.turnSelection;
+    final saveAs = onSaveAs ?? () {};
+    final editLink = onEditLink ?? () {};
 
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): deleteSel,
@@ -234,6 +238,16 @@ void main() {
         shift: true,
       ): () => adjustWholeLabelTextSize(-1),
       const SingleActivator(
+        LogicalKeyboardKey.bracketRight,
+        meta: true,
+        shift: true,
+      ): () => adjustWholeLabelTextSize(1),
+      const SingleActivator(
+        LogicalKeyboardKey.bracketLeft,
+        control: true,
+        shift: true,
+      ): () => adjustWholeLabelTextSize(-1),
+      const SingleActivator(
         LogicalKeyboardKey.keyR,
         alt: true,
         shift: true,
@@ -252,23 +266,27 @@ void main() {
         LogicalKeyboardKey.keyC,
         alt: true,
         shift: true,
-      ): () {
-        if (c.canSelectChildren) {
-          c.selectChildren();
-        } else {
-          c.copyTextStyle();
-        }
-      },
+      ): c.copyTextStyle,
       const SingleActivator(
         LogicalKeyboardKey.keyV,
         alt: true,
         shift: true,
-      ): c.pasteTextStyle,
+      ): c.pasteSelectionSize,
+      const SingleActivator(
+        LogicalKeyboardKey.keyF,
+        alt: true,
+        shift: true,
+      ): c.copySelectionSize,
       const SingleActivator(
         LogicalKeyboardKey.keyX,
         alt: true,
         shift: true,
-      ): c.selectDescendants,
+      ): c.selectChildren,
+      const SingleActivator(
+        LogicalKeyboardKey.keyT,
+        alt: true,
+        shift: true,
+      ): c.selectSubtree,
       const SingleActivator(
         LogicalKeyboardKey.keyP,
         alt: true,
@@ -279,6 +297,22 @@ void main() {
         alt: true,
         shift: true,
       ): c.selectSiblings,
+      const SingleActivator(
+        LogicalKeyboardKey.keyL,
+        alt: true,
+        shift: true,
+      ): editLink,
+      const SingleActivator(
+        LogicalKeyboardKey.keyQ,
+        alt: true,
+        shift: true,
+      ): () {
+        if (c.editingConnectionPoints) {
+          c.endEditConnectionPoints();
+        } else {
+          c.beginEditConnectionPoints();
+        }
+      },
       const SingleActivator(
         LogicalKeyboardKey.arrowUp,
         alt: true,
@@ -312,6 +346,36 @@ void main() {
         LogicalKeyboardKey.keyJ,
         control: true,
       ): c.requestFitToWindow,
+      const SingleActivator(
+        LogicalKeyboardKey.keyH,
+        meta: true,
+        shift: true,
+      ): c.requestFitToWindow,
+      const SingleActivator(
+        LogicalKeyboardKey.keyH,
+        control: true,
+        shift: true,
+      ): c.requestFitToWindow,
+      const SingleActivator(
+        LogicalKeyboardKey.keyE,
+        meta: true,
+        shift: true,
+      ): c.selectConnectors,
+      const SingleActivator(
+        LogicalKeyboardKey.keyE,
+        control: true,
+        shift: true,
+      ): c.selectConnectors,
+      const SingleActivator(
+        LogicalKeyboardKey.keyS,
+        meta: true,
+        shift: true,
+      ): saveAs,
+      const SingleActivator(
+        LogicalKeyboardKey.keyS,
+        control: true,
+        shift: true,
+      ): saveAs,
       const SingleActivator(
         LogicalKeyboardKey.keyG,
         meta: true,
@@ -366,6 +430,8 @@ void main() {
     VoidCallback? onBold,
     VoidCallback? onFind,
     VoidCallback? onRotate,
+    VoidCallback? onSaveAs,
+    VoidCallback? onEditLink,
   }) async {
     final focus = FocusNode();
     addTearDown(focus.dispose);
@@ -377,6 +443,8 @@ void main() {
             onBold: onBold,
             onFind: onFind,
             onRotate: onRotate,
+            onSaveAs: onSaveAs,
+            onEditLink: onEditLink,
           ),
           isEditableTextFocused: isEditableTextFocused,
           child: Scaffold(
@@ -632,7 +700,8 @@ void main() {
     );
   });
 
-  testWidgets('F2, Home, Cmd+J and Cmd+Shift+G match draw.io view commands',
+  testWidgets(
+      'F2, Home, Cmd+J, Cmd+Shift+H and Cmd+Shift+G match draw.io commands',
       (tester) async {
     final c = ctrlWithRect();
     await pumpHarness(tester, c);
@@ -654,6 +723,14 @@ void main() {
     await tester.pump();
     expect(c.fitSerial, fitSerial + 1);
 
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.fitSerial, fitSerial + 2);
+
     final gridWasVisible = c.showGrid;
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -662,6 +739,43 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(c.showGrid, isNot(gridWasVisible));
+  });
+
+  testWidgets('Cmd+Shift+E selects connectors', (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1.5,
+        height: 1,
+      ),
+      6,
+      3,
+    );
+    final target = c.singleSelectedId!;
+    c.createConnector(
+      2,
+      3,
+      6,
+      3,
+      beginTarget: source,
+      endTarget: target,
+    );
+    final connector = c.singleSelectedId!;
+    c.clearSelection();
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    expect(c.selection, <int>{connector});
   });
 
   testWidgets('Ctrl+Enter duplicates an ordinary multi-selection',
@@ -784,7 +898,7 @@ void main() {
     );
   });
 
-  testWidgets('Cmd+Shift+NumPad plus adjusts the whole selected label', (
+  testWidgets('Cmd+Shift+NumPad plus and } adjust the whole selected label', (
     tester,
   ) async {
     final c = ctrlWithRect();
@@ -808,6 +922,13 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pump();
 
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
     final after =
         c.currentPage!
             .findShapeById(id)!
@@ -817,7 +938,7 @@ void main() {
             .charStyle
             .fontSizeInches *
         72;
-    expect(after, closeTo(before + 1, 1e-9));
+    expect(after, closeTo(before + 2, 1e-9));
   });
 
   testWidgets('NumPad text-size chord is deferred in a regular text field', (
@@ -877,6 +998,32 @@ void main() {
     await tester.pump();
 
     expect(c.currentPage!.findShapeById(connector)!.waypoints, isEmpty);
+  });
+
+  testWidgets('Alt+Shift+L and Q edit links and connection points',
+      (tester) async {
+    final c = ctrlWithRect();
+    var editLinkHits = 0;
+    await pumpHarness(tester, c, onEditLink: () => editLinkHits++);
+
+    Future<void> altShift(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump();
+    }
+
+    await altShift(LogicalKeyboardKey.keyL);
+    expect(editLinkHits, 1);
+
+    await altShift(LogicalKeyboardKey.keyQ);
+    expect(c.editingConnectionPoints, isTrue);
+    expect(c.singleSelected!.connectionPoints, isNotEmpty);
+
+    await altShift(LogicalKeyboardKey.keyQ);
+    expect(c.editingConnectionPoints, isFalse);
   });
 
   testWidgets('Cmd/Ctrl+R reverses a selected connector', (tester) async {
@@ -1039,12 +1186,15 @@ void main() {
       await tester.pump();
     }
 
-    await altShift(LogicalKeyboardKey.keyC);
+    await altShift(LogicalKeyboardKey.keyX);
     expect(c.selection, <int>{left, right});
 
     c.selectOnly(root);
-    await altShift(LogicalKeyboardKey.keyX);
-    expect(c.selection, <int>{left, right, leaf});
+    await altShift(LogicalKeyboardKey.keyT);
+    final connectors = c.currentPage!.shapes
+        .where((shape) => shape.isGlueableConnector)
+        .map((shape) => shape.id);
+    expect(c.selection, <int>{root, left, right, leaf, ...connectors});
 
     c.selectOnly(left);
     await altShift(LogicalKeyboardKey.keyP);
@@ -1055,7 +1205,43 @@ void main() {
     expect(c.selection, <int>{left, right});
   });
 
-  testWidgets('Alt+Shift+C/V copies and pastes only text style',
+  testWidgets('Alt+Shift+F/V copies and pastes shape size', (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 3,
+        height: 2,
+      ),
+      5,
+      3,
+    );
+    final target = c.singleSelectedId!;
+    c.selectOnly(source);
+    await pumpHarness(tester, c);
+
+    Future<void> altShift(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump();
+    }
+
+    await altShift(LogicalKeyboardKey.keyF);
+    c.selectOnly(target);
+    await altShift(LogicalKeyboardKey.keyV);
+
+    final resized = c.currentPage!.findShapeById(target)!;
+    expect(resized.width, 1.5);
+    expect(resized.height, 1);
+  });
+
+  testWidgets('Alt+Shift+C copies only text style',
       (tester) async {
     final c = ctrlWithRect();
     final source = c.singleSelectedId!;
@@ -1088,11 +1274,7 @@ void main() {
     await tester.pump();
 
     c.selectOnly(target);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    c.pasteTextStyle();
     await tester.pump();
 
     final pasted = c.currentPage!.findShapeById(target)!;
@@ -1326,15 +1508,17 @@ void main() {
     expect(rotateHits, 0);
   });
 
-  testWidgets('Cmd+S is still recognised as a document chord while typing',
+  testWidgets('Cmd+Shift+S remains a Save As document chord while typing',
       (tester) async {
     final c = ctrlWithRect();
+    var saveAsHits = 0;
     final search = TextEditingController(text: 'hello');
     addTearDown(search.dispose);
 
     await pumpHarness(
       tester,
       c,
+      onSaveAs: () => saveAsHits++,
       body: TextField(
         controller: search,
         autofocus: true,
@@ -1373,6 +1557,11 @@ void main() {
       ),
       isTrue,
     );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(saveAsHits, 1);
   });
 }

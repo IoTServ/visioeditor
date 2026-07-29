@@ -1164,8 +1164,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
       }
     });
 
-    // draw.io: Cmd/Ctrl+Shift+NumPad +/- changes the entire selected label by
-    // one point, even when only part of the inline label is selected.
+    // draw.io: Cmd/Ctrl+Shift+NumPad +/- and Cmd/Ctrl+{/} change the entire
+    // selected label by one point, even when only part of the inline label is
+    // selected.
     void adjustWholeLabelTextSize(double deltaPoints) {
       if (_presentationMode) return;
       final cur = c();
@@ -1183,6 +1184,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
     );
     mod(
       LogicalKeyboardKey.numpadSubtract,
+      () => adjustWholeLabelTextSize(-1),
+      shift: true,
+    );
+    mod(
+      LogicalKeyboardKey.bracketRight,
+      () => adjustWholeLabelTextSize(1),
+      shift: true,
+    );
+    mod(
+      LogicalKeyboardKey.bracketLeft,
       () => adjustWholeLabelTextSize(-1),
       shift: true,
     );
@@ -1304,6 +1315,9 @@ class _EditorHomePageState extends State<EditorHomePage> {
     mod(LogicalKeyboardKey.keyS, () {
       if (c() != null && c()!.hasDocument) _save();
     });
+    mod(LogicalKeyboardKey.keyS, () {
+      if (c() != null && c()!.hasDocument) _saveAs();
+    }, shift: true);
     mod(LogicalKeyboardKey.keyZ, () {
       final cur = c();
       if (cur != null && cur.canUndo) cur.undo();
@@ -1369,7 +1383,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     mod(LogicalKeyboardKey.keyE, () {
       final cur = c();
       if (cur != null && cur.hasDocument) cur.selectConnectors();
-    });
+    }, shift: true);
     mod(LogicalKeyboardKey.keyI, () {
       final cur = c();
       if (cur != null && cur.hasDocument) cur.selectVertices();
@@ -1388,7 +1402,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.selectParentShape();
     };
-    // draw.io view shortcuts: Home resets to 100%; Cmd/Ctrl+J fits one page.
+    // draw.io view shortcuts: Home resets to 100%; Cmd/Ctrl+J and
+    // Cmd/Ctrl+Shift+H fit one page.
     bindings[const SingleActivator(LogicalKeyboardKey.home)] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.requestResetView();
@@ -1397,6 +1412,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.requestFitToWindow();
     });
+    mod(LogicalKeyboardKey.keyH, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.requestFitToWindow();
+    }, shift: true);
     // draw.io: collapse / expand selected containers.
     mod(LogicalKeyboardKey.home, () {
       if (_presentationMode || _isEditableTextFocused()) return;
@@ -1462,15 +1481,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
       shift: true,
     )] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
-      final cur = c();
-      if (cur == null) return;
-      // Trees.js gives this chord contextual priority for Select Children;
-      // elsewhere it remains draw.io's Copy Text Style shortcut.
-      if (cur.canSelectChildren) {
-        cur.selectChildren();
-      } else {
-        cur.copyTextStyle();
-      }
+      c()?.copyTextStyle();
     };
     bindings[const SingleActivator(
       LogicalKeyboardKey.keyV,
@@ -1478,7 +1489,17 @@ class _EditorHomePageState extends State<EditorHomePage> {
       shift: true,
     )] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
-      c()?.pasteTextStyle();
+      final cur = c();
+      if (cur != null && cur.canPasteSize) cur.pasteSelectionSize();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyF,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur != null && cur.canCopySize) cur.copySelectionSize();
     };
     bindings[const SingleActivator(
       LogicalKeyboardKey.keyX,
@@ -1486,7 +1507,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
       shift: true,
     )] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
-      c()?.selectDescendants();
+      c()?.selectChildren();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyT,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.selectSubtree();
     };
     bindings[const SingleActivator(
       LogicalKeyboardKey.keyP,
@@ -1552,6 +1581,28 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final cur = c();
       if (cur != null && cur.canClearWaypoints) {
         cur.clearSelectedConnectorWaypoints();
+      }
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyL,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      if (c()?.singleSelectedId != null) _editLink();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyQ,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur == null) return;
+      if (cur.editingConnectionPoints) {
+        cur.endEditConnectionPoints();
+      } else if (cur.canEditConnectionPoints) {
+        cur.beginEditConnectionPoints();
       }
     };
     mod(LogicalKeyboardKey.keyF, _openFind);
