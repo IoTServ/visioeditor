@@ -68,6 +68,10 @@ byte-for-byte, so formulas and structure survive a save.
   Tab/Shift+Tab traverses expanded container children and Alt+Tab selects their
   parent. Plain groups select/drag as a unit first, then repeated clicks drill
   into their children; Alt-click bypasses the group hierarchy. Right-click
+  a flow-tree vertex to select its immediate children, all descendants, parent
+  or siblings. These commands follow Begin→End connector direction, fall back
+  to nested group/container relationships, and use draw.io's contextual
+  Alt+Shift+C/X/P/S shortcuts. Right-click
   a selected child or use the Arrange panel to **Remove from Group**, or drag
   the child beyond its group bounds. Foldable containers support context-menu
   Collapse / Expand and draw.io's Ctrl/Cmd+Home / Ctrl/Cmd+End shortcuts,
@@ -126,7 +130,10 @@ byte-for-byte, so formulas and structure survive a save.
   Alt-click places a shape beneath the lower-left of the current drawing, and
   Alt+Shift/Ctrl-click inserts and connects beside the selected shape.
 - **Multi-page** documents: add / duplicate / delete / rename pages, and toggle
-  layer visibility.
+  layer visibility. With no shape selected, Ctrl/Cmd+Arrow selects the
+  previous/next/first/last page and Shift+Arrow reorders the active page;
+  Ctrl/Cmd+Shift+PageUp/PageDown also moves between adjacent pages. With a
+  selected 2-D shape, Ctrl/Cmd+Arrow resizes it by 1pt.
 - **Save / Save As** with round-trip fidelity, plus **export** to SVG, PNG and
   multi-page PDF.
 - Quality-of-life: recent files, unsaved-changes guard, a bottom status bar and
@@ -172,8 +179,13 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
 | Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` |
 | Toggle grid / Outline / Layers | `Cmd/Ctrl+Shift+G` / `Cmd/Ctrl+Shift+O` / `Cmd/Ctrl+Shift+L` |
+| Select tree children / descendants / parent / siblings | `Alt+Shift+C` / `Alt+Shift+X` / `Alt+Shift+P` / `Alt+Shift+S` |
+| Select previous/next/first/last page (no shape selection) | `Cmd/Ctrl+Left` / `Right` / `Up` / `Down` |
+| Reorder current page (no shape selection) | `Shift+Left` / `Right` / `Up` / `Down` |
+| Previous / next page | `Cmd/Ctrl+Shift+PageUp` / `PageDown` |
 | Cancel tool / clear selection | `Esc` |
 | Nudge selection | Arrow keys (by the grid step) |
+| Resize selection | `Cmd/Ctrl+Arrow` (1pt) / `Cmd/Ctrl+Shift+Arrow` (grid step) |
 | Pan / zoom canvas | Scroll to pan · `Cmd`/`Ctrl`+scroll to zoom · Space-drag to pan |
 
 ## Known limitations (deferred beyond v0.1)

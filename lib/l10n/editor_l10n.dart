@@ -17,6 +17,51 @@ class EditorL10n {
   static Map<String, String> get _en =>
       kEditorL10nTables['en'] ?? const <String, String>{};
 
+  // draw.io Trees.js labels, kept compact as [children, descendants, parent,
+  // siblings]. A few upstream locales intentionally fall back to English.
+  static const Map<String, List<String>> _treeLabels = {
+    'en': ['Select Children', 'Select Descendants', 'Select Parent', 'Select Siblings'],
+    'zh': ['选择子元素', '选择所有子代元素', '选择父元素', '选择同级元素'],
+    'ja': ['子を選択', '子孫を選択', '親を選択', '兄弟を選択'],
+    'ko': ['자식 선택', '자손 선택', '부모 선택', '형제 선택'],
+    'es': ['Seleccionar Hijos', 'Seleccionar Descendientes', 'Seleccionar Padre', 'Seleccionar Hermanos'],
+    'fr': ['Sélectionner les enfants', 'Sélectionner les descendants', 'Sélectionner le parent', 'Sélectionner les voisins'],
+    'de': ['Kindknoten markieren', 'Untergeordnete Knoten markieren', 'Vaterknoten markieren', 'Geschwisterknoten markieren'],
+    'pt': ['Selecionar Filhos', 'Selecionar Descendentes', 'Selecionar Pai', 'Selecionar Irmãos'],
+    'ru': ['Выбрать дочерние', 'Выбрать потомков', 'Выбрать родительский', 'Выбрать родственные'],
+    'it': ['Seleziona figli', 'Seleziona discendenti', 'Seleziona genitore', 'Seleziona fratelli'],
+    'ar': ['اختر الأطفال', 'اختر الأحفاد', 'اختر الوالد', 'اختر الأشقاء'],
+    'id': ['Pilih Anak', 'Pilih Keturunan', 'Pilih Induk', 'Pilih Saudara'],
+    'hi': ['चाइल्ड चुनें', 'डिसेंडेंट चुनें', 'पैरेंट चुनें', 'सिबलिंग चुनें'],
+    'nl': ['Selecteer kinderen', 'Selecteer afstammelingen', 'Selecteer ouder', 'Selecteer broers en zussen'],
+    'tr': ['Alt Öğeleri Seç', 'Alt Öğelerin Tümünü Seç', 'Üst Öğeyi Seç', 'Kardeş Öğeleri Seç'],
+    'pl': ['Wybierz elementy podrzędne', 'Wybierz potomków', 'Wybierz element nadrzędny', 'Wybierz elementy równorzędne'],
+    'vi': ['Chọn phần tử con', 'Chọn tất cả phần tử con', 'Chọn phần tử cha', 'Chọn phần tử cùng cấp'],
+    'th': ['เลือกรายการย่อย', 'เลือกรายการสืบทอด', 'เลือกรายการหลัก', 'เลือกรายการพี่น้อง'],
+    'sv': ['Välj underordnade', 'Välj ättlingar', 'Välj överordnad', 'Välj på samma nivå'],
+    'uk': ['Обрати дочірні елементи', 'Обрати нащадків', 'Обрати батьківський елемент', 'Обрати сусідні елементи'],
+    'he': ['Select Children', 'Select Descendants', 'Select Parent', 'Select Siblings'],
+    'cs': ['Vybrat potomky', 'Vybrat potomky', 'Vybrat rodiče', 'Vybrat sourozence'],
+    'ro': ['Select Children', 'Select Descendants', 'Select Parent', 'Select Siblings'],
+    'el': ['Επιλογή Θυγατρικών', 'Επιλογή Απογόνων', 'Επιλογή Γονέα', 'Επιλογή Ισότιμων'],
+    'hu': ['Gyermekelemek kiválasztása', 'Leszármazott elemek kiválasztása', 'Szülőelem kiválasztása', 'Testvérelemek kiválasztása'],
+    'da': ['Vælg underordnede', 'Vælg efterkommere', 'Vælg overordnet', 'Vælg søskende'],
+    'ms': ['Pilih Anak', 'Pilih Keturunan', 'Pilih Induk', 'Pilih Adik-beradik'],
+    'fi': ['Valitse alemman tason kohteet', 'Valitse alikohteet', 'Valitse ylätason kohde', 'Valitse rinnakkaiset kohteet'],
+    'nb': ['Velg underordnede', 'Velg etterkommere', 'Velg overordnet', 'Velg søsken'],
+    'sk': ['Vybrať potomkov', 'Vybrať všetkých potomkov', 'Vybrať rodiča', 'Vybrať súrodencov'],
+    'bn': ['চাইল্ড নির্বাচন করুন', 'ডিসেন্ড্যান্ট নির্বাচন করুন', 'প্যারেন্ট নির্বাচন করুন', 'সিবলিং নির্বাচন করুন'],
+    'fa': ['انتخاب فرزندان', 'انتخاب نوادگان', 'انتخاب والد', 'انتخاب هم‌سطح‌ها'],
+    'bg': ['Избиране на дъщерни елементи', 'Избиране на наследници', 'Избиране на родителски елемент', 'Избиране на съседни елементи'],
+    'hr': ['Odaberi podređene', 'Odaberi potomke', 'Odaberi nadređeni', 'Odaberi srodne'],
+    'ca': ['Selecciona els fills', 'Selecciona els descendents', 'Selecciona el pare', 'Selecciona els germans'],
+    'fil': ['Piliin ang mga Anak', 'Piliin ang mga Inapo', 'Piliin ang Magulang', 'Piliin ang mga Kapatid'],
+    'sw': ['Chagua Watoto', 'Chagua Vizazi', 'Chagua Mzazi', 'Chagua Ndugu'],
+  };
+
+  String _treeLabel(int index) =>
+      (_treeLabels[locale.languageCode] ?? _treeLabels['en']!)[index];
+
   String _t(String key) {
     final lang = locale.languageCode;
     return kEditorL10nTables[lang]?[key] ?? _en[key] ?? key;
@@ -56,6 +101,10 @@ class EditorL10n {
   String get selectAllShortcut => _t('selectAllShortcut');
   String get selectEdges => _t('selectEdges');
   String get selectVertices => _t('selectVertices');
+  String get selectChildren => _treeLabel(0);
+  String get selectDescendants => _treeLabel(1);
+  String get selectParent => _treeLabel(2);
+  String get selectSiblings => _treeLabel(3);
   String get find => _t('find');
   String get findShortcut => _t('findShortcut');
   String get findReplace => _t('findReplace');

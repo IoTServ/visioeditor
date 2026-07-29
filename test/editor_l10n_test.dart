@@ -15,6 +15,14 @@ void main() {
     expect(zh.selectEdges, '选择连接线');
     expect(en.selectVertices, 'Select Vertices');
     expect(zh.selectVertices, '选择图形');
+    expect(en.selectChildren, 'Select Children');
+    expect(zh.selectChildren, '选择子元素');
+    expect(en.selectDescendants, 'Select Descendants');
+    expect(zh.selectDescendants, '选择所有子代元素');
+    expect(en.selectParent, 'Select Parent');
+    expect(zh.selectParent, '选择父元素');
+    expect(en.selectSiblings, 'Select Siblings');
+    expect(zh.selectSiblings, '选择同级元素');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');

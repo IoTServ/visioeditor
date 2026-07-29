@@ -1552,6 +1552,30 @@ class _PageCanvasState extends State<PageCanvas> {
           child: Text(el.selectConnections),
         ));
       }
+      if (_c.canSelectChildren) {
+        items.add(PopupMenuItem(
+          value: 'selectChildren',
+          child: Text(el.selectChildren),
+        ));
+      }
+      if (_c.canSelectDescendants) {
+        items.add(PopupMenuItem(
+          value: 'selectDescendants',
+          child: Text(el.selectDescendants),
+        ));
+      }
+      if (_c.canSelectRelatedParent) {
+        items.add(PopupMenuItem(
+          value: 'selectParent',
+          child: Text(el.selectParent),
+        ));
+      }
+      if (_c.canSelectSiblings) {
+        items.add(PopupMenuItem(
+          value: 'selectSiblings',
+          child: Text(el.selectSiblings),
+        ));
+      }
       if (contextRemoveWaypointIndex != null) {
         items.add(PopupMenuItem(
             value: 'removeWaypoint', child: Text(el.removeWaypoint)));
@@ -1743,6 +1767,14 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.toggleLock();
       case 'selectConnections':
         _c.selectConnections();
+      case 'selectChildren':
+        _c.selectChildren();
+      case 'selectDescendants':
+        _c.selectDescendants();
+      case 'selectParent':
+        _c.selectRelatedParent();
+      case 'selectSiblings':
+        _c.selectSiblings();
       case 'addWaypoint':
         final connectorId = contextConnectorId;
         final index = contextAddWaypointIndex;

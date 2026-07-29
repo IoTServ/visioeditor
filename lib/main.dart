@@ -1200,6 +1200,23 @@ class _EditorHomePageState extends State<EditorHomePage> {
       cur.moveSelectionBy(dx * step, dy * step);
     }
 
+    void nudgeOrMovePage(double dx, double dy) {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur == null || !cur.hasDocument) return;
+      if (cur.hasSelection) {
+        nudge(dx, dy);
+      } else if (dx < 0) {
+        cur.moveCurrentPageBy(-1);
+      } else if (dx > 0) {
+        cur.moveCurrentPageBy(1);
+      } else if (dy > 0) {
+        cur.moveCurrentPageToBoundary(last: false);
+      } else if (dy < 0) {
+        cur.moveCurrentPageToBoundary(last: true);
+      }
+    }
+
     bindings[const SingleActivator(LogicalKeyboardKey.arrowLeft)] =
         () => nudge(-1, 0);
     bindings[const SingleActivator(LogicalKeyboardKey.arrowRight)] =
@@ -1208,10 +1225,26 @@ class _EditorHomePageState extends State<EditorHomePage> {
         () => nudge(0, 1);
     bindings[const SingleActivator(LogicalKeyboardKey.arrowDown)] =
         () => nudge(0, -1);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowLeft,
+      shift: true,
+    )] = () => nudgeOrMovePage(-1, 0);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowRight,
+      shift: true,
+    )] = () => nudgeOrMovePage(1, 0);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowUp,
+      shift: true,
+    )] = () => nudgeOrMovePage(0, 1);
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.arrowDown,
+      shift: true,
+    )] = () => nudgeOrMovePage(0, -1);
 
     // draw.io: Cmd/Ctrl+Shift+arrow adjusts the selected shape's right or
     // lower edge by one grid step (Arrange-panel Width / Height).
-    void resizeSelection(double dw, double dh) {
+    void resizeSelection(double dw, double dh, {bool byPoint = false}) {
       if (_presentationMode || _isEditableTextFocused()) return;
       final cur = c();
       final geometry = cur?.selectedGeometry;
@@ -1221,11 +1254,35 @@ class _EditorHomePageState extends State<EditorHomePage> {
           cur.editingConnectionPoints) {
         return;
       }
-      final step = cur.snapToGrid ? cur.gridInches : 0.1;
+      final step =
+          byPoint ? 1 / 72 : (cur.snapToGrid ? cur.gridInches : 0.1);
       if (dw != 0) cur.setSelectedWidth(geometry.w + dw * step);
       if (dh != 0) cur.setSelectedHeight(geometry.h + dh * step);
     }
 
+    // Without a shape selection the same Ctrl/Cmd+Arrow chords navigate page
+    // tabs. With a selection draw.io resizes the right/lower edge by 1pt.
+    void resizeOrSelectPage(double dw, double dh) {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      final cur = c();
+      if (cur == null || !cur.hasDocument) return;
+      if (cur.hasSelection) {
+        resizeSelection(dw, dh, byPoint: true);
+      } else if (dw < 0) {
+        cur.selectRelativePage(-1);
+      } else if (dw > 0) {
+        cur.selectRelativePage(1);
+      } else if (dh < 0) {
+        cur.selectBoundaryPage(last: false);
+      } else if (dh > 0) {
+        cur.selectBoundaryPage(last: true);
+      }
+    }
+
+    mod(LogicalKeyboardKey.arrowLeft, () => resizeOrSelectPage(-1, 0));
+    mod(LogicalKeyboardKey.arrowRight, () => resizeOrSelectPage(1, 0));
+    mod(LogicalKeyboardKey.arrowUp, () => resizeOrSelectPage(0, -1));
+    mod(LogicalKeyboardKey.arrowDown, () => resizeOrSelectPage(0, 1));
     mod(LogicalKeyboardKey.arrowLeft, () => resizeSelection(-1, 0),
         shift: true);
     mod(LogicalKeyboardKey.arrowRight, () => resizeSelection(1, 0),
@@ -1233,6 +1290,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
     mod(LogicalKeyboardKey.arrowUp, () => resizeSelection(0, -1),
         shift: true);
     mod(LogicalKeyboardKey.arrowDown, () => resizeSelection(0, 1),
+        shift: true);
+    mod(LogicalKeyboardKey.pageUp, () => c()?.selectRelativePage(-1),
+        shift: true);
+    mod(LogicalKeyboardKey.pageDown, () => c()?.selectRelativePage(1),
         shift: true);
 
     mod(LogicalKeyboardKey.keyN, _newDoc);
@@ -1401,7 +1462,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
       shift: true,
     )] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
-      c()?.copyTextStyle();
+      final cur = c();
+      if (cur == null) return;
+      // Trees.js gives this chord contextual priority for Select Children;
+      // elsewhere it remains draw.io's Copy Text Style shortcut.
+      if (cur.canSelectChildren) {
+        cur.selectChildren();
+      } else {
+        cur.copyTextStyle();
+      }
     };
     bindings[const SingleActivator(
       LogicalKeyboardKey.keyV,
@@ -1410,6 +1479,30 @@ class _EditorHomePageState extends State<EditorHomePage> {
     )] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.pasteTextStyle();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyX,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.selectDescendants();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyP,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.selectRelatedParent();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyS,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.selectSiblings();
     };
     mod(LogicalKeyboardKey.keyG, () {
       final cur = c();

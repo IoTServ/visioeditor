@@ -2283,6 +2283,83 @@ void main() {
     );
   });
 
+  testWidgets('shape context menu selects connector-tree children',
+      (tester) async {
+    late int root;
+    late int upper;
+    late int lower;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        root = _addRect(c);
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 1.5,
+            height: 0.8,
+          ),
+          6,
+          6,
+        );
+        upper = c.singleSelectedId!;
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 1.5,
+            height: 0.8,
+          ),
+          6,
+          4,
+        );
+        lower = c.singleSelectedId!;
+        c
+          ..createConnector(
+            3,
+            5,
+            6,
+            6,
+            beginTarget: root,
+            endTarget: upper,
+          )
+          ..createConnector(
+            3,
+            5,
+            6,
+            4,
+            beginTarget: root,
+            endTarget: lower,
+          )
+          ..selectOnly(root);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final rootShape = page.findShapeById(root)!;
+    final point = _pagePoint(
+      tester.getTopLeft(find.byType(PageCanvas)),
+      camera,
+      page,
+      rootShape.pinX,
+      rootShape.pinY,
+    );
+
+    await tester.tapAt(point, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Select Children'), findsOneWidget);
+    expect(find.text('Select Descendants'), findsOneWidget);
+
+    await tester.tap(find.text('Select Children'));
+    await tester.pumpAndSettle();
+    expect(controller.selection, <int>{upper, lower});
+  });
+
   testWidgets('context menu copies shape data, preserves label, and turns shape',
       (tester) async {
     late int source;

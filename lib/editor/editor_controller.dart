@@ -265,6 +265,36 @@ class EditorController extends ChangeNotifier {
     applyEdit(next, undoPageIndex: undoPage, undoSelection: undoSel);
   }
 
+  /// Select a page relative to the active one without wrapping.
+  ///
+  /// Used by draw.io's page-aware Ctrl/Cmd+Arrow and
+  /// Ctrl/Cmd+Shift+PageUp/PageDown shortcuts.
+  void selectRelativePage(int delta) {
+    if (delta == 0 || pageCount < 2) return;
+    selectPage((_currentPageIndex + delta).clamp(0, pageCount - 1));
+  }
+
+  /// Select the first or last page (draw.io Ctrl/Cmd+Up/Down with no shape
+  /// selected).
+  void selectBoundaryPage({required bool last}) {
+    if (pageCount < 2) return;
+    selectPage(last ? pageCount - 1 : 0);
+  }
+
+  /// Move the active page one tab left/right, retaining the active page and
+  /// selection. The edit remains a single undo step through [movePage].
+  void moveCurrentPageBy(int delta) {
+    if (delta == 0 || pageCount < 2) return;
+    final target = (_currentPageIndex + delta).clamp(0, pageCount - 1);
+    movePage(_currentPageIndex, target);
+  }
+
+  /// Move the active page to the start/end of the page-tab strip.
+  void moveCurrentPageToBoundary({required bool last}) {
+    if (pageCount < 2) return;
+    movePage(_currentPageIndex, last ? pageCount - 1 : 0);
+  }
+
   static String _uniquePageName(VsdxDocument doc, String base) {
     final names = <String>{for (final p in doc.pages) p.name};
     if (!names.contains(base)) return base;
@@ -741,6 +771,182 @@ class EditorController extends ChangeNotifier {
     if (page == null || id == null) return;
     final parent = page.findParentId(id);
     if (parent != null) selectOnly(parent);
+  }
+
+  /// Directed vertex relation inferred from a connector's Begin → End glue.
+  ///
+  /// draw.io's tree commands follow outgoing/incoming edges first and fall
+  /// back to the cell hierarchy. Keeping this helper in the controller lets
+  /// imported Visio flowcharts participate without adding editor-only model
+  /// metadata.
+  Iterable<({int source, int target})> _directedVertexRelations(
+    VsdxPage page,
+  ) sync* {
+    final rowsByConnector = <int, List<VsdxConnect>>{};
+    for (final row in page.connects) {
+      rowsByConnector
+          .putIfAbsent(row.fromSheetId, () => <VsdxConnect>[])
+          .add(row);
+    }
+    for (final entry in rowsByConnector.entries) {
+      final connector = page.findShapeById(entry.key);
+      if (connector == null ||
+          !connector.isGlueableConnector ||
+          !page.isShapeTreeVisible(connector.id)) {
+        continue;
+      }
+      int? source;
+      int? target;
+      for (final row in entry.value) {
+        if (row.isBegin) source = row.toSheetId;
+        if (row.isEnd) target = row.toSheetId;
+      }
+      if (source == null || target == null || source == target) continue;
+      final sourceShape = page.findShapeById(source);
+      final targetShape = page.findShapeById(target);
+      if (sourceShape == null ||
+          targetShape == null ||
+          sourceShape.isGlueableConnector ||
+          targetShape.isGlueableConnector ||
+          !page.isShapeTreeVisible(source) ||
+          !page.isShapeTreeVisible(target)) {
+        continue;
+      }
+      yield (source: source, target: target);
+    }
+  }
+
+  List<int> _graphChildrenOf(VsdxPage page, int id) {
+    final result = <int>{};
+    for (final relation in _directedVertexRelations(page)) {
+      if (relation.source == id) result.add(relation.target);
+    }
+    return result.toList(growable: false);
+  }
+
+  List<int> _graphParentsOf(VsdxPage page, int id) {
+    final result = <int>{};
+    for (final relation in _directedVertexRelations(page)) {
+      if (relation.target == id) result.add(relation.source);
+    }
+    return result.toList(growable: false);
+  }
+
+  List<int> _nestedChildrenOf(VsdxPage page, int id) {
+    final shape = page.findShapeById(id);
+    if (shape == null || shape.collapsed) return const <int>[];
+    return <int>[
+      for (final child in shape.children)
+        if (page.isShapeTreeVisible(child.id)) child.id,
+    ];
+  }
+
+  List<int> _relatedChildrenOf(VsdxPage page, int id) {
+    final graphChildren = _graphChildrenOf(page, id);
+    return graphChildren.isNotEmpty
+        ? graphChildren
+        : _nestedChildrenOf(page, id);
+  }
+
+  bool get canSelectChildren {
+    final page = currentPage;
+    final id = singleSelectedId;
+    return page != null &&
+        id != null &&
+        _relatedChildrenOf(page, id).isNotEmpty;
+  }
+
+  bool get canSelectDescendants {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return false;
+    return _relatedChildrenOf(page, id).isNotEmpty;
+  }
+
+  bool get canSelectRelatedParent {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return false;
+    return _graphParentsOf(page, id).isNotEmpty ||
+        page.findParentId(id) != null;
+  }
+
+  bool get canSelectSiblings {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return false;
+    final graphParents = _graphParentsOf(page, id);
+    if (graphParents.isNotEmpty) {
+      return _graphChildrenOf(page, graphParents.first).isNotEmpty;
+    }
+    final parentId = page.findParentId(id);
+    if (parentId == null) return false;
+    return _nestedChildrenOf(page, parentId).isNotEmpty;
+  }
+
+  /// Select immediate children reached by outgoing connectors, falling back
+  /// to the selected group/container's direct children.
+  void selectChildren() {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return;
+    final children = _relatedChildrenOf(page, id);
+    if (children.isNotEmpty) setSelection(children);
+  }
+
+  /// Select every reachable descendant without looping on cyclic diagrams.
+  ///
+  /// When the root has an outgoing graph edge, only the connector graph is
+  /// traversed, matching draw.io Trees.js. Otherwise the nested shape tree is
+  /// used.
+  void selectDescendants() {
+    final page = currentPage;
+    final root = singleSelectedId;
+    if (page == null || root == null) return;
+    final graphMode = _graphChildrenOf(page, root).isNotEmpty;
+    final selected = <int>{};
+    final pending = <int>[root];
+    final visited = <int>{root};
+    while (pending.isNotEmpty) {
+      final current = pending.removeLast();
+      final children = graphMode
+          ? _graphChildrenOf(page, current)
+          : _nestedChildrenOf(page, current);
+      for (final child in children) {
+        if (!visited.add(child)) continue;
+        selected.add(child);
+        pending.add(child);
+      }
+    }
+    if (selected.isNotEmpty) setSelection(selected);
+  }
+
+  /// Select the incoming graph parent, or the containing group when no
+  /// incoming connector exists.
+  void selectRelatedParent() {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return;
+    final graphParents = _graphParentsOf(page, id);
+    final parent = graphParents.isNotEmpty
+        ? graphParents.first
+        : page.findParentId(id);
+    if (parent != null) selectOnly(parent);
+  }
+
+  /// Select all vertices that share the same graph or container parent.
+  void selectSiblings() {
+    final page = currentPage;
+    final id = singleSelectedId;
+    if (page == null || id == null) return;
+    final graphParents = _graphParentsOf(page, id);
+    final siblings = graphParents.isNotEmpty
+        ? _graphChildrenOf(page, graphParents.first)
+        : switch (page.findParentId(id)) {
+            final parent? => _nestedChildrenOf(page, parent),
+            null => const <int>[],
+          };
+    if (siblings.isNotEmpty) setSelection(siblings);
   }
 
   // --- Layers ----------------------------------------------------------------

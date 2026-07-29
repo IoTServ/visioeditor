@@ -54,7 +54,22 @@ void main() {
       c.moveSelectionBy(dx * step, dy * step);
     }
 
-    void resizeSelection(double dw, double dh) {
+    void nudgeOrMovePage(double dx, double dy) {
+      if (isEditableTextFocused()) return;
+      if (c.hasSelection) {
+        nudge(dx, dy);
+      } else if (dx < 0) {
+        c.moveCurrentPageBy(-1);
+      } else if (dx > 0) {
+        c.moveCurrentPageBy(1);
+      } else if (dy > 0) {
+        c.moveCurrentPageToBoundary(last: false);
+      } else if (dy < 0) {
+        c.moveCurrentPageToBoundary(last: true);
+      }
+    }
+
+    void resizeSelection(double dw, double dh, {bool byPoint = false}) {
       if (isEditableTextFocused()) return;
       final geometry = c.selectedGeometry;
       if (geometry == null ||
@@ -62,9 +77,24 @@ void main() {
           c.editingConnectionPoints) {
         return;
       }
-      final step = c.snapToGrid ? c.gridInches : 0.1;
+      final step = byPoint ? 1 / 72 : (c.snapToGrid ? c.gridInches : 0.1);
       if (dw != 0) c.setSelectedWidth(geometry.w + dw * step);
       if (dh != 0) c.setSelectedHeight(geometry.h + dh * step);
+    }
+
+    void resizeOrSelectPage(double dw, double dh) {
+      if (isEditableTextFocused()) return;
+      if (c.hasSelection) {
+        resizeSelection(dw, dh, byPoint: true);
+      } else if (dw < 0) {
+        c.selectRelativePage(-1);
+      } else if (dw > 0) {
+        c.selectRelativePage(1);
+      } else if (dh < 0) {
+        c.selectBoundaryPage(last: false);
+      } else if (dh > 0) {
+        c.selectBoundaryPage(last: true);
+      }
     }
 
     void adjustWholeLabelTextSize(double deltaPoints) {
@@ -114,6 +144,38 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => nudge(1, 0),
       const SingleActivator(LogicalKeyboardKey.arrowUp): () => nudge(0, 1),
       const SingleActivator(LogicalKeyboardKey.arrowDown): () => nudge(0, -1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowLeft,
+        shift: true,
+      ): () => nudgeOrMovePage(-1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowRight,
+        shift: true,
+      ): () => nudgeOrMovePage(1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowUp,
+        shift: true,
+      ): () => nudgeOrMovePage(0, 1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowDown,
+        shift: true,
+      ): () => nudgeOrMovePage(0, -1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowLeft,
+        meta: true,
+      ): () => resizeOrSelectPage(-1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowRight,
+        meta: true,
+      ): () => resizeOrSelectPage(1, 0),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowUp,
+        control: true,
+      ): () => resizeOrSelectPage(0, -1),
+      const SingleActivator(
+        LogicalKeyboardKey.arrowDown,
+        control: true,
+      ): () => resizeOrSelectPage(0, 1),
       const SingleActivator(LogicalKeyboardKey.enter):
           c.requestEditSelectionLabel,
       const SingleActivator(LogicalKeyboardKey.f2):
@@ -152,6 +214,16 @@ void main() {
         shift: true,
       ): () => resizeSelection(1, 0),
       const SingleActivator(
+        LogicalKeyboardKey.pageUp,
+        meta: true,
+        shift: true,
+      ): () => c.selectRelativePage(-1),
+      const SingleActivator(
+        LogicalKeyboardKey.pageDown,
+        control: true,
+        shift: true,
+      ): () => c.selectRelativePage(1),
+      const SingleActivator(
         LogicalKeyboardKey.numpadAdd,
         meta: true,
         shift: true,
@@ -180,12 +252,33 @@ void main() {
         LogicalKeyboardKey.keyC,
         alt: true,
         shift: true,
-      ): c.copyTextStyle,
+      ): () {
+        if (c.canSelectChildren) {
+          c.selectChildren();
+        } else {
+          c.copyTextStyle();
+        }
+      },
       const SingleActivator(
         LogicalKeyboardKey.keyV,
         alt: true,
         shift: true,
       ): c.pasteTextStyle,
+      const SingleActivator(
+        LogicalKeyboardKey.keyX,
+        alt: true,
+        shift: true,
+      ): c.selectDescendants,
+      const SingleActivator(
+        LogicalKeyboardKey.keyP,
+        alt: true,
+        shift: true,
+      ): c.selectRelatedParent,
+      const SingleActivator(
+        LogicalKeyboardKey.keyS,
+        alt: true,
+        shift: true,
+      ): c.selectSiblings,
       const SingleActivator(
         LogicalKeyboardKey.arrowUp,
         alt: true,
@@ -412,6 +505,44 @@ void main() {
     expect(after.pinY, closeTo(before.pinY, 1e-9));
   });
 
+  testWidgets('page-aware arrow shortcuts navigate and reorder tabs',
+      (tester) async {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    c
+      ..addPage()
+      ..addPage()
+      ..selectBoundaryPage(last: false)
+      ..clearSelection();
+    final ids = c.document!.pages.map((page) => page.id).toList();
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.currentPageIndex, 1);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(c.currentPageIndex, 2);
+    expect(c.document!.pages.map((page) => page.id), <int>[
+      ids[0],
+      ids[2],
+      ids[1],
+    ]);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.currentPageIndex, 1);
+  });
+
   testWidgets('Cmd+Home collapses and Cmd+End expands selected container',
       (tester) async {
     final c = EditorController()..newDocument();
@@ -616,6 +747,23 @@ void main() {
     expect(after.height, before.height);
   });
 
+  testWidgets('Cmd+arrow resizes the selected shape by one point',
+      (tester) async {
+    final c = ctrlWithRect();
+    final id = c.selection.single;
+    final before = c.currentPage!.findShapeById(id)!;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final after = c.currentPage!.findShapeById(id)!;
+    expect(after.width, closeTo(before.width + 1 / 72, 1e-9));
+    expect(after.height, before.height);
+  });
+
   testWidgets('Cmd+Shift+Y autosizes the selected shape', (tester) async {
     final c = ctrlWithRect();
     final id = c.selection.single;
@@ -812,6 +960,99 @@ void main() {
     expect(pasted.userProperties.single.name, 'Owner');
     expect(pasted.userProperties.single.value, 'Alice');
     expect(pasted.richText.plainText, 'Source');
+  });
+
+  testWidgets('Alt+Shift tree shortcuts follow connector relationships',
+      (tester) async {
+    final c = ctrlWithRect();
+    final root = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 0.6,
+      ),
+      4,
+      4,
+    );
+    final left = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 0.6,
+      ),
+      6,
+      4,
+    );
+    final right = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 0.6,
+      ),
+      4,
+      6,
+    );
+    final leaf = c.singleSelectedId!;
+    c
+      ..createConnector(
+        2,
+        3,
+        4,
+        4,
+        beginTarget: root,
+        endTarget: left,
+      )
+      ..createConnector(
+        2,
+        3,
+        6,
+        4,
+        beginTarget: root,
+        endTarget: right,
+      )
+      ..createConnector(
+        4,
+        4,
+        4,
+        6,
+        beginTarget: left,
+        endTarget: leaf,
+      )
+      ..selectOnly(root);
+    await pumpHarness(tester, c);
+
+    Future<void> altShift(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump();
+    }
+
+    await altShift(LogicalKeyboardKey.keyC);
+    expect(c.selection, <int>{left, right});
+
+    c.selectOnly(root);
+    await altShift(LogicalKeyboardKey.keyX);
+    expect(c.selection, <int>{left, right, leaf});
+
+    c.selectOnly(left);
+    await altShift(LogicalKeyboardKey.keyP);
+    expect(c.singleSelectedId, root);
+
+    c.selectOnly(left);
+    await altShift(LogicalKeyboardKey.keyS);
+    expect(c.selection, <int>{left, right});
   });
 
   testWidgets('Alt+Shift+C/V copies and pastes only text style',

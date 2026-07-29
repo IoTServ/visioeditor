@@ -6,6 +6,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io relationship and page-keyboard parity**: Select Children /
+  Descendants / Parent / Siblings now follows directed connector trees first
+  and nested groups or containers as a fallback, with cycle and visibility
+  protection, context-menu actions, and draw.io's contextual
+  `Alt+Shift+C/X/P/S` shortcuts. With no shape selected, Ctrl/Cmd+Arrow
+  navigates pages and Shift+Arrow reorders them; Ctrl/Cmd+Shift+PageUp/PageDown
+  moves between pages directly. With a shape selected, Ctrl/Cmd+Arrow performs
+  draw.io's 1pt size adjustment. Relationship labels are localized across all
+  37 supported UI languages.
 - **draw.io text-style clipboard parity**: **Copy Text Style** /
   **Paste Text Style** now transfer only label typography and layout—font,
   size, colour, emphasis, paragraph alignment, text margins, background,
