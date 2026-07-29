@@ -130,6 +130,50 @@ void main() {
     expect(c.currentPage!.findShapeById(box.id)!.height, closeTo(3, 1e-3));
   });
 
+  test('collapse and expand selection batch multiple hosts into one undo', () {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    final page = c.currentPage!;
+    final first = VsdxShapeFactory.container(
+      id: page.nextFreeShapeId(),
+      pinX: 3,
+      pinY: 4,
+      width: 3,
+      height: 2,
+    );
+    final second = VsdxShapeFactory.container(
+      id: first.id + 1,
+      pinX: 7,
+      pinY: 4,
+      width: 3,
+      height: 2,
+    );
+    c.updateCurrentPage(
+      (p) => p.copyWith(shapes: <VsdxShape>[first, second]),
+    );
+    c.setSelection(<int>{first.id, second.id});
+
+    expect(c.canCollapseSelection, isTrue);
+    expect(c.canExpandSelection, isFalse);
+    c.collapseSelection();
+    expect(c.isCollapsed(first.id), isTrue);
+    expect(c.isCollapsed(second.id), isTrue);
+    expect(c.canCollapseSelection, isFalse);
+    expect(c.canExpandSelection, isTrue);
+
+    c.undo();
+    expect(c.isCollapsed(first.id), isFalse);
+    expect(c.isCollapsed(second.id), isFalse);
+
+    c.redo();
+    c.expandSelection();
+    expect(c.isCollapsed(first.id), isFalse);
+    expect(c.isCollapsed(second.id), isFalse);
+    c.undo();
+    expect(c.isCollapsed(first.id), isTrue);
+    expect(c.isCollapsed(second.id), isTrue);
+  });
+
   test('collapse chevron local centre sits in the header band', () {
     final box = VsdxShapeFactory.container(
       id: 1,

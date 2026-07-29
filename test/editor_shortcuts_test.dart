@@ -152,6 +152,22 @@ void main() {
         LogicalKeyboardKey.tab,
         alt: true,
       ): c.selectParentShape,
+      const SingleActivator(
+        LogicalKeyboardKey.home,
+        meta: true,
+      ): c.collapseSelection,
+      const SingleActivator(
+        LogicalKeyboardKey.home,
+        control: true,
+      ): c.collapseSelection,
+      const SingleActivator(
+        LogicalKeyboardKey.end,
+        meta: true,
+      ): c.expandSelection,
+      const SingleActivator(
+        LogicalKeyboardKey.end,
+        control: true,
+      ): c.expandSelection,
       const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): undo,
       const SingleActivator(LogicalKeyboardKey.keyZ, control: true): undo,
       const SingleActivator(
@@ -249,6 +265,35 @@ void main() {
     final after = c.currentPage!.findShapeById(id)!;
     expect(after.pinX, closeTo(before.pinX + 0.1, 1e-9));
     expect(after.pinY, closeTo(before.pinY, 1e-9));
+  });
+
+  testWidgets('Cmd+Home collapses and Cmd+End expands selected container',
+      (tester) async {
+    final c = EditorController()..newDocument();
+    addTearDown(c.dispose);
+    final page = c.currentPage!;
+    final container = VsdxShapeFactory.container(
+      id: page.nextFreeShapeId(),
+      pinX: 4,
+      pinY: 4,
+      width: 4,
+      height: 3,
+    );
+    c.updateCurrentPage((p) => p.addShape(container));
+    c.selectOnly(container.id);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.isCollapsed(container.id), isTrue);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.end);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.isCollapsed(container.id), isFalse);
   });
 
   testWidgets('Cmd+Shift+arrow resizes the selected shape',

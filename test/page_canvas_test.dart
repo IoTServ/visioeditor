@@ -1030,6 +1030,61 @@ void main() {
     expect(restored.bottom, closeTo(before.bottom, 1e-6));
   });
 
+  testWidgets('container context menu collapses and expands selection',
+      (tester) async {
+    late int containerId;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.container(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 4,
+            height: 3,
+          ),
+          4,
+          5,
+        );
+        containerId = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+
+    Offset centre() {
+      final page = controller.currentPage!;
+      final bounds = page.shapePageAabb(containerId)!;
+      return _pagePoint(
+        origin,
+        camera,
+        page,
+        (bounds.left + bounds.right) / 2,
+        (bounds.bottom + bounds.top) / 2,
+      );
+    }
+
+    await tester.tapAt(centre(), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Collapse Selection'), findsOneWidget);
+    expect(find.text('Expand Selection'), findsNothing);
+    await tester.tap(find.text('Collapse Selection'));
+    await tester.pumpAndSettle();
+    expect(controller.isCollapsed(containerId), isTrue);
+
+    await tester.tapAt(centre(), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Expand Selection'), findsOneWidget);
+    expect(find.text('Collapse Selection'), findsNothing);
+    await tester.tap(find.text('Expand Selection'));
+    await tester.pumpAndSettle();
+    expect(controller.isCollapsed(containerId), isFalse);
+  });
+
   testWidgets('Space drag pans even when it starts on a selected shape',
       (tester) async {
     late int id;

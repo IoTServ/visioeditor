@@ -1285,6 +1285,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.selectParentShape();
     };
+    // draw.io: collapse / expand selected containers.
+    mod(LogicalKeyboardKey.home, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.collapseSelection();
+    });
+    mod(LogicalKeyboardKey.end, () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.expandSelection();
+    });
     void connectSelection(int dir) {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.connectSelectionInDirection(dir);

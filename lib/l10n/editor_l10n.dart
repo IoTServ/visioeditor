@@ -111,6 +111,10 @@ class EditorL10n {
   String get ungroup => _t('ungroup');
   String get removeFromGroup =>
       locale.languageCode == 'zh' ? '移出组合' : 'Remove from Group';
+  String get collapseSelection =>
+      locale.languageCode == 'zh' ? '折叠所选容器' : 'Collapse Selection';
+  String get expandSelection =>
+      locale.languageCode == 'zh' ? '展开所选容器' : 'Expand Selection';
   String get groupShortcut => _t('groupShortcut');
   String get ungroupShortcut => _t('ungroupShortcut');
   String get flipHorizontal => _t('flipHorizontal');

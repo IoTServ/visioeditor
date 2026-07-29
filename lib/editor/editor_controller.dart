@@ -1267,6 +1267,51 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  bool _canSetSelectedHostCollapsed(VsdxPage page, int id, bool value) {
+    final host = page.findShapeById(id);
+    return host != null &&
+        host.shapeKind.isFoldable &&
+        host.collapsed != value &&
+        !host.locked &&
+        !isOnLockedLayer(id);
+  }
+
+  bool get canCollapseSelection {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any(
+      (id) => _canSetSelectedHostCollapsed(page, id, true),
+    );
+  }
+
+  bool get canExpandSelection {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any(
+      (id) => _canSetSelectedHostCollapsed(page, id, false),
+    );
+  }
+
+  /// draw.io Ctrl/Cmd+Home / Ctrl/Cmd+End: fold or unfold every eligible
+  /// selected container as one undoable edit.
+  void setSelectionCollapsed(bool collapsed) {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return;
+    final ids = <int>[
+      for (final id in _selection)
+        if (_canSetSelectedHostCollapsed(page, id, collapsed)) id,
+    ];
+    if (ids.isEmpty) return;
+    beginTransaction();
+    for (final id in ids) {
+      toggleCollapsed(id);
+    }
+    commitTransaction();
+  }
+
+  void collapseSelection() => setSelectionCollapsed(true);
+  void expandSelection() => setSelectionCollapsed(false);
+
   /// Whether [id] is a foldable container currently collapsed.
   bool isCollapsed(int id) =>
       currentPage?.findShapeById(id)?.collapsed ?? false;

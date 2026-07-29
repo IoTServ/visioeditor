@@ -1461,7 +1461,9 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(value: 'backward', child: Text(el.sendBackward)));
       if (_c.canGroup ||
           _c.canUngroup ||
-          _c.canRemoveSelectionFromGroup) {
+          _c.canRemoveSelectionFromGroup ||
+          _c.canCollapseSelection ||
+          _c.canExpandSelection) {
         items.add(const PopupMenuDivider());
         if (_c.canGroup) {
           items.add(PopupMenuItem(value: 'group', child: Text(el.group)));
@@ -1473,6 +1475,18 @@ class _PageCanvasState extends State<PageCanvas> {
           items.add(PopupMenuItem(
             value: 'removeFromGroup',
             child: Text(el.removeFromGroup),
+          ));
+        }
+        if (_c.canCollapseSelection) {
+          items.add(PopupMenuItem(
+            value: 'collapseSelection',
+            child: Text(el.collapseSelection),
+          ));
+        }
+        if (_c.canExpandSelection) {
+          items.add(PopupMenuItem(
+            value: 'expandSelection',
+            child: Text(el.expandSelection),
           ));
         }
       }
@@ -1608,6 +1622,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.ungroupSelection();
       case 'removeFromGroup':
         _c.removeSelectionFromGroup();
+      case 'collapseSelection':
+        _c.collapseSelection();
+      case 'expandSelection':
+        _c.expandSelection();
       case 'copyStyle':
         _c.copyStyle();
       case 'pasteStyle':

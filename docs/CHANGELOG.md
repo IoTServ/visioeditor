@@ -378,10 +378,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   panel or context menu, or by dragging it beyond the group bounds; page-space
   geometry is preserved and the whole edit is undoable. Structured tables,
   swimlanes and charts are protected from accidental dismantling.
+  Foldable containers can also be collapsed or expanded from their context
+  menu or with draw.io's Ctrl/Cmd+Home and Ctrl/Cmd+End shortcuts. Multi-selected
+  hosts fold as one undo step, while locked hosts and locked layers are skipped.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),
-  Cmd+G / Cmd+Shift+U (group / ungroup), Cmd+Alt+C/V (copy/paste style),
+  Cmd+G / Cmd+Shift+U (group / ungroup), Cmd+Home / Cmd+End (collapse / expand),
+  Cmd+Alt+C/V (copy/paste style),
   Cmd+R / Cmd+Shift+R (rotate 90°), Cmd+F (find), Delete, Esc, arrow keys to
   nudge the selection, Tab/Shift+Tab to traverse visible nested shapes,
   Alt+Tab to select the parent, and canvas zoom (Cmd +/- , Cmd+0 = 100%,

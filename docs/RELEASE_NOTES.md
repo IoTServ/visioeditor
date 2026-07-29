@@ -66,8 +66,10 @@ byte-for-byte, so formulas and structure survive a save.
   parent. Plain groups select/drag as a unit first, then repeated clicks drill
   into their children; Alt-click bypasses the group hierarchy. Right-click
   a selected child or use the Arrange panel to **Remove from Group**, or drag
-  the child beyond its group bounds. Right-click blank canvas to select all
-  edges or all vertices.
+  the child beyond its group bounds. Foldable containers support context-menu
+  Collapse / Expand and draw.io's Ctrl/Cmd+Home / Ctrl/Cmd+End shortcuts,
+  including one-step multi-selection edits. Right-click blank canvas to select
+  all edges or all vertices.
   Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
