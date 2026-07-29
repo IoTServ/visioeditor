@@ -314,6 +314,16 @@ void main() {
         }
       },
       const SingleActivator(
+        LogicalKeyboardKey.keyA,
+        alt: true,
+        shift: true,
+      ): c.toggleConnectionArrows,
+      const SingleActivator(
+        LogicalKeyboardKey.keyO,
+        alt: true,
+        shift: true,
+      ): c.toggleConnectionPoints,
+      const SingleActivator(
         LogicalKeyboardKey.arrowUp,
         alt: true,
         shift: true,
@@ -1024,6 +1034,33 @@ void main() {
 
     await altShift(LogicalKeyboardKey.keyQ);
     expect(c.editingConnectionPoints, isFalse);
+  });
+
+  testWidgets('Alt+Shift+A and O toggle connection affordances',
+      (tester) async {
+    final c = ctrlWithRect();
+    await pumpHarness(tester, c);
+
+    Future<void> altShift(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump();
+    }
+
+    expect(c.connectionArrowsEnabled, isTrue);
+    expect(c.connectionPointsEnabled, isTrue);
+    await altShift(LogicalKeyboardKey.keyA);
+    await altShift(LogicalKeyboardKey.keyO);
+    expect(c.connectionArrowsEnabled, isFalse);
+    expect(c.connectionPointsEnabled, isFalse);
+
+    await altShift(LogicalKeyboardKey.keyA);
+    await altShift(LogicalKeyboardKey.keyO);
+    expect(c.connectionArrowsEnabled, isTrue);
+    expect(c.connectionPointsEnabled, isTrue);
   });
 
   testWidgets('Cmd/Ctrl+R reverses a selected connector', (tester) async {

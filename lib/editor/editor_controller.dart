@@ -54,6 +54,8 @@ class EditorController extends ChangeNotifier {
   bool _snapToGrid = true;
   bool _showGuides = true;
   bool _showLineJumps = true;
+  bool _connectionArrowsEnabled = true;
+  bool _connectionPointsEnabled = true;
   bool _colorByLayer = false;
   double _lineJumpRadiusInches = 0.07;
   final double _gridInches = 0.25;
@@ -472,6 +474,8 @@ class EditorController extends ChangeNotifier {
   bool get snapToGrid => _snapToGrid;
   bool get showGuides => _showGuides;
   bool get showLineJumps => _showLineJumps;
+  bool get connectionArrowsEnabled => _connectionArrowsEnabled;
+  bool get connectionPointsEnabled => _connectionPointsEnabled;
   bool get colorByLayer => _colorByLayer;
   double get lineJumpRadiusInches => _lineJumpRadiusInches;
   double get gridInches => _gridInches;
@@ -495,6 +499,18 @@ class EditorController extends ChangeNotifier {
   /// Toggle drawio-style line jumps (arc connectors over the ones they cross).
   void toggleLineJumps() {
     _showLineJumps = !_showLineJumps;
+    notifyListeners();
+  }
+
+  /// Toggle draw.io HoverIcons / directional quick-connect arrows.
+  void toggleConnectionArrows() {
+    _connectionArrowsEnabled = !_connectionArrowsEnabled;
+    notifyListeners();
+  }
+
+  /// Toggle draw.io fixed connection-point display, hit-testing and snapping.
+  void toggleConnectionPoints() {
+    _connectionPointsEnabled = !_connectionPointsEnabled;
     notifyListeners();
   }
 

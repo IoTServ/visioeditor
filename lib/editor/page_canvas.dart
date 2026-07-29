@@ -1262,6 +1262,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Whether hover-connect affordances should be offered right now.
   bool get _connectAffordanceActive =>
       !widget.presentationMode &&
+      (_c.connectionArrowsEnabled || _c.connectionPointsEnabled) &&
       _mode == _DragMode.none &&
       _c.tool == EditorTool.select &&
       _editingShapeId == null &&
@@ -1288,6 +1289,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// If [viewportPos] is on one of [s]'s connect arrows, return its direction.
   int? _connectArrowHitDir(VsdxShape s, Offset viewportPos) {
+    if (!_c.connectionArrowsEnabled) return null;
     final gap = _connectArrowGapPxEffective / _scale;
     final anchors = _connectArrows(_exactContentBox(s), gap);
     final hit = _connectArrowHitPxEffective * _connectArrowHitPxEffective;
@@ -1351,7 +1353,8 @@ class _PageCanvasState extends State<PageCanvas> {
       final s = _page?.findShapeById(next);
       if (s != null && _canConnectFrom(s)) {
         onArrow = _connectArrowHitDir(s, pos) != null;
-        onConnect = !onArrow &&
+        onConnect = _c.connectionPointsEnabled &&
+            !onArrow &&
             _resizableSelection()?.id != s.id &&
             (_connDragSourceIndex(s, pos) != null ||
                 _nearShapePerimeter(s, pos));
@@ -2415,7 +2418,8 @@ class _PageCanvasState extends State<PageCanvas> {
               (id: s.id, dir: arrowDir, start: d.localPosition);
           return;
         }
-        if (_resizableSelection()?.id != s.id) {
+        if (_c.connectionPointsEnabled &&
+            _resizableSelection()?.id != s.id) {
           final cpIndex = _connDragSourceIndex(s, d.localPosition);
           if (cpIndex != null) {
             final pts = VsdxPage.effectiveConnectionPoints(s);
@@ -3185,7 +3189,11 @@ class _PageCanvasState extends State<PageCanvas> {
   /// custom fixed point created on drop. Neither should snap to a nearby
   /// existing blue point during the preview.
   int? _connectorSnapIndex(VsdxShape target, Offset pos) {
-    if (_customFixedConnectorDrop || _forceFloatingConnectorDrop) return null;
+    if (!_c.connectionPointsEnabled ||
+        _customFixedConnectorDrop ||
+        _forceFloatingConnectorDrop) {
+      return null;
+    }
     return _connSnapIndex(target, pos);
   }
 
@@ -3264,6 +3272,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Whether [viewportPos] is within the snap radius of [s]'s geometry outline
   /// (draw.io: start a connector from anywhere on the body, not only blue dots).
   bool _nearShapePerimeter(VsdxShape s, Offset viewportPos) =>
+      _c.connectionPointsEnabled &&
       _nearestPerimeterPage(s, viewportPos) != null;
 
   /// Nearest page-inch point on [s]'s outline to [viewportPos], or `null` when
@@ -3285,6 +3294,7 @@ class _PageCanvasState extends State<PageCanvas> {
   /// connector from (drawio's edge connection points), or null. Excludes the
   /// shape's centre point so pressing the middle still moves the shape.
   int? _connDragSourceIndex(VsdxShape s, Offset viewportPos) {
+    if (!_c.connectionPointsEnabled) return null;
     final pts = VsdxPage.effectiveConnectionPoints(s);
     final cx = s.width / 2, cy = s.height / 2;
     var best = -1;
@@ -4503,7 +4513,7 @@ class _PageCanvasState extends State<PageCanvas> {
             final affordanceId =
                 _stencilShapeConnectionTarget?.sourceId ??
                     _connectAffordanceShapeId;
-            if (affordanceId != null) {
+            if (_c.connectionArrowsEnabled && affordanceId != null) {
               final s = page.findShapeById(affordanceId);
               if (s != null && !s.is1D) hoverBox = _exactContentBox(s);
             }
@@ -4521,13 +4531,16 @@ class _PageCanvasState extends State<PageCanvas> {
             VsdxShape? cpShape;
             if (_c.editingConnectionPoints && _c.singleSelectedId != null) {
               cpShape = page.findShapeById(_c.singleSelectedId!);
-            } else if (targetId != null &&
+            } else if (_c.connectionPointsEnabled &&
+                targetId != null &&
                 (_mode == _DragMode.connect ||
                     _mode == _DragMode.moveEndpoint ||
                     (_mode == _DragMode.createShape &&
                         _c.tool == EditorTool.connector))) {
               cpShape = page.findShapeById(targetId);
-            } else if (_connectAffordanceActive && _hoverShapeId != null) {
+            } else if (_c.connectionPointsEnabled &&
+                _connectAffordanceActive &&
+                _hoverShapeId != null) {
               // Blue CPs only for true hover (unselected source). Selection-
               // based touch arrows stay triangle-only so they don't fight
               // resize handles.

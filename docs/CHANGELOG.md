@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io connection-affordance controls**: **Connection Arrows** and
+  **Connection Points** are now independent session toggles in the More menu,
+  with draw.io's `Alt+Shift+A/O` shortcuts. Disabling arrows removes their
+  drawing and hit regions; disabling points removes blue-point display,
+  fixed-point source gestures and snapping while preserving ordinary perimeter
+  glue and the explicit Edit Connection Points mode.
 - **draw.io advanced shortcut parity**: the editor now follows the effective
   core and Trees-plugin key map for Save As, Fit Window, Select Edges, whole
   label font sizing, Copy / Paste Size, Edit Link, Edit Connection Points and

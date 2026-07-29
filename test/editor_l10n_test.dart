@@ -23,6 +23,10 @@ void main() {
     expect(zh.selectParent, '选择父元素');
     expect(en.selectSiblings, 'Select Siblings');
     expect(zh.selectSiblings, '选择同级元素');
+    expect(en.connectionArrows, 'Connection Arrows');
+    expect(zh.connectionArrows, '连接箭头');
+    expect(en.connectionPoints, 'Connection Points');
+    expect(zh.connectionPoints, '连接点');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');

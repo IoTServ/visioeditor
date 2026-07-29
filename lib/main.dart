@@ -1605,6 +1605,22 @@ class _EditorHomePageState extends State<EditorHomePage> {
         cur.beginEditConnectionPoints();
       }
     };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyA,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.toggleConnectionArrows();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyO,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.toggleConnectionPoints();
+    };
     mod(LogicalKeyboardKey.keyF, _openFind);
     mod(LogicalKeyboardKey.keyH, () {
       _openFind(replace: true);
@@ -1925,6 +1941,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.toggleGuides();
                               case 'lineJumps':
                                 cur.toggleLineJumps();
+                              case 'connectionArrows':
+                                cur.toggleConnectionArrows();
+                              case 'connectionPoints':
+                                cur.toggleConnectionPoints();
                               case 'agentPreview':
                                 _toggleAgentPreview();
                               case 'aiChat':
@@ -2117,6 +2137,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'lineJumps',
                               checked: cur.showLineJumps,
                               child: Text(el.lineJumps),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'connectionArrows',
+                              checked: cur.connectionArrowsEnabled,
+                              child: Text(el.connectionArrows),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'connectionPoints',
+                              checked: cur.connectionPointsEnabled,
+                              child: Text(el.connectionPoints),
                             ),
                             CheckedPopupMenuItem<String>(
                               value: 'agentPreview',

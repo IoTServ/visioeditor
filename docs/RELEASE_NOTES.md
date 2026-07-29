@@ -88,6 +88,11 @@ byte-for-byte, so formulas and structure survive a save.
   A shape's context menu can Select Connections, and Clear Anchors changes
   fixed-point glue on selected or incident connectors back to automatic
   perimeter attachment without disconnecting either terminal.
+  Connection Arrows and Connection Points can be toggled independently from
+  the More menu or with Alt+Shift+A/O. Turning arrows off removes the
+  quick-add/quick-connect hit regions; turning points off disables blue-point
+  display and fixed-point snapping while ordinary perimeter glue remains
+  available.
   Turn / Reverse now uses Cmd/Ctrl+R for both 90° shape turns and semantic
   connector reversal. Copy Data / Paste Data transfers complete Shape Data
   metadata; context-menu paste preserves target labels, while the draw.io
@@ -185,6 +190,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Select tree children / subtree / parent / siblings | `Alt+Shift+X` / `Alt+Shift+T` / `Alt+Shift+P` / `Alt+Shift+S` |
 | Copy Text Style / Copy Size / Paste Size | `Alt+Shift+C` / `Alt+Shift+F` / `Alt+Shift+V` |
 | Edit Link / Edit Connection Points | `Alt+Shift+L` / `Alt+Shift+Q` |
+| Toggle Connection Arrows / Connection Points | `Alt+Shift+A` / `Alt+Shift+O` |
 | Select previous/next/first/last page (no shape selection) | `Cmd/Ctrl+Left` / `Right` / `Up` / `Down` |
 | Reorder current page (no shape selection) | `Shift+Left` / `Right` / `Up` / `Down` |
 | Previous / next page | `Cmd/Ctrl+Shift+PageUp` / `PageDown` |

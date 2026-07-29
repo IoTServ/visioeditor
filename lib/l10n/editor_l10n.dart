@@ -116,6 +116,10 @@ class EditorL10n {
   String get openLink => _t('openLink');
   String get editConnectionPoints => _t('editConnectionPoints');
   String get doneEditingConnectionPoints => _t('doneEditingConnectionPoints');
+  String get connectionArrows =>
+      locale.languageCode == 'zh' ? '连接箭头' : 'Connection Arrows';
+  String get connectionPoints =>
+      locale.languageCode == 'zh' ? '连接点' : 'Connection Points';
   String get lock => _t('lock');
   String get unlock => _t('unlock');
   String get lockShortcut => _t('lockShortcut');

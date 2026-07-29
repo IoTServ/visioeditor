@@ -2491,6 +2491,50 @@ void main() {
     expect(glue.single.toPart, greaterThanOrEqualTo(100));
   });
 
+  testWidgets('disabled connection points use floating perimeter glue',
+      (tester) async {
+    late int target;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        if (c.snapToGrid) c.toggleSnap();
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          3,
+          5,
+        );
+        target = c.singleSelectedId!;
+        c
+          ..toggleConnectionPoints()
+          ..setTool(EditorTool.connector);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(origin, camera, page, 0.5, 5.0);
+    final end = _pagePoint(origin, camera, page, 4.08, 5.0);
+
+    final gesture = await tester.startGesture(start);
+    await gesture.moveTo(end);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final glue = controller.currentPage!.connects.where((c) => c.isEnd).single;
+    expect(glue.toSheetId, target);
+    expect(glue.toPart, lessThan(100));
+  });
+
   testWidgets('pan tool drags the viewport without moving shapes',
       (tester) async {
     late int id;
@@ -2692,6 +2736,44 @@ void main() {
               row.fromSheetId == floatingConnector.id && row.isEnd),
       isEmpty,
     );
+  });
+
+  testWidgets('disabled connection arrows leave no invisible drag target',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late int source;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(400, 800),
+      setUp: (c) {
+        source = _addRect(c);
+        c.toggleConnectionArrows();
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final sourceBounds = page.shapePageAabb(source)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final eastEdge = _pagePoint(
+      origin,
+      camera,
+      page,
+      sourceBounds.right,
+      (sourceBounds.bottom + sourceBounds.top) / 2,
+    );
+    final eastArrow = eastEdge + const Offset(38, 0);
+    final drop = _pagePoint(origin, camera, page, 7, 7);
+
+    await tester.dragFrom(eastArrow, drop - eastArrow);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.shapes, hasLength(1));
+    expect(controller.currentPage!.connects, isEmpty);
   });
 
   testWidgets('compact layout keeps selection for touch quick-add chrome',
