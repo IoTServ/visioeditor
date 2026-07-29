@@ -148,6 +148,40 @@ void main() {
     expect(next.findShapeById(a)!.connectionPoints, isEmpty);
   });
 
+  test('custom fixed point falls back to whole-shape glue on locked target',
+      () {
+    final e = ctrl();
+    final a = rect(e, 2, 4);
+    final b = rect(e, 5, 4);
+    clearConnectionPoints(e, b);
+    e.setSelection([b]);
+    e.setSelectionLocked(true);
+
+    e.createConnector(
+      2,
+      4,
+      5,
+      4,
+      beginTarget: a,
+      endTarget: b,
+      endFixedAtPosition: true,
+    );
+
+    final page = e.currentPage!;
+    final connector = e.singleSelectedId!;
+    expect(page.findShapeById(b)!.connectionPoints, isEmpty);
+    final end = page.connects.singleWhere(
+      (c) => c.fromSheetId == connector && c.isEnd,
+    );
+    expect(end.toSheetId, b);
+    expect(VsdxPage.fixedConnectionIndex(end), isNull);
+    expect(end.toPart, 3);
+    expect(
+      page.addConnectionPoint(b, 0.5, 0.3).findShapeById(b)!.connectionPoints,
+      isEmpty,
+    );
+  });
+
   test('resizeTableRow undo; locked table is no-op', () {
     final e = ctrl();
     e.addShapeFromBuilderAt(

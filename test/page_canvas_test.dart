@@ -1283,7 +1283,8 @@ void main() {
     );
   });
 
-  testWidgets('Alt endpoint drop over a shape stays floating', (tester) async {
+  testWidgets('Alt endpoint drop creates one undoable custom fixed point',
+      (tester) async {
     late int connector;
     late int alternate;
     final camera = CanvasCamera();
@@ -1319,6 +1320,7 @@ void main() {
     var page = controller.currentPage!;
     final route = VsdxPage.connectorRoute(page.findShapeById(connector)!);
     final alternateShape = page.findShapeById(alternate)!;
+    final alternatePointCount = alternateShape.connectionPoints.length;
     final origin = tester.getTopLeft(find.byType(PageCanvas));
     final start = _pagePoint(
       origin,
@@ -1336,20 +1338,113 @@ void main() {
     );
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
-    await tester.dragFrom(start, destination - start);
-    await tester.pumpAndSettle();
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    try {
+      await tester.dragFrom(start, destination - start);
+      await tester.pumpAndSettle();
+    } finally {
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    }
 
     page = controller.currentPage!;
+    final endGlue = page.connects
+        .singleWhere((c) => c.fromSheetId == connector && c.isEnd);
+    expect(endGlue.toSheetId, alternate);
+    expect(VsdxPage.fixedConnectionIndex(endGlue), alternatePointCount);
     expect(
-      page.connects.where((c) => c.fromSheetId == connector && c.isEnd),
-      isEmpty,
+      page.findShapeById(alternate)!.connectionPoints,
+      hasLength(alternatePointCount + 1),
     );
-    final floating = VsdxPage.connectorRoute(
+    final fixed = VsdxPage.connectorRoute(
       page.findShapeById(connector)!,
     ).last;
-    expect(floating.x, closeTo(alternateShape.pinX, 0.05));
-    expect(floating.y, closeTo(alternateShape.pinY, 0.05));
+    expect(fixed.x, closeTo(alternateShape.pinX, 0.05));
+    expect(fixed.y, closeTo(alternateShape.pinY, 0.05));
+
+    controller.undo();
+    page = controller.currentPage!;
+    expect(
+      page.findShapeById(alternate)!.connectionPoints,
+      hasLength(alternatePointCount),
+    );
+    expect(
+      page.connects
+          .singleWhere((c) => c.fromSheetId == connector && c.isEnd)
+          .toSheetId,
+      isNot(alternate),
+    );
+  });
+
+  testWidgets('Shift endpoint drop forces floating shape glue', (tester) async {
+    late int connector;
+    late int alternate;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(1, 4, 3, 6);
+        final source = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 4, 7, 6);
+        final target = c.singleSelectedId!;
+        c
+          ..setTool(EditorTool.rectangle)
+          ..createShapeByDrag(5, 1, 7, 3);
+        alternate = c.singleSelectedId!;
+        c.createConnector(
+          2,
+          5,
+          6,
+          5,
+          beginTarget: source,
+          endTarget: target,
+        );
+        connector = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    var page = controller.currentPage!;
+    final route = VsdxPage.connectorRoute(page.findShapeById(connector)!);
+    final alternateShape = page.findShapeById(alternate)!;
+    final alternatePointCount = alternateShape.connectionPoints.length;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(
+      origin,
+      camera,
+      page,
+      route.last.x,
+      route.last.y,
+    );
+    final destination = _pagePoint(
+      origin,
+      camera,
+      page,
+      alternateShape.pinX,
+      alternateShape.pinY,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    try {
+      await tester.dragFrom(start, destination - start);
+      await tester.pumpAndSettle();
+    } finally {
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    }
+
+    page = controller.currentPage!;
+    final endGlue = page.connects
+        .singleWhere((c) => c.fromSheetId == connector && c.isEnd);
+    expect(endGlue.toSheetId, alternate);
+    expect(VsdxPage.fixedConnectionIndex(endGlue), isNull);
+    expect(endGlue.toPart, 3);
+    expect(
+      page.findShapeById(alternate)!.connectionPoints,
+      hasLength(alternatePointCount),
+    );
   });
 
   testWidgets('connector segment midpoint drag creates one undoable waypoint',

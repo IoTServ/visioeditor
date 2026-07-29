@@ -206,6 +206,12 @@ class _PageCanvasState extends State<PageCanvas> {
   // arrow / blue point it was dragged out of), or null for a whole-shape glue.
   int? _connectSourceConnIndex;
 
+  // Alt/Option connector drops create a custom fixed point at the exact
+  // pointer position. Keep the source and live target intent independently so
+  // connector-tool drags can fix either end in one creation edit.
+  bool _connectSourceFixedAtPosition = false;
+  bool _connectTargetFixedAtPosition = false;
+
   // Direction of a connector drag that started on a quick-connect arrow.
   // Holding Ctrl/Cmd on release clones the source at the drop point and wires
   // the clone instead of leaving a floating connector (draw.io).
@@ -245,6 +251,11 @@ class _PageCanvasState extends State<PageCanvas> {
   /// draw.io modifier semantics: Alt/Option bypasses all snapping for precise
   /// placement; Ctrl/Cmd-drag clones the selection.
   bool get _bypassSnapping => HardwareKeyboard.instance.isAltPressed;
+  bool get _customFixedConnectorDrop =>
+      HardwareKeyboard.instance.isAltPressed;
+  bool get _forceFloatingConnectorDrop =>
+      !_customFixedConnectorDrop &&
+      HardwareKeyboard.instance.isShiftPressed;
   bool get _cloneDrag =>
       HardwareKeyboard.instance.isControlPressed ||
       HardwareKeyboard.instance.isMetaPressed;
@@ -1987,14 +1998,16 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.createShape;
       if (_c.tool == EditorTool.connector) {
         // Capture the begin glue point at press (deepest 2-D, matches drop).
-        final beginId =
-            _bypassSnapping ? null : _glueTargetAt(d.localPosition);
+        final beginId = _connectorTargetAt(d.localPosition);
         final beginShape =
             beginId == null ? null : _page?.findShapeById(beginId);
         _connectSourceConnIndex =
             (beginShape != null && _canConnectFrom(beginShape))
-                ? _connSnapIndex(beginShape, d.localPosition)
+                ? _connectorSnapIndex(beginShape, d.localPosition)
                 : null;
+        _connectSourceFixedAtPosition =
+            beginId != null && _customFixedConnectorDrop;
+        _connectTargetFixedAtPosition = false;
         setState(() {
           _previewStart = _previewEndForSnap(
             beginShape,
@@ -2007,6 +2020,8 @@ class _PageCanvasState extends State<PageCanvas> {
         });
       } else {
         _connectSourceConnIndex = null;
+        _connectSourceFixedAtPosition = false;
+        _connectTargetFixedAtPosition = false;
         setState(() {
           _previewStart = _viewportToContent(d.localPosition);
           _previewEnd = _previewStart;
@@ -2064,6 +2079,8 @@ class _PageCanvasState extends State<PageCanvas> {
             final pg = _connPointPage(s, pts[cpIndex].offset);
             _connectSourceId = affordanceId;
             _connectSourceConnIndex = cpIndex;
+            _connectSourceFixedAtPosition = false;
+            _connectTargetFixedAtPosition = false;
             _connectArrowDirection = null;
             _connectTargetId = null;
             _mode = _DragMode.connect;
@@ -2077,6 +2094,8 @@ class _PageCanvasState extends State<PageCanvas> {
           if (peri != null) {
             _connectSourceId = affordanceId;
             _connectSourceConnIndex = null;
+            _connectSourceFixedAtPosition = false;
+            _connectTargetFixedAtPosition = false;
             _connectArrowDirection = null;
             _connectTargetId = null;
             _mode = _DragMode.connect;
@@ -2309,13 +2328,13 @@ class _PageCanvasState extends State<PageCanvas> {
           }
           break;
         }
-        final connTarget = _c.tool == EditorTool.connector &&
-                !_bypassSnapping
-            ? _glueTargetAt(pos)
+        final connTarget = _c.tool == EditorTool.connector
+            ? _connectorTargetAt(pos)
             : null;
         final connTs =
             connTarget == null ? null : _page?.findShapeById(connTarget);
-        final snap = connTs != null ? _connSnapIndex(connTs, pos) : null;
+        final snap =
+            connTs != null ? _connectorSnapIndex(connTs, pos) : null;
         setState(() {
           _previewEnd = _previewEndForSnap(
             connTs,
@@ -2326,13 +2345,14 @@ class _PageCanvasState extends State<PageCanvas> {
           // its end to a fixed connection point when the pointer is near one.
           _connectTargetId = connTarget;
           _snapConnIndex = snap;
+          _connectTargetFixedAtPosition =
+              connTarget != null && _customFixedConnectorDrop;
         });
       case _DragMode.connect:
         final src = _connectSourceId;
-        final target =
-            _bypassSnapping ? null : _glueTargetAt(pos, excludeId: src);
+        final target = _connectorTargetAt(pos, excludeId: src);
         final ts = target == null ? null : _page?.findShapeById(target);
-        final snap = ts != null ? _connSnapIndex(ts, pos) : null;
+        final snap = ts != null ? _connectorSnapIndex(ts, pos) : null;
         setState(() {
           _previewEnd = _previewEndForSnap(
             ts,
@@ -2341,6 +2361,8 @@ class _PageCanvasState extends State<PageCanvas> {
           );
           _connectTargetId = target;
           _snapConnIndex = snap;
+          _connectTargetFixedAtPosition =
+              target != null && _customFixedConnectorDrop;
         });
       case _DragMode.resize:
         _applyResize(pos);
@@ -2371,10 +2393,10 @@ class _PageCanvasState extends State<PageCanvas> {
         final id = _endpointConnId;
         if (id != null) {
           final p = _pageInchesAt(pos);
-          final target =
-              _bypassSnapping ? null : _endpointTargetAt(pos, id);
+          final target = _connectorTargetAt(pos, excludeId: id);
           final ts = target == null ? null : _page?.findShapeById(target);
-          final snap = ts == null ? null : _connSnapIndex(ts, pos);
+          final snap =
+              ts == null ? null : _connectorSnapIndex(ts, pos);
           var x = _bypassSnapping ? p.dx : _c.snap(p.dx);
           var y = _bypassSnapping ? p.dy : _c.snap(p.dy);
           if (ts != null && snap != null) {
@@ -2388,11 +2410,16 @@ class _PageCanvasState extends State<PageCanvas> {
           setState(() {
             _connectTargetId = target;
             _snapConnIndex = snap;
+            _connectTargetFixedAtPosition =
+                target != null && _customFixedConnectorDrop;
           });
           _c.reconnectEndpoint(
             id,
             begin: _endpointIsBegin,
-            targetShapeId: target,
+            // Keep an Alt/Option drag visually under the pointer; the custom
+            // point and fixed glue are created once on release.
+            targetShapeId:
+                _customFixedConnectorDrop ? null : target,
             connectionPointIndex: snap,
             x: x,
             y: y,
@@ -2726,10 +2753,14 @@ class _PageCanvasState extends State<PageCanvas> {
     return true;
   }
 
-  /// Deepest non-connector shape the endpoint would glue to at [pos]
-  /// (including nested children), excluding the connector [connId] being edited.
-  int? _endpointTargetAt(Offset pos, int connId) =>
-      _glueTargetAt(pos, excludeId: connId);
+  /// Connector target under [pos]. Alt/Option custom points are only valid
+  /// inside a shape; ordinary and Shift-floating glue may also acquire a
+  /// nearby blue point just outside its bounds.
+  int? _connectorTargetAt(Offset pos, {int? excludeId}) => _glueTargetAt(
+        pos,
+        excludeId: excludeId,
+        insideOnly: _customFixedConnectorDrop,
+      );
 
   /// Deepest visible 2-D shape under [pos] (nested children included), or the
   /// shape owning the nearest connection point within [_connSnapPx].
@@ -2738,7 +2769,11 @@ class _PageCanvasState extends State<PageCanvas> {
   /// shape underneath (create-by-drag / endpoint attach / hover-connect).
   /// Connection-point proximity is checked even when the pointer is *outside*
   /// the AABB so edge blue points stay sticky (draw.io parity).
-  int? _glueTargetAt(Offset pos, {int? excludeId}) {
+  int? _glueTargetAt(
+    Offset pos, {
+    int? excludeId,
+    bool insideOnly = false,
+  }) {
     final page = _page;
     if (page == null) return null;
     final pt = _contentToPageInches(_viewportToContent(pos));
@@ -2764,7 +2799,7 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     // Prefer a nearby connection point over a deep AABB hit so an outer blue
     // point is not stolen by an overlapping neighbour's interior.
-    return bestCp ?? bestInside;
+    return insideOnly ? bestInside : bestCp ?? bestInside;
   }
 
   /// Content-px end for a live connector preview: sticks to a snapped blue
@@ -2775,6 +2810,15 @@ class _PageCanvasState extends State<PageCanvas> {
     if (snapIndex < 0 || snapIndex >= pts.length) return pointerContent;
     final pg = _connPointPage(target, pts[snapIndex].offset);
     return _pageToContent(pg.x, pg.y);
+  }
+
+  /// Draw.io connector modifiers: Shift forces whole-shape (floating)
+  /// attachment, while Alt/Option reserves the exact pointer position for a
+  /// custom fixed point created on drop. Neither should snap to a nearby
+  /// existing blue point during the preview.
+  int? _connectorSnapIndex(VsdxShape target, Offset pos) {
+    if (_customFixedConnectorDrop || _forceFloatingConnectorDrop) return null;
+    return _connSnapIndex(target, pos);
   }
 
   /// Drawn / obstacle-aware connector polyline in **page** inches (matches
@@ -3004,6 +3048,9 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.beginTransaction();
         _endpointConnId = conn.id;
         _endpointIsBegin = begin;
+        _connectTargetId = null;
+        _snapConnIndex = null;
+        _connectTargetFixedAtPosition = false;
         _mode = _DragMode.moveEndpoint;
         return true;
       }
@@ -3189,11 +3236,28 @@ class _PageCanvasState extends State<PageCanvas> {
         _waypointConnId = null;
         _waypointIndex = null;
       case _DragMode.moveEndpoint:
+        final endpointId = _endpointConnId;
+        final fixedTarget = _connectTargetId;
+        if (endpointId != null &&
+            fixedTarget != null &&
+            _connectTargetFixedAtPosition) {
+          final p = _pageInchesAt(_lastPointer);
+          _c.reconnectEndpoint(
+            endpointId,
+            begin: _endpointIsBegin,
+            targetShapeId: fixedTarget,
+            createFixedConnectionPoint: true,
+            x: p.dx,
+            y: p.dy,
+            transient: true,
+          );
+        }
         _c.commitTransaction();
         _endpointConnId = null;
         setState(() {
           _connectTargetId = null;
           _snapConnIndex = null;
+          _connectTargetFixedAtPosition = false;
         });
       case _DragMode.moveShapes:
       case _DragMode.resize:
@@ -3247,13 +3311,10 @@ class _PageCanvasState extends State<PageCanvas> {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
           if (_c.tool == EditorTool.connector) {
-            final beginTarget = _bypassSnapping
-                ? null
-                : _glueTargetAt(_offset + start * _scale);
-            final endTarget = _bypassSnapping
-                ? null
-                : _connectTargetId ??
-                    _glueTargetAt(_offset + end * _scale);
+            final beginTarget =
+                _connectorTargetAt(_offset + start * _scale);
+            final endTarget = _connectTargetId ??
+                _connectorTargetAt(_offset + end * _scale);
             _c.createConnector(
               a.dx,
               a.dy,
@@ -3264,6 +3325,10 @@ class _PageCanvasState extends State<PageCanvas> {
               beginConnectionPointIndex:
                   beginTarget != null ? _connectSourceConnIndex : null,
               endConnectionPointIndex: endTarget != null ? _snapConnIndex : null,
+              beginFixedAtPosition:
+                  beginTarget != null && _connectSourceFixedAtPosition,
+              endFixedAtPosition:
+                  endTarget != null && _connectTargetFixedAtPosition,
             );
           } else {
             final wasText = _c.tool == EditorTool.text;
@@ -3277,6 +3342,8 @@ class _PageCanvasState extends State<PageCanvas> {
           _connectTargetId = null;
           _snapConnIndex = null;
           _connectSourceConnIndex = null;
+          _connectSourceFixedAtPosition = false;
+          _connectTargetFixedAtPosition = false;
         });
       case _DragMode.connect:
         final start = _previewStart;
@@ -3285,9 +3352,8 @@ class _PageCanvasState extends State<PageCanvas> {
         if (start != null && end != null && src != null) {
           final a = _contentToPageInches(start);
           final b = _contentToPageInches(end);
-          final target = _bypassSnapping || _connectTargetId == src
-              ? null
-              : _connectTargetId;
+          final target =
+              _connectTargetId == src ? null : _connectTargetId;
           final arrowDirection = _connectArrowDirection;
           if (arrowDirection != null && _cloneDrag) {
             _c.connectDirectional(
@@ -3308,6 +3374,8 @@ class _PageCanvasState extends State<PageCanvas> {
               beginConnectionPointIndex: _connectSourceConnIndex,
               endConnectionPointIndex:
                   target != null ? _snapConnIndex : null,
+              endFixedAtPosition:
+                  target != null && _connectTargetFixedAtPosition,
             );
           }
         }
@@ -3319,6 +3387,8 @@ class _PageCanvasState extends State<PageCanvas> {
           _connectArrowDirection = null;
           _connectTargetId = null;
           _snapConnIndex = null;
+          _connectSourceFixedAtPosition = false;
+          _connectTargetFixedAtPosition = false;
         });
       case _DragMode.marquee:
         _commitMarquee();
@@ -3368,6 +3438,8 @@ class _PageCanvasState extends State<PageCanvas> {
     final begin = _connPointPage(source, points[index].offset);
     _connectSourceId = source.id;
     _connectSourceConnIndex = index;
+    _connectSourceFixedAtPosition = false;
+    _connectTargetFixedAtPosition = false;
     _connectArrowDirection = pending.dir;
     _connectTargetId = null;
     _snapConnIndex = null;
@@ -3402,6 +3474,8 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.none;
       _previewStart = null;
       _previewEnd = null;
+      _connectSourceFixedAtPosition = false;
+      _connectTargetFixedAtPosition = false;
       _freehandPoints.clear();
       _marqueeStart = null;
       _marqueeEnd = null;

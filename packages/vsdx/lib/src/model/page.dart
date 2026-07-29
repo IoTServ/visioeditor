@@ -1571,6 +1571,13 @@ class VsdxPage {
   /// Append a connection point at shape-local ([localX],[localY]) on [id]
   /// (materialising defaults first when the shape has none).
   VsdxPage addConnectionPoint(int id, double localX, double localY) {
+    final original = findShapeById(id);
+    if (original == null ||
+        original.is1D ||
+        original.locked ||
+        isShapeTreeOnLockedLayer(id)) {
+      return this;
+    }
     var next = materializeConnectionPoints(id);
     final s = next.findShapeById(id);
     if (s == null || s.is1D) return this;

@@ -2082,6 +2082,9 @@ class EditorController extends ChangeNotifier {
   /// the end pins to that fixed blue point; otherwise whole-shape glue
   /// (`ToPart=3`) attaches on the geometry perimeter aimed at the opposite end
   /// (draw.io-style — any border point, not only the four mid-edge dots).
+  /// [beginFixedAtPosition] / [endFixedAtPosition] first create a custom
+  /// connection point at the supplied page position, matching draw.io's
+  /// Alt/Option-drop gesture.
   void createConnector(
     double ax,
     double ay,
@@ -2091,6 +2094,8 @@ class EditorController extends ChangeNotifier {
     int? endTarget,
     int? beginConnectionPointIndex,
     int? endConnectionPointIndex,
+    bool beginFixedAtPosition = false,
+    bool endFixedAtPosition = false,
   }) {
     final doc = _document;
     final page = currentPage;
@@ -2104,6 +2109,37 @@ class EditorController extends ChangeNotifier {
 
     final begin = glueableTarget(beginTarget) ? beginTarget : null;
     final end = glueableTarget(endTarget) ? endTarget : null;
+    var workingPage = page;
+    int? addFixedPoint(int? targetId, double x, double y) {
+      if (targetId == null) return null;
+      final target = workingPage.findShapeById(targetId);
+      if (target == null ||
+          target.is1D ||
+          target.locked ||
+          workingPage.isShapeTreeOnLockedLayer(targetId)) {
+        return null;
+      }
+      final local =
+          workingPage.pageToLocalDeep(targetId, Offset2D(x, y));
+      workingPage = workingPage.addConnectionPoint(
+        targetId,
+        local.x,
+        local.y,
+      );
+      final updated = workingPage.findShapeById(targetId);
+      return updated == null || updated.connectionPoints.isEmpty
+          ? null
+          : updated.connectionPoints.length - 1;
+    }
+
+    var beginIdx = begin != null ? beginConnectionPointIndex : null;
+    var endIdx = end != null ? endConnectionPointIndex : null;
+    if (begin != null && beginFixedAtPosition) {
+      beginIdx = addFixedPoint(begin, ax, ay);
+    }
+    if (end != null && endFixedAtPosition) {
+      endIdx = addFixedPoint(end, bx, by);
+    }
     final id = page.nextFreeShapeId();
     var sax = ax, say = ay, sbx = bx, sby = by;
     if (begin != null) {
@@ -2156,10 +2192,8 @@ class EditorController extends ChangeNotifier {
     // Prefer explicit CP indices (drawio blue points). Otherwise use whole-shape
     // glue (ToPart=3) so the endpoint attaches anywhere on the geometry
     // perimeter aimed at the opposite end — not only the four mid-edge points.
-    final beginIdx = begin != null ? beginConnectionPointIndex : null;
-    final endIdx = end != null ? endConnectionPointIndex : null;
     final connects = <VsdxConnect>[
-      ...page.connects,
+      ...workingPage.connects,
       if (begin != null)
         VsdxConnect(
           fromSheetId: id,
@@ -2184,7 +2218,7 @@ class EditorController extends ChangeNotifier {
       ..clear()
       ..add(id);
     _tool = EditorTool.select;
-    var next = page.addShape(connector).copyWith(connects: connects);
+    var next = workingPage.addShape(connector).copyWith(connects: connects);
     // Materialise Connection rows on targets so fixed-point glue round-trips.
     if (begin != null && beginIdx != null) {
       next = next.setConnectorEndpoint(
@@ -5700,12 +5734,15 @@ class EditorController extends ChangeNotifier {
   /// Reconnect (or detach) one end of connector [connectorId] — drawio's
   /// endpoint editing. When [targetShapeId] is non-null the end is glued to
   /// that shape; otherwise it floats at page point ([x],[y]). Pass
-  /// `transient: true` while dragging and commit once on release.
+  /// [createFixedConnectionPoint] to append a custom point at ([x],[y]) before
+  /// gluing, matching draw.io's Alt/Option-drop gesture. Pass `transient: true`
+  /// while dragging and commit once on release.
   void reconnectEndpoint(
     int connectorId, {
     required bool begin,
     int? targetShapeId,
     int? connectionPointIndex,
+    bool createFixedConnectionPoint = false,
     required double x,
     required double y,
     bool transient = false,
@@ -5715,14 +5752,43 @@ class EditorController extends ChangeNotifier {
     if (s == null || s.locked || isOnLockedLayer(connectorId)) return;
     updateCurrentPage(
       (page) {
+        var next = page;
+        var fixedIndex = connectionPointIndex;
+        if (targetShapeId != null && createFixedConnectionPoint) {
+          final target = next.findShapeById(targetShapeId);
+          if (target != null &&
+              !target.is1D &&
+              !target.locked &&
+              !next.isShapeTreeOnLockedLayer(targetShapeId)) {
+            final targetLocal = next.pageToLocalDeep(
+              targetShapeId,
+              Offset2D(x, y),
+            );
+            next = next.addConnectionPoint(
+              targetShapeId,
+              targetLocal.x,
+              targetLocal.y,
+            );
+            final updated = next.findShapeById(targetShapeId);
+            fixedIndex =
+                updated == null || updated.connectionPoints.isEmpty
+                    ? null
+                    : updated.connectionPoints.length - 1;
+          } else {
+            // Locked targets remain valid whole-shape glue targets, but must
+            // not be mutated to host a new custom connection point.
+            fixedIndex = null;
+          }
+        }
         // [x]/[y] are page inches from the canvas; nested connectors store
         // Begin/End in parent-local space.
-        final local = _pagePointToConnectorLocal(page, connectorId, Offset2D(x, y));
-        return page.setConnectorEndpoint(
+        final local =
+            _pagePointToConnectorLocal(next, connectorId, Offset2D(x, y));
+        return next.setConnectorEndpoint(
           connectorId,
           begin: begin,
           targetShapeId: targetShapeId,
-          connectionPointIndex: connectionPointIndex,
+          connectionPointIndex: fixedIndex,
           x: local.x,
           y: local.y,
         );

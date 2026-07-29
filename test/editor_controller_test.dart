@@ -1937,6 +1937,65 @@ void main() {
     expect(conn.endY, closeTo(top.y, 1e-6));
   });
 
+  test('custom-position connector glue creates fixed points atomically', () {
+    final c = newDocWithTwoRects();
+    final rects = c.currentPage!.shapes.toList();
+    final a = rects[0], b = rects[1];
+    final aPointCount = a.connectionPoints.length;
+    final bPointCount = b.connectionPoints.length;
+    final ax = a.pinX + a.width * 0.2;
+    final ay = a.pinY - a.height * 0.15;
+    final bx = b.pinX - b.width * 0.2;
+    final by = b.pinY + b.height * 0.15;
+
+    c.createConnector(
+      ax,
+      ay,
+      bx,
+      by,
+      beginTarget: a.id,
+      endTarget: b.id,
+      beginFixedAtPosition: true,
+      endFixedAtPosition: true,
+    );
+
+    var page = c.currentPage!;
+    final connectorId = c.singleSelectedId!;
+    final begin = page.connects.singleWhere(
+      (e) => e.fromSheetId == connectorId && e.isBegin,
+    );
+    final end = page.connects.singleWhere(
+      (e) => e.fromSheetId == connectorId && e.isEnd,
+    );
+    expect(
+      page.findShapeById(a.id)!.connectionPoints,
+      hasLength(aPointCount + 1),
+    );
+    expect(
+      page.findShapeById(b.id)!.connectionPoints,
+      hasLength(bPointCount + 1),
+    );
+    expect(VsdxPage.fixedConnectionIndex(begin), aPointCount);
+    expect(VsdxPage.fixedConnectionIndex(end), bPointCount);
+    final route = VsdxPage.connectorRoute(page.findShapeById(connectorId)!);
+    expect(route.first.x, closeTo(ax, 1e-6));
+    expect(route.first.y, closeTo(ay, 1e-6));
+    expect(route.last.x, closeTo(bx, 1e-6));
+    expect(route.last.y, closeTo(by, 1e-6));
+
+    c.undo();
+    page = c.currentPage!;
+    expect(page.findShapeById(connectorId), isNull);
+    expect(
+      page.findShapeById(a.id)!.connectionPoints,
+      hasLength(aPointCount),
+    );
+    expect(
+      page.findShapeById(b.id)!.connectionPoints,
+      hasLength(bPointCount),
+    );
+  });
+
   test('createConnector without CP index uses whole-shape perimeter glue', () {
     final c = newDocWithTwoRects();
     final rects = c.currentPage!.shapes.toList();

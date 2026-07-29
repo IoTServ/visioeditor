@@ -79,6 +79,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   drag existing points to move them, double-click or right-click a point to
   remove it, and right-click any connector segment to add a point at that
   position. Clear Waypoints and `Alt+Shift+R` restore the automatic route.
+- **Connector drop modifiers**: hold **Alt/Option** while dropping a new or
+  existing connector endpoint inside a shape to append a custom fixed
+  connection point at that exact position; hold **Shift** to force floating
+  whole-shape/perimeter glue even when an existing blue point is nearby. Custom
+  point creation, glue and undo are atomic, and locked targets fall back to
+  floating glue without being mutated.
 - **Text tool** (drawio's "Text"): drop a borderless, fill-less text box that
   drops straight into in-place editing; an untyped box is discarded on commit
   or cancel. It can still be given a background or border afterwards.

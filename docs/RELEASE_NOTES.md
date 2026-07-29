@@ -23,8 +23,11 @@ byte-for-byte, so formulas and structure survive a save.
   segment or waypoint to add, remove or clear routing points. Drop flowchart
   shapes from the stencil palette, or double-click blank canvas to open the
   common-shape picker. Drag from a shape's directional arrow to start a fixed
-  connector; hold Ctrl/Cmd while dragging to clone the shape at any drop point
-  and connect it. Alt+Shift+Arrow also clones/connects in any direction.
+  connector; hold Alt/Option while dropping an endpoint inside a shape to add
+  a custom fixed connection point, or Shift to force floating perimeter glue.
+  Hold Ctrl/Cmd while dragging a directional arrow to clone the shape at any
+  drop point and connect it. Alt+Shift+Arrow also clones/connects in any
+  direction.
 - **Create with AI** using the built-in multi-turn diagram assistant. Configure
   OpenAI-compatible, Anthropic, Gemini or local Ollama engines, discuss and
   revise a process, then open the validated Diagram Spec or Mermaid result as
@@ -33,11 +36,12 @@ byte-for-byte, so formulas and structure survive a save.
 - **Edit** with select / move / resize (8 handles) / rotate, duplicate,
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
   Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise
-  shape, connector and ruler-guide edits. Ctrl/Cmd+Shift+Arrow adjusts size and
-  Alt+Shift+R clears connector waypoints. Cmd/Ctrl+Shift+Y fits selected shapes
-  to their wrapped text. Shift-clicking the Format-panel trash button removes
-  a shape together with its incident connectors; plain Delete keeps them as
-  floating lines.
+  shape, waypoint and ruler-guide edits (on connector endpoints it creates a
+  custom fixed point when dropped inside a shape). Ctrl/Cmd+Shift+Arrow adjusts
+  size and Alt+Shift+R clears connector waypoints. Cmd/Ctrl+Shift+Y fits
+  selected shapes to their wrapped text. Shift-clicking the Format-panel trash
+  button removes a shape together with its incident connectors; plain Delete
+  keeps them as floating lines.
 - **Arrange** with multi-select (Shift/Ctrl/Cmd-click, enclosed marquee, or
   Alt-marquee for intersecting items), Alt-click cycling through overlaps,
   Alt+Shift-click deselection,
