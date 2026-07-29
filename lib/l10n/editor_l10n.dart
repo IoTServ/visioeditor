@@ -125,6 +125,10 @@ class EditorL10n {
   String get flipVertical => _t('flipVertical');
   String get rotateLeft90 => _t('rotateLeft90');
   String get rotateRight90Shortcut => _t('rotateRight90Shortcut');
+  String get rotateRight90 =>
+      locale.languageCode == 'zh' ? '向右旋转 90°' : 'Rotate 90° right';
+  String get turnSelection =>
+      locale.languageCode == 'zh' ? '旋转 / 反向' : 'Turn / Reverse';
   String get centerHorizontally => _t('centerHorizontally');
   String get centerHorizontallyPage => _t('centerHorizontallyPage');
   String get centerVertically => _t('centerVertically');
@@ -451,6 +455,10 @@ class EditorL10n {
   String get clearTextFormatting =>
       locale.languageCode == 'zh' ? '清除文字格式' : 'Remove Formatting';
   String get noShapeData => _t('noShapeData');
+  String get copyData =>
+      locale.languageCode == 'zh' ? '复制形状数据' : 'Copy Data';
+  String get pasteData =>
+      locale.languageCode == 'zh' ? '粘贴形状数据' : 'Paste Data';
   String get noLink => _t('noLink');
   String get alignLeft => _t('alignLeft');
   String get alignRight => _t('alignRight');

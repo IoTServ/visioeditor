@@ -83,6 +83,10 @@ byte-for-byte, so formulas and structure survive a save.
   A shape's context menu can Select Connections, and Clear Anchors changes
   fixed-point glue on selected or incident connectors back to automatic
   perimeter attachment without disconnecting either terminal.
+  Turn / Reverse now uses Cmd/Ctrl+R for both 90° shape turns and semantic
+  connector reversal. Copy Data / Paste Data transfers complete Shape Data
+  metadata; context-menu paste preserves target labels, while the draw.io
+  Alt+Shift+B/E shortcuts also transfer the source label.
   F2 also edits a selected label; Home restores a centred 100% view and
   Cmd/Ctrl+J fits the current page. Cmd/Ctrl+Shift+G/O/L toggle the grid,
   Outline and Layers panels, while Cmd/Ctrl+Shift+K toggles the Shapes sidebar.

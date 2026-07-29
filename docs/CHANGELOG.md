@@ -418,6 +418,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   selected shapes, back to automatic perimeter attachment while keeping both
   terminals connected. Locked connectors are skipped and the batch undoes in
   one step.
+- **Turn / Reverse and Shape Data clipboard** (draw.io): Cmd/Ctrl+R now turns
+  ordinary shapes but semantically reverses connectors, including their
+  terminals, route and arrowheads; mixed selections undo in one step. Copy Data
+  / Paste Data preserve full Visio Property-row metadata, support batch paste
+  while skipping locked shapes, and keep target labels from the context menu.
+  The draw.io Alt+Shift+B/E shortcuts copy data and paste the source label too.
 - **Bundled sample drawings** (from the BSD `vsdx` project) openable from the
   empty state; the full set is copied to `packages/vsdx/test/fixtures/`.
 - **Keyboard**: Cmd+N/O/W/S/Z/Shift+Z/D/C/V/X/A, Cmd+Shift+F/B (to front/back),

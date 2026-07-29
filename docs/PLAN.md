@@ -1414,6 +1414,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   关联连接线，把 `ToPart≥100` / `Connections.Xn` 恢复为 `ToPart=3` / `PinX` 自动边界
   胶合，保留两端目标、刷新路由并合并为单步撤销。命令跳过锁定连接线和锁定图层，复用现有
   Connect 与 Writer 往返。补控制器选择/锚点/撤销及画布右键菜单回归。
+- 2026-07-29 — **对齐 draw.io Turn / Reverse 与 Copy/Paste Data**：
+  `Cmd/Ctrl+R` 对普通形状执行 90° 旋转、对连接线执行端点/固定连接点/路径/箭头语义反向，
+  混合选择合并为单步撤销，并在右键菜单按选择显示 Turn / Reverse。Shape Data 剪贴板完整
+  保留 Property 行的 label/prompt/format/type/formula 等元数据；右键 Paste Data 保留目标
+  标签，`Alt+Shift+B/E` 按 draw.io 的 Shift 语义同时粘贴源标签，多选批量应用并跳过锁定
+  形状/图层。补控制器、应用级快捷键和画布菜单回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

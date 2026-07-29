@@ -5165,9 +5165,44 @@ class EditorController extends ChangeNotifier {
     rotateShape(s.id, localAngle);
   }
 
-  /// Rotate every selected shape 90° about its own pin (drawio Ctrl+R). Pass
-  /// `clockwise: false` to turn the other way.
-  void rotateSelection90({bool clockwise = true}) {
+  /// Whether the selection contains an editable shape that draw.io's
+  /// Turn / Reverse command can change.
+  bool get canTurnSelection {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    return _selectionRoots(page, _selection).any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null && !shape.locked && !isOnLockedLayer(id);
+    });
+  }
+
+  /// Whether every selected item is a connector (used to label draw.io's
+  /// combined Turn / Reverse context-menu command as Reverse).
+  bool get selectionOnlyConnectors {
+    final page = currentPage;
+    return page != null &&
+        _selection.isNotEmpty &&
+        _selection.every(
+          (id) => page.findShapeById(id)?.isGlueableConnector == true,
+        );
+  }
+
+  /// draw.io Turn / Reverse: vertices turn 90° while connectors reverse their
+  /// semantic direction (terminals, route and arrowheads). A mixed selection
+  /// is committed as one undo step.
+  void turnSelection({bool clockwise = true}) =>
+      _turnSelection90(clockwise: clockwise, reverseConnectors: true);
+
+  /// Rotate every selected shape 90° about its own pin. Unlike draw.io's
+  /// combined [turnSelection] command, this always rotates 1-D geometry and is
+  /// retained for the explicit left / right rotation controls.
+  void rotateSelection90({bool clockwise = true}) =>
+      _turnSelection90(clockwise: clockwise, reverseConnectors: false);
+
+  void _turnSelection90({
+    required bool clockwise,
+    required bool reverseConnectors,
+  }) {
     if (_selection.isEmpty) return;
     final page0 = currentPage;
     if (page0 == null) return;
@@ -5189,15 +5224,19 @@ class EditorController extends ChangeNotifier {
     };
     updateCurrentPage((page) {
       var next = page;
-      var rotated = false;
+      var changed = false;
       for (final id in roots) {
         final s = next.findShapeById(id);
         if (s == null) continue;
         if (s.isGlueableConnector) {
-          next = next.updateShapeById(
-            id,
-            (sh) => _rotate1DAboutPin(next, sh, delta),
-          );
+          if (reverseConnectors) {
+            next = next.reverseConnector(id);
+          } else {
+            next = next.updateShapeById(
+              id,
+              (sh) => _rotate1DAboutPin(next, sh, delta),
+            );
+          }
         } else {
           final parentId = next.findParentId(id);
           if (parentId == null) {
@@ -5229,9 +5268,9 @@ class EditorController extends ChangeNotifier {
             );
           }
         }
-        rotated = true;
+        changed = true;
       }
-      return rotated
+      return changed
           ? next
               .recalculateFormulas(changedShapeIds: movedIds)
               .rerouteConnectors(
@@ -7149,6 +7188,75 @@ class EditorController extends ChangeNotifier {
   /// the single selection, or an empty list.
   List<VsdxUserProperty> get selectedProperties =>
       singleSelected?.userProperties ?? const <VsdxUserProperty>[];
+
+  ({List<VsdxUserProperty> properties, String label})? _shapeDataClipboard;
+
+  /// draw.io Copy Data reads the first selected cell, including an empty data
+  /// set (which can subsequently clear data on paste).
+  bool get canCopyShapeData {
+    final page = currentPage;
+    return page != null &&
+        _selection.isNotEmpty &&
+        page.findShapeById(_selection.first) != null;
+  }
+
+  /// Whether at least one selected, editable shape can receive copied data.
+  bool get canPasteShapeData {
+    if (_shapeDataClipboard == null) return false;
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null &&
+          !shape.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Copy the first selected shape's complete Shape Data rows and label.
+  void copyShapeData() {
+    if (!canCopyShapeData) return;
+    final shape = currentPage!.findShapeById(_selection.first)!;
+    _shapeDataClipboard = (
+      properties: List<VsdxUserProperty>.of(shape.userProperties),
+      label: _shapeLabel(shape),
+    );
+    notifyListeners();
+  }
+
+  /// Paste copied Shape Data to every editable selected shape in one undo step.
+  ///
+  /// Context-menu paste preserves each target label. draw.io's
+  /// Alt+Shift+E shortcut keeps Shift active and therefore also pastes the
+  /// source label, exposed through [includeLabel].
+  void pasteShapeData({bool includeLabel = false}) {
+    final clipboard = _shapeDataClipboard;
+    final page = currentPage;
+    if (clipboard == null || page == null) return;
+    final targets = <int>[
+      for (final id in _selection)
+        if (page.findShapeById(id) case final shape?
+            when !shape.locked && !isOnLockedLayer(id))
+          id,
+    ];
+    if (targets.isEmpty) return;
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in targets) {
+        next = next.updateShapeById(id, (shape) {
+          var updated = shape.copyWith(
+            userProperties:
+                List<VsdxUserProperty>.of(clipboard.properties),
+          );
+          if (includeLabel) {
+            updated = _withLabelText(updated, clipboard.label);
+          }
+          return updated;
+        });
+      }
+      return next;
+    });
+  }
 
   /// Replace a shape's Shape Data with [props] (one undo step). Empty [props]
   /// clears the `<Section N="Property">` on save. Names should be unique;

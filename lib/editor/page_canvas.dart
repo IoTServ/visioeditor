@@ -1476,6 +1476,16 @@ class _PageCanvasState extends State<PageCanvas> {
           child: Text(el.clearAnchors),
         ));
       }
+      if (_c.canTurnSelection) {
+        items.add(PopupMenuItem(
+          value: 'turnSelection',
+          child: Text(
+            _c.selectionOnlyConnectors
+                ? el.reverseConnector
+                : el.turnSelection,
+          ),
+        ));
+      }
       items.add(const PopupMenuDivider());
       items.add(PopupMenuItem(value: 'front', child: Text(el.bringToFront)));
       items.add(PopupMenuItem(value: 'back', child: Text(el.sendToBack)));
@@ -1517,6 +1527,12 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_c.hasStyleClipboard) {
         items.add(PopupMenuItem(
             value: 'pasteStyle', child: Text(el.pasteStyle)));
+      }
+      if (_c.canCopyShapeData) {
+        items.add(PopupMenuItem(value: 'copyData', child: Text(el.copyData)));
+      }
+      if (_c.canPasteShapeData) {
+        items.add(PopupMenuItem(value: 'pasteData', child: Text(el.pasteData)));
       }
       items.add(const PopupMenuDivider());
       items.add(PopupMenuItem(value: 'edit', child: Text(el.editText)));
@@ -1634,6 +1650,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.clearSelectedConnectorWaypoints();
       case 'clearAnchors':
         _c.clearSelectedConnectorAnchors();
+      case 'turnSelection':
+        _c.turnSelection();
       case 'front':
         _c.bringSelectionToFront();
       case 'back':
@@ -1656,6 +1674,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.copyStyle();
       case 'pasteStyle':
         _c.pasteStyle();
+      case 'copyData':
+        _c.copyShapeData();
+      case 'pasteData':
+        _c.pasteShapeData();
       case 'edit':
         final id = hit ?? (_c.selection.isEmpty ? null : _c.selection.first);
         if (id != null) _beginTextEdit(id);

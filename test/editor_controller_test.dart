@@ -557,6 +557,65 @@ void main() {
     expect((after.beginY! - after.endY!).abs(), greaterThan(1.5));
   });
 
+  test('Turn / Reverse rotates vertices and reverses edges in one undo', () {
+    final c = newDocWithTwoRects();
+    addTearDown(c.dispose);
+    final shapes = c.currentPage!.shapes.toList();
+    final source = shapes[0];
+    final target = shapes[1];
+    c.createConnector(
+      source.pinX,
+      source.pinY,
+      target.pinX,
+      target.pinY,
+      beginTarget: source.id,
+      endTarget: target.id,
+    );
+    final connectorId = c.singleSelectedId!;
+    final beforeConnector = c.currentPage!.findShapeById(connectorId)!;
+    expect(beforeConnector.line.beginArrow, 0);
+    expect(beforeConnector.line.endArrow, isNot(0));
+
+    c.setSelection(<int>{source.id, connectorId});
+    expect(c.canTurnSelection, isTrue);
+    c.turnSelection();
+
+    var page = c.currentPage!;
+    expect(
+      page.findShapeById(source.id)!.angleRad,
+      closeTo(-math.pi / 2, 1e-9),
+    );
+    var rows = page.connects
+        .where((connect) => connect.fromSheetId == connectorId)
+        .toList();
+    expect(
+      rows.singleWhere((connect) => connect.isBegin).toSheetId,
+      target.id,
+    );
+    expect(
+      rows.singleWhere((connect) => connect.isEnd).toSheetId,
+      source.id,
+    );
+    final reversed = page.findShapeById(connectorId)!;
+    expect(reversed.line.beginArrow, beforeConnector.line.endArrow);
+    expect(reversed.line.endArrow, beforeConnector.line.beginArrow);
+
+    c.undo();
+    page = c.currentPage!;
+    expect(page.findShapeById(source.id)!.angleRad, closeTo(0, 1e-9));
+    rows = page.connects
+        .where((connect) => connect.fromSheetId == connectorId)
+        .toList();
+    expect(
+      rows.singleWhere((connect) => connect.isBegin).toSheetId,
+      source.id,
+    );
+    expect(
+      rows.singleWhere((connect) => connect.isEnd).toSheetId,
+      target.id,
+    );
+  });
+
   test('flipHorizontal on 1D mirrors Begin/End without FlipX', () {
     final c = EditorController()..newDocument();
     c
@@ -1938,6 +1997,70 @@ void main() {
     // Editing is a single undo step back to no data.
     c.undo();
     expect(c.selectedProperties, isEmpty);
+  });
+
+  test('Copy / Paste Data preserves labels unless Shift paste requests it', () {
+    final c = newDocWithTwoRects();
+    addTearDown(c.dispose);
+    final shapes = c.currentPage!.shapes.toList();
+    final source = shapes[0];
+    final target = shapes[1];
+    const properties = <VsdxUserProperty>[
+      VsdxUserProperty(
+        name: 'Owner',
+        label: 'Process owner',
+        value: 'Alice',
+        prompt: 'Team or person',
+        type: 0,
+      ),
+    ];
+    c.setShapeText(source.id, 'Source label');
+    c.setShapeText(target.id, 'Target label');
+    c.setShapeProperties(source.id, properties);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 1,
+      ),
+      7,
+      7,
+    );
+    final locked = c.singleSelectedId!;
+    c.setShapeText(locked, 'Locked label');
+    c.setShapeProperties(locked, const <VsdxUserProperty>[
+      VsdxUserProperty(name: 'Status', value: 'Keep'),
+    ]);
+    c.toggleLock();
+
+    c.selectOnly(source.id);
+    expect(c.canCopyShapeData, isTrue);
+    c.copyShapeData();
+
+    c.setSelection(<int>{target.id, locked});
+    expect(c.canPasteShapeData, isTrue);
+    c.pasteShapeData();
+    var pasted = c.currentPage!.findShapeById(target.id)!;
+    expect(pasted.userProperties, properties);
+    expect(pasted.richText.plainText, 'Target label');
+    var untouched = c.currentPage!.findShapeById(locked)!;
+    expect(untouched.userProperties.single.name, 'Status');
+    expect(untouched.richText.plainText, 'Locked label');
+
+    c.undo();
+    pasted = c.currentPage!.findShapeById(target.id)!;
+    expect(pasted.userProperties, isEmpty);
+    expect(pasted.richText.plainText, 'Target label');
+
+    c.pasteShapeData(includeLabel: true);
+    pasted = c.currentPage!.findShapeById(target.id)!;
+    expect(pasted.userProperties, properties);
+    expect(pasted.richText.plainText, 'Source label');
+    untouched = c.currentPage!.findShapeById(locked)!;
+    expect(untouched.userProperties.single.value, 'Keep');
+    expect(untouched.richText.plainText, 'Locked label');
   });
 
   test('page setup: size, orientation and background are undoable', () {

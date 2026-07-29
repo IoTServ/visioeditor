@@ -81,7 +81,7 @@ void main() {
 
     final bold = onBold ?? () {};
     final find = onFind ?? () {};
-    final rotate = onRotate ?? () {};
+    final rotate = onRotate ?? c.turnSelection;
 
     return <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.delete): deleteSel,
@@ -166,6 +166,16 @@ void main() {
         alt: true,
         shift: true,
       ): c.clearSelectedConnectorWaypoints,
+      const SingleActivator(
+        LogicalKeyboardKey.keyB,
+        alt: true,
+        shift: true,
+      ): c.copyShapeData,
+      const SingleActivator(
+        LogicalKeyboardKey.keyE,
+        alt: true,
+        shift: true,
+      ): () => c.pasteShapeData(includeLabel: true),
       const SingleActivator(
         LogicalKeyboardKey.arrowUp,
         alt: true,
@@ -709,6 +719,89 @@ void main() {
     await tester.pump();
 
     expect(c.currentPage!.findShapeById(connector)!.waypoints, isEmpty);
+  });
+
+  testWidgets('Cmd/Ctrl+R reverses a selected connector', (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1.5,
+        height: 1,
+      ),
+      6,
+      3,
+    );
+    final target = c.singleSelectedId!;
+    c.createConnector(
+      2,
+      3,
+      6,
+      3,
+      beginTarget: source,
+      endTarget: target,
+    );
+    final connector = c.singleSelectedId!;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+
+    final rows = c.currentPage!.connects
+        .where((connect) => connect.fromSheetId == connector)
+        .toList();
+    expect(rows.singleWhere((connect) => connect.isBegin).toSheetId, target);
+    expect(rows.singleWhere((connect) => connect.isEnd).toSheetId, source);
+  });
+
+  testWidgets('Alt+Shift+B/E copies data and pastes the source label',
+      (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c.setShapeText(source, 'Source');
+    c.setShapeProperties(source, const <VsdxUserProperty>[
+      VsdxUserProperty(name: 'Owner', value: 'Alice'),
+    ]);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1.5,
+        height: 1,
+      ),
+      5,
+      3,
+    );
+    final target = c.singleSelectedId!;
+    c.setShapeText(target, 'Target');
+    c.selectOnly(source);
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    c.selectOnly(target);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+
+    final pasted = c.currentPage!.findShapeById(target)!;
+    expect(pasted.userProperties.single.name, 'Owner');
+    expect(pasted.userProperties.single.value, 'Alice');
+    expect(pasted.richText.plainText, 'Source');
   });
 
   testWidgets('Alt+Shift+arrow clones and connects without canvas focus',

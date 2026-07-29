@@ -1195,6 +1195,8 @@ void main() {
     await tester.tapAt(childCentre, buttons: kSecondaryButton);
     await tester.pumpAndSettle();
     expect(find.text('Remove from Group'), findsOneWidget);
+    await tester.ensureVisible(find.text('Remove from Group'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Remove from Group'));
     await tester.pumpAndSettle();
     expect(controller.currentPage!.findParentId(childId), isNull);
@@ -1258,6 +1260,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Collapse Selection'), findsOneWidget);
     expect(find.text('Expand Selection'), findsNothing);
+    await tester.ensureVisible(find.text('Collapse Selection'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Collapse Selection'));
     await tester.pumpAndSettle();
     expect(controller.isCollapsed(containerId), isTrue);
@@ -1266,6 +1270,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Expand Selection'), findsOneWidget);
     expect(find.text('Collapse Selection'), findsNothing);
+    await tester.ensureVisible(find.text('Expand Selection'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Expand Selection'));
     await tester.pumpAndSettle();
     expect(controller.isCollapsed(containerId), isFalse);
@@ -2201,6 +2207,90 @@ void main() {
       rows.map((connect) => connect.toSheetId),
       containsAll(<int>[source, target]),
     );
+  });
+
+  testWidgets('context menu copies shape data, preserves label, and turns shape',
+      (tester) async {
+    late int source;
+    late int target;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        source = _addRect(c);
+        c.setShapeText(source, 'Source');
+        c.setShapeProperties(source, const <VsdxUserProperty>[
+          VsdxUserProperty(
+            name: 'Owner',
+            label: 'Process owner',
+            value: 'Alice',
+            prompt: 'Team or person',
+          ),
+        ]);
+        c.addShapeFromBuilderAt(
+          (id, cx, cy) => VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: cx,
+            pinY: cy,
+            width: 2,
+            height: 1,
+          ),
+          7,
+          5,
+        );
+        target = c.singleSelectedId!;
+        c.setShapeText(target, 'Target');
+        c.selectOnly(source);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final canvasOrigin = tester.getTopLeft(find.byType(PageCanvas));
+    Offset shapePoint(int id) {
+      final shape = page.findShapeById(id)!;
+      return _pagePoint(
+        canvasOrigin,
+        camera,
+        page,
+        shape.pinX,
+        shape.pinY,
+      );
+    }
+
+    await tester.tapAt(shapePoint(source), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Copy Data'), findsOneWidget);
+    expect(find.text('Turn / Reverse'), findsOneWidget);
+    await tester.ensureVisible(find.text('Copy Data'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy Data'));
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(shapePoint(target), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Paste Data'), findsOneWidget);
+    await tester.ensureVisible(find.text('Paste Data'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste Data'));
+    await tester.pumpAndSettle();
+
+    var pasted = controller.currentPage!.findShapeById(target)!;
+    expect(pasted.userProperties.single.name, 'Owner');
+    expect(pasted.userProperties.single.label, 'Process owner');
+    expect(pasted.userProperties.single.prompt, 'Team or person');
+    expect(pasted.richText.plainText, 'Target');
+
+    await tester.tapAt(shapePoint(target), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Turn / Reverse'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Turn / Reverse'));
+    await tester.pumpAndSettle();
+
+    pasted = controller.currentPage!.findShapeById(target)!;
+    expect(pasted.angleRad, closeTo(-math.pi / 2, 1e-9));
   });
 
   testWidgets(

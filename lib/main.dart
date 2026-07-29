@@ -1404,17 +1404,35 @@ class _EditorHomePageState extends State<EditorHomePage> {
     }, shift: true);
     mod(LogicalKeyboardKey.keyR, () {
       final cur = c();
-      if (cur != null && cur.hasSelection) cur.rotateSelection90();
+      if (cur != null && cur.canTurnSelection) cur.turnSelection();
     });
     mod(LogicalKeyboardKey.keyR, () {
       final cur = c();
       if (cur == null) return;
       if (cur.hasSelection) {
-        cur.rotateSelection90(clockwise: false);
+        cur.turnSelection(clockwise: false);
       } else {
         cur.clearDefaultStyle();
       }
     }, shift: true);
+    // draw.io Shape Data clipboard. The Shift held by the paste shortcut means
+    // the copied label is applied too; context-menu Paste Data preserves it.
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyB,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.copyShapeData();
+    };
+    bindings[const SingleActivator(
+      LogicalKeyboardKey.keyE,
+      alt: true,
+      shift: true,
+    )] = () {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      c()?.pasteShapeData(includeLabel: true);
+    };
     bindings[const SingleActivator(
       LogicalKeyboardKey.keyR,
       alt: true,
@@ -4164,7 +4182,7 @@ class _PropertyPanel extends StatelessWidget {
                     () => controller.rotateSelection90(clockwise: false)),
                 _iconBtn(
                     Icons.rotate_right,
-                    EditorL10n.of(context).rotateRight90Shortcut,
+                    EditorL10n.of(context).rotateRight90,
                     () => controller.rotateSelection90()),
               ],
               _iconBtn(
