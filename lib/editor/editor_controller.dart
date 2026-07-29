@@ -87,6 +87,10 @@ class EditorController extends ChangeNotifier {
   // View reset requests from app-level shortcuts. The canvas owns its
   // transform, so Home signals it through this monotonic serial.
   int _resetViewSerial = 0;
+  int _smartFitSerial = 0;
+  int _customZoomSerial = 0;
+  int _zoomInSerial = 0;
+  int _zoomOutSerial = 0;
 
   // Page-width fit requests from app chrome. This is separate from
   // fit-to-window because the latter also constrains the page height.
@@ -9268,6 +9272,35 @@ class EditorController extends ChangeNotifier {
 
   void requestResetView() {
     _resetViewSerial++;
+    notifyListeners();
+  }
+
+  /// Ask the canvas to toggle between centred 100% and fit-to-window.
+  int get smartFitSerial => _smartFitSerial;
+
+  void requestSmartFit() {
+    _smartFitSerial++;
+    notifyListeners();
+  }
+
+  /// Ask the canvas to open draw.io's custom percentage zoom dialog.
+  int get customZoomSerial => _customZoomSerial;
+
+  void requestCustomZoom() {
+    _customZoomSerial++;
+    notifyListeners();
+  }
+
+  int get zoomInSerial => _zoomInSerial;
+  int get zoomOutSerial => _zoomOutSerial;
+
+  void requestZoomIn() {
+    _zoomInSerial++;
+    notifyListeners();
+  }
+
+  void requestZoomOut() {
+    _zoomOutSerial++;
     notifyListeners();
   }
 

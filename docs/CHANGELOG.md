@@ -6,6 +6,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io Smart Fit and global zoom keys**: with no selection, `Enter` now
+  toggles between a centred 100% view and Fit Window. `Cmd/Ctrl+0` opens the
+  existing validated custom-percentage dialog, matching draw.io rather than
+  silently resetting the canvas, and `Cmd/Ctrl +/-` now works after focus moves
+  to app chrome or side panels as well as directly on the canvas.
 - **draw.io Extras controls and ordering chords**: the More menu now exposes
   **Copy on Connect** and **Collapse/Expand Controls**. Copy on Connect clones
   a connector's source at an empty drop point and wires the clone in the same
@@ -482,7 +487,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   nudge the selection, Tab/Shift+Tab to traverse visible nested shapes,
   Alt+Tab to select the parent, F2/Enter to edit labels, Home to reset the
   view, Cmd+J to fit the page, Cmd+Shift+G/O/L to toggle grid/Outline/Layers,
-  and canvas zoom (Cmd +/- , Cmd+0 = 100%, Cmd+Shift+H = fit).
+  and canvas zoom (Cmd +/- , Home = 100%, Cmd+Shift+H = fit).
 - **macOS document integration**: the app declares the Visio drawing file
   types (`.vsdx` / `.vsdm` / `.vstx` / `.vstm` / `.vssx` / `.vssm`) so Finder
   offers "Open With → Editor for Visio Diagrams"; double-click, "Open With" and

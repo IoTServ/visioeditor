@@ -1145,12 +1145,18 @@ class _EditorHomePageState extends State<EditorHomePage> {
       shift: true,
     )] = clearLabels;
 
-    // draw.io: Enter edits the selected label. Cmd/Ctrl+Enter duplicates the
-    // selection; table cells are promoted to their containing row.
+    // draw.io: Enter edits the selected label, or toggles reset/fit when there
+    // is no selection. Cmd/Ctrl+Enter duplicates the selection; table cells are
+    // promoted to their containing row.
     bindings[const SingleActivator(LogicalKeyboardKey.enter)] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
       final cur = c();
-      cur?.requestEditSelectionLabel();
+      if (cur == null || !cur.hasDocument) return;
+      if (cur.hasSelection) {
+        cur.requestEditSelectionLabel();
+      } else {
+        cur.requestSmartFit();
+      }
     };
     bindings[const SingleActivator(LogicalKeyboardKey.f2)] = () {
       if (_presentationMode || _isEditableTextFocused()) return;
@@ -1416,6 +1422,39 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (_presentationMode || _isEditableTextFocused()) return;
       c()?.requestFitToWindow();
     }, shift: true);
+    void requestView(VoidCallback action) {
+      if (_presentationMode || _isEditableTextFocused()) return;
+      action();
+    }
+    mod(
+      LogicalKeyboardKey.digit0,
+      () => requestView(() => c()?.requestCustomZoom()),
+    );
+    mod(
+      LogicalKeyboardKey.equal,
+      () => requestView(() => c()?.requestZoomIn()),
+    );
+    mod(
+      LogicalKeyboardKey.equal,
+      () => requestView(() => c()?.requestZoomIn()),
+      shift: true,
+    );
+    mod(
+      LogicalKeyboardKey.add,
+      () => requestView(() => c()?.requestZoomIn()),
+    );
+    mod(
+      LogicalKeyboardKey.numpadAdd,
+      () => requestView(() => c()?.requestZoomIn()),
+    );
+    mod(
+      LogicalKeyboardKey.minus,
+      () => requestView(() => c()?.requestZoomOut()),
+    );
+    mod(
+      LogicalKeyboardKey.numpadSubtract,
+      () => requestView(() => c()?.requestZoomOut()),
+    );
     // draw.io: collapse / expand selected containers.
     mod(LogicalKeyboardKey.home, () {
       if (_presentationMode || _isEditableTextFocused()) return;

@@ -471,7 +471,7 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   `showMenu`：剪切/复制/粘贴/复制副本/删除、置顶/置底、复制样式/粘贴样式、编辑文本；空白处
   粘贴/全选/适应窗口。(3) **复制/粘贴样式**——`EditorController.copyStyle/pasteStyle`（填充/线条/
   文本 run 样式，单撤销步）。(4) **快捷键对齐**——Cmd+A 全选、Cmd+X 剪切、Cmd+Shift+F/B 置顶置底、
-  Cmd+Alt+C/V 复制/粘贴样式；画布内键盘缩放（Cmd +/- 、Cmd+0=100%、Cmd+Shift+H=适应）。App 测试
+  Cmd+Alt+C/V 复制/粘贴样式；画布内键盘缩放（Cmd +/- 、Home=100%、Cmd+Shift+H=适应）。App 测试
   加右键菜单用例（共组件 3 + snap 单测 5）。`dart analyze` 零问题、`flutter test`（--no-pub）通过、
   `flutter build macos` 成功。
 - 2026-07-10 — **对齐 drawio 交互（批次二）——分组 / 取消分组**：引擎 `VsdxPage.group/ungroup`
@@ -1462,6 +1462,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   自动胶合并合并为单次撤销；后者统一控制折叠箭头绘制、命中及 Ctrl/Cmd+Home/End 命令，
   关闭时保留文档既有折叠状态。补源码定义的 `Cmd/Ctrl+Alt+Shift+F/B` 单层前移/后移，
   并覆盖状态、本地化、真实画布拖拽与两平台快捷键回归。
+- 2026-07-29 — **对齐 draw.io Smart Fit 与全局缩放键**：无选区 Enter 按源码语义在
+  100% 居中和 Fit Window 间智能切换；将 `Cmd/Ctrl+0` 从旧的静默重置校正为打开已验证的
+  Custom Zoom 百分比对话框，100% 重置继续由 Home 承担。`Cmd/Ctrl +/-` 通过控制器请求
+  提升为应用级快捷键，工具栏/侧栏取得焦点后仍可缩放，同时保留画布聚焦时的直接响应。
+  补控制器信号、画布双态判定、真实对话框与跨焦点快捷键回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

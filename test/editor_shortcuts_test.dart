@@ -180,8 +180,13 @@ void main() {
         LogicalKeyboardKey.arrowDown,
         control: true,
       ): () => resizeOrSelectPage(0, 1),
-      const SingleActivator(LogicalKeyboardKey.enter):
-          c.requestEditSelectionLabel,
+      const SingleActivator(LogicalKeyboardKey.enter): () {
+        if (c.hasSelection) {
+          c.requestEditSelectionLabel();
+        } else {
+          c.requestSmartFit();
+        }
+      },
       const SingleActivator(LogicalKeyboardKey.f2):
           c.requestEditSelectionLabel,
       const SingleActivator(
@@ -372,6 +377,35 @@ void main() {
         alt: true,
       ): c.selectParentShape,
       const SingleActivator(LogicalKeyboardKey.home): c.requestResetView,
+      const SingleActivator(
+        LogicalKeyboardKey.digit0,
+        meta: true,
+      ): c.requestCustomZoom,
+      const SingleActivator(
+        LogicalKeyboardKey.digit0,
+        control: true,
+      ): c.requestCustomZoom,
+      const SingleActivator(
+        LogicalKeyboardKey.equal,
+        meta: true,
+      ): c.requestZoomIn,
+      const SingleActivator(
+        LogicalKeyboardKey.equal,
+        meta: true,
+        shift: true,
+      ): c.requestZoomIn,
+      const SingleActivator(
+        LogicalKeyboardKey.add,
+        control: true,
+      ): c.requestZoomIn,
+      const SingleActivator(
+        LogicalKeyboardKey.minus,
+        meta: true,
+      ): c.requestZoomOut,
+      const SingleActivator(
+        LogicalKeyboardKey.numpadSubtract,
+        control: true,
+      ): c.requestZoomOut,
       const SingleActivator(
         LogicalKeyboardKey.keyJ,
         meta: true,
@@ -675,7 +709,7 @@ void main() {
   });
 
   testWidgets(
-      'Enter requests label edit and Cmd+Enter duplicates a table row',
+      'Enter edits labels, duplicates rows, or Smart Fits without selection',
       (tester) async {
     final c = EditorController()..newDocument();
     addTearDown(c.dispose);
@@ -732,10 +766,16 @@ void main() {
       TableOps.isTable(c.currentPage!.findShapeById(c.singleSelectedId!)!),
       isTrue,
     );
+
+    c.clearSelection();
+    final smartFitSerial = c.smartFitSerial;
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(c.smartFitSerial, smartFitSerial + 1);
   });
 
   testWidgets(
-      'F2, Home, Cmd+J, Cmd+Shift+H and Cmd+Shift+G match draw.io commands',
+      'view and panel shortcuts match draw.io commands',
       (tester) async {
     final c = ctrlWithRect();
     await pumpHarness(tester, c);
@@ -764,6 +804,29 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pump();
     expect(c.fitSerial, fitSerial + 2);
+
+    final customZoomSerial = c.customZoomSerial;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit0);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.customZoomSerial, customZoomSerial + 1);
+
+    final zoomInSerial = c.zoomInSerial;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.zoomInSerial, zoomInSerial + 1);
+
+    final zoomOutSerial = c.zoomOutSerial;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpadSubtract);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(c.zoomOutSerial, zoomOutSerial + 1);
 
     final gridWasVisible = c.showGrid;
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);

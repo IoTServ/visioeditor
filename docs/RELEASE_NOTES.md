@@ -111,11 +111,14 @@ byte-for-byte, so formulas and structure survive a save.
   Style uses Alt+Shift+C; both actions are available in the Text panel and
   selection menus.
   F2 also edits a selected label; Home restores a centred 100% view and
-  Cmd/Ctrl+J or Cmd/Ctrl+Shift+H fits the current page.
+  Cmd/Ctrl+J or Cmd/Ctrl+Shift+H fits the current page. With no selection,
+  Enter intelligently toggles between those reset and fitted views.
   Cmd/Ctrl+Shift+G/O/L toggle the grid, Outline and Layers panels, while
   Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
   Clicking the live zoom percentage opens draw.io's 25%–400% presets,
   whole-page fit, Fit Page Width, and a validated custom-percentage dialog.
+  Cmd/Ctrl+0 opens the same dialog, while Cmd/Ctrl +/- zooms globally even
+  after focus has moved into app chrome.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical
@@ -183,6 +186,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Clear selected labels | `Shift+Delete` / `Shift+Backspace` |
 | Delete with connected lines | Hold `Shift` and click the Format-panel trash button |
 | Edit selected label | `Enter` / `F2` |
+| Smart Fit (no selection) | `Enter` |
 | Duplicate selection (table cell → row) | `Cmd/Ctrl+Enter` |
 | Delete table row / complete column selection | `Delete` / `Backspace` |
 | Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` / `Cmd/Ctrl+}` / `{` |
@@ -190,6 +194,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
 | Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` or `Cmd/Ctrl+Shift+H` |
+| Custom zoom / zoom in / zoom out | `Cmd/Ctrl+0` / `Cmd/Ctrl++` / `Cmd/Ctrl+-` |
 | Toggle grid / Outline / Layers | `Cmd/Ctrl+Shift+G` / `Cmd/Ctrl+Shift+O` / `Cmd/Ctrl+Shift+L` |
 | Select connectors / vertices | `Cmd/Ctrl+Shift+E` / `Cmd/Ctrl+Shift+I` |
 | Select tree children / subtree / parent / siblings | `Alt+Shift+X` / `Alt+Shift+T` / `Alt+Shift+P` / `Alt+Shift+S` |

@@ -141,6 +141,10 @@ class _PageCanvasState extends State<PageCanvas> {
   int _lastFitPageWidthSerial = 0;
   // Reset-to-100% requests (draw.io Home) — tracks resetViewSerial.
   int _lastResetViewSerial = 0;
+  int _lastSmartFitSerial = 0;
+  int _lastCustomZoomSerial = 0;
+  int _lastZoomInSerial = 0;
+  int _lastZoomOutSerial = 0;
   Offset _doubleTapPos = Offset.zero;
   _Handle? _activeHandle;
   int? _resizeShapeId;
@@ -625,6 +629,24 @@ class _PageCanvasState extends State<PageCanvas> {
         (v.height - content.height) / 2,
       );
     });
+  }
+
+  /// draw.io Enter with no selection: reset first, then fit if already reset.
+  void _smartFit() {
+    final v = _viewport;
+    if (v == null) return;
+    final content = _contentSize;
+    final resetOffset = Offset(
+      (v.width - content.width) / 2,
+      (v.height - content.height) / 2,
+    );
+    final atReset = (_scale - 1).abs() < 0.00001 &&
+        (_offset - resetOffset).distance < 5;
+    if (atReset) {
+      _applyFit(v);
+    } else {
+      _resetZoom();
+    }
   }
 
   // --- Hit testing -----------------------------------------------------------
@@ -4122,7 +4144,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // While editing text the field owns the keyboard; never mutate shapes.
     if (_editingShapeId != null) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    // Keyboard zoom (Cmd/Ctrl +/- , Cmd/Ctrl+0 = 100%, Cmd/Ctrl+Shift+H = fit).
+    // Keyboard zoom (Cmd/Ctrl +/- , Cmd/Ctrl+0 custom, Cmd/Ctrl+Shift+H fit).
     final zoomMod = HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
     if (zoomMod) {
@@ -4133,7 +4155,7 @@ class _PageCanvasState extends State<PageCanvas> {
         _zoomBy(1 / 1.2);
         return KeyEventResult.handled;
       } else if (key == LogicalKeyboardKey.digit0) {
-        _resetZoom();
+        unawaited(_showCustomZoomDialog());
         return KeyEventResult.handled;
       } else if (HardwareKeyboard.instance.isShiftPressed &&
           key == LogicalKeyboardKey.keyH) {
@@ -4489,6 +4511,30 @@ class _PageCanvasState extends State<PageCanvas> {
               _lastResetViewSerial = _c.resetViewSerial;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) _resetZoom();
+              });
+            }
+            if (_c.smartFitSerial != _lastSmartFitSerial) {
+              _lastSmartFitSerial = _c.smartFitSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _smartFit();
+              });
+            }
+            if (_c.customZoomSerial != _lastCustomZoomSerial) {
+              _lastCustomZoomSerial = _c.customZoomSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) unawaited(_showCustomZoomDialog());
+              });
+            }
+            if (_c.zoomInSerial != _lastZoomInSerial) {
+              _lastZoomInSerial = _c.zoomInSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _zoomBy(1.2);
+              });
+            }
+            if (_c.zoomOutSerial != _lastZoomOutSerial) {
+              _lastZoomOutSerial = _c.zoomOutSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _zoomBy(1 / 1.2);
               });
             }
             // Publish the current view transform to the Outline minimap.

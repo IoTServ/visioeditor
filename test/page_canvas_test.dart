@@ -141,6 +141,16 @@ void main() {
         (camera.viewport.height - camera.content.height) / 2,
       ),
     );
+
+    controller.requestSmartFit();
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, lessThan(1));
+
+    controller.requestSmartFit();
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, 1);
   });
 
   testWidgets('controller can fit the page width without constraining height',
@@ -179,7 +189,8 @@ void main() {
       (tester) async {
     final camera = CanvasCamera();
     addTearDown(camera.dispose);
-    await _pumpCanvas(tester, const Size(800, 600), camera: camera);
+    final controller =
+        await _pumpCanvas(tester, const Size(800, 600), camera: camera);
     Future<void> openZoomMenu() async {
       tester
           .state<PopupMenuButtonState<Object>>(
@@ -215,6 +226,27 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump();
     expect(camera.scale, 1.75);
+
+    controller.requestZoomIn();
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, closeTo(2.1, 1e-9));
+    controller.requestZoomOut();
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, closeTo(1.75, 1e-9));
+
+    controller.requestCustomZoom();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('custom-zoom-field')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('custom-zoom-field')),
+      '125',
+    );
+    await tester.tap(find.byKey(const ValueKey('apply-custom-zoom')));
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, 1.25);
   });
 
   testWidgets('double-click blank canvas inserts from the quick shape picker',
