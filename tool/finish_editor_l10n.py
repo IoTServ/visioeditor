@@ -201,6 +201,46 @@ SELECT_VERTICES = {
     "sw": "Chagua vipeo",
 }
 
+FIT_PAGE_WIDTH = {
+    "en": "Fit Page Width",
+    "zh": "适应页面宽度",
+    "ja": "ページ幅",
+    "ko": "페이지 너비에 맞추기",
+    "es": "Ajustar ancho de página",
+    "fr": "Ajuster à la largeur de la page",
+    "de": "Seitenbreite",
+    "pt": "Ajustar largura da página",
+    "ru": "По ширине страницы",
+    "it": "Adatta alla larghezza della pagina",
+    "ar": "ملائمة عرض الصفحة",
+    "id": "Paskan Lebar Halaman",
+    "hi": "पेज चौड़ाई फ़िट करें",
+    "nl": "Passend op paginabreedte",
+    "tr": "Sayfa genişliğine sığdır",
+    "pl": "Dopasuj szerokość strony",
+    "vi": "Vừa với chiều rộng trang",
+    "th": "ความกว้างพอดีหน้า",
+    "sv": "Anpassa sidbredd",
+    "uk": "За шириною сторінки",
+    "he": "התאם לרוחב העמוד",
+    "cs": "Přizpůsobit šířce stránky",
+    "ro": "Potrivește cu lățimea paginii",
+    "el": "Προσαρμογή στο Πλάτος Σελίδας",
+    "hu": "Oldalszélességhez igazítás",
+    "da": "Tilpas sidens bredde",
+    "ms": "Muatkan Lebar Halaman",
+    "fi": "Sovita sivun leveys",
+    "nb": "Tilpass sidebredde",
+    "sk": "Prispôsobiť šírke stránky",
+    "bn": "পৃষ্ঠার প্রস্থে ফিট করুন",
+    "fa": "تنظیم عرض صفحه",
+    "bg": "Побиране в ширината на страницата",
+    "hr": "Prilagodi širini stranice",
+    "ca": "Ajusta l'amplada de pàgina",
+    "fil": "Ikasya sa lapad ng pahina",
+    "sw": "Linganisha Upana wa Ukurasa",
+}
+
 
 def load_existing() -> dict[str, dict[str, str]]:
     """Load all generated tables as the offline regeneration baseline."""
@@ -255,6 +295,8 @@ def phrase_to_bank(en_ui: dict[str, str], phrases: dict[str, str]) -> dict[str, 
 
 def main() -> None:
     existing = load_existing()
+    for lang, value in FIT_PAGE_WIDTH.items():
+        existing[lang]["fitPageWidth"] = value
     en_all = existing["en"]
     zh_all = existing["zh"]
     en_ui = {k: v for k, v in en_all.items() if not k.startswith("st_")}

@@ -19,6 +19,8 @@ void main() {
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');
     expect(zh.toolPan, '平移 / 缩放画布');
+    expect(en.fitPageWidth, 'Fit Page Width');
+    expect(zh.fitPageWidth, '适应页面宽度');
     expect(en.stencilGroup('Flowchart'), 'Flowchart');
     expect(zh.stencilGroup('Flowchart'), '流程图');
     expect(zh.stencil('Rounded Rectangle'), '圆角矩形');

@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io zoom menu parity**: the live canvas percentage now opens draw.io's
+  25%–400% preset list, whole-page fit, **Fit Page Width**, and a validated
+  custom-percentage dialog. Page-width fitting fills the horizontal viewport
+  while preserving the current vertical reading position; it is also available
+  from the compact toolbar and the blank-canvas context menu. The new label is
+  localized across all 37 supported UI languages.
 - **Built-in AI diagram chat**: configure an OpenAI-compatible, Anthropic,
   Gemini or Ollama endpoint, model and API key; discuss and revise a process in
   a multi-turn conversation; validate Diagram Spec or Mermaid returned by the
@@ -446,7 +452,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   reproducibly rendered by `tool/gen_app_icon.dart`.
 - **Status bar & zoom readout**: a bottom status strip (page size, current
   page, unsaved marker, selection count) and a live zoom percentage on the
-  canvas zoom control (click it to fit-to-screen).
+  canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
 - Hover-connect arrows no longer vanish before the pointer reaches them: the

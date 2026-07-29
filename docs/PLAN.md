@@ -1420,6 +1420,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   保留 Property 行的 label/prompt/format/type/formula 等元数据；右键 Paste Data 保留目标
   标签，`Alt+Shift+B/E` 按 draw.io 的 Shift 语义同时粘贴源标签，多选批量应用并跳过锁定
   形状/图层。补控制器、应用级快捷键和画布菜单回归。
+- 2026-07-29 — **对齐 draw.io 缩放菜单与页面宽度适配**：画布实时百分比改为缩放下拉，
+  对齐 25%–400% 九档预设、Fit Window、Fit Page Width 与 Custom Zoom；自定义输入校验后
+  以视口中心为焦点缩放。Fit Page Width 仅按可用宽度计算比例，水平居中并保留当前垂直
+  阅读位置，同时接入控制器请求通道、紧凑工具栏和空白画布右键菜单。复用 draw.io 资源为
+  37 种界面语言补齐文案，并增加 camera 变换、菜单交互和本地化完整性回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

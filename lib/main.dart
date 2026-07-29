@@ -1775,6 +1775,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.toggleGrid();
                               case 'fit':
                                 cur.requestFitToWindow();
+                              case 'fitPageWidth':
+                                cur.requestFitPageWidth();
+                              case 'resetView':
+                                cur.requestResetView();
                               case 'layers':
                                 setState(
                                     () => _showLayersPanel = !_showLayersPanel);
@@ -1815,6 +1819,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               PopupMenuItem<String>(
                                 value: 'fit',
                                 child: Text(el.fitToWindowShortcut),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'fitPageWidth',
+                                child: Text(el.fitPageWidth),
+                              ),
+                              PopupMenuItem<String>(
+                                value: 'resetView',
+                                child: const Text('100%'),
                               ),
                               PopupMenuItem<String>(
                                 value: 'layers',

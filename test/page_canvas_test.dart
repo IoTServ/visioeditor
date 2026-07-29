@@ -143,6 +143,80 @@ void main() {
     );
   });
 
+  testWidgets('controller can fit the page width without constraining height',
+      (tester) async {
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(320, 240),
+      camera: camera,
+    );
+    final initialScale = camera.scale;
+
+    controller.requestFitPageWidth();
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    final expectedScale = (camera.viewport.width - 80) / camera.content.width;
+    expect(camera.scale, closeTo(expectedScale, 1e-9));
+    expect(camera.scale, greaterThan(initialScale));
+    expect(
+      camera.offset.dx,
+      closeTo(
+        (camera.viewport.width - camera.content.width * expectedScale) / 2,
+        1e-9,
+      ),
+    );
+    // Portrait content is deliberately taller than the viewport at this zoom.
+    expect(
+      camera.content.height * camera.scale,
+      greaterThan(camera.viewport.height),
+    );
+  });
+
+  testWidgets('zoom percentage menu offers draw.io presets and custom zoom',
+      (tester) async {
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    await _pumpCanvas(tester, const Size(800, 600), camera: camera);
+    Future<void> openZoomMenu() async {
+      tester
+          .state<PopupMenuButtonState<Object>>(
+            find.byKey(const ValueKey('zoom-menu')),
+          )
+          .showButtonMenu();
+      await tester.pumpAndSettle();
+    }
+
+    await openZoomMenu();
+    expect(find.text('25%'), findsOneWidget);
+    expect(find.text('400%'), findsOneWidget);
+    expect(find.text('Fit Page Width'), findsOneWidget);
+    expect(find.text('Custom…'), findsOneWidget);
+
+    await tester.tap(find.text('200%'));
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, 2);
+
+    await openZoomMenu();
+    await tester.ensureVisible(find.text('Custom…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom…'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('custom-zoom-field')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('custom-zoom-field')),
+      '175',
+    );
+    await tester.tap(find.byKey(const ValueKey('apply-custom-zoom')));
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(camera.scale, 1.75);
+  });
+
   testWidgets('double-click blank canvas inserts from the quick shape picker',
       (tester) async {
     final camera = CanvasCamera();

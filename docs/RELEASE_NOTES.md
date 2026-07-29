@@ -90,6 +90,8 @@ byte-for-byte, so formulas and structure survive a save.
   F2 also edits a selected label; Home restores a centred 100% view and
   Cmd/Ctrl+J fits the current page. Cmd/Ctrl+Shift+G/O/L toggle the grid,
   Outline and Layers panels, while Cmd/Ctrl+Shift+K toggles the Shapes sidebar.
+  Clicking the live zoom percentage opens draw.io's 25%–400% presets,
+  whole-page fit, Fit Page Width, and a validated custom-percentage dialog.
 - **Style & text** — fill / line colour, line weight, no-fill / no-line, line
   dash style, arrowheads, fill / line opacity, drop shadow, and text formatting
   (font family, size, bold / italic / underline, colour, horizontal + vertical

@@ -84,6 +84,10 @@ class EditorController extends ChangeNotifier {
   // transform, so Home signals it through this monotonic serial.
   int _resetViewSerial = 0;
 
+  // Page-width fit requests from app chrome. This is separate from
+  // fit-to-window because the latter also constrains the page height.
+  int _fitPageWidthSerial = 0;
+
   // Find state (draw.io Ctrl+F): query, match-case / whole-word flags, and hits
   // across every page as (pageIndex, shapeId) pairs plus the current index.
   String _findQuery = '';
@@ -8806,6 +8810,15 @@ class EditorController extends ChangeNotifier {
   /// Ask the canvas to zoom so the whole page fits, centred in the viewport.
   void requestFitToWindow() {
     _fitSerial++;
+    notifyListeners();
+  }
+
+  /// Monotonic counter the canvas watches for draw.io's "Fit Page Width".
+  int get fitPageWidthSerial => _fitPageWidthSerial;
+
+  /// Ask the canvas to fill the available width without constraining height.
+  void requestFitPageWidth() {
+    _fitPageWidthSerial++;
     notifyListeners();
   }
 

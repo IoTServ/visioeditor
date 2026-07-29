@@ -136,6 +136,8 @@ class _PageCanvasState extends State<PageCanvas> {
   int _lastTextEditRequestSerial = 0;
   // Fit-to-window requests (toolbar / zoom controls) — tracks fitSerial.
   int _lastFitSerial = 0;
+  // Fit-page-width requests — tracks fitPageWidthSerial.
+  int _lastFitPageWidthSerial = 0;
   // Reset-to-100% requests (draw.io Home) — tracks resetViewSerial.
   int _lastResetViewSerial = 0;
   Offset _doubleTapPos = Offset.zero;
@@ -448,22 +450,108 @@ class _PageCanvasState extends State<PageCanvas> {
     });
   }
 
-  void _zoomBy(double factor, [Offset? focus]) {
+  /// Fit the page horizontally, matching draw.io's `fitPageWidth` command.
+  ///
+  /// The content point currently at the viewport centre stays there vertically
+  /// so switching from a manually panned view does not unexpectedly jump to a
+  /// different part of a tall page.
+  void _applyFitPageWidth(Size viewport) {
+    final content = _contentSize;
+    if (content.width <= 0 || content.height <= 0 || _scale <= 0) return;
+    const margin = 40.0;
+    final scale = ((viewport.width - margin * 2) / content.width)
+        .clamp(widget.minScale, widget.maxScale)
+        .toDouble();
+    final centreContentY = (viewport.height / 2 - _offset.dy) / _scale;
+    final offset = Offset(
+      (viewport.width - content.width * scale) / 2,
+      viewport.height / 2 - centreContentY * scale,
+    );
+    if (_scale == scale && _offset == offset) return;
+    setState(() {
+      _scale = scale;
+      _offset = offset;
+    });
+  }
+
+  /// Set an absolute zoom while keeping the viewport centre stable.
+  void _setZoom(double target, [Offset? focus]) {
     final viewport = _viewport;
-    if (viewport == null) return;
+    if (viewport == null || !target.isFinite || target <= 0 || _scale <= 0) {
+      return;
+    }
     final f = focus ?? Offset(viewport.width / 2, viewport.height / 2);
-    final target = (_scale * factor).clamp(widget.minScale, widget.maxScale).toDouble();
-    if (target == _scale) return;
+    final scale =
+        target.clamp(widget.minScale, widget.maxScale).toDouble();
+    if (scale == _scale) return;
     final contentPt = (f - _offset) / _scale;
     setState(() {
-      _scale = target;
-      _offset = f - contentPt * target;
+      _scale = scale;
+      _offset = f - contentPt * scale;
     });
+  }
+
+  void _zoomBy(double factor, [Offset? focus]) {
+    _setZoom(_scale * factor, focus);
   }
 
   void fitToScreen() {
     final v = _viewport;
     if (v != null) _applyFit(v);
+  }
+
+  void fitPageWidth() {
+    final v = _viewport;
+    if (v != null) _applyFitPageWidth(v);
+  }
+
+  Future<void> _showCustomZoomDialog() async {
+    final el = EditorL10n.of(context);
+    final result = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) {
+        var value = _scale * 100;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final valid = value.isFinite && value > 0;
+            void submit() {
+              if (valid) Navigator.pop(dialogContext, value / 100);
+            }
+
+            return AlertDialog(
+              title: Text('${el.custom}…'),
+              content: TextFormField(
+                key: const ValueKey('custom-zoom-field'),
+                initialValue: '${(_scale * 100).round()}',
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(suffixText: '%'),
+                onChanged: (text) {
+                  setDialogState(() {
+                    value = double.tryParse(text.replaceAll(',', '.')) ??
+                        double.nan;
+                  });
+                },
+                onFieldSubmitted: (_) => submit(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(el.cancel),
+                ),
+                FilledButton(
+                  key: const ValueKey('apply-custom-zoom'),
+                  onPressed: valid ? submit : null,
+                  child: Text(el.apply),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (result != null && mounted) _setZoom(result);
   }
 
   /// Centre (and optionally zoom-to-fit) the given content-px [rect] in the
@@ -1603,6 +1691,8 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(
           value: 'selectVertices', child: Text(el.selectVertices)));
       items.add(PopupMenuItem(value: 'fit', child: Text(el.fitToWindow)));
+      items.add(PopupMenuItem(
+          value: 'fitPageWidth', child: Text(el.fitPageWidth)));
       if (_c.hasPageGuides) {
         items.add(PopupMenuItem(
             value: 'clearGuides', child: Text(el.clearGuides)));
@@ -1721,6 +1811,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.selectVertices();
       case 'fit':
         fitToScreen();
+      case 'fitPageWidth':
+        fitPageWidth();
       case 'clearGuides':
         _c.clearPageGuides();
     }
@@ -4299,6 +4391,12 @@ class _PageCanvasState extends State<PageCanvas> {
                 if (mounted) fitToScreen();
               });
             }
+            if (_c.fitPageWidthSerial != _lastFitPageWidthSerial) {
+              _lastFitPageWidthSerial = _c.fitPageWidthSerial;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) fitPageWidth();
+              });
+            }
             if (_c.resetViewSerial != _lastResetViewSerial) {
               _lastResetViewSerial = _c.resetViewSerial;
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4618,6 +4716,9 @@ class _PageCanvasState extends State<PageCanvas> {
                             onZoomIn: () => _zoomBy(1.25),
                             onZoomOut: () => _zoomBy(0.8),
                             onFit: fitToScreen,
+                            onFitPageWidth: fitPageWidth,
+                            onSetZoom: _setZoom,
+                            onCustomZoom: _showCustomZoomDialog,
                           ),
                         ),
                     ],
@@ -5036,15 +5137,34 @@ class _ZoomControls extends StatelessWidget {
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onFit,
+    required this.onFitPageWidth,
+    required this.onSetZoom,
+    required this.onCustomZoom,
   });
 
   final double zoom;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onFit;
+  final VoidCallback onFitPageWidth;
+  final ValueChanged<double> onSetZoom;
+  final VoidCallback onCustomZoom;
+
+  static const _scales = <double>[
+    0.25,
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5,
+    2,
+    3,
+    4,
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final el = EditorL10n.of(context);
     return Material(
       elevation: 3,
       borderRadius: BorderRadius.circular(8),
@@ -5055,21 +5175,54 @@ class _ZoomControls extends StatelessWidget {
           IconButton(
             onPressed: onFit,
             icon: const Icon(Icons.fit_screen_outlined),
-            tooltip: EditorL10n.of(context).fitToWindowShortcut,
+            tooltip: el.fitToWindowShortcut,
           ),
           const VerticalDivider(width: 1, indent: 8, endIndent: 8),
           IconButton(
             onPressed: onZoomOut,
             icon: const Icon(Icons.remove),
-            tooltip: EditorL10n.of(context).zoomOut,
+            tooltip: el.zoomOut,
           ),
-          Tooltip(
-            message: EditorL10n.of(context).fitToWindow,
-            child: InkWell(
-              onTap: onFit,
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: 52,
+          PopupMenuButton<Object>(
+            key: const ValueKey('zoom-menu'),
+            tooltip: '${(zoom * 100).round()}%',
+            onSelected: (value) {
+              switch (value) {
+                case final double scale:
+                  onSetZoom(scale);
+                case _ZoomMenuAction.fit:
+                  onFit();
+                case _ZoomMenuAction.fitPageWidth:
+                  onFitPageWidth();
+                case _ZoomMenuAction.custom:
+                  onCustomZoom();
+              }
+            },
+            itemBuilder: (context) => <PopupMenuEntry<Object>>[
+              for (final scale in _scales)
+                PopupMenuItem<Object>(
+                  value: scale,
+                  child: Text('${(scale * 100).round()}%'),
+                ),
+              const PopupMenuDivider(),
+              PopupMenuItem<Object>(
+                value: _ZoomMenuAction.fit,
+                child: Text(el.fitToWindow),
+              ),
+              PopupMenuItem<Object>(
+                value: _ZoomMenuAction.fitPageWidth,
+                child: Text(el.fitPageWidth),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<Object>(
+                value: _ZoomMenuAction.custom,
+                child: Text('${el.custom}…'),
+              ),
+            ],
+            child: SizedBox(
+              width: 52,
+              height: 40,
+              child: Center(
                 child: Text(
                   '${(zoom * 100).round()}%',
                   textAlign: TextAlign.center,
@@ -5081,10 +5234,12 @@ class _ZoomControls extends StatelessWidget {
           IconButton(
             onPressed: onZoomIn,
             icon: const Icon(Icons.add),
-            tooltip: EditorL10n.of(context).zoomIn,
+            tooltip: el.zoomIn,
           ),
         ],
       ),
     );
   }
 }
+
+enum _ZoomMenuAction { fit, fitPageWidth, custom }
