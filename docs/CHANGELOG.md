@@ -6,6 +6,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io centre vs spacing distribution**: horizontal and vertical
+  **Distribute** now equalise shape centres exactly like draw.io, while the new
+  **Distribute Horizontal/Vertical Spacing** commands equalise visible gaps
+  between differently sized shapes. Both modes are available from More and
+  Arrange, ignore connectors when checking availability, preserve the outer
+  anchors, honour locked content, and remain single-step undoable edits.
 - **draw.io one-shot grid alignment and Select None**: **Snap Selection to
   Grid** now immediately quantises selected vertex position/size and connector
   waypoints, skips locked content, and commits mixed selections as one undoable

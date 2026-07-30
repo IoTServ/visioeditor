@@ -48,8 +48,8 @@ byte-for-byte, so formulas and structure survive a save.
 - **Arrange** with multi-select (Shift/Ctrl/Cmd-click, enclosed marquee, or
   Alt-marquee for intersecting items), Alt-click cycling through overlaps,
   Alt+Shift-click deselection,
-  align, distribute, same-size and copy/paste-size tools, two-shape position
-  swapping, connector reversal,
+  align, centre-distribute, equal-spacing distribute, same-size and
+  copy/paste-size tools, two-shape position swapping, connector reversal,
   z-order (bring to front / send to back) and **group / ungroup**. Dragging
   shows **smart alignment guides** that snap to nearby shapes, equal spacing,
   connection points and the orange page centre; Guides can be toggled

@@ -552,6 +552,12 @@ class EditorL10n {
   String get alignBottomPage => _t('alignBottomPage');
   String get distributeH => _t('distributeH');
   String get distributeV => _t('distributeV');
+  String get distributeSpacingH => locale.languageCode == 'zh'
+      ? '水平等间距分布'
+      : 'Distribute Horizontal Spacing';
+  String get distributeSpacingV => locale.languageCode == 'zh'
+      ? '垂直等间距分布'
+      : 'Distribute Vertical Spacing';
   String get sameSize => _t('sameSize');
   String get sameWidth => _t('sameWidth');
   String get sameHeight => _t('sameHeight');

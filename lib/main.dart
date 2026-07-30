@@ -1964,6 +1964,14 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.clearSelection();
                               case 'snapSelection':
                                 cur.snapSelectionToGrid();
+                              case 'distributeH':
+                                cur.distributeHorizontally();
+                              case 'distributeV':
+                                cur.distributeVertically();
+                              case 'distributeSpacingH':
+                                cur.distributeHorizontalSpacing();
+                              case 'distributeSpacingV':
+                                cur.distributeVerticalSpacing();
                               case 'find':
                                 _openFind();
                               case 'replace':
@@ -2107,6 +2115,26 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'snapSelection',
                               enabled: cur.canSnapSelectionToGrid,
                               child: Text(el.snapSelectionToGrid),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'distributeH',
+                              enabled: cur.canDistributeSelection,
+                              child: Text(el.distributeH),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'distributeV',
+                              enabled: cur.canDistributeSelection,
+                              child: Text(el.distributeV),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'distributeSpacingH',
+                              enabled: cur.canDistributeSelection,
+                              child: Text(el.distributeSpacingH),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'distributeSpacingV',
+                              enabled: cur.canDistributeSelection,
+                              child: Text(el.distributeSpacingV),
                             ),
                             PopupMenuItem<String>(
                               value: 'find',
@@ -4597,7 +4625,7 @@ class _PropertyPanel extends StatelessWidget {
                         ? EditorL10n.of(context).alignBottomPage
                         : EditorL10n.of(context).alignBottom,
                     controller.alignBottom),
-                if (count >= 3) ...[
+                if (controller.canDistributeSelection) ...[
                   _iconBtn(
                       Icons.horizontal_distribute,
                       EditorL10n.of(context).distributeH,
@@ -4606,6 +4634,14 @@ class _PropertyPanel extends StatelessWidget {
                       Icons.vertical_distribute,
                       EditorL10n.of(context).distributeV,
                       controller.distributeVertically),
+                  _iconBtn(
+                      Icons.space_bar,
+                      EditorL10n.of(context).distributeSpacingH,
+                      controller.distributeHorizontalSpacing),
+                  _iconBtn(
+                      Icons.import_export,
+                      EditorL10n.of(context).distributeSpacingV,
+                      controller.distributeVerticalSpacing),
                 ],
                 if (count >= 2) ...[
                   _iconBtn(Icons.width_normal, EditorL10n.of(context).sameWidth,

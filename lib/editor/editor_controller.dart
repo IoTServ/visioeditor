@@ -4786,61 +4786,83 @@ class EditorController extends ChangeNotifier {
     });
   }
 
-  /// Equalise gaps between axis-aligned bounds (draw.io Distribute).
-  void distributeHorizontally() => _align((page, ids) {
-        if (ids.length < 3) return const {};
-        final bounds = _alignBounds2D(page, ids);
-        if (bounds.length < 3) return const {};
-        final sorted = bounds.keys.toList()
-          ..sort((a, b) => bounds[a]!.$1.compareTo(bounds[b]!.$1));
-        final first = bounds[sorted.first]!;
-        final last = bounds[sorted.last]!;
-        final totalW = sorted.fold<double>(
-          0,
-          (sum, id) {
-            final b = bounds[id]!;
-            return sum + (b.$3 - b.$1);
-          },
-        );
-        final gap = (last.$3 - first.$1 - totalW) / (sorted.length - 1);
-        var cursor = first.$1;
-        final out = <int, (double, double)>{};
-        for (final id in sorted) {
-          final b = bounds[id]!;
-          final w = b.$3 - b.$1;
-          out[id] = (cursor - b.$1, 0.0);
-          cursor += w + gap;
-        }
-        return out;
-      });
+  /// Whether at least three selected vertex roots can use draw.io's Distribute
+  /// or Distribute Spacing commands.
+  bool get canDistributeSelection {
+    final page = currentPage;
+    if (page == null) return false;
+    final roots = _selectionRoots(page, _selection);
+    return _alignBounds2D(page, roots).length >= 3;
+  }
 
-  /// Equalise gaps between axis-aligned bounds (draw.io Distribute).
-  void distributeVertically() => _align((page, ids) {
-        if (ids.length < 3) return const {};
-        final bounds = _alignBounds2D(page, ids);
-        if (bounds.length < 3) return const {};
-        final sorted = bounds.keys.toList()
-          ..sort((a, b) => bounds[a]!.$2.compareTo(bounds[b]!.$2));
-        final first = bounds[sorted.first]!;
-        final last = bounds[sorted.last]!;
-        final totalH = sorted.fold<double>(
+  /// Equalise vertex centres, matching draw.io's primary Distribute command.
+  void distributeHorizontally() =>
+      _distribute(horizontal: true, spacing: false);
+
+  /// Equalise vertex centres, matching draw.io's primary Distribute command.
+  void distributeVertically() =>
+      _distribute(horizontal: false, spacing: false);
+
+  /// Equalise the gaps between vertex bounds (Distribute > Spacing).
+  void distributeHorizontalSpacing() =>
+      _distribute(horizontal: true, spacing: true);
+
+  /// Equalise the gaps between vertex bounds (Distribute > Spacing).
+  void distributeVerticalSpacing() =>
+      _distribute(horizontal: false, spacing: true);
+
+  void _distribute({required bool horizontal, required bool spacing}) {
+    _align((page, ids) {
+      if (ids.length < 3) return const {};
+      final bounds = _alignBounds2D(page, ids);
+      if (bounds.length < 3) return const {};
+      double start((double, double, double, double) b) =>
+          horizontal ? b.$1 : b.$2;
+      double end((double, double, double, double) b) =>
+          horizontal ? b.$3 : b.$4;
+      double centre((double, double, double, double) b) =>
+          (start(b) + end(b)) / 2;
+      final sorted = bounds.keys.toList()
+        ..sort((a, b) => start(bounds[a]!).compareTo(start(bounds[b]!)));
+      final first = bounds[sorted.first]!;
+      final last = bounds[sorted.last]!;
+      final targets = <int, double>{};
+      if (spacing) {
+        final totalSize = sorted.fold<double>(
           0,
-          (sum, id) {
-            final b = bounds[id]!;
-            return sum + (b.$4 - b.$2);
-          },
+          (sum, id) => sum + end(bounds[id]!) - start(bounds[id]!),
         );
-        final gap = (last.$4 - first.$2 - totalH) / (sorted.length - 1);
-        var cursor = first.$2;
-        final out = <int, (double, double)>{};
+        final gap =
+            (end(last) - start(first) - totalSize) / (sorted.length - 1);
+        var cursor = start(first);
         for (final id in sorted) {
           final b = bounds[id]!;
-          final h = b.$4 - b.$2;
-          out[id] = (0.0, cursor - b.$2);
-          cursor += h + gap;
+          targets[id] = cursor;
+          cursor += end(b) - start(b) + gap;
         }
-        return out;
-      });
+      } else {
+        final step =
+            (centre(last) - centre(first)) / (sorted.length - 1);
+        for (var i = 0; i < sorted.length; i++) {
+          targets[sorted[i]] = centre(first) + step * i;
+        }
+      }
+      return <int, (double, double)>{
+        for (final id in sorted)
+          id: horizontal
+              ? (
+                  targets[id]! -
+                      (spacing ? start(bounds[id]!) : centre(bounds[id]!)),
+                  0.0,
+                )
+              : (
+                  0.0,
+                  targets[id]! -
+                      (spacing ? start(bounds[id]!) : centre(bounds[id]!)),
+                ),
+      };
+    });
+  }
 
   /// Exactly two unlocked 2-D selection roots can trade page-space centres.
   bool get canSwapSelection {

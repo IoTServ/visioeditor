@@ -141,7 +141,7 @@ void main() {
     final b = rect(e, 3, 4, w: 2);
     final d = rect(e, 8, 4, w: 1);
     e.setSelection([a, b, d]);
-    e.distributeHorizontally();
+    e.distributeHorizontalSpacing();
     final ba = bounds(e.currentPage!.findShapeById(a)!);
     final bb = bounds(e.currentPage!.findShapeById(b)!);
     final bd = bounds(e.currentPage!.findShapeById(d)!);

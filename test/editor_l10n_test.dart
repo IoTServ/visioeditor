@@ -39,6 +39,10 @@ void main() {
     expect(zh.selectNone, '取消全选');
     expect(en.snapSelectionToGrid, 'Snap Selection to Grid');
     expect(zh.snapSelectionToGrid, '所选内容对齐网格');
+    expect(en.distributeSpacingH, 'Distribute Horizontal Spacing');
+    expect(zh.distributeSpacingH, '水平等间距分布');
+    expect(en.distributeSpacingV, 'Distribute Vertical Spacing');
+    expect(zh.distributeSpacingV, '垂直等间距分布');
     expect(en.toolRectangle, 'Rectangle');
     expect(zh.toolRectangle, '矩形');
     expect(en.toolPan, 'Pan / zoom canvas');

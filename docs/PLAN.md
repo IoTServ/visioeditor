@@ -1479,6 +1479,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   图形右键菜单与 Arrange，且与只控制后续拖拽的 Snap to Grid 开关明确分离。More 同步
   补 Select None，并覆盖 draw.io 的 `Cmd/Ctrl+Shift+A` 应用级键位、中英文文案、
   控制器几何/撤销和真实菜单点击回归。
+- 2026-07-30 — **对齐 draw.io Distribute / Distribute Spacing 精确语义**：
+  对照 `Graph.distributeCells(horizontal, cells, spacing)` 将原有水平/垂直分布校正为等分
+  图形中心，并新增水平/垂直等间距命令，以可见 AABB 边缘计算不等尺寸图形间隙。两套命令
+  接入 More 与 Arrange，只在三个以上非连接线选区根可用，保留两端锚点、锁定过滤和单步
+  撤销；补不等宽/不等高差异、连接线计数、嵌套根及既有锁定行为回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用
