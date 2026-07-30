@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io single-cell Group / Ungroup containers**: Group on one editable
+  vertex now promotes it in place to a drop container instead of doing
+  nothing; Ungroup on an empty container restores an ordinary vertex without
+  replacing its geometry or ID. The explicit state round-trips through
+  `User.veContainer`, including a negative override for container-like names,
+  and is available through the existing context menu, Arrange controls and
+  `Cmd/Ctrl+G` / `Cmd/Ctrl+Shift+U` shortcuts.
 - **draw.io centre vs spacing distribution**: horizontal and vertical
   **Distribute** now equalise shape centres exactly like draw.io, while the new
   **Distribute Horizontal/Vertical Spacing** commands equalise visible gaps

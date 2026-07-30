@@ -7915,10 +7915,36 @@ class EditorController extends ChangeNotifier {
 
   // --- Grouping (drawio "Group" / "Ungroup") ---------------------------------
 
-  /// Whether the selection has ≥ 2 unlocked top-level shapes that can be grouped.
+  bool _canEnableContainer(VsdxPage page, int id) {
+    final shape = page.findShapeById(id);
+    return shape != null &&
+        !shape.is1D &&
+        shape.shapeKind != VsdxShapeKind.container &&
+        shape.shapeKind != VsdxShapeKind.swimlane &&
+        !_isStructuredGroup(shape) &&
+        !shape.locked &&
+        !isOnLockedLayer(id);
+  }
+
+  bool _canDisableEmptyContainer(VsdxPage page, int id) {
+    final shape = page.findShapeById(id);
+    return shape != null &&
+        shape.shapeKind == VsdxShapeKind.container &&
+        shape.children.isEmpty &&
+        !_isStructuredGroup(shape) &&
+        !shape.locked &&
+        !isOnLockedLayer(id);
+  }
+
+  /// Whether draw.io Group can either turn one vertex into a container or
+  /// combine at least two unlocked top-level shapes.
   bool get canGroup {
     final page = currentPage;
     if (page == null) return false;
+    if (_selection.length == 1 &&
+        _canEnableContainer(page, _selection.single)) {
+      return true;
+    }
     var n = 0;
     for (final s in page.shapes) {
       if (_selection.contains(s.id) &&
@@ -7945,7 +7971,8 @@ class EditorController extends ChangeNotifier {
     if (page == null) return false;
     for (final id in _selection) {
       if (page.findShapeById(id) case final s?
-          when _canUngroupShape(s) &&
+          when (_canUngroupShape(s) ||
+                  _canDisableEmptyContainer(page, id)) &&
               !s.locked &&
               !isOnLockedLayer(id)) {
         return true;
@@ -7987,12 +8014,23 @@ class EditorController extends ChangeNotifier {
     _reparentShapesInto(movable, null);
   }
 
-  /// Group the selected top-level shapes into a new group and select it.
-  /// Locked shapes / locked-layer shapes are left outside the group.
+  /// Draw.io Group: one selected vertex becomes a drop container; multiple
+  /// selected top-level shapes become a new group. Locked content is skipped.
   void groupSelection() {
     final doc = _document;
     final page = currentPage;
     if (doc == null || page == null) return;
+    if (_selection.length == 1) {
+      final id = _selection.single;
+      if (!_canEnableContainer(page, id)) return;
+      updateCurrentPage(
+        (page) => page.updateShapeById(
+          id,
+          (shape) => shape.withContainerEnabled(true),
+        ),
+      );
+      return;
+    }
     final ids = <int>{
       for (final s in page.shapes)
         if (_selection.contains(s.id) &&
@@ -8018,8 +8056,8 @@ class EditorController extends ChangeNotifier {
     );
   }
 
-  /// Ungroup every selected unlocked group (top-level or nested), selecting
-  /// the children.
+  /// Ungroup selected groups; an empty draw.io container becomes a normal
+  /// vertex in place, matching the upstream single-cell Group/Ungroup pair.
   void ungroupSelection() {
     final doc = _document;
     final page = currentPage;
@@ -8032,7 +8070,11 @@ class EditorController extends ChangeNotifier {
                 !isOnLockedLayer(id))
           s,
     ];
-    if (groups.isEmpty) return;
+    final emptyContainerIds = <int>[
+      for (final id in _selection)
+        if (_canDisableEmptyContainer(page, id)) id,
+    ];
+    if (groups.isEmpty && emptyContainerIds.isEmpty) return;
     // Deepest first so nested groups ungroup before their parents.
     int depth(int id) {
       var d = 0;
@@ -8049,10 +8091,19 @@ class EditorController extends ChangeNotifier {
       for (final g in groups)
         for (final c in g.children) c.id,
     };
-    final movedIds = _subtreeIds(<int>[for (final g in groups) g.id]);
+    final movedIds = _subtreeIds(<int>[
+      for (final g in groups) g.id,
+      ...emptyContainerIds,
+    ]);
     var next = page;
     for (final g in groups) {
       next = next.ungroup(g.id);
+    }
+    for (final id in emptyContainerIds) {
+      next = next.updateShapeById(
+        id,
+        (shape) => shape.withContainerEnabled(false),
+      );
     }
     if (identical(next, page)) return;
     next = next

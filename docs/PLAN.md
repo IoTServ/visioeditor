@@ -1484,6 +1484,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   图形中心，并新增水平/垂直等间距命令，以可见 AABB 边缘计算不等尺寸图形间隙。两套命令
   接入 More 与 Arrange，只在三个以上非连接线选区根可用，保留两端锚点、锁定过滤和单步
   撤销；补不等宽/不等高差异、连接线计数、嵌套根及既有锁定行为回归。
+- 2026-07-30 — **对齐 draw.io 单选 Group / Ungroup 容器语义**：`Cmd/Ctrl+G`、
+  右键菜单或 Arrange 对单个可编辑图形执行 Group 时原地启用拖放容器能力，空容器执行
+  `Cmd/Ctrl+Shift+U` Ungroup 时原地恢复普通图形；多选成组/拆组语义保持不变。新增
+  `User.veContainer` 正负显式覆盖并让 ShapeKind 解析优先采用，确保普通图形升级和名称类似
+  Container 的图形降级都能 `.vsdx` 保存重开；补 User 行保留、撤销/重做、命中容器、
+  两平台快捷键和真实画布右键回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

@@ -206,6 +206,47 @@ void main() {
     expect(snapped.height, 0.5);
   });
 
+  testWidgets('single-shape context Group enables draw.io containment',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.addShapeFromBuilderAt(
+          (shapeId, x, y) => VsdxShapeFactory.rectangle(
+            id: shapeId,
+            pinX: x,
+            pinY: y,
+            width: 2,
+            height: 1,
+          ),
+          3,
+          4,
+        );
+        id = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final centre = _pagePoint(origin, camera, page, 3, 4);
+
+    await tester.tapAt(centre, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Group'), findsOneWidget);
+    await tester.ensureVisible(find.text('Group'));
+    await tester.tap(find.text('Group'));
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.currentPage!.findShapeById(id)!.shapeKind,
+      VsdxShapeKind.container,
+    );
+  });
+
   testWidgets('controller Home request restores a centred 100% canvas view',
       (tester) async {
     final camera = CanvasCamera();

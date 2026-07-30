@@ -465,6 +465,32 @@ void main() {
         shift: true,
       ): c.toggleGrid,
       const SingleActivator(
+        LogicalKeyboardKey.keyG,
+        meta: true,
+      ): () {
+        if (c.canGroup) c.groupSelection();
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyG,
+        control: true,
+      ): () {
+        if (c.canGroup) c.groupSelection();
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyU,
+        meta: true,
+        shift: true,
+      ): () {
+        if (c.canUngroup) c.ungroupSelection();
+      },
+      const SingleActivator(
+        LogicalKeyboardKey.keyU,
+        control: true,
+        shift: true,
+      ): () {
+        if (c.canUngroup) c.ungroupSelection();
+      },
+      const SingleActivator(
         LogicalKeyboardKey.home,
         meta: true,
       ): c.collapseSelection,
@@ -589,6 +615,33 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(c.hasSelection, isFalse);
+  });
+
+  testWidgets('Cmd/Ctrl Group toggles a single vertex container',
+      (tester) async {
+    final c = ctrlWithRect();
+    final id = c.singleSelectedId!;
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(
+      c.currentPage!.findShapeById(id)!.shapeKind,
+      VsdxShapeKind.container,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyU);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(
+      c.currentPage!.findShapeById(id)!.shapeKind,
+      VsdxShapeKind.normal,
+    );
   });
 
   testWidgets('Ctrl+Delete removes selection and incident connectors',

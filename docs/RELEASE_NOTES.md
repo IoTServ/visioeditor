@@ -50,7 +50,10 @@ byte-for-byte, so formulas and structure survive a save.
   Alt+Shift-click deselection,
   align, centre-distribute, equal-spacing distribute, same-size and
   copy/paste-size tools, two-shape position swapping, connector reversal,
-  z-order (bring to front / send to back) and **group / ungroup**. Dragging
+  z-order (bring to front / send to back) and **group / ungroup**. Group on one
+  editable vertex promotes it in place to a drop container; Ungroup restores
+  an empty container to an ordinary vertex, with the state surviving `.vsdx`
+  save/reopen without changing its ID or appearance. Dragging
   shows **smart alignment guides** that snap to nearby shapes, equal spacing,
   connection points and the orange page centre; Guides can be toggled
   independently from the grid. Ctrl/Cmd-resizing a normal group changes only
@@ -210,6 +213,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Copy Text Style / Copy Size / Paste Size | `Alt+Shift+C` / `Alt+Shift+F` / `Alt+Shift+V` |
 | Edit Link / Edit Connection Points | `Alt+Shift+L` / `Alt+Shift+Q` |
 | Toggle Connection Arrows / Connection Points | `Alt+Shift+A` / `Alt+Shift+O` |
+| Group / ungroup (single vertex toggles containment) | `Cmd/Ctrl+G` / `Cmd/Ctrl+Shift+U` |
 | Bring forward / send backward one layer | `Cmd/Ctrl+Alt+Shift+F` / `Cmd/Ctrl+Alt+Shift+B` |
 | Select previous/next/first/last page (no shape selection) | `Cmd/Ctrl+Left` / `Right` / `Up` / `Down` |
 | Reorder current page (no shape selection) | `Shift+Left` / `Right` / `Up` / `Down` |

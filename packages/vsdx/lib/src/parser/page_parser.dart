@@ -490,6 +490,14 @@ class PageParser {
       is1D: is1D,
       hasImage: imagePartName != null,
       childCount: children.length,
+      containerOverride: () {
+        for (final cell in userCells) {
+          if (cell.name == VsdxShape.userContainer) {
+            return cell.value == '1';
+          }
+        }
+        return null;
+      }(),
       userProperties: props,
     );
 

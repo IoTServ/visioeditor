@@ -720,6 +720,13 @@ class VsdxShape {
   /// `'1'`, children stay in the model but are not painted or hit-tested.
   static const String userCollapsed = 'veCollapsed';
 
+  /// Explicit draw.io-style container override.
+  ///
+  /// `'1'` lets an otherwise ordinary vertex accept dropped children;
+  /// `'0'` keeps a shape whose name/master looks structural as an ordinary
+  /// vertex after Ungroup. The parser applies this before its heuristics.
+  static const String userContainer = 'veContainer';
+
   /// User-cell flag: paint this shape's label along an arc inside the text
   /// block (editor "Curved Text"). Round-trips via `User.veCurvedText`.
   static const String userCurvedText = 'veCurvedText';
@@ -751,6 +758,32 @@ class VsdxShape {
       if (c.name == userCollapsed) return c.value == '1';
     }
     return false;
+  }
+
+  /// Explicit container state, or `null` when shape-kind heuristics apply.
+  bool? get containerOverride {
+    for (final c in userCells) {
+      if (c.name == userContainer) return c.value == '1';
+    }
+    return null;
+  }
+
+  /// Enable or disable draw.io-style containment while preserving other User
+  /// rows. The explicit row makes the semantic kind survive save → reopen.
+  VsdxShape withContainerEnabled(bool value) {
+    final source = !value && collapsed ? unfold() : this;
+    final others = <VsdxUserCell>[
+      for (final c in source.userCells)
+        if (c.name != userContainer) c,
+    ];
+    return source.copyWith(
+      shapeKind:
+          value ? VsdxShapeKind.container : VsdxShapeKind.normal,
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userContainer, value: value ? '1' : '0'),
+      ],
+    );
   }
 
   /// Whether the label is painted along an arc (editor Curved Text).

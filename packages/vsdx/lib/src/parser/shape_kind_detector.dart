@@ -20,10 +20,16 @@ class ShapeKindDetector {
     required bool is1D,
     required bool hasImage,
     required int childCount,
+    bool? containerOverride,
     List<VsdxUserProperty> userProperties = const [],
   }) {
     if (hasImage) return VsdxShapeKind.picture;
     if (is1D) return VsdxShapeKind.connector;
+    if (containerOverride != null) {
+      return containerOverride
+          ? VsdxShapeKind.container
+          : VsdxShapeKind.normal;
+    }
 
     final master = (masterName ?? '').toLowerCase();
     final label = name.toLowerCase();
