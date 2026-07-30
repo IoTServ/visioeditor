@@ -35,6 +35,8 @@ void main() {
     expect(zh.editTooltip, '编辑工具提示…');
     expect(en.tooltips, 'Tooltips');
     expect(zh.tooltips, '工具提示');
+    expect(en.collapsible, 'Collapsible');
+    expect(zh.collapsible, '可折叠');
     expect(en.selectNone, 'Select None');
     expect(zh.selectNone, '取消全选');
     expect(en.snapSelectionToGrid, 'Snap Selection to Grid');

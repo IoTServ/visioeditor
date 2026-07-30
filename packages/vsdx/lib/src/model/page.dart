@@ -2671,7 +2671,7 @@ class VsdxPage {
   VsdxPage setCollapsed(int shapeId, bool value) {
     final host = findShapeById(shapeId);
     if (host == null ||
-        !host.shapeKind.isFoldable ||
+        (value && !host.collapsible) ||
         host.collapsed == value) {
       return this;
     }

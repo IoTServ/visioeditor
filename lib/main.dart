@@ -1964,6 +1964,8 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.clearSelection();
                               case 'snapSelection':
                                 cur.snapSelectionToGrid();
+                              case 'collapsible':
+                                cur.toggleSelectionCollapsible();
                               case 'distributeH':
                                 cur.distributeHorizontally();
                               case 'distributeV':
@@ -2115,6 +2117,12 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'snapSelection',
                               enabled: cur.canSnapSelectionToGrid,
                               child: Text(el.snapSelectionToGrid),
+                            ),
+                            CheckedPopupMenuItem<String>(
+                              value: 'collapsible',
+                              enabled: cur.canToggleSelectionCollapsible,
+                              checked: cur.selectionCollapsible,
+                              child: Text(el.collapsible),
                             ),
                             PopupMenuItem<String>(
                               value: 'distributeH',
@@ -4515,6 +4523,14 @@ class _PropertyPanel extends StatelessWidget {
                 tooltip: EditorL10n.of(context).removeFromGroup,
                 visualDensity: VisualDensity.compact,
               ),
+              if (controller.canToggleSelectionCollapsible)
+                _iconBtn(
+                  controller.selectionCollapsible
+                      ? Icons.unfold_less
+                      : Icons.unfold_more,
+                  EditorL10n.of(context).collapsible,
+                  controller.toggleSelectionCollapsible,
+                ),
             ],
           ),
           if (isChart) ...[

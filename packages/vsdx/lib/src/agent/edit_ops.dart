@@ -2256,7 +2256,7 @@ ApplyResult applyOps(
             rejected = true;
             continue;
           }
-          if (!host.shapeKind.isFoldable) {
+          if (collapsed && !host.collapsible) {
             log.add('set_collapsed: shape $id is not a foldable container');
             rejected = true;
             continue;

@@ -1490,6 +1490,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   `User.veContainer` 正负显式覆盖并让 ShapeKind 解析优先采用，确保普通图形升级和名称类似
   Container 的图形降级都能 `.vsdx` 保存重开；补 User 行保留、撤销/重做、命中容器、
   两平台快捷键和真实画布右键回归。
+- 2026-07-30 — **对齐 draw.io 单图形 Collapsible 样式**：More、Arrange 与图形右键菜单
+  增加选区级 Collapsible 复选项；容器/泳道按 draw.io 默认可折叠，普通顶点可显式启用，
+  状态以 `User.veCollapsible` 正负覆盖往返 `.vsdx`。关闭已折叠图形时先恢复高度、隐藏子树
+  胶合与可见状态，整体单步撤销；并与只控制全局箭头/命令可见性的 Collapse/Expand Controls
+  保持独立。模型与 Agent 同步按该属性判定，且允许异常导入的“禁用但已折叠”状态安全展开；
+  补 User 行保留、普通顶点往返、胶合恢复、撤销及真实画布菜单回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

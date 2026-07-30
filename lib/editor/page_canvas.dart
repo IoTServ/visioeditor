@@ -865,7 +865,7 @@ class _PageCanvasState extends State<PageCanvas> {
     for (final id in _drawOrder(page).reversed) {
       final s = page.findShapeById(id);
       if (s == null ||
-          !s.shapeKind.isFoldable ||
+          !s.collapsible ||
           !page.isShapeVisible(s)) {
         continue;
       }
@@ -1624,6 +1624,13 @@ class _PageCanvasState extends State<PageCanvas> {
       items.add(PopupMenuItem(
           value: 'lock',
           child: Text(_c.selectionLocked ? el.unlock : el.lock)));
+      if (_c.canToggleSelectionCollapsible) {
+        items.add(CheckedPopupMenuItem(
+          value: 'collapsible',
+          checked: _c.selectionCollapsible,
+          child: Text(el.collapsible),
+        ));
+      }
       if (_c.canSelectConnections) {
         items.add(PopupMenuItem(
           value: 'selectConnections',
@@ -1855,6 +1862,8 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.deleteSelection();
       case 'lock':
         _c.toggleLock();
+      case 'collapsible':
+        _c.toggleSelectionCollapsible();
       case 'selectConnections':
         _c.selectConnections();
       case 'selectChildren':

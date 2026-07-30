@@ -115,8 +115,8 @@ List<Map<String, dynamic>> listShapes(VsdxDocument doc, {int pageIndex = 0}) {
         if (s.isInk) 'ink': true,
         'group': s.children.isNotEmpty,
         if (VsdxPage.isDropContainer(s)) 'container': true,
-        if (s.shapeKind.isFoldable) ...<String, dynamic>{
-          'foldable': true,
+        if (s.collapsible || s.shapeKind.isFoldable) ...<String, dynamic>{
+          'foldable': s.collapsible,
           'collapsed': s.collapsed,
         },
         'x': r(pin.x),

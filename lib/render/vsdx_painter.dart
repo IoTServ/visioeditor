@@ -454,7 +454,7 @@ class VsdxPainter extends CustomPainter {
 
     if (drawEditorChrome &&
         foldingControlsEnabled &&
-        shape.shapeKind.isFoldable) {
+        shape.collapsible) {
       _paintCollapseChevron(canvas, shape, w, h);
     }
 

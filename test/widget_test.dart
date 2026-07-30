@@ -138,7 +138,13 @@ void main() {
     expect(find.text('Copy Style'), findsOneWidget);
 
     // Selecting an item dismisses the menu.
-    await tester.tap(find.text('Copy Style'));
+    final copyStyleItem = find.ancestor(
+      of: find.text('Copy Style'),
+      matching: find.byType(PopupMenuItem<String>),
+    );
+    await tester.ensureVisible(copyStyleItem);
+    await tester.pumpAndSettle();
+    await tester.tap(copyStyleItem);
     await tester.pumpAndSettle();
     expect(find.text('Cut'), findsNothing);
 

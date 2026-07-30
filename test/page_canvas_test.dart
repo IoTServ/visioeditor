@@ -247,6 +247,51 @@ void main() {
     );
   });
 
+  testWidgets('container context menu toggles per-shape Collapsible',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.addShapeFromBuilderAt(
+          (shapeId, x, y) => VsdxShapeFactory.container(
+            id: shapeId,
+            pinX: x,
+            pinY: y,
+            width: 3,
+            height: 2,
+          ),
+          4,
+          4,
+        );
+        id = c.singleSelectedId!;
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final centre = _pagePoint(origin, camera, page, 4, 4);
+    expect(controller.selectionCollapsible, isTrue);
+
+    await tester.tapAt(centre, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Collapsible'), findsOneWidget);
+    final item = find.ancestor(
+      of: find.text('Collapsible'),
+      matching: find.byType(CheckedPopupMenuItem<String>),
+    );
+    await tester.ensureVisible(item);
+    await tester.pumpAndSettle();
+    await tester.tap(item);
+    await tester.pumpAndSettle();
+
+    expect(controller.currentPage!.findShapeById(id)!.collapsible, isFalse);
+    expect(controller.canCollapseSelection, isFalse);
+  });
+
   testWidgets('controller Home request restores a centred 100% canvas view',
       (tester) async {
     final camera = CanvasCamera();

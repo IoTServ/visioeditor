@@ -727,6 +727,12 @@ class VsdxShape {
   /// vertex after Ungroup. The parser applies this before its heuristics.
   static const String userContainer = 'veContainer';
 
+  /// Per-shape draw.io `collapsible` style override.
+  ///
+  /// Containers/swimlanes default to enabled; ordinary vertices default to
+  /// disabled unless this row is explicitly `'1'`.
+  static const String userCollapsible = 'veCollapsible';
+
   /// User-cell flag: paint this shape's label along an arc inside the text
   /// block (editor "Curved Text"). Round-trips via `User.veCurvedText`.
   static const String userCurvedText = 'veCurvedText';
@@ -782,6 +788,28 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userContainer, value: value ? '1' : '0'),
+      ],
+    );
+  }
+
+  /// Whether this shape exposes draw.io-style fold behaviour.
+  bool get collapsible {
+    for (final c in userCells) {
+      if (c.name == userCollapsible) return c.value == '1';
+    }
+    return shapeKind.isFoldable;
+  }
+
+  /// Set the explicit per-shape [collapsible] state.
+  VsdxShape withCollapsible(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userCollapsible) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userCollapsible, value: value ? '1' : '0'),
       ],
     );
   }

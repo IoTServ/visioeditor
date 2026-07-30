@@ -100,7 +100,11 @@ byte-for-byte, so formulas and structure survive a save.
   to empty canvas then clones the source at the drop point and connects it in
   one undo step. Collapse/Expand Controls independently hides fold chevrons and
   disables their click and keyboard commands without altering the drawing's
-  stored collapsed state.
+  stored collapsed state. Each editable 2-D shape also has a separate
+  Collapsible property in More, Arrange and its context menu. Containers and
+  swimlanes enable it by default; ordinary vertices can opt in. Turning it off
+  on a folded shape expands it first, restoring its height and hidden-child
+  connections, and the setting survives `.vsdx` save/reopen.
   Turn / Reverse now uses Cmd/Ctrl+R for both 90° shape turns and semantic
   connector reversal. Copy Data / Paste Data transfers complete Shape Data
   metadata; context-menu paste preserves target labels, while the draw.io

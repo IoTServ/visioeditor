@@ -1576,10 +1576,10 @@ class EditorController extends ChangeNotifier {
     _reparentShapesInto(movable, containerId);
   }
 
-  /// Toggle draw.io-style fold on a foldable container / swimlane. Children
+  /// Toggle draw.io-style fold on a collapsible shape. Children
   /// stay in the model; paint and hit-testing hide them while collapsed. The
   /// container height shrinks to the header band (top edge fixed) and restores
-  /// on unfold. Plain Visio/Edraw groups are not foldable.
+  /// on unfold.
   ///
   /// Glue aimed at children is detached while folded (so connectors don't pin
   /// to invisible targets) and stashed on the host via
@@ -1589,7 +1589,7 @@ class EditorController extends ChangeNotifier {
     final page0 = currentPage;
     final host = page0?.findShapeById(id);
     if (host == null ||
-        !host.shapeKind.isFoldable ||
+        (!host.collapsible && !host.collapsed) ||
         host.locked ||
         isOnLockedLayer(id)) {
       return;
@@ -1608,11 +1608,78 @@ class EditorController extends ChangeNotifier {
   bool _canSetSelectedHostCollapsed(VsdxPage page, int id, bool value) {
     final host = page.findShapeById(id);
     return host != null &&
-        host.shapeKind.isFoldable &&
+        (value ? host.collapsible : host.collapsed) &&
         host.collapsed != value &&
         !host.locked &&
         !isOnLockedLayer(id);
   }
+
+  bool _canSetShapeCollapsible(VsdxPage page, int id) {
+    final shape = page.findShapeById(id);
+    return shape != null &&
+        !shape.is1D &&
+        !shape.locked &&
+        !isOnLockedLayer(id);
+  }
+
+  /// Whether draw.io's per-shape Collapsible style can be changed.
+  bool get canToggleSelectionCollapsible {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selectionRoots(page, _selection)
+        .any((id) => _canSetShapeCollapsible(page, id));
+  }
+
+  /// Collapsible state of the first eligible selection root.
+  bool get selectionCollapsible {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selectionRoots(page, _selection)) {
+      if (_canSetShapeCollapsible(page, id)) {
+        return page.findShapeById(id)!.collapsible;
+      }
+    }
+    return false;
+  }
+
+  /// Set draw.io's per-shape Collapsible style as one undoable edit.
+  ///
+  /// Disabling a folded host expands it first so geometry and any stashed glue
+  /// to hidden descendants are restored before its fold affordance disappears.
+  void setSelectionCollapsible(bool enabled) {
+    final page = currentPage;
+    if (page == null) return;
+    final ids = <int>[
+      for (final id in _selectionRoots(page, _selection))
+        if (_canSetShapeCollapsible(page, id)) id,
+    ];
+    if (ids.isEmpty ||
+        !ids.any(
+          (id) => page.findShapeById(id)!.collapsible != enabled,
+        )) {
+      return;
+    }
+    updateCurrentPage((page) {
+      var next = page;
+      for (final id in ids) {
+        var shape = next.findShapeById(id);
+        if (shape == null || shape.collapsible == enabled) continue;
+        if (!enabled && shape.collapsed) {
+          next = next.setCollapsed(id, false);
+          shape = next.findShapeById(id);
+          if (shape == null) continue;
+        }
+        next = next.updateShapeById(
+          id,
+          (shape) => shape.withCollapsible(enabled),
+        );
+      }
+      return next;
+    });
+  }
+
+  void toggleSelectionCollapsible() =>
+      setSelectionCollapsible(!selectionCollapsible);
 
   bool get canCollapseSelection {
     if (!_foldingControlsEnabled) return false;

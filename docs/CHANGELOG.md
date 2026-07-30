@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io per-shape Collapsible style**: every editable 2-D selection now
+  exposes a **Collapsible** check in More, Arrange and its context menu.
+  Containers and swimlanes keep draw.io's enabled-by-default behaviour, while
+  ordinary vertices may opt in. The explicit state round-trips through
+  `User.veCollapsible`; disabling it on a folded shape safely expands the
+  shape first and restores hidden-child glue as one undoable edit. This remains
+  independent from the global **Collapse/Expand Controls** visibility switch.
 - **draw.io single-cell Group / Ungroup containers**: Group on one editable
   vertex now promotes it in place to a drop container instead of doing
   nothing; Ungroup on an empty container restores an ordinary vertex without
