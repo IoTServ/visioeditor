@@ -35,6 +35,7 @@ import 'render/arrow_library.dart';
 import 'render/path_builder.dart';
 import 'render/pattern_fill.dart';
 import 'io/document_io.dart';
+import 'io/document_save.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
 import 'io/recent_files.dart';
@@ -867,25 +868,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
     if (c == null || !c.hasDocument) return;
     final el = EditorL10n.of(context);
     try {
-      final bytes = c.exportToBytes();
-      var path = c.filePath;
-      // Never overwrite a legacy .vsd with OPC bytes.
-      if (path != null && isLegacyVisioBinary(path)) {
-        path = null;
-      }
-      if (path != null) {
-        await writeBytesToFile(path, bytes);
-      } else {
-        path = await pickSaveLocation(
-          bytes: bytes,
-          suggestedName: c.fileName ?? 'drawing.vsdx',
-        );
-        if (path == null) return;
-      }
-      c.markSaved(bytes, path: path);
-      await _addRecent(path);
+      final result = await saveEditorDocument(c, saveAs: false);
+      if (result == null) return;
+      await _addRecent(result.persistentPath);
       if (!mounted) return;
-      _snack(el.savedTo(path));
+      _snack(el.savedTo(result.path));
     } catch (e) {
       if (!mounted) return;
       _snack(el.saveFailed('$e'));
@@ -897,16 +884,11 @@ class _EditorHomePageState extends State<EditorHomePage> {
     if (c == null || !c.hasDocument) return;
     final el = EditorL10n.of(context);
     try {
-      final bytes = c.exportToBytes();
-      final path = await pickSaveLocation(
-        bytes: bytes,
-        suggestedName: c.fileName ?? 'drawing.vsdx',
-      );
-      if (path == null) return;
-      c.markSaved(bytes, path: path);
-      await _addRecent(path);
+      final result = await saveEditorDocument(c, saveAs: true);
+      if (result == null) return;
+      await _addRecent(result.persistentPath);
       if (!mounted) return;
-      _snack(el.savedTo(path));
+      _snack(el.savedTo(result.path));
     } catch (e) {
       if (!mounted) return;
       _snack(el.saveFailed('$e'));

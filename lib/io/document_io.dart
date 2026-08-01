@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 
+import 'save_platform.dart' as save_platform;
+
 /// A picked file's bytes plus where it came from.
 class PickedDocument {
   const PickedDocument({required this.bytes, this.path, this.name});
@@ -127,7 +129,9 @@ String extensionOfPath(String path) {
   return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
 }
 
-bool get _mobileSaveNeedsBytes => Platform.isIOS || Platform.isAndroid;
+/// Whether a returned picker path can be reopened and overwritten directly.
+/// Browser downloads, UIDocumentPicker, and Android SAF destinations cannot.
+bool get supportsDirectFileSave => save_platform.supportsDirectFileSave;
 
 /// Prompt for a save location and persist [bytes] as `.vsdx`.
 ///
@@ -159,9 +163,8 @@ Future<String?> pickSaveLocation({
   );
 }
 
-Future<void> writeBytesToFile(String path, Uint8List bytes) async {
-  await File(path).writeAsBytes(bytes, flush: true);
-}
+Future<void> writeBytesToFile(String path, Uint8List bytes) =>
+    save_platform.writeBytesToFile(path, bytes);
 
 /// Prompt for an export location and persist [bytes] with extension [ext].
 ///
@@ -182,8 +185,7 @@ Future<String?> pickExportLocation({
   );
 }
 
-/// Shared save/export dialog. Passes [bytes] on every platform (required on
-/// mobile); only writes to [File] afterwards on desktop.
+/// Shared save/export dialog, implemented per platform.
 Future<String?> _saveBytesWithPicker({
   required Uint8List bytes,
   required String fileName,
@@ -191,25 +193,13 @@ Future<String?> _saveBytesWithPicker({
   required List<String> allowedExtensions,
   required String Function(String path) ensureExtension,
 }) async {
-  // Popup menus / sheets on iPad must finish dismissing before another
-  // UIViewController (UIDocumentPicker) can present — otherwise the save
-  // dialog never appears and the export looks like a no-op.
-  if (Platform.isIOS) {
-    await Future<void>.delayed(const Duration(milliseconds: 150));
-  }
-  final picked = await FilePicker.platform.saveFile(
+  return save_platform.saveBytesWithPicker(
+    bytes: bytes,
     dialogTitle: dialogTitle,
     fileName: fileName,
-    type: FileType.custom,
     allowedExtensions: allowedExtensions,
-    bytes: bytes,
+    ensureExtension: ensureExtension,
   );
-  if (picked == null) return null;
-  final path = ensureExtension(picked);
-  if (!_mobileSaveNeedsBytes) {
-    await writeBytesToFile(path, bytes);
-  }
-  return path;
 }
 
 String baseName(String? fileName) {

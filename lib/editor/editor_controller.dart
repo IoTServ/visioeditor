@@ -11110,13 +11110,25 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Record that [savedBytes] were persisted: they become the new baseline for
-  /// subsequent saves and the dirty flag is cleared.
-  void markSaved(Uint8List savedBytes, {String? path, String? name}) {
+  /// subsequent saves. Edits newer than [savedDocument] stay dirty.
+  void markSaved(
+    Uint8List savedBytes, {
+    String? path,
+    String? name,
+    VsdxDocument? savedDocument,
+    bool clearPath = false,
+  }) {
     _originalBytes = savedBytes;
-    if (path != null) _filePath = path;
+    if (clearPath) {
+      _filePath = null;
+    } else if (path != null) {
+      _filePath = path;
+    }
     _fileName = name ?? _basename(_filePath) ?? _fileName;
-    _dirty = false;
-    _cleanDocument = _document;
+    _cleanDocument = savedDocument ?? _document;
+    // Saving is asynchronous. Edits made while the picker or disk write was
+    // pending were not included in [savedBytes] and must remain dirty.
+    _dirty = !identical(_document, _cleanDocument);
     _importedFromVsd = false;
     notifyListeners();
   }

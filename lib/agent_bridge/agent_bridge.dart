@@ -27,6 +27,7 @@ import 'package:vsdx/agent.dart';
 import 'package:vsdx/vsdx.dart';
 
 import '../editor/editor_workspace.dart';
+import '../io/document_save.dart';
 import '../io/image_export.dart';
 
 /// Controls the loopback WebSocket server + file watcher.
@@ -440,11 +441,10 @@ class AgentBridge {
     if (path == null) {
       throw StateError('document has no file path; use Save As');
     }
-    final bytes = c.exportToBytes();
-    await File(path).writeAsBytes(bytes, flush: true);
-    c.markSaved(bytes, path: path);
+    final result = await saveEditorDocumentToPath(c, path);
+    if (result == null) throw StateError('save already in progress');
     _bumpMtime(path);
-    return <String, dynamic>{'saved': path, 'bytes': bytes.length};
+    return <String, dynamic>{'saved': path, 'bytes': result.bytes.length};
   }
 
   Future<String> _snapshot(int pageArg) async {
