@@ -3414,7 +3414,12 @@ class EditorController extends ChangeNotifier {
     // (zip prune on save handles the package; this keeps warmUp lean).
     if (oldPart != null &&
         oldPart.isNotEmpty &&
-        !_anyShapeUsesImage(doc, oldPart, exceptShapeId: shapeId)) {
+        !_anyShapeUsesImage(
+          doc,
+          oldPart,
+          exceptPageId: page.id,
+          exceptShapeId: shapeId,
+        )) {
       images = images.withoutImage(oldPart);
     }
     applyEdit(
@@ -3430,24 +3435,27 @@ class EditorController extends ChangeNotifier {
   bool _anyShapeUsesImage(
     VsdxDocument doc,
     String partName, {
+    int? exceptPageId,
     int? exceptShapeId,
   }) {
     String norm(String p) => p.startsWith('/') ? p.substring(1) : p;
     final want = norm(partName);
-    bool walk(VsdxShape s) {
-      if (exceptShapeId == null || s.id != exceptShapeId) {
+    bool walk(VsdxShape s, {required bool onExceptPage}) {
+      if (!onExceptPage || exceptShapeId == null || s.id != exceptShapeId) {
         final p = s.imagePartName;
         if (p != null && p.isNotEmpty && norm(p) == want) return true;
       }
       for (final c in s.children) {
-        if (walk(c)) return true;
+        if (walk(c, onExceptPage: onExceptPage)) return true;
       }
       return false;
     }
 
     for (final page in doc.pages) {
+      final onExceptPage =
+          exceptPageId != null && page.id == exceptPageId;
       for (final s in page.shapes) {
-        if (walk(s)) return true;
+        if (walk(s, onExceptPage: onExceptPage)) return true;
       }
     }
     return false;
