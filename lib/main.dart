@@ -4572,6 +4572,7 @@ class _PropertyPanel extends StatelessWidget {
     return SizedBox(
       width: fillWidth ? double.infinity : ((isChart || isIcon) ? 300 : 232),
       child: ListView(
+        key: const ValueKey('property-panel-list'),
         padding: const EdgeInsets.all(16),
         children: [
           Text(
@@ -4822,7 +4823,10 @@ class _PropertyPanel extends StatelessWidget {
                     ? controller.selectedFill?.themeForegroundIndex
                     : null),
           ),
-          _fillPatternControls(context, controller),
+          if (controller.canSetSketchFillStyle)
+            _sketchFillControls(context, controller)
+          else
+            _fillPatternControls(context, controller),
           if ((controller.selectedFill?.pattern ?? 1) > 1) ...[
             const SizedBox(height: 6),
             Text(
@@ -4853,7 +4857,8 @@ class _PropertyPanel extends StatelessWidget {
             onChanged: (v) => controller.setFillOpacity(v, transient: true),
             onEnd: controller.commitTransaction,
           ),
-          _fillGradientControls(context, controller),
+          if (!controller.selectedUsesSketchPatternFill)
+            _fillGradientControls(context, controller),
           _roundedControl(context, controller),
           const SizedBox(height: 16),
           _section(context, EditorL10n.of(context).panelLine),
@@ -7120,6 +7125,98 @@ class _PropertyPanel extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _sketchFillControls(
+      BuildContext context, EditorController controller) {
+    final el = EditorL10n.of(context);
+    final style = controller.selectedSketchFillStyle;
+    return Column(
+      key: const ValueKey('sketch-fill-controls'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                el.sketchFillStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            SizedBox(
+              width: 112,
+              child: DropdownButton<VsdxSketchFillStyle>(
+                key: const ValueKey('sketch-fill-style-dropdown'),
+                value: style,
+                isDense: true,
+                isExpanded: true,
+                items: [
+                  for (final value in VsdxSketchFillStyle.values)
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text(
+                        switch (value) {
+                          VsdxSketchFillStyle.auto => el.automatic,
+                          VsdxSketchFillStyle.solid => el.solid,
+                          VsdxSketchFillStyle.hachure => el.hachure,
+                          VsdxSketchFillStyle.crossHatch => el.crossHatch,
+                          VsdxSketchFillStyle.dots => el.dots,
+                        },
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) controller.setSketchFillStyle(value);
+                },
+              ),
+            ),
+          ],
+        ),
+        if (controller.selectedUsesSketchPatternFill) ...[
+          _RangeSlider(
+            key: const ValueKey('sketch-hachure-gap-slider'),
+            label: el.hachureGap,
+            value: controller.selectedSketchHachureGap,
+            min: 1,
+            max: 12,
+            format: (value) => '${value.toStringAsFixed(1)} px',
+            onStart: controller.beginTransaction,
+            onChanged: (value) =>
+                controller.setSketchHachureGap(value, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          if (style != VsdxSketchFillStyle.dots)
+            _RangeSlider(
+              key: const ValueKey('sketch-hachure-angle-slider'),
+              label: el.hachureAngle,
+              value: controller.selectedSketchHachureAngle,
+              min: -90,
+              max: 90,
+              format: (value) => '${value.round()}°',
+              onStart: controller.beginTransaction,
+              onChanged: (value) =>
+                  controller.setSketchHachureAngle(value, transient: true),
+              onEnd: controller.commitTransaction,
+            ),
+          _RangeSlider(
+            key: const ValueKey('sketch-fill-weight-slider'),
+            label: el.fillWeight,
+            value: controller.selectedSketchFillWeight,
+            min: 0.25,
+            max: 3,
+            format: (value) => '${value.toStringAsFixed(2)} px',
+            onStart: controller.beginTransaction,
+            onChanged: (value) =>
+                controller.setSketchFillWeight(value, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+        ],
+      ],
     );
   }
 

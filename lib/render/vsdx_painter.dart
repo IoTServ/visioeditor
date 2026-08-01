@@ -1197,6 +1197,10 @@ class VsdxPainter extends CustomPainter {
   }
 
   void _drawFill(Canvas canvas, VsdxShape shape, Path path) {
+    if (shape.usesSketchPatternFill) {
+      _drawSketchPatternFill(canvas, shape, path);
+      return;
+    }
     final fill = shape.fill;
     if (fill.hasGradient) {
       final bounds = path.getBounds();
@@ -1243,6 +1247,65 @@ class VsdxPainter extends CustomPainter {
     }
     final solid = _resolveFillPaint(shape);
     if (solid != null) canvas.drawPath(path, solid);
+  }
+
+  void _drawSketchPatternFill(
+    Canvas canvas,
+    VsdxShape shape,
+    Path silhouette,
+  ) {
+    final base = _colourOrTheme(
+            shape.fill.foreground, shape.fill.themeForegroundIndex) ??
+        fallbackFill;
+    final transparency =
+        shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+    final color = base.withValues(alpha: base.a * (1 - transparency));
+    final bounds = silhouette.getBounds();
+    if (bounds.isEmpty || color.a <= 0) return;
+    final gap = shape.sketchHachureGapPx / pxPerInch;
+    final weight = shape.sketchFillWeightPx / pxPerInch;
+    final style = shape.effectiveSketchFillStyle;
+    canvas.save();
+    canvas.clipPath(silhouette);
+    if (style == VsdxSketchFillStyle.dots) {
+      final dots = drawioSketchFillDots(
+        minX: bounds.left,
+        minY: bounds.top,
+        width: bounds.width,
+        height: bounds.height,
+        gap: gap,
+      );
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.fill;
+      final radius = math.max(weight * 0.65, 0.6 / pxPerInch);
+      for (final dot in dots) {
+        canvas.drawCircle(Offset(dot.x, dot.y), radius, paint);
+      }
+    } else {
+      final segments = drawioSketchHachureSegments(
+        minX: bounds.left,
+        minY: bounds.top,
+        width: bounds.width,
+        height: bounds.height,
+        gap: gap,
+        angleDegrees: shape.sketchHachureAngleDegrees,
+        crossHatch: style == VsdxSketchFillStyle.crossHatch,
+      );
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(weight, 0.25 / pxPerInch)
+        ..strokeCap = StrokeCap.round;
+      for (final segment in segments) {
+        canvas.drawLine(
+          Offset(segment.start.x, segment.start.y),
+          Offset(segment.end.x, segment.end.y),
+          paint,
+        );
+      }
+    }
+    canvas.restore();
   }
 
   /// Convert a Visio length in page inches to a Flutter blur sigma in layer

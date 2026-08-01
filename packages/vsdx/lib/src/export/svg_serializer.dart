@@ -782,7 +782,8 @@ class VsdxToSvgSerializer {
     );
     final fillRuleAttr =
         (!noFill && fillRule != null) ? ' fill-rule="$fillRule"' : '';
-    final fillAttr = !noFill
+    final sketchPatternFill = !noFill && shape.usesSketchPatternFill;
+    final fillAttr = !noFill && !sketchPatternFill
         ? '${_fillAttr(shape.fill, theme, paintId, defs, bounds: fillBounds)}$fillRuleAttr'
         : 'fill="none"';
     // Line gradients follow the unjumped geometry (canvas path bounds).
@@ -887,6 +888,19 @@ class VsdxToSvgSerializer {
       indent: indent,
     );
     final filter = softFilter == null ? '' : ' filter="$softFilter"';
+    if (sketchPatternFill) {
+      _writeSketchPatternFill(
+        buf,
+        shape,
+        theme,
+        d: d,
+        bounds: fillBounds,
+        paintId: paintId,
+        fillRule: fillRule,
+        filter: filter,
+        indent: indent,
+      );
+    }
     final compound = !noLine && shape.line.compoundType > 0;
     if (compound) {
       final weight =
@@ -1031,6 +1045,85 @@ class VsdxToSvgSerializer {
         indent: indent,
       );
     }
+  }
+
+  void _writeSketchPatternFill(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme, {
+    required String d,
+    required ({double minX, double minY, double width, double height}) bounds,
+    required String paintId,
+    required String? fillRule,
+    required String filter,
+    required String indent,
+  }) {
+    final color = _resolveColor(
+          shape.fill.foreground,
+          shape.fill.themeForegroundIndex,
+          theme,
+        ) ??
+        const VsdxColor(0xFFFFFFFF);
+    final opacity = _combinedOpacity(
+      color,
+      shape.fill.foregroundTransparency,
+    );
+    if (opacity <= 0) return;
+    final clipId = 'sketch-fill-$paintId';
+    final rule = fillRule == null
+        ? ''
+        : ' fill-rule="$fillRule" clip-rule="$fillRule"';
+    buf.writeln(
+      '$indent<defs><clipPath id="$clipId">'
+      '<path d="$d"$rule/></clipPath></defs>',
+    );
+    buf.writeln(
+      '$indent<g data-ve-sketch-fill="${shape.effectiveSketchFillStyle.drawioValue}" '
+      'clip-path="url(#$clipId)"$filter>',
+    );
+    final gap = shape.sketchHachureGapPx / pxPerInch;
+    final weight = math.max(shape.sketchFillWeightPx / pxPerInch, 0.0025);
+    final style = shape.effectiveSketchFillStyle;
+    if (style == VsdxSketchFillStyle.dots) {
+      final dots = drawioSketchFillDots(
+        minX: bounds.minX,
+        minY: bounds.minY,
+        width: bounds.width,
+        height: bounds.height,
+        gap: gap,
+      );
+      final radius = math.max(weight * 0.65, 0.6 / pxPerInch);
+      for (final dot in dots) {
+        buf.writeln(
+          '$indent  <circle cx="${_n(dot.x)}" cy="${_n(dot.y)}" '
+          'r="${_n(radius)}" fill="${_hex(color)}" '
+          'fill-opacity="${_n(opacity)}"/>',
+        );
+      }
+    } else {
+      final segments = drawioSketchHachureSegments(
+        minX: bounds.minX,
+        minY: bounds.minY,
+        width: bounds.width,
+        height: bounds.height,
+        gap: gap,
+        angleDegrees: shape.sketchHachureAngleDegrees,
+        crossHatch: style == VsdxSketchFillStyle.crossHatch,
+      );
+      final path = StringBuffer();
+      for (final segment in segments) {
+        path.write(
+          'M ${_n(segment.start.x)} ${_n(segment.start.y)} '
+          'L ${_n(segment.end.x)} ${_n(segment.end.y)} ',
+        );
+      }
+      buf.writeln(
+        '$indent  <path d="${path.toString().trim()}" fill="none" '
+        'stroke="${_hex(color)}" stroke-opacity="${_n(opacity)}" '
+        'stroke-width="${_n(weight)}" stroke-linecap="round"/>',
+      );
+    }
+    buf.writeln('$indent</g>');
   }
 
   /// Emits a normal stroke or draw.io's two stable rough.js-like passes.

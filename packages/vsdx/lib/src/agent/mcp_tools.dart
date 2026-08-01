@@ -1135,6 +1135,25 @@ void _registerEditTools(McpServer server) {
         'minimum': 0.25,
         'maximum': 10,
       },
+      'sketchFillStyle': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['auto', 'solid', 'hachure', 'cross-hatch', 'dots'],
+      },
+      'sketchHachureGap': <String, dynamic>{
+        'type': 'number',
+        'minimum': 1,
+        'maximum': 24,
+      },
+      'sketchHachureAngle': <String, dynamic>{
+        'type': 'number',
+        'minimum': -180,
+        'maximum': 180,
+      },
+      'sketchFillWeight': <String, dynamic>{
+        'type': 'number',
+        'minimum': 0.25,
+        'maximum': 10,
+      },
       'flowAnimation': <String, dynamic>{'type': 'boolean'},
       'flowDurationMs': <String, dynamic>{'type': 'integer', 'minimum': 1},
       'flowTiming': <String, dynamic>{
@@ -1301,6 +1320,10 @@ void _registerEditTools(McpServer server) {
           'glass',
           'sketch',
           'sketchJiggle',
+          'sketchFillStyle',
+          'sketchHachureGap',
+          'sketchHachureAngle',
+          'sketchFillWeight',
           'flowAnimation',
           'flowDurationMs',
           'flowTiming',

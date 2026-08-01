@@ -616,6 +616,19 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '随连接线旋转' : 'Rotate with Edge';
   String get sketch => locale.languageCode == 'zh' ? '手绘风格' : 'Sketch';
   String get jiggle => locale.languageCode == 'zh' ? '抖动强度' : 'Jiggle';
+  String get sketchFillStyle =>
+      locale.languageCode == 'zh' ? '手绘填充' : 'Sketch Fill';
+  String get automatic => locale.languageCode == 'zh' ? '自动' : 'Auto';
+  String get hachure => locale.languageCode == 'zh' ? '斜线纹' : 'Hachure';
+  String get crossHatch =>
+      locale.languageCode == 'zh' ? '交叉线纹' : 'Cross-Hatch';
+  String get dots => locale.languageCode == 'zh' ? '点阵' : 'Dots';
+  String get hachureGap =>
+      locale.languageCode == 'zh' ? '纹线间距' : 'Hachure Gap';
+  String get hachureAngle =>
+      locale.languageCode == 'zh' ? '纹线角度' : 'Hachure Angle';
+  String get fillWeight =>
+      locale.languageCode == 'zh' ? '填充笔触粗细' : 'Fill Weight';
   String get bulletList => _t('bulletList');
   String get superscript => locale.languageCode == 'zh'
       ? '上标 (Cmd/Ctrl+.)'

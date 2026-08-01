@@ -1343,6 +1343,24 @@ ApplyResult applyOps(
             if (sketch != false && sketchJiggle != null && sketchJiggle > 0) {
               next = next.withSketchJiggle(sketchJiggle);
             }
+            final sketchFillStyle = VsdxSketchFillStyle.parse(
+              op['sketchFillStyle']?.toString(),
+            );
+            if (op.containsKey('sketchFillStyle') && !next.is1D) {
+              next = next.withSketchFillStyle(sketchFillStyle);
+            }
+            final sketchHachureGap = _d(op['sketchHachureGap']);
+            if (!next.is1D && sketchHachureGap != null) {
+              next = next.withSketchHachureGap(sketchHachureGap);
+            }
+            final sketchHachureAngle = _d(op['sketchHachureAngle']);
+            if (!next.is1D && sketchHachureAngle != null) {
+              next = next.withSketchHachureAngle(sketchHachureAngle);
+            }
+            final sketchFillWeight = _d(op['sketchFillWeight']);
+            if (!next.is1D && sketchFillWeight != null) {
+              next = next.withSketchFillWeight(sketchFillWeight);
+            }
             final flow = _b(op['flowAnimation']);
             if (flow == false || (flow == true && next.supportsFlowAnimation)) {
               next = next.withFlowAnimation(flow!);

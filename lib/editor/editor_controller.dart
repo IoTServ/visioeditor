@@ -52,6 +52,10 @@ typedef _CreationStyle = ({
   bool glassEffect,
   bool sketchEffect,
   double sketchJiggle,
+  VsdxSketchFillStyle sketchFillStyle,
+  double sketchHachureGap,
+  double sketchHachureAngle,
+  double sketchFillWeight,
   bool flowAnimation,
   int flowAnimationDurationMs,
   VsdxFlowAnimationTiming flowAnimationTiming,
@@ -7607,6 +7611,10 @@ class EditorController extends ChangeNotifier {
       glassEffect: shape.glassEffect,
       sketchEffect: shape.sketchEffect,
       sketchJiggle: shape.sketchJiggle,
+      sketchFillStyle: shape.sketchFillStyle,
+      sketchHachureGap: shape.sketchHachureGapPx,
+      sketchHachureAngle: shape.sketchHachureAngleDegrees,
+      sketchFillWeight: shape.sketchFillWeightPx,
       flowAnimation: shape.flowAnimation,
       flowAnimationDurationMs: shape.flowAnimationDurationMs,
       flowAnimationTiming: shape.flowAnimationTiming,
@@ -7732,6 +7740,13 @@ class EditorController extends ChangeNotifier {
     next = clip.sketchEffect
         ? next.withSketchEffect(true).withSketchJiggle(clip.sketchJiggle)
         : next.withSketchEffect(false);
+    if (!s.is1D && clip.includeFill) {
+      next = next
+          .withSketchFillStyle(clip.sketchFillStyle)
+          .withSketchHachureGap(clip.sketchHachureGap)
+          .withSketchHachureAngle(clip.sketchHachureAngle)
+          .withSketchFillWeight(clip.sketchFillWeight);
+    }
     if (s.is1D) {
       next = next.withAutoRotateLabel(clip.autoRotateLabel);
       if (next.supportsFlowAnimation && clip.includeFlow) {
@@ -9672,6 +9687,70 @@ class EditorController extends ChangeNotifier {
   void setSketchJiggle(double value, {bool transient = false}) =>
       _updateSelectedShapes(
         (shape) => shape.withSketchJiggle(value),
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  VsdxShape? get _firstSelectedSketchFill {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return null;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape != null &&
+          !shape.is1D &&
+          shape.sketchEffect &&
+          shape.fill.hasFill &&
+          !shape.locked &&
+          !isOnLockedLayer(id)) {
+        return shape;
+      }
+    }
+    return null;
+  }
+
+  bool get canSetSketchFillStyle => _firstSelectedSketchFill != null;
+
+  VsdxSketchFillStyle get selectedSketchFillStyle =>
+      _firstSelectedSketchFill?.sketchFillStyle ?? VsdxSketchFillStyle.auto;
+  double get selectedSketchHachureGap =>
+      _firstSelectedSketchFill?.sketchHachureGapPx ?? 4.0;
+  double get selectedSketchHachureAngle =>
+      _firstSelectedSketchFill?.sketchHachureAngleDegrees ?? -41.0;
+  double get selectedSketchFillWeight =>
+      _firstSelectedSketchFill?.sketchFillWeightPx ?? 0.5;
+  bool get selectedUsesSketchPatternFill =>
+      _firstSelectedSketchFill?.usesSketchPatternFill ?? false;
+
+  void setSketchFillStyle(VsdxSketchFillStyle value) => _updateSelectedShapes(
+        (shape) => shape.is1D || !shape.fill.hasFill
+            ? shape
+            : shape.withSketchFillStyle(value),
+        rememberStyle: true,
+      );
+
+  void setSketchHachureGap(double value, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) => shape.is1D || !shape.fill.hasFill
+            ? shape
+            : shape.withSketchHachureGap(value),
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  void setSketchHachureAngle(double value, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) => shape.is1D || !shape.fill.hasFill
+            ? shape
+            : shape.withSketchHachureAngle(value),
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  void setSketchFillWeight(double value, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) => shape.is1D || !shape.fill.hasFill
+            ? shape
+            : shape.withSketchFillWeight(value),
         transient: transient,
         rememberStyle: true,
       );

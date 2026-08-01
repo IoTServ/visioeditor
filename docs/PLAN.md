@@ -1595,6 +1595,12 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   视觉尺度且重复导出不漂移。状态通过 `User.veSketch` / `User.veSketchJiggle` 保真往返 VSDX，
   纳入撤销、锁定、Copy/Paste Style、独立 Vertex/Edge 默认样式及 Agent `set_style`；补 User 行
   保留、离屏像素、导出、真实 Format 面板和双语文案回归。
+- 2026-08-01 — **对齐 draw.io Sketch Fill**：在 Sketch 图形的 Fill 面板按当前 `Format.js`
+  切换为 Auto、Solid、Hachure、Cross-Hatch、Dots，并补齐 rough.js 风格的纹线间距、角度和
+  填充笔触粗细。Auto 对普通填充采用 Hachure、对渐变保持 Solid；Canvas 与 SVG/PDF 使用同一组
+  确定性图案几何并按真实轮廓裁剪。设置通过 `User.veSketchFillStyle`、`User.veSketchHachure*` 与
+  `User.veSketchFillWeight` 保真往返 VSDX，纳入撤销、锁定、
+  Copy/Paste Style、默认 Vertex 样式与 Agent `set_style`，覆盖导出、离屏像素、属性面板和双语回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

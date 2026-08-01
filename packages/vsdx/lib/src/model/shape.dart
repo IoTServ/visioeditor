@@ -19,6 +19,7 @@ import 'hyperlink.dart';
 import 'line.dart';
 import 'rich_text.dart';
 import 'shape_kind.dart';
+import 'sketch_style.dart';
 import 'sheet_sections.dart';
 import 'user_property.dart';
 import '../parser/formula.dart';
@@ -832,6 +833,10 @@ class VsdxShape {
   /// portable hand-drawn stroke style, so both values live in User rows.
   static const String userSketchEffect = 'veSketch';
   static const String userSketchJiggle = 'veSketchJiggle';
+  static const String userSketchFillStyle = 'veSketchFillStyle';
+  static const String userSketchHachureGap = 'veSketchHachureGap';
+  static const String userSketchHachureAngle = 'veSketchHachureAngle';
+  static const String userSketchFillWeight = 'veSketchFillWeight';
 
   /// draw.io edge flow animation styles. Visio has no native equivalent.
   static const String userFlowAnimation = 'veFlowAnimation';
@@ -1174,7 +1179,8 @@ class VsdxShape {
   }
 
   /// Toggle Sketch while preserving unrelated User rows. Disabling removes
-  /// both editor-owned rows so the normal rendering path remains the default.
+  /// the effect and jiggle rows while retaining the user's Sketch-fill
+  /// preferences for the next time the effect is enabled.
   VsdxShape withSketchEffect(bool value) {
     final others = <VsdxUserCell>[
       for (final c in userCells)
@@ -1205,6 +1211,85 @@ class VsdxShape {
         ...others,
         const VsdxUserCell(name: userSketchEffect, value: '1'),
         VsdxUserCell(name: userSketchJiggle, value: '$jiggle'),
+      ],
+    );
+  }
+
+  VsdxSketchFillStyle get sketchFillStyle {
+    for (final c in userCells) {
+      if (c.name == userSketchFillStyle) {
+        return VsdxSketchFillStyle.parse(c.value);
+      }
+    }
+    return VsdxSketchFillStyle.auto;
+  }
+
+  /// `auto` follows draw.io: a gradient stays solid; otherwise rough.js uses
+  /// its default hachure fill.
+  VsdxSketchFillStyle get effectiveSketchFillStyle {
+    final style = sketchFillStyle;
+    if (style != VsdxSketchFillStyle.auto) return style;
+    return fill.hasGradient
+        ? VsdxSketchFillStyle.solid
+        : VsdxSketchFillStyle.hachure;
+  }
+
+  bool get usesSketchPatternFill =>
+      sketchEffect &&
+      !is1D &&
+      fill.hasFill &&
+      effectiveSketchFillStyle != VsdxSketchFillStyle.solid;
+
+  double get sketchHachureGapPx =>
+      _sketchNumber(userSketchHachureGap, 4.0).clamp(1.0, 24.0).toDouble();
+
+  double get sketchHachureAngleDegrees =>
+      _sketchNumber(userSketchHachureAngle, -41.0)
+          .clamp(-180.0, 180.0)
+          .toDouble();
+
+  double get sketchFillWeightPx =>
+      _sketchNumber(userSketchFillWeight, 0.5).clamp(0.25, 10.0).toDouble();
+
+  double _sketchNumber(String name, double fallback) {
+    for (final c in userCells) {
+      if (c.name != name) continue;
+      final parsed = double.tryParse(c.value ?? '');
+      if (parsed != null && parsed.isFinite) return parsed;
+    }
+    return fallback;
+  }
+
+  VsdxShape withSketchFillStyle(VsdxSketchFillStyle value) =>
+      _withSketchCell(userSketchFillStyle, value.drawioValue);
+
+  VsdxShape withSketchHachureGap(double value) =>
+      _withSketchCell(
+        userSketchHachureGap,
+        '${value.clamp(1.0, 24.0).toDouble()}',
+      );
+
+  VsdxShape withSketchHachureAngle(double value) =>
+      _withSketchCell(
+        userSketchHachureAngle,
+        '${value.clamp(-180.0, 180.0).toDouble()}',
+      );
+
+  VsdxShape withSketchFillWeight(double value) =>
+      _withSketchCell(
+        userSketchFillWeight,
+        '${value.clamp(0.25, 10.0).toDouble()}',
+      );
+
+  VsdxShape _withSketchCell(String name, String value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != name) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: name, value: value),
       ],
     );
   }

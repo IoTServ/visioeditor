@@ -91,6 +91,14 @@ void main() {
     expect(en.jiggle, 'Jiggle');
     expect(zh.sketch, '手绘风格');
     expect(zh.jiggle, '抖动强度');
+    expect(en.sketchFillStyle, 'Sketch Fill');
+    expect(zh.sketchFillStyle, '手绘填充');
+    expect(en.automatic, 'Auto');
+    expect(zh.automatic, '自动');
+    expect(en.crossHatch, 'Cross-Hatch');
+    expect(zh.hachureGap, '纹线间距');
+    expect(en.fillWeight, 'Fill Weight');
+    expect(zh.hachureAngle, '纹线角度');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
     expect(en.copyTextStyle, 'Copy Text Style');

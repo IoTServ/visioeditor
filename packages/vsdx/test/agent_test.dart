@@ -870,7 +870,7 @@ void main() {
           doc.pages.single.shapes.firstWhere((s) => s.text == 'Do work');
       final r = applyOps(doc, _ops('''
         { "ops": [
-          { "op": "set_style", "ids": ["shape:${target.id}"], "fill": "#F8CECC", "glass": true, "sketch": true, "sketchJiggle": 3.5 },
+          { "op": "set_style", "ids": ["shape:${target.id}"], "fill": "#F8CECC", "glass": true, "sketch": true, "sketchJiggle": 3.5, "sketchFillStyle": "cross-hatch", "sketchHachureGap": 6, "sketchHachureAngle": -30, "sketchFillWeight": 1.25 },
           { "op": "set_text", "id": ${target.id}, "text": "Renamed" }
         ] }'''));
       final s =
@@ -880,6 +880,10 @@ void main() {
       expect(s.glassEffect, isTrue);
       expect(s.sketchEffect, isTrue);
       expect(s.sketchJiggle, 3.5);
+      expect(s.sketchFillStyle, VsdxSketchFillStyle.crossHatch);
+      expect(s.sketchHachureGapPx, 6);
+      expect(s.sketchHachureAngleDegrees, -30);
+      expect(s.sketchFillWeightPx, 1.25);
     });
 
     test('set_style line color preserves begin/end arrows', () {
