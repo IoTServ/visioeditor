@@ -365,16 +365,19 @@ class VsdxToSvgSerializer {
         ],
     ];
     if (polylineCrossings(localRoute, unders).isEmpty) return null;
-    final rx = resolveLineJumpRadius(
-      uiRadius: lineJumpRadiusInches,
-      lineToLineInches: sheet.lineToLineXInches,
-      jumpFactor: sheet.lineJumpFactorX,
-    );
-    final ry = resolveLineJumpRadius(
-      uiRadius: lineJumpRadiusInches,
-      lineToLineInches: sheet.lineToLineYInches,
-      jumpFactor: sheet.lineJumpFactorY,
-    );
+    final customRadius = shape.drawioLineJumpSizeInches;
+    final rx = customRadius ??
+        resolveLineJumpRadius(
+          uiRadius: lineJumpRadiusInches,
+          lineToLineInches: sheet.lineToLineXInches,
+          jumpFactor: sheet.lineJumpFactorX,
+        );
+    final ry = customRadius ??
+        resolveLineJumpRadius(
+          uiRadius: lineJumpRadiusInches,
+          lineToLineInches: sheet.lineToLineYInches,
+          jumpFactor: sheet.lineJumpFactorY,
+        );
     return polylineWithJumpsSvg(
       localRoute,
       unders,
@@ -383,6 +386,7 @@ class VsdxToSvgSerializer {
       pageJumpCode: pageCode,
       style: shape.connectorProps?.conLineJumpStyle,
       pageStyle: sheet.lineJumpStyle,
+      customStyle: shape.drawioLineJumpStyle,
       dirX: effectiveLineJumpDir(
         shape.connectorProps?.conLineJumpDirX,
         sheet.lineJumpDirX,

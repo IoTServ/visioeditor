@@ -169,10 +169,19 @@ double resolveLineJumpRadius({
 enum LineJumpRenderStyle {
   arc,
   gap,
-  square;
+  square,
+  line;
 
   /// Resolve [conStyle] (shape) over [pageStyle] (page layout).
-  static LineJumpRenderStyle resolve({int? conStyle, int? pageStyle}) {
+  static LineJumpRenderStyle resolve({
+    int? conStyle,
+    int? pageStyle,
+    String? customStyle,
+  }) {
+    if (customStyle == 'line') return LineJumpRenderStyle.line;
+    if (customStyle == 'gap') return LineJumpRenderStyle.gap;
+    if (customStyle == 'sharp') return LineJumpRenderStyle.square;
+    if (customStyle == 'arc') return LineJumpRenderStyle.arc;
     final raw = (conStyle != null && conStyle != 0) ? conStyle : pageStyle;
     return switch (raw) {
       2 => LineJumpRenderStyle.gap,
@@ -276,12 +285,17 @@ String polylineWithJumpsSvg(
   int? pageJumpCode,
   int? style,
   int? pageStyle,
+  String? customStyle,
   int? dirX,
   int? dirY,
   String Function(double) format = _defaultFormat,
 }) {
   if (route.isEmpty) return '';
-  final mode = LineJumpRenderStyle.resolve(conStyle: style, pageStyle: pageStyle);
+  final mode = LineJumpRenderStyle.resolve(
+    conStyle: style,
+    pageStyle: pageStyle,
+    customStyle: customStyle,
+  );
   final buf = StringBuffer('M ${format(route.first.x)} ${format(route.first.y)}');
   for (var i = 0; i + 1 < route.length; i++) {
     final a = route[i];
@@ -353,6 +367,14 @@ String polylineWithJumpsSvg(
             ' L ${format(inX + px)} ${format(inY + py)}'
             ' L ${format(outX + px)} ${format(outY + py)}'
             ' L ${format(outX)} ${format(outY)}',
+          );
+        case LineJumpRenderStyle.line:
+          buf.write(
+            ' M ${format(inX + px)} ${format(inY + py)}'
+            ' L ${format(inX - px)} ${format(inY - py)}'
+            ' M ${format(outX - px)} ${format(outY - py)}'
+            ' L ${format(outX + px)} ${format(outY + py)}'
+            ' M ${format(outX)} ${format(outY)}',
           );
         case LineJumpRenderStyle.arc:
           buf.write(

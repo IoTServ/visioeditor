@@ -804,16 +804,19 @@ class VsdxPainter extends CustomPainter {
     if (polylineCrossings(route, unders).isEmpty) return null;
     final pageStyle = sheet?.lineJumpStyle;
     final conStyle = shape.connectorProps?.conLineJumpStyle;
-    final rx = resolveLineJumpRadius(
-      uiRadius: lineJumpRadiusInches,
-      lineToLineInches: sheet?.lineToLineXInches,
-      jumpFactor: sheet?.lineJumpFactorX,
-    );
-    final ry = resolveLineJumpRadius(
-      uiRadius: lineJumpRadiusInches,
-      lineToLineInches: sheet?.lineToLineYInches,
-      jumpFactor: sheet?.lineJumpFactorY,
-    );
+    final customRadius = shape.drawioLineJumpSizeInches;
+    final rx = customRadius ??
+        resolveLineJumpRadius(
+          uiRadius: lineJumpRadiusInches,
+          lineToLineInches: sheet?.lineToLineXInches,
+          jumpFactor: sheet?.lineJumpFactorX,
+        );
+    final ry = customRadius ??
+        resolveLineJumpRadius(
+          uiRadius: lineJumpRadiusInches,
+          lineToLineInches: sheet?.lineToLineYInches,
+          jumpFactor: sheet?.lineJumpFactorY,
+        );
     return polylineWithJumps(
       route,
       unders,
@@ -822,6 +825,7 @@ class VsdxPainter extends CustomPainter {
       pageJumpCode: pageCode,
       style: conStyle,
       pageStyle: pageStyle,
+      customStyle: shape.drawioLineJumpStyle,
       dirX: effectiveLineJumpDir(
         shape.connectorProps?.conLineJumpDirX,
         sheet?.lineJumpDirX,
@@ -875,16 +879,19 @@ class VsdxPainter extends CustomPainter {
       ];
       final pageStyle = sheet?.lineJumpStyle;
       final conStyle = shape.connectorProps?.conLineJumpStyle;
-      final rx = resolveLineJumpRadius(
-        uiRadius: lineJumpRadiusInches,
-        lineToLineInches: sheet?.lineToLineXInches,
-        jumpFactor: sheet?.lineJumpFactorX,
-      );
-      final ry = resolveLineJumpRadius(
-        uiRadius: lineJumpRadiusInches,
-        lineToLineInches: sheet?.lineToLineYInches,
-        jumpFactor: sheet?.lineJumpFactorY,
-      );
+      final customRadius = shape.drawioLineJumpSizeInches;
+      final rx = customRadius ??
+          resolveLineJumpRadius(
+            uiRadius: lineJumpRadiusInches,
+            lineToLineInches: sheet?.lineToLineXInches,
+            jumpFactor: sheet?.lineJumpFactorX,
+          );
+      final ry = customRadius ??
+          resolveLineJumpRadius(
+            uiRadius: lineJumpRadiusInches,
+            lineToLineInches: sheet?.lineToLineYInches,
+            jumpFactor: sheet?.lineJumpFactorY,
+          );
       path = unders.isEmpty || polylineCrossings(localPts, unders).isEmpty
           ? _polylinePath(localPts)
           : polylineWithJumps(
@@ -895,6 +902,7 @@ class VsdxPainter extends CustomPainter {
               pageJumpCode: pageCode,
               style: conStyle,
               pageStyle: pageStyle,
+              customStyle: shape.drawioLineJumpStyle,
               dirX: effectiveLineJumpDir(
                 shape.connectorProps?.conLineJumpDirX,
                 sheet?.lineJumpDirX,

@@ -347,6 +347,39 @@ void main() {
         .hasMatch(d), isTrue);
   });
 
+  test('draw.io Line jump emits paired crossing marks', () {
+    final route = <Offset2D>[const Offset2D(0, 1), const Offset2D(4, 1)];
+    final unders = <List<Offset2D>>[
+      <Offset2D>[const Offset2D(2, 0), const Offset2D(2, 2)],
+    ];
+    final d = polylineWithJumpsSvg(
+      route,
+      unders,
+      0.2,
+      customStyle: 'line',
+    );
+    expect(d.contains(' A '), isFalse);
+    expect(' M '.allMatches(d).length, 3,
+        reason: 'two crossing marks plus resume point');
+  });
+
+  test('SVG honours per-connector draw.io jump style and size', () {
+    final lower = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final upper = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1)
+        .withDrawioLineJumpStyle('arc')
+        .withDrawioLineJumpSize(0.13);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[lower, upper],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 0),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('A 0.13 0.13'));
+  });
+
   test('drawnConnectorPagePolyline keeps dense curved geometry', () {
     final r1 = VsdxShapeFactory.rectangle(
         id: 1, pinX: 1, pinY: 1, width: 1, height: 1);

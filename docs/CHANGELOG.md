@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io per-connector Line Jumps and Line Cap**: Format now offers Flat,
+  Round and Square stroke caps plus None, Arc, Gap, Sharp and Line crossing
+  styles with an independent jump size for each connector. Arc/Gap/Sharp map
+  to native Visio `ConLineJump*` cells; draw.io's paired-Line rendering and
+  per-edge size use preserved User rows with a native Sharp fallback. Canvas
+  and SVG/PDF export agree, edits are undoable and lock-safe, and the complete
+  line style participates in Copy/Paste Style and default edge styles.
 - **draw.io label background and Text Spacing**: Format → Text now exposes a
   solid/transparent label background with opacity plus independent left,
   right, top and bottom text padding. Slider drags preview as one undo step,

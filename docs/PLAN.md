@@ -357,6 +357,12 @@ Reset Crop 与 Reset Image Adjustments 可独立恢复。控制器写入 `ImgOff
 并将这些字段纳入 Copy/Paste Style 与独立默认创建样式；粘贴时明确保留目标 `TxtPin*`、`TxtWidth/Height` 和
 `TxtAngle`。新增撤销、锁定、样式继承、真实 Format 面板和 `.vsdx` 保存重开回归。
 
+已补：**逐连接线跳线与线端样式（draw.io Line Jumps / Line Cap）** —— Format 的 Line 区增加 Flat/Round/Square
+端帽，Connector 区增加 None/Arc/Gap/Sharp/Line 五种交叉样式和逐连接线 Jump Size。Arc/Gap/Sharp 映射 Visio 原生
+`ConLineJumpCode/Style`；draw.io 独有的双线跳线以 Square 作为其他 VSDX 阅读器的降级效果，并通过
+`User.veLineJumpStyle/Size` 保留本应用中的精确视觉。画布与 SVG/PDF 共用样式和尺寸解析，支持拖动单步撤销、锁定过滤、
+Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、样式继承和真实 Format 面板回归。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 加密 / masters 深编辑 / 写回二进制（产品决策：导入 → 另存 `.vsdx` only；不实现 OLE2 写回）
@@ -1542,6 +1548,11 @@ Reset Crop 与 Reset Image Adjustments 可独立恢复。控制器写入 `ImgOff
   `TextBkgnd` / `TextBkgndTrans` / Margin 模型、渲染与 Writer，实现 `.vsdx` 往返；同步纳入
   Copy/Paste Style 与默认创建样式，同时保留目标文字框位置、尺寸和角度。补锁定、撤销、几何隔离、
   默认继承、真实面板与保存重开回归。
+- 2026-08-01 — **对齐 draw.io Line Jumps / Line Cap**：Format 补 Flat/Round/Square
+  线端与 None/Arc/Gap/Sharp/Line 五种逐连接线跳线样式、独立 Jump Size。前三种跳线写入 Visio
+  `ConLineJump*`，draw.io 双线形态和逐线尺寸通过 User 行精确保留并提供 Sharp 原生降级；画布、
+  SVG/PDF、保存重开、Copy/Paste Style 和默认 Edge 样式保持一致。补撤销、锁定、路径、导出、
+  几何属性保留和真实面板回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

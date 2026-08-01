@@ -60,6 +60,7 @@ Path polylineWithJumps(
   int? pageJumpCode,
   int? style,
   int? pageStyle,
+  String? customStyle,
   int? dirX,
   int? dirY,
 }) {
@@ -68,6 +69,7 @@ Path polylineWithJumps(
   final mode = vsdx.LineJumpRenderStyle.resolve(
     conStyle: style,
     pageStyle: pageStyle,
+    customStyle: customStyle,
   );
   path.moveTo(route.first.dx, route.first.dy);
   for (var i = 0; i + 1 < route.length; i++) {
@@ -130,6 +132,13 @@ Path polylineWithJumps(
             ..lineTo(inP.dx + perp.dx, inP.dy + perp.dy)
             ..lineTo(outP.dx + perp.dx, outP.dy + perp.dy)
             ..lineTo(outP.dx, outP.dy);
+        case vsdx.LineJumpRenderStyle.line:
+          path
+            ..moveTo(inP.dx + perp.dx, inP.dy + perp.dy)
+            ..lineTo(inP.dx - perp.dx, inP.dy - perp.dy)
+            ..moveTo(outP.dx - perp.dx, outP.dy - perp.dy)
+            ..lineTo(outP.dx + perp.dx, outP.dy + perp.dy)
+            ..moveTo(outP.dx, outP.dy);
         case vsdx.LineJumpRenderStyle.arc:
           path.arcToPoint(
             outP,

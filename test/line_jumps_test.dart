@@ -62,4 +62,18 @@ void main() {
     expect(len(plain), closeTo(4.0, 1e-6));
     expect(len(jumped), greaterThan(len(plain)));
   });
+
+  test('draw.io Line jump paints two crossing marks and resumes the route', () {
+    final route = <Offset>[const Offset(0, 1), const Offset(4, 1)];
+    final unders = <List<Offset>>[
+      <Offset>[const Offset(2, 0), const Offset(2, 2)],
+    ];
+    final path = polylineWithJumps(
+      route,
+      unders,
+      0.2,
+      customStyle: 'line',
+    );
+    expect(path.computeMetrics().length, 4);
+  });
 }

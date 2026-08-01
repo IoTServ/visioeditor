@@ -4810,6 +4810,28 @@ class _PropertyPanel extends StatelessWidget {
           const SizedBox(height: 8),
           _compoundTypeRow(context, controller),
           const SizedBox(height: 8),
+          Text(
+            EditorL10n.of(context).lineCap,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            children: [
+              for (final cap in LineCap.values)
+                ChoiceChip(
+                  label: Text(switch (cap) {
+                    LineCap.extended => EditorL10n.of(context).lineCapFlat,
+                    LineCap.round => EditorL10n.of(context).lineCapRound,
+                    LineCap.square => EditorL10n.of(context).lineCapSquare,
+                  }),
+                  selected: controller.selectedLine?.cap == cap,
+                  onSelected: (_) => controller.setLineCap(cap),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
           _arrowPickers(context, controller),
           _OpacitySlider(
             label: EditorL10n.of(context).opacity,
@@ -4857,6 +4879,56 @@ class _PropertyPanel extends StatelessWidget {
                   ? null
                   : controller.setConnectorRounded,
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(EditorL10n.of(context).connectorLineJumps),
+                ),
+                DropdownButton<ConnectorLineJumpStyle>(
+                  value: controller.selectedConnectorLineJumpStyle,
+                  isDense: true,
+                  items: [
+                    for (final style in ConnectorLineJumpStyle.values)
+                      DropdownMenuItem<ConnectorLineJumpStyle>(
+                        value: style,
+                        child: Text(switch (style) {
+                          ConnectorLineJumpStyle.none =>
+                            EditorL10n.of(context).none,
+                          ConnectorLineJumpStyle.arc =>
+                            EditorL10n.of(context).jumpArc,
+                          ConnectorLineJumpStyle.gap =>
+                            EditorL10n.of(context).jumpGap,
+                          ConnectorLineJumpStyle.sharp =>
+                            EditorL10n.of(context).jumpSharp,
+                          ConnectorLineJumpStyle.line =>
+                            EditorL10n.of(context).jumpLine,
+                        }),
+                      ),
+                  ],
+                  onChanged: (style) {
+                    if (style != null) {
+                      controller.setConnectorLineJumpStyle(style);
+                    }
+                  },
+                ),
+              ],
+            ),
+            if (controller.selectedConnectorLineJumpStyle !=
+                ConnectorLineJumpStyle.none)
+              _RangeSlider(
+                label: EditorL10n.of(context).connectorLineJumpSize,
+                value: controller.selectedConnectorLineJumpSize,
+                min: 0.02,
+                max: 0.25,
+                format: (v) => '${(v * 72).round()} pt',
+                onStart: controller.beginTransaction,
+                onChanged: (v) => controller.setConnectorLineJumpSize(
+                  v,
+                  transient: true,
+                ),
+                onEnd: controller.commitTransaction,
+              ),
           ],
           // Text sits with Style (fill/line) like draw.io's Format → Text tab —
           // not buried under shadow/glow. Shown for any selection; empty runs

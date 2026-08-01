@@ -49,6 +49,10 @@ byte-for-byte, so formulas and structure survive a save.
   route segment while remaining upright across reverse and reroute operations;
   canvas and SVG/PDF output agree, and the manual label angle is restored when
   the option is disabled.
+  Connectors also expose draw.io's per-edge None/Arc/Gap/Sharp/Line crossing
+  styles and jump size, while every stroke can select Flat/Round/Square caps.
+  Native Visio cells and preserved extension rows keep these settings stable
+  through save/reopen, style copy and default-edge creation.
   Arrange's Constrain Proportions switch persistently couples width and height
   across numeric, keyboard and all resize-handle edits, matching draw.io's
   `aspect=fixed` style and surviving `.vsdx` save/reopen.

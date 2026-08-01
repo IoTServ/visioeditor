@@ -493,6 +493,18 @@ class EditorL10n {
   String get paddingBottom => locale.languageCode == 'zh' ? '底部' : 'Bottom';
   String get resetTextPadding =>
       locale.languageCode == 'zh' ? '重置文本内边距' : 'Reset Text Padding';
+  String get lineCap => locale.languageCode == 'zh' ? '线端样式' : 'Line Cap';
+  String get lineCapFlat => locale.languageCode == 'zh' ? '平直' : 'Flat';
+  String get lineCapRound => locale.languageCode == 'zh' ? '圆形' : 'Round';
+  String get lineCapSquare => locale.languageCode == 'zh' ? '方形' : 'Square';
+  String get jumpArc => locale.languageCode == 'zh' ? '圆弧' : 'Arc';
+  String get jumpGap => locale.languageCode == 'zh' ? '间隙' : 'Gap';
+  String get jumpSharp => locale.languageCode == 'zh' ? '尖角' : 'Sharp';
+  String get jumpLine => locale.languageCode == 'zh' ? '双线' : 'Line';
+  String get connectorLineJumps =>
+      locale.languageCode == 'zh' ? '连接线跳线' : 'Line Jumps';
+  String get connectorLineJumpSize =>
+      locale.languageCode == 'zh' ? '跳线尺寸' : 'Jump Size';
   String get size => _t('size');
   String get color => _t('color');
   String get rounded => _t('rounded');

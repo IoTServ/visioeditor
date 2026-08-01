@@ -754,6 +754,15 @@ class VsdxShape {
   /// The manual Visio `TxtAngle` remains intact and is restored when disabled.
   static const String userAutoRotateLabel = 'veAutoRotateLabel';
 
+  /// Exact draw.io `jumpStyle` for connectors. Arc/Gap/Sharp are mirrored to
+  /// native Visio `ConLineJump*` cells; `line` uses Square as its Visio
+  /// fallback while this row preserves the richer editor rendering.
+  static const String userLineJumpStyle = 'veLineJumpStyle';
+
+  /// Per-connector draw.io `jumpSize`, stored as an inch radius. Visio only
+  /// exposes page-level jump factors, so the User row preserves this override.
+  static const String userLineJumpSize = 'veLineJumpSize';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -904,6 +913,83 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userAutoRotateLabel, value: value ? '1' : '0'),
+      ],
+    );
+  }
+
+  /// Exact draw.io line-jump style, or `null` when native Visio cells decide.
+  String? get drawioLineJumpStyle {
+    for (final c in userCells) {
+      if (c.name == userLineJumpStyle) {
+        final value = c.value?.trim().toLowerCase();
+        if (const <String>{'none', 'arc', 'gap', 'sharp', 'line'}
+            .contains(value)) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Per-connector jump radius in inches, or `null` for the page/default size.
+  double? get drawioLineJumpSizeInches {
+    for (final c in userCells) {
+      if (c.name == userLineJumpSize) {
+        final value = double.tryParse(c.value ?? '');
+        if (value != null && value > 0) return value;
+      }
+    }
+    return null;
+  }
+
+  /// Set draw.io's five-way jump style while preserving unrelated User and
+  /// Connector cells. Native Visio receives the closest interoperable style.
+  VsdxShape withDrawioLineJumpStyle(String value) {
+    if (!isGlueableConnector) return this;
+    final style = value.trim().toLowerCase();
+    if (!const <String>{'none', 'arc', 'gap', 'sharp', 'line'}
+        .contains(style)) {
+      return this;
+    }
+    final props = connectorProps ?? const VsdxConnectorProps();
+    final (code, nativeStyle) = switch (style) {
+      'none' => (1, 0),
+      'gap' => (2, 2),
+      'sharp' || 'line' => (2, 3),
+      _ => (2, 1),
+    };
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userLineJumpStyle) c,
+    ];
+    return copyWith(
+      connectorProps: props.copyWith(
+        conLineJumpCode: code,
+        conLineJumpStyle: nativeStyle,
+      ),
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userLineJumpStyle, value: style),
+      ],
+    );
+  }
+
+  /// Set draw.io's per-connector jump radius while preserving other User rows.
+  VsdxShape withDrawioLineJumpSize(double? inches) {
+    if (!isGlueableConnector) return this;
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userLineJumpSize) c,
+    ];
+    if (inches == null) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    final value = inches.clamp(0.02, 0.25).toDouble();
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userLineJumpSize, value: '$value'),
       ],
     );
   }

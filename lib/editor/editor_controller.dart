@@ -30,6 +30,9 @@ enum EditorTool {
 /// edge styles. [curved] smooths the orthogonal control points into a spline.
 enum ConnectorRouteStyle { straight, orthogonal, curved }
 
+/// draw.io connector crossing styles (`jumpStyle`).
+enum ConnectorLineJumpStyle { none, arc, gap, sharp, line }
+
 /// Common draw.io label positions around a 2-D shape.
 enum TextLabelPosition { left, top, center, bottom, right }
 
@@ -39,6 +42,8 @@ typedef _CreationStyle = ({
   VsdxCharStyle? char,
   VsdxParaStyle? para,
   VsdxTextBlock block,
+  ConnectorLineJumpStyle? lineJumpStyle,
+  double? lineJumpSize,
   VsdxShadow shadow,
   VsdxGlow glow,
   VsdxReflection reflection,
@@ -6402,6 +6407,11 @@ class EditorController extends ChangeNotifier {
   VsdxFill? get selectedFill => (_firstSelected2D ?? _firstSelected)?.fill;
   VsdxLine? get selectedLine => _firstSelected?.line;
 
+  void setLineCap(LineCap cap) => _updateSelectedShapes(
+        (s) => s.copyWith(line: s.line.copyWith(cap: cap)),
+        rememberStyle: true,
+      );
+
   void setFillColor(VsdxColor color) => _updateSelectedShapes(
         (s) {
           if (s.is1D) return s;
@@ -6736,6 +6746,76 @@ class EditorController extends ChangeNotifier {
       return next;
     });
   }
+
+  static ConnectorLineJumpStyle _connectorLineJumpStyleOf(VsdxShape shape) {
+    final custom = shape.drawioLineJumpStyle;
+    if (custom != null) {
+      return switch (custom) {
+        'none' => ConnectorLineJumpStyle.none,
+        'gap' => ConnectorLineJumpStyle.gap,
+        'sharp' => ConnectorLineJumpStyle.sharp,
+        'line' => ConnectorLineJumpStyle.line,
+        _ => ConnectorLineJumpStyle.arc,
+      };
+    }
+    final props = shape.connectorProps;
+    if (props?.conLineJumpCode case 1 || 3 || 4) {
+      return ConnectorLineJumpStyle.none;
+    }
+    return switch (props?.conLineJumpStyle) {
+      2 => ConnectorLineJumpStyle.gap,
+      3 => ConnectorLineJumpStyle.sharp,
+      _ => ConnectorLineJumpStyle.arc,
+    };
+  }
+
+  ConnectorLineJumpStyle get selectedConnectorLineJumpStyle {
+    final page = currentPage;
+    if (page == null) return ConnectorLineJumpStyle.none;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape != null && shape.isGlueableConnector) {
+        return _connectorLineJumpStyleOf(shape);
+      }
+    }
+    return ConnectorLineJumpStyle.none;
+  }
+
+  double get selectedConnectorLineJumpSize {
+    final page = currentPage;
+    if (page == null) return _lineJumpRadiusInches;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape != null && shape.isGlueableConnector) {
+        final custom = shape.drawioLineJumpSizeInches;
+        if (custom != null) return custom;
+        final sheet = page.pageSheet;
+        return resolveLineJumpRadius(
+          uiRadius: _lineJumpRadiusInches,
+          lineToLineInches: sheet.lineToLineXInches,
+          jumpFactor: sheet.lineJumpFactorX,
+        );
+      }
+    }
+    return _lineJumpRadiusInches;
+  }
+
+  void setConnectorLineJumpStyle(ConnectorLineJumpStyle style) =>
+      _updateSelectedShapes(
+        (shape) => shape.isGlueableConnector
+            ? shape.withDrawioLineJumpStyle(style.name)
+            : shape,
+        rememberStyle: true,
+      );
+
+  void setConnectorLineJumpSize(double inches, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) => shape.isGlueableConnector
+            ? shape.withDrawioLineJumpSize(inches)
+            : shape,
+        transient: transient,
+        rememberStyle: true,
+      );
 
   /// Whether the first selected connector is drawn as a straight segment.
   bool get selectedConnectorStraight {
@@ -7368,6 +7448,10 @@ class EditorController extends ChangeNotifier {
       char: run?.charStyle,
       para: run?.paraStyle,
       block: shape.richText.textBlock,
+      lineJumpStyle: shape.isGlueableConnector
+          ? _connectorLineJumpStyleOf(shape)
+          : null,
+      lineJumpSize: shape.drawioLineJumpSizeInches,
       shadow: shape.shadow,
       glow: shape.glow,
       reflection: shape.reflection,
@@ -7477,6 +7561,11 @@ class EditorController extends ChangeNotifier {
     }
     if (s.is1D) {
       next = next.withAutoRotateLabel(clip.autoRotateLabel);
+      if (clip.lineJumpStyle case final jumpStyle?) {
+        next = next
+            .withDrawioLineJumpStyle(jumpStyle.name)
+            .withDrawioLineJumpSize(clip.lineJumpSize);
+      }
     }
     // Keep Geometry NoFill/NoLine in sync with pasted fill/line — otherwise
     // setNoFill → pasteStyle leaves geom.noFill=true and the canvas stays hollow.
