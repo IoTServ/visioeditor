@@ -148,6 +148,59 @@ void main() {
     );
   });
 
+  test('selection crop includes loose labels and large visual effects', () {
+    final connector = VsdxShapeFactory.line(
+      id: 1,
+      ax: 2,
+      ay: 2,
+      bx: 2.2,
+      by: 2,
+    ).copyWith(text: 'A connector label much wider than its edge');
+    final effected =
+        VsdxShapeFactory.rectangle(
+          id: 2,
+          pinX: 5,
+          pinY: 3,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            offsetXInches: 0.25,
+            offsetYInches: -0.25,
+            blurInches: 0.2,
+            transparency: 0,
+          ),
+          glow: const VsdxGlow(sizeInches: 0.2, transparency: 0),
+          reflection: const VsdxReflection(
+            sizeInches: 1,
+            distanceInches: 0.3,
+            blurInches: 0.1,
+            transparency: 0,
+          ),
+        );
+    final page = VsdxPage(
+      id: 0,
+      name: 'Effects',
+      widthInches: 9,
+      heightInches: 6,
+      shapes: <VsdxShape>[connector, effected],
+    );
+
+    final labelCrop = buildSelectionExportPage(page, <int>[
+      1,
+    ], marginInches: 0.1)!;
+    expect(labelCrop.widthInches, greaterThan(4));
+
+    final effectCrop = buildSelectionExportPage(page, <int>[
+      2,
+    ], marginInches: 0.1)!;
+    final visible = buildShapeBounds(effectCrop)[2]!;
+    expect(visible.left, closeTo(0.1, 1e-9));
+    expect(visible.top, closeTo(0.1, 1e-9));
+    expect(visible.right, closeTo(effectCrop.widthInches - 0.1, 1e-9));
+    expect(visible.bottom, closeTo(effectCrop.heightInches - 0.1, 1e-9));
+  });
+
   test('selection export retains only internal glue rows', () {
     final a = VsdxShapeFactory.rectangle(
       id: 1,

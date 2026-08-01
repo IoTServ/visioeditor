@@ -58,4 +58,81 @@ void main() {
     // Caption sits under the local box (y=0 bottom); page pin is centre.
     expect(box.top, lessThan(2 - 0.75 / 2));
   });
+
+  test('buildShapeBounds includes a loose connector label plate', () {
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 2,
+      ay: 2,
+      bx: 2.2,
+      by: 2,
+    ).copyWith(text: 'A connector label much wider than its edge');
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 5,
+      shapes: <VsdxShape>[connector],
+    );
+
+    final box = buildShapeBounds(page)[3]!;
+
+    expect(box.width, greaterThan(3.8));
+    expect(box.center.dx, closeTo(2.1, 1e-9));
+  });
+
+  test('buildShapeBounds includes label padding and visual effects', () {
+    final padded =
+        VsdxShapeFactory.rectangle(
+              id: 4,
+              pinX: 2,
+              pinY: 2,
+              width: 0.5,
+              height: 0.5,
+            )
+            .copyWith(
+              text: 'Padded',
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'Padded')],
+                textBlock: VsdxTextBlock(backgroundColor: VsdxColor.white),
+              ),
+            )
+            .withLabelPadding(const VsdxLabelPadding(left: 20));
+    final effected =
+        VsdxShapeFactory.rectangle(
+          id: 5,
+          pinX: 4,
+          pinY: 3,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            offsetXInches: 0.25,
+            offsetYInches: -0.25,
+            blurInches: 0.2,
+            transparency: 0,
+          ),
+          glow: const VsdxGlow(sizeInches: 0.2, transparency: 0),
+          reflection: const VsdxReflection(
+            sizeInches: 1,
+            distanceInches: 0.3,
+            blurInches: 0.1,
+            transparency: 0,
+          ),
+        );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 6,
+      shapes: <VsdxShape>[padded, effected],
+    );
+    final bounds = buildShapeBounds(page);
+
+    expect(bounds[4]!.left, closeTo(2 - 0.25 - 20 / 96, 1e-9));
+    expect(bounds[5]!.left, closeTo(2.7, 1e-9));
+    expect(bounds[5]!.right, closeTo(5.35, 1e-9));
+    expect(bounds[5]!.top, closeTo(0.9, 1e-9));
+    expect(bounds[5]!.bottom, closeTo(4.3, 1e-9));
+  });
 }
