@@ -22,7 +22,10 @@ Future<String?> saveBytesWithPicker({
     fileName: fileName,
     type: FileType.custom,
     allowedExtensions: allowedExtensions,
-    bytes: bytes,
+    // file_picker requires bytes on iOS/Android, but its macOS adapter throws
+    // when bytes are supplied. Desktop pickers return a path and this adapter
+    // persists the bytes after the dialog completes.
+    bytes: supportsDirectFileSave ? null : bytes,
   );
   if (picked == null) return null;
 
