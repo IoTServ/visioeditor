@@ -610,6 +610,8 @@ class EditorL10n {
   String get curvedText => _t('curvedText');
   String get wordWrap =>
       locale.languageCode == 'zh' ? '自动换行' : 'Word Wrap';
+  String get automaticTextSize =>
+      locale.languageCode == 'zh' ? '自动文字大小' : 'Automatic Text Size';
   String get constrainProportions =>
       locale.languageCode == 'zh' ? '限制比例' : 'Constrain Proportions';
   String get autoRotateLabel =>

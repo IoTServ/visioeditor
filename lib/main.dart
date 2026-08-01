@@ -6308,9 +6308,11 @@ class _PropertyPanel extends StatelessWidget {
                 for (final p in sizes)
                   DropdownMenuItem<int>(value: p, child: Text('$p pt')),
               ],
-              onChanged: (p) {
-                if (p != null) controller.setTextSizeInches(p / 72.0);
-              },
+              onChanged: controller.selectedAutosizeText
+                  ? null
+                  : (p) {
+                      if (p != null) controller.setTextSizeInches(p / 72.0);
+                    },
             ),
             IconButton(
               onPressed: () => controller.setBold(!cs.style.bold),
@@ -6360,6 +6362,25 @@ class _PropertyPanel extends StatelessWidget {
               icon: const Icon(Icons.format_clear),
               tooltip: EditorL10n.of(context).clearTextFormatting,
               visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                EditorL10n.of(context).automaticTextSize,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Switch(
+              key: const ValueKey('autosize-text-switch'),
+              value: controller.selectedAutosizeText,
+              onChanged: controller.canSetAutosizeText
+                  ? controller.setAutosizeText
+                  : null,
             ),
           ],
         ),

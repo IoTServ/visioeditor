@@ -783,6 +783,10 @@ class VsdxShape {
   /// default; `'0'` lets a label keep its natural width beyond the text box.
   static const String userWordWrap = 'veWordWrap';
 
+  /// draw.io `autosizeText=1`: keep vertex bounds fixed and fit the label by
+  /// changing its Character-row font sizes.
+  static const String userAutosizeText = 'veAutosizeText';
+
   /// draw.io `labelBorderColor` for the text-block outline. Visio has no
   /// portable ShapeSheet equivalent, so the RGB token is kept in a User row.
   static const String userLabelBorderColor = 'veLabelBorderColor';
@@ -948,6 +952,31 @@ class VsdxShape {
         ...others,
         VsdxUserCell(name: userWordWrap, value: value ? '1' : '0'),
       ],
+    );
+  }
+
+  /// Whether this vertex automatically fits its label into the text block.
+  bool get autosizeText {
+    for (final c in userCells) {
+      if (c.name == userAutosizeText) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// Set Automatic Text Size while preserving unrelated User metadata.
+  /// Disabling removes only the behaviour flag and keeps the fitted sizes.
+  VsdxShape withAutosizeText(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userAutosizeText) c,
+    ];
+    return copyWith(
+      userCells: value
+          ? <VsdxUserCell>[
+              ...others,
+              const VsdxUserCell(name: userAutosizeText, value: '1'),
+            ]
+          : others,
     );
   }
 

@@ -1601,6 +1601,12 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   确定性图案几何并按真实轮廓裁剪。设置通过 `User.veSketchFillStyle`、`User.veSketchHachure*` 与
   `User.veSketchFillWeight` 保真往返 VSDX，纳入撤销、锁定、
   Copy/Paste Style、默认 Vertex 样式与 Agent `set_style`，覆盖导出、离屏像素、属性面板和双语回归。
+- 2026-08-01 — **对齐 draw.io Automatic Text Size**：跟进 draw.io v29.5.4 新增的
+  `autosizeText`，在 Format → Text 为可缩放二维图形增加自动文字大小；保持图形与文字框尺寸不变，
+  在 6–999pt 内二分拟合，富文本各段按统一比例缩放。文字、尺寸、内边距、方向与换行变化会自动
+  重新计算，实际字号写入 Character 行，使 Canvas、SVG/PDF 与 Visio 打开结果一致；状态通过
+  `User.veAutosizeText` 保真往返 VSDX，并纳入撤销、锁定、Copy/Paste Style、Copy/Paste Text Style、
+  默认 Vertex 样式及 Agent `set_style`，覆盖富文本比例、保存重开和真实 Format 面板回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

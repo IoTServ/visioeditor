@@ -60,6 +60,7 @@ typedef _CreationStyle = ({
   int flowAnimationDurationMs,
   VsdxFlowAnimationTiming flowAnimationTiming,
   VsdxFlowAnimationDirection flowAnimationDirection,
+  bool autosizeText,
   bool wordWrap,
   bool constrainProportions,
   bool autoRotateLabel,
@@ -5342,6 +5343,142 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Fit a vertex label into its fixed text block by changing font size.
+  ///
+  /// draw.io's `autosizeText` searches up to 999pt and keeps a practical 6pt
+  /// floor. A single scale preserves mixed-size rich-text hierarchy, and the
+  /// result is persisted in Visio Character rows for every exporter.
+  static VsdxShape _fitAutosizeText(VsdxShape s) {
+    if (!s.autosizeText || s.is1D) return s;
+    final label = _shapeLabel(s);
+    if (label.trim().isEmpty) return s;
+
+    var runs = s.richText.runs;
+    if (runs.isEmpty) {
+      runs = <VsdxTextRun>[VsdxTextRun(text: s.text ?? '')];
+    }
+    final currentMaxPt = runs
+        .map((run) => run.charStyle.fontSizeInches * 72)
+        .fold<double>(0, math.max);
+    if (!currentMaxPt.isFinite || currentMaxPt <= 0) return s;
+
+    final block = s.richText.textBlock;
+    var textWidth = (block.widthInches ?? s.width.abs()).abs();
+    var textHeight = (block.heightInches ?? s.height.abs()).abs();
+    var marginLeft = block.marginLeftInches;
+    var marginRight = block.marginRightInches;
+    var marginTop = block.marginTopInches;
+    var marginBottom = block.marginBottomInches;
+    if (block.textDirection == 1) {
+      final oldWidth = textWidth;
+      textWidth = textHeight;
+      textHeight = oldWidth;
+      final oldLeft = marginLeft;
+      final oldRight = marginRight;
+      final oldTop = marginTop;
+      final oldBottom = marginBottom;
+      marginLeft = oldTop;
+      marginRight = oldBottom;
+      marginTop = oldRight;
+      marginBottom = oldLeft;
+    }
+    const dpi = 96.0;
+    final availableWidth =
+        math.max(0.01, textWidth - marginLeft - marginRight) * dpi;
+    final availableHeight =
+        math.max(0.01, textHeight - marginTop - marginBottom) * dpi;
+
+    String applyCase(String text, VsdxTextCase value) => switch (value) {
+          VsdxTextCase.allCaps => text.toUpperCase(),
+          VsdxTextCase.initialCaps => text.replaceAllMapped(
+              RegExp(r'(^|\s)(\S)'),
+              (match) => '${match.group(1)}${match.group(2)!.toUpperCase()}',
+            ),
+          VsdxTextCase.normal => text,
+        };
+
+    bool fits(double targetMaxPt) {
+      final scale = targetMaxPt / currentMaxPt;
+      final spans = <InlineSpan>[];
+      for (final run in runs) {
+        final c = run.charStyle;
+        final p = run.paraStyle;
+        var sizePx = math.max(1.0, c.fontSizeInches * 72 * scale) / 72 * dpi;
+        if (c.position != VsdxTextPosition.normal) sizePx *= 0.7;
+        final height = p.lineSpacingAbsoluteInches > 0
+            ? p.lineSpacingAbsoluteInches * dpi / sizePx
+            : math.max(0.1, p.lineSpacing);
+        spans.add(TextSpan(
+          text: applyCase(run.text, c.textCase),
+          style: TextStyle(
+            fontFamily: c.fontFamily,
+            fontSize: sizePx,
+            fontWeight: c.style.bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: c.style.italic ? FontStyle.italic : FontStyle.normal,
+            height: height,
+            letterSpacing: c.letterSpacingInches * dpi,
+          ),
+        ));
+      }
+      final painter = TextPainter(
+        text: TextSpan(children: spans),
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      );
+      if (s.wordWrap) {
+        painter.layout(maxWidth: availableWidth);
+      } else {
+        painter.layout();
+      }
+      final result = painter.height <= availableHeight + 0.5 &&
+          (s.wordWrap || painter.width <= availableWidth + 0.5);
+      painter.dispose();
+      return result;
+    }
+
+    var low = 6;
+    var high = 999;
+    var best = 6;
+    while (low <= high) {
+      final candidate = (low + high) ~/ 2;
+      if (fits(candidate.toDouble())) {
+        best = candidate;
+        low = candidate + 1;
+      } else {
+        high = candidate - 1;
+      }
+    }
+    final scale = best / currentMaxPt;
+    final fittedRuns = <VsdxTextRun>[
+      for (final run in runs)
+        run.copyWith(
+          charStyle: run.charStyle.copyWith(
+            fontSizeInches: (run.charStyle.fontSizeInches * scale)
+                .clamp(1 / 72, 999 / 72)
+                .toDouble(),
+            complexScriptSizeInches:
+                run.charStyle.complexScriptSizeInches == null
+                    ? null
+                    : (run.charStyle.complexScriptSizeInches! * scale)
+                        .clamp(1 / 72, 999 / 72)
+                        .toDouble(),
+          ),
+          paraStyle: run.paraStyle.bulletFontSizeInches == null
+              ? null
+              : run.paraStyle.copyWith(
+                  bulletFontSizeInches:
+                      (run.paraStyle.bulletFontSizeInches! * scale)
+                          .clamp(1 / 72, 999 / 72)
+                          .toDouble(),
+                ),
+        ),
+    ];
+    return s.copyWith(
+      text: s.text ?? label,
+      richText: s.richText.copyWith(runs: fittedRuns),
+    );
+  }
+
   /// Make every other selected shape match the first selection's width
   /// (draw.io Arrange → Same width). Keeps each shape's left edge.
   void matchSelectionWidth() => _matchSelectionSize(width: true, height: false);
@@ -5420,12 +5557,13 @@ class EditorController extends ChangeNotifier {
           (sh) {
             final sx = sh.width == 0 ? 1.0 : nw / sh.width;
             final sy = sh.height == 0 ? 1.0 : nh / sh.height;
-            final resized = sh.resizeTo(
+            var resized = sh.resizeTo(
               pinX: sh.pinX,
               pinY: sh.pinY,
               width: nw,
               height: nh,
             );
+            if (resized.autosizeText) resized = _fitAutosizeText(resized);
             // Match [resizeShape]: groups scale all children; pools scale
             // non-lane content here (lanes reflow via layoutLanes below).
             if (SwimlaneOps.isPool(sh)) {
@@ -7619,6 +7757,7 @@ class EditorController extends ChangeNotifier {
       flowAnimationDurationMs: shape.flowAnimationDurationMs,
       flowAnimationTiming: shape.flowAnimationTiming,
       flowAnimationDirection: shape.flowAnimationDirection,
+      autosizeText: shape.autosizeText,
       wordWrap: shape.wordWrap,
       constrainProportions: shape.constrainProportions,
       autoRotateLabel: shape.autoRotateLabel,
@@ -7728,6 +7867,7 @@ class EditorController extends ChangeNotifier {
           fixed: line.fixedDash,
         );
     if (!s.is1D && clip.includeFill) {
+      next = next.withAutosizeText(clip.autosizeText);
       next = next.withWordWrap(clip.wordWrap);
       next = next.withConstrainProportions(clip.constrainProportions);
     }
@@ -7827,6 +7967,7 @@ class EditorController extends ChangeNotifier {
     )
         .withLabelBorderColor(clip.labelBorderColor)
         .withShapeOpacity(clip.shapeOpacity);
+    if (next.autosizeText) next = _fitAutosizeText(next);
     return next;
   }
 
@@ -7844,6 +7985,7 @@ class EditorController extends ChangeNotifier {
     double backgroundTransparency,
     VsdxColor? labelBorderColor,
     int textDirection,
+    bool autosizeText,
   })? _textStyleClipboard;
 
   bool get hasTextStyleClipboard => _textStyleClipboard != null;
@@ -7885,6 +8027,7 @@ class EditorController extends ChangeNotifier {
       backgroundTransparency: block.backgroundTransparency,
       labelBorderColor: shape.labelBorderColor,
       textDirection: block.textDirection,
+      autosizeText: shape.autosizeText,
     );
     notifyListeners();
   }
@@ -7944,17 +8087,18 @@ class EditorController extends ChangeNotifier {
         textDirection: clip.textDirection,
         defaultTabStopInches: old.defaultTabStopInches,
       );
-      nextPage = nextPage.updateShapeById(
-        id,
-        (target) => target
+      nextPage = nextPage.updateShapeById(id, (target) {
+        var styled = target
             .copyWith(
               richText: target.richText.copyWith(
                 runs: runs,
                 textBlock: styledBlock,
               ),
             )
-            .withLabelBorderColor(clip.labelBorderColor),
-      );
+            .withLabelBorderColor(clip.labelBorderColor);
+        if (!target.is1D) styled = styled.withAutosizeText(clip.autosizeText);
+        return styled.autosizeText ? _fitAutosizeText(styled) : styled;
+      });
       changed = true;
     }
     if (!changed) return;
@@ -8733,7 +8877,7 @@ class EditorController extends ChangeNotifier {
       final sizeInches =
           (s.is1D ? 0.14 : box * 0.18).clamp(4.0 / 72.0, 1.0);
       final cjk = _containsCjk(text);
-      return s.copyWith(
+      final next = s.copyWith(
         text: text,
         fields: const <VsdxFieldRow>[],
         richText: s.richText.copyWith(
@@ -8753,10 +8897,12 @@ class EditorController extends ChangeNotifier {
           ],
         ),
       );
+      return next.autosizeText ? _fitAutosizeText(next) : next;
     }
     final next = replacePlainText(s.richText, text);
-    return s.copyWith(
+    final updated = s.copyWith(
         text: text, richText: next, fields: const <VsdxFieldRow>[]);
+    return updated.autosizeText ? _fitAutosizeText(updated) : updated;
   }
 
   static String _shapeLabel(VsdxShape s) =>
@@ -8940,10 +9086,10 @@ class EditorController extends ChangeNotifier {
           rich = applyParaStyleToRange(rich, start: a, end: b, update: para);
         }
         changed = true;
-        return page.updateShapeById(
-          editId,
-          (sh) => sh.copyWith(text: rich.plainText, richText: rich),
-        );
+        return page.updateShapeById(editId, (sh) {
+          final next = sh.copyWith(text: rich.plainText, richText: rich);
+          return next.autosizeText ? _fitAutosizeText(next) : next;
+        });
       }, transient: transient);
       if (rememberStyle && changed) _rememberStyle();
       return;
@@ -8968,9 +9114,10 @@ class EditorController extends ChangeNotifier {
                 ? para(const VsdxParaStyle())
                 : const VsdxParaStyle(),
           );
-          return s.copyWith(
+          final next = s.copyWith(
             richText: s.richText.copyWith(runs: <VsdxTextRun>[seeded]),
           );
+          return next.autosizeText ? _fitAutosizeText(next) : next;
         }
         runs = <VsdxTextRun>[VsdxTextRun(text: t)];
       }
@@ -8981,7 +9128,8 @@ class EditorController extends ChangeNotifier {
             paraStyle: para != null ? para(r.paraStyle) : null,
           ),
       ];
-      return s.copyWith(richText: s.richText.copyWith(runs: newRuns));
+      final next = s.copyWith(richText: s.richText.copyWith(runs: newRuns));
+      return next.autosizeText ? _fitAutosizeText(next) : next;
     }, transient: transient, rememberStyle: rememberStyle);
   }
 
@@ -9319,7 +9467,7 @@ class EditorController extends ChangeNotifier {
       _updateSelectedShapes(
         (s) {
           final old = s.richText.textBlock;
-          return s.copyWith(
+          final next = s.copyWith(
             richText: s.richText.copyWith(
               textBlock: old.copyWith(
                 marginLeftInches:
@@ -9334,6 +9482,7 @@ class EditorController extends ChangeNotifier {
               ),
             ),
           );
+          return next.autosizeText ? _fitAutosizeText(next) : next;
         },
         transient: transient,
         rememberStyle: true,
@@ -9439,7 +9588,7 @@ class EditorController extends ChangeNotifier {
         ]) {
           formulas.remove(key);
         }
-        return s.copyWith(
+        final next = s.copyWith(
           formulas: formulas,
           richText: s.richText.copyWith(
             runs: runs,
@@ -9464,6 +9613,7 @@ class EditorController extends ChangeNotifier {
             ),
           ),
         );
+        return next.autosizeText ? _fitAutosizeText(next) : next;
       });
 
   TextLabelPosition? get selectedTextLabelPosition {
@@ -9491,13 +9641,16 @@ class EditorController extends ChangeNotifier {
   }
 
   void setVerticalText(bool enabled) => _updateSelectedShapes(
-        (s) => s.copyWith(
+        (s) {
+          final next = s.copyWith(
           richText: s.richText.copyWith(
             textBlock: s.richText.textBlock.copyWith(
               textDirection: enabled ? 1 : 0,
             ),
           ),
-        ),
+          );
+          return next.autosizeText ? _fitAutosizeText(next) : next;
+        },
       );
 
   bool get selectedVerticalText {
@@ -9547,9 +9700,48 @@ class EditorController extends ChangeNotifier {
 
   /// Apply draw.io's `whiteSpace=wrap` semantic to selected vertices.
   void setWordWrap(bool value) => _updateSelectedShapes(
-        (shape) => shape.is1D || shape.wordWrap == value
-            ? shape
-            : shape.withWordWrap(value),
+        (shape) {
+          if (shape.is1D || shape.wordWrap == value) return shape;
+          final next = shape.withWordWrap(value);
+          return next.autosizeText ? _fitAutosizeText(next) : next;
+        },
+        rememberStyle: true,
+      );
+
+  /// Whether Automatic Text Size can change an editable selected vertex.
+  bool get canSetAutosizeText {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null &&
+          !shape.is1D &&
+          !shape.locked &&
+          !isOnLockedLayer(id);
+    });
+  }
+
+  /// Whether every selected vertex uses draw.io's `autosizeText` behaviour.
+  bool get selectedAutosizeText {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape == null || shape.is1D) continue;
+      any = true;
+      if (!shape.autosizeText) return false;
+    }
+    return any;
+  }
+
+  /// Toggle fixed-bounds automatic font fitting for selected vertices.
+  void setAutosizeText(bool value) => _updateSelectedShapes(
+        (shape) {
+          if (shape.is1D || shape.autosizeText == value) return shape;
+          final next = shape.withAutosizeText(value);
+          return value ? _fitAutosizeText(next) : next;
+        },
         rememberStyle: true,
       );
 
@@ -10144,12 +10336,13 @@ class EditorController extends ChangeNotifier {
             }
             final sx = sh.width == 0 ? 1.0 : width / sh.width;
             final sy = sh.height == 0 ? 1.0 : height / sh.height;
-            final resized = sh.resizeTo(
+            var resized = sh.resizeTo(
               pinX: pinX,
               pinY: pinY,
               width: width,
               height: height,
             );
+            if (resized.autosizeText) resized = _fitAutosizeText(resized);
             // Groups: scale children with the box (draw.io). Skip pools/lanes/
             // tables (they reflow) and pure pin moves (sx≈sy≈1).
             if (!resizeChildren ||

@@ -1718,6 +1718,7 @@ void main() {
           'fontScale': 0.85,
           'complexScriptFont': 'Arial',
           'complexScriptSizePt': 10,
+          'autosizeText': true,
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -1736,6 +1737,7 @@ void main() {
       expect(c.fontScale, closeTo(0.85, 1e-9));
       expect(c.complexScriptFont, 'Arial');
       expect(c.complexScriptSizeInches, closeTo(10 / 72.0, 1e-9));
+      expect(after.autosizeText, isTrue);
     });
 
     test('set_style textBackground margins and paragraph indent', () {

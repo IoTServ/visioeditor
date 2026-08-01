@@ -1300,6 +1300,10 @@ ApplyResult applyOps(
                 );
               }
             }
+            if (!next.is1D && op.containsKey('autosizeText')) {
+              final enabled = _b(op['autosizeText']);
+              if (enabled != null) next = next.withAutosizeText(enabled);
+            }
             final lineCapRaw = op['lineCap'] ?? op['cap'];
             if (lineCapRaw != null) {
               LineCap? cap;
