@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io Rotate with Edge**: labelled connectors now expose the persistent
+  Text-panel auto-rotation switch. Labels follow the nearest drawn route
+  segment, stay upright when an edge is reversed, and update immediately after
+  rerouting on the canvas and in SVG/PDF export. The option hides/disables the
+  manual rotate handle without overwriting `TxtAngle`, is undoable, survives
+  `.vsdx` through `User.veAutoRotateLabel`, preserves unrelated User rows and
+  participates in connector Copy/Paste Style and default creation styles.
 - **draw.io Constrain Proportions**: the Arrange size section now exposes the
   persistent `aspect=fixed` switch for editable vertices. Width/height fields,
   keyboard sizing and all eight resize handles preserve the original ratio;

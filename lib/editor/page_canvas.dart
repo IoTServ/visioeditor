@@ -3552,6 +3552,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final conn = _selectedConnector();
     if (conn == null ||
         !_canEditConnector(conn) ||
+        conn.autoRotateLabel ||
         !_connectorHasLabel(conn)) {
       return false;
     }
@@ -4794,7 +4795,9 @@ class _PageCanvasState extends State<PageCanvas> {
               if (_connectorHasLabel(connector)) {
                 final anchors = _connectorLabelRotateAnchors(connector);
                 connectorLabelHandle = anchors.$1;
-                connectorLabelRotateKnob = anchors.$2;
+                if (!connector.autoRotateLabel) {
+                  connectorLabelRotateKnob = anchors.$2;
+                }
               }
             }
             return DragTarget<ThirdPartyIcon>(

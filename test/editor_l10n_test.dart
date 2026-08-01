@@ -45,6 +45,8 @@ void main() {
     expect(zh.wordWrap, '自动换行');
     expect(en.constrainProportions, 'Constrain Proportions');
     expect(zh.constrainProportions, '限制比例');
+    expect(en.autoRotateLabel, 'Rotate with Edge');
+    expect(zh.autoRotateLabel, '随连接线旋转');
     expect(en.selectNone, 'Select None');
     expect(zh.selectNone, '取消全选');
     expect(en.snapSelectionToGrid, 'Snap Selection to Grid');

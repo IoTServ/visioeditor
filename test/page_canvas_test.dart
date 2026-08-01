@@ -2354,6 +2354,45 @@ void main() {
     );
   });
 
+  testWidgets('Rotate with Edge hides and disables the manual rotate handle',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.createConnector(2, 5, 6, 5);
+        connector = c.singleSelectedId!;
+        c
+          ..setShapeText(connector, 'Approval')
+          ..setAutoRotateLabel(true);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final midpoint = VsdxPage.connectorMidpoint(
+      page.findShapeById(connector)!,
+    );
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final anchor = _pagePoint(
+      origin,
+      camera,
+      page,
+      midpoint.x,
+      midpoint.y,
+    );
+    final formerKnob = anchor + const Offset(0, -26);
+
+    await tester.dragFrom(formerKnob, const Offset(60, 26));
+    await tester.pumpAndSettle();
+
+    final shape = controller.currentPage!.findShapeById(connector)!;
+    expect(shape.richText.textBlock.angleRad, closeTo(0, 1e-9));
+    expect(shape.autoRotateLabel, isTrue);
+  });
+
   testWidgets('blank context menu selects all edges or vertices',
       (tester) async {
     late int connector;

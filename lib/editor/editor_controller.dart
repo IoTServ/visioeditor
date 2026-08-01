@@ -43,6 +43,7 @@ typedef _CreationStyle = ({
   VsdxReflection reflection,
   bool wordWrap,
   bool constrainProportions,
+  bool autoRotateLabel,
   bool includeFill,
   bool includeEffects,
 });
@@ -2873,13 +2874,15 @@ class EditorController extends ChangeNotifier {
     if (baseLine.pattern == 0) {
       baseLine = baseLine.copyWith(pattern: 1);
     }
-    var connector = VsdxShapeFactory.line(
-      id: id,
-      ax: sax,
-      ay: say,
-      bx: sbx,
-      by: sby,
-      line: baseLine,
+    var connector = _withMemoStyle(
+      VsdxShapeFactory.line(
+        id: id,
+        ax: sax,
+        ay: say,
+        bx: sbx,
+        by: sby,
+        line: baseLine,
+      ),
     );
     // Prefixed XFTRIGGER formulas so 万兴图示 re-glues when targets move.
     if (begin != null || end != null) {
@@ -3167,13 +3170,15 @@ class EditorController extends ChangeNotifier {
     }
     final srcPin = next.shapePinPage(sourceId);
     final tgtPin = next.shapePinPage(targetId);
-    var connector = VsdxShapeFactory.line(
-      id: connId,
-      ax: srcPin.x,
-      ay: srcPin.y,
-      bx: tgtPin.x,
-      by: tgtPin.y,
-      line: baseLine,
+    var connector = _withMemoStyle(
+      VsdxShapeFactory.line(
+        id: connId,
+        ax: srcPin.x,
+        ay: srcPin.y,
+        bx: tgtPin.x,
+        by: tgtPin.y,
+        line: baseLine,
+      ),
     );
     // Same XFTRIGGER wiring as [createConnector] so exported diagrams re-glue.
     final formulas = Map<String, String>.from(connector.formulas);
@@ -6834,6 +6839,7 @@ class EditorController extends ChangeNotifier {
     final connector = page0.findShapeById(id);
     if (connector == null ||
         !connector.isGlueableConnector ||
+        connector.autoRotateLabel ||
         connector.locked ||
         isOnLockedLayer(id)) {
       return;
@@ -7190,6 +7196,7 @@ class EditorController extends ChangeNotifier {
       reflection: shape.reflection,
       wordWrap: shape.wordWrap,
       constrainProportions: shape.constrainProportions,
+      autoRotateLabel: shape.autoRotateLabel,
       includeFill: !shape.is1D,
       includeEffects: !shape.is1D,
     );
@@ -7290,6 +7297,9 @@ class EditorController extends ChangeNotifier {
     if (!s.is1D && clip.includeFill) {
       next = next.withWordWrap(clip.wordWrap);
       next = next.withConstrainProportions(clip.constrainProportions);
+    }
+    if (s.is1D) {
+      next = next.withAutoRotateLabel(clip.autoRotateLabel);
     }
     // Keep Geometry NoFill/NoLine in sync with pasted fill/line — otherwise
     // setNoFill → pasteStyle leaves geom.noFill=true and the canvas stays hollow.
@@ -8971,6 +8981,26 @@ class EditorController extends ChangeNotifier {
         (shape) => shape.is1D || shape.constrainProportions == value
             ? shape
             : shape.withConstrainProportions(value),
+        rememberStyle: true,
+      );
+
+  /// Whether the selected connector can toggle draw.io label auto-rotation.
+  bool get canSetAutoRotateLabel {
+    final shape = singleSelected;
+    return shape != null &&
+        shape.isGlueableConnector &&
+        !shape.locked &&
+        !isOnLockedLayer(shape.id);
+  }
+
+  /// Current `labelAutoRotate=1` state for the selected connector.
+  bool get selectedAutoRotateLabel => singleSelected?.autoRotateLabel ?? false;
+
+  /// Follow the nearest route segment while preserving the manual TxtAngle.
+  void setAutoRotateLabel(bool value) => _updateSelectedShapes(
+        (shape) => !shape.isGlueableConnector || shape.autoRotateLabel == value
+            ? shape
+            : shape.withAutoRotateLabel(value),
         rememberStyle: true,
       );
 

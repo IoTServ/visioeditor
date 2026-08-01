@@ -750,6 +750,10 @@ class VsdxShape {
   /// the shape's aggregate [locked] state.
   static const String userConstrainProportions = 'veConstrainProportions';
 
+  /// Explicit draw.io `labelAutoRotate=1` equivalent for connector labels.
+  /// The manual Visio `TxtAngle` remains intact and is restored when disabled.
+  static const String userAutoRotateLabel = 'veAutoRotateLabel';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -878,6 +882,28 @@ class VsdxShape {
           name: userConstrainProportions,
           value: value ? '1' : '0',
         ),
+      ],
+    );
+  }
+
+  /// Whether this connector label follows the nearest route segment's tangent.
+  bool get autoRotateLabel {
+    for (final c in userCells) {
+      if (c.name == userAutoRotateLabel) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// Set [autoRotateLabel] while preserving unrelated User rows.
+  VsdxShape withAutoRotateLabel(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userAutoRotateLabel) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userAutoRotateLabel, value: value ? '1' : '0'),
       ],
     );
   }

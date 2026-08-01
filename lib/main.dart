@@ -6044,6 +6044,25 @@ class _PropertyPanel extends StatelessWidget {
             ),
           ],
         ),
+        if (controller.singleSelected?.isGlueableConnector ?? false)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  EditorL10n.of(context).autoRotateLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Switch(
+                key: const ValueKey('auto-rotate-label-switch'),
+                value: controller.selectedAutoRotateLabel,
+                onChanged: controller.canSetAutoRotateLabel
+                    ? controller.setAutoRotateLabel
+                    : null,
+              ),
+            ],
+          ),
         Row(
           children: [
             Expanded(

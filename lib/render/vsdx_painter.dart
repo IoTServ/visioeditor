@@ -2004,6 +2004,10 @@ class VsdxPainter extends CustomPainter {
     final isEdgeLabel = shape.isGlueableConnector;
 
     final block = rich.textBlock;
+    final labelAngle = isEdgeLabel
+        ? (_paintTarget ?? page)?.effectiveConnectorLabelAngle(shape) ??
+            block.angleRad
+        : block.angleRad;
     // Match Visio / libvisio: HideText suppresses the painted label.
     if (block.hideText) return;
     final s = pxPerInch;
@@ -2052,7 +2056,7 @@ class VsdxPainter extends CustomPainter {
       final local = _pageToLocal(shape, Offset(mid.x, mid.y));
       canvas.save();
       canvas.translate(local.dx, local.dy);
-      if (block.angleRad != 0) canvas.rotate(block.angleRad);
+      if (labelAngle != 0) canvas.rotate(labelAngle);
       canvas.scale(1 / s, -1 / s);
       // Match SVG / pinned text blocks: TextDirection=1 rotates the label.
       if (block.textDirection == 1) {
@@ -2103,7 +2107,7 @@ class VsdxPainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(pinX, pinY); // to TxtPin (shape-local, Y-up)
-    if (block.angleRad != 0) canvas.rotate(block.angleRad);
+    if (labelAngle != 0) canvas.rotate(labelAngle);
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
     // TextBkgnd — solid fill behind the text block (libvisio fo:background-color).
     if (block.backgroundColor != null) {

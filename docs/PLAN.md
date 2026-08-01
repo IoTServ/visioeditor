@@ -1513,6 +1513,13 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   `User.veConstrainProportions` 往返 `.vsdx`、保留其他 User 行、支持撤销，并纳入顶点
   Copy/Paste Style 与默认创建样式；连接线与锁定图形不暴露可编辑状态。补模型往返、锚点、
   数值尺寸、角点/边中点拖拽、样式继承和双语文案回归。
+- 2026-08-01 — **对齐 draw.io Rotate with Edge**：按 `Format.js` 的连接线标签范围与
+  `Graph.getEdgeLabelAngle` / `getLabelAutoRotation` 增加 Text 面板持久开关；从当前绘制路径中
+  选择距标签锚点最近的非零线段，以切线方向旋转并对反向边做 180° 正置，重路由后自动更新。
+  画布与 SVG/PDF 导出共用角度计算；启用时隐藏并禁用手动旋转柄，但保留 Visio `TxtAngle`
+  供关闭后恢复。状态以 `User.veAutoRotateLabel` 往返 `.vsdx`、保留其他 User 行、支持撤销，
+  并纳入连接线 Copy/Paste Style 和独立默认 Edge 样式；补折线路段、反向正置、导出、锁定、
+  手柄互斥、真实面板开关和双语文案回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

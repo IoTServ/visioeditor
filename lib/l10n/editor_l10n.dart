@@ -537,6 +537,8 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '自动换行' : 'Word Wrap';
   String get constrainProportions =>
       locale.languageCode == 'zh' ? '限制比例' : 'Constrain Proportions';
+  String get autoRotateLabel =>
+      locale.languageCode == 'zh' ? '随连接线旋转' : 'Rotate with Edge';
   String get bulletList => _t('bulletList');
   String get superscript => locale.languageCode == 'zh'
       ? '上标 (Cmd/Ctrl+.)'

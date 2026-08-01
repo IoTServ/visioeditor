@@ -140,6 +140,44 @@ void main() {
     expect(tester.widget<Switch>(toggle).value, isTrue);
   });
 
+  testWidgets('Text exposes Rotate with Edge for a selected connector',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+    await tester.pumpAndSettle();
+    final controller =
+        tester.widget<PageCanvas>(find.byType(PageCanvas)).controller;
+    controller.createConnector(2, 4, 6, 5);
+    controller.setShapeText(controller.singleSelectedId!, 'Approval');
+    await tester.pumpAndSettle();
+
+    final label = find.text('Rotate with Edge');
+    final propertyScrollable = find.ancestor(
+      of: find.text('Arrange'),
+      matching: find.byWidgetPredicate((widget) => widget is Scrollable),
+    );
+    expect(propertyScrollable, findsOneWidget);
+    final scrollState = tester.state<ScrollableState>(propertyScrollable);
+    for (var i = 0; i < 8 && label.evaluate().isEmpty; i++) {
+      scrollState.position.jumpTo(
+        (scrollState.position.pixels + 300).clamp(
+          0,
+          scrollState.position.maxScrollExtent,
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(label, findsOneWidget);
+    final toggle = find.byKey(const ValueKey('auto-rotate-label-switch'));
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+  });
+
   testWidgets('right-click opens a context menu with edit actions',
       (tester) async {
     await pumpApp(tester);

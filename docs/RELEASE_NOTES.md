@@ -38,6 +38,10 @@ byte-for-byte, so formulas and structure survive a save.
   preview, MCP, CLI and Agent Skill workflows.
 - **Edit** with select / move / resize (8 handles) / rotate, duplicate,
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
+  Connector labels can optionally **Rotate with Edge**, following the nearest
+  route segment while remaining upright across reverse and reroute operations;
+  canvas and SVG/PDF output agree, and the manual label angle is restored when
+  the option is disabled.
   Arrange's Constrain Proportions switch persistently couples width and height
   across numeric, keyboard and all resize-handle edits, matching draw.io's
   `aspect=fixed` style and surviving `.vsdx` save/reopen.

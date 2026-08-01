@@ -1035,6 +1035,98 @@ class VsdxPage {
     return autoRoutedConnectorPolyline(s);
   }
 
+  /// Effective connector-label angle in the connector's local coordinates.
+  ///
+  /// draw.io's `labelAutoRotate` selects the route segment nearest the label,
+  /// aligns the text baseline to its tangent and flips reverse-facing angles
+  /// by 180° so text remains upright. Manual `TxtAngle` is the fallback and is
+  /// never overwritten, so disabling the option restores the authored angle.
+  double effectiveConnectorLabelAngle(VsdxShape s) {
+    final manual = s.richText.textBlock.angleRad;
+    if (!s.isGlueableConnector || !s.autoRotateLabel) return manual;
+    final route = drawnConnectorPagePolyline(s);
+    if (route.length < 2) return manual;
+
+    final block = s.richText.textBlock;
+    final anchor = block.pinXInches != null || block.pinYInches != null
+        ? localToPageDeep(
+            s.id,
+            Offset2D(
+              block.pinXInches ?? s.width / 2,
+              block.pinYInches ?? s.height / 2,
+            ),
+          )
+        : _polylineMidpoint(route);
+
+    Offset2D? from;
+    Offset2D? to;
+    var bestDistance = double.infinity;
+    for (var i = 1; i < route.length; i++) {
+      final a = route[i - 1];
+      final b = route[i];
+      final dx = b.x - a.x;
+      final dy = b.y - a.y;
+      final length2 = dx * dx + dy * dy;
+      if (length2 <= 1e-18) continue;
+      final t = (((anchor.x - a.x) * dx + (anchor.y - a.y) * dy) /
+              length2)
+          .clamp(0.0, 1.0);
+      final px = a.x + dx * t;
+      final py = a.y + dy * t;
+      final ddx = anchor.x - px;
+      final ddy = anchor.y - py;
+      final distance = ddx * ddx + ddy * ddy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        from = a;
+        to = b;
+      }
+    }
+    if (from == null || to == null) return manual;
+
+    var pageAngle = math.atan2(to.y - from.y, to.x - from.x);
+    if (pageAngle > math.pi / 2) pageAngle -= math.pi;
+    if (pageAngle < -math.pi / 2) pageAngle += math.pi;
+
+    // Convert the upright page-space direction back through nested transforms
+    // so the local text transform produces that same page heading.
+    final pageTip = Offset2D(
+      anchor.x + math.cos(pageAngle),
+      anchor.y + math.sin(pageAngle),
+    );
+    final localAnchor = pageToLocalDeep(s.id, anchor);
+    final localTip = pageToLocalDeep(s.id, pageTip);
+    final localDx = localTip.x - localAnchor.x;
+    final localDy = localTip.y - localAnchor.y;
+    if (localDx * localDx + localDy * localDy <= 1e-18) return manual;
+    return math.atan2(localDy, localDx);
+  }
+
+  static Offset2D _polylineMidpoint(List<Offset2D> route) {
+    if (route.isEmpty) return const Offset2D(0, 0);
+    if (route.length == 1) return route.first;
+    var total = 0.0;
+    for (var i = 1; i < route.length; i++) {
+      total += _segLength(route[i - 1], route[i]);
+    }
+    if (total <= 1e-18) return route.first;
+    var remaining = total / 2;
+    for (var i = 1; i < route.length; i++) {
+      final a = route[i - 1];
+      final b = route[i];
+      final length = _segLength(a, b);
+      if (length >= remaining) {
+        final t = length <= 1e-18 ? 0.0 : remaining / length;
+        return Offset2D(
+          a.x + (b.x - a.x) * t,
+          a.y + (b.y - a.y) * t,
+        );
+      }
+      remaining -= length;
+    }
+    return route.last;
+  }
+
   /// The drawn route of connector [s] in page inches: begin → waypoints → end,
   /// or the straight / elbow route when it has no explicit waypoints.
   ///

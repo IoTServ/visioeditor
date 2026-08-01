@@ -3087,6 +3087,9 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final block = shape.richText.textBlock;
+    final labelAngle = shape.isGlueableConnector
+        ? page.effectiveConnectorLabelAngle(shape)
+        : block.angleRad;
     // Match libvisio: HideText suppresses the label entirely.
     if (block.hideText) return;
     final tw = block.widthInches ?? shape.width;
@@ -3131,8 +3134,8 @@ class VsdxToSvgSerializer {
     final xf = StringBuffer(
       'translate(${_n(pinX)} ${_n(pinY)})',
     );
-    if (block.angleRad != 0) {
-      xf.write(' rotate(${_n(block.angleRad * 180 / math.pi)})');
+    if (labelAngle != 0) {
+      xf.write(' rotate(${_n(labelAngle * 180 / math.pi)})');
     }
     xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
 
@@ -3150,7 +3153,7 @@ class VsdxToSvgSerializer {
         runs: runs,
         pinX: pinX,
         pinY: pinY,
-        angleRad: block.angleRad,
+        angleRad: labelAngle,
         textDirection: block.textDirection,
         backgroundColor: block.backgroundColor,
         backgroundTransparency: block.backgroundTransparency,
@@ -3189,7 +3192,7 @@ class VsdxToSvgSerializer {
         mr: mr,
         mt: mt,
         mb: mb,
-        angleRad: block.angleRad,
+        angleRad: labelAngle,
         textDirection: block.textDirection,
         paintIdScope: paintIdScope,
         indent: indent,
