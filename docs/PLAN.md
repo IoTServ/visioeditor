@@ -345,6 +345,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
 **Rounded 开关**（curved 时禁用）。测试：引擎 2 例（`roundCorners` 圆角化+端点精确+拐点回退、圆角连接器烘焙折线且
 经重路由保持）+ Writer 1 例（圆角连接器几何真实 `.vsdx` 往返，共 54）、控制器 1 例（圆角开关+重路由保持+撤销，App 共 52）。
 
+已补：**图片裁剪与图像调整（drawio Crop / Image）** —— Format → Image 在既有 Replace Image 之下增加裁剪缩放、
+水平/垂直平移和透明度、亮度、对比度、模糊实时控制；裁剪平移限制在始终覆盖图片框的范围内，拖动预览合并为单次撤销，
+Reset Crop 与 Reset Image Adjustments 可独立恢复。控制器写入 `ImgOffsetX/Y`、`ImgWidth/Height`、`Transparency`、
+`Brightness`、`Contrast`、`Blur`，显式裁剪会清除旧的继承/参数公式，锁定图片保持只读；现有画布、SVG/PDF 与 Writer
+共用这些 Image Properties，故保存重开视觉一致。新增控制器、锁定、撤销、真实 Format 面板和 `.vsdx` 往返测试。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 加密 / masters 深编辑 / 写回二进制（产品决策：导入 → 另存 `.vsdx` only；不实现 OLE2 写回）
@@ -1520,6 +1526,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   供关闭后恢复。状态以 `User.veAutoRotateLabel` 往返 `.vsdx`、保留其他 User 行、支持撤销，
   并纳入连接线 Copy/Paste Style 和独立默认 Edge 样式；补折线路段、反向正置、导出、锁定、
   手柄互斥、真实面板开关和双语文案回归。
+- 2026-08-01 — **对齐 draw.io 图片 Crop / Image 调整**：Format → Image 补裁剪缩放、
+  双轴平移、透明度、亮度、对比度与模糊；图片始终覆盖裁剪框，现有非方形 `Img*` 区域按同倍率
+  缩放而不改变比例，拖动合并为单步撤销。Reset Crop / Reset Image Adjustments 分离，锁定态
+  拒绝修改；显式裁剪清除继承公式并经既有 Image Properties Writer 完整往返。补控制器、撤销、
+  锁定、真实 Format UI 与保存重开回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

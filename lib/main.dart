@@ -5017,6 +5017,99 @@ class _PropertyPanel extends StatelessWidget {
           icon: Icons.image_outlined,
           label: EditorL10n.of(context).replaceImage,
         ),
+        const SizedBox(height: 12),
+        Text(
+          EditorL10n.of(context).crop,
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
+        const SizedBox(height: 4),
+        _RangeSlider(
+          label: EditorL10n.of(context).zoom,
+          value: controller.selectedImageCropZoom,
+          min: 1,
+          max: 4,
+          format: (v) => '${(v * 100).round()}%',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.setSelectedImageCropZoom(v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        if (controller.selectedImageCropZoom > 1.0001) ...[
+          _RangeSlider(
+            label: EditorL10n.of(context).offsetX,
+            value: controller.selectedImageCropPanX,
+            min: -1,
+            max: 1,
+            format: (v) => '${(v * 100).round()}%',
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setSelectedImageCropPan(x: v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          _RangeSlider(
+            label: EditorL10n.of(context).offsetY,
+            value: controller.selectedImageCropPanY,
+            min: -1,
+            max: 1,
+            format: (v) => '${(v * 100).round()}%',
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setSelectedImageCropPan(y: v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+        ],
+        _fullWidthOutlineButton(
+          onPressed: controller.resetSelectedImageCrop,
+          icon: Icons.crop_free,
+          label: EditorL10n.of(context).resetCrop,
+        ),
+        const SizedBox(height: 12),
+        _OpacitySlider(
+          label: EditorL10n.of(context).opacity,
+          opacity: controller.selectedImageOpacity,
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateSelectedImage(opacity: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: EditorL10n.of(context).brightness,
+          value: controller.selectedImageBrightness,
+          min: 0,
+          max: 1,
+          format: (v) => '${(v * 100).round()}%',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateSelectedImage(brightness: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: EditorL10n.of(context).contrast,
+          value: controller.selectedImageContrast,
+          min: 0,
+          max: 1,
+          format: (v) => '${(v * 100).round()}%',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateSelectedImage(contrast: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _RangeSlider(
+          label: EditorL10n.of(context).blur,
+          value: controller.selectedImageBlur,
+          min: 0,
+          max: 1,
+          format: (v) => '${(v * 100).round()}%',
+          onStart: controller.beginTransaction,
+          onChanged: (v) =>
+              controller.updateSelectedImage(blur: v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
+        _fullWidthOutlineButton(
+          onPressed: controller.resetSelectedImageAdjustments,
+          icon: Icons.restart_alt,
+          label: EditorL10n.of(context).resetImageAdjustments,
+        ),
       ],
     );
   }

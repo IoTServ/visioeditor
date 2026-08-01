@@ -476,6 +476,13 @@ class EditorL10n {
   String get panelDiagram => _t('panelDiagram');
   String get panelView => _t('panelView');
   String get opacity => _t('opacity');
+  String get crop => locale.languageCode == 'zh' ? '裁剪' : 'Crop';
+  String get zoom => locale.languageCode == 'zh' ? '缩放' : 'Zoom';
+  String get brightness => locale.languageCode == 'zh' ? '亮度' : 'Brightness';
+  String get contrast => locale.languageCode == 'zh' ? '对比度' : 'Contrast';
+  String get resetCrop => locale.languageCode == 'zh' ? '重置裁剪' : 'Reset Crop';
+  String get resetImageAdjustments =>
+      locale.languageCode == 'zh' ? '重置图像调整' : 'Reset Image Adjustments';
   String get size => _t('size');
   String get color => _t('color');
   String get rounded => _t('rounded');

@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io picture Crop and Image controls**: a selected raster picture now
+  exposes crop zoom and two-axis pan plus opacity, brightness, contrast and
+  blur in Format → Image. Crop movement is constrained to keep the frame
+  covered, slider gestures preview live as one undo step, Reset Crop and Reset
+  Image Adjustments are independent, and locked pictures reject every edit.
+  Literal crop values scrub inherited `Img*` formulas and all controls survive
+  `.vsdx` save/reopen through the existing Image Properties cells.
 - **draw.io Rotate with Edge**: labelled connectors now expose the persistent
   Text-panel auto-rotation switch. Labels follow the nearest drawn route
   segment, stay upright when an edge is reversed, and update immediately after

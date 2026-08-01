@@ -3442,6 +3442,181 @@ class EditorController extends ChangeNotifier {
         page.isShapeVisible(s);
   }
 
+  /// Draw.io-friendly picture properties for the Format inspector. Visio
+  /// stores opacity inversely as Image Properties `Transparency`.
+  double get selectedImageOpacity =>
+      (1.0 - (singleSelected?.imageTransparency ?? 0.0)).clamp(0.0, 1.0);
+  double get selectedImageBlur =>
+      (singleSelected?.imageBlur ?? 0.0).clamp(0.0, 1.0);
+  double get selectedImageBrightness =>
+      (singleSelected?.imageBrightness ?? 0.5).clamp(0.0, 1.0);
+  double get selectedImageContrast =>
+      (singleSelected?.imageContrast ?? 0.5).clamp(0.0, 1.0);
+
+  /// Crop zoom relative to the picture frame. Values above one overflow the
+  /// frame and are clipped, matching draw.io Crop.
+  double get selectedImageCropZoom => _imageCropZoom(singleSelected);
+
+  static double _imageCropZoom(VsdxShape? shape) {
+    return _rawImageCropZoom(shape).clamp(1.0, 4.0);
+  }
+
+  static double _rawImageCropZoom(VsdxShape? shape) {
+    if (shape == null || !shape.hasImage) return 1.0;
+    final zx = shape.width <= 1e-9
+        ? 1.0
+        : shape.effectiveImgWidth / shape.width;
+    final zy = shape.height <= 1e-9
+        ? 1.0
+        : shape.effectiveImgHeight / shape.height;
+    return math.max(1.0, math.max(zx, zy));
+  }
+
+  /// Normalised crop pan: -1 = first edge, 0 = centred, 1 = opposite edge.
+  double get selectedImageCropPanX => _imageCropPan(singleSelected, true);
+  double get selectedImageCropPanY => _imageCropPan(singleSelected, false);
+
+  static double _imageCropPan(VsdxShape? shape, bool horizontal) {
+    if (shape == null || !shape.hasImage) return 0.0;
+    final imageSize = horizontal
+        ? shape.effectiveImgWidth
+        : shape.effectiveImgHeight;
+    final frameSize = horizontal ? shape.width : shape.height;
+    final overflow = math.max(0.0, imageSize - frameSize);
+    if (overflow <= 1e-9) return 0.0;
+    final offset = horizontal
+        ? shape.imgOffsetXInches
+        : shape.imgOffsetYInches;
+    return ((-offset / overflow) * 2.0 - 1.0).clamp(-1.0, 1.0);
+  }
+
+  /// Apply picture tone/opacity controls. Slider previews pass [transient] so
+  /// an entire drag remains one undo step.
+  void updateSelectedImage({
+    double? opacity,
+    double? blur,
+    double? brightness,
+    double? contrast,
+    bool transient = false,
+  }) {
+    final s = singleSelected;
+    if (!canReplaceSelectedImage || s == null) return;
+    final transparency =
+        1.0 - (opacity ?? (1.0 - s.imageTransparency)).clamp(0.0, 1.0);
+    final nextBlur = (blur ?? s.imageBlur).clamp(0.0, 1.0);
+    final nextBrightness =
+        (brightness ?? s.imageBrightness).clamp(0.0, 1.0);
+    final nextContrast = (contrast ?? s.imageContrast).clamp(0.0, 1.0);
+    if ((transparency - s.imageTransparency).abs() <= 1e-12 &&
+        (nextBlur - s.imageBlur).abs() <= 1e-12 &&
+        (nextBrightness - s.imageBrightness).abs() <= 1e-12 &&
+        (nextContrast - s.imageContrast).abs() <= 1e-12) {
+      return;
+    }
+    updateCurrentPage(
+      (page) => page.updateShapeById(
+        s.id,
+        (shape) => shape.copyWith(
+          imageTransparency: transparency,
+          imageBlur: nextBlur,
+          imageBrightness: nextBrightness,
+          imageContrast: nextContrast,
+        ),
+      ),
+      transient: transient,
+    );
+  }
+
+  void setSelectedImageCropZoom(double zoom, {bool transient = false}) {
+    final s = singleSelected;
+    if (!canReplaceSelectedImage || s == null) return;
+    _setSelectedImageCrop(
+      s,
+      zoom: zoom.clamp(1.0, 4.0),
+      panX: _imageCropPan(s, true),
+      panY: _imageCropPan(s, false),
+      transient: transient,
+    );
+  }
+
+  void setSelectedImageCropPan({
+    double? x,
+    double? y,
+    bool transient = false,
+  }) {
+    final s = singleSelected;
+    if (!canReplaceSelectedImage || s == null) return;
+    _setSelectedImageCrop(
+      s,
+      zoom: _rawImageCropZoom(s),
+      panX: (x ?? _imageCropPan(s, true)).clamp(-1.0, 1.0),
+      panY: (y ?? _imageCropPan(s, false)).clamp(-1.0, 1.0),
+      transient: transient,
+    );
+  }
+
+  void _setSelectedImageCrop(
+    VsdxShape shape, {
+    required double zoom,
+    required double panX,
+    required double panY,
+    required bool transient,
+  }) {
+    // Scale the current image rectangle uniformly so imported non-square crop
+    // rectangles keep their aspect. Each axis still covers the frame.
+    final factor = zoom / _rawImageCropZoom(shape);
+    final width = math.max(shape.width, shape.effectiveImgWidth * factor);
+    final height = math.max(shape.height, shape.effectiveImgHeight * factor);
+    final overflowX = math.max(0.0, width - shape.width);
+    final overflowY = math.max(0.0, height - shape.height);
+    final offsetX = -overflowX * (panX + 1.0) / 2.0;
+    final offsetY = -overflowY * (panY + 1.0) / 2.0;
+    if ((width - shape.effectiveImgWidth).abs() <= 1e-12 &&
+        (height - shape.effectiveImgHeight).abs() <= 1e-12 &&
+        (offsetX - shape.imgOffsetXInches).abs() <= 1e-12 &&
+        (offsetY - shape.imgOffsetYInches).abs() <= 1e-12) {
+      return;
+    }
+    updateCurrentPage(
+      (page) => page.updateShapeById(shape.id, (s) {
+        // A user crop is literal: inherited/parametric Img* formulas must not
+        // recalculate over the values from the inspector.
+        final formulas = Map<String, String>.from(s.formulas)
+          ..remove('ImgOffsetX')
+          ..remove('ImgOffsetY')
+          ..remove('ImgWidth')
+          ..remove('ImgHeight');
+        return s.copyWith(
+          imgOffsetXInches: offsetX,
+          imgOffsetYInches: offsetY,
+          imgWidthInches: width,
+          imgHeightInches: height,
+          formulas: formulas,
+        );
+      }),
+      transient: transient,
+    );
+  }
+
+  void resetSelectedImageCrop() {
+    final s = singleSelected;
+    if (!canReplaceSelectedImage || s == null) return;
+    _setSelectedImageCrop(
+      s,
+      zoom: 1.0,
+      panX: 0.0,
+      panY: 0.0,
+      transient: false,
+    );
+  }
+
+  void resetSelectedImageAdjustments() => updateSelectedImage(
+        opacity: 1.0,
+        blur: 0.0,
+        brightness: 0.5,
+        contrast: 0.5,
+      );
+
   /// Top-most picture shape whose bounds contain page point ([x],[y]), or
   /// `null`. Used when dropping an image file onto the canvas (drawio replaces
   /// the picture under the cursor).
