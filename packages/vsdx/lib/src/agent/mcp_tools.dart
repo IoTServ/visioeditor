@@ -1129,6 +1129,12 @@ void _registerEditTools(McpServer server) {
       },
       'miterLimit': <String, dynamic>{'type': 'number', 'minimum': 1},
       'glass': <String, dynamic>{'type': 'boolean'},
+      'sketch': <String, dynamic>{'type': 'boolean'},
+      'sketchJiggle': <String, dynamic>{
+        'type': 'number',
+        'minimum': 0.25,
+        'maximum': 10,
+      },
       'flowAnimation': <String, dynamic>{'type': 'boolean'},
       'flowDurationMs': <String, dynamic>{'type': 'integer', 'minimum': 1},
       'flowTiming': <String, dynamic>{
@@ -1293,6 +1299,8 @@ void _registerEditTools(McpServer server) {
           'lineJoin',
           'miterLimit',
           'glass',
+          'sketch',
+          'sketchJiggle',
           'flowAnimation',
           'flowDurationMs',
           'flowTiming',

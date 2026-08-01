@@ -870,7 +870,7 @@ void main() {
           doc.pages.single.shapes.firstWhere((s) => s.text == 'Do work');
       final r = applyOps(doc, _ops('''
         { "ops": [
-          { "op": "set_style", "ids": ["shape:${target.id}"], "fill": "#F8CECC", "glass": true },
+          { "op": "set_style", "ids": ["shape:${target.id}"], "fill": "#F8CECC", "glass": true, "sketch": true, "sketchJiggle": 3.5 },
           { "op": "set_text", "id": ${target.id}, "text": "Renamed" }
         ] }'''));
       final s =
@@ -878,6 +878,8 @@ void main() {
       expect(s.text, 'Renamed');
       expect(s.fill.foreground?.value, 0xFFF8CECC);
       expect(s.glassEffect, isTrue);
+      expect(s.sketchEffect, isTrue);
+      expect(s.sketchJiggle, 3.5);
     });
 
     test('set_style line color preserves begin/end arrows', () {

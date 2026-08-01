@@ -47,6 +47,7 @@ export 'src/model/rounding.dart';
 export 'src/model/shape.dart';
 export 'src/model/shape_factory.dart';
 export 'src/model/shape_kind.dart';
+export 'src/model/sketch_style.dart';
 export 'src/model/sheet_sections.dart';
 export 'src/model/stylesheet.dart';
 export 'src/model/swimlane.dart';

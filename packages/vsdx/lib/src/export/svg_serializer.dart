@@ -28,6 +28,7 @@ import '../model/spline.dart';
 import '../model/rich_text.dart';
 import '../model/rounding.dart';
 import '../model/shape.dart';
+import '../model/sketch_style.dart';
 import '../model/table.dart';
 import '../model/theme.dart';
 import '../parser/metafile.dart';
@@ -928,8 +929,12 @@ class VsdxToSvgSerializer {
               ? railPaint
               : '$railPaint stroke-linecap="$linecap" '
                   'stroke-linejoin="$linejoin"$miterAttr';
-          buf.writeln(
-            '$indent<path d="$od" fill="none" $withCap/>',
+          _writeBodyStroke(
+            buf,
+            shape,
+            d: od,
+            strokePaint: withCap,
+            indent: indent,
           );
         }
       } else {
@@ -946,9 +951,13 @@ class VsdxToSvgSerializer {
           'stroke-linejoin="$linejoin"$miterAttr/>'
           '</mask></defs>',
         );
-        buf.writeln(
-          '$indent<path d="$sD" fill="none" $bodyStrokePaint '
-          'mask="url(#$mid)"/>',
+        _writeBodyStroke(
+          buf,
+          shape,
+          d: sD,
+          strokePaint: bodyStrokePaint,
+          extraAttrs: 'mask="url(#$mid)"',
+          indent: indent,
         );
       }
       if (filter.isNotEmpty) {
@@ -969,8 +978,12 @@ class VsdxToSvgSerializer {
         buf.writeln('$indent<path d="$d" $fillAttr stroke="none"/>');
       }
       if (!noLine && stroke.paint != 'stroke="none"') {
-        buf.writeln(
-          '$indent<path d="$sD" fill="none" $bodyStrokePaint/>',
+        _writeBodyStroke(
+          buf,
+          shape,
+          d: sD,
+          strokePaint: bodyStrokePaint,
+          indent: indent,
         );
       }
       if (filter.isNotEmpty) {
@@ -983,9 +996,25 @@ class VsdxToSvgSerializer {
         );
       }
     } else {
-      buf.writeln(
-        '$indent<path d="$d" $fillAttr $bodyStrokePaint$filter/>',
-      );
+      if (shape.sketchEffect &&
+          !noLine &&
+          stroke.paint != 'stroke="none"') {
+        if (!noFill && fillAttr != 'fill="none"') {
+          buf.writeln('$indent<path d="$d" $fillAttr stroke="none"$filter/>');
+        }
+        _writeBodyStroke(
+          buf,
+          shape,
+          d: d,
+          strokePaint: bodyStrokePaint,
+          extraAttrs: filter.trim(),
+          indent: indent,
+        );
+      } else {
+        buf.writeln(
+          '$indent<path d="$d" $fillAttr $bodyStrokePaint$filter/>',
+        );
+      }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
           '$indent<path d="$markerD" fill="none" '
@@ -1002,6 +1031,39 @@ class VsdxToSvgSerializer {
         indent: indent,
       );
     }
+  }
+
+  /// Emits a normal stroke or draw.io's two stable rough.js-like passes.
+  /// Each pass has independent opacity so their overlap reads as ink while
+  /// Canvas, SVG and PDF share the same authored pixel jiggle.
+  void _writeBodyStroke(
+    StringBuffer buf,
+    VsdxShape shape, {
+    required String d,
+    required String strokePaint,
+    required String indent,
+    String extraAttrs = '',
+  }) {
+    final extra = extraAttrs.trim().isEmpty ? '' : ' ${extraAttrs.trim()}';
+    if (!shape.sketchEffect) {
+      buf.writeln(
+        '$indent<path d="$d" fill="none" $strokePaint$extra/>',
+      );
+      return;
+    }
+    final offsets = drawioSketchStrokeOffsets(
+      shape.id,
+      shape.sketchJiggle,
+      pxPerInch: pxPerInch,
+    );
+    buf.writeln('$indent<g data-ve-sketch="1">');
+    for (final offset in offsets) {
+      buf.writeln(
+        '$indent  <path d="$d" fill="none" $strokePaint opacity="0.68" '
+        'transform="translate(${_n(offset.x)} ${_n(offset.y)})"$extra/>',
+      );
+    }
+    buf.writeln('$indent</g>');
   }
 
   /// Invisible stroke carrier for SVG `<marker>` — HTML keeps the *first*

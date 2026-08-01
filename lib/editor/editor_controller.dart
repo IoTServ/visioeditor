@@ -50,6 +50,8 @@ typedef _CreationStyle = ({
   VsdxGlow glow,
   VsdxReflection reflection,
   bool glassEffect,
+  bool sketchEffect,
+  double sketchJiggle,
   bool flowAnimation,
   int flowAnimationDurationMs,
   VsdxFlowAnimationTiming flowAnimationTiming,
@@ -7603,6 +7605,8 @@ class EditorController extends ChangeNotifier {
       glow: shape.glow,
       reflection: shape.reflection,
       glassEffect: shape.glassEffect,
+      sketchEffect: shape.sketchEffect,
+      sketchJiggle: shape.sketchJiggle,
       flowAnimation: shape.flowAnimation,
       flowAnimationDurationMs: shape.flowAnimationDurationMs,
       flowAnimationTiming: shape.flowAnimationTiming,
@@ -7723,6 +7727,11 @@ class EditorController extends ChangeNotifier {
       final enabled = clip.includeEffects ? clip.glassEffect : s.glassEffect;
       next = next.withGlassEffect(next.supportsGlassEffect && enabled);
     }
+    // Sketch applies to both vertices and edges in draw.io and is independent
+    // from Visio shadow/glow/reflection support.
+    next = clip.sketchEffect
+        ? next.withSketchEffect(true).withSketchJiggle(clip.sketchJiggle)
+        : next.withSketchEffect(false);
     if (s.is1D) {
       next = next.withAutoRotateLabel(clip.autoRotateLabel);
       if (next.supportsFlowAnimation && clip.includeFlow) {
@@ -9627,6 +9636,43 @@ class EditorController extends ChangeNotifier {
         (shape) => shape.supportsGlassEffect
             ? shape.withGlassEffect(enabled)
             : shape,
+        rememberStyle: true,
+      );
+
+  /// draw.io exposes Sketch for both vertices and edges in the Effects area.
+  bool get canSetSketchEffect {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    return _selection.any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null && !shape.locked && !isOnLockedLayer(id);
+    });
+  }
+
+  bool get selectedHasSketchEffect {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape == null) continue;
+      any = true;
+      if (!shape.sketchEffect) return false;
+    }
+    return any;
+  }
+
+  double get selectedSketchJiggle => _firstSelected?.sketchJiggle ?? 2.0;
+
+  void setSketchEffect(bool enabled) => _updateSelectedShapes(
+        (shape) => shape.withSketchEffect(enabled),
+        rememberStyle: true,
+      );
+
+  void setSketchJiggle(double value, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) => shape.withSketchJiggle(value),
+        transient: transient,
         rememberStyle: true,
       );
 

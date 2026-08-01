@@ -828,6 +828,11 @@ class VsdxShape {
   /// draw.io `glass=1` glossy white highlight. Visio has no equivalent cell.
   static const String userGlassEffect = 'veGlass';
 
+  /// draw.io `sketch=1` and its rough.js `jiggle` amount. Visio has no
+  /// portable hand-drawn stroke style, so both values live in User rows.
+  static const String userSketchEffect = 'veSketch';
+  static const String userSketchJiggle = 'veSketchJiggle';
+
   /// draw.io edge flow animation styles. Visio has no native equivalent.
   static const String userFlowAnimation = 'veFlowAnimation';
   static const String userFlowAnimationDuration = 'veFlowAnimationDuration';
@@ -1144,6 +1149,62 @@ class VsdxShape {
         ...others,
         if (value)
           const VsdxUserCell(name: userGlassEffect, value: '1'),
+      ],
+    );
+  }
+
+  /// Whether draw.io's hand-drawn double-stroke treatment is enabled.
+  bool get sketchEffect {
+    for (final c in userCells) {
+      if (c.name == userSketchEffect) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// draw.io defaults `jiggle` to 2 pixels when Sketch is enabled.
+  double get sketchJiggle {
+    for (final c in userCells) {
+      if (c.name != userSketchJiggle) continue;
+      final parsed = double.tryParse(c.value ?? '');
+      if (parsed != null && parsed.isFinite) {
+        return parsed.clamp(0.25, 10.0).toDouble();
+      }
+    }
+    return 2.0;
+  }
+
+  /// Toggle Sketch while preserving unrelated User rows. Disabling removes
+  /// both editor-owned rows so the normal rendering path remains the default.
+  VsdxShape withSketchEffect(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userSketchEffect && c.name != userSketchJiggle) c,
+    ];
+    if (!value) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        const VsdxUserCell(name: userSketchEffect, value: '1'),
+        VsdxUserCell(name: userSketchJiggle, value: '$sketchJiggle'),
+      ],
+    );
+  }
+
+  /// Update the rough.js-style jiggle amount and keep Sketch enabled.
+  VsdxShape withSketchJiggle(double value) {
+    final jiggle = value.clamp(0.25, 10.0).toDouble();
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userSketchEffect && c.name != userSketchJiggle) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        const VsdxUserCell(name: userSketchEffect, value: '1'),
+        VsdxUserCell(name: userSketchJiggle, value: '$jiggle'),
       ],
     );
   }

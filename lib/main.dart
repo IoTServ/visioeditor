@@ -5078,6 +5078,29 @@ class _PropertyPanel extends StatelessWidget {
             _textControls(context),
           ],
           ], // !isChart
+          if (controller.canSetSketchEffect) ...[
+            const SizedBox(height: 8),
+            _section(context, EditorL10n.of(context).sketch),
+            _switchRow(
+              key: const ValueKey('sketch-effect-switch'),
+              label: EditorL10n.of(context).enabled,
+              value: controller.selectedHasSketchEffect,
+              onChanged: controller.setSketchEffect,
+            ),
+            if (controller.selectedHasSketchEffect)
+              _RangeSlider(
+                key: const ValueKey('sketch-jiggle-slider'),
+                label: EditorL10n.of(context).jiggle,
+                value: controller.selectedSketchJiggle,
+                min: 0.5,
+                max: 5,
+                format: (value) => value.toStringAsFixed(1),
+                onStart: controller.beginTransaction,
+                onChanged: (value) =>
+                    controller.setSketchJiggle(value, transient: true),
+                onEnd: controller.commitTransaction,
+              ),
+          ],
           if (controller.canSetGlassEffect) ...[
             const SizedBox(height: 8),
             _section(context, EditorL10n.of(context).glass),
@@ -5251,11 +5274,13 @@ class _PropertyPanel extends StatelessWidget {
   /// Label + trailing switch that ellipsizes long locale strings in the
   /// narrow Format panel (232px) / compact bottom sheet.
   Widget _switchRow({
+    Key? key,
     required String label,
     required bool value,
     required ValueChanged<bool>? onChanged,
   }) {
     return Row(
+      key: key,
       children: [
         Expanded(
           child: Text(
@@ -7632,6 +7657,7 @@ class _CornersSliderState extends State<_CornersSlider> {
 /// Compact numeric range slider with transactional live preview (one undo step).
 class _RangeSlider extends StatefulWidget {
   const _RangeSlider({
+    super.key,
     required this.label,
     required this.value,
     required this.min,

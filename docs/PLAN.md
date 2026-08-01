@@ -1589,6 +1589,12 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   可自然叠加。状态通过 `User.veOpacity` 保真往返 VSDX，避免破坏性改写 Visio 各组件透明度；支持
   滑动单步撤销、锁定保护、Copy/Paste Style 和独立 Vertex/Edge 默认样式，并补离屏像素、导出、
   User 行保留、真实 Format 面板及中英文文案回归。
+- 2026-08-01 — **对齐 draw.io Sketch / Jiggle**：按当前 `Format.js` 的 Effects 开关与
+  `Editor.sketchDefaultJiggle=2` 增加逐图形手绘风格，并允许 0.5–5 调整抖动强度；顶点和连接线以
+  Shape ID 为种子生成稳定双笔触，屏幕像素抖动经渲染倍率换算，使 Canvas、SVG 与 PDF 保持相同
+  视觉尺度且重复导出不漂移。状态通过 `User.veSketch` / `User.veSketchJiggle` 保真往返 VSDX，
+  纳入撤销、锁定、Copy/Paste Style、独立 Vertex/Edge 默认样式及 Agent `set_style`；补 User 行
+  保留、离屏像素、导出、真实 Format 面板和双语文案回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

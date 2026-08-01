@@ -1335,6 +1335,14 @@ ApplyResult applyOps(
             if (glass == false || (glass == true && next.supportsGlassEffect)) {
               next = next.withGlassEffect(glass!);
             }
+            final sketch = _b(op['sketch']);
+            if (sketch != null) {
+              next = next.withSketchEffect(sketch);
+            }
+            final sketchJiggle = _d(op['sketchJiggle']);
+            if (sketch != false && sketchJiggle != null && sketchJiggle > 0) {
+              next = next.withSketchJiggle(sketchJiggle);
+            }
             final flow = _b(op['flowAnimation']);
             if (flow == false || (flow == true && next.supportsFlowAnimation)) {
               next = next.withFlowAnimation(flow!);

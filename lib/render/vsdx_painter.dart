@@ -661,12 +661,11 @@ class VsdxPainter extends CustomPainter {
               final jumped = _lineJumpsPath(shape, geom);
               if (jumped != null) strokeSrc = jumped;
             }
-            _drawCompoundStroke(
+            _drawBodyStroke(
               canvas,
               strokeSrc,
               strokePaint,
-              shape.line.compoundType,
-              shape.line.weightInches,
+              shape,
               dashes: dashes,
               dashPhase: dashPhase,
             );
@@ -736,12 +735,11 @@ class VsdxPainter extends CustomPainter {
           }
           // Offset compound rails on the continuous path, then dash each rail
           // (SVG order) — dashing before offset breaks thick-thin rails.
-          _drawCompoundStroke(
+          _drawBodyStroke(
             canvas,
             strokeSrc,
             strokePaint,
-            shape.line.compoundType,
-            shape.line.weightInches,
+            shape,
             dashes: dashes,
             dashPhase: dashPhase,
           );
@@ -810,6 +808,61 @@ class VsdxPainter extends CustomPainter {
       direction: shape.flowAnimationDirection,
     );
     return cycle * (1 - progress);
+  }
+
+  /// Draw the authored body stroke, adding draw.io's stable two-pass Sketch
+  /// treatment when requested. Effects and alpha masks continue using the
+  /// exact silhouette so blur/feather bounds are not accidentally widened.
+  void _drawBodyStroke(
+    Canvas canvas,
+    Path path,
+    Paint paint,
+    VsdxShape shape, {
+    List<double>? dashes,
+    double dashPhase = 0,
+  }) {
+    if (!shape.sketchEffect) {
+      _drawCompoundStroke(
+        canvas,
+        path,
+        paint,
+        shape.line.compoundType,
+        shape.line.weightInches,
+        dashes: dashes,
+        dashPhase: dashPhase,
+      );
+      return;
+    }
+    final offsets = drawioSketchStrokeOffsets(
+      shape.id,
+      shape.sketchJiggle,
+      pxPerInch: pxPerInch,
+    );
+    for (final offset in offsets) {
+      final pass = Paint()
+        ..style = paint.style
+        ..strokeWidth = paint.strokeWidth
+        ..strokeCap = paint.strokeCap
+        ..strokeJoin = paint.strokeJoin
+        ..strokeMiterLimit = paint.strokeMiterLimit
+        ..color = paint.color.withValues(alpha: paint.color.a * 0.68)
+        ..shader = paint.shader
+        ..maskFilter = paint.maskFilter
+        ..blendMode = paint.blendMode;
+      canvas
+        ..save()
+        ..translate(offset.x, offset.y);
+      _drawCompoundStroke(
+        canvas,
+        path,
+        pass,
+        shape.line.compoundType,
+        shape.line.weightInches,
+        dashes: dashes,
+        dashPhase: dashPhase,
+      );
+      canvas.restore();
+    }
   }
 
   /// Draw a stroke honouring Visio `CompoundType`
@@ -1080,12 +1133,11 @@ class VsdxPainter extends CustomPainter {
     _drawReflection(canvas, shape, path, noFill: true, noLine: false);
     _applyLineGradient(stroke, shape, path.getBounds());
     final dashes = _effectiveStrokeDashes(shape);
-    _drawCompoundStroke(
+    _drawBodyStroke(
       canvas,
       path,
       stroke,
-      shape.line.compoundType,
-      shape.line.weightInches,
+      shape,
       dashes: dashes,
       dashPhase: _flowDashPhase(shape, dashes),
     );
