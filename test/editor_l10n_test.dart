@@ -63,6 +63,10 @@ void main() {
     expect(zh.fitPageWidth, '适应页面宽度');
     expect(en.copyAsText, 'Copy as Text');
     expect(zh.copyAsText, '复制为文本');
+    expect(en.exportSelectionSvg, 'Export Selection as SVG…');
+    expect(zh.exportSelectionSvg, '仅将所选内容导出为 SVG…');
+    expect(en.exportSelectionPng, 'Export Selection as PNG…');
+    expect(zh.exportSelectionPng, '仅将所选内容导出为 PNG…');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
     expect(en.copyTextStyle, 'Copy Text Style');

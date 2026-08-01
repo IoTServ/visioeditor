@@ -1553,6 +1553,11 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   `ConLineJump*`，draw.io 双线形态和逐线尺寸通过 User 行精确保留并提供 Sharp 原生降级；画布、
   SVG/PDF、保存重开、Copy/Paste Style 和默认 Edge 样式保持一致。补撤销、锁定、路径、导出、
   几何属性保留和真实面板回归。
+- 2026-08-01 — **对齐 draw.io Selection Only 导出**：More 增加“仅将所选内容导出为
+  SVG/PNG”，按选区根构造独立裁切页面并保留原始绘制顺序；嵌套图形提升到页面坐标，组内溢出
+  子项参与边界计算，共选父子不重复，只有两端都在选区内的 Connect 胶合行随导出保留。SVG 与
+  PNG 复用既有主题、图片、图层打印、跳线和 Color-by-Layer 渲染链路，并增加安全留白避免描边、
+  箭头与阴影贴边。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

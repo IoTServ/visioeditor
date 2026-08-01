@@ -161,6 +161,12 @@ class EditorL10n {
   String get saveAs => _t('saveAs');
   String get exportSvg => _t('exportSvg');
   String get exportPng => _t('exportPng');
+  String get exportSelectionSvg => locale.languageCode == 'zh'
+      ? '仅将所选内容导出为 SVG…'
+      : 'Export Selection as SVG…';
+  String get exportSelectionPng => locale.languageCode == 'zh'
+      ? '仅将所选内容导出为 PNG…'
+      : 'Export Selection as PNG…';
   String get exportPdf => _t('exportPdf');
   String get snapToGrid => _t('snapToGrid');
   String get snapSelectionToGrid => locale.languageCode == 'zh'

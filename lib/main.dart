@@ -38,6 +38,7 @@ import 'io/document_io.dart';
 import 'io/image_export.dart';
 import 'io/pdf_export.dart';
 import 'io/recent_files.dart';
+import 'io/selection_export.dart';
 import 'settings/app_settings.dart';
 import 'settings/settings_page.dart';
 import 'templates/diagram_templates.dart';
@@ -967,6 +968,73 @@ class _EditorHomePageState extends State<EditorHomePage> {
       );
       if (path == null) return;
       if (!mounted) return;
+      _snack(el.exportedPng(path));
+    } catch (e) {
+      if (!mounted) return;
+      _snack(el.pngExportFailedError('$e'));
+    }
+  }
+
+  Future<void> _exportSelectionSvg() async {
+    final c = _c;
+    final doc = c?.document;
+    final page = c?.currentPage;
+    if (c == null || doc == null || page == null || !c.hasSelection) return;
+    final el = EditorL10n.of(context);
+    try {
+      final selectionPage = buildSelectionExportPage(page, c.selection);
+      if (selectionPage == null) return;
+      final svg = VsdxToSvgSerializer(
+        layerFilter: SvgLayerFilter.print,
+        drawLineJumps: c.showLineJumps,
+        lineJumpRadiusInches: c.lineJumpRadiusInches,
+        colorByLayer: c.colorByLayer,
+      ).serializePage(
+        selectionPage,
+        theme: doc.theme,
+        images: doc.images,
+      );
+      final path = await pickExportLocation(
+        ext: 'svg',
+        suggestedName: '${baseName(c.fileName)}-selection.svg',
+        bytes: Uint8List.fromList(utf8.encode(svg)),
+      );
+      if (path == null || !mounted) return;
+      _snack(el.exportedSvg(path));
+    } catch (e) {
+      if (!mounted) return;
+      _snack(el.svgExportFailed('$e'));
+    }
+  }
+
+  Future<void> _exportSelectionPng() async {
+    final c = _c;
+    final doc = c?.document;
+    final page = c?.currentPage;
+    if (c == null || doc == null || page == null || !c.hasSelection) return;
+    final el = EditorL10n.of(context);
+    try {
+      final selectionPage = buildSelectionExportPage(page, c.selection);
+      if (selectionPage == null) return;
+      final bytes = await renderPageToPng(
+        selectionPage,
+        theme: doc.theme,
+        images: doc.images,
+        drawLineJumps: c.showLineJumps,
+        lineJumpRadiusInches: c.lineJumpRadiusInches,
+        colorByLayer: c.colorByLayer,
+      );
+      if (bytes == null) {
+        if (!mounted) return;
+        _snack(el.pngExportFailed);
+        return;
+      }
+      final path = await pickExportLocation(
+        ext: 'png',
+        suggestedName: '${baseName(c.fileName)}-selection.png',
+        bytes: bytes,
+      );
+      if (path == null || !mounted) return;
       _snack(el.exportedPng(path));
     } catch (e) {
       if (!mounted) return;
@@ -1951,6 +2019,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 _exportSvg();
                               case 'exportPng':
                                 _exportPng();
+                              case 'exportSelectionSvg':
+                                _exportSelectionSvg();
+                              case 'exportSelectionPng':
+                                _exportSelectionPng();
                               case 'exportPdf':
                                 _exportPdf();
                               case 'selectAll':
@@ -2248,6 +2320,16 @@ class _EditorHomePageState extends State<EditorHomePage> {
                             PopupMenuItem<String>(
                               value: 'exportPng',
                               child: Text(el.exportPng),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'exportSelectionSvg',
+                              enabled: cur.hasSelection,
+                              child: Text(el.exportSelectionSvg),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'exportSelectionPng',
+                              enabled: cur.hasSelection,
+                              child: Text(el.exportSelectionPng),
                             ),
                             PopupMenuItem<String>(
                               value: 'exportPdf',
