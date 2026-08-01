@@ -787,6 +787,10 @@ class VsdxShape {
   /// changing its Character-row font sizes.
   static const String userAutosizeText = 'veAutosizeText';
 
+  /// draw.io `shapeInside=1` and its outline-to-text padding in screen pixels.
+  static const String userShapeInside = 'veShapeInside';
+  static const String userShapeInsidePadding = 'veShapeInsidePadding';
+
   /// draw.io `labelBorderColor` for the text-block outline. Visio has no
   /// portable ShapeSheet equivalent, so the RGB token is kept in a User row.
   static const String userLabelBorderColor = 'veLabelBorderColor';

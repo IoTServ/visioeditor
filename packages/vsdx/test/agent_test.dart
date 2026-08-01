@@ -1691,7 +1691,7 @@ void main() {
       doc = doc.replacePage(
         0,
         doc.pages.first.addShape(
-          VsdxShapeFactory.rectangle(
+          VsdxShapeFactory.ellipse(
             id: id,
             pinX: 1,
             pinY: 1,
@@ -1719,6 +1719,8 @@ void main() {
           'complexScriptFont': 'Arial',
           'complexScriptSizePt': 10,
           'autosizeText': true,
+          'shapeInside': true,
+          'shapeInsidePadding': 6,
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -1738,6 +1740,9 @@ void main() {
       expect(c.complexScriptFont, 'Arial');
       expect(c.complexScriptSizeInches, closeTo(10 / 72.0, 1e-9));
       expect(after.autosizeText, isTrue);
+      expect(after.shapeInside, isTrue);
+      expect(after.shapeInsidePaddingPx, 6);
+      expect(after.wordWrap, isTrue);
     });
 
     test('set_style textBackground margins and paragraph indent', () {

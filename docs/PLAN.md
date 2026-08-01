@@ -1607,6 +1607,12 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   重新计算，实际字号写入 Character 行，使 Canvas、SVG/PDF 与 Visio 打开结果一致；状态通过
   `User.veAutosizeText` 保真往返 VSDX，并纳入撤销、锁定、Copy/Paste Style、Copy/Paste Text Style、
   默认 Vertex 样式及 Agent `set_style`，覆盖富文本比例、保存重开和真实 Format 面板回归。
+- 2026-08-01 — **对齐 draw.io Fit Text to Shape**：跟进 draw.io 30.4/31.0 新增的
+  `shapeInside` 轮廓文字流，在 Format → Text 为椭圆及非矩形凸多边形增加开关与 Outline Padding；
+  启用时自动打开 Word Wrap，按每行所在高度计算图形内部左右边界，使菱形、三角形、六边形、
+  平行四边形、梯形等标签随轮廓逐行收窄。Canvas 与 SVG/PDF 共用三点采样带语义，水平/垂直翻转、
+  Automatic Text Size、富文本样式和垂直对齐保持一致；状态通过 `User.veShapeInside*` 往返 VSDX，
+  纳入撤销、锁定、Copy/Paste Style、Copy/Paste Text Style、默认 Vertex 样式及 Agent `set_style`。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

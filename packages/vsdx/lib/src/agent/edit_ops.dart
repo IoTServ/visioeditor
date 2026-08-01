@@ -1304,6 +1304,21 @@ ApplyResult applyOps(
               final enabled = _b(op['autosizeText']);
               if (enabled != null) next = next.withAutosizeText(enabled);
             }
+            if (!next.is1D && op.containsKey('shapeInside')) {
+              final enabled = _b(op['shapeInside']);
+              if (enabled != null && (!enabled || next.supportsShapeInside)) {
+                next = next.withShapeInside(enabled);
+                if (enabled && !next.wordWrap) {
+                  next = next.withWordWrap(true);
+                }
+              }
+            }
+            final shapeInsidePadding = _d(op['shapeInsidePadding']);
+            if (!next.is1D &&
+                next.supportsShapeInside &&
+                shapeInsidePadding != null) {
+              next = next.withShapeInsidePadding(shapeInsidePadding);
+            }
             final lineCapRaw = op['lineCap'] ?? op['cap'];
             if (lineCapRaw != null) {
               LineCap? cap;

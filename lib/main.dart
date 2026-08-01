@@ -6385,6 +6385,42 @@ class _PropertyPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
+        if (controller.canSetShapeInside) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  EditorL10n.of(context).fitTextToShape,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Switch(
+                key: const ValueKey('shape-inside-switch'),
+                value: controller.selectedShapeInside,
+                onChanged: controller.selectedWordWrap
+                    ? controller.setShapeInside
+                    : null,
+              ),
+            ],
+          ),
+          if (controller.selectedShapeInside)
+            _RangeSlider(
+              key: const ValueKey('shape-inside-padding-slider'),
+              label: EditorL10n.of(context).shapeInsidePadding,
+              value: controller.selectedShapeInsidePadding,
+              min: 0,
+              max: 20,
+              format: (v) => '${v.toStringAsFixed(1)} px',
+              onStart: controller.beginTransaction,
+              onChanged: (v) => controller.setShapeInsidePadding(
+                v,
+                transient: true,
+              ),
+              onEnd: controller.commitTransaction,
+            ),
+          const SizedBox(height: 8),
+        ],
         _fullWidthOutlineButton(
           onPressed:
               controller.canCopyTextStyle ? controller.copyTextStyle : null,

@@ -612,6 +612,10 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '自动换行' : 'Word Wrap';
   String get automaticTextSize =>
       locale.languageCode == 'zh' ? '自动文字大小' : 'Automatic Text Size';
+  String get fitTextToShape =>
+      locale.languageCode == 'zh' ? '文字适应图形' : 'Fit Text to Shape';
+  String get shapeInsidePadding =>
+      locale.languageCode == 'zh' ? '轮廓文字间距' : 'Outline Padding';
   String get constrainProportions =>
       locale.languageCode == 'zh' ? '限制比例' : 'Constrain Proportions';
   String get autoRotateLabel =>

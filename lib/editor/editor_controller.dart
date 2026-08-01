@@ -61,6 +61,8 @@ typedef _CreationStyle = ({
   VsdxFlowAnimationTiming flowAnimationTiming,
   VsdxFlowAnimationDirection flowAnimationDirection,
   bool autosizeText,
+  bool shapeInside,
+  double shapeInsidePadding,
   bool wordWrap,
   bool constrainProportions,
   bool autoRotateLabel,
@@ -5425,8 +5427,44 @@ class EditorController extends ChangeNotifier {
         textDirection: TextDirection.ltr,
         maxLines: null,
       );
-      if (s.wordWrap) {
-        painter.layout(maxWidth: availableWidth);
+      var layoutWidth = availableWidth;
+      final shapeFlow = s.shapeInside &&
+          s.supportsShapeInside &&
+          s.wordWrap &&
+          block.textDirection != 1;
+      if (shapeFlow) {
+        final blockWidthPx = textWidth * dpi;
+        final blockHeightPx = textHeight * dpi;
+        for (var pass = 0; pass < 3; pass++) {
+          painter.layout(maxWidth: layoutWidth);
+          var top = switch (block.verticalAlign) {
+            VsdxVertAlign.top => marginTop * dpi,
+            VsdxVertAlign.bottom =>
+              blockHeightPx - marginBottom * dpi - painter.height,
+            VsdxVertAlign.middle =>
+              marginTop * dpi + (availableHeight - painter.height) / 2,
+          };
+          if (block.verticalAlign == VsdxVertAlign.middle &&
+              top < marginTop * dpi) {
+            top = marginTop * dpi;
+          }
+          final band = s.shapeInsideBand(
+            top / blockHeightPx,
+            (top + painter.height) / blockHeightPx,
+          );
+          final left = math.max(
+            marginLeft * dpi,
+            (band?.left ?? 0) * blockWidthPx + s.shapeInsidePaddingPx,
+          );
+          final right = math.min(
+            blockWidthPx - marginRight * dpi,
+            (band?.right ?? 1) * blockWidthPx - s.shapeInsidePaddingPx,
+          );
+          layoutWidth = math.max(1, right - left);
+        }
+        painter.layout(maxWidth: layoutWidth);
+      } else if (s.wordWrap) {
+        painter.layout(maxWidth: layoutWidth);
       } else {
         painter.layout();
       }
@@ -7758,6 +7796,8 @@ class EditorController extends ChangeNotifier {
       flowAnimationTiming: shape.flowAnimationTiming,
       flowAnimationDirection: shape.flowAnimationDirection,
       autosizeText: shape.autosizeText,
+      shapeInside: shape.shapeInside,
+      shapeInsidePadding: shape.shapeInsidePaddingPx,
       wordWrap: shape.wordWrap,
       constrainProportions: shape.constrainProportions,
       autoRotateLabel: shape.autoRotateLabel,
@@ -7868,6 +7908,9 @@ class EditorController extends ChangeNotifier {
         );
     if (!s.is1D && clip.includeFill) {
       next = next.withAutosizeText(clip.autosizeText);
+      next = next
+          .withShapeInside(clip.shapeInside && next.supportsShapeInside)
+          .withShapeInsidePadding(clip.shapeInsidePadding);
       next = next.withWordWrap(clip.wordWrap);
       next = next.withConstrainProportions(clip.constrainProportions);
     }
@@ -7986,6 +8029,8 @@ class EditorController extends ChangeNotifier {
     VsdxColor? labelBorderColor,
     int textDirection,
     bool autosizeText,
+    bool shapeInside,
+    double shapeInsidePadding,
   })? _textStyleClipboard;
 
   bool get hasTextStyleClipboard => _textStyleClipboard != null;
@@ -8028,6 +8073,8 @@ class EditorController extends ChangeNotifier {
       labelBorderColor: shape.labelBorderColor,
       textDirection: block.textDirection,
       autosizeText: shape.autosizeText,
+      shapeInside: shape.shapeInside,
+      shapeInsidePadding: shape.shapeInsidePaddingPx,
     );
     notifyListeners();
   }
@@ -8097,6 +8144,14 @@ class EditorController extends ChangeNotifier {
             )
             .withLabelBorderColor(clip.labelBorderColor);
         if (!target.is1D) styled = styled.withAutosizeText(clip.autosizeText);
+        if (!target.is1D && target.supportsShapeInside) {
+          styled = styled
+              .withShapeInside(clip.shapeInside)
+              .withShapeInsidePadding(clip.shapeInsidePadding);
+          if (clip.shapeInside && !styled.wordWrap) {
+            styled = styled.withWordWrap(true);
+          }
+        }
         return styled.autosizeText ? _fitAutosizeText(styled) : styled;
       });
       changed = true;
@@ -9742,6 +9797,64 @@ class EditorController extends ChangeNotifier {
           final next = shape.withAutosizeText(value);
           return value ? _fitAutosizeText(next) : next;
         },
+        rememberStyle: true,
+      );
+
+  /// Whether every selected vertex has an outline supported by draw.io-style
+  /// shape-inside text flow. Mixed supported/unsupported selections hide it.
+  bool get canSetShapeInside {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape == null || shape.is1D) continue;
+      any = true;
+      if (shape.locked ||
+          isOnLockedLayer(id) ||
+          !shape.supportsShapeInside) {
+        return false;
+      }
+    }
+    return any;
+  }
+
+  bool get selectedShapeInside {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape == null || shape.is1D) continue;
+      any = true;
+      if (!shape.shapeInside) return false;
+    }
+    return any;
+  }
+
+  double get selectedShapeInsidePadding =>
+      _firstSelected2D?.shapeInsidePaddingPx ?? 2;
+
+  /// Enable outline-aware wrapping. draw.io requires Word Wrap, so enabling
+  /// this option also turns wrapping on in the same undoable edit.
+  void setShapeInside(bool value) => _updateSelectedShapes(
+        (shape) {
+          if (shape.is1D || !shape.supportsShapeInside) return shape;
+          var next = shape.withShapeInside(value);
+          if (value && !next.wordWrap) next = next.withWordWrap(true);
+          return next.autosizeText ? _fitAutosizeText(next) : next;
+        },
+        rememberStyle: true,
+      );
+
+  void setShapeInsidePadding(double pixels, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) {
+          if (shape.is1D || !shape.supportsShapeInside) return shape;
+          final next = shape.withShapeInsidePadding(pixels);
+          return next.autosizeText ? _fitAutosizeText(next) : next;
+        },
+        transient: transient,
         rememberStyle: true,
       );
 

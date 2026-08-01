@@ -2457,6 +2457,46 @@ class VsdxPainter extends CustomPainter {
       return;
     }
 
+    final shapeInsideDefaultBlock =
+        (block.widthInches == null || (tw - shape.width).abs() < 1e-6) &&
+        (block.heightInches == null || (th - shape.height).abs() < 1e-6) &&
+        (block.pinXInches == null ||
+            (block.pinXInches! - shape.width / 2).abs() < 1e-6) &&
+        (block.pinYInches == null ||
+            (block.pinYInches! - shape.height / 2).abs() < 1e-6);
+    if (shape.shapeInside &&
+        shape.supportsShapeInside &&
+        shape.wordWrap &&
+        !isEdgeLabel &&
+        block.textDirection != 1 &&
+        shapeInsideDefaultBlock) {
+      _paintShapeInsideText(
+        canvas,
+        shape: shape,
+        runs: hasRich
+            ? rich.runs
+            : <VsdxTextRun>[
+                VsdxTextRun(
+                  text: label!,
+                  charStyle: VsdxCharStyle(
+                    fontSizeInches: math.min(th, tw) * 0.18,
+                  ),
+                ),
+              ],
+        align: align,
+        verticalAlign: block.verticalAlign,
+        twPx: twPx,
+        thPx: thPx,
+        mlPx: mlPx,
+        mrPx: mrPx,
+        mtPx: mtPx,
+        mbPx: mbPx,
+        scale: s,
+      );
+      canvas.restore();
+      return;
+    }
+
     // Paragraph layout when spacing / indents / bullets / multi-line need it.
     // Ordinary single-run labels keep the fast path below.
     final needsParaLayout = hasRich &&
@@ -2542,6 +2582,84 @@ class VsdxPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// Greedy line layout whose width follows the selected shape outline.
+  void _paintShapeInsideText(
+    Canvas canvas, {
+    required VsdxShape shape,
+    required List<VsdxTextRun> runs,
+    required TextAlign align,
+    required VsdxVertAlign verticalAlign,
+    required double twPx,
+    required double thPx,
+    required double mlPx,
+    required double mrPx,
+    required double mtPx,
+    required double mbPx,
+    required double scale,
+  }) {
+    final fullWidth = math.max(1.0, twPx - mlPx - mrPx);
+    final padding = shape.shapeInsidePaddingPx;
+    var lineHeight = 1.0;
+    for (final run in runs) {
+      final probe = _posShiftPiece('Mg', run, scale);
+      lineHeight = math.max(lineHeight, probe.tp.height + probe.dy.abs());
+      probe.tp.dispose();
+    }
+    var top = mtPx;
+    late List<({
+      List<({TextPainter tp, double dy})> pieces,
+      double width,
+      double height,
+    })> lines;
+
+    ({double left, double right}) bandFor(double y0, double y1) {
+      final band = shape.shapeInsideBand(y0 / thPx, y1 / thPx);
+      final left = math.max(mlPx, (band?.left ?? 0) * twPx + padding);
+      final right = math.min(twPx - mrPx, (band?.right ?? 1) * twPx - padding);
+      return (left: left, right: math.max(left + 1, right));
+    }
+
+    for (var pass = 0; pass < 3; pass++) {
+      lines = _wrapPosShiftLines(
+        runs,
+        fullWidth,
+        scale,
+        maxWidthForLine: (index) {
+          final band = bandFor(
+            top + index * lineHeight,
+            top + (index + 1) * lineHeight,
+          );
+          return band.right - band.left;
+        },
+      );
+      final totalHeight = lines.fold<double>(0, (sum, line) => sum + line.height);
+      top = switch (verticalAlign) {
+        VsdxVertAlign.top => mtPx,
+        VsdxVertAlign.bottom => thPx - mbPx - totalHeight,
+        VsdxVertAlign.middle =>
+          mtPx + (thPx - mtPx - mbPx - totalHeight) / 2,
+      };
+      if (verticalAlign == VsdxVertAlign.middle && top < mtPx) top = mtPx;
+    }
+
+    var y = top;
+    for (final line in lines) {
+      final band = bandFor(y, y + line.height);
+      final available = band.right - band.left;
+      final x0 = switch (align) {
+        TextAlign.center => band.left + (available - line.width) / 2,
+        TextAlign.right => band.right - line.width,
+        _ => band.left,
+      };
+      var x = x0;
+      for (final piece in line.pieces) {
+        piece.tp.paint(canvas, Offset(x, y + piece.dy));
+        x += piece.tp.width;
+      }
+      y += line.height;
+    }
+  }
+
   /// Wrapped paint with super/sub baseline offsets (no OpenType pos features —
   /// those would double-lift when combined with [dy]).
   void _paintRunsWithPosShift(
@@ -2596,12 +2714,13 @@ class VsdxPainter extends CustomPainter {
         List<({TextPainter tp, double dy})> pieces,
         double width,
         double height,
-      })> _wrapPosShiftLines(
+  })> _wrapPosShiftLines(
     List<VsdxTextRun> runs,
     double maxW,
     double scale, {
     double? firstLineMaxW,
     bool applyPosDy = true,
+    double Function(int lineIndex)? maxWidthForLine,
   }) {
     final lines = <({
       List<({TextPainter tp, double dy})> pieces,
@@ -2611,7 +2730,10 @@ class VsdxPainter extends CustomPainter {
     var cur = <({TextPainter tp, double dy})>[];
     var curW = 0.0;
     var curH = 0.0;
-    var lineMax = firstLineMaxW ?? maxW;
+    double widthForLine(int index) => index == 0 && firstLineMaxW != null
+        ? firstLineMaxW
+        : (maxWidthForLine?.call(index) ?? maxW);
+    var lineMax = widthForLine(0);
 
     void flush() {
       if (cur.isEmpty) return;
@@ -2619,7 +2741,7 @@ class VsdxPainter extends CustomPainter {
       cur = <({TextPainter tp, double dy})>[];
       curW = 0.0;
       curH = 0.0;
-      lineMax = maxW;
+      lineMax = widthForLine(lines.length);
     }
 
     for (final run in runs) {

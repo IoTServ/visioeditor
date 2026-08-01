@@ -45,6 +45,7 @@ export 'src/model/rich_text.dart';
 export 'src/model/rich_text_edit.dart';
 export 'src/model/rounding.dart';
 export 'src/model/shape.dart';
+export 'src/model/shape_inside.dart';
 export 'src/model/shape_factory.dart';
 export 'src/model/shape_kind.dart';
 export 'src/model/sketch_style.dart';

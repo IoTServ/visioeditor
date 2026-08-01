@@ -28,6 +28,7 @@ import '../model/spline.dart';
 import '../model/rich_text.dart';
 import '../model/rounding.dart';
 import '../model/shape.dart';
+import '../model/shape_inside.dart';
 import '../model/sketch_style.dart';
 import '../model/table.dart';
 import '../model/theme.dart';
@@ -3505,6 +3506,37 @@ class VsdxToSvgSerializer {
       return;
     }
 
+    final shapeInsideDefaultBlock =
+        (block.widthInches == null || (tw - shape.width).abs() < 1e-6) &&
+        (block.heightInches == null || (th - shape.height).abs() < 1e-6) &&
+        (block.pinXInches == null ||
+            (block.pinXInches! - shape.width / 2).abs() < 1e-6) &&
+        (block.pinYInches == null ||
+            (block.pinYInches! - shape.height / 2).abs() < 1e-6);
+    if (shape.shapeInside &&
+        shape.supportsShapeInside &&
+        shape.wordWrap &&
+        !shape.is1D &&
+        block.textDirection != 1 &&
+        shapeInsideDefaultBlock) {
+      _writeShapeInsideText(
+        buf,
+        shape: shape,
+        theme: theme,
+        runs: runs,
+        transform: xf.toString(),
+        width: tw,
+        height: th,
+        marginLeft: ml,
+        marginRight: mr,
+        marginTop: mt,
+        marginBottom: mb,
+        verticalAlign: block.verticalAlign,
+        indent: indent,
+      );
+      return;
+    }
+
     // Split into paragraphs (Visio `\n` / `<pp>`). Each keeps its own
     // HorzAlign / Ind* / Sp* / Bullet* (canvas [_paintParagraphBlock]).
     final paras = _splitSvgParagraphs(runs);
@@ -3696,6 +3728,135 @@ class VsdxToSvgSerializer {
     buf.writeln('$indent</g>');
   }
 
+  /// SVG/PDF counterpart of the canvas outline-aware line layout.
+  void _writeShapeInsideText(
+    StringBuffer buf, {
+    required VsdxShape shape,
+    required VsdxTheme theme,
+    required List<VsdxTextRun> runs,
+    required String transform,
+    required double width,
+    required double height,
+    required double marginLeft,
+    required double marginRight,
+    required double marginTop,
+    required double marginBottom,
+    required VsdxVertAlign verticalAlign,
+    required String indent,
+  }) {
+    final paragraphs = _splitSvgParagraphs(runs);
+    final padding = shape.shapeInsidePaddingPx / pxPerInch;
+    var top = marginTop;
+    var textHeight = 0.0;
+    var layouts = <({
+      VsdxParaStyle style,
+      List<(String text, VsdxTextRun run)> segs,
+      double lineHeight,
+      double yTop,
+      double left,
+      double right,
+    })>[];
+
+    ({double left, double right}) bandFor(double y0, double y1) {
+      final band = shape.shapeInsideBand(y0 / height, y1 / height);
+      final left = math.max(marginLeft, (band?.left ?? 0) * width + padding);
+      final right = math.min(
+        width - marginRight,
+        (band?.right ?? 1) * width - padding,
+      );
+      return (left: left, right: math.max(left + 0.01, right));
+    }
+
+    for (var pass = 0; pass < 3; pass++) {
+      layouts = [];
+      var cursor = 0.0;
+      for (final paragraph in paragraphs) {
+        cursor += paragraph.style.spaceBeforeInches;
+        final lineHeight = _svgParaLineHeight(
+          paragraph.segs,
+          paragraph.style,
+        );
+        final paragraphTop = cursor;
+        final wrapped = _wrapSvgSegs(
+          paragraph.segs,
+          math.max(0.01, width - marginLeft - marginRight),
+          maxWidthForLine: (index) {
+            final band = bandFor(
+              top + paragraphTop + index * lineHeight,
+              top + paragraphTop + (index + 1) * lineHeight,
+            );
+            return band.right - band.left;
+          },
+        );
+        for (var index = 0; index < wrapped.length; index++) {
+          final band = bandFor(
+            top + cursor,
+            top + cursor + lineHeight,
+          );
+          layouts.add((
+            style: paragraph.style,
+            segs: wrapped[index],
+            lineHeight: lineHeight,
+            yTop: cursor,
+            left: band.left,
+            right: band.right,
+          ));
+          cursor += lineHeight;
+        }
+        cursor += paragraph.style.spaceAfterInches;
+      }
+      textHeight = math.max(cursor, 0.04);
+      top = switch (verticalAlign) {
+        VsdxVertAlign.top => marginTop,
+        VsdxVertAlign.bottom => height - marginBottom - textHeight,
+        VsdxVertAlign.middle =>
+          marginTop + (height - marginTop - marginBottom - textHeight) / 2,
+      };
+      if (verticalAlign == VsdxVertAlign.middle && top < marginTop) {
+        top = marginTop;
+      }
+    }
+
+    buf.writeln(
+      '$indent<g transform="$transform translate(0 ${_n(height)}) scale(1 -1)">',
+    );
+    for (final layout in layouts) {
+      final widthAvailable = layout.right - layout.left;
+      final (anchor, x) = switch (layout.style.horizontalAlign) {
+        VsdxHorzAlign.right => ('end', layout.right),
+        VsdxHorzAlign.center =>
+          ('middle', layout.left + widthAvailable / 2),
+        _ => ('start', layout.left),
+      };
+      var fontSize = 0.14;
+      for (final (_, run) in layout.segs) {
+        if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
+          fontSize = run.charStyle.fontSizeInches;
+          break;
+        }
+      }
+      final middle = top + layout.yTop + layout.lineHeight / 2;
+      final y = pdfCompat ? middle + fontSize * 0.35 : middle;
+      final baseline = pdfCompat ? '' : ' dominant-baseline="middle"';
+      final body = StringBuffer();
+      for (var i = 0; i < layout.segs.length; i++) {
+        final (raw, run) = layout.segs[i];
+        _writeStyledTspans(
+          body,
+          raw: raw,
+          style: run.charStyle,
+          theme: theme,
+          xAttr: i == 0 ? 'x="${_n(x)}"' : null,
+        );
+      }
+      buf.writeln(
+        '$indent  <text xml:space="preserve" text-anchor="$anchor"$baseline '
+        'y="${_n(y)}">$body</text>',
+      );
+    }
+    buf.writeln('$indent</g>');
+  }
+
   /// Greedy wrap of rich-text segments to [maxWidth] inches (canvas maxWidth).
   ///
   /// When [firstLineMaxWidth] is set (IndFirst), only the first wrapped line
@@ -3704,19 +3865,23 @@ class VsdxToSvgSerializer {
     List<(String text, VsdxTextRun run)> segs,
     double maxWidth, {
     double? firstLineMaxWidth,
+    double Function(int lineIndex)? maxWidthForLine,
   }) {
     if (segs.isEmpty) return [<(String, VsdxTextRun)>[]];
     final lines = <List<(String, VsdxTextRun)>>[];
     var cur = <(String, VsdxTextRun)>[];
     var curW = 0.0;
-    var lineMax = firstLineMaxWidth ?? maxWidth;
+    double widthForLine(int index) => index == 0 && firstLineMaxWidth != null
+        ? firstLineMaxWidth
+        : (maxWidthForLine?.call(index) ?? maxWidth);
+    var lineMax = widthForLine(0);
 
     void flush() {
       if (cur.isEmpty) return;
       lines.add(cur);
       cur = <(String, VsdxTextRun)>[];
       curW = 0.0;
-      lineMax = maxWidth;
+      lineMax = widthForLine(lines.length);
     }
 
     void append(String unit, VsdxTextRun run, double uw) {
