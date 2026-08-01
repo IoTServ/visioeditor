@@ -226,7 +226,23 @@ class _ChartConfigPanelState extends State<ChartConfigPanel> {
   void _commitPercent() {
     final chart = controller.selectedChart;
     if (chart == null) return;
-    final v = ChartOps.parseUnitValue(_percentCtrl.text);
+    final raw = _percentCtrl.text.trim();
+    final numeric = (raw.endsWith('%')
+            ? raw.substring(0, raw.length - 1).trim()
+            : raw)
+        .replaceAll(',', '.');
+    final parsed = double.tryParse(numeric);
+    if (parsed == null || !parsed.isFinite) {
+      final values = ChartOps.chartValues(chart);
+      if (values.isNotEmpty) {
+        _percentCtrl.text = ChartOps.formatPercent(values.first);
+        _percentCtrl.selection = TextSelection.collapsed(
+          offset: _percentCtrl.text.length,
+        );
+      }
+      return;
+    }
+    final v = ChartOps.parseUnitValue(raw);
     controller.updateChartItem(0, value: v);
   }
 

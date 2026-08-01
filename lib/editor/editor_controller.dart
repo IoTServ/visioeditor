@@ -8245,13 +8245,16 @@ class EditorController extends ChangeNotifier {
       return;
     }
     if (vals.length >= ChartOps.maxSeriesItems) return;
-    final cols = List<VsdxColor>.of(ChartOps.chartColors(chart));
+    final cols = ChartOps.padColors(ChartOps.chartColors(chart), vals.length);
     final labs = List<String>.of(ChartOps.chartLabels(chart, vals.length));
     final avg = vals.isEmpty
         ? 0.5
         : vals.reduce((a, b) => a + b) / vals.length;
+    final nextIndex = vals.length;
     vals.add(avg);
-    cols.add(ChartOps.seriesColors[vals.length % ChartOps.seriesColors.length]);
+    cols.add(
+      ChartOps.seriesColors[nextIndex % ChartOps.seriesColors.length],
+    );
     labs.add(label?.trim().isNotEmpty == true
         ? label!.trim()
         : ChartOps.defaultLabel(vals.length - 1));
@@ -8264,7 +8267,7 @@ class EditorController extends ChangeNotifier {
     if (chart == null) return;
     final vals = List<double>.of(ChartOps.chartValues(chart));
     if (index < 0 || index >= vals.length || vals.length <= 1) return;
-    final cols = List<VsdxColor>.of(ChartOps.chartColors(chart));
+    final cols = ChartOps.padColors(ChartOps.chartColors(chart), vals.length);
     final labs = List<String>.of(ChartOps.chartLabels(chart, vals.length));
     vals.removeAt(index);
     if (index < cols.length) cols.removeAt(index);
@@ -8305,16 +8308,35 @@ class EditorController extends ChangeNotifier {
   }) {
     final chart = selectedChart;
     if (chart == null) return;
-    final vals = List<double>.of(ChartOps.chartValues(chart));
-    if (index < 0 || index >= vals.length) return;
-    final cols = ChartOps.padColors(ChartOps.chartColors(chart), vals.length);
-    final labs = ChartOps.padLabels(ChartOps.chartLabels(chart), vals.length);
-    if (value != null && value.isFinite) vals[index] = value;
-    if (color != null) cols[index] = color;
-    if (label != null) {
-      labs[index] =
-          label.trim().isEmpty ? ChartOps.defaultLabel(index) : label.trim();
+    final currentValues = ChartOps.chartValues(chart);
+    if (index < 0 || index >= currentValues.length) return;
+    List<double>? vals;
+    List<VsdxColor>? cols;
+    List<String>? labs;
+    if (value != null && value.isFinite && value != currentValues[index]) {
+      vals = List<double>.of(currentValues)..[index] = value;
     }
+    if (color != null) {
+      final currentColors = ChartOps.padColors(
+        ChartOps.chartColors(chart),
+        currentValues.length,
+      );
+      if (color != currentColors[index]) {
+        cols = currentColors..[index] = color;
+      }
+    }
+    if (label != null) {
+      final currentLabels = ChartOps.padLabels(
+        ChartOps.chartLabels(chart),
+        currentValues.length,
+      );
+      final nextLabel =
+          label.trim().isEmpty ? ChartOps.defaultLabel(index) : label.trim();
+      if (nextLabel != currentLabels[index]) {
+        labs = currentLabels..[index] = nextLabel;
+      }
+    }
+    if (vals == null && cols == null && labs == null) return;
     _rebuildSelectedChart(
       values: vals,
       colors: cols,
@@ -8336,6 +8358,36 @@ class EditorController extends ChangeNotifier {
     final page0 = currentPage;
     final chart0 = page0?.findShapeById(chartId);
     if (chart0 == null || chart0.locked || isOnLockedLayer(chartId)) return;
+    if (kind != null && !ChartOps.kindDisplayNames.containsKey(kind)) return;
+
+    var requested = false;
+    var changed = false;
+    if (values != null) {
+      requested = true;
+      changed |= !listEquals(values, ChartOps.chartValues(chart0));
+    }
+    if (colors != null) {
+      requested = true;
+      changed |= !listEquals(colors, ChartOps.chartColors(chart0));
+    }
+    if (labels != null) {
+      requested = true;
+      changed |= !listEquals(
+        labels,
+        ChartOps.chartLabels(chart0, labels.length),
+      );
+    }
+    if (kind != null) {
+      requested = true;
+      changed |= kind != (ChartOps.chartKind(chart0) ?? 'column');
+    }
+    if (extras != null) {
+      requested = true;
+      final nextExtras = extras.trim().isEmpty ? null : extras.trim();
+      changed |= nextExtras != ChartOps.chartExtras(chart0);
+    }
+    if (!requested || !changed) return;
+
     updateCurrentPage(
       (page) {
         final chart = page.findShapeById(chartId);
