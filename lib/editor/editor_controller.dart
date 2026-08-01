@@ -43,6 +43,7 @@ typedef _CreationStyle = ({
   VsdxParaStyle? para,
   VsdxTextBlock block,
   VsdxColor? labelBorderColor,
+  double shapeOpacity,
   ConnectorLineJumpStyle? lineJumpStyle,
   double? lineJumpSize,
   VsdxShadow shadow,
@@ -6822,6 +6823,27 @@ class EditorController extends ChangeNotifier {
         rememberStyle: true,
       );
 
+  /// draw.io's cell-level Opacity. Unlike fill/line/text opacity, this fades
+  /// the complete rendered cell including its label, image, effects and child
+  /// shapes. Mixed selections reflect the first selected cell, like draw.io.
+  double get selectedShapeOpacity => _firstSelected?.shapeOpacity ?? 1.0;
+
+  bool get canSetShapeOpacity {
+    final page = currentPage;
+    if (page == null) return false;
+    return _selection.any((id) {
+      final shape = page.findShapeById(id);
+      return shape != null && !shape.locked && !isOnLockedLayer(id);
+    });
+  }
+
+  void setShapeOpacity(double opacity, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (s) => s.withShapeOpacity(opacity),
+        transient: transient,
+        rememberStyle: true,
+      );
+
   // --- Connector routing style (drawio straight / orthogonal edges) ----------
 
   /// Whether the selection includes at least one glueable connector.
@@ -7572,6 +7594,7 @@ class EditorController extends ChangeNotifier {
       para: run?.paraStyle,
       block: shape.richText.textBlock,
       labelBorderColor: shape.labelBorderColor,
+      shapeOpacity: shape.shapeOpacity,
       lineJumpStyle: shape.isGlueableConnector
           ? _connectorLineJumpStyleOf(shape)
           : null,
@@ -7777,7 +7800,9 @@ class EditorController extends ChangeNotifier {
     );
     next = next.copyWith(
       richText: next.richText.copyWith(textBlock: styledBlock),
-    ).withLabelBorderColor(clip.labelBorderColor);
+    )
+        .withLabelBorderColor(clip.labelBorderColor)
+        .withShapeOpacity(clip.shapeOpacity);
     return next;
   }
 

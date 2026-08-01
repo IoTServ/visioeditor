@@ -85,6 +85,8 @@ void main() {
     expect(zh.textOpacity, '文字不透明度');
     expect(en.labelBorder, 'Label Border');
     expect(zh.labelBorder, '标签边框');
+    expect(en.shapeOpacity, 'Shape Opacity');
+    expect(zh.shapeOpacity, '图形不透明度');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
     expect(en.copyTextStyle, 'Copy Text Style');

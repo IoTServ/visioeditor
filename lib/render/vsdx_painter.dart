@@ -416,6 +416,18 @@ class VsdxPainter extends CustomPainter {
     }
     canvas.translate(-localPinX, -localPinY);
 
+    // draw.io cell opacity composites the complete cell as one layer: fill,
+    // line, image, effects, label and nested children all fade together.
+    final shapeOpacity = shape.shapeOpacity;
+    final useShapeOpacity = shapeOpacity < 1.0 - 1e-9;
+    if (useShapeOpacity) {
+      canvas.saveLayer(
+        null,
+        Paint()
+          ..color = Colors.white.withValues(alpha: shapeOpacity),
+      );
+    }
+
     // Picture frames keep Geometry (fill/stroke/effects). Paint geometry
     // first so the outer half of the stroke stays visible around the bitmap.
     if (shape.hasGeometry) {
@@ -514,6 +526,8 @@ class VsdxPainter extends CustomPainter {
         _paintShape(canvas, child, visibleLayers, bboxes, viewport);
       }
     }
+
+    if (useShapeOpacity) canvas.restore();
 
     if (drawEditorChrome &&
         foldingControlsEnabled &&

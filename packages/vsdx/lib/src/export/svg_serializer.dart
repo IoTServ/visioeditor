@@ -474,7 +474,13 @@ class VsdxToSvgSerializer {
     if (link != null) {
       buf.writeln('$indent<a $link>');
     }
-    buf.writeln('$indent<g transform="${transforms.join(' ')}">');
+    final opacity = shape.shapeOpacity;
+    final opacityAttr = opacity < 1.0 - 1e-9
+        ? ' opacity="${_n(opacity)}"'
+        : '';
+    buf.writeln(
+      '$indent<g transform="${transforms.join(' ')}"$opacityAttr>',
+    );
 
     // Picture frames keep Geometry (fill/stroke/effects); paint it first so
     // the outer half of the stroke stays visible around the bitmap.

@@ -496,6 +496,8 @@ class EditorL10n {
   String get panelDiagram => _t('panelDiagram');
   String get panelView => _t('panelView');
   String get opacity => _t('opacity');
+  String get shapeOpacity =>
+      locale.languageCode == 'zh' ? '图形不透明度' : 'Shape Opacity';
   String get crop => locale.languageCode == 'zh' ? '裁剪' : 'Crop';
   String get zoom => locale.languageCode == 'zh' ? '缩放' : 'Zoom';
   String get brightness => locale.languageCode == 'zh' ? '亮度' : 'Brightness';

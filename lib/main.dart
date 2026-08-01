@@ -4781,6 +4781,16 @@ class _PropertyPanel extends StatelessWidget {
             icon: Icons.layers_clear_outlined,
             label: EditorL10n.of(context).clearDefaultStyle,
           ),
+          const SizedBox(height: 8),
+          _OpacitySlider(
+            key: const ValueKey('shape-opacity-slider'),
+            label: EditorL10n.of(context).shapeOpacity,
+            opacity: controller.selectedShapeOpacity,
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setShapeOpacity(v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
           const SizedBox(height: 16),
           _section(context, EditorL10n.of(context).panelFill),
           _swatchRow(

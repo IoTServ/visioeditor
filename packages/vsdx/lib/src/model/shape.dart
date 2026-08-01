@@ -786,6 +786,11 @@ class VsdxShape {
   /// portable ShapeSheet equivalent, so the RGB token is kept in a User row.
   static const String userLabelBorderColor = 'veLabelBorderColor';
 
+  /// draw.io cell `opacity` for the complete rendered shape subtree. Visio
+  /// only has per-component transparency cells, so this app-level value is
+  /// preserved in a User row without destructively rewriting those cells.
+  static const String userShapeOpacity = 'veOpacity';
+
   /// Explicit draw.io `aspect=fixed` equivalent for vertex geometry.
   ///
   /// This is an editor interaction preference rather than Visio's LockAspect
@@ -966,6 +971,40 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userLabelBorderColor, value: '#$rgb'),
+      ],
+    );
+  }
+
+  /// Overall draw.io opacity as an opaque fraction in 0..1.
+  double get shapeOpacity {
+    for (final c in userCells) {
+      if (c.name != userShapeOpacity) continue;
+      final parsed = double.tryParse(c.value ?? '');
+      if (parsed == null || !parsed.isFinite) return 1.0;
+      // Accept percentage-shaped values for forward compatibility with
+      // hand-authored User rows while writing the canonical fraction.
+      final value = parsed > 1 ? parsed / 100 : parsed;
+      return value.clamp(0.0, 1.0).toDouble();
+    }
+    return 1.0;
+  }
+
+  /// Set overall opacity while preserving unrelated User rows. Fully opaque
+  /// is represented by the absence of the row, matching draw.io's default.
+  VsdxShape withShapeOpacity(double opacity) {
+    final value = opacity.clamp(0.0, 1.0).toDouble();
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userShapeOpacity) c,
+    ];
+    if ((value - 1).abs() <= 1e-9) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userShapeOpacity, value: '$value'),
       ],
     );
   }
