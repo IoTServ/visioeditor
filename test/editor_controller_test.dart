@@ -816,12 +816,13 @@ void main() {
     expect(second.fill.foreground?.value, 0xFF00FF00);
     expect(second.line.color?.value, 0xFF0000FF);
 
-    // A new line inherits the stroke but never gains a fill.
+    // Vertex defaults are independent from edge defaults, so a new line uses
+    // the built-in black edge stroke until an edge style is remembered.
     c
       ..setTool(EditorTool.line)
       ..createShapeByDrag(1, 6, 4, 6);
     final line = c.currentPage!.shapes.last;
-    expect(line.line.color?.value, 0xFF0000FF);
+    expect(line.line.color?.value, 0xFF000000);
     expect(line.fill.pattern, 0);
   });
 
@@ -2692,9 +2693,9 @@ void main() {
     expect(conn.endX, isNot(closeTo(b.pinX, 1e-3)));
   });
 
-  test('memo line from connector does not stamp arrows onto new boxes', () {
-    // Styling a connector then dropping a rectangle must not export EndArrow
-    // on the box (万兴图示 would draw stray arrowheads on vertices).
+  test('edge style does not leak into new vertices', () {
+    // Styling a connector then dropping a rectangle must not export its edge
+    // dash or arrows onto the vertex (draw.io keeps defaults independent).
     final c = EditorController()..newDocument();
     addTearDown(c.dispose);
     c.addShapeFromBuilderAt(
@@ -2724,8 +2725,8 @@ void main() {
     expect(circle.is1D, isFalse);
     expect(circle.line.endArrow, 0);
     expect(circle.line.beginArrow, 0);
-    // Dash / weight from the memo stroke still apply (drawio-like).
-    expect(circle.line.pattern, 2);
+    // The vertex uses the built-in line until a vertex default is remembered.
+    expect(circle.line.pattern, 1);
   });
 
   test('addShapeFromBuilderAt drops a shape centred on the given point', () {

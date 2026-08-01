@@ -1606,12 +1606,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     });
     mod(LogicalKeyboardKey.keyR, () {
       final cur = c();
-      if (cur == null) return;
-      if (cur.hasSelection) {
-        cur.turnSelection(clockwise: false);
-      } else {
-        cur.clearDefaultStyle();
-      }
+      if (cur != null) cur.clearDefaultStyle();
     }, shift: true);
     // draw.io Shape Data clipboard. The Shift held by the paste shortcut means
     // the copied label is applied too; context-menu Paste Data preserves it.
@@ -2004,6 +1999,10 @@ class _EditorHomePageState extends State<EditorHomePage> {
                                 cur.copyStyle();
                               case 'pasteStyle':
                                 cur.pasteStyle();
+                              case 'setDefaultStyle':
+                                cur.setSelectionAsDefaultStyle();
+                              case 'clearDefaultStyle':
+                                cur.clearDefaultStyle();
                               case 'copyTextStyle':
                                 cur.copyTextStyle();
                               case 'pasteTextStyle':
@@ -2212,6 +2211,15 @@ class _EditorHomePageState extends State<EditorHomePage> {
                               value: 'pasteStyle',
                               enabled: cur.hasStyleClipboard && cur.hasSelection,
                               child: Text(el.pasteStyleShortcut),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'setDefaultStyle',
+                              enabled: cur.hasSelection,
+                              child: Text(el.setAsDefaultStyle),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'clearDefaultStyle',
+                              child: Text(el.clearDefaultStyle),
                             ),
                             PopupMenuItem<String>(
                               value: 'copyTextStyle',
@@ -4678,6 +4686,20 @@ class _PropertyPanel extends StatelessWidget {
             const SizedBox(height: 16),
           ],
           if (!isChart) ...[
+          _fullWidthOutlineButton(
+            onPressed: count > 0
+                ? controller.setSelectionAsDefaultStyle
+                : null,
+            icon: Icons.format_paint,
+            label: EditorL10n.of(context).setAsDefaultStyle,
+          ),
+          const SizedBox(height: 4),
+          _fullWidthOutlineButton(
+            onPressed: controller.clearDefaultStyle,
+            icon: Icons.layers_clear_outlined,
+            label: EditorL10n.of(context).clearDefaultStyle,
+          ),
+          const SizedBox(height: 16),
           _section(context, EditorL10n.of(context).panelFill),
           _swatchRow(
             onColor: (v) {

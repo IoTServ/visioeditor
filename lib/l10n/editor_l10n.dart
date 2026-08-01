@@ -139,6 +139,12 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '折叠/展开控件' : 'Collapse/Expand Controls';
   String get collapsible =>
       locale.languageCode == 'zh' ? '可折叠' : 'Collapsible';
+  String get setAsDefaultStyle => locale.languageCode == 'zh'
+      ? '设为默认样式'
+      : 'Set as Default Style';
+  String get clearDefaultStyle => locale.languageCode == 'zh'
+      ? '清除默认样式'
+      : 'Clear Default Style';
   String get lock => _t('lock');
   String get unlock => _t('unlock');
   String get lockShortcut => _t('lockShortcut');

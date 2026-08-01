@@ -141,9 +141,10 @@ byte-for-byte, so formulas and structure survive a save.
   character formatting without changing paragraph layout. While inline
   editing, Cmd/Ctrl+. toggles superscript and Cmd/Ctrl+, toggles subscript for
   the selected range. Cmd/Ctrl+Shift+NumPad +/- adjusts the whole label by 1pt.
-  Cmd/Ctrl+Shift+D remembers the selected shape or connector as the creation
-  style; Cmd/Ctrl+Shift+R clears it when nothing is selected. Start typing with
-  a shape or connector selected to replace its label; Enter saves and
+  Cmd/Ctrl+Shift+D remembers the selected vertex or connector as its independent
+  creation style; Cmd/Ctrl+Shift+R clears both remembered categories. The same
+  actions are available from Format, More and the shape context menu. Start
+  typing with a shape or connector selected to replace its label; Enter saves and
   Shift/Alt+Enter adds a line break. Labels on 2-D shapes can be positioned
   outside any edge or centred, and displayed vertically.
 - **Shape-library modifiers** — Shift-click replaces a compatible selection or
@@ -206,7 +207,7 @@ Visio drawing file types (`.vsdx` / `.vsd` / `.vsdm` / `.vstx` / `.vstm` /
 | Delete table row / complete column selection | `Delete` / `Backspace` |
 | Increase / decrease whole-label text | `Cmd/Ctrl+Shift+NumPad +/-` / `Cmd/Ctrl+}` / `{` |
 | Superscript / subscript while editing | `Cmd/Ctrl+.` / `Cmd/Ctrl+,` |
-| Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` (clear with no selection) |
+| Set / clear default creation style | `Cmd/Ctrl+Shift+D` / `Cmd/Ctrl+Shift+R` |
 | Show / hide Shapes sidebar | `Cmd/Ctrl+Shift+K` |
 | Reset view to centred 100% / fit current page | `Home` / `Cmd/Ctrl+J` or `Cmd/Ctrl+Shift+H` |
 | Custom zoom / zoom in / zoom out | `Cmd/Ctrl+0` / `Cmd/Ctrl++` / `Cmd/Ctrl+-` |

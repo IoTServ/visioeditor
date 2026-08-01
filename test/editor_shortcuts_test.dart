@@ -524,6 +524,26 @@ void main() {
       const SingleActivator(LogicalKeyboardKey.keyF, control: true): find,
       const SingleActivator(LogicalKeyboardKey.keyR, meta: true): rotate,
       const SingleActivator(LogicalKeyboardKey.keyR, control: true): rotate,
+      const SingleActivator(
+        LogicalKeyboardKey.keyD,
+        meta: true,
+        shift: true,
+      ): c.setSelectionAsDefaultStyle,
+      const SingleActivator(
+        LogicalKeyboardKey.keyD,
+        control: true,
+        shift: true,
+      ): c.setSelectionAsDefaultStyle,
+      const SingleActivator(
+        LogicalKeyboardKey.keyR,
+        meta: true,
+        shift: true,
+      ): c.clearDefaultStyle,
+      const SingleActivator(
+        LogicalKeyboardKey.keyR,
+        control: true,
+        shift: true,
+      ): c.clearDefaultStyle,
     };
   }
 
@@ -642,6 +662,59 @@ void main() {
       c.currentPage!.findShapeById(id)!.shapeKind,
       VsdxShapeKind.normal,
     );
+  });
+
+  testWidgets('Cmd/Ctrl+Shift+D/R manage independent default styles',
+      (tester) async {
+    final c = ctrlWithRect();
+    final source = c.singleSelectedId!;
+    c.setFillColor(const VsdxColor(0xFF22AA66));
+    await pumpHarness(tester, c);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    c.setFillColor(const VsdxColor(0xFFCC2222));
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 1,
+      ),
+      5,
+      3,
+    );
+    expect(
+      c.currentPage!.findShapeById(c.singleSelectedId!)!.fill.foreground,
+      const VsdxColor(0xFF22AA66),
+    );
+
+    c.setSelection([source]);
+    final angle = c.currentPage!.findShapeById(source)!.angleRad;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+    expect(c.currentPage!.findShapeById(source)!.angleRad, angle);
+    c.addShapeFromBuilderAt(
+      (id, cx, cy) => VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: cx,
+        pinY: cy,
+        width: 1,
+        height: 1,
+      ),
+      8,
+      3,
+    );
+    final reset = c.currentPage!.findShapeById(c.singleSelectedId!)!;
+    expect(reset.fill.foreground, VsdxColor.white);
   });
 
   testWidgets('Ctrl+Delete removes selection and incident connectors',

@@ -1496,6 +1496,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   胶合与可见状态，整体单步撤销；并与只控制全局箭头/命令可见性的 Collapse/Expand Controls
   保持独立。模型与 Agent 同步按该属性判定，且允许异常导入的“禁用但已折叠”状态安全展开；
   补 User 行保留、普通顶点往返、胶合恢复、撤销及真实画布菜单回归。
+- 2026-08-01 — **对齐 draw.io 独立默认样式**：按 `EditorUi` 的
+  `currentVertexStyle` / `currentEdgeStyle` 语义拆分顶点与连接线的当前创建样式；普通
+  格式编辑只更新未锁定的对应类别，显式 **Set as Default Style** 会锁定所选类别，完整
+  继承填充、线条、文字与效果。More、Format、图形右键菜单和
+  `Cmd/Ctrl+Shift+D/R` 均可操作，`Clear Default Style` 无条件清除两类并恢复自动跟踪；
+  补独立继承、固定样式、清除恢复、快捷键和双语入口回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

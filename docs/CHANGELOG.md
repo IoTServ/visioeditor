@@ -6,6 +6,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io independent default creation styles**: vertices and connectors now
+  maintain separate current styles, so a remembered connector stroke never leaks
+  onto new vertices (or vice versa). **Set as Default Style** and **Clear Default
+  Style** are available from Format, More and the shape context menu; the
+  complete matching fill/line/text/effects bundle is copied to future shapes.
+  `Cmd/Ctrl+Shift+D` pins the selected category, while `Cmd/Ctrl+Shift+R`
+  unconditionally clears both categories and resumes automatic last-used-style
+  tracking. Defaults remain session-only and do not dirty the document.
 - **draw.io per-shape Collapsible style**: every editable 2-D selection now
   exposes a **Collapsible** check in More, Arrange and its context menu.
   Containers and swimlanes keep draw.io's enabled-by-default behaviour, while

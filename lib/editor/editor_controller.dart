@@ -33,6 +33,18 @@ enum ConnectorRouteStyle { straight, orthogonal, curved }
 /// Common draw.io label positions around a 2-D shape.
 enum TextLabelPosition { left, top, center, bottom, right }
 
+typedef _CreationStyle = ({
+  VsdxFill fill,
+  VsdxLine line,
+  VsdxCharStyle? char,
+  VsdxParaStyle? para,
+  VsdxShadow shadow,
+  VsdxGlow glow,
+  VsdxReflection reflection,
+  bool includeFill,
+  bool includeEffects,
+});
+
 /// Central editor state: the parsed [VsdxDocument], current page, selection,
 /// and an undo/redo history built on immutable document snapshots.
 ///
@@ -106,10 +118,13 @@ class EditorController extends ChangeNotifier {
       const <({int pageIndex, int shapeId})>[];
   int _findIndex = -1;
 
-  // Style memory (drawio currentVertexStyle): the fill / line last applied to a
-  // shape, inherited by newly-created shapes. Reset per document.
-  VsdxFill? _memoFill;
-  VsdxLine? _memoLine;
+  // draw.io keeps currentVertexStyle and currentEdgeStyle independently.
+  // Explicit Set as Default Style pins only the selected category until Clear
+  // Default Style resets both and resumes automatic last-used-style tracking.
+  _CreationStyle? _memoVertexStyle;
+  _CreationStyle? _memoEdgeStyle;
+  bool _vertexStylePinned = false;
+  bool _edgeStylePinned = false;
 
   /// Last non-zero SoftEdgesSize so toggle off→on restores the user's radius.
   double _memoSoftEdgesInches = 0.05;
@@ -2614,7 +2629,7 @@ class EditorController extends ChangeNotifier {
     if (simplified.length < 2) return;
     final id = page.nextFreeShapeId();
     final base = VsdxShapeFactory.freehand(id: id, points: simplified);
-    final shape = _withMemoStyle(base, includeFill: false);
+    final shape = _withMemoStyle(base);
     final undoSel = Set<int>.of(_selection);
     _selection
       ..clear()
@@ -2738,8 +2753,7 @@ class EditorController extends ChangeNotifier {
               id: id, pinX: pinX, pinY: pinY, width: w, height: h);
     }
 
-    final shape0 =
-        _withMemoStyle(base, includeFill: _tool != EditorTool.line);
+    final shape0 = _withMemoStyle(base);
     // Materialise default blue points on new 2-D shapes so Edraw glue works
     // after save without the writer inventing points over an intentional clear.
     final shape = (!shape0.is1D && shape0.connectionPoints.isEmpty)
@@ -2849,8 +2863,8 @@ class EditorController extends ChangeNotifier {
     // Connectors carry a filled end arrowhead by default (drawio edges point
     // at their target); the stroke follows the last-used line style (never
     // Soft Edges — that is a 2-D effect).
-    var baseLine = (_memoLine ?? const VsdxLine(color: VsdxColor.black))
-        .copyWith(endArrow: 4);
+    var baseLine = _memoEdgeStyle?.line ??
+        const VsdxLine(color: VsdxColor.black, endArrow: 4);
     if (baseLine.softEdgesInches > 0) {
       baseLine = baseLine.copyWith(softEdgesInches: 0);
     }
@@ -3104,8 +3118,7 @@ class EditorController extends ChangeNotifier {
     final id = page.nextFreeShapeId();
     final built = build(id, snap(cx), snap(cy));
     if (built.is1D) return;
-    var shape =
-        inheritStyle ? _withMemoStyle(built, includeFill: true) : built;
+    var shape = inheritStyle ? _withMemoStyle(built) : built;
     if (shape.connectionPoints.isEmpty) {
       shape = shape.copyWith(
         connectionPoints: VsdxPage.defaultConnectionPoints(
@@ -3142,8 +3155,8 @@ class EditorController extends ChangeNotifier {
 
     var next = page;
     final connId = next.nextFreeShapeId();
-    var baseLine = (_memoLine ?? const VsdxLine(color: VsdxColor.black))
-        .copyWith(endArrow: 4);
+    var baseLine = _memoEdgeStyle?.line ??
+        const VsdxLine(color: VsdxColor.black, endArrow: 4);
     if (baseLine.softEdgesInches > 0) {
       baseLine = baseLine.copyWith(softEdgesInches: 0);
     }
@@ -3524,9 +3537,7 @@ class EditorController extends ChangeNotifier {
     if (doc == null || page == null) return;
     final id = page.nextFreeShapeId();
     final built = build(id, snap(cx), snap(cy));
-    var shape = inheritStyle
-        ? _withMemoStyle(built, includeFill: !built.is1D)
-        : built;
+    var shape = inheritStyle ? _withMemoStyle(built) : built;
     // Materialise default blue points like [createShapeByDrag] / quick-add so
     // exported diagrams keep glue targets (writer no longer invents them).
     if (!shape.is1D && shape.connectionPoints.isEmpty) {
@@ -6094,75 +6105,71 @@ class EditorController extends ChangeNotifier {
     if (rememberStyle && didChange) _rememberStyle();
   }
 
-  /// Remember the first selection's fill / line so new shapes inherit it
-  /// (drawio's `currentVertexStyle`). Prefers a 2-D shape so Soft Edges from a
-  /// box are not skipped when a connector leads the selection.
+  /// Track draw.io's independent current vertex and edge creation styles.
+  ///
+  /// Normal Format edits update the matching unpinned category. Set as Default
+  /// Style pins one category so later edits no longer mutate that chosen
+  /// default until [clearDefaultStyle].
   void _rememberStyle() {
-    final s = _firstSelected2D ?? _firstSelected;
-    if (s == null) return;
-    _memoFill = s.is1D ? null : s.fill;
-    final line = s.line;
-    _memoLine = s.is1D && line.softEdgesInches > 0
-        ? line.copyWith(softEdgesInches: 0)
-        : line;
+    final page = currentPage;
+    if (page == null) return;
+    if (!_vertexStylePinned) {
+      final shape = _firstSelected2D;
+      if (shape != null) _memoVertexStyle = _creationStyleOf(shape);
+    }
+    if (!_edgeStylePinned) {
+      for (final id in _selection) {
+        final shape = page.findShapeById(id);
+        if (shape != null && shape.is1D) {
+          _memoEdgeStyle = _creationStyleOf(shape);
+          break;
+        }
+      }
+    }
   }
 
   /// Use the selected shape or connector's appearance for newly created
   /// elements (draw.io Cmd/Ctrl+Shift+D, "Set as Default Style").
   void setSelectionAsDefaultStyle() {
-    if (_selection.isEmpty) return;
-    _rememberStyle();
+    final shape = _firstSelected;
+    if (shape == null) return;
+    if (shape.is1D) {
+      _memoEdgeStyle = _creationStyleOf(shape);
+      _edgeStylePinned = true;
+    } else {
+      _memoVertexStyle = _creationStyleOf(shape);
+      _vertexStylePinned = true;
+    }
     notifyListeners();
   }
 
-  /// Restore the built-in white-fill / black-line creation style.
+  /// Restore the built-in vertex and edge creation styles.
   ///
   /// This is session state rather than a document edit, so it does not dirty
-  /// the file or create an undo entry (draw.io Cmd/Ctrl+Shift+R with no
-  /// selection).
+  /// the file or create an undo entry (draw.io Cmd/Ctrl+Shift+R).
   void clearDefaultStyle() {
-    if (_memoFill == null && _memoLine == null) return;
-    _memoFill = null;
-    _memoLine = null;
+    if (_memoVertexStyle == null &&
+        _memoEdgeStyle == null &&
+        !_vertexStylePinned &&
+        !_edgeStylePinned) {
+      return;
+    }
+    _memoVertexStyle = null;
+    _memoEdgeStyle = null;
+    _vertexStylePinned = false;
+    _edgeStylePinned = false;
     notifyListeners();
   }
 
-  /// Apply the remembered style to a freshly-created shape. Lines/connectors
-  /// take only the stroke (never a fill / Soft Edges).
-  VsdxShape _withMemoStyle(VsdxShape s, {required bool includeFill}) {
-    var r = s;
-    if (includeFill && _memoFill != null) r = r.copyWith(fill: _memoFill);
-    if (_memoLine != null) {
-      // Arrowheads belong on 1-D connectors. A memo line remembered from a
-      // connector must not stamp BeginArrow/EndArrow onto boxes/ellipses —
-      // otherwise the export shows stray arrowheads in 万兴图示 on vertices.
-      // Soft Edges are a 2-D fill-edge effect — never seed them onto 1-D.
-      var line = _memoLine!;
-      if (!s.is1D && (line.beginArrow != 0 || line.endArrow != 0)) {
-        line = line.copyWith(beginArrow: 0, endArrow: 0);
-      }
-      if (s.is1D && line.softEdgesInches > 0) {
-        line = line.copyWith(softEdgesInches: 0);
-      }
-      // "No line" on a box must not birth invisible connectors / freehands.
-      if (s.is1D && line.pattern == 0) {
-        line = line.copyWith(pattern: 1);
-      }
-      r = r.copyWith(line: line);
-    }
-    // Match pasteStyle / setNoFill: keep Geometry NoFill/NoLine in sync so
-    // Edraw does not revive a fill when FillPattern=0 but NoFill=0.
-    var geos = r.geometries;
-    if (includeFill && _memoFill != null) {
-      geos = syncGeometryNoFill(geos, hollow: r.fill.pattern == 0);
-    }
-    if (_memoLine != null) {
-      geos = syncGeometryNoLine(geos, hollow: r.line.pattern == 0);
-    }
-    if (!identical(geos, r.geometries)) {
-      r = r.copyWith(geometries: geos);
-    }
-    return r;
+  /// Apply the matching remembered vertex or edge style to a fresh shape.
+  VsdxShape _withMemoStyle(VsdxShape shape) {
+    final style = shape.is1D ? _memoEdgeStyle : _memoVertexStyle;
+    // Keep empty labels structurally empty. The writer intentionally omits
+    // empty text runs, while [setShapeText] applies the remembered typography
+    // when the user first types into this fresh shape.
+    return style == null
+        ? shape
+        : _pasteStyleOnto(shape, style, createEmptyTextRun: false);
   }
 
   /// The first selected shape, or null — used by the inspector to reflect the
@@ -7154,18 +7161,25 @@ class EditorController extends ChangeNotifier {
 
   // --- Copy / paste style (drawio "Copy Style" / "Paste Style") --------------
 
-  ({
-    VsdxFill fill,
-    VsdxLine line,
-    VsdxCharStyle? char,
-    VsdxParaStyle? para,
-    VsdxShadow shadow,
-    VsdxGlow glow,
-    VsdxReflection reflection,
-    bool includeFill,
-    bool includeEffects,
-  })? _styleClipboard;
+  _CreationStyle? _styleClipboard;
   bool get hasStyleClipboard => _styleClipboard != null;
+
+  static _CreationStyle _creationStyleOf(VsdxShape shape) {
+    final run = shape.richText.runs.isNotEmpty
+        ? shape.richText.runs.first
+        : null;
+    return (
+      fill: shape.fill,
+      line: shape.line,
+      char: run?.charStyle,
+      para: run?.paraStyle,
+      shadow: shape.shadow,
+      glow: shape.glow,
+      reflection: shape.reflection,
+      includeFill: !shape.is1D,
+      includeEffects: !shape.is1D,
+    );
+  }
 
   /// Capture fill / line / text / effect styling of the first selected shape.
   void copyStyle() {
@@ -7174,19 +7188,7 @@ class EditorController extends ChangeNotifier {
     for (final id in _selection) {
       final s = page.findShapeById(id);
       if (s != null) {
-        final run = s.richText.runs.isNotEmpty ? s.richText.runs.first : null;
-        _styleClipboard = (
-          fill: s.fill,
-          line: s.line,
-          char: run?.charStyle,
-          para: run?.paraStyle,
-          shadow: s.shadow,
-          glow: s.glow,
-          reflection: s.reflection,
-          // Connectors have no meaningful fill / effects to transfer onto boxes.
-          includeFill: !s.is1D,
-          includeEffects: !s.is1D,
-        );
+        _styleClipboard = _creationStyleOf(s);
         notifyListeners();
         return;
       }
@@ -7227,19 +7229,7 @@ class EditorController extends ChangeNotifier {
     _rememberStyle();
   }
 
-  static bool _styleClipboardNeedsTheme(
-    ({
-      VsdxFill fill,
-      VsdxLine line,
-      VsdxCharStyle? char,
-      VsdxParaStyle? para,
-      VsdxShadow shadow,
-      VsdxGlow glow,
-      VsdxReflection reflection,
-      bool includeFill,
-      bool includeEffects,
-    }) clip,
-  ) {
+  static bool _styleClipboardNeedsTheme(_CreationStyle clip) {
     if (clip.includeFill &&
         (clip.fill.themeForegroundIndex != null ||
             clip.fill.themeBackgroundIndex != null)) {
@@ -7257,18 +7247,8 @@ class EditorController extends ChangeNotifier {
 
   static VsdxShape _pasteStyleOnto(
     VsdxShape s,
-    ({
-      VsdxFill fill,
-      VsdxLine line,
-      VsdxCharStyle? char,
-      VsdxParaStyle? para,
-      VsdxShadow shadow,
-      VsdxGlow glow,
-      VsdxReflection reflection,
-      bool includeFill,
-      bool includeEffects,
-    }) clip,
-  ) {
+    _CreationStyle clip,
+      {bool createEmptyTextRun = true}) {
     var line = clip.line;
     if (!s.is1D && (line.beginArrow != 0 || line.endArrow != 0)) {
       line = line.copyWith(beginArrow: 0, endArrow: 0);
@@ -7316,7 +7296,7 @@ class EditorController extends ChangeNotifier {
         final t = next.text;
         if (t != null && t.isNotEmpty) {
           runs = <VsdxTextRun>[VsdxTextRun(text: t)];
-        } else {
+        } else if (createEmptyTextRun) {
           runs = <VsdxTextRun>[
             VsdxTextRun(
               text: '',
@@ -8209,7 +8189,17 @@ class EditorController extends ChangeNotifier {
     final s = page?.findShapeById(id);
     if (s == null || s.locked || isOnLockedLayer(id)) return;
     updateCurrentPage(
-      (p) => p.updateShapeById(id, (sh) => _withLabelText(sh, text)),
+      (p) => p.updateShapeById(id, (sh) {
+        final freshLabel = sh.richText.runs.isEmpty &&
+            (sh.text == null || sh.text!.isEmpty);
+        final next = _withLabelText(sh, text);
+        if (!freshLabel || next.richText.runs.isEmpty) return next;
+        final style = next.is1D ? _memoEdgeStyle : _memoVertexStyle;
+        if (style == null || (style.char == null && style.para == null)) {
+          return next;
+        }
+        return _pasteStyleOnto(next, style, createEmptyTextRun: false);
+      }),
     );
   }
 
@@ -10021,8 +10011,10 @@ class EditorController extends ChangeNotifier {
     _dirty = false;
     _cleanDocument = _document;
     _clearFindState();
-    _memoFill = null;
-    _memoLine = null;
+    _memoVertexStyle = null;
+    _memoEdgeStyle = null;
+    _vertexStylePinned = false;
+    _edgeStylePinned = false;
     _memoSoftEdgesInches = 0.05;
     _imageSeq = 0;
     // Page guides are keyed by page id; empty docs reuse id 0, so clear on

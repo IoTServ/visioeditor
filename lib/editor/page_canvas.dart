@@ -1736,6 +1736,14 @@ class _PageCanvasState extends State<PageCanvas> {
         items.add(PopupMenuItem(
             value: 'pasteStyle', child: Text(el.pasteStyle)));
       }
+      items.add(PopupMenuItem(
+        value: 'setDefaultStyle',
+        child: Text(el.setAsDefaultStyle),
+      ));
+      items.add(PopupMenuItem(
+        value: 'clearDefaultStyle',
+        child: Text(el.clearDefaultStyle),
+      ));
       if (_c.canCopyTextStyle) {
         items.add(PopupMenuItem(
             value: 'copyTextStyle', child: Text(el.copyTextStyle)));
@@ -1916,6 +1924,10 @@ class _PageCanvasState extends State<PageCanvas> {
         _c.copyStyle();
       case 'pasteStyle':
         _c.pasteStyle();
+      case 'setDefaultStyle':
+        _c.setSelectionAsDefaultStyle();
+      case 'clearDefaultStyle':
+        _c.clearDefaultStyle();
       case 'copyTextStyle':
         _c.copyTextStyle();
       case 'pasteTextStyle':
