@@ -261,7 +261,7 @@ class PageParser {
         proto?.lineStyleId;
     final sheetLine =
         lineStyleId != null ? _stylesheets.resolveLine(lineStyleId) : null;
-    final line = _style.parseLine(
+    var line = _style.parseLine(
       shapeEl,
       defaults: proto?.line ??
           sheetLine ??
@@ -441,6 +441,17 @@ class PageParser {
     final userCells = ownUserCells.isEmpty && proto != null
         ? proto.userCells
         : ownUserCells;
+    for (final cell in userCells) {
+      if (cell.name == VsdxShape.userLineJoin) {
+        final join = VsdxLineJoin.parse(cell.value);
+        if (join != null) line = line.copyWith(join: join);
+      } else if (cell.name == VsdxShape.userMiterLimit) {
+        final limit = double.tryParse(cell.value ?? '');
+        if (limit != null && limit >= 1) {
+          line = line.copyWith(miterLimit: limit.clamp(1.0, 100.0).toDouble());
+        }
+      }
+    }
     final ownControls = _readControls(shapeEl, inherit: proto?.controls);
     final controls =
         ownControls.isEmpty && proto != null ? proto.controls : ownControls;

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:visioeditor/editor/page_canvas.dart';
 import 'package:visioeditor/main.dart';
+import 'package:visioeditor/render/vsdx_painter.dart';
 import 'package:visioeditor/settings/app_settings.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -43,6 +44,89 @@ void main() {
     value.setSelectionLocked(true);
     value.setLineCap(LineCap.extended);
     expect(value.currentPage!.findShapeById(id)!.line.cap, LineCap.square);
+  });
+
+  test(
+    'Line Join and Miter Limit are undoable and survive VSDX round-trip',
+    () {
+      final value = controller();
+      final id = line(value, 1, 3, 5, 3);
+
+      value.setLineJoin(VsdxLineJoin.miterClip);
+      expect(value.selectedLineJoin, VsdxLineJoin.miterClip);
+      value.undo();
+      expect(value.selectedLineJoin, VsdxLineJoin.miter);
+      value.redo();
+      value.setLineMiterLimit(9);
+
+      var shape = value.currentPage!.findShapeById(id)!;
+      expect(shape.line.join, VsdxLineJoin.miterClip);
+      expect(shape.line.miterLimit, 9);
+      expect(
+        shape.userCells.any(
+          (cell) =>
+              cell.name == VsdxShape.userLineJoin && cell.value == 'miter-clip',
+        ),
+        isTrue,
+      );
+
+      final reopened = const DocumentParser()
+          .parse(value.exportToBytes())
+          .pages
+          .single
+          .findShapeById(id)!;
+      expect(reopened.line.join, VsdxLineJoin.miterClip);
+      expect(reopened.line.miterLimit, closeTo(9, 1e-9));
+
+      value.setSelectionLocked(true);
+      value
+        ..setLineJoin(VsdxLineJoin.round)
+        ..setLineMiterLimit(2);
+      shape = value.currentPage!.findShapeById(id)!;
+      expect(shape.line.join, VsdxLineJoin.miterClip);
+      expect(shape.line.miterLimit, 9);
+    },
+  );
+
+  test('SVG preserves five joins and Canvas uses documented fallbacks', () {
+    final base = VsdxShapeFactory.line(id: 1, ax: 1, ay: 1, bx: 4, by: 3)
+        .reshapeAsPolyline(const <Offset2D>[
+          Offset2D(1, 1),
+          Offset2D(2, 3),
+          Offset2D(4, 3),
+        ])
+        .copyWith(line: const VsdxLine(weightInches: 0.2));
+
+    for (final join in VsdxLineJoin.values) {
+      final shape = base.withDrawioLineJoin(join).withDrawioMiterLimit(7);
+      final page = VsdxPage(
+        id: 0,
+        name: 'Join',
+        widthInches: 6,
+        heightInches: 5,
+        shapes: <VsdxShape>[shape],
+      );
+      final svg = VsdxToSvgSerializer().serializePage(page);
+      expect(svg, contains('stroke-linejoin="${join.svgName}"'));
+      if (join == VsdxLineJoin.miter || join == VsdxLineJoin.miterClip) {
+        expect(svg, contains('stroke-miterlimit="7"'));
+      } else {
+        expect(svg, isNot(contains('stroke-miterlimit=')));
+      }
+    }
+
+    expect(
+      canvasStrokeJoin(const VsdxLine(join: VsdxLineJoin.miterClip)),
+      StrokeJoin.miter,
+    );
+    expect(
+      canvasStrokeJoin(const VsdxLine(join: VsdxLineJoin.arcs)),
+      StrokeJoin.round,
+    );
+    expect(
+      canvasStrokeJoin(const VsdxLine(join: VsdxLineJoin.bevel)),
+      StrokeJoin.bevel,
+    );
   });
 
   test('five jump styles and per-edge size round-trip through VSDX', () {
@@ -94,6 +178,8 @@ void main() {
     final source = line(value, 1, 5, 4, 5);
     value
       ..setLineCap(LineCap.extended)
+      ..setLineJoin(VsdxLineJoin.round)
+      ..setLineMiterLimit(12)
       ..setConnectorLineJumpStyle(ConnectorLineJumpStyle.gap)
       ..setConnectorLineJumpSize(0.12)
       ..copyStyle();
@@ -111,6 +197,8 @@ void main() {
     value.pasteStyle();
     var pasted = value.currentPage!.findShapeById(target)!;
     expect(pasted.line.cap, LineCap.extended);
+    expect(pasted.line.join, VsdxLineJoin.round);
+    expect(pasted.line.miterLimit, 12);
     expect(pasted.drawioLineJumpStyle, 'gap');
     expect(pasted.drawioLineJumpSizeInches, closeTo(0.12, 1e-9));
     expect(pasted.connectorProps?.begTrigger, 'keep');
@@ -121,6 +209,8 @@ void main() {
     final created = line(value, 1, 1, 4, 1);
     pasted = value.currentPage!.findShapeById(created)!;
     expect(pasted.line.cap, LineCap.extended);
+    expect(pasted.line.join, VsdxLineJoin.round);
+    expect(pasted.line.miterLimit, 12);
     expect(pasted.drawioLineJumpStyle, 'gap');
     expect(pasted.drawioLineJumpSizeInches, closeTo(0.12, 1e-9));
   });
@@ -178,6 +268,20 @@ void main() {
     await tester.tap(find.text('Square'));
     await tester.pumpAndSettle();
     expect(canvas.controller.selectedLine?.cap, LineCap.square);
+
+    await scrollTo('Line Join');
+    await tester.ensureVisible(find.text('Bevel'));
+    await tester.tap(find.text('Bevel'));
+    await tester.pumpAndSettle();
+    expect(canvas.controller.selectedLineJoin, VsdxLineJoin.bevel);
+    expect(find.text('Miter Limit'), findsNothing);
+
+    await tester.ensureVisible(find.text('Miter'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Miter'));
+    await tester.pumpAndSettle();
+    expect(canvas.controller.selectedLineJoin, VsdxLineJoin.miter);
+    expect(find.text('Miter Limit'), findsOneWidget);
 
     await scrollTo('Line Jumps');
     final jumpDropdown = find.byWidgetPredicate(

@@ -1287,6 +1287,14 @@ ApplyResult applyOps(
                 next = next.copyWith(line: next.line.copyWith(cap: cap));
               }
             }
+            final lineJoin = VsdxLineJoin.parse(op['lineJoin']?.toString());
+            if (lineJoin != null) {
+              next = next.withDrawioLineJoin(lineJoin);
+            }
+            final miterLimit = _d(op['miterLimit']);
+            if (miterLimit != null && miterLimit >= 1) {
+              next = next.withDrawioMiterLimit(miterLimit);
+            }
             final valign = op['verticalAlign']?.toString().toLowerCase();
             if (valign != null && valign.isNotEmpty) {
               final align = switch (valign) {

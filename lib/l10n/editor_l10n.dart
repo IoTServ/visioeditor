@@ -503,6 +503,14 @@ class EditorL10n {
   String get lineCapFlat => locale.languageCode == 'zh' ? '平直' : 'Flat';
   String get lineCapRound => locale.languageCode == 'zh' ? '圆形' : 'Round';
   String get lineCapSquare => locale.languageCode == 'zh' ? '方形' : 'Square';
+  String get lineJoin => locale.languageCode == 'zh' ? '线条连接' : 'Line Join';
+  String get lineJoinMiter => locale.languageCode == 'zh' ? '斜接' : 'Miter';
+  String get lineJoinArcs => locale.languageCode == 'zh' ? '圆弧' : 'Arcs';
+  String get lineJoinBevel => locale.languageCode == 'zh' ? '斜角' : 'Bevel';
+  String get lineJoinMiterClip =>
+      locale.languageCode == 'zh' ? '裁剪斜接' : 'Miter-Clip';
+  String get lineJoinRound => locale.languageCode == 'zh' ? '圆角' : 'Round';
+  String get miterLimit => locale.languageCode == 'zh' ? '斜接限制' : 'Miter Limit';
   String get jumpArc => locale.languageCode == 'zh' ? '圆弧' : 'Arc';
   String get jumpGap => locale.languageCode == 'zh' ? '间隙' : 'Gap';
   String get jumpSharp => locale.languageCode == 'zh' ? '尖角' : 'Sharp';

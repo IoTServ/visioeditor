@@ -4914,6 +4914,51 @@ class _PropertyPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          Text(
+            EditorL10n.of(context).lineJoin,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final join in VsdxLineJoin.values)
+                ChoiceChip(
+                  label: Text(switch (join) {
+                    VsdxLineJoin.miter =>
+                      EditorL10n.of(context).lineJoinMiter,
+                    VsdxLineJoin.arcs =>
+                      EditorL10n.of(context).lineJoinArcs,
+                    VsdxLineJoin.bevel =>
+                      EditorL10n.of(context).lineJoinBevel,
+                    VsdxLineJoin.miterClip =>
+                      EditorL10n.of(context).lineJoinMiterClip,
+                    VsdxLineJoin.round =>
+                      EditorL10n.of(context).lineJoinRound,
+                  }),
+                  selected: controller.selectedLineJoin == join,
+                  onSelected: (_) => controller.setLineJoin(join),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          if (controller.selectedLineJoin == VsdxLineJoin.miter ||
+              controller.selectedLineJoin == VsdxLineJoin.miterClip)
+            _RangeSlider(
+              label: EditorL10n.of(context).miterLimit,
+              value: controller.selectedLineMiterLimit,
+              min: 1,
+              max: 100,
+              format: (v) => '${v.round()}',
+              onStart: controller.beginTransaction,
+              onChanged: (v) => controller.setLineMiterLimit(
+                v.roundToDouble(),
+                transient: true,
+              ),
+              onEnd: controller.commitTransaction,
+            ),
+          const SizedBox(height: 8),
           _arrowPickers(context, controller),
           _OpacitySlider(
             label: EditorL10n.of(context).opacity,

@@ -1469,6 +1469,8 @@ void main() {
           'ids': <String>['shape:$id'],
           'hideText': true,
           'lineCap': 'square',
+          'lineJoin': 'miter-clip',
+          'miterLimit': 8,
           'italic': true,
           'bold': true,
           'align': 'center',
@@ -1477,6 +1479,8 @@ void main() {
       final after = r.document.pages.first.findShapeById(id)!;
       expect(after.richText.textBlock.hideText, isTrue);
       expect(after.line.cap, LineCap.square);
+      expect(after.line.join, VsdxLineJoin.miterClip);
+      expect(after.line.miterLimit, 8);
       expect(after.richText.runs.first.charStyle.style.italic, isTrue);
       expect(after.richText.runs.first.charStyle.style.bold, isTrue);
       expect(after.richText.runs.first.paraStyle.horizontalAlign,

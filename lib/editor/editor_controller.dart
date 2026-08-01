@@ -6407,8 +6407,25 @@ class EditorController extends ChangeNotifier {
   VsdxFill? get selectedFill => (_firstSelected2D ?? _firstSelected)?.fill;
   VsdxLine? get selectedLine => _firstSelected?.line;
 
+  VsdxLineJoin get selectedLineJoin =>
+      selectedLine?.effectiveJoin ?? VsdxLineJoin.miter;
+
+  double get selectedLineMiterLimit => selectedLine?.miterLimit ?? 4.0;
+
   void setLineCap(LineCap cap) => _updateSelectedShapes(
         (s) => s.copyWith(line: s.line.copyWith(cap: cap)),
+        rememberStyle: true,
+      );
+
+  void setLineJoin(VsdxLineJoin join) => _updateSelectedShapes(
+        (s) => s.withDrawioLineJoin(join),
+        rememberStyle: true,
+      );
+
+  void setLineMiterLimit(double value, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (s) => s.withDrawioMiterLimit(value),
+        transient: transient,
         rememberStyle: true,
       );
 
@@ -7555,6 +7572,9 @@ class EditorController extends ChangeNotifier {
             glow: clip.includeEffects ? clip.glow : s.glow,
             reflection: clip.includeEffects ? clip.reflection : s.reflection,
           );
+    next = next
+        .withDrawioLineJoin(line.effectiveJoin)
+        .withDrawioMiterLimit(line.miterLimit);
     if (!s.is1D && clip.includeFill) {
       next = next.withWordWrap(clip.wordWrap);
       next = next.withConstrainProportions(clip.constrainProportions);

@@ -763,6 +763,13 @@ class VsdxShape {
   /// exposes page-level jump factors, so the User row preserves this override.
   static const String userLineJumpSize = 'veLineJumpSize';
 
+  /// Exact draw.io/SVG `linejoin` value. Visio has no equivalent ShapeSheet
+  /// cell, so this editor-owned row preserves the setting across VSDX saves.
+  static const String userLineJoin = 'veLineJoin';
+
+  /// draw.io/SVG `miterlimit` ratio paired with [userLineJoin].
+  static const String userMiterLimit = 'veMiterLimit';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -913,6 +920,37 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userAutoRotateLabel, value: value ? '1' : '0'),
+      ],
+    );
+  }
+
+  /// Set draw.io's SVG line join while preserving unrelated User rows.
+  VsdxShape withDrawioLineJoin(VsdxLineJoin value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userLineJoin) c,
+    ];
+    return copyWith(
+      line: line.copyWith(join: value),
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userLineJoin, value: value.svgName),
+      ],
+    );
+  }
+
+  /// Set draw.io's miter ratio (minimum 1) while preserving other User rows.
+  VsdxShape withDrawioMiterLimit(double value) {
+    final limit = value.clamp(1.0, 100.0).toDouble();
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userMiterLimit) c,
+    ];
+    return copyWith(
+      line: line.copyWith(miterLimit: limit),
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userMiterLimit, value: '$limit'),
       ],
     );
   }

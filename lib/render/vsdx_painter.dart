@@ -35,6 +35,15 @@ import 'path_builder.dart';
 import 'pattern_fill.dart';
 import 'shape_bounds.dart' as bounds;
 
+/// Flutter Canvas supports three joins. Preserve draw.io's richer value in
+/// the model/SVG while using the closest on-canvas appearance for SVG 2-only
+/// `arcs` and `miter-clip`.
+StrokeJoin canvasStrokeJoin(VsdxLine line) => switch (line.effectiveJoin) {
+      VsdxLineJoin.bevel => StrokeJoin.bevel,
+      VsdxLineJoin.arcs || VsdxLineJoin.round => StrokeJoin.round,
+      VsdxLineJoin.miter || VsdxLineJoin.miterClip => StrokeJoin.miter,
+    };
+
 class VsdxPainter extends CustomPainter {
   VsdxPainter({
     required this.page,
@@ -1302,9 +1311,8 @@ class VsdxPainter extends CustomPainter {
       paint
         ..strokeWidth = math.max(shape.line.weightInches, 0.01)
         ..strokeCap = _flutterCap(shape)
-        ..strokeJoin = shape.line.roundingInches > 0
-            ? StrokeJoin.round
-            : StrokeJoin.miter;
+        ..strokeJoin = canvasStrokeJoin(shape.line)
+        ..strokeMiterLimit = shape.line.miterLimit.clamp(1.0, 100.0);
     }
     canvas.save();
     // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
@@ -1736,9 +1744,8 @@ class VsdxPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = math.max(shape.line.weightInches, 1 / pxPerInch)
       ..strokeCap = _flutterCap(shape)
-      ..strokeJoin = shape.line.roundingInches > 0
-          ? StrokeJoin.round
-          : StrokeJoin.miter;
+      ..strokeJoin = canvasStrokeJoin(shape.line)
+      ..strokeMiterLimit = shape.line.miterLimit.clamp(1.0, 100.0);
   }
 
   Color? _colourOrTheme(VsdxColor? raw, int? themeIndex) {

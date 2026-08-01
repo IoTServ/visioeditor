@@ -786,7 +786,8 @@ class VsdxToSvgSerializer {
         LineCap.square => 'square',
         LineCap.extended => 'butt',
       };
-      final linejoin = shape.line.roundingInches > 0 ? 'round' : 'miter';
+      final linejoin = _svgLineJoin(shape.line);
+      final miterAttr = _svgMiterLimitAttr(shape.line);
       // SoftEdges once on a wrapper — markers stay outside (canvas paints
       // arrows after soft/shadow/glow in _paintLineEndings).
       if (filter.isNotEmpty) {
@@ -817,7 +818,7 @@ class VsdxToSvgSerializer {
           final withCap = railPaint.contains('stroke-linecap=')
               ? railPaint
               : '$railPaint stroke-linecap="$linecap" '
-                  'stroke-linejoin="$linejoin"';
+                  'stroke-linejoin="$linejoin"$miterAttr';
           buf.writeln(
             '$indent<path d="$od" fill="none" $withCap/>',
           );
@@ -830,10 +831,10 @@ class VsdxToSvgSerializer {
           '$indent<defs><mask id="$mid" maskUnits="userSpaceOnUse">'
           '<path d="$sD" fill="none" stroke="white" '
           'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
-          'stroke-linejoin="$linejoin"/>'
+          'stroke-linejoin="$linejoin"$miterAttr/>'
           '<path d="$sD" fill="none" stroke="black" '
           'stroke-width="${_n(gap)}" stroke-linecap="$linecap" '
-          'stroke-linejoin="$linejoin"/>'
+          'stroke-linejoin="$linejoin"$miterAttr/>'
           '</mask></defs>',
         );
         buf.writeln(
@@ -1459,7 +1460,8 @@ class VsdxToSvgSerializer {
       LineCap.square => 'square',
       LineCap.extended => 'butt',
     };
-    final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
+    final linejoin = _svgLineJoin(line);
+    final miterAttr = _svgMiterLimitAttr(line);
     final dash = _dashAttr(line.pattern, line.weightInches);
     final dashAttr = dash.isEmpty ? '' : ' stroke-dasharray="$dash"';
     final rails = compoundRails(line.compoundType, weight);
@@ -1477,7 +1479,7 @@ class VsdxToSvgSerializer {
           '$indent<path d="$od" fill="none" $strokePaint '
           'stroke-opacity="${_n(strokeOpacity)}" '
           'stroke-width="${_n(rail.width)}" stroke-linecap="$linecap" '
-          'stroke-linejoin="$linejoin"$dashAttr$extraAttrs/>',
+          'stroke-linejoin="$linejoin"$miterAttr$dashAttr$extraAttrs/>',
         );
       }
       return;
@@ -1486,7 +1488,7 @@ class VsdxToSvgSerializer {
       '$indent<path d="$d" fill="none" $strokePaint '
       'stroke-opacity="${_n(strokeOpacity)}" '
       'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
-      'stroke-linejoin="$linejoin"$dashAttr$extraAttrs/>',
+      'stroke-linejoin="$linejoin"$miterAttr$dashAttr$extraAttrs/>',
     );
   }
 
@@ -2272,7 +2274,8 @@ class VsdxToSvgSerializer {
     final weight = line.weightInches > 0 ? line.weightInches : 0.01;
     // Visio Rounding fillets corners; when we cannot rewrite the path, round
     // joins approximate the soft elbow look (canvas uses filletPolyline).
-    final linejoin = line.roundingInches > 0 ? 'round' : 'miter';
+    final linejoin = _svgLineJoin(line);
+    final miterAttr = _svgMiterLimitAttr(line);
     // Keep LineColorTrans as stroke-opacity even for gradients (canvas bakes
     // line.transparency into the shader and forces paint alpha=1). Do NOT fold
     // LineColor.a into stroke-opacity when a gradient paints the stroke — the
@@ -2377,9 +2380,30 @@ class VsdxToSvgSerializer {
     }
     final paint = '$strokePaint '
         'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
-        'stroke-linejoin="$linejoin"'
+        'stroke-linejoin="$linejoin"$miterAttr'
         '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}';
     return (paint: paint, markers: markers.toString());
+  }
+
+  String _svgLineJoin(VsdxLine line) {
+    final join = line.effectiveJoin;
+    if (!pdfCompat) return join.svgName;
+    return switch (join) {
+      VsdxLineJoin.arcs => 'round',
+      VsdxLineJoin.miterClip => 'miter',
+      _ => join.svgName,
+    };
+  }
+
+  String _svgMiterLimitAttr(VsdxLine line) {
+    final join = line.effectiveJoin;
+    if (join != VsdxLineJoin.miter && join != VsdxLineJoin.miterClip) {
+      return '';
+    }
+    if (line.join == null && (line.miterLimit - 4.0).abs() < 1e-9) {
+      return '';
+    }
+    return ' stroke-miterlimit="${_n(line.miterLimit.clamp(1.0, 100.0))}"';
   }
 
   /// SVG marker path for common Visio BeginArrow/EndArrow ids (subset of

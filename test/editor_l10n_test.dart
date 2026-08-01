@@ -67,6 +67,10 @@ void main() {
     expect(zh.exportSelectionSvg, '仅将所选内容导出为 SVG…');
     expect(en.exportSelectionPng, 'Export Selection as PNG…');
     expect(zh.exportSelectionPng, '仅将所选内容导出为 PNG…');
+    expect(en.lineJoin, 'Line Join');
+    expect(zh.lineJoin, '线条连接');
+    expect(en.lineJoinMiterClip, 'Miter-Clip');
+    expect(zh.miterLimit, '斜接限制');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
     expect(en.copyTextStyle, 'Copy Text Style');

@@ -23,6 +23,8 @@ class VsdxLine {
     this.beginArrowSizeInches = 0.125,
     this.endArrowSizeInches = 0.125,
     this.roundingInches = 0.0,
+    this.join,
+    this.miterLimit = 4.0,
     this.softEdgesInches = 0.0,
     this.compoundType = 0,
     this.gradient,
@@ -63,6 +65,16 @@ class VsdxLine {
   /// `computeRounding`). `0` ⇒ sharp corners.
   final double roundingInches;
 
+  /// draw.io/SVG stroke join override. `null` preserves the historical Visio
+  /// fallback: rounded geometry uses a round join, otherwise miter.
+  final VsdxLineJoin? join;
+
+  /// SVG/Canvas miter ratio. draw.io defaults to 4 and exposes values >= 1.
+  final double miterLimit;
+
+  VsdxLineJoin get effectiveJoin =>
+      join ?? (roundingInches > 0 ? VsdxLineJoin.round : VsdxLineJoin.miter);
+
   /// `SoftEdgesSize` — soft-edge blur radius in inches (`0` ⇒ none).
   final double softEdgesInches;
 
@@ -92,6 +104,8 @@ class VsdxLine {
         beginArrowSizeInches: beginArrowSizeInches,
         endArrowSizeInches: endArrowSizeInches,
         roundingInches: roundingInches,
+        join: join,
+        miterLimit: miterLimit,
         softEdgesInches: softEdgesInches,
         compoundType: compoundType,
       );
@@ -110,6 +124,8 @@ class VsdxLine {
         beginArrowSizeInches: beginArrowSizeInches,
         endArrowSizeInches: endArrowSizeInches,
         roundingInches: roundingInches,
+        join: join,
+        miterLimit: miterLimit,
         softEdgesInches: softEdgesInches,
         compoundType: compoundType,
       );
@@ -127,6 +143,8 @@ class VsdxLine {
         beginArrowSizeInches: beginArrowSizeInches,
         endArrowSizeInches: endArrowSizeInches,
         roundingInches: roundingInches,
+        join: join,
+        miterLimit: miterLimit,
         softEdgesInches: softEdgesInches,
         compoundType: compoundType,
         gradient: gradient,
@@ -148,6 +166,8 @@ class VsdxLine {
     double? beginArrowSizeInches,
     double? endArrowSizeInches,
     double? roundingInches,
+    VsdxLineJoin? join,
+    double? miterLimit,
     double? softEdgesInches,
     int? compoundType,
     Object? gradient = keepGradient,
@@ -166,6 +186,8 @@ class VsdxLine {
       beginArrowSizeInches: beginArrowSizeInches ?? this.beginArrowSizeInches,
       endArrowSizeInches: endArrowSizeInches ?? this.endArrowSizeInches,
       roundingInches: roundingInches ?? this.roundingInches,
+      join: join ?? this.join,
+      miterLimit: miterLimit ?? this.miterLimit,
       softEdgesInches: softEdgesInches ?? this.softEdgesInches,
       compoundType: compoundType ?? this.compoundType,
       gradient: identical(gradient, keepGradient)
@@ -176,3 +198,30 @@ class VsdxLine {
 }
 
 enum LineCap { round, square, extended }
+
+/// draw.io's five SVG 2 line-join values.
+enum VsdxLineJoin {
+  miter,
+  arcs,
+  bevel,
+  miterClip,
+  round;
+
+  String get svgName => switch (this) {
+        VsdxLineJoin.miter => 'miter',
+        VsdxLineJoin.arcs => 'arcs',
+        VsdxLineJoin.bevel => 'bevel',
+        VsdxLineJoin.miterClip => 'miter-clip',
+        VsdxLineJoin.round => 'round',
+      };
+
+  static VsdxLineJoin? parse(String? raw) =>
+      switch (raw?.trim().toLowerCase()) {
+        'miter' => VsdxLineJoin.miter,
+        'arcs' => VsdxLineJoin.arcs,
+        'bevel' => VsdxLineJoin.bevel,
+        'miter-clip' || 'miterclip' => VsdxLineJoin.miterClip,
+        'round' => VsdxLineJoin.round,
+        _ => null,
+      };
+}

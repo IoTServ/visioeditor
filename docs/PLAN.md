@@ -1558,6 +1558,11 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   子项参与边界计算，共选父子不重复，只有两端都在选区内的 Connect 胶合行随导出保留。SVG 与
   PNG 复用既有主题、图片、图层打印、跳线和 Color-by-Layer 渲染链路，并增加安全留白避免描边、
   箭头与阴影贴边。
+- 2026-08-01 — **对齐 draw.io Line Join / Miter Limit**：Format → Line 补 Miter、Arcs、
+  Bevel、Miter-Clip、Round 五种连接样式，并仅为两种斜接显示 1–100 的 Miter Limit。普通 SVG
+  原样输出 SVG 2 join 与限制；Flutter/PDF 对 Arcs、Miter-Clip 分别采用 Round、Miter 的兼容
+  降级，精确值仍以 `User.veLineJoin` / `User.veMiterLimit` 在 VSDX 中保留。同步纳入撤销、锁定、
+  Copy/Paste Style、独立默认样式和 Agent `set_style`，补画布映射、SVG、保存重开与真实面板回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用
