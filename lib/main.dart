@@ -6499,6 +6499,65 @@ class _PropertyPanel extends StatelessWidget {
                 controller.setLabelBorderColor(VsdxColor(argb)),
             onNone: controller.clearLabelBorderColor,
           ),
+          if (controller.selectedTextBackgroundColor != null ||
+              controller.selectedLabelBorderColor != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              EditorL10n.of(context).labelPadding,
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            const SizedBox(height: 4),
+            _RangeSlider(
+              key: const ValueKey('label-padding-top-slider'),
+              label: EditorL10n.of(context).paddingTop,
+              value: controller.selectedLabelPadding.top,
+              min: 0,
+              max: 20,
+              format: (v) => '${v.toStringAsFixed(1)} px',
+              onStart: controller.beginTransaction,
+              onChanged: (v) =>
+                  controller.setLabelPadding(top: v, transient: true),
+              onEnd: controller.commitTransaction,
+            ),
+            _RangeSlider(
+              label: EditorL10n.of(context).paddingRight,
+              value: controller.selectedLabelPadding.right,
+              min: 0,
+              max: 20,
+              format: (v) => '${v.toStringAsFixed(1)} px',
+              onStart: controller.beginTransaction,
+              onChanged: (v) =>
+                  controller.setLabelPadding(right: v, transient: true),
+              onEnd: controller.commitTransaction,
+            ),
+            _RangeSlider(
+              label: EditorL10n.of(context).paddingBottom,
+              value: controller.selectedLabelPadding.bottom,
+              min: 0,
+              max: 20,
+              format: (v) => '${v.toStringAsFixed(1)} px',
+              onStart: controller.beginTransaction,
+              onChanged: (v) =>
+                  controller.setLabelPadding(bottom: v, transient: true),
+              onEnd: controller.commitTransaction,
+            ),
+            _RangeSlider(
+              label: EditorL10n.of(context).paddingLeft,
+              value: controller.selectedLabelPadding.left,
+              min: 0,
+              max: 20,
+              format: (v) => '${v.toStringAsFixed(1)} px',
+              onStart: controller.beginTransaction,
+              onChanged: (v) =>
+                  controller.setLabelPadding(left: v, transient: true),
+              onEnd: controller.commitTransaction,
+            ),
+            _fullWidthOutlineButton(
+              onPressed: controller.resetLabelPadding,
+              icon: Icons.restart_alt,
+              label: EditorL10n.of(context).resetLabelPadding,
+            ),
+          ],
           const SizedBox(height: 8),
           Text(
             EditorL10n.of(context).textPadding,

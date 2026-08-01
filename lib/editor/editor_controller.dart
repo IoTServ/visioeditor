@@ -43,6 +43,7 @@ typedef _CreationStyle = ({
   VsdxParaStyle? para,
   VsdxTextBlock block,
   VsdxColor? labelBorderColor,
+  VsdxLabelPadding labelPadding,
   double shapeOpacity,
   ConnectorLineJumpStyle? lineJumpStyle,
   double? lineJumpSize,
@@ -7776,6 +7777,7 @@ class EditorController extends ChangeNotifier {
       para: run?.paraStyle,
       block: shape.richText.textBlock,
       labelBorderColor: shape.labelBorderColor,
+      labelPadding: shape.labelPadding,
       shapeOpacity: shape.shapeOpacity,
       lineJumpStyle: shape.isGlueableConnector
           ? _connectorLineJumpStyleOf(shape)
@@ -8009,6 +8011,7 @@ class EditorController extends ChangeNotifier {
       richText: next.richText.copyWith(textBlock: styledBlock),
     )
         .withLabelBorderColor(clip.labelBorderColor)
+        .withLabelPadding(clip.labelPadding)
         .withShapeOpacity(clip.shapeOpacity);
     if (next.autosizeText) next = _fitAutosizeText(next);
     return next;
@@ -8027,6 +8030,7 @@ class EditorController extends ChangeNotifier {
     VsdxColor? backgroundColor,
     double backgroundTransparency,
     VsdxColor? labelBorderColor,
+    VsdxLabelPadding labelPadding,
     int textDirection,
     bool autosizeText,
     bool shapeInside,
@@ -8071,6 +8075,7 @@ class EditorController extends ChangeNotifier {
       backgroundColor: block.backgroundColor,
       backgroundTransparency: block.backgroundTransparency,
       labelBorderColor: shape.labelBorderColor,
+      labelPadding: shape.labelPadding,
       textDirection: block.textDirection,
       autosizeText: shape.autosizeText,
       shapeInside: shape.shapeInside,
@@ -8142,7 +8147,8 @@ class EditorController extends ChangeNotifier {
                 textBlock: styledBlock,
               ),
             )
-            .withLabelBorderColor(clip.labelBorderColor);
+            .withLabelBorderColor(clip.labelBorderColor)
+            .withLabelPadding(clip.labelPadding);
         if (!target.is1D) styled = styled.withAutosizeText(clip.autosizeText);
         if (!target.is1D && target.supportsShapeInside) {
           styled = styled
@@ -9468,6 +9474,9 @@ class EditorController extends ChangeNotifier {
 
   VsdxColor? get selectedLabelBorderColor => _firstSelected?.labelBorderColor;
 
+  VsdxLabelPadding get selectedLabelPadding =>
+      _firstSelected?.labelPadding ?? VsdxLabelPadding.zero;
+
   void setLabelBorderColor(VsdxColor color) => _updateSelectedShapes(
         (s) => s.withLabelBorderColor(color),
         rememberStyle: true,
@@ -9475,6 +9484,30 @@ class EditorController extends ChangeNotifier {
 
   void clearLabelBorderColor() => _updateSelectedShapes(
         (s) => s.withLabelBorderColor(null),
+        rememberStyle: true,
+      );
+
+  void setLabelPadding({
+    double? top,
+    double? right,
+    double? bottom,
+    double? left,
+    bool transient = false,
+  }) => _updateSelectedShapes(
+        (s) => s.withLabelPadding(
+          s.labelPadding.copyWith(
+            top: top,
+            right: right,
+            bottom: bottom,
+            left: left,
+          ),
+        ),
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  void resetLabelPadding() => _updateSelectedShapes(
+        (s) => s.withLabelPadding(VsdxLabelPadding.zero),
         rememberStyle: true,
       );
 

@@ -509,6 +509,10 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '标签背景' : 'Label Background';
   String get labelBorder =>
       locale.languageCode == 'zh' ? '标签边框' : 'Label Border';
+  String get labelPadding =>
+      locale.languageCode == 'zh' ? '标签背景内边距' : 'Label Padding';
+  String get resetLabelPadding =>
+      locale.languageCode == 'zh' ? '重置标签背景内边距' : 'Reset Label Padding';
   String get textOpacity =>
       locale.languageCode == 'zh' ? '文字不透明度' : 'Text Opacity';
   String get textPadding =>

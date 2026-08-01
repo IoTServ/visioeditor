@@ -1261,6 +1261,10 @@ void _registerEditTools(McpServer server) {
       'autosizeText': <String, dynamic>{'type': 'boolean'},
       'shapeInside': <String, dynamic>{'type': 'boolean'},
       'shapeInsidePadding': <String, dynamic>{'type': 'number'},
+      'labelPadding': <String, dynamic>{
+        'description':
+            'draw.io CSS-style label padding in pixels (number, 1-4 value string, or array)',
+      },
       'pt': <String, dynamic>{'type': 'number'},
       'fontSize': <String, dynamic>{'type': 'number'},
       'opacity': <String, dynamic>{'type': 'number'},
@@ -1413,6 +1417,7 @@ void _registerEditTools(McpServer server) {
           'autosizeText',
           'shapeInside',
           'shapeInsidePadding',
+          'labelPadding',
           'pt',
           'fontSize',
           'opacity',

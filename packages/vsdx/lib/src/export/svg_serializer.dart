@@ -3330,14 +3330,18 @@ class VsdxToSvgSerializer {
     final borderPaint = border == null
         ? 'stroke="none"'
         : 'stroke="${_hex(border)}" stroke-width="${_n(1 / pxPerInch)}"';
-    const pad = 0.03;
+    final padding = shape.labelPadding;
+    final padTop = (padding.isZero ? 3.0 : padding.top) / pxPerInch;
+    final padRight = (padding.isZero ? 3.0 : padding.right) / pxPerInch;
+    final padBottom = (padding.isZero ? 3.0 : padding.bottom) / pxPerInch;
+    final padLeft = (padding.isZero ? 3.0 : padding.left) / pxPerInch;
     final angle =
         angleRad != 0 ? ' rotate(${_n(angleRad * 180 / math.pi)})' : '';
     final dirRot = textDirection == 1 ? ' rotate(-90)' : '';
     buf.writeln(
       '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle$dirRot">'
-      '<rect x="${_n(-maxW / 2 - pad)}" y="${_n(-totalH / 2 - pad)}" '
-      'width="${_n(maxW + 2 * pad)}" height="${_n(totalH + 2 * pad)}" '
+      '<rect x="${_n(-maxW / 2 - padLeft)}" y="${_n(-totalH / 2 - padTop)}" '
+      'width="${_n(maxW + padLeft + padRight)}" height="${_n(totalH + padTop + padBottom)}" '
       'rx="0.02" fill="${_hex(plate)}" '
       'fill-opacity="${_n(bgOp)}" $borderPaint/>'
       '<g transform="scale(1 -1)">',
@@ -3458,7 +3462,10 @@ class VsdxToSvgSerializer {
       return;
     }
     final labelBorder = shape.labelBorderColor;
-    if (block.backgroundColor != null || labelBorder != null) {
+    final tightLabelPlate = !shape.labelPadding.isZero &&
+        (block.backgroundColor != null || labelBorder != null);
+    if (!tightLabelPlate &&
+        (block.backgroundColor != null || labelBorder != null)) {
       final bgOp = block.backgroundColor == null
           ? 0.0
           : _combinedOpacity(
@@ -3477,6 +3484,27 @@ class VsdxToSvgSerializer {
         '$indent<g transform="$xf">'
         '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
         '$fill $stroke/></g>',
+      );
+    }
+
+    if (tightLabelPlate) {
+      _writeTightLabelPlate(
+        buf,
+        shape: shape,
+        runs: runs,
+        transform: xf.toString(),
+        width: tw,
+        height: th,
+        marginLeft: ml,
+        marginRight: mr,
+        marginTop: mt,
+        marginBottom: mb,
+        verticalAlign: block.verticalAlign,
+        textDirection: block.textDirection,
+        backgroundColor: block.backgroundColor,
+        backgroundTransparency: block.backgroundTransparency,
+        borderColor: labelBorder,
+        indent: indent,
       );
     }
 
@@ -3726,6 +3754,124 @@ class VsdxToSvgSerializer {
       );
     }
     buf.writeln('$indent</g>');
+  }
+
+  /// SVG/PDF draw.io label box: the text block positions glyphs, while this
+  /// plate hugs their bounds and expands by CSS-style pixel padding.
+  void _writeTightLabelPlate(
+    StringBuffer buf, {
+    required VsdxShape shape,
+    required List<VsdxTextRun> runs,
+    required String transform,
+    required double width,
+    required double height,
+    required double marginLeft,
+    required double marginRight,
+    required double marginTop,
+    required double marginBottom,
+    required VsdxVertAlign verticalAlign,
+    required int textDirection,
+    required VsdxColor? backgroundColor,
+    required double backgroundTransparency,
+    required VsdxColor? borderColor,
+    required String indent,
+  }) {
+    var layoutW = width;
+    var layoutH = height;
+    var ml = marginLeft;
+    var mr = marginRight;
+    var mt = marginTop;
+    var mb = marginBottom;
+    final vertical = textDirection == 1;
+    if (vertical) {
+      layoutW = height;
+      layoutH = width;
+      ml = marginTop;
+      mr = marginBottom;
+      mt = marginRight;
+      mb = marginLeft;
+    }
+
+    var cursor = 0.0;
+    var minX = double.infinity;
+    var maxX = double.negativeInfinity;
+    for (final p in _splitSvgParagraphs(runs)) {
+      cursor += p.style.spaceBeforeInches;
+      final lineH = _svgParaLineHeight(p.segs, p.style);
+      final indentL = p.style.indentLeftInches;
+      final indentF = p.style.indentFirstInches;
+      final hasBullet = p.style.bullet != 0;
+      final bulletGap = hasBullet
+          ? (p.style.textPosAfterBulletInches > 0
+              ? p.style.textPosAfterBulletInches
+              : 0.18)
+          : 0.0;
+      final restX = ml + indentL + (hasBullet ? bulletGap : 0.0);
+      final firstX = hasBullet ? restX : ml + indentL + indentF;
+      final bandRight = layoutW - mr - p.style.indentRightInches;
+      final wrapped = shape.wordWrap
+          ? _wrapSvgSegs(
+              p.segs,
+              math.max(0.04, bandRight - restX),
+              firstLineMaxWidth: math.max(0.04, bandRight - firstX),
+            )
+          : <List<(String text, VsdxTextRun run)>>[p.segs];
+      for (var i = 0; i < wrapped.length; i++) {
+        final xBand = i == 0 ? firstX : restX;
+        var natural = 0.0;
+        for (final (raw, run) in wrapped[i]) {
+          natural += _estSvgTextWidth(raw, run.charStyle);
+        }
+        final (x0, x1) = switch (p.style.horizontalAlign) {
+          VsdxHorzAlign.right => (bandRight - natural, bandRight),
+          VsdxHorzAlign.center => (
+              xBand + (bandRight - xBand - natural) / 2,
+              xBand + (bandRight - xBand + natural) / 2,
+            ),
+          VsdxHorzAlign.justify => (xBand, bandRight),
+          _ => (xBand, xBand + natural),
+        };
+        minX = math.min(minX, x0);
+        maxX = math.max(maxX, x1);
+        cursor += lineH;
+      }
+      cursor += p.style.spaceAfterInches;
+    }
+    if (!minX.isFinite || !maxX.isFinite) return;
+    final textH = math.max(cursor, 0.04);
+    final contentBand = layoutH - mt - mb;
+    final yCenter = switch (verticalAlign) {
+      VsdxVertAlign.top => layoutH - mt - textH / 2,
+      VsdxVertAlign.bottom => mb + textH / 2,
+      VsdxVertAlign.middle => textH > contentBand + 1e-9
+          ? layoutH - mt - textH / 2
+          : mb + contentBand / 2,
+    };
+    final padding = shape.labelPadding;
+    final pt = padding.top / pxPerInch;
+    final pr = padding.right / pxPerInch;
+    final pb = padding.bottom / pxPerInch;
+    final pl = padding.left / pxPerInch;
+    final fill = backgroundColor == null
+        ? 'fill="none"'
+        : 'fill="${_hex(backgroundColor)}" '
+            'fill-opacity="${_n(_combinedOpacity(backgroundColor, backgroundTransparency))}"';
+    final stroke = borderColor == null
+        ? 'stroke="none"'
+        : 'stroke="${_hex(borderColor)}" stroke-width="${_n(1 / pxPerInch)}"';
+    final xf = StringBuffer(transform);
+    if (vertical) {
+      xf.write(
+        ' translate(${_n(width / 2)} ${_n(height / 2)}) rotate(-90) '
+        'translate(${_n(-height / 2)} ${_n(-width / 2)})',
+      );
+    }
+    buf.writeln(
+      '$indent<g transform="$xf"><rect '
+      'x="${_n(minX - pl)}" y="${_n(yCenter - textH / 2 - pb)}" '
+      'width="${_n(maxX - minX + pl + pr)}" '
+      'height="${_n(textH + pt + pb)}" $fill $stroke/></g>',
+    );
   }
 
   /// SVG/PDF counterpart of the canvas outline-aware line layout.

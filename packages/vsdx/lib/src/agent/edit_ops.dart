@@ -1319,6 +1319,10 @@ ApplyResult applyOps(
                 shapeInsidePadding != null) {
               next = next.withShapeInsidePadding(shapeInsidePadding);
             }
+            if (op.containsKey('labelPadding')) {
+              final padding = VsdxLabelPadding.tryParse(op['labelPadding']);
+              if (padding != null) next = next.withLabelPadding(padding);
+            }
             final lineCapRaw = op['lineCap'] ?? op['cap'];
             if (lineCapRaw != null) {
               LineCap? cap;

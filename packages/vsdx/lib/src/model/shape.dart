@@ -62,6 +62,104 @@ enum VsdxFlowAnimationDirection {
   }
 }
 
+/// draw.io `labelPadding` in screen pixels, expanded from CSS-style shorthand.
+@immutable
+class VsdxLabelPadding {
+  const VsdxLabelPadding({
+    this.top = 0,
+    this.right = 0,
+    this.bottom = 0,
+    this.left = 0,
+  });
+
+  const VsdxLabelPadding.all(double value)
+      : top = value,
+        right = value,
+        bottom = value,
+        left = value;
+
+  static const zero = VsdxLabelPadding();
+
+  final double top;
+  final double right;
+  final double bottom;
+  final double left;
+
+  bool get isZero => top == 0 && right == 0 && bottom == 0 && left == 0;
+
+  VsdxLabelPadding copyWith({
+    double? top,
+    double? right,
+    double? bottom,
+    double? left,
+  }) => VsdxLabelPadding(
+        top: _safe(top ?? this.top),
+        right: _safe(right ?? this.right),
+        bottom: _safe(bottom ?? this.bottom),
+        left: _safe(left ?? this.left),
+      );
+
+  /// Parses draw.io's 1–4 value CSS shorthand. Numeric values/lists are also
+  /// accepted for editor and Agent callers.
+  static VsdxLabelPadding? tryParse(Object? value) {
+    final values = <double>[];
+    if (value is num) {
+      values.add(value.toDouble());
+    } else if (value is String) {
+      for (final token in value.trim().split(RegExp(r'[\s,]+'))) {
+        if (token.isEmpty) continue;
+        final parsed = double.tryParse(token);
+        if (parsed == null) return null;
+        values.add(parsed);
+      }
+    } else if (value is List) {
+      for (final token in value.take(4)) {
+        final parsed = token is num
+            ? token.toDouble()
+            : double.tryParse('$token');
+        if (parsed == null) return null;
+        values.add(parsed);
+      }
+    } else {
+      return null;
+    }
+    if (values.isEmpty || values.length > 4 || values.any((v) => !v.isFinite)) {
+      return null;
+    }
+    final v = values.map(_safe).toList(growable: false);
+    return switch (v.length) {
+      1 => VsdxLabelPadding.all(v[0]),
+      2 => VsdxLabelPadding(top: v[0], right: v[1], bottom: v[0], left: v[1]),
+      3 => VsdxLabelPadding(top: v[0], right: v[1], bottom: v[2], left: v[1]),
+      _ => VsdxLabelPadding(top: v[0], right: v[1], bottom: v[2], left: v[3]),
+    };
+  }
+
+  static double _safe(double value) => value.isFinite ? math.max(0, value) : 0;
+
+  String get cssValue {
+    String n(double value) => value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(3)
+            .replaceFirst(RegExp(r'0+$'), '')
+            .replaceFirst(RegExp(r'\.$'), '');
+    if (top == right && top == bottom && top == left) return n(top);
+    if (top == bottom && right == left) return '${n(top)} ${n(right)}';
+    if (right == left) return '${n(top)} ${n(right)} ${n(bottom)}';
+    return '${n(top)} ${n(right)} ${n(bottom)} ${n(left)}';
+  }
+
+  @override
+  bool operator ==(Object other) => other is VsdxLabelPadding &&
+      top == other.top &&
+      right == other.right &&
+      bottom == other.bottom &&
+      left == other.left;
+
+  @override
+  int get hashCode => Object.hash(top, right, bottom, left);
+}
+
 @immutable
 class VsdxShape {
   const VsdxShape({
@@ -795,6 +893,9 @@ class VsdxShape {
   /// portable ShapeSheet equivalent, so the RGB token is kept in a User row.
   static const String userLabelBorderColor = 'veLabelBorderColor';
 
+  /// draw.io `labelPadding`, in CSS top/right/bottom/left screen pixels.
+  static const String userLabelPadding = 'veLabelPadding';
+
   /// draw.io cell `opacity` for the complete rendered shape subtree. Visio
   /// only has per-component transparency cells, so this app-level value is
   /// preserved in a User row without destructively rewriting those cells.
@@ -1014,6 +1115,34 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userLabelBorderColor, value: '#$rgb'),
+      ],
+    );
+  }
+
+  /// Padding between this label's rendered text and its background/border.
+  VsdxLabelPadding get labelPadding {
+    for (final c in userCells) {
+      if (c.name == userLabelPadding) {
+        return VsdxLabelPadding.tryParse(c.value) ?? VsdxLabelPadding.zero;
+      }
+    }
+    return VsdxLabelPadding.zero;
+  }
+
+  /// Set or clear draw.io label padding while preserving unrelated User rows.
+  VsdxShape withLabelPadding(VsdxLabelPadding padding) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userLabelPadding) c,
+    ];
+    if (padding.isZero) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userLabelPadding, value: padding.cssValue),
       ],
     );
   }

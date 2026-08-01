@@ -85,6 +85,8 @@ void main() {
     expect(zh.textOpacity, '文字不透明度');
     expect(en.labelBorder, 'Label Border');
     expect(zh.labelBorder, '标签边框');
+    expect(en.labelPadding, 'Label Padding');
+    expect(zh.labelPadding, '标签背景内边距');
     expect(en.shapeOpacity, 'Shape Opacity');
     expect(zh.shapeOpacity, '图形不透明度');
     expect(en.sketch, 'Sketch');

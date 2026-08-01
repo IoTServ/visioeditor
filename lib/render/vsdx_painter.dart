@@ -2352,7 +2352,11 @@ class VsdxPainter extends CustomPainter {
       final ox = -tp.width / 2;
       final oy = -tp.height / 2;
       if (tp.width > 0) {
-        final pad = 0.03 * s;
+        final padding = shape.labelPadding;
+        final padTop = padding.isZero ? 0.03 * s : padding.top;
+        final padRight = padding.isZero ? 0.03 * s : padding.right;
+        final padBottom = padding.isZero ? 0.03 * s : padding.bottom;
+        final padLeft = padding.isZero ? 0.03 * s : padding.left;
         // Prefer authored TextBkgnd (matches SVG / Visio); else page/white.
         final Color plate;
         if (block.backgroundColor != null) {
@@ -2364,7 +2368,11 @@ class VsdxPainter extends CustomPainter {
         }
         final plateRect = RRect.fromRectAndRadius(
           Rect.fromLTWH(
-              ox - pad, oy - pad, tp.width + pad * 2, tp.height + pad * 2),
+            ox - padLeft,
+            oy - padTop,
+            tp.width + padLeft + padRight,
+            tp.height + padTop + padBottom,
+          ),
           Radius.circular(0.02 * s),
         );
         canvas.drawRRect(plateRect, Paint()..color = plate);
@@ -2399,22 +2407,26 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
     // TextBkgnd plus draw.io labelBorderColor around the text block.
     final textRect = Rect.fromLTWH(0, 0, tw, th);
-    if (block.backgroundColor case final background?) {
-      final bg = Color(background.value);
-      final t = block.backgroundTransparency.clamp(0.0, 1.0);
-      canvas.drawRect(
-        textRect,
-        Paint()..color = bg.withValues(alpha: bg.a * (1.0 - t)),
-      );
-    }
-    if (shape.labelBorderColor case final border?) {
-      canvas.drawRect(
-        textRect,
-        Paint()
-          ..color = Color(border.value)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1 / s,
-      );
+    final tightLabelPlate = !shape.labelPadding.isZero &&
+        (block.backgroundColor != null || shape.labelBorderColor != null);
+    if (!tightLabelPlate) {
+      if (block.backgroundColor case final background?) {
+        final bg = Color(background.value);
+        final t = block.backgroundTransparency.clamp(0.0, 1.0);
+        canvas.drawRect(
+          textRect,
+          Paint()..color = bg.withValues(alpha: bg.a * (1.0 - t)),
+        );
+      }
+      if (shape.labelBorderColor case final border?) {
+        canvas.drawRect(
+          textRect,
+          Paint()
+            ..color = Color(border.value)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1 / s,
+        );
+      }
     }
     canvas.translate(0, th); // to the block's upper-left corner (Y still up)
     canvas.scale(1 / s, -1 / s); // → pixel space, Y-down upright text frame
@@ -2440,6 +2452,27 @@ class VsdxPainter extends CustomPainter {
       mbPx = oldMl;
     }
     final maxW = math.max(0.0, twPx - mlPx - mrPx);
+
+    if (tightLabelPlate) {
+      _paintTightLabelPlate(
+        canvas,
+        spans: spans,
+        align: align,
+        verticalAlign: block.verticalAlign,
+        wordWrap: shape.wordWrap,
+        twPx: twPx,
+        thPx: thPx,
+        mlPx: mlPx,
+        mrPx: mrPx,
+        mtPx: mtPx,
+        mbPx: mbPx,
+        maxW: maxW,
+        padding: shape.labelPadding,
+        background: block.backgroundColor,
+        backgroundTransparency: block.backgroundTransparency,
+        border: shape.labelBorderColor,
+      );
+    }
 
     // Curved Text: place glyphs along a quadratic arc inside the text block.
     // Falls back to the rectangular layout when the shape is a 1-D edge label.
@@ -2580,6 +2613,75 @@ class VsdxPainter extends CustomPainter {
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
+  }
+
+  /// Draw draw.io's plate around the laid-out glyph bounds. Text-block
+  /// margins position the label; [padding] expands only its background box.
+  void _paintTightLabelPlate(
+    Canvas canvas, {
+    required List<InlineSpan> spans,
+    required TextAlign align,
+    required VsdxVertAlign verticalAlign,
+    required bool wordWrap,
+    required double twPx,
+    required double thPx,
+    required double mlPx,
+    required double mrPx,
+    required double mtPx,
+    required double mbPx,
+    required double maxW,
+    required VsdxLabelPadding padding,
+    required VsdxColor? background,
+    required double backgroundTransparency,
+    required VsdxColor? border,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(children: spans),
+      textAlign: align,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    );
+    if (wordWrap) {
+      tp.layout(maxWidth: maxW);
+    } else {
+      tp.layout();
+    }
+    final ox = switch (align) {
+      TextAlign.center => mlPx + (twPx - mlPx - mrPx - tp.width) / 2,
+      TextAlign.right => twPx - mrPx - tp.width,
+      _ => mlPx,
+    };
+    var oy = switch (verticalAlign) {
+      VsdxVertAlign.top => mtPx,
+      VsdxVertAlign.bottom => thPx - mbPx - tp.height,
+      VsdxVertAlign.middle =>
+        mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
+    };
+    if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
+    final rect = Rect.fromLTWH(
+      ox - padding.left,
+      oy - padding.top,
+      tp.width + padding.left + padding.right,
+      tp.height + padding.top + padding.bottom,
+    );
+    if (background case final color?) {
+      final bg = Color(color.value);
+      final transparency = backgroundTransparency.clamp(0.0, 1.0);
+      canvas.drawRect(
+        rect,
+        Paint()..color = bg.withValues(alpha: bg.a * (1 - transparency)),
+      );
+    }
+    if (border case final color?) {
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = Color(color.value)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    }
+    tp.dispose();
   }
 
   /// Greedy line layout whose width follows the selected shape outline.

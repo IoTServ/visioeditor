@@ -1721,6 +1721,7 @@ void main() {
           'autosizeText': true,
           'shapeInside': true,
           'shapeInsidePadding': 6,
+          'labelPadding': '2 4 6 8',
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -1742,6 +1743,10 @@ void main() {
       expect(after.autosizeText, isTrue);
       expect(after.shapeInside, isTrue);
       expect(after.shapeInsidePaddingPx, 6);
+      expect(
+        after.labelPadding,
+        const VsdxLabelPadding(top: 2, right: 4, bottom: 6, left: 8),
+      );
       expect(after.wordWrap, isTrue);
     });
 
