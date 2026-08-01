@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'package:meta/meta.dart';
 
 import 'connect.dart';
+import 'dash_pattern.dart';
 import 'effects.dart';
 import 'fill.dart';
 import 'geometry.dart';
@@ -770,6 +771,13 @@ class VsdxShape {
   /// draw.io/SVG `miterlimit` ratio paired with [userLineJoin].
   static const String userMiterLimit = 'veMiterLimit';
 
+  /// Raw draw.io `dashPattern` number sequence. Visio's nearest native
+  /// LinePattern remains the compatibility fallback.
+  static const String userDashPattern = 'veDashPattern';
+
+  /// draw.io `fixDash=1`, paired with [userDashPattern].
+  static const String userFixedDash = 'veFixedDash';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -951,6 +959,36 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userMiterLimit, value: '$limit'),
+      ],
+    );
+  }
+
+  /// Set or clear draw.io's custom dash sequence while preserving User rows.
+  VsdxShape withDrawioDashPattern(
+    List<double>? values, {
+    bool fixed = false,
+  }) {
+    final pattern = values == null || values.isEmpty
+        ? null
+        : List<double>.unmodifiable(values);
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userDashPattern && c.name != userFixedDash) c,
+    ];
+    return copyWith(
+      line: line.copyWith(
+        customDashPattern: pattern,
+        fixedDash: pattern != null && fixed,
+      ),
+      userCells: <VsdxUserCell>[
+        ...others,
+        if (pattern != null)
+          VsdxUserCell(
+            name: userDashPattern,
+            value: formatDrawioDashPattern(pattern),
+          ),
+        if (pattern != null && fixed)
+          const VsdxUserCell(name: userFixedDash, value: '1'),
       ],
     );
   }

@@ -439,6 +439,8 @@ class StyleParser {
           ? defaults.endArrowSizeInches
           : _arrowSizeFromBucket(endSize),
       roundingInches: rounding,
+      customDashPattern: defaults.customDashPattern,
+      fixedDash: defaults.fixedDash,
       join: defaults.join,
       miterLimit: defaults.miterLimit,
       softEdgesInches: softEdges,

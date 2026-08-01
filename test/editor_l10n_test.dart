@@ -71,6 +71,10 @@ void main() {
     expect(zh.lineJoin, '线条连接');
     expect(en.lineJoinMiterClip, 'Miter-Clip');
     expect(zh.miterLimit, '斜接限制');
+    expect(en.dashPattern, 'Dash Pattern');
+    expect(zh.dashPattern, '虚线图案');
+    expect(en.fixedDash, 'Fixed Dash');
+    expect(zh.fixedDash, '固定虚线长度');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
     expect(en.copyTextStyle, 'Copy Text Style');

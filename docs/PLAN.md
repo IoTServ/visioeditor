@@ -1563,6 +1563,11 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   原样输出 SVG 2 join 与限制；Flutter/PDF 对 Arcs、Miter-Clip 分别采用 Round、Miter 的兼容
   降级，精确值仍以 `User.veLineJoin` / `User.veMiterLimit` 在 VSDX 中保留。同步纳入撤销、锁定、
   Copy/Paste Style、独立默认样式和 Agent `set_style`，补画布映射、SVG、保存重开与真实面板回归。
+- 2026-08-01 — **对齐 draw.io Dash Pattern / Fixed Dash**：Format → Line 增加任意正数虚线/
+  间隙序列编辑及恢复 Visio 预设入口；普通模式按线宽同比缩放，Fixed Dash 使用固定显示单位，
+  调整线宽时保持节奏不变。原始序列与固定标记以 `User.veDashPattern` / `User.veFixedDash`
+  精确保存在 VSDX，`LinePattern` 作为 Visio 兼容回退；画布、阴影、反射与 SVG/PDF 导出共用
+  同一有效序列，并纳入撤销、锁定、Copy/Paste Style、独立默认样式及 Agent `set_style`。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

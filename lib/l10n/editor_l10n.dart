@@ -511,6 +511,18 @@ class EditorL10n {
       locale.languageCode == 'zh' ? '裁剪斜接' : 'Miter-Clip';
   String get lineJoinRound => locale.languageCode == 'zh' ? '圆角' : 'Round';
   String get miterLimit => locale.languageCode == 'zh' ? '斜接限制' : 'Miter Limit';
+  String get dashPattern =>
+      locale.languageCode == 'zh' ? '虚线图案' : 'Dash Pattern';
+  String get dashPatternHint => locale.languageCode == 'zh'
+      ? '输入正数序列，例如 8 4 2 4'
+      : 'Enter positive numbers, for example 8 4 2 4';
+  String get invalidDashPattern => locale.languageCode == 'zh'
+      ? '请输入以空格或逗号分隔的正数'
+      : 'Enter positive numbers separated by spaces or commas';
+  String get resetDashPattern =>
+      locale.languageCode == 'zh' ? '恢复预设' : 'Use Preset';
+  String get fixedDash =>
+      locale.languageCode == 'zh' ? '固定虚线长度' : 'Fixed Dash';
   String get jumpArc => locale.languageCode == 'zh' ? '圆弧' : 'Arc';
   String get jumpGap => locale.languageCode == 'zh' ? '间隙' : 'Gap';
   String get jumpSharp => locale.languageCode == 'zh' ? '尖角' : 'Sharp';

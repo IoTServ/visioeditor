@@ -129,6 +129,85 @@ void main() {
     );
   });
 
+  test('custom Dash Pattern and Fixed Dash round-trip and scale correctly', () {
+    final value = controller();
+    final id = line(value, 1, 3, 5, 3);
+
+    value.setCustomDashPattern(const <double>[8, 4, 2, 4]);
+    expect(value.selectedCustomDashPattern, <double>[8, 4, 2, 4]);
+    expect(value.selectedLine?.pattern, 2);
+    value.setFixedDash(true);
+    expect(value.selectedFixedDash, isTrue);
+    value.undo();
+    expect(value.selectedFixedDash, isFalse);
+    value.redo();
+
+    final shape = value.currentPage!.findShapeById(id)!;
+    expect(
+      shape.userCells.any(
+        (cell) =>
+            cell.name == VsdxShape.userDashPattern && cell.value == '8 4 2 4',
+      ),
+      isTrue,
+    );
+    expect(
+      shape.userCells.any(
+        (cell) => cell.name == VsdxShape.userFixedDash && cell.value == '1',
+      ),
+      isTrue,
+    );
+
+    final reopened = const DocumentParser()
+        .parse(value.exportToBytes())
+        .pages
+        .single
+        .findShapeById(id)!;
+    expect(reopened.line.customDashPattern, <double>[8, 4, 2, 4]);
+    expect(reopened.line.fixedDash, isTrue);
+
+    const scalable = VsdxLine(
+      weightInches: 0.02,
+      pattern: 2,
+      customDashPattern: <double>[4, 2],
+    );
+    expect(effectiveDashPatternForLine(scalable), <double>[0.08, 0.04]);
+    expect(
+      effectiveDashPatternForLine(
+        const VsdxLine(
+          weightInches: 0.08,
+          pattern: 2,
+          customDashPattern: <double>[4, 2],
+          fixedDash: true,
+        ),
+      ),
+      <double>[4 / 96, 2 / 96],
+    );
+
+    value.setSelectionLocked(true);
+    value.setCustomDashPattern(const <double>[1, 1]);
+    expect(value.selectedCustomDashPattern, <double>[8, 4, 2, 4]);
+  });
+
+  test('SVG exports the effective custom dash array', () {
+    final shape = VsdxShapeFactory.line(id: 1, ax: 1, ay: 1, bx: 4, by: 3)
+        .copyWith(
+          line: const VsdxLine(
+            weightInches: 0.02,
+            pattern: 2,
+            customDashPattern: <double>[4, 2],
+          ),
+        );
+    final page = VsdxPage(
+      id: 0,
+      name: 'Dash',
+      widthInches: 6,
+      heightInches: 5,
+      shapes: <VsdxShape>[shape],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('stroke-dasharray="0.08 0.04"'));
+  });
+
   test('five jump styles and per-edge size round-trip through VSDX', () {
     final value = controller();
     final id = line(value, 1, 3, 5, 3);
@@ -180,6 +259,8 @@ void main() {
       ..setLineCap(LineCap.extended)
       ..setLineJoin(VsdxLineJoin.round)
       ..setLineMiterLimit(12)
+      ..setCustomDashPattern(const <double>[7, 3, 1, 3])
+      ..setFixedDash(true)
       ..setConnectorLineJumpStyle(ConnectorLineJumpStyle.gap)
       ..setConnectorLineJumpSize(0.12)
       ..copyStyle();
@@ -199,6 +280,8 @@ void main() {
     expect(pasted.line.cap, LineCap.extended);
     expect(pasted.line.join, VsdxLineJoin.round);
     expect(pasted.line.miterLimit, 12);
+    expect(pasted.line.customDashPattern, <double>[7, 3, 1, 3]);
+    expect(pasted.line.fixedDash, isTrue);
     expect(pasted.drawioLineJumpStyle, 'gap');
     expect(pasted.drawioLineJumpSizeInches, closeTo(0.12, 1e-9));
     expect(pasted.connectorProps?.begTrigger, 'keep');
@@ -211,6 +294,8 @@ void main() {
     expect(pasted.line.cap, LineCap.extended);
     expect(pasted.line.join, VsdxLineJoin.round);
     expect(pasted.line.miterLimit, 12);
+    expect(pasted.line.customDashPattern, <double>[7, 3, 1, 3]);
+    expect(pasted.line.fixedDash, isTrue);
     expect(pasted.drawioLineJumpStyle, 'gap');
     expect(pasted.drawioLineJumpSizeInches, closeTo(0.12, 1e-9));
   });
@@ -250,6 +335,8 @@ void main() {
     );
     final state = tester.state<ScrollableState>(scrollable);
     Future<void> scrollTo(String label) async {
+      state.position.jumpTo(0);
+      await tester.pumpAndSettle();
       for (var i = 0; i < 30 && find.text(label).evaluate().isEmpty; i++) {
         state.position.jumpTo(
           (state.position.pixels + 240).clamp(
@@ -269,8 +356,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(canvas.controller.selectedLine?.cap, LineCap.square);
 
+    await scrollTo('Dash Pattern…');
+    await tester.ensureVisible(find.text('Dash Pattern…'));
+    await tester.tap(find.text('Dash Pattern…'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '8 4 2 4');
+    await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+    await tester.pumpAndSettle();
+    expect(canvas.controller.selectedCustomDashPattern, <double>[8, 4, 2, 4]);
+    expect(find.text('Fixed Dash'), findsOneWidget);
+
     await scrollTo('Line Join');
     await tester.ensureVisible(find.text('Bevel'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Bevel'));
     await tester.pumpAndSettle();
     expect(canvas.controller.selectedLineJoin, VsdxLineJoin.bevel);

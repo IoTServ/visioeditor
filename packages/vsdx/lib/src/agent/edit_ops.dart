@@ -895,13 +895,49 @@ ApplyResult applyOps(
             }
             final linePattern = _i(op['linePattern'] ?? op['dash']);
             if (linePattern != null) {
-              next = next.copyWith(
-                line: next.line.copyWith(pattern: linePattern),
-                geometries: syncGeometryNoLine(
-                  next.geometries,
-                  hollow: linePattern == 0,
-                ),
-              );
+              next = next
+                  .copyWith(
+                    line: next.line.copyWith(pattern: linePattern),
+                    geometries: syncGeometryNoLine(
+                      next.geometries,
+                      hollow: linePattern == 0,
+                    ),
+                  )
+                  .withDrawioDashPattern(null);
+            }
+            if (op.containsKey('dashPattern')) {
+              final raw = op['dashPattern'];
+              final clear = raw == null ||
+                  raw == false ||
+                  (raw is String &&
+                      (raw.trim().isEmpty ||
+                          raw.trim().toLowerCase() == 'none'));
+              final custom = clear ? null : _parseDashPatternOp(raw);
+              if (!clear && custom == null) {
+                log.add('set_style: invalid dashPattern on shape $id');
+              } else if (custom == null) {
+                next = next.withDrawioDashPattern(null);
+              } else {
+                next = next.copyWith(
+                  line: next.line.copyWith(
+                    pattern: next.line.pattern <= 1 ? 2 : next.line.pattern,
+                  ),
+                  geometries: syncGeometryNoLine(
+                    next.geometries,
+                    hollow: false,
+                  ),
+                );
+                next = next.withDrawioDashPattern(
+                  custom,
+                  fixed: _b(op['fixedDash']) ?? next.line.fixedDash,
+                );
+              }
+            } else if (op.containsKey('fixedDash')) {
+              final fixed = _b(op['fixedDash']);
+              final custom = next.line.customDashPattern;
+              if (fixed != null && custom != null && custom.isNotEmpty) {
+                next = next.withDrawioDashPattern(custom, fixed: fixed);
+              }
             }
             final lineTrans = _d(op['lineTransparency']);
             if (lineTrans != null) {
@@ -3044,6 +3080,18 @@ double? _d(Object? v) {
   if (v == null) return null;
   final value = v is num ? v.toDouble() : double.tryParse('$v');
   return value != null && value.isFinite ? value : null;
+}
+
+List<double>? _parseDashPatternOp(Object? raw) {
+  if (raw is String) return parseDrawioDashPattern(raw);
+  if (raw is! List || raw.isEmpty) return null;
+  final values = <double>[];
+  for (final item in raw) {
+    final value = _d(item);
+    if (value == null || value <= 0) return null;
+    values.add(value);
+  }
+  return values;
 }
 
 int? _i(Object? v) {

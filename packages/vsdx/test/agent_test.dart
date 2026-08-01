@@ -905,6 +905,8 @@ void main() {
           'op': 'set_style',
           'ids': <String>['shape:$id'],
           'line': '#FF0000',
+          'dashPattern': <double>[8, 4, 2, 4],
+          'fixedDash': true,
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -914,6 +916,16 @@ void main() {
       expect(after.line.beginArrowSizeInches, closeTo(0.15, 1e-9));
       expect(after.line.endArrowSizeInches, closeTo(0.2, 1e-9));
       expect(after.line.weightInches, closeTo(0.02, 1e-9));
+      expect(after.line.customDashPattern, <double>[8, 4, 2, 4]);
+      expect(after.line.fixedDash, isTrue);
+      expect(
+        after.userCells.any(
+          (cell) =>
+              cell.name == VsdxShape.userDashPattern &&
+              cell.value == '8 4 2 4',
+        ),
+        isTrue,
+      );
     });
 
     test('set_style weight / arrows / textColor / opacity', () {

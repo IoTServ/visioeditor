@@ -1115,6 +1115,12 @@ void _registerEditTools(McpServer server) {
       'beginArrowSize': <String, dynamic>{'type': 'number'},
       'endArrowSize': <String, dynamic>{'type': 'number'},
       'linePattern': <String, dynamic>{'type': 'integer'},
+      'dashPattern': <String, dynamic>{
+        'type': 'array',
+        'items': <String, dynamic>{'type': 'number', 'exclusiveMinimum': 0},
+        'minItems': 1,
+      },
+      'fixedDash': <String, dynamic>{'type': 'boolean'},
       'lineTransparency': <String, dynamic>{'type': 'number'},
       'lineCap': <String, dynamic>{'type': 'string'},
       'lineJoin': <String, dynamic>{
@@ -1263,6 +1269,8 @@ void _registerEditTools(McpServer server) {
           'beginArrowSize',
           'endArrowSize',
           'linePattern',
+          'dashPattern',
+          'fixedDash',
           'lineTransparency',
           'lineCap',
           'lineJoin',

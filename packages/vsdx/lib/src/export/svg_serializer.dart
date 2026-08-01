@@ -1462,7 +1462,7 @@ class VsdxToSvgSerializer {
     };
     final linejoin = _svgLineJoin(line);
     final miterAttr = _svgMiterLimitAttr(line);
-    final dash = _dashAttr(line.pattern, line.weightInches);
+    final dash = _dashAttr(line);
     final dashAttr = dash.isEmpty ? '' : ' stroke-dasharray="$dash"';
     final rails = compoundRails(line.compoundType, weight);
     final sampled = samplePathD(d);
@@ -2255,7 +2255,7 @@ class VsdxToSvgSerializer {
     final c = _resolveColor(line.color, line.themeColorIndex, theme);
     final alpha = _combinedOpacity(c, line.transparency);
     final hex = c == null ? '#000000' : _hex(c);
-    final dash = _dashAttr(line.pattern, line.weightInches);
+    final dash = _dashAttr(line);
     // Match canvas [_flutterCap]: Visio LineCap → SVG stroke-linecap.
     final linecap = switch (line.cap) {
       LineCap.round => 'round',
@@ -2586,10 +2586,9 @@ class VsdxToSvgSerializer {
     return (colourA * (1 - t)).clamp(0.0, 1.0);
   }
 
-  String _dashAttr(int linePattern, [double weightInches = 0.01]) {
-    return dashArrayAttr(
-      linePattern,
-      weightInches: weightInches,
+  String _dashAttr(VsdxLine line) {
+    return effectiveDashArrayAttr(
+      line,
       format: _n,
     );
   }

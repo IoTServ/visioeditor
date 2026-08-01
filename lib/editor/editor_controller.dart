@@ -6412,6 +6412,11 @@ class EditorController extends ChangeNotifier {
 
   double get selectedLineMiterLimit => selectedLine?.miterLimit ?? 4.0;
 
+  List<double>? get selectedCustomDashPattern =>
+      selectedLine?.customDashPattern;
+
+  bool get selectedFixedDash => selectedLine?.fixedDash ?? false;
+
   void setLineCap(LineCap cap) => _updateSelectedShapes(
         (s) => s.copyWith(line: s.line.copyWith(cap: cap)),
         rememberStyle: true,
@@ -6570,15 +6575,48 @@ class EditorController extends ChangeNotifier {
   /// Set the line dash pattern (Visio `LinePattern`: 1 = solid, 2 = dashed,
   /// 3 = dotted, 4 = dash-dot…). Re-enables the line if it was off.
   void setLinePattern(int pattern) => _updateSelectedShapes(
-        (s) => s.copyWith(
-          line: s.line.copyWith(
-            pattern: pattern,
-            // pattern=0 is NoLine — clear gradient/theme like [setNoLine].
-            gradient: pattern == 0 ? null : VsdxLine.keepGradient,
-            clearThemeColorIndex: pattern == 0,
-          ),
-          geometries: syncGeometryNoLine(s.geometries, hollow: pattern == 0),
-        ),
+        (s) => s
+            .copyWith(
+              line: s.line.copyWith(
+                pattern: pattern,
+                // pattern=0 is NoLine — clear gradient/theme like [setNoLine].
+                gradient: pattern == 0 ? null : VsdxLine.keepGradient,
+                clearThemeColorIndex: pattern == 0,
+              ),
+              geometries:
+                  syncGeometryNoLine(s.geometries, hollow: pattern == 0),
+            )
+            .withDrawioDashPattern(null),
+        rememberStyle: true,
+      );
+
+  /// Set draw.io's custom dash/gap sequence. Values are positive stroke-width
+  /// multiples unless [setFixedDash] is enabled.
+  void setCustomDashPattern(List<double>? values) => _updateSelectedShapes(
+        (s) {
+          if (values == null || values.isEmpty) {
+            return s.withDrawioDashPattern(null);
+          }
+          final next = s.copyWith(
+            line: s.line.copyWith(
+              pattern: s.line.pattern <= 1 ? 2 : s.line.pattern,
+            ),
+            geometries: syncGeometryNoLine(s.geometries, hollow: false),
+          );
+          return next.withDrawioDashPattern(
+            values,
+            fixed: s.line.fixedDash,
+          );
+        },
+        rememberStyle: true,
+      );
+
+  void setFixedDash(bool value) => _updateSelectedShapes(
+        (s) {
+          final values = s.line.customDashPattern;
+          if (values == null || values.isEmpty) return s;
+          return s.withDrawioDashPattern(values, fixed: value);
+        },
         rememberStyle: true,
       );
 
@@ -7574,7 +7612,11 @@ class EditorController extends ChangeNotifier {
           );
     next = next
         .withDrawioLineJoin(line.effectiveJoin)
-        .withDrawioMiterLimit(line.miterLimit);
+        .withDrawioMiterLimit(line.miterLimit)
+        .withDrawioDashPattern(
+          line.customDashPattern,
+          fixed: line.fixedDash,
+        );
     if (!s.is1D && clip.includeFill) {
       next = next.withWordWrap(clip.wordWrap);
       next = next.withConstrainProportions(clip.constrainProportions);

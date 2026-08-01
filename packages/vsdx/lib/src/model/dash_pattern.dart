@@ -7,6 +7,37 @@
 /// `0.10 0.05` → `10w 5w`).
 library;
 
+import 'line.dart';
+
+/// One draw.io canvas unit at the editor's SVG/CSS reference density.
+const double drawioDashUnitInches = 1 / 96;
+
+/// Parse draw.io's whitespace/comma-separated positive `dashPattern` values.
+/// Returns `null` for an empty or invalid sequence.
+List<double>? parseDrawioDashPattern(String? raw) {
+  final text = raw?.trim() ?? '';
+  if (text.isEmpty) return null;
+  final values = <double>[];
+  for (final part in text.split(RegExp(r'[\s,]+'))) {
+    final value = double.tryParse(part);
+    if (value == null || !value.isFinite || value <= 0) return null;
+    values.add(value);
+  }
+  return values.isEmpty ? null : values;
+}
+
+/// Format raw draw.io dash values without converting them to inches.
+String formatDrawioDashPattern(List<double>? values) {
+  if (values == null || values.isEmpty) return '';
+  return values.map((value) {
+    if (value == value.truncateToDouble()) return value.toStringAsFixed(0);
+    return value
+        .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }).join(' ');
+}
+
 /// Dash/gap pairs for [linePattern], or `null` for solid / no-line.
 ///
 /// [weightInches] defaults to Visio's ≈0.01" stroke so callers that omit it
@@ -68,6 +99,25 @@ List<double>? dashPatternFor(
   }
 }
 
+/// Effective dash/gap lengths in inches for a complete line style.
+///
+/// Custom draw.io values override Visio [VsdxLine.pattern]. Non-fixed values
+/// are multiples of line weight; fixed values use CSS/SVG display units.
+List<double>? effectiveDashPatternForLine(VsdxLine line) {
+  if (!line.hasLine) return null;
+  final custom = line.customDashPattern;
+  if (custom != null && custom.isNotEmpty) {
+    final unit = line.fixedDash
+        ? drawioDashUnitInches
+        : (line.weightInches > 1e-9 ? line.weightInches : 0.01);
+    return <double>[for (final value in custom) value * unit];
+  }
+  return dashPatternFor(
+    line.pattern,
+    weightInches: line.weightInches,
+  );
+}
+
 /// Format [dashPatternFor] for SVG `stroke-dasharray`, or `''` when solid.
 String dashArrayAttr(
   int linePattern, {
@@ -80,6 +130,24 @@ String dashArrayAttr(
       (double v) {
         if (v == v.truncateToDouble()) return v.toStringAsFixed(0);
         return v
+            .toStringAsFixed(3)
+            .replaceFirst(RegExp(r'0+$'), '')
+            .replaceFirst(RegExp(r'\.$'), '');
+      };
+  return dashes.map(fmt).join(' ');
+}
+
+/// Format [effectiveDashPatternForLine] for SVG `stroke-dasharray`.
+String effectiveDashArrayAttr(
+  VsdxLine line, {
+  String Function(double v)? format,
+}) {
+  final dashes = effectiveDashPatternForLine(line);
+  if (dashes == null || dashes.isEmpty) return '';
+  final fmt = format ??
+      (double value) {
+        if (value == value.truncateToDouble()) return value.toStringAsFixed(0);
+        return value
             .toStringAsFixed(3)
             .replaceFirst(RegExp(r'0+$'), '')
             .replaceFirst(RegExp(r'\.$'), '');

@@ -9,6 +9,7 @@ import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
 import '../core/exceptions.dart';
+import '../model/dash_pattern.dart';
 import '../model/effects.dart';
 import '../model/fill.dart';
 import '../model/geometry.dart';
@@ -441,6 +442,8 @@ class PageParser {
     final userCells = ownUserCells.isEmpty && proto != null
         ? proto.userCells
         : ownUserCells;
+    List<double>? drawioDashPattern;
+    var drawioFixedDash = false;
     for (final cell in userCells) {
       if (cell.name == VsdxShape.userLineJoin) {
         final join = VsdxLineJoin.parse(cell.value);
@@ -450,7 +453,17 @@ class PageParser {
         if (limit != null && limit >= 1) {
           line = line.copyWith(miterLimit: limit.clamp(1.0, 100.0).toDouble());
         }
+      } else if (cell.name == VsdxShape.userDashPattern) {
+        drawioDashPattern = parseDrawioDashPattern(cell.value);
+      } else if (cell.name == VsdxShape.userFixedDash) {
+        drawioFixedDash = cell.value == '1';
       }
+    }
+    if (drawioDashPattern != null) {
+      line = line.copyWith(
+        customDashPattern: List<double>.unmodifiable(drawioDashPattern),
+        fixedDash: drawioFixedDash,
+      );
     }
     final ownControls = _readControls(shapeEl, inherit: proto?.controls);
     final controls =

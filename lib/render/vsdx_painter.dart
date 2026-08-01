@@ -473,8 +473,7 @@ class VsdxPainter extends CustomPainter {
   }
 
   void _paintGeometries(Canvas canvas, VsdxShape shape) {
-    final dashes =
-        dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches);
+    final dashes = effectiveDashPatternForLine(shape.line);
     final rounding = shape.line.roundingInches;
 
     // Visio / libvisio: every Geometry with NoFill=0 is one even-odd fill path
@@ -936,7 +935,7 @@ class VsdxPainter extends CustomPainter {
       stroke,
       shape.line.compoundType,
       shape.line.weightInches,
-      dashes: dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches),
+      dashes: effectiveDashPatternForLine(shape.line),
     );
   }
 
@@ -1209,7 +1208,7 @@ class VsdxPainter extends CustomPainter {
         stroke,
         shape.line.compoundType,
         shape.line.weightInches,
-        dashes: dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches),
+        dashes: effectiveDashPatternForLine(shape.line),
       );
     }
     if (paintImage) {
@@ -1326,7 +1325,7 @@ class VsdxPainter extends CustomPainter {
         paint,
         shape.line.compoundType,
         shape.line.weightInches,
-        dashes: dashPatternFor(shape.line.pattern, weightInches: shape.line.weightInches),
+        dashes: effectiveDashPatternForLine(shape.line),
       );
     } else {
       canvas.drawPath(path, paint);

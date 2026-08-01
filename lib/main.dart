@@ -4889,6 +4889,8 @@ class _PropertyPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _dashDropdown(context, controller),
+          const SizedBox(height: 6),
+          _dashPatternControls(context, controller),
           const SizedBox(height: 8),
           _compoundTypeRow(context, controller),
           const SizedBox(height: 8),
@@ -6690,9 +6692,11 @@ class _PropertyPanel extends StatelessWidget {
     final el = EditorL10n.of(context);
     final presets = _dashPresets(el);
     final pattern = controller.selectedLine?.pattern ?? 1;
+    final custom = controller.selectedCustomDashPattern;
     // Do not fall back to Solid (1) for NoLine (0) or unknown Visio patterns —
     // that lied about stroke visibility after setNoLine.
-    final value = presets.containsKey(pattern) ? pattern : null;
+    final value =
+        custom == null && presets.containsKey(pattern) ? pattern : null;
     return Row(
       children: [
         const Icon(Icons.line_style, size: 18),
@@ -6717,6 +6721,95 @@ class _PropertyPanel extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Widget _dashPatternControls(
+    BuildContext context,
+    EditorController controller,
+  ) {
+    final el = EditorL10n.of(context);
+    final pattern = controller.selectedCustomDashPattern;
+    final formatted = formatDrawioDashPattern(pattern);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton.icon(
+          onPressed: () => _editDashPattern(context, controller),
+          icon: const Icon(Icons.more_horiz, size: 18),
+          label: Text(
+            formatted.isEmpty
+                ? '${el.dashPattern}…'
+                : '${el.dashPattern}: $formatted',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (pattern != null && pattern.isNotEmpty)
+          _switchRow(
+            label: el.fixedDash,
+            value: controller.selectedFixedDash,
+            onChanged: controller.setFixedDash,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _editDashPattern(
+    BuildContext context,
+    EditorController controller,
+  ) async {
+    final el = EditorL10n.of(context);
+    var input = formatDrawioDashPattern(controller.selectedCustomDashPattern);
+    String? error;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(el.dashPattern),
+          content: TextFormField(
+            initialValue: input,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              hintText: el.dashPatternHint,
+              errorText: error,
+            ),
+            onChanged: (value) => input = value,
+            onFieldSubmitted: (_) {
+              final value = parseDrawioDashPattern(input);
+              if (value == null) {
+                setState(() => error = el.invalidDashPattern);
+              } else {
+                Navigator.pop(dialogContext, input);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, ''),
+              child: Text(el.resetDashPattern),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(el.cancel),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = parseDrawioDashPattern(input);
+                if (value == null) {
+                  setState(() => error = el.invalidDashPattern);
+                } else {
+                  Navigator.pop(dialogContext, input);
+                }
+              },
+              child: Text(el.apply),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result != null) {
+      controller.setCustomDashPattern(parseDrawioDashPattern(result));
+    }
   }
 
   Map<int, String> _compoundTypes(EditorL10n el) => <int, String>{

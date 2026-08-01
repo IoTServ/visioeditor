@@ -23,6 +23,8 @@ class VsdxLine {
     this.beginArrowSizeInches = 0.125,
     this.endArrowSizeInches = 0.125,
     this.roundingInches = 0.0,
+    this.customDashPattern,
+    this.fixedDash = false,
     this.join,
     this.miterLimit = 4.0,
     this.softEdgesInches = 0.0,
@@ -65,6 +67,15 @@ class VsdxLine {
   /// `computeRounding`). `0` ⇒ sharp corners.
   final double roundingInches;
 
+  /// draw.io `dashPattern` values. Each positive number is a dash/gap length
+  /// relative to the stroke width, unless [fixedDash] requests fixed display
+  /// units. `null` keeps Visio [pattern] rendering.
+  final List<double>? customDashPattern;
+
+  /// draw.io `fixDash=1`: custom dash lengths stay constant as line weight
+  /// changes instead of scaling with the stroke width.
+  final bool fixedDash;
+
   /// draw.io/SVG stroke join override. `null` preserves the historical Visio
   /// fallback: rounded geometry uses a round join, otherwise miter.
   final VsdxLineJoin? join;
@@ -104,6 +115,8 @@ class VsdxLine {
         beginArrowSizeInches: beginArrowSizeInches,
         endArrowSizeInches: endArrowSizeInches,
         roundingInches: roundingInches,
+        customDashPattern: customDashPattern,
+        fixedDash: fixedDash,
         join: join,
         miterLimit: miterLimit,
         softEdgesInches: softEdgesInches,
@@ -124,6 +137,8 @@ class VsdxLine {
         beginArrowSizeInches: beginArrowSizeInches,
         endArrowSizeInches: endArrowSizeInches,
         roundingInches: roundingInches,
+        customDashPattern: customDashPattern,
+        fixedDash: fixedDash,
         join: join,
         miterLimit: miterLimit,
         softEdgesInches: softEdgesInches,
@@ -143,6 +158,8 @@ class VsdxLine {
         beginArrowSizeInches: beginArrowSizeInches,
         endArrowSizeInches: endArrowSizeInches,
         roundingInches: roundingInches,
+        customDashPattern: customDashPattern,
+        fixedDash: fixedDash,
         join: join,
         miterLimit: miterLimit,
         softEdgesInches: softEdgesInches,
@@ -152,6 +169,9 @@ class VsdxLine {
 
   /// Sentinel for [copyWith] so callers can clear [gradient] to `null`.
   static const Object keepGradient = Object();
+
+  /// Sentinel for [copyWith] so callers can clear [customDashPattern].
+  static const Object keepDashPattern = Object();
 
   VsdxLine copyWith({
     VsdxColor? color,
@@ -166,6 +186,8 @@ class VsdxLine {
     double? beginArrowSizeInches,
     double? endArrowSizeInches,
     double? roundingInches,
+    Object? customDashPattern = keepDashPattern,
+    bool? fixedDash,
     VsdxLineJoin? join,
     double? miterLimit,
     double? softEdgesInches,
@@ -186,6 +208,10 @@ class VsdxLine {
       beginArrowSizeInches: beginArrowSizeInches ?? this.beginArrowSizeInches,
       endArrowSizeInches: endArrowSizeInches ?? this.endArrowSizeInches,
       roundingInches: roundingInches ?? this.roundingInches,
+      customDashPattern: identical(customDashPattern, keepDashPattern)
+          ? this.customDashPattern
+          : customDashPattern as List<double>?,
+      fixedDash: fixedDash ?? this.fixedDash,
       join: join ?? this.join,
       miterLimit: miterLimit ?? this.miterLimit,
       softEdgesInches: softEdgesInches ?? this.softEdgesInches,
