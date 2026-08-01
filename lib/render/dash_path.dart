@@ -19,27 +19,45 @@ import 'package:vsdx/vsdx.dart' show dashPatternFor;
 export 'package:vsdx/vsdx.dart' show dashPatternFor, dashArrayAttr;
 
 /// Resample [source] using [dashPattern].
-Path dashedPath(Path source, List<double> dashPattern) {
+Path dashedPath(
+  Path source,
+  List<double> dashPattern, {
+  double phase = 0,
+}) {
   if (dashPattern.isEmpty) return source;
   if (dashPattern.length.isOdd) {
     // Pattern must have an even number of entries (dash + gap pairs).
     // Repeat once to make it even.
     dashPattern = [...dashPattern, ...dashPattern];
   }
+  final cycle = dashPattern.fold<double>(0, (sum, value) => sum + value);
+  var initialIndex = 0;
+  var initialOffset = 0.0;
+  if (cycle > 0 && phase != 0) {
+    var offset = phase % cycle;
+    while (offset >= dashPattern[initialIndex] &&
+        dashPattern[initialIndex] > 0) {
+      offset -= dashPattern[initialIndex];
+      initialIndex = (initialIndex + 1) % dashPattern.length;
+    }
+    initialOffset = offset;
+  }
   final out = Path();
   for (final metric in source.computeMetrics()) {
     var distance = 0.0;
-    var draw = true;
-    var patternIdx = 0;
+    var patternIdx = initialIndex;
+    var draw = patternIdx.isEven;
+    var first = true;
     while (distance < metric.length) {
-      final span = dashPattern[patternIdx % dashPattern.length];
+      final span = dashPattern[patternIdx] - (first ? initialOffset : 0);
+      first = false;
       final next = (distance + span).clamp(0.0, metric.length);
       if (draw && next > distance) {
         out.addPath(metric.extractPath(distance, next), Offset.zero);
       }
       distance = next;
       draw = !draw;
-      patternIdx++;
+      patternIdx = (patternIdx + 1) % dashPattern.length;
     }
   }
   return out;

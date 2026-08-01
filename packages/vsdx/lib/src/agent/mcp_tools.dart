@@ -1129,6 +1129,22 @@ void _registerEditTools(McpServer server) {
       },
       'miterLimit': <String, dynamic>{'type': 'number', 'minimum': 1},
       'glass': <String, dynamic>{'type': 'boolean'},
+      'flowAnimation': <String, dynamic>{'type': 'boolean'},
+      'flowDurationMs': <String, dynamic>{'type': 'integer', 'minimum': 1},
+      'flowTiming': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>[
+          'linear',
+          'ease',
+          'ease-in',
+          'ease-out',
+          'ease-in-out'
+        ],
+      },
+      'flowDirection': <String, dynamic>{
+        'type': 'string',
+        'enum': <String>['normal', 'reverse', 'alternate', 'alternate-reverse'],
+      },
       'rounding': <String, dynamic>{'type': 'number'},
       'softEdges': <String, dynamic>{'type': 'number'},
       'compoundType': <String, dynamic>{'type': 'integer'},
@@ -1277,6 +1293,10 @@ void _registerEditTools(McpServer server) {
           'lineJoin',
           'miterLimit',
           'glass',
+          'flowAnimation',
+          'flowDurationMs',
+          'flowTiming',
+          'flowDirection',
           'rounding',
           'softEdges',
           'compoundType',

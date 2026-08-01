@@ -338,6 +338,19 @@ class EditorL10n {
   String get panelReflection => _t('panelReflection');
   String get panelSoftEdges => _t('panelSoftEdges');
   String get glass => locale.languageCode == 'zh' ? '玻璃高光' : 'Glass';
+  String get flowAnimation =>
+      locale.languageCode == 'zh' ? '流动动画' : 'Flow Animation';
+  String get flowDuration =>
+      locale.languageCode == 'zh' ? '流动时长' : 'Flow Duration';
+  String get flowTiming =>
+      locale.languageCode == 'zh' ? '流动缓动' : 'Flow Timing';
+  String get flowDirection =>
+      locale.languageCode == 'zh' ? '流动方向' : 'Flow Direction';
+  String get alternate => locale.languageCode == 'zh' ? '交替' : 'Alternate';
+  String get alternateReverse =>
+      locale.languageCode == 'zh' ? '反向交替' : 'Alternate-Reverse';
+  String get flowNormal => locale.languageCode == 'zh' ? '正向' : 'Normal';
+  String get flowReverse => locale.languageCode == 'zh' ? '反向' : 'Reverse';
   String get panelText => _t('panelText');
   String get panelImage => _t('panelImage');
   String get panelData => _t('panelData');

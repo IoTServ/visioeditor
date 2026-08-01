@@ -23,6 +23,43 @@ import 'sheet_sections.dart';
 import 'user_property.dart';
 import '../parser/formula.dart';
 
+enum VsdxFlowAnimationTiming {
+  linear('linear'),
+  ease('ease'),
+  easeIn('ease-in'),
+  easeOut('ease-out'),
+  easeInOut('ease-in-out');
+
+  const VsdxFlowAnimationTiming(this.cssValue);
+  final String cssValue;
+
+  static VsdxFlowAnimationTiming? parse(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    for (final timing in values) {
+      if (timing.cssValue == normalized) return timing;
+    }
+    return null;
+  }
+}
+
+enum VsdxFlowAnimationDirection {
+  normal('normal'),
+  reverse('reverse'),
+  alternate('alternate'),
+  alternateReverse('alternate-reverse');
+
+  const VsdxFlowAnimationDirection(this.cssValue);
+  final String cssValue;
+
+  static VsdxFlowAnimationDirection? parse(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    for (final direction in values) {
+      if (direction.cssValue == normalized) return direction;
+    }
+    return null;
+  }
+}
+
 @immutable
 class VsdxShape {
   const VsdxShape({
@@ -781,6 +818,12 @@ class VsdxShape {
   /// draw.io `glass=1` glossy white highlight. Visio has no equivalent cell.
   static const String userGlassEffect = 'veGlass';
 
+  /// draw.io edge flow animation styles. Visio has no native equivalent.
+  static const String userFlowAnimation = 'veFlowAnimation';
+  static const String userFlowAnimationDuration = 'veFlowAnimationDuration';
+  static const String userFlowAnimationTiming = 'veFlowAnimationTiming';
+  static const String userFlowAnimationDirection = 'veFlowAnimationDirection';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -1023,6 +1066,80 @@ class VsdxShape {
         ...others,
         if (value)
           const VsdxUserCell(name: userGlassEffect, value: '1'),
+      ],
+    );
+  }
+
+  /// draw.io exposes Flow Animation for every graph edge, even when its
+  /// current stroke is hidden; freehand ink is 1-D but is not an edge.
+  bool get supportsFlowAnimation => isGlueableConnector;
+
+  bool get flowAnimation {
+    for (final cell in userCells) {
+      if (cell.name == userFlowAnimation) return cell.value == '1';
+    }
+    return false;
+  }
+
+  int get flowAnimationDurationMs {
+    for (final cell in userCells) {
+      if (cell.name == userFlowAnimationDuration) {
+        final value = int.tryParse(cell.value ?? '');
+        if (value != null && value > 0) return value;
+      }
+    }
+    return 500;
+  }
+
+  VsdxFlowAnimationTiming get flowAnimationTiming {
+    for (final cell in userCells) {
+      if (cell.name == userFlowAnimationTiming) {
+        return VsdxFlowAnimationTiming.parse(cell.value) ??
+            VsdxFlowAnimationTiming.linear;
+      }
+    }
+    return VsdxFlowAnimationTiming.linear;
+  }
+
+  VsdxFlowAnimationDirection get flowAnimationDirection {
+    for (final cell in userCells) {
+      if (cell.name == userFlowAnimationDirection) {
+        return VsdxFlowAnimationDirection.parse(cell.value) ??
+            VsdxFlowAnimationDirection.normal;
+      }
+    }
+    return VsdxFlowAnimationDirection.normal;
+  }
+
+  VsdxShape withFlowAnimation(bool value) =>
+      _withUserCell(userFlowAnimation, value ? '1' : null);
+
+  VsdxShape withFlowAnimationDurationMs(int value) => _withUserCell(
+        userFlowAnimationDuration,
+        value > 0 && value != 500 ? '$value' : null,
+      );
+
+  VsdxShape withFlowAnimationTiming(VsdxFlowAnimationTiming value) =>
+      _withUserCell(
+        userFlowAnimationTiming,
+        value == VsdxFlowAnimationTiming.linear ? null : value.cssValue,
+      );
+
+  VsdxShape withFlowAnimationDirection(VsdxFlowAnimationDirection value) =>
+      _withUserCell(
+        userFlowAnimationDirection,
+        value == VsdxFlowAnimationDirection.normal ? null : value.cssValue,
+      );
+
+  VsdxShape _withUserCell(String name, String? value) {
+    final others = <VsdxUserCell>[
+      for (final cell in userCells)
+        if (cell.name != name) cell,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        if (value != null) VsdxUserCell(name: name, value: value),
       ],
     );
   }

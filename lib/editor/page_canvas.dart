@@ -102,7 +102,8 @@ enum _DragMode {
 /// The eight resize handles around a selection box.
 enum _Handle { tl, tr, br, bl, t, r, b, l }
 
-class _PageCanvasState extends State<PageCanvas> {
+class _PageCanvasState extends State<PageCanvas>
+    with SingleTickerProviderStateMixin {
   double _scale = 1;
   Offset _offset = Offset.zero;
   Size? _viewport;
@@ -337,6 +338,8 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Rebuilt whenever a fresh document loads (see [_imageCacheEpoch]).
   final VsdxImageCache _imageCache = VsdxImageCache();
   int _imageCacheEpoch = 0;
+  late final AnimationController _flowClock;
+  bool _flowClockWanted = false;
 
   @override
   void initState() {
@@ -344,6 +347,10 @@ class _PageCanvasState extends State<PageCanvas> {
     _textFocus.addListener(_onEditorFocusChange);
     _textController.addListener(_onTextControllerChanged);
     _imageCacheEpoch = widget.controller.documentEpoch;
+    _flowClock = AnimationController(
+      vsync: this,
+      duration: const Duration(hours: 1),
+    );
   }
 
   @override
@@ -360,7 +367,27 @@ class _PageCanvasState extends State<PageCanvas> {
       ..dispose();
     _canvasFocus.dispose();
     _imageCache.dispose();
+    _flowClock.dispose();
     super.dispose();
+  }
+
+  void _syncFlowClock(VsdxPage? page) {
+    bool treeHasFlow(VsdxShape shape) =>
+        (shape.flowAnimation && shape.supportsFlowAnimation) ||
+        shape.children.any(treeHasFlow);
+    final wanted = page?.shapes.any(treeHasFlow) ?? false;
+    if (wanted == _flowClockWanted) return;
+    _flowClockWanted = wanted;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || wanted != _flowClockWanted) return;
+      if (wanted) {
+        _flowClock.repeat();
+      } else {
+        _flowClock
+          ..stop()
+          ..value = 0;
+      }
+    });
   }
 
   /// Ensure diagram keys reach [_onKey] after the user clicks / drags the page.
@@ -4552,6 +4579,7 @@ class _PageCanvasState extends State<PageCanvas> {
       listenable: _c,
       builder: (context, _) {
         final page = _page;
+        _syncFlowClock(page);
         if (page == null) {
           return ColoredBox(color: widget.canvasColor);
         }
@@ -4899,6 +4927,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                           _c.lineJumpRadiusInches,
                                       foldingControlsEnabled:
                                           _c.foldingControlsEnabled,
+                                      flowAnimation: _flowClock,
                                       backgroundColor: _c.showGrid
                                           ? const Color(0x00000000)
                                           : widget.pageColor,

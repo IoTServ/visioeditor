@@ -5077,6 +5077,95 @@ class _PropertyPanel extends StatelessWidget {
               onChanged: controller.setGlassEffect,
             ),
           ],
+          if (controller.canSetFlowAnimation) ...[
+            const SizedBox(height: 8),
+            _section(context, EditorL10n.of(context).flowAnimation),
+            _switchRow(
+              label: EditorL10n.of(context).enabled,
+              value: controller.selectedHasFlowAnimation,
+              onChanged: controller.setFlowAnimation,
+            ),
+            if (controller.selectedHasFlowAnimation) ...[
+              _RangeSlider(
+                label: EditorL10n.of(context).flowDuration,
+                value: controller.selectedFlowAnimationDurationMs.toDouble(),
+                min: 100,
+                max: 3000,
+                format: (value) => '${value.round()} ms',
+                onStart: controller.beginTransaction,
+                onChanged: (value) => controller.setFlowAnimationDurationMs(
+                  value,
+                  transient: true,
+                ),
+                onEnd: controller.commitTransaction,
+              ),
+              Row(
+                children: [
+                  Expanded(child: Text(EditorL10n.of(context).flowTiming)),
+                  Expanded(
+                    child: DropdownButton<VsdxFlowAnimationTiming>(
+                      value: controller.selectedFlowAnimationTiming,
+                      isDense: true,
+                      isExpanded: true,
+                      items: [
+                        for (final timing in VsdxFlowAnimationTiming.values)
+                          DropdownMenuItem(
+                            value: timing,
+                            child: Text(
+                              timing.cssValue,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          controller.setFlowAnimationTiming(value);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(child: Text(EditorL10n.of(context).flowDirection)),
+                  Expanded(
+                    child: DropdownButton<VsdxFlowAnimationDirection>(
+                      value: controller.selectedFlowAnimationDirection,
+                      isDense: true,
+                      isExpanded: true,
+                      items: [
+                        for (final direction
+                            in VsdxFlowAnimationDirection.values)
+                          DropdownMenuItem(
+                            value: direction,
+                            child: Text(
+                              switch (direction) {
+                                VsdxFlowAnimationDirection.normal =>
+                                  EditorL10n.of(context).flowNormal,
+                                VsdxFlowAnimationDirection.reverse =>
+                                  EditorL10n.of(context).flowReverse,
+                                VsdxFlowAnimationDirection.alternate =>
+                                  EditorL10n.of(context).alternate,
+                                VsdxFlowAnimationDirection.alternateReverse =>
+                                  EditorL10n.of(context).alternateReverse,
+                              },
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          controller.setFlowAnimationDirection(value);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelShadow),
           _switchRow(

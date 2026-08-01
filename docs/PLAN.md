@@ -1573,6 +1573,12 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   及多边形均不会溢出轮廓。Canvas 与 SVG/PDF 使用同一 Y-up 几何和透明度语义，状态通过
   `User.veGlass` 往返 VSDX；连接线与图片框不暴露该能力。同步纳入撤销、锁定、Copy/Paste
   Style、独立默认 Vertex 样式和 Agent `set_style`，补离屏像素、导出与真实面板回归。
+- 2026-08-01 — **对齐 draw.io Flow Animation**：Format → Effects 为纯连接线选区增加流动动画，
+  按上游 `flowAnimation` 语义支持 500ms 默认周期、Linear/Ease 系列缓动和 Normal/Reverse/
+  Alternate/Alternate-Reverse 方向；实线自动采用 8px 流动节奏，自定义虚线按完整周期等速换算。
+  编辑画布实时驱动 dash offset，SVG 内嵌独立 keyframes，PDF/PNG 保留静态虚线帧；状态通过
+  `User.veFlowAnimation*` 往返 VSDX，并纳入撤销、锁定、Copy/Paste Style、独立默认 Edge 样式
+  及 Agent `set_style`，排除顶点与自由笔迹并覆盖像素、窄面板和动画导出回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

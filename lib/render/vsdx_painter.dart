@@ -61,6 +61,34 @@ Path drawioGlassHighlightPath({
     ..close();
 }
 
+/// CSS-compatible progress for draw.io Flow Animation timing and direction.
+double drawioFlowAnimationProgress({
+  required double elapsedSeconds,
+  required int durationMs,
+  VsdxFlowAnimationTiming timing = VsdxFlowAnimationTiming.linear,
+  VsdxFlowAnimationDirection direction = VsdxFlowAnimationDirection.normal,
+}) {
+  final duration = math.max(durationMs, 1) / 1000;
+  final cycles = math.max(elapsedSeconds, 0) / duration;
+  final iteration = cycles.floor();
+  final raw = cycles - iteration;
+  final reverse = switch (direction) {
+    VsdxFlowAnimationDirection.normal => false,
+    VsdxFlowAnimationDirection.reverse => true,
+    VsdxFlowAnimationDirection.alternate => iteration.isOdd,
+    VsdxFlowAnimationDirection.alternateReverse => iteration.isEven,
+  };
+  final directed = reverse ? 1 - raw : raw;
+  final curve = switch (timing) {
+    VsdxFlowAnimationTiming.linear => Curves.linear,
+    VsdxFlowAnimationTiming.ease => Curves.ease,
+    VsdxFlowAnimationTiming.easeIn => Curves.easeIn,
+    VsdxFlowAnimationTiming.easeOut => Curves.easeOut,
+    VsdxFlowAnimationTiming.easeInOut => Curves.easeInOut,
+  };
+  return curve.transform(directed.clamp(0.0, 1.0));
+}
+
 class VsdxPainter extends CustomPainter {
   VsdxPainter({
     required this.page,
@@ -87,7 +115,13 @@ class VsdxPainter extends CustomPainter {
     this.drawEditorChrome = true,
     this.foldingControlsEnabled = true,
     this.colorByLayer = false,
-  }) : super(repaint: imageCache);
+    this.flowAnimation,
+  }) : super(
+          repaint: Listenable.merge(<Listenable>[
+            ?imageCache,
+            ?flowAnimation,
+          ]),
+        );
 
   final VsdxPage? page;
 
@@ -103,6 +137,9 @@ class VsdxPainter extends CustomPainter {
   /// Async decode cache. The painter listens to it (`super.repaint`) so a
   /// late-arriving decode automatically triggers a rebuild.
   final VsdxImageCache? imageCache;
+
+  /// Optional editor clock. Static exports omit it and retain the first frame.
+  final Animation<double>? flowAnimation;
 
   /// Pre-rendered hatching tiles. Use [PatternFillBuilder.warmUp] at app
   /// startup; the default empty builder falls back to solid fills.
@@ -490,7 +527,8 @@ class VsdxPainter extends CustomPainter {
   }
 
   void _paintGeometries(Canvas canvas, VsdxShape shape) {
-    final dashes = effectiveDashPatternForLine(shape.line);
+    final dashes = _effectiveStrokeDashes(shape);
+    final dashPhase = _flowDashPhase(shape, dashes);
     final rounding = shape.line.roundingInches;
 
     // Visio / libvisio: every Geometry with NoFill=0 is one even-odd fill path
@@ -616,6 +654,7 @@ class VsdxPainter extends CustomPainter {
               shape.line.compoundType,
               shape.line.weightInches,
               dashes: dashes,
+              dashPhase: dashPhase,
             );
           }
         }
@@ -654,6 +693,7 @@ class VsdxPainter extends CustomPainter {
             shape.line.compoundType,
             w,
             dashes: dashes,
+            dashPhase: dashPhase,
           );
         }
         canvas.restore();
@@ -689,6 +729,7 @@ class VsdxPainter extends CustomPainter {
             shape.line.compoundType,
             shape.line.weightInches,
             dashes: dashes,
+            dashPhase: dashPhase,
           );
         }
       }
@@ -726,6 +767,37 @@ class VsdxPainter extends CustomPainter {
       ..restore();
   }
 
+  List<double>? _effectiveStrokeDashes(VsdxShape shape) {
+    final existing = effectiveDashPatternForLine(shape.line);
+    if (existing != null) return existing;
+    if (shape.flowAnimation && shape.supportsFlowAnimation) {
+      final dash = 8 / pxPerInch;
+      return <double>[dash, dash];
+    }
+    return null;
+  }
+
+  double _flowDashPhase(VsdxShape shape, List<double>? dashes) {
+    if (dashes == null ||
+        !shape.flowAnimation ||
+        !shape.supportsFlowAnimation) {
+      return 0;
+    }
+    final elapsed = (flowAnimation?.value ?? 0) * 3600;
+    final cycle = dashes.fold<double>(0, (sum, value) => sum + value);
+    final effectiveDuration = math.max(
+      1,
+      (shape.flowAnimationDurationMs * cycle * pxPerInch / 16).round(),
+    );
+    final progress = drawioFlowAnimationProgress(
+      elapsedSeconds: elapsed,
+      durationMs: effectiveDuration,
+      timing: shape.flowAnimationTiming,
+      direction: shape.flowAnimationDirection,
+    );
+    return cycle * (1 - progress);
+  }
+
   /// Draw a stroke honouring Visio `CompoundType`
   /// (0=single, 1=double, 2=thick-thin, 3=thin-thick).
   ///
@@ -742,10 +814,13 @@ class VsdxPainter extends CustomPainter {
     int compoundType,
     double weightInches, {
     List<double>? dashes,
+    double dashPhase = 0,
   }) {
     final w = math.max(paint.strokeWidth, weightInches);
     if (compoundType <= 0 || w < 1e-6) {
-      final p = dashes == null ? path : dashedPath(path, dashes);
+      final p = dashes == null
+          ? path
+          : dashedPath(path, dashes, phase: dashPhase);
       canvas.drawPath(p, paint);
       return;
     }
@@ -755,7 +830,9 @@ class VsdxPainter extends CustomPainter {
       for (final rail in rails) {
         final offset = _parallelPath(path, rail.offset);
         if (offset == null) continue;
-        final stroked = dashes == null ? offset : dashedPath(offset, dashes);
+        final stroked = dashes == null
+            ? offset
+            : dashedPath(offset, dashes, phase: dashPhase);
         canvas.drawPath(
           stroked,
           Paint()
@@ -772,7 +849,9 @@ class VsdxPainter extends CustomPainter {
       if (drew) return;
     }
     // Fallback: concentric double with a transparent gap.
-    final src = dashes == null ? path : dashedPath(path, dashes);
+    final src = dashes == null
+        ? path
+        : dashedPath(path, dashes, phase: dashPhase);
     final bounds = src.getBounds().inflate(w * 2);
     canvas.saveLayer(bounds, Paint());
     canvas.drawPath(src, paint..strokeWidth = w);
@@ -986,13 +1065,15 @@ class VsdxPainter extends CustomPainter {
     _drawGlow(canvas, shape, path);
     _drawReflection(canvas, shape, path, noFill: true, noLine: false);
     _applyLineGradient(stroke, shape, path.getBounds());
+    final dashes = _effectiveStrokeDashes(shape);
     _drawCompoundStroke(
       canvas,
       path,
       stroke,
       shape.line.compoundType,
       shape.line.weightInches,
-      dashes: effectiveDashPatternForLine(shape.line),
+      dashes: dashes,
+      dashPhase: _flowDashPhase(shape, dashes),
     );
   }
 

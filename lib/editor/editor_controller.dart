@@ -48,11 +48,16 @@ typedef _CreationStyle = ({
   VsdxGlow glow,
   VsdxReflection reflection,
   bool glassEffect,
+  bool flowAnimation,
+  int flowAnimationDurationMs,
+  VsdxFlowAnimationTiming flowAnimationTiming,
+  VsdxFlowAnimationDirection flowAnimationDirection,
   bool wordWrap,
   bool constrainProportions,
   bool autoRotateLabel,
   bool includeFill,
   bool includeEffects,
+  bool includeFlow,
 });
 
 /// Central editor state: the parsed [VsdxDocument], current page, selection,
@@ -6418,6 +6423,67 @@ class EditorController extends ChangeNotifier {
 
   bool get selectedFixedDash => selectedLine?.fixedDash ?? false;
 
+  bool get canSetFlowAnimation {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    for (final id in _selection) {
+      if (!(page.findShapeById(id)?.supportsFlowAnimation ?? false)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool get selectedHasFlowAnimation =>
+      canSetFlowAnimation &&
+      _selection.every(
+        (id) => currentPage!.findShapeById(id)?.flowAnimation ?? false,
+      );
+
+  int get selectedFlowAnimationDurationMs =>
+      _firstSelected?.flowAnimationDurationMs ?? 500;
+
+  VsdxFlowAnimationTiming get selectedFlowAnimationTiming =>
+      _firstSelected?.flowAnimationTiming ?? VsdxFlowAnimationTiming.linear;
+
+  VsdxFlowAnimationDirection get selectedFlowAnimationDirection =>
+      _firstSelected?.flowAnimationDirection ??
+      VsdxFlowAnimationDirection.normal;
+
+  void setFlowAnimation(bool enabled) => _updateSelectedShapes(
+        (shape) => shape.supportsFlowAnimation
+            ? shape.withFlowAnimation(enabled)
+            : shape,
+        rememberStyle: true,
+      );
+
+  void setFlowAnimationDurationMs(double value, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (shape) => shape.supportsFlowAnimation
+            ? shape.withFlowAnimationDurationMs(
+                value.round().clamp(50, 10000).toInt(),
+              )
+            : shape,
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  void setFlowAnimationTiming(VsdxFlowAnimationTiming value) =>
+      _updateSelectedShapes(
+        (shape) => shape.supportsFlowAnimation
+            ? shape.withFlowAnimationTiming(value)
+            : shape,
+        rememberStyle: true,
+      );
+
+  void setFlowAnimationDirection(VsdxFlowAnimationDirection value) =>
+      _updateSelectedShapes(
+        (shape) => shape.supportsFlowAnimation
+            ? shape.withFlowAnimationDirection(value)
+            : shape,
+        rememberStyle: true,
+      );
+
   void setLineCap(LineCap cap) => _updateSelectedShapes(
         (s) => s.copyWith(line: s.line.copyWith(cap: cap)),
         rememberStyle: true,
@@ -7512,11 +7578,16 @@ class EditorController extends ChangeNotifier {
       glow: shape.glow,
       reflection: shape.reflection,
       glassEffect: shape.glassEffect,
+      flowAnimation: shape.flowAnimation,
+      flowAnimationDurationMs: shape.flowAnimationDurationMs,
+      flowAnimationTiming: shape.flowAnimationTiming,
+      flowAnimationDirection: shape.flowAnimationDirection,
       wordWrap: shape.wordWrap,
       constrainProportions: shape.constrainProportions,
       autoRotateLabel: shape.autoRotateLabel,
       includeFill: !shape.is1D,
       includeEffects: !shape.is1D,
+      includeFlow: shape.supportsFlowAnimation,
     );
   }
 
@@ -7629,6 +7700,13 @@ class EditorController extends ChangeNotifier {
     }
     if (s.is1D) {
       next = next.withAutoRotateLabel(clip.autoRotateLabel);
+      if (next.supportsFlowAnimation && clip.includeFlow) {
+        next = next
+            .withFlowAnimation(clip.flowAnimation)
+            .withFlowAnimationDurationMs(clip.flowAnimationDurationMs)
+            .withFlowAnimationTiming(clip.flowAnimationTiming)
+            .withFlowAnimationDirection(clip.flowAnimationDirection);
+      }
       if (clip.lineJumpStyle case final jumpStyle?) {
         next = next
             .withDrawioLineJumpStyle(jumpStyle.name)

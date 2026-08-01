@@ -908,6 +908,10 @@ void main() {
           'line': '#FF0000',
           'dashPattern': <double>[8, 4, 2, 4],
           'fixedDash': true,
+          'flowAnimation': true,
+          'flowDurationMs': 900,
+          'flowTiming': 'ease-in-out',
+          'flowDirection': 'alternate-reverse',
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -919,6 +923,13 @@ void main() {
       expect(after.line.weightInches, closeTo(0.02, 1e-9));
       expect(after.line.customDashPattern, <double>[8, 4, 2, 4]);
       expect(after.line.fixedDash, isTrue);
+      expect(after.flowAnimation, isTrue);
+      expect(after.flowAnimationDurationMs, 900);
+      expect(after.flowAnimationTiming, VsdxFlowAnimationTiming.easeInOut);
+      expect(
+        after.flowAnimationDirection,
+        VsdxFlowAnimationDirection.alternateReverse,
+      );
       expect(
         after.userCells.any(
           (cell) =>

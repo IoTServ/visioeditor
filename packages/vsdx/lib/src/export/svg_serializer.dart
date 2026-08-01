@@ -705,6 +705,46 @@ class VsdxToSvgSerializer {
     return attrs.toString();
   }
 
+  String _flowStrokePaint(
+    VsdxShape shape,
+    String paint, {
+    required String paintId,
+    required StringBuffer defs,
+  }) {
+    if (paint == 'stroke="none"' ||
+        !shape.flowAnimation ||
+        !shape.supportsFlowAnimation) {
+      return paint;
+    }
+    final match = RegExp(r'stroke-dasharray="([^"]+)"').firstMatch(paint);
+    final dash =
+        match?.group(1) ?? '${_n(8 / pxPerInch)} ${_n(8 / pxPerInch)}';
+    final values = match == null
+        ? <double>[8 / pxPerInch, 8 / pxPerInch]
+        : dash
+            .split(RegExp(r'[ ,]+'))
+            .map(double.tryParse)
+            .whereType<double>()
+            .toList(growable: false);
+    var cycle = values.fold<double>(0, (sum, value) => sum + value);
+    if (values.length.isOdd) cycle *= 2;
+    var result = paint;
+    if (match == null) result += ' stroke-dasharray="$dash"';
+    if (pdfCompat || cycle <= 0) return result;
+    final id = 'flow-$paintId';
+    final duration = math.max(
+      1,
+      (shape.flowAnimationDurationMs * cycle * pxPerInch / 16).round(),
+    );
+    defs.write(
+      '<style>@keyframes $id { to { stroke-dashoffset: 0; } }</style>',
+    );
+    return '$result stroke-dashoffset="${_n(cycle)}" '
+        'style="animation: $id ${duration}ms '
+        '${shape.flowAnimationTiming.cssValue} infinite '
+        '${shape.flowAnimationDirection.cssValue}"';
+  }
+
   void _writePath(
     StringBuffer buf,
     VsdxShape shape,
@@ -750,6 +790,12 @@ class VsdxToSvgSerializer {
             includeMarkers: attachArrows && !_bakeArrows,
           )
         : (paint: 'stroke="none"', markers: '');
+    final bodyStrokePaint = _flowStrokePaint(
+      shape,
+      stroke.paint,
+      paintId: paintId,
+      defs: defs,
+    );
     final sD = strokeD ?? d;
     // Gap jumps insert mid-path `M` subpaths; SVG markers would repeat on
     // every subpath. Hang markers (and baked tips) on the continuous [d].
@@ -858,7 +904,7 @@ class VsdxToSvgSerializer {
       final usedRails = rails.isNotEmpty && sampled.points.length >= 2;
       if (usedRails) {
         // Parallel offset rails (matches canvas thick-thin / thin-thick).
-        final strokePaint = stroke.paint;
+        final strokePaint = bodyStrokePaint;
         for (final rail in rails) {
           final off = offsetPolyline(
             sampled.points,
@@ -895,7 +941,7 @@ class VsdxToSvgSerializer {
           '</mask></defs>',
         );
         buf.writeln(
-          '$indent<path d="$sD" fill="none" ${stroke.paint} '
+          '$indent<path d="$sD" fill="none" $bodyStrokePaint '
           'mask="url(#$mid)"/>',
         );
       }
@@ -918,7 +964,7 @@ class VsdxToSvgSerializer {
       }
       if (!noLine && stroke.paint != 'stroke="none"') {
         buf.writeln(
-          '$indent<path d="$sD" fill="none" ${stroke.paint}/>',
+          '$indent<path d="$sD" fill="none" $bodyStrokePaint/>',
         );
       }
       if (filter.isNotEmpty) {
@@ -932,7 +978,7 @@ class VsdxToSvgSerializer {
       }
     } else {
       buf.writeln(
-        '$indent<path d="$d" $fillAttr ${stroke.paint}$filter/>',
+        '$indent<path d="$d" $fillAttr $bodyStrokePaint$filter/>',
       );
       if (stroke.markers.isNotEmpty) {
         buf.writeln(

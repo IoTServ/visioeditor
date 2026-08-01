@@ -1335,6 +1335,28 @@ ApplyResult applyOps(
             if (glass == false || (glass == true && next.supportsGlassEffect)) {
               next = next.withGlassEffect(glass!);
             }
+            final flow = _b(op['flowAnimation']);
+            if (flow == false || (flow == true && next.supportsFlowAnimation)) {
+              next = next.withFlowAnimation(flow!);
+            }
+            final flowDuration = _i(op['flowDurationMs']);
+            if (next.supportsFlowAnimation &&
+                flowDuration != null &&
+                flowDuration > 0) {
+              next = next.withFlowAnimationDurationMs(flowDuration);
+            }
+            final flowTiming = VsdxFlowAnimationTiming.parse(
+              op['flowTiming']?.toString(),
+            );
+            if (next.supportsFlowAnimation && flowTiming != null) {
+              next = next.withFlowAnimationTiming(flowTiming);
+            }
+            final flowDirection = VsdxFlowAnimationDirection.parse(
+              op['flowDirection']?.toString(),
+            );
+            if (next.supportsFlowAnimation && flowDirection != null) {
+              next = next.withFlowAnimationDirection(flowDirection);
+            }
             final valign = op['verticalAlign']?.toString().toLowerCase();
             if (valign != null && valign.isNotEmpty) {
               final align = switch (valign) {
