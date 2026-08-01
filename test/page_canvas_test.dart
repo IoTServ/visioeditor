@@ -1658,6 +1658,115 @@ void main() {
     expect(restored.pinX, closeTo(before.pinX, 1e-9));
   });
 
+  testWidgets('Constrain Proportions persists for corner-handle resizing',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        id = _addRect(c);
+        c.setConstrainProportions(true);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final before = page.findShapeById(id)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final handle = _pagePoint(
+      origin,
+      camera,
+      page,
+      before.pinX + before.width / 2,
+      before.pinY - before.height / 2,
+    );
+
+    await tester.dragFrom(handle, const Offset(40, 20));
+    await tester.pumpAndSettle();
+
+    final resized = controller.currentPage!.findShapeById(id)!;
+    expect(resized.width, greaterThan(before.width + 0.1));
+    expect(resized.width / resized.height, closeTo(2, 1e-6));
+    controller.undo();
+    final restored = controller.currentPage!.findShapeById(id)!;
+    expect(restored.width, closeTo(before.width, 1e-9));
+    expect(restored.height, closeTo(before.height, 1e-9));
+    expect(restored.constrainProportions, isTrue);
+  });
+
+  testWidgets('Constrain Proportions also couples side-handle dimensions',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        id = _addRect(c);
+        c.setConstrainProportions(true);
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final before = page.findShapeById(id)!;
+    final beforeBounds = page.shapePageAabb(id)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final handle = _pagePoint(
+      origin,
+      camera,
+      page,
+      before.pinX + before.width / 2,
+      before.pinY,
+    );
+
+    await tester.dragFrom(handle, const Offset(40, 0));
+    await tester.pumpAndSettle();
+
+    final resized = controller.currentPage!.findShapeById(id)!;
+    final resizedBounds = controller.currentPage!.shapePageAabb(id)!;
+    expect(resized.width, greaterThan(before.width + 0.1));
+    expect(resized.height, greaterThan(before.height + 0.05));
+    expect(resized.width / resized.height, closeTo(2, 1e-6));
+    expect(resizedBounds.left, closeTo(beforeBounds.left, 1e-6));
+    expect(resizedBounds.top, closeTo(beforeBounds.top, 1e-6));
+  });
+
+  testWidgets('Shift temporarily constrains a side handle like draw.io',
+      (tester) async {
+    late int id;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) => id = _addRect(c),
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final before = page.findShapeById(id)!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final handle = _pagePoint(
+      origin,
+      camera,
+      page,
+      before.pinX + before.width / 2,
+      before.pinY,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.dragFrom(handle, const Offset(40, 0));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+
+    final resized = controller.currentPage!.findShapeById(id)!;
+    expect(resized.width, greaterThan(before.width + 0.1));
+    expect(resized.width / resized.height, closeTo(2, 1e-6));
+    expect(resized.constrainProportions, isFalse);
+  });
+
   testWidgets('rotation handle tracks pointer heading and is undoable',
       (tester) async {
     late int id;

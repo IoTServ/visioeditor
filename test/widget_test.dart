@@ -120,6 +120,26 @@ void main() {
     expect(inlineWithText('Discarded'), findsNothing);
   });
 
+  testWidgets('Arrange exposes the persistent Constrain Proportions switch',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.crop_square));
+    await tester.pumpAndSettle();
+    await _tapCanvasAt(tester, _canvasCentre(tester));
+
+    final label = find.text('Constrain Proportions');
+    expect(label, findsOneWidget);
+    final row = find.ancestor(of: label, matching: find.byType(Row));
+    final toggle = find.descendant(of: row, matching: find.byType(Switch));
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+  });
+
   testWidgets('right-click opens a context menu with edit actions',
       (tester) async {
     await pumpApp(tester);

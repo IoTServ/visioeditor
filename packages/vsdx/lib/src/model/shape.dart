@@ -743,6 +743,13 @@ class VsdxShape {
   /// default; `'0'` lets a label keep its natural width beyond the text box.
   static const String userWordWrap = 'veWordWrap';
 
+  /// Explicit draw.io `aspect=fixed` equivalent for vertex geometry.
+  ///
+  /// This is an editor interaction preference rather than Visio's LockAspect
+  /// protection cell, so it lives in a User row and stays independent from
+  /// the shape's aggregate [locked] state.
+  static const String userConstrainProportions = 'veConstrainProportions';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -846,6 +853,31 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userWordWrap, value: value ? '1' : '0'),
+      ],
+    );
+  }
+
+  /// Whether future size edits preserve this vertex's width/height ratio.
+  bool get constrainProportions {
+    for (final c in userCells) {
+      if (c.name == userConstrainProportions) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// Set [constrainProportions] while preserving unrelated User rows.
+  VsdxShape withConstrainProportions(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userConstrainProportions) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(
+          name: userConstrainProportions,
+          value: value ? '1' : '0',
+        ),
       ],
     );
   }

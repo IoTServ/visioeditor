@@ -42,6 +42,7 @@ typedef _CreationStyle = ({
   VsdxGlow glow,
   VsdxReflection reflection,
   bool wordWrap,
+  bool constrainProportions,
   bool includeFill,
   bool includeEffects,
 });
@@ -5614,13 +5615,18 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final before = page.shapePageAabb(s.id);
+    final nextHeight = !s.is1D &&
+            s.constrainProportions &&
+            s.width.abs() > _epsilon
+        ? s.height * w / s.width
+        : s.height;
     beginTransaction();
     resizeShape(
       s.id,
       pinX: s.pinX,
       pinY: s.pinY,
       width: w,
-      height: s.height,
+      height: nextHeight,
       transient: true,
     );
     if (before != null) {
@@ -5645,12 +5651,17 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final before = page.shapePageAabb(s.id);
+    final nextWidth = !s.is1D &&
+            s.constrainProportions &&
+            s.height.abs() > _epsilon
+        ? s.width * h / s.height
+        : s.width;
     beginTransaction();
     resizeShape(
       s.id,
       pinX: s.pinX,
       pinY: s.pinY,
-      width: s.width,
+      width: nextWidth,
       height: h,
       transient: true,
     );
@@ -7178,6 +7189,7 @@ class EditorController extends ChangeNotifier {
       glow: shape.glow,
       reflection: shape.reflection,
       wordWrap: shape.wordWrap,
+      constrainProportions: shape.constrainProportions,
       includeFill: !shape.is1D,
       includeEffects: !shape.is1D,
     );
@@ -7277,6 +7289,7 @@ class EditorController extends ChangeNotifier {
           );
     if (!s.is1D && clip.includeFill) {
       next = next.withWordWrap(clip.wordWrap);
+      next = next.withConstrainProportions(clip.constrainProportions);
     }
     // Keep Geometry NoFill/NoLine in sync with pasted fill/line — otherwise
     // setNoFill → pasteStyle leaves geom.noFill=true and the canvas stays hollow.
@@ -8937,6 +8950,27 @@ class EditorController extends ChangeNotifier {
         (shape) => shape.is1D || shape.wordWrap == value
             ? shape
             : shape.withWordWrap(value),
+        rememberStyle: true,
+      );
+
+  /// Whether the Arrange panel can change aspect locking for its selection.
+  bool get canSetConstrainProportions {
+    final shape = singleSelected;
+    return shape != null &&
+        !shape.is1D &&
+        !shape.locked &&
+        !isOnLockedLayer(shape.id);
+  }
+
+  /// Current draw.io-style `aspect=fixed` state for the selected vertex.
+  bool get selectedConstrainProportions =>
+      singleSelected?.constrainProportions ?? false;
+
+  /// Persistently preserve the selected vertex's width/height ratio.
+  void setConstrainProportions(bool value) => _updateSelectedShapes(
+        (shape) => shape.is1D || shape.constrainProportions == value
+            ? shape
+            : shape.withConstrainProportions(value),
         rememberStyle: true,
       );
 

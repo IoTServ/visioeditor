@@ -535,6 +535,8 @@ class EditorL10n {
   String get curvedText => _t('curvedText');
   String get wordWrap =>
       locale.languageCode == 'zh' ? '自动换行' : 'Word Wrap';
+  String get constrainProportions =>
+      locale.languageCode == 'zh' ? '限制比例' : 'Constrain Proportions';
   String get bulletList => _t('bulletList');
   String get superscript => locale.languageCode == 'zh'
       ? '上标 (Cmd/Ctrl+.)'

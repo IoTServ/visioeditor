@@ -43,6 +43,8 @@ void main() {
     expect(zh.clearDefaultStyle, '清除默认样式');
     expect(en.wordWrap, 'Word Wrap');
     expect(zh.wordWrap, '自动换行');
+    expect(en.constrainProportions, 'Constrain Proportions');
+    expect(zh.constrainProportions, '限制比例');
     expect(en.selectNone, 'Select None');
     expect(zh.selectNone, '取消全选');
     expect(en.snapSelectionToGrid, 'Snap Selection to Grid');

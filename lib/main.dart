@@ -4602,7 +4602,7 @@ class _PropertyPanel extends StatelessWidget {
                 ),
             ],
           ),
-          if (!controller.selectionLocked) _arrangeFields(controller),
+          if (!controller.selectionLocked) _arrangeFields(context, controller),
           const SizedBox(height: 16),
           if (count >= 1) ...[
             _section(
@@ -5759,7 +5759,10 @@ class _PropertyPanel extends StatelessWidget {
 
   /// Numeric position / size / angle fields for a single selection (drawio's
   /// Arrange tab). Hidden when zero or many shapes are selected.
-  Widget _arrangeFields(EditorController controller) {
+  Widget _arrangeFields(
+    BuildContext context,
+    EditorController controller,
+  ) {
     final g = controller.selectedGeometry;
     if (g == null) return const SizedBox.shrink();
     return Padding(
@@ -5802,6 +5805,24 @@ class _PropertyPanel extends StatelessWidget {
                   value: g.h,
                   onSubmit: controller.setSelectedHeight,
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  EditorL10n.of(context).constrainProportions,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Switch(
+                value: controller.selectedConstrainProportions,
+                onChanged: controller.canSetConstrainProportions
+                    ? controller.setConstrainProportions
+                    : null,
               ),
             ],
           ),

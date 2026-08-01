@@ -1507,6 +1507,12 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   画布与 SVG/PDF 导出语义一致，连接线标签不暴露该开关。状态通过
   `User.veWordWrap` 往返 `.vsdx`、保留其他 User 行、支持撤销，并纳入顶点 Copy/Paste
   Style 与默认创建样式；补混合顶点/连接线、默认继承、清除恢复和导出行数回归。
+- 2026-08-01 — **对齐 draw.io Constrain Proportions**：按 `Format.js` 的 Arrange / Size
+  区域和 `mxVertexHandler.isConstrainedEvent` 增加持久比例开关；宽高输入、键盘尺寸调整及八个
+  缩放手柄均按 `aspect=fixed` 联动，Shift 可在任一手柄上提供相同的临时约束。状态以
+  `User.veConstrainProportions` 往返 `.vsdx`、保留其他 User 行、支持撤销，并纳入顶点
+  Copy/Paste Style 与默认创建样式；连接线与锁定图形不暴露可编辑状态。补模型往返、锚点、
+  数值尺寸、角点/边中点拖拽、样式继承和双语文案回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

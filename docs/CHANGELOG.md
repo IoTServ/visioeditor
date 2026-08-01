@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io Constrain Proportions**: the Arrange size section now exposes the
+  persistent `aspect=fixed` switch for editable vertices. Width/height fields,
+  keyboard sizing and all eight resize handles preserve the original ratio;
+  Shift supplies the same temporary constraint on every handle. The state is
+  undoable, round-trips through `User.veConstrainProportions`, preserves
+  unrelated User rows and participates in vertex Copy/Paste Style and default
+  creation styles.
 - **draw.io Word Wrap**: the Format → Text panel can now enable or disable
   wrapping for selected vertex labels, while connector labels remain outside
   the option just as in draw.io. Disabled wrapping keeps explicit line breaks

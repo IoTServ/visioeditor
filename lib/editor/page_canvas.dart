@@ -2995,17 +2995,20 @@ class _PageCanvasState extends State<PageCanvas> {
     var w = math.max(nr - nl, 0.05);
     var h = math.max(nt - nb, 0.05);
 
-    // Shift on a corner handle keeps the original aspect ratio.
-    final corner = handle == _Handle.tl ||
-        handle == _Handle.tr ||
-        handle == _Handle.br ||
-        handle == _Handle.bl;
-    if (HardwareKeyboard.instance.isShiftPressed && corner && s0.height > 0) {
+    // Shift temporarily, or draw.io's persistent Constrain Proportions style,
+    // keeps the original aspect ratio. Match mxVertexHandler.union: vertical
+    // handles (plus right corners) drive height; the others drive width.
+    final constrained = s0.constrainProportions ||
+        HardwareKeyboard.instance.isShiftPressed;
+    if (constrained && s0.height > 0) {
       final aspect = s0.width / s0.height;
-      if (w / h > aspect) {
-        h = w / aspect;
-      } else {
+      if (handle == _Handle.t ||
+          handle == _Handle.tr ||
+          handle == _Handle.br ||
+          handle == _Handle.b) {
         w = h * aspect;
+      } else {
+        h = w / aspect;
       }
       if (centered) {
         nl = cx - w / 2;
@@ -3013,15 +3016,26 @@ class _PageCanvasState extends State<PageCanvas> {
         nb = cy - h / 2;
         nt = cy + h / 2;
       } else {
-        // Anchor the corner opposite the one being dragged (page space).
-        final fixedX = movesL ? (aabb0?.right ?? (s0.pinX + s0.width / 2))
-            : (aabb0?.left ?? (s0.pinX - s0.width / 2));
-        final fixedY = movesB ? (aabb0?.top ?? (s0.pinY + s0.height / 2))
-            : (aabb0?.bottom ?? (s0.pinY - s0.height / 2));
-        nl = movesL ? fixedX - w : fixedX;
-        nr = movesL ? fixedX : fixedX + w;
-        nb = movesB ? fixedY - h : fixedY;
-        nt = movesB ? fixedY : fixedY + h;
+        // mxGraph anchors the opposite edge on the dragged axis and the
+        // original top/left edge on the coupled axis.
+        final oldL = aabb0?.left ?? (s0.pinX - s0.width / 2);
+        final oldR = aabb0?.right ?? (s0.pinX + s0.width / 2);
+        final oldB = aabb0?.bottom ?? (s0.pinY - s0.height / 2);
+        final oldT = aabb0?.top ?? (s0.pinY + s0.height / 2);
+        if (movesL) {
+          nl = oldR - w;
+          nr = oldR;
+        } else {
+          nl = oldL;
+          nr = oldL + w;
+        }
+        if (movesT) {
+          nb = oldB;
+          nt = oldB + h;
+        } else {
+          nb = oldT - h;
+          nt = oldT;
+        }
       }
     }
 

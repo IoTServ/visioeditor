@@ -38,6 +38,9 @@ byte-for-byte, so formulas and structure survive a save.
   preview, MCP, CLI and Agent Skill workflows.
 - **Edit** with select / move / resize (8 handles) / rotate, duplicate,
   copy-paste, delete, snapshot undo-redo, grid snapping and arrow-key nudging.
+  Arrange's Constrain Proportions switch persistently couples width and height
+  across numeric, keyboard and all resize-handle edits, matching draw.io's
+  `aspect=fixed` style and surviving `.vsdx` save/reopen.
   Ctrl/Cmd-drag clones; Alt/Option temporarily disables snapping for precise
   shape, waypoint and ruler-guide edits (on connector endpoints it creates a
   custom fixed point when dropped inside a shape). Ctrl/Cmd+Shift+Arrow adjusts
