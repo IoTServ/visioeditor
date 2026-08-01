@@ -47,6 +47,7 @@ typedef _CreationStyle = ({
   VsdxShadow shadow,
   VsdxGlow glow,
   VsdxReflection reflection,
+  bool glassEffect,
   bool wordWrap,
   bool constrainProportions,
   bool autoRotateLabel,
@@ -7510,6 +7511,7 @@ class EditorController extends ChangeNotifier {
       shadow: shape.shadow,
       glow: shape.glow,
       reflection: shape.reflection,
+      glassEffect: shape.glassEffect,
       wordWrap: shape.wordWrap,
       constrainProportions: shape.constrainProportions,
       autoRotateLabel: shape.autoRotateLabel,
@@ -7620,6 +7622,10 @@ class EditorController extends ChangeNotifier {
     if (!s.is1D && clip.includeFill) {
       next = next.withWordWrap(clip.wordWrap);
       next = next.withConstrainProportions(clip.constrainProportions);
+    }
+    if (!s.is1D) {
+      final enabled = clip.includeEffects ? clip.glassEffect : s.glassEffect;
+      next = next.withGlassEffect(next.supportsGlassEffect && enabled);
     }
     if (s.is1D) {
       next = next.withAutoRotateLabel(clip.autoRotateLabel);
@@ -9456,6 +9462,34 @@ class EditorController extends ChangeNotifier {
     }
     return null;
   }
+
+  bool get canSetGlassEffect {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape == null || !shape.supportsGlassEffect) return false;
+      any = true;
+    }
+    return any;
+  }
+
+  bool get selectedHasGlassEffect {
+    final page = currentPage;
+    if (page == null || !canSetGlassEffect) return false;
+    for (final id in _selection) {
+      if (!(page.findShapeById(id)?.glassEffect ?? false)) return false;
+    }
+    return true;
+  }
+
+  void setGlassEffect(bool enabled) => _updateSelectedShapes(
+        (shape) => shape.supportsGlassEffect
+            ? shape.withGlassEffect(enabled)
+            : shape,
+        rememberStyle: true,
+      );
 
   /// Toggle a drop shadow on the selected shapes (2-D only; connectors skip).
   void setShadow(bool enabled) => _updateSelectedShapes(

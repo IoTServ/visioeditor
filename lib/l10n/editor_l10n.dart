@@ -337,6 +337,7 @@ class EditorL10n {
   String get panelGlow => _t('panelGlow');
   String get panelReflection => _t('panelReflection');
   String get panelSoftEdges => _t('panelSoftEdges');
+  String get glass => locale.languageCode == 'zh' ? '玻璃高光' : 'Glass';
   String get panelText => _t('panelText');
   String get panelImage => _t('panelImage');
   String get panelData => _t('panelData');

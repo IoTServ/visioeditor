@@ -5068,6 +5068,15 @@ class _PropertyPanel extends StatelessWidget {
             _textControls(context),
           ],
           ], // !isChart
+          if (controller.canSetGlassEffect) ...[
+            const SizedBox(height: 8),
+            _section(context, EditorL10n.of(context).glass),
+            _switchRow(
+              label: EditorL10n.of(context).enabled,
+              value: controller.selectedHasGlassEffect,
+              onChanged: controller.setGlassEffect,
+            ),
+          ],
           const SizedBox(height: 8),
           _section(context, EditorL10n.of(context).panelShadow),
           _switchRow(

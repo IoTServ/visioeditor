@@ -778,6 +778,9 @@ class VsdxShape {
   /// draw.io `fixDash=1`, paired with [userDashPattern].
   static const String userFixedDash = 'veFixedDash';
 
+  /// draw.io `glass=1` glossy white highlight. Visio has no equivalent cell.
+  static const String userGlassEffect = 'veGlass';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -989,6 +992,37 @@ class VsdxShape {
           ),
         if (pattern != null && fixed)
           const VsdxUserCell(name: userFixedDash, value: '1'),
+      ],
+    );
+  }
+
+  /// Whether draw.io's glossy foreground highlight is enabled.
+  bool get glassEffect {
+    for (final c in userCells) {
+      if (c.name == userGlassEffect) return c.value == '1';
+    }
+    return false;
+  }
+
+  /// Glass is a filled 2-D foreground effect; connectors and image frames do
+  /// not expose it in draw.io's Format panel.
+  bool get supportsGlassEffect =>
+      !is1D &&
+      !hasImage &&
+      fill.hasFill &&
+      geometries.any((geometry) => !geometry.noShow && !geometry.noFill);
+
+  /// Set the Glass effect while preserving unrelated User rows.
+  VsdxShape withGlassEffect(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userGlassEffect) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        if (value)
+          const VsdxUserCell(name: userGlassEffect, value: '1'),
       ],
     );
   }

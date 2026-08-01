@@ -554,6 +554,16 @@ class VsdxToSvgSerializer {
       if (attachArrows) arrowsAttached = true;
       geomIndex++;
     }
+    if (shape.glassEffect && shape.supportsGlassEffect && fillParts.isNotEmpty) {
+      _writeGlassHighlight(
+        buf,
+        shape,
+        theme,
+        clipD: fillParts.join(' '),
+        paintId: '$paintIdScope-${shape.id}-glass',
+        indent: '$indent  ',
+      );
+    }
     if (shape.hasImage) {
       _writeImage(buf, shape, indent: '$indent  ');
     } else if (!wroteGeom &&
@@ -627,6 +637,53 @@ class VsdxToSvgSerializer {
     if (link != null) {
       buf.writeln('$indent</a>');
     }
+  }
+
+  void _writeGlassHighlight(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme, {
+    required String clipD,
+    required String paintId,
+    required String indent,
+  }) {
+    final fillColor = _resolveColor(
+      shape.fill.foreground,
+      shape.fill.themeForegroundIndex,
+      theme,
+    );
+    final alpha = _combinedOpacity(
+      fillColor,
+      shape.fill.foregroundTransparency,
+    );
+    if (alpha <= 0) return;
+    final w = shape.width;
+    final h = shape.height;
+    final sw = math.max(0.0, shape.line.weightInches / 2);
+    final clipId = 'clip-$paintId';
+    final gradientId = 'gradient-$paintId';
+    final highlightD = 'M ${_n(-sw)} ${_n(h + sw)} '
+        'L ${_n(-sw)} ${_n(h * 0.6)} '
+        'Q ${_n(w * 0.5)} ${_n(h * 0.3)} '
+        '${_n(w + sw)} ${_n(h * 0.6)} '
+        'L ${_n(w + sw)} ${_n(h + sw)} Z';
+    buf.writeln(
+      '$indent<defs>'
+      '<clipPath id="$clipId"><path d="$clipD" fill-rule="evenodd"/>'
+      '</clipPath>'
+      '<linearGradient id="$gradientId" gradientUnits="userSpaceOnUse" '
+      'x1="0" y1="${_n(h)}" x2="0" y2="${_n(h * 0.4)}">'
+      '<stop offset="0" stop-color="#ffffff" '
+      'stop-opacity="${_n(0.9 * alpha)}"/>'
+      '<stop offset="1" stop-color="#ffffff" '
+      'stop-opacity="${_n(0.1 * alpha)}"/>'
+      '</linearGradient>'
+      '</defs>',
+    );
+    buf.writeln(
+      '$indent<path d="$highlightD" clip-path="url(#$clipId)" '
+      'fill="url(#$gradientId)" stroke="none"/>',
+    );
   }
 
   /// SVG `<a>` attribute string for [shape]'s primary hyperlink, or `null`.

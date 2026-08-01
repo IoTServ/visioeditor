@@ -75,6 +75,8 @@ void main() {
     expect(zh.dashPattern, '虚线图案');
     expect(en.fixedDash, 'Fixed Dash');
     expect(zh.fixedDash, '固定虚线长度');
+    expect(en.glass, 'Glass');
+    expect(zh.glass, '玻璃高光');
     expect(en.openLink, 'Open Link');
     expect(zh.openLink, '打开链接');
     expect(en.copyTextStyle, 'Copy Text Style');

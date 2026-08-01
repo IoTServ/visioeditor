@@ -44,6 +44,23 @@ StrokeJoin canvasStrokeJoin(VsdxLine line) => switch (line.effectiveJoin) {
       VsdxLineJoin.miter || VsdxLineJoin.miterClip => StrokeJoin.miter,
     };
 
+/// draw.io's Glass foreground silhouette in the editor's local Y-up space.
+/// The actual shape path clips this broad top highlight for rectangles,
+/// ellipses, diamonds, and other compatible filled vertices.
+Path drawioGlassHighlightPath({
+  required double width,
+  required double height,
+  double strokeWidth = 0,
+}) {
+  final sw = math.max(0.0, strokeWidth / 2);
+  return Path()
+    ..moveTo(-sw, height + sw)
+    ..lineTo(-sw, height * 0.6)
+    ..quadraticBezierTo(width * 0.5, height * 0.3, width + sw, height * 0.6)
+    ..lineTo(width + sw, height + sw)
+    ..close();
+}
+
 class VsdxPainter extends CustomPainter {
   VsdxPainter({
     required this.page,
@@ -522,6 +539,9 @@ class VsdxPainter extends CustomPainter {
         _drawFill(canvas, shape, compoundPath);
       }
     }
+    if (compoundPath != null && shape.glassEffect) {
+      _drawGlassHighlight(canvas, shape, compoundPath);
+    }
 
     for (final geom in shape.geometries) {
       if (geom.noShow) continue;
@@ -638,10 +658,16 @@ class VsdxPainter extends CustomPainter {
         }
         canvas.restore();
         canvas.restore();
+        if (!compoundFill && paintFill && shape.glassEffect) {
+          _drawGlassHighlight(canvas, shape, path);
+        }
         continue;
       }
       if (paintFill) {
         _drawFill(canvas, shape, path);
+        if (shape.glassEffect) {
+          _drawGlassHighlight(canvas, shape, path);
+        }
       }
       if (!geom.noLine && shape.line.hasLine) {
         final strokePaint = _resolveStrokePaint(shape);
@@ -667,6 +693,37 @@ class VsdxPainter extends CustomPainter {
         }
       }
     }
+  }
+
+  void _drawGlassHighlight(
+    Canvas canvas,
+    VsdxShape shape,
+    Path silhouette,
+  ) {
+    if (!shape.supportsGlassEffect) return;
+    final colorAlpha = (shape.fill.foreground?.alpha ?? 255) / 255;
+    final alpha = colorAlpha *
+        (1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0));
+    if (alpha <= 0) return;
+    final highlight = drawioGlassHighlightPath(
+      width: shape.width,
+      height: shape.height,
+      strokeWidth: shape.line.weightInches,
+    );
+    final paint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, shape.height),
+        Offset(0, shape.height * 0.4),
+        <Color>[
+          Colors.white.withValues(alpha: 0.9 * alpha),
+          Colors.white.withValues(alpha: 0.1 * alpha),
+        ],
+      );
+    canvas
+      ..save()
+      ..clipPath(silhouette)
+      ..drawPath(highlight, paint)
+      ..restore();
   }
 
   /// Draw a stroke honouring Visio `CompoundType`

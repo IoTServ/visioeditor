@@ -1331,6 +1331,10 @@ ApplyResult applyOps(
             if (miterLimit != null && miterLimit >= 1) {
               next = next.withDrawioMiterLimit(miterLimit);
             }
+            final glass = _b(op['glass']);
+            if (glass == false || (glass == true && next.supportsGlassEffect)) {
+              next = next.withGlassEffect(glass!);
+            }
             final valign = op['verticalAlign']?.toString().toLowerCase();
             if (valign != null && valign.isNotEmpty) {
               final align = switch (valign) {

@@ -1568,6 +1568,11 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   调整线宽时保持节奏不变。原始序列与固定标记以 `User.veDashPattern` / `User.veFixedDash`
   精确保存在 VSDX，`LinePattern` 作为 Visio 兼容回退；画布、阴影、反射与 SVG/PDF 导出共用
   同一有效序列，并纳入撤销、锁定、Copy/Paste Style、独立默认样式及 Agent `set_style`。
+- 2026-08-01 — **对齐 draw.io Glass**：Format → Effects 为可填充 2-D 图形增加 Glass 开关；
+  按上游 90%→10% 白色渐变与波浪下缘生成顶部高光，并以实际复合几何裁剪，矩形、圆形、菱形
+  及多边形均不会溢出轮廓。Canvas 与 SVG/PDF 使用同一 Y-up 几何和透明度语义，状态通过
+  `User.veGlass` 往返 VSDX；连接线与图片框不暴露该能力。同步纳入撤销、锁定、Copy/Paste
+  Style、独立默认 Vertex 样式和 Agent `set_style`，补离屏像素、导出与真实面板回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用
