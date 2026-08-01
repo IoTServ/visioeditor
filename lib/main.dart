@@ -6011,6 +6011,22 @@ class _PropertyPanel extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
+                EditorL10n.of(context).wordWrap,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Switch(
+              value: controller.selectedWordWrap,
+              onChanged:
+                  controller.canSetWordWrap ? controller.setWordWrap : null,
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
                 EditorL10n.of(context).verticalText,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

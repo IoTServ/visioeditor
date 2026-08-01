@@ -2177,6 +2177,7 @@ class VsdxPainter extends CustomPainter {
         mtPx: mtPx,
         mbPx: mbPx,
         maxW: maxW,
+        wordWrap: shape.wordWrap,
         verticalAlign: block.verticalAlign,
         scale: s,
       );
@@ -2201,6 +2202,7 @@ class VsdxPainter extends CustomPainter {
         mtPx: mtPx,
         mbPx: mbPx,
         maxW: maxW,
+        wordWrap: shape.wordWrap,
         scale: s,
       );
       canvas.restore();
@@ -2212,7 +2214,12 @@ class VsdxPainter extends CustomPainter {
       textAlign: align,
       textDirection: TextDirection.ltr,
       maxLines: null,
-    )..layout(maxWidth: maxW);
+    );
+    if (shape.wordWrap) {
+      tp.layout(maxWidth: maxW);
+    } else {
+      tp.layout();
+    }
 
     // Offsets measured from the block's upper-left corner (px).
     final ox = switch (align) {
@@ -2247,9 +2254,14 @@ class VsdxPainter extends CustomPainter {
     required double mtPx,
     required double mbPx,
     required double maxW,
+    required bool wordWrap,
     required double scale,
   }) {
-    final lines = _wrapPosShiftLines(runs, maxW, scale);
+    final lines = _wrapPosShiftLines(
+      runs,
+      wordWrap ? maxW : double.infinity,
+      scale,
+    );
     var totalH = 0.0;
     for (final line in lines) {
       totalH += line.height;
@@ -2426,6 +2438,7 @@ class VsdxPainter extends CustomPainter {
     required double mtPx,
     required double mbPx,
     required double maxW,
+    required bool wordWrap,
     required VsdxVertAlign verticalAlign,
     required double scale,
   }) {
@@ -2500,6 +2513,8 @@ class VsdxPainter extends CustomPainter {
       final firstX = hasBullet ? textX : textX + indentF;
       final availRest = math.max(0.0, maxW - (textX - mlPx) - indentR);
       final availFirst = math.max(0.0, maxW - (firstX - mlPx) - indentR);
+      final wrapRest = wordWrap ? availRest : double.infinity;
+      final wrapFirst = wordWrap ? availFirst : double.infinity;
       final needsPos = para.runs
           .any((r) => r.charStyle.position != VsdxTextPosition.normal);
       // Per-line wrap when: super/sub needs dy; IndFirst is first-line-only;
@@ -2517,9 +2532,9 @@ class VsdxPainter extends CustomPainter {
         // Baseline dy + wrap (OpenType pos off when dy applies).
         final lines = _wrapPosShiftLines(
           para.runs,
-          availRest,
+          wrapRest,
           scale,
-          firstLineMaxW: availFirst,
+          firstLineMaxW: wrapFirst,
           applyPosDy: needsPos,
         );
         // Emit one layout row per wrapped line so Sp*/bullet stay correct.
@@ -2564,7 +2579,12 @@ class VsdxPainter extends CustomPainter {
         textAlign: pAlign,
         textDirection: TextDirection.ltr,
         maxLines: null,
-      )..layout(maxWidth: availRest);
+      );
+      if (wordWrap) {
+        tp.layout(maxWidth: availRest);
+      } else {
+        tp.layout();
+      }
       rowW = tp.width;
       rowTextH = tp.height;
       posPainters = null;

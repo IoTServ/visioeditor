@@ -737,6 +737,12 @@ class VsdxShape {
   /// block (editor "Curved Text"). Round-trips via `User.veCurvedText`.
   static const String userCurvedText = 'veCurvedText';
 
+  /// Explicit draw.io `whiteSpace=wrap` equivalent for vertex labels.
+  ///
+  /// Missing rows preserve the editor's historical/Visio-compatible wrapped
+  /// default; `'0'` lets a label keep its natural width beyond the text box.
+  static const String userWordWrap = 'veWordWrap';
+
   /// Custom hover text used by draw.io's "Edit Tooltip" action.
   ///
   /// Visio has no portable shape-tooltip cell, so the editor stores it in a
@@ -820,6 +826,28 @@ class VsdxShape {
       if (c.name == userCurvedText) return c.value == '1';
     }
     return false;
+  }
+
+  /// Whether text flows inside the vertex text box instead of overflowing.
+  bool get wordWrap {
+    for (final c in userCells) {
+      if (c.name == userWordWrap) return c.value != '0';
+    }
+    return true;
+  }
+
+  /// Set the explicit per-shape [wordWrap] state while preserving User rows.
+  VsdxShape withWordWrap(bool value) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userWordWrap) c,
+    ];
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userWordWrap, value: value ? '1' : '0'),
+      ],
+    );
   }
 
   /// User-authored hover tooltip, or `null` when none is configured.

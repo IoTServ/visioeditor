@@ -1502,6 +1502,11 @@ connects + 端点种子 + 重路由，胶合端由 `_edgePoint` 精修、浮动�
   继承填充、线条、文字与效果。More、Format、图形右键菜单和
   `Cmd/Ctrl+Shift+D/R` 均可操作，`Clear Default Style` 无条件清除两类并恢复自动跟踪；
   补独立继承、固定样式、清除恢复、快捷键和双语入口回归。
+- 2026-08-01 — **对齐 draw.io Word Wrap**：按 `Format.js` 的顶点标签范围在
+  Format / Text 增加 Word Wrap 开关；关闭后保留显式换行，但每行以自然宽度溢出文本框，
+  画布与 SVG/PDF 导出语义一致，连接线标签不暴露该开关。状态通过
+  `User.veWordWrap` 往返 `.vsdx`、保留其他 User 行、支持撤销，并纳入顶点 Copy/Paste
+  Style 与默认创建样式；补混合顶点/连接线、默认继承、清除恢复和导出行数回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

@@ -143,8 +143,10 @@ byte-for-byte, so formulas and structure survive a save.
   the selected range. Cmd/Ctrl+Shift+NumPad +/- adjusts the whole label by 1pt.
   Cmd/Ctrl+Shift+D remembers the selected vertex or connector as its independent
   creation style; Cmd/Ctrl+Shift+R clears both remembered categories. The same
-  actions are available from Format, More and the shape context menu. Start
-  typing with a shape or connector selected to replace its label; Enter saves and
+  actions are available from Format, More and the shape context menu. Word Wrap
+  in the Text panel controls whether vertex labels flow inside their text box or
+  retain their natural line width, with matching canvas and SVG/PDF output.
+  Start typing with a shape or connector selected to replace its label; Enter saves and
   Shift/Alt+Enter adds a line break. Labels on 2-D shapes can be positioned
   outside any edge or centred, and displayed vertically.
 - **Shape-library modifiers** — Shift-click replaces a compatible selection or

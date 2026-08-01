@@ -41,6 +41,7 @@ typedef _CreationStyle = ({
   VsdxShadow shadow,
   VsdxGlow glow,
   VsdxReflection reflection,
+  bool wordWrap,
   bool includeFill,
   bool includeEffects,
 });
@@ -7176,6 +7177,7 @@ class EditorController extends ChangeNotifier {
       shadow: shape.shadow,
       glow: shape.glow,
       reflection: shape.reflection,
+      wordWrap: shape.wordWrap,
       includeFill: !shape.is1D,
       includeEffects: !shape.is1D,
     );
@@ -7273,6 +7275,9 @@ class EditorController extends ChangeNotifier {
             glow: clip.includeEffects ? clip.glow : s.glow,
             reflection: clip.includeEffects ? clip.reflection : s.reflection,
           );
+    if (!s.is1D && clip.includeFill) {
+      next = next.withWordWrap(clip.wordWrap);
+    }
     // Keep Geometry NoFill/NoLine in sync with pasted fill/line — otherwise
     // setNoFill → pasteStyle leaves geom.noFill=true and the canvas stays hollow.
     if (!s.is1D) {
@@ -8894,6 +8899,46 @@ class EditorController extends ChangeNotifier {
     }
     return any;
   }
+
+  /// Whether Word Wrap can change at least one selected vertex label.
+  /// draw.io omits edge labels from this option because they need an explicit
+  /// label width; this editor follows the same vertex-only scope.
+  bool get canSetWordWrap {
+    final page = currentPage;
+    if (page == null) return false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape != null &&
+          !shape.is1D &&
+          !shape.locked &&
+          !isOnLockedLayer(id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether every selected vertex currently wraps inside its text block.
+  bool get selectedWordWrap {
+    final page = currentPage;
+    if (page == null || _selection.isEmpty) return false;
+    var any = false;
+    for (final id in _selection) {
+      final shape = page.findShapeById(id);
+      if (shape == null || shape.is1D) continue;
+      any = true;
+      if (!shape.wordWrap) return false;
+    }
+    return any;
+  }
+
+  /// Apply draw.io's `whiteSpace=wrap` semantic to selected vertices.
+  void setWordWrap(bool value) => _updateSelectedShapes(
+        (shape) => shape.is1D || shape.wordWrap == value
+            ? shape
+            : shape.withWordWrap(value),
+        rememberStyle: true,
+      );
 
   /// Toggle Curved Text (label along an arc) on selected 2-D shapes.
   void setCurvedText(bool value) => _updateSelectedShapes(

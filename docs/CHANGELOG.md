@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io Word Wrap**: the Format → Text panel can now enable or disable
+  wrapping for selected vertex labels, while connector labels remain outside
+  the option just as in draw.io. Disabled wrapping keeps explicit line breaks
+  but lets each line use its natural width on the canvas and in SVG/PDF export.
+  The state is undoable, survives `.vsdx` through `User.veWordWrap`, preserves
+  unrelated User rows and participates in vertex Copy/Paste Style and default
+  creation styles.
 - **draw.io independent default creation styles**: vertices and connectors now
   maintain separate current styles, so a remembered connector stroke never leaks
   onto new vertices (or vice versa). **Set as Default Style** and **Clear Default

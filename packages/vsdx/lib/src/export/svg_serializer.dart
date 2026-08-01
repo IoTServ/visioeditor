@@ -3249,11 +3249,13 @@ class VsdxToSvgSerializer {
         0.04,
         layoutW - layoutMr - p.style.indentRightInches - firstBandX,
       );
-      final wrapped = _wrapSvgSegs(
-        p.segs,
-        availRest,
-        firstLineMaxWidth: availFirst,
-      );
+      final wrapped = shape.wordWrap
+          ? _wrapSvgSegs(
+              p.segs,
+              availRest,
+              firstLineMaxWidth: availFirst,
+            )
+          : <List<(String text, VsdxTextRun run)>>[p.segs];
       for (var li = 0; li < wrapped.length; li++) {
         layouts.add((
           style: p.style,

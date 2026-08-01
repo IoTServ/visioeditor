@@ -41,6 +41,8 @@ void main() {
     expect(zh.setAsDefaultStyle, '设为默认样式');
     expect(en.clearDefaultStyle, 'Clear Default Style');
     expect(zh.clearDefaultStyle, '清除默认样式');
+    expect(en.wordWrap, 'Word Wrap');
+    expect(zh.wordWrap, '自动换行');
     expect(en.selectNone, 'Select None');
     expect(zh.selectNone, '取消全选');
     expect(en.snapSelectionToGrid, 'Snap Selection to Grid');

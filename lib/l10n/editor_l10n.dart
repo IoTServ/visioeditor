@@ -533,6 +533,8 @@ class EditorL10n {
   String get patternShingle => _t('patternShingle');
   String get lineSpacing => _t('lineSpacing');
   String get curvedText => _t('curvedText');
+  String get wordWrap =>
+      locale.languageCode == 'zh' ? '自动换行' : 'Word Wrap';
   String get bulletList => _t('bulletList');
   String get superscript => locale.languageCode == 'zh'
       ? '上标 (Cmd/Ctrl+.)'
