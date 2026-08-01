@@ -3164,6 +3164,10 @@ class VsdxToSvgSerializer {
     final bgOp = backgroundColor != null
         ? _combinedOpacity(backgroundColor, backgroundTransparency)
         : 1.0;
+    final border = shape.labelBorderColor;
+    final borderPaint = border == null
+        ? 'stroke="none"'
+        : 'stroke="${_hex(border)}" stroke-width="${_n(1 / pxPerInch)}"';
     const pad = 0.03;
     final angle =
         angleRad != 0 ? ' rotate(${_n(angleRad * 180 / math.pi)})' : '';
@@ -3173,7 +3177,7 @@ class VsdxToSvgSerializer {
       '<rect x="${_n(-maxW / 2 - pad)}" y="${_n(-totalH / 2 - pad)}" '
       'width="${_n(maxW + 2 * pad)}" height="${_n(totalH + 2 * pad)}" '
       'rx="0.02" fill="${_hex(plate)}" '
-      'fill-opacity="${_n(bgOp)}" stroke="none"/>'
+      'fill-opacity="${_n(bgOp)}" $borderPaint/>'
       '<g transform="scale(1 -1)">',
     );
     var yTop = -totalH / 2;
@@ -3291,16 +3295,26 @@ class VsdxToSvgSerializer {
       );
       return;
     }
-    if (block.backgroundColor != null) {
-      final bgOp = _combinedOpacity(
-        block.backgroundColor,
-        block.backgroundTransparency,
-      );
+    final labelBorder = shape.labelBorderColor;
+    if (block.backgroundColor != null || labelBorder != null) {
+      final bgOp = block.backgroundColor == null
+          ? 0.0
+          : _combinedOpacity(
+              block.backgroundColor,
+              block.backgroundTransparency,
+            );
+      final fill = block.backgroundColor == null
+          ? 'fill="none"'
+          : 'fill="${_hex(block.backgroundColor!)}" '
+              'fill-opacity="${_n(bgOp)}"';
+      final stroke = labelBorder == null
+          ? 'stroke="none"'
+          : 'stroke="${_hex(labelBorder)}" '
+              'stroke-width="${_n(1 / pxPerInch)}"';
       buf.writeln(
         '$indent<g transform="$xf">'
         '<rect x="0" y="0" width="${_n(tw)}" height="${_n(th)}" '
-        'fill="${_hex(block.backgroundColor!)}" '
-        'fill-opacity="${_n(bgOp)}" stroke="none"/></g>',
+        '$fill $stroke/></g>',
       );
     }
 

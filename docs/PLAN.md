@@ -1579,6 +1579,11 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   编辑画布实时驱动 dash offset，SVG 内嵌独立 keyframes，PDF/PNG 保留静态虚线帧；状态通过
   `User.veFlowAnimation*` 往返 VSDX，并纳入撤销、锁定、Copy/Paste Style、独立默认 Edge 样式
   及 Agent `set_style`，排除顶点与自由笔迹并覆盖像素、窄面板和动画导出回归。
+- 2026-08-01 — **对齐 draw.io Text Opacity / Label Border**：Format → Text 增加文字不透明度
+  与标签边框色。文字透明度直接写入 Visio 原生 `Character.ColorTrans`，支持内联选区、滑动单步
+  撤销以及画布、SVG/PDF、保存重开一致；标签边框覆盖普通文本框和连接线紧凑标签，状态通过
+  `User.veLabelBorderColor` 保真往返 VSDX。两项均纳入 Copy/Paste Style、Copy/Paste Text Style
+  与独立默认样式，并补 User 行保留、锁定、导出、真实 Format 面板及中英文文案回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

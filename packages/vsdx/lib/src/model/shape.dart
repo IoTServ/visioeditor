@@ -22,6 +22,7 @@ import 'shape_kind.dart';
 import 'sheet_sections.dart';
 import 'user_property.dart';
 import '../parser/formula.dart';
+import '../utils/color.dart';
 
 enum VsdxFlowAnimationTiming {
   linear('linear'),
@@ -781,6 +782,10 @@ class VsdxShape {
   /// default; `'0'` lets a label keep its natural width beyond the text box.
   static const String userWordWrap = 'veWordWrap';
 
+  /// draw.io `labelBorderColor` for the text-block outline. Visio has no
+  /// portable ShapeSheet equivalent, so the RGB token is kept in a User row.
+  static const String userLabelBorderColor = 'veLabelBorderColor';
+
   /// Explicit draw.io `aspect=fixed` equivalent for vertex geometry.
   ///
   /// This is an editor interaction preference rather than Visio's LockAspect
@@ -927,6 +932,40 @@ class VsdxShape {
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userWordWrap, value: value ? '1' : '0'),
+      ],
+    );
+  }
+
+  /// Optional draw.io label-border colour.
+  VsdxColor? get labelBorderColor {
+    for (final c in userCells) {
+      if (c.name == userLabelBorderColor) {
+        return VsdxColor.tryParse(c.value);
+      }
+    }
+    return null;
+  }
+
+  /// Set or clear the draw.io label-border colour while preserving unrelated
+  /// User rows. Alpha is intentionally omitted: draw.io models border colour
+  /// independently from text opacity.
+  VsdxShape withLabelBorderColor(VsdxColor? color) {
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userLabelBorderColor) c,
+    ];
+    if (color == null) {
+      if (others.length == userCells.length) return this;
+      return copyWith(userCells: others);
+    }
+    final rgb = (color.value & 0x00FFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    return copyWith(
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userLabelBorderColor, value: '#$rgb'),
       ],
     );
   }

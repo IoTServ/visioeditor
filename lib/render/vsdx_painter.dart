@@ -2233,14 +2233,21 @@ class VsdxPainter extends CustomPainter {
         } else {
           plate = _edgeLabelBackground();
         }
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(
-                ox - pad, oy - pad, tp.width + pad * 2, tp.height + pad * 2),
-            Radius.circular(0.02 * s),
-          ),
-          Paint()..color = plate,
+        final plateRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+              ox - pad, oy - pad, tp.width + pad * 2, tp.height + pad * 2),
+          Radius.circular(0.02 * s),
         );
+        canvas.drawRRect(plateRect, Paint()..color = plate);
+        if (shape.labelBorderColor case final border?) {
+          canvas.drawRRect(
+            plateRect,
+            Paint()
+              ..color = Color(border.value)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1,
+          );
+        }
       }
       tp.paint(canvas, Offset(ox, oy));
       canvas.restore();
@@ -2261,13 +2268,23 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(pinX, pinY); // to TxtPin (shape-local, Y-up)
     if (labelAngle != 0) canvas.rotate(labelAngle);
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
-    // TextBkgnd — solid fill behind the text block (libvisio fo:background-color).
-    if (block.backgroundColor != null) {
-      final bg = Color(block.backgroundColor!.value);
+    // TextBkgnd plus draw.io labelBorderColor around the text block.
+    final textRect = Rect.fromLTWH(0, 0, tw, th);
+    if (block.backgroundColor case final background?) {
+      final bg = Color(background.value);
       final t = block.backgroundTransparency.clamp(0.0, 1.0);
       canvas.drawRect(
-        Rect.fromLTWH(0, 0, tw, th),
+        textRect,
         Paint()..color = bg.withValues(alpha: bg.a * (1.0 - t)),
+      );
+    }
+    if (shape.labelBorderColor case final border?) {
+      canvas.drawRect(
+        textRect,
+        Paint()
+          ..color = Color(border.value)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1 / s,
       );
     }
     canvas.translate(0, th); // to the block's upper-left corner (Y still up)

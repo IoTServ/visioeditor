@@ -42,6 +42,7 @@ typedef _CreationStyle = ({
   VsdxCharStyle? char,
   VsdxParaStyle? para,
   VsdxTextBlock block,
+  VsdxColor? labelBorderColor,
   ConnectorLineJumpStyle? lineJumpStyle,
   double? lineJumpSize,
   VsdxShadow shadow,
@@ -7570,6 +7571,7 @@ class EditorController extends ChangeNotifier {
       char: run?.charStyle,
       para: run?.paraStyle,
       block: shape.richText.textBlock,
+      labelBorderColor: shape.labelBorderColor,
       lineJumpStyle: shape.isGlueableConnector
           ? _connectorLineJumpStyleOf(shape)
           : null,
@@ -7775,7 +7777,7 @@ class EditorController extends ChangeNotifier {
     );
     next = next.copyWith(
       richText: next.richText.copyWith(textBlock: styledBlock),
-    );
+    ).withLabelBorderColor(clip.labelBorderColor);
     return next;
   }
 
@@ -7791,6 +7793,7 @@ class EditorController extends ChangeNotifier {
     double marginBottom,
     VsdxColor? backgroundColor,
     double backgroundTransparency,
+    VsdxColor? labelBorderColor,
     int textDirection,
   })? _textStyleClipboard;
 
@@ -7831,6 +7834,7 @@ class EditorController extends ChangeNotifier {
       marginBottom: block.marginBottomInches,
       backgroundColor: block.backgroundColor,
       backgroundTransparency: block.backgroundTransparency,
+      labelBorderColor: shape.labelBorderColor,
       textDirection: block.textDirection,
     );
     notifyListeners();
@@ -7893,12 +7897,14 @@ class EditorController extends ChangeNotifier {
       );
       nextPage = nextPage.updateShapeById(
         id,
-        (target) => target.copyWith(
-          richText: target.richText.copyWith(
-            runs: runs,
-            textBlock: styledBlock,
-          ),
-        ),
+        (target) => target
+            .copyWith(
+              richText: target.richText.copyWith(
+                runs: runs,
+                textBlock: styledBlock,
+              ),
+            )
+            .withLabelBorderColor(clip.labelBorderColor),
       );
       changed = true;
     }
@@ -8856,6 +8862,8 @@ class EditorController extends ChangeNotifier {
   void _updateText({
     VsdxCharStyle Function(VsdxCharStyle)? char,
     VsdxParaStyle Function(VsdxParaStyle)? para,
+    bool transient = false,
+    bool rememberStyle = false,
   }) {
     final editId = _textEditShapeId;
     final sel = _textEditSelection;
@@ -8864,6 +8872,7 @@ class EditorController extends ChangeNotifier {
         sel.start != sel.end;
 
     if (useRange) {
+      var changed = false;
       updateCurrentPage((page) {
         final s = page.findShapeById(editId);
         if (s == null || s.locked || isOnLockedLayer(editId)) return page;
@@ -8881,11 +8890,13 @@ class EditorController extends ChangeNotifier {
         if (para != null) {
           rich = applyParaStyleToRange(rich, start: a, end: b, update: para);
         }
+        changed = true;
         return page.updateShapeById(
           editId,
           (sh) => sh.copyWith(text: rich.plainText, richText: rich),
         );
-      });
+      }, transient: transient);
+      if (rememberStyle && changed) _rememberStyle();
       return;
     }
 
@@ -8922,7 +8933,7 @@ class EditorController extends ChangeNotifier {
           ),
       ];
       return s.copyWith(richText: s.richText.copyWith(runs: newRuns));
-    });
+    }, transient: transient, rememberStyle: rememberStyle);
   }
 
   void setTextSizeInches(double inches) =>
@@ -8977,6 +8988,19 @@ class EditorController extends ChangeNotifier {
 
   void setTextColor(VsdxColor color) =>
       _updateText(char: (c) => c.withSolidColor(color));
+
+  /// draw.io Text opacity (0..1 opaque fraction), backed by Visio's native
+  /// Character `ColorTrans` so canvas, SVG/PDF and VSDX round-trip agree.
+  double get selectedTextOpacity =>
+      (1 - (selectedCharStyle?.transparency ?? 0)).clamp(0.0, 1.0).toDouble();
+
+  void setTextOpacity(double opacity, {bool transient = false}) => _updateText(
+        char: (c) => c.copyWith(
+          transparency: (1 - opacity).clamp(0.0, 1.0),
+        ),
+        transient: transient,
+        rememberStyle: true,
+      );
 
   /// Bind selected / in-edit text colour to a document theme slot.
   void setTextThemeSlot(int slot) {
@@ -9189,6 +9213,18 @@ class EditorController extends ChangeNotifier {
 
   VsdxColor? get selectedTextBackgroundColor =>
       selectedTextBlock?.backgroundColor;
+
+  VsdxColor? get selectedLabelBorderColor => _firstSelected?.labelBorderColor;
+
+  void setLabelBorderColor(VsdxColor color) => _updateSelectedShapes(
+        (s) => s.withLabelBorderColor(color),
+        rememberStyle: true,
+      );
+
+  void clearLabelBorderColor() => _updateSelectedShapes(
+        (s) => s.withLabelBorderColor(null),
+        rememberStyle: true,
+      );
 
   double get selectedTextBackgroundOpacity =>
       1 - (selectedTextBlock?.backgroundTransparency ?? 0);

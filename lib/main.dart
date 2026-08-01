@@ -6358,6 +6358,14 @@ class _PropertyPanel extends StatelessWidget {
           onSlot: controller.setTextThemeSlot,
           selectedSlot: cs.color == null ? cs.themeColorIndex : null,
         ),
+        _OpacitySlider(
+          key: const ValueKey('text-opacity-slider'),
+          label: EditorL10n.of(context).textOpacity,
+          opacity: controller.selectedTextOpacity,
+          onStart: controller.beginTransaction,
+          onChanged: (v) => controller.setTextOpacity(v, transient: true),
+          onEnd: controller.commitTransaction,
+        ),
         if (textBlock != null) ...[
           const SizedBox(height: 10),
           Text(
@@ -6383,6 +6391,17 @@ class _PropertyPanel extends StatelessWidget {
               onEnd: controller.commitTransaction,
             ),
           ],
+          const SizedBox(height: 8),
+          Text(
+            EditorL10n.of(context).labelBorder,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          const SizedBox(height: 4),
+          _swatchRow(
+            onColor: (argb) =>
+                controller.setLabelBorderColor(VsdxColor(argb)),
+            onNone: controller.clearLabelBorderColor,
+          ),
           const SizedBox(height: 8),
           Text(
             EditorL10n.of(context).textPadding,
@@ -7680,6 +7699,7 @@ class _RangeSliderState extends State<_RangeSlider> {
 /// parent tree is busy painting the canvas.
 class _OpacitySlider extends StatefulWidget {
   const _OpacitySlider({
+    super.key,
     required this.label,
     required this.opacity,
     required this.onStart,
