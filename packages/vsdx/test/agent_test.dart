@@ -168,6 +168,52 @@ void main() {
       expect(result.log, isEmpty);
     });
 
+    test('rename_page retargets inbound internal hyperlinks', () {
+      final original = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(original);
+      final linked = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 1,
+        height: 1,
+      ).copyWith(
+        hyperlinks: const <VsdxHyperlink>[
+          VsdxHyperlink(
+            id: 0,
+            subAddress: "#'Target Page'!Bookmark",
+            isDefault: true,
+          ),
+        ],
+      );
+      doc = doc
+          .replacePage(0, doc.pages.first.copyWith(shapes: <VsdxShape>[linked]))
+          .insertPage(
+            1,
+            VsdxPage(
+              id: doc.nextPageId(),
+              name: 'Target Page',
+              widthInches: 8.5,
+              heightInches: 11,
+              shapes: const <VsdxShape>[],
+            ),
+          );
+
+      final result = applyOps(doc, <Map<String, dynamic>>[
+        <String, dynamic>{
+          'op': 'rename_page',
+          'index': 1,
+          'name': 'Details',
+        },
+      ]);
+
+      expect(result.document.pages[1].name, 'Details');
+      expect(
+        result.document.pages.first.shapes.single.hyperlinks.single.subAddress,
+        "#'Details'!Bookmark",
+      );
+    });
+
     test('layer ops mirror draw.io and survive a writer round-trip', () {
       final original = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(original);

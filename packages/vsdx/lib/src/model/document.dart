@@ -13,9 +13,11 @@ import 'package:meta/meta.dart';
 
 import 'custom_property.dart';
 import 'document_settings.dart';
+import 'hyperlink.dart';
 import 'image.dart';
 import 'master.dart';
 import 'page.dart';
+import 'shape.dart';
 import 'theme.dart';
 
 @immutable
@@ -94,6 +96,99 @@ class VsdxDocument {
     final newPages = List<VsdxPage>.of(pages);
     newPages[index] = page;
     return copyWith(pages: newPages);
+  }
+
+  /// Rename a page and keep in-document hyperlinks pointing at it.
+  ///
+  /// Visio stores page jumps as textual `SubAddress` values, so changing only
+  /// the page name would leave links such as `#Page-2/Shape-4` dangling. The
+  /// rename and every inbound retarget are returned as one immutable document
+  /// update so callers can record them as one undo step.
+  VsdxDocument renamePageAndRetargetLinks(int index, String name) {
+    if (index < 0 || index >= pages.length) return this;
+    final nextName = name.trim();
+    final oldName = pages[index].name;
+    if (nextName.isEmpty || nextName == oldName) return this;
+
+    String? retarget(String? raw) {
+      if (raw == null || raw.trim().isEmpty) return null;
+      var target = raw.trim();
+      final hash = target.startsWith('#');
+      if (hash) target = target.substring(1).trim();
+      try {
+        target = Uri.decodeFull(target);
+      } on FormatException {
+        // A malformed escape can still be a literal page name.
+      }
+      final separators = <int>[
+        target.indexOf('/'),
+        target.indexOf('!'),
+      ].where((value) => value >= 0);
+      int? separator;
+      for (final value in separators) {
+        if (separator == null || value < separator) separator = value;
+      }
+      final token =
+          (separator == null ? target : target.substring(0, separator)).trim();
+      final suffix = separator == null ? '' : target.substring(separator);
+      String? quote;
+      var pageName = token;
+      if (token.length >= 2 &&
+          ((token.startsWith('"') && token.endsWith('"')) ||
+              (token.startsWith("'") && token.endsWith("'")))) {
+        quote = token.substring(0, 1);
+        pageName = token.substring(1, token.length - 1).trim();
+      }
+      if (pageName.toLowerCase() != oldName.trim().toLowerCase()) return null;
+      final renamed = quote == null ? nextName : '$quote$nextName$quote';
+      return '${hash ? '#' : ''}$renamed$suffix';
+    }
+
+    VsdxShape rewriteShape(VsdxShape shape) {
+      var linksChanged = false;
+      final links = <VsdxHyperlink>[];
+      for (final link in shape.hyperlinks) {
+        final target = link.address?.trim().isNotEmpty == true
+            ? null
+            : retarget(link.subAddress);
+        if (target == null) {
+          links.add(link);
+        } else {
+          linksChanged = true;
+          links.add(link.copyWith(subAddress: target));
+        }
+      }
+      var childrenChanged = false;
+      final children = <VsdxShape>[];
+      for (final child in shape.children) {
+        final rewritten = rewriteShape(child);
+        childrenChanged |= !identical(rewritten, child);
+        children.add(rewritten);
+      }
+      if (!linksChanged && !childrenChanged) return shape;
+      return shape.copyWith(hyperlinks: links, children: children);
+    }
+
+    final nextPages = <VsdxPage>[];
+    for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      final page = pages[pageIndex];
+      var shapesChanged = false;
+      final shapes = <VsdxShape>[];
+      for (final shape in page.shapes) {
+        final rewritten = rewriteShape(shape);
+        shapesChanged |= !identical(rewritten, shape);
+        shapes.add(rewritten);
+      }
+      nextPages.add(
+        pageIndex == index || shapesChanged
+            ? page.copyWith(
+                name: pageIndex == index ? nextName : null,
+                shapes: shapesChanged ? shapes : null,
+              )
+            : page,
+      );
+    }
+    return copyWith(pages: nextPages);
   }
 
   /// Smallest page id greater than every existing page id.

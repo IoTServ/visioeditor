@@ -217,7 +217,7 @@ class EditorController extends ChangeNotifier {
         ? _uniquePageName(doc, trimmed)
         : trimmed;
     if (unique == doc.pages[index].name) return;
-    applyEdit(doc.replacePage(index, doc.pages[index].copyWith(name: unique)));
+    applyEdit(doc.renamePageAndRetargetLinks(index, unique));
   }
 
   /// Add a new blank page after the current one and switch to it.

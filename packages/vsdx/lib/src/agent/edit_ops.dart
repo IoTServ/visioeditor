@@ -220,10 +220,8 @@ ApplyResult applyOps(
           final unique =
               _uniquePageName(workingDoc, name, excludeIndex: target);
           if (workingDoc.pages[target].name != unique) {
-            workingDoc = workingDoc.replacePage(
-              target,
-              workingDoc.pages[target].copyWith(name: unique),
-            );
+            workingDoc =
+                workingDoc.renamePageAndRetargetLinks(target, unique);
           }
           loadPage(target);
           activatePage = true;
