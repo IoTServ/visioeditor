@@ -38,6 +38,7 @@ typedef _CreationStyle = ({
   VsdxLine line,
   VsdxCharStyle? char,
   VsdxParaStyle? para,
+  VsdxTextBlock block,
   VsdxShadow shadow,
   VsdxGlow glow,
   VsdxReflection reflection,
@@ -7366,6 +7367,7 @@ class EditorController extends ChangeNotifier {
       line: shape.line,
       char: run?.charStyle,
       para: run?.paraStyle,
+      block: shape.richText.textBlock,
       shadow: shape.shadow,
       glow: shape.glow,
       reflection: shape.reflection,
@@ -7523,6 +7525,22 @@ class EditorController extends ChangeNotifier {
         );
       }
     }
+    final oldBlock = next.richText.textBlock;
+    final styledBlock = oldBlock.copyWith(
+      verticalAlign: clip.block.verticalAlign,
+      marginLeftInches: clip.block.marginLeftInches,
+      marginRightInches: clip.block.marginRightInches,
+      marginTopInches: clip.block.marginTopInches,
+      marginBottomInches: clip.block.marginBottomInches,
+      backgroundColor: clip.block.backgroundColor,
+      clearBackgroundColor: clip.block.backgroundColor == null,
+      backgroundTransparency: clip.block.backgroundTransparency,
+      textDirection: clip.block.textDirection,
+      defaultTabStopInches: clip.block.defaultTabStopInches,
+    );
+    next = next.copyWith(
+      richText: next.richText.copyWith(textBlock: styledBlock),
+    );
     return next;
   }
 
@@ -8932,6 +8950,82 @@ class EditorController extends ChangeNotifier {
   void setFontFamily(String family) =>
       _updateText(char: (c) => c.copyWith(fontFamily: family));
 
+  VsdxTextBlock? get selectedTextBlock => _firstSelected?.richText.textBlock;
+
+  VsdxColor? get selectedTextBackgroundColor =>
+      selectedTextBlock?.backgroundColor;
+
+  double get selectedTextBackgroundOpacity =>
+      1 - (selectedTextBlock?.backgroundTransparency ?? 0);
+
+  void setTextBackgroundColor(VsdxColor color) => _updateSelectedShapes(
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.copyWith(backgroundColor: color),
+          ),
+        ),
+        rememberStyle: true,
+      );
+
+  void clearTextBackgroundColor() => _updateSelectedShapes(
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.withoutBackgroundColor(),
+          ),
+        ),
+        rememberStyle: true,
+      );
+
+  void setTextBackgroundOpacity(double opacity, {bool transient = false}) =>
+      _updateSelectedShapes(
+        (s) => s.copyWith(
+          richText: s.richText.copyWith(
+            textBlock: s.richText.textBlock.copyWith(
+              backgroundTransparency: 1 - opacity.clamp(0.0, 1.0),
+            ),
+          ),
+        ),
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  void setTextMargins({
+    double? left,
+    double? right,
+    double? top,
+    double? bottom,
+    bool transient = false,
+  }) =>
+      _updateSelectedShapes(
+        (s) {
+          final old = s.richText.textBlock;
+          return s.copyWith(
+            richText: s.richText.copyWith(
+              textBlock: old.copyWith(
+                marginLeftInches:
+                    (left ?? old.marginLeftInches).clamp(0.0, 0.5).toDouble(),
+                marginRightInches:
+                    (right ?? old.marginRightInches).clamp(0.0, 0.5).toDouble(),
+                marginTopInches:
+                    (top ?? old.marginTopInches).clamp(0.0, 0.5).toDouble(),
+                marginBottomInches: (bottom ?? old.marginBottomInches)
+                    .clamp(0.0, 0.5)
+                    .toDouble(),
+              ),
+            ),
+          );
+        },
+        transient: transient,
+        rememberStyle: true,
+      );
+
+  void resetTextMargins() => setTextMargins(
+        left: VsdxTextBlock.defaults.marginLeftInches,
+        right: VsdxTextBlock.defaults.marginRightInches,
+        top: VsdxTextBlock.defaults.marginTopInches,
+        bottom: VsdxTextBlock.defaults.marginBottomInches,
+      );
+
   /// Vertical text alignment (applies to the shape's text block).
   void setTextVerticalAlign(VsdxVertAlign align) => _updateSelectedShapes(
         (s) => s.copyWith(
@@ -8939,6 +9033,7 @@ class EditorController extends ChangeNotifier {
             textBlock: s.richText.textBlock.copyWith(verticalAlign: align),
           ),
         ),
+        rememberStyle: true,
       );
 
   /// Move selected 2-D labels inside or immediately outside their shapes.

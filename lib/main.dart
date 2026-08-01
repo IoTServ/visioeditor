@@ -5947,6 +5947,7 @@ class _PropertyPanel extends StatelessWidget {
   Widget _textControls(BuildContext context) {
     final cs = controller.selectedCharStyle;
     if (cs == null) return const SizedBox.shrink();
+    final textBlock = controller.selectedTextBlock;
     final curPt = (cs.fontSizeInches * 72).round();
     final sizes = <int>{8, 9, 10, 11, 12, 14, 16, 18, 24, 28, 36, 48, curPt}
         .toList()
@@ -6058,6 +6059,87 @@ class _PropertyPanel extends StatelessWidget {
           onSlot: controller.setTextThemeSlot,
           selectedSlot: cs.color == null ? cs.themeColorIndex : null,
         ),
+        if (textBlock != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            EditorL10n.of(context).labelBackground,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          const SizedBox(height: 4),
+          _swatchRow(
+            onColor: (argb) =>
+                controller.setTextBackgroundColor(VsdxColor(argb)),
+            onNone: controller.clearTextBackgroundColor,
+          ),
+          if (controller.selectedTextBackgroundColor != null) ...[
+            const SizedBox(height: 4),
+            _OpacitySlider(
+              label: EditorL10n.of(context).opacity,
+              opacity: controller.selectedTextBackgroundOpacity,
+              onStart: controller.beginTransaction,
+              onChanged: (v) => controller.setTextBackgroundOpacity(
+                v,
+                transient: true,
+              ),
+              onEnd: controller.commitTransaction,
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            EditorL10n.of(context).textPadding,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+          const SizedBox(height: 4),
+          _RangeSlider(
+            label: EditorL10n.of(context).paddingLeft,
+            value: textBlock.marginLeftInches,
+            min: 0,
+            max: 0.5,
+            format: (v) => '${(v * 72).round()} pt',
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setTextMargins(left: v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          _RangeSlider(
+            label: EditorL10n.of(context).paddingRight,
+            value: textBlock.marginRightInches,
+            min: 0,
+            max: 0.5,
+            format: (v) => '${(v * 72).round()} pt',
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setTextMargins(right: v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          _RangeSlider(
+            label: EditorL10n.of(context).paddingTop,
+            value: textBlock.marginTopInches,
+            min: 0,
+            max: 0.5,
+            format: (v) => '${(v * 72).round()} pt',
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setTextMargins(top: v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          _RangeSlider(
+            label: EditorL10n.of(context).paddingBottom,
+            value: textBlock.marginBottomInches,
+            min: 0,
+            max: 0.5,
+            format: (v) => '${(v * 72).round()} pt',
+            onStart: controller.beginTransaction,
+            onChanged: (v) =>
+                controller.setTextMargins(bottom: v, transient: true),
+            onEnd: controller.commitTransaction,
+          ),
+          _fullWidthOutlineButton(
+            onPressed: controller.resetTextMargins,
+            icon: Icons.restart_alt,
+            label: EditorL10n.of(context).resetTextPadding,
+          ),
+        ],
         const SizedBox(height: 8),
         Row(
           children: [

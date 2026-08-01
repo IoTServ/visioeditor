@@ -483,6 +483,16 @@ class EditorL10n {
   String get resetCrop => locale.languageCode == 'zh' ? '重置裁剪' : 'Reset Crop';
   String get resetImageAdjustments =>
       locale.languageCode == 'zh' ? '重置图像调整' : 'Reset Image Adjustments';
+  String get labelBackground =>
+      locale.languageCode == 'zh' ? '标签背景' : 'Label Background';
+  String get textPadding =>
+      locale.languageCode == 'zh' ? '文本内边距' : 'Text Padding';
+  String get paddingLeft => locale.languageCode == 'zh' ? '左侧' : 'Left';
+  String get paddingRight => locale.languageCode == 'zh' ? '右侧' : 'Right';
+  String get paddingTop => locale.languageCode == 'zh' ? '顶部' : 'Top';
+  String get paddingBottom => locale.languageCode == 'zh' ? '底部' : 'Bottom';
+  String get resetTextPadding =>
+      locale.languageCode == 'zh' ? '重置文本内边距' : 'Reset Text Padding';
   String get size => _t('size');
   String get color => _t('color');
   String get rounded => _t('rounded');

@@ -351,6 +351,12 @@ Reset Crop 与 Reset Image Adjustments 可独立恢复。控制器写入 `ImgOff
 `Brightness`、`Contrast`、`Blur`，显式裁剪会清除旧的继承/参数公式，锁定图片保持只读；现有画布、SVG/PDF 与 Writer
 共用这些 Image Properties，故保存重开视觉一致。新增控制器、锁定、撤销、真实 Format 面板和 `.vsdx` 往返测试。
 
+已补：**标签背景与文本内边距（draw.io Label Background / Spacing）** —— Format → Text 增加标签背景色、无背景、
+透明度，以及左/右/上/下四侧 Text Padding 和一键重置；拖动预览合并为单次撤销，锁定图形保持只读。现有
+`VsdxTextBlock`、画布、SVG/PDF 与 Writer 已统一承载 `TextBkgnd`、`TextBkgndTrans` 和四侧 Margin，现补齐编辑入口，
+并将这些字段纳入 Copy/Paste Style 与独立默认创建样式；粘贴时明确保留目标 `TxtPin*`、`TxtWidth/Height` 和
+`TxtAngle`。新增撤销、锁定、样式继承、真实 Format 面板和 `.vsdx` 保存重开回归。
+
 剩余：
 - macOS 代码签名 / 公证（notarization，需证书）；其他平台（Windows/Linux/Android/iOS）
 - `.vsd` 加密 / masters 深编辑 / 写回二进制（产品决策：导入 → 另存 `.vsdx` only；不实现 OLE2 写回）
@@ -1531,6 +1537,11 @@ Reset Crop 与 Reset Image Adjustments 可独立恢复。控制器写入 `ImgOff
   缩放而不改变比例，拖动合并为单步撤销。Reset Crop / Reset Image Adjustments 分离，锁定态
   拒绝修改；显式裁剪清除继承公式并经既有 Image Properties Writer 完整往返。补控制器、撤销、
   锁定、真实 Format UI 与保存重开回归。
+- 2026-08-01 — **对齐 draw.io Label Background / Spacing**：Format → Text 补标签背景色、
+  无背景、透明度和四侧文本内边距，拖动合并为单步撤销并提供默认 Margin 重置。复用已有
+  `TextBkgnd` / `TextBkgndTrans` / Margin 模型、渲染与 Writer，实现 `.vsdx` 往返；同步纳入
+  Copy/Paste Style 与默认创建样式，同时保留目标文字框位置、尺寸和角度。补锁定、撤销、几何隔离、
+  默认继承、真实面板与保存重开回归。
 - 2026-07-28 — **应用内 AI 对话闭环**：新增可持久配置的 OpenAI-compatible /
   Anthropic / Gemini / Ollama 引擎（接口、模型、API Key）和多轮对话工具；统一系统提示让
   模型输出完整 Diagram Spec v0，兼容提取 Mermaid，校验节点唯一性与连接边引用后复用

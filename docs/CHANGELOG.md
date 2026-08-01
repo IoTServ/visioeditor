@@ -6,6 +6,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 ## [Unreleased] — v0.1 (core editor, macOS-first)
 
 ### Added
+- **draw.io label background and Text Spacing**: Format → Text now exposes a
+  solid/transparent label background with opacity plus independent left,
+  right, top and bottom text padding. Slider drags preview as one undo step,
+  Reset Text Padding restores Visio defaults, and locked labels remain
+  unchanged. These text-block styles survive `.vsdx` save/reopen and now join
+  Copy/Paste Style and default creation styles without replacing the target
+  label's position, size or angle.
 - **draw.io picture Crop and Image controls**: a selected raster picture now
   exposes crop zoom and two-axis pan plus opacity, brightness, contrast and
   blur in Format → Image. Crop movement is constrained to keep the frame

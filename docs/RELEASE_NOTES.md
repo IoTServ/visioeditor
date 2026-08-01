@@ -41,6 +41,10 @@ byte-for-byte, so formulas and structure survive a save.
   Selected raster pictures expose draw.io-style Crop zoom/pan and live opacity,
   brightness, contrast and blur controls, with independent crop/adjustment
   resets and full `.vsdx` round-trip fidelity.
+  Text labels expose draw.io-style label background colour/opacity and
+  independent four-side Text Spacing. These settings round-trip through native
+  Visio text-block cells and participate in style copy/defaults without moving
+  or resizing the target label box.
   Connector labels can optionally **Rotate with Edge**, following the nearest
   route segment while remaining upright across reverse and reroute operations;
   canvas and SVG/PDF output agree, and the manual label angle is restored when
