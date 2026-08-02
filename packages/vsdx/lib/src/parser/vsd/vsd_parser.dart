@@ -78,6 +78,59 @@ List<T> vsdReorderById<T>(
 /// unsigned 32-bit integer, so values such as -2 must remain `0xfffffffe`.
 int vsdV5UnsignedInt(int signedValue) => signedValue & 0xffffffff;
 
+/// Formats the time-bearing field codes handled by libvisio.
+///
+/// Returns `null` when [format] is a date-only or non-date field code.
+String? vsdFormatVisioTimeField(DateTime dateTime, int format) {
+  final dt = dateTime.toUtc();
+  String two(int value) => value.toString().padLeft(2, '0');
+  final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final amPm = dt.hour >= 12 ? 'PM' : 'AM';
+  switch (format) {
+    case 30: // TimeGen: h:mm:ss tt
+      return '${two(hour12)}:${two(dt.minute)}:${two(dt.second)} $amPm';
+    case 31:
+    case 32:
+    case 33:
+    case 34:
+      // libvisio emits seconds for all four legacy h:mm / H:mm codes.
+      return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+    case 35:
+    case 36:
+      return '${two(hour12)}:${two(dt.minute)} $amPm';
+    case 46:
+    case 66:
+    case 67:
+    case 68:
+    case 69:
+    case 70:
+    case 71:
+    case 72:
+    case 73:
+    case 74:
+    case 75:
+    case 80:
+    case 81:
+      // Stable C-locale equivalent of libvisio's `%X` output.
+      return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+    case 211:
+    case 212:
+      final date = '${two(dt.month)}/${two(dt.day)}/${dt.year}';
+      final seconds = format == 212 ? ':${two(dt.second)}' : '';
+      return '$date ${two(hour12)}:${two(dt.minute)}$seconds $amPm';
+    case 213:
+      return '${two(hour12)}:${two(dt.minute)} $amPm';
+    case 214:
+      return '${two(hour12)}:${two(dt.minute)}:${two(dt.second)} $amPm';
+    case 215:
+      return '${two(dt.hour)}:${two(dt.minute)}';
+    case 216:
+      return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+    default:
+      return null;
+  }
+}
+
 /// Resolves ShapeList element ids to the actual Shape ids stored by ShapeId.
 ///
 /// libvisio keeps the two collections separately because a list trailer orders
@@ -3916,6 +3969,8 @@ class VsdBinaryParser {
     );
     String two(int n) => n.toString().padLeft(2, '0');
     String y2() => two(dt.year % 100);
+    final formattedTime = vsdFormatVisioTimeField(dt, format);
+    if (formattedTime != null) return formattedTime;
     switch (format) {
       case 20: // DateShort weekday abbr
         return _weekdayAbbr(dt.weekday);
@@ -3939,20 +3994,6 @@ class VsdBinaryParser {
       case 29:
       case 208: // d MMMM yyyy
         return '${dt.day} ${_monthName(dt.month)} ${dt.year}';
-      case 30:
-      case 213:
-        return '${dt.hour % 12 == 0 ? 12 : dt.hour % 12}:${two(dt.minute)} '
-            '${dt.hour >= 12 ? 'PM' : 'AM'}';
-      case 31:
-      case 32:
-      case 33:
-      case 34:
-      case 215:
-        return '${two(dt.hour)}:${two(dt.minute)}';
-      case 35:
-      case 36:
-        return '${dt.hour % 12 == 0 ? 12 : dt.hour % 12}:${two(dt.minute)} '
-            '${dt.hour >= 12 ? 'PM' : 'AM'}';
       case 201: // dddd, MMMM dd, yyyy
         return '${_weekdayName(dt.weekday)}, ${_monthName(dt.month)} '
             '${two(dt.day)}, ${dt.year}';
@@ -3968,21 +4009,6 @@ class VsdBinaryParser {
         return '${_monthName(dt.month)} $y2()';
       case 210:
         return '${_monthAbbr(dt.month)}-$y2()';
-      case 211: // M/d/yyyy h:mm am/pm
-      case 212: // M/d/yyyy h:mm:ss am/pm
-        {
-          final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-          final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-          if (format == 212) {
-            return '${two(dt.month)}/${two(dt.day)}/${dt.year} '
-                '$h12:${two(dt.minute)}:${two(dt.second)} $ampm';
-          }
-          return '${two(dt.month)}/${two(dt.day)}/${dt.year} '
-              '$h12:${two(dt.minute)} $ampm';
-        }
-      case 214:
-      case 216:
-        return '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
       case 200: // MsoDateShort — libvisio `%m/%d/%Y` (zero-padded)
       default:
         // Most remaining date codes map to MM/dd/yyyy (libvisio).
