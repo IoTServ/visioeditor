@@ -72,6 +72,20 @@ List<T> vsdReorderById<T>(
   return out;
 }
 
+/// Resolves the page-level shadow offsets inherited by VSD5/VSD6
+/// FillAndShadow records.
+///
+/// libvisio keeps PageProps separately for the active stencil page. A master
+/// shape must inherit those values instead of the drawing page (which is not
+/// active while the stencil stream is being parsed).
+({double x, double y}) vsdResolveLegacyShadowOffsets({
+  required bool isStencil,
+  required double stencilX,
+  required double stencilY,
+  required double pageX,
+  required double pageY,
+}) => isStencil ? (x: stencilX, y: stencilY) : (x: pageX, y: pageY);
+
 class _GeomBuilder {
   _GeomBuilder();
   bool noFill = false;
@@ -452,6 +466,8 @@ class VsdBinaryParser {
   /// stencilPageId → (shapeId → draft)
   final _stencils = <int, Map<int, _ShapeDraft>>{};
   Map<int, _ShapeDraft>? _currentStencilShapes;
+  double _stencilShadowOffsetX = 0;
+  double _stencilShadowOffsetY = 0;
   _PageDraft? _currentPage;
   _ShapeDraft? _shape;
   bool _isShapeStarted = false;
@@ -511,6 +527,8 @@ class VsdBinaryParser {
     _pages.clear();
     _currentPage = null;
     _currentStencilShapes = null;
+    _stencilShadowOffsetX = 0;
+    _stencilShadowOffsetY = 0;
     // Keep _stencils across? No — styles pass skips them; content rebuilds.
     _stencils.clear();
     // Preserve name/font tables collected in the styles pass.
@@ -666,6 +684,8 @@ class VsdBinaryParser {
     if (ptr.type == VsdRecordId.stencilPage) {
       if (collectStylesOnly || !_isStencilStarted) return;
       _currentStencilShapes = <int, _ShapeDraft>{};
+      _stencilShadowOffsetX = 0;
+      _stencilShadowOffsetY = 0;
       _stencils[idx] = _currentStencilShapes!;
     }
     if (ptr.type == VsdRecordId.shapeGroup ||
@@ -2489,6 +2509,13 @@ class VsdBinaryParser {
   void _readFillAndShadow(VsdByteReader input) {
     late final VsdxFill fill;
     late final VsdxShadow shadow;
+    final inheritedShadowOffsets = vsdResolveLegacyShadowOffsets(
+      isStencil: _currentStencilShapes != null,
+      stencilX: _stencilShadowOffsetX,
+      stencilY: _stencilShadowOffsetY,
+      pageX: _currentPage?.shadowOffsetX ?? 0.125,
+      pageY: _currentPage?.shadowOffsetY ?? -0.125,
+    );
     if (_version == 5) {
       // Algorithm reference: libvisio VSD5Parser::readFillAndShadow.
       final colourFG = _colourFromIndex(input.readU8());
@@ -2506,8 +2533,8 @@ class VsdBinaryParser {
       );
       shadow = VsdxShadow(
         color: shadowFG.withOpacity(1),
-        offsetXInches: _currentPage?.shadowOffsetX ?? 0.125,
-        offsetYInches: _currentPage?.shadowOffsetY ?? -0.125,
+        offsetXInches: inheritedShadowOffsets.x,
+        offsetYInches: inheritedShadowOffsets.y,
         blurInches: 0,
         transparency: 1.0 - (shadowFG.alpha / 255.0),
         enabled: shadowPattern != 0,
@@ -2565,8 +2592,8 @@ class VsdBinaryParser {
         shadowTransparency = 1.0 - (shadowColor.alpha / 255.0);
         shadowColor = shadowColor.withOpacity(1);
       }
-      var shadowOffsetX = _currentPage?.shadowOffsetX ?? 0.125;
-      var shadowOffsetY = _currentPage?.shadowOffsetY ?? -0.125;
+      var shadowOffsetX = inheritedShadowOffsets.x;
+      var shadowOffsetY = inheritedShadowOffsets.y;
       if (_version == 11) {
         try {
           input.skip(2); // shadow type + format
@@ -2744,6 +2771,10 @@ class VsdBinaryParser {
     var drawingScale = input.readF64();
     if (drawingScale.abs() < 1e-12) drawingScale = 1.0;
     final scale = (pageScale / drawingScale).abs();
+    if (_isStencilStarted && _currentStencilShapes != null) {
+      _stencilShadowOffsetX = shadowOffsetX;
+      _stencilShadowOffsetY = shadowOffsetY;
+    }
     if (_currentPage != null) {
       _currentPage!.width = pageWidth > 0 ? pageWidth : 8.5;
       _currentPage!.height = pageHeight > 0 ? pageHeight : 11.0;
