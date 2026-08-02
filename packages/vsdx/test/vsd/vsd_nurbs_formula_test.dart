@@ -5,6 +5,37 @@ import 'package:vsdx/src/parser/vsd/vsd_byte_reader.dart';
 import 'package:vsdx/src/parser/vsd/vsd_parser.dart';
 
 void main() {
+  test('ShapeData master sentinel resolves the matching master row id', () {
+    final local = <int, String>{1: 'local'};
+    final master = <int, String>{7: 'master'};
+
+    expect(
+      vsdResolveShapeDataReference(
+        dataId: 1,
+        localData: local,
+        masterData: master,
+        masterDataId: 7,
+      ),
+      'local',
+    );
+    expect(
+      vsdResolveShapeDataReference(
+        dataId: 0xfffffffe,
+        localData: local,
+        masterData: master,
+        masterDataId: 7,
+      ),
+      'master',
+    );
+    expect(
+      vsdResolveShapeDataReference(
+        dataId: 0xfffffffe,
+        localData: local,
+      ),
+      isNull,
+    );
+  });
+
   test('ShapeData NURBS combines row endpoints like libvisio', () {
     final result = vsdAssembleNurbsShapeData(
       dataKnots: [1, 2],

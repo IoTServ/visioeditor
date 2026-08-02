@@ -180,6 +180,18 @@ typedef VsdDynamicNurbsFormula = ({
       weights: [firstWeight, ...dataWeights, lastWeight],
     );
 
+/// Resolves a ShapeData id, including libvisio's `0xfffffffe` master sentinel.
+T? vsdResolveShapeDataReference<T>({
+  required int dataId,
+  required Map<int, T> localData,
+  Map<int, T>? masterData,
+  int? masterDataId,
+}) {
+  if (dataId != 0xfffffffe) return localData[dataId];
+  if (masterData == null || masterDataId == null) return null;
+  return masterData[masterDataId];
+}
+
 /// Reads the typed-parameter form of a binary NURBS formula.
 ///
 /// Unlike the static `0x8a` form, every coordinate, knot and weight carries a
@@ -263,6 +275,8 @@ class _GeomBuilder {
   final commands = <VsdxPathCommand>[];
   final order = <int>[];
   final byId = <int, VsdxPathCommand>{};
+  final polylineDataIds = <int, int>{};
+  final nurbsDataIds = <int, int>{};
   int? geometryFlagsId;
 }
 
@@ -379,11 +393,20 @@ class _ShapeDraft {
         bool xRel,
         bool yRel,
       })>{};
-  /// Pending PolylineTo that references ShapeData by id.
-  final pendingPolylineDataIds = <int, ({double x, double y, int dataId})>{};
-  /// Pending NURBSTo that references ShapeData by id.
-  final pendingNurbsDataIds = <int,
+  /// Pending PolylineTo rows that reference ShapeData by id.
+  final pendingPolylineData = <
       ({
+        int geometryIndex,
+        int rowId,
+        double x,
+        double y,
+        int dataId,
+      })>[];
+  /// Pending NURBSTo rows that reference ShapeData by id.
+  final pendingNurbsData = <
+      ({
+        int geometryIndex,
+        int rowId,
         double x,
         double y,
         double knot,
@@ -391,7 +414,7 @@ class _ShapeDraft {
         double knotPrev,
         double weightPrev,
         int dataId,
-      })>{};
+      })>[];
   /// Text field display values in document order (for ￼ / 0x1E substitution).
   final fieldDisplays = <String>[];
   /// Parallel chunk ids for [fieldDisplays] (libvisio field list element ids).
@@ -1405,6 +1428,8 @@ class VsdBinaryParser {
     final d = _shape!;
 
     if (_isStencilStarted) {
+      // ShapeData can follow its geometry row in a stencil stream.
+      _resolvePendingShapeData(d);
       final bucket = _currentStencilShapes;
       if (bucket != null) {
         bucket[d.id] = d;
@@ -1413,14 +1438,14 @@ class VsdBinaryParser {
     }
 
     if (_currentPage == null) return;
-    _applyMasterInheritance(d);
+    final master = _applyMasterInheritance(d);
     d.shapeName ??= _currentPage!.elementNames[d.id];
     d.line ??= _resolveLineStyle(d.lineStyleId);
     final fillStyle = _resolveFillStyle(d.fillStyleId);
     d.fill ??= fillStyle.$1;
     d.shadow ??= fillStyle.$2;
     _applyTextStyle(d);
-    _resolvePendingShapeData(d);
+    _resolvePendingShapeData(d, master: master);
     _dedupeConnectionPoints(d);
     // Drop GeomList shells that never received path commands (common on
     // ForeignData picture frames — trailer may list child ids with no rows).
@@ -1456,53 +1481,69 @@ class VsdBinaryParser {
     _currentPage!.shapes.add(d);
   }
 
-  void _resolvePendingShapeData(_ShapeDraft d) {
-    for (final e in d.pendingPolylineDataIds.entries) {
-      final blob = d.polylineData[e.value.dataId];
-      if (blob == null || blob.points.isEmpty) continue;
-      for (final g in d.geometries) {
-        if (g.byId.containsKey(e.key)) {
-          g.byId[e.key] = PolylineTo(
-            x: e.value.x,
-            y: e.value.y,
-            vertices: blob.points,
-            vertsRelative: blob.xRel,
-            vertsYRelative: blob.yRel,
-          );
-          break;
-        }
+  void _resolvePendingShapeData(_ShapeDraft d, {_ShapeDraft? master}) {
+    for (final pending in d.pendingPolylineData) {
+      if (pending.geometryIndex < 0 ||
+          pending.geometryIndex >= d.geometries.length) {
+        continue;
       }
+      final masterGeom = master != null &&
+              pending.geometryIndex < master.geometries.length
+          ? master.geometries[pending.geometryIndex]
+          : null;
+      final blob = vsdResolveShapeDataReference(
+        dataId: pending.dataId,
+        localData: d.polylineData,
+        masterData: master?.polylineData,
+        masterDataId: masterGeom?.polylineDataIds[pending.rowId],
+      );
+      if (blob == null || blob.points.isEmpty) continue;
+      d.geometries[pending.geometryIndex].byId[pending.rowId] = PolylineTo(
+        x: pending.x,
+        y: pending.y,
+        vertices: blob.points,
+        vertsRelative: blob.xRel,
+        vertsYRelative: blob.yRel,
+      );
     }
-    d.pendingPolylineDataIds.clear();
-    for (final e in d.pendingNurbsDataIds.entries) {
-      final n = d.nurbsData[e.value.dataId];
+    d.pendingPolylineData.clear();
+    for (final pending in d.pendingNurbsData) {
+      if (pending.geometryIndex < 0 ||
+          pending.geometryIndex >= d.geometries.length) {
+        continue;
+      }
+      final masterGeom = master != null &&
+              pending.geometryIndex < master.geometries.length
+          ? master.geometries[pending.geometryIndex]
+          : null;
+      final n = vsdResolveShapeDataReference(
+        dataId: pending.dataId,
+        localData: d.nurbsData,
+        masterData: master?.nurbsData,
+        masterDataId: masterGeom?.nurbsDataIds[pending.rowId],
+      );
       if (n == null || n.cps.isEmpty) continue;
       final assembled = vsdAssembleNurbsShapeData(
         dataKnots: n.knots,
         dataWeights: n.weights,
-        firstKnot: e.value.knotPrev,
-        secondLastKnot: e.value.knot,
+        firstKnot: pending.knotPrev,
+        secondLastKnot: pending.knot,
         lastKnot: n.lastKnot,
-        firstWeight: e.value.weightPrev,
-        lastWeight: e.value.weight,
+        firstWeight: pending.weightPrev,
+        lastWeight: pending.weight,
       );
-      for (final g in d.geometries) {
-        if (g.byId.containsKey(e.key)) {
-          g.byId[e.key] = NurbsTo(
-            x: e.value.x,
-            y: e.value.y,
-            controlPoints: n.cps,
-            knots: assembled.knots,
-            weights: assembled.weights,
-            degree: n.degree,
-            cpRelative: n.xRel,
-            cpYRelative: n.yRel,
-          );
-          break;
-        }
-      }
+      d.geometries[pending.geometryIndex].byId[pending.rowId] = NurbsTo(
+        x: pending.x,
+        y: pending.y,
+        controlPoints: n.cps,
+        knots: assembled.knots,
+        weights: assembled.weights,
+        degree: n.degree,
+        cpRelative: n.xRel,
+        cpYRelative: n.yRel,
+      );
     }
-    d.pendingNurbsDataIds.clear();
+    d.pendingNurbsData.clear();
   }
 
   void _dedupeConnectionPoints(_ShapeDraft d) {
@@ -1717,10 +1758,10 @@ class VsdBinaryParser {
     d.text = out.toString();
   }
 
-  void _applyMasterInheritance(_ShapeDraft d) {
-    if (d.masterPage == _minusOne) return;
+  _ShapeDraft? _applyMasterInheritance(_ShapeDraft d) {
+    if (d.masterPage == _minusOne) return null;
     final page = _stencils[d.masterPage];
-    if (page == null || page.isEmpty) return;
+    if (page == null || page.isEmpty) return null;
     _ShapeDraft? master;
     if (d.masterShape != _minusOne) {
       master = page[d.masterShape];
@@ -1733,7 +1774,9 @@ class VsdBinaryParser {
           ..noLine = g.noLine
           ..noShow = g.noShow
           ..order.addAll(g.order)
-          ..byId.addAll(g.byId);
+          ..byId.addAll(g.byId)
+          ..polylineDataIds.addAll(g.polylineDataIds)
+          ..nurbsDataIds.addAll(g.nurbsDataIds);
         d.geometries.add(ng);
       }
     }
@@ -1979,6 +2022,7 @@ class VsdBinaryParser {
     if (!d.isTextEditTarget) d.isTextEditTarget = master.isTextEditTarget;
     d.selectMode ??= master.selectMode;
     d.displayMode ??= master.displayMode;
+    return master;
   }
 
   /// Merge stencil FieldList into the instance (libvisio `m_stencilFields`).
@@ -3075,6 +3119,8 @@ class VsdBinaryParser {
         final dataId = input.readU32();
         final s = _shape;
         if (s == null) return;
+        final geometryIndex = s.geometries.length - 1;
+        s.currentGeom?.polylineDataIds[_header.id] = dataId;
         final blob = s.polylineData[dataId];
         if (blob != null && blob.points.isNotEmpty) {
           _addGeomCmd(
@@ -3088,7 +3134,13 @@ class VsdBinaryParser {
             ),
           );
         } else {
-          s.pendingPolylineDataIds[_header.id] = (x: x, y: y, dataId: dataId);
+          s.pendingPolylineData.add((
+            geometryIndex: geometryIndex,
+            rowId: _header.id,
+            x: x,
+            y: y,
+            dataId: dataId,
+          ));
           _addGeomCmd(_header.id, LineTo(x, y)); // placeholder until flush
         }
         return;
@@ -3173,6 +3225,8 @@ class VsdBinaryParser {
         final dataId = input.readU32();
         final s = _shape;
         if (s == null) return;
+        final geometryIndex = s.geometries.length - 1;
+        s.currentGeom?.nurbsDataIds[_header.id] = dataId;
         final n = s.nurbsData[dataId];
         if (n != null && n.cps.isNotEmpty) {
           final assembled = vsdAssembleNurbsShapeData(
@@ -3198,7 +3252,9 @@ class VsdBinaryParser {
             ),
           );
         } else {
-          s.pendingNurbsDataIds[_header.id] = (
+          s.pendingNurbsData.add((
+            geometryIndex: geometryIndex,
+            rowId: _header.id,
             x: x,
             y: y,
             knot: knot,
@@ -3206,7 +3262,7 @@ class VsdBinaryParser {
             knotPrev: knotPrev,
             weightPrev: weightPrev,
             dataId: dataId,
-          );
+          ));
           _addGeomCmd(_header.id, LineTo(x, y));
         }
         return;
