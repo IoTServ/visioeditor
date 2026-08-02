@@ -4494,17 +4494,38 @@ class VsdBinaryParser {
       double? textPosAfterBullet;
       int? paraFlags;
       String? bulletStr;
-      if (_version != 5) {
+      if (_version == 5) {
+        // VSD5 has no bullet payload, but libvisio still materialises the
+        // format's concrete defaults so a master/style bullet is cleared.
+        bullet = 0;
+        bulletStr = '';
+        bulletFont = '';
+        bulletFontSize = 0;
+        textPosAfterBullet = 0;
+        paraFlags = 0;
+      } else {
         bullet = input.readU8();
         input.skip(4);
-        final fontID = input.readU16();
-        if (fontID != 0) bulletFont = _fonts[fontID];
-        input.skip(2);
-        bulletFontSize = input.readF64();
-        input.skip(1);
-        textPosAfterBullet = input.readF64();
-        paraFlags = input.readU32();
-        input.skip(34);
+        bulletStr = '';
+        bulletFont = '';
+        if (_version == 6) {
+          // Visio 2000 ParaIX ends its fixed fields with flags + 5 reserved
+          // bytes. It has no BulletFont/BulletFontSize/TextPosAfterBullet
+          // fields; those zero values are nevertheless concrete in libvisio.
+          paraFlags = input.readU32();
+          input.skip(5);
+          bulletFontSize = 0;
+          textPosAfterBullet = 0;
+        } else {
+          final fontID = input.readU16();
+          if (fontID != 0) bulletFont = _fonts[fontID] ?? '';
+          input.skip(2);
+          bulletFontSize = input.readF64();
+          input.skip(1);
+          textPosAfterBullet = input.readF64();
+          paraFlags = input.readU32();
+          input.skip(34);
+        }
         var remaining = _header.dataLength - (input.offset - start);
         while (remaining >= 4 && !input.isEnd) {
           final blockLength = input.readU32();
@@ -4514,9 +4535,11 @@ class VsdBinaryParser {
           final blockIdx = input.readU8();
           if (blockType == 2 && blockIdx == 8 && input.remaining >= 2) {
             input.skip(1);
-            final numBytes = 2 * input.readU8();
+            final numBytes = (_version == 6 ? 1 : 2) * input.readU8();
             if (numBytes > 0 && input.remaining >= numBytes) {
-              bulletStr = _decodeUtf16Le(input.readBytes(numBytes));
+              final bytes = input.readBytes(numBytes);
+              bulletStr =
+                  _version == 6 ? _decodeAnsi(bytes) : _decodeUtf16Le(bytes);
             }
           }
           if (blockEnd > input.length) break;

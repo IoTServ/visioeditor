@@ -333,6 +333,17 @@ void main() {
       expect(aligns.contains(VsdxHorzAlign.center) ||
           aligns.contains(VsdxHorzAlign.right) ||
           aligns.contains(VsdxHorzAlign.left), isTrue);
+
+      // VSD6 ParaIX has a shorter fixed layout than VSD11. Reading it as
+      // VSD11 used the flags/reserved bytes as a denormal bullet size and
+      // consumed the first extension block as TextPosAfterBullet.
+      final customColorRun = result.document.pages.first.shapes
+          .expand((s) => s.richText.runs)
+          .firstWhere((r) => r.text.contains('Bold Custom Color'));
+      expect(customColorRun.paraStyle.bulletFont, '');
+      expect(customColorRun.paraStyle.bulletFontSizeInches, 0);
+      expect(customColorRun.paraStyle.textPosAfterBulletInches, 0);
+      expect(customColorRun.paraStyle.flags, 0);
     });
 
     test('VSD6 TextFields resolve fonts via style parent chain', () {
