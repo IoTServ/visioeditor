@@ -605,9 +605,8 @@ class StyleParser {
       }
       return _ColorResolution(VsdxColor.tryParse(v), null);
     }
-    // THEMEGUARD(RGB/HSL/SHADE...) protects a concrete colour from theme
-    // replacement. Visio stores its evaluated result in V= and libvisio uses
-    // that extended-colour value; it is not a THEMEVAL slot binding.
+    // THEMEGUARD(...) protects the evaluated colour cached in V=. libvisio
+    // consumes that value regardless of the guarded inner expression.
     final cached = VsdxColor.tryParse(v);
     if (_isConcreteThemeGuard(f) && cached != null) {
       return _ColorResolution(cached, null);
@@ -714,10 +713,8 @@ class StyleParser {
     return u.contains('THEMEVAL') || u.contains('THEMEGUARD');
   }
 
-  bool _isConcreteThemeGuard(String formula) => RegExp(
-        r'THEMEGUARD\s*\(\s*(?:RGB|HSL|SHADE)\s*\(',
-        caseSensitive: false,
-      ).hasMatch(formula);
+  bool _isConcreteThemeGuard(String formula) =>
+      formula.toUpperCase().contains('THEMEGUARD');
 
   double? _double(XmlElement shape, String name, {double? inheritFrom}) {
     final cell = findCell(shape, name);

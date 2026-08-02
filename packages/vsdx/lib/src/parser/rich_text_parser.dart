@@ -428,10 +428,8 @@ class RichTextParser {
     );
   }
 
-  bool _isConcreteThemeGuard(String formula) => RegExp(
-        r'THEMEGUARD\s*\(\s*(?:RGB|HSL|SHADE)\s*\(',
-        caseSensitive: false,
-      ).hasMatch(formula);
+  bool _isConcreteThemeGuard(String formula) =>
+      formula.toUpperCase().contains('THEMEGUARD');
 
   VsdxParaStyle _readParaRow(XmlElement row, VsdxParaStyle defaults) {
     final horz = _cellInt(

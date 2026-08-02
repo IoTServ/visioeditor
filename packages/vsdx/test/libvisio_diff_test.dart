@@ -238,6 +238,17 @@ void main() {
     expect(lineColors, contains(VsdxColor.black.value));
     expect(fillColors, contains(VsdxColor.white.value));
 
+    // libvisio uses the evaluated V= cache for every THEMEGUARD expression,
+    // including THEMEGUARD(THEMEVAL("VariantColor3")), not just RGB/HSL/SHADE.
+    final guardedVariant = parser.parse(_fixture('test10_nested_shapes.vsdx'));
+    final variantFills = <int>{};
+    _walk(guardedVariant, (shape) {
+      if (shape.fill.foreground != null) {
+        variantFills.add(shape.fill.foreground!.value);
+      }
+    });
+    expect(variantFills, contains(const VsdxColor(0xFFAB9AC0).value));
+
     final styledText = <VsdxShape>[];
     _walk(styled, (shape) {
       if (shape.richText.runs.any((run) => run.text.trim().isNotEmpty)) {
