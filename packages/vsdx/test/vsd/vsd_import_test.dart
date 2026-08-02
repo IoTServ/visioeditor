@@ -711,9 +711,13 @@ void main() {
       if (bytes == null) return;
       final doc = const VsdDocumentParser().parse(bytes);
       expect(doc.title, 'mytitleéá');
+      expect(doc.created, isNotNull);
+      expect(doc.modified, doc.created);
       final synth = synthesizeVsdx(doc);
       final again = const DocumentParser().parse(synth);
       expect(again.title, 'mytitleéá');
+      expect(again.created, doc.created);
+      expect(again.modified, doc.modified);
     });
 
     test('explicit transparent TextBkgnd does not inherit white', () {

@@ -404,11 +404,27 @@ class VsdxWriter {
     final titleXml = (edited.title != null && edited.title!.isNotEmpty)
         ? '<dc:title>${_xmlEscape(edited.title!)}</dc:title>'
         : '';
+    String core(String tag, String? value) => value == null || value.isEmpty
+        ? ''
+        : '<$tag>${_xmlEscape(value)}</$tag>';
+    String date(String tag, String? value) => value == null || value.isEmpty
+        ? ''
+        : '<dcterms:$tag xsi:type="dcterms:W3CDTF">'
+            '${_xmlEscape(value)}</dcterms:$tag>';
     patched[coreName] = Uint8List.fromList(utf8.encode(
       '$decl\n'
-      '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+      '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
       '$titleXml'
-      '<dc:creator>$creatorXml</dc:creator></cp:coreProperties>',
+      '<dc:creator>$creatorXml</dc:creator>'
+      '${core('dc:subject', edited.subject)}'
+      '${core('cp:keywords', edited.keywords)}'
+      '${core('dc:description', edited.description)}'
+      '${core('cp:lastModifiedBy', edited.lastModifiedBy)}'
+      '${date('created', edited.created)}'
+      '${date('modified', edited.modified)}'
+      '${core('dc:language', edited.language)}'
+      '${core('cp:category', edited.category)}'
+      '</cp:coreProperties>',
     ));
 
     final types = ctXml ?? pkg.readPartXml('/[Content_Types].xml');
@@ -1708,12 +1724,31 @@ class VsdxWriter {
     double heightInches = 11.0,
     String? title,
     String? creator,
+    String? subject,
+    String? keywords,
+    String? description,
+    String? lastModifiedBy,
+    String? created,
+    String? modified,
+    String? language,
+    String? category,
+    String? company,
+    String? template,
   }) {
     const decl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
     final creatorXml = VsdxWriter._xmlEscape(creator ?? 'Editor for Visio Diagrams');
     final titleXml = (title != null && title.isNotEmpty)
         ? '<dc:title>${VsdxWriter._xmlEscape(title)}</dc:title>'
         : '';
+    String core(String tag, String? value) =>
+        value == null || value.isEmpty
+            ? ''
+            : '<$tag>${VsdxWriter._xmlEscape(value)}</$tag>';
+    String date(String tag, String? value) =>
+        value == null || value.isEmpty
+            ? ''
+            : '<dcterms:$tag xsi:type="dcterms:W3CDTF">'
+                '${VsdxWriter._xmlEscape(value)}</dcterms:$tag>';
     final parts = <String, String>{
       '[Content_Types].xml': '$decl\n'
           '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -1732,12 +1767,24 @@ class VsdxWriter {
           '<Relationship Id="rId3" Type="$_officeRelNs/extended-properties" Target="docProps/app.xml"/>'
           '</Relationships>',
       'docProps/core.xml': '$decl\n'
-          '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">'
+          '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
           '$titleXml'
-          '<dc:creator>$creatorXml</dc:creator></cp:coreProperties>',
+          '<dc:creator>$creatorXml</dc:creator>'
+          '${core('dc:subject', subject)}'
+          '${core('cp:keywords', keywords)}'
+          '${core('dc:description', description)}'
+          '${core('cp:lastModifiedBy', lastModifiedBy)}'
+          '${date('created', created)}'
+          '${date('modified', modified)}'
+          '${core('dc:language', language)}'
+          '${core('cp:category', category)}'
+          '</cp:coreProperties>',
       'docProps/app.xml': '$decl\n'
           '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
-          '<Application>Editor for Visio Diagrams</Application></Properties>',
+          '<Application>Editor for Visio Diagrams</Application>'
+          '${core('Company', company)}'
+          '${core('Template', template)}'
+          '</Properties>',
       // Minimal StyleSheets + FaceNames so Edraw / Visio resolve Default*Style
       // (previously pointed at missing sheet 0 → hollow fills, wrong text size).
       'visio/document.xml': '$decl\n'

@@ -81,6 +81,16 @@ class DocumentParser {
       settings: settings,
       title: _readCoreProperty(pkg, 'title'),
       creator: _readCoreProperty(pkg, 'creator'),
+      subject: _readCoreProperty(pkg, 'subject'),
+      keywords: _readCoreProperty(pkg, 'keywords'),
+      description: _readCoreProperty(pkg, 'description'),
+      lastModifiedBy: _readCoreProperty(pkg, 'lastModifiedBy'),
+      created: _readCoreProperty(pkg, 'created'),
+      modified: _readCoreProperty(pkg, 'modified'),
+      language: _readCoreProperty(pkg, 'language'),
+      category: _readCoreProperty(pkg, 'category'),
+      company: _readAppProperty(pkg, 'Company'),
+      template: _basename(_readAppProperty(pkg, 'Template')),
       applicationName: _readAppProperty(pkg, 'Application'),
       customProperties: const CustomPropertiesParser().parse(pkg),
     );
@@ -105,5 +115,11 @@ class DocumentParser {
       }
     }
     return null;
+  }
+
+  String? _basename(String? path) {
+    if (path == null || path.isEmpty) return path;
+    final parts = path.split(RegExp(r'[/\\]'));
+    return parts.isEmpty ? path : parts.last;
   }
 }

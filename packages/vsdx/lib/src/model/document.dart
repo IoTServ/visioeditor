@@ -30,6 +30,16 @@ class VsdxDocument {
     this.settings = VsdxDocumentSettings.defaults,
     this.title,
     this.creator,
+    this.subject,
+    this.keywords,
+    this.description,
+    this.lastModifiedBy,
+    this.created,
+    this.modified,
+    this.language,
+    this.category,
+    this.company,
+    this.template,
     this.applicationName,
     this.customProperties = const [],
   });
@@ -56,6 +66,18 @@ class VsdxDocument {
   final String? title;
   final String? creator;
 
+  /// Remaining core / extended document metadata surfaced by libvisio.
+  final String? subject;
+  final String? keywords;
+  final String? description;
+  final String? lastModifiedBy;
+  final String? created;
+  final String? modified;
+  final String? language;
+  final String? category;
+  final String? company;
+  final String? template;
+
   /// `docProps/app.xml` → `<Application>` (e.g. "Microsoft Visio").
   final String? applicationName;
 
@@ -73,6 +95,16 @@ class VsdxDocument {
     VsdxDocumentSettings? settings,
     String? title,
     String? creator,
+    String? subject,
+    String? keywords,
+    String? description,
+    String? lastModifiedBy,
+    String? created,
+    String? modified,
+    String? language,
+    String? category,
+    String? company,
+    String? template,
     String? applicationName,
     List<VsdxCustomProperty>? customProperties,
   }) {
@@ -84,6 +116,16 @@ class VsdxDocument {
       settings: settings ?? this.settings,
       title: title ?? this.title,
       creator: creator ?? this.creator,
+      subject: subject ?? this.subject,
+      keywords: keywords ?? this.keywords,
+      description: description ?? this.description,
+      lastModifiedBy: lastModifiedBy ?? this.lastModifiedBy,
+      created: created ?? this.created,
+      modified: modified ?? this.modified,
+      language: language ?? this.language,
+      category: category ?? this.category,
+      company: company ?? this.company,
+      template: template ?? this.template,
       applicationName: applicationName ?? this.applicationName,
       customProperties: customProperties ?? this.customProperties,
     );

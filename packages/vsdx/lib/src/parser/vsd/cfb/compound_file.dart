@@ -38,6 +38,8 @@ class CfbEntry {
     required this.childId,
     required this.leftSibling,
     required this.rightSibling,
+    required this.creationTime,
+    required this.modifiedTime,
   });
 
   final String name;
@@ -49,6 +51,10 @@ class CfbEntry {
   final int childId;
   final int leftSibling;
   final int rightSibling;
+
+  /// Raw CFB FILETIME values (100 ns ticks since 1601-01-01 UTC).
+  final int creationTime;
+  final int modifiedTime;
 
   bool get isStream => type == 2;
   bool get isStorage => type == 1 || type == 5;
@@ -209,6 +215,12 @@ class CompoundFile {
 
   Iterable<String> get entryNames => _entries.map((e) => e.name);
 
+  /// Root-storage modified timestamp. Visio exposes this as both creation and
+  /// modification time, matching libvisio's `VSDMetaData::parseTimes`.
+  DateTime? get rootModifiedDateTime => _fileTimeToDateTime(
+        _entries.isEmpty ? 0 : _entries.first.modifiedTime,
+      );
+
   CfbEntry? _findByName(String name) {
     final lower = name.toLowerCase();
     for (final e in _entries) {
@@ -312,8 +324,20 @@ class CompoundFile {
       leftSibling: bd.getUint32(0x44, Endian.little),
       rightSibling: bd.getUint32(0x48, Endian.little),
       childId: bd.getUint32(0x4C, Endian.little),
+      creationTime: bd.getUint64(0x64, Endian.little),
+      modifiedTime: bd.getUint64(0x6C, Endian.little),
       startSector: bd.getUint32(0x74, Endian.little),
       streamSize: bd.getUint32(0x78, Endian.little),
     );
+  }
+
+  static DateTime? _fileTimeToDateTime(int value) {
+    if (value <= 116444736000000000) return null;
+    final millis = (value - 116444736000000000) ~/ 10000;
+    try {
+      return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+    } on ArgumentError {
+      return null;
+    }
   }
 }
