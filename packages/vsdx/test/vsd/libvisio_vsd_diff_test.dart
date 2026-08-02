@@ -76,6 +76,21 @@ void main() {
               reason: 'fill transparency must not be applied twice');
         }
       }
+      if (fixture.uri.pathSegments.last == 'Visio6PlanWithDimensions.vsd') {
+        final referenceWidths = reference
+            .expand(_svgStrokeWidthsPt)
+            .map(_round6)
+            .toSet();
+        final modelWidths = _allShapes(doc)
+            .where((shape) =>
+                shape.line.pattern != 0 &&
+                (shape.geometries.isEmpty ||
+                    shape.geometries.any((geometry) => !geometry.noLine)))
+            .map((shape) => _round6(shape.line.weightInches * 72))
+            .toSet();
+        expect(modelWidths, referenceWidths,
+            reason: 'page drawing scale must apply to VSD line widths');
+      }
       if (const <String>{
         'tdf154379-DrawingUnits-type.vsd',
         'tdf76829-datetime-format.vsd',
@@ -167,3 +182,10 @@ List<File> _fixtures() {
   if (match == null) return null;
   return (double.parse(match.group(1)!), double.parse(match.group(2)!));
 }
+
+Iterable<double> _svgStrokeWidthsPt(String svg) =>
+    RegExp(r'stroke-width:\s*([0-9.]+)')
+        .allMatches(svg)
+        .map((match) => double.parse(match.group(1)!));
+
+double _round6(double value) => (value * 1000000).round() / 1000000;

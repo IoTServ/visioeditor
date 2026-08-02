@@ -268,9 +268,16 @@ class PageParser {
           sheetLine ??
           (isForeign ? const VsdxLine(pattern: 0) : VsdxLine.defaultLine),
     );
+    final sheetShadow = fillStyleId == null
+        ? null
+        : _stylesheets.resolveShadow(
+            fillStyleId,
+            pageOffsetXInches: pageShadowOffsetXInches,
+            pageOffsetYInches: pageShadowOffsetYInches,
+          );
     final shadow = _style.parseShadow(
       shapeEl,
-      defaults: proto?.shadow ?? VsdxShadow.disabled,
+      defaults: proto?.shadow ?? sheetShadow ?? VsdxShadow.disabled,
       pageOffsetXInches: pageShadowOffsetXInches,
       pageOffsetYInches: pageShadowOffsetYInches,
     );

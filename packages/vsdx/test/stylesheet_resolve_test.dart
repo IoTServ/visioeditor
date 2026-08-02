@@ -1,5 +1,7 @@
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:vsdx/src/parser/stylesheet_parser.dart';
+import 'package:xml/xml.dart';
 
 void main() {
   test('resolveFill walks FillStyle parent chain like resolveLine', () {
@@ -77,5 +79,62 @@ void main() {
     const registry = StyleSheetRegistry(<int, VsdxStyleSheet>{12: sheet});
     final line = registry.resolveLine(12)!;
     expect(line.roundingInches, closeTo(0.125, 1e-9));
+  });
+
+  test('parses direct StyleSheet line fill and shadow cells', () {
+    final xml = XmlDocument.parse('''
+      <VisioDocument>
+        <StyleSheets>
+          <StyleSheet ID="0" NameU="No Style">
+            <Cell N="LineWeight" V="0.01041666666666667"/>
+            <Cell N="LineColor" V="0"/>
+            <Cell N="LinePattern" V="2"/>
+            <Cell N="LineCap" V="2"/>
+            <Cell N="BeginArrow" V="4"/>
+            <Cell N="EndArrow" V="5"/>
+            <Cell N="LineColorTrans" V="0.25"/>
+            <Cell N="FillForegnd" V="1"/>
+            <Cell N="FillBkgnd" V="2"/>
+            <Cell N="FillPattern" V="3"/>
+            <Cell N="FillForegndTrans" V="0.4"/>
+            <Cell N="FillBkgndTrans" V="0.6"/>
+            <Cell N="ShdwForegnd" V="3"/>
+            <Cell N="ShdwPattern" V="1"/>
+            <Cell N="ShapeShdwOffsetX" V="0.125"/>
+            <Cell N="ShapeShdwOffsetY" V="-0.25"/>
+            <Cell N="ShdwForegndTrans" V="0.5"/>
+          </StyleSheet>
+          <StyleSheet ID="3" NameU="Normal" LineStyle="0" FillStyle="0">
+            <Cell N="LineWeight" V="Themed" F="Inh"/>
+            <Cell N="FillPattern" V="Themed" F="Inh"/>
+            <Cell N="ShdwPattern" V="Themed" F="Inh"/>
+          </StyleSheet>
+        </StyleSheets>
+      </VisioDocument>
+    ''');
+    final registry = const StyleSheetParser().parse(xml);
+
+    final line = registry.resolveLine(3)!;
+    expect(line.weightInches, closeTo(0.01041666666666667, 1e-12));
+    expect(line.color, VsdxColor.black);
+    expect(line.pattern, 2);
+    expect(line.cap, LineCap.extended);
+    expect(line.beginArrow, 4);
+    expect(line.endArrow, 5);
+    expect(line.transparency, closeTo(0.25, 1e-12));
+
+    final fill = registry.resolveFill(3)!;
+    expect(fill.foreground, VsdxColor.white);
+    expect(fill.background, const VsdxColor(0xFFFF0000));
+    expect(fill.pattern, 3);
+    expect(fill.foregroundTransparency, closeTo(0.4, 1e-12));
+    expect(fill.backgroundTransparency, closeTo(0.6, 1e-12));
+
+    final shadow = registry.resolveShadow(3)!;
+    expect(shadow.enabled, isTrue);
+    expect(shadow.color, const VsdxColor(0xFF00FF00));
+    expect(shadow.offsetXInches, closeTo(0.125, 1e-12));
+    expect(shadow.offsetYInches, closeTo(-0.25, 1e-12));
+    expect(shadow.transparency, closeTo(0.5, 1e-12));
   });
 }

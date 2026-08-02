@@ -60,15 +60,21 @@ class StyleParser {
     }
 
     return VsdxFill(
-      foreground: fgRes.color ?? defaults.foreground,
-      background: bgRes.color ?? defaults.background,
+      foreground: fgRes.themeIndex != null
+          ? null
+          : fgRes.color ?? defaults.foreground,
+      background: bgRes.themeIndex != null
+          ? null
+          : bgRes.color ?? defaults.background,
       foregroundTransparency: fgT.clamp(0.0, 1.0),
       backgroundTransparency: bgT.clamp(0.0, 1.0),
       pattern: pat,
-      themeForegroundIndex:
-          fgRes.themeIndex ?? defaults.themeForegroundIndex,
-      themeBackgroundIndex:
-          bgRes.themeIndex ?? defaults.themeBackgroundIndex,
+      themeForegroundIndex: fgRes.color != null
+          ? null
+          : fgRes.themeIndex ?? defaults.themeForegroundIndex,
+      themeBackgroundIndex: bgRes.color != null
+          ? null
+          : bgRes.themeIndex ?? defaults.themeBackgroundIndex,
       gradient: gradient,
     );
   }
@@ -288,22 +294,36 @@ class StyleParser {
         );
     if (pat == null && !defaults.enabled) return defaults;
     final enabled = (pat ?? (defaults.enabled ? 1 : 0)) != 0;
-    final col = _resolveColor(
+    final primaryCol = _resolveColor(
       shape,
       'ShadowForegnd',
       'QuickStyleShadowColor',
       honorInh: defaults.enabled,
     );
+    final legacyCol = _resolveColor(
+      shape,
+      'ShdwForegnd',
+      'QuickStyleShadowColor',
+      honorInh: defaults.enabled,
+    );
+    final col = _ColorResolution(
+      primaryCol.color ?? legacyCol.color,
+      primaryCol.themeIndex ?? legacyCol.themeIndex,
+    );
     // F=Inh → master defaults when enabled; otherwise page Sheet ShdwOffset*.
     // Missing cell → page Sheet (Visio behaviour for pattern-only shadows).
+    final inheritedOx = defaults.enabled
+        ? defaults.offsetXInches
+        : (pageOffsetXInches ?? defaults.offsetXInches);
+    final inheritedOy = defaults.enabled
+        ? defaults.offsetYInches
+        : (pageOffsetYInches ?? defaults.offsetYInches);
     final ox = readLengthInches(shape, 'ShadowOffsetX',
-        inheritFrom: defaults.enabled
-            ? defaults.offsetXInches
-            : (pageOffsetXInches ?? defaults.offsetXInches));
+            inheritFrom: inheritedOx) ??
+        readLengthInches(shape, 'ShapeShdwOffsetX', inheritFrom: inheritedOx);
     final oy = readLengthInches(shape, 'ShadowOffsetY',
-        inheritFrom: defaults.enabled
-            ? defaults.offsetYInches
-            : (pageOffsetYInches ?? defaults.offsetYInches));
+            inheritFrom: inheritedOy) ??
+        readLengthInches(shape, 'ShapeShdwOffsetY', inheritFrom: inheritedOy);
     final blur = readLengthInches(shape, 'ShadowBlur',
         // Blur has no page-sheet fallback; only inherit from an enabled master
         // so F=Inh keeps the cached V instead of the disabled default 0.04".
@@ -315,6 +335,11 @@ class StyleParser {
           'ShadowForegndTrans',
           inheritFrom: defaults.enabled ? defaults.transparency : null,
         ) ??
+            _double(
+              shape,
+              'ShdwForegndTrans',
+              inheritFrom: defaults.enabled ? defaults.transparency : null,
+            ) ??
             defaults.transparency)
         .clamp(0.0, 1.0);
     final fallbackOx = pageOffsetXInches ?? defaults.offsetXInches;
@@ -325,7 +350,8 @@ class StyleParser {
           ox != null ||
           oy != null ||
           blur != null ||
-          _double(shape, 'ShadowForegndTrans') != null;
+          _double(shape, 'ShadowForegndTrans') != null ||
+          _double(shape, 'ShdwForegndTrans') != null;
       if (!hasCompanion) return VsdxShadow.disabled;
       return VsdxShadow(
         enabled: false,
@@ -424,12 +450,16 @@ class StyleParser {
     }
 
     return VsdxLine(
-      color: colorRes.color ?? defaults.color,
+      color: colorRes.themeIndex != null
+          ? null
+          : colorRes.color ?? defaults.color,
       weightInches: weight,
       pattern: pat,
       cap: cap,
       transparency: transparency.clamp(0.0, 1.0),
-      themeColorIndex: colorRes.themeIndex ?? defaults.themeColorIndex,
+      themeColorIndex: colorRes.color != null
+          ? null
+          : colorRes.themeIndex ?? defaults.themeColorIndex,
       beginArrow: beginArrow,
       endArrow: endArrow,
       beginArrowSizeInches: beginSize == null
@@ -575,6 +605,13 @@ class StyleParser {
       }
       return _ColorResolution(VsdxColor.tryParse(v), null);
     }
+    // THEMEGUARD(RGB/HSL/SHADE...) protects a concrete colour from theme
+    // replacement. Visio stores its evaluated result in V= and libvisio uses
+    // that extended-colour value; it is not a THEMEVAL slot binding.
+    final cached = VsdxColor.tryParse(v);
+    if (_isConcreteThemeGuard(f) && cached != null) {
+      return _ColorResolution(cached, null);
+    }
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // Prefer an explicit THEMEVAL("AccentColor2") / THEMEVAL(3) argument so
       // FillBkgnd can differ from FillForegnd's QuickStyleFillColor slot.
@@ -626,6 +663,10 @@ class StyleParser {
       }
       // No Master/prototype stop — fall through and honour cached V=.
     }
+    final cached = VsdxColor.tryParse(v);
+    if (_isConcreteThemeGuard(f) && cached != null) {
+      return _ColorResolution(cached, null);
+    }
     if (_isThemeFormula(v) || _isThemeFormula(f)) {
       // Prefer cached slot in V (writer emits V=slot + F=THEMEVAL()), then
       // named THEMEVAL arg, then row QuickStyle*, then Light1 fallback.
@@ -672,6 +713,11 @@ class StyleParser {
     final u = s.toUpperCase();
     return u.contains('THEMEVAL') || u.contains('THEMEGUARD');
   }
+
+  bool _isConcreteThemeGuard(String formula) => RegExp(
+        r'THEMEGUARD\s*\(\s*(?:RGB|HSL|SHADE)\s*\(',
+        caseSensitive: false,
+      ).hasMatch(formula);
 
   double? _double(XmlElement shape, String name, {double? inheritFrom}) {
     final cell = findCell(shape, name);

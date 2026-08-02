@@ -222,6 +222,35 @@ void main() {
     }
   });
 
+  test('direct StyleSheet cells and THEMEGUARD cached colours are parsed', () {
+    final styled = parser.parse(_fixture('test1.vsdx'));
+    final weights = <double>{};
+    final lineColors = <int>{};
+    final fillColors = <int>{};
+    _walk(styled, (shape) {
+      weights.add(shape.line.weightInches);
+      if (shape.line.color != null) lineColors.add(shape.line.color!.value);
+      if (shape.fill.foreground != null) {
+        fillColors.add(shape.fill.foreground!.value);
+      }
+    });
+    expect(weights, contains(closeTo(0.01041666666666667, 1e-12)));
+    expect(lineColors, contains(VsdxColor.black.value));
+    expect(fillColors, contains(VsdxColor.white.value));
+
+    final guarded = parser.parse(_fixture('test12_colors.vsdx'));
+    final guardedLines = <int>{};
+    final guardedFills = <int>{};
+    _walk(guarded, (shape) {
+      if (shape.line.color != null) guardedLines.add(shape.line.color!.value);
+      if (shape.fill.foreground != null) {
+        guardedFills.add(shape.fill.foreground!.value);
+      }
+    });
+    expect(guardedLines, containsAll(<int>[0xFFFF0000, 0xFF00FF00]));
+    expect(guardedFills, containsAll(<int>[0xFFFF0000, 0xFF00FF00]));
+  });
+
   group('identity write → libvisio oracle', () {
     for (final name in _fixtureNames()) {
       if (_fontSizeGaps.contains(name) || _textContentGaps.contains(name)) {

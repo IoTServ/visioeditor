@@ -25,6 +25,8 @@ class VsdxStyleSheet {
     this.lineDefinedCells = const <String>{},
     this.fill,
     this.fillDefinedCells = const <String>{},
+    this.shadow,
+    this.shadowDefinedCells = const <String>{},
   });
 
   final int id;
@@ -55,6 +57,12 @@ class VsdxStyleSheet {
 
   /// Same idea as [lineDefinedCells] for Fill cells.
   final Set<String> fillDefinedCells;
+
+  final VsdxShadow? shadow;
+
+  /// Concrete shadow cells contributed by this stylesheet. Shadow properties
+  /// share the FillStyle inheritance chain in Visio/libvisio.
+  final Set<String> shadowDefinedCells;
 }
 
 /// Registry of every `<StyleSheet>` in the document, with chain resolution
@@ -139,8 +147,15 @@ class StyleSheetRegistry {
     VsdxColor? color;
     double? weightInches;
     int? pattern;
+    LineCap? cap;
+    double? transparency;
+    int? beginArrow;
+    int? endArrow;
+    double? beginArrowSizeInches;
+    double? endArrowSizeInches;
     double? softEdgesInches;
     double? roundingInches;
+    int? compoundType;
 
     final seen = <int>{};
     while (id != null && seen.add(id)) {
@@ -153,8 +168,15 @@ class StyleSheetRegistry {
               'LineColor',
               'LineWeight',
               'LinePattern',
+              'LineCap',
+              'LineColorTrans',
+              'BeginArrow',
+              'EndArrow',
+              'BeginArrowSize',
+              'EndArrowSize',
               'SoftEdgesSize',
               'Rounding',
+              'CompoundType',
             }
           : sheet.lineDefinedCells;
       if (line != null) {
@@ -169,15 +191,34 @@ class StyleSheetRegistry {
         if (pattern == null && defined.contains('LinePattern')) {
           pattern = line.pattern;
         }
+        if (cap == null && defined.contains('LineCap')) cap = line.cap;
+        if (transparency == null && defined.contains('LineColorTrans')) {
+          transparency = line.transparency;
+        }
+        if (beginArrow == null && defined.contains('BeginArrow')) {
+          beginArrow = line.beginArrow;
+        }
+        if (endArrow == null && defined.contains('EndArrow')) {
+          endArrow = line.endArrow;
+        }
+        if (beginArrowSizeInches == null &&
+            defined.contains('BeginArrowSize')) {
+          beginArrowSizeInches = line.beginArrowSizeInches;
+        }
+        if (endArrowSizeInches == null &&
+            defined.contains('EndArrowSize')) {
+          endArrowSizeInches = line.endArrowSizeInches;
+        }
         if (softEdgesInches == null &&
-            defined.contains('SoftEdgesSize') &&
-            line.softEdgesInches > 0) {
+            defined.contains('SoftEdgesSize')) {
           softEdgesInches = line.softEdgesInches;
         }
         if (roundingInches == null &&
-            defined.contains('Rounding') &&
-            line.roundingInches > 0) {
+            defined.contains('Rounding')) {
           roundingInches = line.roundingInches;
+        }
+        if (compoundType == null && defined.contains('CompoundType')) {
+          compoundType = line.compoundType;
         }
       }
       id = sheet.lineStyleId;
@@ -186,17 +227,33 @@ class StyleSheetRegistry {
     if (color == null &&
         weightInches == null &&
         pattern == null &&
+        cap == null &&
+        transparency == null &&
+        beginArrow == null &&
+        endArrow == null &&
+        beginArrowSizeInches == null &&
+        endArrowSizeInches == null &&
         softEdgesInches == null &&
-        roundingInches == null) {
+        roundingInches == null &&
+        compoundType == null) {
       return null;
     }
     return VsdxLine(
       color: color,
       weightInches: weightInches ?? VsdxLine.defaultLine.weightInches,
       pattern: pattern ?? VsdxLine.defaultLine.pattern,
+      cap: cap ?? VsdxLine.defaultLine.cap,
+      transparency: transparency ?? VsdxLine.defaultLine.transparency,
+      beginArrow: beginArrow ?? VsdxLine.defaultLine.beginArrow,
+      endArrow: endArrow ?? VsdxLine.defaultLine.endArrow,
+      beginArrowSizeInches:
+          beginArrowSizeInches ?? VsdxLine.defaultLine.beginArrowSizeInches,
+      endArrowSizeInches:
+          endArrowSizeInches ?? VsdxLine.defaultLine.endArrowSizeInches,
       softEdgesInches:
           softEdgesInches ?? VsdxLine.defaultLine.softEdgesInches,
       roundingInches: roundingInches ?? VsdxLine.defaultLine.roundingInches,
+      compoundType: compoundType ?? VsdxLine.defaultLine.compoundType,
     );
   }
 
@@ -214,7 +271,6 @@ class StyleSheetRegistry {
     VsdxGradient? gradient;
     double? foregroundTransparency;
     double? backgroundTransparency;
-    var sawTransparency = false;
 
     final seen = <int>{};
     while (id != null && seen.add(id)) {
@@ -248,12 +304,13 @@ class StyleSheetRegistry {
         themeForegroundIndex ??= fill.themeForegroundIndex;
         themeBackgroundIndex ??= fill.themeBackgroundIndex;
         gradient ??= fill.gradient;
-        if (!sawTransparency &&
-            (defined.contains('FillForegndTrans') ||
-                defined.contains('FillBkgndTrans'))) {
+        if (foregroundTransparency == null &&
+            defined.contains('FillForegndTrans')) {
           foregroundTransparency = fill.foregroundTransparency;
+        }
+        if (backgroundTransparency == null &&
+            defined.contains('FillBkgndTrans')) {
           backgroundTransparency = fill.backgroundTransparency;
-          sawTransparency = true;
         }
       }
       id = sheet.fillStyleId;
@@ -264,7 +321,9 @@ class StyleSheetRegistry {
         pattern == null &&
         themeForegroundIndex == null &&
         themeBackgroundIndex == null &&
-        gradient == null) {
+        gradient == null &&
+        foregroundTransparency == null &&
+        backgroundTransparency == null) {
       return null;
     }
     return VsdxFill(
@@ -278,6 +337,78 @@ class StyleSheetRegistry {
       themeForegroundIndex: themeForegroundIndex,
       themeBackgroundIndex: themeBackgroundIndex,
       gradient: gradient,
+    );
+  }
+
+  /// Resolve shadow cells through the FillStyle chain, matching libvisio's
+  /// treatment of shadow as part of FillAndShadow.
+  VsdxShadow? resolveShadow(
+    int? fillStyleId, {
+    double? pageOffsetXInches,
+    double? pageOffsetYInches,
+  }) {
+    var id = fillStyleId;
+    if (id == null) return null;
+
+    VsdxColor? color;
+    int? pattern;
+    double? offsetX;
+    double? offsetY;
+    double? transparency;
+
+    final seen = <int>{};
+    while (id != null && seen.add(id)) {
+      final sheet = _byId[id];
+      if (sheet == null) break;
+      final shadow = sheet.shadow;
+      final defined = sheet.shadowDefinedCells.isEmpty
+          ? const {
+              'ShdwForegnd',
+              'ShdwPattern',
+              'ShapeShdwOffsetX',
+              'ShapeShdwOffsetY',
+              'ShdwForegndTrans',
+            }
+          : sheet.shadowDefinedCells;
+      if (shadow != null) {
+        if (color == null &&
+            defined.contains('ShdwForegnd') &&
+            shadow.color != null) {
+          color = shadow.color;
+        }
+        if (pattern == null && defined.contains('ShdwPattern')) {
+          pattern = shadow.enabled ? shadow.pattern : 0;
+        }
+        if (offsetX == null && defined.contains('ShapeShdwOffsetX')) {
+          offsetX = shadow.offsetXInches;
+        }
+        if (offsetY == null && defined.contains('ShapeShdwOffsetY')) {
+          offsetY = shadow.offsetYInches;
+        }
+        if (transparency == null &&
+            defined.contains('ShdwForegndTrans')) {
+          transparency = shadow.transparency;
+        }
+      }
+      id = sheet.fillStyleId;
+    }
+
+    if (color == null &&
+        pattern == null &&
+        offsetX == null &&
+        offsetY == null &&
+        transparency == null) {
+      return null;
+    }
+    final effectivePattern = pattern ?? 0;
+    return VsdxShadow(
+      enabled: effectivePattern != 0,
+      pattern: effectivePattern == 0 ? 1 : effectivePattern,
+      color: color,
+      offsetXInches: offsetX ?? pageOffsetXInches ?? 0.125,
+      offsetYInches: offsetY ?? pageOffsetYInches ?? -0.125,
+      blurInches: 0,
+      transparency: transparency ?? 0,
     );
   }
 }

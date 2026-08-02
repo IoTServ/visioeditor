@@ -10,6 +10,7 @@ library;
 import 'package:xml/xml.dart';
 
 import '../model/fill.dart';
+import '../model/effects.dart';
 import '../model/line.dart';
 import '../model/rich_text.dart';
 import '../model/stylesheet.dart';
@@ -74,6 +75,8 @@ class StyleSheetParser {
     final lineDefined = <String>{};
     VsdxFill? fill;
     final fillDefined = <String>{};
+    VsdxShadow? shadow;
+    final shadowDefined = <String>{};
 
     for (final section in ss.childElements) {
       if (section.name.local != 'Section') continue;
@@ -137,6 +140,131 @@ class StyleSheetParser {
       }
     }
 
+    // The normative VSDX layout places Line/Fill/TextBlock cells directly
+    // under <StyleSheet>, not inside a Section. libvisio's
+    // readStyleProperties() consumes both those direct cells and Character /
+    // Paragraph sections in one pass. Preserve the section form above for
+    // third-party writers, then overlay any concrete direct cells here.
+    final weight = _length(ss, 'LineWeight');
+    final linePattern = _cellInt(ss, 'LinePattern');
+    final lineColorValue = _cellString(ss, 'LineColor');
+    final lineColor = lineColorValue == null
+        ? null
+        : VsdxColor.tryParse(lineColorValue);
+    final lineCapValue = _cellInt(ss, 'LineCap');
+    final lineTransparency = _number(ss, 'LineColorTrans');
+    final beginArrow = _cellInt(ss, 'BeginArrow');
+    final endArrow = _cellInt(ss, 'EndArrow');
+    final beginArrowSize = _cellInt(ss, 'BeginArrowSize');
+    final endArrowSize = _cellInt(ss, 'EndArrowSize');
+    final directRounding = _length(ss, 'Rounding');
+    final directSoftEdges = _length(ss, 'SoftEdgesSize');
+    final compoundType = _cellInt(ss, 'CompoundType');
+    if (weight != null) lineDefined.add('LineWeight');
+    if (linePattern != null) lineDefined.add('LinePattern');
+    if (lineColor != null) lineDefined.add('LineColor');
+    if (lineCapValue != null) lineDefined.add('LineCap');
+    if (lineTransparency != null) lineDefined.add('LineColorTrans');
+    if (beginArrow != null) lineDefined.add('BeginArrow');
+    if (endArrow != null) lineDefined.add('EndArrow');
+    if (beginArrowSize != null) lineDefined.add('BeginArrowSize');
+    if (endArrowSize != null) lineDefined.add('EndArrowSize');
+    if (directRounding != null) lineDefined.add('Rounding');
+    if (directSoftEdges != null) lineDefined.add('SoftEdgesSize');
+    if (compoundType != null) lineDefined.add('CompoundType');
+    if (lineDefined.isNotEmpty) {
+      line = VsdxLine(
+        color: lineColor ?? line?.color,
+        weightInches:
+            weight ?? line?.weightInches ?? VsdxLine.defaultLine.weightInches,
+        pattern:
+            linePattern ?? line?.pattern ?? VsdxLine.defaultLine.pattern,
+        cap: lineCapValue == null
+            ? (line?.cap ?? VsdxLine.defaultLine.cap)
+            : _lineCap(lineCapValue),
+        transparency: (lineTransparency ??
+                line?.transparency ??
+                VsdxLine.defaultLine.transparency)
+            .clamp(0.0, 1.0),
+        beginArrow:
+            beginArrow ?? line?.beginArrow ?? VsdxLine.defaultLine.beginArrow,
+        endArrow: endArrow ?? line?.endArrow ?? VsdxLine.defaultLine.endArrow,
+        beginArrowSizeInches: beginArrowSize == null
+            ? (line?.beginArrowSizeInches ??
+                VsdxLine.defaultLine.beginArrowSizeInches)
+            : _arrowSize(beginArrowSize),
+        endArrowSizeInches: endArrowSize == null
+            ? (line?.endArrowSizeInches ??
+                VsdxLine.defaultLine.endArrowSizeInches)
+            : _arrowSize(endArrowSize),
+        roundingInches: directRounding ??
+            line?.roundingInches ??
+            VsdxLine.defaultLine.roundingInches,
+        softEdgesInches: directSoftEdges ??
+            line?.softEdgesInches ??
+            VsdxLine.defaultLine.softEdgesInches,
+        compoundType: compoundType ??
+            line?.compoundType ??
+            VsdxLine.defaultLine.compoundType,
+      );
+    }
+
+    final fillPattern = _cellInt(ss, 'FillPattern');
+    final fgValue = _cellString(ss, 'FillForegnd');
+    final fg = fgValue == null ? null : VsdxColor.tryParse(fgValue);
+    final bgValue = _cellString(ss, 'FillBkgnd');
+    final bg = bgValue == null ? null : VsdxColor.tryParse(bgValue);
+    final fgTransparency = _number(ss, 'FillForegndTrans');
+    final bgTransparency = _number(ss, 'FillBkgndTrans');
+    if (fillPattern != null) fillDefined.add('FillPattern');
+    if (fg != null) fillDefined.add('FillForegnd');
+    if (bg != null) fillDefined.add('FillBkgnd');
+    if (fgTransparency != null) fillDefined.add('FillForegndTrans');
+    if (bgTransparency != null) fillDefined.add('FillBkgndTrans');
+    if (fillDefined.isNotEmpty) {
+      fill = VsdxFill(
+        foreground: fg ?? fill?.foreground,
+        background: bg ?? fill?.background,
+        pattern: fillPattern ?? fill?.pattern ?? VsdxFill.defaultFill.pattern,
+        foregroundTransparency: (fgTransparency ??
+                fill?.foregroundTransparency ??
+                VsdxFill.defaultFill.foregroundTransparency)
+            .clamp(0.0, 1.0),
+        backgroundTransparency: (bgTransparency ??
+                fill?.backgroundTransparency ??
+                VsdxFill.defaultFill.backgroundTransparency)
+            .clamp(0.0, 1.0),
+      );
+    }
+
+    final shadowPattern = _cellInt(ss, 'ShdwPattern');
+    final shadowColorValue = _cellString(ss, 'ShdwForegnd');
+    final shadowColor = shadowColorValue == null
+        ? null
+        : VsdxColor.tryParse(shadowColorValue);
+    final shadowOffsetX = _length(ss, 'ShapeShdwOffsetX');
+    final shadowOffsetY = _length(ss, 'ShapeShdwOffsetY');
+    final shadowTransparency = _number(ss, 'ShdwForegndTrans');
+    if (shadowPattern != null) shadowDefined.add('ShdwPattern');
+    if (shadowColor != null) shadowDefined.add('ShdwForegnd');
+    if (shadowOffsetX != null) shadowDefined.add('ShapeShdwOffsetX');
+    if (shadowOffsetY != null) shadowDefined.add('ShapeShdwOffsetY');
+    if (shadowTransparency != null) {
+      shadowDefined.add('ShdwForegndTrans');
+    }
+    if (shadowDefined.isNotEmpty) {
+      final effectivePattern = shadowPattern ?? 0;
+      shadow = VsdxShadow(
+        enabled: effectivePattern != 0,
+        pattern: effectivePattern == 0 ? 1 : effectivePattern,
+        color: shadowColor,
+        offsetXInches: shadowOffsetX ?? 0.125,
+        offsetYInches: shadowOffsetY ?? -0.125,
+        blurInches: 0,
+        transparency: (shadowTransparency ?? 0).clamp(0.0, 1.0),
+      );
+    }
+
     return VsdxStyleSheet(
       id: id,
       name: name,
@@ -149,6 +277,8 @@ class StyleSheetParser {
       lineDefinedCells: Set.unmodifiable(lineDefined),
       fill: fill,
       fillDefinedCells: Set.unmodifiable(fillDefined),
+      shadow: shadow,
+      shadowDefinedCells: Set.unmodifiable(shadowDefined),
     );
   }
 
@@ -186,6 +316,28 @@ class StyleSheetParser {
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
   }
+
+  double? _number(XmlElement parent, String name) {
+    final s = _cellString(parent, name);
+    return s == null ? null : double.tryParse(s);
+  }
+
+  LineCap _lineCap(int value) => switch (value) {
+        1 => LineCap.square,
+        2 => LineCap.extended,
+        _ => LineCap.round,
+      };
+
+  double _arrowSize(int bucket) => switch (bucket) {
+        0 => 0.0625,
+        1 => 0.0875,
+        2 => 0.125,
+        3 => 0.175,
+        4 => 0.225,
+        5 => 0.30,
+        6 => 0.375,
+        _ => 0.125,
+      };
 
   /// Like [_cellInt] but reads the raw `V` even when it is `Themed` / a
   /// formula — numeric Style bitmasks still parse; non-numeric → null.

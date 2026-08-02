@@ -4801,6 +4801,14 @@ class VsdBinaryParser {
     if (d.imgOffsetY != null) d.imgOffsetY = d.imgOffsetY! * s;
     if (d.imgWidth != null) d.imgWidth = d.imgWidth! * s;
     if (d.imgHeight != null) d.imgHeight = d.imgHeight! * s;
+    // libvisio applies the page drawing scale when materialising line
+    // properties as well as geometry. Materialise the default too: otherwise
+    // style-less shapes receive an unscaled default later in [_toShape].
+    final line = d.line ?? VsdxLine.defaultLine;
+    d.line = line.copyWith(
+      weightInches: line.weightInches * s,
+      roundingInches: line.roundingInches * s,
+    );
     if (d.shadow != null) {
       d.shadow = d.shadow!.copyWith(
         offsetXInches: d.shadow!.offsetXInches * s,
