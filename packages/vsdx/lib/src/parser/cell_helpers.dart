@@ -98,11 +98,20 @@ bool isXmlTrue(String? value) {
   return normalized == '1' || normalized == 'true';
 }
 
+/// Normalise the line-break sequences libvisio recognises in VSDX text.
+/// XML readers already collapse source CR/LF in ordinary XML content, but
+/// producer-generated Unicode line/paragraph separators remain literal unless
+/// handled explicitly.
+String normalizeVisioText(String value) => value
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\u2028', '\n')
+    .replaceAll('\u2029', '\n');
+
 /// Direct text content of `<Text>` (concatenates all descendant text nodes).
 String? readShapeText(XmlElement shape) {
   for (final child in shape.childElements) {
     if (child.name.local == 'Text') {
-      final t = child.innerText.trim();
+      final t = normalizeVisioText(child.innerText).trim();
       return t.isEmpty ? null : t;
     }
   }

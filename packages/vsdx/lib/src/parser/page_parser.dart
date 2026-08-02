@@ -104,6 +104,7 @@ class PageParser {
     required String partName,
     required int depth,
     VsdxMaster? inheritedMaster,
+    String? inheritedShapeName,
   }) {
     if (depth > 64) {
       // Visio caps practical nesting well below this; bail out loudly.
@@ -121,6 +122,7 @@ class PageParser {
           partName: partName,
           depth: depth,
           inheritedMaster: inheritedMaster,
+          inheritedShapeName: inheritedShapeName,
         ));
       } catch (e, st) {
         // Per ARCHITECTURE §5.7: parse failures on a single shape must not
@@ -140,12 +142,15 @@ class PageParser {
     required String partName,
     required int depth,
     VsdxMaster? inheritedMaster,
+    String? inheritedShapeName,
   }) {
     final idStr = shapeEl.getAttribute('ID');
     final id = idStr == null ? -1 : int.tryParse(idStr) ?? -1;
-    final nameU = shapeEl.getAttribute('NameU') ??
-        shapeEl.getAttribute('Name') ??
-        'Sheet.$id';
+    // libvisio uses the universal name only. A nested shape without NameU
+    // inherits its enclosing group's universal name; the localized Name
+    // attribute is not used as the shape type.
+    final libvisioName = shapeEl.getAttribute('NameU') ?? inheritedShapeName;
+    final nameU = libvisioName ?? 'Sheet.$id';
 
     // Resolve the inheritance prototype up front; subsequent reads use its
     // geometry / fill / line / text as defaults. `Master="M"` binds a whole
@@ -243,6 +248,7 @@ class PageParser {
             partName: partName,
             depth: depth + 1,
             inheritedMaster: master,
+            inheritedShapeName: libvisioName,
           );
 
     var geometries = _geometry.parse(shapeEl);

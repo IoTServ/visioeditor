@@ -732,7 +732,7 @@ class RichTextParser {
 
     for (final node in textEl.children) {
       if (node is XmlText) {
-        buf.write(node.value);
+        buf.write(normalizeVisioText(node.value));
       } else if (node is XmlElement) {
         switch (node.name.local) {
           case 'cp':
@@ -751,7 +751,7 @@ class RichTextParser {
             // Dynamic field — keep display text for paint, record span for
             // XML round-trip (`<fld IX="n">cached</fld>`).
             final ix = int.tryParse(node.getAttribute('IX') ?? '') ?? 0;
-            final display = fieldResolver.resolve(node);
+            final display = normalizeVisioText(fieldResolver.resolve(node));
             final start = buf.length;
             buf.write(display);
             fieldSpans.add(VsdxFieldSpan(

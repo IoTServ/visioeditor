@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:test/test.dart';
 import 'package:vsdx/src/parser/geometry_parser.dart';
+import 'package:vsdx/src/parser/page_parser.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
@@ -110,6 +111,44 @@ void main() {
     expect(geometries[1].noQuickDrag, isTrue);
     expect(geometries[1].commands, isEmpty);
     expect(geometries[1].deletedRowIndices, contains(4));
+  });
+
+  test('Text normalizes Unicode separators like libvisio', () {
+    final pageXml = XmlDocument.parse(
+      '<PageContents><Shapes><Shape ID="1" NameU="Text">'
+      '<Text>A\u2028B<fld IX="4">F\u2029G</fld>C</Text>'
+      '</Shape></Shapes></PageContents>',
+    );
+
+    final shape = const PageParser()
+        .parseShapes(pageXml, partName: '/visio/pages/page1.xml')
+        .single;
+    expect(shape.text, 'A\nBF\nGC');
+    expect(shape.richText.plainText, 'A\nBF\nGC');
+    expect(shape.richText.runs, hasLength(1));
+    expect(shape.richText.runs.single.fieldSpans, hasLength(1));
+    expect(shape.richText.runs.single.fieldSpans.single.start, 3);
+    expect(shape.richText.runs.single.fieldSpans.single.length, 3);
+  });
+
+  test('Nested shapes inherit only the parent NameU like libvisio', () {
+    final pageXml = XmlDocument.parse(
+      '<PageContents><Shapes>'
+      '<Shape ID="1" NameU="UniversalParent" Name="LocalizedParent">'
+      '<Shapes>'
+      '<Shape ID="2" Name="LocalizedChild"/>'
+      '<Shape ID="3" NameU="UniversalChild" Name="LocalizedChild"/>'
+      '</Shapes></Shape>'
+      '<Shape ID="4" Name="LocalizedTop"/>'
+      '</Shapes></PageContents>',
+    );
+
+    final shapes = const PageParser()
+        .parseShapes(pageXml, partName: '/visio/pages/page1.xml');
+    expect(shapes[0].name, 'UniversalParent');
+    expect(shapes[0].children[0].name, 'UniversalParent');
+    expect(shapes[0].children[1].name, 'UniversalChild');
+    expect(shapes[1].name, 'Sheet.4');
   });
 
   test('Page drawing scale materializes drawable coordinates like libvisio',
