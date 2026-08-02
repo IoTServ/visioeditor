@@ -7,6 +7,7 @@ import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
 import '../model/connect.dart';
+import '../model/geometry.dart';
 import '../model/layer.dart';
 import '../model/master.dart';
 import '../model/page.dart';
@@ -133,14 +134,22 @@ class PagesParser {
     var sheet = VsdxPageSheet.defaults;
     final pageSheet = _firstChildLocal(pageEl, 'PageSheet');
     if (pageSheet != null) {
-      width = readLengthInches(pageSheet, 'PageWidth', inheritFrom: width) ??
-          width;
-      height = readLengthInches(pageSheet, 'PageHeight', inheritFrom: height) ??
-          height;
+      // PageSheet has no master prototype in libvisio: its collector consumes
+      // the cached V= even when a producer leaves F="Inh" on these cells.
+      width = readLengthInches(pageSheet, 'PageWidth') ?? width;
+      height = readLengthInches(pageSheet, 'PageHeight') ?? height;
       layers = LayerParser(colorPalette: _colorPalette).parseLayers(pageSheet);
       bgColor = _readPageColor(pageSheet);
       sheet = _readPageSheet(pageSheet);
     }
+    // libvisio materialises PageScale / DrawingScale into the page canvas and
+    // every drawable coordinate. Keep the original cells in [pageSheet] for
+    // round-trip, but expose physical page inches from the parsed model just
+    // like the binary VSD path does.
+    final drawingScale =
+        sheet.drawingScale != 0 ? sheet.pageScale / sheet.drawingScale : 1.0;
+    width *= drawingScale;
+    height *= drawingScale;
 
     // <Rel r:id="rIdN"/> → pageN.xml
     final relEl = _firstChildLocal(pageEl, 'Rel');
@@ -176,7 +185,9 @@ class PagesParser {
             try {
               shapes
                 ..clear()
-                ..addAll(parser.parseShapes(pageXml, partName: target));
+                ..addAll(parser
+                    .parseShapes(pageXml, partName: target)
+                    .map((shape) => _scaleShape(shape, drawingScale)));
               connects = const ConnectParser().parsePage(pageXml.rootElement);
             } catch (_) {
               _log.warning(
@@ -214,21 +225,92 @@ class PagesParser {
     );
   }
 
+  /// Apply libvisio's page drawing scale to the properties it materialises
+  /// while collecting VSDX shapes. Text font/paragraph metrics and shadow
+  /// offsets intentionally remain unscaled: libvisio emits those source-cell
+  /// values verbatim even when the drawing canvas is scaled.
+  static VsdxShape _scaleShape(VsdxShape shape, double scale) {
+    if (scale == 1.0) return shape;
+    final block = shape.richText.textBlock;
+    return shape.copyWith(
+      pinX: shape.pinX * scale,
+      pinY: shape.pinY * scale,
+      width: shape.width * scale,
+      height: shape.height * scale,
+      locPinXInches:
+          shape.locPinXInches == null ? null : shape.locPinXInches! * scale,
+      locPinYInches:
+          shape.locPinYInches == null ? null : shape.locPinYInches! * scale,
+      beginX: shape.beginX == null ? null : shape.beginX! * scale,
+      beginY: shape.beginY == null ? null : shape.beginY! * scale,
+      endX: shape.endX == null ? null : shape.endX! * scale,
+      endY: shape.endY == null ? null : shape.endY! * scale,
+      geometries: <VsdxGeometry>[
+        for (final geometry in shape.geometries)
+          geometry.copyWith(
+            commands: <VsdxPathCommand>[
+              for (final command in geometry.commands)
+                scalePathCommand(command, scale, scale),
+            ],
+          ),
+      ],
+      line: shape.line.copyWith(
+        weightInches: shape.line.weightInches * scale,
+        roundingInches: shape.line.roundingInches * scale,
+        beginArrowSizeInches: shape.line.beginArrowSizeInches * scale,
+        endArrowSizeInches: shape.line.endArrowSizeInches * scale,
+      ),
+      imgOffsetXInches: shape.imgOffsetXInches * scale,
+      imgOffsetYInches: shape.imgOffsetYInches * scale,
+      imgWidthInches:
+          shape.imgWidthInches == null ? null : shape.imgWidthInches! * scale,
+      imgHeightInches:
+          shape.imgHeightInches == null ? null : shape.imgHeightInches! * scale,
+      richText: shape.richText.copyWith(
+        textBlock: block.copyWith(
+          pinXInches:
+              block.pinXInches == null ? null : block.pinXInches! * scale,
+          pinYInches:
+              block.pinYInches == null ? null : block.pinYInches! * scale,
+          locPinXInches:
+              block.locPinXInches == null ? null : block.locPinXInches! * scale,
+          locPinYInches:
+              block.locPinYInches == null ? null : block.locPinYInches! * scale,
+          widthInches:
+              block.widthInches == null ? null : block.widthInches! * scale,
+          heightInches:
+              block.heightInches == null ? null : block.heightInches! * scale,
+        ),
+      ),
+      children: <VsdxShape>[
+        for (final child in shape.children) _scaleShape(child, scale),
+      ],
+    );
+  }
+
   VsdxPageSheet _readPageSheet(XmlElement pageSheet) {
-    int? i(String n, {int? inheritFrom}) {
+    int? i(
+      String n, {
+      int? inheritFrom,
+      bool useCachedValue = false,
+    }) {
       final cell = findCell(pageSheet, n);
       if (cell == null) return null;
-      if (isInhFormula(cell.getAttribute('F'))) {
+      if (!useCachedValue && isInhFormula(cell.getAttribute('F'))) {
         return inheritFrom; // null ⇒ treat Inh as absent
       }
       return int.tryParse(cell.getAttribute('V') ?? '') ??
           double.tryParse(cell.getAttribute('V') ?? '')?.toInt();
     }
 
-    double? d(String n, {double? inheritFrom}) {
+    double? d(
+      String n, {
+      double? inheritFrom,
+      bool useCachedValue = false,
+    }) {
       final cell = findCell(pageSheet, n);
       if (cell == null) return null;
-      if (isInhFormula(cell.getAttribute('F'))) {
+      if (!useCachedValue && isInhFormula(cell.getAttribute('F'))) {
         return inheritFrom;
       }
       return double.tryParse(cell.getAttribute('V') ?? '');
@@ -241,16 +323,17 @@ class PagesParser {
 
     const def = VsdxPageSheet.defaults;
     return VsdxPageSheet(
-      shadowOffsetXInches: readLengthInches(pageSheet, 'ShdwOffsetX',
-              inheritFrom: def.shadowOffsetXInches) ??
+      shadowOffsetXInches: readLengthInches(pageSheet, 'ShdwOffsetX') ??
           def.shadowOffsetXInches,
-      shadowOffsetYInches: readLengthInches(pageSheet, 'ShdwOffsetY',
-              inheritFrom: def.shadowOffsetYInches) ??
+      shadowOffsetYInches: readLengthInches(pageSheet, 'ShdwOffsetY') ??
           def.shadowOffsetYInches,
-      pageScale: d('PageScale', inheritFrom: def.pageScale) ?? def.pageScale,
+      pageScale: d('PageScale',
+              inheritFrom: def.pageScale, useCachedValue: true) ??
+          def.pageScale,
       pageScaleUnit: unit('PageScale') ?? def.pageScaleUnit,
-      drawingScale:
-          d('DrawingScale', inheritFrom: def.drawingScale) ?? def.drawingScale,
+      drawingScale: d('DrawingScale',
+              inheritFrom: def.drawingScale, useCachedValue: true) ??
+          def.drawingScale,
       drawingScaleUnit: unit('DrawingScale') ?? def.drawingScaleUnit,
       drawingSizeType: i('DrawingSizeType', inheritFrom: def.drawingSizeType) ??
           def.drawingSizeType,
@@ -298,8 +381,10 @@ class PagesParser {
       printPageOrientation: i('PrintPageOrientation',
               inheritFrom: def.printPageOrientation) ??
           def.printPageOrientation,
-      variationColorIndex: i('VariationColorIndex'),
-      variationStyleIndex: i('VariationStyleIndex'),
+      variationColorIndex:
+          i('VariationColorIndex', useCachedValue: true),
+      variationStyleIndex:
+          i('VariationStyleIndex', useCachedValue: true),
     );
   }
 
