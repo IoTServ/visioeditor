@@ -152,6 +152,10 @@ class _ShapeDraft {
   Uint8List? foreignBytes;
   int foreignType = 0;
   int foreignFormat = 0;
+  double? imgOffsetX;
+  double? imgOffsetY;
+  double? imgWidth;
+  double? imgHeight;
   /// ShapeData polyline blobs keyed by chunk id (libvisio `m_polylineData`).
   final polylineData =
       <int, ({List<Offset2D> points, bool xRel, bool yRel})>{};
@@ -379,6 +383,8 @@ class _PageDraft {
   _PageDraft(this.id);
   final int id;
   String name = 'Page-1';
+  bool isBackgroundPage = false;
+  int? backgroundPageId;
   double width = 8.5;
   double height = 11.0;
   /// `pageScale / drawingScale` from PageProps (libvisio `m_scale`).
@@ -605,18 +611,21 @@ class VsdBinaryParser {
       ..chunkType = ptr.type;
     _handleLevelChange(level);
 
-    // Skip background pages; styles-only pass skips page/stencil content.
+    // Background pages are first-class Visio pages. libvisio retains them and
+    // composites them under foreground pages through the Page record's
+    // backgroundPageID, so do not discard their streams here.
     if (ptr.type == VsdRecordId.page) {
       if (collectStylesOnly) return;
       _isBackgroundPage = (ptr.format & 0x1) == 0;
-      if (_isBackgroundPage) return;
       final resolved = _nameFromId(idx, level + 1);
       // Reject pure-numeric "names" (often mis-mapped NameIDX entries).
       final pageName =
           (resolved != null && !RegExp(r'^\d+$').hasMatch(resolved))
               ? resolved
               : 'Page-${_pages.length + 1}';
-      _currentPage = _PageDraft(idx)..name = pageName;
+      _currentPage = _PageDraft(idx)
+        ..name = pageName
+        ..isBackgroundPage = _isBackgroundPage;
       _pages.add(_currentPage!);
     }
     if (ptr.type == VsdRecordId.styles) {
@@ -675,6 +684,7 @@ class VsdBinaryParser {
     if (ptr.type == VsdRecordId.page) {
       _handleLevelChange(0);
       _currentPage = null;
+      _isBackgroundPage = false;
     }
     if (ptr.type == VsdRecordId.stencilPage) {
       _handleLevelChange(0);
@@ -1018,6 +1028,8 @@ class VsdBinaryParser {
         _readFontIx(input);
       case VsdRecordId.textBlock:
         _readTextBlock(input);
+      case VsdRecordId.page:
+        if (!collectStylesOnly) _readPage(input);
       case VsdRecordId.pageProps:
         _readPageProps(input);
       case VsdRecordId.text:
@@ -1473,6 +1485,15 @@ class VsdBinaryParser {
           ..byId.addAll(g.byId);
         d.geometries.add(ng);
       }
+    }
+    if (d.foreignBytes == null && master.foreignBytes != null) {
+      d.foreignBytes = Uint8List.fromList(master.foreignBytes!);
+      d.foreignType = master.foreignType;
+      d.foreignFormat = master.foreignFormat;
+      d.imgOffsetX = master.imgOffsetX;
+      d.imgOffsetY = master.imgOffsetY;
+      d.imgWidth = master.imgWidth;
+      d.imgHeight = master.imgHeight;
     }
     d.line ??= master.line;
     d.fill ??= master.fill;
@@ -2609,18 +2630,36 @@ class VsdBinaryParser {
     }
   }
 
+  /// Page record → background-page relationship (libvisio `readPage`).
+  void _readPage(VsdByteReader input) {
+    final page = _currentPage;
+    if (page == null) return;
+    try {
+      final backgroundId = _version == 5
+          ? _getUInt(input)
+          : (() {
+              input.skip(8); // sub-header length + children-list length
+              return input.readU32();
+            })();
+      page.backgroundPageId =
+          backgroundId == _minusOne || backgroundId == page.id
+              ? null
+              : backgroundId;
+    } catch (_) {}
+  }
+
   void _readForeignDataType(VsdByteReader input) {
     final s = _shape;
     if (s == null) return;
     try {
       input.skip(1);
-      input.readF64(); // offsetX
+      final offsetX = input.readF64();
       input.skip(1);
-      input.readF64(); // offsetY
+      final offsetY = input.readF64();
       input.skip(1);
-      input.readF64(); // width
+      final width = input.readF64();
       input.skip(1);
-      input.readF64(); // height
+      final height = input.readF64();
       var foreignType = input.readU16();
       final mapMode = input.readU16();
       if (mapMode == 0x8) foreignType = 0x4;
@@ -2628,6 +2667,10 @@ class VsdBinaryParser {
       final foreignFormat = input.readU32();
       s.foreignType = foreignType;
       s.foreignFormat = foreignFormat;
+      s.imgOffsetX = offsetX;
+      s.imgOffsetY = offsetY;
+      s.imgWidth = width;
+      s.imgHeight = height;
     } catch (_) {}
   }
 
@@ -4575,6 +4618,7 @@ class VsdBinaryParser {
     final images = <String, VsdxImage>{};
     var imageSeq = 0;
     final pages = <VsdxPage>[];
+    final firstPageId = _pages.first.id;
     for (var i = 0; i < _pages.length; i++) {
       final p = _pages[i];
       final scale = (p.scale > 0 && p.scale.isFinite) ? p.scale : 1.0;
@@ -4596,6 +4640,10 @@ class VsdBinaryParser {
           ),
           layers: List<VsdxLayer>.from(p.layers),
           connects: List<VsdxConnect>.from(p.connects),
+          isBackgroundPage: p.isBackgroundPage,
+          backgroundPageId: p.backgroundPageId == firstPageId
+              ? 0
+              : p.backgroundPageId,
           pageSheet: VsdxPageSheet(
             shadowOffsetXInches: p.shadowOffsetX * scale,
             shadowOffsetYInches: p.shadowOffsetY * scale,
@@ -4648,6 +4696,10 @@ class VsdBinaryParser {
     if (d.txtHeight != null) d.txtHeight = d.txtHeight! * s;
     if (d.txtLocPinX != null) d.txtLocPinX = d.txtLocPinX! * s;
     if (d.txtLocPinY != null) d.txtLocPinY = d.txtLocPinY! * s;
+    if (d.imgOffsetX != null) d.imgOffsetX = d.imgOffsetX! * s;
+    if (d.imgOffsetY != null) d.imgOffsetY = d.imgOffsetY! * s;
+    if (d.imgWidth != null) d.imgWidth = d.imgWidth! * s;
+    if (d.imgHeight != null) d.imgHeight = d.imgHeight! * s;
     for (final g in d.geometries) {
       final scaled = <int, VsdxPathCommand>{};
       for (final e in g.byId.entries) {
@@ -5183,6 +5235,10 @@ class VsdBinaryParser {
       endX: d.endX,
       endY: d.endY,
       imagePartName: _foreignPartByShapeId[d.id],
+      imgOffsetXInches: d.imgOffsetX ?? 0,
+      imgOffsetYInches: d.imgOffsetY ?? 0,
+      imgWidthInches: d.imgWidth,
+      imgHeightInches: d.imgHeight,
       foreignType: _foreignTypeByShapeId[d.id],
       layerMemberIds: List<int>.from(d.layerMemberIds),
       connectionPoints: [
