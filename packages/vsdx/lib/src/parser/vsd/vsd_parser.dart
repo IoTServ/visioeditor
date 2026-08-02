@@ -98,6 +98,77 @@ List<int> vsdResolveShapeOrder(
   return [for (final entry in entries) entry.value];
 }
 
+typedef VsdDynamicNurbsFormula = ({
+  double lastKnot,
+  int degree,
+  bool xRelative,
+  bool yRelative,
+  List<Offset2D> controlPoints,
+  List<double> knots,
+  List<double> weights,
+});
+
+/// Reads the typed-parameter form of a binary NURBS formula.
+///
+/// Unlike the static `0x8a` form, every coordinate, knot and weight carries a
+/// value-type byte. This mirrors libvisio's complex `readNURBSTo` branch.
+VsdDynamicNurbsFormula vsdReadDynamicNurbsFormula(
+  VsdByteReader input, {
+  required int firstValueType,
+  required int blockLength,
+  required int payloadStart,
+}) {
+  final lastKnot = firstValueType == 0x20
+      ? input.readF64()
+      : input.readU16().toDouble();
+  input.skip(1);
+  final degree = input.readU16();
+  input.skip(1);
+  final xType = input.readU16();
+  input.skip(1);
+  final yType = input.readU16();
+
+  final controlPoints = <Offset2D>[];
+  final knots = <double>[];
+  final weights = <double>[];
+  var bytesRead = input.offset - payloadStart;
+  var flag = input.readU8();
+  while (flag != 0x81 && bytesRead < blockLength && !input.isEnd) {
+    final parameterStart = input.offset;
+    final x = flag == 0x20 ? input.readF64() : input.readU16().toDouble();
+    final yFlag = input.readU8();
+    final y =
+        yFlag == 0x20 ? input.readF64() : input.readU16().toDouble();
+    final knotFlag = input.readU8();
+    final knot = switch (knotFlag) {
+      0x20 => input.readF64(),
+      0x62 => input.readU16().toDouble(),
+      _ => 0.0,
+    };
+    final weightFlag = input.readU8();
+    final weight = switch (weightFlag) {
+      0x20 => input.readF64(),
+      0x62 => input.readU16().toDouble(),
+      _ => 0.0,
+    };
+    controlPoints.add(Offset2D(x, y));
+    knots.add(knot);
+    weights.add(weight);
+    flag = input.readU8();
+    bytesRead += input.offset - parameterStart;
+  }
+
+  return (
+    lastKnot: lastKnot,
+    degree: degree,
+    xRelative: xType == 0,
+    yRelative: yType == 0,
+    controlPoints: controlPoints,
+    knots: knots,
+    weights: weights,
+  );
+}
+
 /// Resolves the page-level shadow offsets inherited by VSD5/VSD6
 /// FillAndShadow records.
 ///
@@ -3058,8 +3129,9 @@ class VsdBinaryParser {
         }
         if (cellRef == 6) {
           final paramType = input.readU8();
+          late final double lastKnot;
           if (paramType == 0x8a) {
-            final lastKnot = input.readF64();
+            lastKnot = input.readF64();
             degree = input.readU16();
             final xType = input.readU8();
             final yType = input.readU8();
@@ -3076,10 +3148,24 @@ class VsdBinaryParser {
               weights.add(w);
               repetitions--;
             }
-            knotVector.add(knot);
-            knotVector.add(lastKnot);
-            weights.add(weight);
+          } else {
+            final dynamic = vsdReadDynamicNurbsFormula(
+              input,
+              firstValueType: paramType,
+              blockLength: length,
+              payloadStart: inputPos,
+            );
+            lastKnot = dynamic.lastKnot;
+            degree = dynamic.degree;
+            xRel = dynamic.xRelative;
+            yRel = dynamic.yRelative;
+            controlPoints.addAll(dynamic.controlPoints);
+            knotVector.addAll(dynamic.knots);
+            weights.addAll(dynamic.weights);
           }
+          knotVector.add(knot);
+          knotVector.add(lastKnot);
+          weights.add(weight);
         }
       } catch (_) {}
       if (controlPoints.isEmpty) {
