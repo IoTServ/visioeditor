@@ -10,10 +10,13 @@ import 'package:xml/xml.dart';
 
 import '../model/master.dart';
 import '../model/stylesheet.dart';
+import '../utils/color.dart';
 import 'master_parser.dart';
 import 'package_reader.dart';
 import 'page_parser.dart';
 import 'relationships.dart';
+import 'rich_text_parser.dart';
+import 'style_parser.dart';
 
 final _log = Logger('vsdx.parser.masters');
 
@@ -22,9 +25,20 @@ class MastersParser {
     this._package, {
     MasterParser? masterParser,
     StyleSheetRegistry stylesheets = StyleSheetRegistry.empty,
+    Map<int, VsdxColor> colorPalette = const <int, VsdxColor>{},
+    Map<int, String> fontNames = const <int, String>{},
   })  : _resolver = RelationshipResolver(_package),
         _master = masterParser ??
-            MasterParser(shapes: PageParser(stylesheets: stylesheets));
+            MasterParser(
+              shapes: PageParser(
+                style: StyleParser(colorPalette: colorPalette),
+                richText: RichTextParser(
+                  colorPalette: colorPalette,
+                  fontNames: fontNames,
+                ),
+                stylesheets: stylesheets,
+              ),
+            );
 
   final VsdxPackage _package;
   final RelationshipResolver _resolver;

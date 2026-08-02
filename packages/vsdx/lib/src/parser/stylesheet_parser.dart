@@ -20,7 +20,13 @@ import 'cell_helpers.dart';
 import 'rich_text_parser.dart';
 
 class StyleSheetParser {
-  const StyleSheetParser();
+  const StyleSheetParser({
+    this.colorPalette = const <int, VsdxColor>{},
+    this.fontNames = const <int, String>{},
+  });
+
+  final Map<int, VsdxColor> colorPalette;
+  final Map<int, String> fontNames;
 
   StyleSheetRegistry parse(
     XmlDocument documentXml, {
@@ -117,7 +123,10 @@ class StyleSheetParser {
               }
             }
             if (charDefined.isNotEmpty) {
-              charStyle = const RichTextParser().readCharStyleRow(row);
+              charStyle = RichTextParser(
+                colorPalette: colorPalette,
+                fontNames: fontNames,
+              ).readCharStyleRow(row);
             }
           }
         case 'Paragraph':
@@ -493,7 +502,7 @@ class StyleSheetParser {
     if (cell == null) return const _StyleColorResolution.absent();
     final value = cell.getAttribute('V') ?? '';
     final formula = cell.getAttribute('F') ?? '';
-    final cached = VsdxColor.tryParse(value);
+    final cached = VsdxColor.tryParse(value, palette: colorPalette);
     if (_isConcreteThemeGuard(formula) && cached != null) {
       return _StyleColorResolution(color: cached);
     }
@@ -540,7 +549,7 @@ class StyleSheetParser {
     if (raw == null || raw.isEmpty) return null;
     final value = raw.trim();
     if (value == '0' || value == '255') return null;
-    return VsdxColor.tryParse(value);
+    return VsdxColor.tryParse(value, palette: colorPalette);
   }
 
   /// Length cell; `F=Inh` → null (caller keeps walking the parent chain).

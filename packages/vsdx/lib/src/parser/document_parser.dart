@@ -13,6 +13,7 @@ import 'package:xml/xml.dart';
 import '../core/exceptions.dart';
 import '../model/document.dart';
 import 'custom_properties_parser.dart';
+import 'document_resources_parser.dart';
 import 'document_settings_parser.dart';
 import 'image_parser.dart';
 import 'masters_parser.dart';
@@ -47,8 +48,14 @@ class DocumentParser {
         partName: documentPart,
       );
     }
-    final settings = const DocumentSettingsParser().parse(documentXml);
-    final stylesheets = const StyleSheetParser().parse(
+    final resources = const DocumentResourcesParser().parse(documentXml);
+    final settings = DocumentSettingsParser(
+      colorPalette: resources.colorPalette,
+    ).parse(documentXml);
+    final stylesheets = StyleSheetParser(
+      colorPalette: resources.colorPalette,
+      fontNames: resources.fontNames,
+    ).parse(
       documentXml,
       defaultTextStyleId: settings.defaultTextStyleId,
     );
@@ -61,7 +68,12 @@ class DocumentParser {
     _log.fine(() =>
         'Loaded theme (${theme.isEmpty ? 'empty' : '${theme.colors.length} slots'})');
 
-    final masters = MastersParser(pkg, stylesheets: stylesheets)
+    final masters = MastersParser(
+      pkg,
+      stylesheets: stylesheets,
+      colorPalette: resources.colorPalette,
+      fontNames: resources.fontNames,
+    )
         .parseMasters(documentPartName: documentPart);
     _log.fine(() => 'Loaded ${masters.length} master(s)');
 
@@ -71,7 +83,13 @@ class DocumentParser {
 
     // PagesParser will mint its own PageParser instances per page so each
     // shape can resolve `<ForeignData r:id>` against the right rels map.
-    final pages = PagesParser(pkg, masters: masters, stylesheets: stylesheets)
+    final pages = PagesParser(
+      pkg,
+      masters: masters,
+      stylesheets: stylesheets,
+      colorPalette: resources.colorPalette,
+      fontNames: resources.fontNames,
+    )
         .parsePages(documentPartName: documentPart);
     _log.fine(() => 'Parsed ${pages.length} page(s)');
 

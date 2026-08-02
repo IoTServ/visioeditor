@@ -172,12 +172,18 @@ class _ZeroDateTime implements DateTime {
 }
 
 class RichTextParser {
-  const RichTextParser({this.fieldResolver = FieldResolver.placeholder});
+  const RichTextParser({
+    this.fieldResolver = FieldResolver.placeholder,
+    this.colorPalette = const <int, VsdxColor>{},
+    this.fontNames = const <int, String>{},
+  });
 
   /// Field substitution policy. Defaults to a static placeholder; the
   /// PageParser overrides it per page so `PageNumber` / `PageCount` /
   /// `Title` / `DateField` resolve to real values.
   final FieldResolver fieldResolver;
+  final Map<int, VsdxColor> colorPalette;
+  final Map<int, String> fontNames;
 
   /// Parse the shape's text into a [VsdxRichText].
   ///
@@ -232,7 +238,11 @@ class RichTextParser {
   /// Spawn a new parser with the field resolver overridden — useful for
   /// per-page substitution without rebuilding the rest of the config.
   RichTextParser withFieldResolver(FieldResolver resolver) =>
-      RichTextParser(fieldResolver: resolver);
+      RichTextParser(
+        fieldResolver: resolver,
+        colorPalette: colorPalette,
+        fontNames: fontNames,
+      );
 
   /// Public: parse only the Character section into a map IX→style (used by
   /// the Master parser to lift defaults onto instance shapes).
@@ -316,7 +326,8 @@ class RichTextParser {
     final colorV = colorCell?.getAttribute('V');
     final colorF = colorCell?.getAttribute('F') ?? '';
     final colorInh = isInhFormula(colorF);
-    final cachedColor = VsdxColor.tryParse(colorV);
+    final cachedColor =
+        VsdxColor.tryParse(colorV, palette: colorPalette);
     final concreteThemeGuard =
         _isConcreteThemeGuard(colorF) && cachedColor != null;
     final isTheme = !colorInh &&
@@ -684,7 +695,7 @@ class RichTextParser {
     }
     final asInt = int.tryParse(raw);
     if (asInt == 0 || asInt == 255) return null;
-    return VsdxColor.tryParse(raw);
+    return VsdxColor.tryParse(raw, palette: colorPalette);
   }
 
   /// Walk the children of `<Text>`, splitting at every `<cp/>` / `<pp/>`
@@ -928,7 +939,9 @@ class RichTextParser {
         combined.contains('THEMEGUARD')) {
       return inheritFrom;
     }
-    return value.isEmpty ? null : value;
+    if (value.isEmpty) return null;
+    final index = int.tryParse(value);
+    return index == null ? value : fontNames[index] ?? value;
   }
 
   int? _cellInt(XmlElement parent, String name, {int? inheritFrom}) {

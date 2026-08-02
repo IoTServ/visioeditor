@@ -20,7 +20,11 @@ import '../utils/color.dart';
 import 'cell_helpers.dart';
 
 class DocumentSettingsParser {
-  const DocumentSettingsParser();
+  const DocumentSettingsParser({
+    this.colorPalette = const <int, VsdxColor>{},
+  });
+
+  final Map<int, VsdxColor> colorPalette;
 
   VsdxDocumentSettings parse(XmlDocument? documentXml) {
     if (documentXml == null) return VsdxDocumentSettings.defaults;
@@ -36,7 +40,9 @@ class DocumentSettingsParser {
     final color = _cellString(settings, 'PageColor');
     return VsdxDocumentSettings(
       defaultPageBackgroundColor:
-          color == null ? null : VsdxColor.tryParse(color),
+          color == null
+              ? null
+              : VsdxColor.tryParse(color, palette: colorPalette),
       glueType: _cellInt(settings, 'GlueType') ?? 0,
       snapEnabled: (_cellInt(settings, 'SnapEnabled') ?? 1) != 0,
       gridDensityX: _cellInt(settings, 'GridDensityX') ?? 4,

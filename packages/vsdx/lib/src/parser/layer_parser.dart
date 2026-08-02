@@ -13,7 +13,11 @@ import '../utils/color.dart';
 import 'cell_helpers.dart';
 
 class LayerParser {
-  const LayerParser();
+  const LayerParser({
+    this.colorPalette = const <int, VsdxColor>{},
+  });
+
+  final Map<int, VsdxColor> colorPalette;
 
   /// Returns one [VsdxLayer] per `<Row>` of the `Layer` section. Returns an
   /// empty list when no Layer section is present.
@@ -39,7 +43,10 @@ class LayerParser {
           locked: (_cellInt(row, 'Lock') ?? 0) != 0,
           snap: (_cellInt(row, 'Snap') ?? 1) != 0,
           glue: (_cellInt(row, 'Glue') ?? 1) != 0,
-          color: VsdxColor.tryParse(_cellString(row, 'Color')),
+          color: VsdxColor.tryParse(
+            _cellString(row, 'Color'),
+            palette: colorPalette,
+          ),
           // ColorTrans / Status: keep cached V= even when F=Inh so a non-zero
           // transparency / status is not forced to the Visio default 0.
           colorTrans: _cellDoubleCached(row, 'ColorTrans') ?? 0,

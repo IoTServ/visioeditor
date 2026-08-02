@@ -15,7 +15,11 @@ import '../utils/color.dart';
 import 'cell_helpers.dart' show findCell, isInhFormula, readLengthInches;
 
 class StyleParser {
-  const StyleParser();
+  const StyleParser({
+    this.colorPalette = const <int, VsdxColor>{},
+  });
+
+  final Map<int, VsdxColor> colorPalette;
 
   /// Parse fill cells, falling back to [defaults] for any cell that's
   /// absent on the shape (this is the Master-inheritance hook).
@@ -603,11 +607,11 @@ class StyleParser {
         final idx = _int(shape, quickStyleCell);
         if (idx != null) return _ColorResolution(null, idx);
       }
-      return _ColorResolution(VsdxColor.tryParse(v), null);
+      return _ColorResolution(_parseColor(v), null);
     }
     // THEMEGUARD(...) protects the evaluated colour cached in V=. libvisio
     // consumes that value regardless of the guarded inner expression.
-    final cached = VsdxColor.tryParse(v);
+    final cached = _parseColor(v);
     if (_isConcreteThemeGuard(f) && cached != null) {
       return _ColorResolution(cached, null);
     }
@@ -629,7 +633,7 @@ class StyleParser {
       // Visio defaults QuickStyle*Color to lt1 when the cell is absent.
       return _ColorResolution(null, idx ?? ThemeSlot.lt1);
     }
-    return _ColorResolution(VsdxColor.tryParse(v), null);
+    return _ColorResolution(_parseColor(v), null);
   }
 
   /// Extract a theme slot from `THEMEVAL("AccentColor2")` / `THEMEVAL(3)`.
@@ -662,7 +666,7 @@ class StyleParser {
       }
       // No Master/prototype stop — fall through and honour cached V=.
     }
-    final cached = VsdxColor.tryParse(v);
+    final cached = _parseColor(v);
     if (_isConcreteThemeGuard(f) && cached != null) {
       return _ColorResolution(cached, null);
     }
@@ -689,8 +693,11 @@ class StyleParser {
       final idx = int.tryParse(v.trim());
       if (idx != null) return _ColorResolution(null, idx);
     }
-    return _ColorResolution(VsdxColor.tryParse(v), null);
+    return _ColorResolution(_parseColor(v), null);
   }
+
+  VsdxColor? _parseColor(String? value) =>
+      VsdxColor.tryParse(value, palette: colorPalette);
 
   double? _doubleIn(XmlElement parent, String name, {double? inheritFrom}) {
     final cell = findCell(parent, name);

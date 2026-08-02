@@ -44,7 +44,10 @@ class VsdxColor {
   ///     `null`, caller (the theme resolver) must look it up against the
   ///     theme part.
   ///   * `MSO_SYSTEM_COLOR(...)`: returns `null` (delegate to OS palette).
-  static VsdxColor? tryParse(String? raw) {
+  static VsdxColor? tryParse(
+    String? raw, {
+    Map<int, VsdxColor> palette = const <int, VsdxColor>{},
+  }) {
     if (raw == null || raw.isEmpty) return null;
     final s = raw.trim();
     final upper = s.toUpperCase();
@@ -58,10 +61,12 @@ class VsdxColor {
 
     // Bare palette index?
     final paletteIdx = int.tryParse(s);
-    if (paletteIdx != null &&
-        paletteIdx >= 0 &&
-        paletteIdx < _defaultPalette.length) {
-      return _defaultPalette[paletteIdx];
+    if (paletteIdx != null) {
+      final custom = palette[paletteIdx];
+      if (custom != null) return custom;
+      if (paletteIdx >= 0 && paletteIdx < _defaultPalette.length) {
+        return _defaultPalette[paletteIdx];
+      }
     }
     return null;
   }
@@ -169,13 +174,13 @@ const List<VsdxColor> _defaultPalette = <VsdxColor>[
   VsdxColor(0xFF800080), // 12 DarkMagenta
   VsdxColor(0xFF008080), // 13 DarkCyan
   VsdxColor(0xFFC0C0C0), // 14 LightGray
-  VsdxColor(0xFF808080), // 15 DarkGray
-  VsdxColor(0xFFE6E6E6), // 16
-  VsdxColor(0xFFCDCDCD), // 17
-  VsdxColor(0xFFB3B3B3), // 18
-  VsdxColor(0xFF9A9A9A), // 19
-  VsdxColor(0xFF808080), // 20
-  VsdxColor(0xFF666666), // 21
-  VsdxColor(0xFF4D4D4D), // 22
-  VsdxColor(0xFF333333), // 23
+  VsdxColor(0xFFE6E6E6), // 15
+  VsdxColor(0xFFCDCDCD), // 16
+  VsdxColor(0xFFB3B3B3), // 17
+  VsdxColor(0xFF9A9A9A), // 18
+  VsdxColor(0xFF808080), // 19
+  VsdxColor(0xFF666666), // 20
+  VsdxColor(0xFF4D4D4D), // 21
+  VsdxColor(0xFF333333), // 22
+  VsdxColor(0xFF1A1A1A), // 23
 ];

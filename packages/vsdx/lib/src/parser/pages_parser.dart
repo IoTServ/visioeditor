@@ -20,6 +20,7 @@ import 'package_reader.dart';
 import 'page_parser.dart';
 import 'relationships.dart';
 import 'rich_text_parser.dart';
+import 'style_parser.dart';
 
 final _log = Logger('vsdx.parser.pages');
 
@@ -29,15 +30,23 @@ class PagesParser {
     PageParser? pageParser,
     MasterRegistry masters = MasterRegistry.empty,
     StyleSheetRegistry stylesheets = StyleSheetRegistry.empty,
+    Map<int, VsdxColor> colorPalette = const <int, VsdxColor>{},
+    Map<int, String> fontNames = const <int, String>{},
   })  : _resolver = RelationshipResolver(_package),
         _pageParserFactory =
             ((Map<String, String>? rels) => pageParser ??
                 PageParser(
+                  style: StyleParser(colorPalette: colorPalette),
+                  richText: RichTextParser(
+                    colorPalette: colorPalette,
+                    fontNames: fontNames,
+                  ),
                   masters: masters,
                   stylesheets: stylesheets,
                   imageRels: rels,
                 )),
-        _hasInjectedParser = pageParser != null;
+        _hasInjectedParser = pageParser != null,
+        _colorPalette = colorPalette;
 
   final VsdxPackage _package;
   final RelationshipResolver _resolver;
@@ -46,6 +55,7 @@ class PagesParser {
   /// `<ForeignData r:id="...">` against the right rels file.
   final PageParser Function(Map<String, String>?) _pageParserFactory;
   final bool _hasInjectedParser;
+  final Map<int, VsdxColor> _colorPalette;
 
   /// Locate `visio/pages/pages.xml` via the document part's relationships and
   /// return a fully-populated page list. If no `pages` relationship exists
@@ -119,7 +129,7 @@ class PagesParser {
           width;
       height = readLengthInches(pageSheet, 'PageHeight', inheritFrom: height) ??
           height;
-      layers = const LayerParser().parseLayers(pageSheet);
+      layers = LayerParser(colorPalette: _colorPalette).parseLayers(pageSheet);
       bgColor = _readPageColor(pageSheet);
       sheet = _readPageSheet(pageSheet);
     }
@@ -293,7 +303,7 @@ class PagesParser {
       if (isInhFormula(el.getAttribute('F'))) return null;
       final v = el.getAttribute('V');
       if (v == null || v.isEmpty) return null;
-      return VsdxColor.tryParse(v);
+      return VsdxColor.tryParse(v, palette: _colorPalette);
     }
     return null;
   }
