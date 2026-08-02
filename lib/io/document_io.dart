@@ -1,7 +1,8 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'save_platform.dart' as save_platform;
 
@@ -32,9 +33,21 @@ const List<String> kVisioAssociatedExtensions = <String>[
   ...kVisioOpenExtensions,
 ];
 
+const MethodChannel _androidFileChannel = MethodChannel('visioeditor/files');
+
 /// Show the native open dialog and return the chosen file's bytes, or `null`
 /// if the user cancelled.
 Future<PickedDocument?> pickVisioFile() async {
+  // Android's file_picker adapter converts extensions through MimeTypeMap.
+  // Visio types are absent on many Android versions, which makes a custom
+  // filter fail before the system picker opens. The native bridge supplies
+  // the canonical MIME types plus generic OPC fallbacks and returns a cached,
+  // extension-preserving path.
+  if (!kIsWeb && Platform.isAndroid) {
+    final path = await _androidFileChannel.invokeMethod<String>('pickVisioFile');
+    if (path == null || !hasVisioExtension(path)) return null;
+    return readDroppedFile(path);
+  }
   final result = await FilePicker.platform.pickFiles(
     type: FileType.custom,
     allowedExtensions: kVisioOpenExtensions,
@@ -106,6 +119,14 @@ bool hasVisioAssociatedExtension(String path) {
   final lower = path.toLowerCase();
   return kVisioAssociatedExtensions.any((e) => lower.endsWith('.$e'));
 }
+
+/// Visio file paths supplied by desktop runners at process startup.
+///
+/// Windows passes shell association paths as command-line arguments and the
+/// Linux desktop entry uses `%f`. Ignore Flutter/tooling flags and unrelated
+/// arguments rather than attempting to read them as documents.
+List<String> visioPathsFromArguments(Iterable<String> arguments) =>
+    arguments.where(hasVisioAssociatedExtension).toList(growable: false);
 
 /// Legacy Visio 2003–2010 binary drawing (OLE2). Importable; Save As `.vsdx`.
 bool isLegacyVisioBinary(String path) {

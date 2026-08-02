@@ -30,10 +30,6 @@ them at the packaged executable — no manual registry edits.
 
 An installer such as Inno Setup can perform the same writes at install time.
 
-## Remaining runtime step
-
-With the association in place Windows launches the app with the drawing path as
-`argv[1]` (the runner already reads command-line args in
-`windows/runner/utils.cpp`). To actually open it, that path must be forwarded to
-Dart (mirroring the macOS `MethodChannel('visioeditor/files')` bridge); until
-then the app launches but does not auto-open the passed file.
+The Windows runner forwards command-line arguments to Dart. The app filters
+those arguments against the supported Visio extensions and opens associated
+files on startup.

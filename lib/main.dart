@@ -45,18 +45,26 @@ import 'settings/settings_page.dart';
 import 'templates/diagram_templates.dart';
 import 'templates/template_picker_dialog.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
   // Hatch tiles for Visio FillPattern 2–16 (canvas + PNG share VsdxPainter).
   await PatternFillBuilder.warmUpShared();
   final settings = await AppSettings.load();
-  runApp(VisioEditorApp(settings: settings));
+  runApp(VisioEditorApp(
+    settings: settings,
+    initialFilePaths: visioPathsFromArguments(arguments),
+  ));
 }
 
 class VisioEditorApp extends StatelessWidget {
-  const VisioEditorApp({required this.settings, super.key});
+  const VisioEditorApp({
+    required this.settings,
+    this.initialFilePaths = const <String>[],
+    super.key,
+  });
 
   final AppSettings settings;
+  final List<String> initialFilePaths;
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +103,10 @@ class VisioEditorApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: EditorHomePage(settings: settings),
+          home: EditorHomePage(
+            settings: settings,
+            initialFilePaths: initialFilePaths,
+          ),
         );
       },
     );
@@ -103,9 +114,14 @@ class VisioEditorApp extends StatelessWidget {
 }
 
 class EditorHomePage extends StatefulWidget {
-  const EditorHomePage({required this.settings, super.key});
+  const EditorHomePage({
+    required this.settings,
+    this.initialFilePaths = const <String>[],
+    super.key,
+  });
 
   final AppSettings settings;
+  final List<String> initialFilePaths;
 
   @override
   State<EditorHomePage> createState() => _EditorHomePageState();
@@ -123,8 +139,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     'workflow.vsdx',
   ];
 
-  /// Channel over which macOS hands us documents opened from Finder
-  /// (double-click / "Open With") or the `open` command.
+  /// Channel over which Android/iOS/macOS hand us documents opened by the OS.
   static const MethodChannel _fileChannel = MethodChannel('visioeditor/files');
 
   /// Match [StencilGroup.expandAtWidth] for everyday libraries (General /
@@ -294,13 +309,22 @@ class _EditorHomePageState extends State<EditorHomePage> {
       if (mounted) setState(() => _recents = r);
     });
     if (!kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.macOS ||
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
       _fileChannel.setMethodCallHandler(_onNativeMethod);
       // Tell the native side we're listening so it can flush any file that was
       // opened before the Dart isolate was ready (cold launch from Finder /
       // Files / "Open in…").
       unawaited(_fileChannel.invokeMethod<void>('ready').catchError((Object _) {}));
+    }
+    if (widget.initialFilePaths.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        for (final path in widget.initialFilePaths) {
+          if (!mounted) return;
+          await _openPath(path);
+        }
+      });
     }
   }
 

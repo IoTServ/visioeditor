@@ -35,9 +35,5 @@ gtk-update-icon-cache -f ~/.local/share/icons/hicolor 2>/dev/null || true
 For a system-wide install use `/usr/share/mime/packages/` and
 `/usr/share/applications/` (run the `update-*` commands without the `~` prefix).
 
-## Remaining runtime step
-
-The association makes the OS launch the app with the file path in `argv`
-(`%f`). To actually load it, the Linux runner must forward that path to Dart
-(mirroring the macOS `MethodChannel('visioeditor/files')` bridge). Until then
-the app launches but does not auto-open the passed file.
+The `%f` path is forwarded by the Linux runner to Dart. The app filters startup
+arguments against the supported Visio extensions and opens the associated file.

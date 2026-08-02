@@ -10,4 +10,4 @@ Icon=visioeditor
 Terminal=false
 Categories=Graphics;Office;VectorGraphics;
 StartupNotify=true
-MimeType=application/vnd.ms-visio.drawing;application/vnd.ms-visio.template;application/vnd.ms-visio.stencil;application/vnd.visio;
+MimeType=application/vnd.ms-visio.drawing;application/vnd.ms-visio.drawing.macroEnabled.12;application/vnd.ms-visio.template;application/vnd.ms-visio.template.macroEnabled.12;application/vnd.ms-visio.stencil;application/vnd.ms-visio.stencil.macroEnabled.12;application/vnd.visio;

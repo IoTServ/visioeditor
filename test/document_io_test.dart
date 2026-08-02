@@ -16,6 +16,34 @@ void main() {
     expect(isLegacyVisioBinary('x.VSD'), isTrue);
   });
 
+  test('open filters cover every supported Visio family extension', () {
+    expect(kVisioOpenExtensions, <String>[
+      'vsd',
+      'vsdx',
+      'vsdm',
+      'vstx',
+      'vstm',
+      'vssx',
+      'vssm',
+    ]);
+    for (final extension in kVisioOpenExtensions) {
+      expect(hasVisioExtension('DRAWING.${extension.toUpperCase()}'), isTrue);
+      expect(hasVisioAssociatedExtension('/tmp/drawing.$extension'), isTrue);
+    }
+  });
+
+  test('desktop startup arguments retain only associated Visio files', () {
+    expect(
+      visioPathsFromArguments(<String>[
+        '--trace-startup',
+        r'C:\Diagrams\Network.VSDX',
+        '/tmp/template.vstm',
+        '/tmp/readme.txt',
+      ]),
+      <String>[r'C:\Diagrams\Network.VSDX', '/tmp/template.vstm'],
+    );
+  });
+
   test('export helpers require bytes in the API (compile-time contract)', () {
     // Ensures call sites pass bytes — mobile saveFile throws without them.
     const suggested = 'out.svg';

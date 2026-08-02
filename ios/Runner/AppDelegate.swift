@@ -20,7 +20,8 @@ import UIKit
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
     FileOpenBridge.shared.open([url])
-    return super.application(app, open: url, options: options)
+    let flutterHandled = super.application(app, open: url, options: options)
+    return url.isFileURL || flutterHandled
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {

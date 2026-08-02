@@ -13,18 +13,30 @@
     <comment>Visio Drawing</comment>
     <sub-class-of type="application/zip"/>
     <glob pattern="*.vsdx"/>
+  </mime-type>
+  <mime-type type="application/vnd.ms-visio.drawing.macroEnabled.12">
+    <comment>Visio Macro-Enabled Drawing</comment>
+    <sub-class-of type="application/zip"/>
     <glob pattern="*.vsdm"/>
   </mime-type>
   <mime-type type="application/vnd.ms-visio.template">
     <comment>Visio Template</comment>
     <sub-class-of type="application/zip"/>
     <glob pattern="*.vstx"/>
+  </mime-type>
+  <mime-type type="application/vnd.ms-visio.template.macroEnabled.12">
+    <comment>Visio Macro-Enabled Template</comment>
+    <sub-class-of type="application/zip"/>
     <glob pattern="*.vstm"/>
   </mime-type>
   <mime-type type="application/vnd.ms-visio.stencil">
     <comment>Visio Stencil</comment>
     <sub-class-of type="application/zip"/>
     <glob pattern="*.vssx"/>
+  </mime-type>
+  <mime-type type="application/vnd.ms-visio.stencil.macroEnabled.12">
+    <comment>Visio Macro-Enabled Stencil</comment>
+    <sub-class-of type="application/zip"/>
     <glob pattern="*.vssm"/>
   </mime-type>
 </mime-info>

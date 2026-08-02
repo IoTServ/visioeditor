@@ -30,7 +30,7 @@ Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\Software\Classes\.vsdm]
 @="VisioEditor.Drawing"
-"Content Type"="application/vnd.ms-visio.drawing.macroEnabled"
+"Content Type"="application/vnd.ms-visio.drawing.macroEnabled.12"
 
 [HKEY_CURRENT_USER\Software\Classes\.vstx]
 @="VisioEditor.Drawing"
@@ -38,7 +38,7 @@ Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\Software\Classes\.vstm]
 @="VisioEditor.Drawing"
-"Content Type"="application/vnd.ms-visio.template.macroEnabled"
+"Content Type"="application/vnd.ms-visio.template.macroEnabled.12"
 
 [HKEY_CURRENT_USER\Software\Classes\.vssx]
 @="VisioEditor.Drawing"
@@ -46,7 +46,7 @@ Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\Software\Classes\.vssm]
 @="VisioEditor.Drawing"
-"Content Type"="application/vnd.ms-visio.stencil.macroEnabled"
+"Content Type"="application/vnd.ms-visio.stencil.macroEnabled.12"
 
 ; Legacy binary Visio drawing
 [HKEY_CURRENT_USER\Software\Classes\.vsd]

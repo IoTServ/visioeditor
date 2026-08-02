@@ -39,10 +39,14 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:mimeType="application/vnd.visio"/>
                 <data android:mimeType="application/vnd.ms-visio.drawing"/>
+                <data android:mimeType="application/vnd.ms-visio.drawing.macroEnabled.12"/>
+                <!-- Compatibility with providers that omit the Office `.12` suffix. -->
                 <data android:mimeType="application/vnd.ms-visio.drawing.macroEnabled"/>
                 <data android:mimeType="application/vnd.ms-visio.template"/>
+                <data android:mimeType="application/vnd.ms-visio.template.macroEnabled.12"/>
                 <data android:mimeType="application/vnd.ms-visio.template.macroEnabled"/>
                 <data android:mimeType="application/vnd.ms-visio.stencil"/>
+                <data android:mimeType="application/vnd.ms-visio.stencil.macroEnabled.12"/>
                 <data android:mimeType="application/vnd.ms-visio.stencil.macroEnabled"/>
             </intent-filter>
             <!-- Fall back to matching by file extension (content/file URIs whose
