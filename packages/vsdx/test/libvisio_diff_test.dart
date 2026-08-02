@@ -256,20 +256,29 @@ void main() {
       for (final run in shape.richText.runs) {
         expect(run.paraStyle.horizontalAlign, VsdxHorzAlign.center);
         expect(run.paraStyle.lineSpacing, closeTo(1.2, 1e-12));
+        expect(run.charStyle.fontFamily, 'Calibri');
+        expect(run.charStyle.langId, 'en-GB');
       }
     }
 
     final guarded = parser.parse(_fixture('test12_colors.vsdx'));
     final guardedLines = <int>{};
     final guardedFills = <int>{};
+    final guardedText = <int>{};
     _walk(guarded, (shape) {
       if (shape.line.color != null) guardedLines.add(shape.line.color!.value);
       if (shape.fill.foreground != null) {
         guardedFills.add(shape.fill.foreground!.value);
       }
+      for (final run in shape.richText.runs) {
+        if (run.charStyle.color != null) {
+          guardedText.add(run.charStyle.color!.value);
+        }
+      }
     });
     expect(guardedLines, containsAll(<int>[0xFFFF0000, 0xFF00FF00]));
     expect(guardedFills, containsAll(<int>[0xFFFF0000, 0xFF00FF00]));
+    expect(guardedText, containsAll(<int>[0xFFFF0000, 0xFF00FF00]));
   });
 
   group('identity write → libvisio oracle', () {

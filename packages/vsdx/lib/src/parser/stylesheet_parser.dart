@@ -16,6 +16,7 @@ import '../model/rich_text.dart';
 import '../model/stylesheet.dart';
 import '../utils/color.dart';
 import 'cell_helpers.dart';
+import 'rich_text_parser.dart';
 
 class StyleSheetParser {
   const StyleSheetParser();
@@ -71,6 +72,7 @@ class StyleSheetParser {
 
     VsdxCharStyle? charStyle;
     var charSizeInherits = false;
+    final charDefined = <String>{};
     VsdxParaStyle? paraStyle;
     var paraDefined = <String>{};
     VsdxTextBlock? textBlock;
@@ -90,14 +92,33 @@ class StyleSheetParser {
           if (row != null) {
             final sizeCell = findCell(row, 'Size');
             charSizeInherits = isInhFormula(sizeCell?.getAttribute('F'));
-            charStyle = VsdxCharStyle(
-              fontFamily: _cellString(row, 'Font'),
-              fontSizeInches:
-                  readLengthInches(row, 'Size') ?? (12.0 / 72.0),
-              style: VsdxFontStyle.fromBitmask(_rawCellInt(row, 'Style') ?? 0),
-              color: VsdxColor.tryParse(_cellString(row, 'Color') ?? ''),
-              underline: ((_rawCellInt(row, 'Style') ?? 0) & 0x04) != 0,
-            );
+            for (final name in const <String>{
+              'Font',
+              'Size',
+              'Style',
+              'Color',
+              'Strikethru',
+              'DblUnderline',
+              'DoubleStrikethrough',
+              'Overline',
+              'ColorTrans',
+              'Letterspace',
+              'Pos',
+              'Case',
+              'FontScale',
+              'AsianFont',
+              'ComplexScriptFont',
+              'LangID',
+              'ComplexScriptSize',
+            }) {
+              final cell = _concreteCell(row, name);
+              if (cell != null && (name == 'Color' || !_isThemeCell(cell))) {
+                charDefined.add(name);
+              }
+            }
+            if (charDefined.isNotEmpty) {
+              charStyle = const RichTextParser().readCharStyleRow(row);
+            }
           }
         case 'Paragraph':
           final parsed = _readParagraphStyle(section);
@@ -285,6 +306,7 @@ class StyleSheetParser {
       fillStyleId: fillStyleId,
       charStyle: charStyle,
       charSizeInherits: charSizeInherits,
+      charDefinedCells: Set.unmodifiable(charDefined),
       paraStyle: paraStyle,
       paraDefinedCells: Set.unmodifiable(paraDefined),
       textBlock: textBlock,
@@ -435,6 +457,15 @@ class StyleSheetParser {
     return cell;
   }
 
+  bool _isThemeCell(XmlElement cell) {
+    final value = cell.getAttribute('V') ?? '';
+    final formula = cell.getAttribute('F') ?? '';
+    final combined = '$value $formula'.toUpperCase();
+    return value.toUpperCase() == 'THEMED' ||
+        combined.contains('THEMEVAL') ||
+        combined.contains('THEMEGUARD');
+  }
+
   VsdxColor? _textBackground(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     final value = raw.trim();
@@ -491,15 +522,4 @@ class StyleSheetParser {
         6 => 0.375,
         _ => 0.125,
       };
-
-  /// Like [_cellInt] but reads the raw `V` even when it is `Themed` / a
-  /// formula — numeric Style bitmasks still parse; non-numeric → null.
-  int? _rawCellInt(XmlElement parent, String name) {
-    final cell = findCell(parent, name);
-    if (cell == null) return null;
-    if (isInhFormula(cell.getAttribute('F'))) return null;
-    final v = cell.getAttribute('V');
-    if (v == null) return null;
-    return int.tryParse(v) ?? double.tryParse(v)?.toInt();
-  }
 }

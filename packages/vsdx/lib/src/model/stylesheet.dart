@@ -21,6 +21,7 @@ class VsdxStyleSheet {
     this.fillStyleId,
     this.charStyle,
     this.charSizeInherits = false,
+    this.charDefinedCells = const <String>{},
     this.paraStyle,
     this.paraDefinedCells = const <String>{},
     this.textBlock,
@@ -49,6 +50,9 @@ class VsdxStyleSheet {
   /// `true` when the Size cell carried `F="Inh"` — callers should keep walking
   /// the [textStyleId] chain rather than treating [charStyle]'s size as final.
   final bool charSizeInherits;
+
+  /// Concrete Character cells contributed by row IX=0 on this stylesheet.
+  final Set<String> charDefinedCells;
 
   final VsdxParaStyle? paraStyle;
 
@@ -109,10 +113,23 @@ class StyleSheetRegistry {
     String? fontFamily;
     double? fontSizeInches;
     VsdxFontStyle? style;
-    var underline = false;
-    var sawStyle = false;
-    // Colour is often THEMEVAL / index — leave null unless we get a hex.
-    // (Colour resolution stays with StyleParser + theme.)
+    VsdxColor? color;
+    int? themeColorIndex;
+    bool? underline;
+    bool? strikethrough;
+    bool? doubleUnderline;
+    bool? doubleStrikethrough;
+    bool? overline;
+    double? transparency;
+    double? letterSpacingInches;
+    VsdxTextPosition? position;
+    VsdxTextCase? textCase;
+    double? fontScale;
+    String? asianFont;
+    String? complexScriptFont;
+    String? langId;
+    double? complexScriptSizeInches;
+    final resolved = <String>{};
 
     final seen = <int>{};
     while (id != null && seen.add(id)) {
@@ -120,35 +137,73 @@ class StyleSheetRegistry {
       if (sheet == null) break;
       final c = sheet.charStyle;
       if (c != null) {
-        fontFamily ??= c.fontFamily;
-        if (fontSizeInches == null &&
-            !sheet.charSizeInherits &&
-            c.fontSizeInches > 0) {
+        final defined = sheet.charDefinedCells.isEmpty
+            ? const <String>{'Font', 'Size', 'Style', 'Color'}
+            : sheet.charDefinedCells;
+        if (resolved.addIfAbsent('Font', defined)) fontFamily = c.fontFamily;
+        if (!sheet.charSizeInherits && resolved.addIfAbsent('Size', defined)) {
           fontSizeInches = c.fontSizeInches;
         }
-        if (!sawStyle &&
-            (c.style.bold || c.style.italic || c.underline)) {
+        if (resolved.addIfAbsent('Style', defined)) {
           style = c.style;
           underline = c.underline;
-          sawStyle = true;
-        } else if (!sawStyle && c.style == VsdxFontStyle.regular) {
-          // Explicit Style=0 on this sheet — still a concrete value.
-          style = c.style;
-          underline = c.underline;
-          sawStyle = true;
+        }
+        if (resolved.addIfAbsent('Color', defined)) {
+          color = c.color;
+          themeColorIndex = c.themeColorIndex;
+        }
+        if (resolved.addIfAbsent('Strikethru', defined)) {
+          strikethrough = c.strikethrough;
+        }
+        if (resolved.addIfAbsent('DblUnderline', defined)) {
+          doubleUnderline = c.doubleUnderline;
+        }
+        if (resolved.addIfAbsent('DoubleStrikethrough', defined)) {
+          doubleStrikethrough = c.doubleStrikethrough;
+        }
+        if (resolved.addIfAbsent('Overline', defined)) overline = c.overline;
+        if (resolved.addIfAbsent('ColorTrans', defined)) {
+          transparency = c.transparency;
+        }
+        if (resolved.addIfAbsent('Letterspace', defined)) {
+          letterSpacingInches = c.letterSpacingInches;
+        }
+        if (resolved.addIfAbsent('Pos', defined)) position = c.position;
+        if (resolved.addIfAbsent('Case', defined)) textCase = c.textCase;
+        if (resolved.addIfAbsent('FontScale', defined)) fontScale = c.fontScale;
+        if (resolved.addIfAbsent('AsianFont', defined)) asianFont = c.asianFont;
+        if (resolved.addIfAbsent('ComplexScriptFont', defined)) {
+          complexScriptFont = c.complexScriptFont;
+        }
+        if (resolved.addIfAbsent('LangID', defined)) langId = c.langId;
+        if (resolved.addIfAbsent('ComplexScriptSize', defined)) {
+          complexScriptSizeInches = c.complexScriptSizeInches;
         }
       }
       id = sheet.textStyleId;
     }
 
-    if (fontFamily == null && fontSizeInches == null && !sawStyle) {
-      return null;
-    }
+    if (resolved.isEmpty) return null;
     return VsdxCharStyle(
       fontFamily: fontFamily,
       fontSizeInches: fontSizeInches ?? VsdxCharStyle.defaults.fontSizeInches,
       style: style ?? VsdxFontStyle.regular,
-      underline: underline,
+      color: color,
+      themeColorIndex: themeColorIndex,
+      underline: underline ?? false,
+      strikethrough: strikethrough ?? false,
+      doubleUnderline: doubleUnderline ?? false,
+      doubleStrikethrough: doubleStrikethrough ?? false,
+      overline: overline ?? false,
+      transparency: transparency ?? 0,
+      letterSpacingInches: letterSpacingInches ?? 0,
+      position: position ?? VsdxTextPosition.normal,
+      textCase: textCase ?? VsdxTextCase.normal,
+      fontScale: fontScale ?? 1,
+      asianFont: asianFont,
+      complexScriptFont: complexScriptFont,
+      langId: langId,
+      complexScriptSizeInches: complexScriptSizeInches,
     );
   }
 

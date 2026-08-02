@@ -112,6 +112,27 @@ void main() {
             <Cell N="TextBkgndTrans" V="0.25"/>
             <Cell N="DefaultTabStop" V="0.75"/>
             <Cell N="TextDirection" V="1"/>
+            <Section N="Character">
+              <Row IX="0">
+                <Cell N="Font" V="Calibri"/>
+                <Cell N="Size" V="0.2"/>
+                <Cell N="Style" V="15"/>
+                <Cell N="Color" V="#123456" F="THEMEGUARD(RGB(18,52,86))"/>
+                <Cell N="Strikethru" V="1"/>
+                <Cell N="DblUnderline" V="1"/>
+                <Cell N="DoubleStrikethrough" V="1"/>
+                <Cell N="Overline" V="1"/>
+                <Cell N="ColorTrans" V="0.25"/>
+                <Cell N="Letterspace" V="0.02"/>
+                <Cell N="Pos" V="1"/>
+                <Cell N="Case" V="1"/>
+                <Cell N="FontScale" V="0.8"/>
+                <Cell N="AsianFont" V="SimSun"/>
+                <Cell N="ComplexScriptFont" V="Arial"/>
+                <Cell N="LangID" V="zh-CN"/>
+                <Cell N="ComplexScriptSize" V="0.18"/>
+              </Row>
+            </Section>
             <Section N="Paragraph">
               <Row IX="0">
                 <Cell N="HorzAlign" V="1"/>
@@ -126,6 +147,12 @@ void main() {
             <Cell N="LineWeight" V="Themed" F="Inh"/>
             <Cell N="FillPattern" V="Themed" F="Inh"/>
             <Cell N="ShdwPattern" V="Themed" F="Inh"/>
+            <Section N="Character">
+              <Row IX="0">
+                <Cell N="Size" V="0.2" F="Inh"/>
+                <Cell N="Case" V="2"/>
+              </Row>
+            </Section>
           </StyleSheet>
         </StyleSheets>
       </VisioDocument>
@@ -172,5 +199,28 @@ void main() {
     expect(block.backgroundTransparency, closeTo(0.25, 1e-12));
     expect(block.defaultTabStopInches, closeTo(0.75, 1e-12));
     expect(block.textDirection, 1);
+
+    final char = registry.resolveCharStyle(3)!;
+    expect(char.fontFamily, 'Calibri');
+    expect(char.fontSizeInches, closeTo(0.2, 1e-12));
+    expect(char.style.bold, isTrue);
+    expect(char.style.italic, isTrue);
+    expect(char.style.smallCaps, isTrue);
+    expect(char.underline, isTrue);
+    expect(char.color, const VsdxColor(0xFF123456));
+    expect(char.themeColorIndex, isNull);
+    expect(char.strikethrough, isTrue);
+    expect(char.doubleUnderline, isTrue);
+    expect(char.doubleStrikethrough, isTrue);
+    expect(char.overline, isTrue);
+    expect(char.transparency, closeTo(0.25, 1e-12));
+    expect(char.letterSpacingInches, closeTo(0.02, 1e-12));
+    expect(char.position, VsdxTextPosition.superscript);
+    expect(char.textCase, VsdxTextCase.initialCaps);
+    expect(char.fontScale, closeTo(0.8, 1e-12));
+    expect(char.asianFont, 'SimSun');
+    expect(char.complexScriptFont, 'Arial');
+    expect(char.langId, 'zh-CN');
+    expect(char.complexScriptSizeInches, closeTo(0.18, 1e-12));
   });
 }

@@ -242,6 +242,14 @@ class RichTextParser {
   }) =>
       _readCharSection(shape, defaultChar);
 
+  /// Parse one Character row. StyleSheetParser uses the same decoder so
+  /// stylesheet and shape-local rows agree on every libvisio character cell.
+  VsdxCharStyle readCharStyleRow(
+    XmlElement row, {
+    VsdxCharStyle defaults = VsdxCharStyle.defaults,
+  }) =>
+      _readCharRow(row, defaults);
+
   Map<int, VsdxCharStyle> _readCharSection(
     XmlElement shape,
     VsdxCharStyle defaults,
@@ -286,7 +294,7 @@ class RichTextParser {
     // (inherit via DefaultTextStyle at paint / in Visio); stuffing Arial /
     // #000000 here made save→reopen drift (`null → Arial` / `null → black`).
     // Size and other metrics still fall back to [defaults] (TextStyle / master).
-    final font = _cellString(row, 'Font', inheritFrom: defaults.fontFamily);
+    final font = _fontString(row, 'Font', inheritFrom: defaults.fontFamily);
     final size = readLengthInches(
           row,
           'Size',
@@ -308,7 +316,11 @@ class RichTextParser {
     final colorV = colorCell?.getAttribute('V');
     final colorF = colorCell?.getAttribute('F') ?? '';
     final colorInh = isInhFormula(colorF);
+    final cachedColor = VsdxColor.tryParse(colorV);
+    final concreteThemeGuard =
+        _isConcreteThemeGuard(colorF) && cachedColor != null;
     final isTheme = !colorInh &&
+        !concreteThemeGuard &&
         ((colorV != null &&
                 (colorV.toUpperCase().contains('THEMEVAL') ||
                     colorV.toUpperCase().contains('THEMEGUARD'))) ||
@@ -317,7 +329,7 @@ class RichTextParser {
     // F=Inh → master colour / theme slot; do not materialise a stale V=.
     final color = colorInh
         ? defaults.color
-        : (isTheme ? null : VsdxColor.tryParse(colorV));
+        : (isTheme ? null : cachedColor);
     // A theme character colour caches its slot index in V (see the writer);
     // read it back when present, otherwise fall back to the inherited slot.
     int? themeIdx;
@@ -385,7 +397,9 @@ class RichTextParser {
       fontSizeInches: size,
       style: style,
       color: color,
-      themeColorIndex: themeIdx ?? defaults.themeColorIndex,
+      themeColorIndex: colorCell == null
+          ? null
+          : (color != null ? null : (themeIdx ?? defaults.themeColorIndex)),
       underline: underline,
       strikethrough: strike,
       doubleUnderline: dblUnder,
@@ -402,21 +416,22 @@ class RichTextParser {
       textCase: textCase,
       fontScale: fontScale,
       asianFont:
-          _cellString(row, 'AsianFont', inheritFrom: defaults.asianFont) ??
-              defaults.asianFont,
-      complexScriptFont: _cellString(row, 'ComplexScriptFont',
-              inheritFrom: defaults.complexScriptFont) ??
-          defaults.complexScriptFont,
-      langId: _cellString(row, 'LangID', inheritFrom: defaults.langId) ??
-          defaults.langId,
+          _fontString(row, 'AsianFont', inheritFrom: defaults.asianFont),
+      complexScriptFont: _fontString(row, 'ComplexScriptFont',
+          inheritFrom: defaults.complexScriptFont),
+      langId: _cellString(row, 'LangID', inheritFrom: defaults.langId),
       complexScriptSizeInches: readLengthInches(
-            row,
-            'ComplexScriptSize',
-            inheritFrom: defaults.complexScriptSizeInches,
-          ) ??
-          defaults.complexScriptSizeInches,
+        row,
+        'ComplexScriptSize',
+        inheritFrom: defaults.complexScriptSizeInches,
+      ),
     );
   }
+
+  bool _isConcreteThemeGuard(String formula) => RegExp(
+        r'THEMEGUARD\s*\(\s*(?:RGB|HSL|SHADE)\s*\(',
+        caseSensitive: false,
+      ).hasMatch(formula);
 
   VsdxParaStyle _readParaRow(XmlElement row, VsdxParaStyle defaults) {
     final horz = _cellInt(
@@ -901,6 +916,21 @@ class RichTextParser {
     final v = cell.getAttribute('V');
     if (v == null) return null;
     return v.isEmpty ? null : v;
+  }
+
+  String? _fontString(XmlElement parent, String name, {String? inheritFrom}) {
+    final cell = findCell(parent, name);
+    if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F'))) return inheritFrom;
+    final value = cell.getAttribute('V') ?? '';
+    final formula = cell.getAttribute('F') ?? '';
+    final combined = '$value $formula'.toUpperCase();
+    if (value.toUpperCase() == 'THEMED' ||
+        combined.contains('THEMEVAL') ||
+        combined.contains('THEMEGUARD')) {
+      return inheritFrom;
+    }
+    return value.isEmpty ? null : value;
   }
 
   int? _cellInt(XmlElement parent, String name, {int? inheritFrom}) {
