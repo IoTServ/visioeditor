@@ -2,6 +2,16 @@ import 'package:test/test.dart';
 import 'package:vsdx/src/parser/vsd/vsd_parser.dart';
 
 void main() {
+  group('vsdV5UnsignedInt', () {
+    test('matches the VSD5 signed-word to unsigned-int conversion', () {
+      expect(vsdV5UnsignedInt(0), 0);
+      expect(vsdV5UnsignedInt(0x7fff), 0x7fff);
+      expect(vsdV5UnsignedInt(-1), 0xffffffff);
+      expect(vsdV5UnsignedInt(-2), 0xfffffffe);
+      expect(vsdV5UnsignedInt(-0x8000), 0xffff8000);
+    });
+  });
+
   group('vsdReorderById', () {
     test('reorders when trailer differs from encounter order', () {
       final items = [

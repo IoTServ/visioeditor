@@ -72,6 +72,12 @@ List<T> vsdReorderById<T>(
   return out;
 }
 
+/// Converts the signed word stored by Visio 5 to libvisio's unsigned value.
+///
+/// `VSD5Parser::getUInt` sign-extends the 16-bit word and then casts it to an
+/// unsigned 32-bit integer, so values such as -2 must remain `0xfffffffe`.
+int vsdV5UnsignedInt(int signedValue) => signedValue & 0xffffffff;
+
 /// Resolves the page-level shadow offsets inherited by VSD5/VSD6
 /// FillAndShadow records.
 ///
@@ -915,10 +921,7 @@ class VsdBinaryParser {
 
   /// Visio 5 typed integers are signed 16-bit (libvisio `VSD5Parser::getUInt`).
   int _getUInt(VsdByteReader input) {
-    if (_version == 5) {
-      final v = input.readS16();
-      return v < 0 ? _minusOne : v;
-    }
+    if (_version == 5) return vsdV5UnsignedInt(input.readS16());
     return input.readU32();
   }
 
