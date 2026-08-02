@@ -26,8 +26,24 @@ import '../../utils/color.dart';
 import 'vsd_byte_reader.dart';
 import 'vsd_internal_stream.dart';
 import 'vsd_record_ids.dart';
+import 'vsd_text_codec.dart';
 
 const int _minusOne = 0xFFFFFFFF;
+
+class _VsdFontInfo {
+  const _VsdFontInfo(this.name, this.encoding);
+
+  final String name;
+  final VsdLegacyTextEncoding encoding;
+}
+
+class _LegacyTextSpan {
+  const _LegacyTextSpan(this.start, this.end, this.encoding);
+
+  final int start;
+  final int end;
+  final VsdLegacyTextEncoding encoding;
+}
 
 /// Reorder list items by trailer id sequence (CharList / ParaList / FieldList).
 ///
@@ -103,6 +119,7 @@ class _ShapeDraft {
   VsdxFill? fill;
   VsdxShadow? shadow;
   String? text;
+  Uint8List? legacyTextBytes;
   double? fontSizeInches;
   VsdxColor? textColor;
   bool bold = false;
@@ -110,6 +127,7 @@ class _ShapeDraft {
   bool hideText = false;
   bool hasMisc = false;
   String? fontFamily;
+  VsdLegacyTextEncoding fontEncoding = VsdLegacyTextEncoding.ansi;
   String? shapeName;
   double? txtPinX;
   double? txtPinY;
@@ -299,6 +317,7 @@ class _CharRunDraft {
   int id = 0;
   int charCount = 0;
   String? fontFamily;
+  VsdLegacyTextEncoding encoding = VsdLegacyTextEncoding.ansi;
   double? fontSizeInches;
   VsdxColor? textColor;
   bool bold = false;
@@ -346,6 +365,7 @@ class _StyleDraft {
   int textParent = _minusOne;
   // Text style cells collected while `_isInStyles` (libvisio style sheet Char/Para/TextBlock).
   String? fontFamily;
+  VsdLegacyTextEncoding fontEncoding = VsdLegacyTextEncoding.ansi;
   double? fontSizeInches;
   VsdxColor? textColor;
   bool bold = false;
@@ -427,8 +447,8 @@ class VsdBinaryParser {
   final _names = <int, String>{};
   /// NameIDX: level → (elementId → name) (libvisio `m_namesMapMap`).
   final _namesByLevel = <int, Map<int, String>>{};
-  /// FontFace id → family name (libvisio `m_fonts`).
-  final _fonts = <int, String>{};
+  /// FontFace id → family name + legacy code page (libvisio `m_fonts`).
+  final _fonts = <int, _VsdFontInfo>{};
   /// stencilPageId → (shapeId → draft)
   final _stencils = <int, Map<int, _ShapeDraft>>{};
   Map<int, _ShapeDraft>? _currentStencilShapes;
@@ -1518,8 +1538,12 @@ class VsdBinaryParser {
     d.fill ??= master.fill;
     d.shadow ??= master.shadow;
     d.text ??= master.text;
+    d.legacyTextBytes ??= master.legacyTextBytes;
     d.fontSizeInches ??= master.fontSizeInches;
     d.fontFamily ??= master.fontFamily;
+    if (d.fontEncoding == VsdLegacyTextEncoding.ansi) {
+      d.fontEncoding = master.fontEncoding;
+    }
     d.textColor ??= master.textColor;
     d.shapeName ??= master.shapeName;
     d.txtPinX ??= master.txtPinX;
@@ -1776,6 +1800,9 @@ class VsdBinaryParser {
       if (st == null) break;
       if (st.hasCharStyle) {
         d.fontFamily ??= st.fontFamily;
+        if (d.fontEncoding == VsdLegacyTextEncoding.ansi) {
+          d.fontEncoding = st.fontEncoding;
+        }
         d.fontSizeInches ??= st.fontSizeInches;
         d.textColor ??= st.textColor;
         if (!d.bold) d.bold = st.bold;
@@ -4022,8 +4049,8 @@ class VsdBinaryParser {
               marker4 == 0x40000073) {
             if (s.beginTargetId == null) {
               s.beginTargetId = shapeId;
-            } else if (s.endTargetId == null) {
-              s.endTargetId = shapeId;
+            } else {
+              s.endTargetId ??= shapeId;
             }
           }
         }
@@ -4114,7 +4141,10 @@ class VsdBinaryParser {
           if (c == 0) break;
           chars.add(c);
         }
-        final text = String.fromCharCodes(chars).trim();
+        final text = decodeVsdLegacyText(
+          chars,
+          VsdLegacyTextEncoding.ansi,
+        );
         if (text.isNotEmpty) _names[_header.id] = text;
       } else {
         input.skip(4);
@@ -4271,7 +4301,10 @@ class VsdBinaryParser {
         units.add(hi);
       }
       final name = _decodeUtf16Le(Uint8List.fromList(units));
-      if (name.isNotEmpty) _fonts[_header.id] = name;
+      if (name.isNotEmpty) {
+        _fonts[_header.id] =
+            _VsdFontInfo(name, VsdLegacyTextEncoding.ansi);
+      }
     } catch (_) {}
   }
 
@@ -4281,7 +4314,7 @@ class VsdBinaryParser {
     try {
       final start = input.offset;
       input.skip(2);
-      final codePage = _getUInt(input) & 0xff;
+      var codePage = _getUInt(input) & 0xff;
       final remaining = _header.dataLength - (input.offset - start);
       if (remaining <= 0) return;
       final chars = <int>[];
@@ -4291,30 +4324,44 @@ class VsdBinaryParser {
         chars.add(c);
       }
       if (chars.isEmpty) return;
-      var name = String.fromCharCodes(chars);
+      var nameBytes = chars;
+      var nameProbe = String.fromCharCodes(chars);
       // When codePage==0, libvisio derives it from name suffixes and strips them.
       if (codePage == 0) {
-        for (final suffix in const [
-          ' CE',
-          ' Cyrillic',
-          ' Cyr',
-          ' CYR',
-          ' Baltic',
-          ' Greek',
-          ' Tur',
-          ' TUR',
-          ' Hebrew',
-          ' Arabic',
-          ' Thai',
-        ]) {
-          if (name.endsWith(suffix)) {
-            name = name.substring(0, name.length - suffix.length);
+        const suffixCodePages = <String, int>{
+          ' CE': 0xee,
+          ' Cyrillic': 0xcc,
+          ' Cyr': 0xcc,
+          ' CYR': 0xcc,
+          ' Baltic': 0xba,
+          ' Greek': 0xa1,
+          ' Tur': 0xa2,
+          ' TUR': 0xa2,
+          ' Hebrew': 0xb1,
+          ' Arabic': 0xb2,
+          ' Thai': 0xde,
+        };
+        for (final entry in suffixCodePages.entries) {
+          if (nameProbe.endsWith(entry.key)) {
+            codePage = entry.value;
+            nameBytes = chars.sublist(0, chars.length - entry.key.length);
+            nameProbe = nameProbe.substring(
+              0,
+              nameProbe.length - entry.key.length,
+            );
             break;
           }
         }
+        if (nameProbe.startsWith('GOST')) codePage = 0xcc;
       }
-      name = name.trim();
-      if (name.isNotEmpty) _fonts[_header.id] = name;
+      final encoding = vsdLegacyEncodingForCodePage(codePage);
+      final name = decodeVsdLegacyText(nameBytes, encoding);
+      if (name.isNotEmpty) {
+        _fonts[_header.id] = _VsdFontInfo(
+          name,
+          encoding,
+        );
+      }
     } catch (_) {}
   }
 
@@ -4374,7 +4421,13 @@ class VsdBinaryParser {
     final n = _header.dataLength - 8;
     if (n <= 0 || input.remaining < n) return;
     final raw = input.readBytes(n);
-    s.text = _version == 11 ? _decodeUtf16Le(raw) : _decodeAnsi(raw);
+    if (_version == 11) {
+      s.text = _decodeUtf16Le(raw);
+    } else {
+      s.legacyTextBytes = raw;
+      // Temporary fallback until CharIX order/code pages are available.
+      s.text = decodeVsdLegacyText(raw, VsdLegacyTextEncoding.ansi);
+    }
   }
 
   void _readCharIx(VsdByteReader input) {
@@ -4458,9 +4511,14 @@ class VsdBinaryParser {
           : (subscript
               ? VsdxTextPosition.subscript
               : VsdxTextPosition.normal);
-      final family = _fonts[fontID];
+      final font = _fonts[fontID];
+      final family = font?.name;
+      final encoding = font?.encoding ?? VsdLegacyTextEncoding.ansi;
       void apply(dynamic t) {
         if (family != null) t.fontFamily ??= family;
+        if (t.fontEncoding == VsdLegacyTextEncoding.ansi) {
+          t.fontEncoding = encoding;
+        }
         if (textColor != null) t.textColor = textColor;
         t.bold = bold;
         t.italic = italic;
@@ -4481,6 +4539,7 @@ class VsdBinaryParser {
           ..id = _header.id
           ..charCount = charCount
           ..fontFamily = family
+          ..encoding = encoding
           ..fontSizeInches = fontSizeInches
           ..textColor = textColor
           ..bold = bold
@@ -4558,7 +4617,7 @@ class VsdBinaryParser {
           textPosAfterBullet = 0;
         } else {
           final fontID = input.readU16();
-          if (fontID != 0) bulletFont = _fonts[fontID] ?? '';
+          if (fontID != 0) bulletFont = _fonts[fontID]?.name ?? '';
           input.skip(2);
           bulletFontSize = input.readF64();
           input.skip(1);
@@ -4702,6 +4761,105 @@ class VsdBinaryParser {
     }
   }
 
+  /// Decode VSD5/VSD6 text one CharIX span at a time. CharIX/ParaIX/TabsData
+  /// counts are byte counts in these formats, so remap them to decoded UTF-16
+  /// code-unit counts before the rich-text walker consumes them.
+  String _decodeLegacyShapeText(_ShapeDraft d) {
+    final stored = d.legacyTextBytes;
+    if (stored == null || stored.isEmpty) return d.text ?? '';
+
+    var byteLength = stored.length;
+    while (byteLength > 0 && stored[byteLength - 1] == 0) {
+      byteLength--;
+    }
+    final bytes = stored.sublist(0, byteLength);
+    if (bytes.isEmpty) return '';
+
+    final spans = <_LegacyTextSpan>[];
+    var byteOffset = 0;
+    if (d.charRuns.isEmpty) {
+      spans.add(_LegacyTextSpan(0, bytes.length, d.fontEncoding));
+    } else {
+      for (final run in d.charRuns) {
+        if (byteOffset >= bytes.length) {
+          run.charCount = 0;
+          continue;
+        }
+        final rawCount = run.charCount == 0
+            ? bytes.length - byteOffset
+            : run.charCount.clamp(0, bytes.length - byteOffset);
+        final end = byteOffset + rawCount;
+        spans.add(_LegacyTextSpan(byteOffset, end, run.encoding));
+        run.charCount = decodeVsdLegacyText(
+          bytes.sublist(byteOffset, end),
+          run.encoding,
+        ).length;
+        byteOffset = end;
+      }
+      if (byteOffset < bytes.length) {
+        spans.add(_LegacyTextSpan(
+          byteOffset,
+          bytes.length,
+          d.charRuns.last.encoding,
+        ));
+      }
+    }
+
+    int decodedLength(int start, int end) {
+      var length = 0;
+      for (final span in spans) {
+        final partStart = start > span.start ? start : span.start;
+        final partEnd = end < span.end ? end : span.end;
+        if (partStart >= partEnd) continue;
+        length += decodeVsdLegacyText(
+          bytes.sublist(partStart, partEnd),
+          span.encoding,
+        ).length;
+      }
+      return length;
+    }
+
+    void remapCounts<T>(
+      List<T> rows,
+      int Function(T row) read,
+      void Function(T row, int value) write,
+    ) {
+      var start = 0;
+      for (final row in rows) {
+        final rawCount = read(row);
+        if (start >= bytes.length) {
+          write(row, 0);
+          continue;
+        }
+        final end = rawCount == 0
+            ? bytes.length
+            : start + rawCount.clamp(0, bytes.length - start);
+        write(row, decodedLength(start, end));
+        start = end;
+      }
+    }
+
+    remapCounts<_ParaRunDraft>(
+      d.paraRuns,
+      (row) => row.charCount,
+      (row, value) => row.charCount = value,
+    );
+    remapCounts<_TabSetDraft>(
+      d.tabRuns,
+      (row) => row.numChars,
+      (row, value) => row.numChars = value,
+    );
+
+    final out = StringBuffer();
+    for (final span in spans) {
+      out.write(decodeVsdLegacyText(
+        bytes.sublist(span.start, span.end),
+        span.encoding,
+      ));
+    }
+    return out.toString();
+  }
+
   /// Read a list chunk trailer of child ids (libvisio `readCharList` /
   /// `readParaList` / `readFieldList` / `readShapeList`).
   void _readListOrder(VsdByteReader input, {List<int>? into}) {
@@ -4737,16 +4895,9 @@ class VsdBinaryParser {
 
   String _decodeAnsi(Uint8List raw) {
     if (raw.isEmpty) return '';
-    final out = StringBuffer();
-    for (final b in raw) {
-      if (b == 0) break;
-      if (b == 0x0d || b == 0x0e) {
-        out.writeCharCode(0x0a);
-      } else {
-        out.writeCharCode(b);
-      }
-    }
-    return out.toString();
+    final nul = raw.indexOf(0);
+    final bytes = nul < 0 ? raw : raw.sublist(0, nul);
+    return decodeVsdLegacyText(bytes, VsdLegacyTextEncoding.ansi);
   }
 
   String _decodeUtf16Le(Uint8List raw) {
@@ -5340,6 +5491,10 @@ class VsdBinaryParser {
       );
     }
 
+    _applyListOrders(d);
+    if (d.legacyTextBytes != null) {
+      d.text = _decodeLegacyShapeText(d);
+    }
     VsdxRichText rich = VsdxRichText.empty;
     final rawText = d.text;
     final textBlock = VsdxTextBlock.defaults.copyWith(
@@ -5360,7 +5515,6 @@ class VsdBinaryParser {
       defaultTabStopInches: d.defaultTabStop,
       textDirection: d.textDirection,
     );
-    _applyListOrders(d);
     final tabSets = [
       for (final t in d.tabRuns)
         VsdxTabSet(ix: t.id, stops: List<VsdxTabStop>.from(t.stops)),

@@ -49,6 +49,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.1.2"
+  charset:
+    dependency: "direct main"
+    description:
+      name: charset
+      sha256: "27802032a581e01ac565904ece8c8962564b1070690794f0072f6865958ce8b9"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.0.1"
   cli_config:
     dependency: transitive
     description:
@@ -81,6 +89,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.15.1"
+  cp949_codec:
+    dependency: "direct main"
+    description:
+      name: cp949_codec
+      sha256: a381b062b0727a22ac022a6562c49ea6e2eed487d6cb8a676b44cdc593716782
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.0.2"
   crypto:
     dependency: "direct main"
     description:
@@ -89,6 +105,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.0.7"
+  enough_convert:
+    dependency: "direct main"
+    description:
+      name: enough_convert
+      sha256: c67d85ca21aaa0648f155907362430701db41f7ec8e6501a58ad9cd9d8569d01
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.6.0"
   ffi:
     dependency: "direct dev"
     description:

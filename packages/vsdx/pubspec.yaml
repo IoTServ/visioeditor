@@ -15,6 +15,10 @@ dependencies:
   collection: ^1.18.0
   crypto: ^3.0.5
   logging: ^1.2.0
+  # Legacy VSD5/VSD6 FontIX code pages (Windows-125x, CJK, Symbol).
+  charset: ^2.0.1
+  cp949_codec: ^1.0.2
+  enough_convert: ^1.6.0
   # Multi-command CLI (bin/vsdxtool.dart) — the headless Agent backend.
   args: ^2.5.0
   # Parse YAML OpenAPI/Swagger specs (import-openapi); JSON handled by dart:convert.
