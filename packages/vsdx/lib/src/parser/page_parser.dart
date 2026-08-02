@@ -613,10 +613,12 @@ class PageParser {
           proto?.themeIndex,
       quickStyleFillMatrix: _int(shapeEl, 'QuickStyleFillMatrix',
               inheritFrom: proto?.quickStyleFillMatrix) ??
-          proto?.quickStyleFillMatrix,
+          proto?.quickStyleFillMatrix ??
+          _stylesheets.resolveQuickStyleFillMatrix(fillStyleId),
       quickStyleLineMatrix: _int(shapeEl, 'QuickStyleLineMatrix',
               inheritFrom: proto?.quickStyleLineMatrix) ??
-          proto?.quickStyleLineMatrix,
+          proto?.quickStyleLineMatrix ??
+          _stylesheets.resolveQuickStyleLineMatrix(lineStyleId),
       quickStyleEffectsMatrix: _int(shapeEl, 'QuickStyleEffectsMatrix',
               inheritFrom: proto?.quickStyleEffectsMatrix) ??
           proto?.quickStyleEffectsMatrix,

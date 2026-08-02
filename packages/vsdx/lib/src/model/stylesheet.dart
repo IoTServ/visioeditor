@@ -32,6 +32,8 @@ class VsdxStyleSheet {
     this.fillDefinedCells = const <String>{},
     this.shadow,
     this.shadowDefinedCells = const <String>{},
+    this.quickStyleLineMatrix,
+    this.quickStyleFillMatrix,
   });
 
   final int id;
@@ -81,6 +83,12 @@ class VsdxStyleSheet {
   /// Concrete shadow cells contributed by this stylesheet. Shadow properties
   /// share the FillStyle inheritance chain in Visio/libvisio.
   final Set<String> shadowDefinedCells;
+
+  /// Theme format-scheme selectors carried by the stylesheet. libvisio
+  /// retains these alongside the optional line/fill styles and walks the same
+  /// parent chains as the corresponding style properties.
+  final int? quickStyleLineMatrix;
+  final int? quickStyleFillMatrix;
 }
 
 /// Registry of every `<StyleSheet>` in the document, with chain resolution
@@ -295,7 +303,8 @@ class StyleSheetRegistry {
           lineSpacingAbsoluteInches ?? defaults.lineSpacingAbsoluteInches,
       lineSpacingSolid: lineSpacingSolid ?? defaults.lineSpacingSolid,
       bullet: bullet ?? defaults.bullet,
-      bulletStr: resolved.contains('BulletStr') ? bulletStr : defaults.bulletStr,
+      bulletStr:
+          resolved.contains('BulletStr') ? bulletStr : defaults.bulletStr,
       bulletFont:
           resolved.contains('BulletFont') ? bulletFont : defaults.bulletFont,
       bulletFontSizeInches: resolved.contains('BulletFontSize')
@@ -397,6 +406,8 @@ class StyleSheetRegistry {
     if (id == null) return null;
 
     VsdxColor? color;
+    int? themeColorIndex;
+    var colorResolved = false;
     double? weightInches;
     int? pattern;
     LineCap? cap;
@@ -415,7 +426,8 @@ class StyleSheetRegistry {
       if (sheet == null) break;
       final line = sheet.line;
       // Empty defined set ⇒ hand-built / legacy sheet: take every field.
-      final defined = sheet.lineDefinedCells.isEmpty
+      final legacy = sheet.lineDefinedCells.isEmpty;
+      final defined = legacy
           ? const {
               'LineColor',
               'LineWeight',
@@ -432,10 +444,12 @@ class StyleSheetRegistry {
             }
           : sheet.lineDefinedCells;
       if (line != null) {
-        if (color == null &&
+        if (!colorResolved &&
             defined.contains('LineColor') &&
-            line.color != null) {
+            (!legacy || line.color != null || line.themeColorIndex != null)) {
           color = line.color;
+          themeColorIndex = line.themeColorIndex;
+          colorResolved = true;
         }
         if (weightInches == null && defined.contains('LineWeight')) {
           weightInches = line.weightInches;
@@ -457,16 +471,13 @@ class StyleSheetRegistry {
             defined.contains('BeginArrowSize')) {
           beginArrowSizeInches = line.beginArrowSizeInches;
         }
-        if (endArrowSizeInches == null &&
-            defined.contains('EndArrowSize')) {
+        if (endArrowSizeInches == null && defined.contains('EndArrowSize')) {
           endArrowSizeInches = line.endArrowSizeInches;
         }
-        if (softEdgesInches == null &&
-            defined.contains('SoftEdgesSize')) {
+        if (softEdgesInches == null && defined.contains('SoftEdgesSize')) {
           softEdgesInches = line.softEdgesInches;
         }
-        if (roundingInches == null &&
-            defined.contains('Rounding')) {
+        if (roundingInches == null && defined.contains('Rounding')) {
           roundingInches = line.roundingInches;
         }
         if (compoundType == null && defined.contains('CompoundType')) {
@@ -476,7 +487,7 @@ class StyleSheetRegistry {
       id = sheet.lineStyleId;
     }
 
-    if (color == null &&
+    if (!colorResolved &&
         weightInches == null &&
         pattern == null &&
         cap == null &&
@@ -492,6 +503,7 @@ class StyleSheetRegistry {
     }
     return VsdxLine(
       color: color,
+      themeColorIndex: themeColorIndex,
       weightInches: weightInches ?? VsdxLine.defaultLine.weightInches,
       pattern: pattern ?? VsdxLine.defaultLine.pattern,
       cap: cap ?? VsdxLine.defaultLine.cap,
@@ -502,8 +514,7 @@ class StyleSheetRegistry {
           beginArrowSizeInches ?? VsdxLine.defaultLine.beginArrowSizeInches,
       endArrowSizeInches:
           endArrowSizeInches ?? VsdxLine.defaultLine.endArrowSizeInches,
-      softEdgesInches:
-          softEdgesInches ?? VsdxLine.defaultLine.softEdgesInches,
+      softEdgesInches: softEdgesInches ?? VsdxLine.defaultLine.softEdgesInches,
       roundingInches: roundingInches ?? VsdxLine.defaultLine.roundingInches,
       compoundType: compoundType ?? VsdxLine.defaultLine.compoundType,
     );
@@ -520,6 +531,8 @@ class StyleSheetRegistry {
     int? pattern;
     int? themeForegroundIndex;
     int? themeBackgroundIndex;
+    var foregroundResolved = false;
+    var backgroundResolved = false;
     VsdxGradient? gradient;
     double? foregroundTransparency;
     double? backgroundTransparency;
@@ -530,7 +543,8 @@ class StyleSheetRegistry {
       if (sheet == null) break;
       final fill = sheet.fill;
       // Empty defined set ⇒ hand-built / legacy sheet: take every field.
-      final defined = sheet.fillDefinedCells.isEmpty
+      final legacy = sheet.fillDefinedCells.isEmpty;
+      final defined = legacy
           ? const {
               'FillForegnd',
               'FillBkgnd',
@@ -540,21 +554,27 @@ class StyleSheetRegistry {
             }
           : sheet.fillDefinedCells;
       if (fill != null) {
-        if (foreground == null &&
+        if (!foregroundResolved &&
             defined.contains('FillForegnd') &&
-            fill.foreground != null) {
+            (!legacy ||
+                fill.foreground != null ||
+                fill.themeForegroundIndex != null)) {
           foreground = fill.foreground;
+          themeForegroundIndex = fill.themeForegroundIndex;
+          foregroundResolved = true;
         }
-        if (background == null &&
+        if (!backgroundResolved &&
             defined.contains('FillBkgnd') &&
-            fill.background != null) {
+            (!legacy ||
+                fill.background != null ||
+                fill.themeBackgroundIndex != null)) {
           background = fill.background;
+          themeBackgroundIndex = fill.themeBackgroundIndex;
+          backgroundResolved = true;
         }
         if (pattern == null && defined.contains('FillPattern')) {
           pattern = fill.pattern;
         }
-        themeForegroundIndex ??= fill.themeForegroundIndex;
-        themeBackgroundIndex ??= fill.themeBackgroundIndex;
         gradient ??= fill.gradient;
         if (foregroundTransparency == null &&
             defined.contains('FillForegndTrans')) {
@@ -568,8 +588,8 @@ class StyleSheetRegistry {
       id = sheet.fillStyleId;
     }
 
-    if (foreground == null &&
-        background == null &&
+    if (!foregroundResolved &&
+        !backgroundResolved &&
         pattern == null &&
         themeForegroundIndex == null &&
         themeBackgroundIndex == null &&
@@ -603,6 +623,8 @@ class StyleSheetRegistry {
     if (id == null) return null;
 
     VsdxColor? color;
+    int? themeColorIndex;
+    var colorResolved = false;
     int? pattern;
     double? offsetX;
     double? offsetY;
@@ -613,7 +635,8 @@ class StyleSheetRegistry {
       final sheet = _byId[id];
       if (sheet == null) break;
       final shadow = sheet.shadow;
-      final defined = sheet.shadowDefinedCells.isEmpty
+      final legacy = sheet.shadowDefinedCells.isEmpty;
+      final defined = legacy
           ? const {
               'ShdwForegnd',
               'ShdwPattern',
@@ -623,10 +646,14 @@ class StyleSheetRegistry {
             }
           : sheet.shadowDefinedCells;
       if (shadow != null) {
-        if (color == null &&
+        if (!colorResolved &&
             defined.contains('ShdwForegnd') &&
-            shadow.color != null) {
+            (!legacy ||
+                shadow.color != null ||
+                shadow.themeColorIndex != null)) {
           color = shadow.color;
+          themeColorIndex = shadow.themeColorIndex;
+          colorResolved = true;
         }
         if (pattern == null && defined.contains('ShdwPattern')) {
           pattern = shadow.enabled ? shadow.pattern : 0;
@@ -637,15 +664,14 @@ class StyleSheetRegistry {
         if (offsetY == null && defined.contains('ShapeShdwOffsetY')) {
           offsetY = shadow.offsetYInches;
         }
-        if (transparency == null &&
-            defined.contains('ShdwForegndTrans')) {
+        if (transparency == null && defined.contains('ShdwForegndTrans')) {
           transparency = shadow.transparency;
         }
       }
       id = sheet.fillStyleId;
     }
 
-    if (color == null &&
+    if (!colorResolved &&
         pattern == null &&
         offsetX == null &&
         offsetY == null &&
@@ -657,11 +683,42 @@ class StyleSheetRegistry {
       enabled: effectivePattern != 0,
       pattern: effectivePattern == 0 ? 1 : effectivePattern,
       color: color,
+      themeColorIndex: themeColorIndex,
       offsetXInches: offsetX ?? pageOffsetXInches ?? 0.125,
       offsetYInches: offsetY ?? pageOffsetYInches ?? -0.125,
       blurInches: 0,
       transparency: transparency ?? 0,
     );
+  }
+
+  /// Resolve the QuickStyle line matrix through the LineStyle chain.
+  int? resolveQuickStyleLineMatrix(int? lineStyleId) {
+    var id = lineStyleId;
+    final seen = <int>{};
+    while (id != null && seen.add(id)) {
+      final sheet = _byId[id];
+      if (sheet == null) break;
+      if (sheet.quickStyleLineMatrix != null) {
+        return sheet.quickStyleLineMatrix;
+      }
+      id = sheet.lineStyleId;
+    }
+    return null;
+  }
+
+  /// Resolve the QuickStyle fill matrix through the FillStyle chain.
+  int? resolveQuickStyleFillMatrix(int? fillStyleId) {
+    var id = fillStyleId;
+    final seen = <int>{};
+    while (id != null && seen.add(id)) {
+      final sheet = _byId[id];
+      if (sheet == null) break;
+      if (sheet.quickStyleFillMatrix != null) {
+        return sheet.quickStyleFillMatrix;
+      }
+      id = sheet.fillStyleId;
+    }
+    return null;
   }
 }
 

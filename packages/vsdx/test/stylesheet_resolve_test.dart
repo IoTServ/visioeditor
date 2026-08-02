@@ -223,4 +223,64 @@ void main() {
     expect(char.langId, 'zh-CN');
     expect(char.complexScriptSizeInches, closeTo(0.18, 1e-12));
   });
+
+  test('inherits QuickStyle theme colours and matrices from stylesheets', () {
+    final xml = XmlDocument.parse('''
+      <VisioDocument>
+        <StyleSheets>
+          <StyleSheet ID="10" NameU="ThemeBase">
+            <Cell N="LineColor" V="Themed" F="THEMEVAL()"/>
+            <Cell N="QuickStyleLineColor" V="5"/>
+            <Cell N="QuickStyleLineMatrix" V="2"/>
+            <Cell N="FillForegnd" V="Themed" F="THEMEVAL()"/>
+            <Cell N="FillBkgnd" V="Themed" F="THEMEVAL(&quot;AccentColor4&quot;)"/>
+            <Cell N="QuickStyleFillColor" V="6"/>
+            <Cell N="QuickStyleFillMatrix" V="3"/>
+            <Cell N="ShdwForegnd" V="Themed" F="THEMEVAL()"/>
+            <Cell N="QuickStyleShadowColor" V="8"/>
+            <Cell N="ShdwPattern" V="1"/>
+          </StyleSheet>
+          <StyleSheet ID="11" NameU="ThemeChild" LineStyle="10" FillStyle="10">
+            <Cell N="LineWeight" V="0.02"/>
+            <Cell N="FillPattern" V="2"/>
+          </StyleSheet>
+          <StyleSheet ID="12" NameU="SolidChild" LineStyle="10" FillStyle="10">
+            <Cell N="LineColor" V="#123456"/>
+            <Cell N="FillForegnd" V="#654321"/>
+            <Cell N="ShdwForegnd" V="#abcdef"/>
+          </StyleSheet>
+        </StyleSheets>
+      </VisioDocument>
+    ''');
+    final registry = const StyleSheetParser().parse(xml);
+
+    final themedLine = registry.resolveLine(11)!;
+    expect(themedLine.color, isNull);
+    expect(themedLine.themeColorIndex, 5);
+    expect(themedLine.weightInches, closeTo(0.02, 1e-12));
+    expect(registry.resolveQuickStyleLineMatrix(11), 2);
+
+    final themedFill = registry.resolveFill(11)!;
+    expect(themedFill.foreground, isNull);
+    expect(themedFill.themeForegroundIndex, 6);
+    expect(themedFill.background, isNull);
+    expect(themedFill.themeBackgroundIndex, 7);
+    expect(themedFill.pattern, 2);
+    expect(registry.resolveQuickStyleFillMatrix(11), 3);
+
+    final themedShadow = registry.resolveShadow(11)!;
+    expect(themedShadow.color, isNull);
+    expect(themedShadow.themeColorIndex, 8);
+    expect(themedShadow.enabled, isTrue);
+
+    final solidLine = registry.resolveLine(12)!;
+    expect(solidLine.color, const VsdxColor(0xFF123456));
+    expect(solidLine.themeColorIndex, isNull);
+    final solidFill = registry.resolveFill(12)!;
+    expect(solidFill.foreground, const VsdxColor(0xFF654321));
+    expect(solidFill.themeForegroundIndex, isNull);
+    final solidShadow = registry.resolveShadow(12)!;
+    expect(solidShadow.color, const VsdxColor(0xFFABCDEF));
+    expect(solidShadow.themeColorIndex, isNull);
+  });
 }

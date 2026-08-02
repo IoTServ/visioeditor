@@ -14,6 +14,7 @@ import '../model/effects.dart';
 import '../model/line.dart';
 import '../model/rich_text.dart';
 import '../model/stylesheet.dart';
+import '../model/theme.dart';
 import '../utils/color.dart';
 import 'cell_helpers.dart';
 import 'rich_text_parser.dart';
@@ -63,9 +64,8 @@ class StyleSheetParser {
   VsdxStyleSheet? _readSheet(XmlElement ss) {
     final id = int.tryParse(ss.getAttribute('ID') ?? '');
     if (id == null) return null;
-    final name = ss.getAttribute('NameU') ??
-        ss.getAttribute('Name') ??
-        'Style.$id';
+    final name =
+        ss.getAttribute('NameU') ?? ss.getAttribute('Name') ?? 'Style.$id';
     final textStyleId = int.tryParse(ss.getAttribute('TextStyle') ?? '');
     final lineStyleId = int.tryParse(ss.getAttribute('LineStyle') ?? '');
     final fillStyleId = int.tryParse(ss.getAttribute('FillStyle') ?? '');
@@ -130,39 +130,46 @@ class StyleSheetParser {
           // the parent LineStyle chain instead of the cached V=.
           final weight = _length(section, 'LineWeight');
           final pat = _cellInt(section, 'LinePattern');
-          final colorStr = _cellString(section, 'LineColor');
-          final color =
-              colorStr == null ? null : VsdxColor.tryParse(colorStr);
+          final colorRes = _resolveColor(
+              section, 'LineColor', 'QuickStyleLineColor',
+              defaultQuickStyleColor: VsdxColor.black);
+          final color = colorRes.color;
           final soft = _length(section, 'SoftEdgesSize');
           final rounding = _length(section, 'Rounding');
           if (weight != null) lineDefined.add('LineWeight');
           if (pat != null) lineDefined.add('LinePattern');
-          if (color != null) lineDefined.add('LineColor');
+          if (colorRes.defined) lineDefined.add('LineColor');
           if (soft != null) lineDefined.add('SoftEdgesSize');
           if (rounding != null) lineDefined.add('Rounding');
           if (lineDefined.isNotEmpty) {
             line = VsdxLine(
               color: color,
+              themeColorIndex: colorRes.themeIndex,
               weightInches: weight ?? VsdxLine.defaultLine.weightInches,
               pattern: pat ?? VsdxLine.defaultLine.pattern,
               softEdgesInches: soft ?? VsdxLine.defaultLine.softEdgesInches,
-              roundingInches:
-                  rounding ?? VsdxLine.defaultLine.roundingInches,
+              roundingInches: rounding ?? VsdxLine.defaultLine.roundingInches,
             );
           }
         case 'Fill':
           final pat = _cellInt(section, 'FillPattern');
-          final fgStr = _cellString(section, 'FillForegnd');
-          final fg = fgStr == null ? null : VsdxColor.tryParse(fgStr);
-          final bgStr = _cellString(section, 'FillBkgnd');
-          final bg = bgStr == null ? null : VsdxColor.tryParse(bgStr);
+          final fgRes = _resolveColor(
+              section, 'FillForegnd', 'QuickStyleFillColor',
+              defaultQuickStyleColor: VsdxColor.white);
+          final bgRes = _resolveColor(
+              section, 'FillBkgnd', 'QuickStyleFillColor',
+              defaultQuickStyleColor: VsdxColor.white);
+          final fg = fgRes.color;
+          final bg = bgRes.color;
           if (pat != null) fillDefined.add('FillPattern');
-          if (fg != null) fillDefined.add('FillForegnd');
-          if (bg != null) fillDefined.add('FillBkgnd');
+          if (fgRes.defined) fillDefined.add('FillForegnd');
+          if (bgRes.defined) fillDefined.add('FillBkgnd');
           if (fillDefined.isNotEmpty) {
             fill = VsdxFill(
               foreground: fg,
               background: bg,
+              themeForegroundIndex: fgRes.themeIndex,
+              themeBackgroundIndex: bgRes.themeIndex,
               pattern: pat ?? VsdxFill.defaultFill.pattern,
             );
           }
@@ -176,10 +183,9 @@ class StyleSheetParser {
     // third-party writers, then overlay any concrete direct cells here.
     final weight = _length(ss, 'LineWeight');
     final linePattern = _cellInt(ss, 'LinePattern');
-    final lineColorValue = _cellString(ss, 'LineColor');
-    final lineColor = lineColorValue == null
-        ? null
-        : VsdxColor.tryParse(lineColorValue);
+    final lineColorRes = _resolveColor(ss, 'LineColor', 'QuickStyleLineColor',
+        defaultQuickStyleColor: VsdxColor.black);
+    final lineColor = lineColorRes.color;
     final lineCapValue = _cellInt(ss, 'LineCap');
     final lineTransparency = _number(ss, 'LineColorTrans');
     final beginArrow = _cellInt(ss, 'BeginArrow');
@@ -191,7 +197,7 @@ class StyleSheetParser {
     final compoundType = _cellInt(ss, 'CompoundType');
     if (weight != null) lineDefined.add('LineWeight');
     if (linePattern != null) lineDefined.add('LinePattern');
-    if (lineColor != null) lineDefined.add('LineColor');
+    if (lineColorRes.defined) lineDefined.add('LineColor');
     if (lineCapValue != null) lineDefined.add('LineCap');
     if (lineTransparency != null) lineDefined.add('LineColorTrans');
     if (beginArrow != null) lineDefined.add('BeginArrow');
@@ -203,11 +209,13 @@ class StyleSheetParser {
     if (compoundType != null) lineDefined.add('CompoundType');
     if (lineDefined.isNotEmpty) {
       line = VsdxLine(
-        color: lineColor ?? line?.color,
+        color: lineColorRes.defined ? lineColor : line?.color,
+        themeColorIndex: lineColorRes.defined
+            ? lineColorRes.themeIndex
+            : line?.themeColorIndex,
         weightInches:
             weight ?? line?.weightInches ?? VsdxLine.defaultLine.weightInches,
-        pattern:
-            linePattern ?? line?.pattern ?? VsdxLine.defaultLine.pattern,
+        pattern: linePattern ?? line?.pattern ?? VsdxLine.defaultLine.pattern,
         cap: lineCapValue == null
             ? (line?.cap ?? VsdxLine.defaultLine.cap)
             : _lineCap(lineCapValue),
@@ -239,21 +247,27 @@ class StyleSheetParser {
     }
 
     final fillPattern = _cellInt(ss, 'FillPattern');
-    final fgValue = _cellString(ss, 'FillForegnd');
-    final fg = fgValue == null ? null : VsdxColor.tryParse(fgValue);
-    final bgValue = _cellString(ss, 'FillBkgnd');
-    final bg = bgValue == null ? null : VsdxColor.tryParse(bgValue);
+    final fgRes = _resolveColor(ss, 'FillForegnd', 'QuickStyleFillColor',
+        defaultQuickStyleColor: VsdxColor.white);
+    final fg = fgRes.color;
+    final bgRes = _resolveColor(ss, 'FillBkgnd', 'QuickStyleFillColor',
+        defaultQuickStyleColor: VsdxColor.white);
+    final bg = bgRes.color;
     final fgTransparency = _number(ss, 'FillForegndTrans');
     final bgTransparency = _number(ss, 'FillBkgndTrans');
     if (fillPattern != null) fillDefined.add('FillPattern');
-    if (fg != null) fillDefined.add('FillForegnd');
-    if (bg != null) fillDefined.add('FillBkgnd');
+    if (fgRes.defined) fillDefined.add('FillForegnd');
+    if (bgRes.defined) fillDefined.add('FillBkgnd');
     if (fgTransparency != null) fillDefined.add('FillForegndTrans');
     if (bgTransparency != null) fillDefined.add('FillBkgndTrans');
     if (fillDefined.isNotEmpty) {
       fill = VsdxFill(
-        foreground: fg ?? fill?.foreground,
-        background: bg ?? fill?.background,
+        foreground: fgRes.defined ? fg : fill?.foreground,
+        background: bgRes.defined ? bg : fill?.background,
+        themeForegroundIndex:
+            fgRes.defined ? fgRes.themeIndex : fill?.themeForegroundIndex,
+        themeBackgroundIndex:
+            bgRes.defined ? bgRes.themeIndex : fill?.themeBackgroundIndex,
         pattern: fillPattern ?? fill?.pattern ?? VsdxFill.defaultFill.pattern,
         foregroundTransparency: (fgTransparency ??
                 fill?.foregroundTransparency ??
@@ -267,15 +281,15 @@ class StyleSheetParser {
     }
 
     final shadowPattern = _cellInt(ss, 'ShdwPattern');
-    final shadowColorValue = _cellString(ss, 'ShdwForegnd');
-    final shadowColor = shadowColorValue == null
-        ? null
-        : VsdxColor.tryParse(shadowColorValue);
+    final shadowColorRes = _resolveColor(
+        ss, 'ShdwForegnd', 'QuickStyleShadowColor',
+        defaultQuickStyleColor: VsdxColor.black);
+    final shadowColor = shadowColorRes.color;
     final shadowOffsetX = _length(ss, 'ShapeShdwOffsetX');
     final shadowOffsetY = _length(ss, 'ShapeShdwOffsetY');
     final shadowTransparency = _number(ss, 'ShdwForegndTrans');
     if (shadowPattern != null) shadowDefined.add('ShdwPattern');
-    if (shadowColor != null) shadowDefined.add('ShdwForegnd');
+    if (shadowColorRes.defined) shadowDefined.add('ShdwForegnd');
     if (shadowOffsetX != null) shadowDefined.add('ShapeShdwOffsetX');
     if (shadowOffsetY != null) shadowDefined.add('ShapeShdwOffsetY');
     if (shadowTransparency != null) {
@@ -287,6 +301,7 @@ class StyleSheetParser {
         enabled: effectivePattern != 0,
         pattern: effectivePattern == 0 ? 1 : effectivePattern,
         color: shadowColor,
+        themeColorIndex: shadowColorRes.themeIndex,
         offsetXInches: shadowOffsetX ?? 0.125,
         offsetYInches: shadowOffsetY ?? -0.125,
         blurInches: 0,
@@ -317,6 +332,8 @@ class StyleSheetParser {
       fillDefinedCells: Set.unmodifiable(fillDefined),
       shadow: shadow,
       shadowDefinedCells: Set.unmodifiable(shadowDefined),
+      quickStyleLineMatrix: _cellInt(ss, 'QuickStyleLineMatrix'),
+      quickStyleFillMatrix: _cellInt(ss, 'QuickStyleFillMatrix'),
     );
   }
 
@@ -466,6 +483,61 @@ class StyleSheetParser {
         combined.contains('THEMEGUARD');
   }
 
+  _StyleColorResolution _resolveColor(
+    XmlElement parent,
+    String colorCell,
+    String quickStyleCell, {
+    required VsdxColor defaultQuickStyleColor,
+  }) {
+    final cell = _concreteCell(parent, colorCell);
+    if (cell == null) return const _StyleColorResolution.absent();
+    final value = cell.getAttribute('V') ?? '';
+    final formula = cell.getAttribute('F') ?? '';
+    final cached = VsdxColor.tryParse(value);
+    if (_isConcreteThemeGuard(formula) && cached != null) {
+      return _StyleColorResolution(color: cached);
+    }
+    if (_isThemeFormula(value) || _isThemeFormula(formula)) {
+      final named = _themeValArgSlot(formula.isNotEmpty ? formula : value);
+      if (named != null) return _StyleColorResolution(themeIndex: named);
+      final quick = _concreteCell(parent, quickStyleCell);
+      final index = quick == null
+          ? null
+          : int.tryParse(quick.getAttribute('V') ?? '') ??
+              double.tryParse(quick.getAttribute('V') ?? '')?.toInt();
+      // QuickStyle colour 100 is libvisio's context-dependent materialised
+      // default, not a theme slot id: black for lines/shadows, white for fills.
+      if (index == null || index == 100) {
+        return _StyleColorResolution(color: defaultQuickStyleColor);
+      }
+      return _StyleColorResolution(
+        themeIndex: index,
+      );
+    }
+    return _StyleColorResolution(color: cached);
+  }
+
+  bool _isThemeFormula(String value) {
+    final upper = value.toUpperCase();
+    return upper == 'THEMED' ||
+        upper.contains('THEMEVAL') ||
+        upper.contains('THEMEGUARD');
+  }
+
+  bool _isConcreteThemeGuard(String formula) => RegExp(
+        r'THEMEGUARD\s*\(\s*(?:RGB|HSL|SHADE)\s*\(',
+        caseSensitive: false,
+      ).hasMatch(formula);
+
+  int? _themeValArgSlot(String formula) {
+    final match = RegExp(
+      r'THEMEVAL\s*\(\s*([^),]+)\s*[,)]',
+      caseSensitive: false,
+    ).firstMatch(formula);
+    if (match == null) return null;
+    return ThemeSlot.fromThemeValArg(match.group(1)!);
+  }
+
   VsdxColor? _textBackground(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     final value = raw.trim();
@@ -522,4 +594,16 @@ class StyleSheetParser {
         6 => 0.375,
         _ => 0.125,
       };
+}
+
+class _StyleColorResolution {
+  const _StyleColorResolution({this.color, this.themeIndex}) : defined = true;
+  const _StyleColorResolution.absent()
+      : color = null,
+        themeIndex = null,
+        defined = false;
+
+  final VsdxColor? color;
+  final int? themeIndex;
+  final bool defined;
 }
