@@ -5,6 +5,21 @@ import 'package:vsdx/src/parser/vsd/vsd_byte_reader.dart';
 import 'package:vsdx/src/parser/vsd/vsd_parser.dart';
 
 void main() {
+  test('ShapeData NURBS combines row endpoints like libvisio', () {
+    final result = vsdAssembleNurbsShapeData(
+      dataKnots: [1, 2],
+      dataWeights: [1.25, 1.5],
+      firstKnot: 0,
+      secondLastKnot: 3,
+      lastKnot: 4,
+      firstWeight: 0.75,
+      lastWeight: 2,
+    );
+
+    expect(result.knots, [0, 1, 2, 3, 4]);
+    expect(result.weights, [0.75, 1.25, 1.5, 2]);
+  });
+
   test('typed NURBS formula parameters match libvisio decoding', () {
     final bytes = BytesBuilder();
 

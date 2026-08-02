@@ -161,6 +161,25 @@ typedef VsdDynamicNurbsFormula = ({
   List<double> weights,
 });
 
+/// Combines a `NURBSTo` row with its referenced ShapeData block.
+///
+/// ShapeData stores only the interior knot/weight sequence and the final knot;
+/// Visio keeps the first and penultimate knots plus endpoint weights on the
+/// geometry row. libvisio joins them in this exact order before sampling.
+({List<double> knots, List<double> weights}) vsdAssembleNurbsShapeData({
+  required List<double> dataKnots,
+  required List<double> dataWeights,
+  required double firstKnot,
+  required double secondLastKnot,
+  required double lastKnot,
+  required double firstWeight,
+  required double lastWeight,
+}) =>
+    (
+      knots: [firstKnot, ...dataKnots, secondLastKnot, lastKnot],
+      weights: [firstWeight, ...dataWeights, lastWeight],
+    );
+
 /// Reads the typed-parameter form of a binary NURBS formula.
 ///
 /// Unlike the static `0x8a` form, every coordinate, knot and weight carries a
@@ -355,6 +374,7 @@ class _ShapeDraft {
         List<Offset2D> cps,
         List<double> knots,
         List<double> weights,
+        double lastKnot,
         int degree,
         bool xRel,
         bool yRel,
@@ -362,7 +382,16 @@ class _ShapeDraft {
   /// Pending PolylineTo that references ShapeData by id.
   final pendingPolylineDataIds = <int, ({double x, double y, int dataId})>{};
   /// Pending NURBSTo that references ShapeData by id.
-  final pendingNurbsDataIds = <int, ({double x, double y, int dataId})>{};
+  final pendingNurbsDataIds = <int,
+      ({
+        double x,
+        double y,
+        double knot,
+        double weight,
+        double knotPrev,
+        double weightPrev,
+        int dataId,
+      })>{};
   /// Text field display values in document order (for ￼ / 0x1E substitution).
   final fieldDisplays = <String>[];
   /// Parallel chunk ids for [fieldDisplays] (libvisio field list element ids).
@@ -1448,14 +1477,23 @@ class VsdBinaryParser {
     for (final e in d.pendingNurbsDataIds.entries) {
       final n = d.nurbsData[e.value.dataId];
       if (n == null || n.cps.isEmpty) continue;
+      final assembled = vsdAssembleNurbsShapeData(
+        dataKnots: n.knots,
+        dataWeights: n.weights,
+        firstKnot: e.value.knotPrev,
+        secondLastKnot: e.value.knot,
+        lastKnot: n.lastKnot,
+        firstWeight: e.value.weightPrev,
+        lastWeight: e.value.weight,
+      );
       for (final g in d.geometries) {
         if (g.byId.containsKey(e.key)) {
           g.byId[e.key] = NurbsTo(
             x: e.value.x,
             y: e.value.y,
             controlPoints: n.cps,
-            knots: n.knots,
-            weights: n.weights,
+            knots: assembled.knots,
+            weights: assembled.weights,
             degree: n.degree,
             cpRelative: n.xRel,
             cpYRelative: n.yRel,
@@ -3137,21 +3175,38 @@ class VsdBinaryParser {
         if (s == null) return;
         final n = s.nurbsData[dataId];
         if (n != null && n.cps.isNotEmpty) {
+          final assembled = vsdAssembleNurbsShapeData(
+            dataKnots: n.knots,
+            dataWeights: n.weights,
+            firstKnot: knotPrev,
+            secondLastKnot: knot,
+            lastKnot: n.lastKnot,
+            firstWeight: weightPrev,
+            lastWeight: weight,
+          );
           _addGeomCmd(
             _header.id,
             NurbsTo(
               x: x,
               y: y,
               controlPoints: n.cps,
-              knots: n.knots,
-              weights: n.weights,
+              knots: assembled.knots,
+              weights: assembled.weights,
               degree: n.degree,
               cpRelative: n.xRel,
               cpYRelative: n.yRel,
             ),
           );
         } else {
-          s.pendingNurbsDataIds[_header.id] = (x: x, y: y, dataId: dataId);
+          s.pendingNurbsDataIds[_header.id] = (
+            x: x,
+            y: y,
+            knot: knot,
+            weight: weight,
+            knotPrev: knotPrev,
+            weightPrev: weightPrev,
+            dataId: dataId,
+          );
           _addGeomCmd(_header.id, LineTo(x, y));
         }
         return;
@@ -3327,11 +3382,11 @@ class VsdBinaryParser {
           knots.add(input.readF64());
           weights.add(input.readF64());
         }
-        knots.add(lastKnot);
         s.nurbsData[_header.id] = (
           cps: cps,
           knots: knots,
           weights: weights,
+          lastKnot: lastKnot,
           degree: degree,
           xRel: xType == 0,
           yRel: yType == 0,
