@@ -6,7 +6,9 @@
 /// Implements just enough of OPC for VSDX (we don't need full ECMA-376
 /// validation):
 ///  1. Open the ZIP.
-///  2. Read `[Content_Types].xml` so we can answer "what is this part?".
+///  2. Read `[Content_Types].xml` so we can answer "what is this part?". For
+///     malformed-but-readable packages accepted by libvisio, infer common
+///     types from filename extensions when that manifest is absent or invalid.
 ///  3. Read the root `_rels/.rels` to locate `visio/document.xml`.
 ///
 /// Subsequent relationship traversal lives in `relationships.dart` (M1-04).
@@ -72,12 +74,16 @@ class VsdxPackage {
     }
 
     final ctEntry = archive.findFile('[Content_Types].xml');
-    if (ctEntry == null) {
-      throw const VsdxPackageException(
-        'Missing [Content_Types].xml — not a valid OPC package',
-      );
+    var contentTypes = ContentTypes.inferredDefaults();
+    if (ctEntry != null) {
+      try {
+        contentTypes = ContentTypes.parse(_readXml(ctEntry));
+      } catch (_) {
+        // libvisio locates VSDX parts exclusively through relationships and
+        // ignores this optional-for-reading manifest. Keep the same recovery
+        // behaviour when the manifest exists but is damaged.
+      }
     }
-    final contentTypes = ContentTypes.parse(_readXml(ctEntry));
 
     final rootRelsEntry = archive.findFile('_rels/.rels');
     if (rootRelsEntry == null) {
@@ -232,6 +238,27 @@ class ContentTypes {
 
   final Map<String, String> _defaults;   // extension -> mime
   final Map<String, String> _overrides;  // partName  -> mime
+
+  /// Extension-based fallback for damaged Visio packages that omit or corrupt
+  /// the OPC content-type manifest. libvisio still traverses their
+  /// relationships and parses their XML; common media mappings preserve images.
+  factory ContentTypes.inferredDefaults() => ContentTypes(
+        defaults: const <String, String>{
+          'xml': 'application/xml',
+          'rels': 'application/vnd.openxmlformats-package.relationships+xml',
+          'png': 'image/png',
+          'jpg': 'image/jpeg',
+          'jpeg': 'image/jpeg',
+          'gif': 'image/gif',
+          'bmp': 'image/bmp',
+          'webp': 'image/webp',
+          'emf': 'image/x-emf',
+          'wmf': 'image/x-wmf',
+          'tif': 'image/tiff',
+          'tiff': 'image/tiff',
+        },
+        overrides: const <String, String>{},
+      );
 
   /// Resolve the MIME type for a given absolute part name (leading `/`).
   String? mimeFor(String partName) {

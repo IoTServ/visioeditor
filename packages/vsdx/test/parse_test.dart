@@ -1,12 +1,40 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
 Uint8List _fixture(String name) =>
     File('test/fixtures/$name').readAsBytesSync();
+
+Uint8List _withoutPart(Uint8List bytes, String partName) {
+  final source = ZipDecoder().decodeBytes(bytes);
+  final output = Archive();
+  for (final file in source) {
+    if (file.name == partName) continue;
+    output.addFile(ArchiveFile(file.name, file.size, file.content));
+  }
+  return Uint8List.fromList(ZipEncoder().encode(output)!);
+}
+
+Uint8List _replacePart(
+  Uint8List bytes,
+  String partName,
+  Uint8List replacement,
+) {
+  final source = ZipDecoder().decodeBytes(bytes);
+  final output = Archive();
+  for (final file in source) {
+    if (file.name == partName) {
+      output.addFile(ArchiveFile(file.name, replacement.length, replacement));
+    } else {
+      output.addFile(ArchiveFile(file.name, file.size, file.content));
+    }
+  }
+  return Uint8List.fromList(ZipEncoder().encode(output)!);
+}
 
 List<String> _fixtureNames() => Directory('test/fixtures')
     .listSync()
@@ -98,6 +126,37 @@ void main() {
     final doc = parser.parse(_fixture('workflow.vsdx'));
     expect(doc.pages, isNotEmpty);
     expect(doc.pages.first.shapes, isNotEmpty);
+  });
+
+  test('parses package with absent or malformed Content_Types like libvisio',
+      () {
+    final original = _fixture('test9_rect_and_line.vsdx');
+    final before = parser.parse(original);
+    final damagedPackages = <Uint8List>[
+      _withoutPart(original, '[Content_Types].xml'),
+      _replacePart(
+        original,
+        '[Content_Types].xml',
+        Uint8List.fromList('<broken'.codeUnits),
+      ),
+    ];
+
+    for (final damaged in damagedPackages) {
+      final pkg = VsdxPackage.open(damaged);
+      expect(pkg.resolveDocumentPartName(), '/visio/document.xml');
+      expect(
+        pkg.contentTypes.mimeFor('/visio/pages/page1.xml'),
+        'application/xml',
+      );
+      expect(
+          pkg.contentTypes.mimeFor('/visio/media/image1.webp'), 'image/webp');
+
+      final after = parser.parse(damaged);
+      expect(after.pages.length, before.pages.length);
+      expect(after.pages.first.widthInches, before.pages.first.widthInches);
+      expect(after.pages.first.heightInches, before.pages.first.heightInches);
+      expect(after.pages.first.shapes.length, before.pages.first.shapes.length);
+    }
   });
 
   // --- libvisio parity: every fixture parses, and no geometry is dropped ----
