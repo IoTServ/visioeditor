@@ -321,9 +321,37 @@ void main() {
       expect(page.heightInches, lessThan(20));
       final withGeom = page.shapes.where((s) => s.geometries.isNotEmpty);
       expect(withGeom.length, greaterThan(3));
+      // VSD5 TextBlock stops after the palette colour index. Reading the
+      // VSD6/11 tail used to throw and discard the entire local block.
+      final indexedBackground = page.shapes.firstWhere((s) => s.id == 38);
+      expect(indexedBackground.richText.plainText,
+          contains('Indexed Background Colour'));
+      expect(
+        indexedBackground.richText.textBlock.backgroundColor,
+        const VsdxColor(0xFF800000),
+      );
+      expect(indexedBackground.richText.textBlock.marginLeftInches, 0);
+      expect(indexedBackground.richText.textBlock.defaultTabStopInches, 0);
+      expect(indexedBackground.richText.textBlock.textDirection, 0);
+      expect(
+        page.shapes
+            .firstWhere((s) => s.id == 39)
+            .richText
+            .textBlock
+            .backgroundColor,
+        isNull,
+      );
       expect(looksLikeZipOpc(result.originalBytes), isTrue);
       final again = const DocumentParser().parse(result.originalBytes);
       expect(again.pages.first.shapes.length, page.shapes.length);
+      expect(
+        again.pages.first.shapes
+            .firstWhere((s) => s.id == 38)
+            .richText
+            .textBlock
+            .backgroundColor,
+        const VsdxColor(0xFF800000),
+      );
     });
 
     test('parses VSD6 PlanWithDimensions', () {

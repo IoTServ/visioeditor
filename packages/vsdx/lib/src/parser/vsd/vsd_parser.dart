@@ -4388,14 +4388,26 @@ class VsdBinaryParser {
         _ => VsdxVertAlign.middle,
       };
       final bgIdx = input.readU8();
-      input.skip(4);
-      final isBgFilled = bgIdx != 0 && bgIdx != 0xff;
-      final textBgColor =
-          isBgFilled ? _colourFromIndex(bgIdx - 1) : null;
-      input.skip(1);
-      final defaultTabStop = input.readF64();
-      input.skip(12);
-      final textDirection = input.readU8();
+      late final bool isBgFilled;
+      late final VsdxColor? textBgColor;
+      late final double defaultTabStop;
+      late final int textDirection;
+      if (_version == 5) {
+        // VSD5 TextBlock ends after the palette colour index.
+        isBgFilled = bgIdx != 0;
+        textBgColor = isBgFilled ? _colourFromIndex(bgIdx - 1) : null;
+        defaultTabStop = 0;
+        textDirection = 0;
+      } else {
+        // VSD6/11 carry cached RGBA plus the newer tab/direction cells.
+        input.skip(4);
+        isBgFilled = bgIdx != 0 && bgIdx != 0xff;
+        textBgColor = isBgFilled ? _colourFromIndex(bgIdx - 1) : null;
+        input.skip(1);
+        defaultTabStop = input.readF64();
+        input.skip(12);
+        textDirection = input.readU8();
+      }
       void apply(dynamic t) {
         t.marginLeft = marginLeft;
         t.marginRight = marginRight;
