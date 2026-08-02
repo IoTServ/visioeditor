@@ -25,6 +25,7 @@ enum VsdxRelType {
   image('/image'),
   hyperlink('/hyperlink'),
   customXml('/customXml'),
+  customProperties('/custom-properties'),
   coreProperties('/metadata/core-properties'),
   extendedProperties('/extended-properties');
 
@@ -38,6 +39,18 @@ class RelationshipResolver {
   RelationshipResolver(this._package);
 
   final VsdxPackage _package;
+
+  /// Resolve a package-root relationship by type. OPC metadata parts are not
+  /// required to live under `/docProps`; libvisio follows these root targets.
+  /// When a producer repeats a type, use the last row like libvisio's map.
+  String? rootTargetOfType(VsdxRelType type) {
+    PackageRelationship? match;
+    for (final rel in _package.rootRelationships) {
+      if (type.matches(rel.type)) match = rel;
+    }
+    if (match == null || match.targetMode == 'External') return null;
+    return _package.resolveRelationshipTarget('/', match.target);
+  }
 
   /// All relationships emanating from [sourcePartName], keyed by `rId`.
   Map<String, PackageRelationship> relsByIdOf(String sourcePartName) {

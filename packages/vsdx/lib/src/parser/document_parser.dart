@@ -18,6 +18,7 @@ import 'image_parser.dart';
 import 'masters_parser.dart';
 import 'package_reader.dart';
 import 'pages_parser.dart';
+import 'relationships.dart';
 import 'stylesheet_parser.dart';
 import 'theme_parser.dart';
 
@@ -31,6 +32,7 @@ class DocumentParser {
   /// Throws [VsdxException] subclasses on failure.
   VsdxDocument parse(Uint8List bytes) {
     final pkg = VsdxPackage.open(bytes);
+    final resolver = RelationshipResolver(pkg);
     _log.fine(
       () => 'Opened OPC package with ${pkg.allPartNames.length} parts',
     );
@@ -73,43 +75,61 @@ class DocumentParser {
         .parsePages(documentPartName: documentPart);
     _log.fine(() => 'Parsed ${pages.length} page(s)');
 
+    final coreProperties = _readOptionalPropertiesPart(
+      pkg,
+      resolver.rootTargetOfType(VsdxRelType.coreProperties) ??
+          '/docProps/core.xml',
+    );
+    final extendedProperties = _readOptionalPropertiesPart(
+      pkg,
+      resolver.rootTargetOfType(VsdxRelType.extendedProperties) ??
+          '/docProps/app.xml',
+    );
+    final customPropertiesPart =
+        resolver.rootTargetOfType(VsdxRelType.customProperties) ??
+            '/docProps/custom.xml';
+
     return VsdxDocument(
       pages: pages,
       masters: masters,
       theme: theme,
       images: images,
       settings: settings,
-      title: _readCoreProperty(pkg, 'title'),
-      creator: _readCoreProperty(pkg, 'creator'),
-      subject: _readCoreProperty(pkg, 'subject'),
-      keywords: _readCoreProperty(pkg, 'keywords'),
-      description: _readCoreProperty(pkg, 'description'),
-      lastModifiedBy: _readCoreProperty(pkg, 'lastModifiedBy'),
-      created: _readCoreProperty(pkg, 'created'),
-      modified: _readCoreProperty(pkg, 'modified'),
-      language: _readCoreProperty(pkg, 'language'),
-      category: _readCoreProperty(pkg, 'category'),
-      company: _readAppProperty(pkg, 'Company'),
-      template: _basename(_readAppProperty(pkg, 'Template')),
-      applicationName: _readAppProperty(pkg, 'Application'),
-      customProperties: const CustomPropertiesParser().parse(pkg),
+      title: _readProperty(coreProperties, 'title'),
+      creator: _readProperty(coreProperties, 'creator'),
+      subject: _readProperty(coreProperties, 'subject'),
+      keywords: _readProperty(coreProperties, 'keywords'),
+      description: _readProperty(coreProperties, 'description'),
+      lastModifiedBy: _readProperty(coreProperties, 'lastModifiedBy'),
+      created: _readProperty(coreProperties, 'created'),
+      modified: _readProperty(coreProperties, 'modified'),
+      language: _readProperty(coreProperties, 'language'),
+      category: _readProperty(coreProperties, 'category'),
+      company: _readProperty(extendedProperties, 'Company'),
+      template: _basename(_readProperty(extendedProperties, 'Template')),
+      applicationName: _readProperty(extendedProperties, 'Application'),
+      customProperties: const CustomPropertiesParser().parse(
+        pkg,
+        partName: customPropertiesPart,
+      ),
     );
   }
 
-  String? _readCoreProperty(VsdxPackage pkg, String localName) {
-    final doc = pkg.readPartXml('/docProps/core.xml');
-    if (doc == null) return null;
-    return _firstElementText(doc.rootElement, localName);
+  XmlDocument? _readOptionalPropertiesPart(
+    VsdxPackage pkg,
+    String partName,
+  ) {
+    try {
+      return pkg.readPartXml(partName);
+    } catch (_) {
+      // libvisio treats malformed optional metadata as non-fatal.
+      return null;
+    }
   }
 
-  String? _readAppProperty(VsdxPackage pkg, String localName) {
-    final doc = pkg.readPartXml('/docProps/app.xml');
-    if (doc == null) return null;
-    return _firstElementText(doc.rootElement, localName);
-  }
-
-  String? _firstElementText(XmlElement root, String localName) {
-    for (final node in root.descendants) {
+  String? _readProperty(XmlDocument? document, String localName) {
+    if (document == null) return null;
+    for (final node in document.rootElement.descendants) {
       if (node is XmlElement && node.name.local == localName) {
         return node.innerText.trim();
       }

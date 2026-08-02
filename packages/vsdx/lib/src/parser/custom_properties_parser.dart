@@ -15,8 +15,18 @@ class CustomPropertiesParser {
   static const _vtNs =
       'http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes';
 
-  List<VsdxCustomProperty> parse(VsdxPackage pkg) {
-    final doc = pkg.readPartXml('/docProps/custom.xml');
+  List<VsdxCustomProperty> parse(
+    VsdxPackage pkg, {
+    String partName = '/docProps/custom.xml',
+  }) {
+    XmlDocument? doc;
+    try {
+      doc = pkg.readPartXml(partName);
+    } catch (_) {
+      // Optional metadata must not prevent an otherwise valid drawing from
+      // opening (the same recovery policy used by libvisio).
+      return const [];
+    }
     if (doc == null) return const [];
     return parseDocument(doc);
   }
