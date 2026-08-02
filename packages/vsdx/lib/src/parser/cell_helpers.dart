@@ -91,6 +91,13 @@ bool isInhFormula(String? f) {
   return u == 'INH' || u.startsWith('INH(');
 }
 
+/// True for the two XML boolean spellings accepted by libvisio.
+bool isXmlTrue(String? value) {
+  if (value == null) return false;
+  final normalized = value.trim().toLowerCase();
+  return normalized == '1' || normalized == 'true';
+}
+
 /// Direct text content of `<Text>` (concatenates all descendant text nodes).
 String? readShapeText(XmlElement shape) {
   for (final child in shape.childElements) {

@@ -81,7 +81,9 @@ class PagesParser {
     }
 
     final pageEls = indexXml.rootElement.childElements
-        .where((el) => el.name.local == 'Page')
+        .where((el) =>
+            el.name.local == 'Page' &&
+            int.tryParse(el.getAttribute('ID') ?? '') != null)
         .toList(growable: false);
 
     final out = <VsdxPage>[];
@@ -104,14 +106,20 @@ class PagesParser {
     required int totalPages,
   }) {
     final idStr = pageEl.getAttribute('ID');
-    final id = idStr == null ? -1 : int.tryParse(idStr) ?? -1;
-    final name = pageEl.getAttribute('NameU') ??
-        pageEl.getAttribute('Name') ??
+    final id = idStr == null ? null : int.tryParse(idStr);
+    // libvisio ignores Page rows without a usable ID.
+    if (id == null) return null;
+    // Name is the localized/display label; NameU is only the fallback.
+    final name = pageEl.getAttribute('Name') ??
+        pageEl.getAttribute('NameU') ??
         'Page-$id';
-    final isBackground =
-        (pageEl.getAttribute('Background') ?? '').trim() == '1';
+    final isBackground = isXmlTrue(pageEl.getAttribute('Background'));
     final backPageStr = pageEl.getAttribute('BackPage');
-    final backPageId = backPageStr == null ? null : int.tryParse(backPageStr);
+    final parsedBackPageId =
+        backPageStr == null ? null : int.tryParse(backPageStr);
+    final backPageId = parsedBackPageId != null && parsedBackPageId >= 0
+        ? parsedBackPageId
+        : null;
     final viewScale = double.tryParse(pageEl.getAttribute('ViewScale') ?? '');
     final viewCenterX = double.tryParse(pageEl.getAttribute('ViewCenterX') ?? '');
     final viewCenterY = double.tryParse(pageEl.getAttribute('ViewCenterY') ?? '');

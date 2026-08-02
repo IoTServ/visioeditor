@@ -48,7 +48,7 @@ class GeometryParser {
     final deletedRowIndices = <int>{};
     final definedFlagCells = <String>{};
     final ix = int.tryParse(section.getAttribute('IX') ?? '') ?? 0;
-    final sectionDeleted = section.getAttribute('Del') == '1';
+    final sectionDeleted = isXmlTrue(section.getAttribute('Del'));
     var noFill = false;
     var noLine = false;
     var noShow = false;
@@ -67,27 +67,27 @@ class GeometryParser {
             case 'NoFill':
               // F=Inh → leave default false; master merge supplies the value.
               if (!inherits) {
-                noFill = v == '1';
+                noFill = isXmlTrue(v);
                 definedFlagCells.add('NoFill');
               }
             case 'NoLine':
               if (!inherits) {
-                noLine = v == '1';
+                noLine = isXmlTrue(v);
                 definedFlagCells.add('NoLine');
               }
             case 'NoShow':
               if (!inherits) {
-                noShow = v == '1';
+                noShow = isXmlTrue(v);
                 definedFlagCells.add('NoShow');
               }
             case 'NoSnap':
               if (!inherits) {
-                noSnap = v == '1';
+                noSnap = isXmlTrue(v);
                 definedFlagCells.add('NoSnap');
               }
             case 'NoQuickDrag':
               if (!inherits) {
-                noQuickDrag = v == '1';
+                noQuickDrag = isXmlTrue(v);
                 definedFlagCells.add('NoQuickDrag');
               }
           }
@@ -95,7 +95,7 @@ class GeometryParser {
           final rowIx = int.tryParse(child.getAttribute('IX') ?? '');
           // A `Del="1"` row deletes the same-IX row inherited from the master
           // (MS-VSDX) — record it as a deletion rather than a spurious command.
-          if (child.getAttribute('Del') == '1') {
+          if (isXmlTrue(child.getAttribute('Del'))) {
             if (rowIx != null) deletedRowIndices.add(rowIx);
             continue;
           }

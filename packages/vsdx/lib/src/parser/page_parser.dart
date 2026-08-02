@@ -154,17 +154,25 @@ class PageParser {
     // (Visio / libvisio resolve instance sub-shapes this way).
     final masterIdStr = shapeEl.getAttribute('Master');
     final masterId = masterIdStr == null ? null : int.tryParse(masterIdStr);
-    final master = masterId != null ? _masters.find(masterId) : inheritedMaster;
     final masterShapeStr = shapeEl.getAttribute('MasterShape');
     final masterShapeId =
         masterShapeStr == null ? null : int.tryParse(masterShapeStr);
+    // libvisio keeps the enclosing group's master page for nested master
+    // references. A child cannot switch to an unrelated stencil by repeating
+    // Master; MasterShape is resolved inside the inherited master context.
+    final hasMasterReference = masterId != null || masterShapeId != null;
+    final master = depth > 0 && hasMasterReference
+        ? inheritedMaster
+        : masterId != null
+            ? _masters.find(masterId)
+            : inheritedMaster;
     final VsdxShape? proto;
-    if (masterId != null) {
+    if (masterShapeId != null && master != null) {
+      proto = master.findShape(masterShapeId);
+    } else if (masterId != null) {
       proto = master?.prototype;
     } else {
-      proto = (masterShapeId != null && master != null)
-          ? master.findShape(masterShapeId)
-          : null;
+      proto = null;
     }
 
     final pinX = readLengthInches(shapeEl, 'PinX', inheritFrom: proto?.pinX) ??
@@ -209,8 +217,9 @@ class PageParser {
     final shapeTypeAttr = shapeEl.getAttribute('Type');
     final has1DEndpoints = findCell(shapeEl, 'BeginX') != null ||
         findCell(shapeEl, 'EndX') != null;
-    final is1D = shapeTypeAttr == 'Shape' && has1DEndpoints ||
-        proto?.is1D == true;
+    // libvisio materialises a 1-D transform whenever Begin/End cells exist;
+    // producer output does not need to repeat Type="Shape" for that signal.
+    final is1D = has1DEndpoints || proto?.is1D == true;
     final beginX =
         readLengthInches(shapeEl, 'BeginX', inheritFrom: proto?.beginX) ??
             proto?.beginX;
