@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import '../../core/exceptions.dart';
 import '../../model/connect.dart';
 import '../../model/document.dart';
+import '../../model/effects.dart';
 import '../../model/fill.dart';
 import '../../model/geometry.dart';
 import '../../model/hyperlink.dart';
@@ -85,6 +86,7 @@ class _ShapeDraft {
   double angle = 0;
   bool flipX = false;
   bool flipY = false;
+  bool hasXFormData = false;
   bool is1D = false;
   bool locked = false;
   bool dontMoveChildren = false;
@@ -97,12 +99,14 @@ class _ShapeDraft {
   double? endY;
   VsdxLine? line;
   VsdxFill? fill;
+  VsdxShadow? shadow;
   String? text;
   double? fontSizeInches;
   VsdxColor? textColor;
   bool bold = false;
   bool italic = false;
   bool hideText = false;
+  bool hasMisc = false;
   String? fontFamily;
   String? shapeName;
   double? txtPinX;
@@ -334,6 +338,7 @@ class _TabSetDraft {
 class _StyleDraft {
   VsdxLine? line;
   VsdxFill? fill;
+  VsdxShadow? shadow;
   int lineParent = _minusOne;
   int fillParent = _minusOne;
   int textParent = _minusOne;
@@ -1171,12 +1176,10 @@ class VsdBinaryParser {
     if (_currentPage == null) return;
     _applyMasterInheritance(d);
     d.shapeName ??= _currentPage!.elementNames[d.id];
-    if (d.line == null && d.lineStyleId != _minusOne) {
-      d.line = _styles[d.lineStyleId]?.line;
-    }
-    if (d.fill == null && d.fillStyleId != _minusOne) {
-      d.fill = _styles[d.fillStyleId]?.fill;
-    }
+    d.line ??= _resolveLineStyle(d.lineStyleId);
+    final fillStyle = _resolveFillStyle(d.fillStyleId);
+    d.fill ??= fillStyle.$1;
+    d.shadow ??= fillStyle.$2;
     _applyTextStyle(d);
     _resolvePendingShapeData(d);
     _dedupeConnectionPoints(d);
@@ -1486,6 +1489,20 @@ class VsdBinaryParser {
         d.geometries.add(ng);
       }
     }
+    // libvisio seeds a master instance with the stencil XForm before applying
+    // an optional local XFormData record. Preserve that distinction so an
+    // omitted local record inherits instead of falling back to a 1x1 box.
+    if (!d.hasXFormData) {
+      d.pinX = master.pinX;
+      d.pinY = master.pinY;
+      d.width = master.width;
+      d.height = master.height;
+      d.locPinX = master.locPinX;
+      d.locPinY = master.locPinY;
+      d.angle = master.angle;
+      d.flipX = master.flipX;
+      d.flipY = master.flipY;
+    }
     if (d.foreignBytes == null && master.foreignBytes != null) {
       d.foreignBytes = Uint8List.fromList(master.foreignBytes!);
       d.foreignType = master.foreignType;
@@ -1497,6 +1514,7 @@ class VsdBinaryParser {
     }
     d.line ??= master.line;
     d.fill ??= master.fill;
+    d.shadow ??= master.shadow;
     d.text ??= master.text;
     d.fontSizeInches ??= master.fontSizeInches;
     d.fontFamily ??= master.fontFamily;
@@ -1553,7 +1571,8 @@ class VsdBinaryParser {
     if (d.fontScale == 1.0 && master.fontScale != 1.0) {
       d.fontScale = master.fontScale;
     }
-    if (!d.hideText) d.hideText = master.hideText;
+    // An explicit Misc record with HideText=false overrides a hidden master.
+    if (!d.hasMisc) d.hideText = master.hideText;
     if (d.charRuns.isEmpty && master.charRuns.isNotEmpty) {
       d.charRuns.addAll(master.charRuns);
     }
@@ -1809,6 +1828,34 @@ class VsdBinaryParser {
     }
   }
 
+  VsdxLine? _resolveLineStyle(int styleId) {
+    if (styleId == _minusOne) return null;
+    var id = styleId;
+    final seen = <int>{};
+    while (id != _minusOne && seen.add(id)) {
+      final style = _styles[id];
+      if (style == null) break;
+      if (style.line != null) return style.line;
+      id = style.lineParent;
+    }
+    return null;
+  }
+
+  (VsdxFill?, VsdxShadow?) _resolveFillStyle(int styleId) {
+    if (styleId == _minusOne) return (null, null);
+    var id = styleId;
+    final seen = <int>{};
+    while (id != _minusOne && seen.add(id)) {
+      final style = _styles[id];
+      if (style == null) break;
+      if (style.fill != null || style.shadow != null) {
+        return (style.fill, style.shadow);
+      }
+      id = style.fillParent;
+    }
+    return (null, null);
+  }
+
   void _readShape(VsdByteReader input) {
     _isShapeStarted = true;
     if (_header.id != _minusOne) _currentShapeId = _header.id;
@@ -1893,6 +1940,7 @@ class VsdBinaryParser {
     s.angle = input.readF64();
     s.flipX = input.readU8() != 0;
     s.flipY = input.readU8() != 0;
+    s.hasXFormData = true;
   }
 
   void _readXForm1D(VsdByteReader input) {
@@ -2387,7 +2435,7 @@ class VsdBinaryParser {
       final startMarker = input.readU8();
       final endMarker = input.readU8();
       final lineCap = input.readU8();
-      final colour = VsdxColor.argb(a == 0 ? 255 : a, r, g, b);
+      final colour = VsdxColor.argb(255 - a, r, g, b);
       line = VsdxLine(
         color: colour,
         weightInches: strokeWidth,
@@ -2411,20 +2459,30 @@ class VsdBinaryParser {
 
   void _readFillAndShadow(VsdByteReader input) {
     late final VsdxFill fill;
+    late final VsdxShadow shadow;
     if (_version == 5) {
       // Algorithm reference: libvisio VSD5Parser::readFillAndShadow.
       final colourFG = _colourFromIndex(input.readU8());
       final colourBG = _colourFromIndex(input.readU8());
       final fillPattern = input.readU8();
-      input.readU8(); // shadow FG index
+      final shadowFG = _colourFromIndex(input.readU8());
       input.skip(1); // shadow BG
-      input.readU8(); // shadow pattern
+      final shadowPattern = input.readU8();
       fill = VsdxFill(
-        foreground: colourFG,
-        background: colourBG,
+        foreground: colourFG.withOpacity(1),
+        background: colourBG.withOpacity(1),
         pattern: fillPattern,
         foregroundTransparency: 1.0 - (colourFG.alpha / 255.0),
         backgroundTransparency: 1.0 - (colourBG.alpha / 255.0),
+      );
+      shadow = VsdxShadow(
+        color: shadowFG.withOpacity(1),
+        offsetXInches: _currentPage?.shadowOffsetX ?? 0.125,
+        offsetYInches: _currentPage?.shadowOffsetY ?? -0.125,
+        blurInches: 0,
+        transparency: 1.0 - (shadowFG.alpha / 255.0),
+        enabled: shadowPattern != 0,
+        pattern: shadowPattern == 0 ? 1 : shadowPattern,
       );
     } else {
       final fgIdx = input.readU8();
@@ -2437,43 +2495,82 @@ class VsdBinaryParser {
       var bgG = input.readU8();
       var bgB = input.readU8();
       var bgA = input.readU8();
-      var colourFG = VsdxColor.argb(fgA == 0 ? 255 : fgA, fgR, fgG, fgB);
-      var colourBG = VsdxColor.argb(bgA == 0 ? 255 : bgA, bgR, bgG, bgB);
+      var colourFG = VsdxColor.argb(255, fgR, fgG, fgB);
+      var colourBG = VsdxColor.argb(255, bgR, bgG, bgB);
+      var fgTransparency = fgA / 255.0;
+      var bgTransparency = bgA / 255.0;
       if (fgR == 0 && fgG == 0 && fgB == 0 && fgA == 0 &&
           bgR == 0 && bgG == 0 && bgB == 0 && bgA == 0) {
         colourFG = _colourFromIndex(fgIdx);
         colourBG = _colourFromIndex(bgIdx);
+        fgTransparency = 1.0 - (colourFG.alpha / 255.0);
+        bgTransparency = 1.0 - (colourBG.alpha / 255.0);
+        colourFG = colourFG.withOpacity(1);
+        colourBG = colourBG.withOpacity(1);
       }
       final fillPattern = input.readU8();
-      // VSD11 appends shadow offsets; VSD6 stops here (algorithm reference:
-      // libvisio VSD6Parser::readFillAndShadow).
+      final shadowFGIdx = input.readU8();
+      final shadowR = input.readU8();
+      final shadowG = input.readU8();
+      final shadowB = input.readU8();
+      final shadowA = input.readU8();
+      final shadowBGIdx = input.readU8();
+      final shadowBgR = input.readU8();
+      final shadowBgG = input.readU8();
+      final shadowBgB = input.readU8();
+      final shadowBgA = input.readU8();
+      final shadowPattern = input.readU8();
+      var shadowColor = VsdxColor.argb(255, shadowR, shadowG, shadowB);
+      var shadowTransparency = shadowA / 255.0;
+      if (shadowR == 0 &&
+          shadowG == 0 &&
+          shadowB == 0 &&
+          shadowA == 0 &&
+          shadowBgR == 0 &&
+          shadowBgG == 0 &&
+          shadowBgB == 0 &&
+          shadowBgA == 0) {
+        shadowColor = _colourFromIndex(shadowFGIdx);
+        // Read both indices to mirror libvisio's all-zero fallback decision.
+        _colourFromIndex(shadowBGIdx);
+        shadowTransparency = 1.0 - (shadowColor.alpha / 255.0);
+        shadowColor = shadowColor.withOpacity(1);
+      }
+      var shadowOffsetX = _currentPage?.shadowOffsetX ?? 0.125;
+      var shadowOffsetY = _currentPage?.shadowOffsetY ?? -0.125;
       if (_version == 11) {
         try {
-          input.readU8(); // shadow FG index
-          input.skip(4); // shadow FG rgba
-          input.readU8(); // shadow BG index
-          input.skip(4); // shadow BG rgba
-          input.readU8(); // shadow pattern
           input.skip(2); // shadow type + format
-          input.readF64(); // shadowOffsetX
+          shadowOffsetX = input.readF64();
           input.skip(1);
-          input.readF64(); // shadowOffsetY
+          shadowOffsetY = input.readF64();
         } catch (_) {}
       }
       fill = VsdxFill(
         foreground: colourFG,
         background: colourBG,
         pattern: fillPattern,
-        foregroundTransparency: 1.0 - (colourFG.alpha / 255.0),
-        backgroundTransparency: 1.0 - (colourBG.alpha / 255.0),
+        foregroundTransparency: fgTransparency,
+        backgroundTransparency: bgTransparency,
+      );
+      shadow = VsdxShadow(
+        color: shadowColor,
+        offsetXInches: shadowOffsetX,
+        offsetYInches: shadowOffsetY,
+        blurInches: 0,
+        transparency: shadowTransparency,
+        enabled: shadowPattern != 0,
+        pattern: shadowPattern == 0 ? 1 : shadowPattern,
       );
     }
     if (_isInStyles) {
       final sid = _currentStyleId != _minusOne ? _currentStyleId : _header.id;
       final st = _styles.putIfAbsent(sid, _StyleDraft.new);
       st.fill = fill;
+      st.shadow = shadow;
     } else {
       _shape?.fill = fill;
+      _shape?.shadow = shadow;
     }
   }
 
@@ -3891,6 +3988,7 @@ class VsdBinaryParser {
     try {
       final flags = input.readU8();
       s.hideText = (flags & 0x20) != 0;
+      s.hasMisc = true;
     } catch (_) {}
   }
 
@@ -3902,6 +4000,7 @@ class VsdBinaryParser {
       input.skip(8);
       final colourId = input.readU8();
       VsdxColor? color;
+      var colorTrans = 0.0;
       if (colourId == 0xff) {
         input.skip(4);
       } else {
@@ -3909,7 +4008,8 @@ class VsdBinaryParser {
         final g = input.readU8();
         final b = input.readU8();
         final a = input.readU8();
-        color = VsdxColor.argb(a == 0 ? 255 : a, r, g, b);
+        color = VsdxColor.argb(255, r, g, b);
+        colorTrans = a / 255.0;
       }
       input.skip(1);
       final visible = input.readU8() != 0;
@@ -3924,6 +4024,7 @@ class VsdBinaryParser {
           visible: visible,
           print: printable,
           color: color,
+          colorTrans: colorTrans,
         ),
       );
     } catch (_) {}
@@ -4289,7 +4390,7 @@ class VsdBinaryParser {
         final g = input.readU8();
         final b = input.readU8();
         final a = input.readU8();
-        textColor = VsdxColor.argb(a == 0 ? 255 : a, r, g, b);
+        textColor = VsdxColor.argb(255 - a, r, g, b);
         var fontMod = input.readU8();
         bold = (fontMod & 1) != 0;
         italic = (fontMod & 2) != 0;
@@ -4498,7 +4599,7 @@ class VsdBinaryParser {
       final g = input.readU8();
       final b = input.readU8();
       final a = input.readU8();
-      _colours.add(VsdxColor.argb(a == 0 ? 255 : a, r, g, b));
+      _colours.add(VsdxColor.argb(255 - a, r, g, b));
     }
   }
 
@@ -4700,6 +4801,13 @@ class VsdBinaryParser {
     if (d.imgOffsetY != null) d.imgOffsetY = d.imgOffsetY! * s;
     if (d.imgWidth != null) d.imgWidth = d.imgWidth! * s;
     if (d.imgHeight != null) d.imgHeight = d.imgHeight! * s;
+    if (d.shadow != null) {
+      d.shadow = d.shadow!.copyWith(
+        offsetXInches: d.shadow!.offsetXInches * s,
+        offsetYInches: d.shadow!.offsetYInches * s,
+        blurInches: d.shadow!.blurInches * s,
+      );
+    }
     for (final g in d.geometries) {
       final scaled = <int, VsdxPathCommand>{};
       for (final e in g.byId.entries) {
@@ -5229,6 +5337,7 @@ class VsdBinaryParser {
             pattern: 1,
           ),
       line: d.line ?? VsdxLine.defaultLine,
+      shadow: d.shadow ?? VsdxShadow.disabled,
       is1D: d.is1D,
       beginX: d.beginX,
       beginY: d.beginY,

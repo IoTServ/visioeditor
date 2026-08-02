@@ -32,6 +32,50 @@ void main() {
         expect(doc.pages[i].heightInches, closeTo(size.$2, 0.02),
             reason: '${fixture.path} page $i height');
       }
+
+      if (fixture.uri.pathSegments.last == 'dwg.vsd') {
+        final shadows =
+            _allShapes(doc).where((shape) => shape.shadow.enabled).toList();
+        expect(shadows, isNotEmpty,
+            reason: 'VSD FillAndShadow records must reach the model');
+        for (final shape in shadows) {
+          expect(shape.shadow.pattern, 1);
+          expect(shape.shadow.transparency, closeTo(199 / 255, 1e-9));
+          expect(shape.shadow.offsetXInches, closeTo(0.0048, 1e-9));
+          expect(shape.shadow.offsetYInches, closeTo(-0.0274, 1e-9));
+          expect(shape.shadow.blurInches, 0,
+              reason: 'binary Visio shadows are unblurred');
+        }
+
+        final reopened = const DocumentParser().parse(synthesizeVsdx(doc));
+        final reopenedById = <int, VsdxShape>{
+          for (final shape in _allShapes(reopened)) shape.id: shape,
+        };
+        for (final shape in shadows) {
+          final after = reopenedById[shape.id];
+          expect(after, isNotNull);
+          expect(after!.shadow.enabled, isTrue);
+          expect(after.shadow.pattern, shape.shadow.pattern);
+          expect(after.shadow.transparency,
+              closeTo(shape.shadow.transparency, 1e-9));
+          expect(after.shadow.offsetXInches,
+              closeTo(shape.shadow.offsetXInches, 1e-9));
+          expect(after.shadow.offsetYInches,
+              closeTo(shape.shadow.offsetYInches, 1e-9));
+          expect(after.shadow.blurInches, shape.shadow.blurInches);
+        }
+      }
+      if (fixture.uri.pathSegments.last == 'tdf76829-datetime-format.vsd') {
+        final transparentFills = _allShapes(doc)
+            .where((shape) => shape.fill.foregroundTransparency > 0.99)
+            .toList();
+        expect(transparentFills, isNotEmpty,
+            reason: 'binary alpha is transparency, not opacity');
+        for (final shape in transparentFills) {
+          expect(shape.fill.foreground?.alpha, 255,
+              reason: 'fill transparency must not be applied twice');
+        }
+      }
       if (const <String>{
         'tdf154379-DrawingUnits-type.vsd',
         'tdf76829-datetime-format.vsd',
