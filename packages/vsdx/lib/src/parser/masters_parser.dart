@@ -28,21 +28,17 @@ class MastersParser {
     Map<int, VsdxColor> colorPalette = const <int, VsdxColor>{},
     Map<int, String> fontNames = const <int, String>{},
   })  : _resolver = RelationshipResolver(_package),
-        _master = masterParser ??
-            MasterParser(
-              shapes: PageParser(
-                style: StyleParser(colorPalette: colorPalette),
-                richText: RichTextParser(
-                  colorPalette: colorPalette,
-                  fontNames: fontNames,
-                ),
-                stylesheets: stylesheets,
-              ),
-            );
+        _injectedMaster = masterParser,
+        _stylesheets = stylesheets,
+        _colorPalette = colorPalette,
+        _fontNames = fontNames;
 
   final VsdxPackage _package;
   final RelationshipResolver _resolver;
-  final MasterParser _master;
+  final MasterParser? _injectedMaster;
+  final StyleSheetRegistry _stylesheets;
+  final Map<int, VsdxColor> _colorPalette;
+  final Map<int, String> _fontNames;
 
   /// Builds the registry by walking from [documentPartName] → `masters.xml`
   /// → each `masterN.xml`. Returns [MasterRegistry.empty] when no masters
@@ -71,7 +67,29 @@ class MastersParser {
     final byId = <int, VsdxMaster>{};
     for (final el in indexXml.rootElement.childElements) {
       if (el.name.local != 'Master') continue;
-      final master = _readEntry(el, mastersPart: mastersPart);
+      // libvisio registers each stencil as soon as its Master row finishes.
+      // Consequently a later master may inherit from an earlier one, while a
+      // forward reference remains unresolved. Build the same source-order
+      // registry for the PageParser used by this master part.
+      final masterParser = _injectedMaster ??
+          MasterParser(
+            shapes: PageParser(
+              style: StyleParser(colorPalette: _colorPalette),
+              richText: RichTextParser(
+                colorPalette: _colorPalette,
+                fontNames: _fontNames,
+              ),
+              masters: MasterRegistry(
+                Map<int, VsdxMaster>.unmodifiable(byId),
+              ),
+              stylesheets: _stylesheets,
+            ),
+          );
+      final master = _readEntry(
+        el,
+        mastersPart: mastersPart,
+        masterParser: masterParser,
+      );
       if (master != null) byId[master.id] = master;
     }
     return MasterRegistry(Map.unmodifiable(byId));
@@ -80,13 +98,13 @@ class MastersParser {
   VsdxMaster? _readEntry(
     XmlElement el, {
     required String mastersPart,
+    required MasterParser masterParser,
   }) {
     final idStr = el.getAttribute('ID');
     final id = idStr == null ? null : int.tryParse(idStr);
     if (id == null) return null;
-    final name = el.getAttribute('NameU') ??
-        el.getAttribute('Name') ??
-        'Master-$id';
+    final name =
+        el.getAttribute('NameU') ?? el.getAttribute('Name') ?? 'Master-$id';
 
     final relEl = _firstChildLocal(el, 'Rel');
     if (relEl == null) {
@@ -117,7 +135,7 @@ class MastersParser {
       return null;
     }
     try {
-      return _master.parse(doc, id: id, name: name, partName: target);
+      return masterParser.parse(doc, id: id, name: name, partName: target);
     } catch (_) {
       _log.warning('Master $id ($name) could not be parsed; skipping');
       return null;

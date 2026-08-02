@@ -20,6 +20,7 @@ class VsdxMaster {
     required this.id,
     required this.name,
     required this.prototype,
+    this.additionalPrototypes = const <VsdxShape>[],
   });
 
   /// Stable Visio Master id, referenced by `<Shape Master="ID">`.
@@ -33,11 +34,27 @@ class VsdxMaster {
   /// Master itself and only forwards geometry/fill/line to instances.
   final VsdxShape prototype;
 
+  /// Additional top-level shapes stored in the same master part.
+  ///
+  /// libvisio registers every top-level stencil shape by id while keeping the
+  /// first one as the implicit prototype for `Master="N"`. `MasterShape="M"`
+  /// may therefore resolve to a later top-level shape as well as to a child of
+  /// the first prototype.
+  final List<VsdxShape> additionalPrototypes;
+
   /// Find the master sub-shape with [shapeId] anywhere in the [prototype]
   /// tree. Page sub-shapes reference these via `MasterShape="N"` and inherit
   /// their geometry / text / style from them (Visio, like libvisio, resolves
   /// each instance sub-shape against the matching master sub-shape).
-  VsdxShape? findShape(int shapeId) => _find(prototype, shapeId);
+  VsdxShape? findShape(int shapeId) {
+    final first = _find(prototype, shapeId);
+    if (first != null) return first;
+    for (final shape in additionalPrototypes) {
+      final hit = _find(shape, shapeId);
+      if (hit != null) return hit;
+    }
+    return null;
+  }
 
   static VsdxShape? _find(VsdxShape s, int shapeId) {
     if (s.id == shapeId) return s;

@@ -2,9 +2,9 @@
 ///
 /// Master files share their inner structure with page files
 /// (`<MasterContents><Shapes><Shape>...`), so the existing [PageParser] is
-/// reused without recursion: we don't pass it a [MasterRegistry] to keep
-/// inheritance flat (Master-of-Master support is out-of-scope for the
-/// first cut).
+/// reused without special-case shape logic. [MastersParser] supplies the
+/// registry of previously parsed masters so source-order master inheritance
+/// matches libvisio.
 library;
 
 import 'package:logging/logging.dart';
@@ -20,9 +20,10 @@ class MasterParser {
 
   final PageParser _shapes;
 
-  /// Returns the first top-level shape inside [masterDoc] wrapped as a
-  /// [VsdxMaster]. If the document contains no shape, returns `null`
-  /// (the caller skips that master).
+  /// Returns the top-level shapes inside [masterDoc] wrapped as a [VsdxMaster].
+  /// The first remains the implicit prototype, while later shapes stay
+  /// addressable through `MasterShape`, matching libvisio's stencil map. If
+  /// the document contains no shape, returns `null` (the caller skips it).
   VsdxMaster? parse(
     XmlDocument masterDoc, {
     required int id,
@@ -34,11 +35,11 @@ class MasterParser {
       _log.warning('Master $id ($name) at $partName has no shapes');
       return null;
     }
-    if (shapes.length > 1) {
-      _log.fine(() =>
-          'Master $id ($name) declared ${shapes.length} top-level shapes; '
-          'using the first as the prototype');
-    }
-    return VsdxMaster(id: id, name: name, prototype: shapes.first);
+    return VsdxMaster(
+      id: id,
+      name: name,
+      prototype: shapes.first,
+      additionalPrototypes: List.unmodifiable(shapes.skip(1)),
+    );
   }
 }

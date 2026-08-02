@@ -1,4 +1,5 @@
 import 'package:test/test.dart';
+import 'package:vsdx/src/parser/master_parser.dart';
 import 'package:vsdx/src/parser/page_parser.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
@@ -26,6 +27,77 @@ VsdxMaster _master({
 }
 
 void main() {
+  test('master keeps every top-level shape addressable like libvisio', () {
+    final masterDocument = XmlDocument.parse(
+      '<MasterContents><Shapes>'
+      '<Shape ID="10" NameU="First">'
+      '<Cell N="Width" V="2"/><Cell N="Height" V="3"/>'
+      '</Shape>'
+      '<Shape ID="11" NameU="Second">'
+      '<Cell N="Width" V="7"/><Cell N="Height" V="8"/>'
+      '</Shape>'
+      '</Shapes></MasterContents>',
+    );
+    final master = MasterParser().parse(
+      masterDocument,
+      id: 5,
+      name: 'Multi-shape master',
+      partName: '/visio/masters/master5.xml',
+    )!;
+
+    expect(master.prototype.id, 10);
+    expect(master.additionalPrototypes.map((shape) => shape.id), [11]);
+    expect(master.findShape(11)?.width, 7);
+
+    final parser = PageParser(
+      masters: MasterRegistry(<int, VsdxMaster>{5: master}),
+    );
+    final pageDocument = XmlDocument.parse(
+      '<PageContents><Shapes>'
+      '<Shape ID="100" Master="5" MasterShape="11"/>'
+      '</Shapes></PageContents>',
+    );
+    final instance = parser
+        .parseShapes(pageDocument, partName: '/visio/pages/page1.xml')
+        .single;
+    expect(instance.width, 7);
+    expect(instance.height, 8);
+  });
+
+  test('later master inherits an earlier master like libvisio', () {
+    final baseDocument = XmlDocument.parse(
+      '<MasterContents><Shapes>'
+      '<Shape ID="10" NameU="Base">'
+      '<Cell N="Width" V="4"/><Cell N="Height" V="5"/>'
+      '</Shape>'
+      '</Shapes></MasterContents>',
+    );
+    final base = MasterParser().parse(
+      baseDocument,
+      id: 1,
+      name: 'Base master',
+      partName: '/visio/masters/master1.xml',
+    )!;
+    final derivedDocument = XmlDocument.parse(
+      '<MasterContents><Shapes>'
+      '<Shape ID="20" NameU="Derived" Master="1"/>'
+      '</Shapes></MasterContents>',
+    );
+    final derived = MasterParser(
+      shapes: PageParser(
+        masters: MasterRegistry(<int, VsdxMaster>{1: base}),
+      ),
+    ).parse(
+      derivedDocument,
+      id: 2,
+      name: 'Derived master',
+      partName: '/visio/masters/master2.xml',
+    )!;
+
+    expect(derived.prototype.width, 4);
+    expect(derived.prototype.height, 5);
+  });
+
   test('MasterShape wins when Master and MasterShape are both present', () {
     final parser = PageParser(
       masters: MasterRegistry(<int, VsdxMaster>{
