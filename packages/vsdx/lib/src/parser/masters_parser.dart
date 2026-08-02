@@ -42,7 +42,13 @@ class MastersParser {
       return MasterRegistry.empty;
     }
 
-    final indexXml = _package.readPartXml(mastersPart);
+    XmlDocument? indexXml;
+    try {
+      indexXml = _package.readPartXml(mastersPart);
+    } catch (_) {
+      _log.warning('masters.xml is malformed; ignoring masters: $mastersPart');
+      return MasterRegistry.empty;
+    }
     if (indexXml == null) {
       _log.warning('masters.xml declared but missing in archive: $mastersPart');
       return MasterRegistry.empty;
@@ -85,12 +91,23 @@ class MastersParser {
       _log.warning('Master $id ($name) → $rId did not resolve');
       return null;
     }
-    final doc = _package.readPartXml(target);
+    XmlDocument? doc;
+    try {
+      doc = _package.readPartXml(target);
+    } catch (_) {
+      _log.warning('Master part is malformed; skipping: $target');
+      return null;
+    }
     if (doc == null) {
       _log.warning('Master part missing: $target');
       return null;
     }
-    return _master.parse(doc, id: id, name: name, partName: target);
+    try {
+      return _master.parse(doc, id: id, name: name, partName: target);
+    } catch (_) {
+      _log.warning('Master $id ($name) could not be parsed; skipping');
+      return null;
+    }
   }
 
   static XmlElement? _firstChildLocal(XmlElement parent, String local) {

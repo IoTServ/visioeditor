@@ -52,7 +52,13 @@ class ThemeParser {
       _log.fine(() => 'No theme relationship from $documentPartName');
       return VsdxTheme.empty;
     }
-    final doc = _package.readPartXml(themePart);
+    XmlDocument? doc;
+    try {
+      doc = _package.readPartXml(themePart);
+    } catch (_) {
+      _log.warning('Theme part is malformed; using empty theme: $themePart');
+      return VsdxTheme.empty;
+    }
     if (doc == null) {
       _log.warning('Theme declared but missing in archive: $themePart');
       return VsdxTheme.empty;

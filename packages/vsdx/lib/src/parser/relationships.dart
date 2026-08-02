@@ -6,7 +6,6 @@
 /// will grow over M2/M3 as more part types come into play) lives here.
 library;
 
-import '../core/exceptions.dart';
 import 'package_reader.dart';
 
 /// Well-known relationship type suffixes used by Visio.
@@ -72,20 +71,13 @@ class RelationshipResolver {
     return out;
   }
 
-  /// At-most-one variant of [targetsOfType] — surfaces the first match or
-  /// `null`. Throws if there is more than one (used for the "there must be
-  /// exactly one pages.xml" cases).
+  /// Single-target variant of [targetsOfType]. Duplicate relationship types
+  /// are legal enough in damaged producer output; libvisio stores them in a
+  /// map and therefore uses the last row.
   String? singleTargetOfType(String sourcePartName, VsdxRelType type) {
     final matches = targetsOfType(sourcePartName, type);
     if (matches.isEmpty) return null;
-    if (matches.length > 1) {
-      throw VsdxPackageException(
-        'Expected at most one ${type.name} relationship from '
-        '$sourcePartName, found ${matches.length}',
-        partName: sourcePartName,
-      );
-    }
-    return matches.single;
+    return matches.last;
   }
 
   /// Follow a single relationship by id; thin wrapper around

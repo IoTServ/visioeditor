@@ -167,8 +167,14 @@ class VsdxPackage {
     if (entry == null) {
       return _relsCache[partName] = const <PackageRelationship>[];
     }
-    final list = _parseRelationships(_readXml(entry));
-    return _relsCache[partName] = List.unmodifiable(list);
+    try {
+      final list = _parseRelationships(_readXml(entry));
+      return _relsCache[partName] = List.unmodifiable(list);
+    } catch (_) {
+      // libvisio treats a malformed part side-car as an empty relationship
+      // set. Only the package-root relationship file is required to open.
+      return _relsCache[partName] = const <PackageRelationship>[];
+    }
   }
 
   /// Resolve an OPC `Target` string (as it appears inside a `<Relationship>`)
@@ -188,20 +194,15 @@ class VsdxPackage {
 
   /// Convenience: follow a single relationship by `rId` from [sourcePartName].
   ///
-  /// Returns `null` if no matching relationship exists. Throws
-  /// [VsdxPackageException] when the target part is missing from the archive.
+  /// Returns `null` if no matching relationship or target part exists.
+  /// libvisio treats dangling child relationships as a failed optional part
+  /// traversal rather than failing the complete document.
   String? followRelationship(String sourcePartName, String relationshipId) {
     final rels = readPartRelationships(sourcePartName);
     for (final r in rels) {
       if (r.id != relationshipId) continue;
       final abs = resolveRelationshipTarget(sourcePartName, r.target);
-      if (_archive.findFile(_stripLeadingSlash(abs)) == null) {
-        throw VsdxPackageException(
-          'Relationship $relationshipId from $sourcePartName '
-          'points to missing part $abs',
-          partName: sourcePartName,
-        );
-      }
+      if (_archive.findFile(_stripLeadingSlash(abs)) == null) return null;
       return abs;
     }
     return null;

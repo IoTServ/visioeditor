@@ -6,7 +6,6 @@ library;
 import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
-import '../core/exceptions.dart';
 import '../model/connect.dart';
 import '../model/layer.dart';
 import '../model/master.dart';
@@ -59,12 +58,16 @@ class PagesParser {
       return const <VsdxPage>[];
     }
 
-    final indexXml = _package.readPartXml(pagesPart);
+    XmlDocument? indexXml;
+    try {
+      indexXml = _package.readPartXml(pagesPart);
+    } catch (_) {
+      _log.warning('pages.xml is malformed; returning no pages: $pagesPart');
+      return const <VsdxPage>[];
+    }
     if (indexXml == null) {
-      throw VsdxParseException(
-        'pages.xml part declared in relationships but missing from archive',
-        partName: pagesPart,
-      );
+      _log.warning('pages.xml declared but missing: $pagesPart');
+      return const <VsdxPage>[];
     }
 
     final pageEls = indexXml.rootElement.childElements
@@ -130,7 +133,12 @@ class PagesParser {
       if (rId != null) {
         final target = _resolver.followById(pagesPart, rId);
         if (target != null) {
-          final pageXml = _package.readPartXml(target);
+          XmlDocument? pageXml;
+          try {
+            pageXml = _package.readPartXml(target);
+          } catch (_) {
+            _log.warning('Page part is malformed; keeping empty page: $target');
+          }
           if (pageXml != null) {
             final imageRels = _hasInjectedParser
                 ? null
@@ -147,10 +155,18 @@ class PagesParser {
               sheet.shadowOffsetXInches,
               sheet.shadowOffsetYInches,
             );
-            shapes
-              ..clear()
-              ..addAll(parser.parseShapes(pageXml, partName: target));
-            connects = const ConnectParser().parsePage(pageXml.rootElement);
+            try {
+              shapes
+                ..clear()
+                ..addAll(parser.parseShapes(pageXml, partName: target));
+              connects = const ConnectParser().parsePage(pageXml.rootElement);
+            } catch (_) {
+              _log.warning(
+                'Page content could not be parsed; keeping empty page: $target',
+              );
+              shapes.clear();
+              connects = const <VsdxConnect>[];
+            }
           } else {
             _log.warning('Page part $target empty or unreadable');
           }
