@@ -78,6 +78,26 @@ List<T> vsdReorderById<T>(
 /// unsigned 32-bit integer, so values such as -2 must remain `0xfffffffe`.
 int vsdV5UnsignedInt(int signedValue) => signedValue & 0xffffffff;
 
+/// Resolves ShapeList element ids to the actual Shape ids stored by ShapeId.
+///
+/// libvisio keeps the two collections separately because a list trailer orders
+/// record ids, not shape ids. Without a trailer, record-id order is used.
+List<int> vsdResolveShapeOrder(
+  Map<int, int> elementToShapeId,
+  List<int> elementOrder,
+) {
+  if (elementToShapeId.isEmpty) return const [];
+  if (elementOrder.isNotEmpty) {
+    return [
+      for (final elementId in elementOrder)
+        if (elementToShapeId[elementId] case final shapeId?) shapeId,
+    ];
+  }
+  final entries = elementToShapeId.entries.toList()
+    ..sort((a, b) => a.key.compareTo(b.key));
+  return [for (final entry in entries) entry.value];
+}
+
 /// Resolves the page-level shadow offsets inherited by VSD5/VSD6
 /// FillAndShadow records.
 ///
@@ -189,8 +209,10 @@ class _ShapeDraft {
   double? textPosAfterBullet;
   int? paraFlags;
   List<int> layerMemberIds = [];
-  /// Child shape ids from ShapeList trailer (libvisio `m_shapeList` order).
+  /// Child ShapeList record ids from the list trailer.
   final childOrder = <int>[];
+  /// ShapeList record id → actual child shape id from ShapeId records.
+  final childShapeIds = <int, int>{};
   final geometries = <_GeomBuilder>[];
   _GeomBuilder? currentGeom;
   Uint8List? foreignBytes;
@@ -444,7 +466,10 @@ class _PageDraft {
   double shadowOffsetX = 0.125;
   double shadowOffsetY = -0.125;
   final shapes = <_ShapeDraft>[];
+  /// Root ShapeList record ids from the list trailer.
   final shapeOrder = <int>[];
+  /// ShapeList record id → actual root shape id from ShapeId records.
+  final shapeIds = <int, int>{};
   final layers = <VsdxLayer>[];
   /// Page-scoped NameIDX elementId → display name (shapes / layers).
   final elementNames = <int, String>{};
@@ -4946,7 +4971,12 @@ class VsdBinaryParser {
 
   void _readShapeId(VsdByteReader input) {
     try {
-      _getUInt(input);
+      final shapeId = _getUInt(input);
+      if (_isShapeStarted) {
+        _shape?.childShapeIds[_header.id] = shapeId;
+      } else {
+        _currentPage?.shapeIds[_header.id] = shapeId;
+      }
     } catch (_) {}
   }
 
@@ -5012,7 +5042,7 @@ class VsdBinaryParser {
           heightInches: p.height * scale,
           shapes: _assembleShapes(
             p.shapes,
-            shapeOrder: p.shapeOrder,
+            shapeOrder: vsdResolveShapeOrder(p.shapeIds, p.shapeOrder),
             defaultDrawingUnit: p.drawingScaleUnit,
           ),
           layers: List<VsdxLayer>.from(p.layers),
@@ -5501,7 +5531,10 @@ class VsdBinaryParser {
 
     VsdxShape build(int id) {
       final d = byId[id]!;
-      final kids = orderIds(childrenOf[id] ?? const <int>[], d.childOrder);
+      final kids = orderIds(
+        childrenOf[id] ?? const <int>[],
+        vsdResolveShapeOrder(d.childShapeIds, d.childOrder),
+      );
       return _toShape(
         d,
         kids.map(build).toList(),

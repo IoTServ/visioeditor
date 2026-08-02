@@ -830,9 +830,10 @@ void main() {
       final doc = const VsdDocumentParser().parse(bytes);
       final ids = doc.pages.first.shapes.map((s) => s.id).toList();
       expect(ids, isNotEmpty);
-      // Encounter/id-sorted order would start at 1; ShapeList trailer places
-      // later sheet ids first in this sample.
-      expect(ids.first, isNot(1));
+      // The trailer orders ShapeList record ids, which ShapeId records map to
+      // actual shape ids. Treating the trailer values as shape ids produces
+      // `..., 52, 1, 53`; libvisio's mapping produces `..., 52, 53, 2`.
+      expect(ids.take(20), [...List.generate(19, (i) => i + 35), 2]);
     });
 
     test('CharIX carries fontScale and case/position defaults', () {

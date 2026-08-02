@@ -2,6 +2,22 @@ import 'package:test/test.dart';
 import 'package:vsdx/src/parser/vsd/vsd_parser.dart';
 
 void main() {
+  group('vsdResolveShapeOrder', () {
+    test('maps trailer element ids to actual shape ids', () {
+      expect(
+        vsdResolveShapeOrder({10: 101, 20: 202, 30: 303}, [30, 10, 99]),
+        [303, 101],
+      );
+    });
+
+    test('uses sorted element ids when the trailer is absent', () {
+      expect(
+        vsdResolveShapeOrder({20: 202, 10: 101, 30: 303}, const []),
+        [101, 202, 303],
+      );
+    });
+  });
+
   group('vsdV5UnsignedInt', () {
     test('matches the VSD5 signed-word to unsigned-int conversion', () {
       expect(vsdV5UnsignedInt(0), 0);
