@@ -97,6 +97,8 @@ class _ShapeDraft {
   double? beginY;
   double? endX;
   double? endY;
+  int? beginTargetId;
+  int? endTargetId;
   VsdxLine? line;
   VsdxFill? fill;
   VsdxShadow? shadow;
@@ -3982,13 +3984,51 @@ class VsdBinaryParser {
   String _visioQuote(String s) => '"${s.replaceAll('"', '""')}"';
 
   void _readMisc(VsdByteReader input) {
-    // Algorithm reference: libvisio VSDParser::readMisc (HideText bit 0x20).
+    // Algorithm reference: libvisio VSD5/VSD6/VSDParser::readMisc.
     final s = _shape;
     if (s == null) return;
     try {
+      final initial = input.offset;
       final flags = input.readU8();
       s.hideText = (flags & 0x20) != 0;
       s.hasMisc = true;
+      // VSD5 has no connector-target extension blocks.
+      if (_version == 5) return;
+
+      final limit = (initial + _header.dataLength + _header.trailer)
+          .clamp(0, input.length);
+      final firstBlock = initial + (_version == 6 ? 23 : 45);
+      if (firstBlock + 4 > limit) return;
+      input.seek(firstBlock);
+
+      while (input.offset + 4 <= limit) {
+        final blockStart = input.offset;
+        final length = input.readU32();
+        if (length == 0) break;
+        final blockEnd = blockStart + length;
+        if (length < 6 || blockEnd > limit) break;
+
+        final blockType = input.readU8();
+        input.skip(1);
+        if (blockType == 2 && input.offset + 14 <= blockEnd) {
+          final marker1 = input.readU8();
+          final marker2 = input.readU32();
+          final shapeId = input.readU32();
+          final marker3 = input.readU8();
+          final marker4 = input.readU32();
+          if (marker1 == 0x74 &&
+              marker2 == 0x6000004e &&
+              marker3 == 0x7a &&
+              marker4 == 0x40000073) {
+            if (s.beginTargetId == null) {
+              s.beginTargetId = shapeId;
+            } else if (s.endTargetId == null) {
+              s.endTargetId = shapeId;
+            }
+          }
+        }
+        input.seek(blockEnd);
+      }
     } catch (_) {}
   }
 
@@ -5264,6 +5304,14 @@ class VsdBinaryParser {
     List<VsdxShape> children, {
     int defaultDrawingUnit = 0,
   }) {
+    if (d.beginTargetId != null) {
+      d.formulas['BegTrigger'] =
+          '_XFTRIGGER(Sheet.${d.beginTargetId}!EventXFMod)';
+    }
+    if (d.endTargetId != null) {
+      d.formulas['EndTrigger'] =
+          '_XFTRIGGER(Sheet.${d.endTargetId}!EventXFMod)';
+    }
     final geoms = <VsdxGeometry>[];
     for (var i = 0; i < d.geometries.length; i++) {
       final g = d.geometries[i];

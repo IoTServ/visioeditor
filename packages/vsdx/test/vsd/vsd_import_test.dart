@@ -85,6 +85,18 @@ void main() {
       expect(lines1d, isNotEmpty);
       expect(lines1d.where((s) => s.height < 0).length, greaterThan(10));
       expect(lines1d.where((s) => s.height == 1.0).length, lessThan(5));
+      // VSD11 Misc extension blocks retain the BegTrigger / EndTrigger target
+      // ids that libvisio stores on XForm1D.
+      final triggered = lines1d
+          .where((s) =>
+              s.formulas.containsKey('BegTrigger') &&
+              s.formulas.containsKey('EndTrigger'))
+          .toList();
+      expect(triggered, hasLength(43));
+      expect(
+        triggered.firstWhere((s) => s.id == 35).formulas,
+        containsPair('BegTrigger', '_XFTRIGGER(Sheet.35!EventXFMod)'),
+      );
 
       final again = const DocumentParser().parse(result.originalBytes);
       expect(again.pages.first.shapes.length,
@@ -102,6 +114,12 @@ void main() {
       expect(
         again.pages.first.shapes.where((s) => s.is1D).any((s) => s.height < 0),
         isTrue,
+      );
+      expect(
+        again.pages.first.shapes
+            .firstWhere((s) => s.id == 35)
+            .formulas['BegTrigger'],
+        '_XFTRIGGER(Sheet.35!EventXFMod)',
       );
     });
 
