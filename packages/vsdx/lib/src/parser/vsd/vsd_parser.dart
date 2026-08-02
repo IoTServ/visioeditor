@@ -984,6 +984,13 @@ class VsdBinaryParser {
         case VsdRecordId.name2:
           _readName2(input);
           return;
+        case VsdRecordId.nameList2:
+          if (_version == 5) {
+            _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+          } else {
+            _names.clear();
+          }
+          return;
         case VsdRecordId.nameIdx:
           _readNameIdx(input);
           return;
@@ -1094,6 +1101,15 @@ class VsdBinaryParser {
       case VsdRecordId.nameList:
         // libvisio `readNameList` — clear shape-local names before new Name rows.
         if (!collectStylesOnly) _shape?.localNames.clear();
+      case VsdRecordId.nameList2:
+        if (_version == 5) {
+          // VSD5 embeds Name2 records in the list payload rather than exposing
+          // them as child pointer streams.
+          _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
+        } else {
+          // libvisio `readNameList2` scopes subsequent Name2/NameIDX records.
+          _names.clear();
+        }
       case VsdRecordId.charList:
         if (_version == 5) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);

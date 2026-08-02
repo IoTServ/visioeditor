@@ -321,6 +321,11 @@ void main() {
       expect(page.heightInches, lessThan(20));
       final withGeom = page.shapes.where((s) => s.geometries.isNotEmpty);
       expect(withGeom.length, greaterThan(3));
+      // VSD5 NameList2 is a packed child-record list. Skipping the list drops
+      // every Name2 row, leaving NameIDX unable to resolve display names.
+      expect(page.shapes.firstWhere((s) => s.id == 1).name, '"L" Room');
+      expect(page.shapes.firstWhere((s) => s.id == 2).name, 'Wall');
+      expect(page.shapes.firstWhere((s) => s.id == 38).name, 'Dimension line');
       // VSD5 TextBlock stops after the palette colour index. Reading the
       // VSD6/11 tail used to throw and discard the entire local block.
       final indexedBackground = page.shapes.firstWhere((s) => s.id == 38);
@@ -344,6 +349,12 @@ void main() {
       expect(looksLikeZipOpc(result.originalBytes), isTrue);
       final again = const DocumentParser().parse(result.originalBytes);
       expect(again.pages.first.shapes.length, page.shapes.length);
+      expect(again.pages.first.shapes.firstWhere((s) => s.id == 1).name,
+          '"L" Room');
+      expect(again.pages.first.shapes.firstWhere((s) => s.id == 2).name,
+          'Wall');
+      expect(again.pages.first.shapes.firstWhere((s) => s.id == 38).name,
+          'Dimension line');
       expect(
         again.pages.first.shapes
             .firstWhere((s) => s.id == 38)
