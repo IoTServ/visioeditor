@@ -21,6 +21,10 @@ class VsdxStyleSheet {
     this.fillStyleId,
     this.charStyle,
     this.charSizeInherits = false,
+    this.paraStyle,
+    this.paraDefinedCells = const <String>{},
+    this.textBlock,
+    this.textBlockDefinedCells = const <String>{},
     this.line,
     this.lineDefinedCells = const <String>{},
     this.fill,
@@ -45,6 +49,16 @@ class VsdxStyleSheet {
   /// `true` when the Size cell carried `F="Inh"` — callers should keep walking
   /// the [textStyleId] chain rather than treating [charStyle]'s size as final.
   final bool charSizeInherits;
+
+  final VsdxParaStyle? paraStyle;
+
+  /// Concrete Paragraph cells contributed by row IX=0 on this stylesheet.
+  final Set<String> paraDefinedCells;
+
+  final VsdxTextBlock? textBlock;
+
+  /// Concrete TextBlock cells placed directly under the stylesheet.
+  final Set<String> textBlockDefinedCells;
 
   final VsdxLine? line;
 
@@ -135,6 +149,189 @@ class StyleSheetRegistry {
       fontSizeInches: fontSizeInches ?? VsdxCharStyle.defaults.fontSizeInches,
       style: style ?? VsdxFontStyle.regular,
       underline: underline,
+    );
+  }
+
+  /// Resolve Paragraph row IX=0 through the TextStyle chain. Each cell walks
+  /// independently so a child can override alignment while inheriting line
+  /// spacing, indentation, and bullets from its parent (libvisio behaviour).
+  VsdxParaStyle? resolveParaStyle(
+    int? textStyleId, {
+    VsdxParaStyle defaults = VsdxParaStyle.defaults,
+  }) {
+    var id = textStyleId ?? defaultTextStyleId;
+    if (id == null) return null;
+
+    VsdxHorzAlign? horizontalAlign;
+    double? indentFirstInches;
+    double? indentLeftInches;
+    double? indentRightInches;
+    double? spaceBeforeInches;
+    double? spaceAfterInches;
+    double? lineSpacing;
+    double? lineSpacingAbsoluteInches;
+    bool? lineSpacingSolid;
+    int? bullet;
+    String? bulletStr;
+    String? bulletFont;
+    double? bulletFontSizeInches;
+    double? textPosAfterBulletInches;
+    int? flags;
+    final resolved = <String>{};
+
+    final seen = <int>{};
+    while (id != null && seen.add(id)) {
+      final sheet = _byId[id];
+      if (sheet == null) break;
+      final para = sheet.paraStyle;
+      final defined = sheet.paraDefinedCells;
+      if (para != null) {
+        if (resolved.addIfAbsent('HorzAlign', defined)) {
+          horizontalAlign = para.horizontalAlign;
+        }
+        if (resolved.addIfAbsent('IndFirst', defined)) {
+          indentFirstInches = para.indentFirstInches;
+        }
+        if (resolved.addIfAbsent('IndLeft', defined)) {
+          indentLeftInches = para.indentLeftInches;
+        }
+        if (resolved.addIfAbsent('IndRight', defined)) {
+          indentRightInches = para.indentRightInches;
+        }
+        if (resolved.addIfAbsent('SpBefore', defined)) {
+          spaceBeforeInches = para.spaceBeforeInches;
+        }
+        if (resolved.addIfAbsent('SpAfter', defined)) {
+          spaceAfterInches = para.spaceAfterInches;
+        }
+        if (resolved.addIfAbsent('SpLine', defined)) {
+          lineSpacing = para.lineSpacing;
+          lineSpacingAbsoluteInches = para.lineSpacingAbsoluteInches;
+          lineSpacingSolid = para.lineSpacingSolid;
+        }
+        if (resolved.addIfAbsent('Bullet', defined)) bullet = para.bullet;
+        if (resolved.addIfAbsent('BulletStr', defined)) {
+          bulletStr = para.bulletStr;
+        }
+        if (resolved.addIfAbsent('BulletFont', defined)) {
+          bulletFont = para.bulletFont;
+        }
+        if (resolved.addIfAbsent('BulletFontSize', defined)) {
+          bulletFontSizeInches = para.bulletFontSizeInches;
+        }
+        if (resolved.addIfAbsent('TextPosAfterBullet', defined)) {
+          textPosAfterBulletInches = para.textPosAfterBulletInches;
+        }
+        if (resolved.addIfAbsent('Flags', defined)) flags = para.flags;
+      }
+      id = sheet.textStyleId;
+    }
+
+    if (resolved.isEmpty) return null;
+    return VsdxParaStyle(
+      horizontalAlign: horizontalAlign ?? defaults.horizontalAlign,
+      indentFirstInches: indentFirstInches ?? defaults.indentFirstInches,
+      indentLeftInches: indentLeftInches ?? defaults.indentLeftInches,
+      indentRightInches: indentRightInches ?? defaults.indentRightInches,
+      spaceBeforeInches: spaceBeforeInches ?? defaults.spaceBeforeInches,
+      spaceAfterInches: spaceAfterInches ?? defaults.spaceAfterInches,
+      lineSpacing: lineSpacing ?? defaults.lineSpacing,
+      lineSpacingAbsoluteInches:
+          lineSpacingAbsoluteInches ?? defaults.lineSpacingAbsoluteInches,
+      lineSpacingSolid: lineSpacingSolid ?? defaults.lineSpacingSolid,
+      bullet: bullet ?? defaults.bullet,
+      bulletStr: resolved.contains('BulletStr') ? bulletStr : defaults.bulletStr,
+      bulletFont:
+          resolved.contains('BulletFont') ? bulletFont : defaults.bulletFont,
+      bulletFontSizeInches: resolved.contains('BulletFontSize')
+          ? bulletFontSizeInches
+          : defaults.bulletFontSizeInches,
+      textPosAfterBulletInches:
+          textPosAfterBulletInches ?? defaults.textPosAfterBulletInches,
+      flags: flags ?? defaults.flags,
+    );
+  }
+
+  /// Resolve direct TextBlock style cells through the TextStyle chain while
+  /// preserving shape/master text transforms supplied in [defaults].
+  VsdxTextBlock? resolveTextBlock(
+    int? textStyleId, {
+    VsdxTextBlock defaults = VsdxTextBlock.defaults,
+  }) {
+    var id = textStyleId ?? defaultTextStyleId;
+    if (id == null) return null;
+
+    double? left;
+    double? right;
+    double? top;
+    double? bottom;
+    VsdxVertAlign? verticalAlign;
+    VsdxColor? backgroundColor;
+    double? backgroundTransparency;
+    int? textDirection;
+    double? defaultTabStop;
+    final resolved = <String>{};
+
+    final seen = <int>{};
+    while (id != null && seen.add(id)) {
+      final sheet = _byId[id];
+      if (sheet == null) break;
+      final block = sheet.textBlock;
+      final defined = sheet.textBlockDefinedCells;
+      if (block != null) {
+        if (resolved.addIfAbsent('LeftMargin', defined)) {
+          left = block.marginLeftInches;
+        }
+        if (resolved.addIfAbsent('RightMargin', defined)) {
+          right = block.marginRightInches;
+        }
+        if (resolved.addIfAbsent('TopMargin', defined)) {
+          top = block.marginTopInches;
+        }
+        if (resolved.addIfAbsent('BottomMargin', defined)) {
+          bottom = block.marginBottomInches;
+        }
+        if (resolved.addIfAbsent('VerticalAlign', defined)) {
+          verticalAlign = block.verticalAlign;
+        }
+        if (resolved.addIfAbsent('TextBkgnd', defined)) {
+          backgroundColor = block.backgroundColor;
+        }
+        if (resolved.addIfAbsent('TextBkgndTrans', defined)) {
+          backgroundTransparency = block.backgroundTransparency;
+        }
+        if (resolved.addIfAbsent('TextDirection', defined)) {
+          textDirection = block.textDirection;
+        }
+        if (resolved.addIfAbsent('DefaultTabStop', defined)) {
+          defaultTabStop = block.defaultTabStopInches;
+        }
+      }
+      id = sheet.textStyleId;
+    }
+
+    if (resolved.isEmpty) return null;
+    return VsdxTextBlock(
+      pinXInches: defaults.pinXInches,
+      pinYInches: defaults.pinYInches,
+      locPinXInches: defaults.locPinXInches,
+      locPinYInches: defaults.locPinYInches,
+      widthInches: defaults.widthInches,
+      heightInches: defaults.heightInches,
+      angleRad: defaults.angleRad,
+      verticalAlign: verticalAlign ?? defaults.verticalAlign,
+      marginLeftInches: left ?? defaults.marginLeftInches,
+      marginRightInches: right ?? defaults.marginRightInches,
+      marginTopInches: top ?? defaults.marginTopInches,
+      marginBottomInches: bottom ?? defaults.marginBottomInches,
+      hideText: defaults.hideText,
+      backgroundColor: resolved.contains('TextBkgnd')
+          ? backgroundColor
+          : defaults.backgroundColor,
+      backgroundTransparency:
+          backgroundTransparency ?? defaults.backgroundTransparency,
+      textDirection: textDirection ?? defaults.textDirection,
+      defaultTabStopInches: defaultTabStop ?? defaults.defaultTabStopInches,
     );
   }
 
@@ -410,5 +607,13 @@ class StyleSheetRegistry {
       blurInches: 0,
       transparency: transparency ?? 0,
     );
+  }
+}
+
+extension on Set<String> {
+  bool addIfAbsent(String cell, Set<String> defined) {
+    if (contains(cell) || !defined.contains(cell)) return false;
+    add(cell);
+    return true;
   }
 }

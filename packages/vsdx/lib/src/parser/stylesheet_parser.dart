@@ -71,6 +71,10 @@ class StyleSheetParser {
 
     VsdxCharStyle? charStyle;
     var charSizeInherits = false;
+    VsdxParaStyle? paraStyle;
+    var paraDefined = <String>{};
+    VsdxTextBlock? textBlock;
+    var textBlockDefined = <String>{};
     VsdxLine? line;
     final lineDefined = <String>{};
     VsdxFill? fill;
@@ -95,6 +99,10 @@ class StyleSheetParser {
               underline: ((_rawCellInt(row, 'Style') ?? 0) & 0x04) != 0,
             );
           }
+        case 'Paragraph':
+          final parsed = _readParagraphStyle(section);
+          paraStyle = parsed.style;
+          paraDefined = parsed.defined;
         case 'Line':
           // Line cells may sit directly under the section (no Row) in styles.
           // F=Inh → treat as absent so [StyleSheetRegistry.resolveLine] walks
@@ -265,6 +273,10 @@ class StyleSheetParser {
       );
     }
 
+    final parsedTextBlock = _readTextBlockStyle(ss);
+    textBlock = parsedTextBlock.style;
+    textBlockDefined = parsedTextBlock.defined;
+
     return VsdxStyleSheet(
       id: id,
       name: name,
@@ -273,6 +285,10 @@ class StyleSheetParser {
       fillStyleId: fillStyleId,
       charStyle: charStyle,
       charSizeInherits: charSizeInherits,
+      paraStyle: paraStyle,
+      paraDefinedCells: Set.unmodifiable(paraDefined),
+      textBlock: textBlock,
+      textBlockDefinedCells: Set.unmodifiable(textBlockDefined),
       line: line,
       lineDefinedCells: Set.unmodifiable(lineDefined),
       fill: fill,
@@ -287,6 +303,143 @@ class StyleSheetParser {
       if (el.name.local == 'Row') return el;
     }
     return null;
+  }
+
+  ({VsdxParaStyle? style, Set<String> defined}) _readParagraphStyle(
+    XmlElement section,
+  ) {
+    final row = _firstRow(section);
+    if (row == null) return (style: null, defined: <String>{});
+    final defined = <String>{};
+
+    double? length(String name) {
+      final value = _length(row, name);
+      if (value != null) defined.add(name);
+      return value;
+    }
+
+    int? integer(String name) {
+      final value = _cellInt(row, name);
+      if (value != null) defined.add(name);
+      return value;
+    }
+
+    String? string(String name) {
+      final cell = _concreteCell(row, name);
+      if (cell == null) return null;
+      defined.add(name);
+      final value = cell.getAttribute('V');
+      return value == null || value.isEmpty ? null : value;
+    }
+
+    final horz = integer('HorzAlign');
+    final indFirst = length('IndFirst');
+    final indLeft = length('IndLeft');
+    final indRight = length('IndRight');
+    final spBefore = length('SpBefore');
+    final spAfter = length('SpAfter');
+    final spLine = _number(row, 'SpLine');
+    if (spLine != null) defined.add('SpLine');
+    final bullet = integer('Bullet');
+    final bulletStr = string('BulletStr');
+    final bulletFont = string('BulletFont');
+    final bulletFontSize = length('BulletFontSize');
+    final textPosAfterBullet = length('TextPosAfterBullet');
+    final flags = integer('Flags');
+    if (defined.isEmpty) return (style: null, defined: defined);
+
+    final lineSpacing = spLine == null || spLine >= 0 ? 1.0 : -spLine;
+    final lineSpacingAbsolute = spLine != null && spLine > 0 ? spLine : 0.0;
+    return (
+      style: VsdxParaStyle(
+        horizontalAlign: switch (horz) {
+          1 => VsdxHorzAlign.center,
+          2 => VsdxHorzAlign.right,
+          3 => VsdxHorzAlign.justify,
+          _ => VsdxHorzAlign.left,
+        },
+        indentFirstInches: indFirst ?? 0,
+        indentLeftInches: indLeft ?? 0,
+        indentRightInches: indRight ?? 0,
+        spaceBeforeInches: spBefore ?? 0,
+        spaceAfterInches: spAfter ?? 0,
+        lineSpacing: lineSpacing,
+        lineSpacingAbsoluteInches: lineSpacingAbsolute,
+        lineSpacingSolid: spLine == 0,
+        bullet: bullet ?? 0,
+        bulletStr: bulletStr,
+        bulletFont: bulletFont,
+        bulletFontSizeInches: bulletFontSize,
+        textPosAfterBulletInches: textPosAfterBullet ?? 0,
+        flags: flags ?? 0,
+      ),
+      defined: defined,
+    );
+  }
+
+  ({VsdxTextBlock? style, Set<String> defined}) _readTextBlockStyle(
+    XmlElement sheet,
+  ) {
+    final defined = <String>{};
+
+    double? length(String name) {
+      final value = _length(sheet, name);
+      if (value != null) defined.add(name);
+      return value;
+    }
+
+    int? integer(String name) {
+      final value = _cellInt(sheet, name);
+      if (value != null) defined.add(name);
+      return value;
+    }
+
+    final left = length('LeftMargin');
+    final right = length('RightMargin');
+    final top = length('TopMargin');
+    final bottom = length('BottomMargin');
+    final verticalAlign = integer('VerticalAlign');
+    final backgroundCell = _concreteCell(sheet, 'TextBkgnd');
+    if (backgroundCell != null) defined.add('TextBkgnd');
+    final background = _textBackground(backgroundCell?.getAttribute('V'));
+    final backgroundTransparency = _number(sheet, 'TextBkgndTrans');
+    if (backgroundTransparency != null) defined.add('TextBkgndTrans');
+    final textDirection = integer('TextDirection');
+    final defaultTabStop = length('DefaultTabStop');
+    if (defined.isEmpty) return (style: null, defined: defined);
+
+    return (
+      style: VsdxTextBlock(
+        verticalAlign: switch (verticalAlign) {
+          0 => VsdxVertAlign.top,
+          2 => VsdxVertAlign.bottom,
+          _ => VsdxVertAlign.middle,
+        },
+        marginLeftInches: left ?? VsdxTextBlock.defaults.marginLeftInches,
+        marginRightInches: right ?? VsdxTextBlock.defaults.marginRightInches,
+        marginTopInches: top ?? VsdxTextBlock.defaults.marginTopInches,
+        marginBottomInches: bottom ?? VsdxTextBlock.defaults.marginBottomInches,
+        backgroundColor: background,
+        backgroundTransparency: (backgroundTransparency ?? 0).clamp(0.0, 1.0),
+        textDirection: textDirection ?? 0,
+        defaultTabStopInches:
+            defaultTabStop ?? VsdxTextBlock.defaults.defaultTabStopInches,
+      ),
+      defined: defined,
+    );
+  }
+
+  XmlElement? _concreteCell(XmlElement parent, String name) {
+    final cell = findCell(parent, name);
+    if (cell == null || isInhFormula(cell.getAttribute('F'))) return null;
+    return cell;
+  }
+
+  VsdxColor? _textBackground(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final value = raw.trim();
+    if (value == '0' || value == '255') return null;
+    return VsdxColor.tryParse(value);
   }
 
   /// Length cell; `F=Inh` → null (caller keeps walking the parent chain).

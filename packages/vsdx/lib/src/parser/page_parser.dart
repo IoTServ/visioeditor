@@ -317,9 +317,28 @@ class PageParser {
         inheritedSheetChar ??
         _stylesheets.resolveCharStyle(null) ??
         VsdxCharStyle.defaults;
-    final defaultPara = proto?.richText.runs.isNotEmpty == true
+    final protoPara = proto?.richText.runs.isNotEmpty == true
         ? proto!.richText.runs.first.paraStyle
         : VsdxParaStyle.defaults;
+    final defaultPara = ownTextStyleId != null
+        ? (_stylesheets.resolveParaStyle(
+              ownTextStyleId,
+              defaults: protoPara,
+            ) ??
+            protoPara)
+        : (proto != null
+            ? protoPara
+            : (_stylesheets.resolveParaStyle(null) ?? protoPara));
+    final protoBlock = proto?.richText.textBlock ?? VsdxTextBlock.defaults;
+    final defaultBlock = ownTextStyleId != null
+        ? (_stylesheets.resolveTextBlock(
+              ownTextStyleId,
+              defaults: protoBlock,
+            ) ??
+            protoBlock)
+        : (proto != null
+            ? protoBlock
+            : (_stylesheets.resolveTextBlock(null) ?? protoBlock));
 
     var richText = _richText.parse(
       shapeEl,
@@ -328,7 +347,7 @@ class PageParser {
       // Inherit the Master's text-block transform (TxtAngle, TxtPin/LocPin,
       // vertical align, …) so shapes that leave their text orientation on the
       // Master aren't forced back to horizontal.
-      defaultBlock: proto?.richText.textBlock ?? VsdxTextBlock.defaults,
+      defaultBlock: defaultBlock,
       inheritTabs: proto?.richText.tabSets ?? const <VsdxTabSet>[],
     );
     // Masters often carry TextStyle but no <Text>. Seed an empty run so

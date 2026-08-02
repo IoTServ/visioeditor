@@ -238,6 +238,27 @@ void main() {
     expect(lineColors, contains(VsdxColor.black.value));
     expect(fillColors, contains(VsdxColor.white.value));
 
+    final styledText = <VsdxShape>[];
+    _walk(styled, (shape) {
+      if (shape.richText.runs.any((run) => run.text.trim().isNotEmpty)) {
+        styledText.add(shape);
+      }
+    });
+    expect(styledText, isNotEmpty);
+    for (final shape in styledText) {
+      final block = shape.richText.textBlock;
+      expect(block.marginLeftInches, closeTo(0.05555555555555555, 1e-12));
+      expect(block.marginRightInches, closeTo(0.05555555555555555, 1e-12));
+      expect(block.marginTopInches, closeTo(0.05555555555555555, 1e-12));
+      expect(block.marginBottomInches, closeTo(0.05555555555555555, 1e-12));
+      expect(block.defaultTabStopInches,
+          closeTo(0.5905511811023622, 1e-12));
+      for (final run in shape.richText.runs) {
+        expect(run.paraStyle.horizontalAlign, VsdxHorzAlign.center);
+        expect(run.paraStyle.lineSpacing, closeTo(1.2, 1e-12));
+      }
+    }
+
     final guarded = parser.parse(_fixture('test12_colors.vsdx'));
     final guardedLines = <int>{};
     final guardedFills = <int>{};

@@ -103,8 +103,26 @@ void main() {
             <Cell N="ShapeShdwOffsetX" V="0.125"/>
             <Cell N="ShapeShdwOffsetY" V="-0.25"/>
             <Cell N="ShdwForegndTrans" V="0.5"/>
+            <Cell N="LeftMargin" V="0.2"/>
+            <Cell N="RightMargin" V="0.3"/>
+            <Cell N="TopMargin" V="0.4"/>
+            <Cell N="BottomMargin" V="0.5"/>
+            <Cell N="VerticalAlign" V="2"/>
+            <Cell N="TextBkgnd" V="2"/>
+            <Cell N="TextBkgndTrans" V="0.25"/>
+            <Cell N="DefaultTabStop" V="0.75"/>
+            <Cell N="TextDirection" V="1"/>
+            <Section N="Paragraph">
+              <Row IX="0">
+                <Cell N="HorzAlign" V="1"/>
+                <Cell N="IndFirst" V="0.1"/>
+                <Cell N="SpLine" V="-1.5"/>
+                <Cell N="Bullet" V="2"/>
+                <Cell N="BulletStr" V="•"/>
+              </Row>
+            </Section>
           </StyleSheet>
-          <StyleSheet ID="3" NameU="Normal" LineStyle="0" FillStyle="0">
+          <StyleSheet ID="3" NameU="Normal" LineStyle="0" FillStyle="0" TextStyle="0">
             <Cell N="LineWeight" V="Themed" F="Inh"/>
             <Cell N="FillPattern" V="Themed" F="Inh"/>
             <Cell N="ShdwPattern" V="Themed" F="Inh"/>
@@ -136,5 +154,23 @@ void main() {
     expect(shadow.offsetXInches, closeTo(0.125, 1e-12));
     expect(shadow.offsetYInches, closeTo(-0.25, 1e-12));
     expect(shadow.transparency, closeTo(0.5, 1e-12));
+
+    final para = registry.resolveParaStyle(3)!;
+    expect(para.horizontalAlign, VsdxHorzAlign.center);
+    expect(para.indentFirstInches, closeTo(0.1, 1e-12));
+    expect(para.lineSpacing, closeTo(1.5, 1e-12));
+    expect(para.bullet, 2);
+    expect(para.bulletStr, '•');
+
+    final block = registry.resolveTextBlock(3)!;
+    expect(block.marginLeftInches, closeTo(0.2, 1e-12));
+    expect(block.marginRightInches, closeTo(0.3, 1e-12));
+    expect(block.marginTopInches, closeTo(0.4, 1e-12));
+    expect(block.marginBottomInches, closeTo(0.5, 1e-12));
+    expect(block.verticalAlign, VsdxVertAlign.bottom);
+    expect(block.backgroundColor, const VsdxColor(0xFFFF0000));
+    expect(block.backgroundTransparency, closeTo(0.25, 1e-12));
+    expect(block.defaultTabStopInches, closeTo(0.75, 1e-12));
+    expect(block.textDirection, 1);
   });
 }
