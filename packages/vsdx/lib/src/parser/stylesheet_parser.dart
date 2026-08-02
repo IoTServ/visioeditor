@@ -372,12 +372,30 @@ class StyleSheetParser {
       return value;
     }
 
-    String? string(String name) {
-      final cell = _concreteCell(row, name);
-      if (cell == null) return null;
-      defined.add(name);
-      final value = cell.getAttribute('V');
-      return value == null || value.isEmpty ? null : value;
+    String? bulletString() {
+      final cell = _concreteCell(row, 'BulletStr');
+      final value = cell?.getAttribute('V');
+      if (value == null ||
+          value.isEmpty ||
+          value == '\uE000' ||
+          value.toUpperCase() == 'THEMED') {
+        return null;
+      }
+      defined.add('BulletStr');
+      return value;
+    }
+
+    String? readBulletFont() {
+      final cell = _concreteCell(row, 'BulletFont');
+      final value = cell?.getAttribute('V');
+      if (value == null || value.isEmpty || value.toUpperCase() == 'THEMED') {
+        return null;
+      }
+      final index = int.tryParse(value);
+      // libvisio treats numeric zero as no BulletFont override.
+      if (index == 0) return null;
+      defined.add('BulletFont');
+      return index == null ? value : fontNames[index] ?? value;
     }
 
     final horz = integer('HorzAlign');
@@ -389,8 +407,8 @@ class StyleSheetParser {
     final spLine = _number(row, 'SpLine');
     if (spLine != null) defined.add('SpLine');
     final bullet = integer('Bullet');
-    final bulletStr = string('BulletStr');
-    final bulletFont = string('BulletFont');
+    final bulletStr = bulletString();
+    final bulletFont = readBulletFont();
     final bulletFontSize = length('BulletFontSize');
     final textPosAfterBullet = length('TextPosAfterBullet');
     final flags = integer('Flags');

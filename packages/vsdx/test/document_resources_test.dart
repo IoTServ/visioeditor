@@ -3,7 +3,10 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:test/test.dart';
+import 'package:vsdx/src/parser/rich_text_parser.dart';
+import 'package:vsdx/src/parser/stylesheet_parser.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:xml/xml.dart';
 
 Uint8List _rewritePackage(
   Uint8List input,
@@ -86,5 +89,57 @@ void main() {
     final run = shape.richText.runs.single;
     expect(run.charStyle.color, const VsdxColor(0xFF1A1A1A));
     expect(run.charStyle.fontFamily, 'Palette Font');
+  });
+
+  test('paragraph bullet fonts and Visio 2002 sentinel match libvisio', () {
+    const inherited = VsdxParaStyle(
+      bulletStr: '•',
+      bulletFont: 'Inherited Font',
+    );
+    final shape = XmlDocument.parse(
+      '<Shape><Section N="Paragraph"><Row IX="0">'
+      '<Cell N="Bullet" V="1"/>'
+      '<Cell N="BulletStr" V="\uE000"/>'
+      '<Cell N="BulletFont" V="1"/>'
+      '</Row></Section><Text><pp IX="0"/>Item</Text></Shape>',
+    ).rootElement;
+    final rich = const RichTextParser(
+      fontNames: <int, String>{0: 'Zero Font', 1: 'Wingdings'},
+    ).parse(shape, defaultPara: inherited);
+    final paragraph = rich.runs.single.paraStyle;
+    expect(paragraph.bulletFont, 'Wingdings');
+    expect(paragraph.bulletStr, '•');
+
+    final zeroFontShape = XmlDocument.parse(
+      '<Shape><Section N="Paragraph"><Row IX="0">'
+      '<Cell N="BulletFont" V="0"/>'
+      '</Row></Section><Text><pp IX="0"/>Item</Text></Shape>',
+    ).rootElement;
+    final zeroFont = const RichTextParser(
+      fontNames: <int, String>{0: 'Zero Font'},
+    ).parse(zeroFontShape, defaultPara: inherited);
+    expect(zeroFont.runs.single.paraStyle.bulletFont, 'Inherited Font');
+  });
+
+  test('stylesheet bullet sentinels do not mask parent values', () {
+    final document = XmlDocument.parse(
+      '<VisioDocument><StyleSheets>'
+      '<StyleSheet ID="1"><Section N="Paragraph"><Row IX="0">'
+      '<Cell N="BulletStr" V="•"/>'
+      '<Cell N="BulletFont" V="1"/>'
+      '</Row></Section></StyleSheet>'
+      '<StyleSheet ID="2" TextStyle="1">'
+      '<Section N="Paragraph"><Row IX="0">'
+      '<Cell N="BulletStr" V="\uE000"/>'
+      '<Cell N="BulletFont" V="0"/>'
+      '</Row></Section></StyleSheet>'
+      '</StyleSheets></VisioDocument>',
+    );
+    final registry = const StyleSheetParser(
+      fontNames: <int, String>{1: 'Wingdings'},
+    ).parse(document);
+    final paragraph = registry.resolveParaStyle(2)!;
+    expect(paragraph.bulletStr, '•');
+    expect(paragraph.bulletFont, 'Wingdings');
   });
 }

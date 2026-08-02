@@ -456,10 +456,20 @@ class RichTextParser {
     final align = horz == null ? defaults.horizontalAlign : _alignFromInt(horz);
     final (lineSpacing, lineSpacingAbs, lineSpacingSolid) =
         _readLineSpacing(row, defaults);
-    final bulletStr =
+    final rawBulletStr =
         _cellString(row, 'BulletStr', inheritFrom: defaults.bulletStr);
-    final bulletFont =
-        _cellString(row, 'BulletFont', inheritFrom: defaults.bulletFont);
+    // Visio 2002 writes U+E000 as its sentinel for an empty BulletStr;
+    // libvisio treats it like an absent value so the inherited bullet stays.
+    final bulletStr =
+        rawBulletStr == '\uE000' || rawBulletStr?.toUpperCase() == 'THEMED'
+            ? defaults.bulletStr
+            : rawBulletStr;
+    final bulletFont = _fontString(
+      row,
+      'BulletFont',
+      inheritFrom: defaults.bulletFont,
+      zeroIsAbsent: true,
+    );
     return VsdxParaStyle(
       horizontalAlign: align,
       indentFirstInches: readLengthInches(
@@ -927,7 +937,12 @@ class RichTextParser {
     return v.isEmpty ? null : v;
   }
 
-  String? _fontString(XmlElement parent, String name, {String? inheritFrom}) {
+  String? _fontString(
+    XmlElement parent,
+    String name, {
+    String? inheritFrom,
+    bool zeroIsAbsent = false,
+  }) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
     if (isInhFormula(cell.getAttribute('F'))) return inheritFrom;
@@ -941,6 +956,7 @@ class RichTextParser {
     }
     if (value.isEmpty) return null;
     final index = int.tryParse(value);
+    if (zeroIsAbsent && index == 0) return inheritFrom;
     return index == null ? value : fontNames[index] ?? value;
   }
 
