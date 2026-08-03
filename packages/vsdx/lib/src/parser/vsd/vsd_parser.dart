@@ -78,6 +78,36 @@ List<T> vsdReorderById<T>(
 /// unsigned 32-bit integer, so values such as -2 must remain `0xfffffffe`.
 int vsdV5UnsignedInt(int signedValue) => signedValue & 0xffffffff;
 
+typedef VsdPagePropsValues = ({
+  double pageWidth,
+  double pageHeight,
+  double pageScale,
+  double drawingScale,
+  double scale,
+});
+
+/// Applies the binary VSD PageProps normalization used by libvisio.
+///
+/// Unlike VSDX, binary VSD clamps negative page dimensions, takes the absolute
+/// drawing ratio, and treats a DrawingScale within `VSD_EPSILON` of zero as 1.
+/// Zero page dimensions and a zero PageScale remain valid values.
+VsdPagePropsValues vsdNormalizePageProps({
+  required double pageWidth,
+  required double pageHeight,
+  required double pageScale,
+  required double drawingScale,
+}) {
+  final normalizedDrawingScale =
+      drawingScale.abs() <= 1e-6 ? 1.0 : drawingScale;
+  return (
+    pageWidth: pageWidth < 0 ? 0.0 : pageWidth,
+    pageHeight: pageHeight < 0 ? 0.0 : pageHeight,
+    pageScale: pageScale,
+    drawingScale: normalizedDrawingScale,
+    scale: (pageScale / normalizedDrawingScale).abs(),
+  );
+}
+
 /// Formats the time-bearing field codes handled by libvisio.
 ///
 /// Returns `null` when [format] is a date-only or non-date field code.
@@ -3008,9 +3038,9 @@ class VsdBinaryParser {
 
   void _readPageProps(VsdByteReader input) {
     input.skip(1);
-    final pageWidth = input.readF64();
+    final rawPageWidth = input.readF64();
     input.skip(1);
-    final pageHeight = input.readF64();
+    final rawPageHeight = input.readF64();
     input.skip(1);
     final shadowOffsetX = input.readF64();
     input.skip(1);
@@ -3018,19 +3048,22 @@ class VsdBinaryParser {
     input.skip(1);
     final pageScale = input.readF64();
     final drawingScaleUnit = input.readU8();
-    var drawingScale = input.readF64();
-    if (drawingScale.abs() < 1e-12) drawingScale = 1.0;
-    final scale = (pageScale / drawingScale).abs();
+    final props = vsdNormalizePageProps(
+      pageWidth: rawPageWidth,
+      pageHeight: rawPageHeight,
+      pageScale: pageScale,
+      drawingScale: input.readF64(),
+    );
     if (_isStencilStarted && _currentStencilShapes != null) {
       _stencilShadowOffsetX = shadowOffsetX;
       _stencilShadowOffsetY = shadowOffsetY;
     }
     if (_currentPage != null) {
-      _currentPage!.width = pageWidth > 0 ? pageWidth : 8.5;
-      _currentPage!.height = pageHeight > 0 ? pageHeight : 11.0;
-      if (scale > 0 && scale.isFinite) _currentPage!.scale = scale;
-      _currentPage!.pageScale = pageScale;
-      _currentPage!.drawingScale = drawingScale;
+      _currentPage!.width = props.pageWidth;
+      _currentPage!.height = props.pageHeight;
+      if (props.scale.isFinite) _currentPage!.scale = props.scale;
+      _currentPage!.pageScale = props.pageScale;
+      _currentPage!.drawingScale = props.drawingScale;
       _currentPage!.drawingScaleUnit = drawingScaleUnit;
       _currentPage!.shadowOffsetX = shadowOffsetX;
       _currentPage!.shadowOffsetY = shadowOffsetY;
@@ -5251,7 +5284,9 @@ class VsdBinaryParser {
     final firstPageId = _pages.first.id;
     for (var i = 0; i < _pages.length; i++) {
       final p = _pages[i];
-      final scale = (p.scale > 0 && p.scale.isFinite) ? p.scale : 1.0;
+      // PageScale=0 is valid in libvisio and collapses the page and drawable
+      // coordinates to zero. Only a non-finite parsed ratio needs a fallback.
+      final scale = p.scale.isFinite ? p.scale : 1.0;
       // Apply drawing scale (libvisio: page size and coords *= m_scale).
       for (final s in p.shapes) {
         _applyScale(s, scale);
