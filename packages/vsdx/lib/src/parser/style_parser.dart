@@ -28,9 +28,20 @@ class StyleParser {
   /// corresponding `QuickStyle*Color` index instead — the renderer resolves
   /// it against the document's [VsdxTheme].
   VsdxFill parseFill(XmlElement shape,
-      {VsdxFill defaults = VsdxFill.defaultFill}) {
-    final fgRes = _resolveColor(shape, 'FillForegnd', 'QuickStyleFillColor');
-    final bgRes = _resolveColor(shape, 'FillBkgnd', 'QuickStyleFillColor');
+      {VsdxFill defaults = VsdxFill.defaultFill,
+      bool preferCachedInh = false}) {
+    final fgRes = _resolveColor(
+      shape,
+      'FillForegnd',
+      'QuickStyleFillColor',
+      preferCachedInh: preferCachedInh,
+    );
+    final bgRes = _resolveColor(
+      shape,
+      'FillBkgnd',
+      'QuickStyleFillColor',
+      preferCachedInh: preferCachedInh,
+    );
     final inheritedForegroundTheme = _localQuickStyleOverride(
       shape,
       'QuickStyleFillColor',
@@ -405,8 +416,14 @@ class StyleParser {
   }
 
   VsdxLine parseLine(XmlElement shape,
-      {VsdxLine defaults = VsdxLine.defaultLine}) {
-    final colorRes = _resolveColor(shape, 'LineColor', 'QuickStyleLineColor');
+      {VsdxLine defaults = VsdxLine.defaultLine,
+      bool preferCachedInh = false}) {
+    final colorRes = _resolveColor(
+      shape,
+      'LineColor',
+      'QuickStyleLineColor',
+      preferCachedInh: preferCachedInh,
+    );
     final inheritedTheme = _localQuickStyleOverride(
       shape,
       'QuickStyleLineColor',
@@ -632,11 +649,19 @@ class StyleParser {
     String colorCell,
     String quickStyleCell, {
     bool honorInh = true,
+    bool preferCachedInh = false,
   }) {
     final cell = findCell(shape, colorCell);
     if (cell == null) return const _ColorResolution(null, null);
     final v = cell.getAttribute('V') ?? '';
     final f = cell.getAttribute('F') ?? '';
+    if (preferCachedInh && isInhFormula(f)) {
+      // VSDXParser::readExtendedColourData consumes the evaluated V= cache
+      // on shape instances without consulting F=. This is significant for
+      // resized/master instances whose cached colour differs from the
+      // stencil's current QuickStyle selector.
+      return _ColorResolution(_parseColor(v), null);
+    }
     if (honorInh && isInhFormula(f)) {
       return const _ColorResolution(null, null);
     }

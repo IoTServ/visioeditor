@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -528,4 +529,34 @@ void main() {
     expect(double.parse(size!.group(1)!), closeTo(17, 0.001));
     expect(double.parse(size.group(2)!), closeTo(22, 0.001));
   }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
+
+  test('End Event keeps libvisio cached outline and white inner fill', () {
+    final fixture = File(
+      '../../third_party/libvisio/src/test/data/testfile6.vsdx',
+    );
+    expect(fixture.existsSync(), isTrue);
+    final doc = const DocumentParser().parse(fixture.readAsBytesSync());
+    final outer = doc.pages.single.findShapeById(421)!;
+    final inner = doc.pages.single.findShapeById(424)!;
+
+    // vsd2raw/libvisio emits #3d64ac for both outlines. These values are
+    // evaluated instance caches stored with F="Inh" and must not be replaced
+    // with the master stencil's current QuickStyle line colour.
+    expect(outer.line.color, const VsdxColor(0xFF3D64AC));
+    expect(outer.line.themeColorIndex, isNull);
+    expect(inner.line.color, const VsdxColor(0xFF3D64AC));
+    expect(inner.line.themeColorIndex, isNull);
+
+    // QuickStyle 101 + FillMatrix 101 selects variation fill style 3. Its
+    // first two phClr stops are unresolved by libvisio, while the final lt1
+    // stop resolves to the Office 2019 light colour #feffff.
+    expect(inner.fill.themeForegroundIndex, 101);
+    expect(
+      doc.theme.resolveFill(
+        inner.fill.themeForegroundIndex!,
+        fillMatrix: inner.quickStyleFillMatrix,
+      ),
+      const VsdxColor(0xFFFEFFFF),
+    );
+  });
 }

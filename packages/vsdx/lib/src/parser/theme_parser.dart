@@ -105,7 +105,7 @@ class ThemeParser {
     final fillStyleList = _findFirstByLocal(doc.rootElement, 'fillStyleLst');
     if (fillStyleList != null) {
       for (final style in fillStyleList.childElements) {
-        fillStyleColors.add(_readDirectFillStyleColor(style));
+        fillStyleColors.add(_readDirectFillStyleColor(style, colors));
       }
     }
     final variationFillStyleIndices = <List<int?>>[];
@@ -133,21 +133,29 @@ class ThemeParser {
     );
   }
 
-  static VsdxColor? _readDirectFillStyleColor(XmlElement style) {
-    // A phClr value needs the current QuickStyle colour and transforms; leave
-    // it unresolved here so [VsdxTheme.resolveFill] retains that base colour.
+  static VsdxColor? _readDirectFillStyleColor(
+    XmlElement style,
+    Map<int, VsdxColor> colors,
+  ) {
+    // Match libvisio's readThemeColour loop: inspect every colour child and
+    // keep the last directly-resolvable value. In particular, a gradient may
+    // begin with unresolved phClr stops and end with lt1; returning at the
+    // first phClr incorrectly leaves QuickStyle's accent colour in place.
+    VsdxColor? result;
     for (final node in style.descendants.whereType<XmlElement>()) {
-      if (node.name.local == 'schemeClr') return null;
-      if (node.name.local == 'srgbClr') {
-        final value = node.getAttribute('val');
-        if (value != null) return VsdxColor.tryParse('#$value');
-      }
-      if (node.name.local == 'sysClr') {
-        final value = node.getAttribute('lastClr');
-        if (value != null) return VsdxColor.tryParse('#$value');
+      switch (node.name.local) {
+        case 'schemeClr':
+          final slot = _slotForName[node.getAttribute('val')];
+          result = slot == null ? null : colors[slot];
+        case 'srgbClr':
+          final value = node.getAttribute('val');
+          result = value == null ? null : VsdxColor.tryParse('#$value');
+        case 'sysClr':
+          final value = node.getAttribute('lastClr');
+          result = value == null ? null : VsdxColor.tryParse('#$value');
       }
     }
-    return null;
+    return result;
   }
 
   static VsdxColor? _readColorChild(XmlElement parent) {

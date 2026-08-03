@@ -285,9 +285,14 @@ class PageParser {
         proto?.fillStyleId;
     final sheetFill =
         fillStyleId != null ? _stylesheets.resolveFill(fillStyleId) : null;
+    // libvisio reads evaluated V= colour caches from master instances even
+    // when F="Inh", instead of replacing them with the stencil's current
+    // QuickStyle colour.
+    final preferCachedInhStyle = proto != null;
     final fill = _style.parseFill(
       shapeEl,
       defaults: proto?.fill ?? sheetFill ?? libvisioShapeFillDefault,
+      preferCachedInh: preferCachedInhStyle,
     );
     final lineStyleId = int.tryParse(shapeEl.getAttribute('LineStyle') ?? '') ??
         proto?.lineStyleId;
@@ -298,6 +303,7 @@ class PageParser {
       defaults: proto?.line ??
           sheetLine ??
           (isForeign ? const VsdxLine(pattern: 0) : VsdxLine.defaultLine),
+      preferCachedInh: preferCachedInhStyle,
     );
     final sheetShadow = fillStyleId == null
         ? null
