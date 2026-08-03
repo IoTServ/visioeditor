@@ -679,13 +679,15 @@ class StyleSheetRegistry {
       return null;
     }
     final effectivePattern = pattern ?? 0;
+    final pageOffsetX = pageOffsetXInches ?? 0.125;
+    final pageOffsetY = pageOffsetYInches ?? -0.125;
     return VsdxShadow(
       enabled: effectivePattern != 0,
       pattern: effectivePattern == 0 ? 1 : effectivePattern,
       color: color,
       themeColorIndex: themeColorIndex,
-      offsetXInches: offsetX ?? pageOffsetXInches ?? 0.125,
-      offsetYInches: offsetY ?? pageOffsetYInches ?? -0.125,
+      offsetXInches: libvisioEffectiveShadowOffset(offsetX, pageOffsetX),
+      offsetYInches: libvisioEffectiveShadowOffset(offsetY, pageOffsetY),
       blurInches: 0,
       transparency: transparency ?? 0,
     );

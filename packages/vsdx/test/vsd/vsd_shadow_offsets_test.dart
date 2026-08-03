@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:vsdx/src/parser/vsd/vsd_parser.dart';
+import 'package:vsdx/vsdx.dart';
 
 void main() {
   group('VSD5/VSD6 inherited shadow offsets', () {
@@ -29,5 +30,11 @@ void main() {
         (x: 0.11811023622047244, y: 0.11811023622047244),
       );
     });
+  });
+
+  test('VSD11 zero shadow offsets fall back to PageProps per axis', () {
+    expect(libvisioEffectiveShadowOffset(0, 0.3), 0.3);
+    expect(libvisioEffectiveShadowOffset(-0.2, -0.4), -0.2);
+    expect(libvisioEffectiveShadowOffset(null, -0.4), -0.4);
   });
 }

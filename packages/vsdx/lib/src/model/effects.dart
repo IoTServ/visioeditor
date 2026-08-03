@@ -9,6 +9,18 @@ import 'package:meta/meta.dart';
 
 import '../utils/color.dart';
 
+/// Resolves a shape/style shadow offset the same way libvisio does.
+///
+/// libvisio treats an exact zero as "not overridden" and substitutes the
+/// corresponding PageSheet `ShdwOffsetX` / `ShdwOffsetY` value independently.
+double libvisioEffectiveShadowOffset(
+  double? offsetInches,
+  double pageOffsetInches,
+) =>
+    offsetInches == null || offsetInches == 0.0
+        ? pageOffsetInches
+        : offsetInches;
+
 /// Drop-shadow parameters (`Shadow*` cells).
 @immutable
 class VsdxShadow {

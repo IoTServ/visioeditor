@@ -348,6 +348,17 @@ class StyleParser {
         .clamp(0.0, 1.0);
     final fallbackOx = pageOffsetXInches ?? defaults.offsetXInches;
     final fallbackOy = pageOffsetYInches ?? defaults.offsetYInches;
+    // VSDContentCollector falls back per axis when the resolved shape/style
+    // value is exactly zero. Keep an enabled master's non-zero offset when the
+    // local cell is absent, then apply the PageSheet zero fallback.
+    final effectiveOx = libvisioEffectiveShadowOffset(
+      ox ?? inheritedOx,
+      fallbackOx,
+    );
+    final effectiveOy = libvisioEffectiveShadowOffset(
+      oy ?? inheritedOy,
+      fallbackOy,
+    );
     if (!enabled) {
       final hasCompanion = col.color != null ||
           col.themeIndex != null ||
@@ -362,8 +373,8 @@ class StyleParser {
         pattern: defaults.pattern <= 0 ? 1 : defaults.pattern,
         color: col.color ?? defaults.color,
         themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
-        offsetXInches: ox ?? fallbackOx,
-        offsetYInches: oy ?? fallbackOy,
+        offsetXInches: effectiveOx,
+        offsetYInches: effectiveOy,
         blurInches: blur ?? defaults.blurInches,
         transparency: transparency,
       );
@@ -375,8 +386,8 @@ class StyleParser {
       pattern: patternId <= 0 ? 1 : patternId,
       color: col.color ?? defaults.color,
       themeColorIndex: col.themeIndex ?? defaults.themeColorIndex,
-      offsetXInches: ox ?? fallbackOx,
-      offsetYInches: oy ?? fallbackOy,
+      offsetXInches: effectiveOx,
+      offsetYInches: effectiveOy,
       blurInches: blur ?? defaults.blurInches,
       transparency: transparency,
     );

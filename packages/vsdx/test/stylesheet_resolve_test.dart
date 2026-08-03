@@ -283,4 +283,26 @@ void main() {
     expect(solidShadow.color, const VsdxColor(0xFFABCDEF));
     expect(solidShadow.themeColorIndex, isNull);
   });
+
+  test('zero FillStyle shadow offsets fall back to PageSheet per axis', () {
+    final xml = XmlDocument.parse('''
+      <VisioDocument>
+        <StyleSheets>
+          <StyleSheet ID="20" NameU="Zero shadow offsets">
+            <Cell N="ShdwPattern" V="1"/>
+            <Cell N="ShapeShdwOffsetX" V="0.2"/>
+            <Cell N="ShapeShdwOffsetY" V="0"/>
+          </StyleSheet>
+        </StyleSheets>
+      </VisioDocument>
+    ''');
+    final shadow = const StyleSheetParser().parse(xml).resolveShadow(
+          20,
+          pageOffsetXInches: 0.3,
+          pageOffsetYInches: -0.4,
+        )!;
+
+    expect(shadow.offsetXInches, closeTo(0.2, 1e-12));
+    expect(shadow.offsetYInches, closeTo(-0.4, 1e-12));
+  });
 }

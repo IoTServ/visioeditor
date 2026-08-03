@@ -174,6 +174,25 @@ void main() {
     expect(block.defaultTabStopInches, closeTo(0.5, 1e-9));
   });
 
+  test('zero VSDX shadow offsets fall back to PageSheet per axis', () {
+    final pageXml = XmlDocument.parse(
+      '<PageContents><Shapes><Shape ID="1" NameU="Shadow">'
+      '<Cell N="ShadowPattern" V="1"/>'
+      '<Cell N="ShadowOffsetX" V="0"/>'
+      '<Cell N="ShapeShdwOffsetY" V="-0.2"/>'
+      '</Shape></Shapes></PageContents>',
+    );
+
+    final shape = const PageParser()
+        .withPageShadowOffsets(0.3, -0.4)
+        .parseShapes(pageXml, partName: '/visio/pages/page1.xml')
+        .single;
+
+    expect(shape.shadow.enabled, isTrue);
+    expect(shape.shadow.offsetXInches, closeTo(0.3, 1e-12));
+    expect(shape.shadow.offsetYInches, closeTo(-0.2, 1e-12));
+  });
+
   test('Nested shapes inherit only the parent NameU like libvisio', () {
     final pageXml = XmlDocument.parse(
       '<PageContents><Shapes>'

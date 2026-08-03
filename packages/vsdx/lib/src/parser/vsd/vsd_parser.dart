@@ -1493,6 +1493,20 @@ class VsdBinaryParser {
     final fillStyle = _resolveFillStyle(d.fillStyleId);
     d.fill ??= fillStyle.$1;
     d.shadow ??= fillStyle.$2;
+    if (d.shadow case final shadow?) {
+      // VSDContentCollector substitutes PageProps per axis when a resolved
+      // shape, master, or FillStyle shadow offset is exactly zero.
+      d.shadow = shadow.copyWith(
+        offsetXInches: libvisioEffectiveShadowOffset(
+          shadow.offsetXInches,
+          _currentPage!.shadowOffsetX,
+        ),
+        offsetYInches: libvisioEffectiveShadowOffset(
+          shadow.offsetYInches,
+          _currentPage!.shadowOffsetY,
+        ),
+      );
+    }
     _applyTextStyle(d);
     _resolvePendingShapeData(d, master: master);
     _dedupeConnectionPoints(d);

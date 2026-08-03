@@ -268,6 +268,24 @@ void main() {
     expect(shadow.enabled, isFalse);
   });
 
+  test('missing shadow offsets retain an enabled Master before page fallback',
+      () {
+    final shadow = style.parseShadow(
+      XmlDocument.parse('<Shape/>').rootElement,
+      defaults: const VsdxShadow(
+        enabled: true,
+        pattern: 1,
+        offsetXInches: 0.3,
+        offsetYInches: -0.4,
+      ),
+      pageOffsetXInches: 0.125,
+      pageOffsetYInches: -0.125,
+    );
+
+    expect(shadow.offsetXInches, closeTo(0.3, 1e-12));
+    expect(shadow.offsetYInches, closeTo(-0.4, 1e-12));
+  });
+
   test('FillGradientDir F=Inh inherits Master dir/angle', () {
     final el = XmlDocument.parse(
       '<Shape>'
