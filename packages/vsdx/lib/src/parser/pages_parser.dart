@@ -25,6 +25,14 @@ import 'style_parser.dart';
 
 final _log = Logger('vsdx.parser.pages');
 
+// VSDXParser::readPageSheetProperties starts these collector-facing values at
+// zero. Keep the richer model defaults for newly-created pages, but do not
+// invent Visio's usual shadow offsets while importing an omitted PageSheet.
+const _libvisioPageSheetDefaults = VsdxPageSheet(
+  shadowOffsetXInches: 0,
+  shadowOffsetYInches: 0,
+);
+
 class PagesParser {
   PagesParser(
     this._package, {
@@ -125,13 +133,13 @@ class PagesParser {
     final viewCenterX = double.tryParse(pageEl.getAttribute('ViewCenterX') ?? '');
     final viewCenterY = double.tryParse(pageEl.getAttribute('ViewCenterY') ?? '');
 
-    // Default to US letter so we always have *some* sensible canvas; the
-    // PageSheet usually overrides.
-    double width = 8.5;
-    double height = 11.0;
+    // libvisio starts every VSDX page at 0 × 0 and only changes the canvas
+    // when PageWidth / PageHeight cells are actually present.
+    double width = 0;
+    double height = 0;
     var layers = const <VsdxLayer>[];
     VsdxColor? bgColor;
-    var sheet = VsdxPageSheet.defaults;
+    var sheet = _libvisioPageSheetDefaults;
     final pageSheet = _firstChildLocal(pageEl, 'PageSheet');
     if (pageSheet != null) {
       // PageSheet has no master prototype in libvisio: its collector consumes
@@ -321,7 +329,7 @@ class PagesParser {
 
     String? unit(String n) => findCell(pageSheet, n)?.getAttribute('U');
 
-    const def = VsdxPageSheet.defaults;
+    const def = _libvisioPageSheetDefaults;
     return VsdxPageSheet(
       shadowOffsetXInches: readLengthInches(pageSheet, 'ShdwOffsetX') ??
           def.shadowOffsetXInches,

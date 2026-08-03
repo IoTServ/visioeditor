@@ -66,6 +66,18 @@ Uint8List _scaledDrawingPackage() => _rewritePackage(
       },
     );
 
+Uint8List _missingPagePropsPackage() => _rewritePackage(
+      const VsdxWriter().emptyDocument(),
+      const <String, Map<String, String>>{
+        'visio/pages/pages.xml': <String, String>{
+          '<Cell N="PageWidth" V="8.5"/>': '',
+          '<Cell N="PageHeight" V="11"/>': '',
+          '<Cell N="ShdwOffsetX" V="0.125"/>': '',
+          '<Cell N="ShdwOffsetY" V="-0.125"/>': '',
+        },
+      },
+    );
+
 void main() {
   test('Page uses display Name, XML true, and ignores rows without ID', () {
     final bytes = _rewritePackage(
@@ -184,6 +196,28 @@ void main() {
   });
 
   final oracle = LibvisioOracle.tryLoad();
+
+  test('missing VSDX page properties retain libvisio zero defaults', () {
+    final page =
+        const DocumentParser().parse(_missingPagePropsPackage()).pages.single;
+
+    expect(page.widthInches, 0);
+    expect(page.heightInches, 0);
+    expect(page.pageSheet.shadowOffsetXInches, 0);
+    expect(page.pageSheet.shadowOffsetYInches, 0);
+  });
+
+  test('missing VSDX page dimensions match the libvisio oracle', () {
+    final pages = oracle!.svgPages(_missingPagePropsPackage());
+    expect(pages, isNotNull);
+    expect(pages, hasLength(1));
+    final size = RegExp(r'width="([0-9.]+)in"\s+height="([0-9.]+)in"')
+        .firstMatch(pages!.single);
+    expect(size, isNotNull);
+    expect(double.parse(size!.group(1)!), 0);
+    expect(double.parse(size.group(2)!), 0);
+  }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
+
   test('scaled drawing canvas matches the libvisio oracle', () {
     final pages = oracle!.svgPages(_scaledDrawingPackage());
     expect(pages, isNotNull);
