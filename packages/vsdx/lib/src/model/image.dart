@@ -151,7 +151,7 @@ class VsdxImage {
   /// `EnhMetaFile` for EMF, `MetaFile` for WMF, otherwise `Bitmap`.
   String get foreignType => foreignTypeFor(mimeType: mimeType, partName: partName);
 
-  /// Optional `CompressionType` for bitmap payloads (`JPEG` / `PNG`).
+  /// Optional Visio `CompressionType` for bitmap payloads.
   String? get compressionType =>
       compressionTypeFor(mimeType: mimeType, partName: partName);
 
@@ -173,6 +173,9 @@ class VsdxImage {
     required String mimeType,
     required String partName,
   }) {
+    // Keep every libvisio bitmap enum explicit. Its VSDX reader maps a missing
+    // CompressionType to the legacy DIB/BMP format, so omitting GIF or TIFF
+    // makes otherwise valid bytes disappear when LibreOffice imports them.
     final m = mimeType.toLowerCase();
     final p = partName.toLowerCase();
     if (m.contains('jpeg') ||
@@ -180,6 +183,13 @@ class VsdxImage {
         p.endsWith('.jpg') ||
         p.endsWith('.jpeg')) {
       return 'JPEG';
+    }
+    if (m.contains('gif') || p.endsWith('.gif')) return 'GIF';
+    if (m.contains('tiff') ||
+        m == 'image/tif' ||
+        p.endsWith('.tif') ||
+        p.endsWith('.tiff')) {
+      return 'TIFF';
     }
     if (m.contains('png') || p.endsWith('.png')) return 'PNG';
     return null;

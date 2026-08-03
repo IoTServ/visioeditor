@@ -67,7 +67,16 @@ void main() {
     expect(beforeSvg, contains('href="data:image/png;base64,'));
 
     final saved = writer.write(originalBytes: blank, edited: document);
+    final pageXml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('ForeignType="Bitmap"'));
+    expect(pageXml, contains('CompressionType="TIFF"'));
     final reopened = parser.parse(saved);
+    expect(
+      reopened.pages.first.shapes.single.foreignCompressionType,
+      'TIFF',
+    );
     final reopenedImage = reopened.images.findByPart(part);
     expect(reopenedImage, isNotNull);
     expect(reopenedImage!.mimeType, 'image/tiff');
@@ -88,5 +97,22 @@ void main() {
     );
 
     expect(source.rasterForRendering(), isNull);
+  });
+
+  test('Visio bitmap compression covers every libvisio raster format', () {
+    for (final entry in const <(String, String, String)>[
+      ('image/jpeg', '/visio/media/image.jpg', 'JPEG'),
+      ('image/gif', '/visio/media/image.gif', 'GIF'),
+      ('image/tiff', '/visio/media/image.tiff', 'TIFF'),
+      ('image/png', '/visio/media/image.png', 'PNG'),
+    ]) {
+      expect(
+        VsdxImage.compressionTypeFor(
+          mimeType: entry.$1,
+          partName: entry.$2,
+        ),
+        entry.$3,
+      );
+    }
   });
 }

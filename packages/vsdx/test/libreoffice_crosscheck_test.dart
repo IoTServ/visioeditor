@@ -14,6 +14,7 @@ import 'package:vsdx/vsdx.dart';
 /// it to PDF (proves LibreOffice can open the package).
 void main() {
   final soffice = _resolveSoffice();
+  final pdftoppm = _resolveExecutable('pdftoppm');
   final require = Platform.environment['REQUIRE_SOFFICE'] == '1';
 
   test('LibreOffice soffice opens a writer round-trip .vsdx', () async {
@@ -213,15 +214,15 @@ void main() {
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';
-    final tiffImage = raster.Image(width: 8, height: 8);
-    for (var y = 0; y < tiffImage.height; y++) {
-      for (var x = 0; x < tiffImage.width; x++) {
-        final red = x < 4 ? 255 : 0;
-        final blue = x < 4 ? 0 : 255;
-        tiffImage.setPixelRgba(x, y, red, 0, blue, 255);
-      }
-    }
-    final tiffBytes = raster.encodeTiff(tiffImage, singleFrame: true);
+    final tiffBytes = _uncompressedRgbTiff(width: 32, height: 16);
+    expect(
+      VsdxImage(
+        partName: tiffPart,
+        bytes: tiffBytes,
+        mimeType: 'image/tiff',
+      ).rasterForRendering(),
+      isNotNull,
+    );
     tiffDocument = tiffDocument
         .copyWith(
           images: tiffDocument.images.withImage(
@@ -245,11 +246,55 @@ void main() {
             ),
           ),
         );
+    var gifDocument = parser.parse(blank);
+    final gifPage = gifDocument.pages.first;
+    const gifPart = '/visio/media/libreoffice-crosscheck.gif';
+    final gifImage = raster.Image(width: 32, height: 16);
+    for (var y = 0; y < gifImage.height; y++) {
+      for (var x = 0; x < gifImage.width; x++) {
+        gifImage.setPixelRgba(
+          x,
+          y,
+          x < gifImage.width ~/ 2 ? 255 : 0,
+          0,
+          x < gifImage.width ~/ 2 ? 0 : 255,
+          255,
+        );
+      }
+    }
+    final gifBytes = raster.encodeGif(gifImage, singleFrame: true);
+    gifDocument = gifDocument
+        .copyWith(
+          images: gifDocument.images.withImage(
+            VsdxImage(
+              partName: gifPart,
+              bytes: gifBytes,
+              mimeType: 'image/gif',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          gifPage.addShape(
+            VsdxShapeFactory.picture(
+              id: gifPage.nextFreeShapeId(),
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: gifPart,
+            ),
+          ),
+        );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
         originalBytes: blank,
         edited: tiffDocument,
+      ),
+      'gif_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: gifDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -299,6 +344,40 @@ void main() {
             reason: 'expected ${entry.key}.pdf from soffice; '
                 'dir=${dir.listSync().map((e) => e.path).toList()}');
         expect(pdf.lengthSync(), greaterThan(100));
+        if (entry.key == 'tiff_foreign_data' ||
+            entry.key == 'gif_foreign_data') {
+          if (pdftoppm == null) {
+            if (require) {
+              fail('pdftoppm is required for raster render checking');
+            }
+          } else {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '72',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            );
+            expect(rendered, isNotNull);
+            var redPixels = 0;
+            var bluePixels = 0;
+            for (final pixel in rendered!) {
+              if (pixel.r > 180 && pixel.g < 80 && pixel.b < 80) redPixels++;
+              if (pixel.b > 180 && pixel.r < 80 && pixel.g < 80) bluePixels++;
+            }
+            expect(redPixels, greaterThan(100),
+                reason: 'red=$redPixels blue=$bluePixels');
+            expect(bluePixels, greaterThan(100),
+                reason: 'red=$redPixels blue=$bluePixels');
+          }
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -309,6 +388,76 @@ void main() {
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'
           : false);
+}
+
+String? _resolveExecutable(String name) {
+  final which = Process.runSync('which', <String>[name]);
+  if (which.exitCode != 0) return null;
+  final path = (which.stdout as String).trim();
+  return path.isEmpty ? null : path;
+}
+
+/// Baseline little-endian, single-strip RGB TIFF understood by libtiff,
+/// LibreOffice and the pure-Dart decoder. Keeping this fixture uncompressed
+/// avoids coupling the interop assertion to any particular TIFF compressor.
+Uint8List _uncompressedRgbTiff({required int width, required int height}) {
+  final out = BytesBuilder(copy: false);
+  void u16(int value) {
+    out.add(<int>[value & 0xff, (value >> 8) & 0xff]);
+  }
+
+  void u32(int value) {
+    out.add(<int>[
+      value & 0xff,
+      (value >> 8) & 0xff,
+      (value >> 16) & 0xff,
+      (value >> 24) & 0xff,
+    ]);
+  }
+
+  void entry(int tag, int type, int count, int value, {bool short = false}) {
+    u16(tag);
+    u16(type);
+    u32(count);
+    if (short) {
+      u16(value);
+      u16(0);
+    } else {
+      u32(value);
+    }
+  }
+
+  const entryCount = 10;
+  const ifdOffset = 8;
+  const ifdBytes = 2 + entryCount * 12 + 4;
+  const bitsOffset = ifdOffset + ifdBytes;
+  const pixelOffset = bitsOffset + 6;
+  final pixelBytes = width * height * 3;
+
+  u16(0x4949); // II (little endian)
+  u16(42);
+  u32(ifdOffset);
+  u16(entryCount);
+  entry(256, 4, 1, width); // ImageWidth
+  entry(257, 4, 1, height); // ImageLength
+  entry(258, 3, 3, bitsOffset); // BitsPerSample
+  entry(259, 3, 1, 1, short: true); // Compression = none
+  entry(262, 3, 1, 2, short: true); // Photometric = RGB
+  entry(273, 4, 1, pixelOffset); // StripOffsets
+  entry(277, 3, 1, 3, short: true); // SamplesPerPixel
+  entry(278, 4, 1, height); // RowsPerStrip
+  entry(279, 4, 1, pixelBytes); // StripByteCounts
+  entry(284, 3, 1, 1, short: true); // PlanarConfiguration = chunky
+  u32(0); // next IFD
+  u16(8);
+  u16(8);
+  u16(8);
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      out.add(x < width ~/ 2 ? <int>[255, 0, 0] : <int>[0, 0, 255]);
+    }
+  }
+  return out.takeBytes();
 }
 
 String? _resolveSoffice() {
