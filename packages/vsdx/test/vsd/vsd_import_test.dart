@@ -188,6 +188,84 @@ void main() {
       expect(texts.any((t) => RegExp(r'3937\d').hasMatch(t)), isFalse);
     });
 
+    test('binary TextField rows and markers survive VSDX synthesis', () {
+      List<VsdxShape> fieldShapes(VsdxDocument document) {
+        final out = <VsdxShape>[];
+        void walk(VsdxShape shape) {
+          final hasMarker =
+              shape.richText.runs.any((run) => run.fieldSpans.isNotEmpty);
+          if (shape.fields.isNotEmpty || hasMarker) out.add(shape);
+          for (final child in shape.children) {
+            walk(child);
+          }
+        }
+        for (final page in document.pages) {
+          for (final shape in page.shapes) {
+            walk(shape);
+          }
+        }
+        return out;
+      }
+
+      var checked = 0;
+      for (final name in const <String>[
+        'Visio5TextFieldsWithUnits.vsd',
+        'Visio6TextFieldsWithUnits.vsd',
+        'Visio11TextFieldsWithUnits.vsd',
+      ]) {
+        final bytes = _loadSample(name);
+        if (bytes == null) continue;
+        checked++;
+        final parsed = const VsdDocumentParser().parse(bytes);
+        final before = fieldShapes(parsed);
+        expect(before, isNotEmpty, reason: name);
+        expect(before.any((shape) => shape.fields.isNotEmpty), isTrue,
+            reason: name);
+        expect(
+          before.any((shape) =>
+              shape.richText.runs.any((run) => run.fieldSpans.isNotEmpty)),
+          isTrue,
+          reason: name,
+        );
+        expect(
+          before
+              .expand((shape) => shape.fields)
+              .any((field) => field.format != null),
+          isTrue,
+          reason: '$name binary numeric field pictures must remain editable',
+        );
+        for (final shape in before) {
+          final rowIds = shape.fields.map((field) => field.ix).toSet();
+          for (final span
+              in shape.richText.runs.expand((run) => run.fieldSpans)) {
+            expect(rowIds, contains(span.ix),
+                reason:
+                    '$name shape ${shape.id} field marker must resolve to a row');
+          }
+        }
+
+        final reopened = const DocumentParser().parse(synthesizeVsdx(parsed));
+        final afterById = <int, VsdxShape>{
+          for (final shape in fieldShapes(reopened)) shape.id: shape,
+        };
+        for (final shape in before) {
+          final after = afterById[shape.id];
+          expect(after, isNotNull,
+              reason: '$name shape ${shape.id} after synthesis');
+          expect(after!.fields, shape.fields,
+              reason: '$name shape ${shape.id} Field section');
+          expect(after.richText.plainText, shape.richText.plainText.trimRight(),
+              reason: '$name shape ${shape.id} cached field display');
+          expect(
+            after.richText.runs.expand((run) => run.fieldSpans).toList(),
+            shape.richText.runs.expand((run) => run.fieldSpans).toList(),
+            reason: '$name shape ${shape.id} fld markers',
+          );
+        }
+      }
+      expect(checked, greaterThan(0));
+    });
+
     test('text fields expand Multidimensional area units', () {
       final bytes = _loadSample('Visio11TextFieldsWithUnits.vsd');
       if (bytes == null) return;

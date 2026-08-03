@@ -1733,22 +1733,94 @@ class VsdBinaryParser {
     }
   }
 
-  /// Replace Visio field placeholders (`U+FFFC` / `0x1E`) with field values.
-  String _expandFieldMarkers(String text, List<String> fields) {
-    if (fields.isEmpty) return text;
+  /// Convert binary TextField chunks to editable VSDX Field rows.
+  ///
+  /// VSD stores the definition in a FieldList and places a U+FFFC/0x1e
+  /// marker in the text stream. The binary format does not expose a VSDX
+  /// formula string, so retain its cached display, picture and list id.
+  List<VsdxFieldRow> _buildFieldRows(_ShapeDraft d) {
+    final rows = <VsdxFieldRow>[];
+    for (var i = 0; i < d.fieldDisplays.length; i++) {
+      final raw = i < d.fieldRaw.length ? d.fieldRaw[i] : null;
+      String? format;
+      if (raw != null) {
+        if (raw.customFormat != null && raw.customFormat!.isNotEmpty) {
+          format = raw.customFormat;
+        } else if (raw.format != 0xffff) {
+          format = 'esc(${raw.format})';
+        }
+      }
+      rows.add(VsdxFieldRow(
+        ix: i < d.fieldIds.length ? d.fieldIds[i] : i,
+        value: d.fieldDisplays[i],
+        format: format,
+      ));
+    }
+    return List<VsdxFieldRow>.unmodifiable(rows);
+  }
+
+  int _fieldIx(_ShapeDraft d, int index) =>
+      index < d.fieldIds.length ? d.fieldIds[index] : index;
+
+  ({String text, List<VsdxFieldSpan> spans}) _expandFieldMarkers(
+    _ShapeDraft d,
+    String rawText,
+  ) {
     final out = StringBuffer();
-    var fi = 0;
-    for (var i = 0; i < text.length; i++) {
-      final cu = text.codeUnitAt(i);
-      if ((cu == 0xFFFC || cu == 0x1E) && fi < fields.length) {
-        out.write(fields[fi++]);
-      } else if (cu == 0xFFFC || cu == 0x1E) {
-        // No matching field — drop the marker.
-      } else {
+    final spans = <VsdxFieldSpan>[];
+    var fieldIndex = 0;
+    for (var i = 0; i < rawText.length; i++) {
+      final cu = rawText.codeUnitAt(i);
+      if (cu != 0xfffc && cu != 0x1e) {
         out.writeCharCode(cu);
+        continue;
+      }
+      if (fieldIndex >= d.fieldDisplays.length) continue;
+      final display = d.fieldDisplays[fieldIndex];
+      final start = out.length;
+      out.write(display);
+      spans.add(VsdxFieldSpan(
+        start: start,
+        length: display.length,
+        ix: _fieldIx(d, fieldIndex),
+      ));
+      fieldIndex++;
+    }
+    return (text: out.toString(), spans: List.unmodifiable(spans));
+  }
+
+  ({String text, List<VsdxFieldSpan> spans}) _trimFieldExpansion(
+    String text,
+    List<VsdxFieldSpan> spans,
+  ) {
+    final trimmedLeft = text.trimLeft();
+    final leading = text.length - trimmedLeft.length;
+    final trimmed = trimmedLeft.trimRight();
+    final end = leading + trimmed.length;
+    final kept = <VsdxFieldSpan>[];
+    for (final span in spans) {
+      final spanEnd = span.start + span.length;
+      if (span.length == 0) {
+        if (span.start >= leading && span.start <= end) {
+          kept.add(VsdxFieldSpan(
+            start: span.start - leading,
+            length: 0,
+            ix: span.ix,
+          ));
+        }
+        continue;
+      }
+      final clippedStart = span.start < leading ? leading : span.start;
+      final clippedEnd = spanEnd > end ? end : spanEnd;
+      if (clippedStart < clippedEnd) {
+        kept.add(VsdxFieldSpan(
+          start: clippedStart - leading,
+          length: clippedEnd - clippedStart,
+          ix: span.ix,
+        ));
       }
     }
-    return out.toString();
+    return (text: trimmed, spans: List.unmodifiable(kept));
   }
 
   /// Re-apply numeric field formatting with the page's DrawingUnits default
@@ -5955,6 +6027,7 @@ class VsdBinaryParser {
       formulas: Map<String, String>.unmodifiable(d.formulas),
       text: text,
       richText: rich,
+      fields: _buildFieldRows(d),
       geometries: tagStructuralHitBoxes(geoms),
       fill: d.fill ?? libvisioShapeFillDefault,
       line: d.line ?? VsdxLine.defaultLine,
@@ -6130,9 +6203,10 @@ class VsdBinaryParser {
     final multi = chars.length > 1 || paras.length > 1;
     if (!multi) {
       final expanded = d.fieldDisplays.isEmpty
-          ? rawText
-          : _expandFieldMarkers(rawText, d.fieldDisplays);
-      final plain = expanded.trim();
+          ? (text: rawText, spans: const <VsdxFieldSpan>[])
+          : _expandFieldMarkers(d, rawText);
+      final trimmed = _trimFieldExpansion(expanded.text, expanded.spans);
+      final plain = trimmed.text;
       return (
         rich: VsdxRichText(
           runs: [
@@ -6140,6 +6214,7 @@ class VsdBinaryParser {
               text: plain,
               charStyle: charStyleOf(chars.isEmpty ? null : chars.first),
               paraStyle: paraStyleOf(paras.isEmpty ? null : paras.first),
+              fieldSpans: trimmed.spans,
             ),
           ],
           textBlock: textBlock,
@@ -6161,6 +6236,7 @@ class VsdBinaryParser {
 
     final runs = <VsdxTextRun>[];
     final buf = StringBuffer();
+    final fieldSpans = <VsdxFieldSpan>[];
     final tabIndices = <int>[];
     var fieldIdx = 0;
     var prevCi = -1;
@@ -6169,14 +6245,16 @@ class VsdBinaryParser {
     VsdxParaStyle curPara = paraStyleOf(null);
 
     void flush() {
-      if (buf.isEmpty) return;
+      if (buf.isEmpty && fieldSpans.isEmpty) return;
       runs.add(VsdxTextRun(
         text: buf.toString(),
         charStyle: curChar,
         paraStyle: curPara,
+        fieldSpans: List<VsdxFieldSpan>.from(fieldSpans),
         tabIndices: List<int>.from(tabIndices),
       ));
       buf.clear();
+      fieldSpans.clear();
       tabIndices.clear();
     }
 
@@ -6192,7 +6270,15 @@ class VsdBinaryParser {
       final cu = rawText.codeUnitAt(i);
       if (cu == 0xFFFC || cu == 0x1E) {
         if (fieldIdx < d.fieldDisplays.length) {
-          buf.write(d.fieldDisplays[fieldIdx++]);
+          final display = d.fieldDisplays[fieldIdx];
+          final start = buf.length;
+          buf.write(display);
+          fieldSpans.add(VsdxFieldSpan(
+            start: start,
+            length: display.length,
+            ix: _fieldIx(d, fieldIdx),
+          ));
+          fieldIdx++;
         }
       } else {
         buf.writeCharCode(cu);
