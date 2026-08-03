@@ -11106,7 +11106,8 @@ class EditorController extends ChangeNotifier {
     if (doc == null || orig == null) {
       throw StateError('No document to export');
     }
-    return const VsdxWriter().write(originalBytes: orig, edited: doc);
+    return const VsdxWriter(preserveUnchangedPackage: true)
+        .write(originalBytes: orig, edited: doc);
   }
 
   /// Record that [savedBytes] were persisted: they become the new baseline for

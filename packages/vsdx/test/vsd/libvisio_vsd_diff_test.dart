@@ -176,6 +176,44 @@ void main() {
       for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
         final beforePage = doc.pages[pageIndex];
         final afterPage = reopened.pages[pageIndex];
+        expect(afterPage.name, beforePage.name,
+            reason: '${fixture.path} page $pageIndex name after synthesis');
+        expect(afterPage.widthInches, closeTo(beforePage.widthInches, 1e-8),
+            reason: '${fixture.path} page $pageIndex width after synthesis');
+        expect(afterPage.heightInches, closeTo(beforePage.heightInches, 1e-8),
+            reason: '${fixture.path} page $pageIndex height after synthesis');
+        expect(afterPage.backgroundColor, beforePage.backgroundColor,
+            reason:
+                '${fixture.path} page $pageIndex background after synthesis');
+        expect(afterPage.isBackgroundPage, beforePage.isBackgroundPage,
+            reason:
+                '${fixture.path} page $pageIndex background flag after synthesis');
+        expect(afterPage.backgroundPageId, beforePage.backgroundPageId,
+            reason:
+                '${fixture.path} page $pageIndex background link after synthesis');
+        expect(afterPage.pageSheet, beforePage.pageSheet,
+            reason:
+                '${fixture.path} page $pageIndex PageSheet after synthesis');
+        if (beforePage.viewScale != null) {
+          expect(afterPage.viewScale, closeTo(beforePage.viewScale!, 1e-8),
+              reason:
+                  '${fixture.path} page $pageIndex ViewScale after synthesis');
+        }
+        if (beforePage.viewCenterX != null) {
+          expect(afterPage.viewCenterX,
+              closeTo(beforePage.viewCenterX!, 1e-8),
+              reason:
+                  '${fixture.path} page $pageIndex ViewCenterX after synthesis');
+        }
+        if (beforePage.viewCenterY != null) {
+          expect(afterPage.viewCenterY,
+              closeTo(beforePage.viewCenterY!, 1e-8),
+              reason:
+                  '${fixture.path} page $pageIndex ViewCenterY after synthesis');
+        }
+        expect(_connectSignatures(afterPage.connects),
+            _connectSignatures(beforePage.connects),
+            reason: '${fixture.path} page $pageIndex connects after synthesis');
         expect(afterPage.layers, beforePage.layers,
             reason: '${fixture.path} page $pageIndex layers after synthesis');
         final afterById = <int, VsdxShape>{
@@ -204,6 +242,12 @@ void main() {
     }, skip: skipReason);
   }
 }
+
+List<String> _connectSignatures(List<VsdxConnect> connects) => <String>[
+      for (final connect in connects)
+        '${connect.fromSheetId}|${connect.fromCell}|${connect.fromPart}|'
+            '${connect.toSheetId}|${connect.toCell}|${connect.toPart}',
+    ];
 
 Iterable<VsdxShape> _allShapes(VsdxDocument document) sync* {
   Iterable<VsdxShape> walk(VsdxShape shape) sync* {
@@ -433,6 +477,19 @@ void _expectSynthesizedShape(
     expect(b.commands.map((c) => c.runtimeType),
         a.commands.map((c) => c.runtimeType),
         reason: '$reason Geometry[$i] command topology');
+    for (var commandIndex = 0;
+        commandIndex < a.commands.length;
+        commandIndex++) {
+      expect(
+        pathCommandsEqual(
+          b.commands[commandIndex],
+          a.commands[commandIndex],
+        ),
+        isTrue,
+        reason: '$reason Geometry[$i] command $commandIndex values: '
+            '${a.commands[commandIndex]} -> ${b.commands[commandIndex]}',
+      );
+    }
   }
 }
 

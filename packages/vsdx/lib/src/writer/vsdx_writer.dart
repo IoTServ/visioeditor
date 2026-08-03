@@ -19,6 +19,7 @@ import 'package:xml/xml.dart';
 
 import '../export/theme_serializer.dart';
 import '../model/connect.dart';
+import '../model/custom_property.dart';
 import '../model/document.dart';
 import '../model/document_settings.dart';
 import '../model/drawing_scale.dart';
@@ -42,7 +43,10 @@ import '../parser/relationships.dart';
 import '../utils/color.dart';
 
 class VsdxWriter {
-  const VsdxWriter({this.preserveTextBlockCoordinates = false});
+  const VsdxWriter({
+    this.preserveTextBlockCoordinates = false,
+    this.preserveUnchangedPackage = false,
+  });
 
   /// Keep negative `TxtPinY` values semantically faithful instead of
   /// converting them to the equivalent EdrawMax-compatible representation.
@@ -52,6 +56,13 @@ class VsdxWriter {
   /// carrier for binary text-block coordinates and must not discard gaps
   /// below captions.
   final bool preserveTextBlockCoordinates;
+
+  /// Return the original package byte-for-byte when its parsed editable model
+  /// has not changed. Editor saves enable this to preserve sparse inheritance,
+  /// unknown recovery structures, and exact libvisio rendering. It remains
+  /// opt-in for migration/repair callers that intentionally normalise legacy
+  /// packages by parsing and saving without a user edit.
+  final bool preserveUnchangedPackage;
 
   /// Values within this many inches / radians of the baseline are treated as
   /// unchanged and left alone (preserving any original formula).
@@ -67,6 +78,13 @@ class VsdxWriter {
     required VsdxDocument edited,
   }) {
     final baseline = const DocumentParser().parse(originalBytes);
+    // A true no-op save must be byte-preserving.  Apart from avoiding ZIP/XML
+    // churn, this keeps sparse master inheritance and recovery-only packages
+    // (for example libvisio's recursion-cycle corpus) render-equivalent.
+    if (preserveUnchangedPackage &&
+        _documentPatchInputsEqual(baseline, edited)) {
+      return Uint8List.fromList(originalBytes);
+    }
     final pkg = VsdxPackage.open(originalBytes);
     final resolver = RelationshipResolver(pkg);
     final patched = <String, Uint8List>{}; // archive name (no slash) -> bytes
@@ -2117,7 +2135,7 @@ class VsdxWriter {
     return true;
   }
 
-  bool _connectsEqual(List<VsdxConnect> a, List<VsdxConnect> b) {
+  static bool _connectsEqual(List<VsdxConnect> a, List<VsdxConnect> b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
       final x = a[i];
@@ -2133,6 +2151,307 @@ class VsdxWriter {
     }
     return true;
   }
+
+  /// Preserve source XML for a shape whose editable inputs are unchanged.
+  /// Besides avoiding needless package churn, this is essential for master
+  /// instances: the parser exposes their resolved ShapeSheet values, while
+  /// the source may contain only a few local overrides.  Materialising the
+  /// resolved values can change what libvisio/Visio renders.  Descendants are
+  /// still visited independently by [_patchPage].
+  static bool _shapePatchInputsEqual(VsdxShape a, VsdxShape b) =>
+      a.id == b.id &&
+      a.name == b.name &&
+      a.pinX == b.pinX &&
+      a.pinY == b.pinY &&
+      a.width == b.width &&
+      a.height == b.height &&
+      a.locPinXInches == b.locPinXInches &&
+      a.locPinYInches == b.locPinYInches &&
+      a.angleRad == b.angleRad &&
+      a.text == b.text &&
+      _richTextEqual(a.richText, b.richText) &&
+      _textBlocksEqual(a.richText.textBlock, b.richText.textBlock) &&
+      _shapeGeometriesEqual(a.geometries, b.geometries) &&
+      _fillsEqual(a.fill, b.fill) &&
+      _linesEqual(a.line, b.line) &&
+      _shadowsEqual(a.shadow, b.shadow) &&
+      _glowsEqual(a.glow, b.glow) &&
+      _reflectionsEqual(a.reflection, b.reflection) &&
+      _intListsEqual(a.layerMemberIds, b.layerMemberIds) &&
+      a.is1D == b.is1D &&
+      a.beginX == b.beginX &&
+      a.beginY == b.beginY &&
+      a.endX == b.endX &&
+      a.endY == b.endY &&
+      a.straightRoute == b.straightRoute &&
+      a.curved == b.curved &&
+      a.rounded == b.rounded &&
+      _listEqual(a.waypoints, b.waypoints) &&
+      a.flipX == b.flipX &&
+      a.flipY == b.flipY &&
+      a.locked == b.locked &&
+      a.imagePartName == b.imagePartName &&
+      a.imgOffsetXInches == b.imgOffsetXInches &&
+      a.imgOffsetYInches == b.imgOffsetYInches &&
+      a.imgWidthInches == b.imgWidthInches &&
+      a.imgHeightInches == b.imgHeightInches &&
+      a.imageTransparency == b.imageTransparency &&
+      a.imageBlur == b.imageBlur &&
+      a.imageBrightness == b.imageBrightness &&
+      a.imageContrast == b.imageContrast &&
+      a.foreignType == b.foreignType &&
+      a.foreignCompressionType == b.foreignCompressionType &&
+      a.objType == b.objType &&
+      a.resizeMode == b.resizeMode &&
+      a.eventDblClick == b.eventDblClick &&
+      a.noAlignBox == b.noAlignBox &&
+      a.shapeSplittable == b.shapeSplittable &&
+      a.themeIndex == b.themeIndex &&
+      a.quickStyleFillMatrix == b.quickStyleFillMatrix &&
+      a.quickStyleLineMatrix == b.quickStyleLineMatrix &&
+      a.quickStyleEffectsMatrix == b.quickStyleEffectsMatrix &&
+      a.quickStyleFontMatrix == b.quickStyleFontMatrix &&
+      a.isTextEditTarget == b.isTextEditTarget &&
+      a.dontMoveChildren == b.dontMoveChildren &&
+      a.selectMode == b.selectMode &&
+      a.displayMode == b.displayMode &&
+      _connectsEqual(a.connects, b.connects) &&
+      _connectionPointsEqual(a.connectionPoints, b.connectionPoints) &&
+      _hyperlinksEqual(a.hyperlinks, b.hyperlinks) &&
+      _userPropsEqual(a.userProperties, b.userProperties) &&
+      _userCellsEqual(a.userCells, b.userCells) &&
+      _listEqual(a.controls, b.controls) &&
+      _listEqual(a.scratch, b.scratch) &&
+      _listEqual(a.fields, b.fields) &&
+      _actionsEqual(a.actions, b.actions) &&
+      a.masterId == b.masterId &&
+      a.masterShapeId == b.masterShapeId &&
+      a.lineStyleId == b.lineStyleId &&
+      a.fillStyleId == b.fillStyleId &&
+      a.textStyleId == b.textStyleId &&
+      _mapEqual(a.formulas, b.formulas) &&
+      a.connectorProps == b.connectorProps;
+
+  static bool _documentPatchInputsEqual(VsdxDocument a, VsdxDocument b) =>
+      a.settings == b.settings &&
+      a.title == b.title &&
+      a.creator == b.creator &&
+      a.subject == b.subject &&
+      a.keywords == b.keywords &&
+      a.description == b.description &&
+      a.lastModifiedBy == b.lastModifiedBy &&
+      a.created == b.created &&
+      a.modified == b.modified &&
+      a.language == b.language &&
+      a.category == b.category &&
+      a.company == b.company &&
+      a.template == b.template &&
+      a.applicationName == b.applicationName &&
+      _customPropertiesEqual(a.customProperties, b.customProperties) &&
+      _themesEqual(a.theme, b.theme) &&
+      _imagesEqual(a.images, b.images) &&
+      _pagesEqual(a.pages, b.pages);
+
+  static bool _pagesEqual(List<VsdxPage> a, List<VsdxPage> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i], y = b[i];
+      if (x.id != y.id ||
+          x.name != y.name ||
+          x.widthInches != y.widthInches ||
+          x.heightInches != y.heightInches ||
+          x.backgroundColor != y.backgroundColor ||
+          x.isBackgroundPage != y.isBackgroundPage ||
+          x.backgroundPageId != y.backgroundPageId ||
+          x.pageSheet != y.pageSheet ||
+          x.viewScale != y.viewScale ||
+          x.viewCenterX != y.viewCenterX ||
+          x.viewCenterY != y.viewCenterY ||
+          !_listEqual(x.layers, y.layers) ||
+          !_connectsEqual(x.connects, y.connects) ||
+          !_shapeTreesEqual(x.shapes, y.shapes)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _shapeTreesEqual(List<VsdxShape> a, List<VsdxShape> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_shapePatchInputsEqual(a[i], b[i]) ||
+          !_shapeTreesEqual(a[i].children, b[i].children)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _customPropertiesEqual(
+    List<VsdxCustomProperty> a,
+    List<VsdxCustomProperty> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i], y = b[i];
+      if (x.name != y.name ||
+          x.value != y.value ||
+          x.valueType != y.valueType ||
+          x.propertyId != y.propertyId) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _themesEqual(VsdxTheme a, VsdxTheme b) {
+    if (a.colors.length != b.colors.length ||
+        a.variationColors.length != b.variationColors.length ||
+        a.fillStyleColors.length != b.fillStyleColors.length ||
+        a.variationFillStyleIndices.length !=
+            b.variationFillStyleIndices.length) {
+      return false;
+    }
+    for (final entry in a.colors.entries) {
+      if (b.colors[entry.key] != entry.value) return false;
+    }
+    for (var i = 0; i < a.variationColors.length; i++) {
+      if (!_listEqual(a.variationColors[i], b.variationColors[i])) return false;
+    }
+    if (!_listEqual(a.fillStyleColors, b.fillStyleColors)) return false;
+    for (var i = 0; i < a.variationFillStyleIndices.length; i++) {
+      if (!_listEqual(a.variationFillStyleIndices[i],
+          b.variationFillStyleIndices[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _imagesEqual(ImageRegistry a, ImageRegistry b) {
+    if (a.length != b.length) return false;
+    for (final x in a.all) {
+      final y = b.findByPart(x.partName);
+      if (y == null ||
+          x.mimeType != y.mimeType ||
+          x.bytes.length != y.bytes.length) {
+        return false;
+      }
+      for (var i = 0; i < x.bytes.length; i++) {
+        if (x.bytes[i] != y.bytes[i]) return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _textBlocksEqual(VsdxTextBlock a, VsdxTextBlock b) =>
+      a.pinXInches == b.pinXInches &&
+      a.pinYInches == b.pinYInches &&
+      a.locPinXInches == b.locPinXInches &&
+      a.locPinYInches == b.locPinYInches &&
+      a.widthInches == b.widthInches &&
+      a.heightInches == b.heightInches &&
+      a.angleRad == b.angleRad &&
+      a.verticalAlign == b.verticalAlign &&
+      a.marginLeftInches == b.marginLeftInches &&
+      a.marginRightInches == b.marginRightInches &&
+      a.marginTopInches == b.marginTopInches &&
+      a.marginBottomInches == b.marginBottomInches &&
+      a.hideText == b.hideText &&
+      a.backgroundColor == b.backgroundColor &&
+      a.backgroundTransparency == b.backgroundTransparency &&
+      a.textDirection == b.textDirection &&
+      a.defaultTabStopInches == b.defaultTabStopInches;
+
+  static bool _shapeGeometriesEqual(
+    List<VsdxGeometry> a,
+    List<VsdxGeometry> b,
+  ) {
+    if (!_geometriesEqual(a, b)) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i], y = b[i];
+      if (x.noFill != y.noFill ||
+          x.noLine != y.noLine ||
+          x.noShow != y.noShow ||
+          x.noSnap != y.noSnap ||
+          x.noQuickDrag != y.noQuickDrag ||
+          x.hitBox != y.hitBox ||
+          x.ix != y.ix ||
+          x.deleted != y.deleted ||
+          !_intListsEqual(x.rowIndices, y.rowIndices) ||
+          !_setsEqual(x.deletedRowIndices, y.deletedRowIndices) ||
+          !_setsEqual(x.definedFlagCells, y.definedFlagCells)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _setsEqual<T>(Set<T> a, Set<T> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  static bool _fillsEqual(VsdxFill a, VsdxFill b) =>
+      a.foreground == b.foreground &&
+      a.background == b.background &&
+      a.foregroundTransparency == b.foregroundTransparency &&
+      a.backgroundTransparency == b.backgroundTransparency &&
+      a.pattern == b.pattern &&
+      a.themeForegroundIndex == b.themeForegroundIndex &&
+      a.themeBackgroundIndex == b.themeBackgroundIndex &&
+      _gradientsEqual(a.gradient, b.gradient);
+
+  static bool _linesEqual(VsdxLine a, VsdxLine b) =>
+      a.color == b.color &&
+      a.weightInches == b.weightInches &&
+      a.pattern == b.pattern &&
+      a.cap == b.cap &&
+      a.transparency == b.transparency &&
+      a.themeColorIndex == b.themeColorIndex &&
+      a.beginArrow == b.beginArrow &&
+      a.endArrow == b.endArrow &&
+      a.beginArrowSizeInches == b.beginArrowSizeInches &&
+      a.endArrowSizeInches == b.endArrowSizeInches &&
+      a.roundingInches == b.roundingInches &&
+      _nullableDoubleListsEqual(a.customDashPattern, b.customDashPattern) &&
+      a.fixedDash == b.fixedDash &&
+      a.join == b.join &&
+      a.miterLimit == b.miterLimit &&
+      a.softEdgesInches == b.softEdgesInches &&
+      a.compoundType == b.compoundType &&
+      _gradientsEqual(a.gradient, b.gradient);
+
+  static bool _nullableDoubleListsEqual(List<double>? a, List<double>? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  static bool _shadowsEqual(VsdxShadow a, VsdxShadow b) =>
+      a.color == b.color &&
+      a.themeColorIndex == b.themeColorIndex &&
+      a.offsetXInches == b.offsetXInches &&
+      a.offsetYInches == b.offsetYInches &&
+      a.blurInches == b.blurInches &&
+      a.transparency == b.transparency &&
+      a.enabled == b.enabled &&
+      a.pattern == b.pattern;
+
+  static bool _glowsEqual(VsdxGlow a, VsdxGlow b) =>
+      a.color == b.color &&
+      a.themeColorIndex == b.themeColorIndex &&
+      a.sizeInches == b.sizeInches &&
+      a.transparency == b.transparency &&
+      a.enabled == b.enabled;
+
+  static bool _reflectionsEqual(VsdxReflection a, VsdxReflection b) =>
+      a.sizeInches == b.sizeInches &&
+      a.distanceInches == b.distanceInches &&
+      a.transparency == b.transparency &&
+      a.blurInches == b.blurInches &&
+      a.enabled == b.enabled;
 
   void _writeConnects(XmlElement root, List<VsdxConnect> connects) {
     var el = _firstChild(root, 'Connects');
@@ -2188,6 +2507,12 @@ class VsdxWriter {
     // curved / waypointed connector keeps its edit state across reopen.
     base = base.persistRouteState();
     edited = edited.persistRouteState();
+    final inheritsShapeSheet = el.getAttribute('Master') != null ||
+        el.getAttribute('MasterShape') != null;
+    if ((preserveUnchangedPackage || inheritsShapeSheet) &&
+        _shapePatchInputsEqual(base, edited)) {
+      return false;
+    }
     var changed = false;
     changed |= _patchLength(el, 'PinX', base.pinX, edited.pinX);
     changed |= _patchLength(el, 'PinY', base.pinY, edited.pinY);

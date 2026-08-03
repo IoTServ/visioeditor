@@ -28,6 +28,22 @@ void main() {
   }
 
   test(
+    'unchanged VSDX export preserves the original package byte-for-byte',
+    () async {
+      final original = await File(
+        'assets/examples/test3_house.vsdx',
+      ).readAsBytes();
+      final controller = EditorController();
+      addTearDown(controller.dispose);
+
+      await controller.openBytes(original, name: 'test3_house.vsdx');
+
+      expect(controller.error, isNull);
+      expect(controller.exportToBytes(), original);
+    },
+  );
+
+  test(
     'regular desktop save overwrites its path with reopenable bytes',
     () async {
       final controller = controllerWithShape();
