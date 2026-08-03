@@ -1397,7 +1397,7 @@ void main() {
     expect(svg.contains('stroke-opacity="0.3"'), isFalse);
   });
 
-  test('SVG pattern 8 emits dots not diagonal fallback', () {
+  test('SVG pattern 8 emits libvisio triple hatch layers', () {
     final page = VsdxPage(
       id: 0,
       name: 'P',
@@ -1419,7 +1419,9 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('<circle '), isTrue);
+    expect(svg.contains('<circle '), isFalse);
+    expect(svg.contains('id="pat-p0-9-0-axis"'), isTrue);
+    expect(svg.contains('fill="url(#pat-p0-9-0-axis)"'), isTrue);
     expect(svg.contains('id="pat-p0-9-0"'), isTrue);
   });
 

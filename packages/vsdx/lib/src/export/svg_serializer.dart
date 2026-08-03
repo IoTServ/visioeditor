@@ -19,6 +19,7 @@ import '../model/dash_pattern.dart';
 import '../model/document.dart';
 import '../model/effects.dart';
 import '../model/elliptical_arc.dart';
+import '../model/fill.dart';
 import '../model/geometry.dart';
 import '../model/image.dart';
 import '../model/layer.dart';
@@ -1607,10 +1608,10 @@ class VsdxToSvgSerializer {
       fillPaint = 'url(#grad-$paintId)';
       fillOp = alpha;
     } else if (shape.fill.pattern >= 2 &&
-        shape.fill.pattern <= 16 &&
+        shape.fill.pattern <= 24 &&
         !pdfCompat) {
       // Hatch defs emitted by [_fillAttr] as pat-$paintId — only when a real
-      // <pattern> was created (not pdfCompat / pattern>16 solid fallback).
+      // <pattern> was created (not pdfCompat / unsupported solid fallback).
       fillPaint = 'url(#pat-$paintId)';
       fillOp = alpha;
     } else {
@@ -2449,9 +2450,8 @@ class VsdxToSvgSerializer {
     final fgAlpha = _combinedOpacity(fg, fill.foregroundTransparency);
     final fgHex = fg == null ? '#ffffff' : _hex(fg);
 
-    // Canvas [PatternFillBuilder] only tiles ids 2–16; unknown ids fall
-    // back to solid. Match that here (do not invent a hatch for pattern>16).
-    if (fill.pattern >= 2 && fill.pattern <= 16) {
+    final hatchSpec = libvisioHatchSpec(fill.pattern);
+    if (hatchSpec != null) {
       // package:pdf only resolves url(#…) for gradients — hatch patterns
       // become hollow without this solid fallback.
       if (pdfCompat) {
@@ -2463,8 +2463,32 @@ class VsdxToSvgSerializer {
           bg == null ? 0.0 : _combinedOpacity(bg, fill.backgroundTransparency);
       final bgHex = bg == null ? '#ffffff' : _hex(bg);
       final id = 'pat-$paintId';
-      // Match canvas PatternFillBuilder: 32px tile × scale 0.04 → 1.28".
-      const tile = 1.28;
+      final isDiagonal = hatchSpec.angleDegrees == 45 ||
+          hatchSpec.angleDegrees == 315;
+      final tile = hatchSpec.distanceInches *
+          (isDiagonal ? math.sqrt2 : 1);
+      if (hatchSpec.style == VsdxHatchStyle.triple) {
+        final axisId = '$id-axis';
+        final axisTile = hatchSpec.distanceInches;
+        defs.write(
+          '<pattern id="$axisId" patternUnits="userSpaceOnUse" '
+          'width="${_n(axisTile)}" height="${_n(axisTile)}">'
+          '<rect width="${_n(axisTile)}" height="${_n(axisTile)}" '
+          'fill="$bgHex" fill-opacity="${_n(bgAlpha)}"/>'
+          '${_hatchPath(fill.pattern, axisTile, color: fgHex, opacity: fgAlpha, axisOnly: true)}'
+          '</pattern>',
+        );
+        final diagonalTile = hatchSpec.distanceInches * math.sqrt2;
+        defs.write(
+          '<pattern id="$id" patternUnits="userSpaceOnUse" '
+          'width="${_n(diagonalTile)}" height="${_n(diagonalTile)}">'
+          '<rect width="${_n(diagonalTile)}" height="${_n(diagonalTile)}" '
+          'fill="url(#$axisId)"/>'
+          '${_hatchPath(fill.pattern, diagonalTile, color: fgHex, opacity: fgAlpha, diagonalOnly: true)}'
+          '</pattern>',
+        );
+        return 'fill="url(#$id)"';
+      }
       defs.write(
         '<pattern id="$id" patternUnits="userSpaceOnUse" '
         'width="${_n(tile)}" height="${_n(tile)}">'
@@ -2479,84 +2503,55 @@ class VsdxToSvgSerializer {
     return 'fill="$fgHex" fill-opacity="${_n(fgAlpha)}"';
   }
 
-  /// SVG hatch tile approximating Visio FillPattern 2–16 (matches canvas
-  /// [PatternFillBuilder] coverage).
+  /// SVG hatch tile for Visio FillPattern 2–24, matching libvisio's hatch
+  /// style, angle and spacing and the canvas [PatternFillBuilder].
   String _hatchPath(
     int pattern,
     double tile, {
     String color = '#000000',
     double opacity = 1,
+    bool axisOnly = false,
+    bool diagonalOnly = false,
   }) {
-    // Canvas hatch stroke is 2px on a 32px tile at scale 0.04 → 0.08".
-    final sw = 0.08;
-    final common =
-        'stroke="$color" stroke-opacity="${_n(opacity)}" stroke-width="${_n(sw)}" '
-        'fill="none"';
-    final fillDot = 'fill="$color" fill-opacity="${_n(opacity)}" stroke="none"';
+    final spec = libvisioHatchSpec(pattern);
+    if (spec == null) return '';
+    // LibreOffice renders axis-aligned ODF hatch strokes as a one-device-pixel
+    // hairline at 96 dpi. Sloped hairlines retain that footprint with roughly
+    // half coverage after anti-aliasing.
+    const axisWidth = 0.01;
+    const diagonalWidth = 0.01;
+    final base = 'stroke="$color" stroke-opacity="${_n(opacity)}" fill="none"';
+    final diagonalBase =
+        'stroke="$color" stroke-opacity="${_n(opacity * 0.5)}" fill="none"';
+    final axis = '$base stroke-width="${_n(axisWidth)}"';
+    final diagonal =
+        '$diagonalBase stroke-width="${_n(diagonalWidth)}"';
     final t = _n(tile);
     final h = _n(tile / 2);
-    final q = _n(tile / 4);
-    final t34 = _n(tile * 0.75);
-    return switch (pattern) {
-      2 => '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>',
-      3 => '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
-      5 => '<line x1="0" y1="0" x2="$t" y2="$t" $common/>',
-      6 => '<line x1="0" y1="$t" x2="$t" y2="0" $common/>'
-          '<line x1="0" y1="0" x2="$t" y2="$t" $common/>',
-      7 => '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
-          '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
-      8 => // dots
-        '<circle cx="$q" cy="$q" r="${_n(tile * 0.08)}" $fillDot/>'
-            '<circle cx="$t34" cy="$t34" r="${_n(tile * 0.08)}" $fillDot/>',
-      9 => // dense dots
-        () {
-          final b = StringBuffer();
-          for (var y = tile * 0.15; y < tile; y += tile * 0.25) {
-            for (var x = tile * 0.15; x < tile; x += tile * 0.25) {
-              b.write(
-                '<circle cx="${_n(x)}" cy="${_n(y)}" '
-                'r="${_n(tile * 0.05)}" $fillDot/>',
-              );
-            }
-          }
-          return b.toString();
-        }(),
-      10 => // brick
-        '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
-            '<line x1="$h" y1="0" x2="$h" y2="$h" $common/>'
-            '<line x1="0" y1="$h" x2="0" y2="$t" $common/>',
-      11 => // shingles
-        '<line x1="0" y1="0" x2="$h" y2="$h" $common/>'
-            '<line x1="$h" y1="$h" x2="$t" y2="0" $common/>'
-            '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>',
-      12 => // wide diagonal forward
-        '<line x1="0" y1="$t" x2="$t" y2="0" $common/>'
-            '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.75)}" '
-            'x2="${_n(tile * 0.75)}" y2="${_n(-tile * 0.25)}" $common/>',
-      13 => // wide diagonal back
-        '<line x1="0" y1="0" x2="$t" y2="$t" $common/>'
-            '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.25)}" '
-            'x2="${_n(tile * 0.75)}" y2="${_n(tile * 1.25)}" $common/>',
-      14 => // grid
-        () {
-          final b = StringBuffer();
-          for (var i = 0.0; i <= tile + 1e-9; i += tile / 4) {
-            final v = _n(i);
-            b.write('<line x1="$v" y1="0" x2="$v" y2="$t" $common/>');
-            b.write('<line x1="0" y1="$v" x2="$t" y2="$v" $common/>');
-          }
-          return b.toString();
-        }(),
-      15 => // wave horizontal
-        '<path d="M 0 $h Q $q ${_n(tile * 0.25)} $h $h '
-            'Q $t34 ${_n(tile * 0.75)} $t $h" $common/>',
-      16 => // trellis
-        '<line x1="0" y1="0" x2="$t" y2="$t" $common/>'
-            '<line x1="$t" y1="0" x2="0" y2="$t" $common/>'
-            '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
-            '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
-      _ => // 4: forward diagonal (caller only passes 2–16)
-        '<line x1="0" y1="$t" x2="$t" y2="0" $common/>',
+    final horizontal = '<line x1="0" y1="$h" x2="$t" y2="$h" $axis/>';
+    final vertical = '<line x1="$h" y1="0" x2="$h" y2="$t" $axis/>';
+    // The page-to-SVG transform flips Visio's upward Y axis. Define the
+    // diagonals in local coordinates so their rendered angles still match
+    // libvisio's 45-degree (rising) and 315-degree (falling) hatches.
+    final rising =
+        '<line x1="0" y1="0" x2="$t" y2="$t" $diagonal/>';
+    final falling =
+        '<line x1="0" y1="$t" x2="$t" y2="0" $diagonal/>';
+    if (spec.style == VsdxHatchStyle.triple) {
+      final axes = diagonalOnly ? '' : '$horizontal$vertical';
+      final diagonals = axisOnly ? '' : '$rising$falling';
+      return '$axes$diagonals';
+    }
+    if (spec.style == VsdxHatchStyle.double) {
+      return spec.angleDegrees == 45
+          ? '$rising$falling'
+          : '$horizontal$vertical';
+    }
+    return switch (spec.angleDegrees) {
+      45 => rising,
+      90 => vertical,
+      315 => falling,
+      _ => horizontal,
     };
   }
 

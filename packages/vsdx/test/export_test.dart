@@ -848,7 +848,7 @@ void main() {
     expect(svg, contains('M 0 1 H 10 V 9 H 0 Z'));
   });
 
-  test('SVG hatch tile matches canvas 1.28 inch period', () {
+  test('SVG diagonal hatch keeps libvisio 0.1 inch normal spacing', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -872,7 +872,8 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg, contains('width="1.28" height="1.28"'));
+    // A 45-degree hatch needs a d*sqrt(2) square repeat for normal spacing d.
+    expect(svg, contains('width="0.141" height="0.141"'));
   });
 
   test('SVG Justify uses textLength spacing on short lines', () {
@@ -1599,7 +1600,7 @@ void main() {
     expect(svg, contains('m -4,0 a 4,4 0 1,0 8,0'));
   });
 
-  test('SVG FillPattern > 16 falls back to solid like canvas', () {
+  test('SVG FillPattern 17 is hatch and unsupported 41 is solid', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1622,9 +1623,27 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg.contains('url(#pat-'), isFalse,
+    expect(svg, contains('url(#pat-'));
+    expect(svg, contains('width="0.05" height="0.05"'));
+
+    final unsupported = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        shapes: [
+          doc.pages.first.shapes.single.copyWith(
+            fill: const VsdxFill(
+              foreground: VsdxColor(0xFF1565C0),
+              pattern: 41,
+            ),
+          ),
+        ],
+      ),
+    );
+    final fallback =
+        VsdxToSvgSerializer().serializePage(unsupported.pages.first);
+    expect(fallback.contains('url(#pat-'), isFalse,
         reason: 'unsupported hatch ids must not invent a pattern tile');
-    expect(svg, contains('fill="#1565c0"'));
+    expect(fallback, contains('fill="#1565c0"'));
   });
 
   test('SVG compound-line rails honour LineCap', () {

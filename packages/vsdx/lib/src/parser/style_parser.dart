@@ -79,7 +79,7 @@ class StyleParser {
       gradient = parsedFillGrad ?? defaults.gradient;
     }
 
-    return VsdxFill(
+    return withLibvisioClassicGradient(VsdxFill(
       foreground: foregroundTheme == null
           ? fgRes.color ?? defaults.foreground
           : (foregroundTheme == 100 ? defaults.foreground : null),
@@ -92,7 +92,7 @@ class StyleParser {
       themeForegroundIndex: foregroundTheme,
       themeBackgroundIndex: backgroundTheme,
       gradient: gradient,
-    );
+    ));
   }
 
   /// Look at `FillGradientEnabled` + `<Section N="FillGradient">`. Returns

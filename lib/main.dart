@@ -47,7 +47,7 @@ import 'templates/template_picker_dialog.dart';
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Hatch tiles for Visio FillPattern 2–16 (canvas + PNG share VsdxPainter).
+  // Hatch tiles for Visio FillPattern 2–24 (canvas + PNG share VsdxPainter).
   await PatternFillBuilder.warmUpShared();
   final settings = await AppSettings.load();
   runApp(VisioEditorApp(
@@ -7212,24 +7212,25 @@ class _PropertyPanel extends StatelessWidget {
     );
   }
 
-  /// Fill pattern chips: solid + common Visio hatches (draw.io Style → Fill).
+  /// Fill pattern chips: solid + representative classic libvisio hatches.
   Widget _fillPatternControls(
       BuildContext context, EditorController controller) {
     final el = EditorL10n.of(context);
     final pattern = controller.selectedFill?.pattern ?? 1;
     final labels = <int, String>{
       1: el.solid,
-      2: 'H',
-      3: 'V',
-      4: '/',
+      2: '/',
+      3: '+',
+      4: '×',
       5: '\\',
-      6: 'X',
-      7: '+',
-      8: '·',
-      9: '::',
-      10: el.patternBrick,
-      11: el.patternShingle,
-      14: el.grid,
+      6: '—',
+      7: '|',
+      8: '✳',
+      13: '═',
+      14: '║',
+      15: '\\\\',
+      16: '//',
+      23: '#',
     };
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),

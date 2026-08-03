@@ -1,9 +1,11 @@
 /// Shape-level fill description.
 ///
 /// Solid / theme colours, transparencies, `FillPattern` (canvas+SVG render
-/// hatch ids 2–16; the VSD parser converts classic gradient ids 25–40 to
-/// [gradient]), and optional gradient stops.
+/// libvisio hatch ids 2–24; VSD/VSDX parsers convert classic gradient ids
+/// 25–40 to [gradient]), and optional gradient stops.
 library;
+
+import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
 
@@ -16,6 +18,183 @@ import 'effects.dart';
 /// must stay unresolved in the editable model so a save does not invent
 /// `FillForegnd` / `FillBkgnd` cells that were absent from the source.
 const VsdxFill libvisioShapeFillDefault = VsdxFill(pattern: 0);
+
+/// libvisio's rendering classification for classic `FillPattern` 2–24.
+enum VsdxHatchStyle { single, double, triple }
+
+@immutable
+class VsdxHatchSpec {
+  const VsdxHatchSpec({
+    required this.style,
+    required this.angleDegrees,
+    required this.distanceInches,
+  });
+
+  final VsdxHatchStyle style;
+  final int angleDegrees;
+  final double distanceInches;
+}
+
+/// Return libvisio's hatch style, angle and spacing for a classic Visio fill.
+/// `null` means the pattern is not one of the built-in hatch ids 2–24.
+VsdxHatchSpec? libvisioHatchSpec(int pattern) {
+  const sparse = 0.1;
+  const dense = 0.05;
+  return switch (pattern) {
+    2 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 45,
+        distanceInches: sparse,
+      ),
+    3 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.double,
+        angleDegrees: 0,
+        distanceInches: sparse,
+      ),
+    4 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.double,
+        angleDegrees: 45,
+        distanceInches: sparse,
+      ),
+    5 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 315,
+        distanceInches: sparse,
+      ),
+    6 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 0,
+        distanceInches: sparse,
+      ),
+    7 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 90,
+        distanceInches: sparse,
+      ),
+    >= 8 && <= 12 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.triple,
+        angleDegrees: 0,
+        distanceInches: dense,
+      ),
+    13 || 19 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 0,
+        distanceInches: dense,
+      ),
+    14 || 20 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 90,
+        distanceInches: dense,
+      ),
+    15 || 21 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 315,
+        distanceInches: dense,
+      ),
+    16 || 22 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.single,
+        angleDegrees: 45,
+        distanceInches: dense,
+      ),
+    17 || 18 || 24 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.triple,
+        angleDegrees: 0,
+        distanceInches: dense,
+      ),
+    23 => const VsdxHatchSpec(
+        style: VsdxHatchStyle.double,
+        angleDegrees: 0,
+        distanceInches: dense,
+      ),
+    _ => null,
+  };
+}
+
+/// Convert classic Visio gradient `FillPattern` ids 25–40 to gradient stops.
+/// This is shared by VSD and VSDX parsing so legacy fills render identically.
+VsdxFill withLibvisioClassicGradient(VsdxFill fill) {
+  final pattern = fill.pattern;
+  if (pattern < 25 || pattern > 40 || fill.hasGradient) return fill;
+
+  VsdxGradientStop stop(
+    double position, {
+    required bool foreground,
+  }) =>
+      VsdxGradientStop(
+        position: position,
+        color: foreground ? fill.foreground : fill.background,
+        themeColorIndex: foreground
+            ? fill.themeForegroundIndex
+            : fill.themeBackgroundIndex,
+        transparency: (foreground
+                ? fill.foregroundTransparency
+                : fill.backgroundTransparency)
+            .clamp(0.0, 1.0),
+      );
+
+  late final VsdxGradient gradient;
+  if (pattern == 26 || pattern == 29) {
+    gradient = VsdxGradient(
+      stops: List.unmodifiable([
+        stop(0, foreground: false),
+        stop(0.5, foreground: true),
+        stop(1, foreground: false),
+      ]),
+      angleRad: pattern == 26 ? 0 : math.pi / 2,
+      dir: 0,
+    );
+  } else if (pattern >= 25 && pattern <= 34) {
+    final drawDegrees = switch (pattern) {
+      25 => 270.0,
+      27 => 90.0,
+      28 => 180.0,
+      30 => 0.0,
+      31 => 225.0,
+      32 => 135.0,
+      33 => 315.0,
+      34 => 45.0,
+      _ => 0.0,
+    };
+    gradient = VsdxGradient(
+      stops: List.unmodifiable([
+        stop(0, foreground: false),
+        stop(1, foreground: true),
+      ]),
+      angleRad: math.pi / 2 - drawDegrees * math.pi / 180,
+      dir: 0,
+    );
+  } else {
+    final dir = switch (pattern) {
+      35 => 10,
+      36 => 1,
+      37 => 3,
+      38 => 5,
+      39 => 7,
+      _ => 4,
+    };
+    gradient = VsdxGradient(
+      stops: List.unmodifiable([
+        stop(0, foreground: true),
+        stop(1, foreground: false),
+      ]),
+      type: pattern == 35
+          ? VsdxGradientType.rectangular
+          : VsdxGradientType.radial,
+      dir: dir,
+    );
+  }
+
+  // Endpoint transparency now lives on each stop. Leaving FillForegndTrans
+  // active would multiply it a second time in SVG/canvas rendering.
+  return VsdxFill(
+    foreground: fill.foreground,
+    background: fill.background,
+    pattern: pattern,
+    themeForegroundIndex: fill.themeForegroundIndex,
+    themeBackgroundIndex: fill.themeBackgroundIndex,
+    gradient: gradient,
+  );
+}
 
 @immutable
 class VsdxFill {
@@ -40,8 +219,8 @@ class VsdxFill {
   final double foregroundTransparency;
   final double backgroundTransparency;
 
-  /// `0` = no fill. `1` = solid. `2–16` = hatch (canvas + SVG). Binary VSD
-  /// gradient ids 25–40 retain their original value and also populate
+  /// `0` = no fill. `1` = solid. `2–24` = libvisio hatch (canvas + SVG).
+  /// Classic gradient ids 25–40 retain their value and also populate
   /// [gradient]. Other ids fall back to solid foreground.
   final int pattern;
 

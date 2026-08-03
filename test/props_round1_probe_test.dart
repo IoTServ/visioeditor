@@ -12,6 +12,25 @@ void main() {
   test('warmUpShared enables hatch when painter has empty builder', () async {
     await PatternFillBuilder.warmUpShared();
     expect(PatternFillBuilder.shared.hasTiles, isTrue);
+    for (var pattern = 2; pattern <= 24; pattern++) {
+      expect(PatternFillBuilder.shared.tileFor(pattern), isNotNull,
+          reason: 'libvisio FillPattern $pattern must have a canvas tile');
+    }
+    expect(
+      PatternFillBuilder.shared.overlayPaintFor(
+        8,
+        foreground: const ui.Color(0xFF000000),
+      ),
+      isNotNull,
+      reason: 'triple hatch needs an independently spaced diagonal layer',
+    );
+    expect(
+      PatternFillBuilder.shared.overlayPaintFor(
+        2,
+        foreground: const ui.Color(0xFF000000),
+      ),
+      isNull,
+    );
     final shape = VsdxShapeFactory.rectangle(
       id: 1,
       pinX: 2,
@@ -47,13 +66,13 @@ void main() {
     final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
     image.dispose();
     expect(bytes, isNotNull);
-    // Horizontal hatch (pattern 2): scan the shape AABB for black ink.
+    // 45-degree hatch (libvisio pattern 2): scan the AABB for black ink.
     final rgba = bytes!.buffer.asUint8List();
     var dark = 0;
     for (var y = 40; y < 120; y++) {
       for (var x = 40; x < 120; x++) {
         final i = (y * 160 + x) * 4;
-        if (rgba[i] < 40 && rgba[i + 1] < 40 && rgba[i + 2] < 40) dark++;
+        if (rgba[i] < 180 && rgba[i + 1] < 180 && rgba[i + 2] < 180) dark++;
       }
     }
     expect(dark, greaterThan(50),

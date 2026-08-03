@@ -1301,6 +1301,9 @@ class VsdxPainter extends CustomPainter {
           canvas.drawPath(path, Paint()..color = bg);
         }
         canvas.drawPath(path, hatch);
+        final overlay =
+            patterns.overlayPaintFor(fill.pattern, foreground: fg);
+        if (overlay != null) canvas.drawPath(path, overlay);
         return;
       }
     }

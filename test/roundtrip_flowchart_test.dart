@@ -802,23 +802,23 @@ void main() {
     expect(diffs, isEmpty, reason: 'edit-session drift:\n${diffs.join('\n')}');
   });
 
-  test('hatch fill patterns, dash-dot lines, and rotate+flip combos round-trip',
+  test('classic fill patterns, dash-dot lines, and rotate+flip combos round-trip',
       () {
     final blank = _writer.emptyDocument(widthInches: 11, heightInches: 8.5);
     final base = _parser.parse(blank);
     var id = 1;
     final shapes = <VsdxShape>[];
 
-    // Hatch fills (pattern > 1) carry both a foreground and background colour.
+    // Hatches 2–24 and classic gradients 25–40 carry both endpoint colours.
     for (final pat in const <int>[2, 10, 25, 40]) {
       shapes.add(VsdxShapeFactory.rectangle(
         id: id, pinX: 1.4 + shapes.length * 1.8, pinY: 6.5,
         width: 1.4, height: 1.0,
-        fill: VsdxFill(
+        fill: withLibvisioClassicGradient(VsdxFill(
           foreground: const VsdxColor(0xFF3949AB),
           background: const VsdxColor(0xFFFFFDE7),
           pattern: pat,
-        ),
+        )),
         line: _line(0xFF1A237E),
       ));
       id++;
