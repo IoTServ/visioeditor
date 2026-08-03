@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:vsdx/src/parser/vsd/vsd_parser.dart'
+    show vsdLibvisioMarkerSizeInches;
 
 Uint8List? _loadSample(String name) {
   // Prefer in-repo fixtures so CI works without third_party/.
@@ -52,6 +54,64 @@ void main() {
       expect(page.shapes.length, greaterThan(10));
       final withGeom = page.shapes.where((s) => s.geometries.isNotEmpty);
       expect(withGeom.length, greaterThan(5));
+    });
+
+    test('FormatLine arrow sizes follow libvisio line-width formula', () {
+      final bytes = _loadSample('Visio11FormatLine.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+      final shapes = <VsdxShape>[];
+      void visit(VsdxShape shape) {
+        shapes.add(shape);
+        for (final child in shape.children) {
+          visit(child);
+        }
+      }
+
+      for (final shape in doc.pages.first.shapes) {
+        visit(shape);
+      }
+      final withArrows = shapes
+          .where((shape) =>
+              shape.line.hasBeginArrow || shape.line.hasEndArrow)
+          .toList();
+      expect(withArrows, isNotEmpty);
+      expect(
+        withArrows.any((shape) =>
+            (shape.line.beginArrowSizeInches - 0.125).abs() > 1e-6 ||
+            (shape.line.endArrowSizeInches - 0.125).abs() > 1e-6),
+        isTrue,
+        reason: 'binary VSD arrows must not all use the VSDX bucket-2 size',
+      );
+      for (final shape in withArrows) {
+        final line = shape.line;
+        if (line.hasBeginArrow) {
+          expect(
+            line.beginArrowSizeInches,
+            closeTo(
+              vsdLibvisioMarkerSizeInches(
+                marker: line.beginArrow,
+                strokeWidthInches: line.weightInches,
+              ),
+              1e-9,
+            ),
+            reason: 'shape ${shape.id} begin marker',
+          );
+        }
+        if (line.hasEndArrow) {
+          expect(
+            line.endArrowSizeInches,
+            closeTo(
+              vsdLibvisioMarkerSizeInches(
+                marker: line.endArrow,
+                strokeWidthInches: line.weightInches,
+              ),
+              1e-9,
+            ),
+            reason: 'shape ${shape.id} end marker',
+          );
+        }
+      }
     });
 
     test('parseVisio synthesises vsdx that reopens', () {

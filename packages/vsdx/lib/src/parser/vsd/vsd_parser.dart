@@ -128,6 +128,30 @@ VsdPagePropsValues vsdNormalizePageProps({
   );
 }
 
+/// Computes the marker width used by libvisio for classic binary VSD lines.
+///
+/// VSD5/6/11 `Line` records contain marker ids but no BeginArrowSize or
+/// EndArrowSize cells. `VSDContentCollector::_lineProperties` therefore sizes
+/// every marker from its id, the unscaled line width and the page drawing
+/// ratio, with a physical 0.05-inch floor.
+double vsdLibvisioMarkerSizeInches({
+  required int marker,
+  required double strokeWidthInches,
+  double pageScale = 1.0,
+}) {
+  final markerScale = switch (marker) {
+    10 || 11 => 0.7,
+    14 || 15 || 16 || 17 || 18 || 22 => 1.2,
+    _ => 1.0,
+  };
+  final width = strokeWidthInches.isFinite ? strokeWidthInches : 0.0;
+  final scale = pageScale.isFinite ? pageScale : 1.0;
+  final computed = scale *
+      markerScale *
+      (0.1 / (width * width + 1.0) + 2.54 * width);
+  return computed < 0.05 ? 0.05 : computed;
+}
+
 /// Formats the time-bearing field codes handled by libvisio.
 ///
 /// Returns `null` when [format] is a date-only or non-date field code.
@@ -2915,6 +2939,18 @@ class VsdBinaryParser {
         pattern: pattern,
         beginArrow: startMarker,
         endArrow: endMarker,
+        beginArrowSizeInches: startMarker == 0
+            ? VsdxLine.defaultLine.beginArrowSizeInches
+            : vsdLibvisioMarkerSizeInches(
+                marker: startMarker,
+                strokeWidthInches: strokeWidth,
+              ),
+        endArrowSizeInches: endMarker == 0
+            ? VsdxLine.defaultLine.endArrowSizeInches
+            : vsdLibvisioMarkerSizeInches(
+                marker: endMarker,
+                strokeWidthInches: strokeWidth,
+              ),
         roundingInches: rounding,
         cap: lineCap == 0
             ? LineCap.round
@@ -2942,6 +2978,18 @@ class VsdBinaryParser {
         pattern: pattern,
         beginArrow: startMarker,
         endArrow: endMarker,
+        beginArrowSizeInches: startMarker == 0
+            ? VsdxLine.defaultLine.beginArrowSizeInches
+            : vsdLibvisioMarkerSizeInches(
+                marker: startMarker,
+                strokeWidthInches: strokeWidth,
+              ),
+        endArrowSizeInches: endMarker == 0
+            ? VsdxLine.defaultLine.endArrowSizeInches
+            : vsdLibvisioMarkerSizeInches(
+                marker: endMarker,
+                strokeWidthInches: strokeWidth,
+              ),
         roundingInches: rounding,
         cap: lineCap == 0
             ? LineCap.round
@@ -5559,6 +5607,20 @@ class VsdBinaryParser {
     d.line = line.copyWith(
       weightInches: line.weightInches * s,
       roundingInches: line.roundingInches * s,
+      beginArrowSizeInches: line.beginArrow == 0
+          ? line.beginArrowSizeInches
+          : vsdLibvisioMarkerSizeInches(
+              marker: line.beginArrow,
+              strokeWidthInches: line.weightInches,
+              pageScale: s,
+            ),
+      endArrowSizeInches: line.endArrow == 0
+          ? line.endArrowSizeInches
+          : vsdLibvisioMarkerSizeInches(
+              marker: line.endArrow,
+              strokeWidthInches: line.weightInches,
+              pageScale: s,
+            ),
     );
     // Shadow offsets are physical source-cell values. VSDContentCollector
     // leaves them unscaled even when page geometry and line widths use
