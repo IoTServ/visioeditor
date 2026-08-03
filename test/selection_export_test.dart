@@ -54,9 +54,13 @@ void main() {
       expect(visualBounds[3]!.right, closeTo(cropped.widthInches - 0.1, 1e-9));
 
       final svg = VsdxToSvgSerializer().serializePage(cropped);
-      expect(svg, contains('selected-back'));
-      expect(svg, contains('selected-f'));
-      expect(svg, contains('ront'));
+      final renderedText = RegExp(r'<tspan\b[^>]*>(.*?)</tspan>')
+          .allMatches(svg)
+          .map((match) => match.group(1))
+          .join();
+      // The narrow front shape may wrap at different glyph boundaries as
+      // metrics improve; concatenated SVG text must retain content and order.
+      expect(renderedText, contains('selected-backselected-front'));
       expect(svg, isNot(contains('ignored')));
     },
   );

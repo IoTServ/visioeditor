@@ -4179,12 +4179,16 @@ class VsdxToSvgSerializer {
       n++;
       // Match canvas / SVG synthetic small-caps (lowercase → 0.78× capitals).
       final chFs = smallCaps && r >= 0x61 && r <= 0x7a ? fs * 0.78 : fs;
-      if (r == 0x20 || r == 0x09) {
-        w += chFs * 0.33;
-      } else if (r >= 0x2E80) {
+      if (r >= 0x2E80) {
         w += chFs; // CJK / wide ideographs
       } else {
-        w += chFs * 0.55;
+        // SVG export cannot query the installed font. A uniform 0.55 em
+        // over-counts narrow glyphs enough to wrap valid Visio labels that
+        // LibreOffice and Canvas keep on one line.
+        final measuredRune = smallCaps && r >= 0x61 && r <= 0x7a
+            ? r - 0x20
+            : r;
+        w += chFs * _latinAdvanceFactor(measuredRune);
       }
     }
     var tracking = style.letterSpacingInches;
@@ -4198,6 +4202,48 @@ class VsdxToSvgSerializer {
       w += tracking * (n - 1);
     }
     return w;
+  }
+
+  /// Neutral Helvetica/Arial glyph advances used only for SVG line breaking.
+  double _latinAdvanceFactor(int rune) {
+    if (rune >= 0x30 && rune <= 0x39) return 0.556;
+    return switch (rune) {
+      0x20 || 0x09 || 0x21 || 0x2c || 0x2e || 0x2f || 0x3a || 0x3b ||
+      0x5c =>
+        0.278,
+      0x22 => 0.355,
+      0x23 || 0x24 || 0x3f || 0x4c || 0x5f => 0.556,
+      0x25 => 0.889,
+      0x26 => 0.667,
+      0x27 => 0.191,
+      0x28 || 0x29 || 0x2d || 0x5b || 0x5d || 0x60 || 0x7b || 0x7d =>
+        0.333,
+      0x2a => 0.389,
+      0x2b || 0x3c || 0x3d || 0x3e || 0x7e => 0.584,
+      0x40 => 1.015,
+      0x41 || 0x42 || 0x45 || 0x4b || 0x50 || 0x53 || 0x56 || 0x58 ||
+      0x59 =>
+        0.667,
+      0x43 || 0x44 || 0x48 || 0x4e || 0x52 || 0x55 => 0.722,
+      0x46 || 0x54 || 0x5a => 0.611,
+      0x47 || 0x4f || 0x51 => 0.778,
+      0x49 => 0.278,
+      0x4a => 0.500,
+      0x4d => 0.833,
+      0x57 => 0.944,
+      0x5e => 0.469,
+      0x61 || 0x62 || 0x64 || 0x65 || 0x67 || 0x68 || 0x6e || 0x6f ||
+      0x70 || 0x71 || 0x75 =>
+        0.556,
+      0x63 || 0x6b || 0x73 || 0x76 || 0x78 || 0x79 || 0x7a => 0.500,
+      0x66 || 0x74 => 0.278,
+      0x69 || 0x6a || 0x6c => 0.222,
+      0x6d => 0.833,
+      0x72 => 0.333,
+      0x77 => 0.722,
+      0x7c => 0.260,
+      _ => 0.55,
+    };
   }
 
   List<({VsdxParaStyle style, List<(String text, VsdxTextRun run)> segs})>

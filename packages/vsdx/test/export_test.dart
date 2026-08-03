@@ -190,6 +190,43 @@ void main() {
     expect(textTags, greaterThanOrEqualTo(3));
   });
 
+  test('SVG uses glyph advances before wrapping Visio angle fields', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 3,
+      pinY: 6,
+      width: 4.192,
+      height: 0.984,
+    ).copyWith(
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'TextField GeometryAngleRadians -0.5236 rad',
+            charStyle: VsdxCharStyle(fontSizeInches: 0.194),
+          ),
+        ],
+        textBlock: VsdxTextBlock(
+          widthInches: 4.192,
+          heightInches: 0.984,
+          marginLeftInches: 0.098,
+          marginRightInches: 0.098,
+        ),
+      ),
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8.27,
+      heightInches: 11.69,
+      shapes: <VsdxShape>[shape],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+
+    expect(RegExp(r'<text\b').allMatches(svg), hasLength(1));
+    expect(svg, contains('GeometryAngleRadians -0.5236 rad'));
+  });
+
   test('SVG FontScale wrap estimate matches emitted letter-spacing', () {
     final shape = VsdxShapeFactory.rectangle(
       id: 1,
