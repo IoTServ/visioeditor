@@ -64,13 +64,32 @@ void main() {
         ],
       ),
     );
+    final pageWithArc = pageWithInfinite.addShape(
+      VsdxShape(
+        id: id + 2,
+        name: 'ArcTo',
+        pinX: 5,
+        pinY: 1.5,
+        width: 2,
+        height: 1,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              ArcTo(x: 2, y: 0, bow: 0.6),
+            ],
+          ),
+        ],
+      ),
+    );
     doc = doc.replacePage(
       0,
-      pageWithInfinite.addShape(
+      pageWithArc.addShape(
         VsdxShape(
-          id: id + 2,
-          name: 'ArcTo',
-          pinX: 5,
+          id: id + 3,
+          name: 'DegenerateEllipticalArcTo',
+          pinX: 2,
           pinY: 1.5,
           width: 2,
           height: 1,
@@ -79,7 +98,14 @@ void main() {
               noFill: true,
               commands: <VsdxPathCommand>[
                 MoveTo(0, 0),
-                ArcTo(x: 2, y: 0, bow: 0.6),
+                EllipticalArcTo(
+                  x: 2,
+                  y: 0,
+                  controlX: 1,
+                  controlY: 1,
+                  angle: 0,
+                  eccentricity: 0,
+                ),
               ],
             ),
           ],
@@ -103,6 +129,11 @@ void main() {
       reopenedCommands.whereType<ArcTo>(),
       hasLength(1),
       reason: 'ArcTo must survive the VSDX writer round-trip',
+    );
+    expect(
+      reopenedCommands.whereType<EllipticalArcTo>(),
+      hasLength(1),
+      reason: 'EllipticalArcTo must survive the VSDX writer round-trip',
     );
     final inputs = <String, Uint8List>{'generated': generated};
     for (final entry in const <(String, String)>[

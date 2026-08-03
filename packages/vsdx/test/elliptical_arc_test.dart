@@ -5,6 +5,32 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   group('sampleEllipticalArc', () {
+    test('zero eccentricity falls back to LineTo like libvisio', () {
+      const end = Offset2D(2, 0);
+      final samples = sampleEllipticalArc(
+        start: const Offset2D(0, 0),
+        end: end,
+        control: const Offset2D(1, 1),
+        angle: 0,
+        eccentricity: 0,
+      );
+
+      expect(samples, const <Offset2D>[end]);
+    });
+
+    test('near-collinear points use libvisio LineTo epsilon', () {
+      const end = Offset2D(2, 0);
+      final samples = sampleEllipticalArc(
+        start: const Offset2D(0, 0),
+        end: end,
+        control: const Offset2D(1, 1e-11),
+        angle: 0,
+        eccentricity: 1,
+      );
+
+      expect(samples, const <Offset2D>[end]);
+    });
+
     test('quarter circle (ecc=1) passes near the control point', () {
       const start = Offset2D(1, 0);
       const end = Offset2D(0, 1);

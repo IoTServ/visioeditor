@@ -22,7 +22,24 @@ List<Offset2D> sampleEllipticalArc({
   required double eccentricity,
   int steps = 16,
 }) {
-  final ecc = eccentricity <= 0 ? 1.0 : eccentricity;
+  // libvisio's collectEllipticalArcTo maps the three points into circle
+  // space by multiplying Y by the eccentricity. At zero eccentricity all
+  // three transformed points are collinear, so the row becomes a LineTo.
+  // Do not reinterpret malformed zero/negative values as a circle: a zero
+  // value has a deterministic libvisio fallback and negative values still
+  // pass through the same source transform.
+  if (eccentricity == 0 ||
+      !eccentricity.isFinite ||
+      !angle.isFinite ||
+      !start.x.isFinite ||
+      !start.y.isFinite ||
+      !end.x.isFinite ||
+      !end.y.isFinite ||
+      !control.x.isFinite ||
+      !control.y.isFinite) {
+    return <Offset2D>[end];
+  }
+  final ecc = eccentricity;
   Offset2D toCircle(Offset2D p) {
     final cosA = math.cos(-angle);
     final sinA = math.sin(-angle);
@@ -96,12 +113,16 @@ List<Offset2D> sampleEllipticalArc({
 (double, double, double)? _circleThrough(Offset2D a, Offset2D b, Offset2D c) {
   final d = 2 *
       (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
-  if (d.abs() < 1e-18) return null;
+  // libvisio uses LIBVISIO_EPSILON (1E-10) on the un-doubled determinant
+  // and emits LineTo for nearly collinear points. Our [d] is twice that
+  // determinant, hence the 2E-10 threshold.
+  if (!d.isFinite || d.abs() <= 2e-10) return null;
   final a2 = a.x * a.x + a.y * a.y;
   final b2 = b.x * b.x + b.y * b.y;
   final c2 = c.x * c.x + c.y * c.y;
   final ux = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d;
   final uy = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d;
   final r = math.sqrt((a.x - ux) * (a.x - ux) + (a.y - uy) * (a.y - uy));
+  if (!ux.isFinite || !uy.isFinite || !r.isFinite) return null;
   return (ux, uy, r);
 }
