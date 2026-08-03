@@ -125,5 +125,6 @@ Uint8List synthesizeVsdx(VsdxDocument doc) {
     for (var i = 1; i < pages.length; i++) pages[i],
   ];
   final edited = doc.copyWith(pages: remapped);
-  return const VsdxWriter().write(originalBytes: empty, edited: edited);
+  return const VsdxWriter(preserveTextBlockCoordinates: true)
+      .write(originalBytes: empty, edited: edited);
 }

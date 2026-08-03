@@ -42,7 +42,16 @@ import '../parser/relationships.dart';
 import '../utils/color.dart';
 
 class VsdxWriter {
-  const VsdxWriter();
+  const VsdxWriter({this.preserveTextBlockCoordinates = false});
+
+  /// Keep negative `TxtPinY` values semantically faithful instead of
+  /// converting them to the equivalent EdrawMax-compatible representation.
+  ///
+  /// Normal editor saves retain the compatibility rewrite. VSD import
+  /// synthesis enables this because its fresh VSDX is the only round-trip
+  /// carrier for binary text-block coordinates and must not discard gaps
+  /// below captions.
+  final bool preserveTextBlockCoordinates;
 
   /// Values within this many inches / radians of the baseline are treated as
   /// unchanged and left alone (preserving any original formula).
@@ -5652,7 +5661,9 @@ class VsdxWriter {
   ) {
     // Rewrite negative TxtPinY to pin@0 + LocPin=TxtHeight so EdrawMax keeps
     // captions below the glyph (it clamps / ignores negative pins).
-    edited = _edrawSafeCaptionBelow(edited);
+    if (!preserveTextBlockCoordinates) {
+      edited = _edrawSafeCaptionBelow(edited);
+    }
     var changed = false;
     changed |= _patchNullableLength(
       el,
@@ -5820,7 +5831,9 @@ class VsdxWriter {
     VsdxShape? shapeForDefaults,
     bool hasLabel = false,
   }) {
-    b = _edrawSafeCaptionBelow(b);
+    if (!preserveTextBlockCoordinates) {
+      b = _edrawSafeCaptionBelow(b);
+    }
     void addLen(String name, double? v, {String? defaultFormula, double? fallback}) {
       var f = _nonInhFormula(formulas[name]) ?? defaultFormula;
       final value = v ?? fallback;

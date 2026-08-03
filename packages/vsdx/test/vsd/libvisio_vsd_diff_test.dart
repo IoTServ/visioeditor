@@ -325,7 +325,68 @@ void _expectSynthesizedShape(
   close(before.endY, after.endY, 'EndY');
   expect(after.richText.plainText, _normalizeText(before.richText.plainText),
       reason: '$reason text');
+  _expectRichText(before.richText, after.richText, reason: reason);
+  expect(after.richText.tabSets, before.richText.tabSets,
+      reason: '$reason tab sets');
   expect(after.fields, before.fields, reason: '$reason dynamic fields');
+  expect(after.hyperlinks, before.hyperlinks, reason: '$reason hyperlinks');
+  expect(after.userProperties, before.userProperties,
+      reason: '$reason shape data');
+  expect(after.userCells, before.userCells, reason: '$reason user cells');
+  expect(after.controls, before.controls, reason: '$reason controls');
+  expect(after.scratch, before.scratch, reason: '$reason scratch rows');
+  expect(after.actions, before.actions, reason: '$reason actions');
+  expect(after.connectionPoints, before.connectionPoints,
+      reason: '$reason connection points');
+  for (final formula in before.formulas.entries) {
+    expect(after.formulas[formula.key], formula.value,
+        reason: '$reason formula ${formula.key}');
+  }
+  expect(after.imagePartName, before.imagePartName,
+      reason: '$reason image relationship');
+  close(before.imgOffsetXInches, after.imgOffsetXInches, 'ImgOffsetX');
+  close(before.imgOffsetYInches, after.imgOffsetYInches, 'ImgOffsetY');
+  close(before.imgWidthInches, after.imgWidthInches, 'ImgWidth');
+  close(before.imgHeightInches, after.imgHeightInches, 'ImgHeight');
+  close(before.imageTransparency, after.imageTransparency, 'Transparency');
+  close(before.imageBlur, after.imageBlur, 'Blur');
+  close(before.imageBrightness, after.imageBrightness, 'Brightness');
+  close(before.imageContrast, after.imageContrast, 'Contrast');
+  expect(after.foreignType, before.foreignType, reason: '$reason ForeignType');
+  if (before.foreignCompressionType != null) {
+    expect(after.foreignCompressionType, before.foreignCompressionType,
+        reason: '$reason CompressionType');
+  }
+  if (before.objType != null) {
+    expect(after.objType, before.objType, reason: '$reason ObjType');
+  }
+  expect(after.resizeMode, before.resizeMode, reason: '$reason ResizeMode');
+  expect(after.eventDblClick, before.eventDblClick,
+      reason: '$reason EventDblClick');
+  expect(after.noAlignBox, before.noAlignBox, reason: '$reason NoAlignBox');
+  expect(after.shapeSplittable, before.shapeSplittable,
+      reason: '$reason ShapeSplittable');
+  expect(after.themeIndex, before.themeIndex, reason: '$reason ThemeIndex');
+  expect(after.quickStyleFillMatrix, before.quickStyleFillMatrix,
+      reason: '$reason QuickStyleFillMatrix');
+  expect(after.quickStyleLineMatrix, before.quickStyleLineMatrix,
+      reason: '$reason QuickStyleLineMatrix');
+  expect(after.quickStyleEffectsMatrix, before.quickStyleEffectsMatrix,
+      reason: '$reason QuickStyleEffectsMatrix');
+  expect(after.quickStyleFontMatrix, before.quickStyleFontMatrix,
+      reason: '$reason QuickStyleFontMatrix');
+  expect(after.isTextEditTarget, before.isTextEditTarget,
+      reason: '$reason IsTextEditTarget');
+  expect(after.dontMoveChildren, before.dontMoveChildren,
+      reason: '$reason DontMoveChildren');
+  expect(after.selectMode, before.selectMode, reason: '$reason SelectMode');
+  expect(after.displayMode, before.displayMode, reason: '$reason DisplayMode');
+  expect(after.masterId, before.masterId, reason: '$reason Master');
+  expect(after.masterShapeId, before.masterShapeId,
+      reason: '$reason MasterShape');
+  expect(after.lineStyleId, before.lineStyleId, reason: '$reason LineStyle');
+  expect(after.fillStyleId, before.fillStyleId, reason: '$reason FillStyle');
+  expect(after.textStyleId, before.textStyleId, reason: '$reason TextStyle');
   expect(after.fill.pattern, before.fill.pattern,
       reason: '$reason fill pattern');
   expect(after.fill.foreground, before.fill.foreground,
@@ -345,6 +406,21 @@ void _expectSynthesizedShape(
       reason: '$reason begin arrow');
   expect(after.line.endArrow, before.line.endArrow,
       reason: '$reason end arrow');
+  expect(after.shadow.enabled, before.shadow.enabled,
+      reason: '$reason shadow enabled');
+  expect(after.shadow.pattern, before.shadow.pattern,
+      reason: '$reason shadow pattern');
+  expect(after.shadow.color, before.shadow.color,
+      reason: '$reason shadow color');
+  expect(after.shadow.themeColorIndex, before.shadow.themeColorIndex,
+      reason: '$reason shadow theme color');
+  close(before.shadow.offsetXInches, after.shadow.offsetXInches,
+      'ShadowOffsetX');
+  close(before.shadow.offsetYInches, after.shadow.offsetYInches,
+      'ShadowOffsetY');
+  close(before.shadow.blurInches, after.shadow.blurInches, 'ShadowBlur');
+  close(before.shadow.transparency, after.shadow.transparency,
+      'ShadowTransparency');
   expect(after.geometries.length, before.geometries.length,
       reason: '$reason geometry sections');
   for (var i = 0; i < before.geometries.length; i++) {
@@ -359,6 +435,124 @@ void _expectSynthesizedShape(
         reason: '$reason Geometry[$i] command topology');
   }
 }
+
+void _expectRichText(
+  VsdxRichText before,
+  VsdxRichText after, {
+  required String reason,
+}) {
+  void close(double? a, double? b, String field) {
+    if (a == null || b == null) {
+      expect(b, a, reason: '$reason $field');
+    } else {
+      expect(b, closeTo(a, 1e-8), reason: '$reason $field');
+    }
+  }
+
+  final a = before.textBlock;
+  final b = after.textBlock;
+  if (a.pinXInches != null) close(a.pinXInches, b.pinXInches, 'TxtPinX');
+  if (a.pinYInches != null) close(a.pinYInches, b.pinYInches, 'TxtPinY');
+  if (a.locPinXInches != null) {
+    close(a.locPinXInches, b.locPinXInches, 'TxtLocPinX');
+  }
+  if (a.locPinYInches != null) {
+    close(a.locPinYInches, b.locPinYInches, 'TxtLocPinY');
+  }
+  if (a.widthInches != null) close(a.widthInches, b.widthInches, 'TxtWidth');
+  if (a.heightInches != null) {
+    close(a.heightInches, b.heightInches, 'TxtHeight');
+  }
+  close(a.angleRad, b.angleRad, 'TxtAngle');
+  expect(b.verticalAlign, a.verticalAlign,
+      reason: '$reason VerticalAlign');
+  close(a.marginLeftInches, b.marginLeftInches, 'LeftMargin');
+  close(a.marginRightInches, b.marginRightInches, 'RightMargin');
+  close(a.marginTopInches, b.marginTopInches, 'TopMargin');
+  close(a.marginBottomInches, b.marginBottomInches, 'BottomMargin');
+  expect(b.hideText, a.hideText, reason: '$reason HideText');
+  expect(b.backgroundColor, a.backgroundColor,
+      reason: '$reason TextBkgnd');
+  close(a.backgroundTransparency, b.backgroundTransparency,
+      'TextBkgndTrans');
+  expect(b.textDirection, a.textDirection, reason: '$reason TextDirection');
+  close(a.defaultTabStopInches, b.defaultTabStopInches, 'DefaultTabStop');
+
+  expect(after.runs, hasLength(before.runs.length),
+      reason: '$reason text run count');
+  for (var i = 0; i < before.runs.length; i++) {
+    final ar = before.runs[i];
+    final br = after.runs[i];
+    expect(br.text, _normalizeText(ar.text), reason: '$reason run $i text');
+    expect(br.fieldSpans, ar.fieldSpans,
+        reason: '$reason run $i field spans');
+    expect(br.tabIndices, ar.tabIndices,
+        reason: '$reason run $i tab indices');
+
+    final ac = ar.charStyle;
+    final bc = br.charStyle;
+    expect(bc.fontFamily, ac.fontFamily,
+        reason: '$reason run $i font family');
+    close(ac.fontSizeInches, bc.fontSizeInches, 'run $i font size');
+    expect(bc.style.bold, ac.style.bold, reason: '$reason run $i bold');
+    expect(bc.style.italic, ac.style.italic, reason: '$reason run $i italic');
+    expect(bc.style.smallCaps, ac.style.smallCaps,
+        reason: '$reason run $i small caps');
+    expect(bc.color, ac.color, reason: '$reason run $i color');
+    expect(bc.themeColorIndex, ac.themeColorIndex,
+        reason: '$reason run $i theme color');
+    expect(bc.underline, ac.underline,
+        reason: '$reason run $i underline');
+    expect(bc.strikethrough, ac.strikethrough,
+        reason: '$reason run $i strikethrough');
+    expect(bc.doubleUnderline, ac.doubleUnderline,
+        reason: '$reason run $i double underline');
+    expect(bc.doubleStrikethrough, ac.doubleStrikethrough,
+        reason: '$reason run $i double strikethrough');
+    expect(bc.overline, ac.overline, reason: '$reason run $i overline');
+    close(ac.transparency, bc.transparency, 'run $i transparency');
+    close(ac.letterSpacingInches, bc.letterSpacingInches,
+        'run $i letter spacing');
+    expect(bc.position, ac.position, reason: '$reason run $i position');
+    expect(bc.textCase, ac.textCase, reason: '$reason run $i case');
+    close(ac.fontScale, bc.fontScale, 'run $i font scale');
+    expect(bc.asianFont, ac.asianFont,
+        reason: '$reason run $i AsianFont');
+    expect(bc.complexScriptFont, ac.complexScriptFont,
+        reason: '$reason run $i ComplexScriptFont');
+    expect(bc.langId, ac.langId, reason: '$reason run $i LangID');
+    close(ac.complexScriptSizeInches, bc.complexScriptSizeInches,
+        'run $i ComplexScriptSize');
+
+    final ap = ar.paraStyle;
+    final bp = br.paraStyle;
+    expect(bp.horizontalAlign, ap.horizontalAlign,
+        reason: '$reason run $i HorzAlign');
+    close(ap.indentFirstInches, bp.indentFirstInches, 'run $i IndFirst');
+    close(ap.indentLeftInches, bp.indentLeftInches, 'run $i IndLeft');
+    close(ap.indentRightInches, bp.indentRightInches, 'run $i IndRight');
+    close(ap.spaceBeforeInches, bp.spaceBeforeInches, 'run $i SpBefore');
+    close(ap.spaceAfterInches, bp.spaceAfterInches, 'run $i SpAfter');
+    close(ap.lineSpacing, bp.lineSpacing, 'run $i SpLine');
+    close(ap.lineSpacingAbsoluteInches, bp.lineSpacingAbsoluteInches,
+        'run $i absolute SpLine');
+    expect(bp.lineSpacingSolid, ap.lineSpacingSolid,
+        reason: '$reason run $i solid SpLine');
+    expect(bp.bullet, ap.bullet, reason: '$reason run $i Bullet');
+    expect(_nullIfEmpty(bp.bulletStr), _nullIfEmpty(ap.bulletStr),
+        reason: '$reason run $i BulletStr');
+    expect(_nullIfEmpty(bp.bulletFont), _nullIfEmpty(ap.bulletFont),
+        reason: '$reason run $i BulletFont');
+    close(ap.bulletFontSizeInches, bp.bulletFontSizeInches,
+        'run $i BulletFontSize');
+    close(ap.textPosAfterBulletInches, bp.textPosAfterBulletInches,
+        'run $i TextPosAfterBullet');
+    expect(bp.flags, ap.flags, reason: '$reason run $i Flags');
+  }
+}
+
+String? _nullIfEmpty(String? value) =>
+    value == null || value.isEmpty ? null : value;
 
 double _roundHalfPoint(double value) => (value * 2).round() / 2;
 
