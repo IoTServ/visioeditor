@@ -726,7 +726,13 @@ class GeometryParser {
   String? _cellValue(XmlElement row, String name) {
     for (final el in row.childElements) {
       if (el.name.local == 'Cell' && el.getAttribute('N') == name) {
-        return el.getAttribute('F') ?? el.getAttribute('V');
+        // libvisio VSDXParser::readStringData consumes the evaluated V cache,
+        // not F. This matters for guarded/referenced formulas whose F text is
+        // not itself a literal POLYLINE/NURBS payload. Keep accepting F-only
+        // producer output as a recovery fallback when V is absent or empty.
+        final cached = el.getAttribute('V');
+        if (cached != null && cached.trim().isNotEmpty) return cached;
+        return el.getAttribute('F');
       }
     }
     return null;

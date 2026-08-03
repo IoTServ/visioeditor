@@ -219,6 +219,49 @@ void main() {
       expect(g.commands.whereType<NurbsTo>().single.degree, 9);
     });
 
+    test('POLYLINE and NURBS prefer libvisio evaluated V caches over F', () {
+      final g = parseGeom(
+        '<Row IX="1" T="PolylineTo"><Cell N="X" V="4"/>'
+        '<Cell N="Y" V="0"/><Cell N="A" '
+        'V="POLYLINE(1,1,1,1,3,1)" '
+        'F="GUARD(POLYLINE(0,0,9,9))"/></Row>'
+        '<Row IX="2" T="NURBSTo"><Cell N="X" V="4"/>'
+        '<Cell N="Y" V="0"/><Cell N="E" '
+        'V="NURBS(1,2,1,1,1,1,0,1,3,1,1,1)" '
+        'F="GUARD(NURBS(9,8,0,0,9,9,9,9))"/></Row>',
+      );
+
+      final polyline = g.commands.whereType<PolylineTo>().single;
+      expect(
+        polyline.vertices,
+        const <Offset2D>[Offset2D(1, 1), Offset2D(3, 1)],
+      );
+      expect(polyline.vertsRelative, isFalse);
+      expect(polyline.vertsYRelative, isFalse);
+
+      final nurbs = g.commands.whereType<NurbsTo>().single;
+      expect(nurbs.degree, 2);
+      expect(
+        nurbs.controlPoints,
+        const <Offset2D>[Offset2D(1, 1), Offset2D(3, 1)],
+      );
+      expect(nurbs.cpRelative, isFalse);
+      expect(nurbs.cpYRelative, isFalse);
+    });
+
+    test('formula payload remains a fallback for empty V caches', () {
+      final g = parseGeom(
+        '<Row IX="1" T="PolylineTo"><Cell N="X" V="2"/>'
+        '<Cell N="Y" V="0"/><Cell N="A" V="" '
+        'F="POLYLINE(1,1,1,1)"/></Row>',
+      );
+
+      expect(
+        g.commands.whereType<PolylineTo>().single.vertices,
+        const <Offset2D>[Offset2D(1, 1)],
+      );
+    });
+
     test('NoFill F=Inh ignores stale V= (default false without master)', () {
       final g = parseGeom(
         '<Cell N="NoFill" V="1" F="Inh"/>'

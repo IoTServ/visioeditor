@@ -159,6 +159,31 @@ Uint8List _textBooleanPackage({bool hideText = false}) {
   );
 }
 
+Uint8List _cachedGeometryFormulaPackage() => _rewritePackage(
+      const VsdxWriter().emptyDocument(),
+      const <String, Map<String, String>>{
+        'visio/pages/page1.xml': <String, String>{
+          '<Shapes/>': '<Shapes>'
+              '<Shape ID="1" NameU="CachedGeometry">'
+              '<Cell N="PinX" V="3"/><Cell N="PinY" V="3"/>'
+              '<Cell N="Width" V="4"/><Cell N="Height" V="2"/>'
+              '<Cell N="LocPinX" V="2"/><Cell N="LocPinY" V="1"/>'
+              '<Cell N="LinePattern" V="1"/>'
+              '<Section N="Geometry" IX="0">'
+              '<Cell N="NoFill" V="1"/>'
+              '<Row T="MoveTo" IX="1">'
+              '<Cell N="X" V="0"/><Cell N="Y" V="0"/>'
+              '</Row><Row T="PolylineTo" IX="2">'
+              '<Cell N="X" V="4"/><Cell N="Y" V="0"/>'
+              '<Cell N="A" V="POLYLINE(1,1,1,1,3,1)" '
+              'F="GUARD(POLYLINE(0,0,9,9))"/>'
+              '</Row></Section>'
+              '<Text>CACHE_GEOMETRY</Text>'
+              '</Shape></Shapes>',
+        },
+      },
+    );
+
 void main() {
   test('Page uses display Name, XML true, and ignores rows without ID', () {
     final bytes = _rewritePackage(
@@ -489,6 +514,32 @@ void main() {
     // librevenge's SVG generator does not serialize libvisio's draw:display
     // property, so visibility itself is covered by the parsed model assertion.
     expect(pages.single, contains('LAYER_INH_CACHE'));
+  }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
+
+  test('guarded geometry payload uses the same V cache as libvisio', () {
+    final bytes = _cachedGeometryFormulaPackage();
+    final shape =
+        const DocumentParser().parse(bytes).pages.single.shapes.single;
+    final polyline =
+        shape.geometries.single.commands.whereType<PolylineTo>().single;
+    expect(
+      polyline.vertices,
+      const <Offset2D>[Offset2D(1, 1), Offset2D(3, 1)],
+    );
+
+    final pages = oracle!.svgPages(bytes);
+    expect(pages, isNotNull);
+    expect(pages, hasLength(1));
+    expect(pages!.single, contains('CACHE_GEOMETRY'));
+    final paths = RegExp(r'<(?:\w+:)?path\b[^>]*\bd="([^"]+)"')
+        .allMatches(pages.single)
+        .map((match) => match.group(1)!)
+        .toList(growable: false);
+    expect(
+      paths.any((path) => RegExp(r'(?:^|\s)L').allMatches(path).length >= 3),
+      isTrue,
+      reason: 'libvisio must render both cached interior vertices: $paths',
+    );
   }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
 
   test('text boolean spellings remain parseable by the libvisio oracle', () {
