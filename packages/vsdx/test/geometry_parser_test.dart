@@ -556,6 +556,30 @@ void main() {
       expect(lt.x, closeTo(3.543307, 1e-4));
       expect(lt.y, closeTo(0.787401, 1e-4));
     });
+
+    test('root master instance keeps resized F=Inh geometry cache', () {
+      final fixture = File(
+        '../../third_party/libvisio/src/test/data/testfile3.vsdx',
+      );
+      expect(fixture.existsSync(), isTrue);
+      final doc = const DocumentParser().parse(fixture.readAsBytesSync());
+      final shape = doc.pages.first.findShapeById(1)!;
+      final commands = shape.geometries.single.commands;
+
+      expect(commands, hasLength(5));
+      final move = commands[0] as MoveTo;
+      final line = commands[1] as LineTo;
+      final rightArc = commands[2] as EllipticalArcTo;
+      final leftArc = commands[4] as EllipticalArcTo;
+      expect(move.x, closeTo(0.5905511811, 1e-9));
+      expect(line.x, closeTo(2.3622047244, 1e-9));
+      expect(rightArc.x, closeTo(2.3622047244, 1e-9));
+      expect(rightArc.y, closeTo(1.1811023622, 1e-9));
+      expect(rightArc.controlX, closeTo(shape.width, 1e-9));
+      expect(rightArc.controlY, closeTo(shape.height / 2, 1e-9));
+      expect(leftArc.controlX, closeTo(0, 1e-9));
+      expect(leftArc.controlY, closeTo(shape.height / 2, 1e-9));
+    });
   });
 
   group('syncGeometryNoLine hit-box restore', () {

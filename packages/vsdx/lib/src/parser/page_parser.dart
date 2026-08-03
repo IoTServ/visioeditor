@@ -270,7 +270,10 @@ class PageParser {
       geometries = GeometryParser.mergeInherited(
         proto.geometries,
         geometries,
-        preferInstanceCachedInh: masterShapeId != null,
+        // libvisio's VSDXMLParserBase reads Geometry V= directly even when
+        // F="Inh". The value is Visio's instance-sized formula cache; using
+        // the master's cached coordinate distorts resized master instances.
+        preferInstanceCachedInh: true,
       );
     }
 
