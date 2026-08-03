@@ -41,7 +41,7 @@ List<Offset2D> sampleVisioSpline({
     controlPoints: cps,
     weights: List<double>.filled(cps.length + 2, 1.0),
     knots: knotVec,
-    degree: head.degree.clamp(1, 7),
+    degree: head.degree,
     samples: samples,
   );
 }

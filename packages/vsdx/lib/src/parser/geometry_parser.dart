@@ -672,7 +672,10 @@ class GeometryParser {
     final nums = _extractFormulaArgs(raw, 'NURBS');
     if (nums.length < 4) return _NurbsArgs.empty;
     final knotLast = nums[0];
-    final degree = nums[1].toInt().clamp(1, 7);
+    // Preserve the authored value for lossless round-trip. libvisio applies
+    // its degree-8 safety cap in VSDContentCollector::collectNURBSTo, not in
+    // the XML parser; our shared renderer does the same in sampleNurbs.
+    final degree = nums[1].toInt();
     final xType = nums[2].toInt();
     final yType = nums[3].toInt();
     final points = <Offset2D>[];

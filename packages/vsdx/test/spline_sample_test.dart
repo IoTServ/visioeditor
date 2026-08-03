@@ -5,6 +5,56 @@ import 'package:vsdx/vsdx.dart';
 
 void main() {
   group('sampleVisioSpline', () {
+    test('preserves libvisio-supported degree 8', () {
+      const start = Offset2D(0, 0);
+      const head = SplineStart(
+        x: 1,
+        y: 1,
+        a: 0,
+        b: 0,
+        c: 1,
+        degree: 8,
+      );
+      final knots = <SplineKnot>[
+        for (var i = 0; i < 8; i++)
+          SplineKnot(
+            x: i + 2,
+            y: i.isEven ? -1 : 1,
+            knot: (i + 1) / 9,
+          ),
+      ];
+      final knotVector = <double>[
+        head.b,
+        head.a,
+        for (final knot in knots) knot.knot,
+        head.c,
+      ];
+      final controlPoints = <Offset2D>[
+        Offset2D(head.x, head.y),
+        for (final knot in knots.take(knots.length - 1))
+          Offset2D(knot.x, knot.y),
+      ];
+      final expected = sampleNurbs(
+        start: start,
+        end: Offset2D(knots.last.x, knots.last.y),
+        controlPoints: controlPoints,
+        weights: List<double>.filled(controlPoints.length + 2, 1),
+        knots: knotVector,
+        degree: 8,
+        samples: 16,
+      );
+
+      expect(
+        sampleVisioSpline(
+          start: start,
+          head: head,
+          knots: knots,
+          samples: 16,
+        ),
+        expected,
+      );
+    });
+
     test('assembles knots like libvisio and stays near the control polygon', () {
       // MoveTo(0,0) + SplineStart(1,1) + SplineKnot(2,0) + SplineKnot(3,1)
       const start = Offset2D(0, 0);
@@ -55,6 +105,48 @@ void main() {
   });
 
   group('sampleNurbs', () {
+    test('caps degree at libvisio maximum 8', () {
+      const start = Offset2D(0, 0);
+      const end = Offset2D(9, 0);
+      const controls = <Offset2D>[
+        Offset2D(1, 1),
+        Offset2D(2, -1),
+        Offset2D(3, 1),
+        Offset2D(4, -1),
+        Offset2D(5, 1),
+        Offset2D(6, -1),
+        Offset2D(7, 1),
+        Offset2D(8, -1),
+      ];
+      final degree8 = sampleNurbs(
+        start: start,
+        end: end,
+        controlPoints: controls,
+        degree: 8,
+        samples: 16,
+      );
+
+      expect(
+        sampleNurbs(
+          start: start,
+          end: end,
+          controlPoints: controls,
+          degree: 9,
+          samples: 16,
+        ),
+        degree8,
+      );
+      expect(
+        sampleNurbs(
+          start: start,
+          end: end,
+          controlPoints: controls,
+          degree: 0,
+        ),
+        const <Offset2D>[end],
+      );
+    });
+
     test('last sample snaps to the authored endpoint', () {
       final pts = sampleNurbs(
         start: const Offset2D(0, 0),

@@ -209,6 +209,16 @@ void main() {
       expect(g.noShow, isTrue);
     });
 
+    test('NURBSTo preserves authored degree above renderer cap', () {
+      final g = parseGeom(
+        '<Row IX="1" T="NURBSTo"><Cell N="X" V="9"/>'
+        '<Cell N="Y" V="0"/>'
+        '<Cell N="E" V="NURBS(1, 9, 1, 1, 1, 1, 0, 1)"/></Row>',
+      );
+
+      expect(g.commands.whereType<NurbsTo>().single.degree, 9);
+    });
+
     test('NoFill F=Inh ignores stale V= (default false without master)', () {
       final g = parseGeom(
         '<Cell N="NoFill" V="1" F="Inh"/>'

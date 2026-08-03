@@ -22,24 +22,39 @@ List<Offset2D> sampleNurbs({
   int degree = 3,
   int samples = 32,
 }) {
+  final effectiveDegree = visioNurbsDegree(degree);
+  // A zero degree reaches libvisio's endpoint LineTo after its curve
+  // generator rejects the spline. Negative degrees are foreign/corrupt input
+  // (the binary value is unsigned) and use the same safe fallback.
+  if (effectiveDegree == 0) return <Offset2D>[end];
   final cps = <Offset2D>[start, ...controlPoints, end];
   final wts = _resolveWeights(cps.length, controlPoints.length, weights);
   final n = cps.length - 1;
-  if (n < degree) {
+  if (n < effectiveDegree) {
     return <Offset2D>[for (var i = 1; i <= n; i++) cps[i]];
   }
-  final fullKnots = _resolveKnots(cps.length, degree, knots);
-  final tMin = fullKnots[degree];
+  final fullKnots = _resolveKnots(cps.length, effectiveDegree, knots);
+  final tMin = fullKnots[effectiveDegree];
   final tMax = fullKnots[n + 1];
   final out = <Offset2D>[];
   for (var s = 1; s <= samples; s++) {
     final t = tMin + (tMax - tMin) * s / samples;
-    out.add(deBoorNurbs(cps, wts, fullKnots, degree, t));
+    out.add(deBoorNurbs(cps, wts, fullKnots, effectiveDegree, t));
   }
   // de Boor at tMax is numerically ≈ end; snap so pen / arrows / glue land
   // on the authored endpoint rather than a float residual.
   if (out.isNotEmpty) out[out.length - 1] = end;
   return out;
+}
+
+/// Normalize a Visio NURBS degree like libvisio `collectNURBSTo`.
+///
+/// Valid VSD/VSDX values are unsigned. libvisio caps them at
+/// `MAX_ALLOWED_NURBS_DEGREE` (8); non-positive model values use the
+/// endpoint-only fallback in [sampleNurbs].
+int visioNurbsDegree(int degree) {
+  if (degree <= 0) return 0;
+  return degree > 8 ? 8 : degree;
 }
 
 List<double> _resolveWeights(

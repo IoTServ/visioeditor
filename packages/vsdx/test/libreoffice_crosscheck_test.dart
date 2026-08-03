@@ -109,27 +109,66 @@ void main() {
         ],
       ),
     );
+    final pageWithDegenerateEllipse = pageWithDegenerateArc.addShape(
+      VsdxShape(
+        id: id + 4,
+        name: 'DegenerateEllipse',
+        pinX: 4,
+        pinY: 4,
+        width: 2,
+        height: 2,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              EllipseCmd(
+                cx: 1,
+                cy: 1,
+                aX: 1,
+                aY: 1,
+                bX: 1,
+                bY: 2,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
     doc = doc.replacePage(
       0,
-      pageWithDegenerateArc.addShape(
+      pageWithDegenerateEllipse.addShape(
         VsdxShape(
-          id: id + 4,
-          name: 'DegenerateEllipse',
-          pinX: 4,
-          pinY: 4,
-          width: 2,
-          height: 2,
+          id: id + 5,
+          name: 'HighDegreeNURBS',
+          pinX: 5.5,
+          pinY: 6.5,
+          width: 9,
+          height: 1,
           geometries: const <VsdxGeometry>[
             VsdxGeometry(
               noFill: true,
               commands: <VsdxPathCommand>[
-                EllipseCmd(
-                  cx: 1,
-                  cy: 1,
-                  aX: 1,
-                  aY: 1,
-                  bX: 1,
-                  bY: 2,
+                MoveTo(0, 0.5),
+                NurbsTo(
+                  x: 9,
+                  y: 0.5,
+                  controlPoints: <Offset2D>[
+                    Offset2D(1, 1),
+                    Offset2D(2, 0),
+                    Offset2D(3, 1),
+                    Offset2D(4, 0),
+                    Offset2D(5, 1),
+                    Offset2D(6, 0),
+                    Offset2D(7, 1),
+                    Offset2D(8, 0),
+                  ],
+                  weights: <double>[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                  knots: <double>[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0.5,
+                    1, 1, 1, 1, 1, 1, 1, 1, 1,
+                  ],
+                  degree: 9,
                 ),
               ],
             ),
@@ -164,6 +203,11 @@ void main() {
       reopenedCommands.whereType<EllipseCmd>(),
       hasLength(1),
       reason: 'Ellipse must survive the VSDX writer round-trip',
+    );
+    expect(
+      reopenedCommands.whereType<NurbsTo>().single.degree,
+      9,
+      reason: 'NURBSTo degree must survive the VSDX writer round-trip',
     );
     final inputs = <String, Uint8List>{'generated': generated};
     for (final entry in const <(String, String)>[
