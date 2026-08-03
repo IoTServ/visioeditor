@@ -1012,6 +1012,26 @@ void main() {
     );
   });
 
+  test('SVG arrow 23 keeps libvisio oblique stroke and centred stem', () {
+    final writer = VsdxWriter();
+    var doc = parser.parse(writer.emptyDocument());
+    final page = doc.pages.first;
+    doc = doc.replacePage(
+      0,
+      page.addShape(
+        VsdxShapeFactory.line(
+          id: page.nextFreeShapeId(),
+          ax: 1,
+          ay: 1,
+          bx: 3,
+          by: 1,
+        ).copyWith(line: const VsdxLine(endArrow: 23)),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('d="M 0 9 L 10 1 M 5 0 V 10" fill="none"'));
+  });
+
   test('SVG arrows 27/28/29/33 match libvisio ER/circle styles', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

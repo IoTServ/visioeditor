@@ -55,6 +55,14 @@ void main() {
     expect(diamond.path.getBounds().width, greaterThan(0.9));
   });
 
+  test('id 23 keeps libvisio oblique stroke and centred stem', () {
+    final marker = arrowDescriptor(23)!;
+    final bounds = marker.path.getBounds();
+    expect(marker.filled, isFalse);
+    expect(bounds.width, closeTo(1, 0.02));
+    expect(bounds.height, closeTo(1, 0.02));
+  });
+
   test('libvisio TODO aliases keep their upstream marker paths', () {
     expect(arrowDescriptor(40)!.filled, isTrue);
     for (final id in <int>[43, 44, 45]) {

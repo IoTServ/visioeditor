@@ -228,8 +228,10 @@ ArrowDescriptor _openSquare() {
 }
 
 ArrowDescriptor _backslash() {
-  // Single hash stroke crossing the line (used by some database connectors).
+  // libvisio marker 23: oblique stroke plus the full centred stem.
   final p = Path()
+    ..moveTo(-1, 0.5)
+    ..lineTo(0, -0.5)
     ..moveTo(-0.5, -0.5)
     ..lineTo(-0.5, 0.5);
   return ArrowDescriptor(path: p, filled: false);

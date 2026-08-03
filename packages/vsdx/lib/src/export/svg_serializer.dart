@@ -2761,7 +2761,7 @@ class VsdxToSvgSerializer {
         ),
       21 => ('M 0 1 H 10 V 9 H 0 Z', false),
       22 => ('M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z', false),
-      23 => ('M 5 1 V 9', false),
+      23 => ('M 0 9 L 10 1 M 5 0 V 10', false), // oblique single line
       24 => ('M 7 1 V 9', false),
       25 => ('M 7 1 V 9 M 4.5 1 V 9', false),
       26 => ('M 7 1 V 9 M 4.5 1 V 9', false),
@@ -2853,6 +2853,7 @@ class VsdxToSvgSerializer {
       'M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z' => 'M 10 5 L 5 1.5 L 0 5 L 5 8.5 Z',
       'M 0 1 H 10 V 9 H 0 Z' => d, // square tip-edge at both ends via orient
       'M 5 1 V 9' => d,
+      'M 0 9 L 10 1 M 5 0 V 10' => 'M 10 9 L 0 1 M 5 0 V 10',
       'M 7 1 V 9' => 'M 3 1 V 9',
       'M 7 1 V 9 M 4.5 1 V 9' => 'M 3 1 V 9 M 5.5 1 V 9',
       'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9' =>
