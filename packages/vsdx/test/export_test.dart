@@ -691,7 +691,7 @@ void main() {
     expect(svg, isNot(contains('#ff00ff')));
   });
 
-  test('SVG stroke-linecap follows LineCap', () {
+  test('SVG stroke cap and default join follow libvisio LineCap mapping', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -706,6 +706,16 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('stroke-linecap="square"'));
+    expect(svg, contains('stroke-linejoin="miter"'));
+
+    final roundPage = doc.pages.first.copyWith(
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.line(id: id + 1, ax: 1, ay: 2, bx: 3, by: 2),
+      ],
+    );
+    final roundSvg = VsdxToSvgSerializer().serializePage(roundPage);
+    expect(roundSvg, contains('stroke-linecap="round"'));
+    expect(roundSvg, contains('stroke-linejoin="round"'));
   });
 
   test('SVG open arrow markers use stroke-linecap round', () {

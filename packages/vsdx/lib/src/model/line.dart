@@ -76,15 +76,16 @@ class VsdxLine {
   /// changes instead of scaling with the stroke width.
   final bool fixedDash;
 
-  /// draw.io/SVG stroke join override. `null` preserves the historical Visio
-  /// fallback: rounded geometry uses a round join, otherwise miter.
+  /// draw.io/SVG stroke join override. `null` follows Visio/libvisio's
+  /// LineCap-derived fallback: round caps use round joins, while square and
+  /// extended caps use miter joins.
   final VsdxLineJoin? join;
 
   /// SVG/Canvas miter ratio. draw.io defaults to 4 and exposes values >= 1.
   final double miterLimit;
 
   VsdxLineJoin get effectiveJoin =>
-      join ?? (roundingInches > 0 ? VsdxLineJoin.round : VsdxLineJoin.miter);
+      join ?? (cap == LineCap.round ? VsdxLineJoin.round : VsdxLineJoin.miter);
 
   /// `SoftEdgesSize` — soft-edge blur radius in inches (`0` ⇒ none).
   final double softEdgesInches;

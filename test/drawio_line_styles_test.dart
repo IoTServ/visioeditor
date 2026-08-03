@@ -55,7 +55,7 @@ void main() {
       value.setLineJoin(VsdxLineJoin.miterClip);
       expect(value.selectedLineJoin, VsdxLineJoin.miterClip);
       value.undo();
-      expect(value.selectedLineJoin, VsdxLineJoin.miter);
+      expect(value.selectedLineJoin, VsdxLineJoin.round);
       value.redo();
       value.setLineMiterLimit(9);
 
@@ -126,6 +126,18 @@ void main() {
     expect(
       canvasStrokeJoin(const VsdxLine(join: VsdxLineJoin.bevel)),
       StrokeJoin.bevel,
+    );
+    expect(
+      canvasStrokeJoin(const VsdxLine(cap: LineCap.round)),
+      StrokeJoin.round,
+    );
+    expect(
+      canvasStrokeJoin(const VsdxLine(cap: LineCap.square)),
+      StrokeJoin.miter,
+    );
+    expect(
+      canvasStrokeJoin(const VsdxLine(cap: LineCap.extended)),
+      StrokeJoin.miter,
     );
   });
 
