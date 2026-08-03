@@ -5496,6 +5496,12 @@ class VsdBinaryParser {
             pageScaleUnit: 'IN',
             drawingScale: 1,
             drawingScaleUnit: _visioUnitToken(p.drawingScaleUnit) ?? 'IN',
+            // Binary libvisio only announces PageSheet boundaries; it does
+            // not expose PageLayout/LineJump cells to the drawing collector.
+            // LibreOffice therefore renders ordinary crossing strokes. Mark
+            // jumps off explicitly so the editor's unset=enabled UI default
+            // cannot invent arcs while importing classic VSD pages.
+            lineJumpCode: 0,
           ),
         ),
       );

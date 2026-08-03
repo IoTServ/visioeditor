@@ -2692,7 +2692,7 @@ class VsdxToSvgSerializer {
       }
     }
     final paint = '$strokePaint '
-        'stroke-width="${_n(weight)}" stroke-linecap="$linecap" '
+        'stroke-width="${_strokeN(weight)}" stroke-linecap="$linecap" '
         'stroke-linejoin="$linejoin"$miterAttr'
         '${dash.isEmpty ? '' : ' stroke-dasharray="$dash"'}';
     return (paint: paint, markers: markers.toString());
@@ -2925,7 +2925,11 @@ class VsdxToSvgSerializer {
   String _dashAttr(VsdxLine line) {
     return effectiveDashArrayAttr(
       line,
-      format: _n,
+      // A classic VSD hairline can be 0.00025in wide and its dash cells can
+      // be equally small. Coordinate precision is intentionally compact, but
+      // rounding paint dimensions to three decimals changes these positive
+      // values into SVG zeroes and invokes renderer-specific hairline rules.
+      format: _strokeN,
     );
   }
 
@@ -4612,6 +4616,15 @@ class VsdxToSvgSerializer {
     if (v == v.truncateToDouble()) return v.toStringAsFixed(0);
     return v
         .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  String _strokeN(double v) {
+    if (v.isNaN || v.isInfinite) return '0';
+    if (v == v.truncateToDouble()) return v.toStringAsFixed(0);
+    return v
+        .toStringAsFixed(6)
         .replaceFirst(RegExp(r'0+$'), '')
         .replaceFirst(RegExp(r'\.$'), '');
   }

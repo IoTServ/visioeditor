@@ -164,6 +164,8 @@ void main() {
       expect(doc.pages, isNotEmpty);
       expect(doc.pages.first.pageSheet.pageScaleUnit, 'IN');
       expect(doc.pages.first.pageSheet.drawingScaleUnit, 'CM');
+      expect(doc.pages.every((page) => page.pageSheet.lineJumpCode == 0),
+          isTrue);
       String? plainOf(VsdxShape s) =>
           s.richText.runs.isNotEmpty ? s.richText.plainText : s.text;
       final texts = <String>[];
@@ -184,6 +186,16 @@ void main() {
       final reopened = const DocumentParser().parse(synthesizeVsdx(doc));
       expect(reopened.pages.first.pageSheet.pageScaleUnit, 'IN');
       expect(reopened.pages.first.pageSheet.drawingScaleUnit, 'CM');
+      expect(reopened.pages.every((page) => page.pageSheet.lineJumpCode == 0),
+          isTrue);
+
+      // Page 2 is a rectangular grid. LibreOffice/libvisio renders straight
+      // crossings; an unset jump code used to turn every horizontal stroke
+      // into a row of artificial SVG arc hops.
+      final gridSvg = VsdxToSvgSerializer().serializePage(doc.pages[1]);
+      expect(gridSvg, isNot(contains(' A ')));
+      expect(gridSvg, contains('stroke-width="0.00025"'));
+      expect(gridSvg, isNot(contains('stroke-width="0"')));
     });
 
     test('text fields expand numeric placeholders', () {
