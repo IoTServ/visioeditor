@@ -97,9 +97,23 @@ List<Offset2D> sampleVisioSpline({
   return (samples: pts, end: end, nextIndex: j);
 }
 
+/// Whether a Visio ArcTo uses the major circular arc.
+///
+/// Matches libvisio `collectArcTo`: `abs(bow) > radius`, where
+/// `r = (chord² + 4·bow²) / (8·|bow|)`.
+bool visioArcByBowIsLarge(double chord, double bow) {
+  final sagitta = bow.abs();
+  if (!chord.isFinite || !sagitta.isFinite || sagitta < 1e-12) return false;
+  final radius =
+      (chord * chord + 4 * sagitta * sagitta) / (8 * sagitta);
+  // Exact libvisio condition: fabs(bow) > radius. Algebraically this is
+  // equivalent to 2*|bow| > chord, but retaining the source form documents
+  // the renderer contract and avoids the previous factor-of-two regression.
+  return sagitta > radius;
+}
+
 /// Sample a Visio ArcTo (chord + bow / sagitta) as a **circular** arc.
 ///
-/// Matches [path_builder] / SVG (`r = (chord² + 4·bow²) / (8·|bow|)`).
 /// Returns intermediate points (excludes [start]; includes [end]).
 List<Offset2D> sampleArcByBow({
   required Offset2D start,

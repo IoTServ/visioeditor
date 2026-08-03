@@ -75,6 +75,13 @@ void main() {
   });
 
   group('sampleArcByBow', () {
+    test('large-arc threshold matches libvisio bow > radius', () {
+      expect(visioArcByBowIsLarge(2, 0.6), isFalse);
+      expect(visioArcByBowIsLarge(2, 1), isFalse);
+      expect(visioArcByBowIsLarge(2, 1.01), isTrue);
+      expect(visioArcByBowIsLarge(2, -1.01), isTrue);
+    });
+
     test('positive bow is a circular arc through the sagitta apex', () {
       final pts = sampleArcByBow(
         start: const Offset2D(0, 0),

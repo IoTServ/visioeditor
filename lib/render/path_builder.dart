@@ -458,7 +458,7 @@ void _arcByBow(
   path.arcToPoint(
     Offset(x1, y1),
     radius: Radius.circular(r),
-    largeArc: 4 * bow.abs() > chord, // apex on far side of chord midpoint
+    largeArc: visioArcByBowIsLarge(chord, bow),
     clockwise: bow < 0,
   );
 }

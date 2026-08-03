@@ -46,21 +46,40 @@ void main() {
         ),
       ),
     );
+    final pageWithInfinite = pageWithBox.addShape(
+      VsdxShape(
+        id: id + 1,
+        name: 'InfiniteLine',
+        pinX: 5,
+        pinY: 3,
+        width: 0.01,
+        height: 0.01,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              InfiniteLineCmd(x: 0, y: 0.005, a: 0.01, b: 0.005),
+            ],
+          ),
+        ],
+      ),
+    );
     doc = doc.replacePage(
       0,
-      pageWithBox.addShape(
+      pageWithInfinite.addShape(
         VsdxShape(
-          id: id + 1,
-          name: 'InfiniteLine',
+          id: id + 2,
+          name: 'ArcTo',
           pinX: 5,
-          pinY: 3,
-          width: 0.01,
-          height: 0.01,
+          pinY: 1.5,
+          width: 2,
+          height: 1,
           geometries: const <VsdxGeometry>[
             VsdxGeometry(
               noFill: true,
               commands: <VsdxPathCommand>[
-                InfiniteLineCmd(x: 0, y: 0.005, a: 0.01, b: 0.005),
+                MoveTo(0, 0),
+                ArcTo(x: 2, y: 0, bow: 0.6),
               ],
             ),
           ],
@@ -68,17 +87,22 @@ void main() {
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
+    final reopenedCommands = parser
+        .parse(generated)
+        .pages
+        .first
+        .shapes
+        .expand((shape) => shape.geometries)
+        .expand((geometry) => geometry.commands);
     expect(
-      parser
-          .parse(generated)
-          .pages
-          .first
-          .shapes
-          .expand((shape) => shape.geometries)
-          .expand((geometry) => geometry.commands)
-          .whereType<InfiniteLineCmd>(),
+      reopenedCommands.whereType<InfiniteLineCmd>(),
       hasLength(1),
       reason: 'InfiniteLine must survive the VSDX writer round-trip',
+    );
+    expect(
+      reopenedCommands.whereType<ArcTo>(),
+      hasLength(1),
+      reason: 'ArcTo must survive the VSDX writer round-trip',
     );
     final inputs = <String, Uint8List>{'generated': generated};
     for (final entry in const <(String, String)>[
