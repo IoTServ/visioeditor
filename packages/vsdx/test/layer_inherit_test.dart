@@ -108,4 +108,31 @@ void main() {
     expect(layer.nameUniv, 'CachedLayer');
     expect(layer.status, 3);
   });
+
+  test('Layer booleans accept libvisio true/false spellings', () {
+    const parser = LayerParser();
+    final sheet = XmlDocument.parse('''
+      <PageSheet>
+        <Section N="Layer">
+          <Row IX="0">
+            <Cell N="Name" V="Boolean layer"/>
+            <Cell N="Visible" V="false" F="Inh"/>
+            <Cell N="Print" V="false"/>
+            <Cell N="Active" V="true"/>
+            <Cell N="Lock" V="true"/>
+            <Cell N="Snap" V="false"/>
+            <Cell N="Glue" V="false"/>
+          </Row>
+        </Section>
+      </PageSheet>
+    ''').rootElement;
+    final layer = parser.parseLayers(sheet).single;
+
+    expect(layer.visible, isFalse);
+    expect(layer.print, isFalse);
+    expect(layer.active, isTrue);
+    expect(layer.locked, isTrue);
+    expect(layer.snap, isFalse);
+    expect(layer.glue, isFalse);
+  });
 }

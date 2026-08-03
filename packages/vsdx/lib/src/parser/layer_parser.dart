@@ -38,12 +38,12 @@ class LayerParser {
         out.add(VsdxLayer(
           id: id,
           name: name,
-          visible: (_cellIntCached(row, 'Visible') ?? 1) != 0,
-          print: (_cellIntCached(row, 'Print') ?? 1) != 0,
-          active: (_cellIntCached(row, 'Active') ?? 0) != 0,
-          locked: (_cellIntCached(row, 'Lock') ?? 0) != 0,
-          snap: (_cellIntCached(row, 'Snap') ?? 1) != 0,
-          glue: (_cellIntCached(row, 'Glue') ?? 1) != 0,
+          visible: _cellBoolCached(row, 'Visible') ?? true,
+          print: _cellBoolCached(row, 'Print') ?? true,
+          active: _cellBoolCached(row, 'Active') ?? false,
+          locked: _cellBoolCached(row, 'Lock') ?? false,
+          snap: _cellBoolCached(row, 'Snap') ?? true,
+          glue: _cellBoolCached(row, 'Glue') ?? true,
           color: VsdxColor.tryParse(
             _cellStringCached(row, 'Color'),
             palette: colorPalette,
@@ -104,6 +104,9 @@ class LayerParser {
     if (s == null) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
   }
+
+  bool? _cellBoolCached(XmlElement parent, String name) =>
+      parseVisioBool(_cellStringCached(parent, name));
 
   double? _cellDoubleCached(XmlElement parent, String name) {
     final s = _cellStringCached(parent, name);

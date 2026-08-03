@@ -120,6 +120,44 @@ Uint8List _layerCachedValuePackage({required bool visible}) {
   );
 }
 
+Uint8List _textBooleanPackage({bool hideText = false}) {
+  const parser = DocumentParser();
+  const writer = VsdxWriter();
+  final blank = writer.emptyDocument();
+  var document = parser.parse(blank);
+  final page = document.pages.single;
+  final shape = VsdxShapeFactory.rectangle(
+    id: page.nextFreeShapeId(),
+    pinX: 2,
+    pinY: 2,
+    width: 2,
+    height: 1,
+  ).copyWith(
+    text: 'TEXT_BOOLEAN',
+    richText: VsdxRichText(
+      runs: const [
+        VsdxTextRun(
+          text: 'TEXT_BOOLEAN',
+          charStyle: VsdxCharStyle(strikethrough: true),
+        ),
+      ],
+      textBlock: VsdxTextBlock(hideText: hideText),
+    ),
+  );
+  document = document.replacePage(0, page.addShape(shape));
+  final bytes = writer.write(originalBytes: blank, edited: document);
+  return _rewritePackage(
+    bytes,
+    <String, Map<String, String>>{
+      'visio/pages/page1.xml': <String, String>{
+        '<Cell N="HideText" V="${hideText ? 1 : 0}"/>':
+            '<Cell N="HideText" V="${hideText ? 'true' : 'false'}"/>',
+        '<Cell N="Strikethru" V="1"/>': '<Cell N="Strikethru" V="true"/>',
+      },
+    },
+  );
+}
+
 void main() {
   test('Page uses display Name, XML true, and ignores rows without ID', () {
     final bytes = _rewritePackage(
@@ -450,6 +488,22 @@ void main() {
     // librevenge's SVG generator does not serialize libvisio's draw:display
     // property, so visibility itself is covered by the parsed model assertion.
     expect(pages.single, contains('LAYER_INH_CACHE'));
+  }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
+
+  test('text boolean spellings remain parseable by the libvisio oracle', () {
+    final bytes = _textBooleanPackage();
+    final hiddenBytes = _textBooleanPackage(hideText: true);
+    final shape =
+        const DocumentParser().parse(bytes).pages.single.shapes.single;
+    final pages = oracle!.svgPages(bytes);
+    final hiddenPages = oracle.svgPages(hiddenBytes);
+
+    expect(shape.richText.textBlock.hideText, isFalse);
+    expect(shape.richText.runs.single.charStyle.strikethrough, isTrue);
+    expect(pages, isNotNull);
+    expect(hiddenPages, isNotNull);
+    expect(pages!.single, contains('TEXT_BOOLEAN'));
+    expect(hiddenPages!.single, isNot(contains('TEXT_BOOLEAN')));
   }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
 
   test('missing VSDX page dimensions match the libvisio oracle', () {

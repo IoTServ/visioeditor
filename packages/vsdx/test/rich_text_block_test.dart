@@ -78,6 +78,35 @@ void main() {
     expect(rich.textBlock.hideText, isTrue);
   });
 
+  test('libvisio true/false spellings parse for text boolean cells', () {
+    final rich = parser.parse(
+      shape(
+        '<Cell N="HideText" V="false"/>'
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Strikethru" V="true"/>'
+        '<Cell N="DblUnderline" V="true"/>'
+        '<Cell N="DoubleStrikethrough" V="false"/>'
+        '<Cell N="Overline" V="true"/>'
+        '</Row></Section>'
+        '<Text><cp IX="0"/>Label</Text>',
+      ),
+      defaultBlock: const VsdxTextBlock(hideText: true),
+      defaultChar: const VsdxCharStyle(
+        strikethrough: false,
+        doubleUnderline: false,
+        doubleStrikethrough: true,
+        overline: false,
+      ),
+    );
+    final style = rich.runs.single.charStyle;
+
+    expect(rich.textBlock.hideText, isFalse);
+    expect(style.strikethrough, isTrue);
+    expect(style.doubleUnderline, isTrue);
+    expect(style.doubleStrikethrough, isFalse);
+    expect(style.overline, isTrue);
+  });
+
   test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {
     final el = shape(
       '<Cell N="VerticalAlign" V="1" F="Inh"/><Text>Label</Text>',

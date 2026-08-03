@@ -91,12 +91,22 @@ bool isInhFormula(String? f) {
   return u == 'INH' || u.startsWith('INH(');
 }
 
-/// True for the two XML boolean spellings accepted by libvisio.
-bool isXmlTrue(String? value) {
-  if (value == null) return false;
-  final normalized = value.trim().toLowerCase();
-  return normalized == '1' || normalized == 'true';
+/// Parse the XML boolean spellings accepted by libvisio's `readBoolData`.
+///
+/// `Themed` is the one non-boolean token libvisio maps to false instead of
+/// rejecting. Returns `null` for a missing or malformed value so callers can
+/// retain their own inheritance/default behavior.
+bool? parseVisioBool(String? value) {
+  if (value == null) return null;
+  return switch (value.trim().toLowerCase()) {
+    '1' || 'true' => true,
+    '0' || 'false' || 'themed' => false,
+    _ => null,
+  };
 }
+
+/// True for the positive XML boolean spellings accepted by libvisio.
+bool isXmlTrue(String? value) => parseVisioBool(value) == true;
 
 /// Normalise the line-break sequences libvisio recognises in VSDX text.
 /// XML readers already collapse source CR/LF in ordinary XML content, but

@@ -355,23 +355,21 @@ class RichTextParser {
     // Underline lives in Style bit 0x04 (libvisio); only inherit when absent.
     final underline =
         styleInt != null ? (styleInt & 0x04) != 0 : defaults.underline;
-    final strikeCell = _cellInt(row, 'Strikethru',
-        inheritFrom: defaults.strikethrough ? 1 : 0);
     final strike =
-        strikeCell != null ? strikeCell != 0 : defaults.strikethrough;
-    final dblUnderCell = _cellInt(row, 'DblUnderline',
-        inheritFrom: defaults.doubleUnderline ? 1 : 0);
-    final dblUnder = dblUnderCell != null
-        ? dblUnderCell != 0
-        : defaults.doubleUnderline;
-    final dblStrikeCell = _cellInt(row, 'DoubleStrikethrough',
-        inheritFrom: defaults.doubleStrikethrough ? 1 : 0);
-    final dblStrike = dblStrikeCell != null
-        ? dblStrikeCell != 0
-        : defaults.doubleStrikethrough;
-    final overCell =
-        _cellInt(row, 'Overline', inheritFrom: defaults.overline ? 1 : 0);
-    final overline = overCell != null ? overCell != 0 : defaults.overline;
+        _cellBool(row, 'Strikethru',
+            inheritFrom: defaults.strikethrough) ??
+        defaults.strikethrough;
+    final dblUnder =
+        _cellBool(row, 'DblUnderline',
+            inheritFrom: defaults.doubleUnderline) ??
+        defaults.doubleUnderline;
+    final dblStrike =
+        _cellBool(row, 'DoubleStrikethrough',
+            inheritFrom: defaults.doubleStrikethrough) ??
+        defaults.doubleStrikethrough;
+    final overline =
+        _cellBool(row, 'Overline', inheritFrom: defaults.overline) ??
+        defaults.overline;
     final transparency = (_cellDouble(row, 'ColorTrans',
                 inheritFrom: defaults.transparency) ??
             defaults.transparency)
@@ -578,10 +576,10 @@ class RichTextParser {
         _ => 1,
       },
     );
-    final hideInt = _cellInt(
+    final hideText = _cellBool(
       shape,
       'HideText',
-      inheritFrom: inherit.hideText ? 1 : 0,
+      inheritFrom: inherit.hideText,
     );
     return VsdxTextBlock(
       pinXInches: readLengthInches(
@@ -659,7 +657,7 @@ class RichTextParser {
             inheritFrom: inherit.marginBottomInches,
           ) ??
           inherit.marginBottomInches,
-      hideText: hideInt == null ? inherit.hideText : hideInt != 0,
+      hideText: hideText ?? inherit.hideText,
       // Absent TextBkgnd → inherit; explicit V=0/255 → transparent (do not
       // fall back to master — mirrors VSD textBgFilled=false).
       backgroundColor: _resolveTextBkgnd(shape, inherit.backgroundColor),
@@ -969,6 +967,15 @@ class RichTextParser {
     final s = cell.getAttribute('V');
     if (s == null || s.isEmpty) return null;
     return int.tryParse(s) ?? double.tryParse(s)?.toInt();
+  }
+
+  bool? _cellBool(XmlElement parent, String name, {bool? inheritFrom}) {
+    final cell = findCell(parent, name);
+    if (cell == null) return null;
+    if (isInhFormula(cell.getAttribute('F')) && inheritFrom != null) {
+      return inheritFrom;
+    }
+    return parseVisioBool(cell.getAttribute('V'));
   }
 
   double? _cellDouble(XmlElement parent, String name, {double? inheritFrom}) {

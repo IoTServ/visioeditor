@@ -8806,6 +8806,66 @@ void main() {
     }
   });
 
+  test('textual true character and HideText values survive synthesis', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          text: 'Hidden strike',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Hidden strike',
+                charStyle: VsdxCharStyle(strikethrough: true),
+              ),
+            ],
+            textBlock: VsdxTextBlock(hideText: true),
+          ),
+        ),
+      ),
+    );
+    var mid = writer.write(originalBytes: blank, edited: doc);
+    final archive = ZipDecoder().decodeBytes(mid);
+    final pageFile =
+        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
+    var pageXml = utf8.decode(pageFile.content as List<int>);
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="HideText"[^/]*/>'),
+      '<Cell N="HideText" V="true"/>',
+    );
+    pageXml = pageXml.replaceFirst(
+      RegExp(r'<Cell N="Strikethru"[^/]*/>'),
+      '<Cell N="Strikethru" V="true"/>',
+    );
+    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+
+    doc = parser.parse(mid);
+    var shape = doc.pages.first.findShapeById(id)!;
+    expect(shape.richText.textBlock.hideText, isTrue);
+    expect(shape.richText.runs.single.charStyle.strikethrough, isTrue);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.updateShapeById(
+        id,
+        (s) => s.copyWith(pinX: s.pinX + 0.1),
+      ),
+    );
+
+    final out = writer.write(originalBytes: mid, edited: doc);
+    shape = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(shape.richText.textBlock.hideText, isTrue);
+    expect(shape.richText.runs.single.charStyle.strikethrough, isTrue);
+  });
+
   test('disabled SoftEdges/Glow/Gradient emit V=0 on group rebuild', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -9423,7 +9483,7 @@ void main() {
     var pagesXml = utf8.decode(pagesFile.content as List<int>);
     pagesXml = pagesXml.replaceFirst(
       RegExp(r'<Cell N="Visible"[^/]*/>'),
-      '<Cell N="Visible" V="0" F="Inh"/>',
+      '<Cell N="Visible" V="false" F="Inh"/>',
     );
     mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
     doc = parser.parse(mid);
