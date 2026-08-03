@@ -30,6 +30,10 @@ void main() {
       out.any((p) => (p.x - 2).abs() < 1e-9 && (p.y - 0).abs() < 1e-9),
       isFalse,
     );
+    // libvisio inserts Q (2,0) between the trimmed points (1.75,0) and
+    // (2,0.25); the t=0.5 sample is therefore exactly (1.9375,0.0625).
+    expect(out[4].x, closeTo(1.9375, 1e-9));
+    expect(out[4].y, closeTo(0.0625, 1e-9));
   });
 
   test('filletPolyline closed square has no sharp corners', () {

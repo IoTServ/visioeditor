@@ -17,12 +17,12 @@ bool polylineLooksClosed(
   return !noFill;
 }
 
-/// Fillet sharp corners of a polyline to approximate Visio `Rounding`
-/// (libvisio-style corner radius on stroked / filled geometry).
+/// Fillet sharp corners of a polyline using Visio/libvisio `Rounding`.
 ///
-/// Returns [points] unchanged when [radius] ≤ 0 or there are fewer than
-/// three vertices. Arc fillets are sampled into line segments so callers can
-/// stay on a pure polyline representation (Flutter [Path] / SVG `d`).
+/// libvisio trims each adjacent segment and inserts a quadratic Bézier whose
+/// control point is the original sharp corner. The Bézier is sampled into line
+/// segments here so Flutter and SVG callers share the same geometry.
+/// Returns [points] unchanged when [radius] ≤ 0 or fewer than three vertices.
 List<Offset2D> filletPolyline(
   List<Offset2D> points,
   double radius, {
@@ -94,46 +94,14 @@ List<Offset2D>? _filletCorner(
   final p1 = Offset2D(cur.x - inUx * trim, cur.y - inUy * trim);
   final p2 = Offset2D(cur.x + outUx * trim, cur.y + outUy * trim);
 
-  final midX = (p1.x + p2.x) / 2;
-  final midY = (p1.y + p2.y) / 2;
-  final chord = math.sqrt(
-    (p2.x - p1.x) * (p2.x - p1.x) + (p2.y - p1.y) * (p2.y - p1.y),
-  );
-  final h = math.sqrt(
-    math.max(0.0, radius * radius - (chord * 0.5) * (chord * 0.5)),
-  );
-  final toCornerX = cur.x - midX;
-  final toCornerY = cur.y - midY;
-  final toCornerLen =
-      math.sqrt(toCornerX * toCornerX + toCornerY * toCornerY);
-  final double cx;
-  final double cy;
-  if (toCornerLen < 1e-12) {
-    final sign = turn > 0 ? 1.0 : -1.0;
-    cx = midX + (-inUy * sign) * h;
-    cy = midY + (inUx * sign) * h;
-  } else {
-    cx = midX - (toCornerX / toCornerLen) * h;
-    cy = midY - (toCornerY / toCornerLen) * h;
-  }
-
-  final a0 = math.atan2(p1.y - cy, p1.x - cx);
-  final a1 = math.atan2(p2.y - cy, p2.x - cx);
-  var sweep = a1 - a0;
-  if (turn > 0 && sweep < 0) sweep += 2 * math.pi;
-  if (turn < 0 && sweep > 0) sweep -= 2 * math.pi;
-
-  final effectiveRadius = math.sqrt(
-    (p1.x - cx) * (p1.x - cx) + (p1.y - cy) * (p1.y - cy),
-  );
   final samples = <Offset2D>[p1];
   final segs = math.max(2, arcSegments);
   for (var s = 1; s < segs; s++) {
     final t = s / segs;
-    final a = a0 + sweep * t;
+    final u = 1.0 - t;
     samples.add(Offset2D(
-      cx + effectiveRadius * math.cos(a),
-      cy + effectiveRadius * math.sin(a),
+      u * u * p1.x + 2.0 * u * t * cur.x + t * t * p2.x,
+      u * u * p1.y + 2.0 * u * t * cur.y + t * t * p2.y,
     ));
   }
   samples.add(p2);
