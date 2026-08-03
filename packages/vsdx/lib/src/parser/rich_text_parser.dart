@@ -196,10 +196,19 @@ class RichTextParser {
     VsdxParaStyle defaultPara = libvisioParagraphStyleDefault,
     VsdxTextBlock defaultBlock = libvisioTextBlockStyleDefault,
     List<VsdxTabSet> inheritTabs = const <VsdxTabSet>[],
+    bool preferCachedInh = false,
   }) {
     final textEl = _firstChildLocal(shape, 'Text');
-    final block = _readTextBlock(shape, defaultBlock);
-    final charStyles = _readCharSection(shape, defaultChar);
+    final block = _readTextBlock(
+      shape,
+      defaultBlock,
+      preferCachedInh: preferCachedInh,
+    );
+    final charStyles = _readCharSection(
+      shape,
+      defaultChar,
+      preferCachedInh: preferCachedInh,
+    );
     final paraStyles = _readParaSection(shape, defaultPara);
     final tabSets = _readTabsSection(shape, inherit: inheritTabs);
 
@@ -262,8 +271,9 @@ class RichTextParser {
 
   Map<int, VsdxCharStyle> _readCharSection(
     XmlElement shape,
-    VsdxCharStyle defaults,
-  ) {
+    VsdxCharStyle defaults, {
+    bool preferCachedInh = false,
+  }) {
     final out = <int, VsdxCharStyle>{};
     for (final section in shape.childElements) {
       if (section.name.local != 'Section') continue;
@@ -273,7 +283,11 @@ class RichTextParser {
         final ix =
             int.tryParse(row.getAttribute('IX') ?? row.getAttribute('N') ?? '');
         if (ix == null) continue;
-        out[ix] = _readCharRow(row, defaults);
+        out[ix] = _readCharRow(
+          row,
+          defaults,
+          preferCachedInh: preferCachedInh,
+        );
       }
     }
     return out;
@@ -298,7 +312,11 @@ class RichTextParser {
     return out;
   }
 
-  VsdxCharStyle _readCharRow(XmlElement row, VsdxCharStyle defaults) {
+  VsdxCharStyle _readCharRow(
+    XmlElement row,
+    VsdxCharStyle defaults, {
+    bool preferCachedInh = false,
+  }) {
     // Font / Color stay null when the cell is absent — do NOT materialise the
     // stylesheet default into the model. Editor-created shapes leave both unset
     // (inherit via DefaultTextStyle at paint / in Visio); stuffing Arial /
@@ -337,15 +355,21 @@ class RichTextParser {
                     colorV.toUpperCase().contains('THEMEGUARD'))) ||
             colorF.toUpperCase().contains('THEMEVAL') ||
             colorF.toUpperCase().contains('THEMEGUARD'));
-    // F=Inh → master colour / theme slot; do not materialise a stale V=.
+    // libvisio's VSDX shape reader consumes the evaluated V= cache even when
+    // F="Inh". StyleSheet parsing keeps inheritance semantics, while a master
+    // instance must retain its cached character colour.
     final color = colorInh
-        ? defaults.color
+        ? (preferCachedInh && cachedColor != null
+            ? cachedColor
+            : defaults.color)
         : (isTheme ? null : cachedColor);
     // A theme character colour caches its slot index in V (see the writer);
     // read it back when present, otherwise fall back to the inherited slot.
     int? themeIdx;
     if (colorInh) {
-      themeIdx = defaults.themeColorIndex;
+      themeIdx = preferCachedInh && cachedColor != null
+          ? null
+          : defaults.themeColorIndex;
     } else if (isTheme) {
       final parsed = int.tryParse((colorV ?? '').trim());
       themeIdx = (parsed != null && parsed >= 0 && parsed < 100)
@@ -566,7 +590,19 @@ class RichTextParser {
   /// shape that inherits its text orientation — most importantly `TxtAngle`
   /// (vertical / rotated labels) — from its Master renders correctly instead of
   /// defaulting to horizontal. Matches Visio / libvisio cell inheritance.
-  VsdxTextBlock _readTextBlock(XmlElement shape, VsdxTextBlock inherit) {
+  VsdxTextBlock _readTextBlock(
+    XmlElement shape,
+    VsdxTextBlock inherit, {
+    bool preferCachedInh = false,
+  }) {
+    double? instanceLength(String name, double? inherited) =>
+        readLengthInches(
+          shape,
+          name,
+          inheritFrom: preferCachedInh ? null : inherited,
+        ) ??
+        inherited;
+
     final vAlignInt = _cellInt(
       shape,
       'VerticalAlign',
@@ -582,42 +618,12 @@ class RichTextParser {
       inheritFrom: inherit.hideText,
     );
     return VsdxTextBlock(
-      pinXInches: readLengthInches(
-            shape,
-            'TxtPinX',
-            inheritFrom: inherit.pinXInches,
-          ) ??
-          inherit.pinXInches,
-      pinYInches: readLengthInches(
-            shape,
-            'TxtPinY',
-            inheritFrom: inherit.pinYInches,
-          ) ??
-          inherit.pinYInches,
-      locPinXInches: readLengthInches(
-            shape,
-            'TxtLocPinX',
-            inheritFrom: inherit.locPinXInches,
-          ) ??
-          inherit.locPinXInches,
-      locPinYInches: readLengthInches(
-            shape,
-            'TxtLocPinY',
-            inheritFrom: inherit.locPinYInches,
-          ) ??
-          inherit.locPinYInches,
-      widthInches: readLengthInches(
-            shape,
-            'TxtWidth',
-            inheritFrom: inherit.widthInches,
-          ) ??
-          inherit.widthInches,
-      heightInches: readLengthInches(
-            shape,
-            'TxtHeight',
-            inheritFrom: inherit.heightInches,
-          ) ??
-          inherit.heightInches,
+      pinXInches: instanceLength('TxtPinX', inherit.pinXInches),
+      pinYInches: instanceLength('TxtPinY', inherit.pinYInches),
+      locPinXInches: instanceLength('TxtLocPinX', inherit.locPinXInches),
+      locPinYInches: instanceLength('TxtLocPinY', inherit.locPinYInches),
+      widthInches: instanceLength('TxtWidth', inherit.widthInches),
+      heightInches: instanceLength('TxtHeight', inherit.heightInches),
       // F=Inh + cached V=0 must not flatten Master vertical text (π/2).
       angleRad: readAngleRadians(
             shape,

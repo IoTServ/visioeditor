@@ -559,4 +559,31 @@ void main() {
       const VsdxColor(0xFFFEFFFF),
     );
   });
+
+  test('master instance keeps libvisio text transform and colour caches', () {
+    final fixture = File(
+      '../../third_party/libvisio/src/test/data/'
+      'tdf154379-QuickStyleFillMatrix.vsdx',
+    );
+    expect(fixture.existsSync(), isTrue);
+    final doc = const DocumentParser().parse(fixture.readAsBytesSync());
+    final shape = doc.pages.single.findShapeById(317)!;
+    final block = shape.richText.textBlock;
+    final runs = shape.richText.runs
+        .where((run) => run.text.isNotEmpty)
+        .toList(growable: false);
+
+    expect(block.pinXInches, closeTo(0.8473050162022133, 1e-12));
+    expect(block.pinYInches, closeTo(0.635478762151662, 1e-12));
+    expect(block.widthInches, closeTo(1.694610032404427, 1e-12));
+    expect(block.heightInches, closeTo(0.7625745145819943, 1e-12));
+    expect(block.locPinXInches, closeTo(0.8473050162022133, 1e-12));
+    expect(block.locPinYInches, closeTo(0.3812872572909972, 1e-12));
+    expect(runs, isNotEmpty);
+    for (final run in runs) {
+      expect(run.charStyle.color, const VsdxColor(0xFF5B9BD5));
+      expect(run.charStyle.themeColorIndex, isNull);
+      expect(run.paraStyle.horizontalAlign, VsdxHorzAlign.center);
+    }
+  });
 }

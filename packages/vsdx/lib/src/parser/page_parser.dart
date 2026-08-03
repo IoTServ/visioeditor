@@ -395,6 +395,7 @@ class PageParser {
       // Master aren't forced back to horizontal.
       defaultBlock: defaultBlock,
       inheritTabs: proto?.richText.tabSets ?? const <VsdxTabSet>[],
+      preferCachedInh: preferCachedInhStyle,
     );
     // Masters often carry TextStyle but no <Text>. Seed an empty run so
     // instance shapes that inherit the prototype pick up the stylesheet size
@@ -402,7 +403,13 @@ class PageParser {
     // (Character-without-Text is already seeded inside RichTextParser.)
     if (richText.runs.isEmpty && ownSheetChar != null) {
       richText = VsdxRichText(
-        runs: <VsdxTextRun>[VsdxTextRun(text: '', charStyle: ownSheetChar)],
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: '',
+            charStyle: ownSheetChar,
+            paraStyle: defaultPara,
+          ),
+        ],
         textBlock: richText.textBlock,
         tabSets: richText.tabSets,
       );
