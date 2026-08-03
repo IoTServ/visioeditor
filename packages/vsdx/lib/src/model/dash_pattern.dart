@@ -1,10 +1,9 @@
 /// Visio `LinePattern` → dash/gap lengths in **inches**.
 ///
-/// Built-in patterns are authored relative to the stroke weight (Visio sizes
-/// unscaled line patterns so master height ≈ LineWeight). The table below is
-/// expressed as multiples of [weightInches] using the historical fixed table
-/// at the default weight `0.01"` as the reference (e.g. pattern 2 was
-/// `0.10 0.05` → `10w 5w`).
+/// Built-in patterns are authored relative to the stroke weight. The table is
+/// the complete `VSDContentCollector::_lineProperties` mapping used by
+/// libvisio/LibreOffice (`draw:dots*-length` and `draw:distance`, expressed as
+/// percentages of the line width).
 library;
 
 import 'line.dart';
@@ -54,48 +53,55 @@ List<double>? dashPatternFor(
     case 0:
     case 1:
       return null;
-    case 2: // dashed
-      return scaled(const [10, 5]);
-    case 3: // dotted
-      return scaled(const [2, 4]);
-    case 4: // dash-dot
-      return scaled(const [12, 5, 2, 5]);
-    case 5: // dash-dot-dot
-      return scaled(const [12, 5, 2, 5, 2, 5]);
-    case 6: // short dash
-      return scaled(const [6, 4]);
-    case 7: // dash long-gap
-      return scaled(const [10, 10]);
-    case 8: // sparse dash
-      return scaled(const [8, 12]);
-    case 9: // long-dash
-      return scaled(const [20, 5]);
-    case 10: // long-dash-dot
-      return scaled(const [20, 5, 2, 5]);
-    case 11: // long-dash-dot-dot
-      return scaled(const [20, 5, 2, 5, 2, 5]);
-    case 12: // medium dash
-      return scaled(const [14, 6]);
-    case 13: // medium dash-dot
-      return scaled(const [14, 5, 2, 5]);
-    case 14: // medium dash-dot-dot
-      return scaled(const [14, 5, 2, 5, 2, 5]);
-    case 15: // fine dots
-      return scaled(const [1.5, 3]);
-    case 16: // dash-gap-dash
-      return scaled(const [10, 4, 4, 4]);
+    case 2:
+      return scaled(const [6, 3]);
+    case 3:
+      return scaled(const [1, 3]);
+    case 4:
+      return scaled(const [6, 3, 1, 3]);
+    case 5:
+      return scaled(const [6, 3, 1, 3, 1, 3]);
+    case 6:
+      return scaled(const [6, 3, 6, 3, 1, 3]);
+    case 7:
+      return scaled(const [14, 2, 6, 2]);
+    case 8:
+      return scaled(const [14, 2, 6, 2, 6, 2]);
+    case 9:
+      return scaled(const [3, 2]);
+    case 10:
+      return scaled(const [1, 2]);
+    case 11:
+      return scaled(const [3, 2, 1, 2]);
+    case 12:
+      return scaled(const [3, 2, 1, 2, 1, 2]);
+    case 13:
+      return scaled(const [3, 2, 3, 2, 1, 2]);
+    case 14:
+      return scaled(const [7, 2, 3, 2]);
+    case 15:
+      return scaled(const [7, 2, 3, 2, 3, 2]);
+    case 16:
+      return scaled(const [11, 5]);
     case 17:
+      return scaled(const [1, 5]);
     case 18:
-      return scaled(const [16, 6]);
+      return scaled(const [11, 5, 1, 5]);
     case 19:
+      return scaled(const [11, 5, 1, 5, 1, 5]);
     case 20:
-      return scaled(const [10, 5, 3, 5]);
+      return scaled(const [11, 5, 11, 5, 1, 5]);
     case 21:
+      return scaled(const [27, 5, 11, 5]);
     case 22:
+      return scaled(const [27, 5, 11, 5, 11, 5]);
     case 23:
-      return scaled(const [8, 4, 2, 4]);
+      return scaled(const [2, 2]);
     default:
-      return scaled(const [8, 4]);
+      // libvisio treats custom/unknown pattern ids as solid until the custom
+      // line-pattern stencil is understood. draw.io custom arrays are handled
+      // separately by [effectiveDashPatternForLine].
+      return null;
   }
 }
 
