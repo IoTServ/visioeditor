@@ -1287,10 +1287,12 @@ class VsdxToSvgSerializer {
         colorHex: paint.hex,
         opacity: paint.opacity,
       );
-      // Marker viewBox tip at (10,5); scale so 10 units → mw inches.
+      final refX = _isCenteredMarker(arrowId) ? 5 : 10;
+      // Marker viewBox is 10 units wide; centred markers anchor at x=5.
       buf.writeln(
         '$indent<g transform="translate(${_n(tip.x)} ${_n(tip.y)}) '
-        'rotate(${_n(deg)}) scale(${_n(mw / 10)}) translate(-10 -5)">'
+        'rotate(${_n(deg)}) scale(${_n(mw / 10)}) '
+        'translate(-$refX -5)">'
         '$body</g>',
       );
     }
@@ -2661,9 +2663,10 @@ class VsdxToSvgSerializer {
           colorHex: tip.hex,
           opacity: tip.opacity,
         );
+        final refX = _isCenteredMarker(line.beginArrow) ? 5 : 0;
         defs.write(
           '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
-          'viewBox="0 0 10 10" refX="0" refY="5" '
+          'viewBox="0 0 10 10" refX="$refX" refY="5" '
           'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" orient="auto">'
           '$body</marker>',
         );
@@ -2681,9 +2684,10 @@ class VsdxToSvgSerializer {
           colorHex: tip.hex,
           opacity: tip.opacity,
         );
+        final refX = _isCenteredMarker(line.endArrow) ? 5 : 10;
         defs.write(
           '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
-          'viewBox="0 0 10 10" refX="10" refY="5" '
+          'viewBox="0 0 10 10" refX="$refX" refY="5" '
           'markerWidth="${_n(mw)}" markerHeight="${_n(mw)}" '
           'orient="auto-start-reverse">'
           '$body</marker>',
@@ -2707,6 +2711,14 @@ class VsdxToSvgSerializer {
       _ => join.svgName,
     };
   }
+
+  /// libvisio emits `draw:marker-*-center=true` only for these marker ids.
+  bool _isCenteredMarker(int arrowId) =>
+      arrowId == 9 ||
+      arrowId == 10 ||
+      arrowId == 11 ||
+      arrowId == 20 ||
+      arrowId == 21;
 
   String _svgMiterLimitAttr(VsdxLine line) {
     final join = line.effectiveJoin;

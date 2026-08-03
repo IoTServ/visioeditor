@@ -8,6 +8,7 @@ void main() {
   test('id 10 is a filled circle (ball), not a diamond', () {
     final d = arrowDescriptor(10)!;
     expect(d.filled, isTrue);
+    expect(d.centered, isTrue);
     final b = d.path.getBounds();
     // A circle has (near) square bounds — a diamond is wider than tall.
     expect(b.width, closeTo(b.height, 0.02));
@@ -69,6 +70,15 @@ void main() {
       final marker = arrowDescriptor(id)!;
       expect(marker.filled, isFalse, reason: 'marker $id');
       expect(marker.path.getBounds(), arrowDescriptor(3)!.path.getBounds());
+    }
+  });
+
+  test('only libvisio marker-center ids are centred', () {
+    for (final id in <int>[9, 10, 11, 20, 21]) {
+      expect(arrowDescriptor(id)!.centered, isTrue, reason: 'marker $id');
+    }
+    for (final id in <int>[31, 41, 42]) {
+      expect(arrowDescriptor(id)!.centered, isFalse, reason: 'marker $id');
     }
   });
 }

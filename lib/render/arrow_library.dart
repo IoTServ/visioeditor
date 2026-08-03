@@ -20,25 +20,43 @@ import 'package:meta/meta.dart';
 
 @immutable
 class ArrowDescriptor {
-  const ArrowDescriptor({required this.path, this.filled = true});
+  const ArrowDescriptor({
+    required this.path,
+    this.filled = true,
+    this.centered = false,
+  });
 
   /// Path in the arrow's local space (tip at origin, length along -X).
   final Path path;
 
   /// `true` ⇒ fill with the line colour; `false` ⇒ stroke only.
   final bool filled;
+
+  /// libvisio `draw:marker-*-center`: centre the marker on the line endpoint.
+  final bool centered;
 }
 
 /// Lookup map for the supported arrow ids.
 ArrowDescriptor? arrowDescriptor(int id) {
   final builder = _arrowBuilders[id] ?? _arrowBuilders[_defaultArrow];
-  return builder?.call();
+  final descriptor = builder?.call();
+  if (descriptor == null || !_centeredMarkerIds.contains(id)) {
+    return descriptor;
+  }
+  return ArrowDescriptor(
+    path: descriptor.path,
+    filled: descriptor.filled,
+    centered: true,
+  );
 }
 
 /// The set of arrow ids we know how to render. Used by tests + tooling.
 Iterable<int> supportedArrowIds() => _arrowBuilders.keys;
 
 const int _defaultArrow = 4;
+
+// VSDContentCollector::_lineProperties sets marker-center only for these ids.
+const Set<int> _centeredMarkerIds = <int>{9, 10, 11, 20, 21};
 
 final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   // 0 = no arrow (line only). The painter checks `hasBeginArrow` /

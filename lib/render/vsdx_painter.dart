@@ -2044,6 +2044,9 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(tip.dx, tip.dy);
     canvas.rotate(angle);
     canvas.scale(sizeInches, sizeInches);
+    if (desc.centered) {
+      canvas.translate(-desc.path.getBounds().center.dx, 0);
+    }
     // Solid tip colour only — line gradients stay on the stroke (SVG/PDF).
     final paint = Paint()
       ..color = tipColor ?? linePaint.color

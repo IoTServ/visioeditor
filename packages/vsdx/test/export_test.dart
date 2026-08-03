@@ -1032,6 +1032,34 @@ void main() {
     expect(svg, contains('d="M 0 9 L 10 1 M 5 0 V 10" fill="none"'));
   });
 
+  test('SVG marker anchoring follows libvisio marker-center ids', () {
+    String svgFor(int arrowId, {bool baked = false}) {
+      final writer = VsdxWriter();
+      var doc = parser.parse(writer.emptyDocument());
+      final page = doc.pages.first;
+      doc = doc.replacePage(
+        0,
+        page.addShape(
+          VsdxShapeFactory.line(
+            id: page.nextFreeShapeId(),
+            ax: 1,
+            ay: 1,
+            bx: 3,
+            by: 1,
+          ).copyWith(line: VsdxLine(endArrow: arrowId)),
+        ),
+      );
+      return VsdxToSvgSerializer(bakeArrowMarkers: baked)
+          .serializePage(doc.pages.first);
+    }
+
+    expect(svgFor(10), contains('refX="5" refY="5"'));
+    expect(svgFor(20), contains('refX="5" refY="5"'));
+    expect(svgFor(42), contains('refX="10" refY="5"'));
+    expect(svgFor(10, baked: true), contains('translate(-5 -5)'));
+    expect(svgFor(42, baked: true), contains('translate(-10 -5)'));
+  });
+
   test('SVG arrows 27/28/29/33 match libvisio ER/circle styles', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
