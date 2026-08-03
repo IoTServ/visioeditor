@@ -403,6 +403,20 @@ class VsdxParaStyle {
   /// Visio `Flags` bitmask.
   final int flags;
 
+  /// Alignment after applying libvisio's Paragraph `Flags` semantics.
+  ///
+  /// A non-zero flag swaps explicit left/right alignment while leaving center
+  /// and justify unchanged. [horizontalAlign] remains the raw ShapeSheet value
+  /// so it can still be edited and written back losslessly.
+  VsdxHorzAlign get effectiveHorizontalAlign {
+    if (flags == 0) return horizontalAlign;
+    return switch (horizontalAlign) {
+      VsdxHorzAlign.left => VsdxHorzAlign.right,
+      VsdxHorzAlign.right => VsdxHorzAlign.left,
+      _ => horizontalAlign,
+    };
+  }
+
   static const VsdxParaStyle defaults = VsdxParaStyle();
 
   VsdxParaStyle copyWith({

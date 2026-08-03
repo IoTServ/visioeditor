@@ -2475,7 +2475,7 @@ class VsdxPainter extends CustomPainter {
       );
     }
     final align = hasRich
-        ? _flutterAlign(rich.runs.first.paraStyle.horizontalAlign)
+        ? _flutterAlign(rich.runs.first.paraStyle.effectiveHorizontalAlign)
         : TextAlign.center;
 
     // Connector edge label with no explicit text pin: centre it on the drawn
@@ -3130,7 +3130,7 @@ class VsdxPainter extends CustomPainter {
 
     for (final para in paras) {
       final style = para.style;
-      final pAlign = _flutterAlign(style.horizontalAlign);
+      final pAlign = _flutterAlign(style.effectiveHorizontalAlign);
       final indentL = style.indentLeftInches * scale;
       final indentF = style.indentFirstInches * scale;
       final indentR = style.indentRightInches * scale;

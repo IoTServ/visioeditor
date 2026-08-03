@@ -2181,7 +2181,8 @@ class _PageCanvasState extends State<PageCanvas>
     final run = s.richText.runs.isNotEmpty ? s.richText.runs.first : null;
     final cs = run?.charStyle ?? VsdxCharStyle.defaults;
     final fontPx = math.max(cs.fontSizeInches * widget.pxPerInch * _scale, 8.0);
-    final align = run?.paraStyle.horizontalAlign ?? VsdxHorzAlign.center;
+    final align =
+        run?.paraStyle.effectiveHorizontalAlign ?? VsdxHorzAlign.center;
     final vAlign = s.richText.textBlock.verticalAlign;
     final previewAlign = switch (vAlign) {
       VsdxVertAlign.top => Alignment.topCenter,

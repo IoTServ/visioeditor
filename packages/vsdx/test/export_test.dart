@@ -142,13 +142,37 @@ void main() {
         ),
       ]),
     );
+    const rtlLeft = VsdxParaStyle(
+      horizontalAlign: VsdxHorzAlign.left,
+      flags: 1,
+    );
+    final flagged = VsdxShapeFactory.rectangle(
+      id: page.nextFreeShapeId() + 2,
+      pinX: 2,
+      pinY: 4,
+      width: 2,
+      height: 0.6,
+    ).copyWith(
+      richText: const VsdxRichText(runs: [
+        VsdxTextRun(text: 'RTL left', paraStyle: rtlLeft),
+      ]),
+    );
     doc = doc.replacePage(
       0,
-      page.addShape(left).addShape(center),
+      page.addShape(left).addShape(center).addShape(flagged),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('text-anchor="start"'));
     expect(svg, contains('text-anchor="middle"'));
+    expect(svg, contains('text-anchor="end"'));
+    expect(rtlLeft.effectiveHorizontalAlign, VsdxHorzAlign.right);
+    expect(
+      const VsdxParaStyle(
+        horizontalAlign: VsdxHorzAlign.right,
+        flags: 1,
+      ).effectiveHorizontalAlign,
+      VsdxHorzAlign.left,
+    );
   });
 
   test('SVG wraps long labels to TxtWidth and preserves spaces', () {

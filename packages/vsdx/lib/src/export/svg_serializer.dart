@@ -3813,11 +3813,12 @@ class VsdxToSvgSerializer {
     buf.writeln('$indent<g transform="$textXf">');
     for (final layout in layouts) {
       final style = layout.style;
+      final horizontalAlign = style.effectiveHorizontalAlign;
       final indentL = style.indentLeftInches;
       final indentF = style.indentFirstInches;
       final textBandX = layout.textBandX;
       final bandRight = layoutW - layoutMr - style.indentRightInches;
-      final (anchor, xBody) = switch (style.horizontalAlign) {
+      final (anchor, xBody) = switch (horizontalAlign) {
         VsdxHorzAlign.left || VsdxHorzAlign.justify => (
             'start',
             textBandX,
@@ -3884,7 +3885,7 @@ class VsdxToSvgSerializer {
       }
       // Approximate Visio Justify on the body band only (bullet is separate).
       var justifyAttr = '';
-      if (style.horizontalAlign == VsdxHorzAlign.justify) {
+      if (horizontalAlign == VsdxHorzAlign.justify) {
         final bandW = math.max(0.04, bandRight - textBandX);
         var natural = 0.0;
         for (final (raw, run) in layout.segs) {
@@ -3944,6 +3945,7 @@ class VsdxToSvgSerializer {
     var minX = double.infinity;
     var maxX = double.negativeInfinity;
     for (final p in _splitSvgParagraphs(runs)) {
+      final horizontalAlign = p.style.effectiveHorizontalAlign;
       cursor += p.style.spaceBeforeInches;
       final lineH = _svgParaLineHeight(p.segs, p.style);
       final indentL = p.style.indentLeftInches;
@@ -3970,7 +3972,7 @@ class VsdxToSvgSerializer {
         for (final (raw, run) in wrapped[i]) {
           natural += _estSvgTextWidth(raw, run.charStyle);
         }
-        final (x0, x1) = switch (p.style.horizontalAlign) {
+        final (x0, x1) = switch (horizontalAlign) {
           VsdxHorzAlign.right => (bandRight - natural, bandRight),
           VsdxHorzAlign.center => (
               xBand + (bandRight - xBand - natural) / 2,
@@ -4116,7 +4118,7 @@ class VsdxToSvgSerializer {
     );
     for (final layout in layouts) {
       final widthAvailable = layout.right - layout.left;
-      final (anchor, x) = switch (layout.style.horizontalAlign) {
+      final (anchor, x) = switch (layout.style.effectiveHorizontalAlign) {
         VsdxHorzAlign.right => ('end', layout.right),
         VsdxHorzAlign.center => ('middle', layout.left + widthAvailable / 2),
         _ => ('start', layout.left),
