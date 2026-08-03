@@ -42,18 +42,18 @@ class PagesParser {
     Map<int, VsdxColor> colorPalette = const <int, VsdxColor>{},
     Map<int, String> fontNames = const <int, String>{},
   })  : _resolver = RelationshipResolver(_package),
-        _pageParserFactory =
-            ((Map<String, String>? rels) => pageParser ??
-                PageParser(
-                  style: StyleParser(colorPalette: colorPalette),
-                  richText: RichTextParser(
-                    colorPalette: colorPalette,
-                    fontNames: fontNames,
-                  ),
-                  masters: masters,
-                  stylesheets: stylesheets,
-                  imageRels: rels,
-                )),
+        _pageParserFactory = ((Map<String, String>? rels) =>
+            pageParser ??
+            PageParser(
+              style: StyleParser(colorPalette: colorPalette),
+              richText: RichTextParser(
+                colorPalette: colorPalette,
+                fontNames: fontNames,
+              ),
+              masters: masters,
+              stylesheets: stylesheets,
+              imageRels: rels,
+            )),
         _hasInjectedParser = pageParser != null,
         _colorPalette = colorPalette;
 
@@ -97,13 +97,21 @@ class PagesParser {
 
     final out = <VsdxPage>[];
     for (var i = 0; i < pageEls.length; i++) {
-      final page = _readIndexEntry(
-        pageEls[i],
-        pagesPart: pagesPart,
-        pageIndex: i,
-        totalPages: pageEls.length,
-      );
-      if (page != null) out.add(page);
+      try {
+        final page = _readIndexEntry(
+          pageEls[i],
+          pagesPart: pagesPart,
+          pageIndex: i,
+          totalPages: pageEls.length,
+        );
+        if (page != null) out.add(page);
+      } catch (error, stackTrace) {
+        _log.warning(
+          'Skipping malformed page index entry ${i + 1} in $pagesPart',
+          error,
+          stackTrace,
+        );
+      }
     }
     return out;
   }
@@ -130,8 +138,10 @@ class PagesParser {
         ? parsedBackPageId
         : null;
     final viewScale = double.tryParse(pageEl.getAttribute('ViewScale') ?? '');
-    final viewCenterX = double.tryParse(pageEl.getAttribute('ViewCenterX') ?? '');
-    final viewCenterY = double.tryParse(pageEl.getAttribute('ViewCenterY') ?? '');
+    final viewCenterX =
+        double.tryParse(pageEl.getAttribute('ViewCenterX') ?? '');
+    final viewCenterY =
+        double.tryParse(pageEl.getAttribute('ViewCenterY') ?? '');
 
     // libvisio starts every VSDX page at 0 × 0 and only changes the canvas
     // when PageWidth / PageHeight cells are actually present.
@@ -174,9 +184,8 @@ class PagesParser {
             _log.warning('Page part is malformed; keeping empty page: $target');
           }
           if (pageXml != null) {
-            final imageRels = _hasInjectedParser
-                ? null
-                : _collectImageRels(target);
+            final imageRels =
+                _hasInjectedParser ? null : _collectImageRels(target);
             var parser = _pageParserFactory(imageRels);
             if (!_hasInjectedParser) {
               parser = parser.withFieldResolver(FieldResolver(
@@ -190,20 +199,37 @@ class PagesParser {
               sheet.shadowOffsetYInches,
             );
             try {
-              shapes
-                ..clear()
-                ..addAll(parser
-                    .parseShapes(pageXml, partName: target)
-                    .map(
-                      (shape) =>
-                          scaleVisioDrawingShape(shape, drawingScale),
-                    ));
-              connects = const ConnectParser().parsePage(pageXml.rootElement);
-            } catch (_) {
+              final parsed = parser.parseShapes(pageXml, partName: target);
+              for (final shape in parsed) {
+                try {
+                  shapes.add(scaleVisioDrawingShape(shape, drawingScale));
+                } catch (error, stackTrace) {
+                  // A single malformed transform must not discard the other
+                  // shapes that PageParser already recovered from this page.
+                  _log.warning(
+                    'Shape ${shape.id} could not be scaled; skipping it',
+                    error,
+                    stackTrace,
+                  );
+                }
+              }
+            } catch (error, stackTrace) {
               _log.warning(
                 'Page content could not be parsed; keeping empty page: $target',
+                error,
+                stackTrace,
               );
-              shapes.clear();
+            }
+            try {
+              connects = const ConnectParser().parsePage(pageXml.rootElement);
+            } catch (error, stackTrace) {
+              // Connect rows enrich routing but are not required to display
+              // the page's shapes. Keep the recovered drawing when damaged.
+              _log.warning(
+                'Connect rows could not be parsed; keeping shapes: $target',
+                error,
+                stackTrace,
+              );
               connects = const <VsdxConnect>[];
             }
           } else {
@@ -270,13 +296,13 @@ class PagesParser {
 
     const def = _libvisioPageSheetDefaults;
     return VsdxPageSheet(
-      shadowOffsetXInches: readLengthInches(pageSheet, 'ShdwOffsetX') ??
-          def.shadowOffsetXInches,
-      shadowOffsetYInches: readLengthInches(pageSheet, 'ShdwOffsetY') ??
-          def.shadowOffsetYInches,
-      pageScale: d('PageScale',
-              inheritFrom: def.pageScale, useCachedValue: true) ??
-          def.pageScale,
+      shadowOffsetXInches:
+          readLengthInches(pageSheet, 'ShdwOffsetX') ?? def.shadowOffsetXInches,
+      shadowOffsetYInches:
+          readLengthInches(pageSheet, 'ShdwOffsetY') ?? def.shadowOffsetYInches,
+      pageScale:
+          d('PageScale', inheritFrom: def.pageScale, useCachedValue: true) ??
+              def.pageScale,
       pageScaleUnit: unit('PageScale') ?? def.pageScaleUnit,
       drawingScale: d('DrawingScale',
               inheritFrom: def.drawingScale, useCachedValue: true) ??
@@ -296,21 +322,21 @@ class PagesParser {
       uiVisibility:
           i('UIVisibility', inheritFrom: def.uiVisibility) ?? def.uiVisibility,
       shadowType: i('ShdwType', inheritFrom: def.shadowType) ?? def.shadowType,
-      shadowObliqueAngle: d('ShdwObliqueAngle',
-              inheritFrom: def.shadowObliqueAngle) ??
-          def.shadowObliqueAngle,
-      shadowScaleFactor: d('ShdwScaleFactor',
-              inheritFrom: def.shadowScaleFactor) ??
-          def.shadowScaleFactor,
+      shadowObliqueAngle:
+          d('ShdwObliqueAngle', inheritFrom: def.shadowObliqueAngle) ??
+              def.shadowObliqueAngle,
+      shadowScaleFactor:
+          d('ShdwScaleFactor', inheritFrom: def.shadowScaleFactor) ??
+              def.shadowScaleFactor,
       pageShapeSplit: b('PageShapeSplit', def.pageShapeSplit),
       lineJumpCode: i('LineJumpCode'),
       lineJumpStyle: i('LineJumpStyle'),
       lineJumpDirX: i('PageLineJumpDirX'),
       lineJumpDirY: i('PageLineJumpDirY'),
-      lineToLineXInches: readLengthInches(pageSheet, 'LineToLineX') ??
-          d('LineToLineX'),
-      lineToLineYInches: readLengthInches(pageSheet, 'LineToLineY') ??
-          d('LineToLineY'),
+      lineToLineXInches:
+          readLengthInches(pageSheet, 'LineToLineX') ?? d('LineToLineX'),
+      lineToLineYInches:
+          readLengthInches(pageSheet, 'LineToLineY') ?? d('LineToLineY'),
       lineJumpFactorX: d('LineJumpFactorX'),
       lineJumpFactorY: d('LineJumpFactorY'),
       marginLeftInches: readLengthInches(pageSheet, 'PageLeftMargin',
@@ -325,13 +351,11 @@ class PagesParser {
       marginBottomInches: readLengthInches(pageSheet, 'PageBottomMargin',
               inheritFrom: def.marginBottomInches) ??
           def.marginBottomInches,
-      printPageOrientation: i('PrintPageOrientation',
-              inheritFrom: def.printPageOrientation) ??
-          def.printPageOrientation,
-      variationColorIndex:
-          i('VariationColorIndex', useCachedValue: true),
-      variationStyleIndex:
-          i('VariationStyleIndex', useCachedValue: true),
+      printPageOrientation:
+          i('PrintPageOrientation', inheritFrom: def.printPageOrientation) ??
+              def.printPageOrientation,
+      variationColorIndex: i('VariationColorIndex', useCachedValue: true),
+      variationStyleIndex: i('VariationStyleIndex', useCachedValue: true),
     );
   }
 
@@ -353,8 +377,7 @@ class PagesParser {
     final out = <String, String>{};
     for (final rel in _package.readPartRelationships(pagePart)) {
       if (!VsdxRelType.image.matches(rel.type)) continue;
-      out[rel.id] =
-          _package.resolveRelationshipTarget(pagePart, rel.target);
+      out[rel.id] = _package.resolveRelationshipTarget(pagePart, rel.target);
     }
     return out;
   }

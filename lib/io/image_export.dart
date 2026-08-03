@@ -27,15 +27,31 @@ Future<Uint8List?> renderPageToPng(
   double lineJumpRadiusInches = 0.07,
   bool colorByLayer = false,
 }) async {
-  final w = (page.widthInches <= 0 ? 8.5 : page.widthInches) * pxPerInch;
-  final h = (page.heightInches <= 0 ? 11.0 : page.heightInches) * pxPerInch;
+  // LibreOffice/libvisio fall back to ISO A4 for malformed pages without a
+  // PageWidth/PageHeight. Normal documents always carry positive dimensions.
+  final safeDpi = pxPerInch.isFinite && pxPerInch > 0 ? pxPerInch : 150.0;
+  final pageWidth = page.widthInches.isFinite && page.widthInches > 0
+      ? page.widthInches
+      : 8.2677165354;
+  final pageHeight = page.heightInches.isFinite && page.heightInches > 0
+      ? page.heightInches
+      : 11.6929133858;
+  final w = pageWidth * safeDpi;
+  final h = pageHeight * safeDpi;
   final cache = VsdxImageCache();
   try {
     await cache.warmUp(images);
-    await PatternFillBuilder.warmUpShared();
+    // Hatching is an enhancement. If the graphics backend cannot allocate a
+    // tile in release mode, continue with the painter's solid-fill fallback.
+    try {
+      await PatternFillBuilder.warmUpShared();
+    } catch (_) {
+      // Best-effort export; PatternFillBuilder.shared remains usable/empty.
+    }
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
-    final layerIds = visibleLayerIdsOverride ??
+    final layerIds =
+        visibleLayerIdsOverride ??
         (page.layers.isEmpty ? null : page.printableLayerIds);
     final underlayLayerIds = underlayPage == null || underlayPage.layers.isEmpty
         ? null
@@ -47,7 +63,7 @@ Future<Uint8List?> renderPageToPng(
       images: images,
       imageCache: cache,
       patternBuilder: PatternFillBuilder.shared,
-      pxPerInch: pxPerInch,
+      pxPerInch: safeDpi,
       backgroundColor: const Color(0xFFFFFFFF),
       respectLayerVisibility: layerIds != null || underlayLayerIds != null,
       visibleLayerIdsOverride: layerIds,
@@ -57,6 +73,9 @@ Future<Uint8List?> renderPageToPng(
       colorByLayer: colorByLayer,
       // Match SVG export: no fold chevrons / kind-hint dashed frames.
       drawEditorChrome: false,
+      drawPageBorder: false,
+      drawPlaceholders: false,
+      drawNameFallback: false,
     ).paint(canvas, Size(w, h));
     final picture = recorder.endRecording();
     final image = await picture.toImage(w.ceil(), h.ceil());

@@ -180,30 +180,31 @@ class PageParser {
       proto = null;
     }
 
-    final pinX = readLengthInches(shapeEl, 'PinX', inheritFrom: proto?.pinX) ??
-        proto?.pinX ??
-        0;
-    final pinY = readLengthInches(shapeEl, 'PinY', inheritFrom: proto?.pinY) ??
-        proto?.pinY ??
-        0;
-    final width = readLengthInches(shapeEl, 'Width', inheritFrom: proto?.width) ??
-        proto?.width ??
-        0.0;
+    double? instanceLength(String name, double? inherited) {
+      final cell = findCell(shapeEl, name);
+      if (masterShapeId != null &&
+          cell != null &&
+          isInhFormula(cell.getAttribute('F'))) {
+        final cached = double.tryParse(cell.getAttribute('V') ?? '');
+        if (cached != null) return cached;
+      }
+      return readLengthInches(shapeEl, name, inheritFrom: inherited);
+    }
+
+    final pinX = instanceLength('PinX', proto?.pinX) ?? proto?.pinX ?? 0;
+    final pinY = instanceLength('PinY', proto?.pinY) ?? proto?.pinY ?? 0;
+    final width = instanceLength('Width', proto?.width) ?? proto?.width ?? 0.0;
     final height =
-        readLengthInches(shapeEl, 'Height', inheritFrom: proto?.height) ??
-            proto?.height ??
-            0.0;
+        instanceLength('Height', proto?.height) ?? proto?.height ?? 0.0;
     // LocPinX/LocPinY — the in-shape point that sits on the pin (and the
     // rotation centre). Usually the centre for 2-D shapes, but connectors and
     // some stencils pin off-centre; keep it so geometry maps to the right spot.
-    final locPinX =
-        readLengthInches(shapeEl, 'LocPinX', inheritFrom: proto?.locPinXInches) ??
-            proto?.locPinXInches ??
-            0.0;
-    final locPinY =
-        readLengthInches(shapeEl, 'LocPinY', inheritFrom: proto?.locPinYInches) ??
-            proto?.locPinYInches ??
-            0.0;
+    final locPinX = instanceLength('LocPinX', proto?.locPinXInches) ??
+        proto?.locPinXInches ??
+        0.0;
+    final locPinY = instanceLength('LocPinY', proto?.locPinYInches) ??
+        proto?.locPinYInches ??
+        0.0;
     final angleRad =
         readAngleRadians(shapeEl, 'Angle', inheritFrom: proto?.angleRad) ??
             proto?.angleRad ??
@@ -241,14 +242,12 @@ class PageParser {
         readLengthInches(shapeEl, 'BeginY', inheritFrom: proto?.beginY) ??
             proto?.beginY ??
             (is1D ? 0.0 : null);
-    final endX =
-        readLengthInches(shapeEl, 'EndX', inheritFrom: proto?.endX) ??
-            proto?.endX ??
-            (is1D ? 0.0 : null);
-    final endY =
-        readLengthInches(shapeEl, 'EndY', inheritFrom: proto?.endY) ??
-            proto?.endY ??
-            (is1D ? 0.0 : null);
+    final endX = readLengthInches(shapeEl, 'EndX', inheritFrom: proto?.endX) ??
+        proto?.endX ??
+        (is1D ? 0.0 : null);
+    final endY = readLengthInches(shapeEl, 'EndY', inheritFrom: proto?.endY) ??
+        proto?.endY ??
+        (is1D ? 0.0 : null);
 
     // Nested <Shapes> ⇒ a group. Children inherit the same master context so
     // their `MasterShape="N"` references resolve against master [master].
@@ -268,7 +267,11 @@ class PageParser {
       // Inherit master geometry by IX: instance rows override same-IX master
       // rows, `Del` removes them, and section flags inherit unless overridden
       // (mirrors libvisio's per-IX geometry inheritance).
-      geometries = GeometryParser.mergeInherited(proto.geometries, geometries);
+      geometries = GeometryParser.mergeInherited(
+        proto.geometries,
+        geometries,
+        preferInstanceCachedInh: masterShapeId != null,
+      );
     }
 
     // Picture / Foreign shapes typically have no fill or stroke; when the
@@ -408,8 +411,8 @@ class PageParser {
         proto?.text;
 
     final layerMembers = LayerParser.parseLayerMembersOrNull(shapeEl);
-    final imagePartName = _resolveForeignDataPart(shapeEl) ??
-        proto?.imagePartName;
+    final imagePartName =
+        _resolveForeignDataPart(shapeEl) ?? proto?.imagePartName;
     final foreignMeta = _readForeignDataMeta(shapeEl);
     final foreignType = foreignMeta.$1 ?? proto?.foreignType;
     final foreignCompressionType =
@@ -488,20 +491,19 @@ class PageParser {
         : ownConnPts;
     final ownHyperlinks =
         const HyperlinkParser().parse(shapeEl, inherit: proto?.hyperlinks);
-    final hyperlinks =
-        ownHyperlinks.isEmpty && proto != null ? proto.hyperlinks : ownHyperlinks;
+    final hyperlinks = ownHyperlinks.isEmpty && proto != null
+        ? proto.hyperlinks
+        : ownHyperlinks;
 
     const userParser = UserPropertyParser();
-    final ownProps = userParser.parseProperties(shapeEl,
-        inherit: proto?.userProperties);
-    final props = ownProps.isEmpty && proto != null
-        ? proto.userProperties
-        : ownProps;
+    final ownProps =
+        userParser.parseProperties(shapeEl, inherit: proto?.userProperties);
+    final props =
+        ownProps.isEmpty && proto != null ? proto.userProperties : ownProps;
     final ownUserCells =
         userParser.parseUserCells(shapeEl, inherit: proto?.userCells);
-    final userCells = ownUserCells.isEmpty && proto != null
-        ? proto.userCells
-        : ownUserCells;
+    final userCells =
+        ownUserCells.isEmpty && proto != null ? proto.userCells : ownUserCells;
     List<double>? drawioDashPattern;
     var drawioFixedDash = false;
     for (final cell in userCells) {
@@ -554,10 +556,10 @@ class PageParser {
         beginY != null &&
         endX != null &&
         endY != null;
-    final canonicalPinX = connectorFrame &&
-        _referencesBoth(formulas['PinX'], 'BeginX', 'EndX');
-    final canonicalPinY = connectorFrame &&
-        _referencesBoth(formulas['PinY'], 'BeginY', 'EndY');
+    final canonicalPinX =
+        connectorFrame && _referencesBoth(formulas['PinX'], 'BeginX', 'EndX');
+    final canonicalPinY =
+        connectorFrame && _referencesBoth(formulas['PinY'], 'BeginY', 'EndY');
     final shapePinX = canonicalPinX ? (beginX + endX) * 0.5 : pinX;
     final shapePinY = canonicalPinY ? (beginY + endY) * 0.5 : pinY;
     final connectorProps = _readConnectorProps(
@@ -585,7 +587,7 @@ class PageParser {
       userProperties: props,
     );
 
-    return VsdxShape(
+    var parsed = VsdxShape(
       id: id,
       name: nameU,
       pinX: shapePinX,
@@ -690,7 +692,20 @@ class PageParser {
       formulas: formulas,
       connectorProps: connectorProps,
       shapeKind: shapeKind,
-    ).restoreRouteState();
+    );
+    // Master instances inherit formulas such as LocPinX=Width*0.5 and
+    // Geometry.X=Width*1. Their cached values in the master describe the
+    // stencil's default size, while the instance can carry a different
+    // literal Width/Height. Re-evaluate after applying the instance XForm so
+    // geometry, text blocks and connection points expand with that instance,
+    // matching libvisio/LibreOffice.
+    if (proto != null) {
+      // Inherited Scratch rows keep the master's evaluated V= cache, exactly
+      // as libvisio does; geometry/XForm formulas may still consume it while
+      // adapting to the instance Width/Height.
+      parsed = parsed.recalculateLocalFormulas(recalculateScratch: false);
+    }
+    return parsed.restoreRouteState();
   }
 
   /// `<Section N="Control">` — named handle rows (libvisio / MS-VSDX).
@@ -742,20 +757,17 @@ class PageParser {
               0,
           xFormula: _formulaOrInherit(row, 'X', proto?.xFormula),
           yFormula: _formulaOrInherit(row, 'Y', proto?.yFormula),
-          dynXFormula: _formulaOrInherit(
-                  row, dynXName, proto?.dynXFormula) ??
+          dynXFormula: _formulaOrInherit(row, dynXName, proto?.dynXFormula) ??
               _formulaOrInherit(row, 'DynX', proto?.dynXFormula),
-          dynYFormula: _formulaOrInherit(
-                  row, dynYName, proto?.dynYFormula) ??
+          dynYFormula: _formulaOrInherit(row, dynYName, proto?.dynYFormula) ??
               _formulaOrInherit(row, 'DynY', proto?.dynYFormula),
-          conXFormula: _formulaOrInherit(
-                  row, conXName, proto?.conXFormula) ??
+          conXFormula: _formulaOrInherit(row, conXName, proto?.conXFormula) ??
               _formulaOrInherit(row, 'ConX', proto?.conXFormula),
-          conYFormula: _formulaOrInherit(
-                  row, conYName, proto?.conYFormula) ??
+          conYFormula: _formulaOrInherit(row, conYName, proto?.conYFormula) ??
               _formulaOrInherit(row, 'ConY', proto?.conYFormula),
           canGlue: (_int(row, 'CanGlue',
-                      inheritFrom: proto == null ? null : (proto.canGlue ? 1 : 0)) ??
+                      inheritFrom:
+                          proto == null ? null : (proto.canGlue ? 1 : 0)) ??
                   (proto?.canGlue == true ? 1 : 0)) !=
               0,
           prompt: () {
@@ -962,8 +974,16 @@ class PageParser {
       if (inherit != null) ...inherit,
     };
     for (final name in _formulaCellNames) {
-      final f = _formula(shapeEl, name);
-      if (f == null || isInhFormula(f)) continue;
+      final cell = findCell(shapeEl, name);
+      if (cell == null) continue;
+      final f = cell.getAttribute('F');
+      if (f == null || f.trim().isEmpty) {
+        // A local literal cell replaces, rather than supplements, the
+        // master's formula (notably an instance Width/Height/Pin).
+        out.remove(name);
+        continue;
+      }
+      if (isInhFormula(f)) continue;
       out[name] = f;
     }
     return Map.unmodifiable(out);
@@ -981,9 +1001,8 @@ class PageParser {
     final end = (endCell != null && isInhFormula(endCell.getAttribute('F')))
         ? inherit?.endTrigger
         : endCell?.getAttribute('V');
-    final glue =
-        _int(shapeEl, 'GlueType', inheritFrom: inherit?.glueType) ??
-            inherit?.glueType;
+    final glue = _int(shapeEl, 'GlueType', inheritFrom: inherit?.glueType) ??
+        inherit?.glueType;
     final fixed =
         _int(shapeEl, 'ConFixedCode', inheritFrom: inherit?.conFixedCode) ??
             inherit?.conFixedCode;
@@ -1011,9 +1030,9 @@ class PageParser {
     final route = _int(shapeEl, 'ShapeRouteStyle',
             inheritFrom: inherit?.shapeRouteStyle) ??
         inherit?.shapeRouteStyle;
-    final placeFlip = _int(shapeEl, 'ShapePlaceFlip',
-            inheritFrom: inherit?.shapePlaceFlip) ??
-        inherit?.shapePlaceFlip;
+    final placeFlip =
+        _int(shapeEl, 'ShapePlaceFlip', inheritFrom: inherit?.shapePlaceFlip) ??
+            inherit?.shapePlaceFlip;
     final props = VsdxConnectorProps(
       begTrigger: (beg == null || beg.isEmpty) ? null : beg,
       endTrigger: (end == null || end.isEmpty) ? null : end,
@@ -1097,7 +1116,8 @@ class PageParser {
           action: _stringCellOrInherit(findCell(row, 'Action'), proto?.action),
           actionFormula: _formulaOrInherit(row, 'Action', proto?.actionFormula),
           checked: (_int(row, 'Checked',
-                      inheritFrom: proto == null ? null : (proto.checked ? 1 : 0)) ??
+                      inheritFrom:
+                          proto == null ? null : (proto.checked ? 1 : 0)) ??
                   (proto?.checked == true ? 1 : 0)) !=
               0,
           disabled: (_int(row, 'Disabled',
@@ -1180,10 +1200,9 @@ class PageParser {
       if (section.getAttribute('N') != 'Connection') continue;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
-        final proto =
-            (inherit != null && out.length < inherit.length)
-                ? inherit[out.length]
-                : null;
+        final proto = (inherit != null && out.length < inherit.length)
+            ? inherit[out.length]
+            : null;
         final x = readLengthInches(row, 'X', inheritFrom: proto?.x) ?? proto?.x;
         final y = readLengthInches(row, 'Y', inheritFrom: proto?.y) ?? proto?.y;
         if (x == null || y == null) continue;
@@ -1196,7 +1215,8 @@ class PageParser {
         final type =
             _int(row, 'Type', inheritFrom: proto?.type) ?? proto?.type ?? 0;
         final autoGen = (_int(row, 'AutoGen',
-                    inheritFrom: proto == null ? null : (proto.autoGen ? 1 : 0)) ??
+                    inheritFrom:
+                        proto == null ? null : (proto.autoGen ? 1 : 0)) ??
                 (proto?.autoGen == true ? 1 : 0)) !=
             0;
         final promptCell = findCell(row, 'Prompt');
@@ -1222,7 +1242,8 @@ class PageParser {
     return List.unmodifiable(out);
   }
 
-  static double? _double(XmlElement parent, String name, {double? inheritFrom}) {
+  static double? _double(XmlElement parent, String name,
+      {double? inheritFrom}) {
     final cell = findCell(parent, name);
     if (cell == null) return null;
     if (isInhFormula(cell.getAttribute('F'))) {

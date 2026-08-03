@@ -31,6 +31,22 @@ class StyleParser {
       {VsdxFill defaults = VsdxFill.defaultFill}) {
     final fgRes = _resolveColor(shape, 'FillForegnd', 'QuickStyleFillColor');
     final bgRes = _resolveColor(shape, 'FillBkgnd', 'QuickStyleFillColor');
+    final inheritedForegroundTheme = _localQuickStyleOverride(
+      shape,
+      'QuickStyleFillColor',
+      defaults.themeForegroundIndex,
+    );
+    final inheritedBackgroundTheme = _localQuickStyleOverride(
+      shape,
+      'QuickStyleFillColor',
+      defaults.themeBackgroundIndex,
+    );
+    final foregroundTheme = fgRes.color != null
+        ? null
+        : fgRes.themeIndex ?? inheritedForegroundTheme;
+    final backgroundTheme = bgRes.color != null
+        ? null
+        : bgRes.themeIndex ?? inheritedBackgroundTheme;
 
     final fgT = _double(
           shape,
@@ -64,21 +80,17 @@ class StyleParser {
     }
 
     return VsdxFill(
-      foreground: fgRes.themeIndex != null
-          ? null
-          : fgRes.color ?? defaults.foreground,
-      background: bgRes.themeIndex != null
-          ? null
-          : bgRes.color ?? defaults.background,
+      foreground: foregroundTheme == null
+          ? fgRes.color ?? defaults.foreground
+          : (foregroundTheme == 100 ? defaults.foreground : null),
+      background: backgroundTheme == null
+          ? bgRes.color ?? defaults.background
+          : (backgroundTheme == 100 ? defaults.background : null),
       foregroundTransparency: fgT.clamp(0.0, 1.0),
       backgroundTransparency: bgT.clamp(0.0, 1.0),
       pattern: pat,
-      themeForegroundIndex: fgRes.color != null
-          ? null
-          : fgRes.themeIndex ?? defaults.themeForegroundIndex,
-      themeBackgroundIndex: bgRes.color != null
-          ? null
-          : bgRes.themeIndex ?? defaults.themeBackgroundIndex,
+      themeForegroundIndex: foregroundTheme,
+      themeBackgroundIndex: backgroundTheme,
       gradient: gradient,
     );
   }
@@ -105,8 +117,7 @@ class StyleParser {
       if (section.getAttribute('N') != 'FillGradient') continue;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
-        final ix =
-            int.tryParse(row.getAttribute('IX') ?? '') ?? stopIx;
+        final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? stopIx;
         stopIx++;
         final proto = (inherit != null && ix < inherit.stops.length)
             ? inherit.stops[ix]
@@ -184,10 +195,10 @@ class StyleParser {
     // Only inherit Trans from an enabled master; otherwise keep cached V so
     // F=Inh does not wipe a local transparency (disabled default is 1.0).
     final transparency = (_double(
-          shape,
-          'GlowColorTrans',
-          inheritFrom: defaults.enabled ? defaults.transparency : null,
-        ) ??
+              shape,
+              'GlowColorTrans',
+              inheritFrom: defaults.enabled ? defaults.transparency : null,
+            ) ??
             defaults.transparency)
         .clamp(0.0, 1.0);
     final enabled = size != null && size > 0;
@@ -242,10 +253,10 @@ class StyleParser {
     // Only inherit Trans from an enabled master; otherwise keep cached V so
     // F=Inh does not wipe a local transparency (disabled default is 1.0).
     final transparency = (_double(
-          shape,
-          'ReflectionTransparency',
-          inheritFrom: defaults.enabled ? defaults.transparency : null,
-        ) ??
+              shape,
+              'ReflectionTransparency',
+              inheritFrom: defaults.enabled ? defaults.transparency : null,
+            ) ??
             defaults.transparency)
         .clamp(0.0, 1.0);
     final enabled = size != null && size > 0;
@@ -335,10 +346,10 @@ class StyleParser {
     // Only inherit Trans from an enabled master; otherwise keep cached V so
     // F=Inh does not wipe a local transparency (disabled default is 1.0).
     final transparency = (_double(
-          shape,
-          'ShadowForegndTrans',
-          inheritFrom: defaults.enabled ? defaults.transparency : null,
-        ) ??
+              shape,
+              'ShadowForegndTrans',
+              inheritFrom: defaults.enabled ? defaults.transparency : null,
+            ) ??
             _double(
               shape,
               'ShdwForegndTrans',
@@ -396,15 +407,21 @@ class StyleParser {
   VsdxLine parseLine(XmlElement shape,
       {VsdxLine defaults = VsdxLine.defaultLine}) {
     final colorRes = _resolveColor(shape, 'LineColor', 'QuickStyleLineColor');
+    final inheritedTheme = _localQuickStyleOverride(
+      shape,
+      'QuickStyleLineColor',
+      defaults.themeColorIndex,
+    );
+    final lineTheme =
+        colorRes.color != null ? null : colorRes.themeIndex ?? inheritedTheme;
     final weight = readLengthInches(
           shape,
           'LineWeight',
           inheritFrom: defaults.weightInches,
         ) ??
         defaults.weightInches;
-    final pat =
-        _int(shape, 'LinePattern', inheritFrom: defaults.pattern) ??
-            defaults.pattern;
+    final pat = _int(shape, 'LinePattern', inheritFrom: defaults.pattern) ??
+        defaults.pattern;
     final capInt = _int(
       shape,
       'LineCap',
@@ -424,9 +441,8 @@ class StyleParser {
     final beginArrow =
         _int(shape, 'BeginArrow', inheritFrom: defaults.beginArrow) ??
             defaults.beginArrow;
-    final endArrow =
-        _int(shape, 'EndArrow', inheritFrom: defaults.endArrow) ??
-            defaults.endArrow;
+    final endArrow = _int(shape, 'EndArrow', inheritFrom: defaults.endArrow) ??
+        defaults.endArrow;
     final beginSize = _int(
       shape,
       'BeginArrowSize',
@@ -444,8 +460,8 @@ class StyleParser {
           inheritFrom: defaults.roundingInches,
         ) ??
         defaults.roundingInches;
-    final softEdges = readLengthInches(
-          shape, 'SoftEdgesSize', inheritFrom: defaults.softEdgesInches) ??
+    final softEdges = readLengthInches(shape, 'SoftEdgesSize',
+            inheritFrom: defaults.softEdgesInches) ??
         defaults.softEdgesInches;
     final compoundType =
         _int(shape, 'CompoundType', inheritFrom: defaults.compoundType) ??
@@ -453,7 +469,8 @@ class StyleParser {
     // Explicit LineGradientEnabled=0 must clear — do not inherit Master.
     // F=Inh is not a local override — use Master/stylesheet only.
     final lineGradEnabledCell = findCell(shape, 'LineGradientEnabled');
-    final parsedLineGrad = _parseLineGradient(shape, inherit: defaults.gradient);
+    final parsedLineGrad =
+        _parseLineGradient(shape, inherit: defaults.gradient);
     final VsdxGradient? gradient;
     if (lineGradEnabledCell != null &&
         isInhFormula(lineGradEnabledCell.getAttribute('F'))) {
@@ -465,16 +482,14 @@ class StyleParser {
     }
 
     return VsdxLine(
-      color: colorRes.themeIndex != null
-          ? null
-          : colorRes.color ?? defaults.color,
+      color: lineTheme == null
+          ? colorRes.color ?? defaults.color
+          : (lineTheme == 100 ? defaults.color : null),
       weightInches: weight,
       pattern: pat,
       cap: cap,
       transparency: transparency.clamp(0.0, 1.0),
-      themeColorIndex: colorRes.color != null
-          ? null
-          : colorRes.themeIndex ?? defaults.themeColorIndex,
+      themeColorIndex: lineTheme,
       beginArrow: beginArrow,
       endArrow: endArrow,
       beginArrowSizeInches: beginSize == null
@@ -492,6 +507,22 @@ class StyleParser {
       compoundType: compoundType,
       gradient: gradient,
     );
+  }
+
+  /// A shape can inherit `FillForegnd=THEMEVAL()` / `LineColor=THEMEVAL()`
+  /// from its stylesheet while supplying only a local QuickStyle colour.
+  /// libvisio applies that local selector after stylesheet inheritance.
+  int? _localQuickStyleOverride(
+    XmlElement shape,
+    String cellName,
+    int? inheritedTheme,
+  ) {
+    if (inheritedTheme == null) return null;
+    final cell = findCell(shape, cellName);
+    if (cell == null || isInhFormula(cell.getAttribute('F'))) {
+      return inheritedTheme;
+    }
+    return int.tryParse(cell.getAttribute('V') ?? '') ?? inheritedTheme;
   }
 
   /// `LineGradientEnabled` + `<Section N="LineGradient">` (mirrors fill).
@@ -515,8 +546,7 @@ class StyleParser {
       if (section.getAttribute('N') != 'LineGradient') continue;
       for (final row in section.childElements) {
         if (row.name.local != 'Row') continue;
-        final ix =
-            int.tryParse(row.getAttribute('IX') ?? '') ?? stopIx;
+        final ix = int.tryParse(row.getAttribute('IX') ?? '') ?? stopIx;
         stopIx++;
         final proto = (inherit != null && ix < inherit.stops.length)
             ? inherit.stops[ix]

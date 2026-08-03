@@ -13,11 +13,12 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+
 import '../model/dash_pattern.dart';
 import '../model/document.dart';
 import '../model/effects.dart';
 import '../model/elliptical_arc.dart';
-import '../model/fill.dart';
 import '../model/geometry.dart';
 import '../model/image.dart';
 import '../model/layer.dart';
@@ -37,6 +38,8 @@ import '../utils/color.dart';
 import '../utils/gradient_math.dart';
 import 'compound_stroke.dart';
 import 'line_jumps.dart';
+
+final _log = Logger('vsdx.export.svg');
 
 /// Which layer flags the SVG serializer honours when filtering shapes.
 enum SvgLayerFilter {
@@ -110,6 +113,8 @@ class VsdxToSvgSerializer {
   /// Active Color-by-Layer tint while writing a shape subtree.
   VsdxColor? _layerTint;
   double _layerTintTrans = 0;
+  int _variationColorIndex = 0;
+  int _variationStyleIndex = 0;
 
   /// Serialize the entire document into a single multi-page SVG with each
   /// page wrapped in a `<g class="page-N">` translated downward. Use
@@ -242,9 +247,11 @@ class VsdxToSvgSerializer {
     );
     final underlay = underlayPage;
     if (underlay != null && underlay.shapes.isNotEmpty) {
+      _variationColorIndex = underlay.pageSheet.variationColorIndex ?? 0;
+      _variationStyleIndex = underlay.pageSheet.variationStyleIndex ?? 0;
       // Jump state is per painted page — prepare underlay routes before drawing
       // so bare shape ids do not collide with the foreground sheet.
-      _prepareLineJumps(underlay);
+      _prepareLineJumpsSafely(underlay);
       final clipId = 'underlay-clip-${page.id}';
       buf.writeln('$indent  <g class="underlay">');
       // Clip to the foreground page box (page inches, Y-up after transform).
@@ -260,7 +267,7 @@ class VsdxToSvgSerializer {
       // composited into multiple sheets does not collide SVG defs.
       final underPaintScope = 'p${page.id}-u${underlay.id}';
       for (final shape in underlay.shapes) {
-        _writeShape(
+        _writeShapeSafely(
           buf,
           shape,
           theme,
@@ -273,11 +280,13 @@ class VsdxToSvgSerializer {
       buf.writeln('$indent    </g>');
       buf.writeln('$indent  </g>');
     }
-    _prepareLineJumps(page);
+    _variationColorIndex = page.pageSheet.variationColorIndex ?? 0;
+    _variationStyleIndex = page.pageSheet.variationStyleIndex ?? 0;
+    _prepareLineJumpsSafely(page);
     final layers = _layerIds(page);
     final paintScope = 'p${page.id}';
     for (final shape in page.shapes) {
-      _writeShape(
+      _writeShapeSafely(
         buf,
         shape,
         theme,
@@ -327,6 +336,24 @@ class VsdxToSvgSerializer {
     _jumpRoutes = routes;
     _jumpCodes = codes;
     _jumpZ = z;
+  }
+
+  void _prepareLineJumpsSafely(VsdxPage page) {
+    try {
+      _prepareLineJumps(page);
+    } catch (error, stackTrace) {
+      // Jump routing is decorative. Preserve ordinary shape output if one
+      // malformed connector cannot be converted into a page-space polyline.
+      _log.warning(
+        'Connector route preparation failed for SVG page ${page.id}',
+        error,
+        stackTrace,
+      );
+      _jumpsEnabled = false;
+      _jumpRoutes = const <List<Offset2D>>[];
+      _jumpCodes = const <int?>[];
+      _jumpZ = const <int, int>{};
+    }
   }
 
   /// Shape-local stroke `d` with line jumps when this 1-D shape crosses
@@ -453,6 +480,38 @@ class VsdxToSvgSerializer {
     }
   }
 
+  void _writeShapeSafely(
+    StringBuffer buf,
+    VsdxShape shape,
+    VsdxTheme theme,
+    VsdxPage page,
+    Set<int>? visibleLayers, {
+    required String paintIdScope,
+    required String indent,
+  }) {
+    // Serialize into a temporary buffer so a failure cannot leave the final
+    // SVG with an unterminated <g>, <a>, filter, or clipping element.
+    final shapeBuffer = StringBuffer();
+    try {
+      _writeShape(
+        shapeBuffer,
+        shape,
+        theme,
+        page,
+        visibleLayers,
+        paintIdScope: paintIdScope,
+        indent: indent,
+      );
+      buf.write(shapeBuffer);
+    } catch (error, stackTrace) {
+      _log.warning(
+        'Skipping shape ${shape.id} after an SVG serialization failure',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
   void _writeShapeBody(
     StringBuffer buf,
     VsdxShape shape,
@@ -481,9 +540,7 @@ class VsdxToSvgSerializer {
       buf.writeln('$indent<a $link>');
     }
     final opacity = shape.shapeOpacity;
-    final opacityAttr = opacity < 1.0 - 1e-9
-        ? ' opacity="${_n(opacity)}"'
-        : '';
+    final opacityAttr = opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
     buf.writeln(
       '$indent<g transform="${transforms.join(' ')}"$opacityAttr>',
     );
@@ -566,7 +623,9 @@ class VsdxToSvgSerializer {
       if (attachArrows) arrowsAttached = true;
       geomIndex++;
     }
-    if (shape.glassEffect && shape.supportsGlassEffect && fillParts.isNotEmpty) {
+    if (shape.glassEffect &&
+        shape.supportsGlassEffect &&
+        fillParts.isNotEmpty) {
       _writeGlassHighlight(
         buf,
         shape,
@@ -585,18 +644,19 @@ class VsdxToSvgSerializer {
         shape.endX != null &&
         shape.endY != null) {
       // Canvas paints geometry-less 1-D connectors via orthogonal routing.
-      final d = jumpD ?? () {
-        final route = page.autoRoutedConnectorPolyline(shape);
-        if (route.length < 2) return '';
-        final buf = StringBuffer();
-        for (var i = 0; i < route.length; i++) {
-          final local = page.pageToLocalDeep(shape.id, route[i]);
-          buf.write(i == 0
-              ? 'M ${_n(local.x)} ${_n(local.y)}'
-              : ' L ${_n(local.x)} ${_n(local.y)}');
-        }
-        return buf.toString();
-      }();
+      final d = jumpD ??
+          () {
+            final route = page.autoRoutedConnectorPolyline(shape);
+            if (route.length < 2) return '';
+            final buf = StringBuffer();
+            for (var i = 0; i < route.length; i++) {
+              final local = page.pageToLocalDeep(shape.id, route[i]);
+              buf.write(i == 0
+                  ? 'M ${_n(local.x)} ${_n(local.y)}'
+                  : ' L ${_n(local.x)} ${_n(local.y)}');
+            }
+            return buf.toString();
+          }();
       if (d.isNotEmpty) {
         _writePath(
           buf,
@@ -634,7 +694,7 @@ class VsdxToSvgSerializer {
     if (!shape.collapsed) {
       for (final child in shape.children) {
         if (TableOps.isCovered(child)) continue;
-        _writeShape(
+        _writeShapeSafely(
           buf,
           child,
           theme,
@@ -659,11 +719,7 @@ class VsdxToSvgSerializer {
     required String paintId,
     required String indent,
   }) {
-    final fillColor = _resolveColor(
-      shape.fill.foreground,
-      shape.fill.themeForegroundIndex,
-      theme,
-    );
+    final fillColor = _resolveFillColor(shape, theme);
     final alpha = _combinedOpacity(
       fillColor,
       shape.fill.foregroundTransparency,
@@ -729,8 +785,7 @@ class VsdxToSvgSerializer {
       return paint;
     }
     final match = RegExp(r'stroke-dasharray="([^"]+)"').firstMatch(paint);
-    final dash =
-        match?.group(1) ?? '${_n(8 / pxPerInch)} ${_n(8 / pxPerInch)}';
+    final dash = match?.group(1) ?? '${_n(8 / pxPerInch)} ${_n(8 / pxPerInch)}';
     final values = match == null
         ? <double>[8 / pxPerInch, 8 / pxPerInch]
         : dash
@@ -763,10 +818,12 @@ class VsdxToSvgSerializer {
     VsdxTheme theme,
     VsdxPage page, {
     required String d,
+
     /// When set (line jumps), stroke uses this path; fill keeps [d].
     String? strokeD,
     required bool noFill,
     required bool noLine,
+
     /// Visio compound fill (libvisio `svg:fill-rule=evenodd`).
     String? fillRule,
     bool attachArrows = true,
@@ -789,7 +846,7 @@ class VsdxToSvgSerializer {
         (!noFill && fillRule != null) ? ' fill-rule="$fillRule"' : '';
     final sketchPatternFill = !noFill && shape.usesSketchPatternFill;
     final fillAttr = !noFill && !sketchPatternFill
-        ? '${_fillAttr(shape.fill, theme, paintId, defs, bounds: fillBounds)}$fillRuleAttr'
+        ? '${_fillAttr(shape, theme, paintId, defs, bounds: fillBounds)}$fillRuleAttr'
         : 'fill="none"';
     // Line gradients follow the unjumped geometry (canvas path bounds).
     // Jump hops must not shift the gradient centre.
@@ -1015,9 +1072,7 @@ class VsdxToSvgSerializer {
         );
       }
     } else {
-      if (shape.sketchEffect &&
-          !noLine &&
-          stroke.paint != 'stroke="none"') {
+      if (shape.sketchEffect && !noLine && stroke.paint != 'stroke="none"') {
         if (!noFill && fillAttr != 'fill="none"') {
           buf.writeln('$indent<path d="$d" $fillAttr stroke="none"$filter/>');
         }
@@ -1063,21 +1118,16 @@ class VsdxToSvgSerializer {
     required String filter,
     required String indent,
   }) {
-    final color = _resolveColor(
-          shape.fill.foreground,
-          shape.fill.themeForegroundIndex,
-          theme,
-        ) ??
-        const VsdxColor(0xFFFFFFFF);
+    final color =
+        _resolveFillColor(shape, theme) ?? const VsdxColor(0xFFFFFFFF);
     final opacity = _combinedOpacity(
       color,
       shape.fill.foregroundTransparency,
     );
     if (opacity <= 0) return;
     final clipId = 'sketch-fill-$paintId';
-    final rule = fillRule == null
-        ? ''
-        : ' fill-rule="$fillRule" clip-rule="$fillRule"';
+    final rule =
+        fillRule == null ? '' : ' fill-rule="$fillRule" clip-rule="$fillRule"';
     buf.writeln(
       '$indent<defs><clipPath id="$clipId">'
       '<path d="$d"$rule/></clipPath></defs>',
@@ -1526,10 +1576,8 @@ class VsdxToSvgSerializer {
     // height — use stroke weight so ReflectionSize still yields a band.
     final weightH =
         shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
-    final fallbackH =
-        shape.height.abs() < 1e-9 ? weightH : shape.height.abs();
-    final fallbackW =
-        shape.width.abs() < 1e-9 ? weightH : shape.width.abs();
+    final fallbackH = shape.height.abs() < 1e-9 ? weightH : shape.height.abs();
+    final fallbackW = shape.width.abs() < 1e-9 ? weightH : shape.width.abs();
     final bounds = _approxPathBoundsFromD(
       d,
       fallbackW: fallbackW,
@@ -1567,12 +1615,9 @@ class VsdxToSvgSerializer {
       fillOp = alpha;
     } else {
       // Solid (incl. pdfCompat hatch flatten and unsupported pattern ids).
-      final c = _resolveColor(shape.fill.foreground,
-              shape.fill.themeForegroundIndex, theme) ??
-          const VsdxColor(0xFF888888);
+      final c = _resolveFillColor(shape, theme) ?? const VsdxColor(0xFF888888);
       fillPaint = _hex(c);
-      fillOp =
-          _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
+      fillOp = _combinedOpacity(c, shape.fill.foregroundTransparency) * alpha;
     }
     // Stroke without arrow markers (canvas reflection draws the path stroke).
     // Compound rails are emitted separately via [_writeCompoundOrPlainStroke].
@@ -1588,9 +1633,8 @@ class VsdxToSvgSerializer {
               : _combinedOpacity(c, line.transparency)) *
           alpha;
       final hex = c == null ? '#000000' : _hex(c);
-      reflStrokePaint = line.hasGradient
-          ? 'stroke="url(#lg-$paintId)"'
-          : 'stroke="$hex"';
+      reflStrokePaint =
+          line.hasGradient ? 'stroke="url(#lg-$paintId)"' : 'stroke="$hex"';
     }
     // Fade mask matches canvas BlendMode.dstIn: opaque near the shape bottom,
     // transparent at the far edge of ReflectionSize.
@@ -1643,9 +1687,8 @@ class VsdxToSvgSerializer {
       return;
     }
     final blurPad = math.max(refl.blurInches, 0.001) * 3;
-    final blurRegion = refl.blurInches > 0
-        ? _filterRegionAttr(bounds, blurPad)
-        : '';
+    final blurRegion =
+        refl.blurInches > 0 ? _filterRegionAttr(bounds, blurPad) : '';
     buf.writeln(
       '$indent<defs>'
       '<clipPath id="$cid">'
@@ -1768,6 +1811,7 @@ class VsdxToSvgSerializer {
     String d, {
     required double fallbackW,
     required double fallbackH,
+
     /// Half-extent for zero-area axes (line weight), matching canvas reflection.
     double? degeneratePad,
   }) {
@@ -1956,10 +2000,9 @@ class VsdxToSvgSerializer {
     final softHollow = (noFill || !shape.fill.hasFill) &&
         (noLine || !shape.line.hasLine) &&
         !shape.hasImage;
-    final soft =
-        (!shape.is1D && !softHollow && shape.line.softEdgesInches > 0)
-            ? shape.line.softEdgesInches
-            : 0.0;
+    final soft = (!shape.is1D && !softHollow && shape.line.softEdgesInches > 0)
+        ? shape.line.softEdgesInches
+        : 0.0;
     if (soft <= 0) return null;
     final id = 'fx-$paintId';
     final region = _filterRegionAttr(bounds, _softEdgesPad(shape.line, soft));
@@ -2001,7 +2044,8 @@ class VsdxToSvgSerializer {
           closed: poly.closed,
         );
         if (filleted.isNotEmpty) {
-          final out = StringBuffer('M ${_n(filleted.first.x)} ${_n(filleted.first.y)} ');
+          final out = StringBuffer(
+              'M ${_n(filleted.first.x)} ${_n(filleted.first.y)} ');
           for (var i = 1; i < filleted.length; i++) {
             out.write('L ${_n(filleted[i].x)} ${_n(filleted[i].y)} ');
           }
@@ -2205,7 +2249,13 @@ class VsdxToSvgSerializer {
             l(v.x * vsx, v.y * vsy);
           }
           l(x * esx, y * esy);
-        case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
+        case InfiniteLineCmd(
+            :final x,
+            :final y,
+            :final a,
+            :final b,
+            :final relative
+          ):
           final sx = relative ? w : 1.0;
           final sy = relative ? h : 1.0;
           final px = x * sx, py = y * sy, qx = a * sx, qy = b * sy;
@@ -2340,12 +2390,13 @@ class VsdxToSvgSerializer {
   }
 
   String _fillAttr(
-    VsdxFill fill,
+    VsdxShape shape,
     VsdxTheme theme,
     String paintId,
     StringBuffer defs, {
     required ({double minX, double minY, double width, double height}) bounds,
   }) {
+    final fill = shape.fill;
     if (!fill.hasFill) return 'fill="none"';
 
     if (fill.hasGradient) {
@@ -2394,7 +2445,7 @@ class VsdxToSvgSerializer {
       return 'fill="url(#$id)"';
     }
 
-    final fg = _resolveColor(fill.foreground, fill.themeForegroundIndex, theme);
+    final fg = _resolveFillColor(shape, theme);
     final fgAlpha = _combinedOpacity(fg, fill.foregroundTransparency);
     final fgHex = fg == null ? '#ffffff' : _hex(fg);
 
@@ -2441,8 +2492,7 @@ class VsdxToSvgSerializer {
     final common =
         'stroke="$color" stroke-opacity="${_n(opacity)}" stroke-width="${_n(sw)}" '
         'fill="none"';
-    final fillDot =
-        'fill="$color" fill-opacity="${_n(opacity)}" stroke="none"';
+    final fillDot = 'fill="$color" fill-opacity="${_n(opacity)}" stroke="none"';
     final t = _n(tile);
     final h = _n(tile / 2);
     final q = _n(tile / 4);
@@ -2457,7 +2507,7 @@ class VsdxToSvgSerializer {
           '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
       8 => // dots
         '<circle cx="$q" cy="$q" r="${_n(tile * 0.08)}" $fillDot/>'
-        '<circle cx="$t34" cy="$t34" r="${_n(tile * 0.08)}" $fillDot/>',
+            '<circle cx="$t34" cy="$t34" r="${_n(tile * 0.08)}" $fillDot/>',
       9 => // dense dots
         () {
           final b = StringBuffer();
@@ -2473,20 +2523,20 @@ class VsdxToSvgSerializer {
         }(),
       10 => // brick
         '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
-        '<line x1="$h" y1="0" x2="$h" y2="$h" $common/>'
-        '<line x1="0" y1="$h" x2="0" y2="$t" $common/>',
+            '<line x1="$h" y1="0" x2="$h" y2="$h" $common/>'
+            '<line x1="0" y1="$h" x2="0" y2="$t" $common/>',
       11 => // shingles
         '<line x1="0" y1="0" x2="$h" y2="$h" $common/>'
-        '<line x1="$h" y1="$h" x2="$t" y2="0" $common/>'
-        '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>',
+            '<line x1="$h" y1="$h" x2="$t" y2="0" $common/>'
+            '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>',
       12 => // wide diagonal forward
         '<line x1="0" y1="$t" x2="$t" y2="0" $common/>'
-        '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.75)}" '
-        'x2="${_n(tile * 0.75)}" y2="${_n(-tile * 0.25)}" $common/>',
+            '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.75)}" '
+            'x2="${_n(tile * 0.75)}" y2="${_n(-tile * 0.25)}" $common/>',
       13 => // wide diagonal back
         '<line x1="0" y1="0" x2="$t" y2="$t" $common/>'
-        '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.25)}" '
-        'x2="${_n(tile * 0.75)}" y2="${_n(tile * 1.25)}" $common/>',
+            '<line x1="${_n(-tile * 0.25)}" y1="${_n(tile * 0.25)}" '
+            'x2="${_n(tile * 0.75)}" y2="${_n(tile * 1.25)}" $common/>',
       14 => // grid
         () {
           final b = StringBuffer();
@@ -2499,12 +2549,12 @@ class VsdxToSvgSerializer {
         }(),
       15 => // wave horizontal
         '<path d="M 0 $h Q $q ${_n(tile * 0.25)} $h $h '
-        'Q $t34 ${_n(tile * 0.75)} $t $h" $common/>',
+            'Q $t34 ${_n(tile * 0.75)} $t $h" $common/>',
       16 => // trellis
         '<line x1="0" y1="0" x2="$t" y2="$t" $common/>'
-        '<line x1="$t" y1="0" x2="0" y2="$t" $common/>'
-        '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
-        '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
+            '<line x1="$t" y1="0" x2="0" y2="$t" $common/>'
+            '<line x1="0" y1="$h" x2="$t" y2="$h" $common/>'
+            '<line x1="$h" y1="0" x2="$h" y2="$t" $common/>',
       _ => // 4: forward diagonal (caller only passes 2–16)
         '<line x1="0" y1="$t" x2="$t" y2="0" $common/>',
     };
@@ -2593,8 +2643,7 @@ class VsdxToSvgSerializer {
           '$stops</radialGradient>',
         );
       }
-      strokePaint =
-          'stroke="url(#$id)" stroke-opacity="${_n(lineTransAlpha)}"';
+      strokePaint = 'stroke="url(#$id)" stroke-opacity="${_n(lineTransAlpha)}"';
     }
     final markers = StringBuffer();
     // PDF backends ignore <marker>; callers bake geometry via [_bakeArrows].
@@ -2730,15 +2779,18 @@ class VsdxToSvgSerializer {
       17 => ('M 5 1 V 9', false), // single hash (backslash/one)
       18 => ('M 7 1 V 9 M 4.5 1 V 9', false), // double hash / exactly one
       19 => ('M 7 1 V 9', false), // crow's foot one
-      20 => ('M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9', false), // crow's foot many
+      20 => (
+          'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9',
+          false
+        ), // crow's foot many
       21 => (
           'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-          'M 7 1 V 9',
+              'M 7 1 V 9',
           false,
         ), // optional one
       22 => (
           'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-          'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9',
+              'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9',
           false,
         ), // optional many
       23 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', true), // swept filled
@@ -2746,7 +2798,10 @@ class VsdxToSvgSerializer {
       // Hatched triangle: canvas shadow (-0.3,-0.2)→(-0.7,0.2) → tip-end M 7 3 L 3 7.
       27 => ('M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7', false),
       28 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true), // spear (filled thin)
-      29 => ('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z', true), // double triangle
+      29 => (
+          'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
+          true
+        ), // double triangle
       30 => (
           'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
           false,
@@ -2787,7 +2842,7 @@ class VsdxToSvgSerializer {
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
       'M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z' =>
-          'M 10 -4.091 L 0 5 L 10 14.091 L 7.273 5 Z',
+        'M 10 -4.091 L 0 5 L 10 14.091 L 7.273 5 Z',
       'M 0 -4.091 L 10 5 L 0 14.091' => 'M 10 -4.091 L 0 5 L 10 14.091',
       'M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z' => 'M 10 5 L 5 1.5 L 0 5 L 5 8.5 Z',
       'M 0 1 H 10 V 9 H 0 Z' => d, // square tip-edge at both ends via orient
@@ -2799,15 +2854,14 @@ class VsdxToSvgSerializer {
       'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 7 1 V 9' =>
         'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 3 1 V 9',
       'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-          'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9' =>
+            'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9' =>
         'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
             'M 6 5 L 10 1 M 6 5 L 10 5 M 6 5 L 10 9',
       'M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z' => 'M 10 0.5 L 0 5 L 10 9.5 L 7.5 5 Z',
       'M 0 2 L 10 5 L 0 8 L 2.5 5 Z' => 'M 10 2 L 0 5 L 10 8 L 7.5 5 Z',
       'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z' =>
         'M 10 1 L 0 5 L 10 9 Z M 12 0.5 L 10 1 L 10 9 L 12 9.5 Z',
-      'M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7' =>
-        'M 10 1 L 0 5 L 10 9 Z M 3 3 L 7 7',
+      'M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7' => 'M 10 1 L 0 5 L 10 9 Z M 3 3 L 7 7',
       'M 0 3.2 L 10 5 L 0 6.8 Z' => 'M 10 3.2 L 0 5 L 10 6.8 Z',
       'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z' =>
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
@@ -2919,8 +2973,11 @@ class VsdxToSvgSerializer {
     VsdxShape shape, {
     required String indent,
     String toneIdSuffix = '',
-    ({String? mime, List<int>? bytes, MetafileDrawing? vectorDrawing})?
-        resolved,
+    ({
+      String? mime,
+      List<int>? bytes,
+      MetafileDrawing? vectorDrawing
+    })? resolved,
   }) {
     final media = resolved ?? _resolveForeignImage(shape);
     if (media == null) {
@@ -2965,8 +3022,7 @@ class VsdxToSvgSerializer {
     final cx = ox + iw / 2;
     final cy = oy + ih / 2;
     final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
-    final opacityAttr =
-        opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
+    final opacityAttr = opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
     buf.writeln(
       '$indent<g$toneAttr transform="translate(${_n(cx)} ${_n(cy)}) '
       'scale(1 ${_n(uprightY)}) '
@@ -3062,8 +3118,7 @@ class VsdxToSvgSerializer {
     // SoftEdges blur extends past the image box — pad the clip so the feather
     // is not cut off (same pad as geometry SoftEdges / [_softEdgesPad]).
     final softIn = shape.line.softEdgesInches;
-    final softPad =
-        softIn > 1e-9 ? _softEdgesPad(shape.line, softIn) : 0.0;
+    final softPad = softIn > 1e-9 ? _softEdgesPad(shape.line, softIn) : 0.0;
     buf.writeln(
       '$indent<defs><clipPath id="$boxId">'
       '<rect x="${_n(-softPad)}" y="${_n(-softPad)}" '
@@ -3134,8 +3189,7 @@ class VsdxToSvgSerializer {
     final sy = ih / dh * (gdiFlipY ? -1.0 : 1.0);
     final ty = gdiFlipY ? oy + ih : oy;
     final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
-    final opacityAttr =
-        opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
+    final opacityAttr = opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
     buf.writeln(
       '$indent<g$opacityAttr transform="translate(${_n(ox)} ${_n(ty)}) '
       'scale(${_n(sx)} ${_n(sy)}) '
@@ -3164,7 +3218,8 @@ class VsdxToSvgSerializer {
     if (op.points.isEmpty) return;
     final fill = op.fill ? _argbCss(op.fillArgb) : 'none';
     final stroke = op.stroke ? _argbCss(op.strokeArgb) : 'none';
-    final sw = op.stroke ? ' stroke-width="${_n(math.max(op.strokeWidth, 0.5))}"' : '';
+    final sw =
+        op.stroke ? ' stroke-width="${_n(math.max(op.strokeWidth, 0.5))}"' : '';
     if (op.isEllipse && op.points.length >= 2) {
       var minX = op.points.first.x, maxX = op.points.first.x;
       var minY = op.points.first.y, maxY = op.points.first.y;
@@ -3184,7 +3239,8 @@ class VsdxToSvgSerializer {
       );
       return;
     }
-    final d = StringBuffer('M ${_n(op.points.first.x)} ${_n(op.points.first.y)}');
+    final d =
+        StringBuffer('M ${_n(op.points.first.x)} ${_n(op.points.first.y)}');
     for (var i = 1; i < op.points.length; i++) {
       d.write(' L ${_n(op.points[i].x)} ${_n(op.points[i].y)}');
     }
@@ -3202,9 +3258,8 @@ class VsdxToSvgSerializer {
   }) {
     if (op.text.isEmpty) return;
     final size = math.max(op.fontHeight.abs(), 1.0);
-    final face = (op.face == null || op.face!.isEmpty)
-        ? 'Arial'
-        : _esc(op.face!);
+    final face =
+        (op.face == null || op.face!.isEmpty) ? 'Arial' : _esc(op.face!);
     // TA_CENTER = 6, TA_RIGHT = 2 (low bits) — match canvas [_paintText].
     final alignBits = op.align & 0x07;
     final anchor = switch (alignBits) {
@@ -3424,12 +3479,14 @@ class VsdxToSvgSerializer {
     final mt = block.marginTopInches;
     final mb = block.marginBottomInches;
 
-    final fallback =
-        shape.text?.isNotEmpty == true ? shape.text! : _meaningfulNameLabel(shape);
+    final fallback = shape.text?.isNotEmpty == true
+        ? shape.text!
+        : _meaningfulNameLabel(shape);
     final runs = shape.richText.runs.isNotEmpty
         ? shape.richText.runs
         : <VsdxTextRun>[VsdxTextRun(text: fallback ?? '')];
-    if (runs.every((r) => r.text.isEmpty) && (fallback == null || fallback.isEmpty)) {
+    if (runs.every((r) => r.text.isEmpty) &&
+        (fallback == null || fallback.isEmpty)) {
       return;
     }
 
@@ -3540,11 +3597,11 @@ class VsdxToSvgSerializer {
 
     final shapeInsideDefaultBlock =
         (block.widthInches == null || (tw - shape.width).abs() < 1e-6) &&
-        (block.heightInches == null || (th - shape.height).abs() < 1e-6) &&
-        (block.pinXInches == null ||
-            (block.pinXInches! - shape.width / 2).abs() < 1e-6) &&
-        (block.pinYInches == null ||
-            (block.pinYInches! - shape.height / 2).abs() < 1e-6);
+            (block.heightInches == null || (th - shape.height).abs() < 1e-6) &&
+            (block.pinXInches == null ||
+                (block.pinXInches! - shape.width / 2).abs() < 1e-6) &&
+            (block.pinYInches == null ||
+                (block.pinYInches! - shape.height / 2).abs() < 1e-6);
     if (shape.shapeInside &&
         shape.supportsShapeInside &&
         shape.wordWrap &&
@@ -3611,8 +3668,7 @@ class VsdxToSvgSerializer {
           : 0.0;
       // IndFirst applies to the first line only (Visio); body lines use IndLeft.
       final bodyBandX = layoutMl + indentL + (hasBullet ? bulletGap : 0.0);
-      final firstBandX =
-          hasBullet ? bodyBandX : layoutMl + indentL + indentF;
+      final firstBandX = hasBullet ? bodyBandX : layoutMl + indentL + indentF;
       final availRest = math.max(
         0.04,
         layoutW - layoutMr - p.style.indentRightInches - bodyBandX,
@@ -3697,8 +3753,7 @@ class VsdxToSvgSerializer {
         }
       }
       final yText = pdfCompat ? yRel + bodyFont * 0.35 : yRel;
-      final baseline =
-          pdfCompat ? '' : ' dominant-baseline="middle"';
+      final baseline = pdfCompat ? '' : ' dominant-baseline="middle"';
 
       if (layout.showBullet) {
         final glyph = _svgBulletGlyph(style);
@@ -3746,8 +3801,7 @@ class VsdxToSvgSerializer {
           natural += _estSvgTextWidth(raw, run.charStyle);
         }
         if (natural > 1e-6 && natural < bandW * 0.98) {
-          justifyAttr =
-              ' textLength="${_n(bandW)}" lengthAdjust="spacing"';
+          justifyAttr = ' textLength="${_n(bandW)}" lengthAdjust="spacing"';
         }
       }
       // Preserve consecutive spaces (canvas TextPainter does; SVG defaults fold).
@@ -3974,8 +4028,7 @@ class VsdxToSvgSerializer {
       final widthAvailable = layout.right - layout.left;
       final (anchor, x) = switch (layout.style.horizontalAlign) {
         VsdxHorzAlign.right => ('end', layout.right),
-        VsdxHorzAlign.center =>
-          ('middle', layout.left + widthAvailable / 2),
+        VsdxHorzAlign.center => ('middle', layout.left + widthAvailable / 2),
         _ => ('start', layout.left),
       };
       var fontSize = 0.14;
@@ -4109,11 +4162,7 @@ class VsdxToSvgSerializer {
     for (final r in text.runes) {
       n++;
       // Match canvas / SVG synthetic small-caps (lowercase → 0.78× capitals).
-      final chFs = smallCaps &&
-              r >= 0x61 &&
-              r <= 0x7a
-          ? fs * 0.78
-          : fs;
+      final chFs = smallCaps && r >= 0x61 && r <= 0x7a ? fs * 0.78 : fs;
       if (r == 0x20 || r == 0x09) {
         w += chFs * 0.33;
       } else if (r >= 0x2E80) {
@@ -4242,7 +4291,8 @@ class VsdxToSvgSerializer {
     final y2 = midY;
     // Page/underlay-scoped — same as gradient/marker paint ids.
     final pathId = 'curved-$paintIdScope-${shape.id}';
-    final style = runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
+    final style =
+        runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
     final attrs = _charStyleSvgAttrs(style, theme);
 
     final xf = StringBuffer('translate(${_n(pinX)} ${_n(pinY)})');
@@ -4285,8 +4335,7 @@ class VsdxToSvgSerializer {
     final text = _applyTextCase(raw, style.textCase);
     final x = xAttr == null ? '' : '$xAttr ';
     if (!style.style.smallCaps || text.isEmpty) {
-      final attrs =
-          _charStyleSvgAttrs(style, theme, synthesizeSmallCaps: true);
+      final attrs = _charStyleSvgAttrs(style, theme, synthesizeSmallCaps: true);
       body.write('<tspan $x$attrs>${_esc(text)}</tspan>');
       return;
     }
@@ -4364,8 +4413,8 @@ class VsdxToSvgSerializer {
     double? fontSizeOverride,
   }) {
     // libvisio's VSDCharStyle baseline is opaque black.
-    final color = _resolveColor(c.color, c.themeColorIndex, theme) ??
-        VsdxColor.black;
+    final color =
+        _resolveColor(c.color, c.themeColorIndex, theme) ?? VsdxColor.black;
     final op = _combinedOpacity(color, c.transparency);
     var fs = math.max(c.fontSizeInches, 0.04);
     switch (c.position) {
@@ -4444,9 +4493,29 @@ class VsdxToSvgSerializer {
 
   VsdxColor? _resolveColor(VsdxColor? raw, int? themeIdx, VsdxTheme theme) {
     if (_layerTint != null) return _layerTint;
-    if (raw != null) return raw;
-    if (themeIdx == null) return null;
-    return theme.resolve(themeIdx);
+    if (themeIdx != null) {
+      final themed = theme.resolve(
+        themeIdx,
+        variationIndex: _variationColorIndex,
+      );
+      if (themed != null) return themed;
+    }
+    return raw;
+  }
+
+  VsdxColor? _resolveFillColor(VsdxShape shape, VsdxTheme theme) {
+    if (_layerTint != null) return _layerTint;
+    final themeIdx = shape.fill.themeForegroundIndex;
+    if (themeIdx != null) {
+      final themed = theme.resolveFill(
+        themeIdx,
+        variationColorIndex: _variationColorIndex,
+        variationStyleIndex: _variationStyleIndex,
+        fillMatrix: shape.quickStyleFillMatrix,
+      );
+      if (themed != null) return themed;
+    }
+    return shape.fill.foreground;
   }
 
   /// CSS font-family list: Latin face, then AsianFont (CJK), then sans-serif.

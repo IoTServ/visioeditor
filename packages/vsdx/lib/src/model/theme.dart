@@ -105,10 +105,31 @@ abstract final class ThemeSlot {
 
 @immutable
 class VsdxTheme {
-  const VsdxTheme({required this.colors});
+  const VsdxTheme({
+    required this.colors,
+    this.variationColors = const <List<VsdxColor?>>[],
+    this.fillStyleColors = const <VsdxColor?>[],
+    this.variationFillStyleIndices = const <List<int?>>[],
+  });
 
   /// Slot → colour. Slot ids match [ThemeSlot]'s constants.
   final Map<int, VsdxColor> colors;
+
+  /// Visio's `vt:variationClrSchemeLst`, in document order. Each scheme has
+  /// seven `varColorN` entries. QuickStyle colour ids 100..106 and 200..206
+  /// select these entries; [VsdxPageSheet.variationColorIndex] chooses the
+  /// scheme. This is separate from DrawingML's twelve base colour slots.
+  final List<List<VsdxColor?>> variationColors;
+
+  /// First directly-resolvable colour of each DrawingML `fillStyleLst` item.
+  /// `null` represents a `phClr`/gradient style whose colour stays based on
+  /// the QuickStyle colour (full gradient geometry remains on [VsdxFill]).
+  final List<VsdxColor?> fillStyleColors;
+
+  /// `fillIdx` of the four `varStyle` rows in every Visio
+  /// `variationStyleScheme`. QuickStyle colours 100..103/200..203 select the
+  /// row; [VsdxPageSheet.variationStyleIndex] selects the scheme.
+  final List<List<int?>> variationFillStyleIndices;
 
   /// Convenience: an empty theme that always returns `null`. Documents
   /// without a theme part fall back to this; renderer then uses its own
@@ -116,7 +137,62 @@ class VsdxTheme {
   static const VsdxTheme empty = VsdxTheme(colors: <int, VsdxColor>{});
 
   /// Resolve a slot id to its colour, or `null` if the slot is undefined.
-  VsdxColor? resolve(int slotId) => colors[slotId];
+  VsdxColor? resolve(int slotId, {int variationIndex = 0}) {
+    final quickStyleOffset = switch (slotId) {
+      >= 100 && <= 106 => slotId - 100,
+      >= 200 && <= 206 => slotId - 200,
+      _ => null,
+    };
+    if (quickStyleOffset != null && variationColors.isNotEmpty) {
+      final schemeIndex =
+          variationIndex >= 0 && variationIndex < variationColors.length
+              ? variationIndex
+              : 0;
+      final scheme = variationColors[schemeIndex];
+      if (quickStyleOffset < scheme.length) {
+        return scheme[quickStyleOffset];
+      }
+    }
+    return colors[slotId];
+  }
+
+  /// Resolve libvisio's QuickStyle fill override order: colour variation,
+  /// then a direct fill matrix, then a variation style matrix when the matrix
+  /// id is beyond the theme's fill-style list.
+  VsdxColor? resolveFill(
+    int slotId, {
+    int variationColorIndex = 0,
+    int variationStyleIndex = 0,
+    int? fillMatrix,
+  }) {
+    final base = resolve(slotId, variationIndex: variationColorIndex);
+    if (fillMatrix == null || fillMatrix < 0 || fillStyleColors.isEmpty) {
+      return base;
+    }
+    int? fillIndex = fillMatrix;
+    if (fillMatrix > fillStyleColors.length &&
+        variationFillStyleIndices.isNotEmpty) {
+      final schemeIndex = variationStyleIndex >= 0 &&
+              variationStyleIndex < variationFillStyleIndices.length
+          ? variationStyleIndex
+          : 0;
+      final styleOffset = switch (slotId) {
+        >= 100 && <= 103 => slotId - 100,
+        >= 200 && <= 203 => slotId - 200,
+        _ => null,
+      };
+      final scheme = variationFillStyleIndices[schemeIndex];
+      fillIndex = styleOffset != null && styleOffset < scheme.length
+          ? scheme[styleOffset]
+          : null;
+    }
+    if (fillIndex == null ||
+        fillIndex <= 0 ||
+        fillIndex > fillStyleColors.length) {
+      return base;
+    }
+    return fillStyleColors[fillIndex - 1] ?? base;
+  }
 
   bool get isEmpty => colors.isEmpty;
 

@@ -92,6 +92,85 @@ void main() {
     final parsed = ThemeParser.parseDocument(XmlDocument.parse(xml));
     expect(ThemeSerializer.themesEqual(parsed, VsdxTheme.blue), isTrue);
   });
+
+  test('ThemeParser resolves QuickStyle variation colours by page index', () {
+    final parsed = ThemeParser.parseDocument(XmlDocument.parse('''
+      <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+          xmlns:vt="http://schemas.microsoft.com/office/visio/2012/theme">
+        <a:themeElements>
+          <a:clrScheme name="Variation test">
+            <a:dk1><a:srgbClr val="000000"/></a:dk1>
+            <a:extLst><a:ext><vt:variationClrSchemeLst>
+              <vt:variationClrScheme>
+                <vt:varColor1><a:srgbClr val="112233"/></vt:varColor1>
+                <vt:varColor7><a:srgbClr val="778899"/></vt:varColor7>
+              </vt:variationClrScheme>
+              <vt:variationClrScheme>
+                <vt:varColor1><a:srgbClr val="AABBCC"/></vt:varColor1>
+                <vt:varColor7><a:srgbClr val="DDEEFF"/></vt:varColor7>
+              </vt:variationClrScheme>
+            </vt:variationClrSchemeLst></a:ext></a:extLst>
+          </a:clrScheme>
+        </a:themeElements>
+      </a:theme>
+    '''));
+
+    expect(parsed.variationColors, hasLength(2));
+    expect(parsed.resolve(100)?.value, 0xFF112233);
+    expect(parsed.resolve(200, variationIndex: 1)?.value, 0xFFAABBCC);
+    expect(parsed.resolve(106)?.value, 0xFF778899);
+    expect(parsed.resolve(206, variationIndex: 1)?.value, 0xFFDDEEFF);
+    expect(
+      parsed.resolve(200, variationIndex: 99)?.value,
+      0xFF112233,
+      reason: 'libvisio falls back to variation zero',
+    );
+  });
+
+  test('ThemeParser resolves variation fill style matrix like libvisio', () {
+    final parsed = ThemeParser.parseDocument(XmlDocument.parse('''
+      <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+          xmlns:vt="http://schemas.microsoft.com/office/visio/2012/theme">
+        <a:themeElements>
+          <a:clrScheme name="Matrix test">
+            <a:dk1><a:srgbClr val="000000"/></a:dk1>
+            <a:extLst><a:ext><vt:variationClrSchemeLst>
+              <vt:variationClrScheme>
+                <vt:varColor1><a:srgbClr val="A5A5A5"/></vt:varColor1>
+              </vt:variationClrScheme>
+            </vt:variationClrSchemeLst></a:ext></a:extLst>
+          </a:clrScheme>
+          <a:fmtScheme name="Matrix test"><a:fillStyleLst>
+            <a:solidFill><a:srgbClr val="111111"/></a:solidFill>
+            <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>
+          </a:fillStyleLst></a:fmtScheme>
+          <a:extLst><a:ext><vt:variationStyleSchemeLst>
+            <vt:variationStyleScheme>
+              <vt:varStyle fillIdx="1"/><vt:varStyle fillIdx="1"/>
+              <vt:varStyle fillIdx="1"/><vt:varStyle fillIdx="1"/>
+            </vt:variationStyleScheme>
+            <vt:variationStyleScheme>
+              <vt:varStyle fillIdx="2"/><vt:varStyle fillIdx="1"/>
+              <vt:varStyle fillIdx="1"/><vt:varStyle fillIdx="1"/>
+            </vt:variationStyleScheme>
+          </vt:variationStyleSchemeLst></a:ext></a:extLst>
+        </a:themeElements>
+      </a:theme>
+    '''));
+
+    expect(parsed.resolveFill(100, fillMatrix: 1)?.value, 0xFF111111);
+    expect(
+      parsed
+          .resolveFill(
+            100,
+            variationColorIndex: 0,
+            variationStyleIndex: 1,
+            fillMatrix: 100,
+          )
+          ?.value,
+      0xFFFFFFFF,
+    );
+  });
 }
 
 Uint8List _packageWithTheme(VsdxTheme theme) {

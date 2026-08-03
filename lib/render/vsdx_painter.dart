@@ -16,6 +16,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui show FontFeature, Gradient, ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 
 import 'package:vsdx/vsdx.dart'
     hide
@@ -35,14 +36,16 @@ import 'path_builder.dart';
 import 'pattern_fill.dart';
 import 'shape_bounds.dart' as bounds;
 
+final _log = Logger('vsdx.render.canvas');
+
 /// Flutter Canvas supports three joins. Preserve draw.io's richer value in
 /// the model/SVG while using the closest on-canvas appearance for SVG 2-only
 /// `arcs` and `miter-clip`.
 StrokeJoin canvasStrokeJoin(VsdxLine line) => switch (line.effectiveJoin) {
-      VsdxLineJoin.bevel => StrokeJoin.bevel,
-      VsdxLineJoin.arcs || VsdxLineJoin.round => StrokeJoin.round,
-      VsdxLineJoin.miter || VsdxLineJoin.miterClip => StrokeJoin.miter,
-    };
+  VsdxLineJoin.bevel => StrokeJoin.bevel,
+  VsdxLineJoin.arcs || VsdxLineJoin.round => StrokeJoin.round,
+  VsdxLineJoin.miter || VsdxLineJoin.miterClip => StrokeJoin.miter,
+};
 
 /// draw.io's Glass foreground silhouette in the editor's local Y-up space.
 /// The actual shape path clips this broad top highlight for rectangles,
@@ -113,15 +116,15 @@ class VsdxPainter extends CustomPainter {
     this.drawLineJumps = true,
     this.lineJumpRadiusInches = 0.07,
     this.drawEditorChrome = true,
+    this.drawPageBorder = true,
+    this.drawPlaceholders = true,
+    this.drawNameFallback = true,
     this.foldingControlsEnabled = true,
     this.colorByLayer = false,
     this.flowAnimation,
   }) : super(
-          repaint: Listenable.merge(<Listenable>[
-            ?imageCache,
-            ?flowAnimation,
-          ]),
-        );
+         repaint: Listenable.merge(<Listenable>[?imageCache, ?flowAnimation]),
+       );
 
   final VsdxPage? page;
 
@@ -148,8 +151,9 @@ class VsdxPainter extends CustomPainter {
   /// Pre-computed shape bounding boxes (page-inch coords). Allows the
   /// painter to skip shapes outside the viewport — a 10× win on dense
   /// drawings. Populated lazily on first paint.
-  static final Expando<Map<int, Rect>> _bboxCache =
-      Expando<Map<int, Rect>>('vsdx_bbox');
+  static final Expando<Map<int, Rect>> _bboxCache = Expando<Map<int, Rect>>(
+    'vsdx_bbox',
+  );
 
   final double pxPerInch;
   final Color backgroundColor;
@@ -198,6 +202,19 @@ class VsdxPainter extends CustomPainter {
   /// kind hint + collapse chevron). Export PNG/SVG should pass `false`.
   final bool drawEditorChrome;
 
+  /// Thin page outline used by the interactive canvas. Raster/PDF exports
+  /// disable it because it is editor chrome, not Visio document content.
+  final bool drawPageBorder;
+
+  /// Empty-page diagnostics shown in the editor. Document exports disable
+  /// these labels so an intentionally blank Visio page remains blank.
+  final bool drawPlaceholders;
+
+  /// Whether an empty 2-D shape may display its internal Visio `NameU` as a
+  /// convenience label. Interactive editing keeps this enabled; exports turn
+  /// it off because a shape name is metadata, not document text.
+  final bool drawNameFallback;
+
   /// Whether draw.io-style fold chevrons are visible on foldable shapes.
   final bool foldingControlsEnabled;
 
@@ -224,34 +241,39 @@ class VsdxPainter extends CustomPainter {
     final pageBg = p?.backgroundColor;
     canvas.drawRect(
       rect,
-      Paint()
-        ..color = pageBg == null ? backgroundColor : Color(pageBg.value),
+      Paint()..color = pageBg == null ? backgroundColor : Color(pageBg.value),
     );
 
     if (p == null) {
-      _drawPlaceholderText(canvas, size, noPageLoadedMessage);
+      if (drawPlaceholders) {
+        _drawPlaceholderText(canvas, size, noPageLoadedMessage);
+      }
       return;
     }
 
-    canvas.drawRect(
-      rect.deflate(0.5),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = Colors.black26,
-    );
+    if (drawPageBorder) {
+      canvas.drawRect(
+        rect.deflate(0.5),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = Colors.black26,
+      );
+    }
 
     final underlay = underlayPage;
     final hasUnderlay = underlay != null && underlay.shapes.isNotEmpty;
     if (p.shapes.isEmpty && !hasUnderlay) {
-      _drawPlaceholderText(
-        canvas,
-        size,
-        '${p.name}\n'
-        '${p.widthInches.toStringAsFixed(2)} × '
-        '${p.heightInches.toStringAsFixed(2)} in\n'
-        '$noShapesOnPageMessage',
-      );
+      if (drawPlaceholders) {
+        _drawPlaceholderText(
+          canvas,
+          size,
+          '${p.name}\n'
+          '${p.widthInches.toStringAsFixed(2)} × '
+          '${p.heightInches.toStringAsFixed(2)} in\n'
+          '$noShapesOnPageMessage',
+        );
+      }
       return;
     }
 
@@ -282,24 +304,51 @@ class VsdxPainter extends CustomPainter {
   /// Paint [target]'s top-level shapes in the current (page-inch, Y-up) canvas.
   void _paintPageShapes(Canvas canvas, VsdxPage target) {
     _paintTarget = target;
-    final isUnderlay =
-        underlayPage != null && identical(target, underlayPage);
+    final isUnderlay = underlayPage != null && identical(target, underlayPage);
     final visibleLayers = !respectLayerVisibility
         ? null
         : isUnderlay
-            ? (underlayVisibleLayerIdsOverride ??
-                (target.layers.isEmpty ? null : target.visibleLayerIds))
-            : (visibleLayerIdsOverride ??
-                (target.layers.isEmpty ? null : target.visibleLayerIds));
-    final bboxes = _bboxesFor(target);
-    final viewportInches =
-        Rect.fromLTWH(0, 0, target.widthInches, target.heightInches);
+        ? (underlayVisibleLayerIdsOverride ??
+              (target.layers.isEmpty ? null : target.visibleLayerIds))
+        : (visibleLayerIdsOverride ??
+              (target.layers.isEmpty ? null : target.visibleLayerIds));
+    Map<int, Rect> bboxes;
+    try {
+      bboxes = _bboxesFor(target);
+    } catch (error, stackTrace) {
+      // Bounds are only a culling optimisation. A corrupt curve must not stop
+      // direct painting of every other shape on the page.
+      _log.warning(
+        'Shape bounds failed for page ${target.id}; disabling culling',
+        error,
+        stackTrace,
+      );
+      bboxes = const <int, Rect>{};
+    }
+    final viewportInches = Rect.fromLTWH(
+      0,
+      0,
+      target.widthInches,
+      target.heightInches,
+    );
 
     // Build routes whenever the UI toggle is on — per-connector
     // ConLineJumpCode (incl. Always over page None) decides who hops.
     _lineJumpsActive = drawLineJumps;
     if (_lineJumpsActive) {
-      _computeConnectorRoutes(target);
+      try {
+        _computeConnectorRoutes(target);
+      } catch (error, stackTrace) {
+        _log.warning(
+          'Connector route preparation failed for page ${target.id}',
+          error,
+          stackTrace,
+        );
+        _lineJumpsActive = false;
+        _connRoutesPage = const <List<Offset>>[];
+        _connJumpCodes = const <int?>[];
+        _connZ = const <int, int>{};
+      }
     } else {
       _connRoutesPage = const <List<Offset>>[];
       _connJumpCodes = const <int?>[];
@@ -307,7 +356,34 @@ class VsdxPainter extends CustomPainter {
     }
 
     for (final shape in target.shapes) {
-      _paintShape(canvas, shape, visibleLayers, bboxes, viewportInches);
+      _paintShapeSafely(canvas, shape, visibleLayers, bboxes, viewportInches);
+    }
+  }
+
+  void _paintShapeSafely(
+    Canvas canvas,
+    VsdxShape shape,
+    Set<int>? visibleLayers,
+    Map<int, Rect> bboxes,
+    Rect viewport,
+  ) {
+    final saveCount = canvas.getSaveCount();
+    final previousTint = _layerTint;
+    final previousTransparency = _layerTintTrans;
+    try {
+      _paintShape(canvas, shape, visibleLayers, bboxes, viewport);
+    } catch (error, stackTrace) {
+      // Rendering is intentionally best-effort: one unsupported/corrupt shape
+      // must never prevent later shapes or pages from reaching the screen.
+      _log.warning(
+        'Skipping shape ${shape.id} after a canvas render failure',
+        error,
+        stackTrace,
+      );
+    } finally {
+      canvas.restoreToCount(saveCount);
+      _layerTint = previousTint;
+      _layerTintTrans = previousTransparency;
     }
   }
 
@@ -375,9 +451,7 @@ class VsdxPainter extends CustomPainter {
     // Cheap reject: if the shape's bbox doesn't intersect the viewport,
     // and it has no children, skip it entirely.
     final bbox = bboxes[shape.id];
-    if (bbox != null &&
-        shape.children.isEmpty &&
-        !bbox.overlaps(viewport)) {
+    if (bbox != null && shape.children.isEmpty && !bbox.overlaps(viewport)) {
       return;
     }
 
@@ -423,8 +497,7 @@ class VsdxPainter extends CustomPainter {
     if (useShapeOpacity) {
       canvas.saveLayer(
         null,
-        Paint()
-          ..color = Colors.white.withValues(alpha: shapeOpacity),
+        Paint()..color = Colors.white.withValues(alpha: shapeOpacity),
       );
     }
 
@@ -439,8 +512,9 @@ class VsdxPainter extends CustomPainter {
       final softImage = soft > 0 && !shape.is1D;
       if (softImage) {
         final sigma = _blurSigmaPx(soft);
-        final weight =
-            shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+        final weight = shape.line.weightInches > 0
+            ? shape.line.weightInches
+            : 0.01;
         var extent = weight / 2;
         for (final r in compoundRails(shape.line.compoundType, weight)) {
           extent = math.max(extent, r.offset.abs() + r.width / 2);
@@ -523,15 +597,13 @@ class VsdxPainter extends CustomPainter {
     if (!shape.collapsed) {
       for (final child in shape.children) {
         if (TableOps.isCovered(child)) continue;
-        _paintShape(canvas, child, visibleLayers, bboxes, viewport);
+        _paintShapeSafely(canvas, child, visibleLayers, bboxes, viewport);
       }
     }
 
     if (useShapeOpacity) canvas.restore();
 
-    if (drawEditorChrome &&
-        foldingControlsEnabled &&
-        shape.collapsible) {
+    if (drawEditorChrome && foldingControlsEnabled && shape.collapsible) {
       _paintCollapseChevron(canvas, shape, w, h);
     }
 
@@ -557,16 +629,12 @@ class VsdxPainter extends CustomPainter {
         : null;
     final compoundFill = compoundPath != null;
     if (compoundFill) {
-      final fillGeom = shape.geometries.firstWhere((g) => !g.noShow && !g.noFill);
+      final fillGeom = shape.geometries.firstWhere(
+        (g) => !g.noShow && !g.noFill,
+      );
       _drawShadow(canvas, shape, compoundPath, geom: fillGeom);
       _drawGlow(canvas, shape, compoundPath, geom: fillGeom);
-      _drawReflection(
-        canvas,
-        shape,
-        compoundPath,
-        noFill: false,
-        noLine: true,
-      );
+      _drawReflection(canvas, shape, compoundPath, noFill: false, noLine: true);
       final soft = shape.line.softEdgesInches;
       final useSoft = soft > 0 && !shape.is1D;
       if (useSoft) {
@@ -618,13 +686,7 @@ class VsdxPainter extends CustomPainter {
       } else if (geom.noFill) {
         _drawShadow(canvas, shape, path, geom: geom);
         _drawGlow(canvas, shape, path, geom: geom);
-        _drawReflection(
-          canvas,
-          shape,
-          path,
-          noFill: true,
-          noLine: geom.noLine,
-        );
+        _drawReflection(canvas, shape, path, noFill: true, noLine: geom.noLine);
       }
       // Soft Edges (Visio SoftEdgesSize): feather fill/stroke via a blurred
       // offscreen layer. Skip 1D connectors — jumps / arrows stay crisp.
@@ -633,14 +695,14 @@ class VsdxPainter extends CustomPainter {
       // by pxPerInch to match SVG feGaussianBlur in the inch→px page group.
       final soft = shape.line.softEdgesInches;
       final paintFill = !compoundFill && !geom.noFill && shape.fill.hasFill;
-      final softHollow = !paintFill &&
-          (geom.noLine || !shape.line.hasLine) &&
-          !shape.hasImage;
+      final softHollow =
+          !paintFill && (geom.noLine || !shape.line.hasLine) && !shape.hasImage;
       final useSoft = soft > 0 && !shape.is1D && !softHollow;
       if (useSoft) {
         final sigma = _blurSigmaPx(soft);
-        final weight =
-            shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+        final weight = shape.line.weightInches > 0
+            ? shape.line.weightInches
+            : 0.01;
         var extent = weight / 2;
         for (final r in compoundRails(shape.line.compoundType, weight)) {
           extent = math.max(extent, r.offset.abs() + r.width / 2);
@@ -687,8 +749,9 @@ class VsdxPainter extends CustomPainter {
         if (!geom.noLine && shape.line.hasLine) {
           // Match content rails (compound + dash) so the alpha silhouette
           // covers the same pixels SVG SourceAlpha would feather.
-          final w =
-              shape.line.weightInches > 0 ? shape.line.weightInches : 0.01;
+          final w = shape.line.weightInches > 0
+              ? shape.line.weightInches
+              : 0.01;
           var strokeSrc = path;
           if (shape.isGlueableConnector && _lineJumpsActive) {
             final jumped = _lineJumpsPath(shape, geom);
@@ -748,15 +811,11 @@ class VsdxPainter extends CustomPainter {
     }
   }
 
-  void _drawGlassHighlight(
-    Canvas canvas,
-    VsdxShape shape,
-    Path silhouette,
-  ) {
+  void _drawGlassHighlight(Canvas canvas, VsdxShape shape, Path silhouette) {
     if (!shape.supportsGlassEffect) return;
     final colorAlpha = (shape.fill.foreground?.alpha ?? 255) / 255;
-    final alpha = colorAlpha *
-        (1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0));
+    final alpha =
+        colorAlpha * (1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0));
     if (alpha <= 0) return;
     final highlight = drawioGlassHighlightPath(
       width: shape.width,
@@ -1016,13 +1075,15 @@ class VsdxPainter extends CustomPainter {
     final pageStyle = sheet?.lineJumpStyle;
     final conStyle = shape.connectorProps?.conLineJumpStyle;
     final customRadius = shape.drawioLineJumpSizeInches;
-    final rx = customRadius ??
+    final rx =
+        customRadius ??
         resolveLineJumpRadius(
           uiRadius: lineJumpRadiusInches,
           lineToLineInches: sheet?.lineToLineXInches,
           jumpFactor: sheet?.lineJumpFactorX,
         );
-    final ry = customRadius ??
+    final ry =
+        customRadius ??
         resolveLineJumpRadius(
           uiRadius: lineJumpRadiusInches,
           lineToLineInches: sheet?.lineToLineYInches,
@@ -1059,14 +1120,13 @@ class VsdxPainter extends CustomPainter {
     if (routed == null) return;
 
     final pts = routed.points.toList(growable: false);
-    final localPts = <Offset>[
-      for (final p in pts) _pageToLocal(shape, p),
-    ];
+    final localPts = <Offset>[for (final p in pts) _pageToLocal(shape, p)];
     Path path;
     final k = _connZ[shape.id];
     final sheet = ctx?.pageSheet;
     final pageCode = sheet?.lineJumpCode;
-    final jumpOk = k != null &&
+    final jumpOk =
+        k != null &&
         lineJumpShapeMayHop(
           k: k,
           routeCount: _connRoutesPage.length,
@@ -1091,13 +1151,15 @@ class VsdxPainter extends CustomPainter {
       final pageStyle = sheet?.lineJumpStyle;
       final conStyle = shape.connectorProps?.conLineJumpStyle;
       final customRadius = shape.drawioLineJumpSizeInches;
-      final rx = customRadius ??
+      final rx =
+          customRadius ??
           resolveLineJumpRadius(
             uiRadius: lineJumpRadiusInches,
             lineToLineInches: sheet?.lineToLineXInches,
             jumpFactor: sheet?.lineJumpFactorX,
           );
-      final ry = customRadius ??
+      final ry =
+          customRadius ??
           resolveLineJumpRadius(
             uiRadius: lineJumpRadiusInches,
             lineToLineInches: sheet?.lineToLineYInches,
@@ -1216,9 +1278,7 @@ class VsdxPainter extends CustomPainter {
       }
     }
     if (fill.pattern > 1) {
-      final fgRaw = _colourOrTheme(
-              fill.foreground, fill.themeForegroundIndex) ??
-          fallbackFill;
+      final fgRaw = _fillColour(shape) ?? fallbackFill;
       final fgT = fill.foregroundTransparency.clamp(0.0, 1.0);
       final fg = fgRaw.withValues(alpha: fgRaw.a * (1.0 - fgT));
       // Prefer an explicit builder; otherwise the process-wide warm-up from
@@ -1227,15 +1287,14 @@ class VsdxPainter extends CustomPainter {
       final patterns = patternBuilder.hasTiles
           ? patternBuilder
           : PatternFillBuilder.shared;
-      final hatch = patterns.paintFor(
-        fill.pattern,
-        foreground: fg,
-      );
+      final hatch = patterns.paintFor(fill.pattern, foreground: fg);
       if (hatch != null) {
         // Draw background colour first (the hatch tiles are mostly
         // transparent) — Visio's FillBkgnd / FillBkgndTrans fill the gaps.
         final bgRaw = _colourOrTheme(
-            fill.background, fill.themeBackgroundIndex);
+          fill.background,
+          fill.themeBackgroundIndex,
+        );
         if (bgRaw != null) {
           final bgT = fill.backgroundTransparency.clamp(0.0, 1.0);
           final bg = bgRaw.withValues(alpha: bgRaw.a * (1.0 - bgT));
@@ -1249,16 +1308,9 @@ class VsdxPainter extends CustomPainter {
     if (solid != null) canvas.drawPath(path, solid);
   }
 
-  void _drawSketchPatternFill(
-    Canvas canvas,
-    VsdxShape shape,
-    Path silhouette,
-  ) {
-    final base = _colourOrTheme(
-            shape.fill.foreground, shape.fill.themeForegroundIndex) ??
-        fallbackFill;
-    final transparency =
-        shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  void _drawSketchPatternFill(Canvas canvas, VsdxShape shape, Path silhouette) {
+    final base = _fillColour(shape) ?? fallbackFill;
+    final transparency = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
     final color = base.withValues(alpha: base.a * (1 - transparency));
     final bounds = silhouette.getBounds();
     if (bounds.isEmpty || color.a <= 0) return;
@@ -1311,8 +1363,7 @@ class VsdxPainter extends CustomPainter {
   /// Convert a Visio length in page inches to a Flutter blur sigma in layer
   /// pixels. [ImageFilter] / [MaskFilter] ignore the canvas CTM, while the
   /// painter draws in inches under `scale(pxPerInch)`.
-  double _blurSigmaPx(double inches) =>
-      math.max(inches, 0.001) * pxPerInch;
+  double _blurSigmaPx(double inches) => math.max(inches, 0.001) * pxPerInch;
 
   /// Apply [VsdxLine.gradient] to [paint] once.
   ///
@@ -1405,7 +1456,8 @@ class VsdxPainter extends CustomPainter {
     // Axis-aligned 1D lines yield zero-area bounds (height or width == 0);
     // Flutter treats those as empty and would skip the mirror entirely.
     if (bounds.width <= 0 && bounds.height <= 0) return;
-    final inflate = math.max(
+    final inflate =
+        math.max(
           shape.line.weightInches > 0 ? shape.line.weightInches : 0.01,
           0.01,
         ) *
@@ -1521,7 +1573,8 @@ class VsdxPainter extends CustomPainter {
     final noFill = (geom?.noFill ?? false) || !shape.fill.hasFill;
     final noLine = (geom?.noLine ?? false) || !shape.line.hasLine;
     if (noFill && noLine && !shape.hasImage) return;
-    final base = _colourOrTheme(glow.color, glow.themeColorIndex) ??
+    final base =
+        _colourOrTheme(glow.color, glow.themeColorIndex) ??
         const Color(0xFFFFC107);
     final alpha = (1 - glow.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
@@ -1546,7 +1599,8 @@ class VsdxPainter extends CustomPainter {
   }) {
     final shadow = shape.shadow;
     if (!shadow.enabled) return;
-    final base = _colourOrTheme(shadow.color, shadow.themeColorIndex) ??
+    final base =
+        _colourOrTheme(shadow.color, shadow.themeColorIndex) ??
         const Color(0x99000000);
     final alpha = (1 - shadow.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
@@ -1554,7 +1608,8 @@ class VsdxPainter extends CustomPainter {
     // on open paths). Filled shapes keep a filled drop shadow.
     // Match SVG: NoFill+NoLine dividers cast no shadow — except Foreign
     // pictures, which use the geometry as an image silhouette.
-    final imageSilhouette = shape.hasImage &&
+    final imageSilhouette =
+        shape.hasImage &&
         (geom?.noFill ?? true) &&
         ((geom?.noLine ?? true) || !shape.line.hasLine);
     if ((geom?.noFill ?? false) &&
@@ -1562,7 +1617,8 @@ class VsdxPainter extends CustomPainter {
         !imageSilhouette) {
       return;
     }
-    final lineOnly = !imageSilhouette &&
+    final lineOnly =
+        !imageSilhouette &&
         (shape.is1D || (geom?.noFill ?? false) || !shape.fill.hasFill);
     if (lineOnly && (geom?.noLine ?? false)) return;
     if (lineOnly && !shape.line.hasLine) return;
@@ -1634,7 +1690,8 @@ class VsdxPainter extends CustomPainter {
     // it — writing `_resolveStrokePaint(shape) ?? Paint()..color = …` binds the
     // cascade to the whole `??` result and clobbers the real line colour with
     // the fallback (that bug painted every arrow head black).
-    final paint = _resolveStrokePaint(shape) ??
+    final paint =
+        _resolveStrokePaint(shape) ??
         (Paint()
           ..style = PaintingStyle.stroke
           ..color = fallbackStroke);
@@ -1790,7 +1847,14 @@ class VsdxPainter extends CustomPainter {
             )) {
               addVertex(Offset(p.x, p.y));
             }
-          case CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2):
+          case CubBezTo(
+            :final x,
+            :final y,
+            :final x1,
+            :final y1,
+            :final x2,
+            :final y2,
+          ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
@@ -1800,13 +1864,13 @@ class VsdxPainter extends CustomPainter {
             addVertex(Offset(x2, y2));
             addVertex(Offset(x, y));
           case RelCubBezTo(
-              :final fx,
-              :final fy,
-              :final fx1,
-              :final fy1,
-              :final fx2,
-              :final fy2,
-            ):
+            :final fx,
+            :final fy,
+            :final fx1,
+            :final fy1,
+            :final fx2,
+            :final fy2,
+          ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
@@ -1829,13 +1893,13 @@ class VsdxPainter extends CustomPainter {
             addVertex(Offset(fx1 * w, fy1 * h));
             addVertex(Offset(fx * w, fy * h));
           case EllipticalArcTo(
-              :final x,
-              :final y,
-              :final controlX,
-              :final controlY,
-              :final angle,
-              :final eccentricity,
-            ):
+            :final x,
+            :final y,
+            :final controlX,
+            :final controlY,
+            :final angle,
+            :final eccentricity,
+          ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
@@ -1852,13 +1916,13 @@ class VsdxPainter extends CustomPainter {
               addVertex(Offset(p.x, p.y));
             }
           case RelEllipticalArcTo(
-              :final fx,
-              :final fy,
-              :final fcx,
-              :final fcy,
-              :final angle,
-              :final eccentricity,
-            ):
+            :final fx,
+            :final fy,
+            :final fcx,
+            :final fcy,
+            :final angle,
+            :final eccentricity,
+          ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
@@ -1908,16 +1972,16 @@ class VsdxPainter extends CustomPainter {
           case SplineKnot():
             break;
           case NurbsTo(
-              :final x,
-              :final y,
-              :final controlPoints,
-              :final weights,
-              :final knots,
-              :final degree,
-              :final relative,
-              :final cpRelative,
-              :final cpYRelative,
-            ):
+            :final x,
+            :final y,
+            :final controlPoints,
+            :final weights,
+            :final knots,
+            :final degree,
+            :final relative,
+            :final cpRelative,
+            :final cpYRelative,
+          ):
             if (!penDown) {
               addVertex(cursor);
               penDown = true;
@@ -1988,9 +2052,7 @@ class VsdxPainter extends CustomPainter {
 
   Paint? _resolveFillPaint(VsdxShape shape) {
     if (!shape.fill.hasFill) return null;
-    final color = _colourOrTheme(
-            shape.fill.foreground, shape.fill.themeForegroundIndex) ??
-        fallbackFill;
+    final color = _fillColour(shape) ?? fallbackFill;
     final transparency = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
     final out = color.withValues(alpha: color.a * (1.0 - transparency));
     return Paint()
@@ -2002,7 +2064,7 @@ class VsdxPainter extends CustomPainter {
     if (!shape.line.hasLine) return null;
     final color =
         _colourOrTheme(shape.line.color, shape.line.themeColorIndex) ??
-            fallbackStroke;
+        fallbackStroke;
     final transparency = shape.line.transparency.clamp(0.0, 1.0);
     final out = color.withValues(alpha: color.a * (1.0 - transparency));
     return Paint()
@@ -2019,18 +2081,41 @@ class VsdxPainter extends CustomPainter {
       final t = _layerTint!;
       return t.withValues(alpha: t.a * (1.0 - _layerTintTrans));
     }
-    if (raw != null) return Color(raw.value);
-    if (themeIndex == null) return null;
-    final c = theme.resolve(themeIndex);
-    return c == null ? null : Color(c.value);
+    if (themeIndex != null) {
+      final themed = theme.resolve(
+        themeIndex,
+        variationIndex: _paintTarget?.pageSheet.variationColorIndex ?? 0,
+      );
+      if (themed != null) return Color(themed.value);
+    }
+    return raw == null ? null : Color(raw.value);
   }
 
-  StrokeCap _flutterCap(VsdxShape shape) =>
-      switch (shape.line.cap) {
-        LineCap.round => StrokeCap.round,
-        LineCap.square => StrokeCap.square,
-        LineCap.extended => StrokeCap.butt,
-      };
+  Color? _fillColour(VsdxShape shape) {
+    if (_layerTint != null) {
+      final tint = _layerTint!;
+      return tint.withValues(alpha: tint.a * (1.0 - _layerTintTrans));
+    }
+    final fill = shape.fill;
+    final themeIndex = fill.themeForegroundIndex;
+    if (themeIndex != null) {
+      final sheet = _paintTarget?.pageSheet;
+      final themed = theme.resolveFill(
+        themeIndex,
+        variationColorIndex: sheet?.variationColorIndex ?? 0,
+        variationStyleIndex: sheet?.variationStyleIndex ?? 0,
+        fillMatrix: shape.quickStyleFillMatrix,
+      );
+      if (themed != null) return Color(themed.value);
+    }
+    return fill.foreground == null ? null : Color(fill.foreground!.value);
+  }
+
+  StrokeCap _flutterCap(VsdxShape shape) => switch (shape.line.cap) {
+    LineCap.round => StrokeCap.round,
+    LineCap.square => StrokeCap.square,
+    LineCap.extended => StrokeCap.butt,
+  };
 
   void _paintImage(Canvas canvas, VsdxShape shape, Rect bounds) {
     final src = images.findByPart(shape.imagePartName!);
@@ -2072,7 +2157,9 @@ class VsdxPainter extends CustomPainter {
     final bright = shape.imageBrightness.clamp(0.0, 1.0);
     final contrast = shape.imageContrast.clamp(0.0, 1.0);
     final needsTone =
-        blur > 1e-6 || (bright - 0.5).abs() > 1e-3 || (contrast - 0.5).abs() > 1e-3;
+        blur > 1e-6 ||
+        (bright - 0.5).abs() > 1e-3 ||
+        (contrast - 0.5).abs() > 1e-3;
     // Bitmap rows are Y-down; the page frame is Y-up. Flip once about the
     // image rect centre — skip when FlipY already mirrored the parent XForm.
     canvas.save();
@@ -2095,10 +2182,26 @@ class VsdxPainter extends CustomPainter {
                 )
               : null
           ..colorFilter = ColorFilter.matrix(<double>[
-            c, 0, 0, 0, t * 255,
-            0, c, 0, 0, t * 255,
-            0, 0, c, 0, t * 255,
-            0, 0, 0, 1, 0,
+            c,
+            0,
+            0,
+            0,
+            t * 255,
+            0,
+            c,
+            0,
+            0,
+            t * 255,
+            0,
+            0,
+            c,
+            0,
+            t * 255,
+            0,
+            0,
+            0,
+            1,
+            0,
           ]),
       );
     }
@@ -2128,10 +2231,7 @@ class VsdxPainter extends CustomPainter {
   }
 
   void _paintImagePlaceholder(Canvas canvas, Rect bounds, VsdxImage src) {
-    canvas.drawRect(
-      bounds,
-      Paint()..color = const Color(0xFFF2F2F2),
-    );
+    canvas.drawRect(bounds, Paint()..color = const Color(0xFFF2F2F2));
     canvas.drawRect(
       bounds,
       Paint()
@@ -2210,14 +2310,16 @@ class VsdxPainter extends CustomPainter {
       return;
     }
     final path = Path()..addRect(rect);
-    canvas.drawPath(
-      dashedPath(path, const [0.08, 0.06]),
-      paint,
-    );
+    canvas.drawPath(dashedPath(path, const [0.08, 0.06]), paint);
   }
 
   /// Draw.io-style fold chevron in the container header / lane strip.
-  void _paintCollapseChevron(Canvas canvas, VsdxShape shape, double w, double h) {
+  void _paintCollapseChevron(
+    Canvas canvas,
+    VsdxShape shape,
+    double w,
+    double h,
+  ) {
     final local = collapseChevronLocalCenter(shape);
     final r = math.min(0.08, math.min(w, h) * 0.08);
     final fill = Paint()..color = const Color(0xCC333333);
@@ -2272,11 +2374,15 @@ class VsdxPainter extends CustomPainter {
     // Fall back to the shape's own name only for 2-D shapes with a meaningful
     // (non-auto) name — connectors and `Sheet.N` placeholders stay blank.
     String? nameFallback;
-    if (!shape.is1D && shape.name.isNotEmpty && !_autoName.hasMatch(shape.name)) {
+    if (drawNameFallback &&
+        !shape.is1D &&
+        shape.name.isNotEmpty &&
+        !_autoName.hasMatch(shape.name)) {
       nameFallback = shape.name;
     }
-    final label =
-        hasRich ? null : (shape.text?.isNotEmpty == true ? shape.text! : nameFallback);
+    final label = hasRich
+        ? null
+        : (shape.text?.isNotEmpty == true ? shape.text! : nameFallback);
     if (!hasRich && (label == null || label.isEmpty)) return;
 
     // Glueable connectors show their label as an edge label centred on the
@@ -2287,7 +2393,7 @@ class VsdxPainter extends CustomPainter {
     final block = rich.textBlock;
     final labelAngle = isEdgeLabel
         ? (_paintTarget ?? page)?.effectiveConnectorLabelAngle(shape) ??
-            block.angleRad
+              block.angleRad
         : block.angleRad;
     // Match Visio / libvisio: HideText suppresses the painted label.
     if (block.hideText) return;
@@ -2307,14 +2413,16 @@ class VsdxPainter extends CustomPainter {
       }
     } else {
       final fsPx = (isEdgeLabel ? 0.14 : math.min(th, tw) * 0.18) * s;
-      spans.add(TextSpan(
-        text: label,
-        style: TextStyle(
-          color: Colors.black87,
-          fontSize: fsPx,
-          fontWeight: FontWeight.w500,
+      spans.add(
+        TextSpan(
+          text: label,
+          style: TextStyle(
+            color: Colors.black87,
+            fontSize: fsPx,
+            fontWeight: FontWeight.w500,
+          ),
         ),
-      ));
+      );
     }
     final align = hasRich
         ? _flutterAlign(rich.runs.first.paraStyle.horizontalAlign)
@@ -2407,7 +2515,8 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
     // TextBkgnd plus draw.io labelBorderColor around the text block.
     final textRect = Rect.fromLTWH(0, 0, tw, th);
-    final tightLabelPlate = !shape.labelPadding.isZero &&
+    final tightLabelPlate =
+        !shape.labelPadding.isZero &&
         (block.backgroundColor != null || shape.labelBorderColor != null);
     if (!tightLabelPlate) {
       if (block.backgroundColor case final background?) {
@@ -2532,15 +2641,18 @@ class VsdxPainter extends CustomPainter {
 
     // Paragraph layout when spacing / indents / bullets / multi-line need it.
     // Ordinary single-run labels keep the fast path below.
-    final needsParaLayout = hasRich &&
-        (rich.runs.any((r) =>
-                r.paraStyle.spaceBeforeInches != 0 ||
-                r.paraStyle.spaceAfterInches != 0 ||
-                r.paraStyle.indentLeftInches != 0 ||
-                r.paraStyle.indentFirstInches != 0 ||
-                r.paraStyle.indentRightInches != 0 ||
-                r.paraStyle.bullet != 0 ||
-                r.text.contains('\n')));
+    final needsParaLayout =
+        hasRich &&
+        (rich.runs.any(
+          (r) =>
+              r.paraStyle.spaceBeforeInches != 0 ||
+              r.paraStyle.spaceAfterInches != 0 ||
+              r.paraStyle.indentLeftInches != 0 ||
+              r.paraStyle.indentFirstInches != 0 ||
+              r.paraStyle.indentRightInches != 0 ||
+              r.paraStyle.bullet != 0 ||
+              r.text.contains('\n'),
+        ));
     if (needsParaLayout) {
       _paintParagraphBlock(
         canvas,
@@ -2562,7 +2674,8 @@ class VsdxPainter extends CustomPainter {
 
     // Super/sub: TextPainter cannot baseline-shift InlineSpans, so paint runs
     // sequentially with a dy that matches SVG baseline-shift≈super/sub.
-    final needsPosShift = hasRich &&
+    final needsPosShift =
+        hasRich &&
         rich.runs.any((r) => r.charStyle.position != VsdxTextPosition.normal);
     if (needsPosShift) {
       _paintRunsWithPosShift(
@@ -2605,8 +2718,7 @@ class VsdxPainter extends CustomPainter {
     var oy = switch (block.verticalAlign) {
       VsdxVertAlign.top => mtPx,
       VsdxVertAlign.bottom => thPx - mbPx - tp.height,
-      VsdxVertAlign.middle =>
-        mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
+      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
     };
     // Text taller than the content band grows downward from the top margin.
     if (block.verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
@@ -2654,8 +2766,7 @@ class VsdxPainter extends CustomPainter {
     var oy = switch (verticalAlign) {
       VsdxVertAlign.top => mtPx,
       VsdxVertAlign.bottom => thPx - mbPx - tp.height,
-      VsdxVertAlign.middle =>
-        mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
+      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
     };
     if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
     final rect = Rect.fromLTWH(
@@ -2708,11 +2819,14 @@ class VsdxPainter extends CustomPainter {
       probe.tp.dispose();
     }
     var top = mtPx;
-    late List<({
-      List<({TextPainter tp, double dy})> pieces,
-      double width,
-      double height,
-    })> lines;
+    late List<
+      ({
+        List<({TextPainter tp, double dy})> pieces,
+        double width,
+        double height,
+      })
+    >
+    lines;
 
     ({double left, double right}) bandFor(double y0, double y1) {
       final band = shape.shapeInsideBand(y0 / thPx, y1 / thPx);
@@ -2734,12 +2848,14 @@ class VsdxPainter extends CustomPainter {
           return band.right - band.left;
         },
       );
-      final totalHeight = lines.fold<double>(0, (sum, line) => sum + line.height);
+      final totalHeight = lines.fold<double>(
+        0,
+        (sum, line) => sum + line.height,
+      );
       top = switch (verticalAlign) {
         VsdxVertAlign.top => mtPx,
         VsdxVertAlign.bottom => thPx - mbPx - totalHeight,
-        VsdxVertAlign.middle =>
-          mtPx + (thPx - mtPx - mbPx - totalHeight) / 2,
+        VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - totalHeight) / 2,
       };
       if (verticalAlign == VsdxVertAlign.middle && top < mtPx) top = mtPx;
     }
@@ -2812,11 +2928,9 @@ class VsdxPainter extends CustomPainter {
 
   /// Greedy wrap of rich runs for baseline-shifted / first-line-indent painting.
   List<
-      ({
-        List<({TextPainter tp, double dy})> pieces,
-        double width,
-        double height,
-  })> _wrapPosShiftLines(
+    ({List<({TextPainter tp, double dy})> pieces, double width, double height})
+  >
+  _wrapPosShiftLines(
     List<VsdxTextRun> runs,
     double maxW,
     double scale, {
@@ -2824,11 +2938,14 @@ class VsdxPainter extends CustomPainter {
     bool applyPosDy = true,
     double Function(int lineIndex)? maxWidthForLine,
   }) {
-    final lines = <({
-      List<({TextPainter tp, double dy})> pieces,
-      double width,
-      double height,
-    })>[];
+    final lines =
+        <
+          ({
+            List<({TextPainter tp, double dy})> pieces,
+            double width,
+            double height,
+          })
+        >[];
     var cur = <({TextPainter tp, double dy})>[];
     var curW = 0.0;
     var curH = 0.0;
@@ -2866,12 +2983,7 @@ class VsdxPainter extends CustomPainter {
           if (piece.tp.width > lineMax && unit.length > 1 && !isBlank) {
             for (final r in unit.runes) {
               final ch = String.fromCharCode(r);
-              final p = _posShiftPiece(
-                ch,
-                run,
-                scale,
-                applyPosDy: applyPosDy,
-              );
+              final p = _posShiftPiece(ch, run, scale, applyPosDy: applyPosDy);
               if (curW > 1e-9 && curW + p.tp.width > lineMax) flush();
               cur.add(p);
               curW += p.tp.width;
@@ -2894,11 +3006,7 @@ class VsdxPainter extends CustomPainter {
         applyPosDy: applyPosDy,
       );
       return [
-        (
-          pieces: [empty],
-          width: 0.0,
-          height: empty.tp.height,
-        )
+        (pieces: [empty], width: 0.0, height: empty.tp.height),
       ];
     }
     return lines;
@@ -3041,14 +3149,14 @@ class VsdxPainter extends CustomPainter {
       final availFirst = math.max(0.0, maxW - (firstX - mlPx) - indentR);
       final wrapRest = wordWrap ? availRest : double.infinity;
       final wrapFirst = wordWrap ? availFirst : double.infinity;
-      final needsPos = para.runs
-          .any((r) => r.charStyle.position != VsdxTextPosition.normal);
+      final needsPos = para.runs.any(
+        (r) => r.charStyle.position != VsdxTextPosition.normal,
+      );
       // Per-line wrap when: super/sub needs dy; IndFirst is first-line-only;
       // or a bullet must stay on the first line (not vertically centred on
       // the whole paragraph block).
-      final needsLineWrap = needsPos ||
-          hasBullet ||
-          (!hasBullet && indentF.abs() > 1e-9);
+      final needsLineWrap =
+          needsPos || hasBullet || (!hasBullet && indentF.abs() > 1e-9);
       late final TextPainter? tp;
       late final double rowW;
       late final double rowTextH;
@@ -3071,10 +3179,12 @@ class VsdxPainter extends CustomPainter {
           final pieces = line.pieces;
           final lineX = li == 0 ? firstX : textX;
           final lineAvail = li == 0 ? availFirst : availRest;
-          painters.add(TextPainter(
-            text: const TextSpan(text: ''),
-            textDirection: TextDirection.ltr,
-          )..layout());
+          painters.add(
+            TextPainter(
+              text: const TextSpan(text: ''),
+              textDirection: TextDirection.ltr,
+            )..layout(),
+          );
           bulletPainters.add(li == 0 ? bulletTp : null);
           bulletOriginsX.add(bulletX);
           paraPosPainters.add([for (final p in pieces) p.tp]);
@@ -3098,9 +3208,7 @@ class VsdxPainter extends CustomPainter {
       }
       tp = TextPainter(
         text: TextSpan(
-          children: <TextSpan>[
-            for (final r in para.runs) _runToSpan(r, scale),
-          ],
+          children: <TextSpan>[for (final r in para.runs) _runToSpan(r, scale)],
         ),
         textAlign: pAlign,
         textDirection: TextDirection.ltr,
@@ -3233,14 +3341,15 @@ class VsdxPainter extends CustomPainter {
   }) {
     final base =
         _colourOrTheme(run.charStyle.color, run.charStyle.themeColorIndex) ??
-            Colors.black;
+        Colors.black;
     final alpha = (1 - run.charStyle.transparency).clamp(0.0, 1.0);
     final c = base.withValues(alpha: base.a * alpha);
     final pos = run.charStyle.position;
     final baseSize = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
     // Match SVG `_charStyleSvgAttrs` (0.7) so canvas / export stay aligned.
-    final scaledSize =
-        pos == VsdxTextPosition.normal ? baseSize : baseSize * 0.7;
+    final scaledSize = pos == VsdxTextPosition.normal
+        ? baseSize
+        : baseSize * 0.7;
     // Flutter's TextStyle.height is a multiple of the font size and must be
     // positive — a non-positive value collapses the line advance so wrapped
     // lines overlap or stack upward (the bug this guards against). Visio's
@@ -3283,12 +3392,16 @@ class VsdxPainter extends CustomPainter {
     final style = TextStyle(
       color: c,
       fontFamily: font.family,
-      fontFamilyFallback:
-          font.familyFallback.isEmpty ? null : font.familyFallback,
+      fontFamilyFallback: font.familyFallback.isEmpty
+          ? null
+          : font.familyFallback,
       fontSize: scaledSize,
-      fontStyle: run.charStyle.style.italic ? FontStyle.italic : FontStyle.normal,
-      fontWeight:
-          run.charStyle.style.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle: run.charStyle.style.italic
+          ? FontStyle.italic
+          : FontStyle.normal,
+      fontWeight: run.charStyle.style.bold
+          ? FontWeight.bold
+          : FontWeight.normal,
       decoration: TextDecoration.combine([
         if (run.charStyle.underline || run.charStyle.doubleUnderline)
           TextDecoration.underline,
@@ -3301,8 +3414,8 @@ class VsdxPainter extends CustomPainter {
       // decoration is not promoted to double.
       decorationStyle: () {
         final under = run.charStyle.underline || run.charStyle.doubleUnderline;
-        final strike = run.charStyle.strikethrough ||
-            run.charStyle.doubleStrikethrough;
+        final strike =
+            run.charStyle.strikethrough || run.charStyle.doubleStrikethrough;
         final underDbl = run.charStyle.doubleUnderline;
         final strikeDbl = run.charStyle.doubleStrikethrough;
         if (under && strike && underDbl != strikeDbl) {
@@ -3348,10 +3461,12 @@ class VsdxPainter extends CustomPainter {
       final chunk = buf.toString();
       buf.clear();
       if (bufLower!) {
-        out.add(TextSpan(
-          text: chunk.toUpperCase(),
-          style: base.copyWith(fontSize: small),
-        ));
+        out.add(
+          TextSpan(
+            text: chunk.toUpperCase(),
+            style: base.copyWith(fontSize: small),
+          ),
+        );
       } else {
         out.add(TextSpan(text: chunk, style: base));
       }
@@ -3500,11 +3615,11 @@ class VsdxPainter extends CustomPainter {
   }
 
   TextAlign _flutterAlign(VsdxHorzAlign a) => switch (a) {
-        VsdxHorzAlign.left => TextAlign.left,
-        VsdxHorzAlign.center => TextAlign.center,
-        VsdxHorzAlign.right => TextAlign.right,
-        VsdxHorzAlign.justify => TextAlign.justify,
-      };
+    VsdxHorzAlign.left => TextAlign.left,
+    VsdxHorzAlign.center => TextAlign.center,
+    VsdxHorzAlign.right => TextAlign.right,
+    VsdxHorzAlign.justify => TextAlign.justify,
+  };
 
   /// Visio `Case=2` (initial caps) — uppercase the first letter of each word.
   static String _initialCaps(String text) {
@@ -3530,17 +3645,17 @@ class VsdxPainter extends CustomPainter {
       text: TextSpan(
         text: text,
         style: const TextStyle(
-            color: Colors.black54, fontSize: 14, height: 1.4),
+          color: Colors.black54,
+          fontSize: 14,
+          height: 1.4,
+        ),
       ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: size.width - 32);
     tp.paint(
       canvas,
-      Offset(
-        (size.width - tp.width) / 2,
-        (size.height - tp.height) / 2,
-      ),
+      Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2),
     );
   }
 
@@ -3565,6 +3680,9 @@ class VsdxPainter extends CustomPainter {
       old.drawLineJumps != drawLineJumps ||
       old.lineJumpRadiusInches != lineJumpRadiusInches ||
       old.drawEditorChrome != drawEditorChrome ||
+      old.drawPageBorder != drawPageBorder ||
+      old.drawPlaceholders != drawPlaceholders ||
+      old.drawNameFallback != drawNameFallback ||
       old.foldingControlsEnabled != foldingControlsEnabled ||
       old.colorByLayer != colorByLayer;
 }
@@ -3575,8 +3693,8 @@ class _LineEndpoints {
     this.end, {
     Offset? beginTangent,
     Offset? endTangent,
-  })  : beginTangent = beginTangent ?? end,
-        endTangent = endTangent ?? start;
+  }) : beginTangent = beginTangent ?? end,
+       endTangent = endTangent ?? start;
   final Offset start;
   final Offset end;
 

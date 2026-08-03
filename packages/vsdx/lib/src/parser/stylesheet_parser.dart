@@ -7,6 +7,7 @@
 /// back to the hard-coded 12pt default and diverge from the oracle.
 library;
 
+import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
 import '../model/fill.dart';
@@ -18,6 +19,8 @@ import '../model/theme.dart';
 import '../utils/color.dart';
 import 'cell_helpers.dart';
 import 'rich_text_parser.dart';
+
+final _log = Logger('vsdx.parser.stylesheet');
 
 class StyleSheetParser {
   const StyleSheetParser({
@@ -42,20 +45,34 @@ class StyleSheetParser {
       if (el.name.local != 'StyleSheets') continue;
       for (final ss in el.childElements) {
         if (ss.name.local != 'StyleSheet') continue;
-        final sheet = _readSheet(ss);
-        if (sheet != null) byId[sheet.id] = sheet;
+        _readSheetSafely(ss, byId);
       }
     }
     // Some writers put StyleSheet elements directly under VisioDocument.
     if (byId.isEmpty) {
       for (final ss in documentXml.rootElement.childElements) {
         if (ss.name.local != 'StyleSheet') continue;
-        final sheet = _readSheet(ss);
-        if (sheet != null) byId[sheet.id] = sheet;
+        _readSheetSafely(ss, byId);
       }
     }
     return StyleSheetRegistry(Map.unmodifiable(byId),
         defaultTextStyleId: settingsDefault);
+  }
+
+  void _readSheetSafely(
+    XmlElement element,
+    Map<int, VsdxStyleSheet> output,
+  ) {
+    try {
+      final sheet = _readSheet(element);
+      if (sheet != null) output[sheet.id] = sheet;
+    } catch (error, stackTrace) {
+      _log.warning(
+        'Skipping malformed stylesheet ${element.getAttribute('ID') ?? '?'}',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   int? _documentSettingsTextStyle(XmlElement root) {
@@ -140,8 +157,11 @@ class StyleSheetParser {
           final weight = _length(section, 'LineWeight');
           final pat = _cellInt(section, 'LinePattern');
           final colorRes = _resolveColor(
-              section, 'LineColor', 'QuickStyleLineColor',
-              defaultQuickStyleColor: VsdxColor.black);
+            section,
+            'LineColor',
+            'QuickStyleLineColor',
+            quickStyle100Fallback: VsdxColor.black,
+          );
           final color = colorRes.color;
           final soft = _length(section, 'SoftEdgesSize');
           final rounding = _length(section, 'Rounding');
@@ -163,11 +183,17 @@ class StyleSheetParser {
         case 'Fill':
           final pat = _cellInt(section, 'FillPattern');
           final fgRes = _resolveColor(
-              section, 'FillForegnd', 'QuickStyleFillColor',
-              defaultQuickStyleColor: VsdxColor.white);
+            section,
+            'FillForegnd',
+            'QuickStyleFillColor',
+            quickStyle100Fallback: VsdxColor.white,
+          );
           final bgRes = _resolveColor(
-              section, 'FillBkgnd', 'QuickStyleFillColor',
-              defaultQuickStyleColor: VsdxColor.white);
+            section,
+            'FillBkgnd',
+            'QuickStyleFillColor',
+            quickStyle100Fallback: VsdxColor.white,
+          );
           final fg = fgRes.color;
           final bg = bgRes.color;
           if (pat != null) fillDefined.add('FillPattern');
@@ -192,8 +218,12 @@ class StyleSheetParser {
     // third-party writers, then overlay any concrete direct cells here.
     final weight = _length(ss, 'LineWeight');
     final linePattern = _cellInt(ss, 'LinePattern');
-    final lineColorRes = _resolveColor(ss, 'LineColor', 'QuickStyleLineColor',
-        defaultQuickStyleColor: VsdxColor.black);
+    final lineColorRes = _resolveColor(
+      ss,
+      'LineColor',
+      'QuickStyleLineColor',
+      quickStyle100Fallback: VsdxColor.black,
+    );
     final lineColor = lineColorRes.color;
     final lineCapValue = _cellInt(ss, 'LineCap');
     final lineTransparency = _number(ss, 'LineColorTrans');
@@ -256,11 +286,19 @@ class StyleSheetParser {
     }
 
     final fillPattern = _cellInt(ss, 'FillPattern');
-    final fgRes = _resolveColor(ss, 'FillForegnd', 'QuickStyleFillColor',
-        defaultQuickStyleColor: VsdxColor.white);
+    final fgRes = _resolveColor(
+      ss,
+      'FillForegnd',
+      'QuickStyleFillColor',
+      quickStyle100Fallback: VsdxColor.white,
+    );
     final fg = fgRes.color;
-    final bgRes = _resolveColor(ss, 'FillBkgnd', 'QuickStyleFillColor',
-        defaultQuickStyleColor: VsdxColor.white);
+    final bgRes = _resolveColor(
+      ss,
+      'FillBkgnd',
+      'QuickStyleFillColor',
+      quickStyle100Fallback: VsdxColor.white,
+    );
     final bg = bgRes.color;
     final fgTransparency = _number(ss, 'FillForegndTrans');
     final bgTransparency = _number(ss, 'FillBkgndTrans');
@@ -291,8 +329,11 @@ class StyleSheetParser {
 
     final shadowPattern = _cellInt(ss, 'ShdwPattern');
     final shadowColorRes = _resolveColor(
-        ss, 'ShdwForegnd', 'QuickStyleShadowColor',
-        defaultQuickStyleColor: VsdxColor.black);
+      ss,
+      'ShdwForegnd',
+      'QuickStyleShadowColor',
+      quickStyle100Fallback: VsdxColor.black,
+    );
     final shadowColor = shadowColorRes.color;
     final shadowOffsetX = _length(ss, 'ShapeShdwOffsetX');
     final shadowOffsetY = _length(ss, 'ShapeShdwOffsetY');
@@ -514,7 +555,7 @@ class StyleSheetParser {
     XmlElement parent,
     String colorCell,
     String quickStyleCell, {
-    required VsdxColor defaultQuickStyleColor,
+    VsdxColor? quickStyle100Fallback,
   }) {
     final cell = _concreteCell(parent, colorCell);
     if (cell == null) return const _StyleColorResolution.absent();
@@ -532,13 +573,14 @@ class StyleSheetParser {
           ? null
           : int.tryParse(quick.getAttribute('V') ?? '') ??
               double.tryParse(quick.getAttribute('V') ?? '')?.toInt();
-      // QuickStyle colour 100 is libvisio's context-dependent materialised
-      // default, not a theme slot id: black for lines/shadows, white for fills.
-      if (index == null || index == 100) {
-        return _StyleColorResolution(color: defaultQuickStyleColor);
-      }
+      // libvisio starts QuickStyle colours at 100 and resolves 100..106 /
+      // 200..206 through vt:variationClrSchemeLst. A missing selector has the
+      // same default value 100; it must remain theme-bound rather than being
+      // prematurely flattened to black/white.
+      final themeIndex = index ?? 100;
       return _StyleColorResolution(
-        themeIndex: index,
+        color: themeIndex == 100 ? quickStyle100Fallback : null,
+        themeIndex: themeIndex,
       );
     }
     return _StyleColorResolution(color: cached);

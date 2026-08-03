@@ -103,7 +103,8 @@ class GeometryParser {
           if (cmd != null) {
             commands.add(cmd);
             commandFormulas.add(_readRowFormulas(child));
-            rowIndices.add(rowIx ?? (rowIndices.isEmpty ? 1 : rowIndices.last + 1));
+            rowIndices
+                .add(rowIx ?? (rowIndices.isEmpty ? 1 : rowIndices.last + 1));
           }
       }
     }
@@ -131,8 +132,9 @@ class GeometryParser {
   /// inherited section. Sections/rows unique to either side are kept.
   static List<VsdxGeometry> mergeInherited(
     List<VsdxGeometry> master,
-    List<VsdxGeometry> instance,
-  ) {
+    List<VsdxGeometry> instance, {
+    bool preferInstanceCachedInh = false,
+  }) {
     final masterByIx = <int, VsdxGeometry>{};
     for (final g in master) {
       masterByIx[g.ix] = g;
@@ -147,7 +149,11 @@ class GeometryParser {
         out.add(_stripDeletedRows(inst));
         continue;
       }
-      out.add(_mergeSection(m, inst));
+      out.add(_mergeSection(
+        m,
+        inst,
+        preferInstanceCachedInh: preferInstanceCachedInh,
+      ));
     }
     // Master sections the instance never mentioned are inherited unchanged.
     for (final m in master) {
@@ -163,7 +169,11 @@ class GeometryParser {
     return g;
   }
 
-  static VsdxGeometry _mergeSection(VsdxGeometry m, VsdxGeometry inst) {
+  static VsdxGeometry _mergeSection(
+    VsdxGeometry m,
+    VsdxGeometry inst, {
+    required bool preferInstanceCachedInh,
+  }) {
     // rowIX -> (command, formulas), seeded from master then overridden.
     final rows = <int, ({VsdxPathCommand cmd, Map<String, String> f})>{};
     final masterIxs = m.rowIndices.toSet();
@@ -179,7 +189,9 @@ class GeometryParser {
       if (masterRow != null && instF.values.any(isInhFormula)) {
         // F=Inh cells keep master coordinates; real formulas still override.
         rows[rowIx] = (
-          cmd: _blendInhCoords(masterRow.cmd, instCmd, instF),
+          cmd: preferInstanceCachedInh
+              ? instCmd
+              : _blendInhCoords(masterRow.cmd, instCmd, instF),
           f: _mergeRowFormulas(masterRow.f, instF),
         );
       } else {
@@ -194,8 +206,7 @@ class GeometryParser {
         inst.definedFlagCells.contains(name) ? instVal : masterVal;
     return VsdxGeometry(
       commands: List.unmodifiable([for (final k in ordered) rows[k]!.cmd]),
-      commandFormulas:
-          List.unmodifiable([for (final k in ordered) rows[k]!.f]),
+      commandFormulas: List.unmodifiable([for (final k in ordered) rows[k]!.f]),
       noFill: flag('NoFill', inst.noFill, m.noFill),
       noLine: flag('NoLine', inst.noLine, m.noLine),
       noShow: flag('NoShow', inst.noShow, m.noShow),
@@ -203,8 +214,8 @@ class GeometryParser {
       noQuickDrag: flag('NoQuickDrag', inst.noQuickDrag, m.noQuickDrag),
       ix: inst.ix,
       rowIndices: List.unmodifiable(ordered),
-      deletedRowIndices: Set.unmodifiable(
-          inst.deletedRowIndices.where(masterIxs.contains)),
+      deletedRowIndices:
+          Set.unmodifiable(inst.deletedRowIndices.where(masterIxs.contains)),
       definedFlagCells: {...m.definedFlagCells, ...inst.definedFlagCells},
     );
   }
@@ -381,8 +392,7 @@ class GeometryParser {
       return NurbsTo(
         x: pick('X', master.x, inst.x),
         y: pick('Y', master.y, inst.y),
-        controlPoints:
-            useMasterCps ? master.controlPoints : inst.controlPoints,
+        controlPoints: useMasterCps ? master.controlPoints : inst.controlPoints,
         weights: useMasterCps ? master.weights : inst.weights,
         knots: useMasterCps ? master.knots : inst.knots,
         degree: useMasterCps ? master.degree : inst.degree,

@@ -197,8 +197,10 @@ void main() {
       defaults: VsdxFill(pattern: 1, gradient: masterGrad),
     );
     expect(fill.gradient, isNotNull);
-    expect(fill.gradient!.stops.first.color?.value, masterGrad.stops.first.color?.value);
-    expect(fill.gradient!.stops.last.color?.value, masterGrad.stops.last.color?.value);
+    expect(fill.gradient!.stops.first.color?.value,
+        masterGrad.stops.first.color?.value);
+    expect(fill.gradient!.stops.last.color?.value,
+        masterGrad.stops.last.color?.value);
   });
 
   test('FillGradientEnabled V=1 F=Inh without Master clears gradient', () {
@@ -240,6 +242,35 @@ void main() {
     expect(fill.themeForegroundIndex, ThemeSlot.accent1);
   });
 
+  test('local QuickStyleFillColor rebinds inherited THEMEVAL fill', () {
+    final el = XmlDocument.parse(
+      '<Shape><Cell N="QuickStyleFillColor" V="205"/></Shape>',
+    ).rootElement;
+    final fill = style.parseFill(
+      el,
+      defaults: const VsdxFill(
+        pattern: 1,
+        themeForegroundIndex: 100,
+      ),
+    );
+
+    expect(fill.foreground, isNull);
+    expect(fill.themeForegroundIndex, 205);
+  });
+
+  test('local QuickStyleLineColor rebinds inherited THEMEVAL line', () {
+    final el = XmlDocument.parse(
+      '<Shape><Cell N="QuickStyleLineColor" V="103"/></Shape>',
+    ).rootElement;
+    final line = style.parseLine(
+      el,
+      defaults: const VsdxLine(themeColorIndex: 100),
+    );
+
+    expect(line.color, isNull);
+    expect(line.themeColorIndex, 103);
+  });
+
   test('ShadowPattern F=Inh inherits Master pattern', () {
     final el = XmlDocument.parse(
       '<Shape>'
@@ -258,7 +289,8 @@ void main() {
     expect(shadow.pattern, 2);
   });
 
-  test('ShadowPattern F=Inh with disabled master stays off (not stale V=1)', () {
+  test('ShadowPattern F=Inh with disabled master stays off (not stale V=1)',
+      () {
     final el = XmlDocument.parse(
       '<Shape>'
       '<Cell N="ShadowPattern" V="1" F="Inh"/>'

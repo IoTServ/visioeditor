@@ -92,7 +92,8 @@ class VsdxLabelPadding {
     double? right,
     double? bottom,
     double? left,
-  }) => VsdxLabelPadding(
+  }) =>
+      VsdxLabelPadding(
         top: _safe(top ?? this.top),
         right: _safe(right ?? this.right),
         bottom: _safe(bottom ?? this.bottom),
@@ -114,9 +115,8 @@ class VsdxLabelPadding {
       }
     } else if (value is List) {
       for (final token in value.take(4)) {
-        final parsed = token is num
-            ? token.toDouble()
-            : double.tryParse('$token');
+        final parsed =
+            token is num ? token.toDouble() : double.tryParse('$token');
         if (parsed == null) return null;
         values.add(parsed);
       }
@@ -140,7 +140,8 @@ class VsdxLabelPadding {
   String get cssValue {
     String n(double value) => value == value.roundToDouble()
         ? value.toInt().toString()
-        : value.toStringAsFixed(3)
+        : value
+            .toStringAsFixed(3)
             .replaceFirst(RegExp(r'0+$'), '')
             .replaceFirst(RegExp(r'\.$'), '');
     if (top == right && top == bottom && top == left) return n(top);
@@ -150,7 +151,8 @@ class VsdxLabelPadding {
   }
 
   @override
-  bool operator ==(Object other) => other is VsdxLabelPadding &&
+  bool operator ==(Object other) =>
+      other is VsdxLabelPadding &&
       top == other.top &&
       right == other.right &&
       bottom == other.bottom &&
@@ -841,7 +843,8 @@ class VsdxShape {
       p[3] = '$nt';
       out.add(p.join('\t'));
     }
-    if (!changed && out.length == raw.split('\n').where((l) => l.isNotEmpty).length) {
+    if (!changed &&
+        out.length == raw.split('\n').where((l) => l.isNotEmpty).length) {
       return raw;
     }
     return out.join('\n');
@@ -999,8 +1002,7 @@ class VsdxShape {
         if (c.name != userContainer) c,
     ];
     return source.copyWith(
-      shapeKind:
-          value ? VsdxShapeKind.container : VsdxShapeKind.normal,
+      shapeKind: value ? VsdxShapeKind.container : VsdxShapeKind.normal,
       userCells: <VsdxUserCell>[
         ...others,
         VsdxUserCell(name: userContainer, value: value ? '1' : '0'),
@@ -1314,8 +1316,7 @@ class VsdxShape {
     return copyWith(
       userCells: <VsdxUserCell>[
         ...others,
-        if (value)
-          const VsdxUserCell(name: userGlassEffect, value: '1'),
+        if (value) const VsdxUserCell(name: userGlassEffect, value: '1'),
       ],
     );
   }
@@ -1425,20 +1426,17 @@ class VsdxShape {
   VsdxShape withSketchFillStyle(VsdxSketchFillStyle value) =>
       _withSketchCell(userSketchFillStyle, value.drawioValue);
 
-  VsdxShape withSketchHachureGap(double value) =>
-      _withSketchCell(
+  VsdxShape withSketchHachureGap(double value) => _withSketchCell(
         userSketchHachureGap,
         '${value.clamp(1.0, 24.0).toDouble()}',
       );
 
-  VsdxShape withSketchHachureAngle(double value) =>
-      _withSketchCell(
+  VsdxShape withSketchHachureAngle(double value) => _withSketchCell(
         userSketchHachureAngle,
         '${value.clamp(-180.0, 180.0).toDouble()}',
       );
 
-  VsdxShape withSketchFillWeight(double value) =>
-      _withSketchCell(
+  VsdxShape withSketchFillWeight(double value) => _withSketchCell(
         userSketchFillWeight,
         '${value.clamp(0.25, 10.0).toDouble()}',
       );
@@ -1765,8 +1763,7 @@ class VsdxShape {
           ].join(';'),
         ),
     ];
-    final hadRoute =
-        userCells.any((c) => _routeUserCellNames.contains(c.name));
+    final hadRoute = userCells.any((c) => _routeUserCellNames.contains(c.name));
     if (add.isEmpty && !hadRoute) return this;
     return copyWith(userCells: <VsdxUserCell>[...others, ...add]);
   }
@@ -1919,12 +1916,10 @@ class VsdxShape {
           );
     // Absolute Foreign Img* cells (no Width*/Height* F=) scale with the box;
     // formula-driven cells keep their V and are refreshed by recalc below.
-    final nextImgOffsetX = hasF(formulas['ImgOffsetX'])
-        ? imgOffsetXInches
-        : imgOffsetXInches * sx;
-    final nextImgOffsetY = hasF(formulas['ImgOffsetY'])
-        ? imgOffsetYInches
-        : imgOffsetYInches * sy;
+    final nextImgOffsetX =
+        hasF(formulas['ImgOffsetX']) ? imgOffsetXInches : imgOffsetXInches * sx;
+    final nextImgOffsetY =
+        hasF(formulas['ImgOffsetY']) ? imgOffsetYInches : imgOffsetYInches * sy;
     final nextImgWidth = imgWidthInches == null || hasF(formulas['ImgWidth'])
         ? imgWidthInches
         : imgWidthInches! * sx;
@@ -2046,7 +2041,8 @@ class VsdxShape {
     final t = raw.trim();
     if (t.isEmpty) return null;
     // Strip a trailing Visio unit token when present (`1.25 in`).
-    final m = RegExp(r'^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)').firstMatch(t);
+    final m =
+        RegExp(r'^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)').firstMatch(t);
     if (m == null) return null;
     return double.tryParse(m.group(1)!);
   }
@@ -2074,14 +2070,9 @@ class VsdxShape {
           continue;
         }
         touched = true;
-        if (cell == null ||
-            cell == 'X' ||
-            cell == 'XDYN' ||
-            cell == 'DYNX') {
+        if (cell == null || cell == 'X' || cell == 'XDYN' || cell == 'DYNX') {
           out.add(c.copyWith(x: value));
-        } else if (cell == 'Y' ||
-            cell == 'YDYN' ||
-            cell == 'DYNY') {
+        } else if (cell == 'Y' || cell == 'YDYN' || cell == 'DYNY') {
           out.add(c.copyWith(y: value));
         } else if (cell == 'XCON' || cell == 'CONX') {
           out.add(c.copyWith(conX: value));
@@ -2161,10 +2152,7 @@ class VsdxShape {
       }
       if (row == null) return null;
       final cell = ctrl.group(2)?.toUpperCase();
-      if (cell == null ||
-          cell == 'X' ||
-          cell == 'XDYN' ||
-          cell == 'DYNX') {
+      if (cell == null || cell == 'X' || cell == 'XDYN' || cell == 'DYNX') {
         return row.xFormula;
       }
       if (cell == 'Y' || cell == 'YDYN' || cell == 'DYNY') {
@@ -2306,6 +2294,7 @@ class VsdxShape {
   /// (see [VsdxPage.recalculateFormulas]).
   VsdxShape recalculateLocalFormulas({
     double? Function(int sheetId, String cell)? sheetLookup,
+    bool recalculateScratch = true,
   }) {
     final locals = <String, double>{
       'Width': width,
@@ -2335,6 +2324,7 @@ class VsdxShape {
           locals['SCRATCH.$cell${r.ix}'] = v;
           locals['SCRATCH.$cell${i + 1}'] = v;
         }
+
         put('X', r.x);
         put('Y', r.y);
         put('A', r.a);
@@ -2502,7 +2492,7 @@ class VsdxShape {
     // so rows that reference earlier Scratch cells can settle.
     List<VsdxScratchRow>? nextScratch;
     var effectiveScratch = scratch;
-    if (scratch.isNotEmpty) {
+    if (scratch.isNotEmpty && recalculateScratch) {
       var rows = evalScratch(scratch);
       if (rows != scratch) changed = true;
       for (var pass = 0; pass < 2; pass++) {

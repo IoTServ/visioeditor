@@ -12,6 +12,12 @@ import 'package:xml/xml.dart';
 
 import '../core/exceptions.dart';
 import '../model/document.dart';
+import '../model/document_settings.dart';
+import '../model/image.dart';
+import '../model/master.dart';
+import '../model/page.dart';
+import '../model/stylesheet.dart';
+import '../model/theme.dart';
 import 'custom_properties_parser.dart';
 import 'document_resources_parser.dart';
 import 'document_settings_parser.dart';
@@ -48,49 +54,73 @@ class DocumentParser {
         partName: documentPart,
       );
     }
-    final resources = const DocumentResourcesParser().parse(documentXml);
-    final settings = DocumentSettingsParser(
-      colorPalette: resources.colorPalette,
-    ).parse(documentXml);
-    final stylesheets = StyleSheetParser(
-      colorPalette: resources.colorPalette,
-      fontNames: resources.fontNames,
-    ).parse(
-      documentXml,
-      defaultTextStyleId: settings.defaultTextStyleId,
+    final resources = _bestEffort(
+      'document resources',
+      const VsdxDocumentResources(),
+      () => const DocumentResourcesParser().parse(documentXml),
     );
-    _log.fine(() =>
-        'StyleSheets defaultTextStyle=${stylesheets.defaultTextStyleId}');
+    final settings = _bestEffort(
+      'document settings',
+      VsdxDocumentSettings.defaults,
+      () => DocumentSettingsParser(
+        colorPalette: resources.colorPalette,
+      ).parse(documentXml),
+    );
+    final stylesheets = _bestEffort(
+      'stylesheets',
+      StyleSheetRegistry.empty,
+      () => StyleSheetParser(
+        colorPalette: resources.colorPalette,
+        fontNames: resources.fontNames,
+      ).parse(
+        documentXml,
+        defaultTextStyleId: settings.defaultTextStyleId,
+      ),
+    );
+    _log.fine(
+        () => 'StyleSheets defaultTextStyle=${stylesheets.defaultTextStyleId}');
 
     // Theme + Masters first — pages need both for full inheritance.
-    final theme =
-        ThemeParser(pkg).parseTheme(documentPartName: documentPart);
+    final theme = _bestEffort(
+      'theme',
+      VsdxTheme.empty,
+      () => ThemeParser(pkg).parseTheme(documentPartName: documentPart),
+    );
     _log.fine(() =>
         'Loaded theme (${theme.isEmpty ? 'empty' : '${theme.colors.length} slots'})');
 
-    final masters = MastersParser(
-      pkg,
-      stylesheets: stylesheets,
-      colorPalette: resources.colorPalette,
-      fontNames: resources.fontNames,
-    )
-        .parseMasters(documentPartName: documentPart);
+    final masters = _bestEffort(
+      'masters',
+      MasterRegistry.empty,
+      () => MastersParser(
+        pkg,
+        stylesheets: stylesheets,
+        colorPalette: resources.colorPalette,
+        fontNames: resources.fontNames,
+      ).parseMasters(documentPartName: documentPart),
+    );
     _log.fine(() => 'Loaded ${masters.length} master(s)');
 
-    final images =
-        ImageParser(pkg).parseImages(documentPartName: documentPart);
+    final images = _bestEffort(
+      'embedded images',
+      ImageRegistry.empty,
+      () => ImageParser(pkg).parseImages(documentPartName: documentPart),
+    );
     _log.fine(() => 'Loaded ${images.length} image(s)');
 
     // PagesParser will mint its own PageParser instances per page so each
     // shape can resolve `<ForeignData r:id>` against the right rels map.
-    final pages = PagesParser(
-      pkg,
-      masters: masters,
-      stylesheets: stylesheets,
-      colorPalette: resources.colorPalette,
-      fontNames: resources.fontNames,
-    )
-        .parsePages(documentPartName: documentPart);
+    final pages = _bestEffort<List<VsdxPage>>(
+      'pages',
+      const <VsdxPage>[],
+      () => PagesParser(
+        pkg,
+        masters: masters,
+        stylesheets: stylesheets,
+        colorPalette: resources.colorPalette,
+        fontNames: resources.fontNames,
+      ).parsePages(documentPartName: documentPart),
+    );
     _log.fine(() => 'Parsed ${pages.length} page(s)');
 
     final coreProperties = _readOptionalPropertiesPart(
@@ -131,6 +161,22 @@ class DocumentParser {
         partName: customPropertiesPart,
       ),
     );
+  }
+
+  T _bestEffort<T>(String component, T fallback, T Function() parse) {
+    try {
+      return parse();
+    } catch (error, stackTrace) {
+      // Only the OPC container and document.xml are required. libvisio keeps
+      // traversing when an optional table/part is damaged; mirror that policy
+      // so release builds can still display every independently valid page.
+      _log.warning(
+        'Could not parse $component; continuing with fallback',
+        error,
+        stackTrace,
+      );
+      return fallback;
+    }
   }
 
   XmlDocument? _readOptionalPropertiesPart(

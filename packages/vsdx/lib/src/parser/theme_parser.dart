@@ -81,7 +81,73 @@ class ThemeParser {
       final c = _readColorChild(el);
       if (c != null) colors[slot] = c;
     }
-    return VsdxTheme(colors: Map.unmodifiable(colors));
+    final variationColors = <List<VsdxColor?>>[];
+    final variationList = _findFirstByLocal(
+      scheme,
+      'variationClrSchemeLst',
+    );
+    if (variationList != null) {
+      for (final variation in variationList.childElements) {
+        if (variation.name.local != 'variationClrScheme') continue;
+        final entries = List<VsdxColor?>.filled(7, null);
+        for (final child in variation.childElements) {
+          final match = RegExp(r'^varColor([1-7])$').firstMatch(
+            child.name.local,
+          );
+          if (match == null) continue;
+          final index = int.parse(match.group(1)!) - 1;
+          entries[index] = _readColorChild(child);
+        }
+        variationColors.add(List<VsdxColor?>.unmodifiable(entries));
+      }
+    }
+    final fillStyleColors = <VsdxColor?>[];
+    final fillStyleList = _findFirstByLocal(doc.rootElement, 'fillStyleLst');
+    if (fillStyleList != null) {
+      for (final style in fillStyleList.childElements) {
+        fillStyleColors.add(_readDirectFillStyleColor(style));
+      }
+    }
+    final variationFillStyleIndices = <List<int?>>[];
+    final variationStyleList = _findFirstByLocal(
+      doc.rootElement,
+      'variationStyleSchemeLst',
+    );
+    if (variationStyleList != null) {
+      for (final scheme in variationStyleList.childElements) {
+        if (scheme.name.local != 'variationStyleScheme') continue;
+        final indices = <int?>[];
+        for (final style in scheme.childElements) {
+          if (style.name.local != 'varStyle') continue;
+          indices.add(int.tryParse(style.getAttribute('fillIdx') ?? ''));
+        }
+        variationFillStyleIndices.add(List<int?>.unmodifiable(indices));
+      }
+    }
+    return VsdxTheme(
+      colors: Map.unmodifiable(colors),
+      variationColors: List<List<VsdxColor?>>.unmodifiable(variationColors),
+      fillStyleColors: List<VsdxColor?>.unmodifiable(fillStyleColors),
+      variationFillStyleIndices:
+          List<List<int?>>.unmodifiable(variationFillStyleIndices),
+    );
+  }
+
+  static VsdxColor? _readDirectFillStyleColor(XmlElement style) {
+    // A phClr value needs the current QuickStyle colour and transforms; leave
+    // it unresolved here so [VsdxTheme.resolveFill] retains that base colour.
+    for (final node in style.descendants.whereType<XmlElement>()) {
+      if (node.name.local == 'schemeClr') return null;
+      if (node.name.local == 'srgbClr') {
+        final value = node.getAttribute('val');
+        if (value != null) return VsdxColor.tryParse('#$value');
+      }
+      if (node.name.local == 'sysClr') {
+        final value = node.getAttribute('lastClr');
+        if (value != null) return VsdxColor.tryParse('#$value');
+      }
+    }
+    return null;
   }
 
   static VsdxColor? _readColorChild(XmlElement parent) {
