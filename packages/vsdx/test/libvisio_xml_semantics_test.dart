@@ -229,6 +229,23 @@ void main() {
     expect(triggerOnly.endY, 0);
   });
 
+  test('VSDX LineCap numeric values follow libvisio rendering semantics', () {
+    final pageXml = XmlDocument.parse(
+      '<PageContents><Shapes>'
+      '<Shape ID="1"><Cell N="LineCap" V="0"/></Shape>'
+      '<Shape ID="2"><Cell N="LineCap" V="1"/></Shape>'
+      '<Shape ID="3"><Cell N="LineCap" V="2"/></Shape>'
+      '</Shapes></PageContents>',
+    );
+
+    final shapes = const PageParser()
+        .parseShapes(pageXml, partName: '/visio/pages/page1.xml');
+    expect(shapes[0].line.cap, LineCap.round);
+    // libvisio maps raw 1 to SVG butt and raw 2 to SVG square.
+    expect(shapes[1].line.cap, LineCap.extended);
+    expect(shapes[2].line.cap, LineCap.square);
+  });
+
   test('Page drawing scale materializes drawable coordinates like libvisio',
       () {
     final bytes = _scaledDrawingPackage();

@@ -163,7 +163,7 @@ void main() {
     expect(line.weightInches, closeTo(0.01041666666666667, 1e-12));
     expect(line.color, VsdxColor.black);
     expect(line.pattern, 2);
-    expect(line.cap, LineCap.extended);
+    expect(line.cap, LineCap.square);
     expect(line.beginArrow, 4);
     expect(line.endArrow, 5);
     expect(line.transparency, closeTo(0.25, 1e-12));

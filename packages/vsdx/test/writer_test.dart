@@ -1680,9 +1680,30 @@ void main() {
       ),
     );
 
-    final reopened = parser.parse(
-      writer.write(originalBytes: bytes, edited: edited),
+    final output = writer.write(originalBytes: bytes, edited: edited);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(output)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
     );
+    final targetXml = XmlDocument.parse(pageXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere((e) =>
+            e.name.local == 'Shape' &&
+            e.getAttribute('ID') == target.id.toString());
+    final lineCapCell = targetXml.descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'LineCap',
+        );
+    expect(
+      lineCapCell.getAttribute('V'),
+      '2',
+      reason: 'libvisio renders raw LineCap=2 as a square SVG cap',
+    );
+    final reopened = parser.parse(output);
     final after = reopened.pages.first.findShapeById(target.id)!;
     expect(after.line.pattern, 3);
     expect(after.line.beginArrow, 1);

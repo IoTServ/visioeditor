@@ -604,8 +604,8 @@ class StyleSheetParser {
   }
 
   LineCap _lineCap(int value) => switch (value) {
-        1 => LineCap.square,
-        2 => LineCap.extended,
+        1 => LineCap.extended,
+        2 => LineCap.square,
         _ => LineCap.round,
       };
 

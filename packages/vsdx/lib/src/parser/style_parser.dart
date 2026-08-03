@@ -398,8 +398,8 @@ class StyleParser {
       shape,
       'LineCap',
       inheritFrom: switch (defaults.cap) {
-        LineCap.square => 1,
-        LineCap.extended => 2,
+        LineCap.square => 2,
+        LineCap.extended => 1,
         LineCap.round => 0,
       },
     );
@@ -747,8 +747,8 @@ class StyleParser {
 
   LineCap _capFromInt(int v) => switch (v) {
         0 => LineCap.round,
-        1 => LineCap.square,
-        2 => LineCap.extended,
+        1 => LineCap.extended,
+        2 => LineCap.square,
         _ => LineCap.round,
       };
 }

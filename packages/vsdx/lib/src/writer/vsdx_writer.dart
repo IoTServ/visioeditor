@@ -4334,8 +4334,8 @@ class VsdxWriter {
 
   static int _lineCapInt(LineCap c) => switch (c) {
         LineCap.round => 0,
-        LineCap.square => 1,
-        LineCap.extended => 2,
+        LineCap.square => 2,
+        LineCap.extended => 1,
       };
 
   /// Inverse of [StyleParser]'s `_arrowSizeFromBucket` — pick the nearest
