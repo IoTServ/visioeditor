@@ -474,11 +474,28 @@ void _ellipseFromPoints(
   double bX,
   double bY,
 ) {
+  final ellipse = EllipseCmd(
+    cx: cx,
+    cy: cy,
+    aX: aX,
+    aY: aY,
+    bX: bX,
+    bY: bY,
+  );
+  final degenerate = visioDegenerateEllipsePath(ellipse);
+  if (degenerate != null) {
+    if (degenerate.isEmpty) return;
+    path.moveTo(degenerate.first.x, degenerate.first.y);
+    for (final point in degenerate.skip(1)) {
+      path.lineTo(point.x, point.y);
+    }
+    path.close();
+    return;
+  }
   final ax = aX - cx, ay = aY - cy;
   final bx = bX - cx, by = bY - cy;
   final rx = math.sqrt(ax * ax + ay * ay);
   final ry = math.sqrt(bx * bx + by * by);
-  if (rx == 0 || ry == 0) return;
   // Axis-aligned fast path.
   if (ay.abs() < 1e-9 && bx.abs() < 1e-9) {
     path.addOval(Rect.fromCenter(

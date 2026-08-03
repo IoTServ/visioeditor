@@ -529,6 +529,26 @@ class EllipseCmd extends VsdxPathCommand {
       'Ellipse(c=($cx,$cy), a=($aX,$aY), b=($bX,$bY))';
 }
 
+/// The path emitted by libvisio when an [EllipseCmd] has a zero-length axis.
+///
+/// `VSDContentCollector::collectEllipse` always emits `M A`, an arc to B,
+/// an arc back to A, and `Z`. SVG defines an arc with either radius equal to
+/// zero as a straight line, so the visible fallback is `A → B → A`. Returns
+/// `null` for a non-degenerate ellipse and an empty list for non-finite data.
+List<Offset2D>? visioDegenerateEllipsePath(EllipseCmd ellipse) {
+  final ax = ellipse.aX - ellipse.cx;
+  final ay = ellipse.aY - ellipse.cy;
+  final bx = ellipse.bX - ellipse.cx;
+  final by = ellipse.bY - ellipse.cy;
+  final aLength2 = ax * ax + ay * ay;
+  final bLength2 = bx * bx + by * by;
+  if (!aLength2.isFinite || !bLength2.isFinite) return const <Offset2D>[];
+  if (aLength2 != 0 && bLength2 != 0) return null;
+  final a = Offset2D(ellipse.aX, ellipse.aY);
+  final b = Offset2D(ellipse.bX, ellipse.bY);
+  return <Offset2D>[a, b, a];
+}
+
 /// `PolylineTo` — Visio packs the polyline data inside a `POLYLINE(...)`
 /// formula on the `A` cell:
 ///   `POLYLINE(xType, yType, x0,y0, x1,y1, …, xN,yN)`

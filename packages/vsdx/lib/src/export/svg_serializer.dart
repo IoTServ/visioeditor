@@ -2214,6 +2214,26 @@ class VsdxToSvgSerializer {
             :final bX,
             :final bY,
           ):
+          final degenerate = visioDegenerateEllipsePath(
+            EllipseCmd(
+              cx: cx,
+              cy: cy,
+              aX: aX,
+              aY: aY,
+              bX: bX,
+              bY: bY,
+            ),
+          );
+          if (degenerate != null) {
+            if (degenerate.isNotEmpty) {
+              m(degenerate.first.x, degenerate.first.y);
+              for (final point in degenerate.skip(1)) {
+                l(point.x, point.y);
+              }
+              out.write('Z ');
+            }
+            continue;
+          }
           final ax = aX - cx, ay = aY - cy;
           final bx = bX - cx, by = bY - cy;
           final rx = math.sqrt(ax * ax + ay * ay);

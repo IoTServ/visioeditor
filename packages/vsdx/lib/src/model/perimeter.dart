@@ -579,11 +579,17 @@ void _sampleEllipse(
   bool close = true,
   int steps = 32,
 }) {
+  final degenerate = visioDegenerateEllipsePath(e);
+  if (degenerate != null) {
+    for (var i = 1; i < degenerate.length; i++) {
+      out.add((degenerate[i - 1], degenerate[i]));
+    }
+    return;
+  }
   // Match path_builder / SVG: conjugate diameters (handles non-orthogonal A/B
   // after non-uniform scale of a rotated ellipse).
   final ax = e.aX - e.cx, ay = e.aY - e.cy;
   final bx = e.bX - e.cx, by = e.bY - e.cy;
-  if (ax * ax + ay * ay < 1e-24 || bx * bx + by * by < 1e-24) return;
   Offset2D pt(double th) {
     final cosT = math.cos(th), sinT = math.sin(th);
     return Offset2D(

@@ -83,28 +83,53 @@ void main() {
         ],
       ),
     );
+    final pageWithDegenerateArc = pageWithArc.addShape(
+      VsdxShape(
+        id: id + 3,
+        name: 'DegenerateEllipticalArcTo',
+        pinX: 2,
+        pinY: 1.5,
+        width: 2,
+        height: 1,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              EllipticalArcTo(
+                x: 2,
+                y: 0,
+                controlX: 1,
+                controlY: 1,
+                angle: 0,
+                eccentricity: 0,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
     doc = doc.replacePage(
       0,
-      pageWithArc.addShape(
+      pageWithDegenerateArc.addShape(
         VsdxShape(
-          id: id + 3,
-          name: 'DegenerateEllipticalArcTo',
-          pinX: 2,
-          pinY: 1.5,
+          id: id + 4,
+          name: 'DegenerateEllipse',
+          pinX: 4,
+          pinY: 4,
           width: 2,
-          height: 1,
+          height: 2,
           geometries: const <VsdxGeometry>[
             VsdxGeometry(
               noFill: true,
               commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                EllipticalArcTo(
-                  x: 2,
-                  y: 0,
-                  controlX: 1,
-                  controlY: 1,
-                  angle: 0,
-                  eccentricity: 0,
+                EllipseCmd(
+                  cx: 1,
+                  cy: 1,
+                  aX: 1,
+                  aY: 1,
+                  bX: 1,
+                  bY: 2,
                 ),
               ],
             ),
@@ -134,6 +159,11 @@ void main() {
       reopenedCommands.whereType<EllipticalArcTo>(),
       hasLength(1),
       reason: 'EllipticalArcTo must survive the VSDX writer round-trip',
+    );
+    expect(
+      reopenedCommands.whereType<EllipseCmd>(),
+      hasLength(1),
+      reason: 'Ellipse must survive the VSDX writer round-trip',
     );
     final inputs = <String, Uint8List>{'generated': generated};
     for (final entry in const <(String, String)>[
