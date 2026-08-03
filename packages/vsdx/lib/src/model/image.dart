@@ -11,7 +11,20 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:image/image.dart' as raster;
 import 'package:meta/meta.dart';
+
+/// A bitmap payload that common Flutter and browser codecs can display.
+@immutable
+class VsdxRenderableRaster {
+  const VsdxRenderableRaster({
+    required this.bytes,
+    required this.mimeType,
+  });
+
+  final Uint8List bytes;
+  final String mimeType;
+}
 
 /// A single piece of embedded media. Bytes are kept as `Uint8List`; the
 /// renderer hands them to `ui.instantiateImageCodec` lazily so model-side
@@ -82,6 +95,56 @@ class VsdxImage {
         lower.endsWith('.gif') ||
         lower.endsWith('.bmp') ||
         lower.endsWith('.webp');
+  }
+
+  /// Return a cross-platform bitmap payload for painting or SVG embedding.
+  ///
+  /// libvisio exposes TIFF ForeignData as a regular binary image to
+  /// librevenge/LibreOffice. Flutter and browsers do not consistently decode
+  /// TIFF, so convert its first page to PNG in pure Dart while retaining the
+  /// original TIFF bytes in the document model for lossless round-tripping.
+  /// Malformed or unsupported input is reported as `null`; callers can keep
+  /// their normal placeholder fallback instead of failing the whole page.
+  VsdxRenderableRaster? rasterForRendering() {
+    if (isFlutterDecodable) {
+      return VsdxRenderableRaster(
+        bytes: bytes,
+        mimeType: _effectiveRasterMimeType,
+      );
+    }
+    if (!_isTiff) return null;
+    try {
+      final decoded = raster.decodeTiff(bytes, frame: 0);
+      if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+        return null;
+      }
+      return VsdxRenderableRaster(
+        bytes: raster.encodePng(decoded),
+        mimeType: 'image/png',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get _isTiff {
+    final m = mimeType.toLowerCase();
+    final p = partName.toLowerCase();
+    return m.startsWith('image/tiff') ||
+        m.startsWith('image/tif') ||
+        p.endsWith('.tif') ||
+        p.endsWith('.tiff');
+  }
+
+  String get _effectiveRasterMimeType {
+    final m = mimeType.toLowerCase();
+    if (m.startsWith('image/')) return mimeType;
+    final dot = partName.lastIndexOf('.');
+    if (dot >= 0) {
+      final inferred = mimeForExtension(partName.substring(dot + 1));
+      if (inferred.isNotEmpty) return inferred;
+    }
+    return 'image/png';
   }
 
   /// Visio `<ForeignData ForeignType>` for this media (MS-VSDX / libvisio).

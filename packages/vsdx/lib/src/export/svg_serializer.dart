@@ -3029,10 +3029,11 @@ class VsdxToSvgSerializer {
       _resolveForeignImage(VsdxShape shape) {
     final src = _images.findByPart(shape.imagePartName ?? '');
     if (!embedImages || src == null) return null;
-    if (src.isFlutterDecodable) {
+    final bitmap = src.rasterForRendering();
+    if (bitmap != null) {
       return (
-        mime: src.mimeType.isEmpty ? 'image/png' : src.mimeType,
-        bytes: src.bytes,
+        mime: bitmap.mimeType,
+        bytes: bitmap.bytes,
         vectorDrawing: null,
       );
     }

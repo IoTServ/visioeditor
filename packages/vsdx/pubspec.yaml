@@ -15,6 +15,8 @@ dependencies:
   collection: ^1.18.0
   crypto: ^3.0.5
   logging: ^1.2.0
+  # Decode TIFF ForeignData to PNG for cross-platform SVG/Flutter rendering.
+  image: ^4.3.0
   # Legacy VSD5/VSD6 FontIX code pages (Windows-125x, CJK, Symbol).
   charset: ^2.0.1
   cp949_codec: ^1.0.2

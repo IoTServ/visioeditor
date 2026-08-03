@@ -73,8 +73,9 @@ class VsdxImageCache extends ChangeNotifier {
     _waiters[src.partName] = waiter;
     _pending.add(src.partName);
     try {
-      if (src.isFlutterDecodable) {
-        await _decodeRaster(src, src.bytes, clearPending: false);
+      final raster = src.rasterForRendering();
+      if (raster != null) {
+        await _decodeRaster(src, raster.bytes, clearPending: false);
       } else {
         await _decodeMetafile(src, managePending: false);
       }

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:image/image.dart' as raster;
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -209,7 +210,48 @@ void main() {
       9,
       reason: 'NURBSTo degree must survive the VSDX writer round-trip',
     );
-    final inputs = <String, Uint8List>{'generated': generated};
+    var tiffDocument = parser.parse(blank);
+    final tiffPage = tiffDocument.pages.first;
+    const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';
+    final tiffImage = raster.Image(width: 8, height: 8);
+    for (var y = 0; y < tiffImage.height; y++) {
+      for (var x = 0; x < tiffImage.width; x++) {
+        final red = x < 4 ? 255 : 0;
+        final blue = x < 4 ? 0 : 255;
+        tiffImage.setPixelRgba(x, y, red, 0, blue, 255);
+      }
+    }
+    final tiffBytes = raster.encodeTiff(tiffImage, singleFrame: true);
+    tiffDocument = tiffDocument
+        .copyWith(
+          images: tiffDocument.images.withImage(
+            VsdxImage(
+              partName: tiffPart,
+              bytes: tiffBytes,
+              mimeType: 'image/tiff',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          tiffPage.addShape(
+            VsdxShapeFactory.picture(
+              id: tiffPage.nextFreeShapeId(),
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: tiffPart,
+            ),
+          ),
+        );
+    final inputs = <String, Uint8List>{
+      'generated': generated,
+      'tiff_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: tiffDocument,
+      ),
+    };
     for (final entry in const <(String, String)>[
       ('connectors', 'test/fixtures/test4_connectors.vsdx'),
       ('zh_data', 'test/fixtures/数据治理.vsdx'),
