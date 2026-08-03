@@ -81,4 +81,12 @@ void main() {
       expect(arrowDescriptor(id)!.centered, isFalse, reason: 'marker $id');
     }
   });
+
+  test('id 34 aliases the full open-circle path like libvisio', () {
+    final marker34 = arrowDescriptor(34)!;
+    final marker33 = arrowDescriptor(33)!;
+    expect(marker34.filled, isFalse);
+    expect(marker34.centered, isFalse);
+    expect(marker34.path.getBounds(), marker33.path.getBounds());
+  });
 }

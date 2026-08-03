@@ -97,7 +97,7 @@ final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   31: _openCircle,
   32: _openCircle,
   33: _openCircle,
-  34: _smallCircle,
+  34: _openCircle,
   35: _filledCircleWithLine,
   36: _filledCircleWithLine,
   37: _filledCircleWithLine,
@@ -224,12 +224,6 @@ ArrowDescriptor _circleDot() {
 ArrowDescriptor _openCircle() {
   final p = Path()
     ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.4));
-  return ArrowDescriptor(path: p, filled: false);
-}
-
-ArrowDescriptor _smallCircle() {
-  final p = Path()
-    ..addOval(Rect.fromCircle(center: const Offset(-0.25, 0), radius: 0.2));
   return ArrowDescriptor(path: p, filled: false);
 }
 

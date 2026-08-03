@@ -1005,10 +1005,10 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0" '
+        'd="M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" '
         'fill="none" stroke="#000000"',
       ),
-      reason: 'arrow 34 is a small open circle on canvas',
+      reason: 'libvisio aliases arrow 34 to the full open-circle path',
     );
   });
 
