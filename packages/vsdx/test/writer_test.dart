@@ -2706,6 +2706,60 @@ void main() {
     );
   });
 
+  test('media referenced by an additional master prototype is retained', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const part = '/visio/media/image_additional_master.png';
+    final bytes = Uint8List.fromList(
+      <int>[0x89, 0x50, 0x4E, 0x47, 4, 4, 4, 4],
+    );
+    final picture = VsdxShapeFactory.picture(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    );
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: bytes, mimeType: 'image/png'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(picture));
+    final withMedia = writer.write(originalBytes: blank, edited: doc);
+
+    doc = parser.parse(withMedia);
+    final primary = VsdxShapeFactory.rectangle(
+      id: 100,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+    );
+    final master = VsdxMaster(
+      id: 10,
+      name: 'Multiple top-level shapes',
+      prototype: primary,
+      additionalPrototypes: <VsdxShape>[
+        doc.pages.first.findShapeById(id)!,
+      ],
+    );
+    doc = doc
+        .copyWith(masters: MasterRegistry(<int, VsdxMaster>{10: master}))
+        .replacePage(0, doc.pages.first.removeShapeById(id));
+
+    final saved = writer.write(originalBytes: withMedia, edited: doc);
+    expect(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .findFile('visio/media/image_additional_master.png'),
+      isNotNull,
+    );
+  });
+
   test('connector endpoint reconnect / detach round-trips', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

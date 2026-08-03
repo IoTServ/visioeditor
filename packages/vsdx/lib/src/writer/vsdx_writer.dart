@@ -307,6 +307,9 @@ class VsdxWriter {
     }
     for (final m in edited.masters.all) {
       walk(m.prototype);
+      for (final shape in m.additionalPrototypes) {
+        walk(shape);
+      }
     }
 
     var any = false;
