@@ -413,7 +413,11 @@ class VsdxToSvgSerializer {
     if (visibleLayers != null &&
         page.layers.isNotEmpty &&
         shape.layerMemberIds.isNotEmpty &&
-        !shape.isOnAnyLayer(visibleLayers)) {
+        !layerMembershipEnabled(
+          page.layers,
+          shape.layerMemberIds,
+          visibleLayers,
+        )) {
       return;
     }
     final prevTint = _layerTint;

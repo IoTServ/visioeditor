@@ -604,9 +604,10 @@ class PageParser {
       shadow: shadow,
       glow: glow,
       reflection: reflection,
-      layerMemberIds: layerMembers == null && proto != null
-          ? proto.layerMemberIds
-          : (layerMembers ?? const <int>[]),
+      // LayerMember is shape-local in libvisio and is not copied from a
+      // Master when the page instance omits it. LayerParser still consumes a
+      // cached V= from an explicit F="Inh" cell, matching VSDXParser.
+      layerMemberIds: layerMembers ?? const <int>[],
       is1D: is1D,
       beginX: beginX,
       beginY: beginY,

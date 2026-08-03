@@ -1947,9 +1947,8 @@ class VsdBinaryParser {
         master.tabRuns.any((t) => t.stops.isNotEmpty)) {
       d.tabRuns.addAll(master.tabRuns);
     }
-    if (d.layerMemberIds.isEmpty && master.layerMemberIds.isNotEmpty) {
-      d.layerMemberIds = List<int>.from(master.layerMemberIds);
-    }
+    // libvisio does not copy LayerMem from binary stencil shapes; membership
+    // belongs to the page instance only.
     if (d.connectionPoints.isEmpty && master.connectionPoints.isNotEmpty) {
       for (final c in master.connectionPoints) {
         d.connectionPoints.add(
@@ -4480,11 +4479,16 @@ class VsdBinaryParser {
         text = _decodeUtf16Le(input.readBytes(n));
       }
       final ids = <int>[];
-      for (final part in text.split(RegExp(r'[;,\s]+'))) {
+      for (final part in text.split(';')) {
         final v = int.tryParse(part.trim());
-        if (v != null) ids.add(v);
+        // VSDContentCollector parses the complete value as `int % ';'`.
+        if (v == null) {
+          s.layerMemberIds = const <int>[];
+          return;
+        }
+        ids.add(v);
       }
-      if (ids.isNotEmpty) s.layerMemberIds = ids;
+      s.layerMemberIds = ids;
     } catch (_) {}
   }
 

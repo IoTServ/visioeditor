@@ -60,20 +60,25 @@ class LayerParser {
 
   /// Parse a shape's `LayerMember` cell into a list of layer ids.
   ///
-  /// Returns `null` when the cell is absent (inherit Master / prototype).
+  /// Returns `null` when the cell is absent (no page-local membership).
   /// Returns an empty list when the cell is present with an empty `V`
   /// (explicitly cleared membership).
   static List<int>? parseLayerMembersOrNull(XmlElement shape) {
     final cell = findCell(shape, 'LayerMember');
     if (cell == null) return null;
-    // F=Inh → inherit Master / prototype (same as a missing cell).
-    if (isInhFormula(cell.getAttribute('F'))) return null;
+    // libvisio reads the cached V= for LayerMember even when F="Inh".
+    // Unlike ordinary ShapeSheet cells, membership is never copied from the
+    // Master prototype when the cell is absent.
     final v = cell.getAttribute('V');
     if (v == null || v.isEmpty) return const <int>[];
     final ids = <int>[];
     for (final t in v.split(';')) {
       final n = int.tryParse(t.trim());
-      if (n != null) ids.add(n);
+      // libvisio parses the complete value as `int % ';'`: one malformed or
+      // empty item invalidates the entire membership instead of preserving a
+      // misleading subset.
+      if (n == null) return const <int>[];
+      ids.add(n);
     }
     return List.unmodifiable(ids);
   }
@@ -82,7 +87,7 @@ class LayerParser {
   /// value is a semicolon-separated string ("0;3;5") or absent.
   ///
   /// Absent and empty both yield `[]` — prefer [parseLayerMembersOrNull]
-  /// when Master inheritance must be distinguished from an explicit clear.
+  /// when source-cell absence must be distinguished from an explicit clear.
   static List<int> parseLayerMembers(XmlElement shape) =>
       parseLayerMembersOrNull(shape) ?? const <int>[];
 

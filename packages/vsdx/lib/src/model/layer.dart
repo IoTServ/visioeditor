@@ -120,8 +120,12 @@ class VsdxLayer {
       'VsdxLayer(#$id $name, visible=$visible print=$print)';
 }
 
-/// First layer with a non-null [VsdxLayer.color] among [layerMemberIds]
-/// (membership order). Used by Visio "Color by Layer" display mode.
+/// The common layer-colour override for [layerMemberIds].
+///
+/// libvisio applies Color-by-Layer only when every referenced layer exists,
+/// every one defines a colour, and all colours (including transparency) are
+/// identical. One missing, uncoloured, or conflicting layer restores the
+/// shape's own colour.
 VsdxLayer? layerColorSource(
   Iterable<VsdxLayer> layers,
   List<int> layerMemberIds,
@@ -130,10 +134,37 @@ VsdxLayer? layerColorSource(
   final byId = <int, VsdxLayer>{
     for (final layer in layers) layer.id: layer,
   };
+  VsdxLayer? source;
   for (final id in layerMemberIds) {
     final layer = byId[id];
-    if (layer?.color != null) return layer;
+    if (layer?.color == null) return null;
+    if (source == null) {
+      source = layer;
+      continue;
+    }
+    if (source.color != layer!.color || source.colorTrans != layer.colorTrans) {
+      return null;
+    }
   }
-  return null;
+  return source;
 }
 
+/// Whether a layer membership is enabled by [enabledLayerIds].
+///
+/// Matching libvisio, an empty membership is enabled, any enabled member makes
+/// the shape enabled, and an unknown layer id is treated as enabled rather
+/// than hiding damaged or forward-compatible content.
+bool layerMembershipEnabled(
+  Iterable<VsdxLayer> layers,
+  List<int> layerMemberIds,
+  Iterable<int> enabledLayerIds,
+) {
+  if (layerMemberIds.isEmpty) return true;
+  final known = <int>{for (final layer in layers) layer.id};
+  final enabled =
+      enabledLayerIds is Set<int> ? enabledLayerIds : enabledLayerIds.toSet();
+  for (final id in layerMemberIds) {
+    if (!known.contains(id) || enabled.contains(id)) return true;
+  }
+  return false;
+}

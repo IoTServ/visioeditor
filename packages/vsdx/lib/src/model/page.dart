@@ -358,8 +358,11 @@ class VsdxPage {
   /// Whether [s] would be painted when layer visibility is respected
   /// (shapes with no layer membership are always visible).
   bool isShapeVisible(VsdxShape s) {
-    if (s.layerMemberIds.isEmpty || layers.isEmpty) return true;
-    return s.isOnAnyLayer(visibleLayerIds);
+    return layerMembershipEnabled(
+      layers,
+      s.layerMemberIds,
+      visibleLayerIds,
+    );
   }
 
   /// Whether [shapeId] is painted: [isShapeVisible] for it and every ancestor,

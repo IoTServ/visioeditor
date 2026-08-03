@@ -147,6 +147,29 @@ void main() {
           expect(after.imgHeightInches, closeTo(shape.imgHeightInches!, 1e-9));
         }
       }
+
+      // VSD has no binary writer; synthesis is its editable round-trip path.
+      // Layer rows and page-local LayerMem values must survive that conversion
+      // without being invented from stencil masters.
+      final reopened = const DocumentParser().parse(synthesizeVsdx(doc));
+      expect(reopened.pages, hasLength(doc.pages.length));
+      for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
+        final beforePage = doc.pages[pageIndex];
+        final afterPage = reopened.pages[pageIndex];
+        expect(afterPage.layers, beforePage.layers,
+            reason: '${fixture.path} page $pageIndex layers after synthesis');
+        final afterById = <int, VsdxShape>{
+          for (final shape in _allPageShapes(afterPage)) shape.id: shape,
+        };
+        for (final shape in _allPageShapes(beforePage)) {
+          expect(
+            afterById[shape.id]?.layerMemberIds,
+            shape.layerMemberIds,
+            reason:
+                '${fixture.path} page $pageIndex shape ${shape.id} LayerMem',
+          );
+        }
+      }
     }, skip: skipReason);
   }
 }
@@ -163,6 +186,19 @@ Iterable<VsdxShape> _allShapes(VsdxDocument document) sync* {
     for (final shape in page.shapes) {
       yield* walk(shape);
     }
+  }
+}
+
+Iterable<VsdxShape> _allPageShapes(VsdxPage page) sync* {
+  Iterable<VsdxShape> walk(VsdxShape shape) sync* {
+    yield shape;
+    for (final child in shape.children) {
+      yield* walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    yield* walk(shape);
   }
 }
 
