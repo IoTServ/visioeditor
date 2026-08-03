@@ -1913,6 +1913,42 @@ void main() {
     expect(svg.contains('font-size="0.333'), isFalse);
   });
 
+  test('SVG negative BulletFontSize follows libvisio percentage semantics', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Bullet percentage',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 3,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: 'Half-size bullet',
+              charStyle: VsdxCharStyle.defaults.copyWith(
+                fontSizeInches: 0.2,
+              ),
+              paraStyle: const VsdxParaStyle(
+                bullet: 1,
+                bulletFontSizeInches: -0.5,
+              ),
+            ),
+          ]),
+        ),
+      ],
+    );
+    final style = page.shapes.single.richText.runs.single.paraStyle;
+    expect(style.effectiveBulletFontSizeInches(0.2), closeTo(0.1, 1e-12));
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('font-size="0.1"'));
+    expect(svg, contains('font-size="0.2"'));
+  });
+
   test('SVG IndFirst applies only to the first wrapped line', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

@@ -400,6 +400,20 @@ class VsdxParaStyle {
   final double? bulletFontSizeInches;
   final double textPosAfterBulletInches;
 
+  /// Resolve Visio's overloaded `BulletFontSize` value against body text.
+  ///
+  /// libvisio emits positive values as absolute point sizes, negative values
+  /// as percentages of the paragraph font size, and zero/absent as 100%.
+  /// Values are stored in Visio internal units, so an absolute result remains
+  /// in inches while `-0.5` resolves to half of [bodyFontSizeInches].
+  double effectiveBulletFontSizeInches(double bodyFontSizeInches) {
+    final value = bulletFontSizeInches;
+    if (value == null || value == 0 || !value.isFinite) {
+      return bodyFontSizeInches;
+    }
+    return value > 0 ? value : -value * bodyFontSizeInches;
+  }
+
   /// Visio `Flags` bitmask.
   final int flags;
 

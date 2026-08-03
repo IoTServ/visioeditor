@@ -101,6 +101,7 @@ void main() {
       '<Cell N="Bullet" V="1"/>'
       '<Cell N="BulletStr" V="\uE000"/>'
       '<Cell N="BulletFont" V="1"/>'
+      '<Cell N="BulletFontSize" V="-0.5"/>'
       '</Row></Section><Text><pp IX="0"/>Item</Text></Shape>',
     ).rootElement;
     final rich = const RichTextParser(
@@ -109,6 +110,11 @@ void main() {
     final paragraph = rich.runs.single.paraStyle;
     expect(paragraph.bulletFont, 'Wingdings');
     expect(paragraph.bulletStr, '•');
+    expect(paragraph.bulletFontSizeInches, -0.5);
+    expect(
+      paragraph.effectiveBulletFontSizeInches(0.2),
+      closeTo(0.1, 1e-12),
+    );
 
     final zeroFontShape = XmlDocument.parse(
       '<Shape><Section N="Paragraph"><Row IX="0">'

@@ -3848,12 +3848,9 @@ class VsdxToSvgSerializer {
 
       if (layout.showBullet) {
         final glyph = _svgBulletGlyph(style);
-        // Match canvas: BulletFontSize, else first non-empty run size.
-        var bFs = bodyFont;
-        if (style.bulletFontSizeInches != null &&
-            style.bulletFontSizeInches! > 0) {
-          bFs = style.bulletFontSizeInches!;
-        }
+        // Match libvisio: positive BulletFontSize is absolute, negative is a
+        // percentage of the first run, and zero/absent inherits that run.
+        final bFs = style.effectiveBulletFontSizeInches(bodyFont);
         var bx = layoutMl + indentL + indentF;
         // Canvas: when the bullet overlaps the body band start, push it left.
         final bulletW = _estSvgTextWidth(

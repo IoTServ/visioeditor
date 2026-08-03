@@ -5513,10 +5513,15 @@ class EditorController extends ChangeNotifier {
           paraStyle: run.paraStyle.bulletFontSizeInches == null
               ? null
               : run.paraStyle.copyWith(
+                  // Positive values are absolute sizes and follow the fitted
+                  // body font. Non-positive values are relative/default
+                  // encodings and must remain unchanged.
                   bulletFontSizeInches:
-                      (run.paraStyle.bulletFontSizeInches! * scale)
-                          .clamp(1 / 72, 999 / 72)
-                          .toDouble(),
+                      run.paraStyle.bulletFontSizeInches! > 0
+                          ? (run.paraStyle.bulletFontSizeInches! * scale)
+                              .clamp(1 / 72, 999 / 72)
+                              .toDouble()
+                          : run.paraStyle.bulletFontSizeInches,
                 ),
         ),
     ];

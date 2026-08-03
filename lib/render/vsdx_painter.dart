@@ -3144,22 +3144,20 @@ class VsdxPainter extends CustomPainter {
       var textX = mlPx + indentL;
       if (hasBullet) {
         final glyph = _bulletGlyph(style);
-        final fontPx = () {
-          if (style.bulletFontSizeInches != null &&
-              style.bulletFontSizeInches! > 0) {
-            return style.bulletFontSizeInches! * scale;
-          }
-          // Match the first run's size when available.
+        final bodyFontInches = () {
+          // Match the first run's size when available. Negative
+          // BulletFontSize values are a percentage of this size in libvisio.
           for (final r in para.runs) {
             if (r.text.isNotEmpty) {
-              return (r.charStyle.fontSizeInches > 0
-                      ? r.charStyle.fontSizeInches
-                      : 0.14) *
-                  scale;
+              return r.charStyle.fontSizeInches > 0
+                  ? r.charStyle.fontSizeInches
+                  : 0.14;
             }
           }
-          return 0.14 * scale;
+          return 0.14;
         }();
+        final fontPx =
+            style.effectiveBulletFontSizeInches(bodyFontInches) * scale;
         bulletTp = TextPainter(
           text: TextSpan(
             text: glyph,

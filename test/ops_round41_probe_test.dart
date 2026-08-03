@@ -70,6 +70,45 @@ void main() {
     expect(e.currentPage!.findShapeById(b)!.height, closeTo(2, 1e-9));
   });
 
+  test('autosize preserves relative libvisio bullet font size', () {
+    final e = ctrl();
+    final id = rect(e, 4, 4, w: 2, h: 1);
+    final page = e.currentPage!;
+    final shape = page.findShapeById(id)!;
+    e.applyEdit(
+      e.document!.replacePage(
+        0,
+        page.updateShapeById(
+          id,
+          (_) => shape.copyWith(
+            text: 'Relative bullet',
+            richText: const VsdxRichText(runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Relative bullet',
+                charStyle: VsdxCharStyle(fontSizeInches: 0.2),
+                paraStyle: VsdxParaStyle(
+                  bullet: 1,
+                  bulletFontSizeInches: -0.5,
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    e.setSelection(<int>[id]);
+
+    e.setAutosizeText(true);
+
+    final para = e.currentPage!
+        .findShapeById(id)!
+        .richText
+        .runs
+        .single
+        .paraStyle;
+    expect(para.bulletFontSizeInches, -0.5);
+  });
+
   test('replace shape preserves identity content style and connector glue', () {
     final e = ctrl();
     final source = rect(e, 2, 4, w: 2, h: 1);
