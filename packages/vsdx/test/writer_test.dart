@@ -5352,6 +5352,7 @@ void main() {
     );
     expect(pageXml.contains('<tp IX="0"/>') || pageXml.contains("<tp IX=\"0\"/>"),
         isTrue);
+    expect(pageXml, contains('\t'));
     final after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.richText.plainText.contains('\t'), isTrue);
   });
@@ -5850,6 +5851,7 @@ void main() {
         isTrue);
     expect(pageXml.contains('<tp IX="1"/>') || pageXml.contains('tp IX="1"'),
         isTrue);
+    expect('\t'.allMatches(pageXml), hasLength(2));
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.richText.tabSets, hasLength(2));
     expect(after.richText.tabSets[1].stops, hasLength(2));

@@ -5383,8 +5383,9 @@ class VsdxWriter {
 
   /// Rewrite `<Text>` when the visible plain string **or** field/tab markers
   /// change. Prefer emitting `<cp>/<pp>` markers for multi-run rich text so
-  /// Character / Paragraph row indices stay wired. Literal `\t` in runs is
-  /// written back as `<tp IX="0"/>` (Visio tab-stop marker).
+  /// Character / Paragraph row indices stay wired. Before each literal `\t`,
+  /// emit `<tp IX="0"/>` to select its tab set, then retain the U+0009 text
+  /// character that libvisio turns into `insertTab()`.
   bool _patchTextContent(XmlElement el, VsdxShape base, VsdxShape edited) {
     final basePlain =
         base.richText.runs.isNotEmpty ? base.richText.plainText : (base.text ?? '');
@@ -5494,7 +5495,7 @@ class VsdxWriter {
     return false;
   }
 
-  /// Emit one rich-text run: tabs → `<tp/>`, field spans → `<fld IX>`.
+  /// Emit one rich-text run: tabs → `<tp/>` + U+0009, fields → `<fld IX>`.
   void _appendRunText(List<XmlNode> out, VsdxTextRun run) {
     final text = run.text;
     final spans = [...run.fieldSpans]
@@ -5534,8 +5535,9 @@ class VsdxWriter {
     }
   }
 
-  /// Split [text] on `\t` and emit Visio `<tp IX="…"/>` markers between chunks.
-  /// [tabIndices] supplies the Tabs-row IX for each tab (defaults to 0).
+  /// Split [text] on `\t`, selecting the Tabs row with `<tp IX="…"/>` before
+  /// retaining each literal U+0009. [tabIndices] supplies the row IX for each
+  /// tab (defaults to 0).
   void _appendTextWithTabs(
     List<XmlNode> out,
     String text, [
@@ -5556,6 +5558,7 @@ class VsdxWriter {
           XmlName('tp'),
           <XmlAttribute>[XmlAttribute(XmlName('IX'), ix.toString())],
         ));
+        out.add(XmlText('\t'));
       }
     }
   }

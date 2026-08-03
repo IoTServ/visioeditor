@@ -3572,6 +3572,7 @@ class VsdxToSvgSerializer {
     final runs = shape.richText.runs.isNotEmpty
         ? shape.richText.runs
         : <VsdxTextRun>[VsdxTextRun(text: fallback ?? '')];
+    final hasTabs = runs.any((run) => run.text.contains('\t'));
     if (runs.every((r) => r.text.isEmpty) &&
         (fallback == null || fallback.isEmpty)) {
       return;
@@ -3592,7 +3593,7 @@ class VsdxToSvgSerializer {
     final looseEdge = shape.isGlueableConnector &&
         block.pinXInches == null &&
         block.pinYInches == null;
-    if (looseEdge) {
+    if (looseEdge && !hasTabs) {
       _writeLooseEdgeLabel(
         buf,
         shape: shape,
@@ -3655,13 +3656,18 @@ class VsdxToSvgSerializer {
         backgroundColor: block.backgroundColor,
         backgroundTransparency: block.backgroundTransparency,
         borderColor: labelBorder,
+        tabSets: shape.richText.tabSets,
+        defaultTabStopInches: block.defaultTabStopInches,
         indent: indent,
       );
     }
 
     // CurvedText: canvas disables arc layout for every glueable connector.
     // package:pdf ignores <textPath> — fall through to rectangular layout.
-    if (shape.curvedText && !shape.isGlueableConnector && !pdfCompat) {
+    if (shape.curvedText &&
+        !shape.isGlueableConnector &&
+        !hasTabs &&
+        !pdfCompat) {
       _writeCurvedText(
         buf,
         shape: shape,
@@ -3696,6 +3702,7 @@ class VsdxToSvgSerializer {
         shape.supportsShapeInside &&
         shape.wordWrap &&
         !shape.is1D &&
+        !hasTabs &&
         block.textDirection != 1 &&
         shapeInsideDefaultBlock) {
       _writeShapeInsideText(
@@ -3767,7 +3774,8 @@ class VsdxToSvgSerializer {
         0.04,
         layoutW - layoutMr - p.style.indentRightInches - firstBandX,
       );
-      final wrapped = shape.wordWrap
+      final paragraphHasTabs = p.segs.any((seg) => seg.$1.contains('\t'));
+      final wrapped = shape.wordWrap && !paragraphHasTabs
           ? _wrapSvgSegs(
               p.segs,
               availRest,
@@ -3818,7 +3826,8 @@ class VsdxToSvgSerializer {
       final indentF = style.indentFirstInches;
       final textBandX = layout.textBandX;
       final bandRight = layoutW - layoutMr - style.indentRightInches;
-      final (anchor, xBody) = switch (horizontalAlign) {
+      final tabbed = layout.segs.any((seg) => seg.$1.contains('\t'));
+      var (anchor, xBody) = switch (horizontalAlign) {
         VsdxHorzAlign.left ||
         VsdxHorzAlign.justify ||
         VsdxHorzAlign.full => (
@@ -3834,6 +3843,22 @@ class VsdxToSvgSerializer {
             textBandX + (bandRight - textBandX) / 2,
           ),
       };
+      if (tabbed) {
+        anchor = 'start';
+        final tabWidth = _writeSvgTabbedTspans(
+          layout.segs,
+          theme: theme,
+          tabSets: shape.richText.tabSets,
+          defaultTabStopInches: block.defaultTabStopInches,
+          originX: 0,
+        ).width;
+        xBody = switch (horizontalAlign) {
+          VsdxHorzAlign.right => bandRight - tabWidth,
+          VsdxHorzAlign.center =>
+            textBandX + (bandRight - textBandX - tabWidth) / 2,
+          _ => textBandX,
+        };
+      }
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
       // package:pdf ignores dominant-baseline — shift by font size (not SpLine
@@ -3872,20 +3897,33 @@ class VsdxToSvgSerializer {
       }
 
       final body = StringBuffer();
-      for (var si = 0; si < layout.segs.length; si++) {
-        final (raw, run) = layout.segs[si];
-        _writeStyledTspans(
-          body,
-          raw: raw,
-          style: run.charStyle,
-          theme: theme,
-          xAttr: si == 0 ? 'x="${_n(xBody)}"' : null,
+      if (tabbed) {
+        body.write(
+          _writeSvgTabbedTspans(
+            layout.segs,
+            theme: theme,
+            tabSets: shape.richText.tabSets,
+            defaultTabStopInches: block.defaultTabStopInches,
+            originX: xBody,
+          ).body,
         );
+      } else {
+        for (var si = 0; si < layout.segs.length; si++) {
+          final (raw, run) = layout.segs[si];
+          _writeStyledTspans(
+            body,
+            raw: raw,
+            style: run.charStyle,
+            theme: theme,
+            xAttr: si == 0 ? 'x="${_n(xBody)}"' : null,
+          );
+        }
       }
       // Approximate Visio Justify on the body band only (bullet is separate).
       var justifyAttr = '';
-      if (horizontalAlign == VsdxHorzAlign.justify ||
-          horizontalAlign == VsdxHorzAlign.full) {
+      if (!tabbed &&
+          (horizontalAlign == VsdxHorzAlign.justify ||
+              horizontalAlign == VsdxHorzAlign.full)) {
         final bandW = math.max(0.04, bandRight - textBandX);
         var natural = 0.0;
         for (final (raw, run) in layout.segs) {
@@ -3923,6 +3961,8 @@ class VsdxToSvgSerializer {
     required VsdxColor? backgroundColor,
     required double backgroundTransparency,
     required VsdxColor? borderColor,
+    required List<VsdxTabSet> tabSets,
+    required double defaultTabStopInches,
     required String indent,
   }) {
     var layoutW = width;
@@ -3959,7 +3999,8 @@ class VsdxToSvgSerializer {
       final restX = ml + indentL + (hasBullet ? bulletGap : 0.0);
       final firstX = hasBullet ? restX : ml + indentL + indentF;
       final bandRight = layoutW - mr - p.style.indentRightInches;
-      final wrapped = shape.wordWrap
+      final paragraphHasTabs = p.segs.any((seg) => seg.$1.contains('\t'));
+      final wrapped = shape.wordWrap && !paragraphHasTabs
           ? _wrapSvgSegs(
               p.segs,
               math.max(0.04, bandRight - restX),
@@ -3968,9 +4009,20 @@ class VsdxToSvgSerializer {
           : <List<(String text, VsdxTextRun run)>>[p.segs];
       for (var i = 0; i < wrapped.length; i++) {
         final xBand = i == 0 ? firstX : restX;
-        var natural = 0.0;
-        for (final (raw, run) in wrapped[i]) {
-          natural += _estSvgTextWidth(raw, run.charStyle);
+        final lineHasTabs = wrapped[i].any((seg) => seg.$1.contains('\t'));
+        var natural = lineHasTabs
+            ? _writeSvgTabbedTspans(
+                wrapped[i],
+                theme: VsdxTheme.empty,
+                tabSets: tabSets,
+                defaultTabStopInches: defaultTabStopInches,
+                originX: 0,
+              ).width
+            : 0.0;
+        if (!lineHasTabs) {
+          for (final (raw, run) in wrapped[i]) {
+            natural += _estSvgTextWidth(raw, run.charStyle);
+          }
         }
         final (x0, x1) = switch (horizontalAlign) {
           VsdxHorzAlign.right => (bandRight - natural, bandRight),
@@ -4335,14 +4387,115 @@ class VsdxToSvgSerializer {
 
     for (final run in runs) {
       final parts = run.text.split('\n');
+      var tabOffset = 0;
       for (var i = 0; i < parts.length; i++) {
         if (i > 0) flush();
         style = run.paraStyle;
-        segs.add((parts[i], run));
+        final tabCount = '\t'.allMatches(parts[i]).length;
+        segs.add((
+          parts[i],
+          run.copyWith(
+            text: parts[i],
+            tabIndices:
+                run.tabIndices.skip(tabOffset).take(tabCount).toList(),
+          ),
+        ));
+        tabOffset += tabCount;
       }
     }
     if (segs.isNotEmpty || out.isEmpty) flush();
+    // Match libvisio: a terminal newline closes the visible paragraph but
+    // does not create another empty layout row.
+    if (runs.isNotEmpty &&
+        runs.last.text.endsWith('\n') &&
+        out.length > 1 &&
+        out.last.segs.every((seg) => seg.$1.isEmpty)) {
+      out.removeLast();
+    }
     return out;
+  }
+
+  ({String body, double width}) _writeSvgTabbedTspans(
+    List<(String text, VsdxTextRun run)> segs, {
+    required VsdxTheme theme,
+    required List<VsdxTabSet> tabSets,
+    required double defaultTabStopInches,
+    required double originX,
+  }) {
+    final tokens = <({String text, VsdxTextRun run, int? tabSetIx})>[];
+    for (final (raw, run) in segs) {
+      var start = 0;
+      var tab = 0;
+      for (var i = 0; i < raw.length; i++) {
+        if (raw.codeUnitAt(i) != 0x09) continue;
+        if (i > start) {
+          tokens.add((text: raw.substring(start, i), run: run, tabSetIx: null));
+        }
+        tokens.add((
+          text: '',
+          run: run,
+          tabSetIx: tab < run.tabIndices.length ? run.tabIndices[tab] : 0,
+        ));
+        tab++;
+        start = i + 1;
+      }
+      if (start < raw.length) {
+        tokens.add((text: raw.substring(start), run: run, tabSetIx: null));
+      }
+    }
+
+    final body = StringBuffer();
+    var x = 0.0;
+    var maxX = 0.0;
+    var forceX = true;
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+      if (token.tabSetIx case final tabSetIx?) {
+        var following = 0.0;
+        var decimalPrefix = 0.0;
+        var sawDecimal = false;
+        for (var j = i + 1; j < tokens.length; j++) {
+          final next = tokens[j];
+          if (next.tabSetIx != null) break;
+          following += _estSvgTextWidth(next.text, next.run.charStyle);
+          if (!sawDecimal) {
+            final dot = next.text.indexOf('.');
+            if (dot < 0) {
+              decimalPrefix +=
+                  _estSvgTextWidth(next.text, next.run.charStyle);
+            } else {
+              decimalPrefix += _estSvgTextWidth(
+                next.text.substring(0, dot),
+                next.run.charStyle,
+              );
+              sawDecimal = true;
+            }
+          }
+        }
+        x = visioTabFieldStart(
+          tabSets: tabSets,
+          tabSetIx: tabSetIx,
+          currentPosition: x,
+          followingWidth: following,
+          decimalPrefixWidth: decimalPrefix,
+          defaultTabStop: defaultTabStopInches,
+        );
+        maxX = math.max(maxX, x);
+        forceX = true;
+        continue;
+      }
+      _writeStyledTspans(
+        body,
+        raw: token.text,
+        style: token.run.charStyle,
+        theme: theme,
+        xAttr: forceX ? 'x="${_n(originX + x)}"' : null,
+      );
+      x += _estSvgTextWidth(token.text, token.run.charStyle);
+      maxX = math.max(maxX, x);
+      forceX = false;
+    }
+    return (body: body.toString(), width: maxX);
   }
 
   double _svgParaLineHeight(

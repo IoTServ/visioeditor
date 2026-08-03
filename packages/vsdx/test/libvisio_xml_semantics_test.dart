@@ -79,6 +79,42 @@ Uint8List _missingPagePropsPackage() => _rewritePackage(
       },
     );
 
+Uint8List _tabStopPackage(double position) {
+  const writer = VsdxWriter();
+  final blank = writer.emptyDocument();
+  var document = const DocumentParser().parse(blank);
+  final shape = VsdxShapeFactory.rectangle(
+    id: document.pages.first.nextFreeShapeId(),
+    pinX: 2,
+    pinY: 2,
+    width: 4,
+    height: 1,
+  ).copyWith(
+    richText: VsdxRichText(
+      runs: const <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'TAB_A\tTAB_B',
+          tabIndices: <int>[5],
+          charStyle: VsdxCharStyle(fontSizeInches: 0.2),
+        ),
+      ],
+      tabSets: <VsdxTabSet>[
+        VsdxTabSet(
+          ix: 5,
+          stops: <VsdxTabStop>[
+            VsdxTabStop(positionInches: position),
+          ],
+        ),
+      ],
+    ),
+  );
+  document = document.replacePage(
+    0,
+    document.pages.first.addShape(shape),
+  );
+  return writer.write(originalBytes: blank, edited: document);
+}
+
 Uint8List _layerCachedValuePackage({required bool visible}) {
   const parser = DocumentParser();
   const writer = VsdxWriter();
@@ -556,6 +592,13 @@ void main() {
     expect(hiddenPages, isNotNull);
     expect(pages!.single, contains('TEXT_BOOLEAN'));
     expect(hiddenPages!.single, isNot(contains('TEXT_BOOLEAN')));
+  }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
+
+  test('written tp plus literal tab reaches the libvisio oracle', () {
+    final pages = oracle!.svgPages(_tabStopPackage(0.75));
+    expect(pages, isNotNull);
+    expect(pages!.single, contains('TAB_A\tTAB_B'),
+        reason: 'tp selects the set; U+0009 remains the insertTab character');
   }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
 
   test('missing VSDX page dimensions match the libvisio oracle', () {

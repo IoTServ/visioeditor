@@ -1014,6 +1014,51 @@ void main() {
     expect(svg, contains('textLength="'));
   });
 
+  test('SVG positions literal tabs at the active libvisio tab stop', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Tabs',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 3,
+          height: 0.8,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(text: 'A\tB', tabIndices: <int>[4]),
+            ],
+            tabSets: <VsdxTabSet>[
+              VsdxTabSet(
+                ix: 4,
+                stops: <VsdxTabStop>[
+                  VsdxTabStop(positionInches: 1),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final a = RegExp(r'<tspan x="([0-9.]+)"[^>]*>A</tspan>')
+        .firstMatch(svg);
+    final b = RegExp(r'<tspan x="([0-9.]+)"[^>]*>B</tspan>')
+        .firstMatch(svg);
+    expect(a, isNotNull);
+    expect(b, isNotNull);
+    expect(
+      double.parse(b!.group(1)!) - double.parse(a!.group(1)!),
+      closeTo(1, 0.001),
+    );
+    expect(svg, isNot(contains('\t')),
+        reason: 'tab control characters must become positioned tspans');
+  });
+
   test('SVG open-concave arrow (id 17) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

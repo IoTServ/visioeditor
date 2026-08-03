@@ -126,9 +126,55 @@ void main() {
     expect(rich.plainText, 'Label  \n');
   });
 
-  test('trailing newline plus empty tab marker is display-normalized', () {
+  test('tp selects a tab set but does not invent a tab character', () {
     final rich = parser.parse(shape('<Text>Label\n<tp IX="0"/></Text>'));
-    expect(rich.plainText, 'Label');
+    expect(rich.plainText, 'Label\n');
+    expect(rich.runs.single.tabIndices, isEmpty);
+  });
+
+  test('literal XML tab uses the active tp tab set like libvisio', () {
+    final rich = parser.parse(
+      shape('<Text>A<tp IX="3"/>\tB<tp IX="1"/>\tC</Text>'),
+    );
+    expect(rich.plainText, 'A\tB\tC');
+    expect(rich.runs.single.tabIndices, [3, 1]);
+  });
+
+  test('tab field alignment covers left center right and decimal', () {
+    const sets = [
+      VsdxTabSet(
+        ix: 7,
+        stops: [
+          VsdxTabStop(positionInches: 1),
+          VsdxTabStop(positionInches: 2, alignment: 1),
+          VsdxTabStop(positionInches: 3, alignment: 2),
+          VsdxTabStop(positionInches: 4, alignment: 3),
+        ],
+      ),
+    ];
+    double start(double current) => visioTabFieldStart(
+          tabSets: sets,
+          tabSetIx: 7,
+          currentPosition: current,
+          followingWidth: 0.8,
+          decimalPrefixWidth: 0.25,
+          defaultTabStop: 0.5,
+        );
+    expect(start(0.2), closeTo(1, 1e-9));
+    expect(start(1.2), closeTo(1.6, 1e-9));
+    expect(start(2.2), closeTo(2.2, 1e-9));
+    expect(start(3.2), closeTo(3.75, 1e-9));
+    expect(
+      visioTabFieldStart(
+        tabSets: sets,
+        tabSetIx: 99,
+        currentPosition: 1.1,
+        followingWidth: 0.2,
+        decimalPrefixWidth: 0.1,
+        defaultTabStop: 0.5,
+      ),
+      closeTo(1.5, 1e-9),
+    );
   });
 
   test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {

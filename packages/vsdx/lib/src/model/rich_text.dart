@@ -97,6 +97,48 @@ class VsdxTabSet {
   }
 }
 
+/// Resolve the start of the field following a Visio tab character.
+///
+/// Tab-stop positions and all arguments are relative to the paragraph's text
+/// band. Alignment follows libvisio's mapping: 0 left, 1 centre, 2 right and
+/// every other value decimal (the `.` character). When no authored stop lies
+/// ahead of [currentPosition], Visio advances to the next default stop.
+double visioTabFieldStart({
+  required List<VsdxTabSet> tabSets,
+  required int tabSetIx,
+  required double currentPosition,
+  required double followingWidth,
+  required double decimalPrefixWidth,
+  required double defaultTabStop,
+}) {
+  VsdxTabSet? set;
+  for (final candidate in tabSets) {
+    if (candidate.ix == tabSetIx) {
+      set = candidate;
+      break;
+    }
+  }
+  final stops = [...?set?.stops]
+    ..sort((a, b) => a.positionInches.compareTo(b.positionInches));
+  VsdxTabStop? stop;
+  for (final candidate in stops) {
+    if (candidate.positionInches > currentPosition + 1e-9) {
+      stop = candidate;
+      break;
+    }
+  }
+  final interval = defaultTabStop > 1e-9 ? defaultTabStop : 0.5;
+  final position = stop?.positionInches ??
+      ((currentPosition / interval).floor() + 1) * interval;
+  final adjustment = switch (stop?.alignment ?? 0) {
+    1 => followingWidth / 2,
+    2 => followingWidth,
+    0 => 0.0,
+    _ => decimalPrefixWidth,
+  };
+  return (position - adjustment).clamp(currentPosition, double.infinity);
+}
+
 /// One contiguous run of text with the same character + paragraph style.
 @immutable
 class VsdxTextRun {

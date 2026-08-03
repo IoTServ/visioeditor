@@ -730,6 +730,7 @@ class RichTextParser {
     final buf = StringBuffer();
     final fieldSpans = <VsdxFieldSpan>[];
     final tabIndices = <int>[];
+    var currentTabSetIx = 0;
 
     void flush() {
       if (buf.isEmpty && fieldSpans.isEmpty) return;
@@ -747,7 +748,11 @@ class RichTextParser {
 
     for (final node in textEl.children) {
       if (node is XmlText) {
-        buf.write(normalizeVisioText(node.value));
+        final text = normalizeVisioText(node.value);
+        buf.write(text);
+        for (var i = 0; i < text.length; i++) {
+          if (text.codeUnitAt(i) == 0x09) tabIndices.add(currentTabSetIx);
+        }
       } else if (node is XmlElement) {
         switch (node.name.local) {
           case 'cp':
@@ -759,9 +764,11 @@ class RichTextParser {
             final ix = int.tryParse(node.getAttribute('IX') ?? '');
             if (ix != null) curPara = paraStyles[ix] ?? defaultPara;
           case 'tp':
-            // Tab marker — emit `\t` and record Tabs-row IX (libvisio).
-            buf.write('\t');
-            tabIndices.add(int.tryParse(node.getAttribute('IX') ?? '') ?? 0);
+            // `tp` selects the Tabs row for subsequent text; the actual tab is
+            // a U+0009 character in an XML text node. This mirrors
+            // libvisio's VSDXMLParserBase::readText char-count handling.
+            currentTabSetIx =
+                int.tryParse(node.getAttribute('IX') ?? '') ?? 0;
           case 'fld':
             // Dynamic field — keep display text for paint, record span for
             // XML round-trip (`<fld IX="n">cached</fld>`).
@@ -769,6 +776,11 @@ class RichTextParser {
             final display = normalizeVisioText(fieldResolver.resolve(node));
             final start = buf.length;
             buf.write(display);
+            for (var i = 0; i < display.length; i++) {
+              if (display.codeUnitAt(i) == 0x09) {
+                tabIndices.add(currentTabSetIx);
+              }
+            }
             fieldSpans.add(VsdxFieldSpan(
               start: start,
               length: display.length,
@@ -780,7 +792,6 @@ class RichTextParser {
       }
     }
     flush();
-    _trimTrailingWhitespace(runs);
     return runs;
   }
 
@@ -875,68 +886,6 @@ class RichTextParser {
       return List.unmodifiable(inherit);
     }
     return List.unmodifiable(out);
-  }
-
-  /// Visio commonly terminates a label with a trailing newline plus an empty
-  /// tab-stop marker (`…市场部需求\n<tp/>`), which would otherwise render as a
-  /// blank extra line and push the visible text off-centre. Strip trailing
-  /// whitespace from the run stream so a single-line label stays centred —
-  /// matching how Visio and libvisio lay the text out.
-  static void _trimTrailingWhitespace(List<VsdxTextRun> runs) {
-    // Do not discard ordinary trailing spaces/newlines: they are real text and
-    // must survive VSD -> VSDX synthesis. This display workaround only applies
-    // to the Visio-specific trailing empty tab marker described above.
-    if (runs.isEmpty ||
-        runs.last.tabIndices.isEmpty ||
-        !runs.last.text.endsWith('\t')) {
-      return;
-    }
-    while (runs.isNotEmpty) {
-      final last = runs.last;
-      final trimmed = last.text.replaceFirst(RegExp(r'\s+$'), '');
-      if (trimmed == last.text) break;
-      if (trimmed.isEmpty) {
-        // Keep a run that exists only to host zero-length field markers.
-        final kept = [
-          for (final s in last.fieldSpans)
-            if (s.length == 0) s,
-        ];
-        if (kept.isEmpty) {
-          runs.removeLast();
-        } else {
-          runs[runs.length - 1] = last.copyWith(
-            text: '',
-            fieldSpans: kept,
-          );
-          break;
-        }
-      } else {
-        final newSpans = <VsdxFieldSpan>[
-          for (final s in last.fieldSpans)
-            if (s.start < trimmed.length)
-              VsdxFieldSpan(
-                start: s.start,
-                length: s.length > trimmed.length - s.start
-                    ? trimmed.length - s.start
-                    : s.length,
-                ix: s.ix,
-              )
-            else if (s.length == 0 && s.start == trimmed.length)
-              s,
-        ];
-        // Drop tab indices that belonged to trimmed trailing tabs.
-        final keptTabs = '\t'.allMatches(trimmed).length;
-        final newTabs = last.tabIndices.length <= keptTabs
-            ? last.tabIndices
-            : last.tabIndices.sublist(0, keptTabs);
-        runs[runs.length - 1] = last.copyWith(
-          text: trimmed,
-          fieldSpans: newSpans,
-          tabIndices: newTabs,
-        );
-        break;
-      }
-    }
   }
 
   String? _cellString(XmlElement parent, String name, {String? inheritFrom}) {

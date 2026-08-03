@@ -2410,6 +2410,7 @@ class VsdxPainter extends CustomPainter {
   void _paintRichText(Canvas canvas, VsdxShape shape, Rect bounds) {
     final rich = shape.richText;
     final hasRich = !rich.isEmpty;
+    final hasTabs = hasRich && rich.runs.any((run) => run.text.contains('\t'));
     // Fall back to the shape's own name only for 2-D shapes with a meaningful
     // (non-auto) name — connectors and `Sheet.N` placeholders stay blank.
     String? nameFallback;
@@ -2501,15 +2502,30 @@ class VsdxPainter extends CustomPainter {
       if (block.textDirection == 1) {
         canvas.rotate(-math.pi / 2);
       }
-      final tp = TextPainter(
-        text: TextSpan(children: spans),
-        textAlign: align,
-        textDirection: TextDirection.ltr,
-        maxLines: null,
-      )..layout();
-      final ox = -tp.width / 2;
-      final oy = -tp.height / 2;
-      if (tp.width > 0) {
+      final tabLine = hasTabs
+          ? _layoutTabbedCanvasLine(
+              rich.runs,
+              tabSets: rich.tabSets,
+              defaultTabStopInches: block.defaultTabStopInches,
+              scale: s,
+              applyPosDy: rich.runs.any(
+                (run) => run.charStyle.position != VsdxTextPosition.normal,
+              ),
+            )
+          : null;
+      final tp = hasTabs
+          ? null
+          : (TextPainter(
+              text: TextSpan(children: spans),
+              textAlign: align,
+              textDirection: TextDirection.ltr,
+              maxLines: null,
+            )..layout());
+      final textWidth = tabLine?.width ?? tp!.width;
+      final textHeight = tabLine?.height ?? tp!.height;
+      final ox = -textWidth / 2;
+      final oy = -textHeight / 2;
+      if (textWidth > 0) {
         final padding = shape.labelPadding;
         final padTop = padding.isZero ? 0.03 * s : padding.top;
         final padRight = padding.isZero ? 0.03 * s : padding.right;
@@ -2528,8 +2544,8 @@ class VsdxPainter extends CustomPainter {
           Rect.fromLTWH(
             ox - padLeft,
             oy - padTop,
-            tp.width + padLeft + padRight,
-            tp.height + padTop + padBottom,
+            textWidth + padLeft + padRight,
+            textHeight + padTop + padBottom,
           ),
           Radius.circular(0.02 * s),
         );
@@ -2544,7 +2560,16 @@ class VsdxPainter extends CustomPainter {
           );
         }
       }
-      tp.paint(canvas, Offset(ox, oy));
+      if (tabLine != null) {
+        for (var i = 0; i < tabLine.painters.length; i++) {
+          tabLine.painters[i].paint(
+            canvas,
+            Offset(ox + tabLine.offsets[i], oy + tabLine.dys[i]),
+          );
+        }
+      } else {
+        tp!.paint(canvas, Offset(ox, oy));
+      }
       canvas.restore();
       return;
     }
@@ -2691,7 +2716,8 @@ class VsdxPainter extends CustomPainter {
               r.paraStyle.indentFirstInches != 0 ||
               r.paraStyle.indentRightInches != 0 ||
               r.paraStyle.bullet != 0 ||
-              r.text.contains('\n'),
+              r.text.contains('\n') ||
+              r.text.contains('\t'),
         ));
     if (needsParaLayout) {
       _paintParagraphBlock(
@@ -2707,6 +2733,8 @@ class VsdxPainter extends CustomPainter {
         wordWrap: shape.wordWrap,
         verticalAlign: block.verticalAlign,
         scale: s,
+        tabSets: rich.tabSets,
+        defaultTabStopInches: block.defaultTabStopInches,
       );
       canvas.restore();
       return;
@@ -3115,6 +3143,8 @@ class VsdxPainter extends CustomPainter {
     required bool wordWrap,
     required VsdxVertAlign verticalAlign,
     required double scale,
+    required List<VsdxTabSet> tabSets,
+    required double defaultTabStopInches,
   }) {
     final paras = _splitParagraphs(runs);
     final painters = <TextPainter>[];
@@ -3125,6 +3155,7 @@ class VsdxPainter extends CustomPainter {
     final bulletOriginsX = <double>[];
     final paraPosPainters = <List<TextPainter>?>[];
     final paraPosDys = <List<double>?>[];
+    final paraPosOffsets = <List<double>?>[];
     final paraRowTextH = <double>[];
     var totalH = 0.0;
 
@@ -3190,6 +3221,7 @@ class VsdxPainter extends CustomPainter {
       final needsPos = para.runs.any(
         (r) => r.charStyle.position != VsdxTextPosition.normal,
       );
+      final hasTabs = para.runs.any((r) => r.text.contains('\t'));
       // Per-line wrap when: super/sub needs dy; IndFirst is first-line-only;
       // or a bullet must stay on the first line (not vertically centred on
       // the whole paragraph block).
@@ -3200,6 +3232,40 @@ class VsdxPainter extends CustomPainter {
       late final double rowTextH;
       List<TextPainter>? posPainters;
       List<double>? posDys;
+      if (hasTabs) {
+        final line = _layoutTabbedCanvasLine(
+          para.runs,
+          tabSets: tabSets,
+          defaultTabStopInches: defaultTabStopInches,
+          scale: scale,
+          applyPosDy: needsPos,
+        );
+        final b = style.spaceBeforeInches * scale;
+        final a = style.spaceAfterInches * scale;
+        painters.add(
+          TextPainter(
+            text: const TextSpan(text: ''),
+            textDirection: TextDirection.ltr,
+          )..layout(),
+        );
+        bulletPainters.add(bulletTp);
+        bulletOriginsX.add(bulletX);
+        paraPosPainters.add(line.painters);
+        paraPosDys.add(line.dys);
+        paraPosOffsets.add(line.offsets);
+        final alignedX = switch (pAlign) {
+          TextAlign.center => firstX + (availFirst - line.width) / 2,
+          TextAlign.right => firstX + availFirst - line.width,
+          _ => firstX,
+        };
+        textOriginsX.add(alignedX);
+        beforePx.add(b);
+        afterPx.add(a);
+        final rowH = math.max(line.height, bulletTp?.height ?? 0);
+        paraRowTextH.add(line.height);
+        totalH += b + rowH + a;
+        continue;
+      }
       if (needsLineWrap) {
         // Baseline dy + wrap (OpenType pos off when dy applies).
         final lines = _wrapPosShiftLines(
@@ -3227,6 +3293,7 @@ class VsdxPainter extends CustomPainter {
           bulletOriginsX.add(bulletX);
           paraPosPainters.add([for (final p in pieces) p.tp]);
           paraPosDys.add([for (final p in pieces) p.dy]);
+          paraPosOffsets.add(null);
           final alignedX = switch (pAlign) {
             TextAlign.center => lineX + (lineAvail - line.width) / 2,
             TextAlign.right => lineX + lineAvail - line.width,
@@ -3267,6 +3334,7 @@ class VsdxPainter extends CustomPainter {
       bulletOriginsX.add(bulletX);
       paraPosPainters.add(posPainters);
       paraPosDys.add(posDys);
+      paraPosOffsets.add(null);
       // Horizontal align still applies within the remaining text band.
       final alignedX = switch (pAlign) {
         TextAlign.center => textX + (availRest - rowW) / 2,
@@ -3307,15 +3375,143 @@ class VsdxPainter extends CustomPainter {
       final posDy = paraPosDys[i];
       if (posPs != null && posDy != null) {
         var x = textOriginsX[i];
+        final offsets = paraPosOffsets[i];
         for (var j = 0; j < posPs.length; j++) {
-          posPs[j].paint(canvas, Offset(x, ty + posDy[j]));
-          x += posPs[j].width;
+          final px = offsets == null ? x : textOriginsX[i] + offsets[j];
+          posPs[j].paint(canvas, Offset(px, ty + posDy[j]));
+          if (offsets == null) x += posPs[j].width;
         }
       } else {
         tp.paint(canvas, Offset(textOriginsX[i], ty));
       }
       y += rowH + afterPx[i];
     }
+  }
+
+  ({
+    List<TextPainter> painters,
+    List<double> dys,
+    List<double> offsets,
+    double width,
+    double height,
+  }) _layoutTabbedCanvasLine(
+    List<VsdxTextRun> runs, {
+    required List<VsdxTabSet> tabSets,
+    required double defaultTabStopInches,
+    required double scale,
+    required bool applyPosDy,
+  }) {
+    final tokens = <({TextPainter? painter, double dy, int? tabSetIx, String text, VsdxTextRun run})>[];
+    for (final run in runs) {
+      var start = 0;
+      var tab = 0;
+      for (var i = 0; i < run.text.length; i++) {
+        if (run.text.codeUnitAt(i) != 0x09) continue;
+        if (i > start) {
+          final text = run.text.substring(start, i);
+          final piece = _posShiftPiece(
+            text,
+            run,
+            scale,
+            applyPosDy: applyPosDy,
+          );
+          tokens.add((painter: piece.tp, dy: piece.dy, tabSetIx: null, text: text, run: run));
+        }
+        tokens.add((
+          painter: null,
+          dy: 0,
+          tabSetIx: tab < run.tabIndices.length ? run.tabIndices[tab] : 0,
+          text: '',
+          run: run,
+        ));
+        tab++;
+        start = i + 1;
+      }
+      if (start < run.text.length) {
+        final text = run.text.substring(start);
+        final piece = _posShiftPiece(
+          text,
+          run,
+          scale,
+          applyPosDy: applyPosDy,
+        );
+        tokens.add((painter: piece.tp, dy: piece.dy, tabSetIx: null, text: text, run: run));
+      }
+    }
+
+    final painters = <TextPainter>[];
+    final dys = <double>[];
+    final offsets = <double>[];
+    var x = 0.0;
+    var maxX = 0.0;
+    var height = 1.0;
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+      if (token.tabSetIx case final tabSetIx?) {
+        var following = 0.0;
+        var decimalPrefix = 0.0;
+        var sawDecimal = false;
+        for (var j = i + 1; j < tokens.length; j++) {
+          final next = tokens[j];
+          if (next.tabSetIx != null) break;
+          final tp = next.painter!;
+          following += tp.width;
+          if (!sawDecimal) {
+            final dot = next.text.indexOf('.');
+            if (dot < 0) {
+              decimalPrefix += tp.width;
+            } else {
+              final probe = _posShiftPiece(
+                next.text.substring(0, dot),
+                next.run,
+                scale,
+                applyPosDy: false,
+              );
+              decimalPrefix += probe.tp.width;
+              probe.tp.dispose();
+              sawDecimal = true;
+            }
+          }
+        }
+        x = visioTabFieldStart(
+              tabSets: tabSets,
+              tabSetIx: tabSetIx,
+              currentPosition: x / scale,
+              followingWidth: following / scale,
+              decimalPrefixWidth: decimalPrefix / scale,
+              defaultTabStop: defaultTabStopInches,
+            ) *
+            scale;
+        maxX = math.max(maxX, x);
+        continue;
+      }
+      final tp = token.painter!;
+      painters.add(tp);
+      dys.add(token.dy);
+      offsets.add(x);
+      x += tp.width;
+      maxX = math.max(maxX, x);
+      height = math.max(height, tp.height + token.dy.abs());
+    }
+    if (painters.isEmpty) {
+      final empty = _posShiftPiece(
+        '',
+        runs.isEmpty ? const VsdxTextRun(text: '') : runs.first,
+        scale,
+        applyPosDy: applyPosDy,
+      );
+      painters.add(empty.tp);
+      dys.add(empty.dy);
+      offsets.add(x);
+      height = empty.tp.height;
+    }
+    return (
+      painters: painters,
+      dys: dys,
+      offsets: offsets,
+      width: maxX,
+      height: height,
+    );
   }
 
   /// Default Visio-style bullet glyph for [VsdxParaStyle.bullet] (1…).
@@ -3347,14 +3543,28 @@ class VsdxPainter extends CustomPainter {
 
     for (final run in runs) {
       final parts = run.text.split('\n');
+      var tabOffset = 0;
       for (var i = 0; i < parts.length; i++) {
         if (i > 0) flush();
         style = run.paraStyle;
         // Keep empty segments so consecutive `\n\n` yield blank paragraphs.
-        cur.add(run.copyWith(text: parts[i]));
+        final tabCount = '\t'.allMatches(parts[i]).length;
+        cur.add(run.copyWith(
+          text: parts[i],
+          tabIndices: run.tabIndices.skip(tabOffset).take(tabCount).toList(),
+        ));
+        tabOffset += tabCount;
       }
     }
     if (cur.isNotEmpty || out.isEmpty) flush();
+    // A terminal newline closes the current paragraph in libvisio; it does
+    // not open an additional empty paragraph that contributes line height.
+    if (runs.isNotEmpty &&
+        runs.last.text.endsWith('\n') &&
+        out.length > 1 &&
+        out.last.runs.every((run) => run.text.isEmpty)) {
+      out.removeLast();
+    }
     return out;
   }
 
