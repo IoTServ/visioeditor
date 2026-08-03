@@ -971,6 +971,32 @@ void main() {
     );
   });
 
+  test('SVG arrows 7/19 share the exact libvisio open-chevron marker', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+    for (final (index, arrowId) in <int>[7, 19].indexed) {
+      page = page.addShape(
+        VsdxShapeFactory.line(
+          id: nextId++,
+          ax: 1,
+          ay: index + 1.0,
+          bx: 3,
+          by: index + 1.0,
+        ).copyWith(
+          line: VsdxLine(endArrow: arrowId, weightInches: 0.01),
+        ),
+      );
+    }
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    const path = 'd="M 0 -4.091 L 10 5 L 0 14.091" fill="none"';
+    expect(svg.split(path).length - 1, 2);
+    expect(svg.split('markerWidth="0.069"').length - 1, 2);
+  });
+
   test('SVG arrows 21/22/34 match libvisio square/diamond/circle', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

@@ -69,7 +69,8 @@ final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   4: _filledTriangle,
   5: _stealth,
   6: _filledArrowSwept,
-  7: _openArrowSwept,
+  // libvisio emits the exact same marker path for ids 7 and 19.
+  7: _openChevron,
   8: _filledArrowSwept,
   9: _centeredLine,
   10: _filledCircle,

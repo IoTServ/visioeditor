@@ -89,4 +89,13 @@ void main() {
     expect(marker34.centered, isFalse);
     expect(marker34.path.getBounds(), marker33.path.getBounds());
   });
+
+  test('id 7 aliases the open-chevron path of id 19 like libvisio', () {
+    final marker7 = arrowDescriptor(7)!;
+    final marker19 = arrowDescriptor(19)!;
+    expect(marker7.filled, isFalse);
+    expect(marker7.centered, isFalse);
+    expect(marker7.path.getBounds(), marker19.path.getBounds());
+    expect(arrowDebugReach(7), arrowDebugReach(19));
+  });
 }
