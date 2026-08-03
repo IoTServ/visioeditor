@@ -23,6 +23,7 @@ import '../../model/shape.dart';
 import '../../model/sheet_sections.dart';
 import '../../model/user_property.dart';
 import '../../utils/color.dart';
+import '../shape_kind_detector.dart';
 import 'vsd_byte_reader.dart';
 import 'vsd_internal_stream.dart';
 import 'vsd_record_ids.dart';
@@ -6004,9 +6005,48 @@ class VsdBinaryParser {
       );
     }
 
+    final shapeName = d.shapeName ?? 'Sheet.${d.id}';
+    final imagePartName = _foreignPartByShapeId[d.id];
+    final userProperties = <VsdxUserProperty>[
+      for (final p in d.userProperties)
+        VsdxUserProperty(
+          name: p.name ?? 'Row${p.id}',
+          label: p.label,
+          value: p.value,
+          prompt: p.prompt,
+          format: p.format,
+          type: p.type,
+        ),
+    ];
+    final userCells = <VsdxUserCell>[
+      for (final c in d.userCells)
+        VsdxUserCell(
+          name: c.name ?? 'Row_${c.id}',
+          value: c.value,
+          prompt: c.prompt,
+        ),
+    ];
+    bool? containerOverride;
+    for (final cell in userCells) {
+      if (cell.name == VsdxShape.userContainer) {
+        containerOverride = cell.value == '1';
+        break;
+      }
+    }
+    final shapeKind = const ShapeKindDetector().detect(
+      xmlType: null,
+      name: shapeName,
+      masterName: null,
+      is1D: d.is1D,
+      hasImage: imagePartName != null,
+      childCount: children.length,
+      containerOverride: containerOverride,
+      userProperties: userProperties,
+    );
+
     return VsdxShape(
       id: d.id,
-      name: d.shapeName ?? 'Sheet.${d.id}',
+      name: shapeName,
       pinX: d.pinX,
       pinY: d.pinY,
       // libvisio preserves zero/negative XForm extents. Missing XFormData
@@ -6037,7 +6077,7 @@ class VsdBinaryParser {
       beginY: d.beginY,
       endX: d.endX,
       endY: d.endY,
-      imagePartName: _foreignPartByShapeId[d.id],
+      imagePartName: imagePartName,
       imgOffsetXInches: d.imgOffsetX ?? 0,
       imgOffsetYInches: d.imgOffsetY ?? 0,
       imgWidthInches: d.imgWidth,
@@ -6068,17 +6108,7 @@ class VsdBinaryParser {
             prompt: d.controls[i].prompt,
           ),
       ],
-      userProperties: [
-        for (final p in d.userProperties)
-          VsdxUserProperty(
-            name: p.name ?? 'Row${p.id}',
-            label: p.label,
-            value: p.value,
-            prompt: p.prompt,
-            format: p.format,
-            type: p.type,
-          ),
-      ],
+      userProperties: userProperties,
       scratch: [
         for (final r in d.scratchRows)
           VsdxScratchRow(
@@ -6091,14 +6121,7 @@ class VsdBinaryParser {
             d: r.d,
           ),
       ],
-      userCells: [
-        for (final c in d.userCells)
-          VsdxUserCell(
-            name: c.name ?? 'Row_${c.id}',
-            value: c.value,
-            prompt: c.prompt,
-          ),
-      ],
+      userCells: userCells,
       actions: [
         for (final a in d.actions)
           VsdxActionRow(
@@ -6123,6 +6146,7 @@ class VsdBinaryParser {
           ),
       ],
       children: children,
+      shapeKind: shapeKind,
     );
   }
 

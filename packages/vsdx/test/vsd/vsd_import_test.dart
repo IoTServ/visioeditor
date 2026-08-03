@@ -78,6 +78,10 @@ void main() {
       final lines1d =
           result.document.pages.first.shapes.where((s) => s.is1D).toList();
       expect(lines1d, isNotEmpty);
+      expect(
+        lines1d.every((s) => s.shapeKind == VsdxShapeKind.connector),
+        isTrue,
+      );
       expect(lines1d.where((s) => s.height < 0).length, greaterThan(10));
       expect(lines1d.where((s) => s.height == 1.0).length, lessThan(5));
       // VSD11 Misc extension blocks retain the BegTrigger / EndTrigger target
@@ -106,6 +110,12 @@ void main() {
       );
       expect(
         again.pages.first.shapes
+            .where((s) => s.is1D)
+            .every((s) => s.shapeKind == VsdxShapeKind.connector),
+        isTrue,
+      );
+      expect(
+        again.pages.first.shapes
             .firstWhere((s) => s.id == 35)
             .formulas['BegTrigger'],
         '_XFTRIGGER(Sheet.35!EventXFMod)',
@@ -120,6 +130,10 @@ void main() {
       final withImg = result.document.pages.first.shapes
           .where((s) => s.imagePartName != null);
       expect(withImg, isNotEmpty);
+      expect(
+        withImg.every((s) => s.shapeKind == VsdxShapeKind.picture),
+        isTrue,
+      );
       expect(withImg.every((s) => s.geometries.isNotEmpty), isTrue);
       // Writer baseline also carries media + frame Geometry.
       final again = const DocumentParser().parse(result.originalBytes);
