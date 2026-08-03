@@ -418,6 +418,7 @@ class _ShapeDraft {
   bool? textBgFilled;
   double? defaultTabStop;
   int? textDirection;
+  bool hasTextBlock = false;
   bool underline = false;
   bool smallCaps = false;
   VsdxTextCase textCase = VsdxTextCase.normal;
@@ -1539,7 +1540,7 @@ class VsdBinaryParser {
         ),
       );
     }
-    _applyTextStyle(d);
+    _resolveTextDefaults(d, master);
     _resolvePendingShapeData(d, master: master);
     _dedupeConnectionPoints(d);
     // Drop GeomList shells that never received path commands (common on
@@ -1987,12 +1988,6 @@ class VsdBinaryParser {
     d.shadow ??= master.shadow;
     d.text ??= master.text;
     d.legacyTextBytes ??= master.legacyTextBytes;
-    d.fontSizeInches ??= master.fontSizeInches;
-    d.fontFamily ??= master.fontFamily;
-    if (d.fontEncoding == VsdLegacyTextEncoding.ansi) {
-      d.fontEncoding = master.fontEncoding;
-    }
-    d.textColor ??= master.textColor;
     d.shapeName ??= master.shapeName;
     d.txtPinX ??= master.txtPinX;
     d.txtPinY ??= master.txtPinY;
@@ -2001,68 +1996,16 @@ class VsdBinaryParser {
     d.txtLocPinX ??= master.txtLocPinX;
     d.txtLocPinY ??= master.txtLocPinY;
     d.txtAngle ??= master.txtAngle;
-    d.marginLeft ??= master.marginLeft;
-    d.marginRight ??= master.marginRight;
-    d.marginTop ??= master.marginTop;
-    d.marginBottom ??= master.marginBottom;
-    d.verticalAlign ??= master.verticalAlign;
-    // TextBkgnd: explicit transparent (bgIdx 0/0xff) must not inherit a
-    // filled colour from the stencil (libvisio isTextBkgndFilled).
-    if (d.textBgFilled == null) {
-      d.textBgColor ??= master.textBgColor;
-      d.textBgFilled = master.textBgFilled;
-    } else if (d.textBgFilled == false) {
-      d.textBgColor = null;
-    }
-    d.defaultTabStop ??= master.defaultTabStop;
-    d.textDirection ??= master.textDirection;
-    d.paraAlign ??= master.paraAlign;
-    d.indFirst ??= master.indFirst;
-    d.indLeft ??= master.indLeft;
-    d.indRight ??= master.indRight;
-    d.spLine ??= master.spLine;
-    d.spBefore ??= master.spBefore;
-    d.spAfter ??= master.spAfter;
-    d.bullet ??= master.bullet;
-    d.bulletStr ??= master.bulletStr;
-    d.bulletFont ??= master.bulletFont;
-    d.bulletFontSize ??= master.bulletFontSize;
-    d.textPosAfterBullet ??= master.textPosAfterBullet;
-    d.paraFlags ??= master.paraFlags;
-    if (!d.bold) d.bold = master.bold;
-    if (!d.italic) d.italic = master.italic;
-    if (!d.underline) d.underline = master.underline;
-    if (!d.smallCaps) d.smallCaps = master.smallCaps;
-    if (d.textCase == VsdxTextCase.normal) d.textCase = master.textCase;
-    if (d.textPosition == VsdxTextPosition.normal) {
-      d.textPosition = master.textPosition;
-    }
-    if (!d.strikethrough) d.strikethrough = master.strikethrough;
-    if (!d.doubleUnderline) d.doubleUnderline = master.doubleUnderline;
-    if (!d.doubleStrikethrough) {
-      d.doubleStrikethrough = master.doubleStrikethrough;
-    }
-    if (d.fontScale == 1.0 && master.fontScale != 1.0) {
-      d.fontScale = master.fontScale;
-    }
     // An explicit Misc record with HideText=false overrides a hidden master.
     if (!d.hasMisc) d.hideText = master.hideText;
-    if (d.charRuns.isEmpty && master.charRuns.isNotEmpty) {
-      d.charRuns.addAll(master.charRuns);
-    }
-    if (d.paraRuns.isEmpty && master.paraRuns.isNotEmpty) {
-      d.paraRuns.addAll(master.paraRuns);
-    }
     // FieldList: inherit stencil formats (libvisio collectNumericField clones
     // stencil element and only overrides value/cellType; format comes from
     // master when the instance block is Unknown).
     _inheritMasterFields(d, master);
-    // Only inherit tab sets that actually define stops (empty TabsData is
-    // common on masters and would otherwise inflate every instance).
-    if (d.tabRuns.isEmpty &&
-        master.tabRuns.any((t) => t.stops.isNotEmpty)) {
-      d.tabRuns.addAll(master.tabRuns);
-    }
+    // libvisio uses a stencil's last CharIX / ParaIX as the instance default;
+    // it does not copy the stencil CharList, ParaList, or TabsDataList. Text
+    // defaults are resolved after this structural inheritance so the instance
+    // TextStyle can override the stencil before local records win last.
     // libvisio does not copy LayerMem from binary stencil shapes; membership
     // belongs to the page instance only.
     if (d.connectionPoints.isEmpty && master.connectionPoints.isNotEmpty) {
@@ -2271,72 +2214,126 @@ class VsdBinaryParser {
     }
   }
 
-  /// Apply StyleSheet text cells referenced by [textStyleId] (libvisio).
-  /// Walks the text-style parent chain so sheets without local CharIX still
-  /// inherit fonts from their ancestors.
-  void _applyTextStyle(_ShapeDraft d) {
-    if (d.textStyleId == _minusOne) return;
-    var id = d.textStyleId;
+  _StyleDraft? _nearestTextStyle(
+    int styleId,
+    bool Function(_StyleDraft style) defines,
+  ) {
+    var id = styleId;
     final seen = <int>{};
     while (id != _minusOne && seen.add(id)) {
-      final st = _styles[id];
-      if (st == null) break;
-      if (st.hasCharStyle) {
-        d.fontFamily ??= st.fontFamily;
-        if (d.fontEncoding == VsdLegacyTextEncoding.ansi) {
-          d.fontEncoding = st.fontEncoding;
-        }
-        d.fontSizeInches ??= st.fontSizeInches;
-        d.textColor ??= st.textColor;
-        if (!d.bold) d.bold = st.bold;
-        if (!d.italic) d.italic = st.italic;
-        if (!d.underline) d.underline = st.underline;
-        if (!d.smallCaps) d.smallCaps = st.smallCaps;
-        if (d.textCase == VsdxTextCase.normal) d.textCase = st.textCase;
-        if (d.textPosition == VsdxTextPosition.normal) {
-          d.textPosition = st.textPosition;
-        }
-        if (!d.strikethrough) d.strikethrough = st.strikethrough;
-        if (!d.doubleUnderline) d.doubleUnderline = st.doubleUnderline;
-        if (!d.doubleStrikethrough) {
-          d.doubleStrikethrough = st.doubleStrikethrough;
-        }
-        if (d.fontScale == 1.0 && st.fontScale != 1.0) {
-          d.fontScale = st.fontScale;
-        }
-      }
-      if (st.hasTextBlock) {
-        d.marginLeft ??= st.marginLeft;
-        d.marginRight ??= st.marginRight;
-        d.marginTop ??= st.marginTop;
-        d.marginBottom ??= st.marginBottom;
-        d.verticalAlign ??= st.verticalAlign;
-        if (d.textBgFilled == null) {
-          d.textBgColor ??= st.textBgColor;
-          d.textBgFilled = st.textBgFilled;
-        } else if (d.textBgFilled == false) {
-          d.textBgColor = null;
-        }
-        d.defaultTabStop ??= st.defaultTabStop;
-        d.textDirection ??= st.textDirection;
-        if (!d.hideText) d.hideText = st.hideText;
-      }
-      if (st.hasParaStyle) {
-        d.paraAlign ??= st.paraAlign;
-        d.indFirst ??= st.indFirst;
-        d.indLeft ??= st.indLeft;
-        d.indRight ??= st.indRight;
-        d.spLine ??= st.spLine;
-        d.spBefore ??= st.spBefore;
-        d.spAfter ??= st.spAfter;
-        d.bullet ??= st.bullet;
-        d.bulletStr ??= st.bulletStr;
-        d.bulletFont ??= st.bulletFont;
-        d.bulletFontSize ??= st.bulletFontSize;
-        d.textPosAfterBullet ??= st.textPosAfterBullet;
-        d.paraFlags ??= st.paraFlags;
-      }
-      id = st.textParent;
+      final style = _styles[id];
+      if (style == null) return null;
+      if (defines(style)) return style;
+      id = style.textParent;
+    }
+    return null;
+  }
+
+  void _copyCharDefaults(_ShapeDraft target, dynamic source) {
+    target.fontFamily = source.fontFamily as String?;
+    target.fontEncoding = source.fontEncoding as VsdLegacyTextEncoding;
+    target.fontSizeInches = source.fontSizeInches as double?;
+    target.textColor = source.textColor as VsdxColor?;
+    target.bold = source.bold as bool;
+    target.italic = source.italic as bool;
+    target.underline = source.underline as bool;
+    target.smallCaps = source.smallCaps as bool;
+    target.textCase = source.textCase as VsdxTextCase;
+    target.textPosition = source.textPosition as VsdxTextPosition;
+    target.strikethrough = source.strikethrough as bool;
+    target.doubleUnderline = source.doubleUnderline as bool;
+    target.doubleStrikethrough = source.doubleStrikethrough as bool;
+    target.fontScale = source.fontScale as double;
+  }
+
+  void _copyParaDefaults(_ShapeDraft target, dynamic source) {
+    target.paraAlign = source.paraAlign as VsdxHorzAlign?;
+    target.indFirst = source.indFirst as double?;
+    target.indLeft = source.indLeft as double?;
+    target.indRight = source.indRight as double?;
+    target.spLine = source.spLine as double?;
+    target.spBefore = source.spBefore as double?;
+    target.spAfter = source.spAfter as double?;
+    target.bullet = source.bullet as int?;
+    target.bulletStr = source.bulletStr as String?;
+    target.bulletFont = source.bulletFont as String?;
+    target.bulletFontSize = source.bulletFontSize as double?;
+    target.textPosAfterBullet = source.textPosAfterBullet as double?;
+    target.paraFlags = source.paraFlags as int?;
+  }
+
+  void _copyTextBlockDefaults(_ShapeDraft target, dynamic source) {
+    target.marginLeft = source.marginLeft as double?;
+    target.marginRight = source.marginRight as double?;
+    target.marginTop = source.marginTop as double?;
+    target.marginBottom = source.marginBottom as double?;
+    target.verticalAlign = source.verticalAlign as VsdxVertAlign?;
+    target.textBgFilled = source.textBgFilled as bool?;
+    target.textBgColor = target.textBgFilled == true
+        ? source.textBgColor as VsdxColor?
+        : null;
+    target.defaultTabStop = source.defaultTabStop as double?;
+    target.textDirection = source.textDirection as int?;
+  }
+
+  /// Match `VSDContentCollector::_startShape`: stencil TextStyle, stencil
+  /// local defaults, instance TextStyle, then instance-local records. Each
+  /// binary CharIX/ParaIX/TextBlock record is concrete, so `false`, normal
+  /// case/position, zero, and 1.0 are values rather than inheritance sentinels.
+  void _resolveTextDefaults(_ShapeDraft d, _ShapeDraft? master) {
+    final hasLocalChar = d.charRuns.isNotEmpty;
+    final hasLocalPara = d.paraRuns.isNotEmpty;
+    final hasLocalTextBlock = d.hasTextBlock;
+
+    if (!hasLocalChar) {
+      final masterChar = master == null
+          ? null
+          : (master.charRuns.isNotEmpty
+              ? master
+              : _nearestTextStyle(
+                  master.textStyleId,
+                  (style) => style.hasCharStyle,
+                ));
+      if (masterChar != null) _copyCharDefaults(d, masterChar);
+      final instanceChar = _nearestTextStyle(
+        d.textStyleId,
+        (style) => style.hasCharStyle,
+      );
+      if (instanceChar != null) _copyCharDefaults(d, instanceChar);
+    }
+
+    if (!hasLocalPara) {
+      final masterPara = master == null
+          ? null
+          : (master.paraRuns.isNotEmpty
+              ? master
+              : _nearestTextStyle(
+                  master.textStyleId,
+                  (style) => style.hasParaStyle,
+                ));
+      if (masterPara != null) _copyParaDefaults(d, masterPara);
+      final instancePara = _nearestTextStyle(
+        d.textStyleId,
+        (style) => style.hasParaStyle,
+      );
+      if (instancePara != null) _copyParaDefaults(d, instancePara);
+    }
+
+    if (!hasLocalTextBlock) {
+      final masterBlock = master == null
+          ? null
+          : (master.hasTextBlock
+              ? master
+              : _nearestTextStyle(
+                  master.textStyleId,
+                  (style) => style.hasTextBlock,
+                ));
+      if (masterBlock != null) _copyTextBlockDefaults(d, masterBlock);
+      final instanceBlock = _nearestTextStyle(
+        d.textStyleId,
+        (style) => style.hasTextBlock,
+      );
+      if (instanceBlock != null) _copyTextBlockDefaults(d, instanceBlock);
     }
   }
 
@@ -4973,7 +4970,11 @@ class VsdBinaryParser {
         t.textBgColor = textBgColor;
         t.defaultTabStop = defaultTabStop;
         t.textDirection = textDirection;
-        if (t is _StyleDraft) t.hasTextBlock = true;
+        if (t is _StyleDraft) {
+          t.hasTextBlock = true;
+        } else if (t is _ShapeDraft) {
+          t.hasTextBlock = true;
+        }
       }
       if (shape != null) apply(shape);
       if (style != null) apply(style);
