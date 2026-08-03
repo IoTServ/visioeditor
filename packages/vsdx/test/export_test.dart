@@ -727,7 +727,7 @@ void main() {
       doc.pages.first.addShape(
         VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
               line: const VsdxLine(
-                endArrow: 28,
+                endArrow: 13,
                 endArrowSizeInches: 0.125,
                 weightInches: 0.01,
               ),
@@ -813,7 +813,7 @@ void main() {
       doc.pages.first.addShape(
         VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
               line: const VsdxLine(
-                endArrow: 8,
+                endArrow: 3,
                 weightInches: 0.1,
                 endArrowSizeInches: 0.125,
               ),
@@ -834,12 +834,12 @@ void main() {
     var nextId = page.nextFreeShapeId();
     page = page.addShape(
       VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
-            line: const VsdxLine(endArrow: 11, weightInches: 0.03),
+            line: const VsdxLine(endArrow: 22, weightInches: 0.03),
           ),
     );
     page = page.addShape(
       VsdxShapeFactory.line(id: nextId++, ax: 1, ay: 2, bx: 3, by: 2).copyWith(
-            line: const VsdxLine(endArrow: 15, weightInches: 0.03),
+            line: const VsdxLine(endArrow: 11, weightInches: 0.03),
           ),
     );
     doc = doc.replacePage(0, page);
@@ -912,7 +912,7 @@ void main() {
     expect(svg, contains('textLength="'));
   });
 
-  test('SVG open-stealth arrow (id 8) is stroked not filled', () {
+  test('SVG open-concave arrow (id 17) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -921,7 +921,7 @@ void main() {
       0,
       doc.pages.first.addShape(
         VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
-              line: const VsdxLine(endArrow: 8, weightInches: 0.04),
+              line: const VsdxLine(endArrow: 17, weightInches: 0.04),
             ),
       ),
     );
@@ -930,11 +930,11 @@ void main() {
     expect(
       svg,
       contains('fill="none" stroke="#000000"'),
-      reason: 'arrow 8 is open stealth on canvas; SVG must not fill it',
+      reason: 'arrow 17 is open concave in libvisio; SVG must not fill it',
     );
   });
 
-  test('SVG arrows 21/22/34 match canvas ER / small-circle styles', () {
+  test('SVG arrows 21/22/34 match libvisio square/diamond/circle', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -957,19 +957,13 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains(
-        'd="M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-        'M 7 1 V 9" fill="none"',
-      ),
-      reason: 'arrow 21 is open circle + hash, not a filled triangle',
+      contains('d="M 0 1 H 10 V 9 H 0 Z" fill="none"'),
+      reason: 'arrow 21 is the centred unfilled square',
     );
     expect(
       svg,
-      contains(
-        'd="M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-        'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9" fill="none"',
-      ),
-      reason: 'arrow 22 is optional-many crow foot',
+      contains('d="M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z" fill="none"'),
+      reason: 'arrow 22 is the unfilled diamond',
     );
     expect(
       svg,
@@ -981,7 +975,7 @@ void main() {
     );
   });
 
-  test('SVG arrows 27/28/29/33 match canvas filled/open styles', () {
+  test('SVG arrows 27/28/29/33 match libvisio ER/circle styles', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1003,32 +997,31 @@ void main() {
     doc = doc.replacePage(0, page);
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
 
-    // 27 hatched triangle is open (stroke-only) on canvas.
     expect(
       svg,
       contains(
-        'd="M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7" '
+        'd="M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9" '
         'fill="none" stroke="#000000"',
       ),
-      reason: 'arrow 27 must be open hatched triangle',
+      reason: 'arrow 27 is the crow-foot many marker',
     );
-    // 33 trident is open three-prong.
     expect(
       svg,
       contains(
-        'd="M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9" '
+        'd="M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" '
         'fill="none" stroke="#000000"',
       ),
-      reason: 'arrow 33 must be open trident, not a filled dart',
+      reason: 'libvisio currently renders marker 33 as an open circle',
     );
-    // 29 is a double triangle — two closed tips, not a single dart.
-    expect(svg, contains('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z'));
-    // 28 spear is a filled thin triangle (not an open polyline).
-    expect(svg, contains('M 0 3.2 L 10 5 L 0 6.8 Z'));
     expect(
-      svg.contains('M 0 5 L 8 5 M 8 2 L 12 5 L 8 8'),
-      isFalse,
-      reason: 'old open-spear path must not be used for arrow 28',
+      svg,
+      contains('M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9'),
+      reason: 'arrow 28 adds the one-bar to the crow foot',
+    );
+    expect(
+      svg,
+      contains('M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0'),
+      reason: 'arrow 29 combines an open circle with a crow foot',
     );
   });
 
@@ -1501,7 +1494,7 @@ void main() {
     expect(svg.contains('objectBoundingBox'), isFalse);
   });
 
-  test('SVG arrow 31 is filled chevron not stealth', () {
+  test('SVG arrow 31 follows libvisio open-circle fallback', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1517,10 +1510,11 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains('d="M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z" fill="#000000"'),
+      contains(
+        'd="M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" '
+        'fill="none" stroke="#000000"',
+      ),
     );
-    expect(svg.contains('L 2 5 Z'), isFalse,
-        reason: 'must not reuse stealth template for chevron 31');
   });
 
   test('SVG marker carrier path has single stroke-opacity=0', () {
@@ -1578,7 +1572,7 @@ void main() {
     expect(RegExp(r'marker-end=').allMatches(svg).length, 1);
   });
 
-  test('SVG ball arrow 10 is larger than circle-dot 13', () {
+  test('SVG arrow 10 is a ball and arrow 13 a long filled triangle', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1597,7 +1591,7 @@ void main() {
     doc = doc.replacePage(0, page);
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('m -5,0 a 5,5 0 1,0 10,0'));
-    expect(svg, contains('m -4,0 a 4,4 0 1,0 8,0'));
+    expect(svg, contains('M 0 3.2 L 10 5 L 0 6.8 Z'));
   });
 
   test('SVG FillPattern 17 is hatch and unsupported 41 is solid', () {
@@ -1699,7 +1693,7 @@ void main() {
     expect(svg, contains('marker-end='));
   });
 
-  test('SVG arrows 25/26 are wide triangles with 0.85 reach', () {
+  test('SVG arrows 25/26 share libvisio double one-bar fallback', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1725,18 +1719,13 @@ void main() {
     doc = doc.replacePage(0, page);
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
-      svg,
-      contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="#000000"'),
-      reason: 'arrow 25 is filled wide triangle',
+      RegExp(
+        r'd="M 7 1 V 9 M 4\.5 1 V 9" fill="none"',
+      ).allMatches(svg).length,
+      2,
+      reason: 'libvisio currently emits the same marker for ids 25 and 26',
     );
-    expect(
-      svg,
-      contains(
-        'd="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z" fill="none" stroke="#000000"',
-      ),
-      reason: 'arrow 26 is open wide triangle',
-    );
-    // markerWidth = size * reach = 0.2 * 0.85 = 0.17
+    // markerWidth = size * reach = 0.2 * 0.85 = 0.17.
     expect(svg, contains('markerWidth="0.17"'));
   });
 
@@ -2041,7 +2030,7 @@ void main() {
     expect(svg, contains('y="0.15"'));
   });
 
-  test('SVG arrows 5/6 are narrow triangles', () {
+  test('SVG arrows 5/6 are filled concave/convex markers', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2064,15 +2053,15 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       svg,
-      contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="#000000"'),
-      reason: 'arrow 5 is filled narrow triangle',
+      contains('d="M 0 1 L 10 5 L 0 9 L 3 5 Z" fill="#000000"'),
+      reason: 'arrow 5 is the filled concave marker',
     );
     expect(
       svg,
       contains(
-        'd="M 0 2.5 L 10 5 L 0 7.5 Z" fill="none" stroke="#000000"',
+        'd="M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z" fill="#000000"',
       ),
-      reason: 'arrow 6 is open narrow triangle',
+      reason: 'arrow 6 is the filled convex marker',
     );
   });
 

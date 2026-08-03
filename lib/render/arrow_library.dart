@@ -1,9 +1,8 @@
 /// Procedural Visio arrow heads.
 ///
-/// Visio ships ~40 built-in BeginArrow/EndArrow shapes; we cover ~30
-/// common ids procedurally so the renderer doesn't need to bundle SVG
-/// assets. Unknown ids fall back to the classic filled triangle (id 4,
-/// Visio's default).
+/// Visio ships 45 built-in BeginArrow/EndArrow shapes. The id mapping follows
+/// libvisio's `VSDContentCollector::_linePropertiesMarkerPath`; unknown ids
+/// fall back to the classic filled triangle (id 4, Visio's default).
 ///
 /// Each arrow is described by an [ArrowDescriptor] in its own local space:
 ///   * X axis points along the line direction (toward the tip).
@@ -47,44 +46,52 @@ final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   // but we surface it as a no-op for completeness.
   0: _empty,
   1: _openTriangle,
-  2: _filledTriangle,
+  2: _filledTriangleNarrow,
   3: _openArrow,
   4: _filledTriangle,
-  5: _filledTriangleNarrow,
-  6: _openTriangleNarrow,
-  7: _stealth,
-  8: _stealthOpen,
-  9: _filledArrowFletched,
-  // 10 = filled circle ("ball") and 12 = filled concave/stealth arrow, matching
-  // how Visio (and the Edraw exports we import) render these two ids — see the
-  // 人才招聘冰山模型 / 数据治理 fixtures. Previously mis-mapped to a diamond and a
-  // half-triangle, so balls drew as arrows and stealth arrows drew half-clipped.
+  5: _stealth,
+  6: _filledArrowSwept,
+  7: _openArrowSwept,
+  8: _filledArrowSwept,
+  9: _centeredLine,
   10: _filledCircle,
-  11: _openDiamond,
-  12: _stealth,
-  13: _circleDot,
-  14: _openCircle,
-  15: _square,
-  16: _openSquare,
-  17: _backslash,
-  18: _crossfoot,
-  19: _databaseOne,
-  20: _databaseMany,
-  21: _databaseOptionalOne,
-  22: _databaseOptionalMany,
-  23: _filledArrowSwept,
-  24: _openArrowSwept,
-  25: _filledTriangleWide,
-  26: _openTriangleWide,
-  27: _hatchedTriangle,
-  28: _spear,
-  29: _doubleTriangle,
-  30: _doubleOpenTriangle,
-  31: _filledChevron,
-  32: _openChevron,
-  33: _trident,
+  11: _square,
+  12: _openArrowSwept,
+  13: _spear,
+  14: _openTriangleWide,
+  15: _openTriangleNarrow,
+  16: _openTriangle,
+  17: _stealthOpen,
+  18: _openArrowSwept,
+  19: _openChevron,
+  20: _openCircle,
+  21: _openSquare,
+  22: _openDiamond,
+  23: _backslash,
+  24: _databaseOne,
+  25: _crossfoot,
+  // libvisio currently emits the same marker path for 25 and 26.
+  26: _crossfoot,
+  27: _databaseMany,
+  28: _databaseManyOne,
+  29: _databaseOptionalMany,
+  30: _databaseOptionalOne,
+  31: _openCircle,
+  32: _openCircle,
+  33: _openCircle,
   34: _smallCircle,
-  35: _filledArrowLong,
+  35: _filledCircleWithLine,
+  36: _filledCircleWithLine,
+  37: _filledCircleWithLine,
+  38: _circleDot,
+  39: _doubleTriangle,
+  // libvisio currently emits the same filled marker path for 39 and 40.
+  40: _doubleTriangle,
+  41: _openCircle,
+  42: _filledCircle,
+  43: _openArrow,
+  44: _openArrow,
+  45: _openArrow,
 };
 
 ArrowDescriptor _empty() => ArrowDescriptor(path: Path(), filled: false);
@@ -104,15 +111,6 @@ ArrowDescriptor _filledTriangleNarrow() {
     ..moveTo(0, 0)
     ..lineTo(-1, -0.25)
     ..lineTo(-1, 0.25)
-    ..close();
-  return ArrowDescriptor(path: p, filled: true);
-}
-
-ArrowDescriptor _filledTriangleWide() {
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-0.85, -0.55)
-    ..lineTo(-0.85, 0.55)
     ..close();
   return ArrowDescriptor(path: p, filled: true);
 }
@@ -174,25 +172,18 @@ ArrowDescriptor _stealthOpen() {
   return ArrowDescriptor(path: p, filled: false);
 }
 
-ArrowDescriptor _filledArrowFletched() {
-  // Triangle + tail flick (vertical hash).
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-1, -0.4)
-    ..lineTo(-1, 0.4)
-    ..close()
-    ..moveTo(-1, -0.45)
-    ..lineTo(-1.2, -0.55)
-    ..lineTo(-1.2, 0.55)
-    ..lineTo(-1, 0.45)
-    ..close();
-  return ArrowDescriptor(path: p, filled: true);
-}
-
 ArrowDescriptor _filledCircle() {
   // A "ball" terminator sitting just behind the line end (Visio arrow 10).
   final p = Path()
     ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.5));
+  return ArrowDescriptor(path: p, filled: true);
+}
+
+ArrowDescriptor _filledCircleWithLine() {
+  // libvisio uses this same filled-circle + centred bar marker for ids 35–37.
+  final p = Path()
+    ..addOval(Rect.fromCircle(center: const Offset(-0.58, 0), radius: 0.34))
+    ..addRect(const Rect.fromLTWH(-0.08, -0.5, 0.08, 1.0));
   return ArrowDescriptor(path: p, filled: true);
 }
 
@@ -244,6 +235,16 @@ ArrowDescriptor _backslash() {
   return ArrowDescriptor(path: p, filled: false);
 }
 
+ArrowDescriptor _centeredLine() {
+  // libvisio marker 9 combines an oblique stroke with a centred stem.
+  final p = Path()
+    ..moveTo(-1, -0.5)
+    ..lineTo(0, 0.5)
+    ..moveTo(-0.5, -0.5)
+    ..lineTo(-0.5, 0.5);
+  return ArrowDescriptor(path: p, filled: false);
+}
+
 ArrowDescriptor _crossfoot() {
   // Two parallel hash strokes — "exactly one" notation.
   final p = Path()
@@ -271,6 +272,20 @@ ArrowDescriptor _databaseMany() {
     ..lineTo(-0.85, 0)
     ..moveTo(0, 0)
     ..lineTo(-0.85, 0.5);
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _databaseManyOne() {
+  // Crow's foot plus the "one" bar (libvisio marker 28).
+  final p = Path()
+    ..moveTo(0, 0)
+    ..lineTo(-0.72, -0.5)
+    ..moveTo(0, 0)
+    ..lineTo(-0.72, 0)
+    ..moveTo(0, 0)
+    ..lineTo(-0.72, 0.5)
+    ..moveTo(-0.88, -0.5)
+    ..lineTo(-0.88, 0.5);
   return ArrowDescriptor(path: p, filled: false);
 }
 
@@ -317,18 +332,6 @@ ArrowDescriptor _openArrowSwept() {
   return ArrowDescriptor(path: p, filled: false);
 }
 
-ArrowDescriptor _hatchedTriangle() {
-  // Triangle outline + diagonal hash.
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-1, -0.4)
-    ..lineTo(-1, 0.4)
-    ..close()
-    ..moveTo(-0.3, -0.2)
-    ..lineTo(-0.7, 0.2);
-  return ArrowDescriptor(path: p, filled: false);
-}
-
 ArrowDescriptor _spear() {
   // Long thin spear-style arrow.
   final p = Path()
@@ -353,60 +356,12 @@ ArrowDescriptor _doubleTriangle() {
   return ArrowDescriptor(path: p, filled: true);
 }
 
-ArrowDescriptor _doubleOpenTriangle() {
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-0.6, -0.35)
-    ..lineTo(-0.6, 0.35)
-    ..close()
-    ..moveTo(-0.6, 0)
-    ..lineTo(-1.2, -0.35)
-    ..lineTo(-1.2, 0.35)
-    ..close();
-  return ArrowDescriptor(path: p, filled: false);
-}
-
-ArrowDescriptor _filledChevron() {
-  // Single chevron (>) — short fat arrow.
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-0.55, -0.5)
-    ..lineTo(-0.4, 0)
-    ..lineTo(-0.55, 0.5)
-    ..close();
-  return ArrowDescriptor(path: p, filled: true);
-}
-
 ArrowDescriptor _openChevron() {
   final p = Path()
     ..moveTo(-0.55, -0.5)
     ..lineTo(0, 0)
     ..lineTo(-0.55, 0.5);
   return ArrowDescriptor(path: p, filled: false);
-}
-
-ArrowDescriptor _trident() {
-  // Three-pronged fork.
-  const tip = Offset(0, 0);
-  final p = Path()
-    ..moveTo(tip.dx, tip.dy)
-    ..lineTo(-0.7, -0.5)
-    ..moveTo(tip.dx, tip.dy)
-    ..lineTo(-0.85, 0)
-    ..moveTo(tip.dx, tip.dy)
-    ..lineTo(-0.7, 0.5);
-  return ArrowDescriptor(path: p, filled: false);
-}
-
-ArrowDescriptor _filledArrowLong() {
-  // Long slim arrow head — useful for flow / process diagrams.
-  final p = Path()
-    ..moveTo(0, 0)
-    ..lineTo(-1.5, -0.3)
-    ..lineTo(-1.2, 0)
-    ..lineTo(-1.5, 0.3)
-    ..close();
-  return ArrowDescriptor(path: p, filled: true);
 }
 
 // Used by tests / tooling: small assertion-friendly summary of the path.
@@ -418,4 +373,3 @@ double arrowDebugReach(int id) {
   // base at negative X).
   return math.max(b.width, b.height);
 }
-

@@ -2729,82 +2729,88 @@ class VsdxToSvgSerializer {
     String? colorHex,
     double opacity = 1.0,
   }) {
-    // Work in tip-at-right space, then mirror for start markers.
-    // filled / open choices mirror lib/render/arrow_library.dart.
+    // Work in tip-at-right space, then mirror for start markers. The id
+    // mapping follows libvisio VSDContentCollector marker paths and mirrors
+    // lib/render/arrow_library.dart.
     final (d, filled) = switch (arrowId) {
-      3 => ('M 0 1 L 10 5 L 0 9', false), // open arrow (V stroke)
-      1 => ('M 0 1 L 10 5 L 0 9 Z', false), // open triangle
-      // Narrow triangles (canvas half-width 0.25).
-      5 => ('M 0 2.5 L 10 5 L 0 7.5 Z', true),
-      6 => ('M 0 2.5 L 10 5 L 0 7.5 Z', false),
-      // Wide triangles (canvas reach 0.85, half-width 0.55).
-      25 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', true),
-      26 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', false),
-      // Ball (10): canvas r=0.5 diameter≈size; circle-dot (13): r=0.4.
+      1 => ('M 0 1 L 10 5 L 0 9 Z', false), // open short arrowhead
+      2 => ('M 0 2.5 L 10 5 L 0 7.5 Z', true),
+      3 => ('M 0 1 L 10 5 L 0 9', false), // short line arrow
+      4 => ('M 0 1 L 10 5 L 0 9 Z', true),
+      5 => ('M 0 1 L 10 5 L 0 9 L 3 5 Z', true), // concave
+      6 => ('M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z', true), // convex
+      7 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false),
+      8 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', true),
+      9 => ('M 0 1 L 10 9 M 5 1 V 9', false), // centred line
       10 => (
           'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
           true,
         ),
-      13 => (
+      11 => ('M 0 1 H 10 V 9 H 0 Z', true), // centred filled square
+      12 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false),
+      13 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true),
+      14 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', false),
+      15 => ('M 0 2.5 L 10 5 L 0 7.5 Z', false),
+      16 => ('M 0 1 L 10 5 L 0 9 Z', false),
+      17 => ('M 0 1 L 10 5 L 0 9 L 3 5 Z', false),
+      18 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false),
+      19 => ('M 0 -4.091 L 10 5 L 0 14.091', false),
+      20 || 31 || 32 || 33 || 41 => (
           'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
-          true,
+          false,
         ),
-      14 => (
-          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
-          false,
-        ), // open circle
-      34 => (
-          'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0',
-          false,
-        ), // small open circle
-      // Diamond tip at x=10 (canvas tip at origin); open diamond id 11.
-      11 => ('M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z', false),
-      // Square right edge at tip (canvas Rect ends at x=0).
-      15 => ('M 0 1 H 10 V 9 H 0 Z', true),
-      16 => ('M 0 1 H 10 V 9 H 0 Z', false),
-      7 || 12 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', true), // stealth
-      // Filled chevron (31): canvas tip(0,0) wings(±0.5) notch(-0.4);
-      // mapped into viewBox with reach 0.55 (overflow visible).
-      31 => ('M 0 -4.091 L 10 5 L 0 14.091 L 2.727 5 Z', true),
-      8 => ('M 0 1 L 10 5 L 0 9 L 2 5 Z', false), // open stealth
-      9 => (
-          'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z',
-          true,
-        ), // fletched
-      17 => ('M 5 1 V 9', false), // single hash (backslash/one)
-      18 => ('M 7 1 V 9 M 4.5 1 V 9', false), // double hash / exactly one
-      19 => ('M 7 1 V 9', false), // crow's foot one
-      20 => (
+      21 => ('M 0 1 H 10 V 9 H 0 Z', false),
+      22 => ('M 0 5 L 5 1.5 L 10 5 L 5 8.5 Z', false),
+      23 => ('M 5 1 V 9', false),
+      24 => ('M 7 1 V 9', false),
+      25 => ('M 7 1 V 9 M 4.5 1 V 9', false),
+      26 => ('M 7 1 V 9 M 4.5 1 V 9', false),
+      27 => (
           'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9',
           false
-        ), // crow's foot many
-      21 => (
-          'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-              'M 7 1 V 9',
+        ),
+      28 => (
+          'M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9',
           false,
-        ), // optional one
-      22 => (
+        ),
+      29 => (
           'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
               'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9',
           false,
-        ), // optional many
-      23 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', true), // swept filled
-      24 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false), // swept open
-      // Hatched triangle: canvas shadow (-0.3,-0.2)→(-0.7,0.2) → tip-end M 7 3 L 3 7.
-      27 => ('M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7', false),
-      28 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true), // spear (filled thin)
-      29 => (
+        ),
+      30 => (
+          'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+              'M 7 1 V 9',
+          false,
+        ),
+      34 => (
+          'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0',
+          false,
+        ),
+      35 || 36 || 37 => (
+          'M 4.2 5 m -3.4,0 a 3.4,3.4 0 1,0 6.8,0 a 3.4,3.4 0 1,0 -6.8,0 '
+              'M 9.2 0 V 10 H 10 V 0 Z',
+          true,
+        ),
+      38 => (
+          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
+          true,
+        ),
+      39 => (
           'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
           true
-        ), // double triangle
-      30 => (
+        ),
+      40 => (
           'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
-          false,
-        ), // double open triangle
-      32 => ('M 0 -4.091 L 10 5 L 0 14.091', false), // open chevron
-      33 => ('M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9', false), // trident
-      35 => ('M 0 2 L 10 5 L 0 8 L 2.5 5 Z', true), // long filled arrow
-      _ => ('M 0 1 L 10 5 L 0 9 Z', true), // filled triangle (2/4/5/…)
+          true,
+        ),
+      42 => (
+          'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
+          true,
+        ),
+      43 => ('M 0 1 L 10 5 L 0 9', false),
+      44 || 45 => ('M 0 1 L 10 5 L 0 9', false),
+      _ => ('M 0 1 L 10 5 L 0 9 Z', true),
     };
     final pathD = tipAtEnd ? d : _mirrorArrowD(d);
     final fillPaint = colorHex == null
@@ -2833,6 +2839,11 @@ class VsdxToSvgSerializer {
     return switch (d) {
       'M 0 1 L 10 5 L 0 9' => 'M 10 1 L 0 5 L 10 9',
       'M 0 1 L 10 5 L 0 9 Z' => 'M 10 1 L 0 5 L 10 9 Z',
+      'M 0 1 L 10 5 L 0 9 L 3 5 Z' =>
+        'M 10 1 L 0 5 L 10 9 L 7 5 Z',
+      'M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z' =>
+        'M 10 1 L 0 5 L 10 9 Q 3 5 10 1 Z',
+      'M 0 1 L 10 9 M 5 1 V 9' => 'M 10 1 L 0 9 M 5 1 V 9',
       'M 0 2.5 L 10 5 L 0 7.5 Z' => 'M 10 2.5 L 0 5 L 10 7.5 Z',
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
@@ -2846,6 +2857,8 @@ class VsdxToSvgSerializer {
       'M 7 1 V 9 M 4.5 1 V 9' => 'M 3 1 V 9 M 5.5 1 V 9',
       'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9' =>
         'M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9',
+      'M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9' =>
+        'M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9',
       'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 7 1 V 9' =>
         'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 3 1 V 9',
       'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
@@ -2862,7 +2875,12 @@ class VsdxToSvgSerializer {
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
       'M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9' =>
         'M 0 5 L 8 1 M 0 5 L 10 5 M 0 5 L 8 9',
-      'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0' => d,
+      'M 7.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0' =>
+        'M 2.5 5 m -2,0 a 2,2 0 1,0 4,0 a 2,2 0 1,0 -4,0',
+      'M 4.2 5 m -3.4,0 a 3.4,3.4 0 1,0 6.8,0 a 3.4,3.4 0 1,0 -6.8,0 '
+            'M 9.2 0 V 10 H 10 V 0 Z' =>
+        'M 5.8 5 m -3.4,0 a 3.4,3.4 0 1,0 6.8,0 a 3.4,3.4 0 1,0 -6.8,0 '
+            'M 0.8 0 V 10 H 0 V 0 Z',
       _ => d, // circles are symmetric
     };
   }
@@ -2881,14 +2899,14 @@ class VsdxToSvgSerializer {
   /// Tip→base extent in canvas `arrow_library` local units (tip at origin).
   double _arrowCanvasReach(int arrowId) {
     return switch (arrowId) {
-      9 => 1.2,
-      15 || 16 || 25 || 26 => 0.85,
-      23 || 24 => 1.1,
-      28 => 1.4,
-      29 || 30 => 1.2,
-      31 || 32 => 0.55,
-      33 => 0.85,
-      35 => 1.5,
+      10 || 11 => 0.7,
+      12 || 14 || 15 || 16 || 17 || 18 || 22 => 1.2,
+      13 => 1.4,
+      19 => 0.55,
+      25 || 26 => 0.85,
+      28 || 29 || 30 => 1.1,
+      34 => 0.45,
+      39 || 40 => 1.2,
       _ => 1.0,
     };
   }

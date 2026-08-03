@@ -7131,10 +7131,10 @@ class _PropertyPanel extends StatelessWidget {
         4: el.arrowFilled,
         1: el.arrowOpen,
         3: el.arrowThin,
-        7: el.arrowStealth,
+        5: el.arrowStealth,
         10: el.arrowCircle,
-        11: el.arrowOpenDiamond,
-        14: el.arrowCircleOpen,
+        22: el.arrowOpenDiamond,
+        20: el.arrowCircleOpen,
       };
 
   Widget _arrowPickers(BuildContext context, EditorController controller) {
