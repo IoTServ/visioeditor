@@ -441,6 +441,30 @@ void _expectSynthesizedShape(
       after.fill.foregroundTransparency, 'FillForegndTrans');
   close(before.fill.backgroundTransparency,
       after.fill.backgroundTransparency, 'FillBkgndTrans');
+  final beforeGradient = before.fill.gradient;
+  final afterGradient = after.fill.gradient;
+  if (beforeGradient == null || afterGradient == null) {
+    expect(afterGradient, beforeGradient, reason: '$reason fill gradient');
+  } else {
+    expect(afterGradient.type, beforeGradient.type,
+        reason: '$reason fill gradient type');
+    expect(afterGradient.dir, beforeGradient.dir,
+        reason: '$reason fill gradient direction');
+    close(beforeGradient.angleRad, afterGradient.angleRad,
+        'FillGradientAngle');
+    expect(afterGradient.stops.length, beforeGradient.stops.length,
+        reason: '$reason fill gradient stops');
+    for (var i = 0; i < beforeGradient.stops.length; i++) {
+      final a = beforeGradient.stops[i];
+      final b = afterGradient.stops[i];
+      close(a.position, b.position, 'FillGradient[$i].Position');
+      expect(b.color, a.color, reason: '$reason FillGradient[$i].Color');
+      expect(b.themeColorIndex, a.themeColorIndex,
+          reason: '$reason FillGradient[$i].ThemeColor');
+      close(a.transparency, b.transparency,
+          'FillGradient[$i].Transparency');
+    }
+  }
   expect(after.line.pattern, before.line.pattern,
       reason: '$reason line pattern');
   expect(after.line.color, before.line.color, reason: '$reason line color');

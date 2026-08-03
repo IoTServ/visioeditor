@@ -5,6 +5,7 @@
 /// Independent Dart implementation — no C++ source is copied.
 library;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../../core/exceptions.dart';
@@ -30,6 +31,96 @@ import 'vsd_record_ids.dart';
 import 'vsd_text_codec.dart';
 
 const int _minusOne = 0xFFFFFFFF;
+
+/// Convert classic binary Visio fill-pattern gradients to the editable model.
+/// libvisio maps 25–34 to linear/axial gradients, 35 to rectangular, and
+/// 36–40 to radial origins.
+VsdxFill _withClassicVsdGradient(VsdxFill fill) {
+  final pattern = fill.pattern;
+  if (pattern < 25 || pattern > 40) return fill;
+  final foreground = fill.foreground;
+  final background = fill.background;
+  if (foreground == null || background == null) return fill;
+
+  VsdxGradientStop stop(
+    double position,
+    VsdxColor color,
+    double transparency,
+  ) =>
+      VsdxGradientStop(
+        position: position,
+        color: color,
+        transparency: transparency.clamp(0.0, 1.0),
+      );
+
+  late final VsdxGradient gradient;
+  if (pattern == 26 || pattern == 29) {
+    // libvisio's axial fill is background → foreground → background.
+    gradient = VsdxGradient(
+      stops: List.unmodifiable([
+        stop(0, background, fill.backgroundTransparency),
+        stop(0.5, foreground, fill.foregroundTransparency),
+        stop(1, background, fill.backgroundTransparency),
+      ]),
+      angleRad: pattern == 26 ? 0 : math.pi / 2,
+      dir: 0,
+    );
+  } else if (pattern >= 25 && pattern <= 34) {
+    // librevenge's draw:angle is clockwise from +Y. The model uses radians
+    // counter-clockwise from +X, hence pi/2 - drawAngle.
+    final drawDegrees = switch (pattern) {
+      25 => 270.0,
+      27 => 90.0,
+      28 => 180.0,
+      30 => 0.0,
+      31 => 225.0,
+      32 => 135.0,
+      33 => 315.0,
+      34 => 45.0,
+      _ => 0.0,
+    };
+    gradient = VsdxGradient(
+      stops: List.unmodifiable([
+        stop(0, background, fill.backgroundTransparency),
+        stop(1, foreground, fill.foregroundTransparency),
+      ]),
+      angleRad: math.pi / 2 - drawDegrees * math.pi / 180,
+      dir: 0,
+    );
+  } else {
+    final dir = switch (pattern) {
+      35 => 10, // centred rectangular
+      36 => 1, // top-left radial
+      37 => 3, // top-right radial
+      38 => 5, // bottom-left radial
+      39 => 7, // bottom-right radial
+      _ => 4, // centred radial
+    };
+    gradient = VsdxGradient(
+      // Radial SVG gradients paint their first stop at the centre. This is
+      // libvisio's end colour (the classic foreground), then background.
+      stops: List.unmodifiable([
+        stop(0, foreground, fill.foregroundTransparency),
+        stop(1, background, fill.backgroundTransparency),
+      ]),
+      type: pattern == 35
+          ? VsdxGradientType.rectangular
+          : VsdxGradientType.radial,
+      dir: dir,
+    );
+  }
+
+  // Endpoint transparency is represented by the stops. Keeping it on the
+  // fill as well would multiply it a second time in SVG/canvas rendering.
+  return VsdxFill(
+    foreground: foreground,
+    background: background,
+    pattern: pattern,
+    themeForegroundIndex: fill.themeForegroundIndex,
+    themeBackgroundIndex: fill.themeBackgroundIndex,
+    gradient: gradient,
+  );
+}
 
 class _VsdFontInfo {
   const _VsdFontInfo(this.name, this.encoding);
@@ -2975,13 +3066,13 @@ class VsdBinaryParser {
       final shadowFG = _colourFromIndex(input.readU8());
       input.skip(1); // shadow BG
       final shadowPattern = input.readU8();
-      fill = VsdxFill(
+      fill = _withClassicVsdGradient(VsdxFill(
         foreground: colourFG.withOpacity(1),
         background: colourBG.withOpacity(1),
         pattern: fillPattern,
         foregroundTransparency: 1.0 - (colourFG.alpha / 255.0),
         backgroundTransparency: 1.0 - (colourBG.alpha / 255.0),
-      );
+      ));
       shadow = VsdxShadow(
         color: shadowFG.withOpacity(1),
         offsetXInches: inheritedShadowOffsets.x,
@@ -3053,13 +3144,13 @@ class VsdBinaryParser {
           shadowOffsetY = input.readF64();
         } catch (_) {}
       }
-      fill = VsdxFill(
+      fill = _withClassicVsdGradient(VsdxFill(
         foreground: colourFG,
         background: colourBG,
         pattern: fillPattern,
         foregroundTransparency: fgTransparency,
         backgroundTransparency: bgTransparency,
-      );
+      ));
       shadow = VsdxShadow(
         color: shadowColor,
         offsetXInches: shadowOffsetX,

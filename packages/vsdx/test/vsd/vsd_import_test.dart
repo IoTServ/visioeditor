@@ -1022,6 +1022,79 @@ void main() {
       expect(withTxt.length, greaterThanOrEqualTo(0));
     });
 
+    test('classic VSD fill patterns 25-40 become libvisio gradients', () {
+      final bytes = _loadSample('tdf76829-datetime-format.vsd');
+      if (bytes == null) return;
+      final doc = const VsdDocumentParser().parse(bytes);
+
+      Iterable<VsdxShape> shapes(VsdxShape root) sync* {
+        yield root;
+        for (final child in root.children) {
+          yield* shapes(child);
+        }
+      }
+
+      final classic = <({int page, VsdxShape shape})>[
+        for (var page = 0; page < doc.pages.length; page++)
+          for (final root in doc.pages[page].shapes)
+            for (final shape in shapes(root))
+              if (shape.fill.pattern >= 25 && shape.fill.pattern <= 40)
+                (page: page, shape: shape),
+      ];
+      expect(classic, hasLength(22));
+      expect(
+        classic.map((entry) => entry.shape.fill.pattern).toSet(),
+        {25, 26, 27, 28, 29, 35, 40},
+      );
+      expect(classic.every((entry) => entry.shape.fill.hasGradient), isTrue);
+
+      final axial = classic
+          .where((entry) => const {26, 29}.contains(entry.shape.fill.pattern));
+      expect(
+        axial.every((entry) => entry.shape.fill.gradient!.stops.length == 3),
+        isTrue,
+      );
+      for (final entry in axial) {
+        final fill = entry.shape.fill;
+        expect(fill.gradient!.stops.map((stop) => stop.position), [0, 0.5, 1]);
+        expect(fill.gradient!.stops[0].color, fill.background);
+        expect(fill.gradient!.stops[1].color, fill.foreground);
+        expect(fill.gradient!.stops[2].color, fill.background);
+      }
+
+      final centred = classic.where((entry) => entry.shape.fill.pattern == 40);
+      expect(centred, hasLength(2));
+      for (final entry in centred) {
+        final fill = entry.shape.fill;
+        expect(fill.gradient!.type, VsdxGradientType.radial);
+        expect(fill.gradient!.dir, 4);
+        expect(fill.gradient!.stops.first.color, fill.foreground);
+        expect(fill.gradient!.stops.last.color, fill.background);
+      }
+
+      // Synthesis must retain converted gradients for app/LibreOffice parity.
+      final reopened = const DocumentParser().parse(synthesizeVsdx(doc));
+      for (final entry in classic) {
+        final after = reopened.pages[entry.page].findShapeById(entry.shape.id)!;
+        expect(after.fill.pattern, entry.shape.fill.pattern);
+        expect(after.fill.gradient, isNotNull);
+        expect(after.fill.gradient!.type, entry.shape.fill.gradient!.type);
+        expect(after.fill.gradient!.dir, entry.shape.fill.gradient!.dir);
+        expect(after.fill.gradient!.angleRad,
+            closeTo(entry.shape.fill.gradient!.angleRad, 1e-9));
+        expect(after.fill.gradient!.stops.length,
+            entry.shape.fill.gradient!.stops.length);
+        for (var i = 0; i < after.fill.gradient!.stops.length; i++) {
+          final beforeStop = entry.shape.fill.gradient!.stops[i];
+          final afterStop = after.fill.gradient!.stops[i];
+          expect(afterStop.position, closeTo(beforeStop.position, 1e-9));
+          expect(afterStop.color, beforeStop.color);
+          expect(afterStop.transparency,
+              closeTo(beforeStop.transparency, 1e-9));
+        }
+      }
+    });
+
     test('date TextFields format Visio serial as calendar date', () {
       var bytes = _loadSample('tdf76829-numeric-format.vsd');
       if (bytes == null) {

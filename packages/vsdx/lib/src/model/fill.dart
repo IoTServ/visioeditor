@@ -1,7 +1,8 @@
 /// Shape-level fill description.
 ///
 /// Solid / theme colours, transparencies, `FillPattern` (canvas+SVG render
-/// hatch ids 2–16; other ids fall back to solid), and optional gradient stops.
+/// hatch ids 2–16; the VSD parser converts classic gradient ids 25–40 to
+/// [gradient]), and optional gradient stops.
 library;
 
 import 'package:meta/meta.dart';
@@ -39,8 +40,9 @@ class VsdxFill {
   final double foregroundTransparency;
   final double backgroundTransparency;
 
-  /// `0` = no fill. `1` = solid. `2–16` = hatch (canvas + SVG). Other ids
-  /// fall back to solid foreground.
+  /// `0` = no fill. `1` = solid. `2–16` = hatch (canvas + SVG). Binary VSD
+  /// gradient ids 25–40 retain their original value and also populate
+  /// [gradient]. Other ids fall back to solid foreground.
   final int pattern;
 
   /// Theme slot to use when [foreground] is `null`. See `lib/model/theme.dart`
