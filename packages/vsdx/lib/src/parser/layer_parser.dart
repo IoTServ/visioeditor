@@ -31,26 +31,25 @@ class LayerParser {
         final idStr = row.getAttribute('IX') ?? row.getAttribute('N');
         final id = idStr == null ? null : int.tryParse(idStr);
         if (id == null) continue;
-        // Name: keep cached V= when F=Inh so equal-path sync does not rewrite
-        // a Visio-cached layer name as the synthetic Layer-$id fallback.
+        // libvisio reads Layer row cells directly from V= without inspecting
+        // F=. Keep every cached value when F=Inh so parsing and equal-path
+        // synthesis preserve the same layer behavior.
         final name = _cellStringCached(row, 'Name') ?? 'Layer-$id';
         out.add(VsdxLayer(
           id: id,
           name: name,
-          visible: (_cellInt(row, 'Visible') ?? 1) != 0,
-          print: (_cellInt(row, 'Print') ?? 1) != 0,
-          active: (_cellInt(row, 'Active') ?? 0) != 0,
-          locked: (_cellInt(row, 'Lock') ?? 0) != 0,
-          snap: (_cellInt(row, 'Snap') ?? 1) != 0,
-          glue: (_cellInt(row, 'Glue') ?? 1) != 0,
+          visible: (_cellIntCached(row, 'Visible') ?? 1) != 0,
+          print: (_cellIntCached(row, 'Print') ?? 1) != 0,
+          active: (_cellIntCached(row, 'Active') ?? 0) != 0,
+          locked: (_cellIntCached(row, 'Lock') ?? 0) != 0,
+          snap: (_cellIntCached(row, 'Snap') ?? 1) != 0,
+          glue: (_cellIntCached(row, 'Glue') ?? 1) != 0,
           color: VsdxColor.tryParse(
-            _cellString(row, 'Color'),
+            _cellStringCached(row, 'Color'),
             palette: colorPalette,
           ),
-          // ColorTrans / Status: keep cached V= even when F=Inh so a non-zero
-          // transparency / status is not forced to the Visio default 0.
           colorTrans: _cellDoubleCached(row, 'ColorTrans') ?? 0,
-          nameUniv: _cellString(row, 'NameUniv'),
+          nameUniv: _cellStringCached(row, 'NameUniv'),
           status: _cellIntCached(row, 'Status') ?? 0,
         ));
       }
@@ -90,22 +89,6 @@ class LayerParser {
   /// when source-cell absence must be distinguished from an explicit clear.
   static List<int> parseLayerMembers(XmlElement shape) =>
       parseLayerMembersOrNull(shape) ?? const <int>[];
-
-  String? _cellString(XmlElement parent, String name) {
-    final cell = findCell(parent, name);
-    if (cell == null) return null;
-    // F=Inh → treat as absent (use Visio defaults), same as LayerMember.
-    if (isInhFormula(cell.getAttribute('F'))) return null;
-    final v = cell.getAttribute('V');
-    if (v == null || v.isEmpty) return null;
-    return v;
-  }
-
-  int? _cellInt(XmlElement parent, String name) {
-    final s = _cellString(parent, name);
-    if (s == null) return null;
-    return int.tryParse(s) ?? double.tryParse(s)?.toInt();
-  }
 
   /// Read `V=` even when `F=Inh` (cached value Visio still stores).
   String? _cellStringCached(XmlElement parent, String name) {

@@ -74,21 +74,38 @@ void main() {
     expect(shapes[2].layerMemberIds, const <int>[2]);
   });
 
-  test('Layer Visible F=Inh uses default visible=true', () {
+  test('Layer row F=Inh keeps cached values like libvisio', () {
     const parser = LayerParser();
     final sheet = XmlDocument.parse('''
       <PageSheet>
         <Section N="Layer">
           <Row IX="0">
-            <Cell N="Name" V="Default"/>
+            <Cell N="Name" V="Cached layer" F="Inh"/>
             <Cell N="Visible" V="0" F="Inh"/>
+            <Cell N="Print" V="0" F="Inh"/>
+            <Cell N="Active" V="1" F="Inh"/>
             <Cell N="Lock" V="1" F="Inh"/>
+            <Cell N="Snap" V="0" F="Inh"/>
+            <Cell N="Glue" V="0" F="Inh"/>
+            <Cell N="Color" V="#ff0000" F="Inh"/>
+            <Cell N="ColorTrans" V="0.25" F="Inh"/>
+            <Cell N="NameUniv" V="CachedLayer" F="Inh"/>
+            <Cell N="Status" V="3" F="Inh"/>
           </Row>
         </Section>
       </PageSheet>
     ''').rootElement;
     final layer = parser.parseLayers(sheet).single;
-    expect(layer.visible, isTrue); // Inh → default 1
-    expect(layer.locked, isFalse); // Inh → default 0
+    expect(layer.name, 'Cached layer');
+    expect(layer.visible, isFalse);
+    expect(layer.print, isFalse);
+    expect(layer.active, isTrue);
+    expect(layer.locked, isTrue);
+    expect(layer.snap, isFalse);
+    expect(layer.glue, isFalse);
+    expect(layer.color, const VsdxColor(0xFFFF0000));
+    expect(layer.colorTrans, closeTo(0.25, 1e-9));
+    expect(layer.nameUniv, 'CachedLayer');
+    expect(layer.status, 3);
   });
 }

@@ -78,6 +78,48 @@ Uint8List _missingPagePropsPackage() => _rewritePackage(
       },
     );
 
+Uint8List _layerCachedValuePackage({required bool visible}) {
+  const parser = DocumentParser();
+  const writer = VsdxWriter();
+  final blank = writer.emptyDocument();
+  var document = parser.parse(blank);
+  final page = document.pages.single.copyWith(
+    layers: <VsdxLayer>[
+      VsdxLayer(
+        id: 0,
+        name: 'Cached layer',
+        visible: visible,
+        print: false,
+        color: const VsdxColor(0xFFFF0000),
+      ),
+    ],
+  );
+  final shape = VsdxShapeFactory.rectangle(
+    id: page.nextFreeShapeId(),
+    pinX: 2,
+    pinY: 2,
+    width: 2,
+    height: 1,
+  ).copyWith(
+    text: 'LAYER_INH_CACHE',
+    layerMemberIds: const <int>[0],
+  );
+  document = document.replacePage(0, page.addShape(shape));
+  final bytes = writer.write(originalBytes: blank, edited: document);
+  return _rewritePackage(
+    bytes,
+    <String, Map<String, String>>{
+      'visio/pages/pages.xml': <String, String>{
+        '<Cell N="Visible" V="${visible ? 1 : 0}"/>':
+            '<Cell N="Visible" V="${visible ? 1 : 0}" F="Inh"/>',
+        '<Cell N="Print" V="0"/>': '<Cell N="Print" V="0" F="Inh"/>',
+        '<Cell N="Color" V="#FF0000"/>':
+            '<Cell N="Color" V="#FF0000" F="Inh"/>',
+      },
+    },
+  );
+}
+
 void main() {
   test('Page uses display Name, XML true, and ignores rows without ID', () {
     final bytes = _rewritePackage(
@@ -386,6 +428,29 @@ void main() {
     expect(page.pageSheet.shadowOffsetXInches, 0);
     expect(page.pageSheet.shadowOffsetYInches, 0);
   });
+
+  test('Layer row cached values match libvisio F=Inh semantics', () {
+    final page = const DocumentParser()
+        .parse(_layerCachedValuePackage(visible: false))
+        .pages
+        .single;
+    final layer = page.layers.single;
+
+    expect(layer.visible, isFalse);
+    expect(layer.print, isFalse);
+    expect(layer.color, const VsdxColor(0xFFFF0000));
+    expect(page.shapes.single.layerMemberIds, const <int>[0]);
+  });
+
+  test('Layer Color cached V with F=Inh matches the libvisio oracle', () {
+    final pages = oracle!.svgPages(_layerCachedValuePackage(visible: false));
+
+    expect(pages, isNotNull);
+    expect(pages!.single, contains('stroke: #ff0000'));
+    // librevenge's SVG generator does not serialize libvisio's draw:display
+    // property, so visibility itself is covered by the parsed model assertion.
+    expect(pages.single, contains('LAYER_INH_CACHE'));
+  }, skip: oracle == null ? 'libvisio oracle is unavailable' : null);
 
   test('missing VSDX page dimensions match the libvisio oracle', () {
     final pages = oracle!.svgPages(_missingPagePropsPackage());

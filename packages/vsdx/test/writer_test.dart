@@ -9412,7 +9412,7 @@ void main() {
       0,
       doc.pages.first.copyWith(
         layers: const [
-          VsdxLayer(id: 0, name: 'Default', visible: true),
+          VsdxLayer(id: 0, name: 'Default', visible: false),
         ],
       ),
     );
@@ -9423,11 +9423,11 @@ void main() {
     var pagesXml = utf8.decode(pagesFile.content as List<int>);
     pagesXml = pagesXml.replaceFirst(
       RegExp(r'<Cell N="Visible"[^/]*/>'),
-      '<Cell N="Visible" V="1" F="Inh"/>',
+      '<Cell N="Visible" V="0" F="Inh"/>',
     );
     mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
     doc = parser.parse(mid);
-    expect(doc.pages.first.layers.single.visible, isTrue);
+    expect(doc.pages.first.layers.single.visible, isFalse);
     // Shape touch forces a write; layers model stays equal.
     final id = doc.pages.first.nextFreeShapeId();
     doc = doc.replacePage(
@@ -9456,7 +9456,8 @@ void main() {
           (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'Visible',
         );
     expect(cell.getAttribute('F'), isNull);
-    expect(cell.getAttribute('V'), '1');
+    expect(cell.getAttribute('V'), '0');
+    expect(parser.parse(out).pages.first.layers.single.visible, isFalse);
   });
 
   test('GlowColor / ShadowForegnd F=Inh scrubbed while effects stay on', () {
@@ -12101,7 +12102,7 @@ void main() {
     expect(after.userProperties.first.calendar, isNull);
   });
 
-  test('Layer Color F=Inh dropped when model color is null', () {
+  test('Layer Color F=Inh keeps cached value through synthesis', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     doc = doc.replacePage(
@@ -12114,24 +12115,27 @@ void main() {
     );
     var mid = writer.write(originalBytes: blank, edited: doc);
     final archive = ZipDecoder().decodeBytes(mid);
-    final pageFile =
-        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
-    var pageXml = utf8.decode(pageFile.content as List<int>);
-    // Inject stale Color F=Inh (model has no colour).
-    if (!pageXml.contains('N="Color"')) {
-      pageXml = pageXml.replaceFirst(
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    // libvisio consumes the cached V even when the formula is Inh.
+    if (!pagesXml.contains('N="Color"')) {
+      pagesXml = pagesXml.replaceFirstMapped(
         RegExp(r'(<Section N="Layer">\s*<Row[^>]*>)'),
-        r'$1<Cell N="Color" V="#ff0000" F="Inh"/>',
+        (m) => '${m.group(1)}<Cell N="Color" V="#ff0000" F="Inh"/>',
       );
     } else {
-      pageXml = pageXml.replaceFirst(
+      pagesXml = pagesXml.replaceFirst(
         RegExp(r'<Cell N="Color"[^/]*/>'),
         '<Cell N="Color" V="#ff0000" F="Inh"/>',
       );
     }
-    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
     doc = parser.parse(mid);
-    expect(doc.pages.first.layers.first.color, isNull);
+    expect(
+      doc.pages.first.layers.first.color,
+      const VsdxColor(0xFFFF0000),
+    );
     doc = doc.replacePage(
       0,
       doc.pages.first.copyWith(
@@ -12142,17 +12146,24 @@ void main() {
     final outXml = utf8.decode(
       ZipDecoder()
           .decodeBytes(out)
-          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
           .content as List<int>,
     );
+    final colorCell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'Color',
+    );
+    expect(colorCell.getAttribute('F'), isNull);
+    expect(colorCell.getAttribute('V'), '#FF0000');
     expect(
-      RegExp(r'<Section N="Layer"[\s\S]*?N="Color"[^>]*F="Inh"')
-          .hasMatch(outXml),
-      isFalse,
+      parser.parse(out).pages.first.layers.first.color,
+      const VsdxColor(0xFFFF0000),
     );
   });
 
-  test('Layer NameUniv F=Inh dropped when model nameUniv is null', () {
+  test('Layer NameUniv F=Inh keeps cached value through synthesis', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     doc = doc.replacePage(
@@ -12165,23 +12176,23 @@ void main() {
     );
     var mid = writer.write(originalBytes: blank, edited: doc);
     final archive = ZipDecoder().decodeBytes(mid);
-    final pageFile =
-        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
-    var pageXml = utf8.decode(pageFile.content as List<int>);
-    if (!pageXml.contains('N="NameUniv"')) {
-      pageXml = pageXml.replaceFirst(
+    final pagesFile =
+        archive.firstWhere((f) => f.name.endsWith('pages/pages.xml'));
+    var pagesXml = utf8.decode(pagesFile.content as List<int>);
+    if (!pagesXml.contains('N="NameUniv"')) {
+      pagesXml = pagesXml.replaceFirstMapped(
         RegExp(r'(<Section N="Layer">\s*<Row[^>]*>)'),
-        r'$1<Cell N="NameUniv" V="Default" F="Inh"/>',
+        (m) => '${m.group(1)}<Cell N="NameUniv" V="Default" F="Inh"/>',
       );
     } else {
-      pageXml = pageXml.replaceFirst(
+      pagesXml = pagesXml.replaceFirst(
         RegExp(r'<Cell N="NameUniv"[^/]*/>'),
         '<Cell N="NameUniv" V="Default" F="Inh"/>',
       );
     }
-    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
+    mid = _rezipWith(mid, pagesFile.name, utf8.encode(pagesXml));
     doc = parser.parse(mid);
-    expect(doc.pages.first.layers.first.nameUniv, isNull);
+    expect(doc.pages.first.layers.first.nameUniv, 'Default');
     doc = doc.replacePage(
       0,
       doc.pages.first.copyWith(
@@ -12192,14 +12203,18 @@ void main() {
     final outXml = utf8.decode(
       ZipDecoder()
           .decodeBytes(out)
-          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
           .content as List<int>,
     );
-    expect(
-      RegExp(r'<Section N="Layer"[\s\S]*?N="NameUniv"[^>]*F="Inh"')
-          .hasMatch(outXml),
-      isFalse,
-    );
+    final nameUnivCell = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'NameUniv',
+        );
+    expect(nameUnivCell.getAttribute('F'), isNull);
+    expect(nameUnivCell.getAttribute('V'), 'Default');
+    expect(parser.parse(out).pages.first.layers.first.nameUniv, 'Default');
   });
 
   test('Layer Color/NameUniv clear on patch', () {
