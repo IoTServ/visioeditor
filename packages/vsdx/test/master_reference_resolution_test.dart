@@ -166,8 +166,12 @@ void main() {
         .single
         .children
         .single;
-    expect(child.width, 1);
-    expect(child.height, 1);
+    // libvisio ignores the nested Master because the parent has no master
+    // context; the cleared XForm therefore keeps its zero defaults.
+    expect(child.width, 0);
+    expect(child.height, 0);
+    expect(child.locPinXInches, 0);
+    expect(child.locPinYInches, 0);
   });
 
   test('Begin and End cells identify 1-D shapes without Type', () {

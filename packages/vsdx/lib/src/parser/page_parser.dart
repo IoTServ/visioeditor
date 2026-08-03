@@ -188,20 +188,22 @@ class PageParser {
         0;
     final width = readLengthInches(shapeEl, 'Width', inheritFrom: proto?.width) ??
         proto?.width ??
-        1.0;
+        0.0;
     final height =
         readLengthInches(shapeEl, 'Height', inheritFrom: proto?.height) ??
             proto?.height ??
-            1.0;
+            0.0;
     // LocPinX/LocPinY — the in-shape point that sits on the pin (and the
     // rotation centre). Usually the centre for 2-D shapes, but connectors and
     // some stencils pin off-centre; keep it so geometry maps to the right spot.
     final locPinX =
         readLengthInches(shapeEl, 'LocPinX', inheritFrom: proto?.locPinXInches) ??
-            proto?.locPinXInches;
+            proto?.locPinXInches ??
+            0.0;
     final locPinY =
         readLengthInches(shapeEl, 'LocPinY', inheritFrom: proto?.locPinYInches) ??
-            proto?.locPinYInches;
+            proto?.locPinYInches ??
+            0.0;
     final angleRad =
         readAngleRadians(shapeEl, 'Angle', inheritFrom: proto?.angleRad) ??
             proto?.angleRad ??
@@ -220,23 +222,33 @@ class PageParser {
             false;
 
     final shapeTypeAttr = shapeEl.getAttribute('Type');
-    final has1DEndpoints = findCell(shapeEl, 'BeginX') != null ||
-        findCell(shapeEl, 'EndX') != null;
-    // libvisio materialises a 1-D transform whenever Begin/End cells exist;
-    // producer output does not need to repeat Type="Shape" for that signal.
-    final is1D = has1DEndpoints || proto?.is1D == true;
+    final has1DTransform = const <String>[
+      'BeginX',
+      'BeginY',
+      'BegTrigger',
+      'EndTrigger',
+      'EndX',
+      'EndY',
+    ].any((name) => findCell(shapeEl, name) != null);
+    // libvisio allocates XForm1D when any endpoint or trigger cell exists;
+    // producer output does not need a Type attribute or both X coordinates.
+    final is1D = has1DTransform || proto?.is1D == true;
     final beginX =
         readLengthInches(shapeEl, 'BeginX', inheritFrom: proto?.beginX) ??
-            proto?.beginX;
+            proto?.beginX ??
+            (is1D ? 0.0 : null);
     final beginY =
         readLengthInches(shapeEl, 'BeginY', inheritFrom: proto?.beginY) ??
-            proto?.beginY;
+            proto?.beginY ??
+            (is1D ? 0.0 : null);
     final endX =
         readLengthInches(shapeEl, 'EndX', inheritFrom: proto?.endX) ??
-            proto?.endX;
+            proto?.endX ??
+            (is1D ? 0.0 : null);
     final endY =
         readLengthInches(shapeEl, 'EndY', inheritFrom: proto?.endY) ??
-            proto?.endY;
+            proto?.endY ??
+            (is1D ? 0.0 : null);
 
     // Nested <Shapes> ⇒ a group. Children inherit the same master context so
     // their `MasterShape="N"` references resolve against master [master].

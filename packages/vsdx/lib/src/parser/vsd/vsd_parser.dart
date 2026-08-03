@@ -78,6 +78,25 @@ List<T> vsdReorderById<T>(
 /// unsigned 32-bit integer, so values such as -2 must remain `0xfffffffe`.
 int vsdV5UnsignedInt(int signedValue) => signedValue & 0xffffffff;
 
+typedef VsdShapeXFormValues = ({
+  double pinX,
+  double pinY,
+  double width,
+  double height,
+  double locPinX,
+  double locPinY,
+});
+
+/// Default binary VSD shape transform, matching libvisio's `XForm()`.
+const VsdShapeXFormValues vsdDefaultShapeXForm = (
+  pinX: 0,
+  pinY: 0,
+  width: 0,
+  height: 0,
+  locPinX: 0,
+  locPinY: 0,
+);
+
 typedef VsdPagePropsValues = ({
   double pageWidth,
   double pageHeight,
@@ -320,12 +339,12 @@ class _ShapeDraft {
   int lineStyleId = _minusOne;
   int fillStyleId = _minusOne;
   int textStyleId = _minusOne;
-  double pinX = 0;
-  double pinY = 0;
-  double width = 1;
-  double height = 1;
-  double locPinX = 0.5;
-  double locPinY = 0.5;
+  double pinX = vsdDefaultShapeXForm.pinX;
+  double pinY = vsdDefaultShapeXForm.pinY;
+  double width = vsdDefaultShapeXForm.width;
+  double height = vsdDefaultShapeXForm.height;
+  double locPinX = vsdDefaultShapeXForm.locPinX;
+  double locPinY = vsdDefaultShapeXForm.locPinY;
   double angle = 0;
   bool flipX = false;
   bool flipY = false;
@@ -5896,11 +5915,10 @@ class VsdBinaryParser {
       name: d.shapeName ?? 'Sheet.${d.id}',
       pinX: d.pinX,
       pinY: d.pinY,
-      // 1D shapes store Width/Height as End−Begin, which may be negative.
-      // Only clamp non-positive dimensions for 2D shapes (libvisio keeps the
-      // signed 1D extents so LocPin / synthesized .vsdx stay aligned).
-      width: d.is1D ? d.width : (d.width <= 0 ? 1.0 : d.width),
-      height: d.is1D ? d.height : (d.height <= 0 ? 1.0 : d.height),
+      // libvisio preserves zero/negative XForm extents. Missing XFormData
+      // therefore stays 0 × 0 instead of becoming an invented unit square.
+      width: d.width,
+      height: d.height,
       locPinXInches: d.locPinX,
       locPinYInches: d.locPinY,
       angleRad: d.angle,

@@ -163,6 +163,43 @@ void main() {
     expect(shapes[1].name, 'Sheet.4');
   });
 
+  test('Sparse shape XForms keep libvisio zero defaults', () {
+    final pageXml = XmlDocument.parse(
+      '<PageContents><Shapes>'
+      '<Shape ID="1"/>'
+      '<Shape ID="2"><Cell N="BeginY" V="2"/></Shape>'
+      '<Shape ID="3"><Cell N="BegTrigger" V="9" '
+      'F="_XFTRIGGER(Sheet.9!EventXFMod)"/></Shape>'
+      '</Shapes></PageContents>',
+    );
+
+    final shapes = const PageParser()
+        .parseShapes(pageXml, partName: '/visio/pages/page1.xml');
+    final sparse = shapes[0];
+    expect(sparse.pinX, 0);
+    expect(sparse.pinY, 0);
+    expect(sparse.width, 0);
+    expect(sparse.height, 0);
+    expect(sparse.locPinXInches, 0);
+    expect(sparse.locPinYInches, 0);
+    expect(sparse.effectiveLocPinX, 0);
+    expect(sparse.effectiveLocPinY, 0);
+
+    final beginYOnly = shapes[1];
+    expect(beginYOnly.is1D, isTrue);
+    expect(beginYOnly.beginX, 0);
+    expect(beginYOnly.beginY, 2);
+    expect(beginYOnly.endX, 0);
+    expect(beginYOnly.endY, 0);
+
+    final triggerOnly = shapes[2];
+    expect(triggerOnly.is1D, isTrue);
+    expect(triggerOnly.beginX, 0);
+    expect(triggerOnly.beginY, 0);
+    expect(triggerOnly.endX, 0);
+    expect(triggerOnly.endY, 0);
+  });
+
   test('Page drawing scale materializes drawable coordinates like libvisio',
       () {
     final bytes = _scaledDrawingPackage();
