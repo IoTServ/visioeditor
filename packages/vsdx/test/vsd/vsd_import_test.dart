@@ -67,11 +67,20 @@ void main() {
             .where((s) => s.geometries.isNotEmpty),
         isNotEmpty,
       );
-      // This line-format fixture has no Fill records/styles. libvisio keeps
-      // the baseline FillPattern=0 instead of inventing white solid fills.
+      // Some 1-D line samples reference a StyleSheet with a solid fill even
+      // though their geometry cannot be filled. Keep that inherited cell in
+      // the model (libvisio applies master → instance style → local records)
+      // without painting a filled connector body.
+      final fillPatterns = <int, int>{
+        for (final shape in result.document.pages.first.shapes)
+          shape.id: shape.fill.pattern,
+      };
+      expect(fillPatterns.values, contains(1));
       expect(
         result.document.pages.first.shapes
-            .every((shape) => shape.fill.pattern == 0),
+            .where((shape) => shape.fill.pattern != 0)
+            .every((shape) =>
+                shape.is1D || shape.geometries.every((g) => g.noFill)),
         isTrue,
       );
       // 1D XForm Width/Height = End−Begin may be negative — do not clamp.
@@ -101,8 +110,11 @@ void main() {
       expect(again.pages.first.shapes.length,
           result.document.pages.first.shapes.length);
       expect(
-        again.pages.first.shapes.every((shape) => shape.fill.pattern == 0),
-        isTrue,
+        <int, int>{
+          for (final shape in again.pages.first.shapes)
+            shape.id: shape.fill.pattern,
+        },
+        fillPatterns,
       );
       expect(
         again.pages.first.shapes.where((s) => s.is1D).any((s) => s.height < 0),
@@ -915,8 +927,23 @@ void main() {
       );
       expect(svg, isNot(contains('#808080')));
 
+      // The dimension band inherits StyleSheet 41 through its master. The
+      // instance has no local Line/Fill records, so the referenced master
+      // style must remain visible (matching libvisio's white band and black
+      // outline) instead of falling back to empty model defaults.
+      final dimension = parsed.pages.first.findShapeById(2)!;
+      expect(dimension.fill.pattern, 1);
+      expect(dimension.fill.foreground, VsdxColor.white);
+      expect(dimension.line.pattern, 1);
+      expect(dimension.line.color, VsdxColor.black);
+
       final reopened = const DocumentParser().parse(synthesizeVsdx(parsed));
       expect(reopened.pages.first.findShapeById(1)!.geometries, isEmpty);
+      final reopenedDimension = reopened.pages.first.findShapeById(2)!;
+      expect(reopenedDimension.fill.pattern, dimension.fill.pattern);
+      expect(reopenedDimension.fill.foreground, dimension.fill.foreground);
+      expect(reopenedDimension.line.pattern, dimension.line.pattern);
+      expect(reopenedDimension.line.color, dimension.line.color);
     });
 
     test('bitmaps.vsd embeds raster ForeignData when present', () {

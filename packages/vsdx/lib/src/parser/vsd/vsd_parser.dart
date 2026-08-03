@@ -2405,6 +2405,18 @@ class VsdBinaryParser {
           ..italic = master.italic;
       }
     }
+    // Match VSDContentCollector::collectShape ordering: seed from the master,
+    // then apply the shape's referenced styles. Any local Line or
+    // FillAndShadow record follows this Shape record and remains the final
+    // override. Applying styles only as a flush-time `??=` fallback caused a
+    // non-null master value to suppress the instance StyleSheet entirely.
+    final instanceLineStyle = _resolveLineStyle(lineStyle);
+    if (instanceLineStyle != null) d.line = instanceLineStyle;
+    if (fillStyle != _minusOne) {
+      final instanceFillStyle = _resolveFillStyle(fillStyle);
+      if (instanceFillStyle.$1 != null) d.fill = instanceFillStyle.$1;
+      if (instanceFillStyle.$2 != null) d.shadow = instanceFillStyle.$2;
+    }
     _shape = d;
     _currentShapeId = _minusOne;
   }
