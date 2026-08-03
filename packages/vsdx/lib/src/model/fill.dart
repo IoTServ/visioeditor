@@ -9,6 +9,13 @@ import 'package:meta/meta.dart';
 import '../utils/color.dart';
 import 'effects.dart';
 
+/// Baseline fill before a parsed Visio shape applies a master or style.
+///
+/// libvisio starts with `FillPattern=0`. Its inactive internal colour slots
+/// must stay unresolved in the editable model so a save does not invent
+/// `FillForegnd` / `FillBkgnd` cells that were absent from the source.
+const VsdxFill libvisioShapeFillDefault = VsdxFill(pattern: 0);
+
 @immutable
 class VsdxFill {
   const VsdxFill({

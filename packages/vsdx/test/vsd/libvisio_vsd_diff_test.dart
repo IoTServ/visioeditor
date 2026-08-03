@@ -90,6 +90,17 @@ void main() {
             .toSet();
         expect(modelWidths, referenceWidths,
             reason: 'page drawing scale must apply to VSD line widths');
+
+        final referenceFontSizes =
+            reference.expand(_svgFontSizesPt).map(_round6).toSet();
+        final modelFontSizes = _allShapes(doc)
+            .where((shape) => !shape.richText.textBlock.hideText)
+            .expand((shape) => shape.richText.runs)
+            .where((run) => run.text.trim().isNotEmpty)
+            .map((run) => _round6(run.charStyle.fontSizeInches * 72))
+            .toSet();
+        expect(modelFontSizes, referenceFontSizes,
+            reason: 'page drawing scale must not alter VSD font sizes');
       }
       if (const <String>{
         'tdf154379-DrawingUnits-type.vsd',
@@ -185,6 +196,11 @@ List<File> _fixtures() {
 
 Iterable<double> _svgStrokeWidthsPt(String svg) =>
     RegExp(r'stroke-width:\s*([0-9.]+)')
+        .allMatches(svg)
+        .map((match) => double.parse(match.group(1)!));
+
+Iterable<double> _svgFontSizesPt(String svg) =>
+    RegExp(r'font-size="([0-9.]+)"')
         .allMatches(svg)
         .map((match) => double.parse(match.group(1)!));
 

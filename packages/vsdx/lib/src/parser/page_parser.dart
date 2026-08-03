@@ -281,9 +281,7 @@ class PageParser {
         fillStyleId != null ? _stylesheets.resolveFill(fillStyleId) : null;
     final fill = _style.parseFill(
       shapeEl,
-      defaults: proto?.fill ??
-          sheetFill ??
-          (isForeign ? const VsdxFill(pattern: 0) : VsdxFill.defaultFill),
+      defaults: proto?.fill ?? sheetFill ?? libvisioShapeFillDefault,
     );
     final lineStyleId = int.tryParse(shapeEl.getAttribute('LineStyle') ?? '') ??
         proto?.lineStyleId;

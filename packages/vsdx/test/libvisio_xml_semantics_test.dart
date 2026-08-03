@@ -184,6 +184,9 @@ void main() {
     expect(sparse.locPinYInches, 0);
     expect(sparse.effectiveLocPinX, 0);
     expect(sparse.effectiveLocPinY, 0);
+    expect(sparse.fill.pattern, 0);
+    expect(sparse.fill.foreground, isNull);
+    expect(sparse.fill.background, isNull);
 
     final beginYOnly = shapes[1];
     expect(beginYOnly.is1D, isTrue);
@@ -259,8 +262,9 @@ void main() {
     final pages = oracle!.svgPages(_scaledDrawingPackage());
     expect(pages, isNotNull);
     expect(pages, hasLength(1));
+    expect(pages!.single, contains('fill: none;'));
     final size = RegExp(r'width="([0-9.]+)in"\s+height="([0-9.]+)in"')
-        .firstMatch(pages!.single);
+        .firstMatch(pages.single);
     expect(size, isNotNull);
     expect(double.parse(size!.group(1)!), closeTo(17, 0.001));
     expect(double.parse(size.group(2)!), closeTo(22, 0.001));

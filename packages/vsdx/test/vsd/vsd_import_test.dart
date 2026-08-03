@@ -67,16 +67,11 @@ void main() {
             .where((s) => s.geometries.isNotEmpty),
         isNotEmpty,
       );
-      // Default / style-less solid fills must carry an explicit colour so
-      // 万兴图示 does not treat FillPattern=1 without FillForegnd as hollow.
-      final solid = result.document.pages.first.shapes
-          .where((s) => s.fill.pattern != 0);
-      expect(solid, isNotEmpty);
+      // This line-format fixture has no Fill records/styles. libvisio keeps
+      // the baseline FillPattern=0 instead of inventing white solid fills.
       expect(
-        solid.every(
-          (s) =>
-              s.fill.foreground != null || s.fill.themeForegroundIndex != null,
-        ),
+        result.document.pages.first.shapes
+            .every((shape) => shape.fill.pattern == 0),
         isTrue,
       );
       // 1D XForm Width/Height = End−Begin may be negative — do not clamp.
@@ -102,13 +97,7 @@ void main() {
       expect(again.pages.first.shapes.length,
           result.document.pages.first.shapes.length);
       expect(
-        again.pages.first.shapes
-            .where((s) => s.fill.pattern != 0)
-            .every(
-              (s) =>
-                  s.fill.foreground != null ||
-                  s.fill.themeForegroundIndex != null,
-            ),
+        again.pages.first.shapes.every((shape) => shape.fill.pattern == 0),
         isTrue,
       );
       expect(

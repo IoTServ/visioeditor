@@ -5373,7 +5373,8 @@ class VsdBinaryParser {
       r.x *= s;
       r.y *= s;
     }
-    if (d.fontSizeInches != null) d.fontSizeInches = d.fontSizeInches! * s;
+    // Font sizes and paragraph/text-block metrics stay in physical units;
+    // libvisio applies the drawing scale to the text frame, not typography.
     if (d.txtPinX != null) d.txtPinX = d.txtPinX! * s;
     if (d.txtPinY != null) d.txtPinY = d.txtPinY! * s;
     if (d.txtWidth != null) d.txtWidth = d.txtWidth! * s;
@@ -5934,12 +5935,7 @@ class VsdBinaryParser {
       text: text,
       richText: rich,
       geometries: tagStructuralHitBoxes(geoms),
-      fill: d.fill ??
-          const VsdxFill(
-            foreground: VsdxColor(0xFFFFFFFF),
-            background: VsdxColor(0xFFFFFFFF),
-            pattern: 1,
-          ),
+      fill: d.fill ?? libvisioShapeFillDefault,
       line: d.line ?? VsdxLine.defaultLine,
       shadow: d.shadow ?? VsdxShadow.disabled,
       is1D: d.is1D,

@@ -14313,8 +14313,7 @@ void main() {
 
   test('group without FillPattern cell does not get pattern=1 injected', () {
     // Chinese Edraw fixtures use bare groups (no Fill* cells). Parser defaults
-    // pattern=1; equal-path must not materialise FillPattern alone or Edraw
-    // reports fill-no-Foregnd on the container.
+    // to libvisio's pattern=0; equal-path must not materialise FillPattern.
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final a = doc.pages.first.nextFreeShapeId();
@@ -14348,7 +14347,7 @@ void main() {
     }
     mid = _rezipWith(mid, pageFile.name, utf8.encode(docXml.toXmlString()));
     doc = parser.parse(mid);
-    expect(doc.pages.first.findShapeById(gid)!.fill.pattern, 1);
+    expect(doc.pages.first.findShapeById(gid)!.fill.pattern, 0);
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
