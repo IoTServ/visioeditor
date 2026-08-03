@@ -1032,10 +1032,28 @@ void main() {
           .shapes
           .map((s) => s.richText.plainText)
           .toList();
-      expect(texts.any((t) => t.contains('THEDOC')), isTrue);
-      expect(texts.any((t) => t.contains('thedoc')), isTrue);
+      // TextField may precede its shape-local Name record. Resolve the id at
+      // shape flush (as libvisio does), rather than prematurely falling back
+      // to the document Name2 entry `TheDoc`.
+      expect(texts.any((t) => t.contains('BARTOSZ KOSIOREK')), isTrue);
+      expect(texts.any((t) => t.contains('bartosz kosiorek')), isTrue);
       // Unformatted / StrNormal keeps original casing.
-      expect(texts.any((t) => t.contains('TheDoc')), isTrue);
+      expect(texts.any((t) => t.contains('Bartosz Kosiorek')), isTrue);
+      expect(texts.any((t) => t.contains('TheDoc')), isFalse);
+
+      final synthesized = synthesizeVsdx(
+        const VsdDocumentParser().parse(bytes),
+      );
+      final reopenedTexts = const DocumentParser()
+          .parse(synthesized)
+          .pages
+          .first
+          .shapes
+          .map((s) => s.richText.plainText)
+          .toList();
+      expect(reopenedTexts.any((t) => t.contains('Bartosz Kosiorek')), isTrue);
+      expect(reopenedTexts.any((t) => t.contains('BARTOSZ KOSIOREK')), isTrue);
+      expect(reopenedTexts.any((t) => t.contains('bartosz kosiorek')), isTrue);
     });
 
     test('page ShapeList order is applied to root z-order', () {

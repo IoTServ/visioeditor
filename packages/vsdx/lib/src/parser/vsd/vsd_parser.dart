@@ -473,6 +473,11 @@ class _ShapeDraft {
   /// byte). Null entries are string fields.
   final fieldRaw =
       <({double number, int cellType, int format, String? customFormat})?>[];
+  /// Parallel deferred string-field references. Binary TextField records can
+  /// precede their shape-local Name records, so resolving them while reading
+  /// the chunk incorrectly falls back to an unrelated document Name2 entry.
+  final fieldStringRefs =
+      <({int nameId, int format, int formatStringId})?>[];
   /// Shape-local Name table (libvisio `m_shape.m_names`) — format ids /
   /// string-field payloads, NOT the shape display name.
   final localNames = <int, String>{};
@@ -1480,6 +1485,7 @@ class VsdBinaryParser {
     if (_isStencilStarted) {
       // ShapeData can follow its geometry row in a stencil stream.
       _resolvePendingShapeData(d);
+      _resolveStringFields(d, null);
       final bucket = _currentStencilShapes;
       if (bucket != null) {
         bucket[d.id] = d;
@@ -1489,6 +1495,7 @@ class VsdBinaryParser {
 
     if (_currentPage == null) return;
     final master = _applyMasterInheritance(d);
+    _resolveStringFields(d, master);
     d.shapeName ??= _currentPage!.elementNames[d.id];
     d.line ??= _resolveLineStyle(d.lineStyleId);
     final fillStyle = _resolveFillStyle(d.fillStyleId);
@@ -1711,12 +1718,16 @@ class VsdBinaryParser {
         int id,
         String text,
         ({double number, int cellType, int format, String? customFormat})? raw,
+        ({int nameId, int format, int formatStringId})? stringRef,
       })>[
         for (var i = 0; i < d.fieldDisplays.length; i++)
           (
             id: d.fieldIds[i],
             text: d.fieldDisplays[i],
             raw: i < d.fieldRaw.length ? d.fieldRaw[i] : null,
+            stringRef: i < d.fieldStringRefs.length
+                ? d.fieldStringRefs[i]
+                : null,
           ),
       ];
       final ordered = vsdReorderById(entries, d.fieldOrder, (e) => e.id);
@@ -1730,6 +1741,11 @@ class VsdBinaryParser {
         d.fieldRaw
           ..clear()
           ..addAll([for (final e in ordered) e.raw]);
+      }
+      if (d.fieldStringRefs.isNotEmpty) {
+        d.fieldStringRefs
+          ..clear()
+          ..addAll([for (final e in ordered) e.stringRef]);
       }
     }
   }
@@ -2168,12 +2184,16 @@ class VsdBinaryParser {
       d.fieldDisplays.addAll(master.fieldDisplays);
       d.fieldIds.addAll(master.fieldIds);
       d.fieldRaw.addAll(master.fieldRaw);
+      d.fieldStringRefs.addAll(
+        List<({int nameId, int format, int formatStringId})?>.filled(
+          master.fieldDisplays.length,
+          null,
+        ),
+      );
       return;
     }
-    // Instance has its own fields: keep value/cellType, take format from
-    // stencil when the instance format block is Unknown (libvisio
-    // collectNumericField). Skip CELL_TYPE_Number so Gantt date-serial
-    // Unknown→calendar heuristic is not overridden by a numeric master format.
+    // Numeric instance fields inherit the stencil's format below. String
+    // references are resolved separately after every Name record is known.
     const cellTypeNumber = 32;
     for (var i = 0; i < d.fieldRaw.length; i++) {
       final raw = d.fieldRaw[i];
@@ -2190,6 +2210,37 @@ class VsdBinaryParser {
         format: mRaw.format,
         customFormat: raw.customFormat ?? mRaw.customFormat,
       );
+    }
+  }
+
+  /// Resolve string TextField name ids at shape flush time. Name chunks are
+  /// not required to precede TextField chunks in VSD, and libvisio likewise
+  /// defers this lookup until its content collector receives the complete
+  /// shape. A -2 reference retains the stencil field value.
+  void _resolveStringFields(_ShapeDraft d, _ShapeDraft? master) {
+    const formatUnknown = 0xffff;
+    for (var i = 0; i < d.fieldStringRefs.length; i++) {
+      final ref = d.fieldStringRefs[i];
+      if (ref == null || i >= d.fieldDisplays.length) continue;
+      String display;
+      if (master != null &&
+          i < master.fieldDisplays.length &&
+          ref.nameId == -2) {
+        display = master.fieldDisplays[i];
+      } else if (ref.nameId >= 0) {
+        display = d.localNames[ref.nameId] ?? '';
+      } else {
+        display = '';
+      }
+      var format = ref.format;
+      if (format == formatUnknown && ref.formatStringId >= 0) {
+        format = _parseFormatId(
+              d.localNames[ref.formatStringId] ??
+                  _names[ref.formatStringId],
+            ) ??
+            formatUnknown;
+      }
+      d.fieldDisplays[i] = _applyStringFieldFormat(display, format);
     }
   }
 
@@ -3605,12 +3656,14 @@ class VsdBinaryParser {
         final cellType = input.readU8();
         if (cellType == stringWithoutUnit) {
           final nameId = input.readS16();
-          final text = nameId >= 0
-              ? (s.localNames[nameId] ?? _names[nameId] ?? '')
-              : '';
-          s.fieldDisplays.add(text);
+          s.fieldDisplays.add('');
           s.fieldIds.add(_header.id);
           s.fieldRaw.add(null);
+          s.fieldStringRefs.add((
+            nameId: nameId,
+            format: formatUnknown,
+            formatStringId: -1,
+          ));
         } else {
           final numeric = input.readF64();
           // Placeholder until `_finalizeVsd5FieldFormats` applies the
@@ -3625,6 +3678,7 @@ class VsdBinaryParser {
             format: fmt,
             customFormat: null,
           ));
+          s.fieldStringRefs.add(null);
         }
         return;
       }
@@ -3635,26 +3689,22 @@ class VsdBinaryParser {
         final nameId = input.readS32();
         input.skip(6);
         final formatStringId = input.readS32();
-        // Shape-local Name first (libvisio `m_names`), then document Name2.
-        var text = nameId >= 0
-            ? (s.localNames[nameId] ?? _names[nameId] ?? '')
-            : '';
-        // Format block may request StrUpper / StrLower (libvisio TODO; we apply).
+        // Defer the name and optional format-string lookup until the complete
+        // shape-local Name table is available. The inline format block itself
+        // is already self-contained.
         final formatNumber = _readFieldFormatBlock(
           input,
           initial: initial,
           blockBase: _version == 6 ? initial + 0x24 : initial + 0x36,
         );
-        var fmt = formatNumber;
-        if (fmt == formatUnknown && formatStringId >= 0) {
-          fmt = _parseFormatId(
-                s.localNames[formatStringId] ?? _names[formatStringId]) ??
-              formatUnknown;
-        }
-        text = _applyStringFieldFormat(text, fmt);
-        s.fieldDisplays.add(text);
+        s.fieldDisplays.add('');
         s.fieldIds.add(_header.id);
         s.fieldRaw.add(null);
+        s.fieldStringRefs.add((
+          nameId: nameId,
+          format: formatNumber,
+          formatStringId: formatStringId,
+        ));
         final end = initial + _header.dataLength;
         if (end <= input.length && end >= input.offset) input.seek(end);
         return;
@@ -3761,6 +3811,7 @@ class VsdBinaryParser {
         format: formatNumber,
         customFormat: customFormat,
       ));
+      s.fieldStringRefs.add(null);
       final end = initial + _header.dataLength;
       if (end <= input.length && end >= input.offset) input.seek(end);
     } catch (_) {}

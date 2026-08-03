@@ -33,6 +33,21 @@ void main() {
             reason: '${fixture.path} page $i height');
       }
 
+      final referenceFontSizes = reference
+          .expand(_svgVisibleFontSizesPt)
+          .map(_roundHalfPoint)
+          .toSet();
+      if (referenceFontSizes.isNotEmpty) {
+        final modelFontSizes = _allShapes(doc)
+            .where((shape) => !shape.richText.textBlock.hideText)
+            .expand((shape) => shape.richText.runs)
+            .where((run) => run.text.trim().isNotEmpty)
+            .map((run) => _roundHalfPoint(run.charStyle.fontSizeInches * 72))
+            .toSet();
+        expect(modelFontSizes, referenceFontSizes,
+            reason: '${fixture.path} visible text font sizes');
+      }
+
       if (fixture.uri.pathSegments.last == 'dwg.vsd') {
         final shadows =
             _allShapes(doc).where((shape) => shape.shadow.enabled).toList();
@@ -174,6 +189,17 @@ void main() {
                 '${fixture.path} page $pageIndex shape ${shape.id} LayerMem',
           );
         }
+        final beforePaths = _shapePaths(beforePage);
+        final afterPaths = _shapePaths(afterPage);
+        expect(afterPaths.keys, beforePaths.keys,
+            reason: '${fixture.path} page $pageIndex shape hierarchy');
+        for (final entry in beforePaths.entries) {
+          _expectSynthesizedShape(
+            entry.value,
+            afterPaths[entry.key]!,
+            reason: '${fixture.path} page $pageIndex ${entry.key}',
+          );
+        }
       }
     }, skip: skipReason);
   }
@@ -244,5 +270,106 @@ Iterable<double> _svgFontSizesPt(String svg) =>
     RegExp(r'font-size="([0-9.]+)"')
         .allMatches(svg)
         .map((match) => double.parse(match.group(1)!));
+
+Iterable<double> _svgVisibleFontSizesPt(String svg) sync* {
+  for (final match in RegExp(
+    r'<(?:\w+:)?tspan\b([^>]*)>(.*?)</(?:\w+:)?tspan>',
+    dotAll: true,
+  ).allMatches(svg)) {
+    if (_unescapeXml(match.group(2)!).trim().isEmpty) continue;
+    final size =
+        RegExp(r'font-size="([0-9.]+)"').firstMatch(match.group(1)!);
+    if (size != null) yield double.parse(size.group(1)!);
+  }
+}
+
+Map<String, VsdxShape> _shapePaths(VsdxPage page) {
+  final out = <String, VsdxShape>{};
+  void walk(VsdxShape shape, String parent) {
+    final path = '$parent/${shape.id}';
+    out[path] = shape;
+    for (final child in shape.children) {
+      walk(child, path);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape, 'shape');
+  }
+  return out;
+}
+
+void _expectSynthesizedShape(
+  VsdxShape before,
+  VsdxShape after, {
+  required String reason,
+}) {
+  void close(double? a, double? b, String field) {
+    if (a == null || b == null) {
+      expect(b, a, reason: '$reason $field');
+    } else {
+      expect(b, closeTo(a, 1e-8), reason: '$reason $field');
+    }
+  }
+
+  close(before.pinX, after.pinX, 'PinX');
+  close(before.pinY, after.pinY, 'PinY');
+  close(before.width, after.width, 'Width');
+  close(before.height, after.height, 'Height');
+  close(before.locPinXInches, after.locPinXInches, 'LocPinX');
+  close(before.locPinYInches, after.locPinYInches, 'LocPinY');
+  close(before.angleRad, after.angleRad, 'Angle');
+  close(before.beginX, after.beginX, 'BeginX');
+  close(before.beginY, after.beginY, 'BeginY');
+  close(before.endX, after.endX, 'EndX');
+  close(before.endY, after.endY, 'EndY');
+  expect(after.richText.plainText, _normalizeText(before.richText.plainText),
+      reason: '$reason text');
+  expect(after.fields, before.fields, reason: '$reason dynamic fields');
+  expect(after.fill.pattern, before.fill.pattern,
+      reason: '$reason fill pattern');
+  expect(after.fill.foreground, before.fill.foreground,
+      reason: '$reason fill foreground');
+  expect(after.fill.background, before.fill.background,
+      reason: '$reason fill background');
+  close(before.fill.foregroundTransparency,
+      after.fill.foregroundTransparency, 'FillForegndTrans');
+  close(before.fill.backgroundTransparency,
+      after.fill.backgroundTransparency, 'FillBkgndTrans');
+  expect(after.line.pattern, before.line.pattern,
+      reason: '$reason line pattern');
+  expect(after.line.color, before.line.color, reason: '$reason line color');
+  close(before.line.weightInches, after.line.weightInches, 'LineWeight');
+  close(before.line.transparency, after.line.transparency, 'LineColorTrans');
+  expect(after.line.beginArrow, before.line.beginArrow,
+      reason: '$reason begin arrow');
+  expect(after.line.endArrow, before.line.endArrow,
+      reason: '$reason end arrow');
+  expect(after.geometries.length, before.geometries.length,
+      reason: '$reason geometry sections');
+  for (var i = 0; i < before.geometries.length; i++) {
+    final a = before.geometries[i];
+    final b = after.geometries[i];
+    expect(b.ix, a.ix, reason: '$reason Geometry[$i] IX');
+    expect(b.noFill, a.noFill, reason: '$reason Geometry[$i] NoFill');
+    expect(b.noLine, a.noLine, reason: '$reason Geometry[$i] NoLine');
+    expect(b.noShow, a.noShow, reason: '$reason Geometry[$i] NoShow');
+    expect(b.commands.map((c) => c.runtimeType),
+        a.commands.map((c) => c.runtimeType),
+        reason: '$reason Geometry[$i] command topology');
+  }
+}
+
+double _roundHalfPoint(double value) => (value * 2).round() / 2;
+
+String _normalizeText(String value) =>
+    value.replaceAll('\u2028', '\n').replaceAll('\u2029', '\n');
+
+String _unescapeXml(String value) => value
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&amp;', '&');
 
 double _round6(double value) => (value * 1000000).round() / 1000000;
