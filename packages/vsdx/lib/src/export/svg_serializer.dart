@@ -42,6 +42,11 @@ import 'line_jumps.dart';
 
 final _log = Logger('vsdx.export.svg');
 
+typedef _InfiniteLineResolver = List<Offset2D>? Function(
+  Offset2D p,
+  Offset2D q,
+);
+
 /// Which layer flags the SVG serializer honours when filtering shapes.
 enum SvgLayerFilter {
   /// Honour `Visible` (on-screen / interactive export).
@@ -564,6 +569,8 @@ class VsdxToSvgSerializer {
           shape.width,
           shape.height,
           roundingInches: shape.line.roundingInches,
+          infiniteLineResolver: (p, q) =>
+              _infiniteLineEndpoints(page, shape, p, q),
         );
         if (part.isNotEmpty) fillParts.add(part);
       }
@@ -593,6 +600,8 @@ class VsdxToSvgSerializer {
         shape.width,
         shape.height,
         roundingInches: shape.line.roundingInches,
+        infiniteLineResolver: (p, q) =>
+            _infiniteLineEndpoints(page, shape, p, q),
       );
       if (d.isEmpty) continue;
       // Compound fill already emitted; skip fill-only sections with no stroke.
@@ -2037,6 +2046,7 @@ class VsdxToSvgSerializer {
     double w,
     double h, {
     double roundingInches = 0,
+    _InfiniteLineResolver? infiniteLineResolver,
   }) {
     if (roundingInches > 1e-12) {
       final poly = _polylineVertices(g, w, h);
@@ -2262,6 +2272,15 @@ class VsdxToSvgSerializer {
           final sx = relative ? w : 1.0;
           final sy = relative ? h : 1.0;
           final px = x * sx, py = y * sy, qx = a * sx, qy = b * sy;
+          final clipped = infiniteLineResolver?.call(
+            Offset2D(px, py),
+            Offset2D(qx, qy),
+          );
+          if (clipped != null && clipped.length >= 2) {
+            m(clipped.first.x, clipped.first.y);
+            l(clipped.last.x, clipped.last.y);
+            continue;
+          }
           final dx = qx - px;
           final dy = qy - py;
           final len = math.sqrt(dx * dx + dy * dy);
@@ -2316,6 +2335,27 @@ class VsdxToSvgSerializer {
       }
     }
     return out.toString().trim();
+  }
+
+  List<Offset2D>? _infiniteLineEndpoints(
+    VsdxPage page,
+    VsdxShape shape,
+    Offset2D p,
+    Offset2D q,
+  ) {
+    final pageP = page.localToPageDeep(shape.id, p);
+    final pageQ = page.localToPageDeep(shape.id, q);
+    final clipped = clipInfiniteLineToPage(
+      pageP,
+      pageQ,
+      pageWidth: page.widthInches,
+      pageHeight: page.heightInches,
+    );
+    if (clipped == null) return null;
+    return <Offset2D>[
+      for (final endpoint in clipped)
+        page.pageToLocalDeep(shape.id, endpoint),
+    ];
   }
 
   /// Pure Move/Line polyline vertices, or `null` when curves / multi-contour.

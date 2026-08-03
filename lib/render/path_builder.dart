@@ -13,6 +13,11 @@ import 'dart:ui';
 
 import 'package:vsdx/vsdx.dart';
 
+typedef InfiniteLineResolver = List<Offset2D>? Function(
+  Offset2D p,
+  Offset2D q,
+);
+
 /// Combine every Geometry section with `NoFill=0` into one even-odd path.
 ///
 /// Visio / libvisio fill all non-NoFill sections of a shape as a single
@@ -24,6 +29,7 @@ Path? buildCompoundFillPath(
   required double widthInches,
   required double heightInches,
   double roundingInches = 0,
+  InfiniteLineResolver? infiniteLineResolver,
 }) {
   final fillable = <VsdxGeometry>[
     for (final g in geometries)
@@ -38,6 +44,7 @@ Path? buildCompoundFillPath(
         widthInches: widthInches,
         heightInches: heightInches,
         roundingInches: roundingInches,
+        infiniteLineResolver: infiniteLineResolver,
       ),
       Offset.zero,
     );
@@ -55,6 +62,7 @@ Path buildPath(
   required double widthInches,
   required double heightInches,
   double roundingInches = 0,
+  InfiniteLineResolver? infiniteLineResolver,
 }) {
   if (roundingInches > 1e-12) {
     final poly = _polylineVertices(
@@ -246,6 +254,17 @@ Path buildPath(
         final sx = relative ? widthInches : 1.0;
         final sy = relative ? heightInches : 1.0;
         final px = x * sx, py = y * sy, qx = a * sx, qy = b * sy;
+        final clipped = infiniteLineResolver?.call(
+          Offset2D(px, py),
+          Offset2D(qx, qy),
+        );
+        if (clipped != null && clipped.length >= 2) {
+          start(clipped.first.x, clipped.first.y);
+          path.lineTo(clipped.last.x, clipped.last.y);
+          cursorX = clipped.last.x;
+          cursorY = clipped.last.y;
+          break;
+        }
         final dx = qx - px;
         final dy = qy - py;
         final len = math.sqrt(dx * dx + dy * dy);

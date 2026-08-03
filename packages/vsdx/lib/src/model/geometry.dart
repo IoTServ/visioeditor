@@ -572,9 +572,86 @@ class PolylineTo extends VsdxPathCommand {
       'verts=$vertices, xRel=$vertsRelative, yRel=$vertsYRelative)';
 }
 
+/// Clip the infinite line through [p] and [q] to a Visio page rectangle.
+///
+/// This mirrors libvisio `VSDContentCollector::collectInfiniteLine`: vertical
+/// and horizontal lines span the corresponding page dimension; other lines
+/// use their first and last intersections with the four page borders. A line
+/// that misses the page, is degenerate, or contains non-finite coordinates
+/// returns `null`.
+List<Offset2D>? clipInfiniteLineToPage(
+  Offset2D p,
+  Offset2D q, {
+  required double pageWidth,
+  required double pageHeight,
+}) {
+  if (!p.x.isFinite ||
+      !p.y.isFinite ||
+      !q.x.isFinite ||
+      !q.y.isFinite ||
+      !pageWidth.isFinite ||
+      !pageHeight.isFinite ||
+      pageWidth < 0 ||
+      pageHeight < 0) {
+    return null;
+  }
+  const epsilon = 1e-10;
+  final dx = q.x - p.x;
+  final dy = q.y - p.y;
+  if (dx.abs() <= epsilon && dy.abs() <= epsilon) return null;
+  if (dx.abs() <= epsilon) {
+    return <Offset2D>[
+      Offset2D(p.x, 0),
+      Offset2D(p.x, pageHeight),
+    ];
+  }
+  if (dy.abs() <= epsilon) {
+    return <Offset2D>[
+      Offset2D(0, p.y),
+      Offset2D(pageWidth, p.y),
+    ];
+  }
+
+  final slope = dy / dx;
+  final intercept = p.y - slope * p.x;
+  final intersections = <Offset2D>[];
+
+  void add(double x, double y) {
+    if (!x.isFinite || !y.isFinite) return;
+    if (x < -epsilon ||
+        x > pageWidth + epsilon ||
+        y < -epsilon ||
+        y > pageHeight + epsilon) {
+      return;
+    }
+    final point = Offset2D(
+      x.clamp(0.0, pageWidth),
+      y.clamp(0.0, pageHeight),
+    );
+    if (intersections.any(
+      (other) =>
+          (other.x - point.x).abs() <= epsilon &&
+          (other.y - point.y).abs() <= epsilon,
+    )) {
+      return;
+    }
+    intersections.add(point);
+  }
+
+  add(0, intercept);
+  add(pageWidth, slope * pageWidth + intercept);
+  add(-intercept / slope, 0);
+  add((pageHeight - intercept) / slope, pageHeight);
+  if (intersections.length < 2) return null;
+  intersections.sort((a, b) {
+    final byX = a.x.compareTo(b.x);
+    return byX != 0 ? byX : a.y.compareTo(b.y);
+  });
+  return <Offset2D>[intersections.first, intersections.last];
+}
+
 /// `InfiniteLine` — a straight line passing through (`x`, `y`) with the
-/// direction implied by (`a`, `b`). Render-time clips to a large bound
-/// inside the shape's local box.
+/// direction implied by (`a`, `b`). Rendering clips it to the Visio page.
 @immutable
 class InfiniteLineCmd extends VsdxPathCommand {
   const InfiniteLineCmd({

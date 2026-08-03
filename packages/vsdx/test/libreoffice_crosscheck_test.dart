@@ -32,24 +32,54 @@ void main() {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
+    final pageWithBox = doc.pages.first.addShape(
+      VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: 2,
+        pinY: 3,
+        width: 2,
+        height: 1,
+        name: 'Box',
+      ).copyWith(
+        richText: const VsdxRichText(
+          runs: <VsdxTextRun>[VsdxTextRun(text: 'Hello LO')],
+        ),
+      ),
+    );
     doc = doc.replacePage(
       0,
-      doc.pages.first.addShape(
-        VsdxShapeFactory.rectangle(
-          id: id,
-          pinX: 2,
+      pageWithBox.addShape(
+        VsdxShape(
+          id: id + 1,
+          name: 'InfiniteLine',
+          pinX: 5,
           pinY: 3,
-          width: 2,
-          height: 1,
-          name: 'Box',
-        ).copyWith(
-          richText: const VsdxRichText(
-            runs: <VsdxTextRun>[VsdxTextRun(text: 'Hello LO')],
-          ),
+          width: 0.01,
+          height: 0.01,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                InfiniteLineCmd(x: 0, y: 0.005, a: 0.01, b: 0.005),
+              ],
+            ),
+          ],
         ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser
+          .parse(generated)
+          .pages
+          .first
+          .shapes
+          .expand((shape) => shape.geometries)
+          .expand((geometry) => geometry.commands)
+          .whereType<InfiniteLineCmd>(),
+      hasLength(1),
+      reason: 'InfiniteLine must survive the VSDX writer round-trip',
+    );
     final inputs = <String, Uint8List>{'generated': generated};
     for (final entry in const <(String, String)>[
       ('connectors', 'test/fixtures/test4_connectors.vsdx'),

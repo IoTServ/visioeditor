@@ -545,6 +545,8 @@ class VsdxPainter extends CustomPainter {
             widthInches: shape.width,
             heightInches: shape.height,
             roundingInches: shape.line.roundingInches,
+            infiniteLineResolver: (p, q) =>
+                _infiniteLineEndpoints(shape, p, q),
           );
           if (!p.getBounds().isEmpty) {
             clipPath = p;
@@ -625,6 +627,8 @@ class VsdxPainter extends CustomPainter {
             widthInches: shape.width,
             heightInches: shape.height,
             roundingInches: rounding,
+            infiniteLineResolver: (p, q) =>
+                _infiniteLineEndpoints(shape, p, q),
           )
         : null;
     final compoundFill = compoundPath != null;
@@ -670,6 +674,8 @@ class VsdxPainter extends CustomPainter {
         widthInches: shape.width,
         heightInches: shape.height,
         roundingInches: rounding,
+        infiniteLineResolver: (p, q) =>
+            _infiniteLineEndpoints(shape, p, q),
       );
       // Compound fill already painted effects+fill; skip re-fill. Still paint
       // effects for NoFill stroke decorations (dividers, inner borders).
@@ -1232,6 +1238,31 @@ class VsdxPainter extends CustomPainter {
       Offset2D(pagePoint.dx, pagePoint.dy),
     );
     return Offset(local.x, local.y);
+  }
+
+  /// Match libvisio InfiniteLine collection: transform the two defining
+  /// points to page space, intersect the line with the page rectangle, then
+  /// return the visible endpoints in this shape's local frame.
+  List<Offset2D>? _infiniteLineEndpoints(
+    VsdxShape shape,
+    Offset2D p,
+    Offset2D q,
+  ) {
+    final ctx = _paintTarget ?? page;
+    if (ctx == null) return null;
+    final pageP = ctx.localToPageDeep(shape.id, p);
+    final pageQ = ctx.localToPageDeep(shape.id, q);
+    final clipped = clipInfiniteLineToPage(
+      pageP,
+      pageQ,
+      pageWidth: ctx.widthInches,
+      pageHeight: ctx.heightInches,
+    );
+    if (clipped == null) return null;
+    return <Offset2D>[
+      for (final endpoint in clipped)
+        ctx.pageToLocalDeep(shape.id, endpoint),
+    ];
   }
 
   static Offset2D _polylineMidpoint(List<Offset2D> route) {
@@ -2144,6 +2175,8 @@ class VsdxPainter extends CustomPainter {
         widthInches: shape.width,
         heightInches: shape.height,
         roundingInches: shape.line.roundingInches,
+        infiniteLineResolver: (p, q) =>
+            _infiniteLineEndpoints(shape, p, q),
       );
       if (!p.getBounds().isEmpty) {
         clipPath = p;

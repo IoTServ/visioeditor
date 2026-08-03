@@ -81,6 +81,37 @@ void main() {
     expect(box.center.dx, closeTo(2.1, 1e-9));
   });
 
+  test('buildShapeBounds keeps an off-page InfiniteLine that crosses page', () {
+    const shape = VsdxShape(
+      id: 6,
+      name: 'Infinite',
+      pinX: 20,
+      pinY: 3,
+      width: 0.01,
+      height: 0.01,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            InfiniteLineCmd(x: 0, y: 0.005, a: 0.01, b: 0.005),
+          ],
+        ),
+      ],
+    );
+    const page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 10,
+      heightInches: 6,
+      shapes: <VsdxShape>[shape],
+    );
+
+    final box = buildShapeBounds(page)[6]!;
+
+    expect(box.left, lessThanOrEqualTo(0));
+    expect(box.right, greaterThanOrEqualTo(10));
+  });
+
   test('buildShapeBounds includes label padding and visual effects', () {
     final padded =
         VsdxShapeFactory.rectangle(

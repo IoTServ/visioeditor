@@ -51,7 +51,7 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out, VsdxPage page) {
       .scale(s.flipX ? -1 : 1, s.flipY ? -1 : 1)
       .translate(-s.effectiveLocPinX, -s.effectiveLocPinY);
   final pad = math.max(s.width.abs(), s.height.abs()) * 0.05;
-  final corners = <Offset>[];
+  final corners = _infiniteLinePageEndpoints(s, local, page);
   if (s.is1D) {
     // Elbow / curve bends often sit outside the Begin→End Width×Height box.
     for (final g in s.geometries) {
@@ -200,6 +200,43 @@ void _walk(VsdxShape s, _Affine2D parent, Map<int, Rect> out, VsdxPage page) {
     if (TableOps.isCovered(c)) continue;
     _walk(c, local, out, page);
   }
+}
+
+List<Offset> _infiniteLinePageEndpoints(
+  VsdxShape shape,
+  _Affine2D local,
+  VsdxPage page,
+) {
+  final endpoints = <Offset>[];
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow) continue;
+    for (final command in geometry.commands) {
+      if (command case InfiniteLineCmd(
+        :final x,
+        :final y,
+        :final a,
+        :final b,
+        :final relative,
+      )) {
+        final sx = relative ? shape.width : 1.0;
+        final sy = relative ? shape.height : 1.0;
+        final p = local.apply(x * sx, y * sy);
+        final q = local.apply(a * sx, b * sy);
+        final clipped = clipInfiniteLineToPage(
+          Offset2D(p.dx, p.dy),
+          Offset2D(q.dx, q.dy),
+          pageWidth: page.widthInches,
+          pageHeight: page.heightInches,
+        );
+        if (clipped != null) {
+          endpoints.addAll(<Offset>[
+            for (final point in clipped) Offset(point.x, point.y),
+          ]);
+        }
+      }
+    }
+  }
+  return endpoints;
 }
 
 void _addLabelBounds(
