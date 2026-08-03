@@ -8445,6 +8445,26 @@ void main() {
     expect(after.pageSheet.pageShapeSplit, sheet.pageShapeSplit);
   });
 
+  test('PageSheet display units patch when scale values stay unchanged', () {
+    final blank = writer.emptyDocument();
+    final doc = parser.parse(blank);
+    final editedSheet = doc.pages.first.pageSheet.copyWith(
+      pageScaleUnit: 'IN',
+      drawingScaleUnit: 'CM',
+    );
+    final edited = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(pageSheet: editedSheet),
+    );
+
+    final out = writer.write(originalBytes: blank, edited: edited);
+    final after = parser.parse(out).pages.first.pageSheet;
+    expect(after.pageScale, editedSheet.pageScale);
+    expect(after.drawingScale, editedSheet.drawingScale);
+    expect(after.pageScaleUnit, 'IN');
+    expect(after.drawingScaleUnit, 'CM');
+  });
+
   test('PageSheet VariationColorIndex/StyleIndex round-trip on new page', () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);

@@ -150,6 +150,7 @@ void main() {
       if (bytes == null) return;
       final doc = const VsdDocumentParser().parse(bytes);
       expect(doc.pages, isNotEmpty);
+      expect(doc.pages.first.pageSheet.pageScaleUnit, 'IN');
       expect(doc.pages.first.pageSheet.drawingScaleUnit, 'CM');
       String? plainOf(VsdxShape s) =>
           s.richText.runs.isNotEmpty ? s.richText.plainText : s.text;
@@ -167,6 +168,10 @@ void main() {
       expect(texts, contains('180.0 cm x 394.0 cm'));
       // Raw inches must not remain for DrawingUnits labels.
       expect(texts.any((t) => t.contains('70.8661')), isFalse);
+
+      final reopened = const DocumentParser().parse(synthesizeVsdx(doc));
+      expect(reopened.pages.first.pageSheet.pageScaleUnit, 'IN');
+      expect(reopened.pages.first.pageSheet.drawingScaleUnit, 'CM');
     });
 
     test('text fields expand numeric placeholders', () {

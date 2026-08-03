@@ -770,14 +770,25 @@ class VsdxWriter {
       changed = true;
     }
 
-    void raw(String name, String b, String e, {String? unit}) {
+    void raw(
+      String name,
+      String b,
+      String e, {
+      String? baseUnit,
+      String? editedUnit,
+    }) {
       final inh = isInhFormula(_pageSheetCellF(sheet, name));
-      if (b == e && !inh) return;
+      final unitChanged = baseUnit != editedUnit;
+      if (b == e && !inh && !unitChanged) return;
       final cell = _ensurePageSheetCell(sheet, name);
       _writeValue(cell, e,
           preserveFormula: _pageSheetCellHasFormula(sheet, name));
-      if (unit != null && unit.isNotEmpty && cell.getAttribute('U') == null) {
-        cell.setAttribute('U', unit);
+      if (unitChanged) {
+        if (editedUnit == null || editedUnit.isEmpty) {
+          cell.removeAttribute('U');
+        } else {
+          cell.setAttribute('U', editedUnit);
+        }
       }
       changed = true;
     }
@@ -792,9 +803,10 @@ class VsdxWriter {
     len('ShdwOffsetX', base.shadowOffsetXInches, edited.shadowOffsetXInches);
     len('ShdwOffsetY', base.shadowOffsetYInches, edited.shadowOffsetYInches);
     raw('PageScale', _fmt(base.pageScale), _fmt(edited.pageScale),
-        unit: edited.pageScaleUnit);
+        baseUnit: base.pageScaleUnit, editedUnit: edited.pageScaleUnit);
     raw('DrawingScale', _fmt(base.drawingScale), _fmt(edited.drawingScale),
-        unit: edited.drawingScaleUnit);
+        baseUnit: base.drawingScaleUnit,
+        editedUnit: edited.drawingScaleUnit);
     raw('DrawingSizeType', base.drawingSizeType.toString(),
         edited.drawingSizeType.toString());
     raw('DrawingScaleType', base.drawingScaleType.toString(),
