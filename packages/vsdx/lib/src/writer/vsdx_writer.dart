@@ -3906,8 +3906,12 @@ class VsdxWriter {
       } else {
         changed |= _removeInhOrDrop(row, 'Menu');
       }
-      changed |= _scrubFormulaOrLiteral(
-          row, 'Action', r.action ?? '0', formula: r.actionFormula);
+      if (r.action != null || r.actionFormula != null) {
+        changed |= _scrubFormulaOrLiteral(
+            row, 'Action', r.action ?? '0', formula: r.actionFormula);
+      } else {
+        changed |= _removeInhOrDrop(row, 'Action');
+      }
       if (r.checked || _findCell(row, 'Checked') != null) {
         changed |= _writeValueIfNeeded(
             _ensureCell(row, 'Checked'), r.checked ? '1' : '0');
@@ -7025,6 +7029,12 @@ class VsdxWriter {
         formula: _nonInhFormula(s.formulas['EventDblClick']),
       ));
     }
+    for (final name in const <String>['TheText', 'EventXFMod', 'EventDrop']) {
+      final formula = _nonInhFormula(s.formulas[name]);
+      if (formula != null) {
+        children.add(_cell(name, '0', formula: formula));
+      }
+    }
     children
       ..add(_cell('NoAlignBox', s.noAlignBox ? '1' : '0'))
       ..add(_cell('ShapeSplittable', s.shapeSplittable ? '1' : '0'));
@@ -7377,7 +7387,8 @@ class VsdxWriter {
     'DefaultTabStop',
     // Only LockMoveX is modeled (↔ locked). Other Lock* survive via opaque.
     'LockMoveX',
-    'ObjType', 'ResizeMode', 'EventDblClick', 'NoAlignBox', 'ShapeSplittable',
+    'ObjType', 'ResizeMode', 'TheText', 'EventDblClick', 'EventXFMod',
+    'EventDrop', 'NoAlignBox', 'ShapeSplittable',
     'ThemeIndex', 'QuickStyleFillMatrix', 'QuickStyleLineMatrix',
     'QuickStyleEffectsMatrix', 'QuickStyleFontMatrix',
     'IsTextEditTarget', 'DontMoveChildren', 'SelectMode', 'DisplayMode',
@@ -7651,6 +7662,12 @@ class VsdxWriter {
         s.eventDblClick ?? '0',
         formula: _nonInhFormula(s.formulas['EventDblClick']),
       ));
+    }
+    for (final name in const <String>['TheText', 'EventXFMod', 'EventDrop']) {
+      final formula = _nonInhFormula(s.formulas[name]);
+      if (formula != null) {
+        children.add(_cell(name, '0', formula: formula));
+      }
     }
     children
       ..add(_cell('NoAlignBox', s.noAlignBox ? '1' : '0'))
@@ -7971,7 +7988,8 @@ class VsdxWriter {
               ],
               <XmlNode>[
                 if (r.menu != null) _cell('Menu', r.menu!),
-                _cell('Action', r.action ?? '0', formula: r.actionFormula),
+                if (r.action != null || r.actionFormula != null)
+                  _cell('Action', r.action ?? '0', formula: r.actionFormula),
                 if (r.checked) _cell('Checked', '1'),
                 if (r.disabled) _cell('Disabled', '1'),
                 if (r.readOnly) _cell('ReadOnly', '1'),

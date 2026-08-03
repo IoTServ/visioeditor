@@ -876,6 +876,14 @@ class RichTextParser {
   /// whitespace from the run stream so a single-line label stays centred —
   /// matching how Visio and libvisio lay the text out.
   static void _trimTrailingWhitespace(List<VsdxTextRun> runs) {
+    // Do not discard ordinary trailing spaces/newlines: they are real text and
+    // must survive VSD -> VSDX synthesis. This display workaround only applies
+    // to the Visio-specific trailing empty tab marker described above.
+    if (runs.isEmpty ||
+        runs.last.tabIndices.isEmpty ||
+        !runs.last.text.endsWith('\t')) {
+      return;
+    }
     while (runs.isNotEmpty) {
       final last = runs.last;
       final trimmed = last.text.replaceFirst(RegExp(r'\s+$'), '');

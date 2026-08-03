@@ -875,7 +875,12 @@ class PageParser {
     'TxtLocPinX',
     'TxtLocPinY',
     'TxtAngle',
+    // ShapeSheet event formulas. VSD imports populate all four from Event
+    // chunks; keep them when the synthesized VSDX is parsed again.
+    'TheText',
     'EventDblClick',
+    'EventXFMod',
+    'EventDrop',
     'FillPattern',
     'LinePattern',
     'FillForegnd',

@@ -107,6 +107,16 @@ void main() {
     expect(style.overline, isTrue);
   });
 
+  test('ordinary trailing whitespace is preserved without a tab marker', () {
+    final rich = parser.parse(shape('<Text>Label  \n</Text>'));
+    expect(rich.plainText, 'Label  \n');
+  });
+
+  test('trailing newline plus empty tab marker is display-normalized', () {
+    final rich = parser.parse(shape('<Text>Label\n<tp IX="0"/></Text>'));
+    expect(rich.plainText, 'Label');
+  });
+
   test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {
     final el = shape(
       '<Cell N="VerticalAlign" V="1" F="Inh"/><Text>Label</Text>',

@@ -254,7 +254,7 @@ void main() {
               reason: '$name shape ${shape.id} after synthesis');
           expect(after!.fields, shape.fields,
               reason: '$name shape ${shape.id} Field section');
-          expect(after.richText.plainText, shape.richText.plainText.trimRight(),
+          expect(after.richText.plainText, shape.richText.plainText,
               reason: '$name shape ${shape.id} cached field display');
           expect(
             after.richText.runs.expand((run) => run.fieldSpans).toList(),
@@ -322,6 +322,10 @@ void main() {
           expect(other.scratch, shape.scratch);
           comparedRows++;
         }
+        if (shape.actions.isNotEmpty) {
+          expect(other.actions, shape.actions);
+          comparedRows++;
+        }
         for (final child in shape.children) {
           compareRows(child);
         }
@@ -330,6 +334,14 @@ void main() {
         compareRows(shape);
       }
       expect(comparedRows, greaterThan(0));
+
+      // VSD text bytes may intentionally end in spaces. They are not the
+      // VSDX-only `newline + empty <tp/>` display convention and must remain.
+      final beforeTrailing = parsed6.pages.first.findShapeById(38)!;
+      final afterTrailing = reopened6.pages.first.findShapeById(38)!;
+      expect(beforeTrailing.richText.plainText, endsWith('   '));
+      expect(afterTrailing.richText.plainText,
+          beforeTrailing.richText.plainText);
     });
 
     test('text fields expand Multidimensional area units', () {
@@ -1159,8 +1171,10 @@ void main() {
       final result = parseVisio(poi);
       final reopened = const DocumentParser().parse(result.originalBytes);
       String? again;
+      String? dropAgain;
       void walk3(VsdxShape s) {
         again ??= s.formulas['EventDblClick'];
+        dropAgain ??= s.formulas['EventDrop'];
         for (final c in s.children) {
           walk3(c);
         }
@@ -1169,6 +1183,42 @@ void main() {
         walk3(s);
       }
       expect(again, contains('RUNADDONW'));
+      expect(dropAgain, drop);
+
+      // EventXFMod is a distinct Event-chunk cell and must survive the same
+      // VSD -> synthesized VSDX -> parser round trip.
+      final drawingUnits = _loadSample('tdf154379-DrawingUnits-type.vsd');
+      if (drawingUnits == null) return;
+      final unitsBefore = const VsdDocumentParser().parse(drawingUnits);
+      final xfById = <int, String>{};
+      void collectXf(VsdxShape s) {
+        final formula = s.formulas['EventXFMod'];
+        if (formula != null) xfById[s.id] = formula;
+        for (final c in s.children) {
+          collectXf(c);
+        }
+      }
+      for (final s in unitsBefore.pages.first.shapes) {
+        collectXf(s);
+      }
+      expect(xfById, isNotEmpty);
+      final unitsAfter =
+          const DocumentParser().parse(synthesizeVsdx(unitsBefore));
+      var matched = 0;
+      void verifyXf(VsdxShape s) {
+        final expected = xfById[s.id];
+        if (expected != null) {
+          expect(s.formulas['EventXFMod'], expected);
+          matched++;
+        }
+        for (final c in s.children) {
+          verifyXf(c);
+        }
+      }
+      for (final s in unitsAfter.pages.first.shapes) {
+        verifyXf(s);
+      }
+      expect(matched, xfById.length);
     });
   });
 }
