@@ -7940,7 +7940,12 @@ class VsdxWriter {
               <XmlAttribute>[XmlAttribute(XmlName('IX'), r.ix.toString())],
               <XmlNode>[
                 _fieldCell('Value', r.value ?? '', formula: r.valueFormula),
-                _fieldCell('Format', r.format ?? '', formula: r.formatFormula),
+                if (r.format != null || r.formatFormula != null)
+                  _fieldCell(
+                    'Format',
+                    r.format ?? '',
+                    formula: r.formatFormula,
+                  ),
                 _cell('Type', r.type.toString()),
                 if (r.uiCat != null) _cell('UICat', r.uiCat.toString()),
                 if (r.uiCod != null) _cell('UICod', r.uiCod.toString()),
@@ -8555,11 +8560,14 @@ class VsdxWriter {
 
   static String _fmt(double v) {
     if (!v.isFinite) return '0';
-    var s = v.toStringAsFixed(9);
-    if (s.contains('.')) {
-      s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    // Dart's shortest representation is guaranteed to parse back to the same
+    // IEEE-754 value. Fixed 9-decimal output visibly changed imported VSD
+    // TextBlock coordinates, font sizes and geometry after VSDX synthesis.
+    var s = v.toString();
+    if (!s.contains('e') && s.endsWith('.0')) {
+      s = s.substring(0, s.length - 2);
     }
-    return s == '-0' ? '0' : s;
+    return s == '-0' || s == '-0.0' ? '0' : s;
   }
 
   static XmlElement? _firstChild(XmlElement parent, String local) {

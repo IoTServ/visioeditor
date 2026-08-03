@@ -266,6 +266,72 @@ void main() {
       expect(checked, greaterThan(0));
     });
 
+    test('VSD synthesis keeps binary double precision and sparse fields', () {
+      final bytes = _loadSample('Visio11PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final parsed = const VsdDocumentParser().parse(bytes);
+      final reopened = const DocumentParser().parse(synthesizeVsdx(parsed));
+      final before = parsed.pages.first.findShapeById(1)!;
+      final after = reopened.pages.first.findShapeById(1)!;
+      final beforeBlock = before.richText.textBlock;
+      final afterBlock = after.richText.textBlock;
+
+      expect(afterBlock.pinXInches, beforeBlock.pinXInches);
+      expect(afterBlock.pinYInches, beforeBlock.pinYInches);
+      expect(afterBlock.widthInches, beforeBlock.widthInches);
+      expect(afterBlock.heightInches, beforeBlock.heightInches);
+      expect(afterBlock.locPinXInches, beforeBlock.locPinXInches);
+      expect(afterBlock.locPinYInches, beforeBlock.locPinYInches);
+      expect(afterBlock.angleRad, beforeBlock.angleRad);
+      expect(after.richText.runs.first.charStyle.fontSizeInches,
+          before.richText.runs.first.charStyle.fontSizeInches);
+
+      // Dimension fields have no binary picture. Keep the absent Format cell
+      // absent rather than materialising it as an empty VSDX string.
+      final beforeField = parsed.pages.first.findShapeById(8)!;
+      final afterField = reopened.pages.first.findShapeById(8)!;
+      expect(beforeField.fields.single.format, isNull);
+      expect(afterField.fields, beforeField.fields);
+
+      final plan6 = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (plan6 == null) return;
+      final parsed6 = const VsdDocumentParser().parse(plan6);
+      final reopened6 = const DocumentParser().parse(synthesizeVsdx(parsed6));
+      final afterById = <int, VsdxShape>{};
+      void index(VsdxShape shape) {
+        afterById[shape.id] = shape;
+        for (final child in shape.children) {
+          index(child);
+        }
+      }
+      for (final shape in reopened6.pages.first.shapes) {
+        index(shape);
+      }
+      var comparedRows = 0;
+      void compareRows(VsdxShape shape) {
+        final other = afterById[shape.id]!;
+        if (shape.connectionPoints.isNotEmpty) {
+          expect(other.connectionPoints, shape.connectionPoints);
+          comparedRows++;
+        }
+        if (shape.controls.isNotEmpty) {
+          expect(other.controls, shape.controls);
+          comparedRows++;
+        }
+        if (shape.scratch.isNotEmpty) {
+          expect(other.scratch, shape.scratch);
+          comparedRows++;
+        }
+        for (final child in shape.children) {
+          compareRows(child);
+        }
+      }
+      for (final shape in parsed6.pages.first.shapes) {
+        compareRows(shape);
+      }
+      expect(comparedRows, greaterThan(0));
+    });
+
     test('text fields expand Multidimensional area units', () {
       final bytes = _loadSample('Visio11TextFieldsWithUnits.vsd');
       if (bytes == null) return;

@@ -153,16 +153,10 @@ void main() {
       // without being invented from stencil masters.
       final synthesized = synthesizeVsdx(doc);
       final reopened = const DocumentParser().parse(synthesized);
-      if (const <String>{
-        'Visio5TextFieldsWithUnits.vsd',
-        'Visio6TextFieldsWithUnits.vsd',
-        'Visio11TextFieldsWithUnits.vsd',
-      }.contains(fixture.uri.pathSegments.last)) {
-        final rendered = oracle.svgPages(synthesized);
-        expect(rendered, isNotNull,
-            reason: 'libvisio must accept synthesized Field rows/fld markers');
-        expect(rendered, hasLength(reference.length));
-      }
+      final rendered = oracle.svgPages(synthesized);
+      expect(rendered, isNotNull,
+          reason: 'libvisio must accept the synthesized VSDX');
+      expect(rendered, hasLength(reference.length));
       expect(reopened.pages, hasLength(doc.pages.length));
       for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
         final beforePage = doc.pages[pageIndex];
