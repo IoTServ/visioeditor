@@ -3231,8 +3231,9 @@ class VsdxPainter extends CustomPainter {
     double scale, {
     bool openTypePos = true,
   }) {
-    final base = _colourOrTheme(run.charStyle.color, run.charStyle.themeColorIndex) ??
-        Colors.black87;
+    final base =
+        _colourOrTheme(run.charStyle.color, run.charStyle.themeColorIndex) ??
+            Colors.black;
     final alpha = (1 - run.charStyle.transparency).clamp(0.0, 1.0);
     final c = base.withValues(alpha: base.a * alpha);
     final pos = run.charStyle.position;
@@ -3267,7 +3268,7 @@ class VsdxPainter extends CustomPainter {
       // CSS `font-variant: small-caps` was ignored.
     ];
     final font = fontFallback.resolve(
-      run.charStyle.fontFamily,
+      run.charStyle.fontFamily ?? 'Arial',
       asianFont: run.charStyle.asianFont,
     );
     final rawText = switch (run.charStyle.textCase) {

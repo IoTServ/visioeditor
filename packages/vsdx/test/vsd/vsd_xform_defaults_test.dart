@@ -19,6 +19,10 @@ void main() {
   });
 
   test('unstyled Visio text uses libvisio paragraph and block defaults', () {
+    expect(libvisioCharacterStyleDefault.fontFamily, 'Arial');
+    expect(libvisioCharacterStyleDefault.fontSizeInches, 12 / 72);
+    expect(libvisioCharacterStyleDefault.color, VsdxColor.black);
+    expect(libvisioCharacterStyleDefault.transparency, 0);
     expect(
       libvisioParagraphStyleDefault.horizontalAlign,
       VsdxHorzAlign.center,

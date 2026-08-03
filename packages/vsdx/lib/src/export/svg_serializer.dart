@@ -4359,9 +4359,9 @@ class VsdxToSvgSerializer {
     bool synthesizeSmallCaps = false,
     double? fontSizeOverride,
   }) {
-    // Match canvas [Colors.black87] (0xDD000000) when no solid/theme colour.
+    // libvisio's VSDCharStyle baseline is opaque black.
     final color = _resolveColor(c.color, c.themeColorIndex, theme) ??
-        const VsdxColor(0xDD000000);
+        VsdxColor.black;
     final op = _combinedOpacity(color, c.transparency);
     var fs = math.max(c.fontSizeInches, 0.04);
     switch (c.position) {
@@ -4381,7 +4381,7 @@ class VsdxToSvgSerializer {
       letterSpacing += fs * (fontScale - 1.0) * 0.55;
     }
     // Match canvas fontFallback: Latin face then AsianFont for CJK glyphs.
-    final family = _svgFontFamily(c.fontFamily, c.asianFont);
+    final family = _svgFontFamily(c.fontFamily ?? 'Arial', c.asianFont);
     final weight = c.style.bold ? 'bold' : 'normal';
     final italic = c.style.italic ? 'italic' : 'normal';
     final deco = <String>[

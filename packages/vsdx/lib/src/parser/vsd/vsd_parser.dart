@@ -6055,7 +6055,8 @@ class VsdBinaryParser {
       return VsdxCharStyle(
         fontFamily: c?.fontFamily ?? d.fontFamily ?? 'Arial',
         fontSizeInches: c?.fontSizeInches ?? d.fontSizeInches ?? (12.0 / 72.0),
-        color: c?.textColor ?? d.textColor,
+        color:
+            c?.textColor ?? d.textColor ?? libvisioCharacterStyleDefault.color,
         style: VsdxFontStyle(
           bold: bold,
           italic: italic,

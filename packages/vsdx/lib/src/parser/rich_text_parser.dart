@@ -192,7 +192,7 @@ class RichTextParser {
   /// inherit Size/Style the same way libvisio does.
   VsdxRichText parse(
     XmlElement shape, {
-    VsdxCharStyle defaultChar = VsdxCharStyle.defaults,
+    VsdxCharStyle defaultChar = libvisioCharacterStyleDefault,
     VsdxParaStyle defaultPara = libvisioParagraphStyleDefault,
     VsdxTextBlock defaultBlock = libvisioTextBlockStyleDefault,
     List<VsdxTabSet> inheritTabs = const <VsdxTabSet>[],

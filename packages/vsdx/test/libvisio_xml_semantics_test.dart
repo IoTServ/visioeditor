@@ -154,9 +154,14 @@ void main() {
     final shape = const PageParser()
         .parseShapes(pageXml, partName: '/visio/pages/page1.xml')
         .single;
+    final character = shape.richText.runs.single.charStyle;
     final paragraph = shape.richText.runs.single.paraStyle;
     final block = shape.richText.textBlock;
 
+    expect(character.fontFamily, 'Arial');
+    expect(character.fontSizeInches, closeTo(12 / 72, 1e-9));
+    expect(character.color, VsdxColor.black);
+    expect(character.transparency, 0);
     expect(paragraph.horizontalAlign, VsdxHorzAlign.center);
     expect(paragraph.lineSpacing, closeTo(1.2, 1e-9));
     expect(paragraph.lineSpacingAbsoluteInches, 0);

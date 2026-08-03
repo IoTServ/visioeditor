@@ -341,7 +341,7 @@ class PageParser {
         protoChar ??
         inheritedSheetChar ??
         _stylesheets.resolveCharStyle(null) ??
-        VsdxCharStyle.defaults;
+        libvisioCharacterStyleDefault;
     final protoPara = proto?.richText.runs.isNotEmpty == true
         ? proto!.richText.runs.first.paraStyle
         : libvisioParagraphStyleDefault;

@@ -776,6 +776,33 @@ void main() {
     );
   });
 
+  test('SVG unbound text uses libvisio Arial and opaque black defaults', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Unbound')],
+          ),
+        ),
+      ),
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('font-family="Arial, sans-serif"'));
+    expect(svg, contains('fill="#000000" fill-opacity="1"'));
+  });
+
   test('SVG open-arrow stroke scales with thick LineWeight', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

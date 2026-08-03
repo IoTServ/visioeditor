@@ -297,6 +297,16 @@ class VsdxCharStyle {
       );
 }
 
+/// Effective character baseline used by libvisio while parsing a shape.
+///
+/// Keep this separate from [VsdxCharStyle.defaults] so editor-created sparse
+/// rows can retain absent Font/Color cells for round-trip. When no character
+/// style exists, libvisio renders 12 pt Arial in opaque black.
+const VsdxCharStyle libvisioCharacterStyleDefault = VsdxCharStyle(
+  fontFamily: 'Arial',
+  color: VsdxColor.black,
+);
+
 /// Style bitmask (Visio `Char.Style`):
 ///   bit 0 = bold, bit 1 = italic, bit 2 = underline, bit 3 = small-caps.
 @immutable
