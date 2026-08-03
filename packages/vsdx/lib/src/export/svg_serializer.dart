@@ -3518,8 +3518,11 @@ class VsdxToSvgSerializer {
       return;
     }
     final labelBorder = shape.labelBorderColor;
-    final tightLabelPlate = !shape.labelPadding.isZero &&
-        (block.backgroundColor != null || labelBorder != null);
+    // libvisio applies TextBkgnd to the text span, not the complete
+    // TxtWidth × TxtHeight frame. Approximate the span bounds with the same
+    // layout estimator used for draw.io's padded label plate.
+    final tightLabelPlate = block.backgroundColor != null ||
+        (!shape.labelPadding.isZero && labelBorder != null);
     if (!tightLabelPlate &&
         (block.backgroundColor != null || labelBorder != null)) {
       final bgOp = block.backgroundColor == null

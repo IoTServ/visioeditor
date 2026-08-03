@@ -3,15 +3,18 @@
 
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/io/image_export.dart';
 import 'package:vsdx/vsdx.dart';
 
 const _runEnvironment = 'RUN_LIBREOFFICE_RENDER_CORPUS';
 const _auditDirectoryEnvironment = 'VISIO_RENDER_AUDIT_DIR';
+const _filterEnvironment = 'VISIO_RENDER_AUDIT_FILTER';
+const _latinFontEnvironment = 'VISIO_RENDER_AUDIT_LATIN_FONT';
+const _cjkFontEnvironment = 'VISIO_RENDER_AUDIT_CJK_FONT';
 
 const _upstreamDirectory = 'third_party/libvisio/src/test/data';
 const _appExampleDirectory = 'assets/examples';
@@ -64,11 +67,17 @@ void main() {
   test(
     '34 libvisio fixtures and 4 app examples render like LibreOffice',
     () async {
+      await _loadAuditFonts();
       expect(
         _corpus.where((entry) => !entry.applicationExample),
         hasLength(34),
       );
       expect(_corpus.where((entry) => entry.applicationExample), hasLength(4));
+      final filter = Platform.environment[_filterEnvironment];
+      final selected = filter == null || filter.isEmpty
+          ? _corpus
+          : _corpus.where((entry) => entry.name.contains(filter)).toList();
+      expect(selected, isNotEmpty, reason: 'no corpus entry matches $filter');
 
       final soffice = _resolveExecutable(
         environmentName: 'SOFFICE',
@@ -93,8 +102,12 @@ void main() {
       var renderedPages = 0;
 
       try {
-        for (var corpusIndex = 0; corpusIndex < _corpus.length; corpusIndex++) {
-          final entry = _corpus[corpusIndex];
+        for (
+          var corpusIndex = 0;
+          corpusIndex < selected.length;
+          corpusIndex++
+        ) {
+          final entry = selected[corpusIndex];
           final source = File(entry.path);
           expect(source.existsSync(), isTrue, reason: 'missing ${entry.path}');
 
@@ -142,6 +155,15 @@ void main() {
               '${caseDirectory.path}/app-${pageIndex + 1}.png',
             );
             appFile.writeAsBytesSync(appPng);
+            File(
+              '${caseDirectory.path}/app-${pageIndex + 1}.svg',
+            ).writeAsStringSync(
+              VsdxToSvgSerializer().serializePage(
+                page,
+                theme: document.theme,
+                images: document.images,
+              ),
+            );
 
             final appImage = await _decodePng(appPng);
             final referenceImage = await _decodePng(
@@ -193,14 +215,14 @@ void main() {
           }
         }
 
-        expect(renderedPages, greaterThanOrEqualTo(38));
+        expect(renderedPages, greaterThanOrEqualTo(selected.length));
         expect(
           failures,
           isEmpty,
           reason: 'render corpus mismatches:\n${failures.join('\n')}',
         );
         print(
-          'RENDER SUMMARY files=${_corpus.length} pages=$renderedPages '
+          'RENDER SUMMARY files=${selected.length} pages=$renderedPages '
           'audit=${auditRoot.path}',
         );
       } finally {
@@ -212,6 +234,83 @@ void main() {
     skip: enabled ? false : 'set $_runEnvironment=1 for the full render audit',
     timeout: const Timeout(Duration(minutes: 8)),
   );
+}
+
+/// Flutter's test binding otherwise substitutes the square-glyph Ahem font,
+/// which makes a visual comparison with LibreOffice actively misleading.
+/// This audit is opt-in and already depends on host executables, so loading a
+/// host font here is appropriate. Environment overrides keep it portable to
+/// CI hosts whose fonts live elsewhere.
+Future<void> _loadAuditFonts() async {
+  final latin = _firstExistingFile(<String?>[
+    Platform.environment[_latinFontEnvironment],
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+    '/Library/Fonts/Arial.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  ]);
+  if (latin == null) {
+    throw TestFailure(
+      'A real Latin font is required; set $_latinFontEnvironment',
+    );
+  }
+  await _loadFontAliases(latin, const <String>[
+    'Arial',
+    'Arial Black',
+    'Calibri',
+    'Calibri Light',
+    'Cambria',
+    'Courier New',
+    'Helvetica',
+    'Liberation Sans',
+    'Liberation Serif',
+    'Segoe UI',
+    'Tahoma',
+    'Times New Roman',
+    'Trebuchet MS',
+    'Verdana',
+  ]);
+
+  final cjk = _firstExistingFile(<String?>[
+    Platform.environment[_cjkFontEnvironment],
+    '/Library/Fonts/Arial Unicode.ttf',
+    '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+    '/System/Library/Fonts/PingFang.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
+  ]);
+  if (cjk != null) {
+    await _loadFontAliases(cjk, const <String>[
+      'Arial Unicode MS',
+      'Microsoft YaHei',
+      'Microsoft YaHei UI',
+      'PingFang SC',
+      'Hiragino Sans GB',
+      'SimHei',
+      'SimSun',
+      '宋体',
+      '微软雅黑',
+      '黑体',
+    ]);
+  }
+}
+
+File? _firstExistingFile(Iterable<String?> paths) {
+  for (final path in paths) {
+    if (path == null || path.isEmpty) continue;
+    final file = File(path);
+    if (file.existsSync()) return file;
+  }
+  return null;
+}
+
+Future<void> _loadFontAliases(File file, List<String> families) async {
+  final bytes = ByteData.sublistView(file.readAsBytesSync());
+  for (final family in families) {
+    final loader = FontLoader(family)..addFont(Future<ByteData>.value(bytes));
+    await loader.load();
+  }
 }
 
 class _CorpusEntry {

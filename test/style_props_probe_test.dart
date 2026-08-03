@@ -347,6 +347,53 @@ void main() {
         .hasMatch(svg), isTrue);
   });
 
+  test('SVG shape TextBkgnd hugs glyphs instead of filling text frame', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 10,
+          pinX: 3,
+          pinY: 3,
+          width: 4,
+          height: 2,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle: VsdxCharStyle(fontSizeInches: 0.2),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              widthInches: 4,
+              heightInches: 2,
+              backgroundColor: VsdxColor(0xFFFF0000),
+            ),
+          ),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final background = RegExp(
+      r'<rect\b[^>]*fill="#ff0000"[^>]*/>',
+      caseSensitive: false,
+    ).firstMatch(svg);
+    expect(background, isNotNull);
+    final tag = background!.group(0)!;
+    final width = double.parse(
+      RegExp(r'width="([0-9.]+)"').firstMatch(tag)!.group(1)!,
+    );
+    final height = double.parse(
+      RegExp(r'height="([0-9.]+)"').firstMatch(tag)!.group(1)!,
+    );
+    expect(width, lessThan(1), reason: 'must not fill the 4-inch TxtWidth');
+    expect(height, lessThan(1), reason: 'must not fill the 2-inch TxtHeight');
+  });
+
   test('SVG loose edge label paints page/white plate without TextBkgnd', () {
     final page = VsdxPage(
       id: 0,

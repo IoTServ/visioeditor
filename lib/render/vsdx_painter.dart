@@ -2403,6 +2403,16 @@ class VsdxPainter extends CustomPainter {
     final s = pxPerInch;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
+    final tightLabelPlate =
+        !shape.labelPadding.isZero &&
+        (block.backgroundColor != null || shape.labelBorderColor != null);
+    final inlineBackground = tightLabelPlate || block.backgroundColor == null
+        ? null
+        : Color(block.backgroundColor!.value).withValues(
+            alpha:
+                Color(block.backgroundColor!.value).a *
+                (1.0 - block.backgroundTransparency.clamp(0.0, 1.0)),
+          );
 
     // Build the text spans. Font sizes are scaled to pixels because Flutter's
     // TextPainter is not transform-aware: at the canvas's inches-scale a 10pt
@@ -2412,7 +2422,7 @@ class VsdxPainter extends CustomPainter {
     final spans = <TextSpan>[];
     if (hasRich) {
       for (final run in rich.runs) {
-        spans.add(_runToSpan(run, s));
+        spans.add(_runToSpan(run, s, backgroundColor: inlineBackground));
       }
     } else {
       final fsPx = (isEdgeLabel ? 0.14 : math.min(th, tw) * 0.18) * s;
@@ -2421,6 +2431,7 @@ class VsdxPainter extends CustomPainter {
           text: label,
           style: TextStyle(
             color: Colors.black87,
+            backgroundColor: inlineBackground,
             fontSize: fsPx,
             fontWeight: FontWeight.w500,
           ),
@@ -2516,20 +2527,10 @@ class VsdxPainter extends CustomPainter {
     canvas.translate(pinX, pinY); // to TxtPin (shape-local, Y-up)
     if (labelAngle != 0) canvas.rotate(labelAngle);
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
-    // TextBkgnd plus draw.io labelBorderColor around the text block.
+    // libvisio applies TextBkgnd to the text spans above. Only draw.io's
+    // explicit labelBorderColor belongs around the complete text frame.
     final textRect = Rect.fromLTWH(0, 0, tw, th);
-    final tightLabelPlate =
-        !shape.labelPadding.isZero &&
-        (block.backgroundColor != null || shape.labelBorderColor != null);
     if (!tightLabelPlate) {
-      if (block.backgroundColor case final background?) {
-        final bg = Color(background.value);
-        final t = block.backgroundTransparency.clamp(0.0, 1.0);
-        canvas.drawRect(
-          textRect,
-          Paint()..color = bg.withValues(alpha: bg.a * (1.0 - t)),
-        );
-      }
       if (shape.labelBorderColor case final border?) {
         canvas.drawRect(
           textRect,
@@ -3341,6 +3342,7 @@ class VsdxPainter extends CustomPainter {
     VsdxTextRun run,
     double scale, {
     bool openTypePos = true,
+    Color? backgroundColor,
   }) {
     final base =
         _colourOrTheme(run.charStyle.color, run.charStyle.themeColorIndex) ??
@@ -3394,6 +3396,7 @@ class VsdxPainter extends CustomPainter {
         : run.charStyle.fontScale.clamp(0.1, 4.0);
     final style = TextStyle(
       color: c,
+      backgroundColor: backgroundColor,
       fontFamily: font.family,
       fontFamilyFallback: font.familyFallback.isEmpty
           ? null
