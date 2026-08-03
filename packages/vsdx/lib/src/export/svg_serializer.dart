@@ -3013,15 +3013,15 @@ class VsdxToSvgSerializer {
       _writeImagePlaceholder(buf, shape, indent: indent);
       return;
     }
-    // Clip + SoftEdges wrap both bitmaps and vector metafiles (canvas does).
-    final nest = _writeImageDecorationsOpen(buf, shape, indent: indent);
+    // Shape-box clipping + SoftEdges wrap both bitmaps and vector metafiles.
+    _writeImageDecorationsOpen(buf, shape, indent: indent);
     _writeForeignImageContent(
       buf,
       shape,
       indent: '$indent  ',
       resolved: resolved,
     );
-    _writeImageDecorationsClose(buf, indent: indent, geomClipped: nest);
+    _writeImageDecorationsClose(buf, indent: indent);
   }
 
   /// Resolve Foreign media to a Flutter-decodable bitmap or vector metafile.
@@ -3178,30 +3178,16 @@ class VsdxToSvgSerializer {
     return ' filter="url(#$id)"';
   }
 
-  /// Open clipPath + SoftEdges groups for a Foreign image (bitmap or metafile).
+  /// Open shape-box clip + SoftEdges groups for a Foreign image.
   ///
-  /// Nests geometry clip ∩ shape-box clip so ImgOffset overflow is cropped
-  /// the same way as canvas (`clipPath` then `clipRect(bounds)`).
-  /// Returns whether a geometry clip group was opened.
-  bool _writeImageDecorationsOpen(
+  /// libvisio outputs Geometry paths and the ForeignData GraphicObject as
+  /// siblings. Only the Foreign frame clips ImgOffset overflow; arbitrary
+  /// Geometry must not crop the image.
+  void _writeImageDecorationsOpen(
     StringBuffer buf,
     VsdxShape shape, {
     required String indent,
   }) {
-    String? clipD;
-    for (final geom in shape.geometries) {
-      if (geom.noShow) continue;
-      final d = _geometryToD(
-        geom,
-        shape.width,
-        shape.height,
-        roundingInches: shape.line.roundingInches,
-      );
-      if (d.isNotEmpty) {
-        clipD = d;
-        break;
-      }
-    }
     final boxId = 'img-box-${shape.id}';
     // SoftEdges blur extends past the image box — pad the clip so the feather
     // is not cut off (same pad as geometry SoftEdges / [_softEdgesPad]).
@@ -3214,14 +3200,6 @@ class VsdxToSvgSerializer {
       'height="${_n(shape.height + 2 * softPad)}"/></clipPath></defs>',
     );
     buf.writeln('$indent<g clip-path="url(#$boxId)">');
-    if (clipD != null) {
-      final geomId = 'img-clip-${shape.id}';
-      buf.writeln(
-        '$indent  <defs><clipPath id="$geomId">'
-        '<path d="$clipD"/></clipPath></defs>',
-      );
-      buf.writeln('$indent  <g clip-path="url(#$geomId)">');
-    }
     final softDefs = StringBuffer();
     final softFilter = _softEdgesFilterAttr(
       shape,
@@ -3239,16 +3217,13 @@ class VsdxToSvgSerializer {
     }
     final softAttr = softFilter == null ? '' : ' filter="$softFilter"';
     buf.writeln('$indent  <g$softAttr>');
-    return clipD != null;
   }
 
   void _writeImageDecorationsClose(
     StringBuffer buf, {
     required String indent,
-    required bool geomClipped,
   }) {
     buf.writeln('$indent  </g>'); // soft
-    if (geomClipped) buf.writeln('$indent  </g>');
     buf.writeln('$indent</g>'); // box clip
   }
 

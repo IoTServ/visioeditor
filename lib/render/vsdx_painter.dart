@@ -535,38 +535,18 @@ class VsdxPainter extends CustomPainter {
               tileMode: TileMode.decal,
             ),
         );
-        // Match SVG SourceAlpha: feather the visible silhouette (geometry
-        // clip when present), not the full shape box.
-        Path? clipPath;
-        for (final geom in shape.geometries) {
-          if (geom.noShow) continue;
-          final p = buildPath(
-            geom,
-            widthInches: shape.width,
-            heightInches: shape.height,
-            roundingInches: shape.line.roundingInches,
-            infiniteLineResolver: (p, q) =>
-                _infiniteLineEndpoints(shape, p, q),
-          );
-          if (!p.getBounds().isEmpty) {
-            clipPath = p;
-            break;
-          }
-        }
+        // libvisio emits ForeignData as a GraphicObject beside Geometry;
+        // Geometry is not a clipping path. Feather the bitmap's own frame.
         final maskPaint = Paint()..color = const Color(0xFFFFFFFF);
-        if (clipPath != null) {
-          canvas.drawPath(clipPath, maskPaint);
-        } else {
-          canvas.drawRect(
-            Rect.fromLTWH(
-              shape.imgOffsetXInches,
-              shape.imgOffsetYInches,
-              shape.effectiveImgWidth,
-              shape.effectiveImgHeight,
-            ),
-            maskPaint,
-          );
-        }
+        canvas.drawRect(
+          Rect.fromLTWH(
+            shape.imgOffsetXInches,
+            shape.imgOffsetYInches,
+            shape.effectiveImgWidth,
+            shape.effectiveImgHeight,
+          ),
+          maskPaint,
+        );
         canvas.restore();
         canvas.restore();
       } else {
@@ -2165,26 +2145,9 @@ class VsdxPainter extends CustomPainter {
       _paintImagePlaceholder(canvas, bounds, src);
       return;
     }
-    // Clip to the first visible Geometry so rounded / irregular frames crop
-    // the bitmap (Visio Foreign picture behaviour).
-    Path? clipPath;
-    for (final geom in shape.geometries) {
-      if (geom.noShow) continue;
-      final p = buildPath(
-        geom,
-        widthInches: shape.width,
-        heightInches: shape.height,
-        roundingInches: shape.line.roundingInches,
-        infiniteLineResolver: (p, q) =>
-            _infiniteLineEndpoints(shape, p, q),
-      );
-      if (!p.getBounds().isEmpty) {
-        clipPath = p;
-        break;
-      }
-    }
     // ImgOffset*/ImgWidth/ImgHeight place the bitmap inside the Foreign frame;
-    // overflow is clipped to the shape box (+ geometry).
+    // overflow is clipped to the shape box. libvisio emits Geometry and the
+    // GraphicObject as siblings, so Geometry must not clip ForeignData.
     final imgRect = Rect.fromLTWH(
       shape.imgOffsetXInches,
       shape.imgOffsetYInches,
@@ -2204,7 +2167,6 @@ class VsdxPainter extends CustomPainter {
     // libvisio likewise emits draw:mirror-vertical in addition to converting
     // the foreign object's native coordinate system.
     canvas.save();
-    if (clipPath != null) canvas.clipPath(clipPath);
     canvas.clipRect(bounds);
     if (needsTone) {
       // Blur sigma in layer pixels; Brightness/Contrast are Visio 0…1 with 0.5

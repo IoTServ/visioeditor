@@ -325,6 +325,58 @@ void main() {
             ).copyWith(flipY: true),
           ),
         );
+    var geometryImageDocument = parser.parse(blank);
+    final geometryImagePage = geometryImageDocument.pages.first;
+    const geometryImagePart = '/visio/media/libreoffice-geometry-image.png';
+    final geometryImage = raster.Image(width: 32, height: 32);
+    for (var y = 0; y < geometryImage.height; y++) {
+      for (var x = 0; x < geometryImage.width; x++) {
+        geometryImage.setPixelRgba(
+          x,
+          y,
+          x < geometryImage.width ~/ 2 ? 255 : 0,
+          0,
+          x < geometryImage.width ~/ 2 ? 0 : 255,
+          255,
+        );
+      }
+    }
+    geometryImageDocument = geometryImageDocument
+        .copyWith(
+          images: geometryImageDocument.images.withImage(
+            VsdxImage(
+              partName: geometryImagePart,
+              bytes: raster.encodePng(geometryImage),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          geometryImagePage.addShape(
+            VsdxShapeFactory.picture(
+              id: geometryImagePage.nextFreeShapeId(),
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: geometryImagePart,
+            ).copyWith(
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  noLine: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    LineTo(2, 0),
+                    LineTo(1, 2),
+                    LineTo(0, 0),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -338,6 +390,10 @@ void main() {
       'flipy_foreign_data': writer.write(
         originalBytes: blank,
         edited: flipDocument,
+      ),
+      'geometry_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: geometryImageDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -389,7 +445,8 @@ void main() {
         expect(pdf.lengthSync(), greaterThan(100));
         if (entry.key == 'tiff_foreign_data' ||
             entry.key == 'gif_foreign_data' ||
-            entry.key == 'flipy_foreign_data') {
+            entry.key == 'flipy_foreign_data' ||
+            entry.key == 'geometry_foreign_data') {
           if (pdftoppm == null) {
             if (require) {
               fail('pdftoppm is required for raster render checking');
@@ -440,6 +497,23 @@ void main() {
               expect(bottom.r, greaterThan(180),
                   reason: 'LibreOffice FlipY bottom must be source top');
               expect(bottom.b, lessThan(80));
+            }
+            if (entry.key == 'geometry_foreign_data') {
+              final reopened = parser.parse(entry.value);
+              final page = reopened.pages.first;
+              // This point is inside the ForeignData rectangle but outside
+              // the triangular Geometry. libvisio emits the two as sibling
+              // objects, so LibreOffice must still show the bitmap here.
+              final x = (1.2 / page.widthInches * rendered.width).round();
+              final y = ((page.heightInches - 2.7) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              final corner = rendered.getPixel(x, y);
+              expect(corner.r, greaterThan(180),
+                  reason: 'ForeignData must not be clipped by Geometry');
+              expect(corner.g, lessThan(80));
+              expect(corner.b, lessThan(80));
             }
           }
         }

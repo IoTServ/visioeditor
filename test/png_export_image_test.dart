@@ -191,6 +191,76 @@ void main() {
     codec.dispose();
   });
 
+  test('ForeignData is not clipped by Geometry after VSDX round-trip',
+      () async {
+    final source = raster.Image(width: 8, height: 8);
+    raster.fill(source, color: raster.ColorRgb8(255, 0, 0));
+    const part = '/visio/media/geometry-foreign-data.png';
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    final page = document.pages.first;
+    final shape = VsdxShapeFactory.picture(
+      id: page.nextFreeShapeId(),
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          noLine: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(2, 0),
+            LineTo(1, 2),
+            LineTo(0, 0),
+          ],
+        ),
+      ],
+    );
+    document = document
+        .copyWith(
+          images: document.images.withImage(
+            VsdxImage(
+              partName: part,
+              bytes: raster.encodePng(source),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(0, page.addShape(shape));
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: document),
+    );
+    final exported = await renderPageToPng(
+      reopened.pages.first,
+      theme: reopened.theme,
+      images: reopened.images,
+      pxPerInch: 96,
+    );
+    expect(exported, isNotNull);
+    final codec = await ui.instantiateImageCodec(exported!);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(rgba, isNotNull);
+
+    // Inside the 2x2 ForeignData rectangle, but outside its triangle Geometry.
+    final x = (1.2 * 96).round();
+    final y = ((reopened.pages.first.heightInches - 2.7) * 96).round();
+    final offset = (y * image.width + x) * 4;
+    expect(rgba!.getUint8(offset), greaterThan(200));
+    expect(rgba.getUint8(offset + 1), lessThan(50));
+    expect(rgba.getUint8(offset + 2), lessThan(50));
+    image.dispose();
+    codec.dispose();
+  });
+
   test('PNG export honours Color-by-Layer view', () async {
     final page = VsdxPage(
       id: 0,

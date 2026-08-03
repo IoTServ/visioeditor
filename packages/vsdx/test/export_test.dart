@@ -2488,7 +2488,7 @@ void main() {
     );
   });
 
-  test('SVG Foreign image is clipped to Geometry path', () {
+  test('SVG Foreign image is not clipped to Geometry path', () {
     final png = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     );
@@ -2512,6 +2512,18 @@ void main() {
             offsetXInches: 0.05,
             offsetYInches: 0.05,
           ),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              noLine: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(2, 0),
+                LineTo(1, 1.5),
+                LineTo(0, 0),
+              ],
+            ),
+          ],
         ),
       ],
     );
@@ -2521,8 +2533,9 @@ void main() {
         VsdxImage(partName: part, bytes: png, mimeType: 'image/png'),
       ),
     );
-    expect(svg, contains('clipPath id="img-clip-1"'));
-    expect(svg, contains('clip-path="url(#img-clip-1)"'));
+    expect(svg, isNot(contains('img-clip-1')));
+    expect(svg, contains('clipPath id="img-box-1"'));
+    expect(svg, contains('clip-path="url(#img-box-1)"'));
     // NoFill+NoLine picture still gets a filled silhouette shadow.
     expect(svg, contains('fill-opacity='));
     expect(svg, contains('translate(0.05 0.05)'));
