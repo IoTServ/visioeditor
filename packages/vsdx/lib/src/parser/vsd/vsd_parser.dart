@@ -5343,11 +5343,15 @@ class VsdBinaryParser {
               ? 0
               : p.backgroundPageId,
           pageSheet: VsdxPageSheet(
-            shadowOffsetXInches: p.shadowOffsetX * scale,
-            shadowOffsetYInches: p.shadowOffsetY * scale,
-            pageScale: p.pageScale,
+            // libvisio materialises the drawing ratio into the page and
+            // drawable coordinates, but emits shadow offsets verbatim.
+            // Neutralise the ratio in the editable model so VSD -> VSDX
+            // synthesis cannot apply it a second time on reopen.
+            shadowOffsetXInches: p.shadowOffsetX,
+            shadowOffsetYInches: p.shadowOffsetY,
+            pageScale: 1,
             pageScaleUnit: 'IN',
-            drawingScale: p.drawingScale,
+            drawingScale: 1,
             drawingScaleUnit: _visioUnitToken(p.drawingScaleUnit) ?? 'IN',
           ),
         ),
@@ -5407,13 +5411,9 @@ class VsdBinaryParser {
       weightInches: line.weightInches * s,
       roundingInches: line.roundingInches * s,
     );
-    if (d.shadow != null) {
-      d.shadow = d.shadow!.copyWith(
-        offsetXInches: d.shadow!.offsetXInches * s,
-        offsetYInches: d.shadow!.offsetYInches * s,
-        blurInches: d.shadow!.blurInches * s,
-      );
-    }
+    // Shadow offsets are physical source-cell values. VSDContentCollector
+    // leaves them unscaled even when page geometry and line widths use
+    // PageScale / DrawingScale.
     for (final g in d.geometries) {
       final scaled = <int, VsdxPathCommand>{};
       for (final e in g.byId.entries) {

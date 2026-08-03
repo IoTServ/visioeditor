@@ -21,6 +21,7 @@ import '../export/theme_serializer.dart';
 import '../model/connect.dart';
 import '../model/document.dart';
 import '../model/document_settings.dart';
+import '../model/drawing_scale.dart';
 import '../model/effects.dart';
 import '../model/fill.dart';
 import '../model/geometry.dart';
@@ -121,7 +122,12 @@ class VsdxWriter {
         ctXml: ctXml,
         markCtDirty: () => ctDirty = true,
       );
-      if (_patchPage(xml, bp, ep, imageRels: imageRels)) {
+      if (_patchPage(
+        xml,
+        visioSourceScalePage(bp),
+        visioSourceScalePage(ep),
+        imageRels: imageRels,
+      )) {
         patched[_noSlash(part)] =
             Uint8List.fromList(utf8.encode(xml.toXmlString()));
       }
@@ -146,13 +152,15 @@ class VsdxWriter {
       final bp = baselineById[ep.id];
       final el = pageElById[ep.id];
       if (bp == null || el == null) continue;
+      final sourceBp = visioSourceScalePage(bp);
+      final sourceEp = visioSourceScalePage(ep);
       if (bp.name != ep.name) {
         el.setAttribute('NameU', ep.name);
         if (el.getAttribute('Name') != null) el.setAttribute('Name', ep.name);
         pagesDirty = true;
       }
       if (_patchLayerRows(el, bp, ep)) pagesDirty = true;
-      if (_patchPageProperties(el, bp, ep)) pagesDirty = true;
+      if (_patchPageProperties(el, sourceBp, sourceEp)) pagesDirty = true;
       if (_ensurePageViewCenter(el, ep)) pagesDirty = true;
     }
 
@@ -184,12 +192,13 @@ class VsdxWriter {
     var nextRId = pagesRelsXml == null ? 1 : _maxRelId(pagesRelsXml) + 1;
     for (final ep in edited.pages) {
       if (baselineById.containsKey(ep.id)) continue;
+      final sourceEp = visioSourceScalePage(ep);
       final fileName = 'page$nextNum.xml';
       final partName = 'visio/pages/$fileName';
       nextNum++;
       final rId = 'rId$nextRId';
       nextRId++;
-      root.children.add(_buildPageIndexElement(ep, rId));
+      root.children.add(_buildPageIndexElement(sourceEp, rId));
       pagesDirty = true;
       if (pagesRelsXml != null) {
         _addPageRelationship(pagesRelsXml, rId, fileName);
@@ -211,7 +220,10 @@ class VsdxWriter {
         markCtDirty: () => ctDirty = true,
       );
       patched[partName] = Uint8List.fromList(
-          utf8.encode(_buildPageContentsXml(ep, imageRels: imageRels)));
+        utf8.encode(
+          _buildPageContentsXml(sourceEp, imageRels: imageRels),
+        ),
+      );
     }
 
     // 2d) Reorder <Page> elements to the edited page order.

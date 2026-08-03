@@ -302,6 +302,79 @@ void main() {
     expect(shape.richText.textBlock.marginLeftInches, closeTo(0.1, 1e-9));
   });
 
+  test('Page drawing scale uses libvisio absolute ratio semantics', () {
+    final bytes = _rewritePackage(
+      _scaledDrawingPackage(),
+      const <String, Map<String, String>>{
+        'visio/pages/pages.xml': <String, String>{
+          '<Cell N="PageScale" V="2" U="PT" F="Inh"/>':
+              '<Cell N="PageScale" V="-2" U="PT" F="Inh"/>',
+        },
+      },
+    );
+
+    final page = const DocumentParser().parse(bytes).pages.single;
+    expect(page.widthInches, closeTo(17, 1e-9));
+    expect(page.heightInches, closeTo(22, 1e-9));
+    expect(page.shapes.single.pinX, closeTo(2, 1e-9));
+    expect(page.shapes.single.pinY, closeTo(4, 1e-9));
+  });
+
+  test('scaled VSDX edits write source cells without double scaling', () {
+    final bytes = _scaledDrawingPackage();
+    final parser = const DocumentParser();
+    final before = parser.parse(bytes);
+    final page = before.pages.single;
+    final shape = page.shapes.single;
+    final geometry = shape.geometries.single;
+    final editedShape = shape.copyWith(
+      pinX: 3,
+      pinY: 5,
+      line: shape.line.copyWith(weightInches: 0.03),
+      geometries: <VsdxGeometry>[
+        geometry.copyWith(
+          commands: const <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(5, 3),
+          ],
+        ),
+      ],
+      richText: shape.richText.copyWith(
+        textBlock: shape.richText.textBlock.copyWith(
+          widthInches: 5,
+          heightInches: 3,
+        ),
+      ),
+    );
+    final edited = before.replacePage(
+      0,
+      page
+          .copyWith(widthInches: 18, heightInches: 24)
+          .updateShapeById(shape.id, (_) => editedShape),
+    );
+
+    final reopened = parser
+        .parse(
+          const VsdxWriter().write(originalBytes: bytes, edited: edited),
+        )
+        .pages
+        .single;
+    final after = reopened.shapes.single;
+
+    expect(reopened.widthInches, closeTo(18, 1e-9));
+    expect(reopened.heightInches, closeTo(24, 1e-9));
+    expect(reopened.pageSheet.pageScale, 2);
+    expect(reopened.pageSheet.drawingScale, 1);
+    expect(after.pinX, closeTo(3, 1e-9));
+    expect(after.pinY, closeTo(5, 1e-9));
+    expect(after.line.weightInches, closeTo(0.03, 1e-9));
+    final line = after.geometries.single.commands.last as LineTo;
+    expect(line.x, closeTo(5, 1e-9));
+    expect(line.y, closeTo(3, 1e-9));
+    expect(after.richText.textBlock.widthInches, closeTo(5, 1e-9));
+    expect(after.richText.textBlock.heightInches, closeTo(3, 1e-9));
+  });
+
   final oracle = LibvisioOracle.tryLoad();
 
   test('missing VSDX page properties retain libvisio zero defaults', () {

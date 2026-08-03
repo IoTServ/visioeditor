@@ -654,6 +654,56 @@ void main() {
       expect(page.widthInches, greaterThan(5));
     });
 
+    test('scaled VSD synthesis does not apply drawing scale twice', () {
+      final bytes = _loadSample('Visio6PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final parsed = const VsdDocumentParser().parse(bytes);
+      final page = parsed.pages.first;
+
+      // libvisio materialises the 1:48 drawing ratio into page/shape/line
+      // values, while PageProps and shape shadow offsets remain physical.
+      expect(page.pageSheet.pageScale, 1);
+      expect(page.pageSheet.drawingScale, 1);
+      expect(page.pageSheet.shadowOffsetXInches, closeTo(0.125, 1e-12));
+      expect(page.pageSheet.shadowOffsetYInches, closeTo(-0.125, 1e-12));
+
+      final styleShadows = <VsdxShape>[];
+      void collect(VsdxShape shape) {
+        if (!shape.shadow.enabled && shape.shadow.blurInches == 0) {
+          styleShadows.add(shape);
+        }
+        for (final child in shape.children) {
+          collect(child);
+        }
+      }
+
+      for (final shape in page.shapes) {
+        collect(shape);
+      }
+      expect(styleShadows, isNotEmpty);
+      for (final shape in styleShadows) {
+        expect(shape.shadow.offsetXInches, closeTo(0.125, 1e-12));
+        expect(shape.shadow.offsetYInches, closeTo(-0.125, 1e-12));
+      }
+
+      final reopened = const DocumentParser().parse(synthesizeVsdx(parsed));
+      final reopenedPage = reopened.pages.first;
+      expect(reopenedPage.widthInches, closeTo(page.widthInches, 1e-9));
+      expect(reopenedPage.heightInches, closeTo(page.heightInches, 1e-9));
+      expect(reopenedPage.pageSheet.shadowOffsetXInches,
+          closeTo(page.pageSheet.shadowOffsetXInches, 1e-9));
+      expect(reopenedPage.pageSheet.shadowOffsetYInches,
+          closeTo(page.pageSheet.shadowOffsetYInches, 1e-9));
+
+      final before = page.shapes.first;
+      final after = reopenedPage.findShapeById(before.id)!;
+      expect(after.pinX, closeTo(before.pinX, 1e-9));
+      expect(after.pinY, closeTo(before.pinY, 1e-9));
+      expect(after.width, closeTo(before.width, 1e-9));
+      expect(after.height, closeTo(before.height, 1e-9));
+      expect(after.line.weightInches, closeTo(before.line.weightInches, 1e-9));
+    });
+
     test('FeetAndInches TextField formats beyond libvisio TODO', () {
       // libvisio VSDFieldList still TODOs formats 10/13/14; we emit Visio-style
       // marks (e.g. 20'-6") so 万兴图示 / dimension labels stay readable.
