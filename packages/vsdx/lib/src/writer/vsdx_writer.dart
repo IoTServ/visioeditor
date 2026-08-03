@@ -4771,6 +4771,7 @@ class VsdxWriter {
         VsdxHorzAlign.center => 1,
         VsdxHorzAlign.right => 2,
         VsdxHorzAlign.justify => 3,
+        VsdxHorzAlign.full => 4,
       };
 
   static int _vAlignInt(VsdxVertAlign a) => switch (a) {
@@ -6995,7 +6996,9 @@ class VsdxWriter {
     final cell = _ensureCell(row, 'HorzAlign');
     final cur = cell.getAttribute('V');
     // Keep any explicit alignment already written.
-    if (cur == '0' || cur == '1' || cur == '2' || cur == '3') return false;
+    if (cur == '0' || cur == '1' || cur == '2' || cur == '3' || cur == '4') {
+      return false;
+    }
     final modelAlign = s.richText.runs.isNotEmpty
         ? s.richText.runs.first.paraStyle.horizontalAlign
         : VsdxHorzAlign.center;
@@ -7003,6 +7006,7 @@ class VsdxWriter {
       VsdxHorzAlign.left => '0',
       VsdxHorzAlign.right => '2',
       VsdxHorzAlign.justify => '3',
+      VsdxHorzAlign.full => '4',
       VsdxHorzAlign.center => '1',
     };
     cell.setAttribute('V', want);

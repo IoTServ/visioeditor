@@ -459,6 +459,40 @@ void main() {
         VsdxHorzAlign.center);
   });
 
+  test('Paragraph full alignment writes and reopens as HorzAlign 4', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 3,
+      height: 1,
+    ).copyWith(
+      richText: const VsdxRichText(runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'Distributed',
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.full,
+          ),
+        ),
+      ]),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = VsdxPackage.open(out)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(pageXml, contains('N="HorzAlign" V="4"'));
+    final reopened = parser.parse(out).pages.first.findShapeById(id)!;
+    expect(
+      reopened.richText.runs.first.paraStyle.horizontalAlign,
+      VsdxHorzAlign.full,
+    );
+  });
+
   test('heal injects missing docProps/core.xml on save', () {
     // test5_master references core in .rels but the part is absent.
     final bytes =

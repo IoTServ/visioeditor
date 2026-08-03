@@ -1431,6 +1431,7 @@ ApplyResult applyOps(
                 'center' || 'centre' || 'middle' => VsdxHorzAlign.center,
                 'right' => VsdxHorzAlign.right,
                 'justify' => VsdxHorzAlign.justify,
+                'full' || 'distributed' => VsdxHorzAlign.full,
                 _ => null,
               };
               if (align != null) {

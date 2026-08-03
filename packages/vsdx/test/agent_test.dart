@@ -1549,7 +1549,7 @@ void main() {
           'miterLimit': 8,
           'italic': true,
           'bold': true,
-          'align': 'center',
+          'align': 'full',
         },
       ]);
       final after = r.document.pages.first.findShapeById(id)!;
@@ -1560,7 +1560,7 @@ void main() {
       expect(after.richText.runs.first.charStyle.style.italic, isTrue);
       expect(after.richText.runs.first.charStyle.style.bold, isTrue);
       expect(after.richText.runs.first.paraStyle.horizontalAlign,
-          VsdxHorzAlign.center);
+          VsdxHorzAlign.full);
     });
 
     test('set_style fillGradient and lineGradient', () {

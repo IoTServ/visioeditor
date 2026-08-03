@@ -2435,7 +2435,7 @@ class _PageCanvasState extends State<PageCanvas>
         VsdxHorzAlign.left => TextAlign.left,
         VsdxHorzAlign.center => TextAlign.center,
         VsdxHorzAlign.right => TextAlign.right,
-        VsdxHorzAlign.justify => TextAlign.justify,
+        VsdxHorzAlign.justify || VsdxHorzAlign.full => TextAlign.justify,
       };
 
   void _onPanStart(DragStartDetails d) {

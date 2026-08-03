@@ -5152,6 +5152,7 @@ class VsdBinaryParser {
         1 => VsdxHorzAlign.center,
         2 => VsdxHorzAlign.right,
         3 => VsdxHorzAlign.justify,
+        4 => VsdxHorzAlign.full,
         _ => VsdxHorzAlign.left,
       };
       int? bullet;

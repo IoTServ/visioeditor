@@ -135,7 +135,7 @@ void main() {
             </Section>
             <Section N="Paragraph">
               <Row IX="0">
-                <Cell N="HorzAlign" V="1"/>
+                <Cell N="HorzAlign" V="4"/>
                 <Cell N="IndFirst" V="0.1"/>
                 <Cell N="SpLine" V="-1.5"/>
                 <Cell N="Bullet" V="2"/>
@@ -183,7 +183,7 @@ void main() {
     expect(shadow.transparency, closeTo(0.5, 1e-12));
 
     final para = registry.resolveParaStyle(3)!;
-    expect(para.horizontalAlign, VsdxHorzAlign.center);
+    expect(para.horizontalAlign, VsdxHorzAlign.full);
     expect(para.indentFirstInches, closeTo(0.1, 1e-12));
     expect(para.lineSpacing, closeTo(1.5, 1e-12));
     expect(para.bullet, 2);

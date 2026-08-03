@@ -3819,7 +3819,9 @@ class VsdxToSvgSerializer {
       final textBandX = layout.textBandX;
       final bandRight = layoutW - layoutMr - style.indentRightInches;
       final (anchor, xBody) = switch (horizontalAlign) {
-        VsdxHorzAlign.left || VsdxHorzAlign.justify => (
+        VsdxHorzAlign.left ||
+        VsdxHorzAlign.justify ||
+        VsdxHorzAlign.full => (
             'start',
             textBandX,
           ),
@@ -3882,7 +3884,8 @@ class VsdxToSvgSerializer {
       }
       // Approximate Visio Justify on the body band only (bullet is separate).
       var justifyAttr = '';
-      if (horizontalAlign == VsdxHorzAlign.justify) {
+      if (horizontalAlign == VsdxHorzAlign.justify ||
+          horizontalAlign == VsdxHorzAlign.full) {
         final bandW = math.max(0.04, bandRight - textBandX);
         var natural = 0.0;
         for (final (raw, run) in layout.segs) {
@@ -3975,7 +3978,7 @@ class VsdxToSvgSerializer {
               xBand + (bandRight - xBand - natural) / 2,
               xBand + (bandRight - xBand + natural) / 2,
             ),
-          VsdxHorzAlign.justify => (xBand, bandRight),
+          VsdxHorzAlign.justify || VsdxHorzAlign.full => (xBand, bandRight),
           _ => (xBand, xBand + natural),
         };
         minX = math.min(minX, x0);

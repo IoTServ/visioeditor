@@ -3658,7 +3658,7 @@ class VsdxPainter extends CustomPainter {
     VsdxHorzAlign.left => TextAlign.left,
     VsdxHorzAlign.center => TextAlign.center,
     VsdxHorzAlign.right => TextAlign.right,
-    VsdxHorzAlign.justify => TextAlign.justify,
+    VsdxHorzAlign.justify || VsdxHorzAlign.full => TextAlign.justify,
   };
 
   /// Visio `Case=2` (initial caps) — uppercase the first letter of each word.

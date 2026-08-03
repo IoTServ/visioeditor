@@ -45,6 +45,20 @@ void main() {
     expect(rich.textBlock.angleRad, closeTo(math.pi / 2, 1e-9));
   });
 
+  test('Paragraph HorzAlign=4 remains libvisio full alignment', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Paragraph"><Row IX="0">'
+        '<Cell N="HorzAlign" V="4"/>'
+        '</Row></Section><Text><pp IX="0"/>Distributed</Text>',
+      ),
+    );
+    expect(
+      rich.runs.single.paraStyle.horizontalAlign,
+      VsdxHorzAlign.full,
+    );
+  });
+
   test('TxtWidth F=Inh inherits master width (not cached V=0)', () {
     final el = shape(
       '<Cell N="TxtWidth" V="0" F="Inh"/><Text>Label</Text>',

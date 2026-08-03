@@ -472,6 +472,7 @@ class RichTextParser {
         VsdxHorzAlign.center => 1,
         VsdxHorzAlign.right => 2,
         VsdxHorzAlign.justify => 3,
+        VsdxHorzAlign.full => 4,
         _ => 0,
       },
     );
@@ -1008,6 +1009,7 @@ class RichTextParser {
         1 => VsdxHorzAlign.center,
         2 => VsdxHorzAlign.right,
         3 => VsdxHorzAlign.justify,
+        4 => VsdxHorzAlign.full,
         _ => VsdxHorzAlign.left,
       };
 

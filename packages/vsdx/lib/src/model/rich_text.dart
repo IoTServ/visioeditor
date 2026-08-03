@@ -476,7 +476,12 @@ class VsdxParaStyle {
       );
 }
 
-enum VsdxHorzAlign { left, center, right, justify }
+/// Visio Paragraph `HorzAlign` values.
+///
+/// [justify] (`3`) leaves the final line ragged; [full] (`4`) distributes the
+/// final line as well. Keep them distinct so VSD/VSDX round-trips do not
+/// collapse libvisio's `fo:text-align="full"` into left alignment.
+enum VsdxHorzAlign { left, center, right, justify, full }
 
 /// Baseline paragraph style used by libvisio while parsing a shape.
 ///

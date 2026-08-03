@@ -983,6 +983,37 @@ void main() {
     expect(svg, contains('textLength="'));
   });
 
+  test('SVG Full alignment distributes text like libvisio', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Full alignment',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 3,
+          height: 0.8,
+        ).copyWith(
+          richText: const VsdxRichText(runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: 'A B',
+              paraStyle: VsdxParaStyle(
+                horizontalAlign: VsdxHorzAlign.full,
+              ),
+            ),
+          ]),
+        ),
+      ],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('text-anchor="start"'));
+    expect(svg, contains('lengthAdjust="spacing"'));
+    expect(svg, contains('textLength="'));
+  });
+
   test('SVG open-concave arrow (id 17) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
