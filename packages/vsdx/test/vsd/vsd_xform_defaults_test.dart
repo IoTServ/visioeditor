@@ -17,4 +17,18 @@ void main() {
     expect(libvisioShapeFillDefault.foreground, isNull);
     expect(libvisioShapeFillDefault.background, isNull);
   });
+
+  test('unstyled Visio text uses libvisio paragraph and block defaults', () {
+    expect(
+      libvisioParagraphStyleDefault.horizontalAlign,
+      VsdxHorzAlign.center,
+    );
+    expect(libvisioParagraphStyleDefault.lineSpacing, 1.2);
+    expect(libvisioTextBlockStyleDefault.verticalAlign, VsdxVertAlign.middle);
+    expect(libvisioTextBlockStyleDefault.marginLeftInches, 0);
+    expect(libvisioTextBlockStyleDefault.marginRightInches, 0);
+    expect(libvisioTextBlockStyleDefault.marginTopInches, 0);
+    expect(libvisioTextBlockStyleDefault.marginBottomInches, 0);
+    expect(libvisioTextBlockStyleDefault.defaultTabStopInches, 0.5);
+  });
 }

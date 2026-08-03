@@ -143,6 +143,32 @@ void main() {
     expect(shape.richText.runs.single.fieldSpans.single.length, 3);
   });
 
+  test('Sparse VSDX text starts from libvisio paragraph and block defaults',
+      () {
+    final pageXml = XmlDocument.parse(
+      '<PageContents><Shapes><Shape ID="1" NameU="Text">'
+      '<Text>Unstyled</Text>'
+      '</Shape></Shapes></PageContents>',
+    );
+
+    final shape = const PageParser()
+        .parseShapes(pageXml, partName: '/visio/pages/page1.xml')
+        .single;
+    final paragraph = shape.richText.runs.single.paraStyle;
+    final block = shape.richText.textBlock;
+
+    expect(paragraph.horizontalAlign, VsdxHorzAlign.center);
+    expect(paragraph.lineSpacing, closeTo(1.2, 1e-9));
+    expect(paragraph.lineSpacingAbsoluteInches, 0);
+    expect(paragraph.lineSpacingSolid, isFalse);
+    expect(block.verticalAlign, VsdxVertAlign.middle);
+    expect(block.marginLeftInches, 0);
+    expect(block.marginRightInches, 0);
+    expect(block.marginTopInches, 0);
+    expect(block.marginBottomInches, 0);
+    expect(block.defaultTabStopInches, closeTo(0.5, 1e-9));
+  });
+
   test('Nested shapes inherit only the parent NameU like libvisio', () {
     final pageXml = XmlDocument.parse(
       '<PageContents><Shapes>'

@@ -344,7 +344,7 @@ class PageParser {
         VsdxCharStyle.defaults;
     final protoPara = proto?.richText.runs.isNotEmpty == true
         ? proto!.richText.runs.first.paraStyle
-        : VsdxParaStyle.defaults;
+        : libvisioParagraphStyleDefault;
     final defaultPara = ownTextStyleId != null
         ? (_stylesheets.resolveParaStyle(
               ownTextStyleId,
@@ -353,8 +353,13 @@ class PageParser {
             protoPara)
         : (proto != null
             ? protoPara
-            : (_stylesheets.resolveParaStyle(null) ?? protoPara));
-    final protoBlock = proto?.richText.textBlock ?? VsdxTextBlock.defaults;
+            : (_stylesheets.resolveParaStyle(
+                  null,
+                  defaults: protoPara,
+                ) ??
+                protoPara));
+    final protoBlock =
+        proto?.richText.textBlock ?? libvisioTextBlockStyleDefault;
     final defaultBlock = ownTextStyleId != null
         ? (_stylesheets.resolveTextBlock(
               ownTextStyleId,
@@ -363,7 +368,11 @@ class PageParser {
             protoBlock)
         : (proto != null
             ? protoBlock
-            : (_stylesheets.resolveTextBlock(null) ?? protoBlock));
+            : (_stylesheets.resolveTextBlock(
+                  null,
+                  defaults: protoBlock,
+                ) ??
+                protoBlock));
 
     var richText = _richText.parse(
       shapeEl,

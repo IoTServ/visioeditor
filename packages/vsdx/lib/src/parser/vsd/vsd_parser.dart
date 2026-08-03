@@ -5868,9 +5868,12 @@ class VsdBinaryParser {
     if (d.legacyTextBytes != null) {
       d.text = _decodeLegacyShapeText(d);
     }
-    VsdxRichText rich = VsdxRichText.empty;
+    VsdxRichText rich = const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: libvisioTextBlockStyleDefault,
+    );
     final rawText = d.text;
-    final textBlock = VsdxTextBlock.defaults.copyWith(
+    final textBlock = libvisioTextBlockStyleDefault.copyWith(
       hideText: d.hideText,
       pinXInches: d.txtPinX,
       pinYInches: d.txtPinY,
@@ -6069,7 +6072,7 @@ class VsdBinaryParser {
     }
 
     VsdxParaStyle paraStyleOf(_ParaRunDraft? p) {
-      var lineSpacing = 1.0;
+      var lineSpacing = libvisioParagraphStyleDefault.lineSpacing;
       var lineSpacingAbs = 0.0;
       var lineSpacingSolid = false;
       final sp = p?.spLine ?? d.spLine;
@@ -6083,7 +6086,9 @@ class VsdBinaryParser {
         }
       }
       return VsdxParaStyle(
-        horizontalAlign: p?.paraAlign ?? d.paraAlign ?? VsdxHorzAlign.left,
+        horizontalAlign: p?.paraAlign ??
+            d.paraAlign ??
+            libvisioParagraphStyleDefault.horizontalAlign,
         indentFirstInches: p?.indFirst ?? d.indFirst ?? 0.0,
         indentLeftInches: p?.indLeft ?? d.indLeft ?? 0.0,
         indentRightInches: p?.indRight ?? d.indRight ?? 0.0,

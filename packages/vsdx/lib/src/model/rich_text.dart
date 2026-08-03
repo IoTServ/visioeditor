@@ -440,6 +440,16 @@ class VsdxParaStyle {
 
 enum VsdxHorzAlign { left, center, right, justify }
 
+/// Baseline paragraph style used by libvisio while parsing a shape.
+///
+/// Keep this separate from [VsdxParaStyle.defaults], which is the editor's
+/// creation default. libvisio starts an unstyled shape at centered, 120%
+/// line spacing (`VSDParaStyle::spLine = -1.2`).
+const VsdxParaStyle libvisioParagraphStyleDefault = VsdxParaStyle(
+  horizontalAlign: VsdxHorzAlign.center,
+  lineSpacing: 1.2,
+);
+
 /// Full rich-text body of a shape.
 @immutable
 class VsdxRichText {
@@ -604,5 +614,17 @@ class VsdxTextBlock {
             defaultTabStopInches ?? this.defaultTabStopInches,
       );
 }
+
+/// Baseline text-block style used by libvisio while parsing a shape.
+///
+/// Visio documents normally override these through a text stylesheet, but a
+/// sparse VSD/VSDX shape begins with zero padding in libvisio. The editor's
+/// creation default intentionally keeps its friendlier 0.04-inch padding.
+const VsdxTextBlock libvisioTextBlockStyleDefault = VsdxTextBlock(
+  marginLeftInches: 0,
+  marginRightInches: 0,
+  marginTopInches: 0,
+  marginBottomInches: 0,
+);
 
 enum VsdxVertAlign { top, middle, bottom }

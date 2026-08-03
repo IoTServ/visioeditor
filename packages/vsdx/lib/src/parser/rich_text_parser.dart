@@ -193,8 +193,8 @@ class RichTextParser {
   VsdxRichText parse(
     XmlElement shape, {
     VsdxCharStyle defaultChar = VsdxCharStyle.defaults,
-    VsdxParaStyle defaultPara = VsdxParaStyle.defaults,
-    VsdxTextBlock defaultBlock = VsdxTextBlock.defaults,
+    VsdxParaStyle defaultPara = libvisioParagraphStyleDefault,
+    VsdxTextBlock defaultBlock = libvisioTextBlockStyleDefault,
     List<VsdxTabSet> inheritTabs = const <VsdxTabSet>[],
   }) {
     final textEl = _firstChildLocal(shape, 'Text');
