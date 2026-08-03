@@ -3104,16 +3104,16 @@ class VsdxToSvgSerializer {
     final oy = shape.imgOffsetYInches;
     final iw = shape.effectiveImgWidth;
     final ih = shape.effectiveImgHeight;
-    // Bitmap rows are Y-down — flip about the image rect centre (not the
-    // shape centre) so ImgOffset* pan stays correct under FlipY.
-    final uprightY = shape.flipY ? 1.0 : -1.0;
+    // Bitmap rows are Y-down — always normalise them about the image rect
+    // centre. Shape/group FlipY remains in the outer XForm and must mirror the
+    // already-upright bitmap, matching libvisio's draw:mirror-vertical.
     final cx = ox + iw / 2;
     final cy = oy + ih / 2;
     final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
     final opacityAttr = opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
     buf.writeln(
       '$indent<g$toneAttr transform="translate(${_n(cx)} ${_n(cy)}) '
-      'scale(1 ${_n(uprightY)}) '
+      'scale(1 -1) '
       'translate(${_n(-cx)} ${_n(-cy)})">'
       '<image href="$href" x="${_n(ox)}" y="${_n(oy)}" '
       'width="${_n(iw)}" height="${_n(ih)}" '
@@ -3270,12 +3270,10 @@ class VsdxToSvgSerializer {
     final iw = shape.effectiveImgWidth;
     final ih = shape.effectiveImgHeight;
     final sx = iw / dw;
-    // GDI metafiles are Y-down; flip once into page Y-up — unless FlipY
-    // already mirrored the parent XForm (same cancel-avoidance as bitmaps /
-    // canvas [_paintImage]). Map into the ImgOffset*/ImgWidth/Height rect.
-    final gdiFlipY = !shape.flipY;
-    final sy = ih / dh * (gdiFlipY ? -1.0 : 1.0);
-    final ty = gdiFlipY ? oy + ih : oy;
+    // GDI metafiles are Y-down. Always normalise into shape-local Y-up, then
+    // let the outer shape/group XForms apply FlipY exactly once.
+    final sy = -ih / dh;
+    final ty = oy + ih;
     final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
     final opacityAttr = opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
     buf.writeln(
@@ -3291,7 +3289,7 @@ class VsdxToSvgSerializer {
           buf,
           op,
           indent: '$indent  ',
-          unflipGlyphs: gdiFlipY,
+          unflipGlyphs: true,
         );
       }
     }

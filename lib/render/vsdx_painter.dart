@@ -2199,8 +2199,10 @@ class VsdxPainter extends CustomPainter {
         blur > 1e-6 ||
         (bright - 0.5).abs() > 1e-3 ||
         (contrast - 0.5).abs() > 1e-3;
-    // Bitmap rows are Y-down; the page frame is Y-up. Flip once about the
-    // image rect centre — skip when FlipY already mirrored the parent XForm.
+    // Bitmap rows are Y-down; the shape frame is Y-up. Always normalise the
+    // bitmap here, then let the shape/group XForms apply FlipY independently.
+    // libvisio likewise emits draw:mirror-vertical in addition to converting
+    // the foreign object's native coordinate system.
     canvas.save();
     if (clipPath != null) canvas.clipPath(clipPath);
     canvas.clipRect(bounds);
@@ -2245,7 +2247,7 @@ class VsdxPainter extends CustomPainter {
       );
     }
     canvas.translate(imgRect.center.dx, imgRect.center.dy);
-    canvas.scale(1, shape.flipY ? 1.0 : -1.0);
+    canvas.scale(1, -1);
     final dst = Rect.fromCenter(
       center: Offset.zero,
       width: imgRect.width,

@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as raster;
 import 'package:visioeditor/io/image_export.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -90,6 +91,104 @@ void main() {
     expect(redPixels, greaterThan(20),
         reason: 'expected solid-red embedded image around ($cx,$cy) '
             'on ${w}x$h export; got $redPixels red pixels');
+  });
+
+  test('picture FlipY mirrors pixels and survives VSDX round-trip', () async {
+    final source = raster.Image(width: 8, height: 8);
+    for (var y = 0; y < source.height; y++) {
+      for (var x = 0; x < source.width; x++) {
+        source.setPixelRgba(
+          x,
+          y,
+          y < source.height ~/ 2 ? 255 : 0,
+          0,
+          y < source.height ~/ 2 ? 0 : 255,
+          255,
+        );
+      }
+    }
+    final pngBytes = raster.encodePng(source);
+    const part = '/visio/media/flipy.png';
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    final page = document.pages.first;
+    final normalId = page.nextFreeShapeId();
+    final flippedId = normalId + 1;
+    final normal = VsdxShapeFactory.picture(
+      id: normalId,
+      pinX: 2,
+      pinY: 2.5,
+      width: 1.5,
+      height: 2,
+      imagePartName: part,
+    );
+    final flipped = VsdxShapeFactory.picture(
+      id: flippedId,
+      pinX: 4.5,
+      pinY: 2.5,
+      width: 1.5,
+      height: 2,
+      imagePartName: part,
+    ).copyWith(flipY: true);
+    document = document
+        .copyWith(
+          images: document.images.withImage(
+            VsdxImage(
+              partName: part,
+              bytes: pngBytes,
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(0, page.copyWith(shapes: <VsdxShape>[normal, flipped]));
+
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: document),
+    );
+    expect(reopened.pages.first.findShapeById(flippedId)!.flipY, isTrue);
+    final exported = await renderPageToPng(
+      reopened.pages.first,
+      theme: reopened.theme,
+      images: reopened.images,
+      pxPerInch: 96,
+    );
+    expect(exported, isNotNull);
+    final codec = await ui.instantiateImageCodec(exported!);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(rgba, isNotNull);
+    final pageHeight = reopened.pages.first.heightInches;
+
+    (int, int, int) rgbAt(double pageX, double pageY) {
+      final x = (pageX * 96).round().clamp(0, image.width - 1);
+      final y = ((pageHeight - pageY) * 96)
+          .round()
+          .clamp(0, image.height - 1);
+      final offset = (y * image.width + x) * 4;
+      return (
+        rgba!.getUint8(offset),
+        rgba.getUint8(offset + 1),
+        rgba.getUint8(offset + 2),
+      );
+    }
+
+    final normalTop = rgbAt(2, 3);
+    final normalBottom = rgbAt(2, 2);
+    final flippedTop = rgbAt(4.5, 3);
+    final flippedBottom = rgbAt(4.5, 2);
+    expect(normalTop.$1, greaterThan(200));
+    expect(normalTop.$3, lessThan(50));
+    expect(normalBottom.$3, greaterThan(200));
+    expect(normalBottom.$1, lessThan(50));
+    expect(flippedTop.$3, greaterThan(200));
+    expect(flippedTop.$1, lessThan(50));
+    expect(flippedBottom.$1, greaterThan(200));
+    expect(flippedBottom.$3, lessThan(50));
+    image.dispose();
+    codec.dispose();
   });
 
   test('PNG export honours Color-by-Layer view', () async {

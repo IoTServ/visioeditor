@@ -286,6 +286,45 @@ void main() {
             ),
           ),
         );
+    var flipDocument = parser.parse(blank);
+    final flipPage = flipDocument.pages.first;
+    const flipPart = '/visio/media/libreoffice-flipy.png';
+    final flipImage = raster.Image(width: 32, height: 32);
+    for (var y = 0; y < flipImage.height; y++) {
+      for (var x = 0; x < flipImage.width; x++) {
+        flipImage.setPixelRgba(
+          x,
+          y,
+          y < flipImage.height ~/ 2 ? 255 : 0,
+          0,
+          y < flipImage.height ~/ 2 ? 0 : 255,
+          255,
+        );
+      }
+    }
+    flipDocument = flipDocument
+        .copyWith(
+          images: flipDocument.images.withImage(
+            VsdxImage(
+              partName: flipPart,
+              bytes: raster.encodePng(flipImage),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          flipPage.addShape(
+            VsdxShapeFactory.picture(
+              id: flipPage.nextFreeShapeId(),
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: flipPart,
+            ).copyWith(flipY: true),
+          ),
+        );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -295,6 +334,10 @@ void main() {
       'gif_foreign_data': writer.write(
         originalBytes: blank,
         edited: gifDocument,
+      ),
+      'flipy_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: flipDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -345,7 +388,8 @@ void main() {
                 'dir=${dir.listSync().map((e) => e.path).toList()}');
         expect(pdf.lengthSync(), greaterThan(100));
         if (entry.key == 'tiff_foreign_data' ||
-            entry.key == 'gif_foreign_data') {
+            entry.key == 'gif_foreign_data' ||
+            entry.key == 'flipy_foreign_data') {
           if (pdftoppm == null) {
             if (require) {
               fail('pdftoppm is required for raster render checking');
@@ -376,6 +420,27 @@ void main() {
                 reason: 'red=$redPixels blue=$bluePixels');
             expect(bluePixels, greaterThan(100),
                 reason: 'red=$redPixels blue=$bluePixels');
+            if (entry.key == 'flipy_foreign_data') {
+              final reopened = parser.parse(entry.value);
+              final page = reopened.pages.first;
+              final x = (2 / page.widthInches * rendered.width).round();
+              final topY = ((page.heightInches - 2.5) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              final bottomY = ((page.heightInches - 1.5) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              final top = rendered.getPixel(x, topY);
+              final bottom = rendered.getPixel(x, bottomY);
+              expect(top.b, greaterThan(180),
+                  reason: 'LibreOffice FlipY top must be source bottom');
+              expect(top.r, lessThan(80));
+              expect(bottom.r, greaterThan(180),
+                  reason: 'LibreOffice FlipY bottom must be source top');
+              expect(bottom.b, lessThan(80));
+            }
           }
         }
         // Still parseable after our write (independent of LibreOffice).

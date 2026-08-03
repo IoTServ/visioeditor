@@ -628,7 +628,7 @@ void main() {
     expect(svg.contains('fill="#f2f2f2"'), isFalse);
   });
 
-  test('SVG vector metafile FlipY cancels GDI Y-flip like bitmaps', () {
+  test('SVG vector metafile FlipY mirrors after GDI normalisation', () {
     final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
         .readAsBytesSync();
     const part = '/visio/media/thumb.wmf';
@@ -667,11 +667,10 @@ void main() {
     expect(uprightMeta!.group(1), '-',
         reason: 'default metafile must flip GDI Y-down into page Y-up');
     expect(flippedMeta, isNotNull);
-    expect(flippedMeta!.group(1), '',
-        reason: 'FlipY metafile must not apply a second Y flip');
+    expect(flippedMeta!.group(1), '-',
+        reason: 'GDI normalisation remains inside the parent FlipY XForm');
     expect(flipped, contains('scale(1 -1)')); // parent XForm FlipY
-    // FlipY must not translate(0, height) with positive sy (would land in [h,2h]).
-    expect(flipped, contains('translate(0 0)'));
+    expect(flipped, contains('translate(0 2)'));
     expect(upright, contains('translate(0 2)'));
   });
 
@@ -2529,7 +2528,7 @@ void main() {
     expect(svg, contains('translate(0.05 0.05)'));
   });
 
-  test('SVG FlipY bitmap uses centre flip (stays in shape box)', () {
+  test('SVG FlipY bitmap normalises rows before parent mirror', () {
     // 1×1 PNG
     final png = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -2558,11 +2557,13 @@ void main() {
     expect(
       svg,
       contains(
-        'transform="translate(1 0.5) scale(1 1) translate(-1 -0.5)"',
+        'transform="translate(1 0.5) scale(1 -1) translate(-1 -0.5)"',
       ),
-      reason: 'FlipY bitmap must centre-scale, not translate(0,h)+scale(1,1)',
+      reason: 'bitmap Y-down normalisation must remain inside FlipY XForm',
     );
-    expect(svg.contains('translate(0 1) scale(1 1)'), isFalse);
+    expect('scale(1 -1)'.allMatches(svg).length, greaterThanOrEqualTo(2),
+        reason: 'outer shape mirror and inner bitmap normalisation both apply');
+    expect(svg, isNot(contains('scale(1 1)')));
   });
 
   test('SVG Initial Caps capitalises each word', () {
