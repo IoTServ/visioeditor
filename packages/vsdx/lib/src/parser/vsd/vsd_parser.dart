@@ -1533,8 +1533,11 @@ class VsdBinaryParser {
         ..order.addAll([0, 1]);
       d.geometries.add(g);
     }
-    // Rectangle fallback: text-only, picture frame, or unresolved master.
-    if (d.geometries.isEmpty && !d.is1D) {
+    // A resolved master with no geometry is a group/text container. libvisio
+    // does not invent a path for it; doing so paints a spurious filled box
+    // behind the master's children. Keep the resilience fallback only for a
+    // shape whose geometry could not be resolved from any master.
+    if (d.geometries.isEmpty && !d.is1D && master == null) {
       final g = _GeomBuilder()
         ..byId[0] = const MoveTo(0, 0)
         ..byId[1] = LineTo(d.width, 0)

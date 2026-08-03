@@ -808,13 +808,19 @@ void main() {
       expect(fonts.any((f) => f == 'Calibri' || f == 'Arial'), isTrue);
     });
 
-    test('no-bgcolor resolves geometry via master or fallback', () {
+    test('no-bgcolor resolves child geometry from its master group', () {
       final bytes = _loadSample('no-bgcolor.vsd');
       if (bytes == null) return;
       final doc = const VsdDocumentParser().parse(bytes);
       expect(doc.pages.first.shapes, isNotEmpty);
-      final withGeom =
-          doc.pages.first.shapes.where((s) => s.geometries.isNotEmpty);
+      final allShapes = <VsdxShape>[];
+      void collect(VsdxShape shape) {
+        allShapes.add(shape);
+        shape.children.forEach(collect);
+      }
+
+      doc.pages.first.shapes.forEach(collect);
+      final withGeom = allShapes.where((s) => s.geometries.isNotEmpty);
       expect(withGeom, isNotEmpty);
     });
 
@@ -890,6 +896,27 @@ void main() {
           .firstWhere((t) => t.contains('Geometry Height'), orElse: () => '');
       expect(text, contains("20'-6\""));
       expect(text.contains('20.5'), isFalse);
+    });
+
+    test('master-backed text containers do not gain synthetic rectangles', () {
+      final bytes = _loadSample('Visio11PlanWithDimensions.vsd');
+      if (bytes == null) return;
+      final parsed = const VsdDocumentParser().parse(bytes);
+      final room = parsed.pages.first.findShapeById(1)!;
+
+      // libvisio emits the room's text and children but no path for the empty
+      // master container. A rectangle fallback used to paint its inherited
+      // grey fill over the yellow page drawing.
+      expect(room.geometries, isEmpty);
+      final svg = VsdxToSvgSerializer().serializePage(
+        parsed.pages.first,
+        theme: parsed.theme,
+        images: parsed.images,
+      );
+      expect(svg, isNot(contains('#808080')));
+
+      final reopened = const DocumentParser().parse(synthesizeVsdx(parsed));
+      expect(reopened.pages.first.findShapeById(1)!.geometries, isEmpty);
     });
 
     test('bitmaps.vsd embeds raster ForeignData when present', () {
