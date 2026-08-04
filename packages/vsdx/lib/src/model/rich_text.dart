@@ -227,6 +227,80 @@ bool isVisioAsianScriptRune(int rune) {
       (rune >= 0x20000 && rune <= 0x323af); // CJK extensions B through H.
 }
 
+/// Whether [rune] has a strong right-to-left Unicode direction.
+bool isVisioRightToLeftRune(int rune) {
+  // Arabic-Indic digits are weak/neutral even though they sit in Arabic
+  // blocks. Let surrounding text or LangID choose their paragraph direction.
+  if ((rune >= 0x0660 && rune <= 0x0669) ||
+      (rune >= 0x06f0 && rune <= 0x06f9) ||
+      _isVisioRtlNonStrongRune(rune)) {
+    return false;
+  }
+  return rune == 0x200f || // RIGHT-TO-LEFT MARK.
+      (rune >= 0x0590 && rune <= 0x08ff) ||
+      (rune >= 0xfb1d && rune <= 0xfdff) ||
+      (rune >= 0xfe70 && rune <= 0xfeff) ||
+      (rune >= 0x10840 && rune <= 0x1085f) ||
+      (rune >= 0x10900 && rune <= 0x10cff) ||
+      (rune >= 0x10e60 && rune <= 0x10fff) ||
+      (rune >= 0x1e800 && rune <= 0x1e95f) ||
+      (rune >= 0x1ee00 && rune <= 0x1eeff);
+}
+
+bool _isVisioRtlNonStrongRune(int rune) =>
+    rune == 0x060c || // Arabic comma has the neutral CS bidi class.
+    (rune >= 0x0591 && rune <= 0x05bd) ||
+    rune == 0x05bf ||
+    (rune >= 0x05c1 && rune <= 0x05c2) ||
+    (rune >= 0x05c4 && rune <= 0x05c5) ||
+    rune == 0x05c7 ||
+    (rune >= 0x0610 && rune <= 0x061a) ||
+    (rune >= 0x064b && rune <= 0x065f) ||
+    rune == 0x0670 ||
+    (rune >= 0x06d6 && rune <= 0x06dc) ||
+    (rune >= 0x06df && rune <= 0x06e4) ||
+    (rune >= 0x06e7 && rune <= 0x06e8) ||
+    (rune >= 0x06ea && rune <= 0x06ed);
+
+/// Base direction LibreOffice's Unicode layout chooses for Visio text.
+///
+/// Use the first strong character, falling back to Character `LangID` for
+/// digit/punctuation-only runs. This keeps Latin+Arabic mixed paragraphs LTR
+/// while pure Arabic/Hebrew paragraphs shape and anchor RTL.
+bool isVisioRightToLeftText(String text, {String? langId}) {
+  for (final rune in text.runes) {
+    if (isVisioRightToLeftRune(rune)) return true;
+    if (!_isVisioNeutralBidiRune(rune)) return false;
+  }
+  final subtags = langId
+          ?.trim()
+          .replaceAll('_', '-')
+          .split('-')
+          .where((part) => part.isNotEmpty)
+          .map((part) => part.toLowerCase())
+          .toList() ??
+      const <String>[];
+  if (subtags.contains('arab') || subtags.contains('hebr')) return true;
+  if (subtags.contains('latn') || subtags.contains('deva')) return false;
+  final language = subtags.firstOrNull;
+  return const <String>{
+    'ar', 'dv', 'fa', 'he', 'iw', 'ku', 'ps', 'sd', 'ur', 'yi',
+  }.contains(language);
+}
+
+bool _isVisioNeutralBidiRune(int rune) {
+  if (rune == 0x200e) return false; // LEFT-TO-RIGHT MARK.
+  return _isVisioRtlNonStrongRune(rune) ||
+      rune <= 0x40 ||
+      (rune >= 0x5b && rune <= 0x60) ||
+      (rune >= 0x7b && rune <= 0xbf) ||
+      (rune >= 0x0300 && rune <= 0x036f) ||
+      (rune >= 0x2000 && rune <= 0x2bff) ||
+      (rune >= 0xfe00 && rune <= 0xfe0f) ||
+      (rune >= 0x1f000 && rune <= 0x1faff) ||
+      (rune >= 0xe0100 && rune <= 0xe01ef);
+}
+
 @immutable
 class VsdxCharStyle {
   const VsdxCharStyle({

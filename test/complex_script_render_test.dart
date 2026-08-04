@@ -1,6 +1,8 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as raster;
 import 'package:visioeditor/io/image_export.dart';
+import 'package:visioeditor/render/vsdx_painter.dart';
 import 'package:vsdx/vsdx.dart';
 
 void main() {
@@ -149,5 +151,27 @@ void main() {
     expect(isVisioComplexScriptRune('क'.runes.single), isTrue);
     expect(isVisioComplexScriptRune('A'.runes.single), isFalse);
     expect(isVisioComplexScriptRune('中'.runes.single), isFalse);
+  });
+
+  test('Canvas maps Visio LangID to Flutter locale and bidi direction', () {
+    expect(
+      visioLocaleForLangId('zh_Hans_CN'),
+      const Locale.fromSubtags(
+        languageCode: 'zh',
+        scriptCode: 'Hans',
+        countryCode: 'CN',
+      ),
+    );
+    expect(visioLocaleForLangId('1033'), isNull);
+    expect(visioLocaleForLangId(null), isNull);
+    expect(
+      visioTextDirection('سلام', langId: 'ar-SA'),
+      TextDirection.rtl,
+    );
+    expect(
+      visioTextDirection('Latin سلام', langId: 'ar-SA'),
+      TextDirection.ltr,
+    );
+    expect(visioTextDirection('123', langId: 'he-IL'), TextDirection.rtl);
   });
 }

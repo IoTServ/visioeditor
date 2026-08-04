@@ -878,6 +878,7 @@ void main() {
                   complexScriptFont: 'Times New Roman',
                   fontSizeInches: 0.2,
                   complexScriptSizeInches: 0.35,
+                  langId: 'ar-SA',
                 ),
               ),
             ],
@@ -909,6 +910,8 @@ void main() {
       ),
     );
     expect(svg, contains('>سلام</tspan>'));
+    expect(svg, contains('xml:lang="ar-SA"'));
+    expect(svg, contains('direction="rtl" unicode-bidi="isolate"'));
   });
 
   test('SVG curved text keeps complex-script font and size', () {

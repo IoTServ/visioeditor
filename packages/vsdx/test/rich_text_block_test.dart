@@ -203,6 +203,26 @@ void main() {
     expect(isVisioComplexScriptRune('س'.runes.single), isTrue);
   });
 
+  test('Unicode first-strong direction matches LibreOffice text layout', () {
+    expect(isVisioRightToLeftText('سلام عليكم'), isTrue);
+    expect(isVisioRightToLeftText('שלום'), isTrue);
+    expect(isVisioRightToLeftText('Latin سلام'), isFalse);
+    expect(isVisioRightToLeftText('123، سلام'), isTrue);
+    expect(isVisioRightToLeftText('123، Latin'), isFalse);
+    expect(isVisioRightToLeftText('\u064eLatin'), isFalse);
+    expect(isVisioRightToLeftText('\u200f123'), isTrue);
+    expect(isVisioRightToLeftText('\u200eسلام'), isFalse);
+    expect(isVisioRightToLeftText('नमस्ते'), isFalse);
+  });
+
+  test('LangID and script subtags choose direction for neutral text', () {
+    expect(isVisioRightToLeftText('123', langId: 'ar-SA'), isTrue);
+    expect(isVisioRightToLeftText('123', langId: 'en-US'), isFalse);
+    expect(isVisioRightToLeftText('123', langId: 'ku-Arab-IQ'), isTrue);
+    expect(isVisioRightToLeftText('123', langId: 'ku-Latn-TR'), isFalse);
+    expect(isVisioRightToLeftText('123', langId: 'sd-Deva-IN'), isFalse);
+  });
+
   test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {
     final el = shape(
       '<Cell N="VerticalAlign" V="1" F="Inh"/><Text>Label</Text>',

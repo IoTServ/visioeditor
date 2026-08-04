@@ -38,6 +38,36 @@ import 'shape_bounds.dart' as bounds;
 
 final _log = Logger('vsdx.render.canvas');
 
+/// Convert Visio Character `LangID` (normally BCP-47) for Flutter shaping.
+Locale? visioLocaleForLangId(String? langId) {
+  final raw = langId?.trim().replaceAll('_', '-');
+  if (raw == null || raw.isEmpty) return null;
+  final parts = raw.split('-').where((part) => part.isNotEmpty).toList();
+  if (parts.isEmpty || !RegExp(r'^[A-Za-z]{2,3}$').hasMatch(parts.first)) {
+    return null;
+  }
+  String? script;
+  String? country;
+  for (final part in parts.skip(1)) {
+    if (script == null && RegExp(r'^[A-Za-z]{4}$').hasMatch(part)) {
+      script = '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}';
+    } else if (country == null &&
+        RegExp(r'^(?:[A-Za-z]{2}|[0-9]{3})$').hasMatch(part)) {
+      country = part.toUpperCase();
+    }
+  }
+  return Locale.fromSubtags(
+    languageCode: parts.first.toLowerCase(),
+    scriptCode: script,
+    countryCode: country,
+  );
+}
+
+TextDirection visioTextDirection(String text, {String? langId}) =>
+    isVisioRightToLeftText(text, langId: langId)
+        ? TextDirection.rtl
+        : TextDirection.ltr;
+
 /// Flutter Canvas supports three joins. Preserve draw.io's richer value in
 /// the model/SVG while using the closest on-canvas appearance for SVG 2-only
 /// `arcs` and `miter-clip`.
@@ -2461,6 +2491,15 @@ class VsdxPainter extends CustomPainter {
     final align = hasRich
         ? _flutterAlign(rich.runs.first.paraStyle.effectiveHorizontalAlign)
         : TextAlign.center;
+    final textDirection = visioTextDirection(
+      hasRich ? rich.plainText : label!,
+      langId: hasRich
+          ? rich.runs
+              .map((run) => run.charStyle.langId)
+              .whereType<String>()
+              .firstOrNull
+          : null,
+    );
 
     // Connector edge label with no explicit text pin: centre it on the drawn
     // route midpoint (no text box). Prefer page-space drawn polyline so
@@ -2504,7 +2543,7 @@ class VsdxPainter extends CustomPainter {
           : (TextPainter(
               text: TextSpan(children: spans),
               textAlign: align,
-              textDirection: TextDirection.ltr,
+              textDirection: textDirection,
               maxLines: null,
             )..layout());
       final textWidth = tabLine?.width ?? tp!.width;
@@ -2621,6 +2660,7 @@ class VsdxPainter extends CustomPainter {
         canvas,
         spans: spans,
         align: align,
+        textDirection: textDirection,
         verticalAlign: block.verticalAlign,
         wordWrap: shape.wordWrap,
         twPx: twPx,
@@ -2760,7 +2800,7 @@ class VsdxPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
-      textDirection: TextDirection.ltr,
+      textDirection: textDirection,
       maxLines: null,
     );
     if (shape.wordWrap) {
@@ -2793,6 +2833,7 @@ class VsdxPainter extends CustomPainter {
     Canvas canvas, {
     required List<InlineSpan> spans,
     required TextAlign align,
+    required TextDirection textDirection,
     required VsdxVertAlign verticalAlign,
     required bool wordWrap,
     required double twPx,
@@ -2810,7 +2851,7 @@ class VsdxPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(children: spans),
       textAlign: align,
-      textDirection: TextDirection.ltr,
+      textDirection: textDirection,
       maxLines: null,
     );
     if (wordWrap) {
@@ -2879,6 +2920,14 @@ class VsdxPainter extends CustomPainter {
       probe.tp.dispose();
     }
     var top = mtPx;
+    final rightToLeft = visioTextDirection(
+          runs.map((run) => run.text).join(),
+          langId: runs
+              .map((run) => run.charStyle.langId)
+              .whereType<String>()
+              .firstOrNull,
+        ) ==
+        TextDirection.rtl;
     late List<
       ({
         List<({TextPainter tp, double dy})> pieces,
@@ -2900,6 +2949,7 @@ class VsdxPainter extends CustomPainter {
         runs,
         fullWidth,
         scale,
+        rightToLeft: rightToLeft,
         maxWidthForLine: (index) {
           final band = bandFor(
             top + index * lineHeight,
@@ -2955,10 +3005,19 @@ class VsdxPainter extends CustomPainter {
     required bool wordWrap,
     required double scale,
   }) {
+    final rightToLeft = visioTextDirection(
+          runs.map((run) => run.text).join(),
+          langId: runs
+              .map((run) => run.charStyle.langId)
+              .whereType<String>()
+              .firstOrNull,
+        ) ==
+        TextDirection.rtl;
     final lines = _wrapPosShiftLines(
       runs,
       wordWrap ? maxW : double.infinity,
       scale,
+      rightToLeft: rightToLeft,
     );
     var totalH = 0.0;
     for (final line in lines) {
@@ -2996,6 +3055,7 @@ class VsdxPainter extends CustomPainter {
     double scale, {
     double? firstLineMaxW,
     bool applyPosDy = true,
+    bool rightToLeft = false,
     double Function(int lineIndex)? maxWidthForLine,
   }) {
     final lines =
@@ -3016,7 +3076,11 @@ class VsdxPainter extends CustomPainter {
 
     void flush() {
       if (cur.isEmpty) return;
-      lines.add((pieces: cur, width: curW, height: math.max(curH, 1.0)));
+      lines.add((
+        pieces: rightToLeft ? cur.reversed.toList(growable: false) : cur,
+        width: curW,
+        height: math.max(curH, 1.0),
+      ));
       cur = <({TextPainter tp, double dy})>[];
       curW = 0.0;
       curH = 0.0;
@@ -3085,7 +3149,10 @@ class VsdxPainter extends CustomPainter {
         // When applying explicit dy, disable OpenType pos to avoid double lift.
         openTypePos: !applyPosDy,
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: visioTextDirection(
+        text,
+        langId: run.charStyle.langId,
+      ),
       maxLines: 1,
     )..layout();
     final base = math.max(
@@ -3263,6 +3330,14 @@ class VsdxPainter extends CustomPainter {
         continue;
       }
       if (needsLineWrap) {
+        final rightToLeft = visioTextDirection(
+              para.runs.map((run) => run.text).join(),
+              langId: para.runs
+                  .map((run) => run.charStyle.langId)
+                  .whereType<String>()
+                  .firstOrNull,
+            ) ==
+            TextDirection.rtl;
         // Baseline dy + wrap (OpenType pos off when dy applies).
         final lines = _wrapPosShiftLines(
           para.runs,
@@ -3270,6 +3345,7 @@ class VsdxPainter extends CustomPainter {
           scale,
           firstLineMaxW: wrapFirst,
           applyPosDy: needsPos,
+          rightToLeft: rightToLeft,
         );
         // Emit one layout row per wrapped line so Sp*/bullet stay correct.
         final b = style.spaceBeforeInches * scale;
@@ -3312,7 +3388,13 @@ class VsdxPainter extends CustomPainter {
           children: <TextSpan>[for (final r in para.runs) _runToSpan(r, scale)],
         ),
         textAlign: pAlign,
-        textDirection: TextDirection.ltr,
+        textDirection: visioTextDirection(
+          para.runs.map((run) => run.text).join(),
+          langId: para.runs
+              .map((run) => run.charStyle.langId)
+              .whereType<String>()
+              .firstOrNull,
+        ),
         maxLines: null,
       );
       if (wordWrap) {
@@ -3685,6 +3767,7 @@ class VsdxPainter extends CustomPainter {
       }(),
       height: lineHeight,
       fontFeatures: features.isEmpty ? null : features,
+      locale: visioLocaleForLangId(run.charStyle.langId),
     );
     final hasAsianText = rawText.runes.any(isVisioAsianScriptRune);
     final hasComplexText = rawText.runes.any(isVisioComplexScriptRune);
@@ -3875,7 +3958,15 @@ class VsdxPainter extends CustomPainter {
     final widths = <double>[];
     final painters = <TextPainter>[];
     var totalW = 0.0;
-    for (final r in text.runes) {
+    final textRunes = text.runes.toList();
+    if (visioTextDirection(
+          text,
+          langId: charStyle?.langId,
+        ) ==
+        TextDirection.rtl) {
+      textRunes.setAll(0, textRunes.reversed);
+    }
+    for (final r in textRunes) {
       final ch = String.fromCharCode(r);
       final tp = TextPainter(
         text: glyphStyle == null
@@ -3884,7 +3975,10 @@ class VsdxPainter extends CustomPainter {
                 VsdxTextRun(text: ch, charStyle: glyphStyle),
                 scale,
               ),
-        textDirection: TextDirection.ltr,
+        textDirection: visioTextDirection(
+          ch,
+          langId: glyphStyle?.langId,
+        ),
         maxLines: 1,
       )..layout();
       chars.add(ch);

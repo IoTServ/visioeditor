@@ -4686,7 +4686,12 @@ class VsdxToSvgSerializer {
     final text = _applyTextCase(raw, style.textCase);
     final x = xAttr == null ? '' : '$xAttr ';
     if (!style.style.smallCaps || text.isEmpty) {
-      final attrs = _charStyleSvgAttrs(style, theme, synthesizeSmallCaps: true);
+      final attrs = _charStyleSvgAttrs(
+        style,
+        theme,
+        synthesizeSmallCaps: true,
+        text: text,
+      );
       body.write('<tspan $x$attrs>${_esc(text)}</tspan>');
       return;
     }
@@ -4708,13 +4713,14 @@ class VsdxToSvgSerializer {
       buf.clear();
       final prefix = first ? x : '';
       first = false;
+      final glyph = bufLower! ? chunk.toUpperCase() : chunk;
       final attrs = _charStyleSvgAttrs(
         style,
         theme,
         synthesizeSmallCaps: true,
         fontSizeOverride: bufLower! ? smallFs : null,
+        text: glyph,
       );
-      final glyph = bufLower! ? chunk.toUpperCase() : chunk;
       body.write('<tspan $prefix$attrs>${_esc(glyph)}</tspan>');
       bufLower = null;
     }
@@ -4762,6 +4768,7 @@ class VsdxToSvgSerializer {
     VsdxTheme theme, {
     bool synthesizeSmallCaps = false,
     double? fontSizeOverride,
+    String? text,
   }) {
     // libvisio's VSDCharStyle baseline is opaque black.
     final color =
@@ -4803,6 +4810,14 @@ class VsdxToSvgSerializer {
       '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
+    final lang = c.langId?.trim();
+    if (lang != null && lang.isNotEmpty) {
+      attrs.write(' xml:lang="${_esc(lang.replaceAll('_', '-'))}"');
+    }
+    if (text != null &&
+        isVisioRightToLeftText(text, langId: c.langId)) {
+      attrs.write(' direction="rtl" unicode-bidi="isolate"');
+    }
     // Prefer synthetic small-caps tspans (canvas parity). Keep CSS variant
     // only for callers that have not synthesised (e.g. curved textPath).
     if (c.style.smallCaps && !synthesizeSmallCaps) {
