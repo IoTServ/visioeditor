@@ -7,11 +7,11 @@
 /// what actually paints.
 library;
 
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'metafile_drawing.dart';
+import 'vsd/vsd_text_codec.dart';
 
 const int _placeableKey = 0x9AC6CDD7;
 
@@ -86,6 +86,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var fontUnderline = false;
   var fontStrikeThrough = false;
   var fontEscapementDegrees = 0.0;
+  var fontEncoding = VsdLegacyTextEncoding.ansi;
   double? winOrgX, winOrgY, winExtX, winExtY;
   double? curX, curY;
   final ops = <Object>[];
@@ -169,6 +170,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final italic = bd.getUint8(params + 10) != 0;
       final underline = bd.getUint8(params + 11) != 0;
       final strikeThrough = bd.getUint8(params + 12) != 0;
+      final charset = bd.getUint8(params + 13);
       String? face;
       final faceBytes = <int>[];
       for (var i = params + 18; i < recEnd && faceBytes.length < 32; i++) {
@@ -177,8 +179,14 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         faceBytes.add(c);
       }
       if (faceBytes.isNotEmpty) {
-        face = latin1.decode(faceBytes, allowInvalid: true);
+        face = decodeWindowsLegacyText(
+          faceBytes,
+          VsdLegacyTextEncoding.ansi,
+        );
       }
+      final encoding = face == 'Symbol' || face == 'MT Extra'
+          ? VsdLegacyTextEncoding.symbol
+          : vsdLegacyEncodingForCodePage(charset);
       objects[allocSlot()] = _GdiFont(
         height,
         face,
@@ -187,6 +195,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         underline,
         strikeThrough,
         escapement,
+        encoding,
       );
     } else if (func == _metaSelectObject && params + 2 <= recEnd) {
       final ix = bd.getUint16(params, Endian.little);
@@ -208,6 +217,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           fontUnderline = o.underline;
           fontStrikeThrough = o.strikeThrough;
           fontEscapementDegrees = o.escapementDegrees;
+          fontEncoding = o.encoding;
         }
       }
     } else if (func == _metaDeleteObject && params + 2 <= recEnd) {
@@ -362,10 +372,21 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       ));
     } else if (func == _metaExtTextOut) {
       final textOp = _readExtTextOut(
-        bd, bytes, params, recEnd, textColor, textAlign, fontHeight, fontFace,
+        bd,
+        bytes,
+        params,
+        recEnd,
+        textColor,
+        textAlign,
+        fontHeight,
+        fontFace,
         backgroundMode == 2 ? backgroundColor : null,
-        fontWeight, fontItalic, fontUnderline, fontStrikeThrough,
+        fontWeight,
+        fontItalic,
+        fontUnderline,
+        fontStrikeThrough,
         fontEscapementDegrees,
+        fontEncoding,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
@@ -373,10 +394,21 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       }
     } else if (func == _metaTextOut) {
       final textOp = _readTextOut(
-        bd, bytes, params, recEnd, textColor, textAlign, fontHeight, fontFace,
+        bd,
+        bytes,
+        params,
+        recEnd,
+        textColor,
+        textAlign,
+        fontHeight,
+        fontFace,
         backgroundMode == 2 ? backgroundColor : null,
-        fontWeight, fontItalic, fontUnderline, fontStrikeThrough,
+        fontWeight,
+        fontItalic,
+        fontUnderline,
+        fontStrikeThrough,
         fontEscapementDegrees,
+        fontEncoding,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
@@ -458,6 +490,7 @@ MetafileTextOp? _readExtTextOut(
   bool underline,
   bool strikeThrough,
   double escapementDegrees,
+  VsdLegacyTextEncoding encoding,
 ) {
   if (params + 8 > recEnd) return null;
   final y = bd.getInt16(params, Endian.little).toDouble();
@@ -468,7 +501,7 @@ MetafileTextOp? _readExtTextOut(
   if ((options & 0x0006) != 0) p += 8;
   if (count == 0 || p + count > recEnd) return null;
   final raw = bytes.sublist(p, p + count);
-  final text = latin1.decode(raw, allowInvalid: true).replaceAll('\u0000', '');
+  final text = decodeWindowsLegacyText(raw, encoding).replaceAll('\u0000', '');
   if (text.trim().isEmpty) return null;
   List<double>? advancesX;
   List<double>? advancesY;
@@ -477,20 +510,36 @@ MetafileTextOp? _readExtTextOut(
   final hasVerticalAdvances = (options & 0x2000) != 0; // ETO_PDY
   final advanceWords = (recEnd - advancePos) ~/ 2;
   final wordsPerGlyph = hasVerticalAdvances ? 2 : 1;
-  if (text.runes.length == count &&
-      advanceWords >= count * wordsPerGlyph) {
-    final x = <double>[];
-    final y = hasVerticalAdvances ? <double>[] : null;
+  if (advanceWords >= count * wordsPerGlyph) {
+    final byteX = <double>[];
+    final byteY = hasVerticalAdvances ? <double>[] : null;
     for (var i = 0; i < count; i++) {
-      x.add(bd.getInt16(advancePos, Endian.little).toDouble());
+      byteX.add(bd.getInt16(advancePos, Endian.little).toDouble());
       advancePos += 2;
-      if (y != null) {
-        y.add(bd.getInt16(advancePos, Endian.little).toDouble());
+      if (byteY != null) {
+        byteY.add(bd.getInt16(advancePos, Endian.little).toDouble());
         advancePos += 2;
       }
     }
-    advancesX = List<double>.unmodifiable(x);
-    advancesY = y == null ? null : List<double>.unmodifiable(y);
+    final byteLengths = windowsLegacyCharacterByteLengths(raw, encoding);
+    if (byteLengths.length == text.runes.length) {
+      var byteIndex = 0;
+      final x = <double>[];
+      final y = byteY == null ? null : <double>[];
+      for (final byteLength in byteLengths) {
+        var dx = 0.0;
+        var dy = 0.0;
+        for (var i = 0; i < byteLength; i++) {
+          dx += byteX[byteIndex + i];
+          if (byteY != null) dy += byteY[byteIndex + i];
+        }
+        x.add(dx);
+        y?.add(dy);
+        byteIndex += byteLength;
+      }
+      advancesX = List<double>.unmodifiable(x);
+      advancesY = y == null ? null : List<double>.unmodifiable(y);
+    }
   }
   return MetafileTextOp(
     text: text,
@@ -526,6 +575,7 @@ MetafileTextOp? _readTextOut(
   bool underline,
   bool strikeThrough,
   double escapementDegrees,
+  VsdLegacyTextEncoding encoding,
 ) {
   if (params + 2 > recEnd) return null;
   final count = bd.getUint16(params, Endian.little);
@@ -537,7 +587,7 @@ MetafileTextOp? _readTextOut(
   if (p + 4 > recEnd) return null;
   final y = bd.getInt16(p, Endian.little).toDouble();
   final x = bd.getInt16(p + 2, Endian.little).toDouble();
-  final text = latin1.decode(raw, allowInvalid: true).replaceAll('\u0000', '');
+  final text = decodeWindowsLegacyText(raw, encoding).replaceAll('\u0000', '');
   if (text.trim().isEmpty) return null;
   return MetafileTextOp(
     text: text,
@@ -588,6 +638,7 @@ class _GdiFont extends _GdiObject {
     this.underline,
     this.strikeThrough,
     this.escapementDegrees,
+    this.encoding,
   );
   final double height;
   final String? face;
@@ -596,4 +647,5 @@ class _GdiFont extends _GdiObject {
   final bool underline;
   final bool strikeThrough;
   final double escapementDegrees;
+  final VsdLegacyTextEncoding encoding;
 }

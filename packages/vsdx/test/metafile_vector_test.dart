@@ -90,6 +90,67 @@ Uint8List _emfWithStyledText() {
   return bytes;
 }
 
+Uint8List _wmfWithEncodedText({
+  required List<int> textBytes,
+  required int charset,
+  required List<int> advances,
+  String face = 'Arial',
+}) {
+  final textPadding = textBytes.length.isOdd ? 1 : 0;
+  final textRecordBytes =
+      6 + 8 + textBytes.length + textPadding + advances.length * 2;
+  const fontRecordBytes = 56;
+  const selectRecordBytes = 8;
+  const eofRecordBytes = 6;
+  final totalBytes = 18 +
+      fontRecordBytes +
+      selectRecordBytes +
+      textRecordBytes +
+      eofRecordBytes;
+  final bytes = Uint8List(totalBytes);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little); // MEMORYMETAFILE
+  data.setUint16(2, 9, Endian.little); // header words
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, totalBytes ~/ 2, Endian.little);
+  data.setUint16(10, 1, Endian.little); // object count
+  data.setUint32(12, 28, Endian.little); // largest record words
+
+  const font = 18;
+  data.setUint32(font, fontRecordBytes ~/ 2, Endian.little);
+  data.setUint16(font + 4, 0x02fb, Endian.little); // CREATEFONTINDIRECT
+  const logFont = font + 6;
+  data.setInt16(logFont, 20, Endian.little);
+  data.setUint8(logFont + 13, charset);
+  for (var i = 0; i < face.length && i < 31; i++) {
+    data.setUint8(logFont + 18 + i, face.codeUnitAt(i));
+  }
+
+  const select = font + fontRecordBytes;
+  data.setUint32(select, selectRecordBytes ~/ 2, Endian.little);
+  data.setUint16(select + 4, 0x012d, Endian.little); // SELECTOBJECT
+  data.setUint16(select + 6, 0, Endian.little);
+
+  const text = select + selectRecordBytes;
+  data.setUint32(text, textRecordBytes ~/ 2, Endian.little);
+  data.setUint16(text + 4, 0x0a32, Endian.little); // EXTTEXTOUT
+  const textParams = text + 6;
+  data.setInt16(textParams, 30, Endian.little);
+  data.setInt16(textParams + 2, 10, Endian.little);
+  data.setUint16(textParams + 4, textBytes.length, Endian.little);
+  data.setUint16(textParams + 6, 0, Endian.little);
+  bytes.setRange(textParams + 8, textParams + 8 + textBytes.length, textBytes);
+  var advanceOffset = textParams + 8 + textBytes.length + textPadding;
+  for (final advance in advances) {
+    data.setInt16(advanceOffset, advance, Endian.little);
+    advanceOffset += 2;
+  }
+
+  final eof = text + textRecordBytes;
+  data.setUint32(eof, eofRecordBytes ~/ 2, Endian.little);
+  return bytes;
+}
+
 void main() {
   group('WMF vector parse', () {
     test('Visio5 plan thumbnail has polygons and text', () {
@@ -140,11 +201,43 @@ void main() {
           .firstWhere((op) => op.text == '6\'-0"');
       expect(vertical.escapementDegrees, 90);
       expect(
-        d.ops
-            .whereType<MetafileTextOp>()
-            .where((op) => op.advancesX != null),
+        d.ops.whereType<MetafileTextOp>().where((op) => op.advancesX != null),
         isNotEmpty,
       );
+    });
+
+    test('LOGFONT charset decodes Cyrillic ExtTextOut bytes', () {
+      final drawing = parseWmfDrawing(_wmfWithEncodedText(
+        textBytes: const <int>[0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2],
+        charset: 0xcc, // RUSSIAN_CHARSET / Windows-1251
+        advances: const <int>[5, 5, 5, 5, 5, 5],
+      ));
+      final text = drawing!.ops.whereType<MetafileTextOp>().single;
+      expect(text.text, 'Привет');
+      expect(text.advancesX, const <double>[5, 5, 5, 5, 5, 5]);
+    });
+
+    test('LOGFONT charset combines Shift-JIS byte advances per glyph', () {
+      final drawing = parseWmfDrawing(_wmfWithEncodedText(
+        textBytes: const <int>[0x93, 0xfa, 0x96, 0x7b],
+        charset: 0x80, // SHIFTJIS_CHARSET
+        advances: const <int>[3, 4, 5, 6],
+      ));
+      final text = drawing!.ops.whereType<MetafileTextOp>().single;
+      expect(text.text, '日本');
+      expect(text.advancesX, const <double>[7, 11]);
+    });
+
+    test('Symbol face selects the Microsoft Symbol byte mapping', () {
+      final drawing = parseWmfDrawing(_wmfWithEncodedText(
+        textBytes: const <int>[0x41, 0x61],
+        charset: 0,
+        advances: const <int>[5, 5],
+        face: 'Symbol',
+      ));
+      final text = drawing!.ops.whereType<MetafileTextOp>().single;
+      expect(text.text, 'Αα');
+      expect(text.advancesX, const <double>[5, 5]);
     });
 
     test('rejects random bytes', () {

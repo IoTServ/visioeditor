@@ -76,6 +76,65 @@ String decodeVsdLegacyText(
   return out.toString();
 }
 
+/// Decode raw Windows text bytes without applying Visio's text-stream control
+/// character rules. WMF `TextOut` / `ExtTextOut` records use the same Windows
+/// code pages as legacy VSD FontIX spans, but their bytes are GDI glyph data
+/// rather than Visio's paragraph stream.
+String decodeWindowsLegacyText(
+  List<int> bytes,
+  VsdLegacyTextEncoding encoding,
+) =>
+    bytes.isEmpty ? '' : _decodeVsdLegacyBytes(bytes, encoding);
+
+/// Number of source bytes consumed by each decoded Windows character.
+///
+/// GDI `ExtTextOut` stores one advance per input byte. For double-byte CJK
+/// code pages the two advances belonging to a single character must be
+/// combined before replaying the Unicode string in Canvas or SVG.
+List<int> windowsLegacyCharacterByteLengths(
+  List<int> bytes,
+  VsdLegacyTextEncoding encoding,
+) {
+  final isDoubleByte = switch (encoding) {
+    VsdLegacyTextEncoding.japanese ||
+    VsdLegacyTextEncoding.korean ||
+    VsdLegacyTextEncoding.simplifiedChinese ||
+    VsdLegacyTextEncoding.traditionalChinese =>
+      true,
+    _ => false,
+  };
+  if (!isDoubleByte) return List<int>.filled(bytes.length, 1);
+
+  bool isLeadByte(int byte) => switch (encoding) {
+        VsdLegacyTextEncoding.japanese =>
+          (byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xfc),
+        _ => byte >= 0x81 && byte <= 0xfe,
+      };
+
+  bool isTrailByte(int byte) => switch (encoding) {
+        VsdLegacyTextEncoding.japanese =>
+          (byte >= 0x40 && byte <= 0x7e) || (byte >= 0x80 && byte <= 0xfc),
+        VsdLegacyTextEncoding.korean => (byte >= 0x41 && byte <= 0x5a) ||
+            (byte >= 0x61 && byte <= 0x7a) ||
+            (byte >= 0x81 && byte <= 0xfe),
+        VsdLegacyTextEncoding.traditionalChinese =>
+          (byte >= 0x40 && byte <= 0x7e) || (byte >= 0xa1 && byte <= 0xfe),
+        _ => byte >= 0x40 && byte <= 0xfe && byte != 0x7f,
+      };
+
+  final lengths = <int>[];
+  for (var i = 0; i < bytes.length;) {
+    final length = isLeadByte(bytes[i]) &&
+            i + 1 < bytes.length &&
+            isTrailByte(bytes[i + 1])
+        ? 2
+        : 1;
+    lengths.add(length);
+    i += length;
+  }
+  return lengths;
+}
+
 String _decodeVsdLegacyBytes(
   List<int> bytes,
   VsdLegacyTextEncoding encoding,
