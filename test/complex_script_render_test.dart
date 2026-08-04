@@ -15,12 +15,19 @@ void main() {
       var document = parser.parse(blank);
       final page = document.pages.first;
 
-      VsdxShape label(int id, double y, {double? complexSize}) {
-        return VsdxShapeFactory.rectangle(
+      VsdxShape label(
+        int id,
+        double y, {
+        double x = 3,
+        double width = 4,
+        double? complexSize,
+        bool curved = false,
+      }) {
+        final shape = VsdxShapeFactory.rectangle(
           id: id,
-          pinX: 3,
+          pinX: x,
           pinY: y,
-          width: 4,
+          width: width,
           height: 1.5,
         ).copyWith(
           fill: const VsdxFill(pattern: 0),
@@ -50,13 +57,36 @@ void main() {
             ),
           ),
         );
+        return curved ? shape.withCurvedText(true) : shape;
       }
 
       final normal = label(page.nextFreeShapeId(), 2);
       final enlarged = label(normal.id + 1, 5, complexSize: 0.45);
+      final curvedNormal = label(
+        enlarged.id + 1,
+        2,
+        x: 6.8,
+        width: 3,
+        curved: true,
+      );
+      final curvedEnlarged = label(
+        curvedNormal.id + 1,
+        5,
+        x: 6.8,
+        width: 3,
+        complexSize: 0.45,
+        curved: true,
+      );
       document = document.replacePage(
         0,
-        page.copyWith(shapes: <VsdxShape>[normal, enlarged]),
+        page.copyWith(
+          shapes: <VsdxShape>[
+            normal,
+            enlarged,
+            curvedNormal,
+            curvedEnlarged,
+          ],
+        ),
       );
       final reopened = parser.parse(
         writer.write(originalBytes: blank, edited: document),
@@ -102,6 +132,14 @@ void main() {
       );
       expect(normalPixels, greaterThan(0));
       expect(enlargedPixels, greaterThan(normalPixels * 2));
+      final curvedNormalPixels = darkPixels(
+        reopened.pages.first.findShapeById(curvedNormal.id)!,
+      );
+      final curvedEnlargedPixels = darkPixels(
+        reopened.pages.first.findShapeById(curvedEnlarged.id)!,
+      );
+      expect(curvedNormalPixels, greaterThan(0));
+      expect(curvedEnlargedPixels, greaterThan(curvedNormalPixels * 2));
     },
   );
 

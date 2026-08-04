@@ -177,6 +177,23 @@ void main() {
     );
   });
 
+  test('effective Character size follows complex-script glyphs', () {
+    const style = VsdxCharStyle(
+      fontSizeInches: 0.2,
+      complexScriptSizeInches: 0.35,
+    );
+    expect(style.effectiveFontSizeInchesForText('Latin'), 0.2);
+    expect(style.effectiveFontSizeInchesForText('سلام عليكم'), 0.35);
+    expect(style.effectiveFontSizeInchesForText('Latin سلام'), 0.35);
+
+    const smallerComplex = VsdxCharStyle(
+      fontSizeInches: 0.2,
+      complexScriptSizeInches: 0.1,
+    );
+    expect(smallerComplex.effectiveFontSizeInchesForText('سلام'), 0.1);
+    expect(smallerComplex.effectiveFontSizeInchesForText('A سلام'), 0.2);
+  });
+
   test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {
     final el = shape(
       '<Cell N="VerticalAlign" V="1" F="Inh"/><Text>Label</Text>',

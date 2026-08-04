@@ -269,6 +269,29 @@ class VsdxCharStyle {
   final String? langId;
   final double? complexScriptSizeInches;
 
+  /// Largest Character size that applies to the actual glyphs in [text].
+  ///
+  /// `ComplexScriptSize` replaces (rather than scales) `Size` for complex
+  /// glyphs. Mixed runs need the larger of both sizes for line metrics, while
+  /// spaces and ASCII punctuation do not turn an otherwise Arabic/Hebrew run
+  /// into a mixed Latin run.
+  double effectiveFontSizeInchesForText(String text) {
+    final complexSize = complexScriptSizeInches;
+    if (complexSize == null || text.isEmpty) return fontSizeInches;
+    var hasComplex = false;
+    var hasOther = false;
+    for (final rune in text.runes) {
+      if (isVisioComplexScriptRune(rune)) {
+        hasComplex = true;
+      } else if (!_isVisioNeutralTextRune(rune)) {
+        hasOther = true;
+      }
+    }
+    if (!hasComplex) return fontSizeInches;
+    if (!hasOther) return complexSize;
+    return complexSize > fontSizeInches ? complexSize : fontSizeInches;
+  }
+
   static const VsdxCharStyle defaults = VsdxCharStyle();
 
   /// Solid text colour, clearing any theme-slot binding.
@@ -356,6 +379,13 @@ class VsdxCharStyle {
             : (complexScriptSizeInches ?? this.complexScriptSizeInches),
       );
 }
+
+bool _isVisioNeutralTextRune(int rune) =>
+    rune <= 0x20 ||
+    (rune >= 0x21 && rune <= 0x2f) ||
+    (rune >= 0x3a && rune <= 0x40) ||
+    (rune >= 0x5b && rune <= 0x60) ||
+    (rune >= 0x7b && rune <= 0x7e);
 
 /// Effective character baseline used by libvisio while parsing a shape.
 ///

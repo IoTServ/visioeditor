@@ -897,6 +897,46 @@ void main() {
     expect(svg, contains('>سلام</tspan>'));
   });
 
+  test('SVG curved text keeps complex-script font and size', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 2,
+      pinY: 2,
+      width: 3,
+      height: 1,
+    ).copyWith(
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'سلام',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              complexScriptFont: 'Times New Roman',
+              fontSizeInches: 0.12,
+              complexScriptSizeInches: 0.4,
+            ),
+          ),
+        ],
+      ),
+    ).withCurvedText(true);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('<textPath'));
+    expect(
+      svg,
+      contains(
+        "font-family=\"'Times New Roman', sans-serif\" "
+        'font-size="0.4"',
+      ),
+    );
+    expect(svg, contains('>سلام</tspan></textPath>'));
+  });
+
   test('SVG unbound text uses libvisio Arial and opaque black defaults', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
@@ -2335,6 +2375,48 @@ void main() {
     // (not 0.2*1.2*1.5=0.36). Cluster height 0.6; centres at ±0.15 from mid.
     expect(svg, contains('y="-0.15"'));
     expect(svg, contains('y="0.15"'));
+  });
+
+  test('SVG relative SpLine uses ComplexScriptSize for line metrics', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 2,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'سلام\nسلام',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  complexScriptFont: 'Times New Roman',
+                  fontSizeInches: 0.1,
+                  complexScriptSizeInches: 0.4,
+                ),
+                paraStyle: VsdxParaStyle(lineSpacing: 1.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    // Two 0.4" complex-script lines at 150% → 0.6" centre-to-centre.
+    final ys = RegExp(r'<text[^>]*\sy="([-0-9.]+)"')
+        .allMatches(svg)
+        .map((m) => double.parse(m.group(1)!))
+        .toList();
+    expect(ys.length, greaterThanOrEqualTo(2));
+    expect((ys[1] - ys[0]).abs(), closeTo(0.6, 1e-6));
   });
 
   test('SVG arrows 5/6 are filled concave/convex markers', () {

@@ -3484,7 +3484,7 @@ class VsdxToSvgSerializer {
       var bodyFont = 0.14;
       for (final (_, run) in line.segs) {
         if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
-          bodyFont = run.charStyle.fontSizeInches;
+          bodyFont = run.charStyle.effectiveFontSizeInchesForText(run.text);
           break;
         }
       }
@@ -3859,7 +3859,7 @@ class VsdxToSvgSerializer {
       var bodyFont = 0.14;
       for (final (_, run) in layout.segs) {
         if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
-          bodyFont = run.charStyle.fontSizeInches;
+          bodyFont = run.charStyle.effectiveFontSizeInchesForText(run.text);
           break;
         }
       }
@@ -4171,7 +4171,7 @@ class VsdxToSvgSerializer {
       var fontSize = 0.14;
       for (final (_, run) in layout.segs) {
         if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
-          fontSize = run.charStyle.fontSizeInches;
+          fontSize = run.charStyle.effectiveFontSizeInchesForText(run.text);
           break;
         }
       }
@@ -4497,8 +4497,11 @@ class VsdxToSvgSerializer {
     VsdxParaStyle style,
   ) {
     var fs = 0.04;
-    for (final (_, run) in segs) {
-      fs = math.max(fs, run.charStyle.fontSizeInches);
+    for (final (text, run) in segs) {
+      fs = math.max(
+        fs,
+        run.charStyle.effectiveFontSizeInchesForText(text),
+      );
     }
     if (style.lineSpacingAbsoluteInches > 1e-9) {
       // Match canvas: absolute SpLine is the line advance in inches (may be
@@ -4546,10 +4549,7 @@ class VsdxToSvgSerializer {
     required String paintIdScope,
     required String indent,
   }) {
-    final plain = _applyTextCase(
-      runs.map((r) => r.text).join().replaceAll('\n', ' ').trim(),
-      runs.isNotEmpty ? runs.first.charStyle.textCase : VsdxTextCase.normal,
-    );
+    final plain = runs.map((r) => r.text).join().replaceAll('\n', ' ').trim();
     if (plain.isEmpty) return;
 
     // Match canvas: TextDirection=1 rotates into a vertical band, then the
@@ -4579,6 +4579,13 @@ class VsdxToSvgSerializer {
     final style =
         runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
     final attrs = _charStyleSvgAttrs(style, theme);
+    final body = StringBuffer();
+    _writeStyledTspans(
+      body,
+      raw: plain,
+      style: style,
+      theme: theme,
+    );
 
     final xf = StringBuffer('translate(${_n(pinX)} ${_n(pinY)})');
     if (angleRad != 0) {
@@ -4606,7 +4613,7 @@ class VsdxToSvgSerializer {
       '$indent  <text $attrs>'
       '<textPath href="#$pathId" startOffset="50%" '
       'text-anchor="middle" dominant-baseline="middle">'
-      '${_esc(plain)}</textPath></text>',
+      '$body</textPath></text>',
     );
     buf.writeln('$indent</g>');
   }

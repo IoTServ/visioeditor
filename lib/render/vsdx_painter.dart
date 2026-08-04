@@ -2644,6 +2644,9 @@ class VsdxPainter extends CustomPainter {
         canvas,
         spans: spans,
         plain: hasRich ? rich.plainText : label!,
+        charStyle:
+            hasRich && rich.runs.isNotEmpty ? rich.runs.first.charStyle : null,
+        scale: s,
         twPx: twPx,
         thPx: thPx,
         mlPx: mlPx,
@@ -3085,7 +3088,11 @@ class VsdxPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
-    final base = math.max(run.charStyle.fontSizeInches, 0.04) * scale;
+    final base = math.max(
+          run.charStyle.effectiveFontSizeInchesForText(text),
+          0.04,
+        ) *
+        scale;
     final dy = !applyPosDy
         ? 0.0
         : switch (run.charStyle.position) {
@@ -3170,7 +3177,7 @@ class VsdxPainter extends CustomPainter {
           for (final r in para.runs) {
             if (r.text.isNotEmpty) {
               return r.charStyle.fontSizeInches > 0
-                  ? r.charStyle.fontSizeInches
+                  ? r.charStyle.effectiveFontSizeInchesForText(r.text)
                   : 0.14;
             }
           }
@@ -3803,12 +3810,14 @@ class VsdxPainter extends CustomPainter {
     Canvas canvas, {
     required List<TextSpan> spans,
     required String plain,
+    required VsdxCharStyle? charStyle,
+    required double scale,
     required double twPx,
     required double thPx,
     required double mlPx,
     required double mrPx,
   }) {
-    final text = plain.replaceAll('\n', ' ').trim();
+    var text = plain.replaceAll('\n', ' ').trim();
     if (text.isEmpty) return;
 
     final availW = math.max(0.0, twPx - mlPx - mrPx);
@@ -3817,20 +3826,36 @@ class VsdxPainter extends CustomPainter {
     final baseStyle = spans.isNotEmpty && spans.first.style != null
         ? spans.first.style!
         : const TextStyle(color: Colors.black87, fontSize: 14);
+    VsdxCharStyle? glyphStyle;
+    if (charStyle != null) {
+      text = switch (charStyle.textCase) {
+        VsdxTextCase.allCaps => text.toUpperCase(),
+        VsdxTextCase.initialCaps => _initialCaps(text),
+        VsdxTextCase.normal => text,
+      };
+      glyphStyle = charStyle.copyWith(textCase: VsdxTextCase.normal);
+    }
 
     // Measure each character for arc-length placement.
     final chars = <String>[];
     final widths = <double>[];
+    final painters = <TextPainter>[];
     var totalW = 0.0;
     for (final r in text.runes) {
       final ch = String.fromCharCode(r);
       final tp = TextPainter(
-        text: TextSpan(text: ch, style: baseStyle),
+        text: glyphStyle == null
+            ? TextSpan(text: ch, style: baseStyle)
+            : _runToSpan(
+                VsdxTextRun(text: ch, charStyle: glyphStyle),
+                scale,
+              ),
         textDirection: TextDirection.ltr,
         maxLines: 1,
       )..layout();
       chars.add(ch);
       widths.add(tp.width);
+      painters.add(tp);
       totalW += tp.width;
     }
     if (totalW <= 0) return;
@@ -3869,11 +3894,7 @@ class VsdxPainter extends CustomPainter {
       final tangent = _quadBezierTangent(p0, p1, p2, t);
       final angle = math.atan2(tangent.dy, tangent.dx);
 
-      final tp = TextPainter(
-        text: TextSpan(text: chars[i], style: baseStyle),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout();
+      final tp = painters[i];
 
       canvas.save();
       canvas.translate(pos.dx, pos.dy);
