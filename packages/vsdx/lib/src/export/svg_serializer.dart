@@ -3395,8 +3395,8 @@ class VsdxToSvgSerializer {
     final size = math.max(op.fontHeight.abs(), 1.0);
     final face =
         (op.face == null || op.face!.isEmpty) ? 'Arial' : _esc(op.face!);
-    // TA_CENTER = 6, TA_RIGHT = 2 (low bits) — match canvas [_paintText].
-    final alignBits = op.align & 0x07;
+    // TA_UPDATECP is bit 0 and must not affect left/right/centre alignment.
+    final alignBits = op.align & 0x06;
     final anchor = switch (alignBits) {
       6 => 'middle',
       2 => 'end',
@@ -3419,6 +3419,12 @@ class VsdxToSvgSerializer {
       2 => -textWidth,
       _ => 0.0,
     };
+    final textTop = switch (op.align & 0x18) {
+      0x00 => 0.0, // TA_TOP
+      0x08 => -size, // TA_BOTTOM
+      _ => -size * 0.85, // TA_BASELINE
+    };
+    final baselineY = textTop + size * 0.85;
     final fontWeight = op.fontWeight <= 0 ? 400 : op.fontWeight.clamp(100, 900);
     final fontStyle = op.italic ? ' font-style="italic"' : '';
     final decorations = <String>[
@@ -3439,7 +3445,7 @@ class VsdxToSvgSerializer {
     var backgroundRect = '';
     if (background != null) {
       backgroundRect =
-          '<rect x="${_n(alignedX)}" y="${_n(-size * 0.85)}" '
+          '<rect x="${_n(alignedX)}" y="${_n(textTop)}" '
           'width="${_n(textWidth)}" height="${_n(size)}" '
           'fill="${_argbCss(background)}"/>';
     }
@@ -3448,7 +3454,7 @@ class VsdxToSvgSerializer {
       var x = alignedX;
       var y = 0.0;
       for (var i = 0; i < glyphs.length; i++) {
-        final glyphY = y == 0 ? 0.0 : (unflipGlyphs ? -y : y);
+        final glyphY = baselineY + (unflipGlyphs ? -y : y);
         positionedGlyphs.write(
           '<tspan x="${_n(x)}" y="${_n(glyphY)}">'
           '${_esc(String.fromCharCode(glyphs[i]))}</tspan>',
@@ -3468,7 +3474,8 @@ class VsdxToSvgSerializer {
     buf.writeln(
       '$indent<g transform="$glyphXf">'
       '$backgroundRect'
-      '<text x="0" y="0" text-anchor="$anchor" fill="${_argbCss(op.argb)}" '
+      '<text x="0" y="${_n(baselineY)}" text-anchor="$anchor" '
+      'fill="${_argbCss(op.argb)}" '
       'font-family="$face" font-size="${_n(size)}" '
       'font-weight="$fontWeight"$fontStyle$decorationAttr>'
       '${_esc(op.text)}</text></g>',

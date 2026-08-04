@@ -213,9 +213,15 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
       ? xAdvances.fold<double>(0, (sum, advance) => sum + advance).abs()
       : tp.width;
   var dx = 0.0;
-  final dy = -fontSize * 0.85;
-  // TA_CENTER = 6, TA_RIGHT = 2 (low bits).
-  final align = op.align & 0x07;
+  // GDI vertical alignment is encoded in bits 3-4. Flutter paints from the
+  // glyph box's top edge, so convert the reference point before rotation.
+  final dy = switch (op.align & 0x18) {
+    0x00 => 0.0, // TA_TOP
+    0x08 => -tp.height, // TA_BOTTOM
+    _ => -fontSize * 0.85, // TA_BASELINE
+  };
+  // TA_UPDATECP is bit 0 and must not affect left/right/centre alignment.
+  final align = op.align & 0x06;
   if (align == 6) {
     dx -= textWidth / 2;
   } else if (align == 2) {

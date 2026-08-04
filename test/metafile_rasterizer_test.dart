@@ -132,4 +132,56 @@ void main() {
     expect(upperBandPixels, greaterThan(2));
     image.dispose();
   });
+
+  test('Canvas honours GDI top and bottom text reference points', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 48,
+      maxY: 40,
+      ops: <Object>[
+        MetafileTextOp(
+          text: 'M',
+          x: 2,
+          y: 20,
+          fontHeight: 10,
+          argb: 0x00000000,
+          backgroundArgb: 0xFFFF0000,
+          align: 0x00,
+        ),
+        MetafileTextOp(
+          text: 'M',
+          x: 18,
+          y: 20,
+          fontHeight: 10,
+          argb: 0x00000000,
+          backgroundArgb: 0xFF00FF00,
+          align: 0x08,
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 96);
+    expect(image, isNotNull);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(data, isNotNull);
+    final bytes = data!.buffer.asUint8List();
+    var redBelowReference = 0;
+    var greenAboveReference = 0;
+    final referenceY = image.height ~/ 2;
+    for (var y = 0; y < image.height; y++) {
+      for (var x = 0; x < image.width; x++) {
+        final i = (y * image.width + x) * 4;
+        if (y >= referenceY && bytes[i] > 200 && bytes[i + 1] < 40) {
+          redBelowReference++;
+        }
+        if (y < referenceY && bytes[i + 1] > 200 && bytes[i] < 40) {
+          greenAboveReference++;
+        }
+      }
+    }
+    expect(redBelowReference, greaterThan(20));
+    expect(greenAboveReference, greaterThan(20));
+    image.dispose();
+  });
 }

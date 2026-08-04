@@ -9,6 +9,33 @@ import 'package:vsdx/vsdx.dart';
 Uint8List _fixture(String name) =>
     File('test/fixtures/$name').readAsBytesSync();
 
+Uint8List _wmfTextWithAlign(int align) {
+  final bytes = Uint8List(48);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little); // MEMORYMETAFILE
+  data.setUint16(2, 9, Endian.little); // header words
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint32(12, 8, Endian.little); // largest record words
+
+  const setAlign = 18;
+  data.setUint32(setAlign, 4, Endian.little);
+  data.setUint16(setAlign + 4, 0x012e, Endian.little);
+  data.setUint16(setAlign + 6, align, Endian.little);
+
+  const text = 26;
+  data.setUint32(text, 8, Endian.little);
+  data.setUint16(text + 4, 0x0a32, Endian.little); // EXTTEXTOUT
+  data.setInt16(text + 6, 20, Endian.little);
+  data.setInt16(text + 8, 20, Endian.little);
+  data.setUint16(text + 10, 1, Endian.little);
+  data.setUint8(text + 14, 0x41); // A
+
+  const eof = 42;
+  data.setUint32(eof, 3, Endian.little);
+  return bytes;
+}
+
 void main() {
   const parser = DocumentParser();
 
@@ -637,6 +664,39 @@ void main() {
       isTrue,
     );
     expect(svg.contains('fill="#f2f2f2"'), isFalse);
+  });
+
+  test('SVG metafile text honours GDI vertical and UPDATECP alignment', () {
+    String svgFor(int align) {
+      const part = '/visio/media/aligned.wmf';
+      final page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 2,
+        heightInches: 2,
+        shapes: <VsdxShape>[
+          VsdxShapeFactory.picture(
+            id: 1,
+            pinX: 1,
+            pinY: 1,
+            width: 1,
+            height: 1,
+            imagePartName: part,
+          ),
+        ],
+      );
+      final images = ImageRegistry.empty.withImage(VsdxImage(
+        partName: part,
+        bytes: _wmfTextWithAlign(align),
+        mimeType: 'image/x-wmf',
+      ));
+      return VsdxToSvgSerializer().serializePage(page, images: images);
+    }
+
+    expect(svgFor(0x00), contains('y="10.2" text-anchor="start"'));
+    expect(svgFor(0x08), contains('y="-1.8" text-anchor="start"'));
+    expect(svgFor(0x18), contains('y="0" text-anchor="start"'));
+    expect(svgFor(0x1b), contains('y="0" text-anchor="end"'));
   });
 
   test('SVG vector metafile FlipY mirrors after GDI normalisation', () {
