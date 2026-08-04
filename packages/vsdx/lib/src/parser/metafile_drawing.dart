@@ -63,6 +63,11 @@ class MetafileTextOp {
     this.backgroundArgb,
     this.advancesX,
     this.advancesY,
+    this.fontWeight = 400,
+    this.italic = false,
+    this.underline = false,
+    this.strikeThrough = false,
+    this.escapementDegrees = 0,
   });
 
   final String text;
@@ -87,6 +92,16 @@ class MetafileTextOp {
 
   /// Optional vertical component used by `ETO_PDY` records.
   final List<double>? advancesY;
+
+  /// GDI LOGFONT styling retained independently of the host font backend.
+  final int fontWeight;
+  final bool italic;
+  final bool underline;
+  final bool strikeThrough;
+
+  /// LOGFONT escapement in degrees. Positive values rotate counter-clockwise
+  /// in GDI's logical coordinate system.
+  final double escapementDegrees;
 }
 
 @immutable

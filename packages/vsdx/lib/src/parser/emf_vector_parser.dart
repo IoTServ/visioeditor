@@ -103,6 +103,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
+  var fontWeight = 400;
+  var fontItalic = false;
+  var fontUnderline = false;
+  var fontStrikeThrough = false;
+  var fontEscapementDegrees = 0.0;
   final ops = <Object>[];
   MetafilePoint? curPt;
 
@@ -209,6 +214,17 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       if (params + 4 + 4 <= recEnd) {
         final height =
             bd.getInt32(params + 4, Endian.little).abs().toDouble().clamp(1.0, 2000.0);
+        final escapement = params + 16 <= recEnd
+            ? bd.getInt32(params + 12, Endian.little) / 10.0
+            : 0.0;
+        final weight = params + 24 <= recEnd
+            ? bd.getInt32(params + 20, Endian.little)
+            : 400;
+        final italic = params + 25 <= recEnd && bd.getUint8(params + 24) != 0;
+        final underline =
+            params + 26 <= recEnd && bd.getUint8(params + 25) != 0;
+        final strikeThrough =
+            params + 27 <= recEnd && bd.getUint8(params + 26) != 0;
         String? face;
         // lfFaceName is WCHAR[32] at offset 28 within LOGFONTW (= params+4+28).
         final faceOff = params + 4 + 28;
@@ -221,7 +237,19 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           }
           if (codes.isNotEmpty) face = String.fromCharCodes(codes);
         }
-        _store(objects, ih, _EmfFont(height, face));
+        _store(
+          objects,
+          ih,
+          _EmfFont(
+            height,
+            face,
+            weight,
+            italic,
+            underline,
+            strikeThrough,
+            escapement,
+          ),
+        );
       }
     } else if (t == _emrSelectObject && params + 4 <= recEnd) {
       final ih = bd.getUint32(params, Endian.little);
@@ -243,6 +271,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         } else if (o is _EmfFont) {
           fontHeight = o.height;
           fontFace = o.face;
+          fontWeight = o.weight;
+          fontItalic = o.italic;
+          fontUnderline = o.underline;
+          fontStrikeThrough = o.strikeThrough;
+          fontEscapementDegrees = o.escapementDegrees;
         }
       }
     } else if (t == _emrDeleteObject && params + 4 <= recEnd) {
@@ -451,6 +484,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
                   : null,
               advancesX: advancesX,
               advancesY: advancesY,
+              fontWeight: fontWeight,
+              italic: fontItalic,
+              underline: fontUnderline,
+              strikeThrough: fontStrikeThrough,
+              escapementDegrees: fontEscapementDegrees,
             ));
           }
         }
@@ -538,7 +576,20 @@ class _EmfBrush extends _EmfObject {
 }
 
 class _EmfFont extends _EmfObject {
-  _EmfFont(this.height, this.face);
+  _EmfFont(
+    this.height,
+    this.face,
+    this.weight,
+    this.italic,
+    this.underline,
+    this.strikeThrough,
+    this.escapementDegrees,
+  );
   final double height;
   final String? face;
+  final int weight;
+  final bool italic;
+  final bool underline;
+  final bool strikeThrough;
+  final double escapementDegrees;
 }

@@ -81,6 +81,11 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
+  var fontWeight = 400;
+  var fontItalic = false;
+  var fontUnderline = false;
+  var fontStrikeThrough = false;
+  var fontEscapementDegrees = 0.0;
   double? winOrgX, winOrgY, winExtX, winExtY;
   double? curX, curY;
   final ops = <Object>[];
@@ -159,6 +164,11 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaCreateFontIndirect && params + 18 <= recEnd) {
       final height =
           bd.getInt16(params, Endian.little).abs().toDouble().clamp(1.0, 500.0);
+      final escapement = bd.getInt16(params + 4, Endian.little) / 10.0;
+      final weight = bd.getInt16(params + 8, Endian.little);
+      final italic = bd.getUint8(params + 10) != 0;
+      final underline = bd.getUint8(params + 11) != 0;
+      final strikeThrough = bd.getUint8(params + 12) != 0;
       String? face;
       final faceBytes = <int>[];
       for (var i = params + 18; i < recEnd && faceBytes.length < 32; i++) {
@@ -169,7 +179,15 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       if (faceBytes.isNotEmpty) {
         face = latin1.decode(faceBytes, allowInvalid: true);
       }
-      objects[allocSlot()] = _GdiFont(height, face);
+      objects[allocSlot()] = _GdiFont(
+        height,
+        face,
+        weight,
+        italic,
+        underline,
+        strikeThrough,
+        escapement,
+      );
     } else if (func == _metaSelectObject && params + 2 <= recEnd) {
       final ix = bd.getUint16(params, Endian.little);
       if (ix < objects.length) {
@@ -185,6 +203,11 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         } else if (o is _GdiFont) {
           fontHeight = o.height;
           fontFace = o.face;
+          fontWeight = o.weight;
+          fontItalic = o.italic;
+          fontUnderline = o.underline;
+          fontStrikeThrough = o.strikeThrough;
+          fontEscapementDegrees = o.escapementDegrees;
         }
       }
     } else if (func == _metaDeleteObject && params + 2 <= recEnd) {
@@ -341,6 +364,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final textOp = _readExtTextOut(
         bd, bytes, params, recEnd, textColor, textAlign, fontHeight, fontFace,
         backgroundMode == 2 ? backgroundColor : null,
+        fontWeight, fontItalic, fontUnderline, fontStrikeThrough,
+        fontEscapementDegrees,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
@@ -350,6 +375,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final textOp = _readTextOut(
         bd, bytes, params, recEnd, textColor, textAlign, fontHeight, fontFace,
         backgroundMode == 2 ? backgroundColor : null,
+        fontWeight, fontItalic, fontUnderline, fontStrikeThrough,
+        fontEscapementDegrees,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
@@ -426,6 +453,11 @@ MetafileTextOp? _readExtTextOut(
   double fontHeight,
   String? fontFace,
   int? backgroundArgb,
+  int fontWeight,
+  bool italic,
+  bool underline,
+  bool strikeThrough,
+  double escapementDegrees,
 ) {
   if (params + 8 > recEnd) return null;
   final y = bd.getInt16(params, Endian.little).toDouble();
@@ -471,6 +503,11 @@ MetafileTextOp? _readExtTextOut(
     backgroundArgb: backgroundArgb,
     advancesX: advancesX,
     advancesY: advancesY,
+    fontWeight: fontWeight,
+    italic: italic,
+    underline: underline,
+    strikeThrough: strikeThrough,
+    escapementDegrees: escapementDegrees,
   );
 }
 
@@ -484,6 +521,11 @@ MetafileTextOp? _readTextOut(
   double fontHeight,
   String? fontFace,
   int? backgroundArgb,
+  int fontWeight,
+  bool italic,
+  bool underline,
+  bool strikeThrough,
+  double escapementDegrees,
 ) {
   if (params + 2 > recEnd) return null;
   final count = bd.getUint16(params, Endian.little);
@@ -506,6 +548,11 @@ MetafileTextOp? _readTextOut(
     face: fontFace,
     align: textAlign,
     backgroundArgb: backgroundArgb,
+    fontWeight: fontWeight,
+    italic: italic,
+    underline: underline,
+    strikeThrough: strikeThrough,
+    escapementDegrees: escapementDegrees,
   );
 }
 
@@ -533,7 +580,20 @@ class _GdiBrush extends _GdiObject {
 }
 
 class _GdiFont extends _GdiObject {
-  _GdiFont(this.height, this.face);
+  _GdiFont(
+    this.height,
+    this.face,
+    this.weight,
+    this.italic,
+    this.underline,
+    this.strikeThrough,
+    this.escapementDegrees,
+  );
   final double height;
   final String? face;
+  final int weight;
+  final bool italic;
+  final bool underline;
+  final bool strikeThrough;
+  final double escapementDegrees;
 }

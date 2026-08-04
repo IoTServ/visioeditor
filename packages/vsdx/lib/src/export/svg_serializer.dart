@@ -3419,11 +3419,22 @@ class VsdxToSvgSerializer {
       2 => -textWidth,
       _ => 0.0,
     };
+    final fontWeight = op.fontWeight <= 0 ? 400 : op.fontWeight.clamp(100, 900);
+    final fontStyle = op.italic ? ' font-style="italic"' : '';
+    final decorations = <String>[
+      if (op.underline) 'underline',
+      if (op.strikeThrough) 'line-through',
+    ];
+    final decorationAttr = decorations.isEmpty
+        ? ''
+        : ' text-decoration="${decorations.join(' ')}"';
     // When the metafile group applies GDI→Y-up (scale … -sy), un-flip glyphs
     // so text stays upright. Skip when FlipY already cancelled that flip.
+    final angle = op.escapementDegrees % 360;
+    final rotation = angle.abs() <= 1e-9 ? '' : ' rotate(${_n(-angle)})';
     final glyphXf = unflipGlyphs
-        ? 'translate(${_n(op.x)} ${_n(op.y)}) scale(1 -1)'
-        : 'translate(${_n(op.x)} ${_n(op.y)})';
+        ? 'translate(${_n(op.x)} ${_n(op.y)})$rotation scale(1 -1)'
+        : 'translate(${_n(op.x)} ${_n(op.y)})$rotation';
     final background = op.backgroundArgb;
     var backgroundRect = '';
     if (background != null) {
@@ -3449,7 +3460,8 @@ class VsdxToSvgSerializer {
         '$indent<g transform="$glyphXf">'
         '$backgroundRect'
         '<text fill="${_argbCss(op.argb)}" font-family="$face" '
-        'font-size="${_n(size)}">$positionedGlyphs</text></g>',
+        'font-size="${_n(size)}" font-weight="$fontWeight"$fontStyle'
+        '$decorationAttr>$positionedGlyphs</text></g>',
       );
       return;
     }
@@ -3457,7 +3469,8 @@ class VsdxToSvgSerializer {
       '$indent<g transform="$glyphXf">'
       '$backgroundRect'
       '<text x="0" y="0" text-anchor="$anchor" fill="${_argbCss(op.argb)}" '
-      'font-family="$face" font-size="${_n(size)}">'
+      'font-family="$face" font-size="${_n(size)}" '
+      'font-weight="$fontWeight"$fontStyle$decorationAttr>'
       '${_esc(op.text)}</text></g>',
     );
   }

@@ -37,6 +37,18 @@ MetafileDrawing? parseMetafileDrawing(
     payload = extracted;
   }
 
+  // An explicit WMF media type/extension is authoritative. Scanning the
+  // entire byte stream for an EMF header before trying WMF can match ordinary
+  // WMF record payload by accident and return a plausible but truncated EMF
+  // drawing. This happens in the upstream Visio 5 plan thumbnail: the false
+  // positive contains only 12 of its 80 drawing operations. Keep a genuine
+  // leading EMF signature authoritative for mislabelled parts, otherwise
+  // route known WMF data through its parser first.
+  if (isWmf && !looksLikeEmf(payload)) {
+    final d = parseWmfDrawing(payload);
+    if (d != null && !d.isEmpty) return d;
+  }
+
   // Prefer EMF when signature matches (OLE presentations, .emf parts).
   if (looksLikeEmf(payload) || findEmfOffset(payload) != null || isEmf) {
     final d = parseEmfDrawing(payload);

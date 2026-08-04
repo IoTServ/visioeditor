@@ -92,4 +92,44 @@ void main() {
     expect(rightGlyphPixels, greaterThan(2));
     image.dispose();
   });
+
+  test('Canvas rotates and styles LOGFONT text around its reference point',
+      () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 48,
+      maxY: 48,
+      ops: <Object>[
+        MetafileTextOp(
+          text: 'IIII',
+          x: 24,
+          y: 40,
+          fontHeight: 12,
+          argb: 0xFF000000,
+          advancesX: <double>[6, 6, 6, 6],
+          fontWeight: 700,
+          italic: true,
+          underline: true,
+          strikeThrough: true,
+          escapementDegrees: 90,
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 96);
+    expect(image, isNotNull);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(data, isNotNull);
+    final bytes = data!.buffer.asUint8List();
+    var upperBandPixels = 0;
+    for (var y = 0; y < image.height ~/ 2; y++) {
+      for (var x = 0; x < image.width; x++) {
+        final i = (y * image.width + x) * 4;
+        if (bytes[i + 3] > 32) upperBandPixels++;
+      }
+    }
+    expect(upperBandPixels, greaterThan(2));
+    image.dispose();
+  });
 }

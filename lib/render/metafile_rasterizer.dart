@@ -186,6 +186,12 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
     color: Color(op.argb),
     fontSize: fontSize,
     fontFamily: op.face,
+    fontWeight: _gdiFontWeight(op.fontWeight),
+    fontStyle: op.italic ? FontStyle.italic : FontStyle.normal,
+    decoration: TextDecoration.combine(<TextDecoration>[
+      if (op.underline) TextDecoration.underline,
+      if (op.strikeThrough) TextDecoration.lineThrough,
+    ]),
     height: 1.0,
   );
   // GDI text baseline is near (x,y); Flutter paints from top-left of glyphs.
@@ -206,14 +212,22 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
   final textWidth = hasAdvances
       ? xAdvances.fold<double>(0, (sum, advance) => sum + advance).abs()
       : tp.width;
-  var dx = op.x;
-  var dy = op.y - fontSize * 0.85;
+  var dx = 0.0;
+  final dy = -fontSize * 0.85;
   // TA_CENTER = 6, TA_RIGHT = 2 (low bits).
   final align = op.align & 0x07;
   if (align == 6) {
     dx -= textWidth / 2;
   } else if (align == 2) {
     dx -= textWidth;
+  }
+  canvas.save();
+  canvas.translate(op.x, op.y);
+  final angle = op.escapementDegrees % 360;
+  if (angle.abs() > 1e-9) {
+    // GDI logical coordinates grow down, so positive LOGFONT escapement is
+    // the negative Canvas angle around the text reference point.
+    canvas.rotate(-angle * math.pi / 180);
   }
   final background = op.backgroundArgb;
   if (background != null) {
@@ -224,18 +238,25 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
   }
   if (!hasAdvances) {
     tp.paint(canvas, Offset(dx, dy));
-    return;
+  } else {
+    var glyphX = 0.0;
+    var glyphY = 0.0;
+    for (var i = 0; i < glyphs.length; i++) {
+      final glyphPainter = TextPainter(
+        text: TextSpan(text: String.fromCharCode(glyphs[i]), style: style),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+      )..layout();
+      glyphPainter.paint(canvas, Offset(dx + glyphX, dy + glyphY));
+      glyphX += xAdvances[i];
+      if (yAdvances != null) glyphY += yAdvances[i];
+    }
   }
-  var glyphX = 0.0;
-  var glyphY = 0.0;
-  for (var i = 0; i < glyphs.length; i++) {
-    final glyphPainter = TextPainter(
-      text: TextSpan(text: String.fromCharCode(glyphs[i]), style: style),
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.left,
-    )..layout();
-    glyphPainter.paint(canvas, Offset(dx + glyphX, dy + glyphY));
-    glyphX += xAdvances[i];
-    if (yAdvances != null) glyphY += yAdvances[i];
-  }
+  canvas.restore();
+}
+
+FontWeight _gdiFontWeight(int weight) {
+  if (weight <= 0) return FontWeight.normal;
+  final rounded = ((weight.clamp(100, 900) + 50) ~/ 100).clamp(1, 9);
+  return FontWeight.values[rounded - 1];
 }

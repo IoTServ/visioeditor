@@ -628,6 +628,8 @@ void main() {
     expect(svg.contains('<pattern id="wmf-hatch-'), isTrue);
     expect(svg.contains('stroke="#008000"'), isTrue);
     expect(svg.contains('fill="#ffffff"'), isTrue);
+    expect(svg.contains('font-weight="400"'), isTrue);
+    expect(svg.contains('rotate(-90)'), isTrue);
     expect(
       svg.contains(
         '<tspan x="0" y="0">8</tspan><tspan x="9" y="0">0</tspan>',
