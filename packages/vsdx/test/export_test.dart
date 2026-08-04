@@ -809,7 +809,7 @@ void main() {
     expect(svg, contains('markerWidth="0.175"'));
   });
 
-  test('SVG font-family includes AsianFont after Latin face', () {
+  test('SVG applies AsianFont to CJK glyphs instead of fallback only', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -827,7 +827,7 @@ void main() {
           richText: const VsdxRichText(
             runs: <VsdxTextRun>[
               VsdxTextRun(
-                text: '订单',
+                text: 'Order订单',
                 charStyle: VsdxCharStyle(
                   fontFamily: 'Arial',
                   asianFont: 'Microsoft YaHei',
@@ -844,6 +844,13 @@ void main() {
       svg,
       contains("font-family=\"Arial, 'Microsoft YaHei', sans-serif\""),
     );
+    expect(
+      svg,
+      contains(
+        "font-family=\"'Microsoft YaHei', sans-serif\" font-size=\"0.2\"",
+      ),
+    );
+    expect(svg, contains('>订单</tspan>'));
   });
 
   test('SVG applies ComplexScriptFont and ComplexScriptSize by script', () {
@@ -864,7 +871,7 @@ void main() {
           richText: const VsdxRichText(
             runs: <VsdxTextRun>[
               VsdxTextRun(
-                text: 'Latin سلام',
+                text: 'Latin订单سلام',
                 charStyle: VsdxCharStyle(
                   fontFamily: 'Arial',
                   asianFont: 'Microsoft YaHei',
@@ -884,6 +891,13 @@ void main() {
       svg,
       contains(
         "font-family=\"Arial, 'Microsoft YaHei', 'Times New Roman', sans-serif\" "
+        'font-size="0.2"',
+      ),
+    );
+    expect(
+      svg,
+      contains(
+        "font-family=\"'Microsoft YaHei', 'Times New Roman', sans-serif\" "
         'font-size="0.2"',
       ),
     );
@@ -912,9 +926,10 @@ void main() {
       richText: const VsdxRichText(
         runs: <VsdxTextRun>[
           VsdxTextRun(
-            text: 'سلام',
+            text: '订单سلام',
             charStyle: VsdxCharStyle(
               fontFamily: 'Arial',
+              asianFont: 'Microsoft YaHei',
               complexScriptFont: 'Times New Roman',
               fontSizeInches: 0.12,
               complexScriptSizeInches: 0.4,
@@ -930,7 +945,14 @@ void main() {
     expect(
       svg,
       contains(
-        "font-family=\"'Times New Roman', sans-serif\" "
+        "font-family=\"'Microsoft YaHei', 'Times New Roman', sans-serif\" "
+        'font-size="0.12"',
+      ),
+    );
+    expect(
+      svg,
+      contains(
+        "font-family=\"'Times New Roman', 'Microsoft YaHei', sans-serif\" "
         'font-size="0.4"',
       ),
     );

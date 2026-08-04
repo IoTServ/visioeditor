@@ -194,6 +194,15 @@ void main() {
     expect(smallerComplex.effectiveFontSizeInchesForText('A سلام'), 0.2);
   });
 
+  test('AsianFont script classification covers Office East Asian ranges', () {
+    for (final text in <String>['订单', 'かな', 'カナ', '한글', '注音', 'ꆈ']) {
+      expect(text.runes.every(isVisioAsianScriptRune), isTrue, reason: text);
+    }
+    expect(isVisioAsianScriptRune('A'.runes.single), isFalse);
+    expect(isVisioAsianScriptRune('س'.runes.single), isFalse);
+    expect(isVisioComplexScriptRune('س'.runes.single), isTrue);
+  });
+
   test('VerticalAlign F=Inh inherits master top (not cached V=1)', () {
     final el = shape(
       '<Cell N="VerticalAlign" V="1" F="Inh"/><Text>Label</Text>',

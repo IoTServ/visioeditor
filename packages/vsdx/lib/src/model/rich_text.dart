@@ -204,6 +204,29 @@ bool isVisioComplexScriptRune(int rune) {
       (rune >= 0x11000 && rune <= 0x11fff); // Supplementary Brahmic scripts.
 }
 
+/// Whether [rune] uses Visio's Character `AsianFont` face.
+///
+/// Keep this separate from [isVisioComplexScriptRune]: Office stores East
+/// Asian and complex-script font choices in different Character cells. A
+/// fallback list is insufficient because many Unicode fonts contain both
+/// Latin and CJK glyphs; in that case the explicitly authored `AsianFont`
+/// must still win for Han, Kana, Hangul, Bopomofo, Yi and Tangut text.
+bool isVisioAsianScriptRune(int rune) {
+  return (rune >= 0x1100 && rune <= 0x11ff) || // Hangul Jamo.
+      (rune >= 0x2e80 && rune <= 0x33ff) || // CJK/Kana/Bopomofo symbols.
+      (rune >= 0x3400 && rune <= 0x4dbf) || // CJK Extension A.
+      (rune >= 0x4e00 && rune <= 0x9fff) || // Unified ideographs.
+      (rune >= 0xa000 && rune <= 0xa4cf) || // Yi.
+      (rune >= 0xac00 && rune <= 0xd7ff) || // Hangul syllables/Jamo.
+      (rune >= 0xf900 && rune <= 0xfaff) || // Compatibility ideographs.
+      (rune >= 0xfe30 && rune <= 0xfe4f) || // CJK compatibility forms.
+      (rune >= 0xff00 && rune <= 0xffef) || // Full/half-width forms.
+      (rune >= 0x16fe0 && rune <= 0x16fff) || // Ideographic symbols.
+      (rune >= 0x17000 && rune <= 0x18aff) || // Tangut.
+      (rune >= 0x1b000 && rune <= 0x1b2ff) || // Kana supplements.
+      (rune >= 0x20000 && rune <= 0x323af); // CJK extensions B through H.
+}
+
 @immutable
 class VsdxCharStyle {
   const VsdxCharStyle({

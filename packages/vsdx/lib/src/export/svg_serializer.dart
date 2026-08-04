@@ -4626,44 +4626,58 @@ class VsdxToSvgSerializer {
     required VsdxCharStyle style,
     required VsdxTheme theme,
     String? xAttr,
-    bool applyComplexScript = true,
+    bool applyScriptFonts = true,
   }) {
-    if (applyComplexScript &&
-        raw.runes.any(isVisioComplexScriptRune) &&
+    final asianFontName = style.asianFont?.trim();
+    final latinFontName = style.fontFamily?.trim();
+    final hasAsianOverride = raw.runes.any(isVisioAsianScriptRune) &&
+        (asianFontName?.isNotEmpty ?? false) &&
+        (latinFontName == null ||
+            asianFontName!.toLowerCase() != latinFontName.toLowerCase());
+    final hasComplexOverride = raw.runes.any(isVisioComplexScriptRune) &&
         ((style.complexScriptFont?.isNotEmpty ?? false) ||
-            style.complexScriptSizeInches != null)) {
-      final chunks = <({String text, bool complex})>[];
+            style.complexScriptSizeInches != null);
+    if (applyScriptFonts && (hasAsianOverride || hasComplexOverride)) {
+      final chunks = <({String text, int script})>[];
       final chunk = StringBuffer();
-      bool? complex;
+      var script = -1; // 0 Latin/default, 1 Asian, 2 complex.
       void flush() {
-        if (chunk.isEmpty || complex == null) return;
-        chunks.add((text: chunk.toString(), complex: complex));
+        if (chunk.isEmpty || script < 0) return;
+        chunks.add((text: chunk.toString(), script: script));
         chunk.clear();
       }
 
       for (final rune in raw.runes) {
-        final next = isVisioComplexScriptRune(rune);
-        if (complex != null && complex != next) flush();
-        complex = next;
+        final next = isVisioComplexScriptRune(rune)
+            ? 2
+            : isVisioAsianScriptRune(rune)
+                ? 1
+                : 0;
+        if (script >= 0 && script != next) flush();
+        script = next;
         chunk.writeCharCode(rune);
       }
       flush();
       var first = true;
       for (final part in chunks) {
-        final partStyle = part.complex
-            ? style.copyWith(
+        final partStyle = switch (part.script) {
+          2 when hasComplexOverride => style.copyWith(
                 fontFamily: style.complexScriptFont ?? style.fontFamily,
                 fontSizeInches:
                     style.complexScriptSizeInches ?? style.fontSizeInches,
-              )
-            : style;
+              ),
+          1 when hasAsianOverride => style.copyWith(
+                fontFamily: style.asianFont,
+              ),
+          _ => style,
+        };
         _writeStyledTspans(
           body,
           raw: part.text,
           style: partStyle,
           theme: theme,
           xAttr: first ? xAttr : null,
-          applyComplexScript: false,
+          applyScriptFonts: false,
         );
         first = false;
       }

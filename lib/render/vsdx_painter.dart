@@ -3686,38 +3686,65 @@ class VsdxPainter extends CustomPainter {
       height: lineHeight,
       fontFeatures: features.isEmpty ? null : features,
     );
+    final hasAsianText = rawText.runes.any(isVisioAsianScriptRune);
     final hasComplexText = rawText.runes.any(isVisioComplexScriptRune);
-    if (hasComplexText &&
+    final asianFontName = run.charStyle.asianFont?.trim();
+    final latinFontName = run.charStyle.fontFamily?.trim();
+    final hasAsianOverride = hasAsianText &&
+        (asianFontName?.isNotEmpty ?? false) &&
+        (latinFontName == null ||
+            asianFontName!.toLowerCase() != latinFontName.toLowerCase());
+    final hasComplexOverride = hasComplexText &&
         ((run.charStyle.complexScriptFont?.isNotEmpty ?? false) ||
-            run.charStyle.complexScriptSizeInches != null)) {
-      final complexFont = fontFallback.resolve(
-        run.charStyle.complexScriptFont ?? run.charStyle.fontFamily ?? 'Arial',
-        asianFont: run.charStyle.asianFont,
-      );
-      final complexBaseSize = math.max(
-            run.charStyle.complexScriptSizeInches ??
-                run.charStyle.fontSizeInches,
-            0.04,
-          ) *
-          scale;
-      final complexSize = pos == VsdxTextPosition.normal
-          ? complexBaseSize
-          : complexBaseSize * 0.7;
-      final baseTracking = run.charStyle.letterSpacingInches * scale;
-      final complexStyle = style.copyWith(
-        fontFamily: complexFont.family,
-        fontFamilyFallback: complexFont.familyFallback.isEmpty
-            ? null
-            : complexFont.familyFallback,
-        fontSize: complexSize,
-        letterSpacing: baseTracking +
-            complexSize * (widthScale - 1.0) * 0.55,
-      );
+            run.charStyle.complexScriptSizeInches != null);
+    if (hasAsianOverride || hasComplexOverride) {
+      TextStyle? asianStyle;
+      if (hasAsianOverride) {
+        final asianFont = fontFallback.resolve(
+          run.charStyle.asianFont,
+          complexScriptFont: run.charStyle.complexScriptFont,
+        );
+        asianStyle = style.copyWith(
+          fontFamily: asianFont.family,
+          fontFamilyFallback: asianFont.familyFallback.isEmpty
+              ? null
+              : asianFont.familyFallback,
+        );
+      }
+      TextStyle? complexStyle;
+      if (hasComplexOverride) {
+        final complexFont = fontFallback.resolve(
+          run.charStyle.complexScriptFont ??
+              run.charStyle.fontFamily ??
+              'Arial',
+          asianFont: run.charStyle.asianFont,
+        );
+        final complexBaseSize = math.max(
+              run.charStyle.complexScriptSizeInches ??
+                  run.charStyle.fontSizeInches,
+              0.04,
+            ) *
+            scale;
+        final complexSize = pos == VsdxTextPosition.normal
+            ? complexBaseSize
+            : complexBaseSize * 0.7;
+        final baseTracking = run.charStyle.letterSpacingInches * scale;
+        complexStyle = style.copyWith(
+          fontFamily: complexFont.family,
+          fontFamilyFallback: complexFont.familyFallback.isEmpty
+              ? null
+              : complexFont.familyFallback,
+          fontSize: complexSize,
+          letterSpacing: baseTracking +
+              complexSize * (widthScale - 1.0) * 0.55,
+        );
+      }
       return TextSpan(
         style: style,
-        children: _complexScriptChildren(
+        children: _visioScriptChildren(
           rawText,
           latinStyle: style,
+          asianStyle: asianStyle,
           complexStyle: complexStyle,
           smallCaps: run.charStyle.style.smallCaps,
         ),
@@ -3732,23 +3759,26 @@ class VsdxPainter extends CustomPainter {
     return TextSpan(text: rawText, style: style);
   }
 
-  /// Split a mixed Office text run so complex-script Character cells affect
-  /// only the glyphs they describe, while Latin/CJK text keeps its own face.
-  List<InlineSpan> _complexScriptChildren(
+  /// Split a mixed Office run so `AsianFont` and `ComplexScriptFont` affect
+  /// only the glyphs described by their respective Character cells.
+  List<InlineSpan> _visioScriptChildren(
     String text, {
     required TextStyle latinStyle,
-    required TextStyle complexStyle,
+    required TextStyle? asianStyle,
+    required TextStyle? complexStyle,
     required bool smallCaps,
   }) {
     final out = <InlineSpan>[];
     final buf = StringBuffer();
-    bool? complex;
+    var script = -1; // 0 Latin/default, 1 Asian, 2 complex.
     void flush() {
-      if (buf.isEmpty || complex == null) return;
+      if (buf.isEmpty || script < 0) return;
       final chunk = buf.toString();
       buf.clear();
-      if (complex) {
+      if (script == 2 && complexStyle != null) {
         out.add(TextSpan(text: chunk, style: complexStyle));
+      } else if (script == 1 && asianStyle != null) {
+        out.add(TextSpan(text: chunk, style: asianStyle));
       } else if (smallCaps) {
         out.addAll(_syntheticSmallCapsChildren(chunk, latinStyle));
       } else {
@@ -3757,9 +3787,13 @@ class VsdxPainter extends CustomPainter {
     }
 
     for (final rune in text.runes) {
-      final next = isVisioComplexScriptRune(rune);
-      if (complex != null && complex != next) flush();
-      complex = next;
+      final next = isVisioComplexScriptRune(rune)
+          ? 2
+          : isVisioAsianScriptRune(rune)
+              ? 1
+              : 0;
+      if (script >= 0 && script != next) flush();
+      script = next;
       buf.writeCharCode(rune);
     }
     flush();
