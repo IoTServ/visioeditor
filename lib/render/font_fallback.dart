@@ -152,11 +152,13 @@ class VsdxFontFallback {
   /// appended, so a custom font still wins where installed but degrades
   /// gracefully elsewhere.
   ///
-  /// When [asianFont] is set (Visio `AsianFont` cell), it is tried right
-  /// after the Latin [rawFamily] so CJK glyphs resolve on Edraw exports.
+  /// When [asianFont] / [complexScriptFont] are set (Visio Character cells),
+  /// they are tried after the Latin [rawFamily]. The painter also promotes
+  /// [complexScriptFont] to the primary face for complex-script substrings.
   ResolvedFont resolve(
     String? rawFamily, {
     String? asianFont,
+    String? complexScriptFont,
     String? platformOverride,
   }) {
     final platform = platformOverride ?? _currentPlatform();
@@ -167,6 +169,10 @@ class VsdxFontFallback {
     final asian = (asianFont == null || asianFont.trim().isEmpty)
         ? null
         : (familyMap[asianFont] ?? asianFont);
+    final complex =
+        (complexScriptFont == null || complexScriptFont.trim().isEmpty)
+            ? null
+            : (familyMap[complexScriptFont] ?? complexScriptFont);
 
     final chain = <String>[];
     void add(String? name) {
@@ -177,6 +183,7 @@ class VsdxFontFallback {
     }
 
     add(asian);
+    add(complex);
     for (final f in fallbacks) {
       add(f);
     }

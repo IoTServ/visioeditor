@@ -846,6 +846,57 @@ void main() {
     );
   });
 
+  test('SVG applies ComplexScriptFont and ComplexScriptSize by script', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Latin سلام',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  asianFont: 'Microsoft YaHei',
+                  complexScriptFont: 'Times New Roman',
+                  fontSizeInches: 0.2,
+                  complexScriptSizeInches: 0.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains(
+        "font-family=\"Arial, 'Microsoft YaHei', 'Times New Roman', sans-serif\" "
+        'font-size="0.2"',
+      ),
+    );
+    expect(
+      svg,
+      contains(
+        "font-family=\"'Times New Roman', 'Microsoft YaHei', sans-serif\" "
+        'font-size="0.35"',
+      ),
+    );
+    expect(svg, contains('>سلام</tspan>'));
+  });
+
   test('SVG unbound text uses libvisio Arial and opaque black defaults', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

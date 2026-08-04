@@ -187,6 +187,23 @@ enum VsdxTextPosition { normal, superscript, subscript }
 /// Visio `Char.Case` — matches libvisio `allcaps` / `initcaps`.
 enum VsdxTextCase { normal, allCaps, initialCaps }
 
+/// Whether [rune] belongs to a script for which Visio uses the Character
+/// section's `ComplexScriptFont` / `ComplexScriptSize` cells.
+///
+/// Office classifies Hebrew, Arabic, Indic and the shaping-dependent South
+/// and South-East Asian scripts as complex text. Keep this independent of a
+/// rendering backend so Canvas and SVG split mixed-script runs identically.
+bool isVisioComplexScriptRune(int rune) {
+  return (rune >= 0x0590 && rune <= 0x08ff) || // Hebrew, Arabic, Syriac, etc.
+      (rune >= 0x0900 && rune <= 0x109f) || // Indic + SE Asian scripts.
+      (rune >= 0x1780 && rune <= 0x18af) || // Khmer and Mongolian.
+      (rune >= 0x1c00 && rune <= 0x1cff) ||
+      (rune >= 0xa800 && rune <= 0xaaff) ||
+      (rune >= 0xfb1d && rune <= 0xfdff) || // Hebrew/Arabic presentation.
+      (rune >= 0xfe70 && rune <= 0xfeff) ||
+      (rune >= 0x11000 && rune <= 0x11fff); // Supplementary Brahmic scripts.
+}
+
 @immutable
 class VsdxCharStyle {
   const VsdxCharStyle({
@@ -244,8 +261,9 @@ class VsdxCharStyle {
   /// `Char.FontScale` — width scale (1.0 = 100%), libvisio `scaleWidth`.
   final double fontScale;
 
-  /// `AsianFont` / `ComplexScriptFont` / `LangID` / `ComplexScriptSize`
-  /// (Visio locale fonts — preserved for XML round-trip; renderer may ignore).
+  /// `AsianFont` / `ComplexScriptFont` / `LangID` / `ComplexScriptSize`.
+  /// Locale-specific faces and complex-script size are preserved for XML
+  /// round-trip and consumed by the Canvas/SVG renderers.
   final String? asianFont;
   final String? complexScriptFont;
   final String? langId;

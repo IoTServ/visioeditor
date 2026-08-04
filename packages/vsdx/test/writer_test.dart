@@ -5357,7 +5357,7 @@ void main() {
     expect(after.richText.plainText.contains('\t'), isTrue);
   });
 
-  test('AsianFont / LangID round-trip on new shape', () {
+  test('locale Character fonts and sizes round-trip on new shape', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -5368,15 +5368,16 @@ void main() {
       width: 2,
       height: 1,
     ).copyWith(
-      text: '你好',
+      text: '你好 سلام',
       richText: VsdxRichText(
         runs: [
           VsdxTextRun(
-            text: '你好',
+            text: '你好 سلام',
             charStyle: const VsdxCharStyle(
               fontFamily: 'Arial',
               asianFont: 'Microsoft YaHei',
-              complexScriptFont: 'Arial',
+              complexScriptFont: 'Times New Roman',
+              complexScriptSizeInches: 0.22,
               langId: 'zh-CN',
             ),
           ),
@@ -5392,7 +5393,8 @@ void main() {
     final c = after.richText.runs.first.charStyle;
     expect(c.asianFont, 'Microsoft YaHei');
     expect(c.langId, 'zh-CN');
-    expect(c.complexScriptFont, 'Arial');
+    expect(c.complexScriptFont, 'Times New Roman');
+    expect(c.complexScriptSizeInches, closeTo(0.22, 1e-9));
   });
 
   test('Master attribute survives parse → rebuild write', () {

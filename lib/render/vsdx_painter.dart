@@ -3617,6 +3617,7 @@ class VsdxPainter extends CustomPainter {
     final font = fontFallback.resolve(
       run.charStyle.fontFamily ?? 'Arial',
       asianFont: run.charStyle.asianFont,
+      complexScriptFont: run.charStyle.complexScriptFont,
     );
     final rawText = switch (run.charStyle.textCase) {
       VsdxTextCase.allCaps => run.text.toUpperCase(),
@@ -3678,6 +3679,43 @@ class VsdxPainter extends CustomPainter {
       height: lineHeight,
       fontFeatures: features.isEmpty ? null : features,
     );
+    final hasComplexText = rawText.runes.any(isVisioComplexScriptRune);
+    if (hasComplexText &&
+        ((run.charStyle.complexScriptFont?.isNotEmpty ?? false) ||
+            run.charStyle.complexScriptSizeInches != null)) {
+      final complexFont = fontFallback.resolve(
+        run.charStyle.complexScriptFont ?? run.charStyle.fontFamily ?? 'Arial',
+        asianFont: run.charStyle.asianFont,
+      );
+      final complexBaseSize = math.max(
+            run.charStyle.complexScriptSizeInches ??
+                run.charStyle.fontSizeInches,
+            0.04,
+          ) *
+          scale;
+      final complexSize = pos == VsdxTextPosition.normal
+          ? complexBaseSize
+          : complexBaseSize * 0.7;
+      final baseTracking = run.charStyle.letterSpacingInches * scale;
+      final complexStyle = style.copyWith(
+        fontFamily: complexFont.family,
+        fontFamilyFallback: complexFont.familyFallback.isEmpty
+            ? null
+            : complexFont.familyFallback,
+        fontSize: complexSize,
+        letterSpacing: baseTracking +
+            complexSize * (widthScale - 1.0) * 0.55,
+      );
+      return TextSpan(
+        style: style,
+        children: _complexScriptChildren(
+          rawText,
+          latinStyle: style,
+          complexStyle: complexStyle,
+          smallCaps: run.charStyle.style.smallCaps,
+        ),
+      );
+    }
     if (run.charStyle.style.smallCaps) {
       return TextSpan(
         style: style,
@@ -3685,6 +3723,40 @@ class VsdxPainter extends CustomPainter {
       );
     }
     return TextSpan(text: rawText, style: style);
+  }
+
+  /// Split a mixed Office text run so complex-script Character cells affect
+  /// only the glyphs they describe, while Latin/CJK text keeps its own face.
+  List<InlineSpan> _complexScriptChildren(
+    String text, {
+    required TextStyle latinStyle,
+    required TextStyle complexStyle,
+    required bool smallCaps,
+  }) {
+    final out = <InlineSpan>[];
+    final buf = StringBuffer();
+    bool? complex;
+    void flush() {
+      if (buf.isEmpty || complex == null) return;
+      final chunk = buf.toString();
+      buf.clear();
+      if (complex) {
+        out.add(TextSpan(text: chunk, style: complexStyle));
+      } else if (smallCaps) {
+        out.addAll(_syntheticSmallCapsChildren(chunk, latinStyle));
+      } else {
+        out.add(TextSpan(text: chunk, style: latinStyle));
+      }
+    }
+
+    for (final rune in text.runes) {
+      final next = isVisioComplexScriptRune(rune);
+      if (complex != null && complex != next) flush();
+      complex = next;
+      buf.writeCharCode(rune);
+    }
+    flush();
+    return out;
   }
 
   /// Approximate CSS/Visio small-caps when the font lacks OpenType `smcp`:

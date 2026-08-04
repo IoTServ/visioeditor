@@ -4283,23 +4283,29 @@ class VsdxToSvgSerializer {
   }
 
   /// Approximate advance width for SVG layout (no font metrics in pure Dart).
-  /// Matches canvas: FontScale/letter-spacing tracking and 0.7× super/sub size.
+  /// Matches canvas: locale-specific complex-script size, FontScale/tracking,
+  /// and 0.7× super/sub size.
   double _estSvgTextWidth(String text, VsdxCharStyle style) {
-    var fs = math.max(style.fontSizeInches, 0.04);
-    switch (style.position) {
-      case VsdxTextPosition.superscript:
-      case VsdxTextPosition.subscript:
-        fs *= 0.7;
-      case VsdxTextPosition.normal:
-        break;
+    double positionedSize(double inches) {
+      var size = math.max(inches, 0.04);
+      if (style.position != VsdxTextPosition.normal) size *= 0.7;
+      return size;
     }
+
+    final fs = positionedSize(style.fontSizeInches);
+    final complexFs = style.complexScriptSizeInches == null
+        ? fs
+        : positionedSize(style.complexScriptSizeInches!);
+    final runes = text.runes.toList(growable: false);
     var w = 0.0;
-    var n = 0;
     final smallCaps = style.style.smallCaps;
-    for (final r in text.runes) {
-      n++;
+    final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
+    for (var i = 0; i < runes.length; i++) {
+      final r = runes[i];
+      final runeFs = isVisioComplexScriptRune(r) ? complexFs : fs;
       // Match canvas / SVG synthetic small-caps (lowercase → 0.78× capitals).
-      final chFs = smallCaps && r >= 0x61 && r <= 0x7a ? fs * 0.78 : fs;
+      final chFs =
+          smallCaps && r >= 0x61 && r <= 0x7a ? runeFs * 0.78 : runeFs;
       if (r >= 0x2E80) {
         w += chFs; // CJK / wide ideographs
       } else {
@@ -4311,16 +4317,11 @@ class VsdxToSvgSerializer {
             : r;
         w += chFs * _latinAdvanceFactor(measuredRune);
       }
-    }
-    var tracking = style.letterSpacingInches;
-    final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
-    // SVG/Canvas currently approximate FontScale with tracking (TextStyle has
-    // no horizontal glyph transform). Layout must use that exact formula or
-    // wrap/alignment diverges from the emitted letter-spacing.
-    tracking += fs * (scale - 1.0) * 0.55;
-    // Flutter letterSpacing applies between glyphs ≈ (n-1) gaps.
-    if (n > 1 && tracking.abs() > 1e-12) {
-      w += tracking * (n - 1);
+      if (i + 1 < runes.length) {
+        // Flutter applies tracking between glyphs. Complex-script tspans use
+        // their own size, so their FontScale contribution must do the same.
+        w += style.letterSpacingInches + runeFs * (scale - 1.0) * 0.55;
+      }
     }
     return w;
   }
@@ -4618,7 +4619,49 @@ class VsdxToSvgSerializer {
     required VsdxCharStyle style,
     required VsdxTheme theme,
     String? xAttr,
+    bool applyComplexScript = true,
   }) {
+    if (applyComplexScript &&
+        raw.runes.any(isVisioComplexScriptRune) &&
+        ((style.complexScriptFont?.isNotEmpty ?? false) ||
+            style.complexScriptSizeInches != null)) {
+      final chunks = <({String text, bool complex})>[];
+      final chunk = StringBuffer();
+      bool? complex;
+      void flush() {
+        if (chunk.isEmpty || complex == null) return;
+        chunks.add((text: chunk.toString(), complex: complex));
+        chunk.clear();
+      }
+
+      for (final rune in raw.runes) {
+        final next = isVisioComplexScriptRune(rune);
+        if (complex != null && complex != next) flush();
+        complex = next;
+        chunk.writeCharCode(rune);
+      }
+      flush();
+      var first = true;
+      for (final part in chunks) {
+        final partStyle = part.complex
+            ? style.copyWith(
+                fontFamily: style.complexScriptFont ?? style.fontFamily,
+                fontSizeInches:
+                    style.complexScriptSizeInches ?? style.fontSizeInches,
+              )
+            : style;
+        _writeStyledTspans(
+          body,
+          raw: part.text,
+          style: partStyle,
+          theme: theme,
+          xAttr: first ? xAttr : null,
+          applyComplexScript: false,
+        );
+        first = false;
+      }
+      return;
+    }
     final text = _applyTextCase(raw, style.textCase);
     final x = xAttr == null ? '' : '$xAttr ';
     if (!style.style.smallCaps || text.isEmpty) {
@@ -4721,7 +4764,11 @@ class VsdxToSvgSerializer {
       letterSpacing += fs * (fontScale - 1.0) * 0.55;
     }
     // Match canvas fontFallback: Latin face then AsianFont for CJK glyphs.
-    final family = _svgFontFamily(c.fontFamily ?? 'Arial', c.asianFont);
+    final family = _svgFontFamily(
+      c.fontFamily ?? 'Arial',
+      c.asianFont,
+      c.complexScriptFont,
+    );
     final weight = c.style.bold ? 'bold' : 'normal';
     final italic = c.style.italic ? 'italic' : 'normal';
     final deco = <String>[
@@ -4805,8 +4852,8 @@ class VsdxToSvgSerializer {
     return shape.fill.foreground;
   }
 
-  /// CSS font-family list: Latin face, then AsianFont (CJK), then sans-serif.
-  String _svgFontFamily(String? latin, String? asian) {
+  /// CSS font-family list: Latin, Asian, complex-script, then sans-serif.
+  String _svgFontFamily(String? latin, String? asian, [String? complex]) {
     final parts = <String>[];
     void add(String? name) {
       if (name == null || name.isEmpty) return;
@@ -4818,6 +4865,7 @@ class VsdxToSvgSerializer {
 
     add(latin);
     add(asian);
+    add(complex);
     parts.add('sans-serif');
     return parts.join(', ');
   }
