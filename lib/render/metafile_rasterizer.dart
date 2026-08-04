@@ -182,35 +182,60 @@ void _paintHatch(
 
 void _paintText(Canvas canvas, MetafileTextOp op) {
   final fontSize = math.max(op.fontHeight.abs(), 1.0);
+  final style = TextStyle(
+    color: Color(op.argb),
+    fontSize: fontSize,
+    fontFamily: op.face,
+    height: 1.0,
+  );
   // GDI text baseline is near (x,y); Flutter paints from top-left of glyphs.
   final tp = TextPainter(
-    text: TextSpan(
-      text: op.text,
-      style: TextStyle(
-        color: Color(op.argb),
-        fontSize: fontSize,
-        fontFamily: op.face,
-        height: 1.0,
-      ),
-    ),
+    text: TextSpan(text: op.text, style: style),
     textDirection: TextDirection.ltr,
     textAlign: TextAlign.left,
   )..layout();
+  final glyphs = op.text.runes.toList(growable: false);
+  final xAdvances = op.advancesX;
+  final yAdvances = op.advancesY;
+  final hasAdvances = xAdvances != null &&
+      xAdvances.length == glyphs.length &&
+      xAdvances.every((advance) => advance.isFinite) &&
+      (yAdvances == null ||
+          (yAdvances.length == glyphs.length &&
+              yAdvances.every((advance) => advance.isFinite)));
+  final textWidth = hasAdvances
+      ? xAdvances.fold<double>(0, (sum, advance) => sum + advance).abs()
+      : tp.width;
   var dx = op.x;
   var dy = op.y - fontSize * 0.85;
   // TA_CENTER = 6, TA_RIGHT = 2 (low bits).
   final align = op.align & 0x07;
   if (align == 6) {
-    dx -= tp.width / 2;
+    dx -= textWidth / 2;
   } else if (align == 2) {
-    dx -= tp.width;
+    dx -= textWidth;
   }
   final background = op.backgroundArgb;
   if (background != null) {
     canvas.drawRect(
-      Rect.fromLTWH(dx, dy, tp.width, tp.height),
+      Rect.fromLTWH(dx, dy, textWidth, tp.height),
       Paint()..color = Color(background),
     );
   }
-  tp.paint(canvas, Offset(dx, dy));
+  if (!hasAdvances) {
+    tp.paint(canvas, Offset(dx, dy));
+    return;
+  }
+  var glyphX = 0.0;
+  var glyphY = 0.0;
+  for (var i = 0; i < glyphs.length; i++) {
+    final glyphPainter = TextPainter(
+      text: TextSpan(text: String.fromCharCode(glyphs[i]), style: style),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.left,
+    )..layout();
+    glyphPainter.paint(canvas, Offset(dx + glyphX, dy + glyphY));
+    glyphX += xAdvances[i];
+    if (yAdvances != null) glyphY += yAdvances[i];
+  }
 }

@@ -3402,6 +3402,23 @@ class VsdxToSvgSerializer {
       2 => 'end',
       _ => 'start',
     };
+    final glyphs = op.text.runes.toList(growable: false);
+    final xAdvances = op.advancesX;
+    final yAdvances = op.advancesY;
+    final hasAdvances = xAdvances != null &&
+        xAdvances.length == glyphs.length &&
+        xAdvances.every((advance) => advance.isFinite) &&
+        (yAdvances == null ||
+            (yAdvances.length == glyphs.length &&
+                yAdvances.every((advance) => advance.isFinite)));
+    final textWidth = hasAdvances
+        ? xAdvances.fold<double>(0, (sum, advance) => sum + advance).abs()
+        : math.max(size * 0.55 * glyphs.length, size * 0.25);
+    final alignedX = switch (alignBits) {
+      6 => -textWidth / 2,
+      2 => -textWidth,
+      _ => 0.0,
+    };
     // When the metafile group applies GDI→Y-up (scale … -sy), un-flip glyphs
     // so text stays upright. Skip when FlipY already cancelled that flip.
     final glyphXf = unflipGlyphs
@@ -3410,15 +3427,31 @@ class VsdxToSvgSerializer {
     final background = op.backgroundArgb;
     var backgroundRect = '';
     if (background != null) {
-      final width = math.max(size * 0.55 * op.text.runes.length, size * 0.25);
-      final x = switch (alignBits) {
-        6 => -width / 2,
-        2 => -width,
-        _ => 0.0,
-      };
-      backgroundRect = '<rect x="${_n(x)}" y="${_n(-size * 0.85)}" '
-          'width="${_n(width)}" height="${_n(size)}" '
+      backgroundRect =
+          '<rect x="${_n(alignedX)}" y="${_n(-size * 0.85)}" '
+          'width="${_n(textWidth)}" height="${_n(size)}" '
           'fill="${_argbCss(background)}"/>';
+    }
+    if (hasAdvances) {
+      final positionedGlyphs = StringBuffer();
+      var x = alignedX;
+      var y = 0.0;
+      for (var i = 0; i < glyphs.length; i++) {
+        final glyphY = y == 0 ? 0.0 : (unflipGlyphs ? -y : y);
+        positionedGlyphs.write(
+          '<tspan x="${_n(x)}" y="${_n(glyphY)}">'
+          '${_esc(String.fromCharCode(glyphs[i]))}</tspan>',
+        );
+        x += xAdvances[i];
+        if (yAdvances != null) y += yAdvances[i];
+      }
+      buf.writeln(
+        '$indent<g transform="$glyphXf">'
+        '$backgroundRect'
+        '<text fill="${_argbCss(op.argb)}" font-family="$face" '
+        'font-size="${_n(size)}">$positionedGlyphs</text></g>',
+      );
+      return;
     }
     buf.writeln(
       '$indent<g transform="$glyphXf">'

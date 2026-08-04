@@ -61,6 +61,8 @@ class MetafileTextOp {
     this.face,
     this.align = 0,
     this.backgroundArgb,
+    this.advancesX,
+    this.advancesY,
   });
 
   final String text;
@@ -77,6 +79,14 @@ class MetafileTextOp {
 
   /// GDI text background selected by `SETBKMODE(OPAQUE)` / `SETBKCOLOR`.
   final int? backgroundArgb;
+
+  /// Optional GDI `ExtTextOut` advance for each Unicode scalar value. These
+  /// override platform font metrics so metafile labels keep their authored
+  /// width and per-glyph positions.
+  final List<double>? advancesX;
+
+  /// Optional vertical component used by `ETO_PDY` records.
+  final List<double>? advancesY;
 }
 
 @immutable

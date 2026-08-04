@@ -438,6 +438,28 @@ MetafileTextOp? _readExtTextOut(
   final raw = bytes.sublist(p, p + count);
   final text = latin1.decode(raw, allowInvalid: true).replaceAll('\u0000', '');
   if (text.trim().isEmpty) return null;
+  List<double>? advancesX;
+  List<double>? advancesY;
+  var advancePos = p + count;
+  if (count.isOdd) advancePos++;
+  final hasVerticalAdvances = (options & 0x2000) != 0; // ETO_PDY
+  final advanceWords = (recEnd - advancePos) ~/ 2;
+  final wordsPerGlyph = hasVerticalAdvances ? 2 : 1;
+  if (text.runes.length == count &&
+      advanceWords >= count * wordsPerGlyph) {
+    final x = <double>[];
+    final y = hasVerticalAdvances ? <double>[] : null;
+    for (var i = 0; i < count; i++) {
+      x.add(bd.getInt16(advancePos, Endian.little).toDouble());
+      advancePos += 2;
+      if (y != null) {
+        y.add(bd.getInt16(advancePos, Endian.little).toDouble());
+        advancePos += 2;
+      }
+    }
+    advancesX = List<double>.unmodifiable(x);
+    advancesY = y == null ? null : List<double>.unmodifiable(y);
+  }
   return MetafileTextOp(
     text: text,
     x: x,
@@ -447,6 +469,8 @@ MetafileTextOp? _readExtTextOut(
     face: fontFace,
     align: textAlign,
     backgroundArgb: backgroundArgb,
+    advancesX: advancesX,
+    advancesY: advancesY,
   );
 }
 

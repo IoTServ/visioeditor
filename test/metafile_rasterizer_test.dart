@@ -58,4 +58,38 @@ void main() {
     expect(white, greaterThan(500));
     image.dispose();
   });
+
+  test('Canvas replays ExtTextOut per-glyph advances', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 48,
+      maxY: 32,
+      ops: <Object>[
+        MetafileTextOp(
+          text: 'II',
+          x: 0,
+          y: 20,
+          fontHeight: 12,
+          argb: 0xFF000000,
+          advancesX: <double>[20, 20],
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 96);
+    expect(image, isNotNull);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(data, isNotNull);
+    final bytes = data!.buffer.asUint8List();
+    var rightGlyphPixels = 0;
+    for (var y = 0; y < image.height; y++) {
+      for (var x = 34; x < image.width; x++) {
+        final i = (y * image.width + x) * 4;
+        if (bytes[i + 3] > 32) rightGlyphPixels++;
+      }
+    }
+    expect(rightGlyphPixels, greaterThan(2));
+    image.dispose();
+  });
 }

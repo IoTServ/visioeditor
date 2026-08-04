@@ -393,17 +393,48 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         final y = bd.getInt32(textOff + 4, Endian.little).toDouble();
         final nChars = bd.getUint32(textOff + 8, Endian.little);
         final offString = bd.getUint32(textOff + 12, Endian.little);
+        final options = textOff + 20 <= recEnd
+            ? bd.getUint32(textOff + 16, Endian.little)
+            : 0;
+        final offDx = textOff + 40 <= recEnd
+            ? bd.getUint32(textOff + 36, Endian.little)
+            : 0;
         // offString is from start of record
         final strAt = offset + offString;
         if (nChars > 0 &&
             nChars < 4096 &&
-            strAt + nChars * 2 <= emf.length) {
+            strAt + nChars * 2 <= recEnd) {
           final codes = <int>[];
           for (var i = 0; i < nChars; i++) {
             codes.add(bd.getUint16(strAt + i * 2, Endian.little));
           }
           final text = String.fromCharCodes(codes).replaceAll('\u0000', '');
           if (text.trim().isNotEmpty) {
+            List<double>? advancesX;
+            List<double>? advancesY;
+            final hasVerticalAdvances = (options & 0x2000) != 0; // ETO_PDY
+            final wordsPerGlyph = hasVerticalAdvances ? 2 : 1;
+            final advanceAt = offset + offDx;
+            if (offDx > 0 &&
+                text.runes.length == nChars &&
+                advanceAt >= offset &&
+                advanceAt + nChars * wordsPerGlyph * 4 <= recEnd) {
+              final xAdvances = <double>[];
+              final yAdvances = hasVerticalAdvances ? <double>[] : null;
+              var p = advanceAt;
+              for (var i = 0; i < nChars; i++) {
+                xAdvances.add(bd.getInt32(p, Endian.little).toDouble());
+                p += 4;
+                if (yAdvances != null) {
+                  yAdvances.add(bd.getInt32(p, Endian.little).toDouble());
+                  p += 4;
+                }
+              }
+              advancesX = List<double>.unmodifiable(xAdvances);
+              advancesY = yAdvances == null
+                  ? null
+                  : List<double>.unmodifiable(yAdvances);
+            }
             final pt = MetafilePoint(x, y);
             ensurePts([pt]);
             curPt = pt;
@@ -415,8 +446,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               argb: textColor,
               face: fontFace,
               align: textAlign,
-              backgroundArgb:
-                  backgroundMode == 2 ? backgroundColor : null,
+              backgroundArgb: backgroundMode == 2 || (options & 0x0002) != 0
+                  ? backgroundColor
+                  : null,
+              advancesX: advancesX,
+              advancesY: advancesY,
             ));
           }
         }
