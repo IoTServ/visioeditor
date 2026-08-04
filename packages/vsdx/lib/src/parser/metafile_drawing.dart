@@ -24,6 +24,8 @@ class MetafilePathOp {
     required this.strokeArgb,
     required this.strokeWidth,
     this.isEllipse = false,
+    this.fillHatch,
+    this.fillBackgroundArgb,
   });
 
   final List<MetafilePoint> points;
@@ -35,6 +37,14 @@ class MetafilePathOp {
   final int fillArgb;
   final int strokeArgb;
   final double strokeWidth;
+
+  /// GDI `BS_HATCHED` style (`HS_HORIZONTAL` 0 through `HS_DIAGCROSS` 5).
+  /// `null` means an ordinary solid fill.
+  final int? fillHatch;
+
+  /// Opaque GDI background colour for a hatched brush. A null value keeps the
+  /// spaces between hatch strokes transparent (`BKMODE=TRANSPARENT`).
+  final int? fillBackgroundArgb;
 
   /// When true, [points] are the bounding box corners of an ellipse.
   final bool isEllipse;
@@ -50,6 +60,7 @@ class MetafileTextOp {
     required this.argb,
     this.face,
     this.align = 0,
+    this.backgroundArgb,
   });
 
   final String text;
@@ -63,6 +74,9 @@ class MetafileTextOp {
 
   /// WMF/EMF text-align flags (TA_* low bits).
   final int align;
+
+  /// GDI text background selected by `SETBKMODE(OPAQUE)` / `SETBKCOLOR`.
+  final int? backgroundArgb;
 }
 
 @immutable

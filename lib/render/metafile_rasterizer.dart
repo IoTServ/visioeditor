@@ -32,7 +32,7 @@ Future<ui.Image?> rasterizeMetafileDrawing(
 
   for (final op in drawing.ops) {
     if (op is MetafilePathOp) {
-      _paintPath(canvas, op);
+      _paintPath(canvas, op, deviceScale: scale);
     } else if (op is MetafileTextOp) {
       _paintText(canvas, op);
     }
@@ -46,7 +46,11 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   }
 }
 
-void _paintPath(Canvas canvas, MetafilePathOp op) {
+void _paintPath(
+  Canvas canvas,
+  MetafilePathOp op, {
+  required double deviceScale,
+}) {
   if (op.points.isEmpty) return;
   final paintFill = Paint()
     ..style = PaintingStyle.fill
@@ -60,6 +64,7 @@ void _paintPath(Canvas canvas, MetafilePathOp op) {
     ..strokeCap = StrokeCap.round
     ..isAntiAlias = true;
 
+  final path = Path();
   if (op.isEllipse && op.points.length >= 2) {
     double minX = op.points.first.x, maxX = op.points.first.x;
     double minY = op.points.first.y, maxY = op.points.first.y;
@@ -70,18 +75,109 @@ void _paintPath(Canvas canvas, MetafilePathOp op) {
       maxY = math.max(maxY, p.y);
     }
     final rect = Rect.fromLTRB(minX, minY, maxX, maxY);
-    if (op.fill) canvas.drawOval(rect, paintFill);
-    if (op.stroke) canvas.drawOval(rect, paintStroke);
-    return;
+    path.addOval(rect);
+  } else {
+    path.moveTo(op.points.first.x, op.points.first.y);
+    for (var i = 1; i < op.points.length; i++) {
+      path.lineTo(op.points[i].x, op.points[i].y);
+    }
+    if (op.closed) path.close();
+  }
+  if (op.fill) {
+    if (op.fillHatch == null) {
+      canvas.drawPath(path, paintFill);
+    } else {
+      final background = op.fillBackgroundArgb;
+      if (background != null) {
+        canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = Color(background)
+            ..isAntiAlias = true,
+        );
+      }
+      canvas.save();
+      canvas.clipPath(path);
+      _paintHatch(
+        canvas,
+        path.getBounds(),
+        op.fillHatch!,
+        op.fillArgb,
+        spacing: 8 / deviceScale,
+        strokeWidth: 1 / deviceScale,
+      );
+      canvas.restore();
+    }
+  }
+  if (op.stroke) canvas.drawPath(path, paintStroke);
+}
+
+void _paintHatch(
+  Canvas canvas,
+  Rect bounds,
+  int style,
+  int argb, {
+  required double spacing,
+  required double strokeWidth,
+}) {
+  if (bounds.isEmpty || !spacing.isFinite || spacing <= 0) return;
+  final paint = Paint()
+    ..style = PaintingStyle.stroke
+    ..color = Color(argb)
+    ..strokeWidth = strokeWidth
+    ..isAntiAlias = true;
+
+  void horizontal() {
+    for (var y = bounds.top; y <= bounds.bottom; y += spacing) {
+      canvas.drawLine(Offset(bounds.left, y), Offset(bounds.right, y), paint);
+    }
   }
 
-  final path = Path()..moveTo(op.points.first.x, op.points.first.y);
-  for (var i = 1; i < op.points.length; i++) {
-    path.lineTo(op.points[i].x, op.points[i].y);
+  void vertical() {
+    for (var x = bounds.left; x <= bounds.right; x += spacing) {
+      canvas.drawLine(Offset(x, bounds.top), Offset(x, bounds.bottom), paint);
+    }
   }
-  if (op.closed) path.close();
-  if (op.fill) canvas.drawPath(path, paintFill);
-  if (op.stroke) canvas.drawPath(path, paintStroke);
+
+  void diagonal(bool descending) {
+    final h = bounds.height;
+    for (var x = bounds.left - h; x <= bounds.right; x += spacing) {
+      final from = descending
+          ? Offset(x, bounds.top)
+          : Offset(x, bounds.bottom);
+      final to = descending
+          ? Offset(x + h, bounds.bottom)
+          : Offset(x + h, bounds.top);
+      canvas.drawLine(from, to, paint);
+    }
+  }
+
+  switch (style) {
+    case 0: // HS_HORIZONTAL
+      horizontal();
+      break;
+    case 1: // HS_VERTICAL
+      vertical();
+      break;
+    case 2: // HS_FDIAGONAL
+      diagonal(false);
+      break;
+    case 3: // HS_BDIAGONAL
+      diagonal(true);
+      break;
+    case 4: // HS_CROSS
+      horizontal();
+      vertical();
+      break;
+    case 5: // HS_DIAGCROSS
+      diagonal(false);
+      diagonal(true);
+      break;
+    default:
+      horizontal();
+      break;
+  }
 }
 
 void _paintText(Canvas canvas, MetafileTextOp op) {
@@ -108,6 +204,13 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
     dx -= tp.width / 2;
   } else if (align == 2) {
     dx -= tp.width;
+  }
+  final background = op.backgroundArgb;
+  if (background != null) {
+    canvas.drawRect(
+      Rect.fromLTWH(dx, dy, tp.width, tp.height),
+      Paint()..color = Color(background),
+    );
   }
   tp.paint(canvas, Offset(dx, dy));
 }

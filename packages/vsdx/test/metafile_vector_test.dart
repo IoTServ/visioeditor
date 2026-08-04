@@ -14,6 +14,17 @@ void main() {
       expect(d, isNotNull);
       expect(d!.ops.whereType<MetafilePathOp>().length, greaterThan(5));
       expect(d.ops.whereType<MetafileTextOp>(), isNotEmpty);
+      final hatch = d.ops
+          .whereType<MetafilePathOp>()
+          .where((op) => op.fillHatch != null)
+          .toList();
+      expect(hatch, isNotEmpty);
+      expect(hatch.any((op) => op.fillHatch == 3), isTrue);
+      expect(hatch.any((op) => op.fillArgb == 0xFF008000), isTrue);
+      expect(
+        hatch.any((op) => op.fillBackgroundArgb == 0xFFFFFFFF),
+        isTrue,
+      );
       expect(d.width, greaterThan(10));
       expect(d.height, greaterThan(10));
     });

@@ -17,6 +17,8 @@ const int _placeableKey = 0x9AC6CDD7;
 
 const int _metaSetWindowOrg = 0x020B;
 const int _metaSetWindowExt = 0x020C;
+const int _metaSetBkMode = 0x0102;
+const int _metaSetBkColor = 0x0201;
 const int _metaSetTextColor = 0x0209;
 const int _metaSetTextAlign = 0x012E;
 const int _metaCreatePenIndirect = 0x02FA;
@@ -72,7 +74,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var penStyle = 0;
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1; // BS_NULL
+  var brushHatch = 0;
   var textColor = 0xFF000000;
+  var backgroundMode = 1; // TRANSPARENT
+  var backgroundColor = 0xFFFFFFFF;
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
@@ -133,6 +138,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         maxY = math.max(oy, oy + ey);
         haveBounds = true;
       }
+    } else if (func == _metaSetBkMode && params + 2 <= recEnd) {
+      backgroundMode = bd.getUint16(params, Endian.little);
+    } else if (func == _metaSetBkColor && params + 4 <= recEnd) {
+      backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (func == _metaSetTextColor && params + 4 <= recEnd) {
       textColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (func == _metaSetTextAlign && params + 2 <= recEnd) {
@@ -145,7 +154,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaCreateBrushIndirect && params + 8 <= recEnd) {
       final style = bd.getUint16(params, Endian.little);
       final color = _rgbToArgb(bd.getUint32(params + 2, Endian.little));
-      objects[allocSlot()] = _GdiBrush(style, color);
+      final hatch = bd.getUint16(params + 6, Endian.little);
+      objects[allocSlot()] = _GdiBrush(style, color, hatch);
     } else if (func == _metaCreateFontIndirect && params + 18 <= recEnd) {
       final height =
           bd.getInt16(params, Endian.little).abs().toDouble().clamp(1.0, 500.0);
@@ -171,6 +181,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         } else if (o is _GdiBrush) {
           brushStyle = o.style;
           brushColor = o.color;
+          brushHatch = o.hatch;
         } else if (o is _GdiFont) {
           fontHeight = o.height;
           fontFace = o.face;
@@ -217,6 +228,9 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           penWidth: penWidth,
           brushStyle: brushStyle,
           brushColor: brushColor,
+          brushHatch: brushHatch,
+          backgroundMode: backgroundMode,
+          backgroundColor: backgroundColor,
         ));
       }
     } else if (func == _metaPolyline) {
@@ -291,6 +305,9 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             penWidth: penWidth,
             brushStyle: brushStyle,
             brushColor: brushColor,
+            brushHatch: brushHatch,
+            backgroundMode: backgroundMode,
+            backgroundColor: backgroundColor,
           ));
         }
       }
@@ -315,11 +332,15 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         penWidth: penWidth,
         brushStyle: brushStyle,
         brushColor: brushColor,
+        brushHatch: brushHatch,
+        backgroundMode: backgroundMode,
+        backgroundColor: backgroundColor,
         asEllipse: func == _metaEllipse,
       ));
     } else if (func == _metaExtTextOut) {
       final textOp = _readExtTextOut(
         bd, bytes, params, recEnd, textColor, textAlign, fontHeight, fontFace,
+        backgroundMode == 2 ? backgroundColor : null,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
@@ -328,6 +349,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaTextOut) {
       final textOp = _readTextOut(
         bd, bytes, params, recEnd, textColor, textAlign, fontHeight, fontFace,
+        backgroundMode == 2 ? backgroundColor : null,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
@@ -358,9 +380,12 @@ MetafilePathOp _pathOp(
   required double penWidth,
   required int brushStyle,
   required int brushColor,
+  required int brushHatch,
+  required int backgroundMode,
+  required int backgroundColor,
   bool asEllipse = false,
 }) {
-  final fill = brushStyle == 0;
+  final fill = brushStyle == 0 || brushStyle == 2;
   final stroke = penStyle != 5;
   return MetafilePathOp(
     points: pts,
@@ -371,6 +396,9 @@ MetafilePathOp _pathOp(
     strokeArgb: stroke ? penColor : 0,
     strokeWidth: penWidth,
     isEllipse: asEllipse,
+    fillHatch: brushStyle == 2 ? brushHatch : null,
+    fillBackgroundArgb:
+        brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
   );
 }
 
@@ -397,6 +425,7 @@ MetafileTextOp? _readExtTextOut(
   int textAlign,
   double fontHeight,
   String? fontFace,
+  int? backgroundArgb,
 ) {
   if (params + 8 > recEnd) return null;
   final y = bd.getInt16(params, Endian.little).toDouble();
@@ -417,6 +446,7 @@ MetafileTextOp? _readExtTextOut(
     argb: textColor,
     face: fontFace,
     align: textAlign,
+    backgroundArgb: backgroundArgb,
   );
 }
 
@@ -429,6 +459,7 @@ MetafileTextOp? _readTextOut(
   int textAlign,
   double fontHeight,
   String? fontFace,
+  int? backgroundArgb,
 ) {
   if (params + 2 > recEnd) return null;
   final count = bd.getUint16(params, Endian.little);
@@ -450,6 +481,7 @@ MetafileTextOp? _readTextOut(
     argb: textColor,
     face: fontFace,
     align: textAlign,
+    backgroundArgb: backgroundArgb,
   );
 }
 
@@ -470,9 +502,10 @@ class _GdiPen extends _GdiObject {
 }
 
 class _GdiBrush extends _GdiObject {
-  _GdiBrush(this.style, this.color);
+  _GdiBrush(this.style, this.color, this.hatch);
   final int style;
   final int color;
+  final int hatch;
 }
 
 class _GdiFont extends _GdiObject {

@@ -656,7 +656,12 @@ class VsdxToSvgSerializer {
       );
     }
     if (shape.hasImage) {
-      _writeImage(buf, shape, indent: '$indent  ');
+      _writeImage(
+        buf,
+        shape,
+        paintIdScope: paintIdScope,
+        indent: '$indent  ',
+      );
     } else if (!wroteGeom &&
         shape.isGlueableConnector &&
         shape.beginX != null &&
@@ -1683,6 +1688,7 @@ class VsdxToSvgSerializer {
         _writeForeignImageContent(
           buf,
           shape,
+          paintIdScope: paintId,
           indent: '$indent    ',
           toneIdSuffix: '-refl',
         );
@@ -1752,6 +1758,7 @@ class VsdxToSvgSerializer {
       _writeForeignImageContent(
         buf,
         shape,
+        paintIdScope: paintId,
         indent: '$indent    ',
         toneIdSuffix: '-refl',
       );
@@ -3016,6 +3023,7 @@ class VsdxToSvgSerializer {
   void _writeImage(
     StringBuffer buf,
     VsdxShape shape, {
+    required String paintIdScope,
     required String indent,
   }) {
     final resolved = _resolveForeignImage(shape);
@@ -3028,6 +3036,7 @@ class VsdxToSvgSerializer {
     _writeForeignImageContent(
       buf,
       shape,
+      paintIdScope: paintIdScope,
       indent: '$indent  ',
       resolved: resolved,
     );
@@ -3069,6 +3078,7 @@ class VsdxToSvgSerializer {
   void _writeForeignImageContent(
     StringBuffer buf,
     VsdxShape shape, {
+    required String paintIdScope,
     required String indent,
     String toneIdSuffix = '',
     ({
@@ -3096,6 +3106,7 @@ class VsdxToSvgSerializer {
         buf,
         shape,
         media.vectorDrawing!,
+        idScope: '$paintIdScope-${shape.id}$toneIdSuffix',
         indent: toneAttr.isNotEmpty ? '$indent  ' : indent,
       );
       if (toneAttr.isNotEmpty) {
@@ -3242,6 +3253,7 @@ class VsdxToSvgSerializer {
     StringBuffer buf,
     VsdxShape shape,
     MetafileDrawing drawing, {
+    required String idScope,
     required String indent,
   }) {
     final dw = drawing.width;
@@ -3255,6 +3267,8 @@ class VsdxToSvgSerializer {
     final iw = shape.effectiveImgWidth;
     final ih = shape.effectiveImgHeight;
     final sx = iw / dw;
+    final metafileDeviceScale = math.min(2048 / dw, 2048 / dh);
+    final hatchSpacing = 8 / metafileDeviceScale;
     // GDI metafiles are Y-down. Always normalise into shape-local Y-up, then
     // let the outer shape/group XForms apply FlipY exactly once.
     final sy = -ih / dh;
@@ -3266,9 +3280,27 @@ class VsdxToSvgSerializer {
       'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );
-    for (final op in drawing.ops) {
+    for (var opIndex = 0; opIndex < drawing.ops.length; opIndex++) {
+      final op = drawing.ops[opIndex];
       if (op is MetafilePathOp) {
-        _writeMetafilePathOp(buf, op, indent: '$indent  ');
+        String? fillOverride;
+        if (op.fill && op.fillHatch != null) {
+          final patternId = 'wmf-hatch-$idScope-$opIndex';
+          _writeMetafileHatchPattern(
+            buf,
+            op,
+            patternId: patternId,
+            spacing: hatchSpacing,
+            indent: '$indent  ',
+          );
+          fillOverride = 'url(#$patternId)';
+        }
+        _writeMetafilePathOp(
+          buf,
+          op,
+          fillOverride: fillOverride,
+          indent: '$indent  ',
+        );
       } else if (op is MetafileTextOp) {
         _writeMetafileTextOp(
           buf,
@@ -3284,10 +3316,11 @@ class VsdxToSvgSerializer {
   void _writeMetafilePathOp(
     StringBuffer buf,
     MetafilePathOp op, {
+    String? fillOverride,
     required String indent,
   }) {
     if (op.points.isEmpty) return;
-    final fill = op.fill ? _argbCss(op.fillArgb) : 'none';
+    final fill = fillOverride ?? (op.fill ? _argbCss(op.fillArgb) : 'none');
     final stroke = op.stroke ? _argbCss(op.strokeArgb) : 'none';
     final sw =
         op.stroke ? ' stroke-width="${_n(math.max(op.strokeWidth, 0.5))}"' : '';
@@ -3321,6 +3354,37 @@ class VsdxToSvgSerializer {
     );
   }
 
+  void _writeMetafileHatchPattern(
+    StringBuffer buf,
+    MetafilePathOp op, {
+    required String patternId,
+    required double spacing,
+    required String indent,
+  }) {
+    final background = op.fillBackgroundArgb;
+    final backgroundRect = background == null
+        ? ''
+        : '<rect width="8" height="8" fill="${_argbCss(background)}"/>';
+    final hatchPath = switch (op.fillHatch) {
+      0 => 'M0 0 H8',
+      1 => 'M0 0 V8',
+      2 => 'M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6',
+      3 => 'M-2 6 L2 10 M0 0 L8 8 M6 -2 L10 2',
+      4 => 'M0 0 H8 M0 0 V8',
+      5 => 'M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6 '
+          'M-2 6 L2 10 M0 0 L8 8 M6 -2 L10 2',
+      _ => 'M0 0 H8',
+    };
+    final hatchScale = spacing / 8;
+    buf.writeln(
+      '$indent<defs><pattern id="$patternId" patternUnits="userSpaceOnUse" '
+      'width="${_n(spacing)}" height="${_n(spacing)}">'
+      '<g transform="scale(${_n(hatchScale)})">$backgroundRect'
+      '<path d="$hatchPath" fill="none" stroke="${_argbCss(op.fillArgb)}" '
+      'stroke-width="1"/></g></pattern></defs>',
+    );
+  }
+
   void _writeMetafileTextOp(
     StringBuffer buf,
     MetafileTextOp op, {
@@ -3343,8 +3407,22 @@ class VsdxToSvgSerializer {
     final glyphXf = unflipGlyphs
         ? 'translate(${_n(op.x)} ${_n(op.y)}) scale(1 -1)'
         : 'translate(${_n(op.x)} ${_n(op.y)})';
+    final background = op.backgroundArgb;
+    var backgroundRect = '';
+    if (background != null) {
+      final width = math.max(size * 0.55 * op.text.runes.length, size * 0.25);
+      final x = switch (alignBits) {
+        6 => -width / 2,
+        2 => -width,
+        _ => 0.0,
+      };
+      backgroundRect = '<rect x="${_n(x)}" y="${_n(-size * 0.85)}" '
+          'width="${_n(width)}" height="${_n(size)}" '
+          'fill="${_argbCss(background)}"/>';
+    }
     buf.writeln(
       '$indent<g transform="$glyphXf">'
+      '$backgroundRect'
       '<text x="0" y="0" text-anchor="$anchor" fill="${_argbCss(op.argb)}" '
       'font-family="$face" font-size="${_n(size)}">'
       '${_esc(op.text)}</text></g>',

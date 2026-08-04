@@ -625,6 +625,9 @@ void main() {
       images: doc.images,
     );
     expect(svg.contains('<path '), isTrue);
+    expect(svg.contains('<pattern id="wmf-hatch-'), isTrue);
+    expect(svg.contains('stroke="#008000"'), isTrue);
+    expect(svg.contains('fill="#ffffff"'), isTrue);
     expect(svg.contains('fill="#f2f2f2"'), isFalse);
   });
 

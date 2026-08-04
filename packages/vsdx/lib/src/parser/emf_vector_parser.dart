@@ -22,8 +22,10 @@ const int _emrPolyPolygon = 8;
 const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
+const int _emrSetBkMode = 18;
 const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
+const int _emrSetBkColor = 25;
 const int _emrMoveToEx = 27;
 const int _emrSelectObject = 37;
 const int _emrCreatePen = 38;
@@ -94,7 +96,10 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var penStyle = 0;
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1;
+  var brushHatch = 0;
   var textColor = 0xFF000000;
+  var backgroundMode = 1; // TRANSPARENT
+  var backgroundColor = 0xFFFFFFFF;
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
@@ -117,7 +122,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     ensurePts(dense);
     curPt = dense.last;
     final stroke = penStyle != 5;
-    final fill = brushStyle == 0;
+    final fill = brushStyle == 0 || brushStyle == 2;
     if (fill || stroke) {
       ops.add(MetafilePathOp(
         points: dense,
@@ -127,6 +132,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillArgb: fill ? brushColor : 0,
         strokeArgb: stroke ? penColor : 0,
         strokeWidth: penWidth,
+        fillHatch: brushStyle == 2 ? brushHatch : null,
+        fillBackgroundArgb:
+            brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
       ));
     }
   }
@@ -135,7 +143,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     if (pts.length < 2) return;
     ensurePts(pts);
     curPt = pts.last;
-    final fill = closed && brushStyle == 0;
+    final fill = closed && (brushStyle == 0 || brushStyle == 2);
     final stroke = penStyle != 5;
     if (fill || stroke) {
       ops.add(MetafilePathOp(
@@ -146,6 +154,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillArgb: fill ? brushColor : 0,
         strokeArgb: stroke ? penColor : 0,
         strokeWidth: penWidth,
+        fillHatch: brushStyle == 2 ? brushHatch : null,
+        fillBackgroundArgb:
+            brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
       ));
     }
   }
@@ -172,6 +183,10 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         maxY = cy.abs();
         haveBounds = true;
       }
+    } else if (t == _emrSetBkMode && params + 4 <= recEnd) {
+      backgroundMode = bd.getUint32(params, Endian.little);
+    } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
+      backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetTextColor && params + 4 <= recEnd) {
       textColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetTextAlign && params + 4 <= recEnd) {
@@ -186,7 +201,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final ih = bd.getInt32(params, Endian.little);
       final style = bd.getUint32(params + 4, Endian.little);
       final color = _rgbToArgb(bd.getUint32(params + 8, Endian.little));
-      _store(objects, ih, _EmfBrush(style, color));
+      final hatch = bd.getUint32(params + 12, Endian.little);
+      _store(objects, ih, _EmfBrush(style, color, hatch));
     } else if (t == _emrExtCreateFontIndirectW && params + 8 <= recEnd) {
       final ih = bd.getInt32(params, Endian.little);
       // EXTLOGFONTW starts at params+4; elfLogFont.lfHeight at +0 of that.
@@ -223,6 +239,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         } else if (o is _EmfBrush) {
           brushStyle = o.style;
           brushColor = o.color;
+          brushHatch = o.hatch;
         } else if (o is _EmfFont) {
           fontHeight = o.height;
           fontFace = o.face;
@@ -349,7 +366,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       ];
       ensurePts(pts);
       curPt = MetafilePoint(right, bottom);
-      final fill = brushStyle == 0;
+      final fill = brushStyle == 0 || brushStyle == 2;
       final stroke = penStyle != 5;
       if (fill || stroke) {
         ops.add(MetafilePathOp(
@@ -361,6 +378,10 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           strokeArgb: stroke ? penColor : 0,
           strokeWidth: penWidth,
           isEllipse: t == _emrEllipse,
+          fillHatch: brushStyle == 2 ? brushHatch : null,
+          fillBackgroundArgb: brushStyle == 2 && backgroundMode == 2
+              ? backgroundColor
+              : null,
         ));
       }
     } else if (t == _emrExtTextOutW && params + 32 <= recEnd) {
@@ -394,6 +415,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               argb: textColor,
               face: fontFace,
               align: textAlign,
+              backgroundArgb:
+                  backgroundMode == 2 ? backgroundColor : null,
             ));
           }
         }
@@ -474,9 +497,10 @@ class _EmfPen extends _EmfObject {
 }
 
 class _EmfBrush extends _EmfObject {
-  _EmfBrush(this.style, this.color);
+  _EmfBrush(this.style, this.color, this.hatch);
   final int style;
   final int color;
+  final int hatch;
 }
 
 class _EmfFont extends _EmfObject {
