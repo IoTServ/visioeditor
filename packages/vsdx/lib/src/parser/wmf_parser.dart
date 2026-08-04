@@ -30,6 +30,7 @@ const int _metaPolygon = 0x0324;
 const int _metaPolyline = 0x0325;
 const int _metaPolyPolygon = 0x0538;
 const int _metaRectangle = 0x041B;
+const int _metaRoundRect = 0x061C;
 const int _metaEllipse = 0x0418;
 const int _metaMoveTo = 0x0214;
 const int _metaLineTo = 0x0213;
@@ -356,6 +357,35 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           ));
         }
       }
+    } else if (func == _metaRoundRect && params + 12 <= recEnd) {
+      final cornerHeight = bd.getInt16(params, Endian.little).abs() / 2.0;
+      final cornerWidth = bd.getInt16(params + 2, Endian.little).abs() / 2.0;
+      final bot = bd.getInt16(params + 4, Endian.little).toDouble();
+      final right = bd.getInt16(params + 6, Endian.little).toDouble();
+      final top = bd.getInt16(params + 8, Endian.little).toDouble();
+      final left = bd.getInt16(params + 10, Endian.little).toDouble();
+      final pts = [
+        MetafilePoint(left, top),
+        MetafilePoint(right, top),
+        MetafilePoint(right, bot),
+        MetafilePoint(left, bot),
+      ];
+      ensureBounds(pts);
+      ops.add(_pathOp(
+        pts,
+        closed: true,
+        penStyle: penStyle,
+        penColor: penColor,
+        penWidth: penWidth,
+        penDashPattern: penDashPattern,
+        brushStyle: brushStyle,
+        brushColor: brushColor,
+        brushHatch: brushHatch,
+        backgroundMode: backgroundMode,
+        backgroundColor: backgroundColor,
+        cornerRadiusX: cornerWidth,
+        cornerRadiusY: cornerHeight,
+      ));
     } else if ((func == _metaRectangle || func == _metaEllipse) &&
         params + 8 <= recEnd) {
       final bot = bd.getInt16(params, Endian.little).toDouble();
@@ -476,6 +506,8 @@ MetafilePathOp _pathOp(
   required int backgroundMode,
   required int backgroundColor,
   bool asEllipse = false,
+  double? cornerRadiusX,
+  double? cornerRadiusY,
 }) {
   final fill = brushStyle == 0 || brushStyle == 2;
   final stroke = (penStyle & 0x0f) != 5;
@@ -489,6 +521,8 @@ MetafilePathOp _pathOp(
     strokeWidth: penWidth,
     strokeDashPattern: penDashPattern,
     isEllipse: asEllipse,
+    cornerRadiusX: cornerRadiusX,
+    cornerRadiusY: cornerRadiusY,
     fillHatch: brushStyle == 2 ? brushHatch : null,
     fillBackgroundArgb:
         brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,

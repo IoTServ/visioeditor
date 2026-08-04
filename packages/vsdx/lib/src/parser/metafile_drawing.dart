@@ -52,6 +52,8 @@ class MetafilePathOp {
     required this.strokeWidth,
     this.strokeDashPattern,
     this.isEllipse = false,
+    this.cornerRadiusX,
+    this.cornerRadiusY,
     this.fillHatch,
     this.fillBackgroundArgb,
   });
@@ -79,6 +81,11 @@ class MetafilePathOp {
 
   /// When true, [points] are the bounding box corners of an ellipse.
   final bool isEllipse;
+
+  /// Rounded-rectangle corner radii in metafile logical units. Both values
+  /// are present only for GDI `ROUNDRECT` records.
+  final double? cornerRadiusX;
+  final double? cornerRadiusY;
 }
 
 /// Convert the low `PS_STYLE_MASK` bits of a GDI pen into dash/gap lengths.

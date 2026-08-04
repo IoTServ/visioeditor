@@ -67,7 +67,7 @@ void _paintPath(
     ..isAntiAlias = true;
 
   final path = Path();
-  if (op.isEllipse && op.points.length >= 2) {
+  if ((op.isEllipse || op.cornerRadiusX != null) && op.points.length >= 2) {
     double minX = op.points.first.x, maxX = op.points.first.x;
     double minY = op.points.first.y, maxY = op.points.first.y;
     for (final p in op.points) {
@@ -77,7 +77,22 @@ void _paintPath(
       maxY = math.max(maxY, p.y);
     }
     final rect = Rect.fromLTRB(minX, minY, maxX, maxY);
-    path.addOval(rect);
+    if (op.isEllipse) {
+      path.addOval(rect);
+    } else {
+      final radiusX = math.min(op.cornerRadiusX!.abs(), rect.width / 2);
+      final radiusY = math.min(
+        (op.cornerRadiusY ?? op.cornerRadiusX!).abs(),
+        rect.height / 2,
+      );
+      path.addRRect(RRect.fromRectAndCorners(
+        rect,
+        topLeft: Radius.elliptical(radiusX, radiusY),
+        topRight: Radius.elliptical(radiusX, radiusY),
+        bottomRight: Radius.elliptical(radiusX, radiusY),
+        bottomLeft: Radius.elliptical(radiusX, radiusY),
+      ));
+    }
   } else {
     path.moveTo(op.points.first.x, op.points.first.y);
     for (var i = 1; i < op.points.length; i++) {

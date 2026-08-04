@@ -97,6 +97,28 @@ Uint8List _wmfDashedLine() {
   return bytes;
 }
 
+Uint8List _wmfRoundedRect() {
+  final bytes = Uint8List(42);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint32(12, 9, Endian.little);
+
+  const roundRect = 18;
+  data.setUint32(roundRect, 9, Endian.little);
+  data.setUint16(roundRect + 4, 0x061c, Endian.little);
+  data.setInt16(roundRect + 6, 8, Endian.little);
+  data.setInt16(roundRect + 8, 12, Endian.little);
+  data.setInt16(roundRect + 10, 50, Endian.little);
+  data.setInt16(roundRect + 12, 80, Endian.little);
+  data.setInt16(roundRect + 14, 10, Endian.little);
+  data.setInt16(roundRect + 16, 20, Endian.little);
+  data.setUint32(36, 3, Endian.little);
+  return bytes;
+}
+
 void main() {
   const parser = DocumentParser();
 
@@ -752,6 +774,34 @@ void main() {
     ));
     final svg = VsdxToSvgSerializer().serializePage(page, images: images);
     expect(svg, contains('stroke-dasharray="9 3 3 3"'));
+  });
+
+  test('SVG preserves vector metafile rounded rectangle radii', () {
+    const part = '/visio/media/rounded.wmf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 2,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: _wmfRoundedRect(),
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(svg, contains('<rect x="20" y="10" width="60" height="40"'));
+    expect(svg, contains('rx="6" ry="4"'));
   });
 
   test('SVG metafile text honours GDI vertical and UPDATECP alignment', () {

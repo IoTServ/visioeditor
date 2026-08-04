@@ -3331,7 +3331,7 @@ class VsdxToSvgSerializer {
     final dash = op.stroke && dashPattern != null && dashPattern.isNotEmpty
         ? ' stroke-dasharray="${dashPattern.map(_n).join(' ')}"'
         : '';
-    if (op.isEllipse && op.points.length >= 2) {
+    if ((op.isEllipse || op.cornerRadiusX != null) && op.points.length >= 2) {
       var minX = op.points.first.x, maxX = op.points.first.x;
       var minY = op.points.first.y, maxY = op.points.first.y;
       for (final p in op.points) {
@@ -3344,6 +3344,20 @@ class VsdxToSvgSerializer {
       final cy = (minY + maxY) / 2;
       final rx = (maxX - minX) / 2;
       final ry = (maxY - minY) / 2;
+      if (!op.isEllipse) {
+        final cornerRx = math.min(op.cornerRadiusX!.abs(), rx);
+        final cornerRy = math.min(
+          (op.cornerRadiusY ?? op.cornerRadiusX!).abs(),
+          ry,
+        );
+        buf.writeln(
+          '$indent<rect x="${_n(minX)}" y="${_n(minY)}" '
+          'width="${_n(maxX - minX)}" height="${_n(maxY - minY)}" '
+          'rx="${_n(cornerRx)}" ry="${_n(cornerRy)}" '
+          'fill="$fill" stroke="$stroke"$sw$dash/>',
+        );
+        return;
+      }
       buf.writeln(
         '$indent<ellipse cx="${_n(cx)}" cy="${_n(cy)}" '
         'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"$sw$dash/>',

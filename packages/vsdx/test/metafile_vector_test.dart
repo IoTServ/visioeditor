@@ -242,6 +242,28 @@ Uint8List _wmfWithPenStyle(int style) {
   return bytes;
 }
 
+Uint8List _wmfWithRoundRect() {
+  final bytes = Uint8List(42);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint32(12, 9, Endian.little);
+
+  const roundRect = 18;
+  data.setUint32(roundRect, 9, Endian.little);
+  data.setUint16(roundRect + 4, 0x061c, Endian.little); // ROUNDRECT
+  data.setInt16(roundRect + 6, 8, Endian.little); // ellipse height
+  data.setInt16(roundRect + 8, 12, Endian.little); // ellipse width
+  data.setInt16(roundRect + 10, 50, Endian.little); // bottom
+  data.setInt16(roundRect + 12, 80, Endian.little); // right
+  data.setInt16(roundRect + 14, 10, Endian.little); // top
+  data.setInt16(roundRect + 16, 20, Endian.little); // left
+  data.setUint32(36, 3, Endian.little); // EOF
+  return bytes;
+}
+
 Uint8List _emfWithExtendedPen(int style) {
   final bytes = Uint8List(192);
   final data = ByteData.sublistView(bytes);
@@ -277,6 +299,29 @@ Uint8List _emfWithExtendedPen(int style) {
   data.setInt32(line + 12, 10, Endian.little);
   data.setUint32(184, 14, Endian.little); // EMR_EOF
   data.setUint32(188, 8, Endian.little);
+  return bytes;
+}
+
+Uint8List _emfWithRoundRect() {
+  final bytes = Uint8List(128);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const roundRect = 88;
+  data.setUint32(roundRect, 44, Endian.little); // EMR_ROUNDRECT
+  data.setUint32(roundRect + 4, 32, Endian.little);
+  data.setInt32(roundRect + 8, 20, Endian.little);
+  data.setInt32(roundRect + 12, 10, Endian.little);
+  data.setInt32(roundRect + 16, 80, Endian.little);
+  data.setInt32(roundRect + 20, 50, Endian.little);
+  data.setUint32(roundRect + 24, 12, Endian.little); // ellipse width
+  data.setUint32(roundRect + 28, 8, Endian.little); // ellipse height
+  data.setUint32(120, 14, Endian.little); // EMR_EOF
+  data.setUint32(124, 8, Endian.little);
   return bytes;
 }
 
@@ -488,6 +533,15 @@ void main() {
       }
     });
 
+    test('ROUNDRECT retains half ellipse width and height as radii', () {
+      final drawing = parseWmfDrawing(_wmfWithRoundRect());
+      final path = drawing!.ops.whereType<MetafilePathOp>().single;
+      expect(path.points.first.x, 20);
+      expect(path.points.first.y, 10);
+      expect(path.cornerRadiusX, 6);
+      expect(path.cornerRadiusY, 4);
+    });
+
     test('rejects random bytes', () {
       expect(parseWmfDrawing(Uint8List.fromList([1, 2, 3, 4])), isNull);
     });
@@ -527,6 +581,15 @@ void main() {
       final path = drawing!.ops.whereType<MetafilePathOp>().single;
       expect(path.strokeWidth, 2);
       expect(path.strokeDashPattern, <double>[9, 3, 3, 3]);
+    });
+
+    test('RoundRect retains half ellipse width and height as radii', () {
+      final drawing = parseEmfDrawing(_emfWithRoundRect());
+      final path = drawing!.ops.whereType<MetafilePathOp>().single;
+      expect(path.points.first.x, 20);
+      expect(path.points.first.y, 10);
+      expect(path.cornerRadiusX, 6);
+      expect(path.cornerRadiusY, 4);
     });
 
     test('ExtCreateFontIndirectW retains LOGFONT style and escapement', () {

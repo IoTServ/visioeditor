@@ -33,6 +33,7 @@ const int _emrCreateBrushIndirect = 39;
 const int _emrDeleteObject = 40;
 const int _emrEllipse = 42;
 const int _emrRectangle = 43;
+const int _emrRoundRect = 44;
 const int _emrLineTo = 54;
 const int _emrPolylineTo = 59;
 const int _emrExtCreateFontIndirectW = 82;
@@ -431,6 +432,39 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         final pts = _readPoints16(bd, p, recEnd, c);
         p += c * 4;
         emitPolyline(pts, closed: true);
+      }
+    } else if (t == _emrRoundRect && params + 24 <= recEnd) {
+      final left = bd.getInt32(params, Endian.little).toDouble();
+      final top = bd.getInt32(params + 4, Endian.little).toDouble();
+      final right = bd.getInt32(params + 8, Endian.little).toDouble();
+      final bottom = bd.getInt32(params + 12, Endian.little).toDouble();
+      final cornerWidth = bd.getUint32(params + 16, Endian.little) / 2.0;
+      final cornerHeight = bd.getUint32(params + 20, Endian.little) / 2.0;
+      final pts = [
+        MetafilePoint(left, top),
+        MetafilePoint(right, top),
+        MetafilePoint(right, bottom),
+        MetafilePoint(left, bottom),
+      ];
+      ensurePts(pts);
+      final fill = brushStyle == 0 || brushStyle == 2;
+      final stroke = (penStyle & 0x0f) != 5;
+      if (fill || stroke) {
+        ops.add(MetafilePathOp(
+          points: pts,
+          closed: true,
+          fill: fill,
+          stroke: stroke,
+          fillArgb: fill ? brushColor : 0,
+          strokeArgb: stroke ? penColor : 0,
+          strokeWidth: penWidth,
+          strokeDashPattern: penDashPattern,
+          cornerRadiusX: cornerWidth,
+          cornerRadiusY: cornerHeight,
+          fillHatch: brushStyle == 2 ? brushHatch : null,
+          fillBackgroundArgb:
+              brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        ));
       }
     } else if ((t == _emrRectangle || t == _emrEllipse) &&
         params + 16 <= recEnd) {

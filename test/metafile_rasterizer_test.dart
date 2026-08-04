@@ -134,6 +134,43 @@ void main() {
     image.dispose();
   });
 
+  test('Canvas replays GDI rounded rectangle corners', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 32,
+      maxY: 32,
+      ops: <Object>[
+        MetafilePathOp(
+          points: <MetafilePoint>[
+            MetafilePoint(0, 0),
+            MetafilePoint(32, 0),
+            MetafilePoint(32, 32),
+            MetafilePoint(0, 32),
+          ],
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0xFF000000,
+          strokeArgb: 0,
+          strokeWidth: 1,
+          cornerRadiusX: 8,
+          cornerRadiusY: 8,
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 64);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    int alphaAt(int x, int y) => bytes[(y * image.width + x) * 4 + 3];
+
+    expect(alphaAt(2, 2), lessThan(32));
+    expect(alphaAt(32, 2), greaterThan(224));
+    expect(alphaAt(32, 32), 255);
+    image.dispose();
+  });
+
   test('Canvas rotates and styles LOGFONT text around its reference point',
       () async {
     const drawing = MetafileDrawing(
