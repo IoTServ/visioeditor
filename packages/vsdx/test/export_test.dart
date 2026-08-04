@@ -62,6 +62,41 @@ Uint8List _wmfTextWithBounds() {
   return bytes;
 }
 
+Uint8List _wmfDashedLine() {
+  final bytes = Uint8List(68);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint16(10, 1, Endian.little);
+  data.setUint32(12, 8, Endian.little);
+
+  const pen = 18;
+  data.setUint32(pen, 8, Endian.little);
+  data.setUint16(pen + 4, 0x02fa, Endian.little); // CREATEPENINDIRECT
+  data.setUint16(pen + 6, 3, Endian.little); // PS_DASHDOT
+  data.setInt16(pen + 8, 2, Endian.little);
+
+  const select = 34;
+  data.setUint32(select, 4, Endian.little);
+  data.setUint16(select + 4, 0x012d, Endian.little);
+
+  const move = 42;
+  data.setUint32(move, 5, Endian.little);
+  data.setUint16(move + 4, 0x0214, Endian.little);
+  data.setInt16(move + 6, 10, Endian.little);
+  data.setInt16(move + 8, 2, Endian.little);
+
+  const line = 52;
+  data.setUint32(line, 5, Endian.little);
+  data.setUint16(line + 4, 0x0213, Endian.little);
+  data.setInt16(line + 6, 10, Endian.little);
+  data.setInt16(line + 8, 30, Endian.little);
+  data.setUint32(62, 3, Endian.little); // EOF
+  return bytes;
+}
+
 void main() {
   const parser = DocumentParser();
 
@@ -690,6 +725,33 @@ void main() {
       isTrue,
     );
     expect(svg.contains('fill="#f2f2f2"'), isFalse);
+  });
+
+  test('SVG preserves vector metafile dash-dot pen style', () {
+    const part = '/visio/media/dashed.wmf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 2,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: _wmfDashedLine(),
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(svg, contains('stroke-dasharray="9 3 3 3"'));
   });
 
   test('SVG metafile text honours GDI vertical and UPDATECP alignment', () {

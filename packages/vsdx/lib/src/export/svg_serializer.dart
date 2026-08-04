@@ -3327,6 +3327,10 @@ class VsdxToSvgSerializer {
     final stroke = op.stroke ? _argbCss(op.strokeArgb) : 'none';
     final sw =
         op.stroke ? ' stroke-width="${_n(math.max(op.strokeWidth, 0.5))}"' : '';
+    final dashPattern = op.strokeDashPattern;
+    final dash = op.stroke && dashPattern != null && dashPattern.isNotEmpty
+        ? ' stroke-dasharray="${dashPattern.map(_n).join(' ')}"'
+        : '';
     if (op.isEllipse && op.points.length >= 2) {
       var minX = op.points.first.x, maxX = op.points.first.x;
       var minY = op.points.first.y, maxY = op.points.first.y;
@@ -3342,7 +3346,7 @@ class VsdxToSvgSerializer {
       final ry = (maxY - minY) / 2;
       buf.writeln(
         '$indent<ellipse cx="${_n(cx)}" cy="${_n(cy)}" '
-        'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"$sw/>',
+        'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"$sw$dash/>',
       );
       return;
     }
@@ -3353,7 +3357,7 @@ class VsdxToSvgSerializer {
     }
     if (op.closed) d.write(' Z');
     buf.writeln(
-      '$indent<path d="$d" fill="$fill" stroke="$stroke"$sw/>',
+      '$indent<path d="$d" fill="$fill" stroke="$stroke"$sw$dash/>',
     );
   }
 

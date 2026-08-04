@@ -7,6 +7,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/painting.dart';
 import 'package:vsdx/vsdx.dart';
 
+import 'dash_path.dart';
+
 /// Paint [drawing] into an image. Logical metafile Y grows downward (GDI);
 /// the result is a top-left origin bitmap suitable for [Canvas.drawImageRect]
 /// after the painter's usual Y flip.
@@ -110,7 +112,13 @@ void _paintPath(
       canvas.restore();
     }
   }
-  if (op.stroke) canvas.drawPath(path, paintStroke);
+  if (op.stroke) {
+    final dash = op.strokeDashPattern;
+    canvas.drawPath(
+      dash == null || dash.isEmpty ? path : dashedPath(path, dash),
+      paintStroke,
+    );
+  }
 }
 
 void _paintHatch(

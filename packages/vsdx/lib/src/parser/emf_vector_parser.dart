@@ -43,6 +43,7 @@ const int _emrPolyline16 = 87;
 const int _emrPolyBezierTo16 = 88;
 const int _emrPolylineTo16 = 89;
 const int _emrPolyPolygon16 = 91;
+const int _emrExtCreatePen = 95;
 
 bool looksLikeEmf(Uint8List b) =>
     b.length > 0x2B &&
@@ -94,6 +95,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var penColor = 0xFF000000;
   var penWidth = 1.0;
   var penStyle = 0;
+  List<double>? penDashPattern;
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1;
   var brushHatch = 0;
@@ -126,7 +128,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     final dense = densifyPolyBezier(ctrl);
     ensurePts(dense);
     curPt = dense.last;
-    final stroke = penStyle != 5;
+    final stroke = (penStyle & 0x0f) != 5;
     final fill = brushStyle == 0 || brushStyle == 2;
     if (fill || stroke) {
       ops.add(MetafilePathOp(
@@ -137,6 +139,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillArgb: fill ? brushColor : 0,
         strokeArgb: stroke ? penColor : 0,
         strokeWidth: penWidth,
+        strokeDashPattern: penDashPattern,
         fillHatch: brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
@@ -149,7 +152,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     ensurePts(pts);
     curPt = pts.last;
     final fill = closed && (brushStyle == 0 || brushStyle == 2);
-    final stroke = penStyle != 5;
+    final stroke = (penStyle & 0x0f) != 5;
     if (fill || stroke) {
       ops.add(MetafilePathOp(
         points: pts,
@@ -159,6 +162,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillArgb: fill ? brushColor : 0,
         strokeArgb: stroke ? penColor : 0,
         strokeWidth: penWidth,
+        strokeDashPattern: penDashPattern,
         fillHatch: brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
@@ -201,7 +205,37 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final style = bd.getUint32(params + 4, Endian.little);
       final width = bd.getInt32(params + 8, Endian.little).abs().toDouble();
       final color = _rgbToArgb(bd.getUint32(params + 16, Endian.little));
-      _store(objects, ih, _EmfPen(style, width == 0 ? 1.0 : width, color));
+      _store(
+        objects,
+        ih,
+        _EmfPen(
+          style,
+          width == 0 ? 1.0 : width,
+          color,
+          metafileGdiDashPattern(style, width),
+        ),
+      );
+    } else if (t == _emrExtCreatePen && params + 44 <= recEnd) {
+      final ih = bd.getInt32(params, Endian.little);
+      final style = bd.getUint32(params + 20, Endian.little);
+      final width = bd.getUint32(params + 24, Endian.little).toDouble();
+      final brushStyle = bd.getUint32(params + 28, Endian.little);
+      var color = _rgbToArgb(bd.getUint32(params + 32, Endian.little));
+      final hatch = bd.getInt32(params + 36, Endian.little);
+      if (brushStyle == 2) {
+        if (hatch == 8 || hatch == 9) color = textColor;
+        if (hatch == 10 || hatch == 11) color = backgroundColor;
+      }
+      _store(
+        objects,
+        ih,
+        _EmfPen(
+          style,
+          width == 0 ? 1.0 : width,
+          color,
+          metafileGdiDashPattern(style, width),
+        ),
+      );
     } else if (t == _emrCreateBrushIndirect && params + 16 <= recEnd) {
       final ih = bd.getInt32(params, Endian.little);
       final style = bd.getUint32(params + 4, Endian.little);
@@ -259,7 +293,15 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       if (ih & 0x80000000 != 0) {
         // Stock object — NULL_PEN / NULL_BRUSH etc.
         final stock = ih & 0x7fffffff;
-        if (stock == 8) penStyle = 5; // NULL_PEN
+        if (stock == 8) {
+          penStyle = 5; // NULL_PEN
+          penDashPattern = null;
+        } else if (stock == 6 || stock == 7) {
+          penStyle = 0; // WHITE_PEN / BLACK_PEN
+          penWidth = 1;
+          penColor = stock == 6 ? 0xFFFFFFFF : 0xFF000000;
+          penDashPattern = null;
+        }
         if (stock == 5) brushStyle = 1; // NULL_BRUSH
       } else if (ih < objects.length) {
         final o = objects[ih];
@@ -267,6 +309,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           penStyle = o.style;
           penWidth = o.width;
           penColor = o.color;
+          penDashPattern = o.dashPattern;
         } else if (o is _EmfBrush) {
           brushStyle = o.style;
           brushColor = o.color;
@@ -297,7 +340,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       );
       if (curPt != null) {
         ensurePts([curPt!, end]);
-        final stroke = penStyle != 5;
+        final stroke = (penStyle & 0x0f) != 5;
         if (stroke) {
           ops.add(MetafilePathOp(
             points: <MetafilePoint>[curPt!, end],
@@ -307,6 +350,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             fillArgb: 0,
             strokeArgb: penColor,
             strokeWidth: penWidth,
+            strokeDashPattern: penDashPattern,
           ));
         }
       }
@@ -403,7 +447,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       ensurePts(pts);
       curPt = MetafilePoint(right, bottom);
       final fill = brushStyle == 0 || brushStyle == 2;
-      final stroke = penStyle != 5;
+      final stroke = (penStyle & 0x0f) != 5;
       if (fill || stroke) {
         ops.add(MetafilePathOp(
           points: pts,
@@ -413,6 +457,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillArgb: fill ? brushColor : 0,
           strokeArgb: stroke ? penColor : 0,
           strokeWidth: penWidth,
+          strokeDashPattern: penDashPattern,
           isEllipse: t == _emrEllipse,
           fillHatch: brushStyle == 2 ? brushHatch : null,
           fillBackgroundArgb:
@@ -582,10 +627,11 @@ int _rgbToArgb(int colorRef) {
 sealed class _EmfObject {}
 
 class _EmfPen extends _EmfObject {
-  _EmfPen(this.style, this.width, this.color);
+  _EmfPen(this.style, this.width, this.color, this.dashPattern);
   final int style;
   final double width;
   final int color;
+  final List<double>? dashPattern;
 }
 
 class _EmfBrush extends _EmfObject {

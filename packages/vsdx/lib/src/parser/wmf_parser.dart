@@ -72,6 +72,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var penColor = 0xFF000000;
   var penWidth = 1.0;
   var penStyle = 0;
+  List<double>? penDashPattern;
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1; // BS_NULL
   var brushHatch = 0;
@@ -156,7 +157,12 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final style = bd.getUint16(params, Endian.little);
       final width = bd.getInt16(params + 2, Endian.little).abs().toDouble();
       final color = _rgbToArgb(bd.getUint32(params + 6, Endian.little));
-      objects[allocSlot()] = _GdiPen(style, width == 0 ? 1.0 : width, color);
+      objects[allocSlot()] = _GdiPen(
+        style,
+        width == 0 ? 1.0 : width,
+        color,
+        metafileGdiDashPattern(style, width),
+      );
     } else if (func == _metaCreateBrushIndirect && params + 8 <= recEnd) {
       final style = bd.getUint16(params, Endian.little);
       final color = _rgbToArgb(bd.getUint32(params + 2, Endian.little));
@@ -205,6 +211,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           penStyle = o.style;
           penWidth = o.width;
           penColor = o.color;
+          penDashPattern = o.dashPattern;
         } else if (o is _GdiBrush) {
           brushStyle = o.style;
           brushColor = o.color;
@@ -236,7 +243,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final fromY = curY;
       final pts = [MetafilePoint(fromX, fromY), MetafilePoint(x, y)];
       ensureBounds(pts);
-      if (penStyle != 5) {
+      if ((penStyle & 0x0f) != 5) {
         ops.add(MetafilePathOp(
           points: pts,
           closed: false,
@@ -245,6 +252,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           fillArgb: 0,
           strokeArgb: penColor,
           strokeWidth: penWidth,
+          strokeDashPattern: penDashPattern,
         ));
       }
       curX = x;
@@ -259,6 +267,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           penStyle: penStyle,
           penColor: penColor,
           penWidth: penWidth,
+          penDashPattern: penDashPattern,
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
@@ -270,7 +279,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final pts = _readPoints(bd, params, recEnd);
       if (pts.length >= 2) {
         ensureBounds(pts);
-        if (penStyle != 5) {
+        if ((penStyle & 0x0f) != 5) {
           ops.add(MetafilePathOp(
             points: pts,
             closed: false,
@@ -279,6 +288,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             fillArgb: 0,
             strokeArgb: penColor,
             strokeWidth: penWidth,
+            strokeDashPattern: penDashPattern,
           ));
         }
       }
@@ -296,7 +306,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       if (pts.length >= 4) {
         final dense = densifyPolyBezier(pts);
         ensureBounds(dense);
-        if (penStyle != 5) {
+        if ((penStyle & 0x0f) != 5) {
           ops.add(MetafilePathOp(
             points: dense,
             closed: false,
@@ -305,6 +315,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             fillArgb: 0,
             strokeArgb: penColor,
             strokeWidth: penWidth,
+            strokeDashPattern: penDashPattern,
           ));
         }
         if (dense.isNotEmpty) {
@@ -336,6 +347,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             penStyle: penStyle,
             penColor: penColor,
             penWidth: penWidth,
+            penDashPattern: penDashPattern,
             brushStyle: brushStyle,
             brushColor: brushColor,
             brushHatch: brushHatch,
@@ -363,6 +375,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         penStyle: penStyle,
         penColor: penColor,
         penWidth: penWidth,
+        penDashPattern: penDashPattern,
         brushStyle: brushStyle,
         brushColor: brushColor,
         brushHatch: brushHatch,
@@ -456,6 +469,7 @@ MetafilePathOp _pathOp(
   required int penStyle,
   required int penColor,
   required double penWidth,
+  required List<double>? penDashPattern,
   required int brushStyle,
   required int brushColor,
   required int brushHatch,
@@ -464,7 +478,7 @@ MetafilePathOp _pathOp(
   bool asEllipse = false,
 }) {
   final fill = brushStyle == 0 || brushStyle == 2;
-  final stroke = penStyle != 5;
+  final stroke = (penStyle & 0x0f) != 5;
   return MetafilePathOp(
     points: pts,
     closed: closed,
@@ -473,6 +487,7 @@ MetafilePathOp _pathOp(
     fillArgb: fill ? brushColor : 0,
     strokeArgb: stroke ? penColor : 0,
     strokeWidth: penWidth,
+    strokeDashPattern: penDashPattern,
     isEllipse: asEllipse,
     fillHatch: brushStyle == 2 ? brushHatch : null,
     fillBackgroundArgb:
@@ -658,10 +673,11 @@ int _rgbToArgb(int colorRef) {
 sealed class _GdiObject {}
 
 class _GdiPen extends _GdiObject {
-  _GdiPen(this.style, this.width, this.color);
+  _GdiPen(this.style, this.width, this.color, this.dashPattern);
   final int style;
   final double width;
   final int color;
+  final List<double>? dashPattern;
 }
 
 class _GdiBrush extends _GdiObject {

@@ -50,6 +50,7 @@ class MetafilePathOp {
     required this.fillArgb,
     required this.strokeArgb,
     required this.strokeWidth,
+    this.strokeDashPattern,
     this.isEllipse = false,
     this.fillHatch,
     this.fillBackgroundArgb,
@@ -65,6 +66,9 @@ class MetafilePathOp {
   final int strokeArgb;
   final double strokeWidth;
 
+  /// GDI dash/gap lengths in metafile logical units. `null` means solid.
+  final List<double>? strokeDashPattern;
+
   /// GDI `BS_HATCHED` style (`HS_HORIZONTAL` 0 through `HS_DIAGCROSS` 5).
   /// `null` means an ordinary solid fill.
   final int? fillHatch;
@@ -75,6 +79,24 @@ class MetafilePathOp {
 
   /// When true, [points] are the bounding box corners of an ellipse.
   final bool isEllipse;
+}
+
+/// Convert the low `PS_STYLE_MASK` bits of a GDI pen into dash/gap lengths.
+///
+/// LibreOffice uses one mapped `(penWidth + 1)` unit for dots and gaps, and
+/// three units for dashes. Keeping that authored pattern in the neutral
+/// display list lets Canvas and SVG replay the same WMF/EMF pen.
+List<double>? metafileGdiDashPattern(int penStyle, double rawPenWidth) {
+  if (!rawPenWidth.isFinite) return null;
+  final unit = rawPenWidth.abs() + 1;
+  final values = switch (penStyle & 0x0f) {
+    1 => <double>[unit * 3, unit], // PS_DASH
+    2 => <double>[unit, unit], // PS_DOT
+    3 => <double>[unit * 3, unit, unit, unit], // PS_DASHDOT
+    4 => <double>[unit * 3, unit, unit, unit, unit, unit], // PS_DASHDOTDOT
+    _ => null,
+  };
+  return values == null ? null : List<double>.unmodifiable(values);
 }
 
 @immutable

@@ -93,6 +93,47 @@ void main() {
     image.dispose();
   });
 
+  test('Canvas replays GDI dashed pen gaps', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 32,
+      maxY: 32,
+      ops: <Object>[
+        MetafilePathOp(
+          points: <MetafilePoint>[
+            MetafilePoint(0, 16),
+            MetafilePoint(32, 16),
+          ],
+          closed: false,
+          fill: false,
+          stroke: true,
+          fillArgb: 0,
+          strokeArgb: 0xFF000000,
+          strokeWidth: 1,
+          strokeDashPattern: <double>[6, 6],
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 64);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    int alphaNear(int x) {
+      var alpha = 0;
+      for (var y = 30; y <= 34; y++) {
+        final value = bytes[(y * image.width + x) * 4 + 3];
+        if (value > alpha) alpha = value;
+      }
+      return alpha;
+    }
+
+    expect(alphaNear(6), greaterThan(32)); // first dash
+    expect(alphaNear(18), lessThan(32)); // first gap
+    expect(alphaNear(30), greaterThan(32)); // second dash
+    image.dispose();
+  });
+
   test('Canvas rotates and styles LOGFONT text around its reference point',
       () async {
     const drawing = MetafileDrawing(

@@ -207,6 +207,79 @@ Uint8List _wmfWithTextBounds({bool empty = false}) {
   return bytes;
 }
 
+Uint8List _wmfWithPenStyle(int style) {
+  final bytes = Uint8List(68);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint16(10, 1, Endian.little);
+  data.setUint32(12, 8, Endian.little);
+
+  const pen = 18;
+  data.setUint32(pen, 8, Endian.little);
+  data.setUint16(pen + 4, 0x02fa, Endian.little); // CREATEPENINDIRECT
+  data.setUint16(pen + 6, style, Endian.little);
+  data.setInt16(pen + 8, 2, Endian.little);
+
+  const select = 34;
+  data.setUint32(select, 4, Endian.little);
+  data.setUint16(select + 4, 0x012d, Endian.little);
+
+  const move = 42;
+  data.setUint32(move, 5, Endian.little);
+  data.setUint16(move + 4, 0x0214, Endian.little);
+  data.setInt16(move + 6, 10, Endian.little);
+  data.setInt16(move + 8, 2, Endian.little);
+
+  const line = 52;
+  data.setUint32(line, 5, Endian.little);
+  data.setUint16(line + 4, 0x0213, Endian.little);
+  data.setInt16(line + 6, 10, Endian.little);
+  data.setInt16(line + 8, 30, Endian.little);
+  data.setUint32(62, 3, Endian.little); // EOF
+  return bytes;
+}
+
+Uint8List _emfWithExtendedPen(int style) {
+  final bytes = Uint8List(192);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 40, Endian.little);
+  data.setInt32(20, 20, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const pen = 88;
+  data.setUint32(pen, 95, Endian.little); // EMR_EXTCREATEPEN
+  data.setUint32(pen + 4, 52, Endian.little);
+  const params = pen + 8;
+  data.setUint32(params, 1, Endian.little); // handle
+  data.setUint32(params + 20, style, Endian.little);
+  data.setUint32(params + 24, 2, Endian.little);
+
+  const select = 140;
+  data.setUint32(select, 37, Endian.little);
+  data.setUint32(select + 4, 12, Endian.little);
+  data.setUint32(select + 8, 1, Endian.little);
+
+  const move = 152;
+  data.setUint32(move, 27, Endian.little);
+  data.setUint32(move + 4, 16, Endian.little);
+  data.setInt32(move + 8, 2, Endian.little);
+  data.setInt32(move + 12, 10, Endian.little);
+
+  const line = 168;
+  data.setUint32(line, 54, Endian.little);
+  data.setUint32(line + 4, 16, Endian.little);
+  data.setInt32(line + 8, 30, Endian.little);
+  data.setInt32(line + 12, 10, Endian.little);
+  data.setUint32(184, 14, Endian.little); // EMR_EOF
+  data.setUint32(188, 8, Endian.little);
+  return bytes;
+}
+
 Uint8List _wmfWithUpdateCpText() {
   final bytes = Uint8List(78);
   final data = ByteData.sublistView(bytes);
@@ -401,6 +474,20 @@ void main() {
       }
     });
 
+    test('CREATEPENINDIRECT retains all cosmetic dash styles', () {
+      const expected = <int, List<double>>{
+        1: <double>[9, 3],
+        2: <double>[3, 3],
+        3: <double>[9, 3, 3, 3],
+        4: <double>[9, 3, 3, 3, 3, 3],
+      };
+      for (final entry in expected.entries) {
+        final drawing = parseWmfDrawing(_wmfWithPenStyle(entry.key));
+        final path = drawing!.ops.whereType<MetafilePathOp>().single;
+        expect(path.strokeDashPattern, entry.value);
+      }
+    });
+
     test('rejects random bytes', () {
       expect(parseWmfDrawing(Uint8List.fromList([1, 2, 3, 4])), isNull);
     });
@@ -433,6 +520,13 @@ void main() {
         );
         expect(text.opaqueRect, isNotNull);
       }
+    });
+
+    test('ExtCreatePen retains geometric dash-dot style', () {
+      final drawing = parseEmfDrawing(_emfWithExtendedPen(0x10003));
+      final path = drawing!.ops.whereType<MetafilePathOp>().single;
+      expect(path.strokeWidth, 2);
+      expect(path.strokeDashPattern, <double>[9, 3, 3, 3]);
     });
 
     test('ExtCreateFontIndirectW retains LOGFONT style and escapement', () {
