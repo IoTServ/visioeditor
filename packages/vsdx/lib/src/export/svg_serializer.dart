@@ -119,6 +119,8 @@ class VsdxToSvgSerializer {
   /// Active Color-by-Layer tint while writing a shape subtree.
   VsdxColor? _layerTint;
   double _layerTintTrans = 0;
+  bool _textFlipX = false;
+  bool _textFlipY = false;
   int _variationColorIndex = 0;
   int _variationStyleIndex = 0;
 
@@ -236,6 +238,8 @@ class VsdxToSvgSerializer {
     VsdxPage? underlayPage,
     required String indent,
   }) {
+    _textFlipX = false;
+    _textFlipY = false;
     final h = page.heightInches * pxPerInch;
     final w = page.widthInches * pxPerInch;
     final bg = page.backgroundColor;
@@ -455,6 +459,10 @@ class VsdxToSvgSerializer {
     }
     final prevTint = _layerTint;
     final prevTrans = _layerTintTrans;
+    final prevTextFlipX = _textFlipX;
+    final prevTextFlipY = _textFlipY;
+    _textFlipX = _textFlipX != shape.flipX;
+    _textFlipY = _textFlipY != shape.flipY;
     if (colorByLayer) {
       final src = layerColorSource(page.layers, shape.layerMemberIds);
       if (src?.color != null) {
@@ -483,6 +491,8 @@ class VsdxToSvgSerializer {
     } finally {
       _layerTint = prevTint;
       _layerTintTrans = prevTrans;
+      _textFlipX = prevTextFlipX;
+      _textFlipY = prevTextFlipY;
     }
   }
 
@@ -3458,8 +3468,11 @@ class VsdxToSvgSerializer {
     final angle =
         angleRad != 0 ? ' rotate(${_n(angleRad * 180 / math.pi)})' : '';
     final dirRot = textDirection == 1 ? ' rotate(-90)' : '';
+    final mirror = _textFlipX || _textFlipY
+        ? ' scale(${_textFlipX ? -1 : 1} ${_textFlipY ? -1 : 1})'
+        : '';
     buf.writeln(
-      '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle$dirRot">'
+      '$indent<g transform="translate(${_n(pinX)} ${_n(pinY)})$angle$mirror$dirRot">'
       '<rect x="${_n(-maxW / 2 - padLeft)}" y="${_n(-totalH / 2 - padTop)}" '
       'width="${_n(maxW + padLeft + padRight)}" height="${_n(totalH + padTop + padBottom)}" '
       'rx="0.02" fill="${_hex(plate)}" '
@@ -3507,9 +3520,12 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final block = shape.richText.textBlock;
-    final labelAngle = shape.isGlueableConnector
+    var labelAngle = shape.isGlueableConnector
         ? page.effectiveConnectorLabelAngle(shape)
         : block.angleRad;
+    if (shape.isGlueableConnector && shape.autoRotateLabel && _textFlipX) {
+      labelAngle += math.pi;
+    }
     // Match libvisio: HideText suppresses the label entirely.
     if (block.hideText) return;
     final tw = block.widthInches ?? shape.width;
@@ -3559,6 +3575,9 @@ class VsdxToSvgSerializer {
     );
     if (labelAngle != 0) {
       xf.write(' rotate(${_n(labelAngle * 180 / math.pi)})');
+    }
+    if (_textFlipX || _textFlipY) {
+      xf.write(' scale(${_textFlipX ? -1 : 1} ${_textFlipY ? -1 : 1})');
     }
     xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');
 
@@ -4563,6 +4582,9 @@ class VsdxToSvgSerializer {
     final xf = StringBuffer('translate(${_n(pinX)} ${_n(pinY)})');
     if (angleRad != 0) {
       xf.write(' rotate(${_n(angleRad * 180 / math.pi)})');
+    }
+    if (_textFlipX || _textFlipY) {
+      xf.write(' scale(${_textFlipX ? -1 : 1} ${_textFlipY ? -1 : 1})');
     }
     // Block lower-left → top-left + Y-down (same stack as rectangular text).
     xf.write(' translate(${_n(-lpx)} ${_n(-lpy)})');

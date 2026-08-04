@@ -2541,6 +2541,67 @@ void main() {
     expect(svg, contains('translate(0.05 0.05)'));
   });
 
+  test('SVG cancels ancestor FlipX/FlipY for nested text glyphs', () {
+    final child = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 1.5,
+      pinY: 0.75,
+      width: 3,
+      height: 1.5,
+    ).copyWith(
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'LEFT',
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.left,
+            ),
+          ),
+        ],
+      ),
+    );
+    final group = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 3,
+      height: 1.5,
+    ).copyWith(
+      flipX: true,
+      shapeKind: VsdxShapeKind.group,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      children: <VsdxShape>[child],
+    );
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[group],
+    );
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(
+      RegExp(r'scale\(-1 1\)').allMatches(svg),
+      hasLength(2),
+      reason: 'one mirror belongs to the group and one cancels it for text',
+    );
+    final flipYSvg = VsdxToSvgSerializer().serializePage(
+      page.copyWith(
+        shapes: <VsdxShape>[
+          group.copyWith(flipX: false, flipY: true),
+        ],
+      ),
+    );
+    expect(
+      RegExp(r'scale\(1 -1\)').allMatches(flipYSvg),
+      hasLength(3),
+      reason: 'group mirror + text compensation + SVG glyph Y normalisation',
+    );
+  });
+
   test('SVG FlipY bitmap normalises rows before parent mirror', () {
     // 1×1 PNG
     final png = base64Decode(

@@ -234,6 +234,11 @@ class VsdxPainter extends CustomPainter {
   Color? _layerTint;
   double _layerTintTrans = 0;
 
+  /// Cumulative Shape/Group reflection. libvisio positions text through the
+  /// reflected XForms, then cancels their mirror so glyphs remain readable.
+  bool _textFlipX = false;
+  bool _textFlipY = false;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
@@ -304,6 +309,8 @@ class VsdxPainter extends CustomPainter {
   /// Paint [target]'s top-level shapes in the current (page-inch, Y-up) canvas.
   void _paintPageShapes(Canvas canvas, VsdxPage target) {
     _paintTarget = target;
+    _textFlipX = false;
+    _textFlipY = false;
     final isUnderlay = underlayPage != null && identical(target, underlayPage);
     final visibleLayers = !respectLayerVisibility
         ? null
@@ -370,6 +377,8 @@ class VsdxPainter extends CustomPainter {
     final saveCount = canvas.getSaveCount();
     final previousTint = _layerTint;
     final previousTransparency = _layerTintTrans;
+    final previousTextFlipX = _textFlipX;
+    final previousTextFlipY = _textFlipY;
     try {
       _paintShape(canvas, shape, visibleLayers, bboxes, viewport);
     } catch (error, stackTrace) {
@@ -384,6 +393,8 @@ class VsdxPainter extends CustomPainter {
       canvas.restoreToCount(saveCount);
       _layerTint = previousTint;
       _layerTintTrans = previousTransparency;
+      _textFlipX = previousTextFlipX;
+      _textFlipY = previousTextFlipY;
     }
   }
 
@@ -488,6 +499,8 @@ class VsdxPainter extends CustomPainter {
     if (shape.flipX || shape.flipY) {
       canvas.scale(shape.flipX ? -1.0 : 1.0, shape.flipY ? -1.0 : 1.0);
     }
+    _textFlipX = _textFlipX != shape.flipX;
+    _textFlipY = _textFlipY != shape.flipY;
     canvas.translate(-localPinX, -localPinY);
 
     // draw.io cell opacity composites the complete cell as one layer: fill,
@@ -2395,10 +2408,16 @@ class VsdxPainter extends CustomPainter {
     final isEdgeLabel = shape.isGlueableConnector;
 
     final block = rich.textBlock;
-    final labelAngle = isEdgeLabel
+    var labelAngle = isEdgeLabel
         ? (_paintTarget ?? page)?.effectiveConnectorLabelAngle(shape) ??
               block.angleRad
         : block.angleRad;
+    // Auto-rotation already solves an upright page-space baseline through the
+    // reflected tree. A horizontal mirror compensation reverses that basis,
+    // so rotate it back; authored TxtAngle follows libvisio unchanged.
+    if (isEdgeLabel && shape.autoRotateLabel && _textFlipX) {
+      labelAngle += math.pi;
+    }
     // Match Visio / libvisio: HideText suppresses the painted label.
     if (block.hideText) return;
     final s = pxPerInch;
@@ -2461,6 +2480,9 @@ class VsdxPainter extends CustomPainter {
       canvas.save();
       canvas.translate(local.dx, local.dy);
       if (labelAngle != 0) canvas.rotate(labelAngle);
+      if (_textFlipX || _textFlipY) {
+        canvas.scale(_textFlipX ? -1.0 : 1.0, _textFlipY ? -1.0 : 1.0);
+      }
       canvas.scale(1 / s, -1 / s);
       // Match SVG / pinned text blocks: TextDirection=1 rotates the label.
       if (block.textDirection == 1) {
@@ -2551,6 +2573,9 @@ class VsdxPainter extends CustomPainter {
     canvas.save();
     canvas.translate(pinX, pinY); // to TxtPin (shape-local, Y-up)
     if (labelAngle != 0) canvas.rotate(labelAngle);
+    if (_textFlipX || _textFlipY) {
+      canvas.scale(_textFlipX ? -1.0 : 1.0, _textFlipY ? -1.0 : 1.0);
+    }
     canvas.translate(-locPinX, -locPinY); // to the block's lower-left corner
     // libvisio applies TextBkgnd to the text spans above. Only draw.io's
     // explicit labelBorderColor belongs around the complete text frame.

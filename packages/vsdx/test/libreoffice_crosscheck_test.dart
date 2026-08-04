@@ -377,6 +377,84 @@ void main() {
             ),
           ),
         );
+    var textFlipDocument = parser.parse(blank);
+    final textFlipPage = textFlipDocument.pages.first;
+    VsdxRichText flipText(String text) => VsdxRichText(
+          runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: text,
+              charStyle: const VsdxCharStyle(
+                fontFamily: 'Arial',
+                fontSizeInches: 0.5,
+                color: VsdxColor(0xFF000000),
+              ),
+              paraStyle: const VsdxParaStyle(
+                horizontalAlign: VsdxHorzAlign.left,
+              ),
+            ),
+          ],
+          textBlock: const VsdxTextBlock(
+            verticalAlign: VsdxVertAlign.top,
+            marginLeftInches: 0.1,
+            marginRightInches: 0.1,
+            marginTopInches: 0.1,
+            marginBottomInches: 0.1,
+          ),
+        );
+    final flipXText = VsdxShapeFactory.rectangle(
+      id: textFlipPage.nextFreeShapeId(),
+      pinX: 2,
+      pinY: 6,
+      width: 3,
+      height: 1.5,
+    ).copyWith(
+      flipX: true,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      richText: flipText('LEFT'),
+    );
+    final flipYText = VsdxShapeFactory.rectangle(
+      id: flipXText.id + 1,
+      pinX: 2,
+      pinY: 3,
+      width: 3,
+      height: 1.5,
+    ).copyWith(
+      flipY: true,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      richText: flipText('TOP'),
+    );
+    final nestedText = VsdxShapeFactory.rectangle(
+      id: flipYText.id + 2,
+      pinX: 1.5,
+      pinY: 0.75,
+      width: 3,
+      height: 1.5,
+    ).copyWith(
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      richText: flipText('LEFT'),
+    );
+    final flipXGroup = VsdxShapeFactory.rectangle(
+      id: flipYText.id + 1,
+      pinX: 6,
+      pinY: 6,
+      width: 3,
+      height: 1.5,
+    ).copyWith(
+      flipX: true,
+      shapeKind: VsdxShapeKind.group,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      children: <VsdxShape>[nestedText],
+    );
+    textFlipDocument = textFlipDocument.replacePage(
+      0,
+      textFlipPage.copyWith(
+        shapes: <VsdxShape>[flipXText, flipYText, flipXGroup],
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -394,6 +472,10 @@ void main() {
       'geometry_foreign_data': writer.write(
         originalBytes: blank,
         edited: geometryImageDocument,
+      ),
+      'text_flip': writer.write(
+        originalBytes: blank,
+        edited: textFlipDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -516,6 +598,60 @@ void main() {
               expect(corner.b, lessThan(80));
             }
           }
+        }
+        if (entry.key == 'text_flip' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          int darkPixels(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top = ((page.heightInches - y1) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final bottom = ((page.heightInches - y0) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r < 120 && pixel.g < 120 && pixel.b < 120) count++;
+              }
+            }
+            return count;
+          }
+
+          final flipXLeft = darkPixels(0.55, 5.35, 2.0, 6.65);
+          final flipXRight = darkPixels(2.0, 5.35, 3.45, 6.65);
+          expect(flipXLeft, greaterThan(50));
+          expect(flipXLeft, greaterThan(flipXRight * 2),
+              reason: 'LibreOffice keeps FlipX text left-aligned and upright');
+          final flipYTop = darkPixels(0.55, 3.0, 3.45, 3.7);
+          final flipYBottom = darkPixels(0.55, 2.3, 3.45, 3.0);
+          expect(flipYTop, greaterThan(50));
+          expect(flipYTop, greaterThan(flipYBottom * 2),
+              reason: 'LibreOffice keeps FlipY text top-aligned and upright');
+          final nestedLeft = darkPixels(4.55, 5.35, 6.0, 6.65);
+          final nestedRight = darkPixels(6.0, 5.35, 7.45, 6.65);
+          expect(nestedLeft, greaterThan(50));
+          expect(nestedLeft, greaterThan(nestedRight * 2),
+              reason: 'LibreOffice cancels ancestor-group FlipX for text');
         }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
