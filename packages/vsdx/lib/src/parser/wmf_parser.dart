@@ -380,7 +380,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         textAlign,
         fontHeight,
         fontFace,
-        backgroundMode == 2 ? backgroundColor : null,
+        backgroundColor,
+        backgroundMode == 2,
         fontWeight,
         fontItalic,
         fontUnderline,
@@ -392,6 +393,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
+        final opaqueRect = textOp.opaqueRect;
+        if (opaqueRect != null) ensureBounds(opaqueRect.corners);
         ops.add(textOp);
         if ((textAlign & 0x01) != 0) {
           final next = metafileTextUpdatedCurrentPoint(textOp);
@@ -500,7 +503,8 @@ MetafileTextOp? _readExtTextOut(
     int textAlign,
     double fontHeight,
     String? fontFace,
-    int? backgroundArgb,
+    int backgroundColor,
+    bool backgroundModeOpaque,
     int fontWeight,
     bool italic,
     bool underline,
@@ -517,11 +521,23 @@ MetafileTextOp? _readExtTextOut(
   final count = bd.getUint16(params + 4, Endian.little);
   final options = bd.getUint16(params + 6, Endian.little);
   var p = params + 8;
-  if ((options & 0x0006) != 0) p += 8;
-  if (count == 0 || p + count > recEnd) return null;
+  MetafileRect? recordRect;
+  if ((options & 0x0006) != 0) {
+    if (p + 8 > recEnd) return null;
+    recordRect = MetafileRect(
+      bd.getInt16(p, Endian.little).toDouble(),
+      bd.getInt16(p + 2, Endian.little).toDouble(),
+      bd.getInt16(p + 4, Endian.little).toDouble(),
+      bd.getInt16(p + 6, Endian.little).toDouble(),
+    );
+    p += 8;
+  }
+  if (p + count > recEnd) return null;
   final raw = bytes.sublist(p, p + count);
   final text = decodeWindowsLegacyText(raw, encoding).replaceAll('\u0000', '');
-  if (text.trim().isEmpty) return null;
+  if (text.trim().isEmpty && !((options & 0x0002) != 0 && recordRect != null)) {
+    return null;
+  }
   List<double>? advancesX;
   List<double>? advancesY;
   var advancePos = p + count;
@@ -568,7 +584,11 @@ MetafileTextOp? _readExtTextOut(
     argb: textColor,
     face: fontFace,
     align: textAlign,
-    backgroundArgb: backgroundArgb,
+    backgroundArgb: backgroundModeOpaque || (options & 0x0002) != 0
+        ? backgroundColor
+        : null,
+    opaqueRect: (options & 0x0002) != 0 ? recordRect : null,
+    clipRect: (options & 0x0004) != 0 ? recordRect : null,
     advancesX: advancesX,
     advancesY: advancesY,
     fontWeight: fontWeight,

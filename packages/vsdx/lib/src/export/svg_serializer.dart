@@ -3307,6 +3307,9 @@ class VsdxToSvgSerializer {
           op,
           indent: '$indent  ',
           unflipGlyphs: true,
+          clipId: op.clipRect == null
+              ? null
+              : 'wmf-text-clip-$idScope-$opIndex',
         );
       }
     }
@@ -3390,8 +3393,33 @@ class VsdxToSvgSerializer {
     MetafileTextOp op, {
     required String indent,
     bool unflipGlyphs = true,
+    String? clipId,
   }) {
+    final background = op.backgroundArgb;
+    final opaqueRect = op.opaqueRect;
+    if (background != null && opaqueRect != null) {
+      buf.writeln(
+        '$indent<rect x="${_n(opaqueRect.minX)}" '
+        'y="${_n(opaqueRect.minY)}" width="${_n(opaqueRect.width)}" '
+        'height="${_n(opaqueRect.height)}" '
+        'fill="${_argbCss(background)}"/>',
+      );
+    }
     if (op.text.isEmpty) return;
+
+    final clipRect = op.clipRect;
+    var clipOpen = '';
+    var clipClose = '';
+    if (clipRect != null && clipId != null) {
+      buf.writeln(
+        '$indent<defs><clipPath id="$clipId" clipPathUnits="userSpaceOnUse">'
+        '<rect x="${_n(clipRect.minX)}" y="${_n(clipRect.minY)}" '
+        'width="${_n(clipRect.width)}" height="${_n(clipRect.height)}"/>'
+        '</clipPath></defs>',
+      );
+      clipOpen = '<g clip-path="url(#$clipId)">';
+      clipClose = '</g>';
+    }
     final size = math.max(op.fontHeight.abs(), 1.0);
     final face =
         (op.face == null || op.face!.isEmpty) ? 'Arial' : _esc(op.face!);
@@ -3441,9 +3469,8 @@ class VsdxToSvgSerializer {
     final glyphXf = unflipGlyphs
         ? 'translate(${_n(op.x)} ${_n(op.y)})$rotation scale(1 -1)'
         : 'translate(${_n(op.x)} ${_n(op.y)})$rotation';
-    final background = op.backgroundArgb;
     var backgroundRect = '';
-    if (background != null) {
+    if (background != null && opaqueRect == null) {
       backgroundRect =
           '<rect x="${_n(alignedX)}" y="${_n(textTop)}" '
           'width="${_n(textWidth)}" height="${_n(size)}" '
@@ -3463,22 +3490,22 @@ class VsdxToSvgSerializer {
         if (yAdvances != null) y += yAdvances[i];
       }
       buf.writeln(
-        '$indent<g transform="$glyphXf">'
+        '$indent$clipOpen<g transform="$glyphXf">'
         '$backgroundRect'
         '<text fill="${_argbCss(op.argb)}" font-family="$face" '
         'font-size="${_n(size)}" font-weight="$fontWeight"$fontStyle'
-        '$decorationAttr>$positionedGlyphs</text></g>',
+        '$decorationAttr>$positionedGlyphs</text></g>$clipClose',
       );
       return;
     }
     buf.writeln(
-      '$indent<g transform="$glyphXf">'
+      '$indent$clipOpen<g transform="$glyphXf">'
       '$backgroundRect'
       '<text x="0" y="${_n(baselineY)}" text-anchor="$anchor" '
       'fill="${_argbCss(op.argb)}" '
       'font-family="$face" font-size="${_n(size)}" '
       'font-weight="$fontWeight"$fontStyle$decorationAttr>'
-      '${_esc(op.text)}</text></g>',
+      '${_esc(op.text)}</text></g>$clipClose',
     );
   }
 

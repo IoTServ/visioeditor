@@ -15,6 +15,31 @@ class MetafilePoint {
   final double y;
 }
 
+/// Axis-aligned GDI rectangle in metafile logical coordinates.
+@immutable
+class MetafileRect {
+  const MetafileRect(this.left, this.top, this.right, this.bottom);
+
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  double get minX => math.min(left, right);
+  double get minY => math.min(top, bottom);
+  double get maxX => math.max(left, right);
+  double get maxY => math.max(top, bottom);
+  double get width => maxX - minX;
+  double get height => maxY - minY;
+
+  List<MetafilePoint> get corners => <MetafilePoint>[
+        MetafilePoint(minX, minY),
+        MetafilePoint(maxX, minY),
+        MetafilePoint(maxX, maxY),
+        MetafilePoint(minX, maxY),
+      ];
+}
+
 @immutable
 class MetafilePathOp {
   const MetafilePathOp({
@@ -63,6 +88,8 @@ class MetafileTextOp {
     this.face,
     this.align = 0,
     this.backgroundArgb,
+    this.opaqueRect,
+    this.clipRect,
     this.advancesX,
     this.advancesY,
     this.fontWeight = 400,
@@ -86,6 +113,13 @@ class MetafileTextOp {
 
   /// GDI text background selected by `SETBKMODE(OPAQUE)` / `SETBKCOLOR`.
   final int? backgroundArgb;
+
+  /// Record-space rectangle filled for `ExtTextOut(ETO_OPAQUE)`. This is
+  /// axis-aligned in logical coordinates and is independent of font rotation.
+  final MetafileRect? opaqueRect;
+
+  /// Record-space clipping rectangle selected by `ExtTextOut(ETO_CLIPPED)`.
+  final MetafileRect? clipRect;
 
   /// Optional GDI `ExtTextOut` advance for each Unicode scalar value. These
   /// override platform font metrics so metafile labels keep their authored

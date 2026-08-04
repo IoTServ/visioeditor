@@ -181,6 +181,21 @@ void _paintHatch(
 }
 
 void _paintText(Canvas canvas, MetafileTextOp op) {
+  final background = op.backgroundArgb;
+  final opaqueRect = op.opaqueRect;
+  if (background != null && opaqueRect != null) {
+    canvas.drawRect(
+      Rect.fromLTRB(
+        opaqueRect.minX,
+        opaqueRect.minY,
+        opaqueRect.maxX,
+        opaqueRect.maxY,
+      ),
+      Paint()..color = Color(background),
+    );
+  }
+  if (op.text.isEmpty) return;
+
   final fontSize = math.max(op.fontHeight.abs(), 1.0);
   final style = TextStyle(
     color: Color(op.argb),
@@ -228,6 +243,17 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
     dx -= textWidth;
   }
   canvas.save();
+  final clipRect = op.clipRect;
+  if (clipRect != null) {
+    canvas.clipRect(
+      Rect.fromLTRB(
+        clipRect.minX,
+        clipRect.minY,
+        clipRect.maxX,
+        clipRect.maxY,
+      ),
+    );
+  }
   canvas.translate(op.x, op.y);
   final angle = op.escapementDegrees % 360;
   if (angle.abs() > 1e-9) {
@@ -235,8 +261,7 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
     // the negative Canvas angle around the text reference point.
     canvas.rotate(-angle * math.pi / 180);
   }
-  final background = op.backgroundArgb;
-  if (background != null) {
+  if (background != null && opaqueRect == null) {
     canvas.drawRect(
       Rect.fromLTWH(dx, dy, textWidth, tp.height),
       Paint()..color = Color(background),

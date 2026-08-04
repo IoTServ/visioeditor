@@ -40,6 +40,35 @@ Uint8List _emfWithPositionedText() {
   return bytes;
 }
 
+Uint8List _emfWithTextBounds({bool empty = false}) {
+  final bytes = Uint8List(192);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const record = 88;
+  data.setUint32(record, 84, Endian.little); // EMR_EXTTEXTOUTW
+  data.setUint32(record + 4, 96, Endian.little);
+  const text = record + 36;
+  data.setInt32(text, 4, Endian.little);
+  data.setInt32(text + 4, 5, Endian.little);
+  data.setUint32(text + 8, empty ? 0 : 1, Endian.little);
+  data.setUint32(text + 12, empty ? 0 : 76, Endian.little);
+  data.setUint32(text + 16, 0x0006, Endian.little); // OPAQUE | CLIPPED
+  data.setInt32(text + 20, 2, Endian.little);
+  data.setInt32(text + 24, 3, Endian.little);
+  data.setInt32(text + 28, 11, Endian.little);
+  data.setInt32(text + 32, 13, Endian.little);
+  if (!empty) data.setUint16(record + 76, 0x41, Endian.little);
+
+  data.setUint32(record + 96, 14, Endian.little); // EMR_EOF
+  data.setUint32(record + 100, 8, Endian.little);
+  return bytes;
+}
+
 Uint8List _emfWithStyledText() {
   final bytes = Uint8List(308);
   final data = ByteData.sublistView(bytes);
@@ -148,6 +177,33 @@ Uint8List _wmfWithEncodedText({
 
   final eof = text + textRecordBytes;
   data.setUint32(eof, eofRecordBytes ~/ 2, Endian.little);
+  return bytes;
+}
+
+Uint8List _wmfWithTextBounds({bool empty = false}) {
+  final bytes = Uint8List(48);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint32(12, 12, Endian.little);
+
+  const record = 18;
+  data.setUint32(record, 12, Endian.little);
+  data.setUint16(record + 4, 0x0a32, Endian.little); // EXTTEXTOUT
+  const text = record + 6;
+  data.setInt16(text, 5, Endian.little);
+  data.setInt16(text + 2, 4, Endian.little);
+  data.setUint16(text + 4, empty ? 0 : 1, Endian.little);
+  data.setUint16(text + 6, 0x0006, Endian.little); // OPAQUE | CLIPPED
+  data.setInt16(text + 8, 2, Endian.little);
+  data.setInt16(text + 10, 3, Endian.little);
+  data.setInt16(text + 12, 11, Endian.little);
+  data.setInt16(text + 14, 13, Endian.little);
+  if (!empty) data.setUint8(text + 16, 0x41);
+
+  data.setUint32(42, 3, Endian.little); // EOF
   return bytes;
 }
 
@@ -326,6 +382,25 @@ void main() {
       expect((text[1].x, text[1].y), (16, 20));
     });
 
+    test('ExtTextOut retains opaque and clipping rectangles without text', () {
+      for (final empty in <bool>[false, true]) {
+        final drawing = parseWmfDrawing(_wmfWithTextBounds(empty: empty));
+        final text = drawing!.ops.whereType<MetafileTextOp>().single;
+        expect(text.text, empty ? '' : 'A');
+        expect(text.backgroundArgb, 0xFFFFFFFF);
+        expect(
+          (
+            text.opaqueRect!.left,
+            text.opaqueRect!.top,
+            text.opaqueRect!.right,
+            text.opaqueRect!.bottom,
+          ),
+          (2, 3, 11, 13),
+        );
+        expect(text.clipRect, isNotNull);
+      }
+    });
+
     test('rejects random bytes', () {
       expect(parseWmfDrawing(Uint8List.fromList([1, 2, 3, 4])), isNull);
     });
@@ -339,6 +414,25 @@ void main() {
       expect(text.text, 'AB');
       expect(text.advancesX, <double>[13, 21]);
       expect(text.advancesY, <double>[3, -2]);
+    });
+
+    test('ExtTextOutW retains opaque and clipping rectangles without text', () {
+      for (final empty in <bool>[false, true]) {
+        final drawing = parseEmfDrawing(_emfWithTextBounds(empty: empty));
+        final text = drawing!.ops.whereType<MetafileTextOp>().single;
+        expect(text.text, empty ? '' : 'A');
+        expect(text.backgroundArgb, 0xFFFFFFFF);
+        expect(
+          (
+            text.clipRect!.left,
+            text.clipRect!.top,
+            text.clipRect!.right,
+            text.clipRect!.bottom,
+          ),
+          (2, 3, 11, 13),
+        );
+        expect(text.opaqueRect, isNotNull);
+      }
     });
 
     test('ExtCreateFontIndirectW retains LOGFONT style and escapement', () {

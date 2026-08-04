@@ -184,4 +184,50 @@ void main() {
     expect(greenAboveReference, greaterThan(20));
     image.dispose();
   });
+
+  test('Canvas honours ExtTextOut opaque and clipping rectangles', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 32,
+      maxY: 32,
+      ops: <Object>[
+        MetafileTextOp(
+          text: 'MMMM',
+          x: 2,
+          y: 10,
+          fontHeight: 12,
+          argb: 0xFF000000,
+          backgroundArgb: 0xFFFF0000,
+          opaqueRect: MetafileRect(2, 2, 30, 8),
+          clipRect: MetafileRect(2, 10, 8, 24),
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 96);
+    expect(image, isNotNull);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    var opaqueFarRight = 0;
+    var clippedTextPixels = 0;
+    var leakedTextPixels = 0;
+    for (var y = 0; y < image.height; y++) {
+      for (var x = 0; x < image.width; x++) {
+        final i = (y * image.width + x) * 4;
+        final red = bytes[i] > 200 && bytes[i + 1] < 40 && bytes[i + 2] < 40;
+        final black = bytes[i] < 50 &&
+            bytes[i + 1] < 50 &&
+            bytes[i + 2] < 50 &&
+            bytes[i + 3] > 32;
+        if (red && x > 60) opaqueFarRight++;
+        if (black && x < 24) clippedTextPixels++;
+        if (black && x > 28) leakedTextPixels++;
+      }
+    }
+    expect(opaqueFarRight, greaterThan(100));
+    expect(clippedTextPixels, greaterThan(2));
+    expect(leakedTextPixels, 0);
+    image.dispose();
+  });
 }

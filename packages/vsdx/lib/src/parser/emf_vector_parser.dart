@@ -434,18 +434,27 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         final options = textOff + 20 <= recEnd
             ? bd.getUint32(textOff + 16, Endian.little)
             : 0;
+        final recordRect = textOff + 36 <= recEnd && (options & 0x0006) != 0
+            ? MetafileRect(
+                bd.getInt32(textOff + 20, Endian.little).toDouble(),
+                bd.getInt32(textOff + 24, Endian.little).toDouble(),
+                bd.getInt32(textOff + 28, Endian.little).toDouble(),
+                bd.getInt32(textOff + 32, Endian.little).toDouble(),
+              )
+            : null;
         final offDx = textOff + 40 <= recEnd
             ? bd.getUint32(textOff + 36, Endian.little)
             : 0;
         // offString is from start of record
         final strAt = offset + offString;
-        if (nChars > 0 && nChars < 4096 && strAt + nChars * 2 <= recEnd) {
+        if (nChars < 4096 && strAt + nChars * 2 <= recEnd) {
           final codes = <int>[];
           for (var i = 0; i < nChars; i++) {
             codes.add(bd.getUint16(strAt + i * 2, Endian.little));
           }
           final text = String.fromCharCodes(codes).replaceAll('\u0000', '');
-          if (text.trim().isNotEmpty) {
+          if (text.trim().isNotEmpty ||
+              ((options & 0x0002) != 0 && recordRect != null)) {
             List<double>? advancesX;
             List<double>? advancesY;
             final hasVerticalAdvances = (options & 0x2000) != 0; // ETO_PDY
@@ -484,6 +493,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               backgroundArgb: backgroundMode == 2 || (options & 0x0002) != 0
                   ? backgroundColor
                   : null,
+              opaqueRect: (options & 0x0002) != 0 ? recordRect : null,
+              clipRect: (options & 0x0004) != 0 ? recordRect : null,
               advancesX: advancesX,
               advancesY: advancesY,
               fontWeight: fontWeight,
@@ -492,6 +503,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               strikeThrough: fontStrikeThrough,
               escapementDegrees: fontEscapementDegrees,
             );
+            final opaqueRect = textOp.opaqueRect;
+            if (opaqueRect != null) ensurePts(opaqueRect.corners);
             ops.add(textOp);
             if ((textAlign & 0x01) != 0) {
               curPt = metafileTextUpdatedCurrentPoint(textOp);

@@ -36,6 +36,32 @@ Uint8List _wmfTextWithAlign(int align) {
   return bytes;
 }
 
+Uint8List _wmfTextWithBounds() {
+  final bytes = Uint8List(48);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint32(12, 12, Endian.little);
+
+  const record = 18;
+  data.setUint32(record, 12, Endian.little);
+  data.setUint16(record + 4, 0x0a32, Endian.little); // EXTTEXTOUT
+  const text = record + 6;
+  data.setInt16(text, 5, Endian.little);
+  data.setInt16(text + 2, 4, Endian.little);
+  data.setUint16(text + 4, 1, Endian.little);
+  data.setUint16(text + 6, 0x0006, Endian.little); // OPAQUE | CLIPPED
+  data.setInt16(text + 8, 2, Endian.little);
+  data.setInt16(text + 10, 3, Endian.little);
+  data.setInt16(text + 12, 11, Endian.little);
+  data.setInt16(text + 14, 13, Endian.little);
+  data.setUint8(text + 16, 0x41);
+  data.setUint32(42, 3, Endian.little); // EOF
+  return bytes;
+}
+
 void main() {
   const parser = DocumentParser();
 
@@ -697,6 +723,42 @@ void main() {
     expect(svgFor(0x08), contains('y="-1.8" text-anchor="start"'));
     expect(svgFor(0x18), contains('y="0" text-anchor="start"'));
     expect(svgFor(0x1b), contains('y="0" text-anchor="end"'));
+  });
+
+  test('SVG metafile text honours ExtTextOut opaque and clip rectangles', () {
+    const part = '/visio/media/bounded.wmf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 2,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: _wmfTextWithBounds(),
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(
+      svg,
+      contains('<rect x="2" y="3" width="9" height="10" fill="#ffffff"/>'),
+    );
+    expect(svg, contains('clipPathUnits="userSpaceOnUse"'));
+    expect(
+      svg,
+      contains('<rect x="2" y="3" width="9" height="10"/></clipPath>'),
+    );
+    expect(svg, contains('clip-path="url(#wmf-text-clip-'));
   });
 
   test('SVG vector metafile FlipY mirrors after GDI normalisation', () {
