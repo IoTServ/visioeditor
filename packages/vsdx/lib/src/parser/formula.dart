@@ -461,9 +461,12 @@ double? evaluateFormula(
       upper.contains('!')) {
     return null;
   }
-  final lex = _Lexer(src);
-  final parser = _Parser(lex, locals: locals);
   try {
+    // [_Parser] primes the lexer in its constructor. Keep construction inside
+    // the same recovery boundary as parsing so an unsupported first token is
+    // treated like every other unresolved Visio formula instead of escaping
+    // into editor gesture handlers.
+    final parser = _Parser(_Lexer(src), locals: locals);
     final v = parser.parseExpression();
     if (!parser.atEof) return null;
     return v;

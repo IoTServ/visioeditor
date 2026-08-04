@@ -48,6 +48,12 @@ void main() {
       );
     });
 
+    test('returns null when the first token is outside the supported subset',
+        () {
+      expect(evaluateFormula('"foreign-expression"'), isNull);
+      expect(evaluateFormula('@Width', locals: {'Width': 2}), isNull);
+    });
+
     test('SETATREF recalc peels via cellLookup', () {
       expect(
         evaluateFormula(
@@ -394,6 +400,36 @@ void main() {
       expect((cmds[2] as LineTo).x, closeTo(3, 1e-9));
       expect((cmds[2] as LineTo).y, closeTo(4, 1e-9));
       expect(grown.geometries.single.formulasAt(1)['X'], 'Scratch.X1');
+    });
+
+    test('keeps geometry cache when a formula starts with an unknown token',
+        () {
+      final box = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 2,
+      ).copyWith(
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            commands: const <VsdxPathCommand>[
+              MoveTo(0.25, 0.5),
+              LineTo(2, 2),
+            ],
+            commandFormulas: const <Map<String, String>>[
+              {'X': '"foreign-expression"', 'Y': '@Height'},
+              {'X': 'Width', 'Y': 'Height'},
+            ],
+          ),
+        ],
+      );
+
+      final recalculated = box.recalculateLocalFormulas();
+      final move = recalculated.geometries.single.commands.first as MoveTo;
+      final line = recalculated.geometries.single.commands.last as LineTo;
+      expect((move.x, move.y), (0.25, 0.5));
+      expect((line.x, line.y), (2, 2));
     });
 
     test('SETATREF(Controls.*) syncs TxtPin from control after resize', () {

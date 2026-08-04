@@ -197,6 +197,44 @@ void main() {
     expect(e.currentPage!.shapes.length, 1);
   });
 
+  test('quickAddInDirection tolerates unsupported geometry formulas', () {
+    final e = ctrl();
+    final a = rect(e, 2, 4);
+    expect(
+      () => e.quickAddInDirection(
+        a,
+        1,
+        build: (id, cx, cy) => VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: cx,
+          pinY: cy,
+          width: 1.2,
+          height: 0.8,
+        ).copyWith(
+          geometries: <VsdxGeometry>[
+            VsdxGeometry(
+              commands: const <VsdxPathCommand>[
+                MoveTo(0.25, 0.5),
+                LineTo(1.2, 0.8),
+              ],
+              commandFormulas: const <Map<String, String>>[
+                {'X': '"foreign-expression"', 'Y': '@Height'},
+                {'X': 'Width', 'Y': 'Height'},
+              ],
+            ),
+          ],
+        ),
+        cx: 5,
+        cy: 4,
+      ),
+      returnsNormally,
+    );
+    final target = e.currentPage!.findShapeById(e.singleSelectedId!)!;
+    final move = target.geometries.single.commands.first as MoveTo;
+    expect((move.x, move.y), (0.25, 0.5));
+    expect(e.currentPage!.shapes.where((s) => s.is1D), hasLength(1));
+  });
+
   test('quickAddInDirection is no-op for locked source', () {
     final e = ctrl();
     final a = rect(e, 2, 4);
