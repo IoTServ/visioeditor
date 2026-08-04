@@ -212,8 +212,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final ih = bd.getInt32(params, Endian.little);
       // EXTLOGFONTW starts at params+4; elfLogFont.lfHeight at +0 of that.
       if (params + 4 + 4 <= recEnd) {
-        final height =
-            bd.getInt32(params + 4, Endian.little).abs().toDouble().clamp(1.0, 2000.0);
+        final height = bd
+            .getInt32(params + 4, Endian.little)
+            .abs()
+            .toDouble()
+            .clamp(1.0, 2000.0);
         final escapement = params + 16 <= recEnd
             ? bd.getInt32(params + 12, Endian.little) / 10.0
             : 0.0;
@@ -412,9 +415,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           strokeWidth: penWidth,
           isEllipse: t == _emrEllipse,
           fillHatch: brushStyle == 2 ? brushHatch : null,
-          fillBackgroundArgb: brushStyle == 2 && backgroundMode == 2
-              ? backgroundColor
-              : null,
+          fillBackgroundArgb:
+              brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
         ));
       }
     } else if (t == _emrExtTextOutW && params + 32 <= recEnd) {
@@ -422,8 +424,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       // EMRTEXT at params+28: ptlReference(8), nChars(4), offString(4), …
       final textOff = params + 28;
       if (textOff + 16 <= recEnd) {
-        final x = bd.getInt32(textOff, Endian.little).toDouble();
-        final y = bd.getInt32(textOff + 4, Endian.little).toDouble();
+        final recordX = bd.getInt32(textOff, Endian.little).toDouble();
+        final recordY = bd.getInt32(textOff + 4, Endian.little).toDouble();
+        final useCurrentPoint = (textAlign & 0x01) != 0 && curPt != null;
+        final x = useCurrentPoint ? curPt!.x : recordX;
+        final y = useCurrentPoint ? curPt!.y : recordY;
         final nChars = bd.getUint32(textOff + 8, Endian.little);
         final offString = bd.getUint32(textOff + 12, Endian.little);
         final options = textOff + 20 <= recEnd
@@ -434,9 +439,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             : 0;
         // offString is from start of record
         final strAt = offset + offString;
-        if (nChars > 0 &&
-            nChars < 4096 &&
-            strAt + nChars * 2 <= recEnd) {
+        if (nChars > 0 && nChars < 4096 && strAt + nChars * 2 <= recEnd) {
           final codes = <int>[];
           for (var i = 0; i < nChars; i++) {
             codes.add(bd.getUint16(strAt + i * 2, Endian.little));
@@ -470,8 +473,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             }
             final pt = MetafilePoint(x, y);
             ensurePts([pt]);
-            curPt = pt;
-            ops.add(MetafileTextOp(
+            final textOp = MetafileTextOp(
               text: text,
               x: x,
               y: y,
@@ -489,7 +491,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               underline: fontUnderline,
               strikeThrough: fontStrikeThrough,
               escapementDegrees: fontEscapementDegrees,
-            ));
+            );
+            ops.add(textOp);
+            if ((textAlign & 0x01) != 0) {
+              curPt = metafileTextUpdatedCurrentPoint(textOp);
+              ensurePts([curPt!]);
+            }
           }
         }
       }

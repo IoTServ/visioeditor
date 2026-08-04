@@ -4,6 +4,8 @@
 /// stays free of `dart:ui` so parsers stay unit-testable.
 library;
 
+import 'dart:math' as math;
+
 import 'package:meta/meta.dart';
 
 @immutable
@@ -102,6 +104,44 @@ class MetafileTextOp {
   /// LOGFONT escapement in degrees. Positive values rotate counter-clockwise
   /// in GDI's logical coordinate system.
   final double escapementDegrees;
+}
+
+/// GDI current position after replaying [op] with `TA_UPDATECP`.
+///
+/// The text reference point first receives right/centre alignment, then the
+/// authored glyph advances, and finally LOGFONT escapement rotation in GDI's
+/// Y-down coordinate system. Both WMF and EMF parsers use this shared rule so
+/// a following text or line record starts at the same logical point.
+MetafilePoint metafileTextUpdatedCurrentPoint(MetafileTextOp op) {
+  final glyphCount = op.text.runes.length;
+  final xAdvances = op.advancesX;
+  final yAdvances = op.advancesY;
+  final hasAdvances = xAdvances != null &&
+      xAdvances.length == glyphCount &&
+      xAdvances.every((advance) => advance.isFinite) &&
+      (yAdvances == null ||
+          (yAdvances.length == glyphCount &&
+              yAdvances.every((advance) => advance.isFinite)));
+  final advanceX = hasAdvances
+      ? xAdvances.fold<double>(0, (sum, advance) => sum + advance)
+      : op.fontHeight.abs() * 0.55 * glyphCount;
+  final advanceY = hasAdvances && yAdvances != null
+      ? yAdvances.fold<double>(0, (sum, advance) => sum + advance)
+      : 0.0;
+  final width = advanceX.abs();
+  final alignedX = switch (op.align & 0x06) {
+    6 => -width / 2,
+    2 => -width,
+    _ => 0.0,
+  };
+  final dx = alignedX + advanceX;
+  final angle = op.escapementDegrees * math.pi / 180;
+  final cosA = math.cos(angle);
+  final sinA = math.sin(angle);
+  return MetafilePoint(
+    op.x + dx * cosA + advanceY * sinA,
+    op.y - dx * sinA + advanceY * cosA,
+  );
 }
 
 @immutable

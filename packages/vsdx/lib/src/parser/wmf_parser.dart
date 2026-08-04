@@ -387,10 +387,18 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontStrikeThrough,
         fontEscapementDegrees,
         fontEncoding,
+        currentX: (textAlign & 0x01) != 0 ? curX : null,
+        currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
         ops.add(textOp);
+        if ((textAlign & 0x01) != 0) {
+          final next = metafileTextUpdatedCurrentPoint(textOp);
+          curX = next.x;
+          curY = next.y;
+          ensureBounds([next]);
+        }
       }
     } else if (func == _metaTextOut) {
       final textOp = _readTextOut(
@@ -409,10 +417,18 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontStrikeThrough,
         fontEscapementDegrees,
         fontEncoding,
+        currentX: (textAlign & 0x01) != 0 ? curX : null,
+        currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
       if (textOp != null) {
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
         ops.add(textOp);
+        if ((textAlign & 0x01) != 0) {
+          final next = metafileTextUpdatedCurrentPoint(textOp);
+          curX = next.x;
+          curY = next.y;
+          ensureBounds([next]);
+        }
       }
     }
 
@@ -476,25 +492,28 @@ List<MetafilePoint> _readPoints(ByteData bd, int params, int recEnd) {
 }
 
 MetafileTextOp? _readExtTextOut(
-  ByteData bd,
-  Uint8List bytes,
-  int params,
-  int recEnd,
-  int textColor,
-  int textAlign,
-  double fontHeight,
-  String? fontFace,
-  int? backgroundArgb,
-  int fontWeight,
-  bool italic,
-  bool underline,
-  bool strikeThrough,
-  double escapementDegrees,
-  VsdLegacyTextEncoding encoding,
-) {
+    ByteData bd,
+    Uint8List bytes,
+    int params,
+    int recEnd,
+    int textColor,
+    int textAlign,
+    double fontHeight,
+    String? fontFace,
+    int? backgroundArgb,
+    int fontWeight,
+    bool italic,
+    bool underline,
+    bool strikeThrough,
+    double escapementDegrees,
+    VsdLegacyTextEncoding encoding,
+    {double? currentX,
+    double? currentY}) {
   if (params + 8 > recEnd) return null;
-  final y = bd.getInt16(params, Endian.little).toDouble();
-  final x = bd.getInt16(params + 2, Endian.little).toDouble();
+  final recordY = bd.getInt16(params, Endian.little).toDouble();
+  final recordX = bd.getInt16(params + 2, Endian.little).toDouble();
+  final x = currentX ?? recordX;
+  final y = currentY ?? recordY;
   final count = bd.getUint16(params + 4, Endian.little);
   final options = bd.getUint16(params + 6, Endian.little);
   var p = params + 8;
@@ -561,22 +580,23 @@ MetafileTextOp? _readExtTextOut(
 }
 
 MetafileTextOp? _readTextOut(
-  ByteData bd,
-  Uint8List bytes,
-  int params,
-  int recEnd,
-  int textColor,
-  int textAlign,
-  double fontHeight,
-  String? fontFace,
-  int? backgroundArgb,
-  int fontWeight,
-  bool italic,
-  bool underline,
-  bool strikeThrough,
-  double escapementDegrees,
-  VsdLegacyTextEncoding encoding,
-) {
+    ByteData bd,
+    Uint8List bytes,
+    int params,
+    int recEnd,
+    int textColor,
+    int textAlign,
+    double fontHeight,
+    String? fontFace,
+    int? backgroundArgb,
+    int fontWeight,
+    bool italic,
+    bool underline,
+    bool strikeThrough,
+    double escapementDegrees,
+    VsdLegacyTextEncoding encoding,
+    {double? currentX,
+    double? currentY}) {
   if (params + 2 > recEnd) return null;
   final count = bd.getUint16(params, Endian.little);
   var p = params + 2;
@@ -585,8 +605,10 @@ MetafileTextOp? _readTextOut(
   p += count;
   if (count.isOdd) p++;
   if (p + 4 > recEnd) return null;
-  final y = bd.getInt16(p, Endian.little).toDouble();
-  final x = bd.getInt16(p + 2, Endian.little).toDouble();
+  final recordY = bd.getInt16(p, Endian.little).toDouble();
+  final recordX = bd.getInt16(p + 2, Endian.little).toDouble();
+  final x = currentX ?? recordX;
+  final y = currentY ?? recordY;
   final text = decodeWindowsLegacyText(raw, encoding).replaceAll('\u0000', '');
   if (text.trim().isEmpty) return null;
   return MetafileTextOp(

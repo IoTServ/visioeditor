@@ -151,6 +151,84 @@ Uint8List _wmfWithEncodedText({
   return bytes;
 }
 
+Uint8List _wmfWithUpdateCpText() {
+  final bytes = Uint8List(78);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint32(12, 9, Endian.little);
+
+  const align = 18;
+  data.setUint32(align, 4, Endian.little);
+  data.setUint16(align + 4, 0x012e, Endian.little); // SETTEXTALIGN
+  data.setUint16(align + 6, 0x0001, Endian.little); // TA_UPDATECP
+
+  const move = 26;
+  data.setUint32(move, 5, Endian.little);
+  data.setUint16(move + 4, 0x0214, Endian.little); // MOVETO
+  data.setInt16(move + 6, 20, Endian.little);
+  data.setInt16(move + 8, 10, Endian.little);
+
+  void writeText(int offset, int character, int advance) {
+    data.setUint32(offset, 9, Endian.little);
+    data.setUint16(offset + 4, 0x0a32, Endian.little); // EXTTEXTOUT
+    data.setInt16(offset + 6, 999, Endian.little);
+    data.setInt16(offset + 8, 999, Endian.little);
+    data.setUint16(offset + 10, 1, Endian.little);
+    data.setUint8(offset + 14, character);
+    data.setInt16(offset + 16, advance, Endian.little);
+  }
+
+  writeText(36, 0x41, 6);
+  writeText(54, 0x42, 7);
+  data.setUint32(72, 3, Endian.little); // EOF
+  return bytes;
+}
+
+Uint8List _emfWithUpdateCpText() {
+  final bytes = Uint8List(316);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(8, 0, Endian.little);
+  data.setInt32(12, 0, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const align = 88;
+  data.setUint32(align, 22, Endian.little); // EMR_SETTEXTALIGN
+  data.setUint32(align + 4, 12, Endian.little);
+  data.setUint32(align + 8, 1, Endian.little); // TA_UPDATECP
+
+  const move = 100;
+  data.setUint32(move, 27, Endian.little); // EMR_MOVETOEX
+  data.setUint32(move + 4, 16, Endian.little);
+  data.setInt32(move + 8, 10, Endian.little);
+  data.setInt32(move + 12, 20, Endian.little);
+
+  void writeText(int offset, int character, int advance) {
+    data.setUint32(offset, 84, Endian.little); // EMR_EXTTEXTOUTW
+    data.setUint32(offset + 4, 96, Endian.little);
+    final text = offset + 36;
+    data.setInt32(text, 999, Endian.little);
+    data.setInt32(text + 4, 999, Endian.little);
+    data.setUint32(text + 8, 1, Endian.little);
+    data.setUint32(text + 12, 76, Endian.little);
+    data.setUint32(text + 36, 80, Endian.little);
+    data.setUint16(offset + 76, character, Endian.little);
+    data.setInt32(offset + 80, advance, Endian.little);
+  }
+
+  writeText(116, 0x41, 6);
+  writeText(212, 0x42, 7);
+  data.setUint32(308, 14, Endian.little); // EMR_EOF
+  data.setUint32(312, 8, Endian.little);
+  return bytes;
+}
+
 void main() {
   group('WMF vector parse', () {
     test('Visio5 plan thumbnail has polygons and text', () {
@@ -240,6 +318,14 @@ void main() {
       expect(text.advancesX, const <double>[5, 5]);
     });
 
+    test('TA_UPDATECP uses MoveTo and advances consecutive WMF text', () {
+      final drawing = parseWmfDrawing(_wmfWithUpdateCpText());
+      final text = drawing!.ops.whereType<MetafileTextOp>().toList();
+      expect(text, hasLength(2));
+      expect((text[0].x, text[0].y), (10, 20));
+      expect((text[1].x, text[1].y), (16, 20));
+    });
+
     test('rejects random bytes', () {
       expect(parseWmfDrawing(Uint8List.fromList([1, 2, 3, 4])), isNull);
     });
@@ -266,6 +352,30 @@ void main() {
       expect(text.underline, isTrue);
       expect(text.strikeThrough, isTrue);
       expect(text.escapementDegrees, 90);
+    });
+
+    test('TA_UPDATECP uses MoveToEx and advances consecutive EMF text', () {
+      final drawing = parseEmfDrawing(_emfWithUpdateCpText());
+      final text = drawing!.ops.whereType<MetafileTextOp>().toList();
+      expect(text, hasLength(2));
+      expect((text[0].x, text[0].y), (10, 20));
+      expect((text[1].x, text[1].y), (16, 20));
+    });
+
+    test('TA_UPDATECP rotates the next point with LOGFONT escapement', () {
+      const op = MetafileTextOp(
+        text: 'A',
+        x: 10,
+        y: 20,
+        fontHeight: 12,
+        argb: 0xFF000000,
+        align: 1,
+        advancesX: <double>[6],
+        escapementDegrees: 90,
+      );
+      final next = metafileTextUpdatedCurrentPoint(op);
+      expect(next.x, closeTo(10, 1e-9));
+      expect(next.y, closeTo(14, 1e-9));
     });
 
     test('OLE OlePres EMF vector-parses from visio_with_embeded', () {
