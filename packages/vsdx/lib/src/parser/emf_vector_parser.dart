@@ -292,9 +292,23 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     } else if (t == _emrSelectObject && params + 4 <= recEnd) {
       final ih = bd.getUint32(params, Endian.little);
       if (ih & 0x80000000 != 0) {
-        // Stock object — NULL_PEN / NULL_BRUSH etc.
+        // Stock object colours follow LibreOffice MtfTools::SelectObject.
         final stock = ih & 0x7fffffff;
-        if (stock == 8) {
+        const stockBrushColors = <int>[
+          0xFFFFFFFF, // WHITE_BRUSH
+          0xFFC0C0C0, // LTGRAY_BRUSH
+          0xFF808080, // GRAY_BRUSH
+          0xFF666666, // DKGRAY_BRUSH / LibreOffice COL_GRAY7
+          0xFF000000, // BLACK_BRUSH
+        ];
+        if (stock < stockBrushColors.length) {
+          brushStyle = 0;
+          brushColor = stockBrushColors[stock];
+          brushHatch = 0;
+        } else if (stock == 5) {
+          brushStyle = 1; // NULL_BRUSH
+          brushHatch = 0;
+        } else if (stock == 8) {
           penStyle = 5; // NULL_PEN
           penDashPattern = null;
         } else if (stock == 6 || stock == 7) {
@@ -303,7 +317,6 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           penColor = stock == 6 ? 0xFFFFFFFF : 0xFF000000;
           penDashPattern = null;
         }
-        if (stock == 5) brushStyle = 1; // NULL_BRUSH
       } else if (ih < objects.length) {
         final o = objects[ih];
         if (o is _EmfPen) {

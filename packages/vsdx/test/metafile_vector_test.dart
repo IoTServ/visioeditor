@@ -325,6 +325,32 @@ Uint8List _emfWithRoundRect() {
   return bytes;
 }
 
+Uint8List _emfWithStockBrush(int stock) {
+  final bytes = Uint8List(132);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const select = 88;
+  data.setUint32(select, 37, Endian.little); // EMR_SELECTOBJECT
+  data.setUint32(select + 4, 12, Endian.little);
+  data.setUint32(select + 8, 0x80000000 | stock, Endian.little);
+
+  const rectangle = 100;
+  data.setUint32(rectangle, 43, Endian.little); // EMR_RECTANGLE
+  data.setUint32(rectangle + 4, 24, Endian.little);
+  data.setInt32(rectangle + 8, 10, Endian.little);
+  data.setInt32(rectangle + 12, 10, Endian.little);
+  data.setInt32(rectangle + 16, 50, Endian.little);
+  data.setInt32(rectangle + 20, 50, Endian.little);
+  data.setUint32(124, 14, Endian.little); // EMR_EOF
+  data.setUint32(128, 8, Endian.little);
+  return bytes;
+}
+
 Uint8List _wmfWithUpdateCpText() {
   final bytes = Uint8List(78);
   final data = ByteData.sublistView(bytes);
@@ -590,6 +616,24 @@ void main() {
       expect(path.points.first.y, 10);
       expect(path.cornerRadiusX, 6);
       expect(path.cornerRadiusY, 4);
+    });
+
+    test('stock brushes select all LibreOffice fill colours and null', () {
+      const colors = <int>[
+        0xFFFFFFFF,
+        0xFFC0C0C0,
+        0xFF808080,
+        0xFF666666,
+        0xFF000000,
+      ];
+      for (var stock = 0; stock <= 5; stock++) {
+        final drawing = parseEmfDrawing(_emfWithStockBrush(stock));
+        final path = drawing!.ops.whereType<MetafilePathOp>().single;
+        expect(path.fill, stock < colors.length, reason: 'stock $stock');
+        if (stock < colors.length) {
+          expect(path.fillArgb, colors[stock], reason: 'stock $stock');
+        }
+      }
     });
 
     test('ExtCreateFontIndirectW retains LOGFONT style and escapement', () {

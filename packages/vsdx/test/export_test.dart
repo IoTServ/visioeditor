@@ -119,6 +119,32 @@ Uint8List _wmfRoundedRect() {
   return bytes;
 }
 
+Uint8List _emfStockGrayBrush() {
+  final bytes = Uint8List(132);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const select = 88;
+  data.setUint32(select, 37, Endian.little); // EMR_SELECTOBJECT
+  data.setUint32(select + 4, 12, Endian.little);
+  data.setUint32(select + 8, 0x80000002, Endian.little); // GRAY_BRUSH
+
+  const rectangle = 100;
+  data.setUint32(rectangle, 43, Endian.little); // EMR_RECTANGLE
+  data.setUint32(rectangle + 4, 24, Endian.little);
+  data.setInt32(rectangle + 8, 10, Endian.little);
+  data.setInt32(rectangle + 12, 10, Endian.little);
+  data.setInt32(rectangle + 16, 50, Endian.little);
+  data.setInt32(rectangle + 20, 50, Endian.little);
+  data.setUint32(124, 14, Endian.little); // EMR_EOF
+  data.setUint32(128, 8, Endian.little);
+  return bytes;
+}
+
 void main() {
   const parser = DocumentParser();
 
@@ -802,6 +828,33 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(page, images: images);
     expect(svg, contains('<rect x="20" y="10" width="60" height="40"'));
     expect(svg, contains('rx="6" ry="4"'));
+  });
+
+  test('SVG preserves EMF stock gray brush fill', () {
+    const part = '/visio/media/gray.emf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 2,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: _emfStockGrayBrush(),
+      mimeType: 'image/x-emf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(svg, contains('fill="#808080"'));
   });
 
   test('SVG metafile text honours GDI vertical and UPDATECP alignment', () {

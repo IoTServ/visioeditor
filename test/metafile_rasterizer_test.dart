@@ -1,8 +1,35 @@
 import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/render/metafile_rasterizer.dart';
 import 'package:vsdx/vsdx.dart';
+
+Uint8List _emfWithStockGrayBrush() {
+  final bytes = Uint8List(132);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const select = 88;
+  data.setUint32(select, 37, Endian.little); // EMR_SELECTOBJECT
+  data.setUint32(select + 4, 12, Endian.little);
+  data.setUint32(select + 8, 0x80000002, Endian.little); // GRAY_BRUSH
+
+  const rectangle = 100;
+  data.setUint32(rectangle, 43, Endian.little); // EMR_RECTANGLE
+  data.setUint32(rectangle + 4, 24, Endian.little);
+  data.setInt32(rectangle + 8, 10, Endian.little);
+  data.setInt32(rectangle + 12, 10, Endian.little);
+  data.setInt32(rectangle + 16, 50, Endian.little);
+  data.setInt32(rectangle + 20, 50, Endian.little);
+  data.setUint32(124, 14, Endian.little); // EMR_EOF
+  data.setUint32(128, 8, Endian.little);
+  return bytes;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +83,23 @@ void main() {
     }
     expect(green, greaterThan(50));
     expect(white, greaterThan(500));
+    image.dispose();
+  });
+
+  test('Canvas replays selected EMF stock gray brush', () async {
+    final drawing = parseEmfDrawing(_emfWithStockGrayBrush());
+    expect(drawing, isNotNull);
+    final image = await rasterizeMetafileDrawing(drawing!, maxEdge: 100);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    int channelAt(int x, int y, int channel) =>
+        bytes[(y * image.width + x) * 4 + channel];
+
+    expect(channelAt(20, 20, 0), inInclusiveRange(126, 130));
+    expect(channelAt(20, 20, 1), inInclusiveRange(126, 130));
+    expect(channelAt(20, 20, 2), inInclusiveRange(126, 130));
+    expect(channelAt(20, 20, 3), 255);
+    expect(channelAt(5, 5, 3), 0);
     image.dispose();
   });
 
