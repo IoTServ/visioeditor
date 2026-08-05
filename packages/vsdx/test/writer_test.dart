@@ -6843,9 +6843,15 @@ void main() {
     );
     expect(pageXml.contains('ForeignType="EnhMetaFile"'), isTrue);
     expect(pageXml.contains('ForeignType="Bitmap"'), isFalse);
-    final after = parser.parse(out).pages.first.findShapeById(id)!;
+    final reopened = parser.parse(out);
+    final after = reopened.pages.first.findShapeById(id)!;
     expect(after.foreignType, 'EnhMetaFile');
     expect(after.hasImage, isTrue);
+    expect(
+      reopened.images.findByPart(after.imagePartName!)!.bytes,
+      payload,
+      reason: 'EMF ForeignData bytes must survive VSDX write and reopen',
+    );
   });
 
   test('ForeignType Bitmap writes CompressionType=PNG', () {

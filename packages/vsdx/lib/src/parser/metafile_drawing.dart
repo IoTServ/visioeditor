@@ -259,3 +259,102 @@ List<MetafilePoint> densifyPolyBezier(
   }
   return out;
 }
+
+/// Project GDI radial endpoints onto [bounds] and approximate the selected
+/// ellipse arc with the same direction and point-density rules as
+/// LibreOffice's `tools::Polygon` metafile path conversion.
+///
+/// GDI angles use an Y-up parameter even though logical coordinates are
+/// normally Y-down. Equal radial endpoints denote a complete ellipse.
+List<MetafilePoint> densifyMetafileEllipticalArc(
+  MetafileRect bounds,
+  MetafilePoint start,
+  MetafilePoint end, {
+  bool clockwise = false,
+}) {
+  final radiusX = bounds.width / 2;
+  final radiusY = bounds.height / 2;
+  if (!radiusX.isFinite || !radiusY.isFinite || radiusX <= 0 || radiusY <= 0) {
+    return const <MetafilePoint>[];
+  }
+  final centerX = (bounds.minX + bounds.maxX) / 2;
+  final centerY = (bounds.minY + bounds.maxY) / 2;
+
+  double parameter(MetafilePoint point) => math.atan2(
+        radiusX * (centerY - point.y),
+        radiusY * (point.x - centerX),
+      );
+
+  var angle = parameter(start);
+  final endAngle = parameter(end);
+  var sweep = endAngle - angle;
+  if (!clockwise) {
+    if (sweep <= 0) sweep += 2 * math.pi;
+  } else {
+    sweep = 2 * math.pi - sweep;
+    if (sweep > 2 * math.pi) sweep -= 2 * math.pi;
+    sweep = -sweep;
+  }
+
+  var fullPointCount = (math.pi *
+          (1.5 * (radiusX + radiusY) - math.sqrt((radiusX * radiusY).abs())))
+      .clamp(32.0, 256.0)
+      .floor();
+  if (radiusX > 32 && radiusY > 32 && radiusX + radiusY < 8192) {
+    fullPointCount >>= 1;
+  }
+  final pointCount = math.max(
+    ((sweep.abs() / (2 * math.pi)) * fullPointCount).floor(),
+    16,
+  );
+  final step = sweep / (pointCount - 1);
+  final points = <MetafilePoint>[];
+  for (var i = 0; i < pointCount; i++, angle += step) {
+    points.add(MetafilePoint(
+      centerX + radiusX * math.cos(angle),
+      centerY - radiusY * math.sin(angle),
+    ));
+  }
+  return List<MetafilePoint>.unmodifiable(points);
+}
+
+/// Approximate EMF `ANGLEARC` using its authored degree angles.
+///
+/// LibreOffice reverses the start/end traversal when the device context uses
+/// clockwise arc direction, while negative sweeps retain their own direction.
+List<MetafilePoint> densifyMetafileAngleArc(
+  MetafilePoint center,
+  double radius,
+  double startDegrees,
+  double sweepDegrees, {
+  bool clockwise = false,
+}) {
+  if (!radius.isFinite ||
+      radius <= 0 ||
+      !startDegrees.isFinite ||
+      !sweepDegrees.isFinite ||
+      sweepDegrees == 0) {
+    return const <MetafilePoint>[];
+  }
+  var start = startDegrees * math.pi / 180;
+  var end = start + sweepDegrees * math.pi / 180;
+  if (clockwise) {
+    final oldStart = start;
+    start = end;
+    end = oldStart;
+  }
+  final pointCount =
+      (((end - start).abs() / (math.pi / 128)).floor() + 1).clamp(2, 65536);
+  final step = (end - start) / (pointCount - 1);
+  return List<MetafilePoint>.unmodifiable(List<MetafilePoint>.generate(
+    pointCount,
+    (index) {
+      final angle = start + step * index;
+      return MetafilePoint(
+        center.x + radius * math.cos(angle),
+        center.y - radius * math.sin(angle),
+      );
+    },
+    growable: false,
+  ));
+}

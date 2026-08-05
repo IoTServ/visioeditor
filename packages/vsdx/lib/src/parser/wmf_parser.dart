@@ -31,9 +31,12 @@ const int _metaDeleteObject = 0x01F0;
 const int _metaPolygon = 0x0324;
 const int _metaPolyline = 0x0325;
 const int _metaPolyPolygon = 0x0538;
+const int _metaArc = 0x0817;
 const int _metaRectangle = 0x041B;
 const int _metaRoundRect = 0x061C;
 const int _metaEllipse = 0x0418;
+const int _metaPie = 0x081A;
+const int _metaChord = 0x0830;
 const int _metaMoveTo = 0x0214;
 const int _metaLineTo = 0x0213;
 const int _metaPolyBezier = 0x1008;
@@ -330,6 +333,82 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       }
       curX = x;
       curY = y;
+    } else if ((func == _metaArc || func == _metaPie || func == _metaChord) &&
+        params + 16 <= recEnd) {
+      final end = MetafilePoint(
+        bd.getInt16(params + 2, Endian.little).toDouble(),
+        bd.getInt16(params, Endian.little).toDouble(),
+      );
+      final start = MetafilePoint(
+        bd.getInt16(params + 6, Endian.little).toDouble(),
+        bd.getInt16(params + 4, Endian.little).toDouble(),
+      );
+      final bounds = MetafileRect(
+        bd.getInt16(params + 14, Endian.little).toDouble(),
+        bd.getInt16(params + 12, Endian.little).toDouble(),
+        bd.getInt16(params + 10, Endian.little).toDouble(),
+        bd.getInt16(params + 8, Endian.little).toDouble(),
+      );
+      if (func == _metaPie && start.x == end.x && start.y == end.y) {
+        final points = bounds.corners;
+        ensureBounds(points);
+        ops.add(_pathOp(
+          points,
+          closed: true,
+          penStyle: penStyle,
+          penColor: penColor,
+          penWidth: penWidth,
+          penDashPattern: penDashPattern,
+          brushStyle: brushStyle,
+          brushColor: brushColor,
+          brushHatch: brushHatch,
+          backgroundMode: backgroundMode,
+          backgroundColor: backgroundColor,
+          asEllipse: true,
+        ));
+      } else {
+        final arc = densifyMetafileEllipticalArc(bounds, start, end);
+        final points = func == _metaPie
+            ? <MetafilePoint>[
+                MetafilePoint(
+                  (bounds.minX + bounds.maxX) / 2,
+                  (bounds.minY + bounds.maxY) / 2,
+                ),
+                ...arc,
+              ]
+            : arc;
+        if (points.length >= 2) {
+          ensureBounds(points);
+          if (func == _metaArc) {
+            if ((penStyle & 0x0f) != 5) {
+              ops.add(MetafilePathOp(
+                points: points,
+                closed: false,
+                fill: false,
+                stroke: true,
+                fillArgb: 0,
+                strokeArgb: penColor,
+                strokeWidth: penWidth,
+                strokeDashPattern: penDashPattern,
+              ));
+            }
+          } else {
+            ops.add(_pathOp(
+              points,
+              closed: true,
+              penStyle: penStyle,
+              penColor: penColor,
+              penWidth: penWidth,
+              penDashPattern: penDashPattern,
+              brushStyle: brushStyle,
+              brushColor: brushColor,
+              brushHatch: brushHatch,
+              backgroundMode: backgroundMode,
+              backgroundColor: backgroundColor,
+            ));
+          }
+        }
+      }
     } else if (func == _metaPolygon) {
       final pts = _readPoints(bd, params, recEnd);
       if (pts.length >= 2) {

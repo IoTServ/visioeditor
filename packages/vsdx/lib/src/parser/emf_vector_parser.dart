@@ -33,10 +33,16 @@ const int _emrSelectObject = 37;
 const int _emrCreatePen = 38;
 const int _emrCreateBrushIndirect = 39;
 const int _emrDeleteObject = 40;
+const int _emrAngleArc = 41;
 const int _emrEllipse = 42;
 const int _emrRectangle = 43;
 const int _emrRoundRect = 44;
+const int _emrArc = 45;
+const int _emrChord = 46;
+const int _emrPie = 47;
 const int _emrLineTo = 54;
+const int _emrArcTo = 55;
+const int _emrSetArcDirection = 57;
 const int _emrPolylineTo = 59;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
@@ -113,6 +119,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var fontUnderline = false;
   var fontStrikeThrough = false;
   var fontEscapementDegrees = 0.0;
+  var arcClockwise = false;
   final ops = <Object>[];
   MetafilePoint? curPt;
   final savedStates = <_EmfDcState>[];
@@ -136,6 +143,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fontUnderline: fontUnderline,
         fontStrikeThrough: fontStrikeThrough,
         fontEscapementDegrees: fontEscapementDegrees,
+        arcClockwise: arcClockwise,
         curPt: curPt,
       );
 
@@ -167,6 +175,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     fontUnderline = state.fontUnderline;
     fontStrikeThrough = state.fontStrikeThrough;
     fontEscapementDegrees = state.fontEscapementDegrees;
+    arcClockwise = state.arcClockwise;
     curPt = state.curPt;
   }
 
@@ -227,6 +236,39 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     }
   }
 
+  void emitArc(
+    List<MetafilePoint> arc, {
+    required bool closed,
+    required bool fill,
+    bool connectCurrent = false,
+    bool updateCurrent = false,
+  }) {
+    if (arc.length < 2) return;
+    final points = connectCurrent
+        ? <MetafilePoint>[curPt ?? const MetafilePoint(0, 0), ...arc]
+        : arc;
+    ensurePts(points);
+    final stroke = (penStyle & 0x0f) != 5;
+    final useFill = fill && (brushStyle == 0 || brushStyle == 2);
+    if (stroke || useFill) {
+      ops.add(MetafilePathOp(
+        points: points,
+        closed: closed,
+        fill: useFill,
+        stroke: stroke,
+        fillArgb: useFill ? brushColor : 0,
+        strokeArgb: stroke ? penColor : 0,
+        strokeWidth: penWidth,
+        strokeDashPattern: penDashPattern,
+        fillHatch: useFill && brushStyle == 2 ? brushHatch : null,
+        fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
+            ? backgroundColor
+            : null,
+      ));
+    }
+    if (updateCurrent) curPt = arc.last;
+  }
+
   var offset = hdrSize;
   while (offset + 8 <= emf.length) {
     final t = bd.getUint32(offset, Endian.little);
@@ -257,6 +299,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       backgroundMode = bd.getUint32(params, Endian.little);
     } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
       backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
+    } else if (t == _emrSetArcDirection && params + 4 <= recEnd) {
+      arcClockwise = bd.getUint32(params, Endian.little) == 2;
     } else if (t == _emrSetTextColor && params + 4 <= recEnd) {
       textColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetTextAlign && params + 4 <= recEnd) {
@@ -429,6 +473,68 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         }
       }
       curPt = end;
+    } else if (t == _emrAngleArc && params + 20 <= recEnd) {
+      final center = MetafilePoint(
+        bd.getInt32(params, Endian.little).toDouble(),
+        bd.getInt32(params + 4, Endian.little).toDouble(),
+      );
+      final radius = bd.getUint32(params + 8, Endian.little).toDouble();
+      final arc = densifyMetafileAngleArc(
+        center,
+        radius,
+        bd.getFloat32(params + 12, Endian.little).toDouble(),
+        bd.getFloat32(params + 16, Endian.little).toDouble(),
+        clockwise: arcClockwise,
+      );
+      emitArc(arc,
+          closed: false,
+          fill: false,
+          connectCurrent: true,
+          updateCurrent: true);
+    } else if ((t == _emrArc ||
+            t == _emrArcTo ||
+            t == _emrChord ||
+            t == _emrPie) &&
+        params + 32 <= recEnd) {
+      final bounds = MetafileRect(
+        bd.getInt32(params, Endian.little).toDouble(),
+        bd.getInt32(params + 4, Endian.little).toDouble(),
+        bd.getInt32(params + 8, Endian.little).toDouble(),
+        bd.getInt32(params + 12, Endian.little).toDouble(),
+      );
+      final arc = densifyMetafileEllipticalArc(
+        bounds,
+        MetafilePoint(
+          bd.getInt32(params + 16, Endian.little).toDouble(),
+          bd.getInt32(params + 20, Endian.little).toDouble(),
+        ),
+        MetafilePoint(
+          bd.getInt32(params + 24, Endian.little).toDouble(),
+          bd.getInt32(params + 28, Endian.little).toDouble(),
+        ),
+        clockwise: arcClockwise,
+      );
+      if (t == _emrPie) {
+        emitArc(
+          <MetafilePoint>[
+            MetafilePoint(
+              (bounds.minX + bounds.maxX) / 2,
+              (bounds.minY + bounds.maxY) / 2,
+            ),
+            ...arc,
+          ],
+          closed: true,
+          fill: true,
+        );
+      } else {
+        emitArc(
+          arc,
+          closed: t == _emrChord,
+          fill: t == _emrChord,
+          connectCurrent: t == _emrArcTo,
+          updateCurrent: t == _emrArcTo,
+        );
+      }
     } else if (t == _emrPolyBezier && params + 20 <= recEnd) {
       // Bounds(16) + count(4) + POINTL: start + n×(c1,c2,end).
       final count = bd.getUint32(params + 16, Endian.little);
@@ -787,6 +893,7 @@ class _EmfDcState {
     required this.fontUnderline,
     required this.fontStrikeThrough,
     required this.fontEscapementDegrees,
+    required this.arcClockwise,
     required this.curPt,
   });
 
@@ -808,5 +915,6 @@ class _EmfDcState {
   final bool fontUnderline;
   final bool fontStrikeThrough;
   final double fontEscapementDegrees;
+  final bool arcClockwise;
   final MetafilePoint? curPt;
 }

@@ -478,6 +478,179 @@ Uint8List _emfWithNestedDcRestore() {
   return bytes;
 }
 
+Uint8List _wmfWithArcFamily() {
+  final bytes = Uint8List(134);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint16(10, 1, Endian.little);
+  data.setUint32(12, 11, Endian.little);
+
+  var offset = 18;
+  data.setUint32(offset, 7, Endian.little);
+  data.setUint16(offset + 4, 0x02fc, Endian.little); // CREATEBRUSHINDIRECT
+  data.setUint16(offset + 6, 0, Endian.little); // BS_SOLID
+  data.setUint32(offset + 8, 0x000000ff, Endian.little); // red
+  offset += 14;
+  data.setUint32(offset, 4, Endian.little);
+  data.setUint16(offset + 4, 0x012d, Endian.little); // SELECTOBJECT
+  offset += 8;
+
+  void arcRecord(int function, int left, {bool sameEndpoints = false}) {
+    data.setUint32(offset, 11, Endian.little);
+    data.setUint16(offset + 4, function, Endian.little);
+    data.setInt16(
+      offset + 6,
+      sameEndpoints ? 50 : 0,
+      Endian.little,
+    ); // end y
+    data.setInt16(
+      offset + 8,
+      sameEndpoints ? left + 100 : left + 50,
+      Endian.little,
+    );
+    data.setInt16(offset + 10, 50, Endian.little); // start y
+    data.setInt16(offset + 12, left + 100, Endian.little);
+    data.setInt16(offset + 14, 100, Endian.little); // bottom
+    data.setInt16(offset + 16, left + 100, Endian.little); // right
+    data.setInt16(offset + 18, 0, Endian.little); // top
+    data.setInt16(offset + 20, left, Endian.little);
+    offset += 22;
+  }
+
+  arcRecord(0x0817, 0); // ARC
+  arcRecord(0x081a, 120); // PIE
+  arcRecord(0x0830, 240); // CHORD
+  arcRecord(0x081a, 360, sameEndpoints: true); // full PIE => ellipse
+  data.setUint32(offset, 3, Endian.little); // EOF
+  return bytes;
+}
+
+Uint8List _emfWithArcFamily() {
+  final bytes = Uint8List(364);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 540, Endian.little);
+  data.setInt32(20, 120, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  var offset = 88;
+  data.setUint32(offset, 39, Endian.little); // EMR_CREATEBRUSHINDIRECT
+  data.setUint32(offset + 4, 24, Endian.little);
+  data.setUint32(offset + 8, 1, Endian.little);
+  data.setUint32(offset + 12, 0, Endian.little); // BS_SOLID
+  data.setUint32(offset + 16, 0x000000ff, Endian.little); // red
+  offset += 24;
+  data.setUint32(offset, 37, Endian.little); // EMR_SELECTOBJECT
+  data.setUint32(offset + 4, 12, Endian.little);
+  data.setUint32(offset + 8, 1, Endian.little);
+  offset += 12;
+  data.setUint32(offset, 57, Endian.little); // EMR_SETARCDIRECTION
+  data.setUint32(offset + 4, 12, Endian.little);
+  data.setUint32(offset + 8, 2, Endian.little); // AD_CLOCKWISE
+  offset += 12;
+  data.setUint32(offset, 27, Endian.little); // EMR_MOVETOEX
+  data.setUint32(offset + 4, 16, Endian.little);
+  data.setInt32(offset + 8, -10, Endian.little);
+  data.setInt32(offset + 12, 50, Endian.little);
+  offset += 16;
+
+  void arcRecord(int type, int left) {
+    data.setUint32(offset, type, Endian.little);
+    data.setUint32(offset + 4, 40, Endian.little);
+    data.setInt32(offset + 8, left, Endian.little);
+    data.setInt32(offset + 12, 0, Endian.little);
+    data.setInt32(offset + 16, left + 100, Endian.little);
+    data.setInt32(offset + 20, 100, Endian.little);
+    data.setInt32(offset + 24, left + 100, Endian.little); // start x
+    data.setInt32(offset + 28, 50, Endian.little); // start y
+    data.setInt32(offset + 32, left + 50, Endian.little); // end x
+    data.setInt32(offset + 36, 0, Endian.little); // end y
+    offset += 40;
+  }
+
+  arcRecord(45, 0); // EMR_ARC
+  arcRecord(55, 110); // EMR_ARCTO
+  arcRecord(46, 220); // EMR_CHORD
+  arcRecord(47, 330); // EMR_PIE
+
+  data.setUint32(offset, 41, Endian.little); // EMR_ANGLEARC
+  data.setUint32(offset + 4, 28, Endian.little);
+  data.setInt32(offset + 8, 480, Endian.little);
+  data.setInt32(offset + 12, 50, Endian.little);
+  data.setUint32(offset + 16, 40, Endian.little);
+  data.setFloat32(offset + 20, 0, Endian.little);
+  data.setFloat32(offset + 24, 90, Endian.little);
+  offset += 28;
+
+  data.setUint32(offset, 54, Endian.little); // EMR_LINETO
+  data.setUint32(offset + 4, 16, Endian.little);
+  data.setInt32(offset + 8, 530, Endian.little);
+  data.setInt32(offset + 12, 60, Endian.little);
+  offset += 16;
+  data.setUint32(offset, 14, Endian.little); // EMR_EOF
+  data.setUint32(offset + 4, 8, Endian.little);
+  return bytes;
+}
+
+Uint8List _emfWithRestoredArcDirection() {
+  final bytes = Uint8List(168);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+  var offset = 88;
+  data.setUint32(offset, 33, Endian.little); // EMR_SAVEDC
+  data.setUint32(offset + 4, 8, Endian.little);
+  offset += 8;
+  data.setUint32(offset, 57, Endian.little); // EMR_SETARCDIRECTION
+  data.setUint32(offset + 4, 12, Endian.little);
+  data.setUint32(offset + 8, 2, Endian.little);
+  offset += 12;
+  data.setUint32(offset, 34, Endian.little); // EMR_RESTOREDC
+  data.setUint32(offset + 4, 12, Endian.little);
+  data.setInt32(offset + 8, -1, Endian.little);
+  offset += 12;
+  data.setUint32(offset, 45, Endian.little); // EMR_ARC
+  data.setUint32(offset + 4, 40, Endian.little);
+  data.setInt32(offset + 16, 100, Endian.little);
+  data.setInt32(offset + 20, 100, Endian.little);
+  data.setInt32(offset + 24, 100, Endian.little);
+  data.setInt32(offset + 28, 50, Endian.little);
+  data.setInt32(offset + 32, 50, Endian.little);
+  data.setInt32(offset + 36, 0, Endian.little);
+  offset += 40;
+  data.setUint32(offset, 14, Endian.little); // EMR_EOF
+  data.setUint32(offset + 4, 8, Endian.little);
+  return bytes;
+}
+
+Uint8List _emfAngleArcWithoutMoveTo() {
+  final bytes = Uint8List(124);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+  const record = 88;
+  data.setUint32(record, 41, Endian.little); // EMR_ANGLEARC
+  data.setUint32(record + 4, 28, Endian.little);
+  data.setInt32(record + 8, 50, Endian.little);
+  data.setInt32(record + 12, 50, Endian.little);
+  data.setUint32(record + 16, 40, Endian.little);
+  data.setFloat32(record + 20, 0, Endian.little);
+  data.setFloat32(record + 24, 90, Endian.little);
+  data.setUint32(116, 14, Endian.little); // EMR_EOF
+  data.setUint32(120, 8, Endian.little);
+  return bytes;
+}
+
 Uint8List _wmfWithUpdateCpText() {
   final bytes = Uint8List(78);
   final data = ByteData.sublistView(bytes);
@@ -695,6 +868,58 @@ void main() {
       expect(path.cornerRadiusY, 4);
     });
 
+    test('ARC, PIE and CHORD retain projected curves and closure', () {
+      final bytes = _wmfWithArcFamily();
+      final drawing = parseWmfDrawing(bytes);
+      final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+      expect(paths, hasLength(4));
+
+      expect(paths[0].closed, isFalse);
+      expect(paths[0].fill, isFalse);
+      expect(paths[0].points.first.x, closeTo(100, 1e-9));
+      expect(paths[0].points.first.y, closeTo(50, 1e-9));
+      expect(paths[0].points.last.x, closeTo(50, 1e-9));
+      expect(paths[0].points.last.y, closeTo(0, 1e-9));
+      expect(paths[0].points.every((p) => p.x >= 50 && p.y <= 50), isTrue);
+
+      expect(paths[1].closed, isTrue);
+      expect(paths[1].fill, isTrue);
+      expect(paths[1].fillArgb, 0xFFFF0000);
+      expect(paths[1].points.first.x, 170);
+      expect(paths[1].points.first.y, 50);
+      expect(paths[2].closed, isTrue);
+      expect(paths[2].fill, isTrue);
+      expect(paths[2].points.first.x, closeTo(340, 1e-9));
+      expect(paths[3].isEllipse, isTrue,
+          reason: 'WMF equal-endpoint PIE is a complete ellipse');
+
+      const part = '/visio/media/arc-family.wmf';
+      final page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 5,
+        heightInches: 2,
+        shapes: <VsdxShape>[
+          VsdxShapeFactory.picture(
+            id: 1,
+            pinX: 2.5,
+            pinY: 1,
+            width: 5,
+            height: 1,
+            imagePartName: part,
+          ),
+        ],
+      );
+      final images = ImageRegistry.empty.withImage(VsdxImage(
+        partName: part,
+        bytes: bytes,
+        mimeType: 'image/x-wmf',
+      ));
+      final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+      expect(svg, contains('fill="#ff0000"'));
+      expect(svg, contains('<ellipse cx="410" cy="50"'));
+    });
+
     test('nested SaveDC/RestoreDC restores pen and current position', () {
       final bytes = _wmfWithNestedDcRestore();
       final drawing = parseWmfDrawing(bytes);
@@ -782,6 +1007,90 @@ void main() {
       expect(path.points.first.y, 10);
       expect(path.cornerRadiusX, 6);
       expect(path.cornerRadiusY, 4);
+    });
+
+    test('arc family honours direction, closure and current position', () {
+      final bytes = _emfWithArcFamily();
+      final drawing = parseEmfDrawing(bytes);
+      final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+      expect(paths, hasLength(6));
+
+      expect(paths[0].closed, isFalse);
+      expect(paths[0].points.first.x, closeTo(100, 1e-9));
+      expect(paths[0].points.first.y, closeTo(50, 1e-9));
+      expect(paths[0].points.last.x, closeTo(50, 1e-9));
+      expect(paths[0].points.last.y, closeTo(0, 1e-9));
+      expect(paths[0].points.any((p) => p.x < 50 && p.y > 50), isTrue,
+          reason: 'clockwise right-to-top arc traverses the long side');
+
+      expect(paths[1].points.first.x, -10,
+          reason: 'ARCTO connects from the current position');
+      expect(paths[1].points.first.y, 50);
+      expect(paths[1].points.last.x, closeTo(160, 1e-9));
+      expect(paths[1].points.last.y, closeTo(0, 1e-9));
+      expect(paths[2].closed, isTrue);
+      expect(paths[2].fill, isTrue);
+      expect(paths[2].fillArgb, 0xFFFF0000);
+      expect(paths[3].closed, isTrue);
+      expect(paths[3].fill, isTrue);
+      expect(paths[3].points.first.x, 380,
+          reason: 'PIE begins at the ellipse centre');
+
+      expect(paths[4].points.first.x, closeTo(160, 1e-9));
+      expect(paths[4].points.first.y, closeTo(0, 1e-9));
+      expect(paths[4].points[1].x, closeTo(480, 1e-9));
+      expect(paths[4].points[1].y, closeTo(10, 1e-9));
+      expect(paths[4].points.last.x, closeTo(520, 1e-9));
+      expect(paths[4].points.last.y, closeTo(50, 1e-9));
+      expect(paths[5].points.first.x, closeTo(520, 1e-9),
+          reason: 'ANGLEARC updates the current position');
+      expect(paths[5].points.first.y, closeTo(50, 1e-9));
+
+      const part = '/visio/media/arc-family.emf';
+      final page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 6,
+        heightInches: 2,
+        shapes: <VsdxShape>[
+          VsdxShapeFactory.picture(
+            id: 1,
+            pinX: 3,
+            pinY: 1,
+            width: 6,
+            height: 1,
+            imagePartName: part,
+          ),
+        ],
+      );
+      final images = ImageRegistry.empty.withImage(VsdxImage(
+        partName: part,
+        bytes: bytes,
+        mimeType: 'image/x-emf',
+      ));
+      final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+      expect(svg, contains('fill="#ff0000"'));
+      expect(svg, contains('d="M -10 50 L 210 50'));
+    });
+
+    test('RestoreDC restores the authored arc direction', () {
+      final drawing = parseEmfDrawing(_emfWithRestoredArcDirection());
+      final path = drawing!.ops.whereType<MetafilePathOp>().single;
+      expect(path.points.first.x, closeTo(100, 1e-9));
+      expect(path.points.last.x, closeTo(50, 1e-9));
+      expect(path.points.every((p) => p.x >= 50 && p.y <= 50), isTrue,
+          reason: 'restored default direction uses the short upper quadrant');
+    });
+
+    test('ANGLEARC connects from the default GDI current position', () {
+      final drawing = parseEmfDrawing(_emfAngleArcWithoutMoveTo());
+      final path = drawing!.ops.whereType<MetafilePathOp>().single;
+      expect(path.points.first.x, 0);
+      expect(path.points.first.y, 0);
+      expect(path.points[1].x, closeTo(90, 1e-9));
+      expect(path.points[1].y, closeTo(50, 1e-9));
+      expect(path.points.last.x, closeTo(50, 1e-9));
+      expect(path.points.last.y, closeTo(10, 1e-9));
     });
 
     test('stock brushes select all LibreOffice fill colours and null', () {
