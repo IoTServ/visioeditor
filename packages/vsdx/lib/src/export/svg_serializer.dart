@@ -3331,6 +3331,7 @@ class VsdxToSvgSerializer {
     final dash = op.stroke && dashPattern != null && dashPattern.isNotEmpty
         ? ' stroke-dasharray="${dashPattern.map(_n).join(' ')}"'
         : '';
+    final fillRule = op.fill && op.evenOddFill ? ' fill-rule="evenodd"' : '';
     if ((op.isEllipse || op.cornerRadiusX != null) && op.points.length >= 2) {
       var minX = op.points.first.x, maxX = op.points.first.x;
       var minY = op.points.first.y, maxY = op.points.first.y;
@@ -3354,13 +3355,14 @@ class VsdxToSvgSerializer {
           '$indent<rect x="${_n(minX)}" y="${_n(minY)}" '
           'width="${_n(maxX - minX)}" height="${_n(maxY - minY)}" '
           'rx="${_n(cornerRx)}" ry="${_n(cornerRy)}" '
-          'fill="$fill" stroke="$stroke"$sw$dash/>',
+          'fill="$fill" stroke="$stroke"$sw$dash$fillRule/>',
         );
         return;
       }
       buf.writeln(
         '$indent<ellipse cx="${_n(cx)}" cy="${_n(cy)}" '
-        'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"$sw$dash/>',
+        'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"'
+        '$sw$dash$fillRule/>',
       );
       return;
     }
@@ -3370,8 +3372,17 @@ class VsdxToSvgSerializer {
       d.write(' L ${_n(op.points[i].x)} ${_n(op.points[i].y)}');
     }
     if (op.closed) d.write(' Z');
+    for (final contour in op.additionalContours) {
+      if (contour.points.isEmpty) continue;
+      d.write(' M ${_n(contour.points.first.x)} ${_n(contour.points.first.y)}');
+      for (var i = 1; i < contour.points.length; i++) {
+        d.write(' L ${_n(contour.points[i].x)} ${_n(contour.points[i].y)}');
+      }
+      if (contour.closed) d.write(' Z');
+    }
     buf.writeln(
-      '$indent<path d="$d" fill="$fill" stroke="$stroke"$sw$dash/>',
+      '$indent<path d="$d" fill="$fill" stroke="$stroke"'
+      '$sw$dash$fillRule/>',
     );
   }
 

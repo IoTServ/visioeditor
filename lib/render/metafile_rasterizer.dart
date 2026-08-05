@@ -66,7 +66,8 @@ void _paintPath(
     ..strokeCap = StrokeCap.round
     ..isAntiAlias = true;
 
-  final path = Path();
+  final path = Path()
+    ..fillType = op.evenOddFill ? PathFillType.evenOdd : PathFillType.nonZero;
   if ((op.isEllipse || op.cornerRadiusX != null) && op.points.length >= 2) {
     double minX = op.points.first.x, maxX = op.points.first.x;
     double minY = op.points.first.y, maxY = op.points.first.y;
@@ -94,11 +95,19 @@ void _paintPath(
       ));
     }
   } else {
-    path.moveTo(op.points.first.x, op.points.first.y);
-    for (var i = 1; i < op.points.length; i++) {
-      path.lineTo(op.points[i].x, op.points[i].y);
+    void addContour(List<MetafilePoint> points, {required bool closed}) {
+      if (points.isEmpty) return;
+      path.moveTo(points.first.x, points.first.y);
+      for (var i = 1; i < points.length; i++) {
+        path.lineTo(points[i].x, points[i].y);
+      }
+      if (closed) path.close();
     }
-    if (op.closed) path.close();
+
+    addContour(op.points, closed: op.closed);
+    for (final contour in op.additionalContours) {
+      addContour(contour.points, closed: contour.closed);
+    }
   }
   if (op.fill) {
     if (op.fillHatch == null) {

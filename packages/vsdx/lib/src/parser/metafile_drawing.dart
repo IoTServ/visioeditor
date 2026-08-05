@@ -40,6 +40,15 @@ class MetafileRect {
       ];
 }
 
+/// An additional figure in a compound GDI path.
+@immutable
+class MetafilePathContour {
+  const MetafilePathContour({required this.points, required this.closed});
+
+  final List<MetafilePoint> points;
+  final bool closed;
+}
+
 @immutable
 class MetafilePathOp {
   const MetafilePathOp({
@@ -56,6 +65,8 @@ class MetafilePathOp {
     this.cornerRadiusY,
     this.fillHatch,
     this.fillBackgroundArgb,
+    this.additionalContours = const <MetafilePathContour>[],
+    this.evenOddFill = false,
   });
 
   final List<MetafilePoint> points;
@@ -86,6 +97,12 @@ class MetafilePathOp {
   /// are present only for GDI `ROUNDRECT` records.
   final double? cornerRadiusX;
   final double? cornerRadiusY;
+
+  /// Further figures painted as part of the same compound GDI path.
+  final List<MetafilePathContour> additionalContours;
+
+  /// GDI `ALTERNATE` polygon fill mode; false represents `WINDING`.
+  final bool evenOddFill;
 }
 
 /// Convert the low `PS_STYLE_MASK` bits of a GDI pen into dash/gap lengths.

@@ -82,6 +82,90 @@ Uint8List _emfWithPolyDraw() {
   return bytes;
 }
 
+Uint8List _emfWithPathBracket(int fillMode) {
+  final out = BytesBuilder();
+  void u32(int value) {
+    final data = ByteData(4)..setUint32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  void i32(int value) {
+    final data = ByteData(4)..setInt32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  void pointRecord(int type, int x, int y) {
+    u32(type);
+    u32(16);
+    i32(x);
+    i32(y);
+  }
+
+  void emptyRecord(int type) {
+    u32(type);
+    u32(8);
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add(const <int>[0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+  u32(39); // EMR_CREATEBRUSHINDIRECT
+  u32(24);
+  u32(1);
+  u32(0);
+  u32(0x000000FF);
+  u32(0);
+  u32(37); // EMR_SELECTOBJECT
+  u32(12);
+  u32(1);
+  u32(19); // EMR_SETPOLYFILLMODE
+  u32(12);
+  u32(fillMode);
+  emptyRecord(59); // EMR_BEGINPATH
+  for (final point in const <(int, int)>[
+    (10, 10),
+    (90, 10),
+    (90, 90),
+    (10, 90),
+  ]) {
+    pointRecord(point == const (10, 10) ? 27 : 54, point.$1, point.$2);
+  }
+  emptyRecord(61); // EMR_CLOSEFIGURE
+  for (final point in const <(int, int)>[
+    (30, 30),
+    (70, 30),
+    (70, 70),
+    (30, 70),
+  ]) {
+    pointRecord(point == const (30, 30) ? 27 : 54, point.$1, point.$2);
+  }
+  emptyRecord(61);
+  emptyRecord(60); // EMR_ENDPATH
+  u32(63); // EMR_STROKEANDFILLPATH
+  u32(24);
+  i32(10);
+  i32(10);
+  i32(90);
+  i32(90);
+  u32(14);
+  u32(20);
+  u32(0);
+  u32(16);
+  u32(20);
+  return Uint8List.fromList(out.toBytes());
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -169,6 +253,22 @@ void main() {
     }
     expect(opaquePixels, greaterThan(100));
     image.dispose();
+  });
+
+  test('Canvas honours EMF ALTERNATE and WINDING compound path fill',
+      () async {
+    Future<int> alphaAtCenter(int fillMode) async {
+      final drawing = parseEmfDrawing(_emfWithPathBracket(fillMode))!;
+      final image = await rasterizeMetafileDrawing(drawing, maxEdge: 100);
+      final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final bytes = data!.buffer.asUint8List();
+      final alpha = bytes[(50 * image.width + 50) * 4 + 3];
+      image.dispose();
+      return alpha;
+    }
+
+    expect(await alphaAtCenter(1), 0, reason: 'ALTERNATE leaves a hole');
+    expect(await alphaAtCenter(2), 255, reason: 'WINDING fills the centre');
   });
 
   test('Canvas replays ExtTextOut per-glyph advances', () async {

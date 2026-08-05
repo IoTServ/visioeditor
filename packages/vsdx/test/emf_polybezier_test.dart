@@ -151,7 +151,7 @@ Uint8List _emfWithPolyBezierTo16() {
     out.addByte(0);
   }
 
-  // EMR_POLYLINE16 to seed current point at (0,50).
+  // EMR_POLYLINE16 draws independently and does not update the current point.
   u32(87);
   u32(36);
   i32(0);
@@ -163,6 +163,12 @@ Uint8List _emfWithPolyBezierTo16() {
   i16(50);
   i16(0);
   i16(50);
+
+  // EMR_MOVETOEX seeds the current point used by POLYBEZIERTO16.
+  u32(27);
+  u32(16);
+  i32(0);
+  i32(50);
 
   // EMR_POLYBEZIERTO16: type=88, count=3 → (c1,c2,end)
   u32(88);
@@ -226,6 +232,10 @@ Uint8List _emfWithPolyLineFamilies() {
   i32(20);
   // BEGINPATH is record type 59 and must not be mistaken for POLYLINETO.
   u32(59);
+  u32(8);
+  // Close the deliberately empty path bracket so the following records are
+  // ordinary drawing operations now that path brackets are supported.
+  u32(68); // EMR_ABORTPATH
   u32(8);
   u32(6);
   u32(44);
@@ -426,7 +436,7 @@ void main() {
     expect(paths.last.points.length, greaterThan(3));
   });
 
-  test('EMF POLYLINE (32-bit) and POLYLINETO16 continue from MoveTo', () {
+  test('EMF POLYLINE preserves and POLYLINETO16 uses current point', () {
     final out = BytesBuilder();
     void u32(int v) {
       final b = ByteData(4)..setUint32(0, v, Endian.little);
@@ -458,6 +468,12 @@ void main() {
       out.addByte(0);
     }
 
+    // POLYLINE must not replace this current point.
+    u32(27); // EMR_MOVETOEX
+    u32(16);
+    i32(5);
+    i32(5);
+
     // EMR_POLYLINE = 4, count=2 → size 8+16+4+2*8 = 44
     u32(4);
     u32(44);
@@ -470,6 +486,11 @@ void main() {
     i32(0);
     i32(50);
     i32(50);
+
+    u32(54); // EMR_LINETO must still begin at (5, 5).
+    u32(16);
+    i32(10);
+    i32(5);
 
     // EMR_MOVETOEX then POLYLINETO16 → size 8+16+4+2*4 = 36
     u32(27);
@@ -500,8 +521,9 @@ void main() {
     );
     expect(drawing, isNotNull);
     final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
-    expect(paths.length, greaterThanOrEqualTo(2));
+    expect(paths.length, greaterThanOrEqualTo(3));
     expect(paths.first.points.length, 2);
+    expect((paths[1].points.first.x, paths[1].points.first.y), (5, 5));
     expect(paths.last.points.first.x, 50);
     expect(paths.last.points.length, 3);
   });

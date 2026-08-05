@@ -24,6 +24,7 @@ const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
 const int _emrSetBkMode = 18;
+const int _emrSetPolyFillMode = 19;
 const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
 const int _emrSetBkColor = 25;
@@ -45,6 +46,13 @@ const int _emrLineTo = 54;
 const int _emrArcTo = 55;
 const int _emrPolyDraw = 56;
 const int _emrSetArcDirection = 57;
+const int _emrBeginPath = 59;
+const int _emrEndPath = 60;
+const int _emrCloseFigure = 61;
+const int _emrFillPath = 62;
+const int _emrStrokeAndFillPath = 63;
+const int _emrStrokePath = 64;
+const int _emrAbortPath = 68;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
 const int _emrPolyBezier16 = 85;
@@ -114,6 +122,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var textColor = 0xFF000000;
   var backgroundMode = 1; // TRANSPARENT
   var backgroundColor = 0xFFFFFFFF;
+  var polyFillMode = 1; // ALTERNATE (even-odd)
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
@@ -125,6 +134,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var arcClockwise = false;
   final ops = <Object>[];
   MetafilePoint? curPt;
+  var recordPath = false;
+  final pathFigures = <_EmfPathFigure>[];
   final savedStates = <_EmfDcState>[];
 
   _EmfDcState captureState() => _EmfDcState(
@@ -138,6 +149,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         textColor: textColor,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
+        polyFillMode: polyFillMode,
         textAlign: textAlign,
         fontFace: fontFace,
         fontHeight: fontHeight,
@@ -148,6 +160,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fontEscapementDegrees: fontEscapementDegrees,
         arcClockwise: arcClockwise,
         curPt: curPt,
+        pathFigures: pathFigures
+            .map((figure) => _EmfPathFigure.copy(figure))
+            .toList(growable: false),
       );
 
   void restoreState(int savedDc) {
@@ -170,6 +185,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     textColor = state.textColor;
     backgroundMode = state.backgroundMode;
     backgroundColor = state.backgroundColor;
+    polyFillMode = state.polyFillMode;
     textAlign = state.textAlign;
     fontFace = state.fontFace;
     fontHeight = state.fontHeight;
@@ -180,6 +196,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     fontEscapementDegrees = state.fontEscapementDegrees;
     arcClockwise = state.arcClockwise;
     curPt = state.curPt;
+    pathFigures
+      ..clear()
+      ..addAll(state.pathFigures.map(_EmfPathFigure.copy));
   }
 
   void ensurePts(Iterable<MetafilePoint> pts) {
@@ -192,26 +211,153 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     }
   }
 
-  void emitBezier(List<MetafilePoint> ctrl) {
+  void recordMoveTo(MetafilePoint point) {
+    if (pathFigures.isEmpty || pathFigures.last.points.isNotEmpty) {
+      pathFigures.add(_EmfPathFigure());
+    }
+    pathFigures.last.points.add(point);
+  }
+
+  void recordPathPoints(List<MetafilePoint> points, {required bool closed}) {
+    if (points.isEmpty) return;
+    if (closed) {
+      pathFigures.add(_EmfPathFigure(points: points, closed: true));
+      return;
+    }
+    if (pathFigures.isEmpty || pathFigures.last.closed) {
+      pathFigures.add(_EmfPathFigure());
+    }
+    final target = pathFigures.last.points;
+    var start = 0;
+    if (target.isNotEmpty &&
+        target.last.x == points.first.x &&
+        target.last.y == points.first.y) {
+      start = 1;
+    }
+    target.addAll(points.skip(start));
+  }
+
+  List<MetafilePoint> ellipsePoints(
+    double left,
+    double top,
+    double right,
+    double bottom,
+  ) {
+    final cx = (left + right) / 2;
+    final cy = (top + bottom) / 2;
+    final rx = (right - left).abs() / 2;
+    final ry = (bottom - top).abs() / 2;
+    return <MetafilePoint>[
+      for (var i = 0; i < 48; i++)
+        MetafilePoint(
+          cx + rx * math.cos(2 * math.pi * i / 48),
+          cy + ry * math.sin(2 * math.pi * i / 48),
+        ),
+    ];
+  }
+
+  List<MetafilePoint> roundedRectPoints(
+    double left,
+    double top,
+    double right,
+    double bottom,
+    double radiusX,
+    double radiusY,
+  ) {
+    final minRectX = math.min(left, right);
+    final maxRectX = math.max(left, right);
+    final minRectY = math.min(top, bottom);
+    final maxRectY = math.max(top, bottom);
+    final rx = math.min(radiusX.abs(), (maxRectX - minRectX) / 2);
+    final ry = math.min(radiusY.abs(), (maxRectY - minRectY) / 2);
+    if (rx == 0 || ry == 0) {
+      return <MetafilePoint>[
+        MetafilePoint(minRectX, minRectY),
+        MetafilePoint(maxRectX, minRectY),
+        MetafilePoint(maxRectX, maxRectY),
+        MetafilePoint(minRectX, maxRectY),
+      ];
+    }
+
+    final points = <MetafilePoint>[];
+    void addCorner(double cx, double cy, double startAngle) {
+      for (var i = 0; i <= 8; i++) {
+        final angle = startAngle + math.pi * i / 16;
+        points.add(MetafilePoint(
+          cx + rx * math.cos(angle),
+          cy + ry * math.sin(angle),
+        ));
+      }
+    }
+
+    addCorner(maxRectX - rx, minRectY + ry, -math.pi / 2);
+    addCorner(maxRectX - rx, maxRectY - ry, 0);
+    addCorner(minRectX + rx, maxRectY - ry, math.pi / 2);
+    addCorner(minRectX + rx, minRectY + ry, math.pi);
+    return points;
+  }
+
+  void paintRecordedPath({required bool stroke, required bool fill}) {
+    final figures = pathFigures
+        .where((figure) => figure.points.length >= 2)
+        .toList(growable: false);
+    pathFigures.clear();
+    if (figures.isEmpty) return;
+    for (final figure in figures) {
+      ensurePts(figure.points);
+    }
+    final useStroke = stroke && (penStyle & 0x0f) != 5;
+    final useFill = fill && (brushStyle == 0 || brushStyle == 2);
+    if (!useStroke && !useFill) return;
+    final first = figures.first;
+    ops.add(MetafilePathOp(
+      points: List<MetafilePoint>.of(first.points),
+      closed: first.closed && first.points.length > 2,
+      fill: useFill,
+      stroke: useStroke,
+      fillArgb: useFill ? brushColor : 0,
+      strokeArgb: useStroke ? penColor : 0,
+      strokeWidth: penWidth,
+      strokeDashPattern: penDashPattern,
+      fillHatch: useFill && brushStyle == 2 ? brushHatch : null,
+      fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
+          ? backgroundColor
+          : null,
+      additionalContours: <MetafilePathContour>[
+        for (final figure in figures.skip(1))
+          MetafilePathContour(
+            points: List<MetafilePoint>.of(figure.points),
+            closed: figure.closed && figure.points.length > 2,
+          ),
+      ],
+      evenOddFill: polyFillMode != 2,
+    ));
+  }
+
+  void emitBezier(
+    List<MetafilePoint> ctrl, {
+    bool updateCurrent = false,
+  }) {
     if (ctrl.length < 4) return;
     final dense = densifyPolyBezier(ctrl);
     ensurePts(dense);
-    curPt = dense.last;
+    if (updateCurrent) curPt = dense.last;
+    if (recordPath) {
+      recordPathPoints(dense, closed: false);
+      return;
+    }
     final stroke = (penStyle & 0x0f) != 5;
-    final fill = brushStyle == 0 || brushStyle == 2;
-    if (fill || stroke) {
+    if (stroke) {
       ops.add(MetafilePathOp(
         points: dense,
-        closed: fill,
-        fill: fill,
-        stroke: stroke,
-        fillArgb: fill ? brushColor : 0,
-        strokeArgb: stroke ? penColor : 0,
+        closed: false,
+        fill: false,
+        stroke: true,
+        fillArgb: 0,
+        strokeArgb: penColor,
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
-        fillHatch: brushStyle == 2 ? brushHatch : null,
-        fillBackgroundArgb:
-            brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        evenOddFill: polyFillMode != 2,
       ));
     }
   }
@@ -220,10 +366,16 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     List<MetafilePoint> pts, {
     required bool closed,
     bool allowFill = true,
+    bool recordIfActive = true,
+    bool updateCurrent = false,
   }) {
     if (pts.length < 2) return;
     ensurePts(pts);
-    curPt = pts.last;
+    if (updateCurrent) curPt = pts.last;
+    if (recordPath && recordIfActive) {
+      recordPathPoints(pts, closed: closed);
+      return;
+    }
     final fill = allowFill && closed && (brushStyle == 0 || brushStyle == 2);
     final stroke = (penStyle & 0x0f) != 5;
     if (fill || stroke) {
@@ -239,6 +391,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillHatch: brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        evenOddFill: polyFillMode != 2,
       ));
     }
   }
@@ -272,6 +425,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           List<MetafilePoint>.of(figure),
           closed: closed && figure.length > 2,
           allowFill: false,
+          recordIfActive: false,
         );
       }
       figure = <MetafilePoint>[];
@@ -334,6 +488,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         ? <MetafilePoint>[curPt ?? const MetafilePoint(0, 0), ...arc]
         : arc;
     ensurePts(points);
+    if (recordPath) {
+      recordPathPoints(points, closed: closed);
+      if (updateCurrent) curPt = arc.last;
+      return;
+    }
     final stroke = (penStyle & 0x0f) != 5;
     final useFill = fill && (brushStyle == 0 || brushStyle == 2);
     if (stroke || useFill) {
@@ -350,6 +509,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
             ? backgroundColor
             : null,
+        evenOddFill: polyFillMode != 2,
       ));
     }
     if (updateCurrent) curPt = arc.last;
@@ -383,6 +543,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       }
     } else if (t == _emrSetBkMode && params + 4 <= recEnd) {
       backgroundMode = bd.getUint32(params, Endian.little);
+    } else if (t == _emrSetPolyFillMode && params + 4 <= recEnd) {
+      final mode = bd.getUint32(params, Endian.little);
+      if (mode == 1 || mode == 2) polyFillMode = mode;
     } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
       backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetArcDirection && params + 4 <= recEnd) {
@@ -531,32 +694,40 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     } else if (t == _emrDeleteObject && params + 4 <= recEnd) {
       final ih = bd.getUint32(params, Endian.little);
       if (ih < objects.length) objects[ih] = null;
+    } else if (t == _emrBeginPath) {
+      pathFigures.clear();
+      recordPath = true;
+    } else if (t == _emrEndPath) {
+      recordPath = false;
+    } else if (t == _emrAbortPath) {
+      pathFigures.clear();
+      recordPath = false;
+    } else if (t == _emrCloseFigure) {
+      if (pathFigures.isNotEmpty) pathFigures.last.closed = true;
+    } else if (t == _emrFillPath) {
+      paintRecordedPath(stroke: false, fill: true);
+    } else if (t == _emrStrokeAndFillPath) {
+      paintRecordedPath(stroke: true, fill: true);
+    } else if (t == _emrStrokePath) {
+      paintRecordedPath(stroke: true, fill: false);
     } else if (t == _emrMoveToEx && params + 8 <= recEnd) {
       curPt = MetafilePoint(
         bd.getInt32(params, Endian.little).toDouble(),
         bd.getInt32(params + 4, Endian.little).toDouble(),
       );
       ensurePts([curPt!]);
+      if (recordPath) recordMoveTo(curPt!);
     } else if (t == _emrLineTo && params + 8 <= recEnd) {
       final end = MetafilePoint(
         bd.getInt32(params, Endian.little).toDouble(),
         bd.getInt32(params + 4, Endian.little).toDouble(),
       );
       if (curPt != null) {
-        ensurePts([curPt!, end]);
-        final stroke = (penStyle & 0x0f) != 5;
-        if (stroke) {
-          ops.add(MetafilePathOp(
-            points: <MetafilePoint>[curPt!, end],
-            closed: false,
-            fill: false,
-            stroke: true,
-            fillArgb: 0,
-            strokeArgb: penColor,
-            strokeWidth: penWidth,
-            strokeDashPattern: penDashPattern,
-          ));
-        }
+        emitPolyline(
+          <MetafilePoint>[curPt!, end],
+          closed: false,
+          updateCurrent: true,
+        );
       }
       curPt = end;
     } else if (t == _emrAngleArc && params + 20 <= recEnd) {
@@ -631,7 +802,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final count = bd.getUint32(params + 16, Endian.little);
       final ctrl = _readPoints32(bd, params + 20, recEnd, count);
       if (curPt != null && ctrl.length >= 3) {
-        emitBezier(<MetafilePoint>[curPt!, ...ctrl]);
+        emitBezier(<MetafilePoint>[curPt!, ...ctrl], updateCurrent: true);
       }
     } else if (t == _emrPolyBezier16 && params + 20 <= recEnd) {
       // Bounds(16) + count(4) + POINTS: start + n×(c1,c2,end).
@@ -643,7 +814,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final count = bd.getUint32(params + 16, Endian.little);
       final ctrl = _readPoints16(bd, params + 20, recEnd, count);
       if (curPt != null && ctrl.length >= 3) {
-        emitBezier(<MetafilePoint>[curPt!, ...ctrl]);
+        emitBezier(<MetafilePoint>[curPt!, ...ctrl], updateCurrent: true);
       }
     } else if ((t == _emrPolyDraw || t == _emrPolyDraw16) &&
         params + 20 <= recEnd) {
@@ -679,13 +850,21 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final count = bd.getUint32(params + 16, Endian.little);
       final pts = _readPoints32(bd, params + 20, recEnd, count);
       if (curPt != null && pts.isNotEmpty) {
-        emitPolyline(<MetafilePoint>[curPt!, ...pts], closed: false);
+        emitPolyline(
+          <MetafilePoint>[curPt!, ...pts],
+          closed: false,
+          updateCurrent: true,
+        );
       }
     } else if (t == _emrPolylineTo16 && params + 20 <= recEnd) {
       final count = bd.getUint32(params + 16, Endian.little);
       final pts = _readPoints16(bd, params + 20, recEnd, count);
       if (curPt != null && pts.isNotEmpty) {
-        emitPolyline(<MetafilePoint>[curPt!, ...pts], closed: false);
+        emitPolyline(
+          <MetafilePoint>[curPt!, ...pts],
+          closed: false,
+          updateCurrent: true,
+        );
       }
     } else if ((t == _emrPolyPolygon || t == _emrPolyPolyline) &&
         params + 24 <= recEnd) {
@@ -734,7 +913,20 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         MetafilePoint(right, bottom),
         MetafilePoint(left, bottom),
       ];
-      ensurePts(pts);
+      final pathPoints = roundedRectPoints(
+        left,
+        top,
+        right,
+        bottom,
+        cornerWidth,
+        cornerHeight,
+      );
+      ensurePts(pathPoints);
+      if (recordPath) {
+        recordPathPoints(pathPoints, closed: true);
+        offset = recEnd;
+        continue;
+      }
       final fill = brushStyle == 0 || brushStyle == 2;
       final stroke = (penStyle & 0x0f) != 5;
       if (fill || stroke) {
@@ -752,6 +944,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillHatch: brushStyle == 2 ? brushHatch : null,
           fillBackgroundArgb:
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+          evenOddFill: polyFillMode != 2,
         ));
       }
     } else if ((t == _emrRectangle || t == _emrEllipse) &&
@@ -766,8 +959,14 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         MetafilePoint(right, bottom),
         MetafilePoint(left, bottom),
       ];
-      ensurePts(pts);
-      curPt = MetafilePoint(right, bottom);
+      final pathPoints =
+          t == _emrEllipse ? ellipsePoints(left, top, right, bottom) : pts;
+      ensurePts(pathPoints);
+      if (recordPath) {
+        recordPathPoints(pathPoints, closed: true);
+        offset = recEnd;
+        continue;
+      }
       final fill = brushStyle == 0 || brushStyle == 2;
       final stroke = (penStyle & 0x0f) != 5;
       if (fill || stroke) {
@@ -784,6 +983,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillHatch: brushStyle == 2 ? brushHatch : null,
           fillBackgroundArgb:
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+          evenOddFill: polyFillMode != 2,
         ));
       }
     } else if (t == _emrExtTextOutW && params + 32 <= recEnd) {
@@ -982,6 +1182,19 @@ class _EmfFont extends _EmfObject {
   final double escapementDegrees;
 }
 
+class _EmfPathFigure {
+  _EmfPathFigure({List<MetafilePoint>? points, this.closed = false})
+      : points =
+            points == null ? <MetafilePoint>[] : List<MetafilePoint>.of(points);
+
+  _EmfPathFigure.copy(_EmfPathFigure other)
+      : points = List<MetafilePoint>.of(other.points),
+        closed = other.closed;
+
+  final List<MetafilePoint> points;
+  bool closed;
+}
+
 class _EmfDcState {
   const _EmfDcState({
     required this.penColor,
@@ -994,6 +1207,7 @@ class _EmfDcState {
     required this.textColor,
     required this.backgroundMode,
     required this.backgroundColor,
+    required this.polyFillMode,
     required this.textAlign,
     required this.fontFace,
     required this.fontHeight,
@@ -1004,6 +1218,7 @@ class _EmfDcState {
     required this.fontEscapementDegrees,
     required this.arcClockwise,
     required this.curPt,
+    required this.pathFigures,
   });
 
   final int penColor;
@@ -1016,6 +1231,7 @@ class _EmfDcState {
   final int textColor;
   final int backgroundMode;
   final int backgroundColor;
+  final int polyFillMode;
   final int textAlign;
   final String? fontFace;
   final double fontHeight;
@@ -1026,4 +1242,5 @@ class _EmfDcState {
   final double fontEscapementDegrees;
   final bool arcClockwise;
   final MetafilePoint? curPt;
+  final List<_EmfPathFigure> pathFigures;
 }
