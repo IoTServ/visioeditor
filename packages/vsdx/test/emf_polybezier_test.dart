@@ -291,6 +291,106 @@ Uint8List _emfWithPolyLineFamilies() {
   return Uint8List.fromList(out.toBytes());
 }
 
+Uint8List _emfWithPolyDraw({
+  required bool shortPoints,
+  bool oversizedCount = false,
+}) {
+  final out = BytesBuilder();
+  void u32(int v) {
+    final b = ByteData(4)..setUint32(0, v, Endian.little);
+    out.add(b.buffer.asUint8List());
+  }
+
+  void i32(int v) {
+    final b = ByteData(4)..setInt32(0, v, Endian.little);
+    out.add(b.buffer.asUint8List());
+  }
+
+  void i16(int v) {
+    final b = ByteData(2)..setInt16(0, v, Endian.little);
+    out.add(b.buffer.asUint8List());
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add([0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+
+  u32(shortPoints ? 92 : 56); // EMR_POLYDRAW16 / EMR_POLYDRAW
+  if (oversizedCount) {
+    u32(28);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    u32(0xFFFFFFFF);
+
+    // A valid following record must still parse after the damaged POLYDRAW.
+    u32(4); // EMR_POLYLINE
+    u32(44);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    u32(2);
+    i32(10);
+    i32(10);
+    i32(90);
+    i32(90);
+  } else {
+    u32(shortPoints ? 64 : 92);
+    i32(0);
+    i32(0);
+    i32(100);
+    i32(100);
+    u32(7);
+    const points = <(int, int)>[
+      (10, 50),
+      (30, 20),
+      (50, 50),
+      (60, 50),
+      (70, 10),
+      (90, 90),
+      (100, 50),
+    ];
+    for (final point in points) {
+      if (shortPoints) {
+        i16(point.$1);
+        i16(point.$2);
+      } else {
+        i32(point.$1);
+        i32(point.$2);
+      }
+    }
+    // Move, line, close-line; move, cubic controls/end with close on endpoint.
+    out.add(<int>[0x06, 0x02, 0x03, 0x06, 0x04, 0x04, 0x05]);
+    out.addByte(0); // DWORD record padding.
+
+    // POLYDRAW updates the current point to the cubic endpoint.
+    u32(54); // EMR_LINETO
+    u32(16);
+    i32(90);
+    i32(100);
+  }
+
+  u32(14);
+  u32(20);
+  u32(0);
+  u32(16);
+  u32(20);
+  return Uint8List.fromList(out.toBytes());
+}
+
 void main() {
   test('EMF POLYBEZIER16 densifies into a stroked polyline', () {
     final drawing = parseMetafileDrawing(
@@ -463,6 +563,76 @@ void main() {
       hasLength(2),
       reason: 'the two EMR_POLYPOLYGON16 paths remain closed',
     );
+  });
+
+  test('EMF POLYDRAW variants replay line, cubic, close and current point', () {
+    for (final shortPoints in <bool>[false, true]) {
+      final bytes = _emfWithPolyDraw(shortPoints: shortPoints);
+      final drawing = parseMetafileDrawing(
+        bytes,
+        mimeType: 'image/x-emf',
+      );
+      expect(drawing, isNotNull);
+      final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+      expect(paths, hasLength(3));
+
+      expect(paths[0].points, hasLength(3));
+      expect(paths[0].closed, isTrue);
+      expect(paths[0].fill, isFalse,
+          reason: 'LibreOffice POLYDRAW uses StrokeAndFillPath(true, false)');
+      expect(paths[0].stroke, isTrue);
+
+      expect(paths[1].points.length, greaterThan(4));
+      expect(paths[1].closed, isTrue);
+      expect(paths[1].fill, isFalse);
+      expect((paths[1].points.last.x, paths[1].points.last.y), (100, 50));
+
+      expect(paths[2].closed, isFalse);
+      expect((paths[2].points.first.x, paths[2].points.first.y), (100, 50));
+      expect((paths[2].points.last.x, paths[2].points.last.y), (90, 100));
+    }
+  });
+
+  test('EMF POLYDRAW reaches SVG and ignores an oversized damaged count', () {
+    final bytes = _emfWithPolyDraw(shortPoints: false);
+    const part = '/visio/media/polydraw.emf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 2,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: bytes,
+      mimeType: 'image/x-emf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(RegExp(r'<path d=').allMatches(svg), hasLength(4));
+    expect(RegExp(r' Z"').allMatches(svg), hasLength(2));
+    expect(
+      RegExp(r'fill="none" stroke="#000000"').allMatches(svg).length,
+      greaterThanOrEqualTo(3),
+    );
+
+    final damaged = parseMetafileDrawing(
+      _emfWithPolyDraw(shortPoints: false, oversizedCount: true),
+      mimeType: 'image/x-emf',
+    );
+    expect(damaged, isNotNull);
+    final surviving = damaged!.ops.whereType<MetafilePathOp>().single;
+    expect((surviving.points.first.x, surviving.points.first.y), (10, 10));
+    expect((surviving.points.last.x, surviving.points.last.y), (90, 90));
   });
 
   test('EMF MOVETOEX + LINETO emit a stroked segment', () {

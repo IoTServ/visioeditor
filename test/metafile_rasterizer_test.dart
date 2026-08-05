@@ -31,6 +31,57 @@ Uint8List _emfWithStockGrayBrush() {
   return bytes;
 }
 
+Uint8List _emfWithPolyDraw() {
+  final bytes = Uint8List(216);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 100, Endian.little);
+  data.setInt32(20, 100, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  const record = 88;
+  data.setUint32(record, 56, Endian.little); // EMR_POLYDRAW
+  data.setUint32(record + 4, 92, Endian.little);
+  data.setInt32(record + 16, 100, Endian.little);
+  data.setInt32(record + 20, 100, Endian.little);
+  data.setUint32(record + 24, 7, Endian.little);
+  const points = <(int, int)>[
+    (10, 50),
+    (30, 20),
+    (50, 50),
+    (60, 50),
+    (70, 10),
+    (90, 90),
+    (100, 50),
+  ];
+  var pointOffset = record + 28;
+  for (final point in points) {
+    data.setInt32(pointOffset, point.$1, Endian.little);
+    data.setInt32(pointOffset + 4, point.$2, Endian.little);
+    pointOffset += 8;
+  }
+  bytes.setRange(pointOffset, pointOffset + 7, const <int>[
+    0x06,
+    0x02,
+    0x03,
+    0x06,
+    0x04,
+    0x04,
+    0x05,
+  ]);
+
+  const lineTo = 180;
+  data.setUint32(lineTo, 54, Endian.little); // EMR_LINETO
+  data.setUint32(lineTo + 4, 16, Endian.little);
+  data.setInt32(lineTo + 8, 90, Endian.little);
+  data.setInt32(lineTo + 12, 100, Endian.little);
+  const eof = 196;
+  data.setUint32(eof, 14, Endian.little);
+  data.setUint32(eof + 4, 20, Endian.little);
+  return bytes;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -100,6 +151,23 @@ void main() {
     expect(channelAt(20, 20, 2), inInclusiveRange(126, 130));
     expect(channelAt(20, 20, 3), 255);
     expect(channelAt(5, 5, 3), 0);
+    image.dispose();
+  });
+
+  test('Canvas replays EMF POLYDRAW line and cubic figures', () async {
+    final drawing = parseEmfDrawing(_emfWithPolyDraw());
+    expect(drawing, isNotNull);
+    expect(drawing!.ops.whereType<MetafilePathOp>(), hasLength(3));
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 100);
+    expect(image, isNotNull);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(data, isNotNull);
+    final bytes = data!.buffer.asUint8List();
+    var opaquePixels = 0;
+    for (var i = 3; i < bytes.length; i += 4) {
+      if (bytes[i] != 0) opaquePixels++;
+    }
+    expect(opaquePixels, greaterThan(100));
     image.dispose();
   });
 

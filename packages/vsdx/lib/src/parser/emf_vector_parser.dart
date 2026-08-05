@@ -3,7 +3,7 @@
 /// Prefer [extractEmfEmbeddedBitmap] when the file is a thin wrapper around a
 /// DIB. This parser covers the GDI path used by OLE `\x02OlePres000` previews
 /// and pure-vector ForeignData: pens/brushes, MOVETOEX / LINETO,
-/// POLYBEZIER* / POLYLINE* / POLYGON* (32-bit and 16-bit, incl. *TO),
+/// POLYBEZIER* / POLYDRAW* / POLYLINE* / POLYGON* (32/16-bit, incl. *TO),
 /// POLYPOLYLINE* / POLYPOLYGON*, rectangle/ellipse, and ExtTextOutW.
 library;
 
@@ -43,6 +43,7 @@ const int _emrChord = 46;
 const int _emrPie = 47;
 const int _emrLineTo = 54;
 const int _emrArcTo = 55;
+const int _emrPolyDraw = 56;
 const int _emrSetArcDirection = 57;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
@@ -53,6 +54,7 @@ const int _emrPolyBezierTo16 = 88;
 const int _emrPolylineTo16 = 89;
 const int _emrPolyPolyline16 = 90;
 const int _emrPolyPolygon16 = 91;
+const int _emrPolyDraw16 = 92;
 const int _emrExtCreatePen = 95;
 
 bool looksLikeEmf(Uint8List b) =>
@@ -214,11 +216,15 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     }
   }
 
-  void emitPolyline(List<MetafilePoint> pts, {required bool closed}) {
+  void emitPolyline(
+    List<MetafilePoint> pts, {
+    required bool closed,
+    bool allowFill = true,
+  }) {
     if (pts.length < 2) return;
     ensurePts(pts);
     curPt = pts.last;
-    final fill = closed && (brushStyle == 0 || brushStyle == 2);
+    final fill = allowFill && closed && (brushStyle == 0 || brushStyle == 2);
     final stroke = (penStyle & 0x0f) != 5;
     if (fill || stroke) {
       ops.add(MetafilePathOp(
@@ -235,6 +241,85 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
       ));
     }
+  }
+
+  void emitPolyDraw(List<MetafilePoint> points, List<int> pointTypes) {
+    if (points.length != pointTypes.length || points.isEmpty) return;
+    const moveTo = 0x06;
+    const lineTo = 0x02;
+    const bezierTo = 0x04;
+    const closeFigure = 0x01;
+
+    // Like LibreOffice, reject the whole record before changing the current
+    // point when a Bezier run is not made of complete (control, control, end)
+    // triples. A damaged preview must not abort parsing later EMF records.
+    var bezierCount = 0;
+    for (final pointType in pointTypes) {
+      if (pointType != moveTo && (pointType & bezierTo) != 0) {
+        bezierCount++;
+      } else if (bezierCount % 3 == 0) {
+        bezierCount = 0;
+      } else {
+        return;
+      }
+    }
+    if (bezierCount % 3 != 0) return;
+
+    var figure = <MetafilePoint>[];
+    void flushFigure({required bool closed}) {
+      if (figure.length >= 2) {
+        emitPolyline(
+          List<MetafilePoint>.of(figure),
+          closed: closed && figure.length > 2,
+          allowFill: false,
+        );
+      }
+      figure = <MetafilePoint>[];
+    }
+
+    var i = 0;
+    while (i < points.length) {
+      final point = points[i];
+      final pointType = pointTypes[i];
+      if (pointType == moveTo) {
+        flushFigure(closed: false);
+        figure.add(point);
+        curPt = point;
+        i++;
+        continue;
+      }
+      if ((pointType & lineTo) != 0) {
+        if (figure.isEmpty) {
+          figure.add(curPt ?? const MetafilePoint(0, 0));
+        }
+        figure.add(point);
+        curPt = point;
+        if ((pointType & closeFigure) != 0) {
+          flushFigure(closed: true);
+        }
+        i++;
+        continue;
+      }
+      if ((pointType & bezierTo) != 0 && i + 2 < points.length) {
+        if (figure.isEmpty) {
+          figure.add(curPt ?? const MetafilePoint(0, 0));
+        }
+        final dense = densifyPolyBezier(<MetafilePoint>[
+          figure.last,
+          points[i],
+          points[i + 1],
+          points[i + 2],
+        ]);
+        figure.addAll(dense.skip(1));
+        curPt = points[i + 2];
+        final close = (pointTypes[i + 2] & closeFigure) != 0;
+        i += 3;
+        if (close) flushFigure(closed: true);
+        continue;
+      }
+      i++;
+    }
+    flushFigure(closed: false);
   }
 
   void emitArc(
@@ -559,6 +644,24 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final ctrl = _readPoints16(bd, params + 20, recEnd, count);
       if (curPt != null && ctrl.length >= 3) {
         emitBezier(<MetafilePoint>[curPt!, ...ctrl]);
+      }
+    } else if ((t == _emrPolyDraw || t == _emrPolyDraw16) &&
+        params + 20 <= recEnd) {
+      // Bounds(16) + count(4) + POINTL/POINTS[count] + type bytes[count].
+      final count = bd.getUint32(params + 16, Endian.little);
+      final pointSize = t == _emrPolyDraw ? 8 : 4;
+      final pointsOffset = params + 20;
+      if (count <= (recEnd - pointsOffset) ~/ pointSize) {
+        final typesOffset = pointsOffset + count * pointSize;
+        if (count <= recEnd - typesOffset) {
+          final points = t == _emrPolyDraw
+              ? _readPoints32(bd, pointsOffset, recEnd, count)
+              : _readPoints16(bd, pointsOffset, recEnd, count);
+          final pointTypes = <int>[
+            for (var i = 0; i < count; i++) bd.getUint8(typesOffset + i),
+          ];
+          emitPolyDraw(points, pointTypes);
+        }
       }
     } else if ((t == _emrPolygon || t == _emrPolyline) &&
         params + 20 <= recEnd) {
