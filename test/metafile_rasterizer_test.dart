@@ -169,6 +169,27 @@ Uint8List _emfWithPathBracket(int fillMode) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('Canvas replays pixels as crisp device cells in paint order', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 4,
+      maxY: 4,
+      ops: <Object>[
+        MetafilePixelOp(x: 1, y: 1, argb: 0xffff0000),
+        MetafilePixelOp(x: 1, y: 1, argb: 0xff0000ff),
+      ],
+    );
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 40);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    final center = (15 * image.width + 15) * 4;
+    expect(bytes.sublist(center, center + 4), <int>[0, 0, 255, 255]);
+    final outside = (5 * image.width + 5) * 4;
+    expect(bytes[outside + 3], 0);
+    image.dispose();
+  });
+
   test('Canvas replays opaque GDI hatched brush foreground and background',
       () async {
     const drawing = MetafileDrawing(

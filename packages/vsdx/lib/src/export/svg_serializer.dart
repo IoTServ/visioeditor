@@ -3282,7 +3282,13 @@ class VsdxToSvgSerializer {
     );
     for (var opIndex = 0; opIndex < drawing.ops.length; opIndex++) {
       final op = drawing.ops[opIndex];
-      if (op is MetafilePathOp) {
+      if (op is MetafilePixelOp) {
+        buf.writeln(
+          '$indent  <rect x="${_n(op.x)}" y="${_n(op.y)}" width="1" '
+          'height="1" fill="${_argbCss(op.argb)}" '
+          'shape-rendering="crispEdges"/>',
+        );
+      } else if (op is MetafilePathOp) {
         String? fillOverride;
         if (op.fill && op.fillHatch != null) {
           final patternId = 'wmf-hatch-$idScope-$opIndex';

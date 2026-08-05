@@ -33,7 +33,14 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   canvas.translate(-drawing.minX, -drawing.minY);
 
   for (final op in drawing.ops) {
-    if (op is MetafilePathOp) {
+    if (op is MetafilePixelOp) {
+      canvas.drawRect(
+        Rect.fromLTWH(op.x, op.y, 1, 1),
+        Paint()
+          ..color = Color(op.argb)
+          ..isAntiAlias = false,
+      );
+    } else if (op is MetafilePathOp) {
       _paintPath(canvas, op, deviceScale: scale);
     } else if (op is MetafileTextOp) {
       _paintText(canvas, op);

@@ -24,6 +24,7 @@ const int _emrPolyPolygon = 8;
 const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
+const int _emrSetPixelV = 15;
 const int _emrSetBkMode = 18;
 const int _emrSetPolyFillMode = 19;
 const int _emrSetTextAlign = 22;
@@ -759,6 +760,19 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         maxY = cy.abs();
         haveBounds = true;
       }
+    } else if (t == _emrSetPixelV && params + 12 <= recEnd) {
+      final x = bd.getInt32(params, Endian.little).toDouble();
+      final y = bd.getInt32(params + 4, Endian.little).toDouble();
+      ops.add(MetafilePixelOp(
+        x: x,
+        y: y,
+        argb: _rgbToArgb(bd.getUint32(params + 8, Endian.little)),
+      ));
+      // A GDI pixel occupies the half-open device cell [x,x+1)×[y,y+1).
+      ensurePts(<MetafilePoint>[
+        MetafilePoint(x, y),
+        MetafilePoint(x + 1, y + 1),
+      ]);
     } else if (t == _emrSetBkMode && params + 4 <= recEnd) {
       backgroundMode = bd.getUint32(params, Endian.little);
     } else if (t == _emrSetPolyFillMode && params + 4 <= recEnd) {

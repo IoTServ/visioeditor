@@ -40,6 +40,18 @@ class MetafileRect {
       ];
 }
 
+/// A single GDI device pixel retained in metafile paint order.
+@immutable
+class MetafilePixelOp {
+  const MetafilePixelOp({required this.x, required this.y, required this.argb});
+
+  final double x;
+  final double y;
+
+  /// 0xAARRGGBB
+  final int argb;
+}
+
 /// An additional figure in a compound GDI path.
 @immutable
 class MetafilePathContour {
@@ -239,7 +251,8 @@ class MetafileDrawing {
   final double maxX;
   final double maxY;
 
-  /// Mixed [MetafilePathOp] / [MetafileTextOp] in paint order.
+  /// Mixed [MetafilePixelOp] / [MetafilePathOp] / [MetafileTextOp] in paint
+  /// order.
   final List<Object> ops;
 
   double get width => (maxX - minX).abs().clamp(1.0, 1e9);
