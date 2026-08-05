@@ -4,7 +4,7 @@
 /// DIB. This parser covers the GDI path used by OLE `\x02OlePres000` previews
 /// and pure-vector ForeignData: pens/brushes, MOVETOEX / LINETO,
 /// POLYBEZIER* / POLYDRAW* / POLYLINE* / POLYGON* (32/16-bit, incl. *TO),
-/// POLYPOLYLINE* / POLYPOLYGON*, rectangle/ellipse, and ExtTextOutW.
+/// POLYPOLYLINE* / POLYPOLYGON*, rectangle/ellipse, and EMF text records.
 library;
 
 import 'dart:math' as math;
@@ -68,6 +68,7 @@ const int _emrPolyDraw16 = 92;
 const int _emrExtCreatePen = 95;
 const int _emrPolyTextOutA = 96;
 const int _emrPolyTextOutW = 97;
+const int _emrSmallTextOut = 108;
 
 bool looksLikeEmf(Uint8List b) =>
     b.length > 0x2B &&
@@ -651,6 +652,87 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     }
   }
 
+  void emitSmallText(int params, int recEnd) {
+    // EMR_SMALLTEXTOUT stores the string inline after its fixed fields and an
+    // optional rectangle. Unlike EMRTEXT, ETO_NO_RECT removes the rectangle
+    // from the binary layout and ETO_SMALL_CHARS selects the active ANSI
+    // charset instead of UTF-16LE.
+    if (params + 28 > recEnd) return;
+    final recordX = bd.getInt32(params, Endian.little).toDouble();
+    final recordY = bd.getInt32(params + 4, Endian.little).toDouble();
+    final sourceLength = bd.getUint32(params + 8, Endian.little);
+    if (sourceLength >= 4096) return;
+    final options = bd.getUint32(params + 12, Endian.little);
+    final noRect = (options & 0x0100) != 0; // ETO_NO_RECT
+    final smallChars = (options & 0x0200) != 0; // ETO_SMALL_CHARS
+    var stringAt = params + 28;
+    MetafileRect? recordRect;
+    if (!noRect) {
+      if (stringAt + 16 > recEnd) return;
+      recordRect = MetafileRect(
+        bd.getInt32(stringAt, Endian.little).toDouble(),
+        bd.getInt32(stringAt + 4, Endian.little).toDouble(),
+        bd.getInt32(stringAt + 8, Endian.little).toDouble(),
+        bd.getInt32(stringAt + 12, Endian.little).toDouble(),
+      );
+      stringAt += 16;
+    }
+
+    late final String text;
+    if (smallChars) {
+      if (sourceLength > recEnd - stringAt) return;
+      text = decodeWindowsLegacyText(
+        emf.sublist(stringAt, stringAt + sourceLength),
+        fontEncoding,
+      ).replaceAll('\u0000', '');
+    } else {
+      if (sourceLength > (recEnd - stringAt) ~/ 2) return;
+      text = String.fromCharCodes(<int>[
+        for (var i = 0; i < sourceLength; i++)
+          bd.getUint16(stringAt + i * 2, Endian.little),
+      ]).replaceAll('\u0000', '');
+    }
+    if (text.trim().isEmpty &&
+        !((options & 0x0002) != 0 && recordRect != null)) {
+      return;
+    }
+
+    final useCurrentPoint = (textAlign & 0x01) != 0 && curPt != null;
+    final x = useCurrentPoint ? curPt!.x : recordX;
+    final y = useCurrentPoint ? curPt!.y : recordY;
+    final textOp = MetafileTextOp(
+      text: text,
+      x: x,
+      y: y,
+      fontHeight: fontHeight,
+      argb: textColor,
+      face: fontFace,
+      align: textAlign,
+      // LibreOffice temporarily forces transparent text background when
+      // ETO_NO_RECT is set, even if the DC background mode is OPAQUE.
+      backgroundArgb: noRect
+          ? null
+          : backgroundMode == 2 || (options & 0x0002) != 0
+              ? backgroundColor
+              : null,
+      opaqueRect: (options & 0x0002) != 0 ? recordRect : null,
+      clipRect: (options & 0x0004) != 0 ? recordRect : null,
+      fontWeight: fontWeight,
+      italic: fontItalic,
+      underline: fontUnderline,
+      strikeThrough: fontStrikeThrough,
+      escapementDegrees: fontEscapementDegrees,
+    );
+    ensurePts(<MetafilePoint>[MetafilePoint(x, y)]);
+    final opaqueRect = textOp.opaqueRect;
+    if (opaqueRect != null) ensurePts(opaqueRect.corners);
+    ops.add(textOp);
+    if ((textAlign & 0x01) != 0) {
+      curPt = metafileTextUpdatedCurrentPoint(textOp);
+      ensurePts(<MetafilePoint>[curPt!]);
+    }
+  }
+
   var offset = hdrSize;
   while (offset + 8 <= emf.length) {
     final t = bd.getUint32(offset, Endian.little);
@@ -1145,6 +1227,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           textOff += 40;
         }
       }
+    } else if (t == _emrSmallTextOut) {
+      emitSmallText(params, recEnd);
     }
 
     offset = recEnd;
