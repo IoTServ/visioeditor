@@ -351,6 +351,133 @@ Uint8List _emfWithStockBrush(int stock) {
   return bytes;
 }
 
+Uint8List _wmfWithNestedDcRestore() {
+  final bytes = Uint8List(146);
+  final data = ByteData.sublistView(bytes);
+  data.setUint16(0, 1, Endian.little);
+  data.setUint16(2, 9, Endian.little);
+  data.setUint16(4, 0x0300, Endian.little);
+  data.setUint32(6, bytes.length ~/ 2, Endian.little);
+  data.setUint16(10, 3, Endian.little);
+  data.setUint32(12, 8, Endian.little);
+
+  var offset = 18;
+  void pen(int colorRef) {
+    data.setUint32(offset, 8, Endian.little);
+    data.setUint16(offset + 4, 0x02fa, Endian.little);
+    data.setUint16(offset + 6, 0, Endian.little);
+    data.setInt16(offset + 8, 1, Endian.little);
+    data.setUint32(offset + 12, colorRef, Endian.little);
+    offset += 16;
+  }
+
+  void select(int handle) {
+    data.setUint32(offset, 4, Endian.little);
+    data.setUint16(offset + 4, 0x012d, Endian.little);
+    data.setUint16(offset + 6, handle, Endian.little);
+    offset += 8;
+  }
+
+  void save() {
+    data.setUint32(offset, 3, Endian.little);
+    data.setUint16(offset + 4, 0x001e, Endian.little);
+    offset += 6;
+  }
+
+  void lineTo(int x) {
+    data.setUint32(offset, 5, Endian.little);
+    data.setUint16(offset + 4, 0x0213, Endian.little);
+    data.setInt16(offset + 6, 10, Endian.little);
+    data.setInt16(offset + 8, x, Endian.little);
+    offset += 10;
+  }
+
+  pen(0x00000000); // black
+  pen(0x000000ff); // red
+  pen(0x00ff0000); // blue
+  select(0);
+  data.setUint32(offset, 5, Endian.little);
+  data.setUint16(offset + 4, 0x0214, Endian.little); // MOVETO
+  data.setInt16(offset + 6, 10, Endian.little);
+  data.setInt16(offset + 8, 0, Endian.little);
+  offset += 10;
+  save();
+  select(1);
+  save();
+  select(2);
+  lineTo(10);
+  data.setUint32(offset, 4, Endian.little);
+  data.setUint16(offset + 4, 0x0127, Endian.little); // RESTOREDC
+  data.setInt16(offset + 6, -2, Endian.little);
+  offset += 8;
+  lineTo(20);
+  data.setUint32(offset, 3, Endian.little); // EOF
+  return bytes;
+}
+
+Uint8List _emfWithNestedDcRestore() {
+  final bytes = Uint8List(252);
+  final data = ByteData.sublistView(bytes);
+  data.setUint32(0, 1, Endian.little); // EMR_HEADER
+  data.setUint32(4, 88, Endian.little);
+  data.setInt32(16, 40, Endian.little);
+  data.setInt32(20, 20, Endian.little);
+  data.setUint32(40, 0x464D4520, Endian.little); // " EMF"
+
+  var offset = 88;
+  void pen(int handle, int colorRef) {
+    data.setUint32(offset, 38, Endian.little); // EMR_CREATEPEN
+    data.setUint32(offset + 4, 28, Endian.little);
+    data.setUint32(offset + 8, handle, Endian.little);
+    data.setUint32(offset + 12, 0, Endian.little);
+    data.setInt32(offset + 16, 1, Endian.little);
+    data.setUint32(offset + 24, colorRef, Endian.little);
+    offset += 28;
+  }
+
+  void select(int handle) {
+    data.setUint32(offset, 37, Endian.little);
+    data.setUint32(offset + 4, 12, Endian.little);
+    data.setUint32(offset + 8, handle, Endian.little);
+    offset += 12;
+  }
+
+  void save() {
+    data.setUint32(offset, 33, Endian.little);
+    data.setUint32(offset + 4, 8, Endian.little);
+    offset += 8;
+  }
+
+  void lineTo(int x) {
+    data.setUint32(offset, 54, Endian.little);
+    data.setUint32(offset + 4, 16, Endian.little);
+    data.setInt32(offset + 8, x, Endian.little);
+    data.setInt32(offset + 12, 10, Endian.little);
+    offset += 16;
+  }
+
+  pen(1, 0x000000ff); // red
+  pen(2, 0x00ff0000); // blue
+  data.setUint32(offset, 27, Endian.little); // EMR_MOVETOEX
+  data.setUint32(offset + 4, 16, Endian.little);
+  data.setInt32(offset + 8, 0, Endian.little);
+  data.setInt32(offset + 12, 10, Endian.little);
+  offset += 16;
+  save();
+  select(1);
+  save();
+  select(2);
+  lineTo(10);
+  data.setUint32(offset, 34, Endian.little); // EMR_RESTOREDC
+  data.setUint32(offset + 4, 12, Endian.little);
+  data.setInt32(offset + 8, -2, Endian.little);
+  offset += 12;
+  lineTo(20);
+  data.setUint32(offset, 14, Endian.little); // EMR_EOF
+  data.setUint32(offset + 4, 8, Endian.little);
+  return bytes;
+}
+
 Uint8List _wmfWithUpdateCpText() {
   final bytes = Uint8List(78);
   final data = ByteData.sublistView(bytes);
@@ -568,6 +695,45 @@ void main() {
       expect(path.cornerRadiusY, 4);
     });
 
+    test('nested SaveDC/RestoreDC restores pen and current position', () {
+      final bytes = _wmfWithNestedDcRestore();
+      final drawing = parseWmfDrawing(bytes);
+      final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+      expect(paths, hasLength(2));
+      expect(paths[0].strokeArgb, 0xFF0000FF);
+      expect(paths[0].points.map((p) => p.x), <double>[0, 10]);
+      expect(paths[1].strokeArgb, 0xFF000000);
+      expect(paths[1].points.map((p) => p.x), <double>[0, 20]);
+
+      const part = '/visio/media/dc-state.wmf';
+      final page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 2,
+        heightInches: 2,
+        shapes: <VsdxShape>[
+          VsdxShapeFactory.picture(
+            id: 1,
+            pinX: 1,
+            pinY: 1,
+            width: 1,
+            height: 1,
+            imagePartName: part,
+          ),
+        ],
+      );
+      final images = ImageRegistry.empty.withImage(VsdxImage(
+        partName: part,
+        bytes: bytes,
+        mimeType: 'image/x-wmf',
+      ));
+      final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+      expect(svg, contains('d="M 0 10 L 10 10"'));
+      expect(svg, contains('stroke="#0000ff"'));
+      expect(svg, contains('d="M 0 10 L 20 10"'));
+      expect(svg, contains('stroke="#000000"'));
+    });
+
     test('rejects random bytes', () {
       expect(parseWmfDrawing(Uint8List.fromList([1, 2, 3, 4])), isNull);
     });
@@ -634,6 +800,16 @@ void main() {
           expect(path.fillArgb, colors[stock], reason: 'stock $stock');
         }
       }
+    });
+
+    test('nested SaveDC/RestoreDC restores pen and current position', () {
+      final drawing = parseEmfDrawing(_emfWithNestedDcRestore());
+      final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+      expect(paths, hasLength(2));
+      expect(paths[0].strokeArgb, 0xFF0000FF);
+      expect(paths[0].points.map((p) => p.x), <double>[0, 10]);
+      expect(paths[1].strokeArgb, 0xFF000000);
+      expect(paths[1].points.map((p) => p.x), <double>[0, 20]);
     });
 
     test('ExtCreateFontIndirectW retains LOGFONT style and escapement', () {

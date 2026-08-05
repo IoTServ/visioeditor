@@ -27,6 +27,8 @@ const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
 const int _emrSetBkColor = 25;
 const int _emrMoveToEx = 27;
+const int _emrSaveDc = 33;
+const int _emrRestoreDc = 34;
 const int _emrSelectObject = 37;
 const int _emrCreatePen = 38;
 const int _emrCreateBrushIndirect = 39;
@@ -113,6 +115,60 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var fontEscapementDegrees = 0.0;
   final ops = <Object>[];
   MetafilePoint? curPt;
+  final savedStates = <_EmfDcState>[];
+
+  _EmfDcState captureState() => _EmfDcState(
+        penColor: penColor,
+        penWidth: penWidth,
+        penStyle: penStyle,
+        penDashPattern: penDashPattern,
+        brushColor: brushColor,
+        brushStyle: brushStyle,
+        brushHatch: brushHatch,
+        textColor: textColor,
+        backgroundMode: backgroundMode,
+        backgroundColor: backgroundColor,
+        textAlign: textAlign,
+        fontFace: fontFace,
+        fontHeight: fontHeight,
+        fontWeight: fontWeight,
+        fontItalic: fontItalic,
+        fontUnderline: fontUnderline,
+        fontStrikeThrough: fontStrikeThrough,
+        fontEscapementDegrees: fontEscapementDegrees,
+        curPt: curPt,
+      );
+
+  void restoreState(int savedDc) {
+    if (savedDc == 0 || savedStates.isEmpty) return;
+    final relative = savedDc < 0 ? savedDc : -1;
+    final index = savedStates.length + relative;
+    if (index < 0) {
+      savedStates.clear();
+      return;
+    }
+    final state = savedStates[index];
+    savedStates.removeRange(index, savedStates.length);
+    penColor = state.penColor;
+    penWidth = state.penWidth;
+    penStyle = state.penStyle;
+    penDashPattern = state.penDashPattern;
+    brushColor = state.brushColor;
+    brushStyle = state.brushStyle;
+    brushHatch = state.brushHatch;
+    textColor = state.textColor;
+    backgroundMode = state.backgroundMode;
+    backgroundColor = state.backgroundColor;
+    textAlign = state.textAlign;
+    fontFace = state.fontFace;
+    fontHeight = state.fontHeight;
+    fontWeight = state.fontWeight;
+    fontItalic = state.fontItalic;
+    fontUnderline = state.fontUnderline;
+    fontStrikeThrough = state.fontStrikeThrough;
+    fontEscapementDegrees = state.fontEscapementDegrees;
+    curPt = state.curPt;
+  }
 
   void ensurePts(Iterable<MetafilePoint> pts) {
     for (final p in pts) {
@@ -181,7 +237,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
 
     if (t == _emrEof) break;
 
-    if (t == _emrSetWindowOrgEx && params + 8 <= recEnd) {
+    if (t == _emrSaveDc) {
+      savedStates.add(captureState());
+    } else if (t == _emrRestoreDc && params + 4 <= recEnd) {
+      restoreState(bd.getInt32(params, Endian.little));
+    } else if (t == _emrSetWindowOrgEx && params + 8 <= recEnd) {
       // ignored for drawing; bounds already from header
     } else if (t == _emrSetWindowExtEx && params + 8 <= recEnd) {
       final cx = bd.getInt32(params, Endian.little).toDouble();
@@ -705,4 +765,48 @@ class _EmfFont extends _EmfObject {
   final bool underline;
   final bool strikeThrough;
   final double escapementDegrees;
+}
+
+class _EmfDcState {
+  const _EmfDcState({
+    required this.penColor,
+    required this.penWidth,
+    required this.penStyle,
+    required this.penDashPattern,
+    required this.brushColor,
+    required this.brushStyle,
+    required this.brushHatch,
+    required this.textColor,
+    required this.backgroundMode,
+    required this.backgroundColor,
+    required this.textAlign,
+    required this.fontFace,
+    required this.fontHeight,
+    required this.fontWeight,
+    required this.fontItalic,
+    required this.fontUnderline,
+    required this.fontStrikeThrough,
+    required this.fontEscapementDegrees,
+    required this.curPt,
+  });
+
+  final int penColor;
+  final double penWidth;
+  final int penStyle;
+  final List<double>? penDashPattern;
+  final int brushColor;
+  final int brushStyle;
+  final int brushHatch;
+  final int textColor;
+  final int backgroundMode;
+  final int backgroundColor;
+  final int textAlign;
+  final String? fontFace;
+  final double fontHeight;
+  final int fontWeight;
+  final bool fontItalic;
+  final bool fontUnderline;
+  final bool fontStrikeThrough;
+  final double fontEscapementDegrees;
+  final MetafilePoint? curPt;
 }

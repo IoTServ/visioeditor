@@ -21,6 +21,8 @@ const int _metaSetBkMode = 0x0102;
 const int _metaSetBkColor = 0x0201;
 const int _metaSetTextColor = 0x0209;
 const int _metaSetTextAlign = 0x012E;
+const int _metaSaveDc = 0x001E;
+const int _metaRestoreDc = 0x0127;
 const int _metaCreatePenIndirect = 0x02FA;
 const int _metaCreateBrushIndirect = 0x02FC;
 const int _metaCreateFontIndirect = 0x02FB;
@@ -92,6 +94,72 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   double? winOrgX, winOrgY, winExtX, winExtY;
   double? curX, curY;
   final ops = <Object>[];
+  final savedStates = <_WmfDcState>[];
+
+  _WmfDcState captureState() => _WmfDcState(
+        penColor: penColor,
+        penWidth: penWidth,
+        penStyle: penStyle,
+        penDashPattern: penDashPattern,
+        brushColor: brushColor,
+        brushStyle: brushStyle,
+        brushHatch: brushHatch,
+        textColor: textColor,
+        backgroundMode: backgroundMode,
+        backgroundColor: backgroundColor,
+        textAlign: textAlign,
+        fontFace: fontFace,
+        fontHeight: fontHeight,
+        fontWeight: fontWeight,
+        fontItalic: fontItalic,
+        fontUnderline: fontUnderline,
+        fontStrikeThrough: fontStrikeThrough,
+        fontEscapementDegrees: fontEscapementDegrees,
+        fontEncoding: fontEncoding,
+        winOrgX: winOrgX,
+        winOrgY: winOrgY,
+        winExtX: winExtX,
+        winExtY: winExtY,
+        curX: curX,
+        curY: curY,
+      );
+
+  void restoreState(int savedDc) {
+    if (savedDc == 0) return;
+    final index = savedDc < 0 ? savedStates.length + savedDc : savedDc;
+    if (index < 0) {
+      savedStates.clear();
+      return;
+    }
+    if (index >= savedStates.length) return;
+    final state = savedStates[index];
+    savedStates.removeRange(index, savedStates.length);
+    penColor = state.penColor;
+    penWidth = state.penWidth;
+    penStyle = state.penStyle;
+    penDashPattern = state.penDashPattern;
+    brushColor = state.brushColor;
+    brushStyle = state.brushStyle;
+    brushHatch = state.brushHatch;
+    textColor = state.textColor;
+    backgroundMode = state.backgroundMode;
+    backgroundColor = state.backgroundColor;
+    textAlign = state.textAlign;
+    fontFace = state.fontFace;
+    fontHeight = state.fontHeight;
+    fontWeight = state.fontWeight;
+    fontItalic = state.fontItalic;
+    fontUnderline = state.fontUnderline;
+    fontStrikeThrough = state.fontStrikeThrough;
+    fontEscapementDegrees = state.fontEscapementDegrees;
+    fontEncoding = state.fontEncoding;
+    winOrgX = state.winOrgX;
+    winOrgY = state.winOrgY;
+    winExtX = state.winExtX;
+    winExtY = state.winExtY;
+    curX = state.curX;
+    curY = state.curY;
+  }
 
   void ensureBounds(Iterable<MetafilePoint> pts) {
     for (final p in pts) {
@@ -129,6 +197,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       break;
     } else if (func == _metaEscape) {
       // Skip dual-mode EMF comments.
+    } else if (func == _metaSaveDc) {
+      savedStates.add(captureState());
+    } else if (func == _metaRestoreDc && params + 2 <= recEnd) {
+      restoreState(bd.getInt16(params, Endian.little));
     } else if (func == _metaSetWindowOrg && params + 4 <= recEnd) {
       winOrgY = bd.getInt16(params, Endian.little).toDouble();
       winOrgX = bd.getInt16(params + 2, Endian.little).toDouble();
@@ -139,7 +211,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final oy = winOrgY;
       final ex = winExtX;
       final ey = winExtY;
-      if (!haveBounds && ox != null && oy != null) {
+      if (!haveBounds && ox != null && oy != null && ex != null && ey != null) {
         minX = math.min(ox, ox + ex);
         maxX = math.max(ox, ox + ex);
         minY = math.min(oy, oy + ey);
@@ -240,8 +312,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         curY != null) {
       final y = bd.getInt16(params, Endian.little).toDouble();
       final x = bd.getInt16(params + 2, Endian.little).toDouble();
-      final fromX = curX;
-      final fromY = curY;
+      final fromX = curX!;
+      final fromY = curY!;
       final pts = [MetafilePoint(fromX, fromY), MetafilePoint(x, y)];
       ensureBounds(pts);
       if ((penStyle & 0x0f) != 5) {
@@ -740,4 +812,60 @@ class _GdiFont extends _GdiObject {
   final bool strikeThrough;
   final double escapementDegrees;
   final VsdLegacyTextEncoding encoding;
+}
+
+class _WmfDcState {
+  const _WmfDcState({
+    required this.penColor,
+    required this.penWidth,
+    required this.penStyle,
+    required this.penDashPattern,
+    required this.brushColor,
+    required this.brushStyle,
+    required this.brushHatch,
+    required this.textColor,
+    required this.backgroundMode,
+    required this.backgroundColor,
+    required this.textAlign,
+    required this.fontFace,
+    required this.fontHeight,
+    required this.fontWeight,
+    required this.fontItalic,
+    required this.fontUnderline,
+    required this.fontStrikeThrough,
+    required this.fontEscapementDegrees,
+    required this.fontEncoding,
+    required this.winOrgX,
+    required this.winOrgY,
+    required this.winExtX,
+    required this.winExtY,
+    required this.curX,
+    required this.curY,
+  });
+
+  final int penColor;
+  final double penWidth;
+  final int penStyle;
+  final List<double>? penDashPattern;
+  final int brushColor;
+  final int brushStyle;
+  final int brushHatch;
+  final int textColor;
+  final int backgroundMode;
+  final int backgroundColor;
+  final int textAlign;
+  final String? fontFace;
+  final double fontHeight;
+  final int fontWeight;
+  final bool fontItalic;
+  final bool fontUnderline;
+  final bool fontStrikeThrough;
+  final double fontEscapementDegrees;
+  final VsdLegacyTextEncoding fontEncoding;
+  final double? winOrgX;
+  final double? winOrgY;
+  final double? winExtX;
+  final double? winExtY;
+  final double? curX;
+  final double? curY;
 }
