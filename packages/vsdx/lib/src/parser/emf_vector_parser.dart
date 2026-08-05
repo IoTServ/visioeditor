@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'metafile_drawing.dart';
+import 'vsd/vsd_text_codec.dart';
 
 const int _emrHeader = 1;
 const int _emrPolyBezier = 2;
@@ -54,6 +55,7 @@ const int _emrStrokeAndFillPath = 63;
 const int _emrStrokePath = 64;
 const int _emrAbortPath = 68;
 const int _emrExtCreateFontIndirectW = 82;
+const int _emrExtTextOutA = 83;
 const int _emrExtTextOutW = 84;
 const int _emrPolyBezier16 = 85;
 const int _emrPolygon16 = 86;
@@ -64,6 +66,8 @@ const int _emrPolyPolyline16 = 90;
 const int _emrPolyPolygon16 = 91;
 const int _emrPolyDraw16 = 92;
 const int _emrExtCreatePen = 95;
+const int _emrPolyTextOutA = 96;
+const int _emrPolyTextOutW = 97;
 
 bool looksLikeEmf(Uint8List b) =>
     b.length > 0x2B &&
@@ -131,6 +135,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var fontUnderline = false;
   var fontStrikeThrough = false;
   var fontEscapementDegrees = 0.0;
+  var fontEncoding = VsdLegacyTextEncoding.ansi;
   var arcClockwise = false;
   final ops = <Object>[];
   MetafilePoint? curPt;
@@ -158,6 +163,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fontUnderline: fontUnderline,
         fontStrikeThrough: fontStrikeThrough,
         fontEscapementDegrees: fontEscapementDegrees,
+        fontEncoding: fontEncoding,
         arcClockwise: arcClockwise,
         curPt: curPt,
         pathFigures: pathFigures
@@ -194,6 +200,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     fontUnderline = state.fontUnderline;
     fontStrikeThrough = state.fontStrikeThrough;
     fontEscapementDegrees = state.fontEscapementDegrees;
+    fontEncoding = state.fontEncoding;
     arcClockwise = state.arcClockwise;
     curPt = state.curPt;
     pathFigures
@@ -515,6 +522,135 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     if (updateCurrent) curPt = arc.last;
   }
 
+  void emitText(
+    int recordOffset,
+    int textOff,
+    int recEnd, {
+    required bool ansi,
+  }) {
+    // EMRTEXT: reference(8), count(4), string offset(4), options(4),
+    // optional rectangle(16), and output-Dx offset(4).
+    if (textOff + 40 > recEnd) return;
+    final recordX = bd.getInt32(textOff, Endian.little).toDouble();
+    final recordY = bd.getInt32(textOff + 4, Endian.little).toDouble();
+    final useCurrentPoint = (textAlign & 0x01) != 0 && curPt != null;
+    final x = useCurrentPoint ? curPt!.x : recordX;
+    final y = useCurrentPoint ? curPt!.y : recordY;
+    final sourceLength = bd.getUint32(textOff + 8, Endian.little);
+    if (sourceLength >= 4096) return;
+    final offString = bd.getUint32(textOff + 12, Endian.little);
+    final options = bd.getUint32(textOff + 16, Endian.little);
+    final recordRect = (options & 0x0006) != 0
+        ? MetafileRect(
+            bd.getInt32(textOff + 20, Endian.little).toDouble(),
+            bd.getInt32(textOff + 24, Endian.little).toDouble(),
+            bd.getInt32(textOff + 28, Endian.little).toDouble(),
+            bd.getInt32(textOff + 32, Endian.little).toDouble(),
+          )
+        : null;
+    final offDx = bd.getUint32(textOff + 36, Endian.little);
+    if (offString > recEnd - recordOffset) return;
+    final strAt = recordOffset + offString;
+
+    late final String text;
+    late final List<int> sourceUnitsPerRune;
+    if (ansi) {
+      if (sourceLength > recEnd - strAt) return;
+      final raw = emf.sublist(strAt, strAt + sourceLength);
+      text =
+          decodeWindowsLegacyText(raw, fontEncoding).replaceAll('\u0000', '');
+      sourceUnitsPerRune = windowsLegacyCharacterByteLengths(
+        raw,
+        fontEncoding,
+      );
+    } else {
+      if (sourceLength > (recEnd - strAt) ~/ 2) return;
+      final codes = <int>[
+        for (var i = 0; i < sourceLength; i++)
+          bd.getUint16(strAt + i * 2, Endian.little),
+      ];
+      text = String.fromCharCodes(codes).replaceAll('\u0000', '');
+      sourceUnitsPerRune = <int>[
+        for (final rune in text.runes) rune > 0xffff ? 2 : 1,
+      ];
+    }
+    if (text.trim().isEmpty &&
+        !((options & 0x0002) != 0 && recordRect != null)) {
+      return;
+    }
+
+    List<double>? advancesX;
+    List<double>? advancesY;
+    final hasVerticalAdvances = (options & 0x2000) != 0; // ETO_PDY
+    final valuesPerUnit = hasVerticalAdvances ? 2 : 1;
+    final advanceAt = recordOffset + offDx;
+    final mappedSourceLength = sourceUnitsPerRune.fold<int>(0, (a, b) => a + b);
+    if (offDx > 0 &&
+        mappedSourceLength == sourceLength &&
+        sourceUnitsPerRune.length == text.runes.length &&
+        offDx <= recEnd - recordOffset &&
+        sourceLength <= (recEnd - advanceAt) ~/ (valuesPerUnit * 4)) {
+      final unitX = <double>[];
+      final unitY = hasVerticalAdvances ? <double>[] : null;
+      var p = advanceAt;
+      for (var i = 0; i < sourceLength; i++) {
+        unitX.add(bd.getInt32(p, Endian.little).toDouble());
+        p += 4;
+        if (unitY != null) {
+          unitY.add(bd.getInt32(p, Endian.little).toDouble());
+          p += 4;
+        }
+      }
+      var sourceIndex = 0;
+      final runeX = <double>[];
+      final runeY = unitY == null ? null : <double>[];
+      for (final unitCount in sourceUnitsPerRune) {
+        var dx = 0.0;
+        var dy = 0.0;
+        for (var i = 0; i < unitCount; i++) {
+          dx += unitX[sourceIndex + i];
+          if (unitY != null) dy += unitY[sourceIndex + i];
+        }
+        runeX.add(dx);
+        runeY?.add(dy);
+        sourceIndex += unitCount;
+      }
+      advancesX = List<double>.unmodifiable(runeX);
+      advancesY = runeY == null ? null : List<double>.unmodifiable(runeY);
+    }
+
+    final point = MetafilePoint(x, y);
+    ensurePts([point]);
+    final textOp = MetafileTextOp(
+      text: text,
+      x: x,
+      y: y,
+      fontHeight: fontHeight,
+      argb: textColor,
+      face: fontFace,
+      align: textAlign,
+      backgroundArgb: backgroundMode == 2 || (options & 0x0002) != 0
+          ? backgroundColor
+          : null,
+      opaqueRect: (options & 0x0002) != 0 ? recordRect : null,
+      clipRect: (options & 0x0004) != 0 ? recordRect : null,
+      advancesX: advancesX,
+      advancesY: advancesY,
+      fontWeight: fontWeight,
+      italic: fontItalic,
+      underline: fontUnderline,
+      strikeThrough: fontStrikeThrough,
+      escapementDegrees: fontEscapementDegrees,
+    );
+    final opaqueRect = textOp.opaqueRect;
+    if (opaqueRect != null) ensurePts(opaqueRect.corners);
+    ops.add(textOp);
+    if ((textAlign & 0x01) != 0) {
+      curPt = metafileTextUpdatedCurrentPoint(textOp);
+      ensurePts([curPt!]);
+    }
+  }
+
   var offset = hdrSize;
   while (offset + 8 <= emf.length) {
     final t = bd.getUint32(offset, Endian.little);
@@ -616,6 +752,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             params + 26 <= recEnd && bd.getUint8(params + 25) != 0;
         final strikeThrough =
             params + 27 <= recEnd && bd.getUint8(params + 26) != 0;
+        final charset = params + 28 <= recEnd ? bd.getUint8(params + 27) : 0;
         String? face;
         // lfFaceName is WCHAR[32] at offset 28 within LOGFONTW (= params+4+28).
         final faceOff = params + 4 + 28;
@@ -628,6 +765,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           }
           if (codes.isNotEmpty) face = String.fromCharCodes(codes);
         }
+        final encoding = face == 'Symbol' || face == 'MT Extra'
+            ? VsdLegacyTextEncoding.symbol
+            : vsdLegacyEncodingForCodePage(charset);
         _store(
           objects,
           ih,
@@ -639,6 +779,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             underline,
             strikeThrough,
             escapement,
+            encoding,
           ),
         );
       }
@@ -689,6 +830,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fontUnderline = o.underline;
           fontStrikeThrough = o.strikeThrough;
           fontEscapementDegrees = o.escapementDegrees;
+          fontEncoding = o.encoding;
         }
       }
     } else if (t == _emrDeleteObject && params + 4 <= recEnd) {
@@ -986,98 +1128,21 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           evenOddFill: polyFillMode != 2,
         ));
       }
-    } else if (t == _emrExtTextOutW && params + 32 <= recEnd) {
-      // Bounds(16) + iGraphicsMode(4) + exScale(4) + eyScale(4) + EMRTEXT
-      // EMRTEXT at params+28: ptlReference(8), nChars(4), offString(4), …
-      final textOff = params + 28;
-      if (textOff + 16 <= recEnd) {
-        final recordX = bd.getInt32(textOff, Endian.little).toDouble();
-        final recordY = bd.getInt32(textOff + 4, Endian.little).toDouble();
-        final useCurrentPoint = (textAlign & 0x01) != 0 && curPt != null;
-        final x = useCurrentPoint ? curPt!.x : recordX;
-        final y = useCurrentPoint ? curPt!.y : recordY;
-        final nChars = bd.getUint32(textOff + 8, Endian.little);
-        final offString = bd.getUint32(textOff + 12, Endian.little);
-        final options = textOff + 20 <= recEnd
-            ? bd.getUint32(textOff + 16, Endian.little)
-            : 0;
-        final recordRect = textOff + 36 <= recEnd && (options & 0x0006) != 0
-            ? MetafileRect(
-                bd.getInt32(textOff + 20, Endian.little).toDouble(),
-                bd.getInt32(textOff + 24, Endian.little).toDouble(),
-                bd.getInt32(textOff + 28, Endian.little).toDouble(),
-                bd.getInt32(textOff + 32, Endian.little).toDouble(),
-              )
-            : null;
-        final offDx = textOff + 40 <= recEnd
-            ? bd.getUint32(textOff + 36, Endian.little)
-            : 0;
-        // offString is from start of record
-        final strAt = offset + offString;
-        if (nChars < 4096 && strAt + nChars * 2 <= recEnd) {
-          final codes = <int>[];
-          for (var i = 0; i < nChars; i++) {
-            codes.add(bd.getUint16(strAt + i * 2, Endian.little));
-          }
-          final text = String.fromCharCodes(codes).replaceAll('\u0000', '');
-          if (text.trim().isNotEmpty ||
-              ((options & 0x0002) != 0 && recordRect != null)) {
-            List<double>? advancesX;
-            List<double>? advancesY;
-            final hasVerticalAdvances = (options & 0x2000) != 0; // ETO_PDY
-            final wordsPerGlyph = hasVerticalAdvances ? 2 : 1;
-            final advanceAt = offset + offDx;
-            if (offDx > 0 &&
-                text.runes.length == nChars &&
-                advanceAt >= offset &&
-                advanceAt + nChars * wordsPerGlyph * 4 <= recEnd) {
-              final xAdvances = <double>[];
-              final yAdvances = hasVerticalAdvances ? <double>[] : null;
-              var p = advanceAt;
-              for (var i = 0; i < nChars; i++) {
-                xAdvances.add(bd.getInt32(p, Endian.little).toDouble());
-                p += 4;
-                if (yAdvances != null) {
-                  yAdvances.add(bd.getInt32(p, Endian.little).toDouble());
-                  p += 4;
-                }
-              }
-              advancesX = List<double>.unmodifiable(xAdvances);
-              advancesY = yAdvances == null
-                  ? null
-                  : List<double>.unmodifiable(yAdvances);
-            }
-            final pt = MetafilePoint(x, y);
-            ensurePts([pt]);
-            final textOp = MetafileTextOp(
-              text: text,
-              x: x,
-              y: y,
-              fontHeight: fontHeight,
-              argb: textColor,
-              face: fontFace,
-              align: textAlign,
-              backgroundArgb: backgroundMode == 2 || (options & 0x0002) != 0
-                  ? backgroundColor
-                  : null,
-              opaqueRect: (options & 0x0002) != 0 ? recordRect : null,
-              clipRect: (options & 0x0004) != 0 ? recordRect : null,
-              advancesX: advancesX,
-              advancesY: advancesY,
-              fontWeight: fontWeight,
-              italic: fontItalic,
-              underline: fontUnderline,
-              strikeThrough: fontStrikeThrough,
-              escapementDegrees: fontEscapementDegrees,
-            );
-            final opaqueRect = textOp.opaqueRect;
-            if (opaqueRect != null) ensurePts(opaqueRect.corners);
-            ops.add(textOp);
-            if ((textAlign & 0x01) != 0) {
-              curPt = metafileTextUpdatedCurrentPoint(textOp);
-              ensurePts([curPt!]);
-            }
-          }
+    } else if ((t == _emrExtTextOutA ||
+            t == _emrExtTextOutW ||
+            t == _emrPolyTextOutA ||
+            t == _emrPolyTextOutW) &&
+        params + 32 <= recEnd) {
+      // Bounds(16) + graphics mode(4) + scales(8), then either one EMRTEXT
+      // or a count followed by an array of EMRTEXT structures.
+      final ansi = t == _emrExtTextOutA || t == _emrPolyTextOutA;
+      final poly = t == _emrPolyTextOutA || t == _emrPolyTextOutW;
+      final count = poly ? bd.getUint32(params + 28, Endian.little) : 1;
+      var textOff = params + (poly ? 32 : 28);
+      if (count <= 1024 && count <= (recEnd - textOff) ~/ 40) {
+        for (var i = 0; i < count; i++) {
+          emitText(offset, textOff, recEnd, ansi: ansi);
+          textOff += 40;
         }
       }
     }
@@ -1172,6 +1237,7 @@ class _EmfFont extends _EmfObject {
     this.underline,
     this.strikeThrough,
     this.escapementDegrees,
+    this.encoding,
   );
   final double height;
   final String? face;
@@ -1180,6 +1246,7 @@ class _EmfFont extends _EmfObject {
   final bool underline;
   final bool strikeThrough;
   final double escapementDegrees;
+  final VsdLegacyTextEncoding encoding;
 }
 
 class _EmfPathFigure {
@@ -1216,6 +1283,7 @@ class _EmfDcState {
     required this.fontUnderline,
     required this.fontStrikeThrough,
     required this.fontEscapementDegrees,
+    required this.fontEncoding,
     required this.arcClockwise,
     required this.curPt,
     required this.pathFigures,
@@ -1240,6 +1308,7 @@ class _EmfDcState {
   final bool fontUnderline;
   final bool fontStrikeThrough;
   final double fontEscapementDegrees;
+  final VsdLegacyTextEncoding fontEncoding;
   final bool arcClockwise;
   final MetafilePoint? curPt;
   final List<_EmfPathFigure> pathFigures;
