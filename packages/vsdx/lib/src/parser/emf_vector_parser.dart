@@ -4,7 +4,7 @@
 /// DIB. This parser covers the GDI path used by OLE `\x02OlePres000` previews
 /// and pure-vector ForeignData: pens/brushes, MOVETOEX / LINETO,
 /// POLYBEZIER* / POLYLINE* / POLYGON* (32-bit and 16-bit, incl. *TO),
-/// POLYPOLYGON16, rectangle/ellipse, and ExtTextOutW.
+/// POLYPOLYLINE* / POLYPOLYGON*, rectangle/ellipse, and ExtTextOutW.
 library;
 
 import 'dart:math' as math;
@@ -17,6 +17,7 @@ const int _emrPolyBezier = 2;
 const int _emrPolygon = 3;
 const int _emrPolyline = 4;
 const int _emrPolyBezierTo = 5;
+const int _emrPolylineTo = 6;
 const int _emrPolyPolyline = 7;
 const int _emrPolyPolygon = 8;
 const int _emrEof = 14;
@@ -43,7 +44,6 @@ const int _emrPie = 47;
 const int _emrLineTo = 54;
 const int _emrArcTo = 55;
 const int _emrSetArcDirection = 57;
-const int _emrPolylineTo = 59;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutW = 84;
 const int _emrPolyBezier16 = 85;
@@ -51,6 +51,7 @@ const int _emrPolygon16 = 86;
 const int _emrPolyline16 = 87;
 const int _emrPolyBezierTo16 = 88;
 const int _emrPolylineTo16 = 89;
+const int _emrPolyPolyline16 = 90;
 const int _emrPolyPolygon16 = 91;
 const int _emrExtCreatePen = 95;
 
@@ -595,22 +596,27 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       }
       final closed = t == _emrPolyPolygon;
       for (final c in counts) {
+        if (c > (recEnd - p) ~/ 8) break;
         final pts = _readPoints32(bd, p, recEnd, c);
         p += c * 8;
         emitPolyline(pts, closed: closed);
       }
-    } else if (t == _emrPolyPolygon16 && params + 20 <= recEnd) {
+    } else if ((t == _emrPolyPolyline16 || t == _emrPolyPolygon16) &&
+        params + 24 <= recEnd) {
+      // Bounds(16) + nPolys(4) + nPts(4) + counts[nPolys] + POINTS…
       final nPolys = bd.getUint32(params + 16, Endian.little);
-      var p = params + 20;
+      var p = params + 24;
       final counts = <int>[];
       for (var i = 0; i < nPolys && p + 4 <= recEnd; i++) {
         counts.add(bd.getUint32(p, Endian.little));
         p += 4;
       }
+      final closed = t == _emrPolyPolygon16;
       for (final c in counts) {
+        if (c > (recEnd - p) ~/ 4) break;
         final pts = _readPoints16(bd, p, recEnd, c);
         p += c * 4;
-        emitPolyline(pts, closed: true);
+        emitPolyline(pts, closed: closed);
       }
     } else if (t == _emrRoundRect && params + 24 <= recEnd) {
       final left = bd.getInt32(params, Endian.little).toDouble();

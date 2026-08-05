@@ -187,6 +187,110 @@ Uint8List _emfWithPolyBezierTo16() {
   return Uint8List.fromList(out.toBytes());
 }
 
+Uint8List _emfWithPolyLineFamilies() {
+  final out = BytesBuilder();
+  void u32(int v) {
+    final b = ByteData(4)..setUint32(0, v, Endian.little);
+    out.add(b.buffer.asUint8List());
+  }
+
+  void i32(int v) {
+    final b = ByteData(4)..setInt32(0, v, Endian.little);
+    out.add(b.buffer.asUint8List());
+  }
+
+  void i16(int v) {
+    final b = ByteData(2)..setInt16(0, v, Endian.little);
+    out.add(b.buffer.asUint8List());
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add([0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+
+  // EMR_MOVETOEX, then the 32-bit EMR_POLYLINETO (record type 6).
+  u32(27);
+  u32(16);
+  i32(10);
+  i32(20);
+  // BEGINPATH is record type 59 and must not be mistaken for POLYLINETO.
+  u32(59);
+  u32(8);
+  u32(6);
+  u32(44);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  u32(2);
+  i32(30);
+  i32(30);
+  i32(50);
+  i32(10);
+
+  // EMR_POLYPOLYLINE16: bounds + polygon count + total point count + counts.
+  u32(90);
+  u32(56);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  u32(2);
+  u32(4);
+  u32(2);
+  u32(2);
+  i16(0);
+  i16(0);
+  i16(20);
+  i16(0);
+  i16(0);
+  i16(20);
+  i16(20);
+  i16(20);
+
+  // EMR_POLYPOLYGON16 with two triangles.
+  u32(91);
+  u32(64);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  u32(2);
+  u32(6);
+  u32(3);
+  u32(3);
+  i16(30);
+  i16(40);
+  i16(40);
+  i16(20);
+  i16(50);
+  i16(40);
+  i16(60);
+  i16(40);
+  i16(70);
+  i16(20);
+  i16(80);
+  i16(40);
+
+  u32(14);
+  u32(20);
+  u32(0);
+  u32(16);
+  u32(20);
+  return Uint8List.fromList(out.toBytes());
+}
+
 void main() {
   test('EMF POLYBEZIER16 densifies into a stroked polyline', () {
     final drawing = parseMetafileDrawing(
@@ -300,6 +404,65 @@ void main() {
     expect(paths.first.points.length, 2);
     expect(paths.last.points.first.x, 50);
     expect(paths.last.points.length, 3);
+  });
+
+  test('EMF POLYLINETO and 16-bit poly families use official layouts', () {
+    final bytes = _emfWithPolyLineFamilies();
+    final drawing = parseMetafileDrawing(
+      bytes,
+      mimeType: 'image/x-emf',
+    );
+    expect(drawing, isNotNull);
+    final paths = drawing!.ops.whereType<MetafilePathOp>().toList();
+    expect(paths, hasLength(5));
+
+    expect(paths[0].points, hasLength(3));
+    expect((paths[0].points.first.x, paths[0].points.first.y), (10, 20));
+    expect((paths[0].points.last.x, paths[0].points.last.y), (50, 10));
+
+    expect(paths[1].closed, isFalse);
+    expect(paths[2].closed, isFalse);
+    expect(paths[1].points.map((point) => point.x), <double>[0, 20]);
+    expect(paths[2].points.map((point) => point.y), <double>[20, 20]);
+
+    expect(paths[3].closed, isTrue);
+    expect(paths[4].closed, isTrue);
+    expect(paths[3].points, hasLength(3));
+    expect(paths[4].points, hasLength(3));
+
+    const part = '/visio/media/poly-families.emf';
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 2,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.picture(
+          id: 1,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 1,
+          imagePartName: part,
+        ),
+      ],
+    );
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: bytes,
+      mimeType: 'image/x-emf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(page, images: images);
+    expect(
+      RegExp(r'<path d=').allMatches(svg),
+      hasLength(paths.length + 1),
+      reason: 'five metafile paths plus the picture shape outline',
+    );
+    expect(
+      RegExp(r' Z"').allMatches(svg),
+      hasLength(2),
+      reason: 'the two EMR_POLYPOLYGON16 paths remain closed',
+    );
   });
 
   test('EMF MOVETOEX + LINETO emit a stroked segment', () {
