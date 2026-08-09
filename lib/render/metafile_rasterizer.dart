@@ -153,6 +153,45 @@ Future<ui.Image?> rasterizeMetafileDrawing(
           ),
       );
       canvas.restore();
+    } else if (op is MetafileGradientRectOp) {
+      final upperLeft = op.upperLeft;
+      final lowerRight = op.lowerRight;
+      final rect = Rect.fromLTRB(
+        math.min(upperLeft.point.x, lowerRight.point.x),
+        math.min(upperLeft.point.y, lowerRight.point.y),
+        math.max(upperLeft.point.x, lowerRight.point.x),
+        math.max(upperLeft.point.y, lowerRight.point.y),
+      );
+      if (rect.width == 0 || rect.height == 0) continue;
+      final start = upperLeft.point;
+      final end = lowerRight.point;
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(start.x, start.y),
+            op.horizontal
+                ? Offset(end.x, start.y)
+                : Offset(start.x, end.y),
+            <Color>[Color(upperLeft.argb), Color(lowerRight.argb)],
+          ),
+      );
+    } else if (op is MetafileGradientTriangleOp) {
+      final vertices = ui.Vertices(
+        ui.VertexMode.triangles,
+        <Offset>[
+          Offset(op.first.point.x, op.first.point.y),
+          Offset(op.second.point.x, op.second.point.y),
+          Offset(op.third.point.x, op.third.point.y),
+        ],
+        colors: <Color>[
+          Color(op.first.argb),
+          Color(op.second.argb),
+          Color(op.third.argb),
+        ],
+      );
+      canvas.drawVertices(vertices, BlendMode.dst, Paint());
+      vertices.dispose();
     } else if (op is MetafilePathOp) {
       _paintPath(canvas, op, deviceScale: scale);
     } else if (op is MetafileTextOp) {

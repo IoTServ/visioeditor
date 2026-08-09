@@ -140,6 +140,43 @@ class MetafileBitmapOp {
   final double opacity;
 }
 
+/// A colored point in an EMR_GRADIENTFILL mesh.
+@immutable
+class MetafileGradientVertex {
+  const MetafileGradientVertex({required this.point, required this.argb});
+
+  final MetafilePoint point;
+  final int argb;
+}
+
+/// A horizontal or vertical two-color EMR_GRADIENTFILL rectangle.
+@immutable
+class MetafileGradientRectOp {
+  const MetafileGradientRectOp({
+    required this.upperLeft,
+    required this.lowerRight,
+    required this.horizontal,
+  });
+
+  final MetafileGradientVertex upperLeft;
+  final MetafileGradientVertex lowerRight;
+  final bool horizontal;
+}
+
+/// A three-color EMR_GRADIENTFILL triangle.
+@immutable
+class MetafileGradientTriangleOp {
+  const MetafileGradientTriangleOp({
+    required this.first,
+    required this.second,
+    required this.third,
+  });
+
+  final MetafileGradientVertex first;
+  final MetafileGradientVertex second;
+  final MetafileGradientVertex third;
+}
+
 /// An additional figure in a compound GDI path.
 @immutable
 class MetafilePathContour {
@@ -349,6 +386,8 @@ class MetafileDrawing {
         (op) =>
             op is MetafilePixelOp ||
             op is MetafileBitmapOp ||
+            op is MetafileGradientRectOp ||
+            op is MetafileGradientTriangleOp ||
             op is MetafilePathOp ||
             op is MetafileTextOp,
       );

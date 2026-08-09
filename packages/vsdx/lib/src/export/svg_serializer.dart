@@ -3418,6 +3418,32 @@ class VsdxToSvgSerializer {
           'href="data:image/bmp;base64,$href"/>',
         );
         buf.writeln('$indent  </svg>');
+      } else if (op is MetafileGradientRectOp) {
+        final gradientId = 'emf-gradient-$idScope-$opIndex';
+        final upperLeft = op.upperLeft;
+        final lowerRight = op.lowerRight;
+        final x1 = upperLeft.point.x;
+        final y1 = upperLeft.point.y;
+        final x2 = op.horizontal ? lowerRight.point.x : x1;
+        final y2 = op.horizontal ? y1 : lowerRight.point.y;
+        buf.writeln(
+          '$indent  <defs><linearGradient id="$gradientId" '
+          'gradientUnits="userSpaceOnUse" x1="${_n(x1)}" y1="${_n(y1)}" '
+          'x2="${_n(x2)}" y2="${_n(y2)}">'
+          '<stop offset="0" stop-color="${_argbCss(upperLeft.argb)}"/>'
+          '<stop offset="1" stop-color="${_argbCss(lowerRight.argb)}"/>'
+          '</linearGradient></defs>',
+        );
+        final minX = math.min(x1, lowerRight.point.x);
+        final minY = math.min(y1, lowerRight.point.y);
+        buf.writeln(
+          '$indent  <rect x="${_n(minX)}" y="${_n(minY)}" '
+          'width="${_n((x1 - lowerRight.point.x).abs())}" '
+          'height="${_n((y1 - lowerRight.point.y).abs())}" '
+          'fill="url(#$gradientId)"/>',
+        );
+      } else if (op is MetafileGradientTriangleOp) {
+        _writeMetafileGradientTriangle(buf, op, indent: '$indent  ');
       } else if (op is MetafilePathOp) {
         String? fillOverride;
         if (op.fill && op.fillHatch != null) {
@@ -3454,6 +3480,80 @@ class VsdxToSvgSerializer {
     }
     closeClipGroups(dcClipDepths.single);
     buf.writeln('$indent</g>');
+  }
+
+  void _writeMetafileGradientTriangle(
+    StringBuffer buf,
+    MetafileGradientTriangleOp op, {
+    required String indent,
+  }) {
+    const subdivisions = 16;
+    final vertices = <MetafileGradientVertex>[
+      op.first,
+      op.second,
+      op.third,
+    ];
+
+    ({double x, double y, int argb}) sample(int i, int j) {
+      final secondWeight = i / subdivisions;
+      final thirdWeight = j / subdivisions;
+      final firstWeight = 1 - secondWeight - thirdWeight;
+      int channel(int shift) => (
+            (((vertices[0].argb >> shift) & 0xff) * firstWeight) +
+                (((vertices[1].argb >> shift) & 0xff) * secondWeight) +
+                (((vertices[2].argb >> shift) & 0xff) * thirdWeight)
+          ).round().clamp(0, 255).toInt();
+      return (
+        x: vertices[0].point.x * firstWeight +
+            vertices[1].point.x * secondWeight +
+            vertices[2].point.x * thirdWeight,
+        y: vertices[0].point.y * firstWeight +
+            vertices[1].point.y * secondWeight +
+            vertices[2].point.y * thirdWeight,
+        argb: 0xff000000 |
+            (channel(16) << 16) |
+            (channel(8) << 8) |
+            channel(0),
+      );
+    }
+
+    void triangle(
+      ({double x, double y, int argb}) a,
+      ({double x, double y, int argb}) b,
+      ({double x, double y, int argb}) c,
+    ) {
+      final red = ((((a.argb >> 16) & 0xff) +
+                  ((b.argb >> 16) & 0xff) +
+                  ((c.argb >> 16) & 0xff)) /
+              3)
+          .round();
+      final green = ((((a.argb >> 8) & 0xff) +
+                  ((b.argb >> 8) & 0xff) +
+                  ((c.argb >> 8) & 0xff)) /
+              3)
+          .round();
+      final blue = (((a.argb & 0xff) + (b.argb & 0xff) + (c.argb & 0xff)) / 3)
+          .round();
+      final color = 0xff000000 | (red << 16) | (green << 8) | blue;
+      buf.writeln(
+        '$indent<path d="M ${_n(a.x)} ${_n(a.y)} '
+        'L ${_n(b.x)} ${_n(b.y)} L ${_n(c.x)} ${_n(c.y)} Z" '
+        'fill="${_argbCss(color)}" stroke="${_argbCss(color)}" '
+        'stroke-width="0.08"/>',
+      );
+    }
+
+    for (var i = 0; i < subdivisions; i++) {
+      for (var j = 0; i + j < subdivisions; j++) {
+        final a = sample(i, j);
+        final b = sample(i + 1, j);
+        final c = sample(i, j + 1);
+        triangle(a, b, c);
+        if (i + j + 1 < subdivisions) {
+          triangle(b, sample(i + 1, j + 1), c);
+        }
+      }
+    }
   }
 
   void _writeMetafilePathOp(

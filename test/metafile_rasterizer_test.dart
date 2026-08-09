@@ -783,4 +783,65 @@ void main() {
     expect(leakedTextPixels, 0);
     image.dispose();
   });
+
+  test('Canvas renders EMF gradient rectangles and triangles', () async {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 12,
+      maxY: 8,
+      ops: <Object>[
+        MetafileGradientRectOp(
+          upperLeft: MetafileGradientVertex(
+            point: MetafilePoint(0, 0),
+            argb: 0xFFFF0000,
+          ),
+          lowerRight: MetafileGradientVertex(
+            point: MetafilePoint(6, 4),
+            argb: 0xFF0000FF,
+          ),
+          horizontal: true,
+        ),
+        MetafileGradientTriangleOp(
+          first: MetafileGradientVertex(
+            point: MetafilePoint(7, 1),
+            argb: 0xFFFF0000,
+          ),
+          second: MetafileGradientVertex(
+            point: MetafilePoint(11, 1),
+            argb: 0xFF00FF00,
+          ),
+          third: MetafileGradientVertex(
+            point: MetafilePoint(9, 6),
+            argb: 0xFF0000FF,
+          ),
+        ),
+      ],
+    );
+
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 120);
+    expect(image, isNotNull);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+
+    List<int> pixel(int x, int y) {
+      final offset = (y * image.width + x) * 4;
+      return bytes.sublist(offset, offset + 4);
+    }
+
+    final rectStart = pixel(10, 20);
+    final rectEnd = pixel(50, 20);
+    expect(rectStart[0], greaterThan(rectStart[2]));
+    expect(rectEnd[2], greaterThan(rectEnd[0]));
+    expect(rectStart[3], 255);
+    expect(rectEnd[3], 255);
+
+    final triangleCenter = pixel(90, 30);
+    expect(triangleCenter[0], greaterThan(15));
+    expect(triangleCenter[1], greaterThan(15));
+    expect(triangleCenter[2], greaterThan(15));
+    expect(triangleCenter[3], 255);
+    expect(pixel(65, 70)[3], 0);
+    image.dispose();
+  });
 }

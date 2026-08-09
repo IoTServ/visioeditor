@@ -88,6 +88,7 @@ const int _emrPolyTextOutW = 97;
 const int _emrSmallTextOut = 108;
 const int _emrAlphaBlend = 114;
 const int _emrTransparentBlt = 116;
+const int _emrGradientFill = 118;
 
 bool looksLikeEmf(Uint8List b) =>
     b.length > 0x2B &&
@@ -1837,6 +1838,68 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         usage: bd.getUint32(params + 56, Endian.little),
         rasterOperation: 0x00cc0020,
       );
+    } else if (t == _emrGradientFill && params + 28 <= recEnd) {
+      final vertexCount = bd.getUint32(params + 16, Endian.little);
+      final meshCount = bd.getUint32(params + 20, Endian.little);
+      final mode = bd.getUint32(params + 24, Endian.little);
+      final vertexStart = params + 28;
+      final indexStride = mode == 2 ? 12 : 8;
+      if (vertexCount <= 256 * 1024 &&
+          meshCount <= 256 * 1024 &&
+          (mode == 0 || mode == 1 || mode == 2) &&
+          vertexCount * 16 + meshCount * indexStride <= recEnd - vertexStart) {
+        final vertices = <MetafileGradientVertex>[
+          for (var i = 0; i < vertexCount; i++)
+            MetafileGradientVertex(
+              point: MetafilePoint(
+                bd.getInt32(vertexStart + i * 16, Endian.little).toDouble(),
+                bd.getInt32(vertexStart + i * 16 + 4, Endian.little).toDouble(),
+              ),
+              // MS-EMF requires GRADIENTFILL to ignore TriVertex.Alpha.
+              argb: 0xff000000 |
+                  ((bd.getUint16(vertexStart + i * 16 + 8, Endian.little) >>
+                          8) <<
+                      16) |
+                  ((bd.getUint16(vertexStart + i * 16 + 10, Endian.little) >>
+                          8) <<
+                      8) |
+                  (bd.getUint16(vertexStart + i * 16 + 12, Endian.little) >> 8),
+            ),
+        ];
+        final indexStart = vertexStart + vertexCount * 16;
+        for (var i = 0; i < meshCount; i++) {
+          final meshStart = indexStart + i * indexStride;
+          final first = bd.getUint32(meshStart, Endian.little);
+          final second = bd.getUint32(meshStart + 4, Endian.little);
+          if (first >= vertexCount || second >= vertexCount) continue;
+          if (mode == 0 || mode == 1) {
+            final upperLeft = vertices[first];
+            final lowerRight = vertices[second];
+            ensurePts(<MetafilePoint>[
+              upperLeft.point,
+              lowerRight.point,
+            ]);
+            ops.add(MetafileGradientRectOp(
+              upperLeft: upperLeft,
+              lowerRight: lowerRight,
+              horizontal: mode == 0,
+            ));
+            continue;
+          }
+          // Triangle indexes are three DWORDs, packed at 12-byte strides.
+          final third = bd.getUint32(meshStart + 8, Endian.little);
+          if (third >= vertexCount) continue;
+          final a = vertices[first];
+          final b = vertices[second];
+          final c = vertices[third];
+          ensurePts(<MetafilePoint>[a.point, b.point, c.point]);
+          ops.add(MetafileGradientTriangleOp(
+            first: a,
+            second: b,
+            third: c,
+          ));
+        }
+      }
     } else if ((t == _emrExtTextOutA ||
             t == _emrExtTextOutW ||
             t == _emrPolyTextOutA ||
