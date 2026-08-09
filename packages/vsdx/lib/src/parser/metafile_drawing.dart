@@ -5,6 +5,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 
@@ -76,6 +77,33 @@ class MetafilePixelOp {
 
   /// 0xAARRGGBB
   final int argb;
+}
+
+/// A decoded WMF/EMF DIB retained at its authored position in paint order.
+@immutable
+class MetafileBitmapOp {
+  const MetafileBitmapOp({
+    required this.bmpBytes,
+    required this.pixelWidth,
+    required this.pixelHeight,
+    required this.destination,
+    this.source,
+    this.rasterOperation = 0x00cc0020,
+  });
+
+  /// Complete BMP stream (14-byte file header followed by the source DIB).
+  final Uint8List bmpBytes;
+  final int pixelWidth;
+  final int pixelHeight;
+
+  /// Directed destination rectangle. Reversed edges retain GDI mirroring.
+  final MetafileRect destination;
+
+  /// Optional source crop in bitmap pixel coordinates.
+  final MetafileRect? source;
+
+  /// Authored ternary raster operation (SRCCOPY by default).
+  final int rasterOperation;
 }
 
 /// An additional figure in a compound GDI path.
@@ -286,6 +314,7 @@ class MetafileDrawing {
   bool get isEmpty => !ops.any(
         (op) =>
             op is MetafilePixelOp ||
+            op is MetafileBitmapOp ||
             op is MetafilePathOp ||
             op is MetafileTextOp,
       );

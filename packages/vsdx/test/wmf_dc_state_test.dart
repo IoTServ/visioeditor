@@ -98,6 +98,79 @@ Uint8List _sourceLessBltRecord(
   return out;
 }
 
+Uint8List _twoByTwoDib() {
+  final out = Uint8List(56);
+  ByteData.sublistView(out)
+    ..setUint32(0, 40, Endian.little) // BITMAPINFOHEADER
+    ..setInt32(4, 2, Endian.little)
+    ..setInt32(8, 2, Endian.little) // bottom-up
+    ..setUint16(12, 1, Endian.little)
+    ..setUint16(14, 24, Endian.little)
+    ..setUint32(20, 16, Endian.little);
+  // Two padded BGR scanlines: bottom blue/white, top red/green.
+  out.setRange(40, 56, const <int>[
+    255,
+    0,
+    0,
+    255,
+    255,
+    255,
+    0,
+    0,
+    0,
+    0,
+    255,
+    0,
+    255,
+    0,
+    0,
+    0,
+  ]);
+  return out;
+}
+
+Uint8List _dibBltRecord(
+  int function, {
+  required int x,
+  required int y,
+  required int width,
+  required int height,
+  int sourceX = 0,
+  int sourceY = 0,
+  int sourceWidth = 0,
+  int sourceHeight = 0,
+  int rasterOperation = 0x00cc0020,
+}) {
+  final dib = _twoByTwoDib();
+  final stretched = function == 0x0b41 || function == 0x0f43;
+  final hasColorUsage = function == 0x0f43;
+  final fixedBytes = 4 + (hasColorUsage ? 2 : 0) + (stretched ? 4 : 0) + 12;
+  final out = Uint8List(6 + fixedBytes + dib.length);
+  final data = ByteData.sublistView(out)
+    ..setUint32(0, out.length ~/ 2, Endian.little)
+    ..setUint16(4, function, Endian.little)
+    ..setUint32(6, rasterOperation, Endian.little);
+  var p = 10;
+  if (hasColorUsage) {
+    data.setUint16(p, 0, Endian.little); // DIB_RGB_COLORS
+    p += 2;
+  }
+  if (stretched) {
+    data.setInt16(p, sourceHeight, Endian.little);
+    data.setInt16(p + 2, sourceWidth, Endian.little);
+    p += 4;
+  }
+  data.setInt16(p, sourceY, Endian.little);
+  data.setInt16(p + 2, sourceX, Endian.little);
+  data.setInt16(p + 4, height, Endian.little);
+  data.setInt16(p + 6, width, Endian.little);
+  data.setInt16(p + 8, y, Endian.little);
+  data.setInt16(p + 10, x, Endian.little);
+  p += 12;
+  out.setRange(p, out.length, dib);
+  return out;
+}
+
 Uint8List _polyPolygonRecord() {
   const polygons = <List<(int, int)>>[
     <(int, int)>[(0, 0), (100, 0), (100, 100), (0, 100)],
@@ -435,6 +508,14 @@ void main() {
       _sourceLessBltRecord(0x0940, 0x00f00021, 25, 40, 10, 10),
       _sourceLessBltRecord(0x0b23, 0x00f00021, 40, 40, 10, 10),
       _sourceLessBltRecord(0x0b41, 0x00f00021, 55, 40, 10, 10),
+      _dibBltRecord(
+        0x0940,
+        x: 70,
+        y: 40,
+        width: 10,
+        height: 10,
+        rasterOperation: 0x00f00021,
+      ),
     ]);
 
     final drawing = parseWmfDrawing(payload)!;
@@ -444,13 +525,14 @@ void main() {
     expect(pixel.argb, 0xffff0000);
 
     final paths = drawing.ops.whereType<MetafilePathOp>().toList();
-    expect(paths, hasLength(7));
+    expect(paths, hasLength(8));
     expect(
       paths.map((path) => path.fillArgb),
       <int>[
         0xff0000ff,
         0xff000000,
         0xffffffff,
+        0xff0000ff,
         0xff0000ff,
         0xff0000ff,
         0xff0000ff,
@@ -494,7 +576,7 @@ void main() {
     expect(roundTripped, payload);
     final reopenedDrawing = parseWmfDrawing(roundTripped)!;
     expect(reopenedDrawing.ops.whereType<MetafilePixelOp>(), hasLength(1));
-    expect(reopenedDrawing.ops.whereType<MetafilePathOp>(), hasLength(7));
+    expect(reopenedDrawing.ops.whereType<MetafilePathOp>(), hasLength(8));
   });
 
   test('SETTEXTCHAREXTRA combines with justification and restores with DC', () {
@@ -518,5 +600,104 @@ void main() {
     expect(texts.last.advancesX![0], closeTo(9.6, 1e-9));
     expect(texts.last.advancesX![1], closeTo(13.6, 1e-9));
     expect(texts.last.advancesX![2], closeTo(9.6, 1e-9));
+  });
+
+  test('embedded DIB records retain crop, placement, order, and round-trip',
+      () {
+    final payload = _wmf(<Uint8List>[
+      _setPixelRecord(0x000000ff, 1, 1),
+      _dibBltRecord(0x0940, x: 10, y: 20, width: 12, height: 8),
+      _dibBltRecord(
+        0x0b41,
+        x: 30,
+        y: 20,
+        width: 14,
+        height: 8,
+        sourceX: 1,
+        sourceWidth: 1,
+        sourceHeight: 2,
+      ),
+      _dibBltRecord(
+        0x0f43,
+        x: 60,
+        y: 20,
+        width: -10,
+        height: 8,
+        sourceWidth: 2,
+        sourceHeight: 2,
+      ),
+      _setPixelRecord(0x00ff0000, 79, 39),
+    ]);
+
+    final drawing = parseWmfDrawing(payload)!;
+    expect(drawing.ops.map((op) => op.runtimeType), <Type>[
+      MetafilePixelOp,
+      MetafileBitmapOp,
+      MetafileBitmapOp,
+      MetafileBitmapOp,
+      MetafilePixelOp,
+    ]);
+    final bitmaps = drawing.ops.whereType<MetafileBitmapOp>().toList();
+    expect(bitmaps, hasLength(3));
+    expect((bitmaps.first.pixelWidth, bitmaps.first.pixelHeight), (2, 2));
+    expect(bitmaps.first.bmpBytes.sublist(0, 2), <int>[0x42, 0x4d]);
+    expect(bitmaps.first.destination, isA<MetafileRect>());
+    expect(
+      (
+        bitmaps.first.destination.left,
+        bitmaps.first.destination.top,
+        bitmaps.first.destination.right,
+        bitmaps.first.destination.bottom,
+      ),
+      (10, 20, 22, 28),
+    );
+    expect(bitmaps.first.source, isNull);
+    expect(
+      (
+        bitmaps[1].source!.left,
+        bitmaps[1].source!.top,
+        bitmaps[1].source!.right,
+        bitmaps[1].source!.bottom,
+      ),
+      (1, 0, 2, 2),
+    );
+    expect(bitmaps.last.destination.left, 60);
+    expect(bitmaps.last.destination.right, 50);
+
+    const part = '/visio/media/embedded-dibs.wmf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(RegExp('data:image/bmp;base64,').allMatches(svg), hasLength(3));
+    expect(svg, contains('viewBox="1 0 1 2"'));
+    expect(svg, contains('scale(-1 1)'));
+    final firstPixel = svg.indexOf('fill="#ff0000"');
+    final firstBitmap = svg.indexOf('data:image/bmp;base64,');
+    final lastPixel = svg.indexOf('fill="#0000ff"');
+    expect(firstPixel, lessThan(firstBitmap));
+    expect(lastPixel, greaterThan(firstBitmap));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    document =
+        document.copyWith(images: images).replacePage(0, _imagePage(part));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: document,
+    ));
+    final roundTripped = reopened.images.findByPart(part)!.bytes;
+    expect(roundTripped, payload);
+    expect(
+      parseWmfDrawing(roundTripped)!.ops.whereType<MetafileBitmapOp>(),
+      hasLength(3),
+    );
   });
 }

@@ -3056,18 +3056,26 @@ class VsdxToSvgSerializer {
         vectorDrawing: null,
       );
     }
+    final metafileBytes = Uint8List.fromList(src.bytes);
+    final preferWmfDisplayList =
+        src.mimeType.toLowerCase().contains('wmf') ||
+            src.partName.toLowerCase().endsWith('.wmf') ||
+            looksLikeWmf(metafileBytes);
+    final drawing = parseMetafileDrawing(
+      metafileBytes,
+      mimeType: src.mimeType,
+      partName: src.partName,
+    );
+    if (preferWmfDisplayList && drawing != null && !drawing.isEmpty) {
+      return (mime: null, bytes: null, vectorDrawing: drawing);
+    }
     final raster = extractMetafileRaster(
-      Uint8List.fromList(src.bytes),
+      metafileBytes,
       mimeType: src.mimeType,
     );
     if (raster != null) {
       return (mime: 'image/bmp', bytes: raster, vectorDrawing: null);
     }
-    final drawing = parseMetafileDrawing(
-      Uint8List.fromList(src.bytes),
-      mimeType: src.mimeType,
-      partName: src.partName,
-    );
     if (drawing != null && !drawing.isEmpty) {
       return (mime: null, bytes: null, vectorDrawing: drawing);
     }
@@ -3338,6 +3346,43 @@ class VsdxToSvgSerializer {
           'height="1" fill="${_argbCss(op.argb)}" '
           'shape-rendering="crispEdges"/>',
         );
+      } else if (op is MetafileBitmapOp) {
+        final destination = op.destination;
+        final source = op.source ??
+            MetafileRect(
+              0,
+              0,
+              op.pixelWidth.toDouble(),
+              op.pixelHeight.toDouble(),
+            );
+        final flipX = destination.right < destination.left;
+        final flipY = destination.bottom < destination.top;
+        final transforms = <String>[];
+        if (flipX || flipY) {
+          transforms.add(
+            'translate(${_n(flipX ? destination.left + destination.right : 0)} '
+            '${_n(flipY ? destination.top + destination.bottom : 0)})',
+          );
+          transforms.add('scale(${flipX ? -1 : 1} ${flipY ? -1 : 1})');
+        }
+        final transformAttr = transforms.isEmpty
+            ? ''
+            : ' transform="${transforms.join(' ')}"';
+        final href = base64Encode(op.bmpBytes);
+        buf.writeln(
+          '$indent  <svg x="${_n(destination.minX)}" '
+          'y="${_n(destination.minY)}" width="${_n(destination.width)}" '
+          'height="${_n(destination.height)}" '
+          'viewBox="${_n(source.minX)} ${_n(source.minY)} '
+          '${_n(source.width)} ${_n(source.height)}" '
+          'preserveAspectRatio="none" overflow="hidden"$transformAttr>',
+        );
+        buf.writeln(
+          '$indent    <image x="0" y="0" width="${op.pixelWidth}" '
+          'height="${op.pixelHeight}" preserveAspectRatio="none" '
+          'href="data:image/bmp;base64,$href"/>',
+        );
+        buf.writeln('$indent  </svg>');
       } else if (op is MetafilePathOp) {
         String? fillOverride;
         if (op.fill && op.fillHatch != null) {

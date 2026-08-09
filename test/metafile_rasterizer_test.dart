@@ -166,6 +166,26 @@ Uint8List _emfWithPathBracket(int fillMode) {
   return Uint8List.fromList(out.toBytes());
 }
 
+Uint8List _twoByTwoBmp() {
+  final out = Uint8List(70);
+  ByteData.sublistView(out)
+    ..setUint8(0, 0x42)
+    ..setUint8(1, 0x4d)
+    ..setUint32(2, 70, Endian.little)
+    ..setUint32(10, 54, Endian.little)
+    ..setUint32(14, 40, Endian.little)
+    ..setInt32(18, 2, Endian.little)
+    ..setInt32(22, 2, Endian.little)
+    ..setUint16(26, 1, Endian.little)
+    ..setUint16(28, 24, Endian.little)
+    ..setUint32(34, 16, Endian.little);
+  out.setRange(54, 70, const <int>[
+    255, 0, 0, 255, 255, 255, 0, 0,
+    0, 0, 255, 0, 255, 0, 0, 0,
+  ]);
+  return out;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -187,6 +207,57 @@ void main() {
     expect(bytes.sublist(center, center + 4), <int>[0, 0, 255, 255]);
     final outside = (5 * image.width + 5) * 4;
     expect(bytes[outside + 3], 0);
+    image.dispose();
+  });
+
+  test('Canvas decodes embedded BMP ops with crop, order, and mirroring',
+      () async {
+    final bmp = _twoByTwoBmp();
+    final drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 8,
+      maxY: 4,
+      ops: <Object>[
+        MetafileBitmapOp(
+          bmpBytes: bmp,
+          pixelWidth: 2,
+          pixelHeight: 2,
+          destination: const MetafileRect(0, 0, 4, 4),
+        ),
+        const MetafilePixelOp(x: 0, y: 0, argb: 0xff000000),
+        MetafileBitmapOp(
+          bmpBytes: bmp,
+          pixelWidth: 2,
+          pixelHeight: 2,
+          destination: const MetafileRect(8, 0, 4, 4),
+          source: const MetafileRect(0, 0, 2, 1),
+        ),
+      ],
+    );
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 80);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+
+    List<int> pixel(int x, int y) {
+      final offset = (y * image.width + x) * 4;
+      return bytes.sublist(offset, offset + 4);
+    }
+
+    void expectColor(int x, int y, List<int> expected) {
+      final actual = pixel(x, y);
+      for (var i = 0; i < 4; i++) {
+        expect(actual[i], closeTo(expected[i], 4));
+      }
+    }
+
+    expectColor(5, 5, <int>[0, 0, 0, 255]); // later SETPIXEL
+    expectColor(35, 5, <int>[0, 255, 0, 255]);
+    expectColor(5, 35, <int>[0, 0, 255, 255]);
+    expectColor(35, 35, <int>[255, 255, 255, 255]);
+    // The second op crops the top row and mirrors it horizontally.
+    expectColor(45, 20, <int>[0, 255, 0, 255]);
+    expectColor(75, 20, <int>[255, 0, 0, 255]);
     image.dispose();
   });
 

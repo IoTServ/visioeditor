@@ -10,6 +10,7 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'emf_embedded_bitmap.dart';
 import 'emf_vector_parser.dart';
 import 'metafile_drawing.dart';
 import 'vsd/vsd_text_codec.dart';
@@ -56,6 +57,7 @@ const int _metaBitBlt = 0x0922;
 const int _metaStretchBlt = 0x0B23;
 const int _metaDibBitBlt = 0x0940;
 const int _metaDibStretchBlt = 0x0B41;
+const int _metaStretchDib = 0x0F43;
 const int _metaMoveTo = 0x0214;
 const int _metaLineTo = 0x0213;
 const int _metaPolyBezier = 0x1008;
@@ -349,6 +351,17 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       points.map((point) => point.x).reduce(math.max),
       points.map((point) => point.y).reduce(math.max),
     );
+  }
+
+  MetafileRect mapDirectedRect(
+    double x,
+    double y,
+    double width,
+    double height,
+  ) {
+    final start = mapPoint(MetafilePoint(x, y));
+    final end = mapPoint(MetafilePoint(x + width, y + height));
+    return MetafileRect(start.x, start.y, end.x, end.y);
   }
 
   MetafileTextOp mapTextOp(MetafileTextOp op) {
@@ -723,6 +736,98 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final y = bd.getInt16(params + 8, Endian.little).toDouble();
       final x = bd.getInt16(params + 10, Endian.little).toDouble();
       emitRasterOperationFill(rasterOperation, x, y, width, height);
+    } else if ((func == _metaDibBitBlt ||
+            func == _metaDibStretchBlt ||
+            func == _metaStretchDib) &&
+        !(func != _metaStretchDib && size == (func >> 8) + 3)) {
+      // Match LibreOffice's WMF reader: retain a source DIB in the display
+      // list at the point where the record occurs. Extracting it after parsing
+      // loses both the destination rectangle and surrounding vector content.
+      final stretched = func == _metaDibStretchBlt || func == _metaStretchDib;
+      final fixedBytes = func == _metaStretchDib
+          ? 22
+          : stretched
+              ? 20
+              : 16;
+      if (params + fixedBytes + 12 <= recEnd) {
+        final rasterOperation = bd.getUint32(params, Endian.little);
+        var p = params + 4;
+        final colorUsage =
+            func == _metaStretchDib ? bd.getUint16(p, Endian.little) : 0;
+        if (func == _metaStretchDib) p += 2;
+        var sourceHeight = 0;
+        var sourceWidth = 0;
+        if (stretched) {
+          sourceHeight = bd.getInt16(p, Endian.little);
+          sourceWidth = bd.getInt16(p + 2, Endian.little);
+          p += 4;
+        }
+        final sourceY = bd.getInt16(p, Endian.little);
+        final sourceX = bd.getInt16(p + 2, Endian.little);
+        p += 4;
+        final destinationHeight = bd.getInt16(p, Endian.little).toDouble();
+        final destinationWidth = bd.getInt16(p + 2, Endian.little).toDouble();
+        final destinationY = bd.getInt16(p + 4, Endian.little).toDouble();
+        final destinationX = bd.getInt16(p + 6, Endian.little).toDouble();
+        p += 8;
+
+        // DIB_RGB_COLORS is self-contained. DIB_PAL_COLORS refers to a
+        // logical palette that WMF does not serialize with the record, so it
+        // cannot be converted to a standalone BMP safely.
+        if (destinationWidth != 0 &&
+            destinationHeight != 0 &&
+            (rasterOperation == 0x00f00021 ||
+                rasterOperation == 0x00000042 ||
+                rasterOperation == 0x00ff0062)) {
+          // These ROP3 values ignore the source even when a DIB is present.
+          emitRasterOperationFill(
+            rasterOperation,
+            destinationX,
+            destinationY,
+            destinationWidth,
+            destinationHeight,
+          );
+        } else if (colorUsage == 0 &&
+            destinationWidth != 0 &&
+            destinationHeight != 0) {
+          final dib = Uint8List.sublistView(bytes, p, recEnd);
+          final dimensions = dibDimensions(dib);
+          final bmp = wrapDibAsBmp(dib);
+          if (dimensions != null && bmp != null) {
+            final pixelWidth = dimensions.$1;
+            final pixelHeight = dimensions.$2;
+            MetafileRect? source;
+            if (sourceWidth > 0 &&
+                sourceHeight > 0 &&
+                sourceX >= 0 &&
+                sourceY >= 0 &&
+                sourceX + sourceWidth <= pixelWidth &&
+                sourceY + sourceHeight <= pixelHeight) {
+              source = MetafileRect(
+                sourceX.toDouble(),
+                sourceY.toDouble(),
+                (sourceX + sourceWidth).toDouble(),
+                (sourceY + sourceHeight).toDouble(),
+              );
+            }
+            final destination = mapDirectedRect(
+              destinationX,
+              destinationY,
+              destinationWidth,
+              destinationHeight,
+            );
+            ensureBounds(destination.corners);
+            ops.add(MetafileBitmapOp(
+              bmpBytes: bmp,
+              pixelWidth: pixelWidth,
+              pixelHeight: pixelHeight,
+              destination: destination,
+              source: source,
+              rasterOperation: rasterOperation,
+            ));
+          }
+        }
+      }
     } else if ((func == _metaBitBlt ||
             func == _metaStretchBlt ||
             func == _metaDibBitBlt ||

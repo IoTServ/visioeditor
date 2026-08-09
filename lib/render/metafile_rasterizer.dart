@@ -17,6 +17,20 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   int maxEdge = 2048,
 }) async {
   if (drawing.isEmpty) return null;
+  final bitmapImages = <MetafileBitmapOp, ui.Image>{};
+  for (final op in drawing.ops.whereType<MetafileBitmapOp>()) {
+    try {
+      final codec = await ui.instantiateImageCodec(op.bmpBytes);
+      try {
+        final frame = await codec.getNextFrame();
+        bitmapImages[op] = frame.image;
+      } finally {
+        codec.dispose();
+      }
+    } catch (_) {
+      // Keep replaying later operations when one malformed embedded DIB fails.
+    }
+  }
   final logicalW = drawing.width;
   final logicalH = drawing.height;
   final scale = math.min(maxEdge / logicalW, maxEdge / logicalH);
@@ -58,6 +72,41 @@ Future<ui.Image?> rasterizeMetafileDrawing(
           ..color = Color(op.argb)
           ..isAntiAlias = false,
       );
+    } else if (op is MetafileBitmapOp) {
+      final image = bitmapImages[op];
+      if (image == null) continue;
+      final source = op.source;
+      final sourceRect = source == null
+          ? Rect.fromLTWH(
+              0,
+              0,
+              op.pixelWidth.toDouble(),
+              op.pixelHeight.toDouble(),
+            )
+          : Rect.fromLTRB(source.minX, source.minY, source.maxX, source.maxY);
+      final destination = op.destination;
+      final flipX = destination.right < destination.left;
+      final flipY = destination.bottom < destination.top;
+      canvas.save();
+      if (flipX || flipY) {
+        canvas.translate(
+          flipX ? destination.left + destination.right : 0,
+          flipY ? destination.top + destination.bottom : 0,
+        );
+        canvas.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+      }
+      canvas.drawImageRect(
+        image,
+        sourceRect,
+        Rect.fromLTRB(
+          destination.minX,
+          destination.minY,
+          destination.maxX,
+          destination.maxY,
+        ),
+        Paint()..filterQuality = FilterQuality.low,
+      );
+      canvas.restore();
     } else if (op is MetafilePathOp) {
       _paintPath(canvas, op, deviceScale: scale);
     } else if (op is MetafileTextOp) {
@@ -74,6 +123,9 @@ Future<ui.Image?> rasterizeMetafileDrawing(
     return await picture.toImage(pxW, pxH);
   } finally {
     picture.dispose();
+    for (final image in bitmapImages.values) {
+      image.dispose();
+    }
   }
 }
 

@@ -131,20 +131,43 @@ Uint8List? _dibFromBlits(Uint8List emf, int recOff, int recSize, int type) {
     }
     final dibEnd = recOff + recSize;
     final dib = emf.sublist(i, dibEnd);
-    return _dibToBmp(dib);
+    return wrapDibAsBmp(dib);
   }
   return null;
 }
 
-Uint8List _packBmp(Uint8List bmi, Uint8List bits) {
+Uint8List? _packBmp(Uint8List bmi, Uint8List bits) {
   final dib = Uint8List(bmi.length + bits.length);
   dib.setRange(0, bmi.length, bmi);
   dib.setRange(bmi.length, dib.length, bits);
-  return _dibToBmp(dib);
+  return wrapDibAsBmp(dib);
 }
 
-Uint8List _dibToBmp(Uint8List dib) {
+/// Wrap a standalone device-independent bitmap in a BMP file header.
+///
+/// WMF bitmap records store a DIB directly after their fixed parameters,
+/// while Flutter and SVG image decoders expect a complete BMP stream. The
+/// returned bytes retain the original DIB exactly (including compressed pixel
+/// data); only the 14-byte file header is added.
+Uint8List? wrapDibAsBmp(Uint8List dib) {
+  if (dib.length < 12) return null;
+  final headerSize = _u32(dib, 0);
+  if (headerSize != 12 &&
+      headerSize != 40 &&
+      headerSize != 52 &&
+      headerSize != 56 &&
+      headerSize != 64 &&
+      headerSize != 108 &&
+      headerSize != 124) {
+    return null;
+  }
+  if (headerSize > dib.length) return null;
+  final dimensions = dibDimensions(dib);
+  if (dimensions == null || dimensions.$1 <= 0 || dimensions.$2 <= 0) {
+    return null;
+  }
   final dataOff = _bmpDataOffset(dib);
+  if (dataOff < 14 || dataOff > dib.length + 14) return null;
   final total = dib.length + 14;
   final out = Uint8List(total);
   out[0] = 0x42;
@@ -161,20 +184,45 @@ Uint8List _dibToBmp(Uint8List dib) {
   return out;
 }
 
+/// Pixel dimensions declared by a DIB header, or `null` when it is truncated.
+(int, int)? dibDimensions(Uint8List dib) {
+  if (dib.length < 12) return null;
+  final headerSize = _u32(dib, 0);
+  if (headerSize == 12) {
+    final width = dib[4] | (dib[5] << 8);
+    final height = dib[6] | (dib[7] << 8);
+    return (width, height);
+  }
+  if (headerSize < 40 || dib.length < 16) return null;
+  return (_i32(dib, 4).abs(), _i32(dib, 8).abs());
+}
+
 int _bmpDataOffset(Uint8List dib) {
   if (dib.length < 4) return 14 + 40;
   var headerSize = _u32(dib, 0);
   if (headerSize > dib.length) headerSize = 40;
   var off = headerSize;
   var bpp = 0;
+  if (headerSize == 12 && dib.length >= 12) {
+    bpp = dib[10] | (dib[11] << 8);
+    if (bpp > 0 && bpp <= 8) off += (1 << bpp) * 3;
+    return 14 + off;
+  }
   if (dib.length >= 16) {
     bpp = dib[14] | (dib[15] << 8);
   }
   if (bpp > 32) bpp = 32;
-  if (bpp <= 8 && dib.length >= 36) {
+  if (bpp > 0 && bpp <= 8 && dib.length >= 36) {
     var clrUsed = _u32(dib, 32);
     if (clrUsed == 0) clrUsed = 1 << bpp;
     off += clrUsed * 4;
+  }
+  // BITMAPINFOHEADER stores BI_BITFIELDS masks between the 40-byte header and
+  // the pixel array. V2/V3/V4/V5 headers already include those masks.
+  if (headerSize == 40 && dib.length >= 20) {
+    final compression = _u32(dib, 16);
+    if (compression == 3) off += 12; // BI_BITFIELDS
+    if (compression == 6) off += 16; // BI_ALPHABITFIELDS
   }
   return 14 + off;
 }
