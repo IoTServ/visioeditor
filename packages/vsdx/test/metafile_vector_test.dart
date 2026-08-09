@@ -1256,7 +1256,7 @@ void main() {
   });
 
   group('parseMetafileDrawing facade', () {
-    test('routes .wmf by extension', () {
+    test('routes .wmf and prefers its authoritative WMFC EMF', () {
       final bytes = _fixture('Visio5PlanWithDimensions.wmf');
       final direct = parseWmfDrawing(bytes)!;
       final d = parseMetafileDrawing(
@@ -1265,7 +1265,12 @@ void main() {
         partName: '/visio/media/x.wmf',
       );
       expect(d, isNotNull);
-      expect(d!.ops.length, direct.ops.length);
+      expect(
+        d!.ops.length,
+        greaterThan(direct.ops.length),
+        reason: 'the embedded EMF carries more drawing operations than the '
+            'lower-fidelity WMF fallback',
+      );
       expect(
         d.ops.whereType<MetafileTextOp>().map((op) => op.text),
         direct.ops.whereType<MetafileTextOp>().map((op) => op.text),

@@ -19,11 +19,16 @@ const int _placeableKey = 0x9AC6CDD7;
 const int _metaSetWindowOrg = 0x020B;
 const int _metaSetWindowExt = 0x020C;
 const int _metaSetBkMode = 0x0102;
+const int _metaSetMapMode = 0x0103;
+const int _metaSetPolyFillMode = 0x0106;
 const int _metaSetBkColor = 0x0201;
 const int _metaSetTextColor = 0x0209;
+const int _metaSetTextJustification = 0x020A;
 const int _metaSetTextAlign = 0x012E;
 const int _metaSaveDc = 0x001E;
 const int _metaRestoreDc = 0x0127;
+const int _metaExcludeClipRect = 0x0415;
+const int _metaIntersectClipRect = 0x0416;
 const int _metaCreatePenIndirect = 0x02FA;
 const int _metaCreateBrushIndirect = 0x02FC;
 const int _metaCreateFontIndirect = 0x02FB;
@@ -110,8 +115,7 @@ Uint8List? extractWmfEmbeddedEmf(Uint8List bytes) {
           dataLength >= 34 &&
           dataStart + dataLength <= recordEnd &&
           sizeWords == ((dataLength + 1) >> 1) + 5 &&
-          bd.getUint32(dataStart, Endian.little) ==
-              _wmfcCommentIdentifier) {
+          bd.getUint32(dataStart, Endian.little) == _wmfcCommentIdentifier) {
         final commentType = bd.getUint32(dataStart + 4, Endian.little);
         final commentVersion = bd.getUint32(dataStart + 8, Endian.little);
         final chunkCount = bd.getUint32(dataStart + 18, Endian.little);
@@ -189,6 +193,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var backgroundMode = 1; // TRANSPARENT
   var backgroundColor = 0xFFFFFFFF;
   var textAlign = 0;
+  var mapMode = 1; // MM_TEXT
+  var polyFillMode = 1; // ALTERNATE
+  var textBreakExtra = 0;
+  var textBreakCount = 0;
   String? fontFace;
   var fontHeight = 12.0;
   var fontWeight = 400;
@@ -214,6 +222,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
         textAlign: textAlign,
+        mapMode: mapMode,
+        polyFillMode: polyFillMode,
+        textBreakExtra: textBreakExtra,
+        textBreakCount: textBreakCount,
         fontFace: fontFace,
         fontHeight: fontHeight,
         fontWeight: fontWeight,
@@ -230,15 +242,14 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         curY: curY,
       );
 
-  void restoreState(int savedDc) {
-    if (savedDc == 0) return;
-    final index = savedDc < 0 ? savedStates.length + savedDc : savedDc;
-    if (index < 0) {
-      savedStates.clear();
-      return;
-    }
-    if (index >= savedStates.length) return;
+  int restoreState(int savedDc) {
+    if (savedDc == 0) return 0;
+    // SaveDC identifiers are one-based; negative values are relative to the
+    // current stack (-1 is the most recently saved context).
+    final index = savedDc < 0 ? savedStates.length + savedDc : savedDc - 1;
+    if (index < 0 || index >= savedStates.length) return 0;
     final state = savedStates[index];
+    final restoredCount = savedStates.length - index;
     savedStates.removeRange(index, savedStates.length);
     penColor = state.penColor;
     penWidth = state.penWidth;
@@ -251,6 +262,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     backgroundMode = state.backgroundMode;
     backgroundColor = state.backgroundColor;
     textAlign = state.textAlign;
+    mapMode = state.mapMode;
+    polyFillMode = state.polyFillMode;
+    textBreakExtra = state.textBreakExtra;
+    textBreakCount = state.textBreakCount;
     fontFace = state.fontFace;
     fontHeight = state.fontHeight;
     fontWeight = state.fontWeight;
@@ -265,6 +280,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     winExtY = state.winExtY;
     curX = state.curX;
     curY = state.curY;
+    return restoredCount;
   }
 
   void ensureBounds(Iterable<MetafilePoint> pts) {
@@ -305,8 +321,34 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       // Skip dual-mode EMF comments.
     } else if (func == _metaSaveDc) {
       savedStates.add(captureState());
+      ops.add(const MetafileSaveDcOp());
     } else if (func == _metaRestoreDc && params + 2 <= recEnd) {
-      restoreState(bd.getInt16(params, Endian.little));
+      final restored = restoreState(bd.getInt16(params, Endian.little));
+      if (restored > 0) ops.add(MetafileRestoreDcOp(count: restored));
+    } else if (func == _metaSetMapMode && params + 2 <= recEnd) {
+      mapMode = bd.getUint16(params, Endian.little);
+    } else if (func == _metaSetPolyFillMode && params + 2 <= recEnd) {
+      polyFillMode = bd.getUint16(params, Endian.little);
+    } else if (func == _metaSetTextJustification && params + 4 <= recEnd) {
+      // WMF stores API parameters in reverse order: break count, then the
+      // signed total extra width distributed across break characters.
+      textBreakCount = bd.getInt16(params, Endian.little);
+      textBreakExtra = bd.getInt16(params + 2, Endian.little);
+    } else if ((func == _metaIntersectClipRect ||
+            func == _metaExcludeClipRect) &&
+        params + 8 <= recEnd) {
+      final rect = MetafileRect(
+        bd.getInt16(params + 6, Endian.little).toDouble(),
+        bd.getInt16(params + 4, Endian.little).toDouble(),
+        bd.getInt16(params + 2, Endian.little).toDouble(),
+        bd.getInt16(params, Endian.little).toDouble(),
+      );
+      ops.add(MetafileClipRectOp(
+        rect: rect,
+        mode: func == _metaIntersectClipRect
+            ? MetafileClipCombineMode.intersect
+            : MetafileClipCombineMode.exclude,
+      ));
     } else if (func == _metaSetWindowOrg && params + 4 <= recEnd) {
       winOrgY = bd.getInt16(params, Endian.little).toDouble();
       winOrgX = bd.getInt16(params + 2, Endian.little).toDouble();
@@ -467,6 +509,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushHatch: brushHatch,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
+          evenOddFill: polyFillMode != 2,
           asEllipse: true,
         ));
       } else {
@@ -508,6 +551,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
               brushHatch: brushHatch,
               backgroundMode: backgroundMode,
               backgroundColor: backgroundColor,
+              evenOddFill: polyFillMode != 2,
             ));
           }
         }
@@ -528,6 +572,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushHatch: brushHatch,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
+          evenOddFill: polyFillMode != 2,
         ));
       }
     } else if (func == _metaPolyline) {
@@ -586,6 +631,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         counts.add(bd.getUint16(p, Endian.little));
         p += 2;
       }
+      final contours = <List<MetafilePoint>>[];
       for (final c in counts) {
         final pts = <MetafilePoint>[];
         for (var i = 0; i < c && p + 4 <= recEnd; i++) {
@@ -596,20 +642,28 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         }
         if (pts.length >= 2) {
           ensureBounds(pts);
-          ops.add(_pathOp(
-            pts,
-            closed: true,
-            penStyle: penStyle,
-            penColor: penColor,
-            penWidth: penWidth,
-            penDashPattern: penDashPattern,
-            brushStyle: brushStyle,
-            brushColor: brushColor,
-            brushHatch: brushHatch,
-            backgroundMode: backgroundMode,
-            backgroundColor: backgroundColor,
-          ));
+          contours.add(pts);
         }
+      }
+      if (contours.isNotEmpty) {
+        ops.add(_pathOp(
+          contours.first,
+          closed: true,
+          penStyle: penStyle,
+          penColor: penColor,
+          penWidth: penWidth,
+          penDashPattern: penDashPattern,
+          brushStyle: brushStyle,
+          brushColor: brushColor,
+          brushHatch: brushHatch,
+          backgroundMode: backgroundMode,
+          backgroundColor: backgroundColor,
+          additionalContours: <MetafilePathContour>[
+            for (final points in contours.skip(1))
+              MetafilePathContour(points: points, closed: true),
+          ],
+          evenOddFill: polyFillMode != 2,
+        ));
       }
     } else if (func == _metaRoundRect && params + 12 <= recEnd) {
       final cornerHeight = bd.getInt16(params, Endian.little).abs() / 2.0;
@@ -637,6 +691,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushHatch: brushHatch,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
+        evenOddFill: polyFillMode != 2,
         cornerRadiusX: cornerWidth,
         cornerRadiusY: cornerHeight,
       ));
@@ -665,6 +720,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushHatch: brushHatch,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
+        evenOddFill: polyFillMode != 2,
         asEllipse: func == _metaEllipse,
       ));
     } else if (func == _metaExtTextOut) {
@@ -685,6 +741,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontStrikeThrough,
         fontEscapementDegrees,
         fontEncoding,
+        textBreakExtra,
+        textBreakCount,
         currentX: (textAlign & 0x01) != 0 ? curX : null,
         currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
@@ -717,6 +775,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontStrikeThrough,
         fontEscapementDegrees,
         fontEncoding,
+        textBreakExtra,
+        textBreakCount,
         currentX: (textAlign & 0x01) != 0 ? curX : null,
         currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
@@ -759,6 +819,8 @@ MetafilePathOp _pathOp(
   required int brushHatch,
   required int backgroundMode,
   required int backgroundColor,
+  List<MetafilePathContour> additionalContours = const <MetafilePathContour>[],
+  bool evenOddFill = false,
   bool asEllipse = false,
   double? cornerRadiusX,
   double? cornerRadiusY,
@@ -780,6 +842,8 @@ MetafilePathOp _pathOp(
     fillHatch: brushStyle == 2 ? brushHatch : null,
     fillBackgroundArgb:
         brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+    additionalContours: additionalContours,
+    evenOddFill: evenOddFill,
   );
 }
 
@@ -814,6 +878,8 @@ MetafileTextOp? _readExtTextOut(
     bool strikeThrough,
     double escapementDegrees,
     VsdLegacyTextEncoding encoding,
+    int textBreakExtra,
+    int textBreakCount,
     {double? currentX,
     double? currentY}) {
   if (params + 8 > recEnd) return null;
@@ -879,6 +945,12 @@ MetafileTextOp? _readExtTextOut(
       advancesY = y == null ? null : List<double>.unmodifiable(y);
     }
   }
+  advancesX ??= _justifiedTextAdvances(
+    text,
+    fontHeight,
+    textBreakExtra,
+    textBreakCount,
+  );
   return MetafileTextOp(
     text: text,
     x: x,
@@ -918,6 +990,8 @@ MetafileTextOp? _readTextOut(
     bool strikeThrough,
     double escapementDegrees,
     VsdLegacyTextEncoding encoding,
+    int textBreakExtra,
+    int textBreakCount,
     {double? currentX,
     double? currentY}) {
   if (params + 2 > recEnd) return null;
@@ -934,6 +1008,12 @@ MetafileTextOp? _readTextOut(
   final y = currentY ?? recordY;
   final text = decodeWindowsLegacyText(raw, encoding).replaceAll('\u0000', '');
   if (text.trim().isEmpty) return null;
+  final advancesX = _justifiedTextAdvances(
+    text,
+    fontHeight,
+    textBreakExtra,
+    textBreakCount,
+  );
   return MetafileTextOp(
     text: text,
     x: x,
@@ -943,12 +1023,39 @@ MetafileTextOp? _readTextOut(
     face: fontFace,
     align: textAlign,
     backgroundArgb: backgroundArgb,
+    advancesX: advancesX,
     fontWeight: fontWeight,
     italic: italic,
     underline: underline,
     strikeThrough: strikeThrough,
     escapementDegrees: escapementDegrees,
   );
+}
+
+List<double>? _justifiedTextAdvances(
+  String text,
+  double fontHeight,
+  int breakExtra,
+  int breakCount,
+) {
+  if (breakExtra == 0 || breakCount <= 0) return null;
+  final glyphs = text.runes.toList(growable: false);
+  final breakIndices = <int>[
+    for (var i = 0; i < glyphs.length; i++)
+      if (glyphs[i] == 0x20) i,
+  ];
+  if (breakIndices.isEmpty) return null;
+  final usedBreaks = math.min(breakCount, breakIndices.length);
+  final base = math.max(fontHeight.abs(), 1.0) * 0.55;
+  final advances = List<double>.filled(glyphs.length, base);
+  var remaining = breakExtra;
+  for (var i = 0; i < usedBreaks; i++) {
+    final left = usedBreaks - i;
+    final adjustment = remaining ~/ left;
+    advances[breakIndices[i]] += adjustment;
+    remaining -= adjustment;
+  }
+  return List<double>.unmodifiable(advances);
 }
 
 int _rgbToArgb(int colorRef) {
@@ -1009,6 +1116,10 @@ class _WmfDcState {
     required this.backgroundMode,
     required this.backgroundColor,
     required this.textAlign,
+    required this.mapMode,
+    required this.polyFillMode,
+    required this.textBreakExtra,
+    required this.textBreakCount,
     required this.fontFace,
     required this.fontHeight,
     required this.fontWeight,
@@ -1036,6 +1147,10 @@ class _WmfDcState {
   final int backgroundMode;
   final int backgroundColor;
   final int textAlign;
+  final int mapMode;
+  final int polyFillMode;
+  final int textBreakExtra;
+  final int textBreakCount;
   final String? fontFace;
   final double fontHeight;
   final int fontWeight;
