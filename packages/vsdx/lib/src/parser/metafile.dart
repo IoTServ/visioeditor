@@ -54,6 +54,13 @@ MetafileDrawing? parseMetafileDrawing(
     final d = parseEmfDrawing(payload);
     if (d != null && !d.isEmpty) return d;
   }
+  // OLE CF_METAFILEPICT previews commonly contain a standard (non-placeable)
+  // WMF. Once the presentation stream has been extracted, let the WMF parser
+  // validate it instead of routing OLE payloads back to EMF only.
+  if (isOle) {
+    final d = parseWmfDrawing(payload);
+    if (d != null && !d.isEmpty) return d;
+  }
   if (isWmf ||
       (payload.length > 4 &&
           payload[0] == 0xd7 &&

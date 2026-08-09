@@ -20,7 +20,25 @@ void main() {
     });
 
     test('returns null for non-EMF bytes', () {
-      expect(extractEmfEmbeddedBitmap(Uint8List.fromList([1, 2, 3, 4])), isNull);
+      expect(
+        extractEmfEmbeddedBitmap(Uint8List.fromList([1, 2, 3, 4])),
+        isNull,
+      );
+    });
+
+    test('short BITBLT does not read fields from the following record', () {
+      final emf = Uint8List(88 + 72 + 8);
+      _setU32(emf, 0, 1);
+      _setU32(emf, 4, 88);
+      emf[0x28] = 0x20;
+      emf[0x29] = 0x45;
+      emf[0x2a] = 0x4d;
+      emf[0x2b] = 0x46;
+      _setU32(emf, 88, 0x4c);
+      _setU32(emf, 92, 72);
+      _setU32(emf, 160, 0x0e);
+      _setU32(emf, 164, 8);
+      expect(extractEmfEmbeddedBitmap(emf), isNull);
     });
   });
 

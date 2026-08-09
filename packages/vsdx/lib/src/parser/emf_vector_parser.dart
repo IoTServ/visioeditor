@@ -55,6 +55,7 @@ const int _emrFillPath = 62;
 const int _emrStrokeAndFillPath = 63;
 const int _emrStrokePath = 64;
 const int _emrAbortPath = 68;
+const int _emrBitBlt = 76;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutA = 83;
 const int _emrExtTextOutW = 84;
@@ -403,6 +404,37 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         evenOddFill: polyFillMode != 2,
       ));
     }
+  }
+
+  void emitRasterFill(
+    double x,
+    double y,
+    double width,
+    double height, {
+    required int color,
+    int? hatch,
+    int? hatchBackground,
+  }) {
+    if (width == 0 || height == 0) return;
+    final points = <MetafilePoint>[
+      MetafilePoint(x, y),
+      MetafilePoint(x + width, y),
+      MetafilePoint(x + width, y + height),
+      MetafilePoint(x, y + height),
+    ];
+    ensurePts(points);
+    ops.add(MetafilePathOp(
+      points: points,
+      closed: true,
+      fill: true,
+      stroke: false,
+      fillArgb: color,
+      strokeArgb: 0,
+      strokeWidth: 0,
+      fillHatch: hatch,
+      fillBackgroundArgb: hatchBackground,
+      evenOddFill: polyFillMode != 2,
+    ));
   }
 
   void emitPolyDraw(List<MetafilePoint> points, List<int> pointTypes) {
@@ -1223,6 +1255,46 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
           evenOddFill: polyFillMode != 2,
         ));
+      }
+    } else if (t == _emrBitBlt && params + 36 <= recEnd) {
+      // A source-less BITBLT is still drawable. Office OLE presentations use
+      // ROP3 PATCOPY extensively for spreadsheet cell backgrounds and grid
+      // bands: the selected brush is copied into the destination rectangle,
+      // while all source-bitmap offsets remain zero. LibreOffice's EMF reader
+      // keeps this path instead of treating every BITBLT as an embedded DIB.
+      final rasterOperation = bd.getUint32(params + 32, Endian.little);
+      final x = bd.getInt32(params + 16, Endian.little).toDouble();
+      final y = bd.getInt32(params + 20, Endian.little).toDouble();
+      final width = bd.getInt32(params + 24, Endian.little).toDouble();
+      final height = bd.getInt32(params + 28, Endian.little).toDouble();
+      if (rasterOperation == 0x00f00021 &&
+          (brushStyle == 0 || brushStyle == 2)) {
+        emitRasterFill(
+          x,
+          y,
+          width,
+          height,
+          color: brushColor,
+          hatch: brushStyle == 2 ? brushHatch : null,
+          hatchBackground:
+              brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        );
+      } else if (rasterOperation == 0x00000042) {
+        emitRasterFill(
+          x,
+          y,
+          width,
+          height,
+          color: 0xff000000,
+        );
+      } else if (rasterOperation == 0x00ff0062) {
+        emitRasterFill(
+          x,
+          y,
+          width,
+          height,
+          color: 0xffffffff,
+        );
       }
     } else if ((t == _emrExtTextOutA ||
             t == _emrExtTextOutW ||

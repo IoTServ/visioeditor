@@ -18,7 +18,9 @@ Uint8List? extractOlePresentationMetafile(Uint8List oleBytes) {
     final cfb = CompoundFile.open(oleBytes);
     for (final name in cfb.entryNames) {
       // Stream names are often prefixed with \x01 / \x02 control chars.
-      if (!name.contains('OlePres') && !name.contains('CONTENTS')) {
+      final normalizedName = name.toUpperCase();
+      if (!normalizedName.contains('OLEPRES') &&
+          !normalizedName.contains('CONTENTS')) {
         continue;
       }
       final data = cfb.readStream(name);

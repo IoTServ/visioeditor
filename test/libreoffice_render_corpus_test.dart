@@ -18,6 +18,7 @@ const _cjkFontEnvironment = 'VISIO_RENDER_AUDIT_CJK_FONT';
 
 const _upstreamDirectory = 'third_party/libvisio/src/test/data';
 const _appExampleDirectory = 'assets/examples';
+const _packageExternalDirectory = 'packages/vsdx/test/fixtures/vsd/external';
 
 const _corpus = <_CorpusEntry>[
   _CorpusEntry('Visio11FormatLine.vsd'),
@@ -54,6 +55,7 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry('testfile4.vsdx'),
   _CorpusEntry('testfile5.vsdx'),
   _CorpusEntry('testfile6.vsdx'),
+  _CorpusEntry('visio_with_embeded.vsd', packageExternal: true),
   _CorpusEntry('sample.vsd', applicationExample: true),
   _CorpusEntry('workflow.vsdx', applicationExample: true),
   _CorpusEntry('人才招聘冰山模型.vsdx', applicationExample: true),
@@ -65,12 +67,12 @@ void main() {
 
   final enabled = Platform.environment[_runEnvironment] == '1';
   test(
-    '34 libvisio fixtures and 4 app examples render like LibreOffice',
+    '35 Visio fixtures and 4 app examples render like LibreOffice',
     () async {
       await _loadAuditFonts();
       expect(
         _corpus.where((entry) => !entry.applicationExample),
-        hasLength(34),
+        hasLength(35),
       );
       expect(_corpus.where((entry) => entry.applicationExample), hasLength(4));
       final filter = Platform.environment[_filterEnvironment];
@@ -317,15 +319,19 @@ class _CorpusEntry {
   const _CorpusEntry(
     this.name, {
     this.applicationExample = false,
+    this.packageExternal = false,
     this.ignoreLibreOfficePageCount = false,
   });
 
   final String name;
   final bool applicationExample;
+  final bool packageExternal;
   final bool ignoreLibreOfficePageCount;
 
   String get path => applicationExample
       ? '$_appExampleDirectory/$name'
+      : packageExternal
+      ? '$_packageExternalDirectory/$name'
       : '$_upstreamDirectory/$name';
 }
 

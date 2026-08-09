@@ -79,10 +79,12 @@ Uint8List? _dibFromBlits(Uint8List emf, int recOff, int recSize, int type) {
     cbBmi = _u32(emf, recOff + 52);
     offBits = _u32(emf, recOff + 56);
     cbBits = _u32(emf, recOff + 60);
-  } else if (recSize >= 72) {
+  } else if (recSize >= 100) {
     // EMR_BITBLT: Type+Size(8)+Bounds(16)+xDest,yDest,cxDest,cyDest,rop(20)
-    // +xSrc,ySrc(8)+Xform(24)+BkColor(4)+Usage(4) → offBmi at +84? Variable.
-    // Fall through to header scan below when offsets look wrong.
+    // +xSrc,ySrc(8)+Xform(24)+BkColor(4)+Usage(4) → offBmi at +84.
+    // Fall through to header scan below when offsets look wrong. The final
+    // fixed field is at +96, so a short/malformed record must not be read as
+    // though bytes from the following EMF record belonged to this BITBLT.
     offBmi = _u32(emf, recOff + 84);
     cbBmi = _u32(emf, recOff + 88);
     offBits = _u32(emf, recOff + 92);

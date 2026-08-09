@@ -1176,6 +1176,30 @@ void main() {
       expect(drawing!.ops.whereType<MetafilePathOp>(), isNotEmpty);
     });
 
+    test('OLE Excel preview retains source-less PATCOPY fill bands', () {
+      final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
+          .readAsBytesSync();
+      final doc = parseVisio(vsd).document;
+      final excelPreview = doc.images.findByPart('/visio/media/image6.bin');
+      expect(excelPreview, isNotNull);
+      final drawing = parseMetafileDrawing(
+        excelPreview!.bytes,
+        mimeType: excelPreview.mimeType,
+        partName: excelPreview.partName,
+      );
+      expect(drawing, isNotNull);
+      final fills = drawing!.ops
+          .whereType<MetafilePathOp>()
+          .where((path) => path.fill && !path.stroke)
+          .toList();
+      expect(fills, hasLength(greaterThanOrEqualTo(20)));
+      expect(
+        fills.any((path) => path.fillArgb == 0xffc0c0c0),
+        isTrue,
+        reason: 'PATCOPY grid bands use the active light-gray GDI brush',
+      );
+    });
+
     test('extractOlePresentationMetafile finds EMF', () {
       final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
           .readAsBytesSync();
