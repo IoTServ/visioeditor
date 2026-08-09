@@ -2664,7 +2664,7 @@ void main() {
     expect(svg, contains('stroke="#ff0000"'));
   });
 
-  test('SVG relative SpLine line height does not multiply by extra 1.2', () {
+  test('SVG relative SpLine uses LibreOffice typographic font cell', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2694,10 +2694,10 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    // Two paras at 0.2 * 1.5 = 0.3 each → second line centre offset uses 0.3
-    // (not 0.2*1.2*1.5=0.36). Cluster height 0.6; centres at ±0.15 from mid.
-    expect(svg, contains('y="-0.15"'));
-    expect(svg, contains('y="0.15"'));
+    // LibreOffice percentage spacing applies to a 1.12× typographic cell:
+    // 0.2 * 1.5 * 1.12 = 0.336; centres are ±0.168 from the cluster middle.
+    expect(svg, contains('y="-0.168"'));
+    expect(svg, contains('y="0.168"'));
   });
 
   test('SVG relative SpLine uses ComplexScriptSize for line metrics', () {
@@ -2733,13 +2733,13 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    // Two 0.4" complex-script lines at 150% → 0.6" centre-to-centre.
+    // Two 0.4" complex-script lines at 150% use the 1.12× font cell.
     final ys = RegExp(r'<text[^>]*\sy="([-0-9.]+)"')
         .allMatches(svg)
         .map((m) => double.parse(m.group(1)!))
         .toList();
     expect(ys.length, greaterThanOrEqualTo(2));
-    expect((ys[1] - ys[0]).abs(), closeTo(0.6, 1e-6));
+    expect((ys[1] - ys[0]).abs(), closeTo(0.672, 1e-6));
   });
 
   test('SVG arrows 5/6 are filled concave/convex markers', () {
@@ -3330,6 +3330,45 @@ void main() {
     expect(ys, isNotEmpty);
     expect(ys.reduce((a, b) => a < b ? a : b), greaterThan(0.15));
     expect(ys.reduce((a, b) => a > b ? a : b), lessThan(0.6));
+  });
+
+  test('SVG arc marker carrier preserves exact endpoint tangents', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShape(
+          id: 1,
+          name: 'Arc connector',
+          pinX: 1,
+          pinY: 1,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(beginArrow: 4, endArrow: 4),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                ArcTo(x: 2, y: 0, bow: 0.6),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(
+      svg,
+      contains(
+        'd="M 0 0 L 0.000471 0.000882 '
+        'L 1.999529 0.000882 L 2 0" fill="none"',
+      ),
+    );
   });
 
   test('SVG bullet overlapping body band is pushed left like canvas', () {

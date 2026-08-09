@@ -1851,6 +1851,31 @@ class VsdxPainter extends CustomPainter {
     for (final geom in shape.geometries) {
       // Match SVG: NoShow / NoLine sections do not contribute stroke or arrows.
       if (geom.noShow || geom.noLine || geom.commands.isEmpty) continue;
+      final tangents = geometryEndpointTangents(
+        geom,
+        widthInches: w,
+        heightInches: h,
+      );
+      if (tangents != null) {
+        final start = Offset(tangents.start.x, tangents.start.y);
+        final end = Offset(tangents.end.x, tangents.end.y);
+        return _LineEndpoints(
+          start,
+          end,
+          beginTangent: Offset(
+            start.dx + tangents.startForward.x,
+            start.dy + tangents.startForward.y,
+          ),
+          endTangent: Offset(
+            end.dx - tangents.endForward.x,
+            end.dy - tangents.endForward.y,
+          ),
+        );
+      }
+
+      // Defensive fallback for malformed/unsupported rows. Normal geometry
+      // takes the exact derivative path above; this keeps the previous sampled
+      // behaviour available instead of dropping a marker entirely.
       final vertices = <Offset>[];
       Offset cursor = Offset.zero;
       var penDown = false;
@@ -3727,15 +3752,18 @@ class VsdxPainter extends CustomPainter {
     // positive — a non-positive value collapses the line advance so wrapped
     // lines overlap or stack upward (the bug this guards against). Visio's
     // absolute line spacing (SpLine > 0, inches) is converted to a multiple
-    // via the run's pixel font size; the relative multiple (SpLine < 0) is
-    // applied directly. Anything non-finite/≤0 falls back to the font's
-    // natural line height.
+    // via the run's pixel font size. Relative spacing (SpLine < 0) applies to
+    // LibreOffice's typographic font cell, which is 1.12× the nominal point
+    // size in the reference renderer. Anything non-finite/≤0 falls back to
+    // the font's natural line height.
     final para = run.paraStyle;
     double? lineHeight;
     if (para.lineSpacingAbsoluteInches > 0 && scaledSize > 0) {
       lineHeight = para.lineSpacingAbsoluteInches * scale / scaledSize;
+    } else if (para.lineSpacingSolid) {
+      lineHeight = 1.0;
     } else if (para.lineSpacing > 0) {
-      lineHeight = para.lineSpacing;
+      lineHeight = para.lineSpacing * kLibreOfficeFontCellLineHeightFactor;
     }
     if (lineHeight != null && (!lineHeight.isFinite || lineHeight <= 0)) {
       lineHeight = null;

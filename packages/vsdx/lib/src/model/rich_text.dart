@@ -535,6 +535,11 @@ class VsdxFontStyle {
       );
 }
 
+/// LibreOffice applies percentage line spacing to the font's typographic
+/// cell rather than its nominal point size. The reference SVG for 12 pt text
+/// uses a 423-unit cell and a 568-unit advance at 120%, yielding 1.12.
+const double kLibreOfficeFontCellLineHeightFactor = 1.12;
+
 /// Visio paragraph style (`<Section N="Paragraph">`).
 @immutable
 class VsdxParaStyle {
@@ -565,7 +570,8 @@ class VsdxParaStyle {
 
   /// Line height as a multiple of the font size (Visio `SpLine` < 0, e.g.
   /// `-1.2` → `1.2`). `1.0` = single, `1.5` = 1.5×, `2.0` = double. Maps
-  /// directly onto Flutter's `TextStyle.height`, so it must stay positive.
+  /// through [kLibreOfficeFontCellLineHeightFactor] before mapping onto
+  /// Flutter's `TextStyle.height`, so it must stay positive.
   final double lineSpacing;
 
   /// Absolute line height in inches (Visio `SpLine` > 0 — spacing that is

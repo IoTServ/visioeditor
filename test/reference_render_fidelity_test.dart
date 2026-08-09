@@ -127,6 +127,12 @@ void main() {
       }
 
       expect(bands, hasLength(5));
+      final centres = bands
+          .map((band) => (band.first + band.last) / 2)
+          .toList(growable: false);
+      for (var i = 1; i < centres.length; i++) {
+        expect(centres[i] - centres[i - 1], closeTo(32, 1));
+      }
       const shapeTopPx = (4 - (2 + 0.8 / 2)) * pxPerInch;
       expect(
         bands.first.first,

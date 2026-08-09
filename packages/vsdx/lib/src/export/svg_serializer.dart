@@ -26,6 +26,7 @@ import '../model/layer.dart';
 import '../model/line.dart';
 import '../model/nurbs.dart';
 import '../model/page.dart';
+import '../model/path_tangent.dart';
 import '../model/spline.dart';
 import '../model/rich_text.dart';
 import '../model/rounding.dart';
@@ -631,6 +632,14 @@ class VsdxToSvgSerializer {
         theme,
         page,
         d: d,
+        markerD: attachArrows
+            ? _geometryMarkerCarrierD(
+                geom,
+                shape.width,
+                shape.height,
+                fallback: d,
+              )
+            : null,
         strokeD: strokeD,
         noFill: skipFill || geom.noFill,
         noLine: geom.noLine,
@@ -844,6 +853,10 @@ class VsdxToSvgSerializer {
     VsdxPage page, {
     required String d,
 
+    /// Invisible marker carrier with exact endpoint derivatives when the
+    /// visible path contains sampled curves.
+    String? markerD,
+
     /// When set (line jumps), stroke uses this path; fill keeps [d].
     String? strokeD,
     required bool noFill,
@@ -894,7 +907,7 @@ class VsdxToSvgSerializer {
     final sD = strokeD ?? d;
     // Gap jumps insert mid-path `M` subpaths; SVG markers would repeat on
     // every subpath. Hang markers (and baked tips) on the continuous [d].
-    final markerD = d;
+    final effectiveMarkerD = markerD ?? d;
     // SoftEdges only — shadow is painted separately (fill-only / stroke-only
     // like canvas [_drawShadow]). Markers stay outside soft blur.
     final softFilter = _softEdgesFilterAttr(
@@ -1066,7 +1079,7 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$markerD" fill="none" '
+          '$indent<path d="$effectiveMarkerD" fill="none" '
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
@@ -1092,7 +1105,7 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$markerD" fill="none" '
+          '$indent<path d="$effectiveMarkerD" fill="none" '
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
@@ -1116,7 +1129,7 @@ class VsdxToSvgSerializer {
       }
       if (stroke.markers.isNotEmpty) {
         buf.writeln(
-          '$indent<path d="$markerD" fill="none" '
+          '$indent<path d="$effectiveMarkerD" fill="none" '
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
@@ -1126,7 +1139,7 @@ class VsdxToSvgSerializer {
         buf,
         shape,
         theme,
-        pathD: markerD,
+        pathD: effectiveMarkerD,
         indent: indent,
       );
     }
@@ -2056,6 +2069,50 @@ class VsdxToSvgSerializer {
       extent = math.max(extent, r.offset.abs() + r.width / 2);
     }
     return soft * 3 + extent;
+  }
+
+  /// A hidden four-vertex path whose first and last legs match the exact
+  /// Geometry derivatives. SVG marker orientation then stays tangent even
+  /// when [_geometryToD] samples an arc into straight segments.
+  String _geometryMarkerCarrierD(
+    VsdxGeometry geometry,
+    double width,
+    double height, {
+    required String fallback,
+  }) {
+    final tangents = geometryEndpointTangents(
+      geometry,
+      widthInches: width,
+      heightInches: height,
+    );
+    if (tangents == null) return fallback;
+    final chordX = tangents.end.x - tangents.start.x;
+    final chordY = tangents.end.y - tangents.start.y;
+    final chordLength = math.sqrt(chordX * chordX + chordY * chordY);
+    final startLength = math.sqrt(
+      tangents.startForward.x * tangents.startForward.x +
+          tangents.startForward.y * tangents.startForward.y,
+    );
+    final endLength = math.sqrt(
+      tangents.endForward.x * tangents.endForward.x +
+          tangents.endForward.y * tangents.endForward.y,
+    );
+    if (chordLength <= 1e-9 || startLength <= 1e-12 || endLength <= 1e-12) {
+      return fallback;
+    }
+    final epsilon = math.min(0.001, chordLength / 4);
+    final afterStart = Offset2D(
+      tangents.start.x + tangents.startForward.x / startLength * epsilon,
+      tangents.start.y + tangents.startForward.y / startLength * epsilon,
+    );
+    final beforeEnd = Offset2D(
+      tangents.end.x - tangents.endForward.x / endLength * epsilon,
+      tangents.end.y - tangents.endForward.y / endLength * epsilon,
+    );
+    return 'M ${_strokeN(tangents.start.x)} ${_strokeN(tangents.start.y)} '
+        'L ${_strokeN(afterStart.x)} ${_strokeN(afterStart.y)} '
+        'L ${_strokeN(beforeEnd.x)} ${_strokeN(beforeEnd.y)} '
+        'L ${_strokeN(tangents.end.x)} ${_strokeN(tangents.end.y)}';
   }
 
   String _geometryToD(
@@ -4928,10 +4985,16 @@ class VsdxToSvgSerializer {
       // smaller than the font size).
       return style.lineSpacingAbsoluteInches;
     }
-    // [lineSpacing] is already the Visio SpLine multiple (e.g. -1.2 → 1.2);
-    // do not multiply by an extra 1.2 (that inflated relative spacing vs canvas).
+    // Percentage SpLine applies to LibreOffice's typographic font cell, not
+    // directly to the nominal point size. Keep this in sync with canvas.
     final mult = style.lineSpacingSolid ? 1.0 : style.lineSpacing;
-    return fs * (mult <= 0 ? 1.0 : mult);
+    return fs *
+        (mult <= 0
+            ? 1.0
+            : mult *
+                (style.lineSpacingSolid
+                    ? 1.0
+                    : kLibreOfficeFontCellLineHeightFactor));
   }
 
   String _svgBulletGlyph(VsdxParaStyle style) {

@@ -22,6 +22,61 @@ List<Offset2D> sampleEllipticalArc({
   required double eccentricity,
   int steps = 16,
 }) {
+  final solution = _solveEllipticalArc(
+    start: start,
+    end: end,
+    control: control,
+    angle: angle,
+    eccentricity: eccentricity,
+  );
+  if (solution == null) return <Offset2D>[end];
+
+  final n = steps < 2 ? 2 : steps;
+  final out = <Offset2D>[];
+  for (var i = 1; i <= n; i++) {
+    final t = i / n;
+    final a = solution.startAngle + solution.sweep * t;
+    out.add(solution.pointAt(a));
+  }
+  // Snap the last sample to the exact end point.
+  if (out.isNotEmpty) out[out.length - 1] = end;
+  return out;
+}
+
+/// Exact traversal-direction derivatives at both endpoints of a Visio
+/// elliptical arc. Returns `null` when the row degenerates to a chord.
+({Offset2D start, Offset2D end})? ellipticalArcEndpointTangents({
+  required Offset2D start,
+  required Offset2D end,
+  required Offset2D control,
+  required double angle,
+  required double eccentricity,
+}) {
+  final solution = _solveEllipticalArc(
+    start: start,
+    end: end,
+    control: control,
+    angle: angle,
+    eccentricity: eccentricity,
+  );
+  if (solution == null) return null;
+  final direction = solution.sweep < 0 ? -1.0 : 1.0;
+  return (
+    start: solution.tangentAt(solution.startAngle, direction),
+    end: solution.tangentAt(
+      solution.startAngle + solution.sweep,
+      direction,
+    ),
+  );
+}
+
+_EllipticalArcSolution? _solveEllipticalArc({
+  required Offset2D start,
+  required Offset2D end,
+  required Offset2D control,
+  required double angle,
+  required double eccentricity,
+}) {
   // libvisio's collectEllipticalArcTo maps the three points into circle
   // space by multiplying Y by the eccentricity. At zero eccentricity all
   // three transformed points are collinear, so the row becomes a LineTo.
@@ -37,7 +92,7 @@ List<Offset2D> sampleEllipticalArc({
       !end.y.isFinite ||
       !control.x.isFinite ||
       !control.y.isFinite) {
-    return <Offset2D>[end];
+    return null;
   }
   final ecc = eccentricity;
   Offset2D toCircle(Offset2D p) {
@@ -48,26 +103,19 @@ List<Offset2D> sampleEllipticalArc({
     return Offset2D(rx, ry * ecc);
   }
 
-  Offset2D fromCircle(Offset2D p) {
-    final y = p.y / ecc;
-    final cosA = math.cos(angle);
-    final sinA = math.sin(angle);
-    return Offset2D(p.x * cosA - y * sinA, p.x * sinA + y * cosA);
-  }
-
   final p0 = toCircle(start);
   final p1 = toCircle(control);
   final p2 = toCircle(end);
   final circle = _circleThrough(p0, p1, p2);
-  if (circle == null) return <Offset2D>[end];
+  if (circle == null) return null;
 
   final (cx, cy, r) = circle;
-  if (r < 1e-12) return <Offset2D>[end];
+  if (r < 1e-12) return null;
 
   double ang(Offset2D p) => math.atan2(p.y - cy, p.x - cx);
-  var a0 = ang(p0);
-  var a1 = ang(p1);
-  var a2 = ang(p2);
+  final a0 = ang(p0);
+  final a1 = ang(p1);
+  final a2 = ang(p2);
 
   // Sweep from a0 → a2 that contains a1 (control on the arc).
   double norm(double a) {
@@ -96,17 +144,64 @@ List<Offset2D> sampleEllipticalArc({
         ? sweep - 2 * math.pi
         : sweep + 2 * math.pi;
   }
+  return _EllipticalArcSolution(
+    centerX: cx,
+    centerY: cy,
+    radius: r,
+    startAngle: a0,
+    sweep: sweep,
+    angle: angle,
+    eccentricity: ecc,
+  );
+}
 
-  final n = steps < 2 ? 2 : steps;
-  final out = <Offset2D>[];
-  for (var i = 1; i <= n; i++) {
-    final t = i / n;
-    final a = a0 + sweep * t;
-    out.add(fromCircle(Offset2D(cx + r * math.cos(a), cy + r * math.sin(a))));
+class _EllipticalArcSolution {
+  const _EllipticalArcSolution({
+    required this.centerX,
+    required this.centerY,
+    required this.radius,
+    required this.startAngle,
+    required this.sweep,
+    required this.angle,
+    required this.eccentricity,
+  });
+
+  final double centerX;
+  final double centerY;
+  final double radius;
+  final double startAngle;
+  final double sweep;
+  final double angle;
+  final double eccentricity;
+
+  Offset2D pointAt(double theta) => _fromCircle(
+        Offset2D(
+          centerX + radius * math.cos(theta),
+          centerY + radius * math.sin(theta),
+        ),
+      );
+
+  Offset2D tangentAt(double theta, double direction) {
+    final circleDx = -radius * math.sin(theta) * direction;
+    final circleDy = radius * math.cos(theta) * direction;
+    final localDy = circleDy / eccentricity;
+    final cosA = math.cos(angle);
+    final sinA = math.sin(angle);
+    return Offset2D(
+      circleDx * cosA - localDy * sinA,
+      circleDx * sinA + localDy * cosA,
+    );
   }
-  // Snap the last sample to the exact end point.
-  if (out.isNotEmpty) out[out.length - 1] = end;
-  return out;
+
+  Offset2D _fromCircle(Offset2D p) {
+    final y = p.y / eccentricity;
+    final cosA = math.cos(angle);
+    final sinA = math.sin(angle);
+    return Offset2D(
+      p.x * cosA - y * sinA,
+      p.x * sinA + y * cosA,
+    );
+  }
 }
 
 /// Circle through three non-collinear points, or `null`.

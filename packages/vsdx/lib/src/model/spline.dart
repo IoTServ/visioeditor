@@ -121,11 +121,55 @@ List<Offset2D> sampleArcByBow({
   required double bow,
   int steps = 10,
 }) {
-  if (bow.abs() < 1e-12) return <Offset2D>[end];
+  final solution = _solveArcByBow(start: start, end: end, bow: bow);
+  if (solution == null) return <Offset2D>[end];
+
+  final out = <Offset2D>[];
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final a = solution.startAngle + solution.sweep * t;
+    out.add(Offset2D(
+      solution.center.x + solution.radius * math.cos(a),
+      solution.center.y + solution.radius * math.sin(a),
+    ));
+  }
+  // Snap the last sample to the exact endpoint.
+  if (out.isNotEmpty) {
+    out[out.length - 1] = end;
+  }
+  return out;
+}
+
+/// Exact traversal-direction derivatives at both endpoints of an `ArcTo`.
+/// Returns `null` when the row degenerates to a straight chord.
+({Offset2D start, Offset2D end})? arcByBowEndpointTangents({
+  required Offset2D start,
+  required Offset2D end,
+  required double bow,
+}) {
+  final solution = _solveArcByBow(start: start, end: end, bow: bow);
+  if (solution == null) return null;
+  final direction = solution.sweep < 0 ? -1.0 : 1.0;
+  Offset2D at(double angle) => Offset2D(
+        -solution.radius * math.sin(angle) * direction,
+        solution.radius * math.cos(angle) * direction,
+      );
+  return (
+    start: at(solution.startAngle),
+    end: at(solution.startAngle + solution.sweep),
+  );
+}
+
+_ArcByBowSolution? _solveArcByBow({
+  required Offset2D start,
+  required Offset2D end,
+  required double bow,
+}) {
+  if (bow.abs() < 1e-12) return null;
   final dx = end.x - start.x;
   final dy = end.y - start.y;
   final chord = math.sqrt(dx * dx + dy * dy);
-  if (chord < 1e-12) return <Offset2D>[end];
+  if (chord < 1e-12) return null;
   final s = bow.abs();
   final r = (chord * chord + 4 * s * s) / (8 * s);
   final mx = (start.x + end.x) / 2;
@@ -164,15 +208,24 @@ List<Offset2D> sampleArcByBow({
   final delta =
       angDist(midPos, aA) <= angDist(midNeg, aA) ? dPos : dNeg;
 
-  final out = <Offset2D>[];
-  for (var i = 1; i <= steps; i++) {
-    final t = i / steps;
-    final a = a0 + delta * t;
-    out.add(Offset2D(cx + r * math.cos(a), cy + r * math.sin(a)));
-  }
-  // Snap the last sample to the exact endpoint.
-  if (out.isNotEmpty) {
-    out[out.length - 1] = end;
-  }
-  return out;
+  return _ArcByBowSolution(
+    center: Offset2D(cx, cy),
+    radius: r,
+    startAngle: a0,
+    sweep: delta,
+  );
+}
+
+class _ArcByBowSolution {
+  const _ArcByBowSolution({
+    required this.center,
+    required this.radius,
+    required this.startAngle,
+    required this.sweep,
+  });
+
+  final Offset2D center;
+  final double radius;
+  final double startAngle;
+  final double sweep;
 }
