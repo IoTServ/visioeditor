@@ -3281,8 +3281,37 @@ class VsdxPainter extends CustomPainter {
     final paraPosPainters = <List<TextPainter>?>[];
     final paraPosDys = <List<double>?>[];
     final paraPosOffsets = <List<double>?>[];
-    final paraRowTextH = <double>[];
+    final rowBodyTopOffsets = <double>[];
+    final rowBulletTopOffsets = <double>[];
+    final rowHeights = <double>[];
     var totalH = 0.0;
+
+    ({double bodyTop, double bulletTop, double height}) rowMetrics(
+      double bodyHeight,
+      TextPainter? bullet,
+      TextPainter body, {
+      double bodyDy = 0,
+    }) {
+      if (bullet == null) {
+        return (bodyTop: 0, bulletTop: 0, height: bodyHeight);
+      }
+      final bodyBaseline =
+          body.computeDistanceToActualBaseline(TextBaseline.alphabetic) +
+              bodyDy;
+      final bulletBaseline =
+          bullet.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+      final commonBaseline = math.max(bodyBaseline, bulletBaseline);
+      final bodyTop = commonBaseline - bodyBaseline;
+      final bulletTop = commonBaseline - bulletBaseline;
+      return (
+        bodyTop: bodyTop,
+        bulletTop: bulletTop,
+        height: math.max(
+          bodyTop + bodyHeight,
+          bulletTop + bullet.height,
+        ),
+      );
+    }
 
     for (final para in paras) {
       final style = para.style;
@@ -3291,54 +3320,68 @@ class VsdxPainter extends CustomPainter {
       final indentF = style.indentFirstInches * scale;
       final indentR = style.indentRightInches * scale;
       final hasBullet = style.bullet != 0;
-      final afterBullet = style.textPosAfterBulletInches > 0
+      final minLabelWidth = style.textPosAfterBulletInches > 0
           ? style.textPosAfterBulletInches * scale
-          : (hasBullet ? 0.18 * scale : 0.0);
+          : (hasBullet ? 0.25 * scale : 0.0);
 
       TextPainter? bulletTp;
-      var bulletX = mlPx + indentL + indentF;
+      final bulletX = mlPx + indentL;
       var textX = mlPx + indentL;
       if (hasBullet) {
         final glyph = _bulletGlyph(style);
-        final bodyFontInches = () {
-          // Match the first run's size when available. Negative
-          // BulletFontSize values are a percentage of this size in libvisio.
-          for (final r in para.runs) {
-            if (r.text.isNotEmpty) {
-              return r.charStyle.fontSizeInches > 0
-                  ? r.charStyle.effectiveFontSizeInchesForText(r.text)
-                  : 0.14;
-            }
-          }
-          return 0.14;
-        }();
+        final bodyRun = para.runs
+            .where((run) => run.text.isNotEmpty)
+            .firstOrNull;
+        final bodyStyle = bodyRun?.charStyle ?? VsdxCharStyle.defaults;
+        // Match the first run's size when available. Negative BulletFontSize
+        // values are a percentage of this size in libvisio.
+        final bodyFontInches = bodyRun == null
+            ? 0.14
+            : (bodyStyle.fontSizeInches > 0
+                ? bodyStyle.effectiveFontSizeInchesForText(bodyRun.text)
+                : 0.14);
         final fontPx =
             style.effectiveBulletFontSizeInches(bodyFontInches) * scale;
+        final bulletBase =
+            _colourOrTheme(bodyStyle.color, bodyStyle.themeColorIndex) ??
+                Colors.black;
+        final bulletAlpha =
+            (1 - bodyStyle.transparency).clamp(0.0, 1.0);
+        double? bulletLineHeight;
+        if (style.lineSpacingAbsoluteInches > 0 && fontPx > 0) {
+          bulletLineHeight =
+              style.lineSpacingAbsoluteInches * scale / fontPx;
+        } else if (style.lineSpacingSolid) {
+          bulletLineHeight = 1.0;
+        } else if (style.lineSpacing > 0) {
+          bulletLineHeight =
+              style.lineSpacing * kLibreOfficeFontCellLineHeightFactor;
+        }
         bulletTp = TextPainter(
           text: TextSpan(
             text: glyph,
             style: TextStyle(
-              color: Colors.black87,
+              color: bulletBase.withValues(
+                alpha: bulletBase.a * bulletAlpha,
+              ),
               fontSize: fontPx,
-              fontFamily: style.bulletFont,
-              height: 1.0,
+              fontFamily: style.bulletFont ?? bodyStyle.fontFamily,
+              height: bulletLineHeight,
             ),
           ),
           textDirection: TextDirection.ltr,
           maxLines: 1,
         )..layout();
-        // Hanging indent: bullet sits on the first-line indent; body text
-        // starts at IndLeft + TextPosAfterBullet (or a default gap).
-        textX = mlPx + indentL + afterBullet;
-        if (bulletX > textX - bulletTp.width) {
-          bulletX = textX - bulletTp.width - 0.04 * scale;
-        }
+        // LibreOffice treats TextPosAfterBullet as the minimum physical label
+        // field from the bullet origin to the body origin. A long custom label
+        // expands the field; IndFirst still belongs to the first body line.
+        textX = bulletX + math.max(minLabelWidth, bulletTp.width);
       } else {
         // Body lines sit at IndLeft; IndFirst is applied only on line 0 below.
         textX = mlPx + indentL;
       }
 
-      final firstX = hasBullet ? textX : textX + indentF;
+      final firstX = textX + indentF;
       final availRest = math.max(0.0, maxW - (textX - mlPx) - indentR);
       final availFirst = math.max(0.0, maxW - (firstX - mlPx) - indentR);
       final wrapRest = wordWrap ? availRest : double.infinity;
@@ -3387,9 +3430,16 @@ class VsdxPainter extends CustomPainter {
         textOriginsX.add(alignedX);
         beforePx.add(b);
         afterPx.add(a);
-        final rowH = math.max(line.height, bulletTp?.height ?? 0);
-        paraRowTextH.add(line.height);
-        totalH += b + rowH + a;
+        final metrics = rowMetrics(
+          line.height,
+          bulletTp,
+          line.painters.first,
+          bodyDy: line.dys.first,
+        );
+        rowBodyTopOffsets.add(metrics.bodyTop);
+        rowBulletTopOffsets.add(metrics.bulletTop);
+        rowHeights.add(metrics.height);
+        totalH += b + metrics.height + a;
         continue;
       }
       if (needsLineWrap) {
@@ -3438,12 +3488,16 @@ class VsdxPainter extends CustomPainter {
           textOriginsX.add(alignedX);
           beforePx.add(li == 0 ? b : 0.0);
           afterPx.add(li == lines.length - 1 ? a : 0.0);
-          final rowH = math.max(
+          final metrics = rowMetrics(
             line.height,
-            li == 0 ? (bulletTp?.height ?? 0) : 0.0,
+            li == 0 ? bulletTp : null,
+            pieces.first.tp,
+            bodyDy: pieces.first.dy,
           );
-          paraRowTextH.add(line.height);
-          totalH += beforePx.last + rowH + afterPx.last;
+          rowBodyTopOffsets.add(metrics.bodyTop);
+          rowBulletTopOffsets.add(metrics.bulletTop);
+          rowHeights.add(metrics.height);
+          totalH += beforePx.last + metrics.height + afterPx.last;
         }
         continue;
       }
@@ -3492,9 +3546,11 @@ class VsdxPainter extends CustomPainter {
       final a = style.spaceAfterInches * scale;
       beforePx.add(b);
       afterPx.add(a);
-      final rowH = math.max(rowTextH, bulletTp?.height ?? 0);
-      paraRowTextH.add(rowTextH);
-      totalH += b + rowH + a;
+      final metrics = rowMetrics(rowTextH, bulletTp, tp);
+      rowBodyTopOffsets.add(metrics.bodyTop);
+      rowBulletTopOffsets.add(metrics.bulletTop);
+      rowHeights.add(metrics.height);
+      totalH += b + metrics.height + a;
     }
 
     var oy = switch (verticalAlign) {
@@ -3508,13 +3564,12 @@ class VsdxPainter extends CustomPainter {
       final tp = painters[i];
       final bulletTp = bulletPainters[i];
       y += beforePx[i];
-      final textH = paraRowTextH[i];
-      final rowH = math.max(textH, bulletTp?.height ?? 0);
+      final rowH = rowHeights[i];
       if (bulletTp != null) {
-        final by = y + (rowH - bulletTp.height) / 2;
+        final by = y + rowBulletTopOffsets[i];
         bulletTp.paint(canvas, Offset(bulletOriginsX[i], by));
       }
-      final ty = y + (rowH - textH) / 2;
+      final ty = y + rowBodyTopOffsets[i];
       final posPs = paraPosPainters[i];
       final posDy = paraPosDys[i];
       if (posPs != null && posDy != null) {

@@ -2438,6 +2438,52 @@ void main() {
     expect(svg, contains('font-size="0.2"'));
   });
 
+  test('SVG bullet inherits body paint and aligns its alphabetic baseline', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Bullet paint',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 3,
+          height: 1,
+        ).copyWith(
+          richText: VsdxRichText(runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: 'Item',
+              charStyle: VsdxCharStyle.defaults.copyWith(
+                fontFamily: 'Arial',
+                fontSizeInches: 0.2,
+                color: const VsdxColor(0xFF1565C0),
+                transparency: 0.25,
+              ),
+              paraStyle: const VsdxParaStyle(
+                bullet: 1,
+                bulletFontSizeInches: -0.5,
+              ),
+            ),
+          ]),
+        ),
+      ],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('font-family="Arial" fill="#1565c0" '));
+    expect(svg, contains('fill-opacity="0.75">•</tspan>'));
+    final textNodes = RegExp(
+      r'<text[^>]*y="([-0-9.]+)">(<tspan.*?</tspan>)</text>',
+    ).allMatches(svg);
+    final bullet = textNodes.firstWhere((m) => m.group(2)!.contains('>•<'));
+    final body = textNodes.firstWhere((m) => m.group(2)!.contains('>Item<'));
+    final bulletY = double.parse(bullet.group(1)!);
+    final bodyY = double.parse(body.group(1)!);
+    expect(bulletY - bodyY, closeTo(0.035, 0.001));
+  });
+
   test('SVG IndFirst applies only to the first wrapped line', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
@@ -2544,11 +2590,11 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     // Bullet still drawn when centred (previously skipped for center).
     expect(svg, contains('•'));
-    // Default TextBkgnd margin 0.04": bullet at IndLeft+IndFirst = 0.14
-    expect(svg, contains('x="0.14"'));
-    // Body hanging band: IndLeft + TextPosAfterBullet → centre of remainder.
-    // textBandX=0.59; xBody=0.59+(3-0.04-0.59)/2=1.775
-    expect(svg, contains('x="1.775"'));
+    // Bullet origin is margin + IndLeft; IndFirst belongs to body line one.
+    expect(svg, contains('x="0.29"'));
+    // Resting body band starts at margin + IndLeft + label field = 0.59.
+    // First line additionally applies -0.15 IndFirst, so centred x = 1.7.
+    expect(svg, contains('x="1.7"'));
   });
 
   test('SVG absolute SpLine uses inches not max(fontSize)', () {
@@ -3371,7 +3417,7 @@ void main() {
     );
   });
 
-  test('SVG bullet overlapping body band is pushed left like canvas', () {
+  test('SVG long bullet expands the physical label field', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -3408,15 +3454,16 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    // Unpushed bullet would sit at margin+IndLeft = 0.14; push moves it left.
-    expect(svg.contains('x="0.14"'), isFalse);
+    // Label stays at margin + IndLeft; the body moves right when WWW is wider
+    // than the authored 0.08" minimum field.
+    expect(svg, contains('x="0.14"'));
     expect(svg, contains('WWW'));
     final xs = RegExp(r'x="([0-9.]+)"')
         .allMatches(svg)
         .map((m) => double.parse(m.group(1)!))
         .toList();
-    expect(xs.any((x) => x < 0.14), isTrue,
-        reason: 'overlapping bullet must be pushed left of 0.14');
+    expect(xs.any((x) => x > 0.4), isTrue,
+        reason: 'long label must expand the body field instead of moving left');
   });
 
   test('SVG loose edge label centres glyphs on the route midpoint', () {

@@ -4235,14 +4235,34 @@ class VsdxToSvgSerializer {
       final indentL = p.style.indentLeftInches;
       final indentF = p.style.indentFirstInches;
       final hasBullet = p.style.bullet != 0;
-      final bulletGap = hasBullet
+      final minLabelWidth = hasBullet
           ? (p.style.textPosAfterBulletInches > 0
               ? p.style.textPosAfterBulletInches
-              : 0.18)
+              : 0.25)
           : 0.0;
-      // IndFirst applies to the first line only (Visio); body lines use IndLeft.
-      final bodyBandX = layoutMl + indentL + (hasBullet ? bulletGap : 0.0);
-      final firstBandX = hasBullet ? bodyBandX : layoutMl + indentL + indentF;
+      var bodyFont = 0.14;
+      for (final (text, run) in p.segs) {
+        if (text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
+          bodyFont = run.charStyle.effectiveFontSizeInchesForText(text);
+          break;
+        }
+      }
+      final labelWidth = hasBullet
+          ? math.max(
+              minLabelWidth,
+              _estSvgTextWidth(
+                _svgBulletGlyph(p.style),
+                VsdxCharStyle.defaults.copyWith(
+                  fontSizeInches:
+                      p.style.effectiveBulletFontSizeInches(bodyFont),
+                ),
+              ),
+            )
+          : 0.0;
+      // The list label is a physical field after IndLeft. IndFirst belongs to
+      // the first body line; wrapped lines return to the body field origin.
+      final bodyBandX = layoutMl + indentL + labelWidth;
+      final firstBandX = bodyBandX + indentF;
       final availRest = math.max(
         0.04,
         layoutW - layoutMr - p.style.indentRightInches - bodyBandX,
@@ -4298,7 +4318,6 @@ class VsdxToSvgSerializer {
       final style = layout.style;
       final horizontalAlign = style.effectiveHorizontalAlign;
       final indentL = style.indentLeftInches;
-      final indentF = style.indentFirstInches;
       final textBandX = layout.textBandX;
       final bandRight = layoutW - layoutMr - style.indentRightInches;
       final tabbed = layout.segs.any((seg) => seg.$1.contains('\t'));
@@ -4353,21 +4372,33 @@ class VsdxToSvgSerializer {
         // Match libvisio: positive BulletFontSize is absolute, negative is a
         // percentage of the first run, and zero/absent inherits that run.
         final bFs = style.effectiveBulletFontSizeInches(bodyFont);
-        var bx = layoutMl + indentL + indentF;
-        // Canvas: when the bullet overlaps the body band start, push it left.
-        final bulletW = _estSvgTextWidth(
-          glyph,
-          VsdxCharStyle.defaults.copyWith(fontSizeInches: bFs),
-        );
-        if (bx > textBandX - bulletW) {
-          bx = textBandX - bulletW - 0.04;
+        final bx = layoutMl + indentL;
+        VsdxCharStyle bulletBodyStyle = VsdxCharStyle.defaults;
+        for (final (text, run) in layout.segs) {
+          if (text.isNotEmpty) {
+            bulletBodyStyle = run.charStyle;
+            break;
+          }
         }
+        final bulletColor = _resolveColor(
+              bulletBodyStyle.color,
+              bulletBodyStyle.themeColorIndex,
+              theme,
+            ) ??
+            VsdxColor.black;
+        final bulletOpacity =
+            _combinedOpacity(bulletColor, bulletBodyStyle.transparency);
+        final bulletFamily = style.bulletFont ?? bulletBodyStyle.fontFamily;
+        // Both <text> nodes use dominant-baseline=middle. Offset the smaller
+        // label's centre so its estimated alphabetic baseline matches body.
+        final bulletY = yText + (bodyFont - bFs) * 0.35;
         buf.writeln(
           '$indent  <text xml:space="preserve" text-anchor="start"$baseline '
-          'y="${_n(yText)}">'
+          'y="${_n(bulletY)}">'
           '<tspan x="${_n(bx)}" font-size="${_n(bFs)}" '
-          '${style.bulletFont != null ? 'font-family="${_esc(style.bulletFont!)}" ' : ''}'
-          'fill="#000000" fill-opacity="0.87">${_esc(glyph)}</tspan></text>',
+          '${bulletFamily != null ? 'font-family="${_esc(bulletFamily)}" ' : ''}'
+          'fill="${_hex(bulletColor)}" fill-opacity="${_n(bulletOpacity)}">'
+          '${_esc(glyph)}</tspan></text>',
         );
       }
 
