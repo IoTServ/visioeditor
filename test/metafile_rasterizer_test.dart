@@ -226,6 +226,57 @@ void main() {
     image.dispose();
   });
 
+  test('Canvas applies and restores EMF logical-to-device transforms', () async {
+    const unitRect = <MetafilePoint>[
+      MetafilePoint(0, 0),
+      MetafilePoint(4, 0),
+      MetafilePoint(4, 4),
+      MetafilePoint(0, 4),
+    ];
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 20,
+      maxY: 20,
+      ops: <Object>[
+        MetafileTransformOp(m11: 2, m12: 0, m21: 0, m22: 2, dx: 5, dy: 2),
+        MetafileSaveDcOp(),
+        MetafileTransformOp(m11: 1, m12: 0, m21: 0, m22: 1, dx: 3, dy: 0),
+        MetafilePathOp(
+          points: unitRect,
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0xffff0000,
+          strokeArgb: 0,
+          strokeWidth: 0,
+        ),
+        MetafileRestoreDcOp(),
+        MetafilePathOp(
+          points: unitRect,
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0xff0000ff,
+          strokeArgb: 0,
+          strokeWidth: 0,
+        ),
+      ],
+    );
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 200);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    List<int> rgbaAt(int x, int y) {
+      final offset = (y * image.width + x) * 4;
+      return bytes.sublist(offset, offset + 4);
+    }
+
+    expect(rgbaAt(60, 30), <int>[0, 0, 255, 255]);
+    expect(rgbaAt(160, 30), <int>[255, 0, 0, 255]);
+    expect(rgbaAt(20, 20)[3], 0);
+    image.dispose();
+  });
+
   test('Canvas decodes embedded BMP ops with crop, order, and mirroring',
       () async {
     final bmp = _twoByTwoBmp();

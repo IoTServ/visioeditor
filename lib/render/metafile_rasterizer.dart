@@ -58,6 +58,13 @@ Future<ui.Image?> rasterizeMetafileDrawing(
         canvas.restore();
         savedDcCount--;
       }
+    } else if (op is MetafileTransformOp) {
+      canvas.transform(Float64List.fromList(<double>[
+        op.m11, op.m12, 0, 0,
+        op.m21, op.m22, 0, 0,
+        0, 0, 1, 0,
+        op.dx, op.dy, 0, 1,
+      ]));
     } else if (op is MetafileClipRectOp) {
       final rect = op.rect;
       canvas.clipRect(

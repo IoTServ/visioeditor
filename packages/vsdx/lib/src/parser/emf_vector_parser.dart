@@ -25,7 +25,10 @@ const int _emrPolyPolygon = 8;
 const int _emrEof = 14;
 const int _emrSetWindowExtEx = 9;
 const int _emrSetWindowOrgEx = 10;
+const int _emrSetViewportExtEx = 11;
+const int _emrSetViewportOrgEx = 12;
 const int _emrSetPixelV = 15;
+const int _emrSetMapMode = 17;
 const int _emrSetBkMode = 18;
 const int _emrSetPolyFillMode = 19;
 const int _emrSetTextAlign = 22;
@@ -34,8 +37,12 @@ const int _emrSetBkColor = 25;
 const int _emrMoveToEx = 27;
 const int _emrExcludeClipRect = 29;
 const int _emrIntersectClipRect = 30;
+const int _emrScaleViewportExtEx = 31;
+const int _emrScaleWindowExtEx = 32;
 const int _emrSaveDc = 33;
 const int _emrRestoreDc = 34;
+const int _emrSetWorldTransform = 35;
+const int _emrModifyWorldTransform = 36;
 const int _emrSelectObject = 37;
 const int _emrCreatePen = 38;
 const int _emrCreateBrushIndirect = 39;
@@ -127,6 +134,17 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   }
   var haveBounds = maxX > minX && maxY > minY;
 
+  final deviceWidth = bd.getInt32(72, Endian.little).abs();
+  final deviceHeight = bd.getInt32(76, Endian.little).abs();
+  final millimeterWidth = bd.getInt32(80, Endian.little).abs();
+  final millimeterHeight = bd.getInt32(84, Endian.little).abs();
+  final pixelsPerMillimeterX = deviceWidth > 0 && millimeterWidth > 0
+      ? deviceWidth / millimeterWidth
+      : 96 / 25.4;
+  final pixelsPerMillimeterY = deviceHeight > 0 && millimeterHeight > 0
+      ? deviceHeight / millimeterHeight
+      : 96 / 25.4;
+
   final objects = <_EmfObject?>[];
   // Stock object indices in EMF are 0x80000000 | stock; we only track created.
   var penColor = 0xFF000000;
@@ -150,11 +168,88 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var fontEscapementDegrees = 0.0;
   var fontEncoding = VsdLegacyTextEncoding.ansi;
   var arcClockwise = false;
+  var mapMode = 1; // MM_TEXT
+  var windowOrgX = 0.0;
+  var windowOrgY = 0.0;
+  var windowExtX = 1.0;
+  var windowExtY = 1.0;
+  var viewportOrgX = 0.0;
+  var viewportOrgY = 0.0;
+  var viewportExtX = 1.0;
+  var viewportExtY = 1.0;
+  var worldTransform = const _EmfTransform.identity();
   final ops = <Object>[];
   MetafilePoint? curPt;
   var recordPath = false;
   final pathFigures = <_EmfPathFigure>[];
   final savedStates = <_EmfDcState>[];
+
+  _EmfTransform pageTransform() {
+    var sx = 1.0;
+    var sy = 1.0;
+    switch (mapMode) {
+      case 2: // MM_LOMETRIC: 0.1 mm, Y-up
+        sx = pixelsPerMillimeterX / 10;
+        sy = -pixelsPerMillimeterY / 10;
+        break;
+      case 3: // MM_HIMETRIC: 0.01 mm, Y-up
+        sx = pixelsPerMillimeterX / 100;
+        sy = -pixelsPerMillimeterY / 100;
+        break;
+      case 4: // MM_LOENGLISH: 0.01 inch, Y-up
+        sx = pixelsPerMillimeterX * 25.4 / 100;
+        sy = -pixelsPerMillimeterY * 25.4 / 100;
+        break;
+      case 5: // MM_HIENGLISH: 0.001 inch, Y-up
+        sx = pixelsPerMillimeterX * 25.4 / 1000;
+        sy = -pixelsPerMillimeterY * 25.4 / 1000;
+        break;
+      case 6: // MM_TWIPS: 1/1440 inch, Y-up
+        sx = pixelsPerMillimeterX * 25.4 / 1440;
+        sy = -pixelsPerMillimeterY * 25.4 / 1440;
+        break;
+      case 7: // MM_ISOTROPIC
+      case 8: // MM_ANISOTROPIC
+        if (windowExtX != 0 && windowExtY != 0) {
+          sx = viewportExtX / windowExtX;
+          sy = viewportExtY / windowExtY;
+          if (mapMode == 7) {
+            final magnitude = math.min(sx.abs(), sy.abs());
+            sx = sx.isNegative ? -magnitude : magnitude;
+            sy = sy.isNegative ? -magnitude : magnitude;
+          }
+        }
+        break;
+    }
+    final mapping = _EmfTransform(
+      sx,
+      0,
+      0,
+      sy,
+      viewportOrgX - windowOrgX * sx,
+      viewportOrgY - windowOrgY * sy,
+    );
+    return mapping.multipliedBy(worldTransform);
+  }
+
+  void changeTransform(void Function() update) {
+    final before = pageTransform();
+    update();
+    final after = pageTransform();
+    final inverse = before.inverse();
+    if (inverse == null) return;
+    final delta = inverse.multipliedBy(after);
+    if (!delta.isIdentity) {
+      ops.add(MetafileTransformOp(
+        m11: delta.m11,
+        m12: delta.m12,
+        m21: delta.m21,
+        m22: delta.m22,
+        dx: delta.dx,
+        dy: delta.dy,
+      ));
+    }
+  }
 
   _EmfDcState captureState() => _EmfDcState(
         penColor: penColor,
@@ -178,6 +273,16 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fontEscapementDegrees: fontEscapementDegrees,
         fontEncoding: fontEncoding,
         arcClockwise: arcClockwise,
+        mapMode: mapMode,
+        windowOrgX: windowOrgX,
+        windowOrgY: windowOrgY,
+        windowExtX: windowExtX,
+        windowExtY: windowExtY,
+        viewportOrgX: viewportOrgX,
+        viewportOrgY: viewportOrgY,
+        viewportExtX: viewportExtX,
+        viewportExtY: viewportExtY,
+        worldTransform: worldTransform,
         curPt: curPt,
         pathFigures: pathFigures
             .map((figure) => _EmfPathFigure.copy(figure))
@@ -215,6 +320,16 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     fontEscapementDegrees = state.fontEscapementDegrees;
     fontEncoding = state.fontEncoding;
     arcClockwise = state.arcClockwise;
+    mapMode = state.mapMode;
+    windowOrgX = state.windowOrgX;
+    windowOrgY = state.windowOrgY;
+    windowExtX = state.windowExtX;
+    windowExtY = state.windowExtY;
+    viewportOrgX = state.viewportOrgX;
+    viewportOrgY = state.viewportOrgY;
+    viewportExtX = state.viewportExtX;
+    viewportExtY = state.viewportExtY;
+    worldTransform = state.worldTransform;
     curPt = state.curPt;
     pathFigures
       ..clear()
@@ -952,16 +1067,80 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         ops.add(MetafileRestoreDcOp(count: restoredCount));
       }
     } else if (t == _emrSetWindowOrgEx && params + 8 <= recEnd) {
-      // ignored for drawing; bounds already from header
+      changeTransform(() {
+        windowOrgX = bd.getInt32(params, Endian.little).toDouble();
+        windowOrgY = bd.getInt32(params + 4, Endian.little).toDouble();
+      });
     } else if (t == _emrSetWindowExtEx && params + 8 <= recEnd) {
       final cx = bd.getInt32(params, Endian.little).toDouble();
       final cy = bd.getInt32(params + 4, Endian.little).toDouble();
+      if (cx != 0 && cy != 0) {
+        changeTransform(() {
+          windowExtX = cx;
+          windowExtY = cy;
+        });
+      }
       if (!haveBounds && cx.abs() > 1 && cy.abs() > 1) {
         minX = 0;
         minY = 0;
         maxX = cx.abs();
         maxY = cy.abs();
         haveBounds = true;
+      }
+    } else if (t == _emrSetViewportOrgEx && params + 8 <= recEnd) {
+      changeTransform(() {
+        viewportOrgX = bd.getInt32(params, Endian.little).toDouble();
+        viewportOrgY = bd.getInt32(params + 4, Endian.little).toDouble();
+      });
+    } else if (t == _emrSetViewportExtEx && params + 8 <= recEnd) {
+      final cx = bd.getInt32(params, Endian.little).toDouble();
+      final cy = bd.getInt32(params + 4, Endian.little).toDouble();
+      if (cx != 0 && cy != 0) {
+        changeTransform(() {
+          viewportExtX = cx;
+          viewportExtY = cy;
+        });
+      }
+    } else if ((t == _emrScaleWindowExtEx || t == _emrScaleViewportExtEx) &&
+        params + 16 <= recEnd) {
+      final xDenominator = bd.getInt32(params + 4, Endian.little);
+      final yDenominator = bd.getInt32(params + 12, Endian.little);
+      if (xDenominator != 0 && yDenominator != 0) {
+        final xScale = bd.getInt32(params, Endian.little) / xDenominator;
+        final yScale = bd.getInt32(params + 8, Endian.little) / yDenominator;
+        changeTransform(() {
+          if (t == _emrScaleWindowExtEx) {
+            windowExtX *= xScale;
+            windowExtY *= yScale;
+          } else {
+            viewportExtX *= xScale;
+            viewportExtY *= yScale;
+          }
+        });
+      }
+    } else if (t == _emrSetMapMode && params + 4 <= recEnd) {
+      final mode = bd.getInt32(params, Endian.little);
+      if (mode >= 1 && mode <= 8) {
+        changeTransform(() => mapMode = mode);
+      }
+    } else if (t == _emrSetWorldTransform && params + 24 <= recEnd) {
+      final transform = _EmfTransform.read(bd, params);
+      if (transform != null) {
+        changeTransform(() => worldTransform = transform);
+      }
+    } else if (t == _emrModifyWorldTransform && params + 28 <= recEnd) {
+      final transform = _EmfTransform.read(bd, params);
+      final mode = bd.getUint32(params + 24, Endian.little);
+      if (transform != null && mode >= 1 && mode <= 4) {
+        changeTransform(() {
+          worldTransform = switch (mode) {
+            1 => const _EmfTransform.identity(),
+            2 => transform.multipliedBy(worldTransform),
+            3 => worldTransform.multipliedBy(transform),
+            4 => transform,
+            _ => worldTransform,
+          };
+        });
       }
     } else if (t == _emrSetPixelV && params + 12 <= recEnd) {
       final x = bd.getInt32(params, Endian.little).toDouble();
@@ -1794,6 +1973,77 @@ class _EmfPathFigure {
   bool closed;
 }
 
+class _EmfTransform {
+  const _EmfTransform(
+    this.m11,
+    this.m12,
+    this.m21,
+    this.m22,
+    this.dx,
+    this.dy,
+  );
+
+  const _EmfTransform.identity() : this(1, 0, 0, 1, 0, 0);
+
+  final double m11;
+  final double m12;
+  final double m21;
+  final double m22;
+  final double dx;
+  final double dy;
+
+  static _EmfTransform? read(ByteData data, int offset) {
+    final values = <double>[
+      for (var i = 0; i < 6; i++)
+        data.getFloat32(offset + i * 4, Endian.little).toDouble(),
+    ];
+    if (values.any((value) => !value.isFinite)) return null;
+    return _EmfTransform(
+      values[0],
+      values[1],
+      values[2],
+      values[3],
+      values[4],
+      values[5],
+    );
+  }
+
+  /// Matrix product `this × other` for column-vector affine coordinates.
+  _EmfTransform multipliedBy(_EmfTransform other) => _EmfTransform(
+        m11 * other.m11 + m21 * other.m12,
+        m12 * other.m11 + m22 * other.m12,
+        m11 * other.m21 + m21 * other.m22,
+        m12 * other.m21 + m22 * other.m22,
+        m11 * other.dx + m21 * other.dy + dx,
+        m12 * other.dx + m22 * other.dy + dy,
+      );
+
+  _EmfTransform? inverse() {
+    final determinant = m11 * m22 - m12 * m21;
+    if (!determinant.isFinite || determinant.abs() < 1e-12) return null;
+    final a = m22 / determinant;
+    final b = -m12 / determinant;
+    final c = -m21 / determinant;
+    final d = m11 / determinant;
+    return _EmfTransform(
+      a,
+      b,
+      c,
+      d,
+      -(a * dx + c * dy),
+      -(b * dx + d * dy),
+    );
+  }
+
+  bool get isIdentity =>
+      (m11 - 1).abs() < 1e-12 &&
+      m12.abs() < 1e-12 &&
+      m21.abs() < 1e-12 &&
+      (m22 - 1).abs() < 1e-12 &&
+      dx.abs() < 1e-9 &&
+      dy.abs() < 1e-9;
+}
+
 class _EmfDcState {
   const _EmfDcState({
     required this.penColor,
@@ -1817,6 +2067,16 @@ class _EmfDcState {
     required this.fontEscapementDegrees,
     required this.fontEncoding,
     required this.arcClockwise,
+    required this.mapMode,
+    required this.windowOrgX,
+    required this.windowOrgY,
+    required this.windowExtX,
+    required this.windowExtY,
+    required this.viewportOrgX,
+    required this.viewportOrgY,
+    required this.viewportExtX,
+    required this.viewportExtY,
+    required this.worldTransform,
     required this.curPt,
     required this.pathFigures,
   });
@@ -1842,6 +2102,16 @@ class _EmfDcState {
   final double fontEscapementDegrees;
   final VsdLegacyTextEncoding fontEncoding;
   final bool arcClockwise;
+  final int mapMode;
+  final double windowOrgX;
+  final double windowOrgY;
+  final double windowExtX;
+  final double windowExtY;
+  final double viewportOrgX;
+  final double viewportOrgY;
+  final double viewportExtX;
+  final double viewportExtY;
+  final _EmfTransform worldTransform;
   final MetafilePoint? curPt;
   final List<_EmfPathFigure> pathFigures;
 }

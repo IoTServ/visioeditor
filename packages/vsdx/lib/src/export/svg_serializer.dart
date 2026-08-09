@@ -3304,6 +3304,12 @@ class VsdxToSvgSerializer {
         dcClipDepths.add(0);
       } else if (op is MetafileRestoreDcOp) {
         restoreDeviceContexts(op.count);
+      } else if (op is MetafileTransformOp) {
+        buf.writeln(
+          '$indent  <g transform="matrix(${_n(op.m11)} ${_n(op.m12)} '
+          '${_n(op.m21)} ${_n(op.m22)} ${_n(op.dx)} ${_n(op.dy)})">',
+        );
+        dcClipDepths[dcClipDepths.length - 1]++;
       } else if (op is MetafileClipRectOp) {
         final clipId = 'wmf-dc-clip-$idScope-$opIndex';
         final rect = op.rect;

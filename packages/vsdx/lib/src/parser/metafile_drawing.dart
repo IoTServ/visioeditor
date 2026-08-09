@@ -58,6 +58,26 @@ class MetafileRestoreDcOp {
   final int count;
 }
 
+/// Concatenate a GDI logical-to-device transform with the active transform.
+@immutable
+class MetafileTransformOp {
+  const MetafileTransformOp({
+    required this.m11,
+    required this.m12,
+    required this.m21,
+    required this.m22,
+    required this.dx,
+    required this.dy,
+  });
+
+  final double m11;
+  final double m12;
+  final double m21;
+  final double m22;
+  final double dx;
+  final double dy;
+}
+
 /// Intersect the active clip region with, or exclude, an axis-aligned rect.
 @immutable
 class MetafileClipRectOp {
