@@ -346,10 +346,17 @@ class RichTextParser {
     final colorInh = isInhFormula(colorF);
     final cachedColor =
         VsdxColor.tryParse(colorV, palette: colorPalette);
-    final concreteThemeGuard =
-        _isConcreteThemeGuard(colorF) && cachedColor != null;
+    // libvisio consumes V= for formulas that *compute* from THEMEVAL (for
+    // example IF(LUM(...),SHADE(THEMEVAL(...),75),...)). Only a direct
+    // THEMEVAL(...) remains a live theme binding in our editable model.
+    // Treating every formula containing THEMEVAL as a slot discarded Visio's
+    // evaluated dark/red text caches and painted them black.
+    final concreteThemeFormula = cachedColor != null &&
+        (_isConcreteThemeGuard(colorF) ||
+            (_containsThemeEval(colorF) && !_isDirectThemeEval(colorF)));
+    final themedToken = colorV?.trim().toUpperCase() == 'THEMED';
     final isTheme = !colorInh &&
-        !concreteThemeGuard &&
+        !concreteThemeFormula &&
         ((colorV != null &&
                 (colorV.toUpperCase().contains('THEMEVAL') ||
                     colorV.toUpperCase().contains('THEMEGUARD'))) ||
@@ -362,7 +369,9 @@ class RichTextParser {
         ? (preferCachedInh && cachedColor != null
             ? cachedColor
             : defaults.color)
-        : (isTheme ? null : cachedColor);
+        : (isTheme
+            ? (themedToken ? defaults.color : null)
+            : cachedColor);
     // A theme character colour caches its slot index in V (see the writer);
     // read it back when present, otherwise fall back to the inherited slot.
     int? themeIdx;
@@ -370,6 +379,8 @@ class RichTextParser {
       themeIdx = preferCachedInh && cachedColor != null
           ? null
           : defaults.themeColorIndex;
+    } else if (isTheme && themedToken) {
+      themeIdx = defaults.themeColorIndex;
     } else if (isTheme) {
       final parsed = int.tryParse((colorV ?? '').trim());
       themeIdx = (parsed != null && parsed >= 0 && parsed < 100)
@@ -463,6 +474,14 @@ class RichTextParser {
 
   bool _isConcreteThemeGuard(String formula) =>
       formula.toUpperCase().contains('THEMEGUARD');
+
+  bool _containsThemeEval(String formula) =>
+      formula.toUpperCase().contains('THEMEVAL');
+
+  bool _isDirectThemeEval(String formula) => RegExp(
+        r'^\s*THEMEVAL\s*\(',
+        caseSensitive: false,
+      ).hasMatch(formula);
 
   VsdxParaStyle _readParaRow(XmlElement row, VsdxParaStyle defaults) {
     final horz = _cellInt(

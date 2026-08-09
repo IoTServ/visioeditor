@@ -146,6 +146,51 @@ Uint8List _emfStockGrayBrush() {
 }
 
 void main() {
+  test('SVG composites group text after filled children like libvisio', () {
+    final child = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 1,
+      pinY: 0.5,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: const VsdxFill(
+        pattern: 1,
+        foreground: VsdxColor(0xFF0000FF),
+      ),
+    );
+    final group = VsdxShape(
+      id: 1,
+      name: 'Group',
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+      children: <VsdxShape>[child],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(text: 'PARENT OVERLAY'),
+        ],
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 1,
+        name: 'Page',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: <VsdxShape>[group],
+      ),
+    );
+
+    expect(svg, contains('fill="#0000ff"'));
+    expect(svg, contains('PARENT OVERLAY'));
+    expect(
+      svg.indexOf('fill="#0000ff"'),
+      lessThan(svg.indexOf('PARENT OVERLAY')),
+    );
+  });
+
   const parser = DocumentParser();
 
   test('serializes a document to SVG', () {

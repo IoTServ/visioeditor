@@ -141,6 +141,71 @@ void main() {
       );
     },
   );
+
+  test('group text is composited above filled children like libvisio', () async {
+    const pxPerInch = 144.0;
+    final child = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 1,
+      pinY: 0.5,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: const VsdxFill(
+        pattern: 1,
+        foreground: VsdxColor(0xFF000000),
+      ),
+      line: const VsdxLine(pattern: 0),
+    );
+    final group = VsdxShape(
+      id: 1,
+      name: 'Group',
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+      children: <VsdxShape>[child],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'GROUP LABEL',
+            charStyle: VsdxCharStyle(
+              color: VsdxColor(0xFFFF0000),
+              fontFamily: 'Arial',
+              fontSizeInches: 18 / 72,
+            ),
+          ),
+        ],
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+        ),
+      ),
+    );
+    final rgba = await _rasterPage(
+      VsdxPage(
+        id: 0,
+        name: 'Group text order',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: <VsdxShape>[group],
+      ),
+      pxPerInch: pxPerInch,
+    );
+
+    var redPixels = 0;
+    for (var offset = 0; offset < rgba.length; offset += 4) {
+      if (rgba[offset] > 180 &&
+          rgba[offset + 1] < 80 &&
+          rgba[offset + 2] < 80 &&
+          rgba[offset + 3] > 200) {
+        redPixels++;
+      }
+    }
+    expect(redPixels, greaterThan(100));
+  });
 }
 
 Future<Uint8List> _rasterPage(

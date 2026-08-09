@@ -324,4 +324,13 @@ void main() {
       expect(shape.pinY, closeTo((shape.beginY! + shape.endY!) * 0.5, 1e-9));
     }
   });
+
+  test('test11_rotate keeps the independent size of every page', () {
+    final pages = parser.parse(_fixture('test11_rotate.vsdx')).pages;
+
+    expect(pages, hasLength(3));
+    expect(pages[0].heightInches, closeTo(22.88582677165354, 1e-9));
+    expect(pages[1].heightInches, closeTo(11.69291338582677, 1e-9));
+    expect(pages[2].heightInches, closeTo(11.69291338582677, 1e-9));
+  });
 }

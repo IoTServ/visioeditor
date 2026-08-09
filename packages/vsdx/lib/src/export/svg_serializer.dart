@@ -708,6 +708,24 @@ class VsdxToSvgSerializer {
       }
     }
 
+    // Match canvas: collapsed hosts hide children; covered table cells skip.
+    // Visio/libvisio paint a group's own label above those children, so the
+    // text is emitted afterwards instead of being hidden by a child fill.
+    if (!shape.collapsed) {
+      for (final child in shape.children) {
+        if (TableOps.isCovered(child)) continue;
+        _writeShapeSafely(
+          buf,
+          child,
+          theme,
+          page,
+          visibleLayers,
+          paintIdScope: paintIdScope,
+          indent: '$indent  ',
+        );
+      }
+    }
+
     // Match canvas name-fallback: 2-D shapes with a meaningful (non Sheet.N)
     // name paint that label when richText/text are empty.
     final hasLabel = !shape.richText.isEmpty ||
@@ -722,22 +740,6 @@ class VsdxToSvgSerializer {
         paintIdScope: paintIdScope,
         indent: '$indent  ',
       );
-    }
-
-    // Match canvas: collapsed hosts hide children; covered table cells skip.
-    if (!shape.collapsed) {
-      for (final child in shape.children) {
-        if (TableOps.isCovered(child)) continue;
-        _writeShapeSafely(
-          buf,
-          child,
-          theme,
-          page,
-          visibleLayers,
-          paintIdScope: paintIdScope,
-          indent: '$indent  ',
-        );
-      }
     }
     buf.writeln('$indent</g>');
     if (link != null) {

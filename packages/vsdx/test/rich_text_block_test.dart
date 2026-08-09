@@ -332,6 +332,56 @@ void main() {
     expect(c.fontFamily, 'Calibri');
   });
 
+  test('computed THEMEVAL Character colour keeps its evaluated V cache', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Color" V="#4d1e1a" '
+        'F="IF(LUM(THEMEVAL(&quot;BackgroundColor&quot;))&gt;120,'
+        'SHADE(THEMEVAL(QuickStyleFillColor),75),THEMEVAL(&quot;Light&quot;))"/>'
+        '</Row></Section>'
+        '<Text><cp IX="0"/>Label</Text>',
+      ),
+    );
+    final color = rich.runs.single.charStyle;
+
+    expect(color.color, const VsdxColor(0xFF4D1E1A));
+    expect(color.themeColorIndex, isNull);
+  });
+
+  test('Themed Character token retains the inherited evaluated colour', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Color" V="Themed" F="THEMEVAL()"/>'
+        '</Row></Section>'
+        '<Text><cp IX="0"/>Label</Text>',
+      ),
+      defaultChar: const VsdxCharStyle(
+        color: VsdxColor(0xFF4D1E1A),
+      ),
+    );
+    final color = rich.runs.single.charStyle;
+
+    expect(color.color, const VsdxColor(0xFF4D1E1A));
+    expect(color.themeColorIndex, isNull);
+  });
+
+  test('direct THEMEVAL Character colour remains a live theme binding', () {
+    final rich = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Color" V="4" F="THEMEVAL()"/>'
+        '</Row></Section>'
+        '<Text><cp IX="0"/>Label</Text>',
+      ),
+    );
+    final color = rich.runs.single.charStyle;
+
+    expect(color.color, isNull);
+    expect(color.themeColorIndex, ThemeSlot.accent1);
+  });
+
   test('absent Font stays null (does not materialise defaults)', () {
     final rich = parser.parse(
       shape(

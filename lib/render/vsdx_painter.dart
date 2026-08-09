@@ -618,18 +618,21 @@ class VsdxPainter extends CustomPainter {
     }
 
     _paintLineEndings(canvas, shape);
-    _paintRichText(canvas, shape, Rect.fromLTWH(0, 0, w, h));
 
     // Children inherit the parent's local frame: their PinX/PinY are
     // interpreted in the (0..parentWidth, 0..parentHeight) box, so we paint
-    // them BEFORE restoring the canvas. (M4-06.) Collapsed containers keep
-    // their children in the model but hide them (draw.io fold).
+    // them BEFORE restoring the canvas. (M4-06.) Visio/libvisio composite a
+    // group's own text after its child shapes; painting the label first lets a
+    // filled child erase it. Collapsed containers keep their children in the
+    // model but hide them (draw.io fold).
     if (!shape.collapsed) {
       for (final child in shape.children) {
         if (TableOps.isCovered(child)) continue;
         _paintShapeSafely(canvas, child, visibleLayers, bboxes, viewport);
       }
     }
+
+    _paintRichText(canvas, shape, Rect.fromLTWH(0, 0, w, h));
 
     if (useShapeOpacity) canvas.restore();
 

@@ -19,6 +19,7 @@ const _cjkFontEnvironment = 'VISIO_RENDER_AUDIT_CJK_FONT';
 const _upstreamDirectory = 'third_party/libvisio/src/test/data';
 const _appExampleDirectory = 'assets/examples';
 const _packageExternalDirectory = 'packages/vsdx/test/fixtures/vsd/external';
+const _packageFixtureDirectory = 'packages/vsdx/test/fixtures';
 
 const _corpus = <_CorpusEntry>[
   _CorpusEntry('Visio11FormatLine.vsd'),
@@ -56,6 +57,33 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry('testfile5.vsdx'),
   _CorpusEntry('testfile6.vsdx'),
   _CorpusEntry('visio_with_embeded.vsd', packageExternal: true),
+  _CorpusEntry('test1.vsdx', packageFixture: true),
+  _CorpusEntry('test2.vsdx', packageFixture: true),
+  _CorpusEntry('test3_house.vsdx', packageFixture: true),
+  _CorpusEntry('test4_connectors.vsdx', packageFixture: true),
+  _CorpusEntry('test5_master.vsdx', packageFixture: true),
+  _CorpusEntry('test6_shape_properties.vsdx', packageFixture: true),
+  _CorpusEntry('test7_with_connector.vsdx', packageFixture: true),
+  _CorpusEntry('test8_simple_connector.vsdx', packageFixture: true),
+  _CorpusEntry('test9_rect_and_line.vsdx', packageFixture: true),
+  _CorpusEntry('test10_nested_shapes.vsdx', packageFixture: true),
+  // LibreOffice Draw exports every page at page 1's size, although pages.xml
+  // gives pages 2/3 their own A4 height. Keep comparing their content, but do
+  // not treat that LibreOffice PDF limitation as an application regression.
+  _CorpusEntry(
+    'test11_rotate.vsdx',
+    packageFixture: true,
+    ignoreLibreOfficeCanvasSize: true,
+  ),
+  _CorpusEntry('test12_colors.vsdx', packageFixture: true),
+  _CorpusEntry('test_master.vsdx', packageFixture: true),
+  _CorpusEntry('test_master_multiple_child_shapes.vsdx', packageFixture: true),
+  _CorpusEntry('test_jinja.vsdx', packageFixture: true),
+  _CorpusEntry('test_jinja_inner_loop.vsdx', packageFixture: true),
+  _CorpusEntry('test_jinja_loop.vsdx', packageFixture: true),
+  _CorpusEntry('test_jinja_loop_showif.vsdx', packageFixture: true),
+  _CorpusEntry('test_jinja_page_showif.vsdx', packageFixture: true),
+  _CorpusEntry('test_jinja_self_refs.vsdx', packageFixture: true),
   _CorpusEntry('sample.vsd', applicationExample: true),
   _CorpusEntry('workflow.vsdx', applicationExample: true),
   _CorpusEntry('人才招聘冰山模型.vsdx', applicationExample: true),
@@ -67,12 +95,12 @@ void main() {
 
   final enabled = Platform.environment[_runEnvironment] == '1';
   test(
-    '35 Visio fixtures and 4 app examples render like LibreOffice',
+    '55 Visio fixtures and 4 app examples render like LibreOffice',
     () async {
       await _loadAuditFonts();
       expect(
         _corpus.where((entry) => !entry.applicationExample),
-        hasLength(35),
+        hasLength(55),
       );
       expect(_corpus.where((entry) => entry.applicationExample), hasLength(4));
       final filter = Platform.environment[_filterEnvironment];
@@ -193,8 +221,9 @@ void main() {
               'iou=${comparison.inkIntersectionOverUnion.toStringAsFixed(4)}',
             );
 
-            if ((appMetrics.width - referenceMetrics.width).abs() > 2 ||
-                (appMetrics.height - referenceMetrics.height).abs() > 2) {
+            if (!entry.ignoreLibreOfficeCanvasSize &&
+                ((appMetrics.width - referenceMetrics.width).abs() > 2 ||
+                    (appMetrics.height - referenceMetrics.height).abs() > 2)) {
               failures.add(
                 '$label: canvas app=${appMetrics.width}x${appMetrics.height}, '
                 'LibreOffice=${referenceMetrics.width}x${referenceMetrics.height}',
@@ -320,18 +349,24 @@ class _CorpusEntry {
     this.name, {
     this.applicationExample = false,
     this.packageExternal = false,
+    this.packageFixture = false,
     this.ignoreLibreOfficePageCount = false,
+    this.ignoreLibreOfficeCanvasSize = false,
   });
 
   final String name;
   final bool applicationExample;
   final bool packageExternal;
+  final bool packageFixture;
   final bool ignoreLibreOfficePageCount;
+  final bool ignoreLibreOfficeCanvasSize;
 
   String get path => applicationExample
       ? '$_appExampleDirectory/$name'
       : packageExternal
       ? '$_packageExternalDirectory/$name'
+      : packageFixture
+      ? '$_packageFixtureDirectory/$name'
       : '$_upstreamDirectory/$name';
 }
 
