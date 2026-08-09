@@ -25,6 +25,19 @@ Uint8List _brushRecord(int colorRef) {
   return out;
 }
 
+Uint8List _penRecord(
+    {required int style, required int width, int colorRef = 0}) {
+  final out = Uint8List(16);
+  ByteData.sublistView(out)
+    ..setUint32(0, 8, Endian.little)
+    ..setUint16(4, 0x02fa, Endian.little)
+    ..setUint16(6, style, Endian.little)
+    ..setInt16(8, width, Endian.little)
+    ..setInt16(10, 0, Endian.little)
+    ..setUint32(12, colorRef, Endian.little);
+  return out;
+}
+
 Uint8List _polyPolygonRecord() {
   const polygons = <List<(int, int)>>[
     <(int, int)>[(0, 0), (100, 0), (100, 100), (0, 100)],
@@ -220,6 +233,128 @@ void main() {
         text.advancesX![3] - text.advancesX![2],
         closeTo(perBreak, 1e-9),
       );
+    }
+  });
+
+  test('window and viewport records map paths clips text and pen metrics', () {
+    final payload = _wmf(<Uint8List>[
+      _penRecord(style: 1, width: 3), // PS_DASH
+      _wordRecord(0x012d, const <int>[0]),
+      _wordRecord(0x0103, const <int>[8]), // MM_ANISOTROPIC
+      _wordRecord(0x020b, const <int>[20, 10]),
+      _wordRecord(0x020c, const <int>[100, 200]),
+      _wordRecord(0x020d, const <int>[7, 5]),
+      _wordRecord(0x020e, const <int>[-300, 400]),
+      _wordRecord(0x0416, const <int>[120, 210, 20, 10]),
+      _wordRecord(0x0214, const <int>[20, 10]),
+      _wordRecord(0x0213, const <int>[120, 210]),
+      _textOutRecord('Mapped', 110, 70),
+    ]);
+
+    final drawing = parseWmfDrawing(payload)!;
+    expect(drawing.width, closeTo(400, 1e-9));
+    expect(drawing.height, closeTo(300, 1e-9));
+
+    final clip = drawing.ops.whereType<MetafileClipRectOp>().single.rect;
+    expect(clip.left, closeTo(5, 1e-9));
+    expect(clip.top, closeTo(-293, 1e-9));
+    expect(clip.right, closeTo(405, 1e-9));
+    expect(clip.bottom, closeTo(7, 1e-9));
+
+    final path = drawing.ops.whereType<MetafilePathOp>().single;
+    expect(path.points.first.x, closeTo(5, 1e-9));
+    expect(path.points.first.y, closeTo(7, 1e-9));
+    expect(path.points.last.x, closeTo(405, 1e-9));
+    expect(path.points.last.y, closeTo(-293, 1e-9));
+    expect(path.strokeWidth, closeTo(6, 1e-9));
+    expect(path.strokeDashPattern, <double>[24, 8]);
+
+    final text = drawing.ops.whereType<MetafileTextOp>().single;
+    expect(text.x, closeTo(205, 1e-9));
+    expect(text.y, closeTo(-143, 1e-9));
+    expect(text.fontHeight, closeTo(36, 1e-9));
+
+    const part = '/visio/media/mapped.wmf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(svg, contains('<clipPath'));
+    expect(svg, contains('stroke-dasharray='));
+    expect(svg, contains('Mapped'));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    document = document.copyWith(images: images).replacePage(
+          0,
+          _imagePage(part),
+        );
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: document,
+    ));
+    final roundTripped = reopened.images.findByPart(part)!.bytes;
+    expect(roundTripped, payload);
+    final reopenedPath =
+        parseWmfDrawing(roundTripped)!.ops.whereType<MetafilePathOp>().single;
+    expect(reopenedPath.points.last.x, closeTo(405, 1e-9));
+    expect(reopenedPath.points.last.y, closeTo(-293, 1e-9));
+  });
+
+  test('offset and scale mapping state is restored by RestoreDC', () {
+    final payload = _wmf(<Uint8List>[
+      _wordRecord(0x0103, const <int>[8]), // MM_ANISOTROPIC
+      _wordRecord(0x020b, const <int>[0, 0]),
+      _wordRecord(0x020c, const <int>[100, 100]),
+      _wordRecord(0x020d, const <int>[0, 0]),
+      _wordRecord(0x020e, const <int>[100, 100]),
+      _wordRecord(0x001e, const <int>[]), // SaveDC
+      _wordRecord(0x020f, const <int>[20, 10]),
+      _wordRecord(0x0211, const <int>[7, 5]),
+      _wordRecord(0x0410, const <int>[1, 2, 1, 2]),
+      _wordRecord(0x0412, const <int>[1, 3, 1, 4]),
+      _wordRecord(0x0214, const <int>[20, 10]),
+      _wordRecord(0x0213, const <int>[120, 110]),
+      _wordRecord(0x0127, const <int>[0xffff]), // RestoreDC(-1)
+      _wordRecord(0x0410, const <int>[0, 5, 1, 7]), // invalid, ignored
+      _wordRecord(0x0214, const <int>[0, 0]),
+      _wordRecord(0x0213, const <int>[100, 100]),
+    ]);
+
+    final drawing = parseWmfDrawing(payload)!;
+    final paths = drawing.ops.whereType<MetafilePathOp>().toList();
+    expect(paths, hasLength(2));
+    expect(paths.first.points.first.x, closeTo(5, 1e-9));
+    expect(paths.first.points.first.y, closeTo(7, 1e-9));
+    expect(paths.first.points.last.x, closeTo(205, 1e-9));
+    expect(paths.first.points.last.y, closeTo(157, 1e-9));
+    expect(paths.last.points.first.x, closeTo(0, 1e-9));
+    expect(paths.last.points.first.y, closeTo(0, 1e-9));
+    expect(paths.last.points.last.x, closeTo(100, 1e-9));
+    expect(paths.last.points.last.y, closeTo(100, 1e-9));
+    expect(drawing.ops.whereType<MetafileSaveDcOp>(), hasLength(1));
+    expect(drawing.ops.whereType<MetafileRestoreDcOp>(), hasLength(1));
+  });
+
+  test('fixed physical mapping modes retain their bottom-up Y axis', () {
+    for (final mapMode in <int>[2, 3, 4, 5, 6]) {
+      final drawing = parseWmfDrawing(_wmf(<Uint8List>[
+        _wordRecord(0x0103, <int>[mapMode]),
+        _wordRecord(0x0214, const <int>[0, 0]),
+        _wordRecord(0x0213, const <int>[100, 50]),
+      ]))!;
+      final path = drawing.ops.whereType<MetafilePathOp>().single;
+      expect(path.points.first.x, closeTo(0, 1e-9));
+      expect(path.points.first.y, closeTo(0, 1e-9));
+      expect(path.points.last.x, closeTo(50, 1e-9));
+      expect(path.points.last.y, closeTo(-100, 1e-9));
     }
   });
 }

@@ -18,6 +18,12 @@ const int _placeableKey = 0x9AC6CDD7;
 
 const int _metaSetWindowOrg = 0x020B;
 const int _metaSetWindowExt = 0x020C;
+const int _metaSetViewportOrg = 0x020D;
+const int _metaSetViewportExt = 0x020E;
+const int _metaOffsetWindowOrg = 0x020F;
+const int _metaScaleWindowExt = 0x0410;
+const int _metaOffsetViewportOrg = 0x0211;
+const int _metaScaleViewportExt = 0x0412;
 const int _metaSetBkMode = 0x0102;
 const int _metaSetMapMode = 0x0103;
 const int _metaSetPolyFillMode = 0x0106;
@@ -159,6 +165,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var pos = 0;
   double minX = 0, minY = 0, maxX = 0, maxY = 0;
   var haveBounds = false;
+  MetafileRect? logicalFrame;
 
   if (bd.getUint32(0, Endian.little) == _placeableKey) {
     if (bytes.length < 40) return null;
@@ -166,11 +173,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     final top = bd.getInt16(8, Endian.little).toDouble();
     final right = bd.getInt16(10, Endian.little).toDouble();
     final bottom = bd.getInt16(12, Endian.little).toDouble();
-    minX = math.min(left, right);
-    maxX = math.max(left, right);
-    minY = math.min(top, bottom);
-    maxY = math.max(top, bottom);
-    haveBounds = maxX > minX && maxY > minY;
+    logicalFrame = MetafileRect(left, top, right, bottom);
     pos = 22;
   }
 
@@ -184,6 +187,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   final objects = <_GdiObject?>[];
   var penColor = 0xFF000000;
   var penWidth = 1.0;
+  var penIsCosmetic = true;
   var penStyle = 0;
   List<double>? penDashPattern;
   var brushColor = 0xFFFFFFFF;
@@ -205,7 +209,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var fontStrikeThrough = false;
   var fontEscapementDegrees = 0.0;
   var fontEncoding = VsdLegacyTextEncoding.ansi;
-  double? winOrgX, winOrgY, winExtX, winExtY;
+  var winOrgX = 0.0, winOrgY = 0.0;
+  double? winExtX, winExtY;
+  var viewportOrgX = 0.0, viewportOrgY = 0.0;
+  double? viewportExtX, viewportExtY;
   double? curX, curY;
   final ops = <Object>[];
   final savedStates = <_WmfDcState>[];
@@ -213,6 +220,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   _WmfDcState captureState() => _WmfDcState(
         penColor: penColor,
         penWidth: penWidth,
+        penIsCosmetic: penIsCosmetic,
         penStyle: penStyle,
         penDashPattern: penDashPattern,
         brushColor: brushColor,
@@ -238,6 +246,11 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         winOrgY: winOrgY,
         winExtX: winExtX,
         winExtY: winExtY,
+        viewportOrgX: viewportOrgX,
+        viewportOrgY: viewportOrgY,
+        viewportExtX: viewportExtX,
+        viewportExtY: viewportExtY,
+        logicalFrame: logicalFrame,
         curX: curX,
         curY: curY,
       );
@@ -253,6 +266,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     savedStates.removeRange(index, savedStates.length);
     penColor = state.penColor;
     penWidth = state.penWidth;
+    penIsCosmetic = state.penIsCosmetic;
     penStyle = state.penStyle;
     penDashPattern = state.penDashPattern;
     brushColor = state.brushColor;
@@ -278,12 +292,117 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     winOrgY = state.winOrgY;
     winExtX = state.winExtX;
     winExtY = state.winExtY;
+    viewportOrgX = state.viewportOrgX;
+    viewportOrgY = state.viewportOrgY;
+    viewportExtX = state.viewportExtX;
+    viewportExtY = state.viewportExtY;
+    logicalFrame = state.logicalFrame;
     curX = state.curX;
     curY = state.curY;
     return restoredCount;
   }
 
+  double mappingScaleX() {
+    final window = winExtX;
+    final viewport = viewportExtX;
+    return window != null && viewport != null && window != 0
+        ? viewport / window
+        : 1;
+  }
+
+  double mappingScaleY() {
+    final window = winExtY;
+    final viewport = viewportExtY;
+    return window != null && viewport != null && window != 0
+        ? viewport / window
+        // The five fixed physical mapping modes use a bottom-up logical Y
+        // axis. Their absolute unit size cancels when the metafile is fitted
+        // into its Visio image frame, but the axis direction must be retained.
+        : mapMode >= 2 && mapMode <= 6
+            ? -1
+            : 1;
+  }
+
+  MetafilePoint mapPoint(MetafilePoint point) => MetafilePoint(
+        viewportOrgX + (point.x - winOrgX) * mappingScaleX(),
+        viewportOrgY + (point.y - winOrgY) * mappingScaleY(),
+      );
+
+  List<MetafilePoint> mapPoints(Iterable<MetafilePoint> points) =>
+      <MetafilePoint>[for (final point in points) mapPoint(point)];
+
+  MetafileRect mapRect(MetafileRect rect) {
+    final points = mapPoints(rect.corners);
+    return MetafileRect(
+      points.map((point) => point.x).reduce(math.min),
+      points.map((point) => point.y).reduce(math.min),
+      points.map((point) => point.x).reduce(math.max),
+      points.map((point) => point.y).reduce(math.max),
+    );
+  }
+
+  MetafileTextOp mapTextOp(MetafileTextOp op) {
+    final point = mapPoint(MetafilePoint(op.x, op.y));
+    final sx = mappingScaleX();
+    final sy = mappingScaleY();
+    return MetafileTextOp(
+      text: op.text,
+      x: point.x,
+      y: point.y,
+      fontHeight: op.fontHeight * sy.abs(),
+      argb: op.argb,
+      face: op.face,
+      align: op.align,
+      backgroundArgb: op.backgroundArgb,
+      opaqueRect: op.opaqueRect == null ? null : mapRect(op.opaqueRect!),
+      clipRect: op.clipRect == null ? null : mapRect(op.clipRect!),
+      advancesX: op.advancesX == null
+          ? null
+          : List<double>.unmodifiable(
+              <double>[for (final advance in op.advancesX!) advance * sx],
+            ),
+      advancesY: op.advancesY == null
+          ? null
+          : List<double>.unmodifiable(
+              <double>[for (final advance in op.advancesY!) advance * sy],
+            ),
+      fontWeight: op.fontWeight,
+      italic: op.italic,
+      underline: op.underline,
+      strikeThrough: op.strikeThrough,
+      escapementDegrees:
+          sx * sy < 0 ? -op.escapementDegrees : op.escapementDegrees,
+    );
+  }
+
+  double mappedPenWidth() =>
+      penIsCosmetic ? penWidth : penWidth * mappingScaleX().abs();
+
+  List<double>? mappedPenDashPattern() {
+    final pattern = penDashPattern;
+    if (pattern == null) return null;
+    final scale = penIsCosmetic ? 1.0 : mappingScaleX().abs();
+    return List<double>.unmodifiable(
+      <double>[for (final length in pattern) length * scale],
+    );
+  }
+
   void ensureBounds(Iterable<MetafilePoint> pts) {
+    final frame = logicalFrame;
+    if (!haveBounds && frame != null) {
+      for (final p in mapRect(frame).corners) {
+        if (!haveBounds) {
+          minX = maxX = p.x;
+          minY = maxY = p.y;
+          haveBounds = true;
+        } else {
+          minX = math.min(minX, p.x);
+          maxX = math.max(maxX, p.x);
+          minY = math.min(minY, p.y);
+          maxY = math.max(maxY, p.y);
+        }
+      }
+    }
     for (final p in pts) {
       if (!haveBounds) {
         minX = maxX = p.x;
@@ -337,12 +456,12 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if ((func == _metaIntersectClipRect ||
             func == _metaExcludeClipRect) &&
         params + 8 <= recEnd) {
-      final rect = MetafileRect(
+      final rect = mapRect(MetafileRect(
         bd.getInt16(params + 6, Endian.little).toDouble(),
         bd.getInt16(params + 4, Endian.little).toDouble(),
         bd.getInt16(params + 2, Endian.little).toDouble(),
         bd.getInt16(params, Endian.little).toDouble(),
-      );
+      ));
       ops.add(MetafileClipRectOp(
         rect: rect,
         mode: func == _metaIntersectClipRect
@@ -352,19 +471,83 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaSetWindowOrg && params + 4 <= recEnd) {
       winOrgY = bd.getInt16(params, Endian.little).toDouble();
       winOrgX = bd.getInt16(params + 2, Endian.little).toDouble();
+      final ex = winExtX;
+      final ey = winExtY;
+      if (ex != null && ey != null) {
+        logicalFrame = MetafileRect(
+          winOrgX,
+          winOrgY,
+          winOrgX + ex,
+          winOrgY + ey,
+        );
+      }
     } else if (func == _metaSetWindowExt && params + 4 <= recEnd) {
       winExtY = bd.getInt16(params, Endian.little).toDouble();
       winExtX = bd.getInt16(params + 2, Endian.little).toDouble();
-      final ox = winOrgX;
-      final oy = winOrgY;
       final ex = winExtX;
       final ey = winExtY;
-      if (!haveBounds && ox != null && oy != null && ex != null && ey != null) {
-        minX = math.min(ox, ox + ex);
-        maxX = math.max(ox, ox + ex);
-        minY = math.min(oy, oy + ey);
-        maxY = math.max(oy, oy + ey);
-        haveBounds = true;
+      if (ex != null && ey != null) {
+        logicalFrame = MetafileRect(
+          winOrgX,
+          winOrgY,
+          winOrgX + ex,
+          winOrgY + ey,
+        );
+      }
+    } else if (func == _metaSetViewportOrg && params + 4 <= recEnd) {
+      viewportOrgY = bd.getInt16(params, Endian.little).toDouble();
+      viewportOrgX = bd.getInt16(params + 2, Endian.little).toDouble();
+    } else if (func == _metaSetViewportExt && params + 4 <= recEnd) {
+      viewportExtY = bd.getInt16(params, Endian.little).toDouble();
+      viewportExtX = bd.getInt16(params + 2, Endian.little).toDouble();
+    } else if (func == _metaOffsetWindowOrg && params + 4 <= recEnd) {
+      winOrgY += bd.getInt16(params, Endian.little);
+      winOrgX += bd.getInt16(params + 2, Endian.little);
+      final ex = winExtX;
+      final ey = winExtY;
+      if (ex != null && ey != null) {
+        logicalFrame = MetafileRect(
+          winOrgX,
+          winOrgY,
+          winOrgX + ex,
+          winOrgY + ey,
+        );
+      }
+    } else if (func == _metaOffsetViewportOrg && params + 4 <= recEnd) {
+      viewportOrgY += bd.getInt16(params, Endian.little);
+      viewportOrgX += bd.getInt16(params + 2, Endian.little);
+    } else if ((func == _metaScaleWindowExt || func == _metaScaleViewportExt) &&
+        params + 8 <= recEnd) {
+      final yDenom = bd.getInt16(params, Endian.little);
+      final yNum = bd.getInt16(params + 2, Endian.little);
+      final xDenom = bd.getInt16(params + 4, Endian.little);
+      final xNum = bd.getInt16(params + 6, Endian.little);
+      if (xDenom != 0 && yDenom != 0) {
+        if (func == _metaScaleWindowExt) {
+          final oldWinExtX = winExtX;
+          final oldWinExtY = winExtY;
+          if (oldWinExtX != null) winExtX = oldWinExtX * xNum / xDenom;
+          if (oldWinExtY != null) winExtY = oldWinExtY * yNum / yDenom;
+          final ex = winExtX;
+          final ey = winExtY;
+          if (ex != null && ey != null) {
+            logicalFrame = MetafileRect(
+              winOrgX,
+              winOrgY,
+              winOrgX + ex,
+              winOrgY + ey,
+            );
+          }
+        } else {
+          final oldViewportExtX = viewportExtX;
+          final oldViewportExtY = viewportExtY;
+          if (oldViewportExtX != null) {
+            viewportExtX = oldViewportExtX * xNum / xDenom;
+          }
+          if (oldViewportExtY != null) {
+            viewportExtY = oldViewportExtY * yNum / yDenom;
+          }
+        }
       }
     } else if (func == _metaSetBkMode && params + 2 <= recEnd) {
       backgroundMode = bd.getUint16(params, Endian.little);
@@ -376,13 +559,14 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       textAlign = bd.getUint16(params, Endian.little);
     } else if (func == _metaCreatePenIndirect && params + 10 <= recEnd) {
       final style = bd.getUint16(params, Endian.little);
-      final width = bd.getInt16(params + 2, Endian.little).abs().toDouble();
+      final rawWidth = bd.getInt16(params + 2, Endian.little).abs().toDouble();
       final color = _rgbToArgb(bd.getUint32(params + 6, Endian.little));
       objects[allocSlot()] = _GdiPen(
         style,
-        width == 0 ? 1.0 : width,
+        rawWidth == 0 ? 1.0 : rawWidth,
+        rawWidth == 0,
         color,
-        metafileGdiDashPattern(style, width),
+        metafileGdiDashPattern(style, rawWidth),
       );
     } else if (func == _metaCreateBrushIndirect && params + 8 <= recEnd) {
       final style = bd.getUint16(params, Endian.little);
@@ -431,6 +615,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         if (o is _GdiPen) {
           penStyle = o.style;
           penWidth = o.width;
+          penIsCosmetic = o.isCosmetic;
           penColor = o.color;
           penDashPattern = o.dashPattern;
         } else if (o is _GdiBrush) {
@@ -462,7 +647,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final x = bd.getInt16(params + 2, Endian.little).toDouble();
       final fromX = curX!;
       final fromY = curY!;
-      final pts = [MetafilePoint(fromX, fromY), MetafilePoint(x, y)];
+      final pts = mapPoints(<MetafilePoint>[
+        MetafilePoint(fromX, fromY),
+        MetafilePoint(x, y),
+      ]);
       ensureBounds(pts);
       if ((penStyle & 0x0f) != 5) {
         ops.add(MetafilePathOp(
@@ -472,8 +660,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           stroke: true,
           fillArgb: 0,
           strokeArgb: penColor,
-          strokeWidth: penWidth,
-          strokeDashPattern: penDashPattern,
+          strokeWidth: mappedPenWidth(),
+          strokeDashPattern: mappedPenDashPattern(),
         ));
       }
       curX = x;
@@ -495,15 +683,15 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         bd.getInt16(params + 8, Endian.little).toDouble(),
       );
       if (func == _metaPie && start.x == end.x && start.y == end.y) {
-        final points = bounds.corners;
+        final points = mapPoints(bounds.corners);
         ensureBounds(points);
         ops.add(_pathOp(
           points,
           closed: true,
           penStyle: penStyle,
           penColor: penColor,
-          penWidth: penWidth,
-          penDashPattern: penDashPattern,
+          penWidth: mappedPenWidth(),
+          penDashPattern: mappedPenDashPattern(),
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
@@ -514,7 +702,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         ));
       } else {
         final arc = densifyMetafileEllipticalArc(bounds, start, end);
-        final points = func == _metaPie
+        final rawPoints = func == _metaPie
             ? <MetafilePoint>[
                 MetafilePoint(
                   (bounds.minX + bounds.maxX) / 2,
@@ -523,6 +711,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
                 ...arc,
               ]
             : arc;
+        final points = mapPoints(rawPoints);
         if (points.length >= 2) {
           ensureBounds(points);
           if (func == _metaArc) {
@@ -534,8 +723,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
                 stroke: true,
                 fillArgb: 0,
                 strokeArgb: penColor,
-                strokeWidth: penWidth,
-                strokeDashPattern: penDashPattern,
+                strokeWidth: mappedPenWidth(),
+                strokeDashPattern: mappedPenDashPattern(),
               ));
             }
           } else {
@@ -544,8 +733,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
               closed: true,
               penStyle: penStyle,
               penColor: penColor,
-              penWidth: penWidth,
-              penDashPattern: penDashPattern,
+              penWidth: mappedPenWidth(),
+              penDashPattern: mappedPenDashPattern(),
               brushStyle: brushStyle,
               brushColor: brushColor,
               brushHatch: brushHatch,
@@ -557,7 +746,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         }
       }
     } else if (func == _metaPolygon) {
-      final pts = _readPoints(bd, params, recEnd);
+      final pts = mapPoints(_readPoints(bd, params, recEnd));
       if (pts.length >= 2) {
         ensureBounds(pts);
         ops.add(_pathOp(
@@ -565,8 +754,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           closed: true,
           penStyle: penStyle,
           penColor: penColor,
-          penWidth: penWidth,
-          penDashPattern: penDashPattern,
+          penWidth: mappedPenWidth(),
+          penDashPattern: mappedPenDashPattern(),
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
@@ -576,7 +765,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         ));
       }
     } else if (func == _metaPolyline) {
-      final pts = _readPoints(bd, params, recEnd);
+      final pts = mapPoints(_readPoints(bd, params, recEnd));
       if (pts.length >= 2) {
         ensureBounds(pts);
         if ((penStyle & 0x0f) != 5) {
@@ -587,8 +776,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             stroke: true,
             fillArgb: 0,
             strokeArgb: penColor,
-            strokeWidth: penWidth,
-            strokeDashPattern: penDashPattern,
+            strokeWidth: mappedPenWidth(),
+            strokeDashPattern: mappedPenDashPattern(),
           ));
         }
       }
@@ -604,7 +793,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         p += 4;
       }
       if (pts.length >= 4) {
-        final dense = densifyPolyBezier(pts);
+        final dense = mapPoints(densifyPolyBezier(pts));
         ensureBounds(dense);
         if ((penStyle & 0x0f) != 5) {
           ops.add(MetafilePathOp(
@@ -614,13 +803,13 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             stroke: true,
             fillArgb: 0,
             strokeArgb: penColor,
-            strokeWidth: penWidth,
-            strokeDashPattern: penDashPattern,
+            strokeWidth: mappedPenWidth(),
+            strokeDashPattern: mappedPenDashPattern(),
           ));
         }
-        if (dense.isNotEmpty) {
-          curX = dense.last.x;
-          curY = dense.last.y;
+        if (pts.isNotEmpty) {
+          curX = pts.last.x;
+          curY = pts.last.y;
         }
       }
     } else if (func == _metaPolyPolygon && params + 2 <= recEnd) {
@@ -641,8 +830,9 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           p += 4;
         }
         if (pts.length >= 2) {
-          ensureBounds(pts);
-          contours.add(pts);
+          final mapped = mapPoints(pts);
+          ensureBounds(mapped);
+          contours.add(mapped);
         }
       }
       if (contours.isNotEmpty) {
@@ -651,8 +841,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           closed: true,
           penStyle: penStyle,
           penColor: penColor,
-          penWidth: penWidth,
-          penDashPattern: penDashPattern,
+          penWidth: mappedPenWidth(),
+          penDashPattern: mappedPenDashPattern(),
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
@@ -672,28 +862,28 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final right = bd.getInt16(params + 6, Endian.little).toDouble();
       final top = bd.getInt16(params + 8, Endian.little).toDouble();
       final left = bd.getInt16(params + 10, Endian.little).toDouble();
-      final pts = [
+      final pts = mapPoints(<MetafilePoint>[
         MetafilePoint(left, top),
         MetafilePoint(right, top),
         MetafilePoint(right, bot),
         MetafilePoint(left, bot),
-      ];
+      ]);
       ensureBounds(pts);
       ops.add(_pathOp(
         pts,
         closed: true,
         penStyle: penStyle,
         penColor: penColor,
-        penWidth: penWidth,
-        penDashPattern: penDashPattern,
+        penWidth: mappedPenWidth(),
+        penDashPattern: mappedPenDashPattern(),
         brushStyle: brushStyle,
         brushColor: brushColor,
         brushHatch: brushHatch,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
         evenOddFill: polyFillMode != 2,
-        cornerRadiusX: cornerWidth,
-        cornerRadiusY: cornerHeight,
+        cornerRadiusX: cornerWidth * mappingScaleX().abs(),
+        cornerRadiusY: cornerHeight * mappingScaleY().abs(),
       ));
     } else if ((func == _metaRectangle || func == _metaEllipse) &&
         params + 8 <= recEnd) {
@@ -701,20 +891,20 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final right = bd.getInt16(params + 2, Endian.little).toDouble();
       final top = bd.getInt16(params + 4, Endian.little).toDouble();
       final left = bd.getInt16(params + 6, Endian.little).toDouble();
-      final pts = [
+      final pts = mapPoints(<MetafilePoint>[
         MetafilePoint(left, top),
         MetafilePoint(right, top),
         MetafilePoint(right, bot),
         MetafilePoint(left, bot),
-      ];
+      ]);
       ensureBounds(pts);
       ops.add(_pathOp(
         pts,
         closed: true,
         penStyle: penStyle,
         penColor: penColor,
-        penWidth: penWidth,
-        penDashPattern: penDashPattern,
+        penWidth: mappedPenWidth(),
+        penDashPattern: mappedPenDashPattern(),
         brushStyle: brushStyle,
         brushColor: brushColor,
         brushHatch: brushHatch,
@@ -724,7 +914,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         asEllipse: func == _metaEllipse,
       ));
     } else if (func == _metaExtTextOut) {
-      final textOp = _readExtTextOut(
+      final rawTextOp = _readExtTextOut(
         bd,
         bytes,
         params,
@@ -746,20 +936,21 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         currentX: (textAlign & 0x01) != 0 ? curX : null,
         currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
-      if (textOp != null) {
+      if (rawTextOp != null) {
+        final textOp = mapTextOp(rawTextOp);
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
         final opaqueRect = textOp.opaqueRect;
         if (opaqueRect != null) ensureBounds(opaqueRect.corners);
         ops.add(textOp);
         if ((textAlign & 0x01) != 0) {
-          final next = metafileTextUpdatedCurrentPoint(textOp);
-          curX = next.x;
-          curY = next.y;
-          ensureBounds([next]);
+          final logicalNext = metafileTextUpdatedCurrentPoint(rawTextOp);
+          curX = logicalNext.x;
+          curY = logicalNext.y;
+          ensureBounds([mapPoint(logicalNext)]);
         }
       }
     } else if (func == _metaTextOut) {
-      final textOp = _readTextOut(
+      final rawTextOp = _readTextOut(
         bd,
         bytes,
         params,
@@ -780,14 +971,15 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         currentX: (textAlign & 0x01) != 0 ? curX : null,
         currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
-      if (textOp != null) {
+      if (rawTextOp != null) {
+        final textOp = mapTextOp(rawTextOp);
         ensureBounds([MetafilePoint(textOp.x, textOp.y)]);
         ops.add(textOp);
         if ((textAlign & 0x01) != 0) {
-          final next = metafileTextUpdatedCurrentPoint(textOp);
-          curX = next.x;
-          curY = next.y;
-          ensureBounds([next]);
+          final logicalNext = metafileTextUpdatedCurrentPoint(rawTextOp);
+          curX = logicalNext.x;
+          curY = logicalNext.y;
+          ensureBounds([mapPoint(logicalNext)]);
         }
       }
     }
@@ -1068,9 +1260,16 @@ int _rgbToArgb(int colorRef) {
 sealed class _GdiObject {}
 
 class _GdiPen extends _GdiObject {
-  _GdiPen(this.style, this.width, this.color, this.dashPattern);
+  _GdiPen(
+    this.style,
+    this.width,
+    this.isCosmetic,
+    this.color,
+    this.dashPattern,
+  );
   final int style;
   final double width;
+  final bool isCosmetic;
   final int color;
   final List<double>? dashPattern;
 }
@@ -1107,6 +1306,7 @@ class _WmfDcState {
   const _WmfDcState({
     required this.penColor,
     required this.penWidth,
+    required this.penIsCosmetic,
     required this.penStyle,
     required this.penDashPattern,
     required this.brushColor,
@@ -1132,12 +1332,18 @@ class _WmfDcState {
     required this.winOrgY,
     required this.winExtX,
     required this.winExtY,
+    required this.viewportOrgX,
+    required this.viewportOrgY,
+    required this.viewportExtX,
+    required this.viewportExtY,
+    required this.logicalFrame,
     required this.curX,
     required this.curY,
   });
 
   final int penColor;
   final double penWidth;
+  final bool penIsCosmetic;
   final int penStyle;
   final List<double>? penDashPattern;
   final int brushColor;
@@ -1159,10 +1365,15 @@ class _WmfDcState {
   final bool fontStrikeThrough;
   final double fontEscapementDegrees;
   final VsdLegacyTextEncoding fontEncoding;
-  final double? winOrgX;
-  final double? winOrgY;
+  final double winOrgX;
+  final double winOrgY;
   final double? winExtX;
   final double? winExtY;
+  final double viewportOrgX;
+  final double viewportOrgY;
+  final double? viewportExtX;
+  final double? viewportExtY;
+  final MetafileRect? logicalFrame;
   final double? curX;
   final double? curY;
 }
