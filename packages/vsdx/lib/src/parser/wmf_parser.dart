@@ -27,6 +27,7 @@ const int _metaScaleViewportExt = 0x0412;
 const int _metaSetBkMode = 0x0102;
 const int _metaSetMapMode = 0x0103;
 const int _metaSetPolyFillMode = 0x0106;
+const int _metaSetTextCharExtra = 0x0108;
 const int _metaSetBkColor = 0x0201;
 const int _metaSetTextColor = 0x0209;
 const int _metaSetTextJustification = 0x020A;
@@ -47,8 +48,14 @@ const int _metaArc = 0x0817;
 const int _metaRectangle = 0x041B;
 const int _metaRoundRect = 0x061C;
 const int _metaEllipse = 0x0418;
+const int _metaSetPixel = 0x041F;
 const int _metaPie = 0x081A;
 const int _metaChord = 0x0830;
+const int _metaPatBlt = 0x061D;
+const int _metaBitBlt = 0x0922;
+const int _metaStretchBlt = 0x0B23;
+const int _metaDibBitBlt = 0x0940;
+const int _metaDibStretchBlt = 0x0B41;
 const int _metaMoveTo = 0x0214;
 const int _metaLineTo = 0x0213;
 const int _metaPolyBezier = 0x1008;
@@ -201,6 +208,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var polyFillMode = 1; // ALTERNATE
   var textBreakExtra = 0;
   var textBreakCount = 0;
+  var textCharExtra = 0;
   String? fontFace;
   var fontHeight = 12.0;
   var fontWeight = 400;
@@ -234,6 +242,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         polyFillMode: polyFillMode,
         textBreakExtra: textBreakExtra,
         textBreakCount: textBreakCount,
+        textCharExtra: textCharExtra,
         fontFace: fontFace,
         fontHeight: fontHeight,
         fontWeight: fontWeight,
@@ -280,6 +289,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     polyFillMode = state.polyFillMode;
     textBreakExtra = state.textBreakExtra;
     textBreakCount = state.textBreakCount;
+    textCharExtra = state.textCharExtra;
     fontFace = state.fontFace;
     fontHeight = state.fontHeight;
     fontWeight = state.fontWeight;
@@ -417,6 +427,60 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     }
   }
 
+  void emitRasterFill(
+    double x,
+    double y,
+    double width,
+    double height, {
+    required int color,
+    int? hatch,
+    int? hatchBackground,
+  }) {
+    final points = mapPoints(<MetafilePoint>[
+      MetafilePoint(x, y),
+      MetafilePoint(x + width, y),
+      MetafilePoint(x + width, y + height),
+      MetafilePoint(x, y + height),
+    ]);
+    ensureBounds(points);
+    ops.add(MetafilePathOp(
+      points: points,
+      closed: true,
+      fill: true,
+      stroke: false,
+      fillArgb: color,
+      strokeArgb: 0,
+      strokeWidth: 0,
+      fillHatch: hatch,
+      fillBackgroundArgb: hatchBackground,
+    ));
+  }
+
+  void emitRasterOperationFill(
+    int rasterOperation,
+    double x,
+    double y,
+    double width,
+    double height,
+  ) {
+    if (rasterOperation == 0x00f00021 && (brushStyle == 0 || brushStyle == 2)) {
+      emitRasterFill(
+        x,
+        y,
+        width,
+        height,
+        color: brushColor,
+        hatch: brushStyle == 2 ? brushHatch : null,
+        hatchBackground:
+            brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+      );
+    } else if (rasterOperation == 0x00000042) {
+      emitRasterFill(x, y, width, height, color: 0xff000000);
+    } else if (rasterOperation == 0x00ff0062) {
+      emitRasterFill(x, y, width, height, color: 0xffffffff);
+    }
+  }
+
   int allocSlot() {
     for (var i = 0; i < objects.length; i++) {
       if (objects[i] == null) return i;
@@ -453,6 +517,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       // signed total extra width distributed across break characters.
       textBreakCount = bd.getInt16(params, Endian.little);
       textBreakExtra = bd.getInt16(params + 2, Endian.little);
+    } else if (func == _metaSetTextCharExtra && params + 2 <= recEnd) {
+      textCharExtra = bd.getInt16(params, Endian.little);
     } else if ((func == _metaIntersectClipRect ||
             func == _metaExcludeClipRect) &&
         params + 8 <= recEnd) {
@@ -636,6 +702,48 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaDeleteObject && params + 2 <= recEnd) {
       final ix = bd.getUint16(params, Endian.little);
       if (ix < objects.length) objects[ix] = null;
+    } else if (func == _metaSetPixel && params + 8 <= recEnd) {
+      final point = mapPoint(MetafilePoint(
+        bd.getInt16(params + 6, Endian.little).toDouble(),
+        bd.getInt16(params + 4, Endian.little).toDouble(),
+      ));
+      ops.add(MetafilePixelOp(
+        x: point.x,
+        y: point.y,
+        argb: _rgbToArgb(bd.getUint32(params, Endian.little)),
+      ));
+      ensureBounds(<MetafilePoint>[
+        point,
+        MetafilePoint(point.x + 1, point.y + 1),
+      ]);
+    } else if (func == _metaPatBlt && params + 12 <= recEnd) {
+      final rasterOperation = bd.getUint32(params, Endian.little);
+      final height = bd.getInt16(params + 4, Endian.little).toDouble();
+      final width = bd.getInt16(params + 6, Endian.little).toDouble();
+      final y = bd.getInt16(params + 8, Endian.little).toDouble();
+      final x = bd.getInt16(params + 10, Endian.little).toDouble();
+      emitRasterOperationFill(rasterOperation, x, y, width, height);
+    } else if ((func == _metaBitBlt ||
+            func == _metaStretchBlt ||
+            func == _metaDibBitBlt ||
+            func == _metaDibStretchBlt) &&
+        size == (func >> 8) + 3) {
+      // The short form has no embedded bitmap. PATCOPY, BLACKNESS and
+      // WHITENESS still produce output because their ROP3 ignores the source.
+      final stretched = func == _metaStretchBlt || func == _metaDibStretchBlt;
+      final requiredBytes = stretched ? 22 : 18;
+      if (params + requiredBytes <= recEnd) {
+        final rasterOperation = bd.getUint32(params, Endian.little);
+        var p = params + 4;
+        if (stretched) p += 4; // SrcHeight, SrcWidth.
+        p += 4; // YSrc, XSrc.
+        p += 2; // Reserved in the no-source form.
+        final height = bd.getInt16(p, Endian.little).toDouble();
+        final width = bd.getInt16(p + 2, Endian.little).toDouble();
+        final y = bd.getInt16(p + 4, Endian.little).toDouble();
+        final x = bd.getInt16(p + 6, Endian.little).toDouble();
+        emitRasterOperationFill(rasterOperation, x, y, width, height);
+      }
     } else if (func == _metaMoveTo && params + 4 <= recEnd) {
       curY = bd.getInt16(params, Endian.little).toDouble();
       curX = bd.getInt16(params + 2, Endian.little).toDouble();
@@ -933,6 +1041,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontEncoding,
         textBreakExtra,
         textBreakCount,
+        textCharExtra,
         currentX: (textAlign & 0x01) != 0 ? curX : null,
         currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
@@ -968,6 +1077,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontEncoding,
         textBreakExtra,
         textBreakCount,
+        textCharExtra,
         currentX: (textAlign & 0x01) != 0 ? curX : null,
         currentY: (textAlign & 0x01) != 0 ? curY : null,
       );
@@ -1072,6 +1182,7 @@ MetafileTextOp? _readExtTextOut(
     VsdLegacyTextEncoding encoding,
     int textBreakExtra,
     int textBreakCount,
+    int textCharExtra,
     {double? currentX,
     double? currentY}) {
   if (params + 8 > recEnd) return null;
@@ -1137,9 +1248,10 @@ MetafileTextOp? _readExtTextOut(
       advancesY = y == null ? null : List<double>.unmodifiable(y);
     }
   }
-  advancesX ??= _justifiedTextAdvances(
+  advancesX ??= _textSpacingAdvances(
     text,
     fontHeight,
+    textCharExtra,
     textBreakExtra,
     textBreakCount,
   );
@@ -1184,6 +1296,7 @@ MetafileTextOp? _readTextOut(
     VsdLegacyTextEncoding encoding,
     int textBreakExtra,
     int textBreakCount,
+    int textCharExtra,
     {double? currentX,
     double? currentY}) {
   if (params + 2 > recEnd) return null;
@@ -1200,9 +1313,10 @@ MetafileTextOp? _readTextOut(
   final y = currentY ?? recordY;
   final text = decodeWindowsLegacyText(raw, encoding).replaceAll('\u0000', '');
   if (text.trim().isEmpty) return null;
-  final advancesX = _justifiedTextAdvances(
+  final advancesX = _textSpacingAdvances(
     text,
     fontHeight,
+    textCharExtra,
     textBreakExtra,
     textBreakCount,
   );
@@ -1224,21 +1338,22 @@ MetafileTextOp? _readTextOut(
   );
 }
 
-List<double>? _justifiedTextAdvances(
+List<double>? _textSpacingAdvances(
   String text,
   double fontHeight,
+  int charExtra,
   int breakExtra,
   int breakCount,
 ) {
-  if (breakExtra == 0 || breakCount <= 0) return null;
+  if (charExtra == 0 && (breakExtra == 0 || breakCount <= 0)) return null;
   final glyphs = text.runes.toList(growable: false);
   final breakIndices = <int>[
     for (var i = 0; i < glyphs.length; i++)
       if (glyphs[i] == 0x20) i,
   ];
-  if (breakIndices.isEmpty) return null;
-  final usedBreaks = math.min(breakCount, breakIndices.length);
-  final base = math.max(fontHeight.abs(), 1.0) * 0.55;
+  final usedBreaks = math.min(math.max(breakCount, 0), breakIndices.length);
+  if (charExtra == 0 && usedBreaks == 0) return null;
+  final base = math.max(fontHeight.abs(), 1.0) * 0.55 + charExtra;
   final advances = List<double>.filled(glyphs.length, base);
   var remaining = breakExtra;
   for (var i = 0; i < usedBreaks; i++) {
@@ -1320,6 +1435,7 @@ class _WmfDcState {
     required this.polyFillMode,
     required this.textBreakExtra,
     required this.textBreakCount,
+    required this.textCharExtra,
     required this.fontFace,
     required this.fontHeight,
     required this.fontWeight,
@@ -1357,6 +1473,7 @@ class _WmfDcState {
   final int polyFillMode;
   final int textBreakExtra;
   final int textBreakCount;
+  final int textCharExtra;
   final String? fontFace;
   final double fontHeight;
   final int fontWeight;

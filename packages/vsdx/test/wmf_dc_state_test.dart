@@ -38,6 +38,66 @@ Uint8List _penRecord(
   return out;
 }
 
+Uint8List _setPixelRecord(int colorRef, int x, int y) {
+  final out = Uint8List(14);
+  ByteData.sublistView(out)
+    ..setUint32(0, 7, Endian.little)
+    ..setUint16(4, 0x041f, Endian.little)
+    ..setUint32(6, colorRef, Endian.little)
+    ..setInt16(10, y, Endian.little)
+    ..setInt16(12, x, Endian.little);
+  return out;
+}
+
+Uint8List _patBltRecord(
+  int rasterOperation,
+  int x,
+  int y,
+  int width,
+  int height,
+) {
+  final out = Uint8List(18);
+  ByteData.sublistView(out)
+    ..setUint32(0, 9, Endian.little)
+    ..setUint16(4, 0x061d, Endian.little)
+    ..setUint32(6, rasterOperation, Endian.little)
+    ..setInt16(10, height, Endian.little)
+    ..setInt16(12, width, Endian.little)
+    ..setInt16(14, y, Endian.little)
+    ..setInt16(16, x, Endian.little);
+  return out;
+}
+
+Uint8List _sourceLessBltRecord(
+  int function,
+  int rasterOperation,
+  int x,
+  int y,
+  int width,
+  int height,
+) {
+  final stretched = function == 0x0b23 || function == 0x0b41;
+  final out = Uint8List(stretched ? 28 : 24);
+  final data = ByteData.sublistView(out)
+    ..setUint32(0, out.length ~/ 2, Endian.little)
+    ..setUint16(4, function, Endian.little)
+    ..setUint32(6, rasterOperation, Endian.little);
+  var p = 10;
+  if (stretched) {
+    data.setInt16(p, height, Endian.little);
+    data.setInt16(p + 2, width, Endian.little);
+    p += 4;
+  }
+  data.setInt16(p, 0, Endian.little); // YSrc
+  data.setInt16(p + 2, 0, Endian.little); // XSrc
+  data.setUint16(p + 4, 0, Endian.little); // Reserved
+  data.setInt16(p + 6, height, Endian.little);
+  data.setInt16(p + 8, width, Endian.little);
+  data.setInt16(p + 10, y, Endian.little);
+  data.setInt16(p + 12, x, Endian.little);
+  return out;
+}
+
 Uint8List _polyPolygonRecord() {
   const polygons = <List<(int, int)>>[
     <(int, int)>[(0, 0), (100, 0), (100, 100), (0, 100)],
@@ -356,5 +416,107 @@ void main() {
       expect(path.points.last.x, closeTo(50, 1e-9));
       expect(path.points.last.y, closeTo(-100, 1e-9));
     }
+  });
+
+  test('pixel and source-less raster records render through all WMF forms', () {
+    final payload = _wmf(<Uint8List>[
+      _brushRecord(0x00ff0000), // COLORREF blue
+      _wordRecord(0x012d, const <int>[0]),
+      _wordRecord(0x0103, const <int>[8]), // MM_ANISOTROPIC
+      _wordRecord(0x020b, const <int>[0, 0]),
+      _wordRecord(0x020c, const <int>[100, 100]),
+      _wordRecord(0x020d, const <int>[7, 5]),
+      _wordRecord(0x020e, const <int>[300, 200]),
+      _setPixelRecord(0x000000ff, 12, 22), // COLORREF red
+      _patBltRecord(0x00f00021, 10, 20, 30, 15), // PATCOPY
+      _patBltRecord(0x00000042, 50, 20, 10, 15), // BLACKNESS
+      _patBltRecord(0x00ff0062, 70, 20, 10, 15), // WHITENESS
+      _sourceLessBltRecord(0x0922, 0x00f00021, 10, 40, 10, 10),
+      _sourceLessBltRecord(0x0940, 0x00f00021, 25, 40, 10, 10),
+      _sourceLessBltRecord(0x0b23, 0x00f00021, 40, 40, 10, 10),
+      _sourceLessBltRecord(0x0b41, 0x00f00021, 55, 40, 10, 10),
+    ]);
+
+    final drawing = parseWmfDrawing(payload)!;
+    final pixel = drawing.ops.whereType<MetafilePixelOp>().single;
+    expect(pixel.x, closeTo(29, 1e-9));
+    expect(pixel.y, closeTo(73, 1e-9));
+    expect(pixel.argb, 0xffff0000);
+
+    final paths = drawing.ops.whereType<MetafilePathOp>().toList();
+    expect(paths, hasLength(7));
+    expect(
+      paths.map((path) => path.fillArgb),
+      <int>[
+        0xff0000ff,
+        0xff000000,
+        0xffffffff,
+        0xff0000ff,
+        0xff0000ff,
+        0xff0000ff,
+        0xff0000ff,
+      ],
+    );
+    expect(paths.every((path) => path.fill && !path.stroke), isTrue);
+    expect(
+      paths.first.points.map((point) => (point.x, point.y)),
+      <(double, double)>[(25, 67), (85, 67), (85, 112), (25, 112)],
+    );
+
+    const part = '/visio/media/raster-records.wmf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(svg, contains('fill="#ff0000"'));
+    expect(svg, contains('fill="#0000ff"'));
+    expect(svg, contains('fill="#000000"'));
+    expect(svg, contains('fill="#ffffff"'));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    document = document.copyWith(images: images).replacePage(
+          0,
+          _imagePage(part),
+        );
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: document,
+    ));
+    final roundTripped = reopened.images.findByPart(part)!.bytes;
+    expect(roundTripped, payload);
+    final reopenedDrawing = parseWmfDrawing(roundTripped)!;
+    expect(reopenedDrawing.ops.whereType<MetafilePixelOp>(), hasLength(1));
+    expect(reopenedDrawing.ops.whereType<MetafilePathOp>(), hasLength(7));
+  });
+
+  test('SETTEXTCHAREXTRA combines with justification and restores with DC', () {
+    final payload = _wmf(<Uint8List>[
+      _wordRecord(0x0108, const <int>[3]),
+      _wordRecord(0x001e, const <int>[]),
+      _wordRecord(0x0108, const <int>[7]),
+      _textOutRecord('A B', 10, 10),
+      _wordRecord(0x0127, const <int>[0xffff]),
+      _wordRecord(0x020a, const <int>[1, 4]),
+      _textOutRecord('A B', 10, 30),
+    ]);
+
+    final texts =
+        parseWmfDrawing(payload)!.ops.whereType<MetafileTextOp>().toList();
+    expect(texts, hasLength(2));
+    for (final advance in texts.first.advancesX!) {
+      expect(advance, closeTo(13.6, 1e-9));
+    }
+    expect(texts.last.advancesX, hasLength(3));
+    expect(texts.last.advancesX![0], closeTo(9.6, 1e-9));
+    expect(texts.last.advancesX![1], closeTo(13.6, 1e-9));
+    expect(texts.last.advancesX![2], closeTo(9.6, 1e-9));
   });
 }
