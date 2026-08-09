@@ -123,6 +123,11 @@ double drawioFlowAnimationProgress({
 }
 
 class VsdxPainter extends CustomPainter {
+  /// Sampling used when embedded pictures are scaled into their authored
+  /// ForeignData frame. LibreOffice uses a high-quality resampler here; keep
+  /// the policy explicit so platform defaults cannot make pictures blurrier.
+  static const FilterQuality imageFilterQuality = FilterQuality.high;
+
   VsdxPainter({
     required this.page,
     this.underlayPage,
@@ -933,6 +938,7 @@ class VsdxPainter extends CustomPainter {
         ..strokeCap = paint.strokeCap
         ..strokeJoin = paint.strokeJoin
         ..strokeMiterLimit = paint.strokeMiterLimit
+        ..isAntiAlias = paint.isAntiAlias
         ..color = paint.color.withValues(alpha: paint.color.a * 0.68)
         ..shader = paint.shader
         ..maskFilter = paint.maskFilter
@@ -994,6 +1000,7 @@ class VsdxPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeCap = paint.strokeCap
             ..strokeJoin = paint.strokeJoin
+            ..isAntiAlias = paint.isAntiAlias
             ..color = paint.color
             ..shader = paint.shader
             ..maskFilter = paint.maskFilter
@@ -2130,7 +2137,14 @@ class VsdxPainter extends CustomPainter {
     return Paint()
       ..color = out
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(shape.line.weightInches, 1 / pxPerInch)
+      // LibreOffice promotes legacy sub-pixel Visio construction/dimension
+      // lines to a one-device-pixel hairline. A regular one-pixel stroke is
+      // still anti-aliased across adjacent rows when it lands off-grid,
+      // making the line look pale and twice as wide.
+      ..strokeWidth = shape.line.weightInches * pxPerInch < 0.75
+          ? 0.0
+          : shape.line.weightInches
+      ..isAntiAlias = shape.line.weightInches * pxPerInch >= 0.75
       ..strokeCap = _flutterCap(shape)
       ..strokeJoin = canvasStrokeJoin(shape.line)
       ..strokeMiterLimit = shape.line.miterLimit.clamp(1.0, 100.0);
@@ -2269,7 +2283,7 @@ class VsdxPainter extends CustomPainter {
       srcRect,
       dst,
       Paint()
-        ..filterQuality = FilterQuality.medium
+        ..filterQuality = imageFilterQuality
         ..color = Color.fromRGBO(255, 255, 255, opacity),
     );
     if (needsTone) canvas.restore();
@@ -2536,6 +2550,7 @@ class VsdxPainter extends CustomPainter {
               applyPosDy: rich.runs.any(
                 (run) => run.charStyle.position != VsdxTextPosition.normal,
               ),
+              backgroundColor: inlineBackground,
             )
           : null;
       final tp = hasTabs
@@ -2691,6 +2706,7 @@ class VsdxPainter extends CustomPainter {
         thPx: thPx,
         mlPx: mlPx,
         mrPx: mrPx,
+        backgroundColor: inlineBackground,
       );
       canvas.restore();
       return;
@@ -2731,6 +2747,7 @@ class VsdxPainter extends CustomPainter {
         mtPx: mtPx,
         mbPx: mbPx,
         scale: s,
+        backgroundColor: inlineBackground,
       );
       canvas.restore();
       return;
@@ -2767,6 +2784,7 @@ class VsdxPainter extends CustomPainter {
         scale: s,
         tabSets: rich.tabSets,
         defaultTabStopInches: block.defaultTabStopInches,
+        backgroundColor: inlineBackground,
       );
       canvas.restore();
       return;
@@ -2792,6 +2810,7 @@ class VsdxPainter extends CustomPainter {
         maxW: maxW,
         wordWrap: shape.wordWrap,
         scale: s,
+        backgroundColor: inlineBackground,
       );
       canvas.restore();
       return;
@@ -2820,8 +2839,8 @@ class VsdxPainter extends CustomPainter {
       VsdxVertAlign.bottom => thPx - mbPx - tp.height,
       VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
     };
-    // Text taller than the content band grows downward from the top margin.
-    if (block.verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
+    // Keep authored middle/bottom alignment when text is taller than its box.
+    // Visio and LibreOffice allow vertical overflow on both sides.
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
@@ -2869,7 +2888,6 @@ class VsdxPainter extends CustomPainter {
       VsdxVertAlign.bottom => thPx - mbPx - tp.height,
       VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
     };
-    if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
     final rect = Rect.fromLTWH(
       ox - padding.left,
       oy - padding.top,
@@ -2910,12 +2928,18 @@ class VsdxPainter extends CustomPainter {
     required double mtPx,
     required double mbPx,
     required double scale,
+    required Color? backgroundColor,
   }) {
     final fullWidth = math.max(1.0, twPx - mlPx - mrPx);
     final padding = shape.shapeInsidePaddingPx;
     var lineHeight = 1.0;
     for (final run in runs) {
-      final probe = _posShiftPiece('Mg', run, scale);
+      final probe = _posShiftPiece(
+        'Mg',
+        run,
+        scale,
+        backgroundColor: backgroundColor,
+      );
       lineHeight = math.max(lineHeight, probe.tp.height + probe.dy.abs());
       probe.tp.dispose();
     }
@@ -2950,6 +2974,7 @@ class VsdxPainter extends CustomPainter {
         fullWidth,
         scale,
         rightToLeft: rightToLeft,
+        backgroundColor: backgroundColor,
         maxWidthForLine: (index) {
           final band = bandFor(
             top + index * lineHeight,
@@ -2967,7 +2992,6 @@ class VsdxPainter extends CustomPainter {
         VsdxVertAlign.bottom => thPx - mbPx - totalHeight,
         VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - totalHeight) / 2,
       };
-      if (verticalAlign == VsdxVertAlign.middle && top < mtPx) top = mtPx;
     }
 
     var y = top;
@@ -3004,6 +3028,7 @@ class VsdxPainter extends CustomPainter {
     required double maxW,
     required bool wordWrap,
     required double scale,
+    required Color? backgroundColor,
   }) {
     final rightToLeft = visioTextDirection(
           runs.map((run) => run.text).join(),
@@ -3018,6 +3043,7 @@ class VsdxPainter extends CustomPainter {
       wordWrap ? maxW : double.infinity,
       scale,
       rightToLeft: rightToLeft,
+      backgroundColor: backgroundColor,
     );
     var totalH = 0.0;
     for (final line in lines) {
@@ -3028,7 +3054,6 @@ class VsdxPainter extends CustomPainter {
       VsdxVertAlign.bottom => thPx - mbPx - totalH,
       VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - totalH) / 2,
     };
-    if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
     var y = oy;
     for (final line in lines) {
       final ox = switch (align) {
@@ -3056,6 +3081,7 @@ class VsdxPainter extends CustomPainter {
     double? firstLineMaxW,
     bool applyPosDy = true,
     bool rightToLeft = false,
+    Color? backgroundColor,
     double Function(int lineIndex)? maxWidthForLine,
   }) {
     final lines =
@@ -3097,6 +3123,7 @@ class VsdxPainter extends CustomPainter {
             run,
             scale,
             applyPosDy: applyPosDy,
+            backgroundColor: backgroundColor,
           );
           final isBlank = unit.trim().isEmpty;
           if (curW > 1e-9 && curW + piece.tp.width > lineMax && !isBlank) {
@@ -3107,7 +3134,13 @@ class VsdxPainter extends CustomPainter {
           if (piece.tp.width > lineMax && unit.length > 1 && !isBlank) {
             for (final r in unit.runes) {
               final ch = String.fromCharCode(r);
-              final p = _posShiftPiece(ch, run, scale, applyPosDy: applyPosDy);
+              final p = _posShiftPiece(
+                ch,
+                run,
+                scale,
+                applyPosDy: applyPosDy,
+                backgroundColor: backgroundColor,
+              );
               if (curW > 1e-9 && curW + p.tp.width > lineMax) flush();
               cur.add(p);
               curW += p.tp.width;
@@ -3128,6 +3161,7 @@ class VsdxPainter extends CustomPainter {
         runs.isEmpty ? const VsdxTextRun(text: '') : runs.first,
         scale,
         applyPosDy: applyPosDy,
+        backgroundColor: backgroundColor,
       );
       return [
         (pieces: [empty], width: 0.0, height: empty.tp.height),
@@ -3141,6 +3175,7 @@ class VsdxPainter extends CustomPainter {
     VsdxTextRun run,
     double scale, {
     bool applyPosDy = true,
+    Color? backgroundColor,
   }) {
     final tp = TextPainter(
       text: _runToSpan(
@@ -3148,6 +3183,7 @@ class VsdxPainter extends CustomPainter {
         scale,
         // When applying explicit dy, disable OpenType pos to avoid double lift.
         openTypePos: !applyPosDy,
+        backgroundColor: backgroundColor,
       ),
       textDirection: visioTextDirection(
         text,
@@ -3208,6 +3244,7 @@ class VsdxPainter extends CustomPainter {
     required double scale,
     required List<VsdxTabSet> tabSets,
     required double defaultTabStopInches,
+    required Color? backgroundColor,
   }) {
     final paras = _splitParagraphs(runs);
     final painters = <TextPainter>[];
@@ -3302,6 +3339,7 @@ class VsdxPainter extends CustomPainter {
           defaultTabStopInches: defaultTabStopInches,
           scale: scale,
           applyPosDy: needsPos,
+          backgroundColor: backgroundColor,
         );
         final b = style.spaceBeforeInches * scale;
         final a = style.spaceAfterInches * scale;
@@ -3346,6 +3384,7 @@ class VsdxPainter extends CustomPainter {
           firstLineMaxW: wrapFirst,
           applyPosDy: needsPos,
           rightToLeft: rightToLeft,
+          backgroundColor: backgroundColor,
         );
         // Emit one layout row per wrapped line so Sp*/bullet stay correct.
         final b = style.spaceBeforeInches * scale;
@@ -3385,7 +3424,10 @@ class VsdxPainter extends CustomPainter {
       }
       tp = TextPainter(
         text: TextSpan(
-          children: <TextSpan>[for (final r in para.runs) _runToSpan(r, scale)],
+          children: <TextSpan>[
+            for (final r in para.runs)
+              _runToSpan(r, scale, backgroundColor: backgroundColor),
+          ],
         ),
         textAlign: pAlign,
         textDirection: visioTextDirection(
@@ -3435,7 +3477,6 @@ class VsdxPainter extends CustomPainter {
       VsdxVertAlign.bottom => thPx - mbPx - totalH,
       VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - totalH) / 2,
     };
-    if (verticalAlign == VsdxVertAlign.middle && oy < mtPx) oy = mtPx;
 
     var y = oy;
     for (var i = 0; i < painters.length; i++) {
@@ -3478,6 +3519,7 @@ class VsdxPainter extends CustomPainter {
     required double defaultTabStopInches,
     required double scale,
     required bool applyPosDy,
+    required Color? backgroundColor,
   }) {
     final tokens = <({TextPainter? painter, double dy, int? tabSetIx, String text, VsdxTextRun run})>[];
     for (final run in runs) {
@@ -3492,6 +3534,7 @@ class VsdxPainter extends CustomPainter {
             run,
             scale,
             applyPosDy: applyPosDy,
+            backgroundColor: backgroundColor,
           );
           tokens.add((painter: piece.tp, dy: piece.dy, tabSetIx: null, text: text, run: run));
         }
@@ -3512,6 +3555,7 @@ class VsdxPainter extends CustomPainter {
           run,
           scale,
           applyPosDy: applyPosDy,
+          backgroundColor: backgroundColor,
         );
         tokens.add((painter: piece.tp, dy: piece.dy, tabSetIx: null, text: text, run: run));
       }
@@ -3544,6 +3588,7 @@ class VsdxPainter extends CustomPainter {
                 next.run,
                 scale,
                 applyPosDy: false,
+                backgroundColor: backgroundColor,
               );
               decimalPrefix += probe.tp.width;
               probe.tp.dispose();
@@ -3577,6 +3622,7 @@ class VsdxPainter extends CustomPainter {
         runs.isEmpty ? const VsdxTextRun(text: '') : runs.first,
         scale,
         applyPosDy: applyPosDy,
+        backgroundColor: backgroundColor,
       );
       painters.add(empty.tp);
       dys.add(empty.dy);
@@ -3933,6 +3979,7 @@ class VsdxPainter extends CustomPainter {
     required double thPx,
     required double mlPx,
     required double mrPx,
+    required Color? backgroundColor,
   }) {
     var text = plain.replaceAll('\n', ' ').trim();
     if (text.isEmpty) return;
@@ -3974,6 +4021,7 @@ class VsdxPainter extends CustomPainter {
             : _runToSpan(
                 VsdxTextRun(text: ch, charStyle: glyphStyle),
                 scale,
+                backgroundColor: backgroundColor,
               ),
         textDirection: visioTextDirection(
           ch,

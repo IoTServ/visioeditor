@@ -3412,7 +3412,7 @@ void main() {
     expect(svg.contains('text-anchor="start"'), isFalse);
   });
 
-  test('SVG VertAlign middle clamps overflow to top like canvas', () {
+  test('SVG VertAlign middle preserves centred overflow like canvas', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -3446,16 +3446,13 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    // Overflow → same translate as top: layoutH - mt - textH/2.
-    // If still centred on the short band, y would sit near height/2.
     expect(svg, contains('translate(0'));
-    // Top-clamped cluster sits lower in Y-up than a naive middle centre.
     final m = RegExp(r'translate\(0 ([-\d.]+)\) scale\(1 -1\)')
         .firstMatch(svg);
     expect(m, isNotNull);
     final yc = double.parse(m!.group(1)!);
-    expect(yc, lessThan(0.25),
-        reason: 'overflowing middle must clamp toward top margin');
+    expect(yc, closeTo(0.25, 1e-9),
+        reason: 'overflowing text must remain centred on the content band');
   });
 
   test('SVG pdfCompat uses dy for super/sub not baseline-shift', () {

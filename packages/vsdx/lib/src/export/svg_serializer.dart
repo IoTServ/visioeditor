@@ -4220,11 +4220,9 @@ class VsdxToSvgSerializer {
     final yCenter = switch (block.verticalAlign) {
       VsdxVertAlign.top => layoutH - layoutMt - textH / 2,
       VsdxVertAlign.bottom => layoutMb + textH / 2,
-      // Content-band centre; when taller than the band, clamp like canvas
-      // (grow downward from the top margin).
-      VsdxVertAlign.middle => textH > contentBand + 1e-9
-          ? layoutH - layoutMt - textH / 2
-          : layoutMb + contentBand / 2,
+      // Preserve authored alignment even when the text is taller than its
+      // box; Visio/LibreOffice overflow equally on both sides.
+      VsdxVertAlign.middle => layoutMb + contentBand / 2,
     };
 
     // Text glyphs: block-local → upright (scale 1,-1). One <text> per
@@ -4465,9 +4463,7 @@ class VsdxToSvgSerializer {
     final yCenter = switch (verticalAlign) {
       VsdxVertAlign.top => layoutH - mt - textH / 2,
       VsdxVertAlign.bottom => mb + textH / 2,
-      VsdxVertAlign.middle => textH > contentBand + 1e-9
-          ? layoutH - mt - textH / 2
-          : mb + contentBand / 2,
+      VsdxVertAlign.middle => mb + contentBand / 2,
     };
     final padding = shape.labelPadding;
     final pt = padding.top / pxPerInch;
@@ -4580,9 +4576,6 @@ class VsdxToSvgSerializer {
         VsdxVertAlign.middle =>
           marginTop + (height - marginTop - marginBottom - textHeight) / 2,
       };
-      if (verticalAlign == VsdxVertAlign.middle && top < marginTop) {
-        top = marginTop;
-      }
     }
 
     buf.writeln(
