@@ -186,6 +186,22 @@ Uint8List _twoByTwoBmp() {
   return out;
 }
 
+Uint8List _twoByTwoAlphaBmp() {
+  final bmi = Uint8List(40);
+  ByteData.sublistView(bmi)
+    ..setUint32(0, 40, Endian.little)
+    ..setInt32(4, 2, Endian.little)
+    ..setInt32(8, 2, Endian.little)
+    ..setUint16(12, 1, Endian.little)
+    ..setUint16(14, 32, Endian.little)
+    ..setUint32(20, 16, Endian.little);
+  final bits = Uint8List.fromList(const <int>[
+    255, 0, 0, 255, 255, 255, 255, 255,
+    0, 0, 255, 64, 0, 255, 0, 192,
+  ]);
+  return packDibAsBmp(bmi, bits, preserveAlpha: true)!;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -216,7 +232,7 @@ void main() {
     final drawing = MetafileDrawing(
       minX: 0,
       minY: 0,
-      maxX: 8,
+      maxX: 12,
       maxY: 4,
       ops: <Object>[
         MetafileBitmapOp(
@@ -230,12 +246,19 @@ void main() {
           bmpBytes: bmp,
           pixelWidth: 2,
           pixelHeight: 2,
-          destination: const MetafileRect(8, 0, 4, 4),
-          source: const MetafileRect(0, 0, 2, 1),
+          destination: const MetafileRect(4, 0, 8, 4),
+          source: const MetafileRect(2, 0, 0, 1),
+        ),
+        MetafileBitmapOp(
+          bmpBytes: _twoByTwoAlphaBmp(),
+          pixelWidth: 2,
+          pixelHeight: 2,
+          destination: const MetafileRect(8, 0, 12, 4),
+          opacity: 0.5,
         ),
       ],
     );
-    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 80);
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 120);
     final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
     final bytes = data!.buffer.asUint8List();
 
@@ -258,6 +281,38 @@ void main() {
     // The second op crops the top row and mirrors it horizontally.
     expectColor(45, 20, <int>[0, 255, 0, 255]);
     expectColor(75, 20, <int>[255, 0, 0, 255]);
+    expectColor(85, 5, <int>[32, 0, 0, 32]);
+    expectColor(115, 5, <int>[0, 96, 0, 96]);
+    image.dispose();
+  });
+
+  test('Canvas maps PLGBLT bitmaps into the authored parallelogram', () async {
+    final drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 12,
+      maxY: 8,
+      ops: <Object>[
+        MetafileBitmapOp(
+          bmpBytes: _twoByTwoBmp(),
+          pixelWidth: 2,
+          pixelHeight: 2,
+          destination: const MetafileRect(1, 1, 10, 7),
+          destinationParallelogram: const <MetafilePoint>[
+            MetafilePoint(2, 1),
+            MetafilePoint(10, 3),
+            MetafilePoint(1, 7),
+          ],
+        ),
+      ],
+    );
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 120);
+    final data = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final bytes = data!.buffer.asUint8List();
+    int alphaAt(int x, int y) => bytes[(y * image.width + x) * 4 + 3];
+
+    expect(alphaAt(58, 45), greaterThan(200));
+    expect(alphaAt(105, 12), lessThan(16));
     image.dispose();
   });
 

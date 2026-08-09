@@ -2,6 +2,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
@@ -85,10 +86,39 @@ Future<ui.Image?> rasterizeMetafileDrawing(
             )
           : Rect.fromLTRB(source.minX, source.minY, source.maxX, source.maxY);
       final destination = op.destination;
-      final flipX = destination.right < destination.left;
-      final flipY = destination.bottom < destination.top;
+      final flipX = (destination.right < destination.left) !=
+          (source != null && source.right < source.left);
+      final flipY = (destination.bottom < destination.top) !=
+          (source != null && source.bottom < source.top);
       canvas.save();
-      if (flipX || flipY) {
+      final parallelogram = op.destinationParallelogram;
+      if (parallelogram != null && parallelogram.length == 3) {
+        final p0 = parallelogram[0];
+        var ax = parallelogram[1].x - p0.x;
+        var ay = parallelogram[1].y - p0.y;
+        var bx = parallelogram[2].x - p0.x;
+        var by = parallelogram[2].y - p0.y;
+        var tx = p0.x;
+        var ty = p0.y;
+        if (source != null && source.right < source.left) {
+          tx += ax;
+          ty += ay;
+          ax = -ax;
+          ay = -ay;
+        }
+        if (source != null && source.bottom < source.top) {
+          tx += bx;
+          ty += by;
+          bx = -bx;
+          by = -by;
+        }
+        canvas.transform(Float64List.fromList(<double>[
+          ax, ay, 0, 0,
+          bx, by, 0, 0,
+          0, 0, 1, 0,
+          tx, ty, 0, 1,
+        ]));
+      } else if (flipX || flipY) {
         canvas.translate(
           flipX ? destination.left + destination.right : 0,
           flipY ? destination.top + destination.bottom : 0,
@@ -98,13 +128,22 @@ Future<ui.Image?> rasterizeMetafileDrawing(
       canvas.drawImageRect(
         image,
         sourceRect,
-        Rect.fromLTRB(
-          destination.minX,
-          destination.minY,
-          destination.maxX,
-          destination.maxY,
-        ),
-        Paint()..filterQuality = FilterQuality.low,
+        parallelogram != null && parallelogram.length == 3
+            ? const Rect.fromLTWH(0, 0, 1, 1)
+            : Rect.fromLTRB(
+                destination.minX,
+                destination.minY,
+                destination.maxX,
+                destination.maxY,
+              ),
+        Paint()
+          ..filterQuality = FilterQuality.low
+          ..color = Color.fromARGB(
+            (op.opacity.clamp(0.0, 1.0) * 255).round(),
+            255,
+            255,
+            255,
+          ),
       );
       canvas.restore();
     } else if (op is MetafilePathOp) {

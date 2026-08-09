@@ -13,6 +13,8 @@ import 'dart:typed_data';
 /// Record types that may carry a source DIB (MS-EMF 2.1.1).
 const int _emrBitBlt = 0x4c;
 const int _emrStretchBlt = 0x4d;
+const int _emrMaskBlt = 0x4e;
+const int _emrPlgBlt = 0x4f;
 const int _emrStretchDiBits = 0x51;
 const int _emrAlphaBlend = 0x72;
 const int _emrTransparentBlt = 0x74;
@@ -30,6 +32,8 @@ Uint8List? extractEmfEmbeddedBitmap(Uint8List emf) {
     if (type == _emrStretchDiBits ||
         type == _emrBitBlt ||
         type == _emrStretchBlt ||
+        type == _emrMaskBlt ||
+        type == _emrPlgBlt ||
         type == _emrAlphaBlend ||
         type == _emrTransparentBlt) {
       final bmp = _dibFromBlits(emf, offset, size, type);
@@ -65,7 +69,13 @@ Uint8List? _dibFromBlits(Uint8List emf, int recOff, int recSize, int type) {
   // same place — offBmiSrc still sits at a documented offset.
   //
   // off* fields are offsets from the *start of the record*.
-  final minNeed = type == _emrStretchDiBits ? 80 : 72;
+  final minNeed = type == _emrStretchDiBits
+      ? 80
+      : type == _emrMaskBlt
+          ? 128
+          : type == _emrPlgBlt
+              ? 140
+              : 72;
   if (recSize < minNeed) return null;
 
   // Prefer STRETCHDIBITS layout; fall back to scanning for BITMAPINFOHEADER.
@@ -79,6 +89,11 @@ Uint8List? _dibFromBlits(Uint8List emf, int recOff, int recSize, int type) {
     cbBmi = _u32(emf, recOff + 52);
     offBits = _u32(emf, recOff + 56);
     cbBits = _u32(emf, recOff + 60);
+  } else if (type == _emrPlgBlt && recSize >= 140) {
+    offBmi = _u32(emf, recOff + 96);
+    cbBmi = _u32(emf, recOff + 100);
+    offBits = _u32(emf, recOff + 104);
+    cbBits = _u32(emf, recOff + 108);
   } else if (recSize >= 100) {
     // EMR_BITBLT: Type+Size(8)+Bounds(16)+xDest,yDest,cxDest,cyDest,rop(20)
     // +xSrc,ySrc(8)+Xform(24)+BkColor(4)+Usage(4) → offBmi at +84.
@@ -107,7 +122,7 @@ Uint8List? _dibFromBlits(Uint8List emf, int recOff, int recSize, int type) {
     final bits = emf.sublist(recOff + offBits, recOff + offBits + cbBits);
     final headerSize = _u32(bmi, 0);
     if (headerSize == 40 || headerSize == 108 || headerSize == 124) {
-      return _packBmp(bmi, bits);
+      return packDibAsBmp(bmi, bits);
     }
   }
 
@@ -136,11 +151,181 @@ Uint8List? _dibFromBlits(Uint8List emf, int recOff, int recSize, int type) {
   return null;
 }
 
-Uint8List? _packBmp(Uint8List bmi, Uint8List bits) {
+/// Build a BMP from the independently stored BMI and pixel buffers used by
+/// EMF bitmap records.
+///
+/// [preserveAlpha] promotes an uncompressed 32-bpp source to a V5 header with
+/// an explicit alpha mask, matching LibreOffice's ALPHABLEND path.
+/// [transparentArgb] expands common uncompressed 24/32-bpp sources and clears
+/// alpha for pixels matching the EMR_TRANSPARENTBLT color key.
+/// [maskBmi]/[maskBits] apply the monochrome MASKBLT/PLGBLT mask when its
+/// common uncompressed 1-bpp representation can be decoded.
+Uint8List? packDibAsBmp(
+  Uint8List bmi,
+  Uint8List bits, {
+  bool preserveAlpha = false,
+  int? transparentArgb,
+  Uint8List? maskBmi,
+  Uint8List? maskBits,
+  int sourceX = 0,
+  int sourceY = 0,
+  int maskX = 0,
+  int maskY = 0,
+}) {
+  if (preserveAlpha || transparentArgb != null || maskBmi != null) {
+    final v5 = _packV5Bmp(
+      bmi,
+      bits,
+      preserveAlpha: preserveAlpha,
+      transparentArgb: transparentArgb,
+      maskBmi: maskBmi,
+      maskBits: maskBits,
+      sourceX: sourceX,
+      sourceY: sourceY,
+      maskX: maskX,
+      maskY: maskY,
+    );
+    if (v5 != null) return v5;
+  }
   final dib = Uint8List(bmi.length + bits.length);
   dib.setRange(0, bmi.length, bmi);
   dib.setRange(bmi.length, dib.length, bits);
   return wrapDibAsBmp(dib);
+}
+
+Uint8List? _packV5Bmp(
+  Uint8List bmi,
+  Uint8List bits, {
+  required bool preserveAlpha,
+  required int? transparentArgb,
+  required Uint8List? maskBmi,
+  required Uint8List? maskBits,
+  required int sourceX,
+  required int sourceY,
+  required int maskX,
+  required int maskY,
+}) {
+  if (bmi.length < 40 || _u32(bmi, 0) < 40) return null;
+  final signedWidth = _i32(bmi, 4);
+  final signedHeight = _i32(bmi, 8);
+  final width = signedWidth.abs();
+  final height = signedHeight.abs();
+  final planes = bmi[12] | (bmi[13] << 8);
+  final bpp = bmi[14] | (bmi[15] << 8);
+  final compression = _u32(bmi, 16);
+  if (width == 0 ||
+      height == 0 ||
+      width > 100000 ||
+      height > 100000 ||
+      planes != 1 ||
+      compression != 0 ||
+      (bpp != 24 && bpp != 32) ||
+      (preserveAlpha && bpp != 32)) {
+    return null;
+  }
+  final sourceStride = ((width * bpp + 31) ~/ 32) * 4;
+  if (sourceStride > bits.length || height > bits.length ~/ sourceStride) {
+    return null;
+  }
+  final targetStride = width * 4;
+  final pixelBytes = targetStride * height;
+  final mask = _MonochromeMask.tryDecode(maskBmi, maskBits);
+  final out = Uint8List(14 + 124 + pixelBytes);
+  final data = ByteData.sublistView(out)
+    ..setUint8(0, 0x42)
+    ..setUint8(1, 0x4d)
+    ..setUint32(2, out.length, Endian.little)
+    ..setUint32(10, 138, Endian.little)
+    ..setUint32(14, 124, Endian.little)
+    ..setInt32(18, signedWidth, Endian.little)
+    ..setInt32(22, signedHeight, Endian.little)
+    ..setUint16(26, 1, Endian.little)
+    ..setUint16(28, 32, Endian.little)
+    ..setUint32(30, 3, Endian.little) // BI_BITFIELDS
+    ..setUint32(34, pixelBytes, Endian.little)
+    ..setUint32(54, 0x00ff0000, Endian.little)
+    ..setUint32(58, 0x0000ff00, Endian.little)
+    ..setUint32(62, 0x000000ff, Endian.little)
+    ..setUint32(66, 0xff000000, Endian.little)
+    ..setUint32(70, 0x73524742, Endian.little); // LCS_sRGB
+  if (bmi.length >= 32) {
+    data.setInt32(38, _i32(bmi, 24), Endian.little);
+    data.setInt32(42, _i32(bmi, 28), Endian.little);
+  }
+  final keyR = transparentArgb == null ? -1 : (transparentArgb >> 16) & 0xff;
+  final keyG = transparentArgb == null ? -1 : (transparentArgb >> 8) & 0xff;
+  final keyB = transparentArgb == null ? -1 : transparentArgb & 0xff;
+  for (var y = 0; y < height; y++) {
+    final sourceRow = y * sourceStride;
+    final targetRow = 138 + y * targetStride;
+    for (var x = 0; x < width; x++) {
+      final source = sourceRow + x * (bpp ~/ 8);
+      final target = targetRow + x * 4;
+      final blue = bits[source];
+      final green = bits[source + 1];
+      final red = bits[source + 2];
+      final keyed = transparentArgb != null &&
+          red == keyR &&
+          green == keyG &&
+          blue == keyB;
+      final logicalY = signedHeight > 0 ? height - 1 - y : y;
+      final maskedOut = mask != null &&
+          !mask.copyPixel(
+            maskX + x - sourceX,
+            maskY + logicalY - sourceY,
+          );
+      out[target] = blue;
+      out[target + 1] = green;
+      out[target + 2] = red;
+      out[target + 3] = keyed || maskedOut
+          ? 0
+          : preserveAlpha
+              ? bits[source + 3]
+              : 0xff;
+    }
+  }
+  return out;
+}
+
+class _MonochromeMask {
+  const _MonochromeMask(this.bits, this.width, this.height, this.bottomUp);
+
+  final Uint8List bits;
+  final int width;
+  final int height;
+  final bool bottomUp;
+
+  static _MonochromeMask? tryDecode(Uint8List? bmi, Uint8List? bits) {
+    if (bmi == null || bits == null || bmi.length < 40 || _u32(bmi, 0) < 40) {
+      return null;
+    }
+    final signedWidth = _i32(bmi, 4);
+    final signedHeight = _i32(bmi, 8);
+    final width = signedWidth.abs();
+    final height = signedHeight.abs();
+    final planes = bmi[12] | (bmi[13] << 8);
+    final bpp = bmi[14] | (bmi[15] << 8);
+    if (width == 0 ||
+        height == 0 ||
+        planes != 1 ||
+        bpp != 1 ||
+        _u32(bmi, 16) != 0) {
+      return null;
+    }
+    final stride = ((width + 31) ~/ 32) * 4;
+    if (stride > bits.length || height > bits.length ~/ stride) return null;
+    return _MonochromeMask(bits, width, height, signedHeight > 0);
+  }
+
+  bool copyPixel(int x, int y) {
+    final normalizedX = ((x % width) + width) % width;
+    final normalizedY = ((y % height) + height) % height;
+    final storageY = bottomUp ? height - 1 - normalizedY : normalizedY;
+    final stride = ((width + 31) ~/ 32) * 4;
+    return (bits[storageY * stride + normalizedX ~/ 8] &
+            (0x80 >> (normalizedX & 7))) !=
+        0;
+  }
 }
 
 /// Wrap a standalone device-independent bitmap in a BMP file header.

@@ -10,6 +10,7 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'emf_embedded_bitmap.dart';
 import 'metafile_drawing.dart';
 import 'vsd/vsd_text_codec.dart';
 
@@ -58,6 +59,11 @@ const int _emrStrokeAndFillPath = 63;
 const int _emrStrokePath = 64;
 const int _emrAbortPath = 68;
 const int _emrBitBlt = 76;
+const int _emrStretchBlt = 77;
+const int _emrMaskBlt = 78;
+const int _emrPlgBlt = 79;
+const int _emrSetDibitsToDevice = 80;
+const int _emrStretchDibits = 81;
 const int _emrExtCreateFontIndirectW = 82;
 const int _emrExtTextOutA = 83;
 const int _emrExtTextOutW = 84;
@@ -73,6 +79,8 @@ const int _emrExtCreatePen = 95;
 const int _emrPolyTextOutA = 96;
 const int _emrPolyTextOutW = 97;
 const int _emrSmallTextOut = 108;
+const int _emrAlphaBlend = 114;
+const int _emrTransparentBlt = 116;
 
 bool looksLikeEmf(Uint8List b) =>
     b.length > 0x2B &&
@@ -437,6 +445,162 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       fillHatch: hatch,
       fillBackgroundArgb: hatchBackground,
       evenOddFill: polyFillMode != 2,
+    ));
+  }
+
+  bool emitRasterOperationFill(
+    int rasterOperation,
+    double x,
+    double y,
+    double width,
+    double height,
+  ) {
+    if (rasterOperation == 0x00f00021 && (brushStyle == 0 || brushStyle == 2)) {
+      emitRasterFill(
+        x,
+        y,
+        width,
+        height,
+        color: brushColor,
+        hatch: brushStyle == 2 ? brushHatch : null,
+        hatchBackground:
+            brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+      );
+      return true;
+    }
+    if (rasterOperation == 0x00000042 || rasterOperation == 0x00ff0062) {
+      emitRasterFill(
+        x,
+        y,
+        width,
+        height,
+        color: rasterOperation == 0x00000042 ? 0xff000000 : 0xffffffff,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  void emitEmbeddedBitmap({
+    required int recordStart,
+    required int recordEnd,
+    required double destinationX,
+    required double destinationY,
+    required double destinationWidth,
+    required double destinationHeight,
+    required int sourceX,
+    required int sourceY,
+    required int sourceWidth,
+    required int sourceHeight,
+    required int usage,
+    required int offBmi,
+    required int cbBmi,
+    required int offBits,
+    required int cbBits,
+    required int rasterOperation,
+    double opacity = 1,
+    bool preserveAlpha = false,
+    int? transparentArgb,
+    List<MetafilePoint>? destinationParallelogram,
+    Uint8List? maskBmi,
+    Uint8List? maskBits,
+    int maskX = 0,
+    int maskY = 0,
+  }) {
+    if (destinationWidth == 0 || destinationHeight == 0) return;
+    if (emitRasterOperationFill(
+      rasterOperation,
+      destinationX,
+      destinationY,
+      destinationWidth,
+      destinationHeight,
+    )) {
+      return;
+    }
+    if (usage != 0 || cbBmi < 12 || cbBits == 0) return;
+    final recordSize = recordEnd - recordStart;
+    bool validRange(int offset, int length) =>
+        offset >= 8 &&
+        length > 0 &&
+        offset <= recordSize &&
+        length <= recordSize - offset;
+    if (!validRange(offBmi, cbBmi) || !validRange(offBits, cbBits)) return;
+    final bmi = Uint8List.sublistView(
+      emf,
+      recordStart + offBmi,
+      recordStart + offBmi + cbBmi,
+    );
+    final bits = Uint8List.sublistView(
+      emf,
+      recordStart + offBits,
+      recordStart + offBits + cbBits,
+    );
+    final dimensions = dibDimensions(bmi);
+    if (dimensions == null) return;
+    final pixelWidth = dimensions.$1;
+    final pixelHeight = dimensions.$2;
+    MetafileRect? source;
+    if (sourceWidth != 0 && sourceHeight != 0) {
+      final directed = MetafileRect(
+        sourceX.toDouble(),
+        sourceY.toDouble(),
+        (sourceX + sourceWidth).toDouble(),
+        (sourceY + sourceHeight).toDouble(),
+      );
+      if (directed.minX >= 0 &&
+          directed.minY >= 0 &&
+          directed.maxX <= pixelWidth &&
+          directed.maxY <= pixelHeight) {
+        source = directed;
+      }
+    }
+    final bmp = packDibAsBmp(
+      bmi,
+      bits,
+      preserveAlpha: preserveAlpha,
+      transparentArgb: transparentArgb,
+      maskBmi: maskBmi,
+      maskBits: maskBits,
+      sourceX: sourceX,
+      sourceY: sourceY,
+      maskX: maskX,
+      maskY: maskY,
+    );
+    if (bmp == null) return;
+    final destination = MetafileRect(
+      destinationX,
+      destinationY,
+      destinationX + destinationWidth,
+      destinationY + destinationHeight,
+    );
+    final parallelogram = destinationParallelogram == null
+        ? null
+        : List<MetafilePoint>.unmodifiable(destinationParallelogram);
+    if (parallelogram != null && parallelogram.length == 3) {
+      final a = parallelogram[0];
+      final b = parallelogram[1];
+      final c = parallelogram[2];
+      ensurePts(<MetafilePoint>[
+        a,
+        b,
+        c,
+        MetafilePoint(b.x + c.x - a.x, b.y + c.y - a.y),
+      ]);
+    } else {
+      ensurePts(destination.corners);
+    }
+    ops.add(MetafileBitmapOp(
+      bmpBytes: bmp,
+      pixelWidth: pixelWidth,
+      pixelHeight: pixelHeight,
+      destination: destination,
+      source: source,
+      destinationParallelogram:
+          parallelogram != null && parallelogram.length == 3
+              ? parallelogram
+              : null,
+      rasterOperation: rasterOperation,
+      opacity: opacity,
     ));
   }
 
@@ -1276,46 +1440,224 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           evenOddFill: polyFillMode != 2,
         ));
       }
-    } else if (t == _emrBitBlt && params + 36 <= recEnd) {
-      // A source-less BITBLT is still drawable. Office OLE presentations use
-      // ROP3 PATCOPY extensively for spreadsheet cell backgrounds and grid
-      // bands: the selected brush is copied into the destination rectangle,
-      // while all source-bitmap offsets remain zero. LibreOffice's EMF reader
-      // keeps this path instead of treating every BITBLT as an embedded DIB.
-      final rasterOperation = bd.getUint32(params + 32, Endian.little);
-      final x = bd.getInt32(params + 16, Endian.little).toDouble();
-      final y = bd.getInt32(params + 20, Endian.little).toDouble();
-      final width = bd.getInt32(params + 24, Endian.little).toDouble();
-      final height = bd.getInt32(params + 28, Endian.little).toDouble();
-      if (rasterOperation == 0x00f00021 &&
-          (brushStyle == 0 || brushStyle == 2)) {
-        emitRasterFill(
-          x,
-          y,
-          width,
-          height,
-          color: brushColor,
-          hatch: brushStyle == 2 ? brushHatch : null,
-          hatchBackground:
-              brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
-        );
-      } else if (rasterOperation == 0x00000042) {
-        emitRasterFill(
-          x,
-          y,
-          width,
-          height,
-          color: 0xff000000,
-        );
-      } else if (rasterOperation == 0x00ff0062) {
-        emitRasterFill(
-          x,
-          y,
-          width,
-          height,
-          color: 0xffffffff,
+    } else if ((t == _emrBitBlt ||
+            t == _emrStretchBlt ||
+            t == _emrAlphaBlend ||
+            t == _emrTransparentBlt) &&
+        params + (t == _emrBitBlt ? 92 : 100) <= recEnd) {
+      // The four records share the same destination/source/XForm/BMI layout.
+      // LibreOffice queues their reconstructed bitmaps in record order; doing
+      // the same keeps vector operations before and after the bitmap intact.
+      final destinationX = bd.getInt32(params + 16, Endian.little).toDouble();
+      final destinationY = bd.getInt32(params + 20, Endian.little).toDouble();
+      final destinationWidth =
+          bd.getInt32(params + 24, Endian.little).toDouble();
+      final destinationHeight =
+          bd.getInt32(params + 28, Endian.little).toDouble();
+      final control = bd.getUint32(params + 32, Endian.little);
+      final sourceX = bd.getInt32(params + 36, Endian.little);
+      final sourceY = bd.getInt32(params + 40, Endian.little);
+      final usage = bd.getUint32(params + 72, Endian.little);
+      final offBmi = bd.getUint32(params + 76, Endian.little);
+      final cbBmi = bd.getUint32(params + 80, Endian.little);
+      final offBits = bd.getUint32(params + 84, Endian.little);
+      final cbBits = bd.getUint32(params + 88, Endian.little);
+      final stretched = t != _emrBitBlt;
+      final sourceWidth =
+          stretched ? bd.getInt32(params + 92, Endian.little) : 0;
+      final sourceHeight =
+          stretched ? bd.getInt32(params + 96, Endian.little) : 0;
+      final alphaBlend = t == _emrAlphaBlend;
+      final transparent = t == _emrTransparentBlt;
+      final blendOperation = control & 0xff;
+      if (!alphaBlend || blendOperation == 0) {
+        emitEmbeddedBitmap(
+          recordStart: offset,
+          recordEnd: recEnd,
+          destinationX: destinationX,
+          destinationY: destinationY,
+          destinationWidth: destinationWidth,
+          destinationHeight: destinationHeight,
+          sourceX: sourceX,
+          sourceY: sourceY,
+          sourceWidth: sourceWidth,
+          sourceHeight: sourceHeight,
+          usage: usage,
+          offBmi: offBmi,
+          cbBmi: cbBmi,
+          offBits: offBits,
+          cbBits: cbBits,
+          rasterOperation: alphaBlend || transparent ? 0x00cc0020 : control,
+          opacity: alphaBlend ? ((control >> 16) & 0xff) / 255.0 : 1,
+          preserveAlpha: alphaBlend && ((control >> 24) & 0x01) != 0,
+          transparentArgb: transparent ? _rgbToArgb(control) : null,
         );
       }
+    } else if (t == _emrMaskBlt && params + 120 <= recEnd) {
+      // MASKBLT extends BITBLT with a monochrome mask. A set mask bit copies
+      // the source pixel; a clear bit leaves the destination untouched.
+      final recordSize = recEnd - offset;
+      Uint8List? recordBytes(int fieldOffset, int length) {
+        if (fieldOffset < 8 ||
+            length <= 0 ||
+            fieldOffset > recordSize ||
+            length > recordSize - fieldOffset) {
+          return null;
+        }
+        return Uint8List.sublistView(
+          emf,
+          offset + fieldOffset,
+          offset + fieldOffset + length,
+        );
+      }
+
+      final maskUsage = bd.getUint32(params + 100, Endian.little);
+      final maskBmi = maskUsage == 0
+          ? recordBytes(
+              bd.getUint32(params + 104, Endian.little),
+              bd.getUint32(params + 108, Endian.little),
+            )
+          : null;
+      final maskBits = maskUsage == 0
+          ? recordBytes(
+              bd.getUint32(params + 112, Endian.little),
+              bd.getUint32(params + 116, Endian.little),
+            )
+          : null;
+      emitEmbeddedBitmap(
+        recordStart: offset,
+        recordEnd: recEnd,
+        destinationX: bd.getInt32(params + 16, Endian.little).toDouble(),
+        destinationY: bd.getInt32(params + 20, Endian.little).toDouble(),
+        destinationWidth: bd.getInt32(params + 24, Endian.little).toDouble(),
+        destinationHeight: bd.getInt32(params + 28, Endian.little).toDouble(),
+        sourceX: bd.getInt32(params + 36, Endian.little),
+        sourceY: bd.getInt32(params + 40, Endian.little),
+        sourceWidth: bd.getInt32(params + 24, Endian.little),
+        sourceHeight: bd.getInt32(params + 28, Endian.little),
+        usage: bd.getUint32(params + 72, Endian.little),
+        offBmi: bd.getUint32(params + 76, Endian.little),
+        cbBmi: bd.getUint32(params + 80, Endian.little),
+        offBits: bd.getUint32(params + 84, Endian.little),
+        cbBits: bd.getUint32(params + 88, Endian.little),
+        rasterOperation: bd.getUint32(params + 32, Endian.little),
+        maskBmi: maskBmi,
+        maskBits: maskBits,
+        maskX: bd.getInt32(params + 92, Endian.little),
+        maskY: bd.getInt32(params + 96, Endian.little),
+      );
+    } else if (t == _emrPlgBlt && params + 132 <= recEnd) {
+      final destinationPoints = <MetafilePoint>[
+        for (var i = 0; i < 3; i++)
+          MetafilePoint(
+            bd.getInt32(params + 16 + i * 8, Endian.little).toDouble(),
+            bd.getInt32(params + 20 + i * 8, Endian.little).toDouble(),
+          ),
+      ];
+      final a = destinationPoints[0];
+      final b = destinationPoints[1];
+      final c = destinationPoints[2];
+      final allDestinationPoints = <MetafilePoint>[
+        ...destinationPoints,
+        MetafilePoint(b.x + c.x - a.x, b.y + c.y - a.y),
+      ];
+      final xs = allDestinationPoints.map((point) => point.x);
+      final ys = allDestinationPoints.map((point) => point.y);
+      final minDestinationX = xs.reduce(math.min);
+      final minDestinationY = ys.reduce(math.min);
+      final recordSize = recEnd - offset;
+      Uint8List? recordBytes(int fieldOffset, int length) {
+        if (fieldOffset < 8 ||
+            length <= 0 ||
+            fieldOffset > recordSize ||
+            length > recordSize - fieldOffset) {
+          return null;
+        }
+        return Uint8List.sublistView(
+          emf,
+          offset + fieldOffset,
+          offset + fieldOffset + length,
+        );
+      }
+
+      final maskUsage = bd.getUint32(params + 112, Endian.little);
+      final maskBmi = maskUsage == 0
+          ? recordBytes(
+              bd.getUint32(params + 116, Endian.little),
+              bd.getUint32(params + 120, Endian.little),
+            )
+          : null;
+      final maskBits = maskUsage == 0
+          ? recordBytes(
+              bd.getUint32(params + 124, Endian.little),
+              bd.getUint32(params + 128, Endian.little),
+            )
+          : null;
+      emitEmbeddedBitmap(
+        recordStart: offset,
+        recordEnd: recEnd,
+        destinationX: minDestinationX,
+        destinationY: minDestinationY,
+        destinationWidth: xs.reduce(math.max) - minDestinationX,
+        destinationHeight: ys.reduce(math.max) - minDestinationY,
+        sourceX: bd.getInt32(params + 40, Endian.little),
+        sourceY: bd.getInt32(params + 44, Endian.little),
+        sourceWidth: bd.getInt32(params + 48, Endian.little),
+        sourceHeight: bd.getInt32(params + 52, Endian.little),
+        usage: bd.getUint32(params + 84, Endian.little),
+        offBmi: bd.getUint32(params + 88, Endian.little),
+        cbBmi: bd.getUint32(params + 92, Endian.little),
+        offBits: bd.getUint32(params + 96, Endian.little),
+        cbBits: bd.getUint32(params + 100, Endian.little),
+        rasterOperation: 0x00cc0020,
+        destinationParallelogram: destinationPoints,
+        maskBmi: maskBmi,
+        maskBits: maskBits,
+        maskX: bd.getInt32(params + 104, Endian.little),
+        maskY: bd.getInt32(params + 108, Endian.little),
+      );
+    } else if (t == _emrStretchDibits && params + 72 <= recEnd) {
+      emitEmbeddedBitmap(
+        recordStart: offset,
+        recordEnd: recEnd,
+        destinationX: bd.getInt32(params + 16, Endian.little).toDouble(),
+        destinationY: bd.getInt32(params + 20, Endian.little).toDouble(),
+        destinationWidth: bd.getInt32(params + 64, Endian.little).toDouble(),
+        destinationHeight: bd.getInt32(params + 68, Endian.little).toDouble(),
+        sourceX: bd.getInt32(params + 24, Endian.little),
+        sourceY: bd.getInt32(params + 28, Endian.little),
+        sourceWidth: bd.getInt32(params + 32, Endian.little),
+        sourceHeight: bd.getInt32(params + 36, Endian.little),
+        offBmi: bd.getUint32(params + 40, Endian.little),
+        cbBmi: bd.getUint32(params + 44, Endian.little),
+        offBits: bd.getUint32(params + 48, Endian.little),
+        cbBits: bd.getUint32(params + 52, Endian.little),
+        usage: bd.getUint32(params + 56, Endian.little),
+        rasterOperation: bd.getUint32(params + 60, Endian.little),
+      );
+    } else if (t == _emrSetDibitsToDevice && params + 68 <= recEnd) {
+      final sourceWidth = bd.getInt32(params + 32, Endian.little);
+      final scanCount = bd.getUint32(params + 64, Endian.little);
+      final sourceY = bd.getInt32(params + 28, Endian.little) +
+          bd.getUint32(params + 60, Endian.little);
+      emitEmbeddedBitmap(
+        recordStart: offset,
+        recordEnd: recEnd,
+        destinationX: bd.getInt32(params + 16, Endian.little).toDouble(),
+        destinationY: bd.getInt32(params + 20, Endian.little).toDouble(),
+        destinationWidth: sourceWidth.toDouble(),
+        destinationHeight: scanCount.toDouble(),
+        sourceX: bd.getInt32(params + 24, Endian.little),
+        sourceY: sourceY,
+        sourceWidth: sourceWidth,
+        sourceHeight: scanCount,
+        offBmi: bd.getUint32(params + 40, Endian.little),
+        cbBmi: bd.getUint32(params + 44, Endian.little),
+        offBits: bd.getUint32(params + 48, Endian.little),
+        cbBits: bd.getUint32(params + 52, Endian.little),
+        usage: bd.getUint32(params + 56, Endian.little),
+        rasterOperation: 0x00cc0020,
+      );
     } else if ((t == _emrExtTextOutA ||
             t == _emrExtTextOutW ||
             t == _emrPolyTextOutA ||

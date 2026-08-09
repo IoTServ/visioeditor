@@ -3057,16 +3057,12 @@ class VsdxToSvgSerializer {
       );
     }
     final metafileBytes = Uint8List.fromList(src.bytes);
-    final preferWmfDisplayList =
-        src.mimeType.toLowerCase().contains('wmf') ||
-            src.partName.toLowerCase().endsWith('.wmf') ||
-            looksLikeWmf(metafileBytes);
     final drawing = parseMetafileDrawing(
       metafileBytes,
       mimeType: src.mimeType,
       partName: src.partName,
     );
-    if (preferWmfDisplayList && drawing != null && !drawing.isEmpty) {
+    if (drawing != null && !drawing.isEmpty) {
       return (mime: null, bytes: null, vectorDrawing: drawing);
     }
     final raster = extractMetafileRaster(
@@ -3075,9 +3071,6 @@ class VsdxToSvgSerializer {
     );
     if (raster != null) {
       return (mime: 'image/bmp', bytes: raster, vectorDrawing: null);
-    }
-    if (drawing != null && !drawing.isEmpty) {
-      return (mime: null, bytes: null, vectorDrawing: drawing);
     }
     return null;
   }
@@ -3355,10 +3348,37 @@ class VsdxToSvgSerializer {
               op.pixelWidth.toDouble(),
               op.pixelHeight.toDouble(),
             );
-        final flipX = destination.right < destination.left;
-        final flipY = destination.bottom < destination.top;
+        final flipX = (destination.right < destination.left) !=
+            (op.source != null && source.right < source.left);
+        final flipY = (destination.bottom < destination.top) !=
+            (op.source != null && source.bottom < source.top);
         final transforms = <String>[];
-        if (flipX || flipY) {
+        final parallelogram = op.destinationParallelogram;
+        if (parallelogram != null && parallelogram.length == 3) {
+          final p0 = parallelogram[0];
+          var ax = parallelogram[1].x - p0.x;
+          var ay = parallelogram[1].y - p0.y;
+          var bx = parallelogram[2].x - p0.x;
+          var by = parallelogram[2].y - p0.y;
+          var tx = p0.x;
+          var ty = p0.y;
+          if (op.source != null && source.right < source.left) {
+            tx += ax;
+            ty += ay;
+            ax = -ax;
+            ay = -ay;
+          }
+          if (op.source != null && source.bottom < source.top) {
+            tx += bx;
+            ty += by;
+            bx = -bx;
+            by = -by;
+          }
+          transforms.add(
+            'matrix(${_n(ax)} ${_n(ay)} ${_n(bx)} ${_n(by)} '
+            '${_n(tx)} ${_n(ty)})',
+          );
+        } else if (flipX || flipY) {
           transforms.add(
             'translate(${_n(flipX ? destination.left + destination.right : 0)} '
             '${_n(flipY ? destination.top + destination.bottom : 0)})',
@@ -3368,14 +3388,23 @@ class VsdxToSvgSerializer {
         final transformAttr = transforms.isEmpty
             ? ''
             : ' transform="${transforms.join(' ')}"';
+        final bitmapOpacity = op.opacity.clamp(0.0, 1.0);
+        final bitmapOpacityAttr = bitmapOpacity < 1.0 - 1e-9
+            ? ' opacity="${_n(bitmapOpacity)}"'
+            : '';
         final href = base64Encode(op.bmpBytes);
+        final imageX = parallelogram != null ? 0.0 : destination.minX;
+        final imageY = parallelogram != null ? 0.0 : destination.minY;
+        final imageWidth = parallelogram != null ? 1.0 : destination.width;
+        final imageHeight = parallelogram != null ? 1.0 : destination.height;
         buf.writeln(
-          '$indent  <svg x="${_n(destination.minX)}" '
-          'y="${_n(destination.minY)}" width="${_n(destination.width)}" '
-          'height="${_n(destination.height)}" '
+          '$indent  <svg x="${_n(imageX)}" '
+          'y="${_n(imageY)}" width="${_n(imageWidth)}" '
+          'height="${_n(imageHeight)}" '
           'viewBox="${_n(source.minX)} ${_n(source.minY)} '
           '${_n(source.width)} ${_n(source.height)}" '
-          'preserveAspectRatio="none" overflow="hidden"$transformAttr>',
+          'preserveAspectRatio="none" overflow="hidden"$transformAttr'
+          '$bitmapOpacityAttr>',
         );
         buf.writeln(
           '$indent    <image x="0" y="0" width="${op.pixelWidth}" '

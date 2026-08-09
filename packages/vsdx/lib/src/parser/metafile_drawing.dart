@@ -88,8 +88,14 @@ class MetafileBitmapOp {
     required this.pixelHeight,
     required this.destination,
     this.source,
+    this.destinationParallelogram,
     this.rasterOperation = 0x00cc0020,
-  });
+    this.opacity = 1,
+  })  : assert(
+          destinationParallelogram == null ||
+              destinationParallelogram.length == 3,
+        ),
+        assert(opacity >= 0 && opacity <= 1);
 
   /// Complete BMP stream (14-byte file header followed by the source DIB).
   final Uint8List bmpBytes;
@@ -99,11 +105,19 @@ class MetafileBitmapOp {
   /// Directed destination rectangle. Reversed edges retain GDI mirroring.
   final MetafileRect destination;
 
-  /// Optional source crop in bitmap pixel coordinates.
+  /// Optional directed source crop in bitmap pixel coordinates.
   final MetafileRect? source;
+
+  /// Optional upper-left, upper-right, and lower-left destination corners.
+  ///
+  /// EMR_PLGBLT uses these points instead of an axis-aligned destination.
+  final List<MetafilePoint>? destinationParallelogram;
 
   /// Authored ternary raster operation (SRCCOPY by default).
   final int rasterOperation;
+
+  /// Constant source alpha applied after any per-pixel alpha channel.
+  final double opacity;
 }
 
 /// An additional figure in a compound GDI path.

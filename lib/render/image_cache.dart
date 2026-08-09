@@ -102,16 +102,12 @@ class VsdxImageCache extends ChangeNotifier {
     if (managePending) _pending.add(src.partName);
     try {
       final metafileBytes = Uint8List.fromList(src.bytes);
-      final preferWmfDisplayList =
-          src.mimeType.toLowerCase().contains('wmf') ||
-          src.partName.toLowerCase().endsWith('.wmf') ||
-          looksLikeWmf(metafileBytes);
       final drawing = parseMetafileDrawing(
         metafileBytes,
         mimeType: src.mimeType,
         partName: src.partName,
       );
-      if (preferWmfDisplayList && drawing != null && !drawing.isEmpty) {
+      if (drawing != null && !drawing.isEmpty) {
         final image = await rasterizeMetafileDrawing(drawing);
         if (image != null) {
           _ready[src.partName] = image;
@@ -120,8 +116,8 @@ class VsdxImageCache extends ChangeNotifier {
           return;
         }
       }
-      // EMF files that are bitmap wrappers still use the direct extraction
-      // path until every EMF bitmap record is represented in its display list.
+      // Last chance for malformed bitmap-wrapper metafiles whose display list
+      // could not be reconstructed safely.
       final raster = extractMetafileRaster(
         metafileBytes,
         mimeType: src.mimeType,
@@ -129,13 +125,6 @@ class VsdxImageCache extends ChangeNotifier {
       if (raster != null) {
         await _decodeRaster(src, raster, clearPending: false);
         return;
-      }
-      if (drawing != null && !drawing.isEmpty) {
-        final image = await rasterizeMetafileDrawing(drawing);
-        if (image == null) return;
-        _ready[src.partName] = image;
-        _decodeEpoch++;
-        notifyListeners();
       }
     } catch (_) {
       // Leave pending cleared in finally; painter keeps the placeholder.
