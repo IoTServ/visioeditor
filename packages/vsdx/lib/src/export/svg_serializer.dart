@@ -3280,9 +3280,59 @@ class VsdxToSvgSerializer {
       'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );
+    final dcClipDepths = <int>[0];
+
+    void closeClipGroups(int count) {
+      for (var i = 0; i < count; i++) {
+        buf.writeln('$indent  </g>');
+      }
+    }
+
+    void restoreDeviceContexts(int count) {
+      while (count > 0 && dcClipDepths.length > 1) {
+        closeClipGroups(dcClipDepths.removeLast());
+        buf.writeln('$indent  </g>');
+        count--;
+      }
+    }
+
     for (var opIndex = 0; opIndex < drawing.ops.length; opIndex++) {
       final op = drawing.ops[opIndex];
-      if (op is MetafilePixelOp) {
+      if (op is MetafileSaveDcOp) {
+        buf.writeln('$indent  <g>');
+        dcClipDepths.add(0);
+      } else if (op is MetafileRestoreDcOp) {
+        restoreDeviceContexts(op.count);
+      } else if (op is MetafileClipRectOp) {
+        final clipId = 'wmf-dc-clip-$idScope-$opIndex';
+        final rect = op.rect;
+        if (op.mode == MetafileClipCombineMode.intersect) {
+          buf.writeln(
+            '$indent  <defs><clipPath id="$clipId" '
+            'clipPathUnits="userSpaceOnUse">'
+            '<rect x="${_n(rect.minX)}" y="${_n(rect.minY)}" '
+            'width="${_n(rect.width)}" height="${_n(rect.height)}"/>'
+            '</clipPath></defs>',
+          );
+        } else {
+          final outer =
+              'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
+              'H ${_n(drawing.maxX)} V ${_n(drawing.maxY)} '
+              'H ${_n(drawing.minX)} Z';
+          final excluded =
+              'M ${_n(rect.minX)} ${_n(rect.minY)} '
+              'H ${_n(rect.maxX)} V ${_n(rect.maxY)} '
+              'H ${_n(rect.minX)} Z';
+          buf.writeln(
+            '$indent  <defs><clipPath id="$clipId" '
+            'clipPathUnits="userSpaceOnUse">'
+            '<path d="$outer $excluded" fill-rule="evenodd" '
+            'clip-rule="evenodd"/></clipPath></defs>',
+          );
+        }
+        buf.writeln('$indent  <g clip-path="url(#$clipId)">');
+        dcClipDepths[dcClipDepths.length - 1]++;
+      } else if (op is MetafilePixelOp) {
         buf.writeln(
           '$indent  <rect x="${_n(op.x)}" y="${_n(op.y)}" width="1" '
           'height="1" fill="${_argbCss(op.argb)}" '
@@ -3319,6 +3369,10 @@ class VsdxToSvgSerializer {
         );
       }
     }
+    while (dcClipDepths.length > 1) {
+      restoreDeviceContexts(1);
+    }
+    closeClipGroups(dcClipDepths.single);
     buf.writeln('$indent</g>');
   }
 

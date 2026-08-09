@@ -31,6 +31,8 @@ const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
 const int _emrSetBkColor = 25;
 const int _emrMoveToEx = 27;
+const int _emrExcludeClipRect = 29;
+const int _emrIntersectClipRect = 30;
 const int _emrSaveDc = 33;
 const int _emrRestoreDc = 34;
 const int _emrSelectObject = 37;
@@ -174,14 +176,14 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             .toList(growable: false),
       );
 
-  void restoreState(int savedDc) {
-    if (savedDc == 0 || savedStates.isEmpty) return;
+  int restoreState(int savedDc) {
+    if (savedDc == 0 || savedStates.isEmpty) return 0;
     final relative = savedDc < 0 ? savedDc : -1;
     final index = savedStates.length + relative;
     if (index < 0) {
-      savedStates.clear();
-      return;
+      return 0;
     }
+    final restoredCount = savedStates.length - index;
     final state = savedStates[index];
     savedStates.removeRange(index, savedStates.length);
     penColor = state.penColor;
@@ -209,6 +211,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     pathFigures
       ..clear()
       ..addAll(state.pathFigures.map(_EmfPathFigure.copy));
+    return restoredCount;
   }
 
   void ensurePts(Iterable<MetafilePoint> pts) {
@@ -778,8 +781,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
 
     if (t == _emrSaveDc) {
       savedStates.add(captureState());
+      ops.add(const MetafileSaveDcOp());
     } else if (t == _emrRestoreDc && params + 4 <= recEnd) {
-      restoreState(bd.getInt32(params, Endian.little));
+      final restoredCount = restoreState(bd.getInt32(params, Endian.little));
+      if (restoredCount > 0) {
+        ops.add(MetafileRestoreDcOp(count: restoredCount));
+      }
     } else if (t == _emrSetWindowOrgEx && params + 8 <= recEnd) {
       // ignored for drawing; bounds already from header
     } else if (t == _emrSetWindowExtEx && params + 8 <= recEnd) {
@@ -812,6 +819,19 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       if (mode == 1 || mode == 2) polyFillMode = mode;
     } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
       backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
+    } else if ((t == _emrExcludeClipRect || t == _emrIntersectClipRect) &&
+        params + 16 <= recEnd) {
+      ops.add(MetafileClipRectOp(
+        rect: MetafileRect(
+          bd.getInt32(params, Endian.little).toDouble(),
+          bd.getInt32(params + 4, Endian.little).toDouble(),
+          bd.getInt32(params + 8, Endian.little).toDouble(),
+          bd.getInt32(params + 12, Endian.little).toDouble(),
+        ),
+        mode: t == _emrIntersectClipRect
+            ? MetafileClipCombineMode.intersect
+            : MetafileClipCombineMode.exclude,
+      ));
     } else if (t == _emrSetArcDirection && params + 4 <= recEnd) {
       arcClockwise = bd.getUint32(params, Endian.little) == 2;
     } else if (t == _emrSetTextColor && params + 4 <= recEnd) {

@@ -32,8 +32,26 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   canvas.scale(scale, scale);
   canvas.translate(-drawing.minX, -drawing.minY);
 
+  var savedDcCount = 0;
   for (final op in drawing.ops) {
-    if (op is MetafilePixelOp) {
+    if (op is MetafileSaveDcOp) {
+      canvas.save();
+      savedDcCount++;
+    } else if (op is MetafileRestoreDcOp) {
+      var count = math.min(op.count, savedDcCount);
+      while (count-- > 0) {
+        canvas.restore();
+        savedDcCount--;
+      }
+    } else if (op is MetafileClipRectOp) {
+      final rect = op.rect;
+      canvas.clipRect(
+        Rect.fromLTRB(rect.minX, rect.minY, rect.maxX, rect.maxY),
+        clipOp: op.mode == MetafileClipCombineMode.intersect
+            ? ui.ClipOp.intersect
+            : ui.ClipOp.difference,
+      );
+    } else if (op is MetafilePixelOp) {
       canvas.drawRect(
         Rect.fromLTWH(op.x, op.y, 1, 1),
         Paint()
@@ -45,6 +63,10 @@ Future<ui.Image?> rasterizeMetafileDrawing(
     } else if (op is MetafileTextOp) {
       _paintText(canvas, op);
     }
+  }
+  while (savedDcCount > 0) {
+    canvas.restore();
+    savedDcCount--;
   }
 
   final picture = recorder.endRecording();

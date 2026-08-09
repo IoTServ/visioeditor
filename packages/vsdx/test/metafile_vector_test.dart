@@ -1119,6 +1119,8 @@ void main() {
       expect(paths[0].points.map((p) => p.x), <double>[0, 10]);
       expect(paths[1].strokeArgb, 0xFF000000);
       expect(paths[1].points.map((p) => p.x), <double>[0, 20]);
+      expect(drawing.ops.whereType<MetafileSaveDcOp>(), hasLength(2));
+      expect(drawing.ops.whereType<MetafileRestoreDcOp>().single.count, 2);
     });
 
     test('ExtCreateFontIndirectW retains LOGFONT style and escapement', () {
@@ -1194,9 +1196,37 @@ void main() {
           .toList();
       expect(fills, hasLength(greaterThanOrEqualTo(20)));
       expect(
+        drawing.ops.whereType<MetafileClipRectOp>().any(
+              (clip) => clip.mode == MetafileClipCombineMode.intersect,
+            ),
+        isTrue,
+        reason: 'Excel preview uses an EMR_INTERSECTCLIPRECT region',
+      );
+      expect(
         fills.any((path) => path.fillArgb == 0xffc0c0c0),
         isTrue,
         reason: 'PATCOPY grid bands use the active light-gray GDI brush',
+      );
+    });
+
+    test('OLE chart preview retains intersect and exclude clip records', () {
+      final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
+          .readAsBytesSync();
+      final doc = parseVisio(vsd).document;
+      final chartPreview = doc.images.findByPart('/visio/media/image2.bin');
+      expect(chartPreview, isNotNull);
+      final drawing = parseMetafileDrawing(
+        chartPreview!.bytes,
+        mimeType: chartPreview.mimeType,
+        partName: chartPreview.partName,
+      );
+      expect(drawing, isNotNull);
+      expect(
+        drawing!.ops.whereType<MetafileClipRectOp>().map((clip) => clip.mode),
+        containsAll(<MetafileClipCombineMode>[
+          MetafileClipCombineMode.intersect,
+          MetafileClipCombineMode.exclude,
+        ]),
       );
     });
 

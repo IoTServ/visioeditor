@@ -40,6 +40,32 @@ class MetafileRect {
       ];
 }
 
+/// GDI clipping operation retained in metafile paint order.
+enum MetafileClipCombineMode { intersect, exclude }
+
+/// Save the current GDI device context before later state or clip changes.
+@immutable
+class MetafileSaveDcOp {
+  const MetafileSaveDcOp();
+}
+
+/// Restore one or more previously saved GDI device contexts.
+@immutable
+class MetafileRestoreDcOp {
+  const MetafileRestoreDcOp({this.count = 1}) : assert(count > 0);
+
+  final int count;
+}
+
+/// Intersect the active clip region with, or exclude, an axis-aligned rect.
+@immutable
+class MetafileClipRectOp {
+  const MetafileClipRectOp({required this.rect, required this.mode});
+
+  final MetafileRect rect;
+  final MetafileClipCombineMode mode;
+}
+
 /// A single GDI device pixel retained in metafile paint order.
 @immutable
 class MetafilePixelOp {
@@ -251,14 +277,18 @@ class MetafileDrawing {
   final double maxX;
   final double maxY;
 
-  /// Mixed [MetafilePixelOp] / [MetafilePathOp] / [MetafileTextOp] in paint
-  /// order.
+  /// Mixed drawing and GDI device-context operations in paint order.
   final List<Object> ops;
 
   double get width => (maxX - minX).abs().clamp(1.0, 1e9);
   double get height => (maxY - minY).abs().clamp(1.0, 1e9);
 
-  bool get isEmpty => ops.isEmpty;
+  bool get isEmpty => !ops.any(
+        (op) =>
+            op is MetafilePixelOp ||
+            op is MetafilePathOp ||
+            op is MetafileTextOp,
+      );
 }
 
 /// Densify cubic Bezier control points (start + n×(c1,c2,end)) into a polyline.
