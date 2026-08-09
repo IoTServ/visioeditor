@@ -37,6 +37,16 @@ MetafileDrawing? parseMetafileDrawing(
     payload = extracted;
   }
 
+  // Match LibreOffice's WMF reader: Office may carry the authoritative EMF
+  // in one or more META_ESCAPE/MFCOMMENT `WMFC` chunks, followed by a lower
+  // fidelity WMF fallback. Prefer the validated enhanced metafile when it is
+  // present; private escapes such as MathType remain on the WMF path.
+  final embeddedEmf = extractWmfEmbeddedEmf(payload);
+  if (embeddedEmf != null) {
+    final d = parseEmfDrawing(embeddedEmf);
+    if (d != null && !d.isEmpty) return d;
+  }
+
   // An explicit WMF media type/extension is authoritative. Scanning the
   // entire byte stream for an EMF header before trying WMF can match ordinary
   // WMF record payload by accident and return a plausible but truncated EMF
@@ -44,9 +54,13 @@ MetafileDrawing? parseMetafileDrawing(
   // positive contains only 12 of its 80 drawing operations. Keep a genuine
   // leading EMF signature authoritative for mislabelled parts, otherwise
   // route known WMF data through its parser first.
-  if (isWmf && !looksLikeEmf(payload)) {
+  if ((isWmf || looksLikeWmf(payload)) && !looksLikeEmf(payload)) {
     final d = parseWmfDrawing(payload);
     if (d != null && !d.isEmpty) return d;
+    // A validated WMF container must not fall through to the loose embedded
+    // EMF signature scan: a malformed WMFC first chunk can contain a complete
+    // EMF header plus partial drawing records.
+    return null;
   }
 
   // Prefer EMF when signature matches (OLE presentations, .emf parts).
@@ -84,5 +98,6 @@ Uint8List? extractMetafileRaster(Uint8List bytes, {String mimeType = ''}) {
     if (extracted == null) return null;
     payload = extracted;
   }
+  payload = extractWmfEmbeddedEmf(payload) ?? payload;
   return extractEmfEmbeddedBitmap(payload);
 }

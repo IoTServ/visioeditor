@@ -2,14 +2,15 @@
 ///
 /// Covers the GDI records Visio / LibreOffice thumbnails and ForeignData
 /// typically emit: window mapping, pens/brushes/fonts, polygon/polyline,
-/// rectangle/ellipse, and ExtTextOut. `META_ESCAPE` blobs (often truncated
-/// dual-mode EMF) are skipped — the native WMF drawing stream after them is
-/// what actually paints.
+/// rectangle/ellipse, and ExtTextOut. LibreOffice-style `META_ESCAPE` `WMFC`
+/// chunks are reassembled by [extractWmfEmbeddedEmf]; other private escapes
+/// are skipped so the native WMF drawing stream after them can paint.
 library;
 
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'emf_vector_parser.dart';
 import 'metafile_drawing.dart';
 import 'vsd/vsd_text_codec.dart';
 
@@ -44,6 +45,108 @@ const int _metaExtTextOut = 0x0A32;
 const int _metaTextOut = 0x0521;
 const int _metaEscape = 0x0626;
 const int _metaEof = 0x0000;
+const int _mfCommentEscape = 15;
+const int _wmfcCommentIdentifier = 0x43464D57;
+
+/// Whether [bytes] start with a valid placeable or standard WMF header.
+bool looksLikeWmf(Uint8List bytes) {
+  if (bytes.length < 18) return false;
+  final bd = ByteData.sublistView(bytes);
+  var pos = 0;
+  if (bytes.length >= 22 && bd.getUint32(0, Endian.little) == _placeableKey) {
+    pos = 22;
+  }
+  if (pos + 18 > bytes.length) return false;
+  final type = bd.getUint16(pos, Endian.little);
+  final headerWords = bd.getUint16(pos + 2, Endian.little);
+  final version = bd.getUint16(pos + 4, Endian.little);
+  return (type == 1 || type == 2) &&
+      headerWords >= 9 &&
+      pos + headerWords * 2 <= bytes.length &&
+      (version == 0x0100 || version == 0x0300);
+}
+
+/// Reassemble an EMF embedded in WMF `META_ESCAPE/MFCOMMENT` records.
+///
+/// Microsoft Office can split a complete enhanced metafile across several
+/// `WMFC` comments. LibreOffice validates the chunk count and declared total,
+/// concatenates the payloads, and prefers that EMF over the fallback WMF
+/// records. MathType and other private escapes intentionally return `null`.
+Uint8List? extractWmfEmbeddedEmf(Uint8List bytes) {
+  if (!looksLikeWmf(bytes)) return null;
+  final bd = ByteData.sublistView(bytes);
+  var pos = 0;
+  if (bytes.length >= 22 && bd.getUint32(0, Endian.little) == _placeableKey) {
+    pos = 22;
+  }
+  final headerWords = bd.getUint16(pos + 2, Endian.little);
+  pos += headerWords * 2;
+
+  int? expectedChunks;
+  int? expectedSize;
+  var chunksRead = 0;
+  var payload = BytesBuilder(copy: false);
+
+  void reset() {
+    expectedChunks = null;
+    expectedSize = null;
+    chunksRead = 0;
+    payload = BytesBuilder(copy: false);
+  }
+
+  while (pos + 6 <= bytes.length) {
+    final sizeWords = bd.getUint32(pos, Endian.little);
+    final function = bd.getUint16(pos + 4, Endian.little);
+    if (sizeWords < 3) break;
+    final recordSize = sizeWords * 2;
+    final recordEnd = pos + recordSize;
+    if (recordEnd > bytes.length) break;
+    if (function == _metaEof) break;
+    if (function == _metaEscape && pos + 10 <= recordEnd) {
+      final mode = bd.getUint16(pos + 6, Endian.little);
+      final dataLength = bd.getUint16(pos + 8, Endian.little);
+      final dataStart = pos + 10;
+      if (mode == _mfCommentEscape &&
+          dataLength >= 34 &&
+          dataStart + dataLength <= recordEnd &&
+          sizeWords == ((dataLength + 1) >> 1) + 5 &&
+          bd.getUint32(dataStart, Endian.little) ==
+              _wmfcCommentIdentifier) {
+        final commentType = bd.getUint32(dataStart + 4, Endian.little);
+        final commentVersion = bd.getUint32(dataStart + 8, Endian.little);
+        final chunkCount = bd.getUint32(dataStart + 18, Endian.little);
+        final chunkSize = bd.getUint32(dataStart + 22, Endian.little);
+        final totalSize = bd.getUint32(dataStart + 30, Endian.little);
+        if (commentType != 1 ||
+            commentVersion != 0x00010000 ||
+            chunkCount == 0 ||
+            chunkSize > dataLength - 34 ||
+            totalSize == 0 ||
+            totalSize > bytes.length) {
+          reset();
+        } else if (expectedChunks != null &&
+            (expectedChunks != chunkCount || expectedSize != totalSize)) {
+          reset();
+        } else {
+          expectedChunks ??= chunkCount;
+          expectedSize ??= totalSize;
+          payload.add(bytes.sublist(
+            dataStart + 34,
+            dataStart + 34 + chunkSize,
+          ));
+          chunksRead++;
+          if (chunksRead == expectedChunks) {
+            final emf = Uint8List.fromList(payload.takeBytes());
+            if (emf.length == expectedSize && looksLikeEmf(emf)) return emf;
+            reset();
+          }
+        }
+      }
+    }
+    pos = recordEnd;
+  }
+  return null;
+}
 
 /// Parse placeable or standard WMF bytes into a paint list, or `null`.
 MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
