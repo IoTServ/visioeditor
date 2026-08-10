@@ -65,6 +65,8 @@ const int _emrFillPath = 62;
 const int _emrStrokeAndFillPath = 63;
 const int _emrStrokePath = 64;
 const int _emrAbortPath = 68;
+const int _emrFillRgn = 71;
+const int _emrPaintRgn = 74;
 const int _emrBitBlt = 76;
 const int _emrStretchBlt = 77;
 const int _emrMaskBlt = 78;
@@ -1049,6 +1051,61 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     }
   }
 
+  _EmfBrush? regionBrush(int? handle) {
+    if (handle == null) {
+      return _EmfBrush(brushStyle, brushColor, brushHatch);
+    }
+    if (handle & 0x80000000 != 0) {
+      final stock = handle & 0x7fffffff;
+      const colors = <int>[
+        0xFFFFFFFF,
+        0xFFC0C0C0,
+        0xFF808080,
+        0xFF666666,
+        0xFF000000,
+      ];
+      if (stock < colors.length) return _EmfBrush(0, colors[stock], 0);
+      return null; // NULL_BRUSH and non-brush stock objects do not paint.
+    }
+    if (handle >= objects.length) return null;
+    final object = objects[handle];
+    return object is _EmfBrush ? object : null;
+  }
+
+  void emitRegion(int regionStart, int regionLength, int? brushHandle) {
+    final brush = regionBrush(brushHandle);
+    if (brush == null || (brush.style != 0 && brush.style != 2)) return;
+    final contours = _readEmfRegionContours(
+      bd,
+      regionStart,
+      regionLength,
+      emf.length,
+    );
+    if (contours.isEmpty) return;
+    for (final contour in contours) {
+      ensurePts(contour);
+    }
+    ops.add(MetafilePathOp(
+      points: contours.first,
+      closed: true,
+      fill: true,
+      stroke: false,
+      fillArgb: brush.color,
+      strokeArgb: 0,
+      strokeWidth: 0,
+      fillHatch: brush.style == 2 ? brush.hatch : null,
+      fillBackgroundArgb:
+          brush.style == 2 && backgroundMode == 2 ? backgroundColor : null,
+      additionalContours: <MetafilePathContour>[
+        for (final contour in contours.skip(1))
+          MetafilePathContour(points: contour, closed: true),
+      ],
+      // RGNDATA rectangles describe their union. A non-zero fill prevents
+      // overlapping bands from punching accidental even-odd holes.
+      evenOddFill: false,
+    ));
+  }
+
   var offset = hdrSize;
   while (offset + 8 <= emf.length) {
     final t = bd.getUint32(offset, Endian.little);
@@ -1182,6 +1239,21 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       textColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetTextAlign && params + 4 <= recEnd) {
       textAlign = bd.getUint32(params, Endian.little);
+    } else if (t == _emrFillRgn && params + 24 <= recEnd) {
+      // Bounds (16), cbRgnData (4), ihBrush (4), RGNDATA. LibreOffice uses
+      // the referenced brush temporarily without changing the selected DC
+      // brush, then paints the complete rectangle region as one poly-polygon.
+      final regionLength = bd.getUint32(params + 16, Endian.little);
+      final brushHandle = bd.getUint32(params + 20, Endian.little);
+      if (regionLength <= recEnd - (params + 24)) {
+        emitRegion(params + 24, regionLength, brushHandle);
+      }
+    } else if (t == _emrPaintRgn && params + 20 <= recEnd) {
+      // PAINTRGN has no brush handle; it uses the brush selected in the DC.
+      final regionLength = bd.getUint32(params + 16, Endian.little);
+      if (regionLength <= recEnd - (params + 20)) {
+        emitRegion(params + 20, regionLength, null);
+      }
     } else if (t == _emrCreatePen && params + 20 <= recEnd) {
       final ih = bd.getInt32(params, Endian.little);
       final style = bd.getUint32(params + 4, Endian.little);
@@ -1934,6 +2006,56 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     maxY: maxY,
     ops: ops,
   );
+}
+
+/// Read an EMF RGNDATA rectangle union.
+///
+/// This follows LibreOffice `ImplReadRegion`: require the 32-byte
+/// RGNDATAHEADER, accept only RDH_RECTANGLES, and reject a short rectangle
+/// array as a whole so a damaged record cannot consume the next EMF record.
+List<List<MetafilePoint>> _readEmfRegionContours(
+  ByteData data,
+  int start,
+  int length,
+  int streamLength,
+) {
+  if (length < 32 || start < 0 || start > streamLength - 32) {
+    return const <List<MetafilePoint>>[];
+  }
+  final end = start + length;
+  if (end < start || end > streamLength) {
+    return const <List<MetafilePoint>>[];
+  }
+  final headerSize = data.getUint32(start, Endian.little);
+  final regionType = data.getUint32(start + 4, Endian.little);
+  final rectangleCount = data.getUint32(start + 8, Endian.little);
+  final regionSize = data.getUint32(start + 12, Endian.little);
+  if (headerSize != 32 ||
+      regionType != 1 ||
+      rectangleCount == 0 ||
+      rectangleCount > (length - headerSize) ~/ 16 ||
+      rectangleCount > regionSize ~/ 16 ||
+      regionSize > length - headerSize) {
+    return const <List<MetafilePoint>>[];
+  }
+
+  final contours = <List<MetafilePoint>>[];
+  var position = start + headerSize;
+  for (var i = 0; i < rectangleCount; i++) {
+    final left = data.getInt32(position, Endian.little).toDouble();
+    final top = data.getInt32(position + 4, Endian.little).toDouble();
+    final right = data.getInt32(position + 8, Endian.little).toDouble();
+    final bottom = data.getInt32(position + 12, Endian.little).toDouble();
+    position += 16;
+    if (left == right || top == bottom) continue;
+    contours.add(<MetafilePoint>[
+      MetafilePoint(left, top),
+      MetafilePoint(right, top),
+      MetafilePoint(right, bottom),
+      MetafilePoint(left, bottom),
+    ]);
+  }
+  return contours;
 }
 
 void _store(List<_EmfObject?> objects, int ih, _EmfObject obj) {

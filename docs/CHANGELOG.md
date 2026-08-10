@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF/OLE previews now replay `EMR_FILLRGN` and `EMR_PAINTRGN` rectangle
+  regions with the referenced or current GDI brush (including stock and hatch
+  brushes). Region unions reach both Canvas and SVG/PDF, malformed `RGNDATA`
+  is isolated without dropping later records, and the original media remains
+  byte-identical across `.vsdx` save/reopen.
 - Hover-connect arrows no longer vanish before the pointer reaches them: the
   hover is now kept alive across the whole halo around a shape (its box plus
   the arrow reach), removing the dead zone between the shape's edge and the
