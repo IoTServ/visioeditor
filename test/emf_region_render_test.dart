@@ -88,4 +88,46 @@ void main() {
     expect(argbAt(75, 75), 0x00000000);
     image.dispose();
   });
+
+  test('Canvas rasterizer applies ROP2 invert to later paths', () async {
+    const points = <MetafilePoint>[
+      MetafilePoint(0, 0),
+      MetafilePoint(20, 0),
+      MetafilePoint(20, 20),
+      MetafilePoint(0, 20),
+    ];
+    final drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 20,
+      maxY: 20,
+      ops: <Object>[
+        const MetafilePathOp(
+          points: points,
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0xffff0000,
+          strokeArgb: 0,
+          strokeWidth: 0,
+        ),
+        const MetafilePathOp(
+          points: points,
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0xffffffff,
+          strokeArgb: 0,
+          strokeWidth: 0,
+          rasterOperation: MetafileRasterOperation.invert,
+        ),
+      ],
+    );
+    final image = await rasterizeMetafileDrawing(drawing, maxEdge: 20);
+    final bytes = await image!.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(bytes!.getUint8(10 * 4), 0); // red channel after inversion
+    expect(bytes.getUint8(10 * 4 + 1), 255);
+    expect(bytes.getUint8(10 * 4 + 2), 255);
+    image.dispose();
+  });
 }

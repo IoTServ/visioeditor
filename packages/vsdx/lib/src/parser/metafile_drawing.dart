@@ -44,6 +44,13 @@ class MetafileRect {
 /// GDI clipping operation retained in metafile paint order.
 enum MetafileClipCombineMode { intersect, exclude }
 
+/// GDI ROP2 foreground mix modes retained for vector paint operations.
+///
+/// LibreOffice maps R2_NOT (6) to invert, R2_XORPEN (7) to xor, and
+/// R2_NOP (11) to transparent output; the remaining ROP2 values use the
+/// normal overpaint path in its metafile renderer.
+enum MetafileRasterOperation { overpaint, invert, xor, nop }
+
 /// Save the current GDI device context before later state or clip changes.
 @immutable
 class MetafileSaveDcOp {
@@ -204,6 +211,7 @@ class MetafilePathOp {
     this.fillBackgroundArgb,
     this.additionalContours = const <MetafilePathContour>[],
     this.evenOddFill = false,
+    this.rasterOperation = MetafileRasterOperation.overpaint,
   });
 
   final List<MetafilePoint> points;
@@ -240,6 +248,9 @@ class MetafilePathOp {
 
   /// GDI `ALTERNATE` polygon fill mode; false represents `WINDING`.
   final bool evenOddFill;
+
+  /// The ROP2 mode active when this path was painted.
+  final MetafileRasterOperation rasterOperation;
 }
 
 /// Convert the low `PS_STYLE_MASK` bits of a GDI pen into dash/gap lengths.

@@ -66,6 +66,27 @@ Uint8List _clippedEmf() {
   return Uint8List.fromList(out.toBytes());
 }
 
+Uint8List _rop2Emf() {
+  final out = BytesBuilder();
+  final header = ByteData(88)
+    ..setUint32(0, 1, Endian.little)
+    ..setUint32(4, 88, Endian.little)
+    ..setInt32(16, 100, Endian.little)
+    ..setInt32(20, 100, Endian.little)
+    ..setUint32(40, 0x464d4520, Endian.little);
+  out.add(header.buffer.asUint8List());
+  _brush(out, 1, 0x000000ff);
+  _rectRecord(out, 43, 0, 0, 20, 20);
+  final invert = ByteData(4)..setUint32(0, 6, Endian.little);
+  _record(out, 20, invert.buffer.asUint8List()); // R2_NOT
+  _rectRecord(out, 43, 25, 0, 45, 20);
+  final nop = ByteData(4)..setUint32(0, 11, Endian.little);
+  _record(out, 20, nop.buffer.asUint8List()); // R2_NOP
+  _rectRecord(out, 43, 0, 25, 20, 45);
+  _record(out, 14, Uint8List(0));
+  return Uint8List.fromList(out.toBytes());
+}
+
 VsdxPage _page(String part) => VsdxPage(
       id: 0,
       name: 'P',
@@ -127,6 +148,47 @@ void main() {
     expect(
       parseEmfDrawing(image.bytes)!.ops.whereType<MetafileClipRectOp>(),
       hasLength(2),
+    );
+  });
+
+  test('EMR_SETROP2 follows LibreOffice invert/xor/nop state mapping', () {
+    final payload = _rop2Emf();
+    final drawing = parseEmfDrawing(payload)!;
+    final paths = drawing.ops.whereType<MetafilePathOp>().toList();
+    expect(paths, hasLength(3));
+    expect(paths[0].rasterOperation, MetafileRasterOperation.overpaint);
+    expect(paths[1].rasterOperation, MetafileRasterOperation.invert);
+    expect(paths[2].rasterOperation, MetafileRasterOperation.nop);
+    final svg = VsdxToSvgSerializer().serializePage(
+      _page('/visio/media/rop2.emf'),
+      images: ImageRegistry.empty.withImage(VsdxImage(
+        partName: '/visio/media/rop2.emf',
+        bytes: payload,
+        mimeType: 'image/x-emf',
+      )),
+    );
+    expect(svg, contains('mix-blend-mode:difference'));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    document = document
+        .copyWith(
+          images: ImageRegistry.empty.withImage(VsdxImage(
+            partName: '/visio/media/rop2.emf',
+            bytes: payload,
+            mimeType: 'image/x-emf',
+          )),
+        )
+        .replacePage(0, _page('/visio/media/rop2.emf'));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: document,
+    ));
+    expect(
+      reopened.images.findByPart('/visio/media/rop2.emf')!.bytes,
+      payload,
     );
   });
 }

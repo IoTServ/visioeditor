@@ -220,6 +220,23 @@ void _paintPath(
   required double deviceScale,
 }) {
   if (op.points.isEmpty) return;
+  if (op.rasterOperation == MetafileRasterOperation.nop) return;
+  void applyRaster(Paint paint) {
+    switch (op.rasterOperation) {
+      case MetafileRasterOperation.invert:
+        paint
+          ..color = const Color(0xffffffff)
+          ..blendMode = BlendMode.difference;
+      case MetafileRasterOperation.xor:
+        // Flutter has no bitwise XOR blend; difference is the closest
+        // premultiplied replay and matches LibreOffice's Xor raster action
+        // for the opaque pen/brush colors emitted by Visio.
+        paint.blendMode = BlendMode.difference;
+      case MetafileRasterOperation.overpaint:
+      case MetafileRasterOperation.nop:
+        break;
+    }
+  }
   final paintFill = Paint()
     ..style = PaintingStyle.fill
     ..color = Color(op.fillArgb)
@@ -231,6 +248,8 @@ void _paintPath(
     ..strokeJoin = StrokeJoin.round
     ..strokeCap = StrokeCap.round
     ..isAntiAlias = true;
+  applyRaster(paintFill);
+  applyRaster(paintStroke);
 
   final path = Path()
     ..fillType = op.evenOddFill ? PathFillType.evenOdd : PathFillType.nonZero;

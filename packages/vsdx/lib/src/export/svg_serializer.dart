@@ -3622,8 +3622,17 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     if (op.points.isEmpty) return;
-    final fill = fillOverride ?? (op.fill ? _argbCss(op.fillArgb) : 'none');
-    final stroke = op.stroke ? _argbCss(op.strokeArgb) : 'none';
+    if (op.rasterOperation == MetafileRasterOperation.nop) return;
+    final invert = op.rasterOperation == MetafileRasterOperation.invert;
+    final difference = invert ||
+        op.rasterOperation == MetafileRasterOperation.xor;
+    final fill = invert
+        ? (op.fill ? '#ffffff' : 'none')
+        : (fillOverride ?? (op.fill ? _argbCss(op.fillArgb) : 'none'));
+    final stroke = invert
+        ? (op.stroke ? '#ffffff' : 'none')
+        : (op.stroke ? _argbCss(op.strokeArgb) : 'none');
+    final blend = difference ? ' style="mix-blend-mode:difference"' : '';
     final sw =
         op.stroke ? ' stroke-width="${_n(math.max(op.strokeWidth, 0.5))}"' : '';
     final dashPattern = op.strokeDashPattern;
@@ -3654,14 +3663,14 @@ class VsdxToSvgSerializer {
           '$indent<rect x="${_n(minX)}" y="${_n(minY)}" '
           'width="${_n(maxX - minX)}" height="${_n(maxY - minY)}" '
           'rx="${_n(cornerRx)}" ry="${_n(cornerRy)}" '
-          'fill="$fill" stroke="$stroke"$sw$dash$fillRule/>',
+          'fill="$fill" stroke="$stroke"$sw$dash$fillRule$blend/>',
         );
         return;
       }
       buf.writeln(
         '$indent<ellipse cx="${_n(cx)}" cy="${_n(cy)}" '
         'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"'
-        '$sw$dash$fillRule/>',
+        '$sw$dash$fillRule$blend/>',
       );
       return;
     }
@@ -3681,7 +3690,7 @@ class VsdxToSvgSerializer {
     }
     buf.writeln(
       '$indent<path d="$d" fill="$fill" stroke="$stroke"'
-      '$sw$dash$fillRule/>',
+      '$sw$dash$fillRule$blend/>',
     );
   }
 

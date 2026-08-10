@@ -31,6 +31,7 @@ const int _emrSetPixelV = 15;
 const int _emrSetMapMode = 17;
 const int _emrSetBkMode = 18;
 const int _emrSetPolyFillMode = 19;
+const int _emrSetRop2 = 20;
 const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
 const int _emrSetBkColor = 25;
@@ -161,6 +162,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var backgroundMode = 1; // TRANSPARENT
   var backgroundColor = 0xFFFFFFFF;
   var polyFillMode = 1; // ALTERNATE (even-odd)
+  var rasterOperation = MetafileRasterOperation.overpaint;
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
@@ -266,6 +268,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
         polyFillMode: polyFillMode,
+        rasterOperation: rasterOperation,
         textAlign: textAlign,
         fontFace: fontFace,
         fontHeight: fontHeight,
@@ -313,6 +316,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     backgroundMode = state.backgroundMode;
     backgroundColor = state.backgroundColor;
     polyFillMode = state.polyFillMode;
+    rasterOperation = state.rasterOperation;
     textAlign = state.textAlign;
     fontFace = state.fontFace;
     fontHeight = state.fontHeight;
@@ -470,6 +474,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           ),
       ],
       evenOddFill: polyFillMode != 2,
+      rasterOperation: rasterOperation,
     ));
   }
 
@@ -497,6 +502,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
         evenOddFill: polyFillMode != 2,
+        rasterOperation: rasterOperation,
       ));
     }
   }
@@ -531,6 +537,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillBackgroundArgb:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
         evenOddFill: polyFillMode != 2,
+        rasterOperation: rasterOperation,
       ));
     }
   }
@@ -563,6 +570,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       fillHatch: hatch,
       fillBackgroundArgb: hatchBackground,
       evenOddFill: polyFillMode != 2,
+      rasterOperation: rasterOperation,
     ));
   }
 
@@ -836,6 +844,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             ? backgroundColor
             : null,
         evenOddFill: polyFillMode != 2,
+        rasterOperation: rasterOperation,
       ));
     }
     if (updateCurrent) curPt = arc.last;
@@ -1103,6 +1112,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       // RGNDATA rectangles describe their union. A non-zero fill prevents
       // overlapping bands from punching accidental even-odd holes.
       evenOddFill: false,
+      rasterOperation: rasterOperation,
     ));
   }
 
@@ -1218,6 +1228,13 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     } else if (t == _emrSetPolyFillMode && params + 4 <= recEnd) {
       final mode = bd.getUint32(params, Endian.little);
       if (mode == 1 || mode == 2) polyFillMode = mode;
+    } else if (t == _emrSetRop2 && params + 4 <= recEnd) {
+      rasterOperation = switch (bd.getUint32(params, Endian.little)) {
+        6 => MetafileRasterOperation.invert, // R2_NOT
+        7 => MetafileRasterOperation.xor, // R2_XORPEN
+        11 => MetafileRasterOperation.nop, // R2_NOP
+        _ => MetafileRasterOperation.overpaint,
+      };
     } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
       backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if ((t == _emrExcludeClipRect || t == _emrIntersectClipRect) &&
@@ -1651,6 +1668,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillBackgroundArgb:
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
           evenOddFill: polyFillMode != 2,
+          rasterOperation: rasterOperation,
         ));
       }
     } else if ((t == _emrRectangle || t == _emrEllipse) &&
@@ -1690,6 +1708,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillBackgroundArgb:
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
           evenOddFill: polyFillMode != 2,
+          rasterOperation: rasterOperation,
         ));
       }
     } else if ((t == _emrBitBlt ||
@@ -2242,6 +2261,7 @@ class _EmfDcState {
     required this.backgroundMode,
     required this.backgroundColor,
     required this.polyFillMode,
+    required this.rasterOperation,
     required this.textAlign,
     required this.fontFace,
     required this.fontHeight,
@@ -2277,6 +2297,7 @@ class _EmfDcState {
   final int backgroundMode;
   final int backgroundColor;
   final int polyFillMode;
+  final MetafileRasterOperation rasterOperation;
   final int textAlign;
   final String? fontFace;
   final double fontHeight;

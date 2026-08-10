@@ -583,6 +583,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF vector replay now preserves `EMR_SETROP2` state per path, matching
+  LibreOffice's invert, xor, and no-op modes in Canvas and SVG output.
 - EMF/OLE previews now replay `EMR_FILLRGN` and `EMR_PAINTRGN` rectangle
   regions with the referenced or current GDI brush (including stock and hatch
   brushes). Region unions reach both Canvas and SVG/PDF, malformed `RGNDATA`
