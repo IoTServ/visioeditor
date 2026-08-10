@@ -48,9 +48,25 @@ dev_dependencies:
   # platform (macOS / Android / iOS / Web / Windows / Linux).
   image: ^4.3.0
   archive: ^3.6.1
+  msix: ^3.18.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/examples/
     - assets/materials/
+
+# Microsoft Store (Windows) packaging — Product identity from Partner Center.
+# Build: dart run msix:create
+msix_config:
+  display_name: Flowcharts Editor
+  publisher_display_name: OpenIoTHub Cloud
+  identity_name: 38916OpenIoTHubCloud.FlowchartsEditor
+  publisher: CN=5F64CEA2-463E-41A3-AE89-6979242A61DF
+  msix_version: 1.0.1.6
+  store: true
+  languages: en-us
+  capabilities: internetClient
+  file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd
+  logo_path: macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png
+  trim_logo: false

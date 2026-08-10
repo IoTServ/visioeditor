@@ -1,23 +1,37 @@
-# Windows file association
+# Windows packaging
 
-`flutter build windows` produces an unpackaged runner; Windows file
-associations live in the **registry** and are set at install/packaging time,
-not by the Flutter build. Two supported ways:
+`flutter build windows` produces an unpackaged runner. For Microsoft Store
+distribution, package as MSIX. For local/dev installs, use the registry file.
 
-## Option A — MSIX (recommended for distribution)
+Windows product name: **Flowcharts Editor** (other platforms keep
+"Editor for Visio Diagrams").
 
-Package with the [`msix`](https://pub.dev/packages/msix) tool and declare the
-associations in `pubspec.yaml`:
+## Option A — MSIX (Microsoft Store)
 
-```yaml
-msix_config:
-  display_name: Editor for Visio Diagrams
-  identity_name: cloud.iothub.visioeditor
-  file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd
+Identity and packaging live in `pubspec.yaml` under `msix_config` (must match
+Partner Center → Product management → Product identity). Reference copy:
+`store/microsoft-store/`.
+
+```bash
+# On a Windows machine with Flutter:
+dart run msix:create
 ```
 
-Then `dart run msix:create`. The installer registers the extensions and points
-them at the packaged executable — no manual registry edits.
+Key fields (see `pubspec.yaml` for the full block):
+
+| Field | Value |
+| --- | --- |
+| display_name | Flowcharts Editor |
+| identity_name | 38916OpenIoTHubCloud.FlowchartsEditor |
+| publisher | CN=5F64CEA2-463E-41A3-AE89-6979242A61DF |
+| publisher_display_name | OpenIoTHub Cloud |
+| store | true |
+| file_extension | .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd |
+
+`store: true` produces a Store-uploadable package (Microsoft signs it after
+upload). Bump `msix_version` (a.b.c.d) with each Store submission; keep it in
+sync with `version:` in `pubspec.yaml` when possible (e.g. `1.0.1+6` →
+`1.0.1.6`).
 
 ## Option B — Registry (dev / manual / Inno Setup)
 

@@ -1,0 +1,10 @@
+# Microsoft Partner Center — Product identity
+# App (Windows): Flowcharts Editor
+# Keep in sync with pubspec.yaml → msix_config
+
+Package/Identity/Name=38916OpenIoTHubCloud.FlowchartsEditor
+Package/Identity/Publisher=CN=5F64CEA2-463E-41A3-AE89-6979242A61DF
+Package/Properties/PublisherDisplayName=OpenIoTHub Cloud
+Package Family Name (PFN)=38916OpenIoTHubCloud.FlowchartsEditor_n13avf7sg128e
+Package SID=S-1-15-2-2805370671-1377987770-2996716972-3114799574-3546535731-2894187432-2362010890
+Store ID=9P358XB93V5L

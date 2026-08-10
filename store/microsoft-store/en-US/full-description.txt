@@ -1,0 +1,31 @@
+Flowcharts Editor is a native Microsoft Visio (.vsdx) editor for creating, opening, and editing professional diagrams — without converting them to images or losing structure.
+
+Work with real Visio files. Open .vsdx drawings, edit shapes and connectors on a modern canvas, and save changes back with high fidelity so your diagrams stay editable and compatible.
+
+CREATE & EDIT
+• Start a blank diagram or open existing .vsdx files
+• Draw rectangles, ellipses, lines, and glued connectors
+• Drop flowchart and technical shapes from a searchable stencil library
+• Move, resize, rotate, align, group, and arrange shapes with precision
+• Use smart guides, grid snapping, and multi-select for clean layouts
+• Edit labels, styles, themes, and diagram properties
+
+BUILT FOR REAL DIAGRAMS
+• Flowcharts and process maps
+• System and microservices architecture
+• Network diagrams
+• Org charts, ERD, UML, BPMN, and swimlanes
+• Multi-page drawings with tabbed editing
+
+AI-ASSISTED DIAGRAMMING
+• Create diagrams from natural language with the built-in AI assistant
+• Support for OpenAI-compatible, Anthropic, Gemini, and Ollama engines
+• Turn ideas, Mermaid, or validated diagram specs into editable .vsdx drawings
+
+WHY FLOWCHARTS EDITOR
+• Native .vsdx round-trip — not just a viewer
+• Clean, modern Windows interface
+• Light and dark appearance, customizable theme colors
+• Designed for developers, architects, analysts, and anyone who works with Visio files
+
+Open Visio diagrams. Edit them natively. Save with confidence.

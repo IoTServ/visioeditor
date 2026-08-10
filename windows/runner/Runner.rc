@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "cloud.iothub.visioeditor" "\0"
-            VALUE "FileDescription", "Editor for Visio Diagrams" "\0"
+            VALUE "CompanyName", "OpenIoTHub Cloud" "\0"
+            VALUE "FileDescription", "Flowcharts Editor" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "visioeditor" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 cloud.iothub.visioeditor. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 OpenIoTHub Cloud. All rights reserved." "\0"
             VALUE "OriginalFilename", "visioeditor.exe" "\0"
-            VALUE "ProductName", "Editor for Visio Diagrams" "\0"
+            VALUE "ProductName", "Flowcharts Editor" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

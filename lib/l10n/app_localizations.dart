@@ -108,7 +108,14 @@ class AppLocalizations {
   }
 
   // --- Shell ---
-  String get appTitle => _t('appTitle');
+  /// Windows Store product name is "Flowcharts Editor"; other platforms keep
+  /// the cross-platform "Editor for Visio Diagrams" brand.
+  String get appTitle {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return 'Flowcharts Editor';
+    }
+    return _t('appTitle');
+  }
   String get settings => _t('settings');
   String get settingsTooltip => _t('settingsTooltip');
   String get more => _t('more');

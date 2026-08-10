@@ -1,6 +1,6 @@
 Windows Registry Editor Version 5.00
 
-; File association for Editor for Visio Diagrams (per-user, HKCU).
+; File association for Flowcharts Editor (per-user, HKCU).
 ; BEFORE IMPORTING: replace every C:\\Path\\To\\visioeditor.exe below with the
 ; real path to the built executable (e.g. the Release runner or install dir).
 ; Double-clicking a .vsdx / .vsd then launches the app with the file path as argv[1].

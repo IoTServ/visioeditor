@@ -66,4 +66,35 @@ void main() {
     expect(linux, contains('fl_dart_project_set_dart_entrypoint_arguments'));
     expect(windows, contains('project.set_dart_entrypoint_arguments'));
   });
+
+  test('Windows MSIX Store identity matches Partner Center', () {
+    final pubspec = _read('pubspec.yaml');
+    final identity = _read('store/microsoft-store/product-identity.txt');
+    final runnerRc = _read('windows/runner/Runner.rc');
+    final mainCpp = _read('windows/runner/main.cpp');
+
+    expect(pubspec, contains('msix_config:'));
+    expect(pubspec, contains('display_name: Flowcharts Editor'));
+    expect(
+      pubspec,
+      contains('identity_name: 38916OpenIoTHubCloud.FlowchartsEditor'),
+    );
+    expect(
+      pubspec,
+      contains('publisher: CN=5F64CEA2-463E-41A3-AE89-6979242A61DF'),
+    );
+    expect(pubspec, contains('publisher_display_name: OpenIoTHub Cloud'));
+    expect(pubspec, contains('store: true'));
+    expect(pubspec, contains('.vsdx'));
+    expect(pubspec, contains('.vsd'));
+
+    expect(
+      identity,
+      contains('38916OpenIoTHubCloud.FlowchartsEditor_n13avf7sg128e'),
+    );
+    expect(identity, contains('Store ID=9P358XB93V5L'));
+
+    expect(runnerRc, contains('Flowcharts Editor'));
+    expect(mainCpp, contains('Flowcharts Editor'));
+  });
 }
