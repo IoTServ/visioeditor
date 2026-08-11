@@ -10,3 +10,7 @@ coverage (ConnectList `0x72`, Hyperlink `0xc4`, edge-case CFB chunks).
 
 Do not redistribute these as product assets. Prefer regenerating from upstream
 POI when refreshing fixtures.
+
+`visio_with_embeded.vsd` is also the LibreOffice visual-parity fixture for
+PNG, OLE2, Excel chart/table, WMF and EMF rendering. Its SHA-256 is
+`ce31a269ff6ca0b8a25394c8ae81114895a2eafb4328d72fc9b9450d79a48cf5`.

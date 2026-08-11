@@ -1178,6 +1178,23 @@ void main() {
       expect(drawing!.ops.whereType<MetafilePathOp>(), isNotEmpty);
     });
 
+    test('OLE workbook detection matches embedded Excel chart and sheet', () {
+      final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
+          .readAsBytesSync();
+      final doc = parseVisio(vsd).document;
+      final workbookParts = doc.images.all
+          .where((image) => isOleWorkbook(image.bytes))
+          .map((image) => image.partName)
+          .toSet();
+      expect(
+        workbookParts,
+        containsAll(<String>[
+          '/visio/media/image2.bin',
+          '/visio/media/image6.bin',
+        ]),
+      );
+    });
+
     test('OLE Excel preview retains source-less PATCOPY fill bands', () {
       final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
           .readAsBytesSync();

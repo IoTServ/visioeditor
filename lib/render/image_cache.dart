@@ -108,7 +108,12 @@ class VsdxImageCache extends ChangeNotifier {
         partName: src.partName,
       );
       if (drawing != null && !drawing.isEmpty) {
-        final image = await rasterizeMetafileDrawing(drawing);
+        final image = await rasterizeMetafileDrawing(
+          drawing,
+          backgroundColor: isOleWorkbook(metafileBytes)
+              ? const ui.Color(libreOfficeOleWorkbookBackgroundArgb)
+              : const ui.Color(0x00000000),
+        );
         if (image != null) {
           _ready[src.partName] = image;
           _decodeEpoch++;

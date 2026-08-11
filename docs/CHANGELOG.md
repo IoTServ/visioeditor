@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Embedded Excel chart and sheet OLE previews now detect their Workbook/Book
+  streams and composite the transparent WMF/EMF presentation on LibreOffice's
+  classic Blue 2 surface (`#729FCF`). Variable-length OLE presentation headers
+  are scanned for validated WMF payloads, and the Apache POI
+  `visio_with_embeded.vsd` fixture now has a 144-DPI pixel regression.
 - EMF text replay now retains `EMR_SETTEXTJUSTIFICATION` through DC state and
   distributes the authored extra break width consistently in Canvas and
   SVG/PDF, while preserving the original media on `.vsdx` save/reopen.

@@ -10,6 +10,23 @@ import 'dart:typed_data';
 
 import 'emf_vector_parser.dart';
 import 'vsd/cfb/compound_file.dart';
+import 'wmf_parser.dart';
+
+/// LibreOffice renders embedded Excel chart/sheet previews on its classic
+/// "Blue 2" OLE presentation surface before compositing their transparent
+/// WMF/EMF foreground.
+const int libreOfficeOleWorkbookBackgroundArgb = 0xff729fcf;
+
+/// Whether [oleBytes] is an embedded Excel workbook package.
+bool isOleWorkbook(Uint8List oleBytes) {
+  if (!looksLikeCfb(oleBytes)) return false;
+  try {
+    final cfb = CompoundFile.open(oleBytes);
+    return cfb.hasEntry('Workbook') || cfb.hasEntry('Book');
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Pull EMF/WMF presentation bytes out of an OLE2 package, or `null`.
 Uint8List? extractOlePresentationMetafile(Uint8List oleBytes) {
@@ -28,6 +45,14 @@ Uint8List? extractOlePresentationMetafile(Uint8List oleBytes) {
       final emfOff = findEmfOffset(data);
       if (emfOff != null) {
         return data.sublist(emfOff);
+      }
+      // OLE presentation headers vary between Office and Equation versions.
+      // Validate each plausible even-aligned prefix instead of assuming that
+      // a WMF payload always begins at byte 0 or byte 40.
+      final scanEnd = data.length < 512 ? data.length : 512;
+      for (var offset = 0; offset + 18 <= scanEnd; offset += 2) {
+        final candidate = Uint8List.sublistView(data, offset);
+        if (looksLikeWmf(candidate)) return candidate;
       }
       // Placeable WMF
       if (data.length > 22 &&

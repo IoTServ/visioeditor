@@ -16,6 +16,7 @@ import 'dash_path.dart';
 Future<ui.Image?> rasterizeMetafileDrawing(
   MetafileDrawing drawing, {
   int maxEdge = 2048,
+  Color backgroundColor = const Color(0x00000000),
 }) async {
   if (drawing.isEmpty) return null;
   final bitmapImages = <MetafileBitmapOp, ui.Image>{};
@@ -57,7 +58,7 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   final canvas = Canvas(recorder);
   canvas.drawRect(
     Rect.fromLTWH(0, 0, pxW.toDouble(), pxH.toDouble()),
-    Paint()..color = const Color(0x00000000),
+    Paint()..color = backgroundColor,
   );
   canvas.scale(scale, scale);
   canvas.translate(-drawing.minX, -drawing.minY);

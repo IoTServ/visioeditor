@@ -1620,3 +1620,7 @@ Copy/Paste Style 与独立默认 Edge 样式。新增路径、导出、往返、
   和应用内帮助，覆盖旧有 Agent live preview、MCP、CLI、Agent Skill 的启用与使用方式；
   新增独立 `docs/AI_INTEGRATION.md`。macOS 增加 outbound network entitlement，并补四类
   协议封装、响应解析、错误脱敏、配置持久化、对话建图与窄屏布局回归。
+- 2026-08-11 — **OLE 嵌入图表/表格对齐 LibreOffice**：复用 Apache POI
+  `visio_with_embeded.vsd` 素材，识别 OLE CFB 的 Workbook/Book 流并在 `#729FCF`
+  Blue 2 承载面上合成透明 WMF/EMF 预览；兼容可变长度 Presentation 头，并以
+  144 DPI 精确蓝色像素和本机 LibreOffice 语料对比覆盖解析、画布与 PNG 导出。
