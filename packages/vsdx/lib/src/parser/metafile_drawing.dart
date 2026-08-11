@@ -330,6 +330,8 @@ class MetafileTextOp {
     this.clipRect,
     this.advancesX,
     this.advancesY,
+    this.justificationExtra = 0,
+    this.justificationBreakCount = 0,
     this.fontWeight = 400,
     this.italic = false,
     this.underline = false,
@@ -367,6 +369,13 @@ class MetafileTextOp {
   /// Optional vertical component used by `ETO_PDY` records.
   final List<double>? advancesY;
 
+  /// Total extra logical width distributed over break characters by
+  /// `EMR_SETTEXTJUSTIFICATION`.
+  final double justificationExtra;
+
+  /// Number of break characters that share [justificationExtra].
+  final int justificationBreakCount;
+
   /// GDI LOGFONT styling retained independently of the host font backend.
   final int fontWeight;
   final bool italic;
@@ -397,16 +406,17 @@ MetafilePoint metafileTextUpdatedCurrentPoint(MetafileTextOp op) {
   final advanceX = hasAdvances
       ? xAdvances.fold<double>(0, (sum, advance) => sum + advance)
       : op.fontHeight.abs() * 0.55 * glyphCount;
+  final justifiedAdvanceX = advanceX + metafileTextJustificationWidth(op);
   final advanceY = hasAdvances && yAdvances != null
       ? yAdvances.fold<double>(0, (sum, advance) => sum + advance)
       : 0.0;
-  final width = advanceX.abs();
+  final width = justifiedAdvanceX.abs();
   final alignedX = switch (op.align & 0x06) {
     6 => -width / 2,
     2 => -width,
     _ => 0.0,
   };
-  final dx = alignedX + advanceX;
+  final dx = alignedX + justifiedAdvanceX;
   final angle = op.escapementDegrees * math.pi / 180;
   final cosA = math.cos(angle);
   final sinA = math.sin(angle);
@@ -414,6 +424,22 @@ MetafilePoint metafileTextUpdatedCurrentPoint(MetafileTextOp op) {
     op.x + dx * cosA + advanceY * sinA,
     op.y - dx * sinA + advanceY * cosA,
   );
+}
+
+/// Per-break spacing requested by `EMR_SETTEXTJUSTIFICATION`.
+double metafileTextWordSpacing(MetafileTextOp op) {
+  if (!op.justificationExtra.isFinite || op.justificationBreakCount <= 0) {
+    return 0;
+  }
+  return op.justificationExtra / op.justificationBreakCount;
+}
+
+/// Extra width contributed by break characters actually present in [op].
+double metafileTextJustificationWidth(MetafileTextOp op) {
+  final spacing = metafileTextWordSpacing(op);
+  if (spacing == 0) return 0;
+  final breaks = op.text.runes.where((rune) => rune == 0x20).length;
+  return spacing * math.min(breaks, op.justificationBreakCount);
 }
 
 @immutable

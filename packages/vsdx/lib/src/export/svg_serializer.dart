@@ -3868,6 +3868,10 @@ class VsdxToSvgSerializer {
       _ => 'start',
     };
     final glyphs = op.text.runes.toList(growable: false);
+    final wordSpacing = metafileTextWordSpacing(op);
+    final wordSpacingAttr = wordSpacing == 0
+        ? ''
+        : ' word-spacing="${_n(wordSpacing)}"';
     final xAdvances = op.advancesX;
     final yAdvances = op.advancesY;
     final hasAdvances = xAdvances != null &&
@@ -3877,8 +3881,11 @@ class VsdxToSvgSerializer {
             (yAdvances.length == glyphs.length &&
                 yAdvances.every((advance) => advance.isFinite)));
     final textWidth = hasAdvances
-        ? xAdvances.fold<double>(0, (sum, advance) => sum + advance).abs()
-        : math.max(size * 0.55 * glyphs.length, size * 0.25);
+        ? (xAdvances.fold<double>(0, (sum, advance) => sum + advance) +
+                metafileTextJustificationWidth(op))
+            .abs()
+        : math.max(size * 0.55 * glyphs.length, size * 0.25) +
+            metafileTextJustificationWidth(op);
     final alignedX = switch (alignBits) {
       6 => -textWidth / 2,
       2 => -textWidth,
@@ -3917,6 +3924,7 @@ class VsdxToSvgSerializer {
       final positionedGlyphs = StringBuffer();
       var x = alignedX;
       var y = 0.0;
+      var justifiedBreaks = 0;
       for (var i = 0; i < glyphs.length; i++) {
         final glyphY = baselineY + (unflipGlyphs ? -y : y);
         positionedGlyphs.write(
@@ -3924,6 +3932,11 @@ class VsdxToSvgSerializer {
           '${_esc(String.fromCharCode(glyphs[i]))}</tspan>',
         );
         x += xAdvances[i];
+        if (glyphs[i] == 0x20 &&
+            justifiedBreaks < op.justificationBreakCount) {
+          x += wordSpacing;
+          justifiedBreaks++;
+        }
         if (yAdvances != null) y += yAdvances[i];
       }
       buf.writeln(
@@ -3931,6 +3944,7 @@ class VsdxToSvgSerializer {
         '$backgroundRect'
         '<text fill="${_argbCss(op.argb)}" font-family="$face" '
         'font-size="${_n(size)}" font-weight="$fontWeight"$fontStyle'
+        '$wordSpacingAttr'
         '$decorationAttr>$positionedGlyphs</text></g>$clipClose',
       );
       return;
@@ -3941,7 +3955,7 @@ class VsdxToSvgSerializer {
       '<text x="0" y="${_n(baselineY)}" text-anchor="$anchor" '
       'fill="${_argbCss(op.argb)}" '
       'font-family="$face" font-size="${_n(size)}" '
-      'font-weight="$fontWeight"$fontStyle$decorationAttr>'
+      'font-weight="$fontWeight"$fontStyle$wordSpacingAttr$decorationAttr>'
       '${_esc(op.text)}</text></g>$clipClose',
     );
   }

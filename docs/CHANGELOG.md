@@ -583,6 +583,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF text replay now retains `EMR_SETTEXTJUSTIFICATION` through DC state and
+  distributes the authored extra break width consistently in Canvas and
+  SVG/PDF, while preserving the original media on `.vsdx` save/reopen.
 - EMF region replay now renders `EMR_FRAMERGN` brush borders and
   `EMR_INVERTRGN` difference fills in Canvas and SVG/PDF, including compound
   rectangle unions and byte-identical `.vsdx` save/reopen.

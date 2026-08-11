@@ -101,6 +101,7 @@ const int _emrSmallTextOut = 108;
 const int _emrAlphaBlend = 114;
 const int _emrTransparentBlt = 116;
 const int _emrGradientFill = 118;
+const int _emrSetTextJustification = 120;
 
 bool looksLikeEmf(Uint8List b) =>
     b.length > 0x2B &&
@@ -178,6 +179,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var rasterOperation = MetafileRasterOperation.overpaint;
   var bitmapFilter = MetafileBitmapFilter.linear;
   var textAlign = 0;
+  var textJustificationExtra = 0.0;
+  var textJustificationBreakCount = 0;
   String? fontFace;
   var fontHeight = 12.0;
   var fontWeight = 400;
@@ -290,6 +293,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         rasterOperation: rasterOperation,
         bitmapFilter: bitmapFilter,
         textAlign: textAlign,
+        textJustificationExtra: textJustificationExtra,
+        textJustificationBreakCount: textJustificationBreakCount,
         fontFace: fontFace,
         fontHeight: fontHeight,
         fontWeight: fontWeight,
@@ -344,6 +349,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     rasterOperation = state.rasterOperation;
     bitmapFilter = state.bitmapFilter;
     textAlign = state.textAlign;
+    textJustificationExtra = state.textJustificationExtra;
+    textJustificationBreakCount = state.textJustificationBreakCount;
     fontFace = state.fontFace;
     fontHeight = state.fontHeight;
     fontWeight = state.fontWeight;
@@ -1033,6 +1040,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       clipRect: (options & 0x0004) != 0 ? recordRect : null,
       advancesX: advancesX,
       advancesY: advancesY,
+      justificationExtra: textJustificationExtra,
+      justificationBreakCount: textJustificationBreakCount,
       fontWeight: fontWeight,
       italic: fontItalic,
       underline: fontUnderline,
@@ -1113,6 +1122,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               : null,
       opaqueRect: (options & 0x0002) != 0 ? recordRect : null,
       clipRect: (options & 0x0004) != 0 ? recordRect : null,
+      justificationExtra: textJustificationExtra,
+      justificationBreakCount: textJustificationBreakCount,
       fontWeight: fontWeight,
       italic: fontItalic,
       underline: fontUnderline,
@@ -1521,6 +1532,10 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       textColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetTextAlign && params + 4 <= recEnd) {
       textAlign = bd.getUint32(params, Endian.little);
+    } else if (t == _emrSetTextJustification && params + 8 <= recEnd) {
+      textJustificationExtra = bd.getInt32(params, Endian.little).toDouble();
+      final breakCount = bd.getInt32(params + 4, Endian.little);
+      textJustificationBreakCount = breakCount > 0 ? breakCount : 0;
     } else if (t == _emrFillRgn && params + 24 <= recEnd) {
       // Bounds (16), cbRgnData (4), ihBrush (4), RGNDATA. LibreOffice uses
       // the referenced brush temporarily without changing the selected DC
@@ -2612,6 +2627,8 @@ class _EmfDcState {
     required this.rasterOperation,
     required this.bitmapFilter,
     required this.textAlign,
+    required this.textJustificationExtra,
+    required this.textJustificationBreakCount,
     required this.fontFace,
     required this.fontHeight,
     required this.fontWeight,
@@ -2654,6 +2671,8 @@ class _EmfDcState {
   final MetafileRasterOperation rasterOperation;
   final MetafileBitmapFilter bitmapFilter;
   final int textAlign;
+  final double textJustificationExtra;
+  final int textJustificationBreakCount;
   final String? fontFace;
   final double fontHeight;
   final int fontWeight;

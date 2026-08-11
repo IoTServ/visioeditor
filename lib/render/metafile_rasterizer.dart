@@ -518,6 +518,7 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
   if (op.text.isEmpty) return;
 
   final fontSize = math.max(op.fontHeight.abs(), 1.0);
+  final wordSpacing = metafileTextWordSpacing(op);
   final style = TextStyle(
     color: Color(op.argb),
     fontSize: fontSize,
@@ -528,6 +529,7 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
       if (op.underline) TextDecoration.underline,
       if (op.strikeThrough) TextDecoration.lineThrough,
     ]),
+    wordSpacing: wordSpacing,
     height: 1.0,
   );
   // GDI text baseline is near (x,y); Flutter paints from top-left of glyphs.
@@ -546,7 +548,9 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
           (yAdvances.length == glyphs.length &&
               yAdvances.every((advance) => advance.isFinite)));
   final textWidth = hasAdvances
-      ? xAdvances.fold<double>(0, (sum, advance) => sum + advance).abs()
+      ? (xAdvances.fold<double>(0, (sum, advance) => sum + advance) +
+              metafileTextJustificationWidth(op))
+          .abs()
       : tp.width;
   var dx = 0.0;
   // GDI vertical alignment is encoded in bits 3-4. Flutter paints from the
@@ -593,6 +597,7 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
   } else {
     var glyphX = 0.0;
     var glyphY = 0.0;
+    var justifiedBreaks = 0;
     for (var i = 0; i < glyphs.length; i++) {
       final glyphPainter = TextPainter(
         text: TextSpan(text: String.fromCharCode(glyphs[i]), style: style),
@@ -601,6 +606,11 @@ void _paintText(Canvas canvas, MetafileTextOp op) {
       )..layout();
       glyphPainter.paint(canvas, Offset(dx + glyphX, dy + glyphY));
       glyphX += xAdvances[i];
+      if (glyphs[i] == 0x20 &&
+          justifiedBreaks < op.justificationBreakCount) {
+        glyphX += wordSpacing;
+        justifiedBreaks++;
+      }
       if (yAdvances != null) glyphY += yAdvances[i];
     }
   }

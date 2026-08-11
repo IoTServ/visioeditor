@@ -119,6 +119,53 @@ Uint8List _polyTextEmf({required bool ansi}) {
   return Uint8List.fromList(out.toBytes());
 }
 
+Uint8List _justifiedTextEmf() {
+  final out = _emfWithFont(0);
+
+  void justification(int extra, int breaks) {
+    final payload = ByteData(8)
+      ..setInt32(0, extra, Endian.little)
+      ..setUint32(4, breaks, Endian.little);
+    _addRecord(out, 120, payload.buffer.asUint8List());
+  }
+
+  void text(String value, int y) {
+    final source = Uint8List(value.length * 2);
+    final sourceData = ByteData.sublistView(source);
+    for (var i = 0; i < value.length; i++) {
+      sourceData.setUint16(i * 2, value.codeUnitAt(i), Endian.little);
+    }
+    const stringOffset = 76;
+    final recordSize = _aligned4(stringOffset + source.length);
+    final payload = ByteData(recordSize - 8);
+    const text = 28;
+    payload
+      ..setInt32(text, 10, Endian.little)
+      ..setInt32(text + 4, y, Endian.little)
+      ..setUint32(text + 8, value.length, Endian.little)
+      ..setUint32(text + 12, stringOffset, Endian.little);
+    payload.buffer.asUint8List().setRange(
+          stringOffset - 8,
+          stringOffset - 8 + source.length,
+          source,
+        );
+    _addRecord(out, 84, payload.buffer.asUint8List());
+  }
+
+  justification(12, 2);
+  text('A B C', 20);
+  _addRecord(out, 33, Uint8List(0)); // EMR_SAVEDC
+  justification(-2, 2);
+  text('D E F', 45);
+  final restore = ByteData(4)..setInt32(0, -1, Endian.little);
+  _addRecord(out, 34, restore.buffer.asUint8List());
+  text('G H I', 70);
+  justification(0, 0);
+  text('J K L', 95);
+  _addRecord(out, 14, Uint8List(0));
+  return Uint8List.fromList(out.toBytes());
+}
+
 VsdxPage _picturePage(String part) => VsdxPage(
       id: 0,
       name: 'P',
@@ -201,6 +248,45 @@ void main() {
       expect(text.map((op) => op.text), <String>['A', 'B']);
       expect(text.map((op) => op.x), <double>[10, 30]);
     }
+  });
+
+  test('EMR_SETTEXTJUSTIFICATION reaches SVG and restores with the DC', () {
+    final payload = _justifiedTextEmf();
+    final drawing = parseEmfDrawing(payload)!;
+    final text = drawing.ops.whereType<MetafileTextOp>().toList();
+    expect(text, hasLength(4));
+    expect(text.map((op) => op.justificationExtra), <double>[12, -2, 12, 0]);
+    expect(
+      text.map((op) => op.justificationBreakCount),
+      <int>[2, 2, 2, 0],
+    );
+    expect(text.map(metafileTextWordSpacing), <double>[6, -1, 6, 0]);
+
+    const part = '/visio/media/justified.emf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-emf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _picturePage(part),
+      images: images,
+    );
+    expect(RegExp('word-spacing="6"').allMatches(svg), hasLength(2));
+    expect(svg, contains('word-spacing="-1"'));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final edited = parser
+        .parse(blank)
+        .copyWith(images: images)
+        .replacePage(0, _picturePage(part));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: edited,
+    ));
+    expect(reopened.images.findByPart(part)!.bytes, payload);
   });
 
   test('ANSI EMF bytes survive VSDX write and reopen', () {
