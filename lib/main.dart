@@ -28,6 +28,8 @@ import 'editor/third_party_icons.dart';
 import 'editor/outline_panel.dart';
 import 'editor/page_canvas.dart';
 import 'editor/ruler.dart';
+import 'editor/stencil_library_catalog.dart';
+import 'editor/stencil_library_dialog.dart';
 import 'editor/stencils.dart';
 import 'l10n/app_localizations.dart';
 import 'l10n/editor_l10n.dart';
@@ -3573,112 +3575,14 @@ class _StencilPanelState extends State<_StencilPanel> {
   }
 
   Future<void> _chooseShapeLibraries() async {
-    final el = EditorL10n.of(context);
-    final queryController = TextEditingController();
-    var selected = Set<String>.from(_enabledGroups);
-    var query = '';
     final result = await showDialog<Set<String>>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final normalized = query.trim().toLowerCase();
-          final groups = normalized.isEmpty
-              ? kStencilGroups
-              : kStencilGroups
-                  .where((group) =>
-                      el
-                          .stencilGroup(group.name)
-                          .toLowerCase()
-                          .contains(normalized) ||
-                      group.name.toLowerCase().contains(normalized))
-                  .toList(growable: false);
-          return AlertDialog(
-            title: Row(
-              children: [
-                Expanded(child: Text(el.moreShapes)),
-                Text(
-                  '${selected.length}/${kStencilGroups.length}',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: 560,
-              height: 560,
-              child: Column(
-                children: [
-                  TextField(
-                    controller: queryController,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.search, size: 18),
-                      hintText: el.searchShapes,
-                      border: const OutlineInputBorder(),
-                    ),
-                    onChanged: (value) =>
-                        setDialogState(() => query = value),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        tooltip: el.expandAll,
-                        icon: const Icon(Icons.select_all),
-                        onPressed: () => setDialogState(
-                          () => selected.addAll(groups.map((g) => g.name)),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: el.collapseAll,
-                        icon: const Icon(Icons.deselect),
-                        onPressed: () => setDialogState(
-                          () => selected.removeAll(groups.map((g) => g.name)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: groups.length,
-                      itemBuilder: (context, index) {
-                        final group = groups[index];
-                        return CheckboxListTile(
-                          dense: true,
-                          value: selected.contains(group.name),
-                          title: Text(el.stencilGroup(group.name)),
-                          subtitle: Text('${group.stencils.length}'),
-                          onChanged: (checked) => setDialogState(() {
-                            if (checked == true) {
-                              selected.add(group.name);
-                            } else {
-                              selected.remove(group.name);
-                            }
-                          }),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child:
-                    Text(MaterialLocalizations.of(context).cancelButtonLabel),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, selected),
-                child: Text(MaterialLocalizations.of(context).okButtonLabel),
-              ),
-            ],
-          );
-        },
+      builder: (dialogContext) => StencilLibraryDialog(
+        initialSelection: _enabledGroups,
+        thumbnailBuilder: (context, stencil) =>
+            CustomPaint(painter: _StencilThumbPainter(stencil)),
       ),
     );
-    queryController.dispose();
     if (result == null || !mounted) return;
     final previouslyEnabled = _enabledGroups;
     setState(() {
@@ -3712,7 +3616,12 @@ class _StencilPanelState extends State<_StencilPanel> {
                     size: 16),
                 const SizedBox(width: 2),
                 Flexible(
-                  child: Text(EditorL10n.of(context).stencilGroup(group.name),
+                  child: Text(
+                      stencilLibraryDisplayName(
+                        group.name,
+                        localizeBuiltIn:
+                            EditorL10n.of(context).stencilGroup,
+                      ),
                       style: text.labelLarge,
                       overflow: TextOverflow.ellipsis),
                 ),
