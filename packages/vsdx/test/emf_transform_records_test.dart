@@ -227,8 +227,10 @@ void main() {
       _imagePage(part),
       images: images,
     );
-    expect(RegExp('<g transform="matrix\\(').allMatches(svg).length,
-        greaterThan(6));
+    // SVG replay now coalesces consecutive DC transforms and freezes the
+    // resulting device matrix per painted object. This avoids transforming an
+    // already-selected clip when later mapping records change the DC.
+    expect(RegExp('<g transform="matrix\\(').allMatches(svg), hasLength(6));
     expect(() => XmlDocument.parse(svg), returnsNormally);
 
     const parser = DocumentParser();

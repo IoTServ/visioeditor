@@ -111,6 +111,7 @@ void main() {
       _record(0x012a, const <int>[0]), // INVERTREGION
       _record(0x0429, const <int>[0, 1, 5, 5]), // FRAMEREGION
       _record(0x012c, const <int>[0]), // SELECTCLIPREGION
+      _record(0x0220, const <int>[5, 10]), // OFFSETCLIPRGN(y=5, x=10)
       _record(0x041b, const <int>[80, 80, 0, 0]),
     ]);
 
@@ -125,6 +126,9 @@ void main() {
     final clip = drawing.ops.whereType<MetafileClipPathOp>().single;
     expect(clip.additionalContours, hasLength(2));
     expect(clip.evenOddFill, isFalse);
+    final offset = drawing.ops.whereType<MetafileOffsetClipOp>().single;
+    expect(offset.dx, 10);
+    expect(offset.dy, 5);
 
     const part = '/visio/media/regions.wmf';
     final images = ImageRegistry.empty.withImage(VsdxImage(
@@ -138,6 +142,7 @@ void main() {
     );
     expect(svg, contains('mix-blend-mode:difference'));
     expect(svg, contains('<clipPath'));
+    expect(svg, contains('id="wmf-dc-offset-clip-'));
     expect(svg, contains('clip-rule="nonzero"'));
 
     const parser = DocumentParser();

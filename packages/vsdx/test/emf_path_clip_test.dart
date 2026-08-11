@@ -122,7 +122,10 @@ void main() {
     ));
     final svg =
         VsdxToSvgSerializer().serializePage(_page(part), images: images);
-    expect(RegExp('wmf-dc-path-clip-').allMatches(svg), hasLength(4));
+    expect(
+      RegExp('<clipPath id="wmf-dc-path-clip-').allMatches(svg),
+      hasLength(2),
+    );
     expect(svg, contains('clip-rule="evenodd"'));
 
     const parser = DocumentParser();

@@ -64,15 +64,64 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   canvas.translate(-drawing.minX, -drawing.minY);
 
   var savedDcCount = 0;
+  Path? activeClip;
+  final savedClips = <Path?>[];
+
+  Path clonePath(Path? path) {
+    final copy = Path();
+    if (path != null) copy.addPath(path, Offset.zero);
+    return copy;
+  }
+
+  Path devicePath(Path logicalPath) =>
+      logicalPath.transform(canvas.getTransform());
+
+  void combineClip(Path operand, MetafileClipCombineMode mode) {
+    final current = activeClip;
+    final operation = mode == MetafileClipCombineMode.intersect
+        ? ui.PathOperation.intersect
+        : ui.PathOperation.difference;
+    final base = current ??
+        (Path()..addRect(Rect.fromLTWH(0, 0, pxW.toDouble(), pxH.toDouble())));
+    try {
+      activeClip = Path.combine(operation, base, operand);
+    } catch (_) {
+      // Keep a malformed clip from suppressing the rest of the metafile. An
+      // initial intersection can still safely use its operand directly.
+      if (current == null && mode == MetafileClipCombineMode.intersect) {
+        activeClip = operand;
+      }
+    }
+  }
+
+  void paintWithActiveClip(void Function() paint) {
+    final clip = activeClip;
+    if (clip == null) {
+      paint();
+      return;
+    }
+    final inverse = _invertMetafileCanvasTransform(canvas.getTransform());
+    if (inverse == null) {
+      paint();
+      return;
+    }
+    canvas.save();
+    canvas.clipPath(clip.transform(inverse));
+    paint();
+    canvas.restore();
+  }
+
   for (final op in drawing.ops) {
     if (op is MetafileSaveDcOp) {
       canvas.save();
       savedDcCount++;
+      savedClips.add(activeClip == null ? null : clonePath(activeClip));
     } else if (op is MetafileRestoreDcOp) {
       var count = math.min(op.count, savedDcCount);
       while (count-- > 0) {
         canvas.restore();
         savedDcCount--;
+        activeClip = savedClips.removeLast();
       }
     } else if (op is MetafileTransformOp) {
       canvas.transform(Float64List.fromList(<double>[
@@ -83,33 +132,40 @@ Future<ui.Image?> rasterizeMetafileDrawing(
       ]));
     } else if (op is MetafileClipRectOp) {
       final rect = op.rect;
-      canvas.clipRect(
-        Rect.fromLTRB(rect.minX, rect.minY, rect.maxX, rect.maxY),
-        clipOp: op.mode == MetafileClipCombineMode.intersect
-            ? ui.ClipOp.intersect
-            : ui.ClipOp.difference,
+      combineClip(
+        devicePath(
+          Path()
+            ..addRect(Rect.fromLTRB(
+              rect.minX,
+              rect.minY,
+              rect.maxX,
+              rect.maxY,
+            )),
+        ),
+        op.mode,
       );
     } else if (op is MetafileClipPathOp) {
-      canvas.clipPath(
-        _metafileClipPath(
-          op,
-          excludeBounds: op.mode == MetafileClipCombineMode.exclude
-              ? Rect.fromLTRB(
-                  drawing.minX,
-                  drawing.minY,
-                  drawing.maxX,
-                  drawing.maxY,
-                )
-              : null,
-        ),
+      combineClip(
+        devicePath(_metafileClipPath(op)),
+        op.mode,
       );
+    } else if (op is MetafileOffsetClipOp) {
+      final clip = activeClip;
+      if (clip != null) {
+        final transform = canvas.getTransform();
+        final dx = transform[0] * op.dx + transform[4] * op.dy;
+        final dy = transform[1] * op.dx + transform[5] * op.dy;
+        activeClip = clip.shift(Offset(dx, dy));
+      }
     } else if (op is MetafilePixelOp) {
-      canvas.drawRect(
-        Rect.fromLTWH(op.x, op.y, 1, 1),
-        Paint()
-          ..color = Color(op.argb)
-          ..isAntiAlias = false,
-      );
+      paintWithActiveClip(() {
+        canvas.drawRect(
+          Rect.fromLTWH(op.x, op.y, 1, 1),
+          Paint()
+            ..color = Color(op.argb)
+            ..isAntiAlias = false,
+        );
+      });
     } else if (op is MetafileBitmapOp) {
       final image = bitmapImages[op];
       if (image == null) continue;
@@ -127,64 +183,66 @@ Future<ui.Image?> rasterizeMetafileDrawing(
           (source != null && source.right < source.left);
       final flipY = (destination.bottom < destination.top) !=
           (source != null && source.bottom < source.top);
-      canvas.save();
-      final parallelogram = op.destinationParallelogram;
-      if (parallelogram != null && parallelogram.length == 3) {
-        final p0 = parallelogram[0];
-        var ax = parallelogram[1].x - p0.x;
-        var ay = parallelogram[1].y - p0.y;
-        var bx = parallelogram[2].x - p0.x;
-        var by = parallelogram[2].y - p0.y;
-        var tx = p0.x;
-        var ty = p0.y;
-        if (source != null && source.right < source.left) {
-          tx += ax;
-          ty += ay;
-          ax = -ax;
-          ay = -ay;
+      paintWithActiveClip(() {
+        canvas.save();
+        final parallelogram = op.destinationParallelogram;
+        if (parallelogram != null && parallelogram.length == 3) {
+          final p0 = parallelogram[0];
+          var ax = parallelogram[1].x - p0.x;
+          var ay = parallelogram[1].y - p0.y;
+          var bx = parallelogram[2].x - p0.x;
+          var by = parallelogram[2].y - p0.y;
+          var tx = p0.x;
+          var ty = p0.y;
+          if (source != null && source.right < source.left) {
+            tx += ax;
+            ty += ay;
+            ax = -ax;
+            ay = -ay;
+          }
+          if (source != null && source.bottom < source.top) {
+            tx += bx;
+            ty += by;
+            bx = -bx;
+            by = -by;
+          }
+          canvas.transform(Float64List.fromList(<double>[
+            ax, ay, 0, 0,
+            bx, by, 0, 0,
+            0, 0, 1, 0,
+            tx, ty, 0, 1,
+          ]));
+        } else if (flipX || flipY) {
+          canvas.translate(
+            flipX ? destination.left + destination.right : 0,
+            flipY ? destination.top + destination.bottom : 0,
+          );
+          canvas.scale(flipX ? -1 : 1, flipY ? -1 : 1);
         }
-        if (source != null && source.bottom < source.top) {
-          tx += bx;
-          ty += by;
-          bx = -bx;
-          by = -by;
-        }
-        canvas.transform(Float64List.fromList(<double>[
-          ax, ay, 0, 0,
-          bx, by, 0, 0,
-          0, 0, 1, 0,
-          tx, ty, 0, 1,
-        ]));
-      } else if (flipX || flipY) {
-        canvas.translate(
-          flipX ? destination.left + destination.right : 0,
-          flipY ? destination.top + destination.bottom : 0,
+        canvas.drawImageRect(
+          image,
+          sourceRect,
+          parallelogram != null && parallelogram.length == 3
+              ? const Rect.fromLTWH(0, 0, 1, 1)
+              : Rect.fromLTRB(
+                  destination.minX,
+                  destination.minY,
+                  destination.maxX,
+                  destination.maxY,
+                ),
+          Paint()
+            ..filterQuality = op.filter == MetafileBitmapFilter.nearest
+                ? FilterQuality.none
+                : FilterQuality.low
+            ..color = Color.fromARGB(
+              (op.opacity.clamp(0.0, 1.0) * 255).round(),
+              255,
+              255,
+              255,
+            ),
         );
-        canvas.scale(flipX ? -1 : 1, flipY ? -1 : 1);
-      }
-      canvas.drawImageRect(
-        image,
-        sourceRect,
-        parallelogram != null && parallelogram.length == 3
-            ? const Rect.fromLTWH(0, 0, 1, 1)
-            : Rect.fromLTRB(
-                destination.minX,
-                destination.minY,
-                destination.maxX,
-                destination.maxY,
-              ),
-        Paint()
-          ..filterQuality = op.filter == MetafileBitmapFilter.nearest
-              ? FilterQuality.none
-              : FilterQuality.low
-          ..color = Color.fromARGB(
-            (op.opacity.clamp(0.0, 1.0) * 255).round(),
-            255,
-            255,
-            255,
-          ),
-      );
-      canvas.restore();
+        canvas.restore();
+      });
     } else if (op is MetafileGradientRectOp) {
       final upperLeft = op.upperLeft;
       final lowerRight = op.lowerRight;
@@ -197,17 +255,19 @@ Future<ui.Image?> rasterizeMetafileDrawing(
       if (rect.width == 0 || rect.height == 0) continue;
       final start = upperLeft.point;
       final end = lowerRight.point;
-      canvas.drawRect(
-        rect,
-        Paint()
-          ..shader = ui.Gradient.linear(
-            Offset(start.x, start.y),
-            op.horizontal
-                ? Offset(end.x, start.y)
-                : Offset(start.x, end.y),
-            <Color>[Color(upperLeft.argb), Color(lowerRight.argb)],
-          ),
-      );
+      paintWithActiveClip(() {
+        canvas.drawRect(
+          rect,
+          Paint()
+            ..shader = ui.Gradient.linear(
+              Offset(start.x, start.y),
+              op.horizontal
+                  ? Offset(end.x, start.y)
+                  : Offset(start.x, end.y),
+              <Color>[Color(upperLeft.argb), Color(lowerRight.argb)],
+            ),
+        );
+      });
     } else if (op is MetafileGradientTriangleOp) {
       final vertices = ui.Vertices(
         ui.VertexMode.triangles,
@@ -222,17 +282,21 @@ Future<ui.Image?> rasterizeMetafileDrawing(
           Color(op.third.argb),
         ],
       );
-      canvas.drawVertices(vertices, BlendMode.dst, Paint());
+      paintWithActiveClip(
+        () => canvas.drawVertices(vertices, BlendMode.dst, Paint()),
+      );
       vertices.dispose();
     } else if (op is MetafilePathOp) {
-      _paintPath(
-        canvas,
-        op,
-        deviceScale: scale,
-        patternImage: patternImages[op],
-      );
+      paintWithActiveClip(() {
+        _paintPath(
+          canvas,
+          op,
+          deviceScale: scale,
+          patternImage: patternImages[op],
+        );
+      });
     } else if (op is MetafileTextOp) {
-      _paintText(canvas, op);
+      paintWithActiveClip(() => _paintText(canvas, op));
     }
   }
   while (savedDcCount > 0) {
@@ -254,12 +318,32 @@ Future<ui.Image?> rasterizeMetafileDrawing(
   }
 }
 
-Path _metafileClipPath(MetafileClipPathOp op, {Rect? excludeBounds}) {
+Float64List? _invertMetafileCanvasTransform(Float64List matrix) {
+  // Canvas matrices are column-major. Metafile replay uses only affine 2-D
+  // transforms, so invert the [a c tx; b d ty] portion directly.
+  final a = matrix[0];
+  final b = matrix[1];
+  final c = matrix[4];
+  final d = matrix[5];
+  final tx = matrix[12];
+  final ty = matrix[13];
+  final determinant = a * d - b * c;
+  if (!determinant.isFinite || determinant.abs() <= 1e-12) return null;
+  final inverse = Float64List(16);
+  inverse[0] = d / determinant;
+  inverse[1] = -b / determinant;
+  inverse[4] = -c / determinant;
+  inverse[5] = a / determinant;
+  inverse[10] = 1;
+  inverse[12] = (c * ty - d * tx) / determinant;
+  inverse[13] = (b * tx - a * ty) / determinant;
+  inverse[15] = 1;
+  return inverse;
+}
+
+Path _metafileClipPath(MetafileClipPathOp op) {
   final path = Path()
-    ..fillType = excludeBounds != null || op.evenOddFill
-        ? PathFillType.evenOdd
-        : PathFillType.nonZero;
-  if (excludeBounds != null) path.addRect(excludeBounds);
+    ..fillType = op.evenOddFill ? PathFillType.evenOdd : PathFillType.nonZero;
 
   void addContour(List<MetafilePoint> points) {
     if (points.isEmpty) return;

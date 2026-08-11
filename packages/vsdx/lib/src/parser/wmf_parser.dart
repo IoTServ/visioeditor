@@ -66,6 +66,7 @@ const int _metaRectangle = 0x041B;
 const int _metaRoundRect = 0x061C;
 const int _metaEllipse = 0x0418;
 const int _metaSetPixel = 0x041F;
+const int _metaOffsetClipRgn = 0x0220;
 const int _metaPie = 0x081A;
 const int _metaChord = 0x0830;
 const int _metaPatBlt = 0x061D;
@@ -689,6 +690,14 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         mode: func == _metaIntersectClipRect
             ? MetafileClipCombineMode.intersect
             : MetafileClipCombineMode.exclude,
+      ));
+    } else if (func == _metaOffsetClipRgn && params + 4 <= recEnd) {
+      // WMF stores function parameters in reverse API order: y, then x.
+      // Other WMF geometry is normalized through the window/viewport mapping
+      // during parsing, so retain the clip delta in the same mapped space.
+      ops.add(MetafileOffsetClipOp(
+        dx: bd.getInt16(params + 2, Endian.little) * mappingScaleX(),
+        dy: bd.getInt16(params, Endian.little) * mappingScaleY(),
       ));
     } else if (func == _metaSetWindowOrg && params + 4 <= recEnd) {
       winOrgY = bd.getInt16(params, Endian.little).toDouble();

@@ -60,6 +60,76 @@ enum SvgLayerFilter {
   all,
 }
 
+class _MetafileSvgMatrix {
+  const _MetafileSvgMatrix(this.a, this.b, this.c, this.d, this.e, this.f);
+  const _MetafileSvgMatrix.identity() : this(1, 0, 0, 1, 0, 0);
+
+  final double a, b, c, d, e, f;
+
+  bool get isIdentity =>
+      a == 1 && b == 0 && c == 0 && d == 1 && e == 0 && f == 0;
+
+  _MetafileSvgMatrix multipliedBy(_MetafileSvgMatrix other) =>
+      _MetafileSvgMatrix(
+        a * other.a + c * other.b,
+        b * other.a + d * other.b,
+        a * other.c + c * other.d,
+        b * other.c + d * other.d,
+        a * other.e + c * other.f + e,
+        b * other.e + d * other.f + f,
+      );
+
+  MetafilePoint transformPoint(MetafilePoint point) => MetafilePoint(
+        a * point.x + c * point.y + e,
+        b * point.x + d * point.y + f,
+      );
+
+  List<MetafilePoint> transformPoints(Iterable<MetafilePoint> points) =>
+      <MetafilePoint>[for (final point in points) transformPoint(point)];
+
+  ({double x, double y}) transformVector(double x, double y) =>
+      (x: a * x + c * y, y: b * x + d * y);
+}
+
+class _MetafileSvgClip {
+  const _MetafileSvgClip({
+    required this.id,
+    required this.contours,
+    required this.mode,
+    this.evenOddFill = false,
+    this.offsetX = 0,
+    this.offsetY = 0,
+  });
+
+  final String id;
+  final List<List<MetafilePoint>> contours;
+  final MetafileClipCombineMode mode;
+  final bool evenOddFill;
+  final double offsetX, offsetY;
+
+  _MetafileSvgClip shifted({
+    required String id,
+    required double dx,
+    required double dy,
+  }) =>
+      _MetafileSvgClip(
+        id: id,
+        contours: contours,
+        mode: mode,
+        evenOddFill: evenOddFill,
+        offsetX: offsetX + dx,
+        offsetY: offsetY + dy,
+      );
+}
+
+class _MetafileSvgDcState {
+  _MetafileSvgDcState(this.matrix, List<_MetafileSvgClip> clips)
+      : clips = List<_MetafileSvgClip>.of(clips);
+
+  final _MetafileSvgMatrix matrix;
+  final List<_MetafileSvgClip> clips;
+}
+
 class VsdxToSvgSerializer {
   VsdxToSvgSerializer({
     this.pxPerInch = 96.0,
@@ -3340,95 +3410,150 @@ class VsdxToSvgSerializer {
       'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );
-    final dcClipDepths = <int>[0];
+    var dcMatrix = const _MetafileSvgMatrix.identity();
+    var dcClips = <_MetafileSvgClip>[];
+    final savedDc = <_MetafileSvgDcState>[];
+    final outerClipPath =
+        'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
+        'H ${_n(drawing.maxX)} V ${_n(drawing.maxY)} '
+        'H ${_n(drawing.minX)} Z';
 
-    void closeClipGroups(int count) {
-      for (var i = 0; i < count; i++) {
-        buf.writeln('$indent  </g>');
+    String contoursPath(
+      Iterable<List<MetafilePoint>> contours, {
+      double dx = 0,
+      double dy = 0,
+    }) {
+      final path = StringBuffer();
+      for (final contour in contours) {
+        if (contour.isEmpty) continue;
+        if (path.isNotEmpty) path.write(' ');
+        path.write(
+          'M ${_n(contour.first.x + dx)} ${_n(contour.first.y + dy)}',
+        );
+        for (var i = 1; i < contour.length; i++) {
+          path.write(
+            ' L ${_n(contour[i].x + dx)} ${_n(contour[i].y + dy)}',
+          );
+        }
+        path.write(' Z');
+      }
+      return path.toString();
+    }
+
+    void writeClipDefinition(_MetafileSvgClip clip) {
+      final inner = contoursPath(
+        clip.contours,
+        dx: clip.offsetX,
+        dy: clip.offsetY,
+      );
+      final difference = clip.mode == MetafileClipCombineMode.exclude;
+      final path = difference ? '$outerClipPath $inner' : inner;
+      final rule = difference || clip.evenOddFill ? 'evenodd' : 'nonzero';
+      buf.writeln(
+        '$indent  <defs><clipPath id="${clip.id}" '
+        'clipPathUnits="userSpaceOnUse"><path d="$path" '
+        'fill-rule="$rule" clip-rule="$rule"/></clipPath></defs>',
+      );
+    }
+
+    List<List<MetafilePoint>> transformedClipContours(
+      MetafileClipPathOp op,
+    ) => <List<MetafilePoint>>[
+      dcMatrix.transformPoints(op.points),
+      for (final contour in op.additionalContours)
+        dcMatrix.transformPoints(contour.points),
+    ];
+
+    void openPaintGroups() {
+      for (final clip in dcClips) {
+        buf.writeln('$indent  <g clip-path="url(#${clip.id})">');
+      }
+      if (!dcMatrix.isIdentity) {
+        buf.writeln(
+          '$indent  <g transform="matrix(${_n(dcMatrix.a)} '
+          '${_n(dcMatrix.b)} ${_n(dcMatrix.c)} ${_n(dcMatrix.d)} '
+          '${_n(dcMatrix.e)} ${_n(dcMatrix.f)})">',
+        );
       }
     }
 
-    void restoreDeviceContexts(int count) {
-      while (count > 0 && dcClipDepths.length > 1) {
-        closeClipGroups(dcClipDepths.removeLast());
+    void closePaintGroups() {
+      if (!dcMatrix.isIdentity) buf.writeln('$indent  </g>');
+      for (var i = 0; i < dcClips.length; i++) {
         buf.writeln('$indent  </g>');
-        count--;
       }
     }
 
     for (var opIndex = 0; opIndex < drawing.ops.length; opIndex++) {
       final op = drawing.ops[opIndex];
       if (op is MetafileSaveDcOp) {
-        buf.writeln('$indent  <g>');
-        dcClipDepths.add(0);
+        savedDc.add(_MetafileSvgDcState(dcMatrix, dcClips));
       } else if (op is MetafileRestoreDcOp) {
-        restoreDeviceContexts(op.count);
+        var count = math.min(op.count, savedDc.length);
+        while (count-- > 0) {
+          final restored = savedDc.removeLast();
+          dcMatrix = restored.matrix;
+          dcClips = List<_MetafileSvgClip>.of(restored.clips);
+        }
       } else if (op is MetafileTransformOp) {
-        buf.writeln(
-          '$indent  <g transform="matrix(${_n(op.m11)} ${_n(op.m12)} '
-          '${_n(op.m21)} ${_n(op.m22)} ${_n(op.dx)} ${_n(op.dy)})">',
+        dcMatrix = dcMatrix.multipliedBy(
+          _MetafileSvgMatrix(
+            op.m11,
+            op.m12,
+            op.m21,
+            op.m22,
+            op.dx,
+            op.dy,
+          ),
         );
-        dcClipDepths[dcClipDepths.length - 1]++;
       } else if (op is MetafileClipRectOp) {
-        final clipId = 'wmf-dc-clip-$idScope-$opIndex';
         final rect = op.rect;
-        if (op.mode == MetafileClipCombineMode.intersect) {
-          buf.writeln(
-            '$indent  <defs><clipPath id="$clipId" '
-            'clipPathUnits="userSpaceOnUse">'
-            '<rect x="${_n(rect.minX)}" y="${_n(rect.minY)}" '
-            'width="${_n(rect.width)}" height="${_n(rect.height)}"/>'
-            '</clipPath></defs>',
-          );
-        } else {
-          final outer =
-              'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
-              'H ${_n(drawing.maxX)} V ${_n(drawing.maxY)} '
-              'H ${_n(drawing.minX)} Z';
-          final excluded =
-              'M ${_n(rect.minX)} ${_n(rect.minY)} '
-              'H ${_n(rect.maxX)} V ${_n(rect.maxY)} '
-              'H ${_n(rect.minX)} Z';
-          buf.writeln(
-            '$indent  <defs><clipPath id="$clipId" '
-            'clipPathUnits="userSpaceOnUse">'
-            '<path d="$outer $excluded" fill-rule="evenodd" '
-            'clip-rule="evenodd"/></clipPath></defs>',
-          );
-        }
-        buf.writeln('$indent  <g clip-path="url(#$clipId)">');
-        dcClipDepths[dcClipDepths.length - 1]++;
+        final clip = _MetafileSvgClip(
+          id: 'wmf-dc-clip-$idScope-$opIndex',
+          contours: <List<MetafilePoint>>[
+            dcMatrix.transformPoints(<MetafilePoint>[
+              MetafilePoint(rect.minX, rect.minY),
+              MetafilePoint(rect.maxX, rect.minY),
+              MetafilePoint(rect.maxX, rect.maxY),
+              MetafilePoint(rect.minX, rect.maxY),
+            ]),
+          ],
+          mode: op.mode,
+        );
+        writeClipDefinition(clip);
+        dcClips = <_MetafileSvgClip>[...dcClips, clip];
       } else if (op is MetafileClipPathOp) {
-        final clipId = 'wmf-dc-path-clip-$idScope-$opIndex';
-        final path = _metafileClipPathData(op);
-        final rule = op.evenOddFill ? 'evenodd' : 'nonzero';
-        if (op.mode == MetafileClipCombineMode.intersect) {
-          buf.writeln(
-            '$indent  <defs><clipPath id="$clipId" '
-            'clipPathUnits="userSpaceOnUse"><path d="$path" '
-            'clip-rule="$rule"/></clipPath></defs>',
-          );
-        } else {
-          final outer =
-              'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
-              'H ${_n(drawing.maxX)} V ${_n(drawing.maxY)} '
-              'H ${_n(drawing.minX)} Z';
-          buf.writeln(
-            '$indent  <defs><clipPath id="$clipId" '
-            'clipPathUnits="userSpaceOnUse"><path d="$outer $path" '
-            'fill-rule="evenodd" clip-rule="evenodd"/>'
-            '</clipPath></defs>',
-          );
+        final clip = _MetafileSvgClip(
+          id: 'wmf-dc-path-clip-$idScope-$opIndex',
+          contours: transformedClipContours(op),
+          mode: op.mode,
+          evenOddFill: op.evenOddFill,
+        );
+        writeClipDefinition(clip);
+        dcClips = <_MetafileSvgClip>[...dcClips, clip];
+      } else if (op is MetafileOffsetClipOp) {
+        final delta = dcMatrix.transformVector(op.dx, op.dy);
+        dcClips = <_MetafileSvgClip>[
+          for (var clipIndex = 0; clipIndex < dcClips.length; clipIndex++)
+            dcClips[clipIndex].shifted(
+              id: 'wmf-dc-offset-clip-$idScope-$opIndex-$clipIndex',
+              dx: delta.x,
+              dy: delta.y,
+            ),
+        ];
+        for (final clip in dcClips) {
+          writeClipDefinition(clip);
         }
-        buf.writeln('$indent  <g clip-path="url(#$clipId)">');
-        dcClipDepths[dcClipDepths.length - 1]++;
       } else if (op is MetafilePixelOp) {
+        openPaintGroups();
         buf.writeln(
           '$indent  <rect x="${_n(op.x)}" y="${_n(op.y)}" width="1" '
           'height="1" fill="${_argbCss(op.argb)}" '
           'shape-rendering="crispEdges"/>',
         );
+        closePaintGroups();
       } else if (op is MetafileBitmapOp) {
+        openPaintGroups();
         final destination = op.destination;
         final source = op.source ??
             MetafileRect(
@@ -3504,7 +3629,9 @@ class VsdxToSvgSerializer {
           'href="data:image/bmp;base64,$href"$imageRendering/>',
         );
         buf.writeln('$indent  </svg>');
+        closePaintGroups();
       } else if (op is MetafileGradientRectOp) {
+        openPaintGroups();
         final gradientId = 'emf-gradient-$idScope-$opIndex';
         final upperLeft = op.upperLeft;
         final lowerRight = op.lowerRight;
@@ -3528,9 +3655,13 @@ class VsdxToSvgSerializer {
           'height="${_n((y1 - lowerRight.point.y).abs())}" '
           'fill="url(#$gradientId)"/>',
         );
+        closePaintGroups();
       } else if (op is MetafileGradientTriangleOp) {
+        openPaintGroups();
         _writeMetafileGradientTriangle(buf, op, indent: '$indent  ');
+        closePaintGroups();
       } else if (op is MetafilePathOp) {
+        openPaintGroups();
         String? fillOverride;
         if (op.fill && op.fillPatternBmpBytes != null) {
           final patternId = 'wmf-bitmap-pattern-$idScope-$opIndex';
@@ -3560,7 +3691,9 @@ class VsdxToSvgSerializer {
           fillOverride: fillOverride,
           indent: '$indent  ',
         );
+        closePaintGroups();
       } else if (op is MetafileTextOp) {
+        openPaintGroups();
         _writeMetafileTextOp(
           buf,
           op,
@@ -3570,33 +3703,10 @@ class VsdxToSvgSerializer {
               ? null
               : 'wmf-text-clip-$idScope-$opIndex',
         );
+        closePaintGroups();
       }
     }
-    while (dcClipDepths.length > 1) {
-      restoreDeviceContexts(1);
-    }
-    closeClipGroups(dcClipDepths.single);
     buf.writeln('$indent</g>');
-  }
-
-  String _metafileClipPathData(MetafileClipPathOp op) {
-    final data = StringBuffer();
-
-    void addContour(List<MetafilePoint> points) {
-      if (points.isEmpty) return;
-      if (data.isNotEmpty) data.write(' ');
-      data.write('M ${_n(points.first.x)} ${_n(points.first.y)}');
-      for (var i = 1; i < points.length; i++) {
-        data.write(' L ${_n(points[i].x)} ${_n(points[i].y)}');
-      }
-      data.write(' Z');
-    }
-
-    addContour(op.points);
-    for (final contour in op.additionalContours) {
-      addContour(contour.points);
-    }
-    return data.toString();
   }
 
   void _writeMetafileGradientTriangle(

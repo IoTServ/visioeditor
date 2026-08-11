@@ -8,6 +8,39 @@ import 'package:vsdx/vsdx.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('PNG export keeps fractional page-size edges fully opaque', () async {
+    const page = VsdxPage(
+      id: 1,
+      name: 'A4',
+      widthInches: 8.2677165354,
+      heightInches: 11.6929133858,
+      shapes: <VsdxShape>[],
+    );
+    final exported = await renderPageToPng(page, pxPerInch: 72);
+    expect(exported, isNotNull);
+
+    final codec = await ui.instantiateImageCodec(exported!);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    expect(rgba, isNotNull);
+    expect(image.width, 596);
+    expect(image.height, 842);
+    for (final offset in <int>[
+      0,
+      (image.width - 1) * 4,
+      ((image.height - 1) * image.width) * 4,
+      (image.width * image.height - 1) * 4,
+    ]) {
+      expect(rgba!.getUint8(offset), 255);
+      expect(rgba.getUint8(offset + 1), 255);
+      expect(rgba.getUint8(offset + 2), 255);
+      expect(rgba.getUint8(offset + 3), 255);
+    }
+    image.dispose();
+    codec.dispose();
+  });
+
   test('PNG export paints embedded raster (not only a placeholder)', () async {
     // Build a known-good solid red PNG via the Flutter codec so we don't
     // depend on hand-crafted bytes staying valid across platforms.

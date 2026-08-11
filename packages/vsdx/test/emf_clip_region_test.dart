@@ -55,6 +55,10 @@ Uint8List _clippedEmf() {
   _rectRecord(out, 43, 0, 0, 100, 100);
   _record(out, 33, Uint8List(0)); // EMR_SAVEDC
   _rectRecord(out, 30, 25, 25, 75, 75); // EMR_INTERSECTCLIPRECT
+  final offsetClip = ByteData(8)
+    ..setInt32(0, 5, Endian.little)
+    ..setInt32(4, -3, Endian.little);
+  _record(out, 26, offsetClip.buffer.asUint8List()); // EMR_OFFSETCLIPRGN
   _brush(out, 2, 0x000000ff); // COLORREF red
   _rectRecord(out, 43, 0, 0, 100, 100);
   final restore = ByteData(4)..setInt32(0, -1, Endian.little);
@@ -110,6 +114,9 @@ void main() {
     expect(drawing.ops.whereType<MetafilePathOp>(), hasLength(3));
     expect(drawing.ops.whereType<MetafileSaveDcOp>(), hasLength(1));
     expect(drawing.ops.whereType<MetafileRestoreDcOp>().single.count, 1);
+    final offset = drawing.ops.whereType<MetafileOffsetClipOp>().single;
+    expect(offset.dx, 5);
+    expect(offset.dy, -3);
     expect(
       drawing.ops.whereType<MetafileClipRectOp>().map((op) => op.mode),
       <MetafileClipCombineMode>[
@@ -132,6 +139,8 @@ void main() {
       images: images,
     );
     expect(RegExp('<clipPath id="wmf-dc-clip-').allMatches(svg), hasLength(2));
+    expect(svg, contains('id="wmf-dc-offset-clip-'));
+    expect(svg, contains('M 30 22 L 80 22 L 80 72 L 30 72 Z'));
     expect(svg, contains('clip-rule="evenodd"'));
 
     const parser = DocumentParser();
@@ -148,6 +157,10 @@ void main() {
     expect(
       parseEmfDrawing(image.bytes)!.ops.whereType<MetafileClipRectOp>(),
       hasLength(2),
+    );
+    expect(
+      parseEmfDrawing(image.bytes)!.ops.whereType<MetafileOffsetClipOp>(),
+      hasLength(1),
     );
   });
 

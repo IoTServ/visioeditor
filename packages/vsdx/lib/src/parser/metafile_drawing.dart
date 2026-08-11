@@ -119,6 +119,19 @@ class MetafileClipPathOp {
   final bool evenOddFill;
 }
 
+/// Move the active GDI clip region without moving later drawing operations.
+///
+/// WMF `META_OFFSETCLIPRGN` and EMF `EMR_OFFSETCLIPRGN` express the delta in
+/// the current logical coordinate system. Replayers apply the active mapping
+/// transform to this vector before shifting the device-space clip.
+@immutable
+class MetafileOffsetClipOp {
+  const MetafileOffsetClipOp({required this.dx, required this.dy});
+
+  final double dx;
+  final double dy;
+}
+
 /// A single GDI device pixel retained in metafile paint order.
 @immutable
 class MetafilePixelOp {

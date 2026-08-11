@@ -38,6 +38,14 @@ Future<Uint8List?> renderPageToPng(
       : 11.6929133858;
   final w = pageWidth * safeDpi;
   final h = pageHeight * safeDpi;
+  // `Picture.toImage` requires integer dimensions. Paint the background to
+  // those exact dimensions as well: when an inch size produces a fractional
+  // pixel extent, painting only to `w`/`h` leaves a partially transparent
+  // right or bottom fringe. Flutter's premultiplied raw pixels then look like
+  // a dark full-page border to image consumers and visual-diff tooling.
+  final pixelWidth = w.ceil();
+  final pixelHeight = h.ceil();
+  final pixelSize = Size(pixelWidth.toDouble(), pixelHeight.toDouble());
   final cache = VsdxImageCache();
   try {
     await cache.warmUp(images);
@@ -49,7 +57,10 @@ Future<Uint8List?> renderPageToPng(
       // Best-effort export; PatternFillBuilder.shared remains usable/empty.
     }
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
+    final canvas = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height),
+    );
     final layerIds =
         visibleLayerIdsOverride ??
         (page.layers.isEmpty ? null : page.printableLayerIds);
@@ -76,9 +87,9 @@ Future<Uint8List?> renderPageToPng(
       drawPageBorder: false,
       drawPlaceholders: false,
       drawNameFallback: false,
-    ).paint(canvas, Size(w, h));
+    ).paint(canvas, pixelSize);
     final picture = recorder.endRecording();
-    final image = await picture.toImage(w.ceil(), h.ceil());
+    final image = await picture.toImage(pixelWidth, pixelHeight);
     try {
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       return data?.buffer.asUint8List();

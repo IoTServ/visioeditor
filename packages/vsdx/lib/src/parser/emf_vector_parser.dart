@@ -37,6 +37,7 @@ const int _emrSetStretchBltMode = 21;
 const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
 const int _emrSetBkColor = 25;
+const int _emrOffsetClipRgn = 26;
 const int _emrMoveToEx = 27;
 const int _emrExcludeClipRect = 29;
 const int _emrIntersectClipRect = 30;
@@ -1509,6 +1510,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       };
     } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
       backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
+    } else if (t == _emrOffsetClipRgn && params + 8 <= recEnd) {
+      ops.add(MetafileOffsetClipOp(
+        dx: bd.getInt32(params, Endian.little).toDouble(),
+        dy: bd.getInt32(params + 4, Endian.little).toDouble(),
+      ));
     } else if ((t == _emrExcludeClipRect || t == _emrIntersectClipRect) &&
         params + 16 <= recEnd) {
       ops.add(MetafileClipRectOp(
