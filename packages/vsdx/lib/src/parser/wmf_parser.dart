@@ -27,7 +27,9 @@ const int _metaOffsetViewportOrg = 0x0211;
 const int _metaScaleViewportExt = 0x0412;
 const int _metaSetBkMode = 0x0102;
 const int _metaSetMapMode = 0x0103;
+const int _metaSetRop2 = 0x0104;
 const int _metaSetPolyFillMode = 0x0106;
+const int _metaSetStretchBltMode = 0x0107;
 const int _metaSetTextCharExtra = 0x0108;
 const int _metaSetBkColor = 0x0201;
 const int _metaSetTextColor = 0x0209;
@@ -208,6 +210,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var textAlign = 0;
   var mapMode = 1; // MM_TEXT
   var polyFillMode = 1; // ALTERNATE
+  var rasterOperation = MetafileRasterOperation.overpaint;
+  var bitmapFilter = MetafileBitmapFilter.linear;
   var textBreakExtra = 0;
   var textBreakCount = 0;
   var textCharExtra = 0;
@@ -242,6 +246,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         textAlign: textAlign,
         mapMode: mapMode,
         polyFillMode: polyFillMode,
+        rasterOperation: rasterOperation,
+        bitmapFilter: bitmapFilter,
         textBreakExtra: textBreakExtra,
         textBreakCount: textBreakCount,
         textCharExtra: textCharExtra,
@@ -289,6 +295,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     textAlign = state.textAlign;
     mapMode = state.mapMode;
     polyFillMode = state.polyFillMode;
+    rasterOperation = state.rasterOperation;
+    bitmapFilter = state.bitmapFilter;
     textBreakExtra = state.textBreakExtra;
     textBreakCount = state.textBreakCount;
     textCharExtra = state.textCharExtra;
@@ -466,6 +474,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       strokeWidth: 0,
       fillHatch: hatch,
       fillBackgroundArgb: hatchBackground,
+      rasterOperation: rasterOperation,
     ));
   }
 
@@ -523,8 +532,21 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       if (restored > 0) ops.add(MetafileRestoreDcOp(count: restored));
     } else if (func == _metaSetMapMode && params + 2 <= recEnd) {
       mapMode = bd.getUint16(params, Endian.little);
+    } else if (func == _metaSetRop2 && params + 2 <= recEnd) {
+      rasterOperation = switch (bd.getUint16(params, Endian.little)) {
+        6 => MetafileRasterOperation.invert, // R2_NOT
+        7 => MetafileRasterOperation.xor, // R2_XORPEN
+        11 => MetafileRasterOperation.nop, // R2_NOP
+        _ => MetafileRasterOperation.overpaint,
+      };
     } else if (func == _metaSetPolyFillMode && params + 2 <= recEnd) {
       polyFillMode = bd.getUint16(params, Endian.little);
+    } else if (func == _metaSetStretchBltMode && params + 2 <= recEnd) {
+      bitmapFilter = switch (bd.getUint16(params, Endian.little)) {
+        1 || 2 || 3 => MetafileBitmapFilter.nearest,
+        4 => MetafileBitmapFilter.linear,
+        _ => bitmapFilter,
+      };
     } else if (func == _metaSetTextJustification && params + 4 <= recEnd) {
       // WMF stores API parameters in reverse order: break count, then the
       // signed total extra width distributed across break characters.
@@ -824,6 +846,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
               destination: destination,
               source: source,
               rasterOperation: rasterOperation,
+              filter: bitmapFilter,
             ));
           }
         }
@@ -875,6 +898,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           strokeArgb: penColor,
           strokeWidth: mappedPenWidth(),
           strokeDashPattern: mappedPenDashPattern(),
+          rasterOperation: rasterOperation,
         ));
       }
       curX = x;
@@ -910,6 +934,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushHatch: brushHatch,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
+          rasterOperation: rasterOperation,
           evenOddFill: polyFillMode != 2,
           asEllipse: true,
         ));
@@ -938,6 +963,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
                 strokeArgb: penColor,
                 strokeWidth: mappedPenWidth(),
                 strokeDashPattern: mappedPenDashPattern(),
+                rasterOperation: rasterOperation,
               ));
             }
           } else {
@@ -953,6 +979,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
               brushHatch: brushHatch,
               backgroundMode: backgroundMode,
               backgroundColor: backgroundColor,
+              rasterOperation: rasterOperation,
               evenOddFill: polyFillMode != 2,
             ));
           }
@@ -974,6 +1001,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushHatch: brushHatch,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
+          rasterOperation: rasterOperation,
           evenOddFill: polyFillMode != 2,
         ));
       }
@@ -991,6 +1019,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             strokeArgb: penColor,
             strokeWidth: mappedPenWidth(),
             strokeDashPattern: mappedPenDashPattern(),
+            rasterOperation: rasterOperation,
           ));
         }
       }
@@ -1018,6 +1047,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             strokeArgb: penColor,
             strokeWidth: mappedPenWidth(),
             strokeDashPattern: mappedPenDashPattern(),
+            rasterOperation: rasterOperation,
           ));
         }
         if (pts.isNotEmpty) {
@@ -1061,6 +1091,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushHatch: brushHatch,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
+          rasterOperation: rasterOperation,
           additionalContours: <MetafilePathContour>[
             for (final points in contours.skip(1))
               MetafilePathContour(points: points, closed: true),
@@ -1094,6 +1125,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushHatch: brushHatch,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
+        rasterOperation: rasterOperation,
         evenOddFill: polyFillMode != 2,
         cornerRadiusX: cornerWidth * mappingScaleX().abs(),
         cornerRadiusY: cornerHeight * mappingScaleY().abs(),
@@ -1123,6 +1155,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushHatch: brushHatch,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
+        rasterOperation: rasterOperation,
         evenOddFill: polyFillMode != 2,
         asEllipse: func == _metaEllipse,
       ));
@@ -1226,6 +1259,7 @@ MetafilePathOp _pathOp(
   required int brushHatch,
   required int backgroundMode,
   required int backgroundColor,
+  required MetafileRasterOperation rasterOperation,
   List<MetafilePathContour> additionalContours = const <MetafilePathContour>[],
   bool evenOddFill = false,
   bool asEllipse = false,
@@ -1251,6 +1285,7 @@ MetafilePathOp _pathOp(
         brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
     additionalContours: additionalContours,
     evenOddFill: evenOddFill,
+    rasterOperation: rasterOperation,
   );
 }
 
@@ -1538,6 +1573,8 @@ class _WmfDcState {
     required this.textAlign,
     required this.mapMode,
     required this.polyFillMode,
+    required this.rasterOperation,
+    required this.bitmapFilter,
     required this.textBreakExtra,
     required this.textBreakCount,
     required this.textCharExtra,
@@ -1576,6 +1613,8 @@ class _WmfDcState {
   final int textAlign;
   final int mapMode;
   final int polyFillMode;
+  final MetafileRasterOperation rasterOperation;
+  final MetafileBitmapFilter bitmapFilter;
   final int textBreakExtra;
   final int textBreakCount;
   final int textCharExtra;

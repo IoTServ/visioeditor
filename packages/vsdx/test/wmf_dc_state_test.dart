@@ -700,4 +700,116 @@ void main() {
       hasLength(3),
     );
   });
+
+  test('ROP2 and stretch mode replay and restore through WMF round-trip', () {
+    final payload = _wmf(<Uint8List>[
+      _brushRecord(0x000000ff), // COLORREF red
+      _wordRecord(0x012d, const <int>[0]),
+      _wordRecord(0x0104, const <int>[6]), // R2_NOT
+      _wordRecord(0x041b, const <int>[20, 20, 0, 0]),
+      _wordRecord(0x001e, const <int>[]), // SaveDC
+      _wordRecord(0x0104, const <int>[11]), // R2_NOP
+      _wordRecord(0x041b, const <int>[20, 50, 0, 30]),
+      _wordRecord(0x0107, const <int>[3]), // COLORONCOLOR
+      _dibBltRecord(
+        0x0b41,
+        x: 0,
+        y: 30,
+        width: 20,
+        height: 20,
+        sourceWidth: 2,
+        sourceHeight: 2,
+      ),
+      _wordRecord(0x001e, const <int>[]), // SaveDC
+      _wordRecord(0x0107, const <int>[4]), // HALFTONE
+      _dibBltRecord(
+        0x0b41,
+        x: 30,
+        y: 30,
+        width: 20,
+        height: 20,
+        sourceWidth: 2,
+        sourceHeight: 2,
+      ),
+      _wordRecord(0x0127, const <int>[0xffff]), // RestoreDC(-1)
+      _dibBltRecord(
+        0x0b41,
+        x: 60,
+        y: 30,
+        width: 20,
+        height: 20,
+        sourceWidth: 2,
+        sourceHeight: 2,
+      ),
+      _wordRecord(0x0127, const <int>[0xffff]), // RestoreDC(-1)
+      _wordRecord(0x041b, const <int>[20, 80, 0, 60]),
+    ]);
+
+    final drawing = parseWmfDrawing(payload)!;
+    expect(
+      drawing.ops
+          .whereType<MetafilePathOp>()
+          .map((path) => path.rasterOperation),
+      <MetafileRasterOperation>[
+        MetafileRasterOperation.invert,
+        MetafileRasterOperation.nop,
+        MetafileRasterOperation.invert,
+      ],
+    );
+    expect(
+      drawing.ops.whereType<MetafileBitmapOp>().map((bitmap) => bitmap.filter),
+      <MetafileBitmapFilter>[
+        MetafileBitmapFilter.nearest,
+        MetafileBitmapFilter.linear,
+        MetafileBitmapFilter.nearest,
+      ],
+    );
+
+    const part = '/visio/media/raster-state.wmf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(RegExp('mix-blend-mode:difference').allMatches(svg), hasLength(2));
+    expect(RegExp('image-rendering:pixelated').allMatches(svg), hasLength(2));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var document = parser.parse(blank);
+    document =
+        document.copyWith(images: images).replacePage(0, _imagePage(part));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: document,
+    ));
+    final roundTripped = reopened.images.findByPart(part)!.bytes;
+    expect(roundTripped, payload);
+    final reopenedDrawing = parseWmfDrawing(roundTripped)!;
+    expect(
+      reopenedDrawing.ops
+          .whereType<MetafilePathOp>()
+          .map((path) => path.rasterOperation),
+      <MetafileRasterOperation>[
+        MetafileRasterOperation.invert,
+        MetafileRasterOperation.nop,
+        MetafileRasterOperation.invert,
+      ],
+    );
+    expect(
+      reopenedDrawing.ops
+          .whereType<MetafileBitmapOp>()
+          .map((bitmap) => bitmap.filter),
+      <MetafileBitmapFilter>[
+        MetafileBitmapFilter.nearest,
+        MetafileBitmapFilter.linear,
+        MetafileBitmapFilter.nearest,
+      ],
+    );
+  });
 }
