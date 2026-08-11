@@ -3575,7 +3575,7 @@ class _StencilPanelState extends State<_StencilPanel> {
   }
 
   Future<void> _chooseShapeLibraries() async {
-    final result = await showDialog<Set<String>>(
+    final result = await showDialog<StencilLibraryDialogResult>(
       context: context,
       builder: (dialogContext) => StencilLibraryDialog(
         initialSelection: _enabledGroups,
@@ -3584,19 +3584,22 @@ class _StencilPanelState extends State<_StencilPanel> {
       ),
     );
     if (result == null || !mounted) return;
+    final enabledGroups = result.selectedGroups;
     final previouslyEnabled = _enabledGroups;
     setState(() {
-      _enabledGroups = result;
-      _sessionEnabledGroups = Set<String>.from(result);
-      _collapsed.removeWhere((name) => !result.contains(name));
+      _enabledGroups = enabledGroups;
+      _sessionEnabledGroups = Set<String>.from(enabledGroups);
+      _collapsed.removeWhere((name) => !enabledGroups.contains(name));
       for (final group in kStencilGroups) {
-        if (result.contains(group.name) &&
+        if (enabledGroups.contains(group.name) &&
             !previouslyEnabled.contains(group.name) &&
             !kDefaultStencilGroupNames.contains(group.name)) {
           _collapsed.add(group.name);
         }
       }
     });
+    final stencil = result.stencil;
+    if (stencil != null) _dropStencil(stencil);
   }
 
   Widget _buildGroup(ColorScheme scheme, StencilGroup group,

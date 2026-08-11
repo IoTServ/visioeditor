@@ -91,4 +91,59 @@ void main() {
     expect(find.text('Compute'), findsOneWidget);
     expect(find.textContaining('Draw.io'), findsNothing);
   });
+
+  testWidgets('multi-keyword search previews and returns a shape to insert', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    StencilLibraryDialogResult? chosen;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () async {
+                chosen = await showDialog<StencilLibraryDialogResult>(
+                  context: context,
+                  builder: (context) => StencilLibraryDialog(
+                    initialSelection: const <String>{},
+                    thumbnailBuilder: (context, stencil) =>
+                        const ColoredBox(color: Colors.blue),
+                  ),
+                );
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'decision flowchart');
+    await tester.pump();
+
+    expect(
+      find.textContaining('Search shapes: decision flowchart'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('stencil-library-clear-search')),
+      findsOneWidget,
+    );
+    expect(find.text('Decision'), findsWidgets);
+    expect(find.textContaining('Draw.io'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('stencil-library-preview-tile-0')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(chosen, isNotNull);
+    expect(chosen!.stencil, isNotNull);
+    expect(chosen!.stencil!.name.toLowerCase(), contains('decision'));
+    expect(chosen!.selectedGroups, contains(chosen!.stencil!.group));
+  });
 }
