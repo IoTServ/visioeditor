@@ -3398,6 +3398,30 @@ class VsdxToSvgSerializer {
         }
         buf.writeln('$indent  <g clip-path="url(#$clipId)">');
         dcClipDepths[dcClipDepths.length - 1]++;
+      } else if (op is MetafileClipPathOp) {
+        final clipId = 'wmf-dc-path-clip-$idScope-$opIndex';
+        final path = _metafileClipPathData(op);
+        final rule = op.evenOddFill ? 'evenodd' : 'nonzero';
+        if (op.mode == MetafileClipCombineMode.intersect) {
+          buf.writeln(
+            '$indent  <defs><clipPath id="$clipId" '
+            'clipPathUnits="userSpaceOnUse"><path d="$path" '
+            'clip-rule="$rule"/></clipPath></defs>',
+          );
+        } else {
+          final outer =
+              'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
+              'H ${_n(drawing.maxX)} V ${_n(drawing.maxY)} '
+              'H ${_n(drawing.minX)} Z';
+          buf.writeln(
+            '$indent  <defs><clipPath id="$clipId" '
+            'clipPathUnits="userSpaceOnUse"><path d="$outer $path" '
+            'fill-rule="evenodd" clip-rule="evenodd"/>'
+            '</clipPath></defs>',
+          );
+        }
+        buf.writeln('$indent  <g clip-path="url(#$clipId)">');
+        dcClipDepths[dcClipDepths.length - 1]++;
       } else if (op is MetafilePixelOp) {
         buf.writeln(
           '$indent  <rect x="${_n(op.x)}" y="${_n(op.y)}" width="1" '
@@ -3548,6 +3572,26 @@ class VsdxToSvgSerializer {
     }
     closeClipGroups(dcClipDepths.single);
     buf.writeln('$indent</g>');
+  }
+
+  String _metafileClipPathData(MetafileClipPathOp op) {
+    final data = StringBuffer();
+
+    void addContour(List<MetafilePoint> points) {
+      if (points.isEmpty) return;
+      if (data.isNotEmpty) data.write(' ');
+      data.write('M ${_n(points.first.x)} ${_n(points.first.y)}');
+      for (var i = 1; i < points.length; i++) {
+        data.write(' L ${_n(points[i].x)} ${_n(points[i].y)}');
+      }
+      data.write(' Z');
+    }
+
+    addContour(op.points);
+    for (final contour in op.additionalContours) {
+      addContour(contour.points);
+    }
+    return data.toString();
   }
 
   void _writeMetafileGradientTriangle(

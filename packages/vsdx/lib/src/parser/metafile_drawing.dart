@@ -94,6 +94,22 @@ class MetafileClipRectOp {
   final MetafileClipCombineMode mode;
 }
 
+/// Intersect the active clip region with, or exclude, a compound GDI path.
+@immutable
+class MetafileClipPathOp {
+  const MetafileClipPathOp({
+    required this.points,
+    required this.mode,
+    this.additionalContours = const <MetafilePathContour>[],
+    this.evenOddFill = false,
+  });
+
+  final List<MetafilePoint> points;
+  final MetafileClipCombineMode mode;
+  final List<MetafilePathContour> additionalContours;
+  final bool evenOddFill;
+}
+
 /// A single GDI device pixel retained in metafile paint order.
 @immutable
 class MetafilePixelOp {

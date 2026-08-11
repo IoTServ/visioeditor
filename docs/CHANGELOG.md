@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF/OLE previews now retain compound `EMR_SELECTCLIPPATH` and
+  `EMR_EXTSELECTCLIPRGN` intersection/difference clips in Canvas and SVG/PDF.
+  Complex path and rectangle-union clips follow SaveDC/RestoreDC state, while
+  malformed region payloads remain isolated across `.vsdx` round-trips.
 - EMF/OLE previews now reconstruct and tile `EMR_CREATEMONOBRUSH` and
   `EMR_CREATEDIBPATTERNBRUSHPT` DIB brushes in Canvas and SVG/PDF output.
   Malformed bitmap offsets remain isolated, and the original media bytes stay

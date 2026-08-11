@@ -88,6 +88,20 @@ Future<ui.Image?> rasterizeMetafileDrawing(
             ? ui.ClipOp.intersect
             : ui.ClipOp.difference,
       );
+    } else if (op is MetafileClipPathOp) {
+      canvas.clipPath(
+        _metafileClipPath(
+          op,
+          excludeBounds: op.mode == MetafileClipCombineMode.exclude
+              ? Rect.fromLTRB(
+                  drawing.minX,
+                  drawing.minY,
+                  drawing.maxX,
+                  drawing.maxY,
+                )
+              : null,
+        ),
+      );
     } else if (op is MetafilePixelOp) {
       canvas.drawRect(
         Rect.fromLTWH(op.x, op.y, 1, 1),
@@ -235,6 +249,29 @@ Future<ui.Image?> rasterizeMetafileDrawing(
       image.dispose();
     }
   }
+}
+
+Path _metafileClipPath(MetafileClipPathOp op, {Rect? excludeBounds}) {
+  final path = Path()
+    ..fillType = excludeBounds != null || op.evenOddFill
+        ? PathFillType.evenOdd
+        : PathFillType.nonZero;
+  if (excludeBounds != null) path.addRect(excludeBounds);
+
+  void addContour(List<MetafilePoint> points) {
+    if (points.isEmpty) return;
+    path.moveTo(points.first.x, points.first.y);
+    for (var i = 1; i < points.length; i++) {
+      path.lineTo(points[i].x, points[i].y);
+    }
+    path.close();
+  }
+
+  addContour(op.points);
+  for (final contour in op.additionalContours) {
+    addContour(contour.points);
+  }
+  return path;
 }
 
 void _paintPath(

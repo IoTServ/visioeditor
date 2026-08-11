@@ -65,9 +65,11 @@ const int _emrCloseFigure = 61;
 const int _emrFillPath = 62;
 const int _emrStrokeAndFillPath = 63;
 const int _emrStrokePath = 64;
+const int _emrSelectClipPath = 67;
 const int _emrAbortPath = 68;
 const int _emrFillRgn = 71;
 const int _emrPaintRgn = 74;
+const int _emrExtSelectClipRgn = 75;
 const int _emrBitBlt = 76;
 const int _emrStretchBlt = 77;
 const int _emrMaskBlt = 78;
@@ -191,6 +193,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var recordPath = false;
   final pathFigures = <_EmfPathFigure>[];
   final savedStates = <_EmfDcState>[];
+  var clipActive = false;
 
   _EmfTransform pageTransform() {
     var sx = 1.0;
@@ -297,6 +300,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         pathFigures: pathFigures
             .map((figure) => _EmfPathFigure.copy(figure))
             .toList(growable: false),
+        clipActive: clipActive,
       );
 
   int restoreState(int savedDc) {
@@ -346,6 +350,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     pathFigures
       ..clear()
       ..addAll(state.pathFigures.map(_EmfPathFigure.copy));
+    clipActive = state.clipActive;
     return restoredCount;
   }
 
@@ -1141,6 +1146,35 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     ));
   }
 
+  void emitClipContours(
+    List<List<MetafilePoint>> contours,
+    int regionMode, {
+    required bool evenOddFill,
+  }) {
+    if (contours.isEmpty) return;
+    final mode = switch (regionMode) {
+      1 => MetafileClipCombineMode.intersect, // RGN_AND
+      4 => MetafileClipCombineMode.exclude, // RGN_DIFF
+      // RGN_COPY is equivalent to intersecting the default unbounded clip.
+      5 when !clipActive => MetafileClipCombineMode.intersect,
+      _ => null,
+    };
+    if (mode == null) return;
+    ops.add(MetafileClipPathOp(
+      points: List<MetafilePoint>.of(contours.first),
+      mode: mode,
+      additionalContours: <MetafilePathContour>[
+        for (final contour in contours.skip(1))
+          MetafilePathContour(
+            points: List<MetafilePoint>.of(contour),
+            closed: true,
+          ),
+      ],
+      evenOddFill: evenOddFill,
+    ));
+    clipActive = true;
+  }
+
   void createPatternBrush(int recordStart, int params, int recordEnd) {
     if (params + 24 > recordEnd) return;
     final handle = bd.getUint32(params, Endian.little);
@@ -1311,6 +1345,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
             ? MetafileClipCombineMode.intersect
             : MetafileClipCombineMode.exclude,
       ));
+      clipActive = true;
     } else if (t == _emrSetArcDirection && params + 4 <= recEnd) {
       arcClockwise = bd.getUint32(params, Endian.little) == 2;
     } else if (t == _emrSetTextColor && params + 4 <= recEnd) {
@@ -1331,6 +1366,18 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final regionLength = bd.getUint32(params + 16, Endian.little);
       if (regionLength <= recEnd - (params + 20)) {
         emitRegion(params + 20, regionLength, null);
+      }
+    } else if (t == _emrExtSelectClipRgn && params + 8 <= recEnd) {
+      final regionLength = bd.getUint32(params, Endian.little);
+      final regionMode = bd.getUint32(params + 4, Endian.little);
+      if (regionLength <= recEnd - (params + 8)) {
+        final contours = _readEmfRegionContours(
+          bd,
+          params + 8,
+          regionLength,
+          recEnd,
+        );
+        emitClipContours(contours, regionMode, evenOddFill: false);
       }
     } else if (t == _emrCreatePen && params + 20 <= recEnd) {
       final ih = bd.getInt32(params, Endian.little);
@@ -1503,6 +1550,18 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       paintRecordedPath(stroke: true, fill: true);
     } else if (t == _emrStrokePath) {
       paintRecordedPath(stroke: true, fill: false);
+    } else if (t == _emrSelectClipPath && params + 4 <= recEnd) {
+      final contours = <List<MetafilePoint>>[
+        for (final figure in pathFigures)
+          if (figure.points.length >= 3) List<MetafilePoint>.of(figure.points),
+      ];
+      pathFigures.clear();
+      recordPath = false;
+      emitClipContours(
+        contours,
+        bd.getUint32(params, Endian.little),
+        evenOddFill: polyFillMode != 2,
+      );
     } else if (t == _emrMoveToEx && params + 8 <= recEnd) {
       curPt = MetafilePoint(
         bd.getInt32(params, Endian.little).toDouble(),
@@ -2358,6 +2417,7 @@ class _EmfDcState {
     required this.worldTransform,
     required this.curPt,
     required this.pathFigures,
+    required this.clipActive,
   });
 
   final int penColor;
@@ -2395,4 +2455,5 @@ class _EmfDcState {
   final _EmfTransform worldTransform;
   final MetafilePoint? curPt;
   final List<_EmfPathFigure> pathFigures;
+  final bool clipActive;
 }
