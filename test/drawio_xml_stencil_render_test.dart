@@ -9,13 +9,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'all migrated draw.io XML shapes reach the Canvas path renderer',
+    'all migrated draw.io XML and JavaScript shapes reach the Canvas renderer',
     () async {
       final stencils = <Stencil>[
         for (final group in kStencilGroups)
-          if (group.name.startsWith('Draw.io / ')) ...group.stencils,
+          if (group.name.startsWith('Draw.io / ') ||
+              group.name.startsWith('Draw.io JS / '))
+            ...group.stencils,
       ];
-      expect(stencils, hasLength(8964));
+      expect(stencils, hasLength(9923));
 
       const columns = 100;
       const cell = 20.0;

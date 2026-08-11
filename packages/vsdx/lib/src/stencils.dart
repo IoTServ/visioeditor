@@ -10,6 +10,7 @@ import 'stencil_styles.dart';
 export 'stencil_styles.dart';
 
 part 'drawio_xml_stencils.dart';
+part 'generated/drawio_js_stencil_data.g.dart';
 part 'generated/drawio_xml_stencil_data.g.dart';
 
 /// A palette entry: a named builder that produces a shape at a given page-inch
@@ -3327,6 +3328,7 @@ final Set<String> kDefaultStencilGroupNames = Set<String>.unmodifiable(
 final List<StencilGroup> kStencilGroups = <StencilGroup>[
   ..._builtInStencilGroups,
   ...kDrawioXmlStencilGroups,
+  ...kDrawioJsStencilGroups,
 ];
 
 /// Flattened view of every stencil (used for search / lookups).

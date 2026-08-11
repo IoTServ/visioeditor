@@ -21,6 +21,13 @@ final List<StencilGroup> kDrawioXmlStencilGroups = _drawioXmlLibraryRecords
     .map((record) => _DrawioXmlLibrary(record).toStencilGroup())
     .toList(growable: false);
 
+/// draw.io shapes implemented by JavaScript Canvas painters rather than XML.
+/// Their default sidebar styles are captured into the same native geometry
+/// representation at generation time, so no JavaScript runs in the editor.
+final List<StencilGroup> kDrawioJsStencilGroups = _drawioJsLibraryRecords
+    .map((record) => _DrawioXmlLibrary(record).toStencilGroup())
+    .toList(growable: false);
+
 class _DrawioXmlLibrary {
   _DrawioXmlLibrary(this.record);
 

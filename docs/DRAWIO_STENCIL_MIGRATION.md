@@ -25,24 +25,46 @@ checkout with:
 python3 tool/generate_drawio_xml_stencils.py
 ```
 
+## Migrated in the JavaScript Canvas pass
+
+- 63 draw.io sidebar sections and 959 JavaScript-painted shape variants.
+- AWS 3D, ArchiMate 2.1 and 3.2, Android, Arrows 2, BPMN events and
+  gateways, C4, DFD, Electrical, Floorplan, GCP 2 cards, iOS, Infographic,
+  Lean Mapping, SysML and UML 2.5 are among the captured families.
+- The generator executes the vendored draw.io shape painters against a
+  recording Canvas. Paths are converted to the same native geometry used by
+  XML stencils; JavaScript never runs in the application.
+- Entries that depend on an external image, icon font or unresolved embedded
+  stencil are rejected instead of being replaced by a generic outline.
+
+Regenerate this catalog with:
+
+```sh
+python3 tool/generate_drawio_js_stencils.py
+```
+
+Together, the two passes expose 266 extended libraries and 9,923 shapes. All
+9,923 pass the Flutter Canvas render audit; representative XML and JavaScript
+shapes also pass VSDX writer/parser round-trip tests.
+
 ## Remaining migration work
 
-The following draw.io libraries are defined primarily or exclusively by
-JavaScript template builders rather than the 203 XML stencil files. They are
-not yet represented completely:
+The following draw.io libraries are still not represented completely:
 
-- Active Directory, Allied Telesis, ArchiMate and ArchiMate 3
-- AWS 4b, Azure 2 and Google Cloud icon-font variants
-- C4, DFD, Threat Modeling, SysML and UML 2.5
-- Cumulus, Dynamics 365, Infographic, SAP and current iOS UI templates
-- Some composite templates from Advanced, Arrows 2, ER and Network
+- compressed `addDataEntry` composite models, group templates and edge-only
+  entries used by Advanced, C4, ER, SysML, Threat Modeling and UML 2.5;
+- external-image or embedded-stencil variants in Active Directory, Allied
+  Telesis, Cisco 19/SAFE, SAP, current cloud icon sets and Dynamics 365;
+- icon-font-only variants from AWS 4b, Azure 2, GCP Icons and current iOS;
+- exact draw.io “More Shapes” top-level/sub-library hierarchy and aliases for
+  built-in mxGraph styles that already have equivalent project primitives.
 
 Within migrated XML shapes, geometry and connection points are preserved, but
 these draw.io paint instructions still need a later fidelity pass:
 
 - embedded decorative `<text>` operations and exact font metrics;
 - per-subpath colour, opacity, dash, cap and join changes;
-- JavaScript-only variables, conditional templates and icon-font glyphs.
+- remaining conditional/composite templates and icon-font glyphs.
 
 These limitations affect styling detail, not shape identity: migrated entries
 use their source contours and never substitute a generic placeholder shape.
