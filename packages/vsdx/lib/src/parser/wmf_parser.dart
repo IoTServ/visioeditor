@@ -46,6 +46,12 @@ const int _metaDibCreatePatternBrush = 0x0142;
 const int _metaCreateFontIndirect = 0x02FB;
 const int _metaSelectObject = 0x012D;
 const int _metaDeleteObject = 0x01F0;
+const int _metaCreateRegion = 0x06FF;
+const int _metaFillRegion = 0x0228;
+const int _metaFrameRegion = 0x0429;
+const int _metaInvertRegion = 0x012A;
+const int _metaPaintRegion = 0x012B;
+const int _metaSelectClipRegion = 0x012C;
 const int _metaPolygon = 0x0324;
 const int _metaPolyline = 0x0325;
 const int _metaPolyPolygon = 0x0538;
@@ -527,6 +533,88 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     }
   }
 
+  _GdiBrush? regionBrush(int? index) {
+    if (index == null) {
+      return _GdiBrush(
+        brushStyle,
+        brushColor,
+        brushHatch,
+        brushPatternBmpBytes,
+      );
+    }
+    if (index >= objects.length) return null;
+    final object = objects[index];
+    return object is _GdiBrush ? object : null;
+  }
+
+  void emitRegion(
+    _GdiRegion region,
+    _GdiBrush brush, {
+    MetafileRasterOperation? operation,
+  }) {
+    if (!brush.canFill || region.rectangles.isEmpty) return;
+    final contours = <List<MetafilePoint>>[
+      for (final rectangle in region.rectangles) mapPoints(rectangle),
+    ];
+    for (final contour in contours) {
+      ensureBounds(contour);
+    }
+    ops.add(MetafilePathOp(
+      points: contours.first,
+      closed: true,
+      fill: true,
+      stroke: false,
+      fillArgb: brush.color,
+      strokeArgb: 0,
+      strokeWidth: 0,
+      fillHatch: brush.style == 2 ? brush.hatch : null,
+      fillBackgroundArgb:
+          brush.style == 2 && backgroundMode == 2 ? backgroundColor : null,
+      fillPatternBmpBytes: brush.patternBmpBytes,
+      additionalContours: <MetafilePathContour>[
+        for (final contour in contours.skip(1))
+          MetafilePathContour(points: contour, closed: true),
+      ],
+      // Scan rectangles describe their union; non-zero filling prevents
+      // adjacent bands from punching even-odd holes into the region.
+      evenOddFill: false,
+      rasterOperation: operation ?? rasterOperation,
+    ));
+  }
+
+  void emitFramedRegion(
+    _GdiRegion region,
+    _GdiBrush brush,
+    double frameWidth,
+    double frameHeight,
+  ) {
+    if (!brush.canFill || frameWidth <= 0 || frameHeight <= 0) return;
+    emitRegion(
+      _GdiRegion(_frameRegionRectangles(
+        region.rectangles,
+        frameWidth,
+        frameHeight,
+      )),
+      brush,
+    );
+  }
+
+  void selectClipRegion(_GdiRegion region) {
+    if (region.rectangles.isEmpty) return;
+    final contours = <List<MetafilePoint>>[
+      for (final rectangle in region.rectangles) mapPoints(rectangle),
+    ];
+    ops.add(MetafileClipPathOp(
+      points: contours.first,
+      mode: MetafileClipCombineMode.intersect,
+      additionalContours: <MetafilePathContour>[
+        for (final contour in contours.skip(1))
+          MetafilePathContour(points: contour, closed: true),
+      ],
+      evenOddFill: false,
+    ));
+  }
+
   int allocSlot() {
     for (var i = 0; i < objects.length; i++) {
       if (objects[i] == null) return i;
@@ -712,6 +800,9 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaCreatePatternBrush && params + 32 <= recEnd) {
       final pattern = _wrapBitmap16Pattern(bytes, params, recEnd, 32);
       objects[allocSlot()] = _GdiBrush(3, 0xffffffff, 0, pattern);
+    } else if (func == _metaCreateRegion) {
+      objects[allocSlot()] =
+          _readWmfRegion(bd, params, recEnd) ?? _GdiRegion(const []);
     } else if (func == _metaCreateFontIndirect && params + 18 <= recEnd) {
       final height =
           bd.getInt16(params, Endian.little).abs().toDouble().clamp(1.0, 500.0);
@@ -776,6 +867,52 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaDeleteObject && params + 2 <= recEnd) {
       final ix = bd.getUint16(params, Endian.little);
       if (ix < objects.length) objects[ix] = null;
+    } else if (func == _metaFillRegion && params + 4 <= recEnd) {
+      final regionIndex = bd.getUint16(params, Endian.little);
+      final brushIndex = bd.getUint16(params + 2, Endian.little);
+      if (regionIndex < objects.length && objects[regionIndex] is _GdiRegion) {
+        final brush = regionBrush(brushIndex);
+        if (brush != null)
+          emitRegion(objects[regionIndex]! as _GdiRegion, brush);
+      }
+    } else if (func == _metaFrameRegion && params + 8 <= recEnd) {
+      final regionIndex = bd.getUint16(params, Endian.little);
+      final brushIndex = bd.getUint16(params + 2, Endian.little);
+      final frameHeight =
+          bd.getInt16(params + 4, Endian.little).abs().toDouble();
+      final frameWidth =
+          bd.getInt16(params + 6, Endian.little).abs().toDouble();
+      if (regionIndex < objects.length && objects[regionIndex] is _GdiRegion) {
+        final brush = regionBrush(brushIndex);
+        if (brush != null) {
+          emitFramedRegion(
+            objects[regionIndex]! as _GdiRegion,
+            brush,
+            frameWidth,
+            frameHeight,
+          );
+        }
+      }
+    } else if ((func == _metaInvertRegion ||
+            func == _metaPaintRegion ||
+            func == _metaSelectClipRegion) &&
+        params + 2 <= recEnd) {
+      final regionIndex = bd.getUint16(params, Endian.little);
+      if (regionIndex < objects.length && objects[regionIndex] is _GdiRegion) {
+        final region = objects[regionIndex]! as _GdiRegion;
+        if (func == _metaInvertRegion) {
+          emitRegion(
+            region,
+            _GdiBrush(0, 0xffffffff, 0, null),
+            operation: MetafileRasterOperation.invert,
+          );
+        } else if (func == _metaPaintRegion) {
+          final brush = regionBrush(null);
+          if (brush != null) emitRegion(region, brush);
+        } else {
+          selectClipRegion(region);
+        }
+      }
     } else if (func == _metaSetPixel && params + 8 <= recEnd) {
       final point = mapPoint(MetafilePoint(
         bd.getInt16(params + 6, Endian.little).toDouble(),
@@ -1445,6 +1582,123 @@ Uint8List? _wrapBitmap16Pattern(
   return wrapDibAsBmp(dib);
 }
 
+_GdiRegion? _readWmfRegion(ByteData data, int offset, int end) {
+  // Region header: next/type (4), object count (4), size/count/maxScan (6),
+  // bounding RECT (8), followed by Scan objects.
+  if (offset + 22 > end || data.getInt16(offset + 2, Endian.little) != 6) {
+    return null;
+  }
+  final scanCount = data.getInt16(offset + 10, Endian.little);
+  final maxScan = data.getInt16(offset + 12, Endian.little);
+  if (scanCount < 0 || maxScan < 0 || scanCount > (end - offset - 22) ~/ 8) {
+    return null;
+  }
+  var position = offset + 22;
+  final rectangles = <List<MetafilePoint>>[];
+  for (var scan = 0; scan < scanCount; scan++) {
+    if (position + 8 > end) return null;
+    final count = data.getUint16(position, Endian.little);
+    final top = data.getUint16(position + 2, Endian.little).toDouble();
+    final bottom = data.getUint16(position + 4, Endian.little).toDouble();
+    if (count.isOdd || count > maxScan || count > (end - position - 8) ~/ 2) {
+      return null;
+    }
+    var pointOffset = position + 6;
+    for (var point = 0; point < count; point += 2) {
+      final left = data.getUint16(pointOffset, Endian.little).toDouble();
+      final right = data.getUint16(pointOffset + 2, Endian.little).toDouble();
+      pointOffset += 4;
+      if (left < right && top < bottom) {
+        rectangles.add(<MetafilePoint>[
+          MetafilePoint(left, top),
+          MetafilePoint(right, top),
+          MetafilePoint(right, bottom),
+          MetafilePoint(left, bottom),
+        ]);
+      }
+    }
+    if (data.getUint16(pointOffset, Endian.little) != count) return null;
+    position = pointOffset + 2;
+  }
+  return _GdiRegion(List<List<MetafilePoint>>.unmodifiable(rectangles));
+}
+
+List<List<MetafilePoint>> _frameRegionRectangles(
+  List<List<MetafilePoint>> rectangles,
+  double frameWidth,
+  double frameHeight,
+) {
+  final bands = <List<MetafilePoint>>[];
+
+  List<(double, double)> exposedSegments(
+    double start,
+    double end,
+    Iterable<(double, double)> covered,
+  ) {
+    var segments = <(double, double)>[(start, end)];
+    for (final interval in covered) {
+      final next = <(double, double)>[];
+      for (final segment in segments) {
+        final cutStart = math.max(segment.$1, interval.$1);
+        final cutEnd = math.min(segment.$2, interval.$2);
+        if (cutStart >= cutEnd) {
+          next.add(segment);
+        } else {
+          if (segment.$1 < cutStart) next.add((segment.$1, cutStart));
+          if (cutEnd < segment.$2) next.add((cutEnd, segment.$2));
+        }
+      }
+      segments = next;
+    }
+    return segments;
+  }
+
+  void addBand(double left, double top, double right, double bottom) {
+    if (left >= right || top >= bottom) return;
+    bands.add(<MetafilePoint>[
+      MetafilePoint(left, top),
+      MetafilePoint(right, top),
+      MetafilePoint(right, bottom),
+      MetafilePoint(left, bottom),
+    ]);
+  }
+
+  for (final rectangle in rectangles) {
+    if (rectangle.length < 4) continue;
+    final left = rectangle[0].x;
+    final top = rectangle[0].y;
+    final right = rectangle[2].x;
+    final bottom = rectangle[2].y;
+    final horizontalFrame = math.min(frameHeight, bottom - top);
+    final verticalFrame = math.min(frameWidth, right - left);
+    final topCoverage = rectangles
+        .where((other) => other.length >= 4 && other[2].y == top)
+        .map((other) => (other[0].x, other[2].x));
+    final bottomCoverage = rectangles
+        .where((other) => other.length >= 4 && other[0].y == bottom)
+        .map((other) => (other[0].x, other[2].x));
+    final leftCoverage = rectangles
+        .where((other) => other.length >= 4 && other[2].x == left)
+        .map((other) => (other[0].y, other[2].y));
+    final rightCoverage = rectangles
+        .where((other) => other.length >= 4 && other[0].x == right)
+        .map((other) => (other[0].y, other[2].y));
+    for (final segment in exposedSegments(left, right, topCoverage)) {
+      addBand(segment.$1, top, segment.$2, top + horizontalFrame);
+    }
+    for (final segment in exposedSegments(left, right, bottomCoverage)) {
+      addBand(segment.$1, bottom - horizontalFrame, segment.$2, bottom);
+    }
+    for (final segment in exposedSegments(top, bottom, leftCoverage)) {
+      addBand(left, segment.$1, left + verticalFrame, segment.$2);
+    }
+    for (final segment in exposedSegments(top, bottom, rightCoverage)) {
+      addBand(right - verticalFrame, segment.$1, right, segment.$2);
+    }
+  }
+  return bands;
+}
+
 List<MetafilePoint> _readPoints(ByteData bd, int params, int recEnd) {
   if (params + 2 > recEnd) return const [];
   final count = bd.getUint16(params, Endian.little);
@@ -1691,6 +1945,13 @@ class _GdiBrush extends _GdiObject {
   final int color;
   final int hatch;
   final Uint8List? patternBmpBytes;
+
+  bool get canFill => style == 0 || style == 2 || patternBmpBytes != null;
+}
+
+class _GdiRegion extends _GdiObject {
+  _GdiRegion(this.rectangles);
+  final List<List<MetafilePoint>> rectangles;
 }
 
 class _GdiFont extends _GdiObject {
