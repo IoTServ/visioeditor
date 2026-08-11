@@ -1,8 +1,16 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:archive/archive.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:xml/xml.dart';
 
 import 'stencil_styles.dart';
 
 export 'stencil_styles.dart';
+
+part 'drawio_xml_stencils.dart';
+part 'generated/drawio_xml_stencil_data.g.dart';
 
 /// A palette entry: a named builder that produces a shape at a given page-inch
 /// centre. The shapes panel renders a **live geometry thumbnail** (built via
@@ -771,7 +779,7 @@ const List<Offset2D> _frameCorner = [
 /// Groups are ordered most-used-first and tagged with [StencilGroup.expandAtWidth]
 /// so the panel opens everyday libraries first, then Basic / Containers, then
 /// UML / ER / BPMN / Misc / Advanced when the window is roomy.
-final List<StencilGroup> kStencilGroups = <StencilGroup>[
+final List<StencilGroup> _builtInStencilGroups = <StencilGroup>[
   // drawio "General" — everyday primitives + common composites.
   StencilGroup('General', <Stencil>[
     Stencil('Rectangle', _rect),
@@ -3306,6 +3314,19 @@ final List<StencilGroup> kStencilGroups = <StencilGroup>[
         (id, cx, cy) => VsdxShapeFactory.oracleDevOps(
             id: id, pinX: cx, pinY: cy, width: 1.4, height: 1.1)),
   ], expandAtWidth: 1280),
+];
+
+/// Libraries visible before the user opens the “More shapes” chooser.
+final Set<String> kDefaultStencilGroupNames = Set<String>.unmodifiable(
+  _builtInStencilGroups.map((group) => group.name),
+);
+
+/// Complete palette: hand-tuned everyday libraries followed by every draw.io
+/// XML stencil pack. Extended packs start collapsed and are enabled from the
+/// “More shapes” chooser, so the sidebar remains responsive with 8k+ entries.
+final List<StencilGroup> kStencilGroups = <StencilGroup>[
+  ..._builtInStencilGroups,
+  ...kDrawioXmlStencilGroups,
 ];
 
 /// Flattened view of every stencil (used for search / lookups).

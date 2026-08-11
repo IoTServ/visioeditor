@@ -3359,12 +3359,22 @@ class _StencilPanelState extends State<_StencilPanel> {
 
   final ScrollController _scroll = ScrollController();
   String _query = '';
+  static Set<String>? _sessionEnabledGroups;
+  late Set<String> _enabledGroups;
 
   /// Names of collapsed groups. Seeded responsively from the window size in
   /// [didChangeDependencies]; once the user expands/collapses anything we stop
   /// re-seeding so their choice sticks across rebuilds and window resizes.
   Set<String> _collapsed = <String>{};
   bool _userAdjusted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabledGroups = Set<String>.from(
+      _sessionEnabledGroups ?? kDefaultStencilGroupNames,
+    );
+  }
 
   @override
   void dispose() {
@@ -3399,9 +3409,8 @@ class _StencilPanelState extends State<_StencilPanel> {
 
   void _setAllCollapsed(bool collapsed) => setState(() {
         _userAdjusted = true;
-        _collapsed = collapsed
-            ? <String>{for (final g in kStencilGroups) g.name}
-            : <String>{};
+        _collapsed.removeAll(_enabledGroups);
+        if (collapsed) _collapsed.addAll(_enabledGroups);
       });
 
   void _dropStencil(Stencil s) {
@@ -3445,6 +3454,7 @@ class _StencilPanelState extends State<_StencilPanel> {
     final searching = q.isNotEmpty;
     final groups = <({StencilGroup group, List<Stencil> matches})>[];
     for (final group in kStencilGroups) {
+      if (!searching && !_enabledGroups.contains(group.name)) continue;
       final matches = searching
           ? group.stencils
               .where((s) => el.stencilMatches(s.name, q))
@@ -3524,9 +3534,10 @@ class _StencilPanelState extends State<_StencilPanel> {
   /// a category count so the palette is quick to scan.
   Widget _buildQuickBar(ColorScheme scheme) {
     final el = EditorL10n.of(context);
-    final allExpanded = _collapsed.isEmpty;
+    final allExpanded =
+        _enabledGroups.every((name) => !_collapsed.contains(name));
     final allCollapsed =
-        kStencilGroups.every((g) => _collapsed.contains(g.name));
+        _enabledGroups.every((name) => _collapsed.contains(name));
     Widget btn(IconData icon, String tip, VoidCallback? onTap) => IconButton(
           icon: Icon(icon, size: 18),
           tooltip: tip,
@@ -3541,7 +3552,8 @@ class _StencilPanelState extends State<_StencilPanel> {
         children: [
           Flexible(
             child: Text(
-              el.categoriesCount(kStencilGroups.length),
+              '${el.categoriesCount(_enabledGroups.length)} / '
+              '${kStencilGroups.length}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context)
@@ -3554,9 +3566,133 @@ class _StencilPanelState extends State<_StencilPanel> {
               allExpanded ? null : () => _setAllCollapsed(false)),
           btn(Icons.unfold_less, el.collapseAll,
               allCollapsed ? null : () => _setAllCollapsed(true)),
+          btn(Icons.tune, el.moreShapes, _chooseShapeLibraries),
         ],
       ),
     );
+  }
+
+  Future<void> _chooseShapeLibraries() async {
+    final el = EditorL10n.of(context);
+    final queryController = TextEditingController();
+    var selected = Set<String>.from(_enabledGroups);
+    var query = '';
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final normalized = query.trim().toLowerCase();
+          final groups = normalized.isEmpty
+              ? kStencilGroups
+              : kStencilGroups
+                  .where((group) =>
+                      el
+                          .stencilGroup(group.name)
+                          .toLowerCase()
+                          .contains(normalized) ||
+                      group.name.toLowerCase().contains(normalized))
+                  .toList(growable: false);
+          return AlertDialog(
+            title: Row(
+              children: [
+                Expanded(child: Text(el.moreShapes)),
+                Text(
+                  '${selected.length}/${kStencilGroups.length}',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 560,
+              height: 560,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: queryController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      hintText: el.searchShapes,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (value) =>
+                        setDialogState(() => query = value),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        tooltip: el.expandAll,
+                        icon: const Icon(Icons.select_all),
+                        onPressed: () => setDialogState(
+                          () => selected.addAll(groups.map((g) => g.name)),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: el.collapseAll,
+                        icon: const Icon(Icons.deselect),
+                        onPressed: () => setDialogState(
+                          () => selected.removeAll(groups.map((g) => g.name)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: groups.length,
+                      itemBuilder: (context, index) {
+                        final group = groups[index];
+                        return CheckboxListTile(
+                          dense: true,
+                          value: selected.contains(group.name),
+                          title: Text(el.stencilGroup(group.name)),
+                          subtitle: Text('${group.stencils.length}'),
+                          onChanged: (checked) => setDialogState(() {
+                            if (checked == true) {
+                              selected.add(group.name);
+                            } else {
+                              selected.remove(group.name);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child:
+                    Text(MaterialLocalizations.of(context).cancelButtonLabel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, selected),
+                child: Text(MaterialLocalizations.of(context).okButtonLabel),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    queryController.dispose();
+    if (result == null || !mounted) return;
+    final previouslyEnabled = _enabledGroups;
+    setState(() {
+      _enabledGroups = result;
+      _sessionEnabledGroups = Set<String>.from(result);
+      _collapsed.removeWhere((name) => !result.contains(name));
+      for (final group in kStencilGroups) {
+        if (result.contains(group.name) &&
+            !previouslyEnabled.contains(group.name) &&
+            !kDefaultStencilGroupNames.contains(group.name)) {
+          _collapsed.add(group.name);
+        }
+      }
+    });
   }
 
   Widget _buildGroup(ColorScheme scheme, StencilGroup group,
