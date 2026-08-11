@@ -60,6 +60,7 @@ const int _emrLineTo = 54;
 const int _emrArcTo = 55;
 const int _emrPolyDraw = 56;
 const int _emrSetArcDirection = 57;
+const int _emrSetMiterLimit = 58;
 const int _emrBeginPath = 59;
 const int _emrEndPath = 60;
 const int _emrCloseFigure = 61;
@@ -160,6 +161,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var penWidth = 1.0;
   var penStyle = 0;
   List<double>? penDashPattern;
+  var penMiterLimit = 10.0;
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1;
   var brushHatch = 0;
@@ -270,6 +272,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         penWidth: penWidth,
         penStyle: penStyle,
         penDashPattern: penDashPattern,
+        penMiterLimit: penMiterLimit,
         brushColor: brushColor,
         brushStyle: brushStyle,
         brushHatch: brushHatch,
@@ -322,6 +325,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     penWidth = state.penWidth;
     penStyle = state.penStyle;
     penDashPattern = state.penDashPattern;
+    penMiterLimit = state.penMiterLimit;
     brushColor = state.brushColor;
     brushStyle = state.brushStyle;
     brushHatch = state.brushHatch;
@@ -373,6 +377,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
 
   bool brushCanFill() =>
       brushStyle == 0 || brushStyle == 2 || brushPatternBmpBytes != null;
+
+  MetafileStrokeJoin currentStrokeJoin() => switch (penStyle & 0x0000f000) {
+        0x00001000 => MetafileStrokeJoin.bevel,
+        0x00002000 => MetafileStrokeJoin.miter,
+        _ => MetafileStrokeJoin.round,
+      };
 
   void recordMoveTo(MetafilePoint point) {
     if (pathFigures.isEmpty || pathFigures.last.points.isNotEmpty) {
@@ -482,6 +492,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       strokeArgb: useStroke ? penColor : 0,
       strokeWidth: penWidth,
       strokeDashPattern: penDashPattern,
+      strokeJoin: currentStrokeJoin(),
+      strokeMiterLimit: penMiterLimit,
       fillHatch: useFill && brushStyle == 2 ? brushHatch : null,
       fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
           ? backgroundColor
@@ -524,6 +536,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeArgb: penColor,
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
+        strokeJoin: currentStrokeJoin(),
+        strokeMiterLimit: penMiterLimit,
         evenOddFill: polyFillMode != 2,
         rasterOperation: rasterOperation,
       ));
@@ -556,6 +570,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeArgb: stroke ? penColor : 0,
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
+        strokeJoin: currentStrokeJoin(),
+        strokeMiterLimit: penMiterLimit,
         fillHatch: brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
@@ -870,6 +886,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeArgb: stroke ? penColor : 0,
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
+        strokeJoin: currentStrokeJoin(),
+        strokeMiterLimit: penMiterLimit,
         fillHatch: useFill && brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
             ? backgroundColor
@@ -1368,6 +1386,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       clipActive = true;
     } else if (t == _emrSetArcDirection && params + 4 <= recEnd) {
       arcClockwise = bd.getUint32(params, Endian.little) == 2;
+    } else if (t == _emrSetMiterLimit && params + 4 <= recEnd) {
+      final limit = bd.getFloat32(params, Endian.little).toDouble();
+      if (limit.isFinite && limit >= 1) penMiterLimit = limit;
     } else if (t == _emrSetTextColor && params + 4 <= recEnd) {
       textColor = _rgbToArgb(bd.getUint32(params, Endian.little));
     } else if (t == _emrSetTextAlign && params + 4 <= recEnd) {
@@ -1811,6 +1832,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           strokeArgb: stroke ? penColor : 0,
           strokeWidth: penWidth,
           strokeDashPattern: penDashPattern,
+          strokeJoin: currentStrokeJoin(),
+          strokeMiterLimit: penMiterLimit,
           cornerRadiusX: cornerWidth,
           cornerRadiusY: cornerHeight,
           fillHatch: brushStyle == 2 ? brushHatch : null,
@@ -1855,6 +1878,8 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           strokeArgb: stroke ? penColor : 0,
           strokeWidth: penWidth,
           strokeDashPattern: penDashPattern,
+          strokeJoin: currentStrokeJoin(),
+          strokeMiterLimit: penMiterLimit,
           isEllipse: t == _emrEllipse,
           fillHatch: brushStyle == 2 ? brushHatch : null,
           fillBackgroundArgb:
@@ -2410,6 +2435,7 @@ class _EmfDcState {
     required this.penWidth,
     required this.penStyle,
     required this.penDashPattern,
+    required this.penMiterLimit,
     required this.brushColor,
     required this.brushStyle,
     required this.brushHatch,
@@ -2450,6 +2476,7 @@ class _EmfDcState {
   final double penWidth;
   final int penStyle;
   final List<double>? penDashPattern;
+  final double penMiterLimit;
   final int brushColor;
   final int brushStyle;
   final int brushHatch;

@@ -306,7 +306,12 @@ void _paintPath(
     ..style = PaintingStyle.stroke
     ..color = Color(op.strokeArgb)
     ..strokeWidth = math.max(op.strokeWidth, 0.5)
-    ..strokeJoin = StrokeJoin.round
+    ..strokeJoin = switch (op.strokeJoin) {
+      MetafileStrokeJoin.round => StrokeJoin.round,
+      MetafileStrokeJoin.bevel => StrokeJoin.bevel,
+      MetafileStrokeJoin.miter => StrokeJoin.miter,
+    }
+    ..strokeMiterLimit = op.strokeMiterLimit.clamp(1, 100)
     ..strokeCap = StrokeCap.round
     ..isAntiAlias = true;
   applyRaster(paintFill);

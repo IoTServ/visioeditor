@@ -583,6 +583,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF geometric pens now retain `PS_JOIN_ROUND`, `PS_JOIN_BEVEL`,
+  `PS_JOIN_MITER`, and `EMR_SETMITERLIMIT` through DC state and render the
+  same joins in Canvas and SVG/PDF while preserving byte-identical round-trip.
 - EMF bitmap-pattern and hatch brushes now retain `EMR_SETBRUSHORGEX` phase
   through SaveDC/RestoreDC, keeping Canvas and SVG/PDF tile alignment stable
   while preserving the original media bytes across `.vsdx` save/reopen.

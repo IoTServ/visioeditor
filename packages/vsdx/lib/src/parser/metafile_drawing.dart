@@ -51,6 +51,9 @@ enum MetafileClipCombineMode { intersect, exclude }
 /// normal overpaint path in its metafile renderer.
 enum MetafileRasterOperation { overpaint, invert, xor, nop }
 
+/// GDI geometric-pen join retained for Canvas and SVG/PDF replay.
+enum MetafileStrokeJoin { round, bevel, miter }
+
 /// Save the current GDI device context before later state or clip changes.
 @immutable
 class MetafileSaveDcOp {
@@ -220,6 +223,8 @@ class MetafilePathOp {
     required this.strokeArgb,
     required this.strokeWidth,
     this.strokeDashPattern,
+    this.strokeJoin = MetafileStrokeJoin.round,
+    this.strokeMiterLimit = 10,
     this.isEllipse = false,
     this.cornerRadiusX,
     this.cornerRadiusY,
@@ -245,6 +250,8 @@ class MetafilePathOp {
 
   /// GDI dash/gap lengths in metafile logical units. `null` means solid.
   final List<double>? strokeDashPattern;
+  final MetafileStrokeJoin strokeJoin;
+  final double strokeMiterLimit;
 
   /// GDI `BS_HATCHED` style (`HS_HORIZONTAL` 0 through `HS_DIAGCROSS` 5).
   /// `null` means an ordinary solid fill.

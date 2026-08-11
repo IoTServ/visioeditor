@@ -3694,6 +3694,15 @@ class VsdxToSvgSerializer {
     final dash = op.stroke && dashPattern != null && dashPattern.isNotEmpty
         ? ' stroke-dasharray="${dashPattern.map(_n).join(' ')}"'
         : '';
+    final lineJoin = switch (op.strokeJoin) {
+      MetafileStrokeJoin.round => 'round',
+      MetafileStrokeJoin.bevel => 'bevel',
+      MetafileStrokeJoin.miter => 'miter',
+    };
+    final join = op.stroke ? ' stroke-linejoin="$lineJoin"' : '';
+    final miter = op.stroke && op.strokeJoin == MetafileStrokeJoin.miter
+        ? ' stroke-miterlimit="${_n(op.strokeMiterLimit.clamp(1, 100))}"'
+        : '';
     final fillRule = op.fill && op.evenOddFill ? ' fill-rule="evenodd"' : '';
     if ((op.isEllipse || op.cornerRadiusX != null) && op.points.length >= 2) {
       var minX = op.points.first.x, maxX = op.points.first.x;
@@ -3718,14 +3727,14 @@ class VsdxToSvgSerializer {
           '$indent<rect x="${_n(minX)}" y="${_n(minY)}" '
           'width="${_n(maxX - minX)}" height="${_n(maxY - minY)}" '
           'rx="${_n(cornerRx)}" ry="${_n(cornerRy)}" '
-          'fill="$fill" stroke="$stroke"$sw$dash$fillRule$blend/>',
+          'fill="$fill" stroke="$stroke"$sw$dash$join$miter$fillRule$blend/>',
         );
         return;
       }
       buf.writeln(
         '$indent<ellipse cx="${_n(cx)}" cy="${_n(cy)}" '
         'rx="${_n(rx)}" ry="${_n(ry)}" fill="$fill" stroke="$stroke"'
-        '$sw$dash$fillRule$blend/>',
+        '$sw$dash$join$miter$fillRule$blend/>',
       );
       return;
     }
@@ -3745,7 +3754,7 @@ class VsdxToSvgSerializer {
     }
     buf.writeln(
       '$indent<path d="$d" fill="$fill" stroke="$stroke"'
-      '$sw$dash$fillRule$blend/>',
+      '$sw$dash$join$miter$fillRule$blend/>',
     );
   }
 
