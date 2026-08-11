@@ -199,6 +199,44 @@ Uint8List _setDibToDevRecord({
   return out;
 }
 
+Uint8List _dibPatternBrushRecord({
+  required int style,
+  Uint8List? target,
+}) {
+  final pattern = target ?? _twoByTwoDib();
+  final out = Uint8List(10 + pattern.length);
+  ByteData.sublistView(out)
+    ..setUint32(0, out.length ~/ 2, Endian.little)
+    ..setUint16(4, 0x0142, Endian.little)
+    ..setUint16(6, style, Endian.little)
+    ..setUint16(8, 0, Endian.little); // DIB_RGB_COLORS
+  out.setRange(10, out.length, pattern);
+  return out;
+}
+
+Uint8List _bitmap16Pattern({required int headerSize}) {
+  final out = Uint8List(headerSize + 4);
+  ByteData.sublistView(out)
+    ..setInt16(0, 0, Endian.little) // Type
+    ..setInt16(2, 8, Endian.little)
+    ..setInt16(4, 2, Endian.little)
+    ..setInt16(6, 2, Endian.little) // WORD-aligned source rows
+    ..setUint8(8, 1)
+    ..setUint8(9, 1);
+  out.setRange(headerSize, out.length, const <int>[0xaa, 0, 0x55, 0]);
+  return out;
+}
+
+Uint8List _createPatternBrushRecord() {
+  final target = _bitmap16Pattern(headerSize: 32);
+  final out = Uint8List(6 + target.length);
+  ByteData.sublistView(out)
+    ..setUint32(0, out.length ~/ 2, Endian.little)
+    ..setUint16(4, 0x01f9, Endian.little);
+  out.setRange(6, out.length, target);
+  return out;
+}
+
 Uint8List _polyPolygonRecord() {
   const polygons = <List<(int, int)>>[
     <(int, int)>[(0, 0), (100, 0), (100, 100), (0, 100)],
@@ -917,5 +955,76 @@ void main() {
         parseWmfDrawing(roundTripped)!.ops.whereType<MetafileBitmapOp>().single;
     expect(reopenedBitmap.source!.top, 1);
     expect(reopenedBitmap.destination.bottom, 21);
+  });
+
+  test('WMF DIB and Bitmap16 pattern brushes render and round-trip', () {
+    final payload = _wmf(<Uint8List>[
+      _dibPatternBrushRecord(style: 5), // BS_DIBPATTERNPT with a DIB
+      _dibPatternBrushRecord(
+        style: 3,
+        target: _bitmap16Pattern(headerSize: 10),
+      ),
+      _createPatternBrushRecord(),
+      _wordRecord(0x012d, const <int>[0]),
+      _wordRecord(0x041b, const <int>[20, 20, 0, 0]),
+      _wordRecord(0x012d, const <int>[1]),
+      _wordRecord(0x041b, const <int>[20, 50, 0, 30]),
+      _wordRecord(0x012d, const <int>[2]),
+      _wordRecord(0x041b, const <int>[20, 80, 0, 60]),
+    ]);
+
+    final paths = parseWmfDrawing(payload)!
+        .ops
+        .whereType<MetafilePathOp>()
+        .toList(growable: false);
+    expect(paths, hasLength(3));
+    expect(paths.every((path) => path.fill), isTrue);
+    expect(paths.every((path) => path.fillPatternBmpBytes != null), isTrue);
+    final bitmap16Bmps = paths
+        .skip(1)
+        .map((path) => ByteData.sublistView(path.fillPatternBmpBytes!))
+        .toList(growable: false);
+    for (final bmp in bitmap16Bmps) {
+      expect(bmp.getUint8(0), 0x42);
+      expect(bmp.getUint8(1), 0x4d);
+      expect(bmp.getInt32(18, Endian.little), 8);
+      expect(bmp.getInt32(22, Endian.little), -2);
+      expect(bmp.getUint16(28, Endian.little), 1);
+    }
+
+    const part = '/visio/media/pattern-brushes.wmf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(RegExp(r'<pattern id="wmf-bitmap-pattern-').allMatches(svg),
+        hasLength(3));
+    expect(RegExp('data:image/bmp;base64,').allMatches(svg), hasLength(3));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final edited = parser
+        .parse(blank)
+        .copyWith(images: images)
+        .replacePage(0, _imagePage(part));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: edited,
+    ));
+    final roundTripped = reopened.images.findByPart(part)!.bytes;
+    expect(roundTripped, payload);
+    expect(
+      parseWmfDrawing(roundTripped)!
+          .ops
+          .whereType<MetafilePathOp>()
+          .where((path) => path.fillPatternBmpBytes != null),
+      hasLength(3),
+    );
   });
 }

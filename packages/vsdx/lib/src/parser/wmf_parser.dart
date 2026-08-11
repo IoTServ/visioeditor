@@ -41,6 +41,8 @@ const int _metaExcludeClipRect = 0x0415;
 const int _metaIntersectClipRect = 0x0416;
 const int _metaCreatePenIndirect = 0x02FA;
 const int _metaCreateBrushIndirect = 0x02FC;
+const int _metaCreatePatternBrush = 0x01F9;
+const int _metaDibCreatePatternBrush = 0x0142;
 const int _metaCreateFontIndirect = 0x02FB;
 const int _metaSelectObject = 0x012D;
 const int _metaDeleteObject = 0x01F0;
@@ -205,6 +207,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1; // BS_NULL
   var brushHatch = 0;
+  Uint8List? brushPatternBmpBytes;
   var textColor = 0xFF000000;
   var backgroundMode = 1; // TRANSPARENT
   var backgroundColor = 0xFFFFFFFF;
@@ -241,6 +244,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushColor: brushColor,
         brushStyle: brushStyle,
         brushHatch: brushHatch,
+        brushPatternBmpBytes: brushPatternBmpBytes,
         textColor: textColor,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
@@ -290,6 +294,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     brushColor = state.brushColor;
     brushStyle = state.brushStyle;
     brushHatch = state.brushHatch;
+    brushPatternBmpBytes = state.brushPatternBmpBytes;
     textColor = state.textColor;
     backgroundMode = state.backgroundMode;
     backgroundColor = state.backgroundColor;
@@ -457,6 +462,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     required int color,
     int? hatch,
     int? hatchBackground,
+    Uint8List? patternBmpBytes,
   }) {
     final points = mapPoints(<MetafilePoint>[
       MetafilePoint(x, y),
@@ -475,6 +481,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       strokeWidth: 0,
       fillHatch: hatch,
       fillBackgroundArgb: hatchBackground,
+      fillPatternBmpBytes: patternBmpBytes,
       rasterOperation: rasterOperation,
     ));
   }
@@ -486,7 +493,8 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     double width,
     double height,
   ) {
-    if (rasterOperation == 0x00f00021 && (brushStyle == 0 || brushStyle == 2)) {
+    if (rasterOperation == 0x00f00021 &&
+        (brushStyle == 0 || brushStyle == 2 || brushPatternBmpBytes != null)) {
       emitRasterFill(
         x,
         y,
@@ -496,11 +504,26 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         hatch: brushStyle == 2 ? brushHatch : null,
         hatchBackground:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        patternBmpBytes: brushPatternBmpBytes,
       );
     } else if (rasterOperation == 0x00000042) {
-      emitRasterFill(x, y, width, height, color: 0xff000000);
+      emitRasterFill(
+        x,
+        y,
+        width,
+        height,
+        color: 0xff000000,
+        patternBmpBytes: null,
+      );
     } else if (rasterOperation == 0x00ff0062) {
-      emitRasterFill(x, y, width, height, color: 0xffffffff);
+      emitRasterFill(
+        x,
+        y,
+        width,
+        height,
+        color: 0xffffffff,
+        patternBmpBytes: null,
+      );
     }
   }
 
@@ -674,7 +697,21 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final style = bd.getUint16(params, Endian.little);
       final color = _rgbToArgb(bd.getUint32(params + 2, Endian.little));
       final hatch = bd.getUint16(params + 6, Endian.little);
-      objects[allocSlot()] = _GdiBrush(style, color, hatch);
+      objects[allocSlot()] = _GdiBrush(style, color, hatch, null);
+    } else if (func == _metaDibCreatePatternBrush && params + 4 <= recEnd) {
+      final style = bd.getUint16(params, Endian.little);
+      final colorUsage = bd.getUint16(params + 2, Endian.little);
+      final target = params + 4;
+      Uint8List? pattern;
+      if (style == 3 && !_isDibHeaderAt(bd, target, recEnd)) {
+        pattern = _wrapBitmap16Pattern(bytes, target, recEnd, 10);
+      } else if ((style == 3 || colorUsage == 0) && target + 12 <= recEnd) {
+        pattern = wrapDibAsBmp(Uint8List.sublistView(bytes, target, recEnd));
+      }
+      objects[allocSlot()] = _GdiBrush(style, 0xffffffff, 0, pattern);
+    } else if (func == _metaCreatePatternBrush && params + 32 <= recEnd) {
+      final pattern = _wrapBitmap16Pattern(bytes, params, recEnd, 32);
+      objects[allocSlot()] = _GdiBrush(3, 0xffffffff, 0, pattern);
     } else if (func == _metaCreateFontIndirect && params + 18 <= recEnd) {
       final height =
           bd.getInt16(params, Endian.little).abs().toDouble().clamp(1.0, 500.0);
@@ -724,6 +761,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushStyle = o.style;
           brushColor = o.color;
           brushHatch = o.hatch;
+          brushPatternBmpBytes = o.patternBmpBytes;
         } else if (o is _GdiFont) {
           fontHeight = o.height;
           fontFace = o.face;
@@ -979,6 +1017,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
+          brushPatternBmpBytes: brushPatternBmpBytes,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
           rasterOperation: rasterOperation,
@@ -1024,6 +1063,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
               brushStyle: brushStyle,
               brushColor: brushColor,
               brushHatch: brushHatch,
+              brushPatternBmpBytes: brushPatternBmpBytes,
               backgroundMode: backgroundMode,
               backgroundColor: backgroundColor,
               rasterOperation: rasterOperation,
@@ -1046,6 +1086,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
+          brushPatternBmpBytes: brushPatternBmpBytes,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
           rasterOperation: rasterOperation,
@@ -1136,6 +1177,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           brushStyle: brushStyle,
           brushColor: brushColor,
           brushHatch: brushHatch,
+          brushPatternBmpBytes: brushPatternBmpBytes,
           backgroundMode: backgroundMode,
           backgroundColor: backgroundColor,
           rasterOperation: rasterOperation,
@@ -1170,6 +1212,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushStyle: brushStyle,
         brushColor: brushColor,
         brushHatch: brushHatch,
+        brushPatternBmpBytes: brushPatternBmpBytes,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
         rasterOperation: rasterOperation,
@@ -1200,6 +1243,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         brushStyle: brushStyle,
         brushColor: brushColor,
         brushHatch: brushHatch,
+        brushPatternBmpBytes: brushPatternBmpBytes,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
         rasterOperation: rasterOperation,
@@ -1304,6 +1348,7 @@ MetafilePathOp _pathOp(
   required int brushStyle,
   required int brushColor,
   required int brushHatch,
+  required Uint8List? brushPatternBmpBytes,
   required int backgroundMode,
   required int backgroundColor,
   required MetafileRasterOperation rasterOperation,
@@ -1313,7 +1358,8 @@ MetafilePathOp _pathOp(
   double? cornerRadiusX,
   double? cornerRadiusY,
 }) {
-  final fill = brushStyle == 0 || brushStyle == 2;
+  final fill =
+      brushStyle == 0 || brushStyle == 2 || brushPatternBmpBytes != null;
   final stroke = (penStyle & 0x0f) != 5;
   return MetafilePathOp(
     points: pts,
@@ -1330,10 +1376,73 @@ MetafilePathOp _pathOp(
     fillHatch: brushStyle == 2 ? brushHatch : null,
     fillBackgroundArgb:
         brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+    fillPatternBmpBytes: fill ? brushPatternBmpBytes : null,
     additionalContours: additionalContours,
     evenOddFill: evenOddFill,
     rasterOperation: rasterOperation,
   );
+}
+
+bool _isDibHeaderAt(ByteData data, int offset, int end) {
+  if (offset + 4 > end) return false;
+  return switch (data.getUint32(offset, Endian.little)) {
+    12 || 40 || 52 || 56 || 64 || 108 || 124 => true,
+    _ => false,
+  };
+}
+
+/// Convert the legacy monochrome Bitmap16 payload used by WMF pattern-brush
+/// records into a top-down 1-bpp BMP. LibreOffice accepts this representation
+/// only for Type=0, one plane and one bit per pixel, with white/black palette
+/// entries and the high bit of each source byte as the leftmost pixel.
+Uint8List? _wrapBitmap16Pattern(
+  Uint8List bytes,
+  int offset,
+  int end,
+  int headerSize,
+) {
+  if (headerSize < 10 || offset + headerSize > end) return null;
+  final data = ByteData.sublistView(bytes);
+  final type = data.getInt16(offset, Endian.little);
+  final width = data.getInt16(offset + 2, Endian.little);
+  final height = data.getInt16(offset + 4, Endian.little);
+  final sourceStride = data.getInt16(offset + 6, Endian.little);
+  final planes = data.getUint8(offset + 8);
+  final bitsPerPixel = data.getUint8(offset + 9);
+  final minimumStride = (width + 7) ~/ 8;
+  final bitsStart = offset + headerSize;
+  if (type != 0 ||
+      width <= 0 ||
+      height <= 0 ||
+      width > 100000 ||
+      height > 100000 ||
+      width * height > 100000000 ||
+      sourceStride < minimumStride ||
+      planes != 1 ||
+      bitsPerPixel != 1 ||
+      sourceStride > end - bitsStart ||
+      height > (end - bitsStart) ~/ sourceStride) {
+    return null;
+  }
+
+  final targetStride = ((width + 31) ~/ 32) * 4;
+  final dib = Uint8List(48 + targetStride * height);
+  ByteData.sublistView(dib)
+    ..setUint32(0, 40, Endian.little)
+    ..setInt32(4, width, Endian.little)
+    ..setInt32(8, -height, Endian.little)
+    ..setUint16(12, 1, Endian.little)
+    ..setUint16(14, 1, Endian.little)
+    ..setUint32(20, targetStride * height, Endian.little)
+    ..setUint32(32, 2, Endian.little);
+  // RGBQUAD palette: zero bit is white, one bit is black.
+  dib.setRange(40, 48, const <int>[255, 255, 255, 0, 0, 0, 0, 0]);
+  for (var y = 0; y < height; y++) {
+    final sourceRow = bitsStart + y * sourceStride;
+    final targetRow = 48 + y * targetStride;
+    dib.setRange(targetRow, targetRow + minimumStride, bytes, sourceRow);
+  }
+  return wrapDibAsBmp(dib);
 }
 
 List<MetafilePoint> _readPoints(ByteData bd, int params, int recEnd) {
@@ -1577,10 +1686,11 @@ class _GdiPen extends _GdiObject {
 }
 
 class _GdiBrush extends _GdiObject {
-  _GdiBrush(this.style, this.color, this.hatch);
+  _GdiBrush(this.style, this.color, this.hatch, this.patternBmpBytes);
   final int style;
   final int color;
   final int hatch;
+  final Uint8List? patternBmpBytes;
 }
 
 class _GdiFont extends _GdiObject {
@@ -1614,6 +1724,7 @@ class _WmfDcState {
     required this.brushColor,
     required this.brushStyle,
     required this.brushHatch,
+    required this.brushPatternBmpBytes,
     required this.textColor,
     required this.backgroundMode,
     required this.backgroundColor,
@@ -1654,6 +1765,7 @@ class _WmfDcState {
   final int brushColor;
   final int brushStyle;
   final int brushHatch;
+  final Uint8List? brushPatternBmpBytes;
   final int textColor;
   final int backgroundMode;
   final int backgroundColor;
