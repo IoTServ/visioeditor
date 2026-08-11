@@ -35,8 +35,11 @@ const int _metaSetBkColor = 0x0201;
 const int _metaSetTextColor = 0x0209;
 const int _metaSetTextJustification = 0x020A;
 const int _metaSetTextAlign = 0x012E;
+const int _metaRealizePalette = 0x0035;
+const int _metaSetPalEntries = 0x0037;
 const int _metaSaveDc = 0x001E;
 const int _metaRestoreDc = 0x0127;
+const int _metaResizePalette = 0x0139;
 const int _metaExcludeClipRect = 0x0415;
 const int _metaIntersectClipRect = 0x0416;
 const int _metaCreatePenIndirect = 0x02FA;
@@ -47,6 +50,9 @@ const int _metaCreateFontIndirect = 0x02FB;
 const int _metaSelectObject = 0x012D;
 const int _metaDeleteObject = 0x01F0;
 const int _metaCreateRegion = 0x06FF;
+const int _metaCreatePalette = 0x00F7;
+const int _metaSelectPalette = 0x0234;
+const int _metaAnimatePalette = 0x0436;
 const int _metaFillRegion = 0x0228;
 const int _metaFrameRegion = 0x0429;
 const int _metaInvertRegion = 0x012A;
@@ -233,6 +239,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
   var fontStrikeThrough = false;
   var fontEscapementDegrees = 0.0;
   var fontEncoding = VsdLegacyTextEncoding.ansi;
+  _GdiPalette? selectedPalette;
   var winOrgX = 0.0, winOrgY = 0.0;
   double? winExtX, winExtY;
   var viewportOrgX = 0.0, viewportOrgY = 0.0;
@@ -270,6 +277,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         fontStrikeThrough: fontStrikeThrough,
         fontEscapementDegrees: fontEscapementDegrees,
         fontEncoding: fontEncoding,
+        selectedPalette: selectedPalette,
         winOrgX: winOrgX,
         winOrgY: winOrgY,
         winExtX: winExtX,
@@ -320,6 +328,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     fontStrikeThrough = state.fontStrikeThrough;
     fontEscapementDegrees = state.fontEscapementDegrees;
     fontEncoding = state.fontEncoding;
+    selectedPalette = state.selectedPalette;
     winOrgX = state.winOrgX;
     winOrgY = state.winOrgY;
     winExtX = state.winExtX;
@@ -793,8 +802,13 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       Uint8List? pattern;
       if (style == 3 && !_isDibHeaderAt(bd, target, recEnd)) {
         pattern = _wrapBitmap16Pattern(bytes, target, recEnd, 10);
-      } else if ((style == 3 || colorUsage == 0) && target + 12 <= recEnd) {
-        pattern = wrapDibAsBmp(Uint8List.sublistView(bytes, target, recEnd));
+      } else if (target + 12 <= recEnd) {
+        final dib = _resolvePaletteDib(
+          Uint8List.sublistView(bytes, target, recEnd),
+          colorUsage,
+          selectedPalette,
+        );
+        if (dib != null) pattern = wrapDibAsBmp(dib);
       }
       objects[allocSlot()] = _GdiBrush(style, 0xffffffff, 0, pattern);
     } else if (func == _metaCreatePatternBrush && params + 32 <= recEnd) {
@@ -803,6 +817,10 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
     } else if (func == _metaCreateRegion) {
       objects[allocSlot()] =
           _readWmfRegion(bd, params, recEnd) ?? _GdiRegion(const []);
+    } else if (func == _metaCreatePalette && params + 4 <= recEnd) {
+      final count = bd.getUint16(params + 2, Endian.little);
+      final entries = _readPaletteEntries(bd, params + 4, recEnd, count);
+      objects[allocSlot()] = _GdiPalette(entries ?? <int>[]);
     } else if (func == _metaCreateFontIndirect && params + 18 <= recEnd) {
       final height =
           bd.getInt16(params, Endian.little).abs().toDouble().clamp(1.0, 500.0);
@@ -864,6 +882,25 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
           fontEncoding = o.encoding;
         }
       }
+    } else if (func == _metaSelectPalette && params + 2 <= recEnd) {
+      final ix = bd.getUint16(params, Endian.little);
+      if (ix < objects.length && objects[ix] is _GdiPalette) {
+        selectedPalette = objects[ix]! as _GdiPalette;
+      }
+    } else if ((func == _metaSetPalEntries || func == _metaAnimatePalette) &&
+        selectedPalette != null &&
+        params + 4 <= recEnd) {
+      final start = bd.getUint16(params, Endian.little);
+      final count = bd.getUint16(params + 2, Endian.little);
+      final entries = _readPaletteEntries(bd, params + 4, recEnd, count);
+      if (entries != null) selectedPalette!.replace(start, entries);
+    } else if (func == _metaResizePalette &&
+        selectedPalette != null &&
+        params + 2 <= recEnd) {
+      selectedPalette!.resize(bd.getUint16(params, Endian.little));
+    } else if (func == _metaRealizePalette) {
+      // Vector replay has no device system palette to realize. Resolve the
+      // selected logical palette directly when emitting a standalone bitmap.
     } else if (func == _metaDeleteObject && params + 2 <= recEnd) {
       final ix = bd.getUint16(params, Endian.little);
       if (ix < objects.length) objects[ix] = null;
@@ -872,8 +909,9 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final brushIndex = bd.getUint16(params + 2, Endian.little);
       if (regionIndex < objects.length && objects[regionIndex] is _GdiRegion) {
         final brush = regionBrush(brushIndex);
-        if (brush != null)
+        if (brush != null) {
           emitRegion(objects[regionIndex]! as _GdiRegion, brush);
+        }
       }
     } else if (func == _metaFrameRegion && params + 8 <= recEnd) {
       final regionIndex = bd.getUint16(params, Endian.little);
@@ -947,8 +985,16 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final sourceWidth = bd.getUint16(params + 12, Endian.little);
       final destinationY = bd.getUint16(params + 14, Endian.little).toDouble();
       final destinationX = bd.getUint16(params + 16, Endian.little).toDouble();
-      if (colorUsage == 0 && sourceWidth > 0 && scanCount > 0) {
-        final dib = Uint8List.sublistView(bytes, params + 18, recEnd);
+      if (sourceWidth > 0 && scanCount > 0) {
+        final dib = _resolvePaletteDib(
+          Uint8List.sublistView(bytes, params + 18, recEnd),
+          colorUsage,
+          selectedPalette,
+        );
+        if (dib == null) {
+          pos = recEnd;
+          continue;
+        }
         final dimensions = dibDimensions(dib);
         final bmp = wrapDibAsBmp(dib);
         if (dimensions != null && bmp != null) {
@@ -1015,9 +1061,6 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
         final destinationX = bd.getInt16(p + 6, Endian.little).toDouble();
         p += 8;
 
-        // DIB_RGB_COLORS is self-contained. DIB_PAL_COLORS refers to a
-        // logical palette that WMF does not serialize with the record, so it
-        // cannot be converted to a standalone BMP safely.
         if (destinationWidth != 0 &&
             destinationHeight != 0 &&
             (rasterOperation == 0x00f00021 ||
@@ -1031,10 +1074,16 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
             destinationWidth,
             destinationHeight,
           );
-        } else if (colorUsage == 0 &&
-            destinationWidth != 0 &&
-            destinationHeight != 0) {
-          final dib = Uint8List.sublistView(bytes, p, recEnd);
+        } else if (destinationWidth != 0 && destinationHeight != 0) {
+          final dib = _resolvePaletteDib(
+            Uint8List.sublistView(bytes, p, recEnd),
+            colorUsage,
+            selectedPalette,
+          );
+          if (dib == null) {
+            pos = recEnd;
+            continue;
+          }
           final dimensions = dibDimensions(dib);
           final bmp = wrapDibAsBmp(dib);
           if (dimensions != null && bmp != null) {
@@ -1915,6 +1964,92 @@ List<double>? _textSpacingAdvances(
   return List<double>.unmodifiable(advances);
 }
 
+List<int>? _readPaletteEntries(
+  ByteData data,
+  int offset,
+  int end,
+  int count,
+) {
+  if (count > (end - offset) ~/ 4) return null;
+  return <int>[
+    for (var i = 0; i < count; i++)
+      0xff000000 |
+          (data.getUint8(offset + i * 4) << 16) |
+          (data.getUint8(offset + i * 4 + 1) << 8) |
+          data.getUint8(offset + i * 4 + 2),
+  ];
+}
+
+/// Resolve WMF ColorUsage into the RGB table expected by a standalone BMP.
+///
+/// DIB_PAL_COLORS stores WORD indexes in place of RGBQUAD/RGBTRIPLE entries;
+/// DIB_PAL_INDICES omits the table and uses the pixel values as palette
+/// indexes. Both forms depend on the logical palette selected in the DC.
+Uint8List? _resolvePaletteDib(
+  Uint8List dib,
+  int colorUsage,
+  _GdiPalette? palette,
+) {
+  if (colorUsage == 0) return dib; // DIB_RGB_COLORS
+  if ((colorUsage != 1 && colorUsage != 2) ||
+      palette == null ||
+      dib.length < 12) {
+    return null;
+  }
+  final data = ByteData.sublistView(dib);
+  final headerSize = data.getUint32(0, Endian.little);
+  final isCore = headerSize == 12;
+  if (!isCore &&
+      headerSize != 40 &&
+      headerSize != 52 &&
+      headerSize != 56 &&
+      headerSize != 64 &&
+      headerSize != 108 &&
+      headerSize != 124) {
+    return null;
+  }
+  if (headerSize > dib.length) return null;
+  final bpp = data.getUint16(isCore ? 10 : 14, Endian.little);
+  if (bpp <= 0 || bpp > 8) return null;
+  var count = 1 << bpp;
+  if (!isCore && dib.length >= 36) {
+    final used = data.getUint32(32, Endian.little);
+    if (used != 0) count = used;
+  }
+  if (count <= 0 || count > 256) return null;
+
+  final sourceEntrySize = colorUsage == 1 ? 2 : 0;
+  final sourceBitsOffset = headerSize + count * sourceEntrySize;
+  if (sourceBitsOffset > dib.length) return null;
+  final resolved = <int>[];
+  if (colorUsage == 1) {
+    for (var i = 0; i < count; i++) {
+      final index = data.getUint16(headerSize + i * 2, Endian.little);
+      if (index >= palette.entries.length) return null;
+      resolved.add(palette.entries[index]);
+    }
+  } else {
+    if (count > palette.entries.length) return null;
+    resolved.addAll(palette.entries.take(count));
+  }
+
+  final targetEntrySize = isCore ? 3 : 4;
+  final targetBitsOffset = headerSize + count * targetEntrySize;
+  final out = Uint8List(
+    targetBitsOffset + dib.length - sourceBitsOffset,
+  );
+  out.setRange(0, headerSize, dib);
+  var target = headerSize;
+  for (final argb in resolved) {
+    out[target] = argb & 0xff;
+    out[target + 1] = (argb >> 8) & 0xff;
+    out[target + 2] = (argb >> 16) & 0xff;
+    target += targetEntrySize;
+  }
+  out.setRange(targetBitsOffset, out.length, dib, sourceBitsOffset);
+  return out;
+}
+
 int _rgbToArgb(int colorRef) {
   final r = colorRef & 0xff;
   final g = (colorRef >> 8) & 0xff;
@@ -1952,6 +2087,26 @@ class _GdiBrush extends _GdiObject {
 class _GdiRegion extends _GdiObject {
   _GdiRegion(this.rectangles);
   final List<List<MetafilePoint>> rectangles;
+}
+
+class _GdiPalette extends _GdiObject {
+  _GdiPalette(List<int> entries) : entries = List<int>.of(entries);
+
+  final List<int> entries;
+
+  void replace(int start, List<int> replacements) {
+    if (start < 0 || start >= entries.length) return;
+    final count = math.min(replacements.length, entries.length - start);
+    entries.setRange(start, start + count, replacements);
+  }
+
+  void resize(int length) {
+    if (length < entries.length) {
+      entries.removeRange(length, entries.length);
+    } else if (length > entries.length) {
+      entries.addAll(List<int>.filled(length - entries.length, 0xff000000));
+    }
+  }
 }
 
 class _GdiFont extends _GdiObject {
@@ -2005,6 +2160,7 @@ class _WmfDcState {
     required this.fontStrikeThrough,
     required this.fontEscapementDegrees,
     required this.fontEncoding,
+    required this.selectedPalette,
     required this.winOrgX,
     required this.winOrgY,
     required this.winExtX,
@@ -2046,6 +2202,7 @@ class _WmfDcState {
   final bool fontStrikeThrough;
   final double fontEscapementDegrees;
   final VsdLegacyTextEncoding fontEncoding;
+  final _GdiPalette? selectedPalette;
   final double winOrgX;
   final double winOrgY;
   final double? winExtX;
