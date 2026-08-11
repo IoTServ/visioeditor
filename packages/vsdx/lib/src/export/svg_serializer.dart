@@ -3505,7 +3505,16 @@ class VsdxToSvgSerializer {
         _writeMetafileGradientTriangle(buf, op, indent: '$indent  ');
       } else if (op is MetafilePathOp) {
         String? fillOverride;
-        if (op.fill && op.fillHatch != null) {
+        if (op.fill && op.fillPatternBmpBytes != null) {
+          final patternId = 'wmf-bitmap-pattern-$idScope-$opIndex';
+          _writeMetafileBitmapPattern(
+            buf,
+            op.fillPatternBmpBytes!,
+            patternId: patternId,
+            indent: '$indent  ',
+          );
+          fillOverride = 'url(#$patternId)';
+        } else if (op.fill && op.fillHatch != null) {
           final patternId = 'wmf-hatch-$idScope-$opIndex';
           _writeMetafileHatchPattern(
             buf,
@@ -3722,6 +3731,29 @@ class VsdxToSvgSerializer {
       '<g transform="scale(${_n(hatchScale)})">$backgroundRect'
       '<path d="$hatchPath" fill="none" stroke="${_argbCss(op.fillArgb)}" '
       'stroke-width="1"/></g></pattern></defs>',
+    );
+  }
+
+  void _writeMetafileBitmapPattern(
+    StringBuffer buf,
+    Uint8List bmpBytes, {
+    required String patternId,
+    required String indent,
+  }) {
+    var width = 8;
+    var height = 8;
+    if (bmpBytes.length >= 26 && bmpBytes[0] == 0x42 && bmpBytes[1] == 0x4d) {
+      final data = ByteData.sublistView(bmpBytes);
+      width = data.getInt32(18, Endian.little).abs().clamp(1, 4096);
+      height = data.getInt32(22, Endian.little).abs().clamp(1, 4096);
+    }
+    final href = base64Encode(bmpBytes);
+    buf.writeln(
+      '$indent<defs><pattern id="$patternId" patternUnits="userSpaceOnUse" '
+      'width="$width" height="$height">'
+      '<image x="0" y="0" width="$width" height="$height" '
+      'preserveAspectRatio="none" href="data:image/bmp;base64,$href"/>'
+      '</pattern></defs>',
     );
   }
 

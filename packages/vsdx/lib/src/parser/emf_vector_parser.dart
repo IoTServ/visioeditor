@@ -85,6 +85,8 @@ const int _emrPolylineTo16 = 89;
 const int _emrPolyPolyline16 = 90;
 const int _emrPolyPolygon16 = 91;
 const int _emrPolyDraw16 = 92;
+const int _emrCreateMonoBrush = 93;
+const int _emrCreateDibPatternBrushPt = 94;
 const int _emrExtCreatePen = 95;
 const int _emrPolyTextOutA = 96;
 const int _emrPolyTextOutW = 97;
@@ -158,6 +160,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var brushColor = 0xFFFFFFFF;
   var brushStyle = 1;
   var brushHatch = 0;
+  Uint8List? brushPatternBmpBytes;
   var textColor = 0xFF000000;
   var backgroundMode = 1; // TRANSPARENT
   var backgroundColor = 0xFFFFFFFF;
@@ -264,6 +267,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         brushColor: brushColor,
         brushStyle: brushStyle,
         brushHatch: brushHatch,
+        brushPatternBmpBytes: brushPatternBmpBytes,
         textColor: textColor,
         backgroundMode: backgroundMode,
         backgroundColor: backgroundColor,
@@ -312,6 +316,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     brushColor = state.brushColor;
     brushStyle = state.brushStyle;
     brushHatch = state.brushHatch;
+    brushPatternBmpBytes = state.brushPatternBmpBytes;
     textColor = state.textColor;
     backgroundMode = state.backgroundMode;
     backgroundColor = state.backgroundColor;
@@ -353,6 +358,9 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       haveBounds = true;
     }
   }
+
+  bool brushCanFill() =>
+      brushStyle == 0 || brushStyle == 2 || brushPatternBmpBytes != null;
 
   void recordMoveTo(MetafilePoint point) {
     if (pathFigures.isEmpty || pathFigures.last.points.isNotEmpty) {
@@ -450,7 +458,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       ensurePts(figure.points);
     }
     final useStroke = stroke && (penStyle & 0x0f) != 5;
-    final useFill = fill && (brushStyle == 0 || brushStyle == 2);
+    final useFill = fill && brushCanFill();
     if (!useStroke && !useFill) return;
     final first = figures.first;
     ops.add(MetafilePathOp(
@@ -466,6 +474,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
           ? backgroundColor
           : null,
+      fillPatternBmpBytes: useFill ? brushPatternBmpBytes : null,
       additionalContours: <MetafilePathContour>[
         for (final figure in figures.skip(1))
           MetafilePathContour(
@@ -521,7 +530,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       recordPathPoints(pts, closed: closed);
       return;
     }
-    final fill = allowFill && closed && (brushStyle == 0 || brushStyle == 2);
+    final fill = allowFill && closed && brushCanFill();
     final stroke = (penStyle & 0x0f) != 5;
     if (fill || stroke) {
       ops.add(MetafilePathOp(
@@ -536,6 +545,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillHatch: brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        fillPatternBmpBytes: fill ? brushPatternBmpBytes : null,
         evenOddFill: polyFillMode != 2,
         rasterOperation: rasterOperation,
       ));
@@ -550,6 +560,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     required int color,
     int? hatch,
     int? hatchBackground,
+    Uint8List? patternBmpBytes,
   }) {
     if (width == 0 || height == 0) return;
     final points = <MetafilePoint>[
@@ -569,6 +580,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       strokeWidth: 0,
       fillHatch: hatch,
       fillBackgroundArgb: hatchBackground,
+      fillPatternBmpBytes: patternBmpBytes,
       evenOddFill: polyFillMode != 2,
       rasterOperation: rasterOperation,
     ));
@@ -581,7 +593,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     double width,
     double height,
   ) {
-    if (rasterOperation == 0x00f00021 && (brushStyle == 0 || brushStyle == 2)) {
+    if (rasterOperation == 0x00f00021 && brushCanFill()) {
       emitRasterFill(
         x,
         y,
@@ -591,6 +603,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         hatch: brushStyle == 2 ? brushHatch : null,
         hatchBackground:
             brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+        patternBmpBytes: brushPatternBmpBytes,
       );
       return true;
     }
@@ -828,7 +841,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       return;
     }
     final stroke = (penStyle & 0x0f) != 5;
-    final useFill = fill && (brushStyle == 0 || brushStyle == 2);
+    final useFill = fill && brushCanFill();
     if (stroke || useFill) {
       ops.add(MetafilePathOp(
         points: points,
@@ -843,6 +856,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
             ? backgroundColor
             : null,
+        fillPatternBmpBytes: useFill ? brushPatternBmpBytes : null,
         evenOddFill: polyFillMode != 2,
         rasterOperation: rasterOperation,
       ));
@@ -1062,7 +1076,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
 
   _EmfBrush? regionBrush(int? handle) {
     if (handle == null) {
-      return _EmfBrush(brushStyle, brushColor, brushHatch);
+      return _EmfBrush(
+        brushStyle,
+        brushColor,
+        brushHatch,
+        brushPatternBmpBytes,
+      );
     }
     if (handle & 0x80000000 != 0) {
       final stock = handle & 0x7fffffff;
@@ -1073,7 +1092,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         0xFF666666,
         0xFF000000,
       ];
-      if (stock < colors.length) return _EmfBrush(0, colors[stock], 0);
+      if (stock < colors.length) return _EmfBrush(0, colors[stock], 0, null);
       return null; // NULL_BRUSH and non-brush stock objects do not paint.
     }
     if (handle >= objects.length) return null;
@@ -1083,7 +1102,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
 
   void emitRegion(int regionStart, int regionLength, int? brushHandle) {
     final brush = regionBrush(brushHandle);
-    if (brush == null || (brush.style != 0 && brush.style != 2)) return;
+    if (brush == null ||
+        (brush.style != 0 &&
+            brush.style != 2 &&
+            brush.patternBmpBytes == null)) {
+      return;
+    }
     final contours = _readEmfRegionContours(
       bd,
       regionStart,
@@ -1105,6 +1129,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       fillHatch: brush.style == 2 ? brush.hatch : null,
       fillBackgroundArgb:
           brush.style == 2 && backgroundMode == 2 ? backgroundColor : null,
+      fillPatternBmpBytes: brush.patternBmpBytes,
       additionalContours: <MetafilePathContour>[
         for (final contour in contours.skip(1))
           MetafilePathContour(points: contour, closed: true),
@@ -1114,6 +1139,42 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       evenOddFill: false,
       rasterOperation: rasterOperation,
     ));
+  }
+
+  void createPatternBrush(int recordStart, int params, int recordEnd) {
+    if (params + 24 > recordEnd) return;
+    final handle = bd.getUint32(params, Endian.little);
+    if (handle & 0x80000000 != 0) return;
+    final offBmi = bd.getUint32(params + 8, Endian.little);
+    final cbBmi = bd.getUint32(params + 12, Endian.little);
+    final offBits = bd.getUint32(params + 16, Endian.little);
+    final cbBits = bd.getUint32(params + 20, Endian.little);
+    final recordSize = recordEnd - recordStart;
+    if (offBmi < 8 ||
+        cbBmi < 12 ||
+        offBits < 8 ||
+        cbBits == 0 ||
+        offBmi > recordSize ||
+        cbBmi > recordSize - offBmi ||
+        offBits > recordSize ||
+        cbBits > recordSize - offBits) {
+      return;
+    }
+    final bmp = packDibAsBmp(
+      Uint8List.sublistView(
+        emf,
+        recordStart + offBmi,
+        recordStart + offBmi + cbBmi,
+      ),
+      Uint8List.sublistView(
+        emf,
+        recordStart + offBits,
+        recordStart + offBits + cbBits,
+      ),
+    );
+    if (bmp != null) {
+      _store(objects, handle, _EmfBrush(3, 0, 0, bmp));
+    }
   }
 
   var offset = hdrSize;
@@ -1286,6 +1347,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           metafileGdiDashPattern(style, width),
         ),
       );
+    } else if ((t == _emrCreateMonoBrush || t == _emrCreateDibPatternBrushPt) &&
+        params + 24 <= recEnd) {
+      // Both records use the same ihBrush/Usage/offBmi/cbBmi/offBits/cbBits
+      // layout. LibreOffice reconstructs a BMP and installs it as a tiled
+      // WinMtfFillStyle pattern object.
+      createPatternBrush(offset, params, recEnd);
     } else if (t == _emrExtCreatePen && params + 44 <= recEnd) {
       final ih = bd.getInt32(params, Endian.little);
       final style = bd.getUint32(params + 20, Endian.little);
@@ -1312,7 +1379,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final style = bd.getUint32(params + 4, Endian.little);
       final color = _rgbToArgb(bd.getUint32(params + 8, Endian.little));
       final hatch = bd.getUint32(params + 12, Endian.little);
-      _store(objects, ih, _EmfBrush(style, color, hatch));
+      _store(objects, ih, _EmfBrush(style, color, hatch, null));
     } else if (t == _emrExtCreateFontIndirectW && params + 8 <= recEnd) {
       final ih = bd.getInt32(params, Endian.little);
       // EXTLOGFONTW starts at params+4; elfLogFont.lfHeight at +0 of that.
@@ -1380,9 +1447,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           brushStyle = 0;
           brushColor = stockBrushColors[stock];
           brushHatch = 0;
+          brushPatternBmpBytes = null;
         } else if (stock == 5) {
           brushStyle = 1; // NULL_BRUSH
           brushHatch = 0;
+          brushPatternBmpBytes = null;
         } else if (stock == 8) {
           penStyle = 5; // NULL_PEN
           penDashPattern = null;
@@ -1403,6 +1472,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           brushStyle = o.style;
           brushColor = o.color;
           brushHatch = o.hatch;
+          brushPatternBmpBytes = o.patternBmpBytes;
         } else if (o is _EmfFont) {
           fontHeight = o.height;
           fontFace = o.face;
@@ -1650,7 +1720,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         offset = recEnd;
         continue;
       }
-      final fill = brushStyle == 0 || brushStyle == 2;
+      final fill = brushCanFill();
       final stroke = (penStyle & 0x0f) != 5;
       if (fill || stroke) {
         ops.add(MetafilePathOp(
@@ -1667,6 +1737,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillHatch: brushStyle == 2 ? brushHatch : null,
           fillBackgroundArgb:
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+          fillPatternBmpBytes: fill ? brushPatternBmpBytes : null,
           evenOddFill: polyFillMode != 2,
           rasterOperation: rasterOperation,
         ));
@@ -1691,7 +1762,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         offset = recEnd;
         continue;
       }
-      final fill = brushStyle == 0 || brushStyle == 2;
+      final fill = brushCanFill();
       final stroke = (penStyle & 0x0f) != 5;
       if (fill || stroke) {
         ops.add(MetafilePathOp(
@@ -1707,6 +1778,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           fillHatch: brushStyle == 2 ? brushHatch : null,
           fillBackgroundArgb:
               brushStyle == 2 && backgroundMode == 2 ? backgroundColor : null,
+          fillPatternBmpBytes: fill ? brushPatternBmpBytes : null,
           evenOddFill: polyFillMode != 2,
           rasterOperation: rasterOperation,
         ));
@@ -2137,10 +2209,11 @@ class _EmfPen extends _EmfObject {
 }
 
 class _EmfBrush extends _EmfObject {
-  _EmfBrush(this.style, this.color, this.hatch);
+  _EmfBrush(this.style, this.color, this.hatch, this.patternBmpBytes);
   final int style;
   final int color;
   final int hatch;
+  final Uint8List? patternBmpBytes;
 }
 
 class _EmfFont extends _EmfObject {
@@ -2257,6 +2330,7 @@ class _EmfDcState {
     required this.brushColor,
     required this.brushStyle,
     required this.brushHatch,
+    required this.brushPatternBmpBytes,
     required this.textColor,
     required this.backgroundMode,
     required this.backgroundColor,
@@ -2293,6 +2367,7 @@ class _EmfDcState {
   final int brushColor;
   final int brushStyle;
   final int brushHatch;
+  final Uint8List? brushPatternBmpBytes;
   final int textColor;
   final int backgroundMode;
   final int backgroundColor;

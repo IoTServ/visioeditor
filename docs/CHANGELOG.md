@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF/OLE previews now reconstruct and tile `EMR_CREATEMONOBRUSH` and
+  `EMR_CREATEDIBPATTERNBRUSHPT` DIB brushes in Canvas and SVG/PDF output.
+  Malformed bitmap offsets remain isolated, and the original media bytes stay
+  unchanged across `.vsdx` save/reopen.
 - EMF vector replay now preserves `EMR_SETROP2` state per path, matching
   LibreOffice's invert, xor, and no-op modes in Canvas and SVG output.
 - EMF/OLE previews now replay `EMR_FILLRGN` and `EMR_PAINTRGN` rectangle

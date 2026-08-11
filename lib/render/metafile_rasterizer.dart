@@ -32,6 +32,21 @@ Future<ui.Image?> rasterizeMetafileDrawing(
       // Keep replaying later operations when one malformed embedded DIB fails.
     }
   }
+  final patternImages = <MetafilePathOp, ui.Image>{};
+  for (final op in drawing.ops.whereType<MetafilePathOp>()) {
+    final bytes = op.fillPatternBmpBytes;
+    if (bytes == null) continue;
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      try {
+        patternImages[op] = (await codec.getNextFrame()).image;
+      } finally {
+        codec.dispose();
+      }
+    } catch (_) {
+      // A malformed pattern brush must not suppress later metafile records.
+    }
+  }
   final logicalW = drawing.width;
   final logicalH = drawing.height;
   final scale = math.min(maxEdge / logicalW, maxEdge / logicalH);
@@ -193,7 +208,12 @@ Future<ui.Image?> rasterizeMetafileDrawing(
       canvas.drawVertices(vertices, BlendMode.dst, Paint());
       vertices.dispose();
     } else if (op is MetafilePathOp) {
-      _paintPath(canvas, op, deviceScale: scale);
+      _paintPath(
+        canvas,
+        op,
+        deviceScale: scale,
+        patternImage: patternImages[op],
+      );
     } else if (op is MetafileTextOp) {
       _paintText(canvas, op);
     }
@@ -211,6 +231,9 @@ Future<ui.Image?> rasterizeMetafileDrawing(
     for (final image in bitmapImages.values) {
       image.dispose();
     }
+    for (final image in patternImages.values) {
+      image.dispose();
+    }
   }
 }
 
@@ -218,6 +241,7 @@ void _paintPath(
   Canvas canvas,
   MetafilePathOp op, {
   required double deviceScale,
+  ui.Image? patternImage,
 }) {
   if (op.points.isEmpty) return;
   if (op.rasterOperation == MetafileRasterOperation.nop) return;
@@ -295,7 +319,24 @@ void _paintPath(
     }
   }
   if (op.fill) {
-    if (op.fillHatch == null) {
+    if (patternImage != null &&
+        op.rasterOperation != MetafileRasterOperation.invert) {
+      paintFill
+        ..color = const Color(0xffffffff)
+        ..shader = ui.ImageShader(
+          patternImage,
+          TileMode.repeated,
+          TileMode.repeated,
+          Float64List.fromList(<double>[
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1,
+          ]),
+          filterQuality: FilterQuality.none,
+        );
+      canvas.drawPath(path, paintFill);
+    } else if (op.fillHatch == null) {
       canvas.drawPath(path, paintFill);
     } else {
       final background = op.fillBackgroundArgb;

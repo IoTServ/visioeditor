@@ -209,6 +209,7 @@ class MetafilePathOp {
     this.cornerRadiusY,
     this.fillHatch,
     this.fillBackgroundArgb,
+    this.fillPatternBmpBytes,
     this.additionalContours = const <MetafilePathContour>[],
     this.evenOddFill = false,
     this.rasterOperation = MetafileRasterOperation.overpaint,
@@ -234,6 +235,9 @@ class MetafilePathOp {
   /// Opaque GDI background colour for a hatched brush. A null value keeps the
   /// spaces between hatch strokes transparent (`BKMODE=TRANSPARENT`).
   final int? fillBackgroundArgb;
+
+  /// Complete BMP stream tiled as a GDI DIB/monochrome pattern brush.
+  final Uint8List? fillPatternBmpBytes;
 
   /// When true, [points] are the bounding box corners of an ellipse.
   final bool isEllipse;
