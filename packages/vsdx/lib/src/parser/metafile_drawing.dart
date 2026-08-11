@@ -226,6 +226,8 @@ class MetafilePathOp {
     this.fillHatch,
     this.fillBackgroundArgb,
     this.fillPatternBmpBytes,
+    this.fillOriginX = 0,
+    this.fillOriginY = 0,
     this.additionalContours = const <MetafilePathContour>[],
     this.evenOddFill = false,
     this.rasterOperation = MetafileRasterOperation.overpaint,
@@ -254,6 +256,10 @@ class MetafilePathOp {
 
   /// Complete BMP stream tiled as a GDI DIB/monochrome pattern brush.
   final Uint8List? fillPatternBmpBytes;
+
+  /// Logical GDI brush origin used to phase hatch and bitmap pattern tiles.
+  final double fillOriginX;
+  final double fillOriginY;
 
   /// When true, [points] are the bounding box corners of an ellipse.
   final bool isEllipse;

@@ -3536,6 +3536,8 @@ class VsdxToSvgSerializer {
             op.fillPatternBmpBytes!,
             patternId: patternId,
             indent: '$indent  ',
+            originX: op.fillOriginX,
+            originY: op.fillOriginY,
           );
           fillOverride = 'url(#$patternId)';
         } else if (op.fill && op.fillHatch != null) {
@@ -3771,6 +3773,7 @@ class VsdxToSvgSerializer {
     final hatchScale = spacing / 8;
     buf.writeln(
       '$indent<defs><pattern id="$patternId" patternUnits="userSpaceOnUse" '
+      'x="${_n(op.fillOriginX)}" y="${_n(op.fillOriginY)}" '
       'width="${_n(spacing)}" height="${_n(spacing)}">'
       '<g transform="scale(${_n(hatchScale)})">$backgroundRect'
       '<path d="$hatchPath" fill="none" stroke="${_argbCss(op.fillArgb)}" '
@@ -3783,6 +3786,8 @@ class VsdxToSvgSerializer {
     Uint8List bmpBytes, {
     required String patternId,
     required String indent,
+    required double originX,
+    required double originY,
   }) {
     var width = 8;
     var height = 8;
@@ -3794,6 +3799,7 @@ class VsdxToSvgSerializer {
     final href = base64Encode(bmpBytes);
     buf.writeln(
       '$indent<defs><pattern id="$patternId" patternUnits="userSpaceOnUse" '
+      'x="${_n(originX)}" y="${_n(originY)}" '
       'width="$width" height="$height">'
       '<image x="0" y="0" width="$width" height="$height" '
       'preserveAspectRatio="none" href="data:image/bmp;base64,$href"/>'

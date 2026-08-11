@@ -40,11 +40,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('Canvas tiles EMF DIB pattern brushes inside path bounds', () async {
-    const points = <MetafilePoint>[
+    const left = <MetafilePoint>[
       MetafilePoint(0, 0),
+      MetafilePoint(10, 0),
+      MetafilePoint(10, 20),
+      MetafilePoint(0, 20),
+    ];
+    const right = <MetafilePoint>[
+      MetafilePoint(10, 0),
       MetafilePoint(20, 0),
       MetafilePoint(20, 20),
-      MetafilePoint(0, 20),
+      MetafilePoint(10, 20),
     ];
     final drawing = MetafileDrawing(
       minX: 0,
@@ -53,7 +59,7 @@ void main() {
       maxY: 20,
       ops: <Object>[
         MetafilePathOp(
-          points: points,
+          points: left,
           closed: true,
           fill: true,
           stroke: false,
@@ -61,6 +67,17 @@ void main() {
           strokeArgb: 0,
           strokeWidth: 0,
           fillPatternBmpBytes: _checkerBmp(),
+        ),
+        MetafilePathOp(
+          points: right,
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0,
+          strokeArgb: 0,
+          strokeWidth: 0,
+          fillPatternBmpBytes: _checkerBmp(),
+          fillOriginX: 1,
         ),
       ],
     );
@@ -77,6 +94,7 @@ void main() {
     expect(rgbAt(2, 2), isNot(rgbAt(3, 2)));
     expect(rgbAt(2, 2), rgbAt(4, 2));
     expect(rgbAt(3, 2), rgbAt(5, 2));
+    expect(rgbAt(2, 2), isNot(rgbAt(12, 2)));
     image.dispose();
   });
 }

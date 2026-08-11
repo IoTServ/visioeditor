@@ -583,6 +583,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF bitmap-pattern and hatch brushes now retain `EMR_SETBRUSHORGEX` phase
+  through SaveDC/RestoreDC, keeping Canvas and SVG/PDF tile alignment stable
+  while preserving the original media bytes across `.vsdx` save/reopen.
 - EMF/OLE previews now retain compound `EMR_SELECTCLIPPATH` and
   `EMR_EXTSELECTCLIPRGN` intersection/difference clips in Canvas and SVG/PDF.
   Complex path and rectangle-union clips follow SaveDC/RestoreDC state, while

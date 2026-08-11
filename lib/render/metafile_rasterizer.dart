@@ -368,7 +368,7 @@ void _paintPath(
             1, 0, 0, 0,
             0, 1, 0, 0,
             0, 0, 1, 0,
-            0, 0, 0, 1,
+            op.fillOriginX, op.fillOriginY, 0, 1,
           ]),
           filterQuality: FilterQuality.none,
         );
@@ -395,6 +395,8 @@ void _paintPath(
         op.fillArgb,
         spacing: 8 / deviceScale,
         strokeWidth: 1 / deviceScale,
+        originX: op.fillOriginX,
+        originY: op.fillOriginY,
       );
       canvas.restore();
     }
@@ -415,6 +417,8 @@ void _paintHatch(
   int argb, {
   required double spacing,
   required double strokeWidth,
+  required double originX,
+  required double originY,
 }) {
   if (bounds.isEmpty || !spacing.isFinite || spacing <= 0) return;
   final paint = Paint()
@@ -424,20 +428,31 @@ void _paintHatch(
     ..isAntiAlias = true;
 
   void horizontal() {
-    for (var y = bounds.top; y <= bounds.bottom; y += spacing) {
+    final first = originY + ((bounds.top - originY) / spacing).floor() * spacing;
+    for (var y = first; y <= bounds.bottom; y += spacing) {
       canvas.drawLine(Offset(bounds.left, y), Offset(bounds.right, y), paint);
     }
   }
 
   void vertical() {
-    for (var x = bounds.left; x <= bounds.right; x += spacing) {
+    final first = originX + ((bounds.left - originX) / spacing).floor() * spacing;
+    for (var x = first; x <= bounds.right; x += spacing) {
       canvas.drawLine(Offset(x, bounds.top), Offset(x, bounds.bottom), paint);
     }
   }
 
   void diagonal(bool descending) {
     final h = bounds.height;
-    for (var x = bounds.left - h; x <= bounds.right; x += spacing) {
+    final phase = descending ? originX - originY : originX + originY;
+    final minimum = descending
+        ? bounds.left - bounds.bottom
+        : bounds.left + bounds.top;
+    final maximum = descending
+        ? bounds.right - bounds.top
+        : bounds.right + bounds.bottom;
+    final first = phase + ((minimum - phase) / spacing).floor() * spacing;
+    for (var value = first; value <= maximum; value += spacing) {
+      final x = descending ? value + bounds.top : value - bounds.bottom;
       final from = descending
           ? Offset(x, bounds.top)
           : Offset(x, bounds.bottom);

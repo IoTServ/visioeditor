@@ -55,6 +55,13 @@ void _select(BytesBuilder output, int handle) {
   _record(output, 37, payload.buffer.asUint8List());
 }
 
+void _brushOrigin(BytesBuilder output, int x, int y) {
+  final payload = ByteData(8)
+    ..setInt32(0, x, Endian.little)
+    ..setInt32(4, y, Endian.little);
+  _record(output, 13, payload.buffer.asUint8List());
+}
+
 void _rectangle(BytesBuilder output, int left, int right) {
   final payload = ByteData(16)
     ..setInt32(0, left, Endian.little)
@@ -76,10 +83,16 @@ Uint8List _patternEmf({bool malformedFirst = false}) {
       .asUint8List());
   _patternBrush(output, 93, 1, malformed: malformedFirst);
   _select(output, 1);
-  _rectangle(output, 0, 20);
+  _brushOrigin(output, 3, 4);
+  _rectangle(output, 0, 10);
+  _record(output, 33, Uint8List(0)); // EMR_SAVEDC
   _patternBrush(output, 94, 2);
   _select(output, 2);
-  _rectangle(output, 20, 40);
+  _brushOrigin(output, 7, 8);
+  _rectangle(output, 10, 20);
+  final restore = ByteData(4)..setInt32(0, -1, Endian.little);
+  _record(output, 34, restore.buffer.asUint8List());
+  _rectangle(output, 20, 30);
   _record(output, 14, Uint8List(0));
   return Uint8List.fromList(output.toBytes());
 }
@@ -104,8 +117,13 @@ VsdxPage _page(String partName) => VsdxPage(
 void main() {
   test('EMR mono and DIB pattern brushes tile through paths and SVG', () {
     final payload = _patternEmf();
-    final paths = parseEmfDrawing(payload)!.ops.whereType<MetafilePathOp>();
-    expect(paths, hasLength(2));
+    final paths =
+        parseEmfDrawing(payload)!.ops.whereType<MetafilePathOp>().toList();
+    expect(paths, hasLength(3));
+    expect(
+      paths.map((path) => (path.fillOriginX, path.fillOriginY)),
+      <(double, double)>[(3, 4), (7, 8), (3, 4)],
+    );
     for (final path in paths) {
       final bmp = path.fillPatternBmpBytes!;
       expect(bmp.sublist(0, 2), <int>[0x42, 0x4d]);
@@ -121,8 +139,10 @@ void main() {
     ));
     final svg =
         VsdxToSvgSerializer().serializePage(_page(part), images: images);
-    expect(RegExp('wmf-bitmap-pattern-').allMatches(svg), hasLength(4));
-    expect(RegExp('data:image/bmp;base64,').allMatches(svg), hasLength(2));
+    expect(RegExp('wmf-bitmap-pattern-').allMatches(svg), hasLength(6));
+    expect(RegExp('data:image/bmp;base64,').allMatches(svg), hasLength(3));
+    expect(svg, contains('x="3" y="4"'));
+    expect(svg, contains('x="7" y="8"'));
 
     const parser = DocumentParser();
     const writer = VsdxWriter();
@@ -139,7 +159,7 @@ void main() {
     expect(roundTripped, payload);
     expect(
       parseEmfDrawing(roundTripped)!.ops.whereType<MetafilePathOp>(),
-      hasLength(2),
+      hasLength(3),
     );
   });
 
@@ -150,7 +170,7 @@ void main() {
         .where((path) => path.fillPatternBmpBytes != null)
         .toList();
     expect(paths, hasLength(1));
-    expect(paths.single.points.first.x, 20);
+    expect(paths.single.points.first.x, 10);
     expect(paths.single.fillPatternBmpBytes, isNotNull);
   });
 }
