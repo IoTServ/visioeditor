@@ -266,6 +266,11 @@ class EditorL10n {
   String get toolText => _t('toolText');
   String get moreShapes => _t('moreShapes');
   String get searchShapes => _t('searchShapes');
+  String get addShapeToCanvas =>
+      locale.languageCode == 'zh' ? '添加到画布' : 'Add to canvas';
+  String get chooseShapeToAddHint => locale.languageCode == 'zh'
+      ? '单击选择图形，然后添加到画布；双击可快速添加'
+      : 'Select a shape, then add it to the canvas; double-click to add quickly';
   String get imageMaterials => _t('imageMaterials');
   String get searchImages => _t('searchImages');
   String get thirdPartyIcons => _t('thirdPartyIcons');

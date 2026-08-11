@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/editor_l10n.dart';
 import 'stencil_library_catalog.dart';
@@ -27,12 +28,16 @@ class _StencilSearchEntry {
     required this.group,
     required this.category,
     required this.haystack,
+    required this.shapeText,
+    required this.categoryText,
   });
 
   final Stencil stencil;
   final StencilGroup group;
   final String category;
   final String haystack;
+  final String shapeText;
+  final String categoryText;
 }
 
 /// Two-pane library browser: checkable category tree and live shape preview.
@@ -59,6 +64,7 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
   Map<String, List<_StencilSearchEntry>> _searchByGroup =
       const <String, List<_StencilSearchEntry>>{};
   StencilLibraryNode? _focused;
+  _StencilSearchEntry? _selectedPreview;
   String _query = '';
   String? _localeTag;
 
@@ -87,6 +93,15 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
             haystack: <String>[
               stencil.name,
               el.stencil(stencil.name),
+              stencilLibraryDisplayName(group.name),
+              stencilLibraryDisplayName(
+                group.name,
+                localizeBuiltIn: el.stencilGroup,
+              ),
+            ].join(' ').toLowerCase(),
+            shapeText: '${stencil.name} ${el.stencil(stencil.name)}'
+                .toLowerCase(),
+            categoryText: <String>[
               stencilLibraryDisplayName(group.name),
               stencilLibraryDisplayName(
                 group.name,
@@ -158,9 +173,39 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
   bool _matchesTokens(String haystack, List<String> tokens) =>
       tokens.every(haystack.contains);
 
+  List<_StencilSearchEntry> _searchResults(List<String> tokens) {
+    final phrase = tokens.join(' ');
+    final results = _searchIndex
+        .where((entry) => _matchesTokens(entry.haystack, tokens))
+        .toList(growable: false);
+    int score(_StencilSearchEntry entry) {
+      final name = entry.stencil.name.toLowerCase();
+      if (name == phrase) return 0;
+      if (name.startsWith(phrase)) return 1;
+      if (_matchesTokens(entry.shapeText, tokens)) return 2;
+      if (_matchesTokens(entry.categoryText, tokens)) return 4;
+      return 3;
+    }
+
+    results.sort((a, b) {
+      final byScore = score(a).compareTo(score(b));
+      if (byScore != 0) return byScore;
+      return a.stencil.name.toLowerCase().compareTo(
+        b.stencil.name.toLowerCase(),
+      );
+    });
+    return results;
+  }
+
+  void _selectPreview(_StencilSearchEntry entry) =>
+      setState(() => _selectedPreview = entry);
+
   void _clearQuery() {
     _queryController.clear();
-    setState(() => _query = '');
+    setState(() {
+      _query = '';
+      _selectedPreview = null;
+    });
   }
 
   void _chooseStencil(_StencilSearchEntry entry) {
@@ -190,12 +235,15 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
     final queryTokens = _queryTokens;
     final searching = queryTokens.isNotEmpty;
     final previewEntries = searching
-        ? _searchIndex
-              .where((entry) => _matchesTokens(entry.haystack, queryTokens))
-              .toList(growable: false)
+        ? _searchResults(queryTokens)
         : <_StencilSearchEntry>[
             for (final group in focusedGroups) ...?_searchByGroup[group.name],
           ];
+    final selectedPreview = previewEntries.contains(_selectedPreview)
+        ? _selectedPreview
+        : previewEntries.isEmpty
+        ? null
+        : previewEntries.first;
     final mediaSize = MediaQuery.sizeOf(context);
     final dialogWidth = math.min(1000.0, math.max(320.0, mediaSize.width - 64));
     final dialogHeight = math.min(
@@ -220,32 +268,56 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
         height: dialogHeight,
         child: Column(
           children: [
-            TextField(
-              controller: _queryController,
-              autofocus: true,
-              decoration: InputDecoration(
-                isDense: true,
-                prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        key: const ValueKey('stencil-library-clear-search'),
-                        tooltip: MaterialLocalizations.of(
-                          context,
-                        ).deleteButtonTooltip,
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: _clearQuery,
-                      ),
-                hintText: el.searchShapes,
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: (value) => setState(() => _query = value),
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) {
-                if (previewEntries.isNotEmpty) {
-                  _chooseStencil(previewEntries.first);
+            Focus(
+              onKeyEvent: (node, event) {
+                if (event is! KeyDownEvent || previewEntries.isEmpty) {
+                  return KeyEventResult.ignored;
                 }
+                final delta = event.logicalKey == LogicalKeyboardKey.arrowDown
+                    ? 1
+                    : event.logicalKey == LogicalKeyboardKey.arrowUp
+                    ? -1
+                    : 0;
+                if (delta == 0) return KeyEventResult.ignored;
+                final current = selectedPreview == null
+                    ? 0
+                    : previewEntries.indexOf(selectedPreview);
+                final next = (current + delta)
+                    .clamp(0, previewEntries.length - 1)
+                    .toInt();
+                setState(() => _selectedPreview = previewEntries[next]);
+                return KeyEventResult.handled;
               },
+              child: TextField(
+                controller: _queryController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const ValueKey('stencil-library-clear-search'),
+                          tooltip: MaterialLocalizations.of(
+                            context,
+                          ).deleteButtonTooltip,
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: _clearQuery,
+                        ),
+                  hintText: el.searchShapes,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (value) => setState(() {
+                  _query = value;
+                  _selectedPreview = null;
+                }),
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) {
+                  if (selectedPreview != null) {
+                    _chooseStencil(selectedPreview);
+                  }
+                },
+              ),
             ),
             const SizedBox(height: 12),
             Expanded(
@@ -262,6 +334,7 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
                       scheme,
                       el,
                       previewEntries,
+                      selectedPreview: selectedPreview,
                       searching: searching,
                     ),
                   ),
@@ -414,6 +487,7 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
     ColorScheme scheme,
     EditorL10n el,
     List<_StencilSearchEntry> entries, {
+    required _StencilSearchEntry? selectedPreview,
     required bool searching,
   }) {
     final groupCount = entries.map((entry) => entry.group.name).toSet().length;
@@ -427,20 +501,32 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 9),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    searching
-                        ? '${el.searchShapes}: ${_query.trim()}'
-                        : _focused?.label ?? el.moreShapes,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        searching
+                            ? '${el.searchShapes}: ${_query.trim()}'
+                            : _focused?.label ?? el.moreShapes,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    Text(
+                      '${el.categoriesCount(groupCount)} · ${entries.length}',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 3),
                 Text(
-                  '${el.categoriesCount(groupCount)} · ${entries.length}',
+                  el.chooseShapeToAddHint,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -469,9 +555,41 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
                           crossAxisSpacing: 8,
                         ),
                     itemCount: entries.length,
-                    itemBuilder: (context, index) =>
-                        _buildPreviewTile(scheme, entries[index], index),
+                    itemBuilder: (context, index) => _buildPreviewTile(
+                      scheme,
+                      entries[index],
+                      index,
+                      selected: identical(entries[index], selectedPreview),
+                    ),
                   ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selectedPreview == null
+                        ? el.chooseShapeToAddHint
+                        : '${EditorL10n.of(context).stencil(selectedPreview.stencil.name)}'
+                              ' · ${selectedPreview.category}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  key: const ValueKey('stencil-library-add-to-canvas'),
+                  onPressed: selectedPreview == null
+                      ? null
+                      : () => _chooseStencil(selectedPreview),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(el.addShapeToCanvas),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -569,25 +687,33 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
   Widget _buildPreviewTile(
     ColorScheme scheme,
     _StencilSearchEntry entry,
-    int index,
-  ) {
+    int index, {
+    required bool selected,
+  }) {
     final label = EditorL10n.of(context).stencil(entry.stencil.name);
     return Tooltip(
       message: '$label\n${entry.category}',
       child: Semantics(
         button: true,
         label: label,
+        selected: selected,
         child: Material(
           key: ValueKey('stencil-library-preview-tile-$index'),
-          color: scheme.surfaceContainerLow,
+          color: selected
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerLow,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: scheme.outlineVariant),
+            side: BorderSide(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+              width: selected ? 2 : 1,
+            ),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             mouseCursor: SystemMouseCursors.click,
-            onTap: () => _chooseStencil(entry),
+            onTap: () => _selectPreview(entry),
+            onDoubleTap: () => _chooseStencil(entry),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(6, 6, 6, 5),
               child: Column(
@@ -599,10 +725,20 @@ class _StencilLibraryDialogState extends State<StencilLibraryDialog> {
                         widget.thumbnailBuilder(context, entry.stencil),
                         Align(
                           alignment: Alignment.topRight,
-                          child: Icon(
-                            Icons.add_circle,
-                            size: 17,
-                            color: scheme.primary,
+                          child: IconButton(
+                            key: ValueKey('stencil-library-quick-add-$index'),
+                            tooltip: EditorL10n.of(context).addShapeToCanvas,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 26,
+                              minHeight: 26,
+                            ),
+                            icon: Icon(
+                              Icons.add_circle,
+                              size: 19,
+                              color: scheme.primary,
+                            ),
+                            onPressed: () => _chooseStencil(entry),
                           ),
                         ),
                       ],

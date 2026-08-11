@@ -60,6 +60,11 @@ void main() {
       find.byKey(const ValueKey('stencil-library-preview')),
       findsOneWidget,
     );
+    expect(find.text('Add to canvas'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('stencil-library-quick-add-0')),
+      findsOneWidget,
+    );
     expect(find.textContaining('Draw.io'), findsNothing);
 
     await tester.scrollUntilVisible(
@@ -139,6 +144,13 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('stencil-library-preview-tile-0')),
     );
+    await tester.pump();
+    final addButton = find.byKey(
+      const ValueKey('stencil-library-add-to-canvas'),
+    );
+    expect(addButton, findsOneWidget);
+    expect(tester.widget<FilledButton>(addButton).onPressed, isNotNull);
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
 
     expect(chosen, isNotNull);
