@@ -17,10 +17,14 @@ void _record(BytesBuilder output, int type, [Uint8List? payload]) {
   }
 }
 
-void _extPen(BytesBuilder output, int handle, int joinBits) {
+void _extPen(BytesBuilder output, int handle, int joinBits, int capBits) {
   final payload = ByteData(44)
     ..setInt32(0, handle, Endian.little)
-    ..setUint32(20, 0x00010000 | joinBits, Endian.little) // PS_GEOMETRIC
+    ..setUint32(
+      20,
+      0x00010000 | joinBits | capBits,
+      Endian.little,
+    ) // PS_GEOMETRIC
     ..setUint32(24, 6, Endian.little)
     ..setUint32(28, 0, Endian.little) // BS_SOLID
     ..setUint32(32, 0x000000ff, Endian.little);
@@ -63,12 +67,12 @@ Uint8List _penEmf() {
         ..setUint32(40, 0x464d4520, Endian.little))
       .buffer
       .asUint8List());
-  _extPen(output, 1, 0x00002000); // PS_JOIN_MITER
+  _extPen(output, 1, 0x00002000, 0x00000100); // MITER, SQUARE
   _select(output, 1);
   _miter(output, 2.5);
   _polyline(output, 10);
   _record(output, 33); // EMR_SAVEDC
-  _extPen(output, 2, 0x00001000); // PS_JOIN_BEVEL
+  _extPen(output, 2, 0x00001000, 0x00000200); // BEVEL, FLAT
   _select(output, 2);
   _miter(output, 8);
   _polyline(output, 30);
@@ -107,6 +111,11 @@ void main() {
       MetafileStrokeJoin.miter,
     ]);
     expect(paths.map((path) => path.strokeMiterLimit), <double>[2.5, 8, 2.5]);
+    expect(paths.map((path) => path.strokeCap), <MetafileStrokeCap>[
+      MetafileStrokeCap.square,
+      MetafileStrokeCap.flat,
+      MetafileStrokeCap.square,
+    ]);
 
     const part = '/visio/media/joins.emf';
     final images = ImageRegistry.empty.withImage(VsdxImage(
@@ -119,6 +128,8 @@ void main() {
     expect(RegExp('stroke-linejoin="miter"').allMatches(svg), hasLength(2));
     expect(svg, contains('stroke-linejoin="bevel"'));
     expect(RegExp('stroke-miterlimit="2.5"').allMatches(svg), hasLength(2));
+    expect(RegExp('stroke-linecap="square"').allMatches(svg), hasLength(2));
+    expect(svg, contains('stroke-linecap="butt"'));
 
     const parser = DocumentParser();
     const writer = VsdxWriter();

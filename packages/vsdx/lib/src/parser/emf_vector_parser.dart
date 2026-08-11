@@ -384,6 +384,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         _ => MetafileStrokeJoin.round,
       };
 
+  MetafileStrokeCap currentStrokeCap() => switch (penStyle & 0x00000f00) {
+        0x00000100 => MetafileStrokeCap.square,
+        0x00000200 => MetafileStrokeCap.flat,
+        _ => MetafileStrokeCap.round,
+      };
+
   void recordMoveTo(MetafilePoint point) {
     if (pathFigures.isEmpty || pathFigures.last.points.isNotEmpty) {
       pathFigures.add(_EmfPathFigure());
@@ -493,6 +499,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       strokeWidth: penWidth,
       strokeDashPattern: penDashPattern,
       strokeJoin: currentStrokeJoin(),
+      strokeCap: currentStrokeCap(),
       strokeMiterLimit: penMiterLimit,
       fillHatch: useFill && brushStyle == 2 ? brushHatch : null,
       fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
@@ -537,6 +544,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
         strokeJoin: currentStrokeJoin(),
+        strokeCap: currentStrokeCap(),
         strokeMiterLimit: penMiterLimit,
         evenOddFill: polyFillMode != 2,
         rasterOperation: rasterOperation,
@@ -571,6 +579,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
         strokeJoin: currentStrokeJoin(),
+        strokeCap: currentStrokeCap(),
         strokeMiterLimit: penMiterLimit,
         fillHatch: brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb:
@@ -887,6 +896,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         strokeWidth: penWidth,
         strokeDashPattern: penDashPattern,
         strokeJoin: currentStrokeJoin(),
+        strokeCap: currentStrokeCap(),
         strokeMiterLimit: penMiterLimit,
         fillHatch: useFill && brushStyle == 2 ? brushHatch : null,
         fillBackgroundArgb: useFill && brushStyle == 2 && backgroundMode == 2
@@ -1833,6 +1843,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           strokeWidth: penWidth,
           strokeDashPattern: penDashPattern,
           strokeJoin: currentStrokeJoin(),
+          strokeCap: currentStrokeCap(),
           strokeMiterLimit: penMiterLimit,
           cornerRadiusX: cornerWidth,
           cornerRadiusY: cornerHeight,
@@ -1879,6 +1890,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
           strokeWidth: penWidth,
           strokeDashPattern: penDashPattern,
           strokeJoin: currentStrokeJoin(),
+          strokeCap: currentStrokeCap(),
           strokeMiterLimit: penMiterLimit,
           isEllipse: t == _emrEllipse,
           fillHatch: brushStyle == 2 ? brushHatch : null,

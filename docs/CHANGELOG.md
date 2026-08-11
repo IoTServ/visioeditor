@@ -583,6 +583,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF geometric pens now retain `PS_ENDCAP_ROUND`, `PS_ENDCAP_SQUARE`, and
+  `PS_ENDCAP_FLAT`, so open paths use matching Canvas and SVG/PDF end caps and
+  keep the original media byte-identical across `.vsdx` save/reopen.
 - EMF geometric pens now retain `PS_JOIN_ROUND`, `PS_JOIN_BEVEL`,
   `PS_JOIN_MITER`, and `EMR_SETMITERLIMIT` through DC state and render the
   same joins in Canvas and SVG/PDF while preserving byte-identical round-trip.

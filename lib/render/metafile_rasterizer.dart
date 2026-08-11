@@ -312,7 +312,11 @@ void _paintPath(
       MetafileStrokeJoin.miter => StrokeJoin.miter,
     }
     ..strokeMiterLimit = op.strokeMiterLimit.clamp(1, 100)
-    ..strokeCap = StrokeCap.round
+    ..strokeCap = switch (op.strokeCap) {
+      MetafileStrokeCap.round => StrokeCap.round,
+      MetafileStrokeCap.square => StrokeCap.square,
+      MetafileStrokeCap.flat => StrokeCap.butt,
+    }
     ..isAntiAlias = true;
   applyRaster(paintFill);
   applyRaster(paintStroke);
