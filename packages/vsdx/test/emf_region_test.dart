@@ -42,10 +42,10 @@ Uint8List _regionData({int declaredCount = 2}) {
     ..setInt32(36, 10, Endian.little)
     ..setInt32(40, 35, Endian.little)
     ..setInt32(44, 40, Endian.little)
-    ..setInt32(48, 55, Endian.little)
-    ..setInt32(52, 50, Endian.little)
+    ..setInt32(48, 35, Endian.little)
+    ..setInt32(52, 10, Endian.little)
     ..setInt32(56, 90, Endian.little)
-    ..setInt32(60, 80, Endian.little);
+    ..setInt32(60, 40, Endian.little);
   return output.buffer.asUint8List();
 }
 
@@ -78,6 +78,38 @@ void _paintRegion(BytesBuilder output) {
   _record(output, 74, payload.buffer.asUint8List()); // EMR_PAINTRGN
 }
 
+void _frameRegion(
+  BytesBuilder output,
+  int brushHandle, {
+  int width = 3,
+  int height = 5,
+}) {
+  final region = _regionData();
+  final payload = ByteData(32 + region.length)
+    ..setInt32(0, 5, Endian.little)
+    ..setInt32(4, 10, Endian.little)
+    ..setInt32(8, 90, Endian.little)
+    ..setInt32(12, 80, Endian.little)
+    ..setUint32(16, region.length, Endian.little)
+    ..setUint32(20, brushHandle, Endian.little)
+    ..setInt32(24, width, Endian.little)
+    ..setInt32(28, height, Endian.little);
+  payload.buffer.asUint8List().setRange(32, 32 + region.length, region);
+  _record(output, 72, payload.buffer.asUint8List()); // EMR_FRAMERGN
+}
+
+void _invertRegion(BytesBuilder output) {
+  final region = _regionData();
+  final payload = ByteData(20 + region.length)
+    ..setInt32(0, 5, Endian.little)
+    ..setInt32(4, 10, Endian.little)
+    ..setInt32(8, 90, Endian.little)
+    ..setInt32(12, 80, Endian.little)
+    ..setUint32(16, region.length, Endian.little);
+  payload.buffer.asUint8List().setRange(20, 20 + region.length, region);
+  _record(output, 73, payload.buffer.asUint8List()); // EMR_INVERTRGN
+}
+
 Uint8List _regionEmf({bool malformedFirst = false}) {
   final output = BytesBuilder();
   final header = ByteData(88)
@@ -91,6 +123,22 @@ Uint8List _regionEmf({bool malformedFirst = false}) {
   _brush(output, 2, 0x00ff0000); // COLORREF blue, selected
   _fillRegion(output, 1, declaredCount: malformedFirst ? 3 : 2);
   _paintRegion(output);
+  _record(output, 14, Uint8List(0));
+  return Uint8List.fromList(output.toBytes());
+}
+
+Uint8List _regionEffectsEmf() {
+  final output = BytesBuilder();
+  final header = ByteData(88)
+    ..setUint32(0, 1, Endian.little)
+    ..setUint32(4, 88, Endian.little)
+    ..setInt32(16, 100, Endian.little)
+    ..setInt32(20, 100, Endian.little)
+    ..setUint32(40, 0x464d4520, Endian.little);
+  output.add(header.buffer.asUint8List());
+  _brush(output, 1, 0x0000ff00, select: false); // COLORREF green
+  _frameRegion(output, 1);
+  _invertRegion(output);
   _record(output, 14, Uint8List(0));
   return Uint8List.fromList(output.toBytes());
 }
@@ -135,6 +183,25 @@ void main() {
     expect(region.additionalContours, hasLength(1));
   });
 
+  test('EMR_FRAMERGN and EMR_INVERTRGN retain region effects', () {
+    final drawing = parseEmfDrawing(_regionEffectsEmf())!;
+    final effects = drawing.ops.whereType<MetafilePathOp>().toList();
+    expect(effects, hasLength(2));
+
+    final frame = effects.first;
+    expect(frame.fillArgb, 0xff00ff00);
+    // The two source rectangles share an edge; only the six exterior bands
+    // remain, with no false frame on their internal boundary.
+    expect(frame.additionalContours, hasLength(5));
+    expect(frame.rasterOperation, MetafileRasterOperation.overpaint);
+    expect((frame.points.first.x, frame.points.first.y), (5, 10));
+    expect((frame.points[2].x, frame.points[2].y), (35, 15));
+
+    final inverted = effects.last;
+    expect(inverted.additionalContours, hasLength(1));
+    expect(inverted.rasterOperation, MetafileRasterOperation.invert);
+  });
+
   test('EMF regions reach SVG and survive VSDX writer round-trip', () {
     const partName = '/visio/media/regions.emf';
     final payload = _regionEmf();
@@ -166,5 +233,34 @@ void main() {
       parseEmfDrawing(roundTripped)!.ops.whereType<MetafilePathOp>(),
       hasLength(2),
     );
+  });
+
+  test('EMF region effects reach SVG and survive VSDX writer round-trip', () {
+    const partName = '/visio/media/region-effects.emf';
+    final payload = _regionEffectsEmf();
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: partName,
+      bytes: payload,
+      mimeType: 'image/x-emf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _page(partName),
+      images: images,
+    );
+    expect(svg, contains('fill="#00ff00"'));
+    expect(svg, contains('mix-blend-mode:difference'));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final edited = parser
+        .parse(blank)
+        .copyWith(images: images)
+        .replacePage(0, _page(partName));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: edited,
+    ));
+    expect(reopened.images.findByPart(partName)!.bytes, payload);
   });
 }

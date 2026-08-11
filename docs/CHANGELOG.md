@@ -583,6 +583,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF region replay now renders `EMR_FRAMERGN` brush borders and
+  `EMR_INVERTRGN` difference fills in Canvas and SVG/PDF, including compound
+  rectangle unions and byte-identical `.vsdx` save/reopen.
 - EMF bitmap replay now retains `EMR_SETSTRETCHBLTMODE` through DC state:
   BLACKONWHITE/WHITEONBLACK/COLORONCOLOR use nearest sampling, while HALFTONE
   stays filtered consistently in Canvas and SVG/PDF with byte-identical media.

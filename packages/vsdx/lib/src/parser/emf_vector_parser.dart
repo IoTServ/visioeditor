@@ -71,6 +71,8 @@ const int _emrStrokePath = 64;
 const int _emrSelectClipPath = 67;
 const int _emrAbortPath = 68;
 const int _emrFillRgn = 71;
+const int _emrFrameRgn = 72;
+const int _emrInvertRgn = 73;
 const int _emrPaintRgn = 74;
 const int _emrExtSelectClipRgn = 75;
 const int _emrBitBlt = 76;
@@ -1153,20 +1155,11 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     return object is _EmfBrush ? object : null;
   }
 
-  void emitRegion(int regionStart, int regionLength, int? brushHandle) {
-    final brush = regionBrush(brushHandle);
-    if (brush == null ||
-        (brush.style != 0 &&
-            brush.style != 2 &&
-            brush.patternBmpBytes == null)) {
-      return;
-    }
-    final contours = _readEmfRegionContours(
-      bd,
-      regionStart,
-      regionLength,
-      emf.length,
-    );
+  void emitRegionContours(
+    List<List<MetafilePoint>> contours,
+    _EmfBrush brush, {
+    MetafileRasterOperation? operation,
+  }) {
     if (contours.isEmpty) return;
     for (final contour in contours) {
       ensurePts(contour);
@@ -1192,8 +1185,122 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       // RGNDATA rectangles describe their union. A non-zero fill prevents
       // overlapping bands from punching accidental even-odd holes.
       evenOddFill: false,
-      rasterOperation: rasterOperation,
+      rasterOperation: operation ?? rasterOperation,
     ));
+  }
+
+  void emitRegion(int regionStart, int regionLength, int? brushHandle) {
+    final brush = regionBrush(brushHandle);
+    if (brush == null ||
+        (brush.style != 0 &&
+            brush.style != 2 &&
+            brush.patternBmpBytes == null)) {
+      return;
+    }
+    final contours = _readEmfRegionContours(
+      bd,
+      regionStart,
+      regionLength,
+      emf.length,
+    );
+    emitRegionContours(contours, brush);
+  }
+
+  void emitFramedRegion(
+    int regionStart,
+    int regionLength,
+    int brushHandle,
+    double frameWidth,
+    double frameHeight,
+  ) {
+    final brush = regionBrush(brushHandle);
+    if (brush == null ||
+        (brush.style != 0 &&
+            brush.style != 2 &&
+            brush.patternBmpBytes == null) ||
+        frameWidth <= 0 ||
+        frameHeight <= 0) {
+      return;
+    }
+    final rectangles = _readEmfRegionContours(
+      bd,
+      regionStart,
+      regionLength,
+      emf.length,
+    );
+    if (rectangles.isEmpty) return;
+
+    // RGNDATA is a normalized union of rectangles. Build only its exposed
+    // edge bands, so adjacent rectangles do not gain false internal frames.
+    final bands = <List<MetafilePoint>>[];
+    List<(double, double)> exposedSegments(
+      double start,
+      double end,
+      Iterable<(double, double)> covered,
+    ) {
+      var segments = <(double, double)>[(start, end)];
+      for (final interval in covered) {
+        final next = <(double, double)>[];
+        for (final segment in segments) {
+          final cutStart = math.max(segment.$1, interval.$1);
+          final cutEnd = math.min(segment.$2, interval.$2);
+          if (cutStart >= cutEnd) {
+            next.add(segment);
+          } else {
+            if (segment.$1 < cutStart) next.add((segment.$1, cutStart));
+            if (cutEnd < segment.$2) next.add((cutEnd, segment.$2));
+          }
+        }
+        segments = next;
+      }
+      return segments;
+    }
+
+    void addBand(double left, double top, double right, double bottom) {
+      if (left >= right || top >= bottom) return;
+      bands.add(<MetafilePoint>[
+        MetafilePoint(left, top),
+        MetafilePoint(right, top),
+        MetafilePoint(right, bottom),
+        MetafilePoint(left, bottom),
+      ]);
+    }
+
+    for (final rectangle in rectangles) {
+      final left = rectangle[0].x;
+      final top = rectangle[0].y;
+      final right = rectangle[2].x;
+      final bottom = rectangle[2].y;
+      final horizontalFrame = math.min(frameHeight, bottom - top);
+      final verticalFrame = math.min(frameWidth, right - left);
+      final topCoverage = rectangles.where((other) => other[2].y == top).map(
+            (other) => (other[0].x, other[2].x),
+          );
+      final bottomCoverage =
+          rectangles.where((other) => other[0].y == bottom).map(
+                (other) => (other[0].x, other[2].x),
+              );
+      final leftCoverage = rectangles.where((other) => other[2].x == left).map(
+            (other) => (other[0].y, other[2].y),
+          );
+      final rightCoverage =
+          rectangles.where((other) => other[0].x == right).map(
+                (other) => (other[0].y, other[2].y),
+              );
+      for (final segment in exposedSegments(left, right, topCoverage)) {
+        addBand(segment.$1, top, segment.$2, top + horizontalFrame);
+      }
+      for (final segment in exposedSegments(left, right, bottomCoverage)) {
+        addBand(segment.$1, bottom - horizontalFrame, segment.$2, bottom);
+      }
+      for (final segment in exposedSegments(top, bottom, leftCoverage)) {
+        addBand(left, segment.$1, left + verticalFrame, segment.$2);
+      }
+      for (final segment in exposedSegments(top, bottom, rightCoverage)) {
+        addBand(right - verticalFrame, segment.$1, right, segment.$2);
+      }
+    }
+    emitRegionContours(bands, brush);
   }
 
   void emitClipContours(
@@ -1422,6 +1529,39 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
       final brushHandle = bd.getUint32(params + 20, Endian.little);
       if (regionLength <= recEnd - (params + 24)) {
         emitRegion(params + 24, regionLength, brushHandle);
+      }
+    } else if (t == _emrFrameRgn && params + 32 <= recEnd) {
+      // Bounds (16), cbRgnData (4), ihBrush (4), szlStroke (8), RGNDATA.
+      final regionLength = bd.getUint32(params + 16, Endian.little);
+      final brushHandle = bd.getUint32(params + 20, Endian.little);
+      final frameWidth =
+          bd.getInt32(params + 24, Endian.little).abs().toDouble();
+      final frameHeight =
+          bd.getInt32(params + 28, Endian.little).abs().toDouble();
+      if (regionLength <= recEnd - (params + 32)) {
+        emitFramedRegion(
+          params + 32,
+          regionLength,
+          brushHandle,
+          frameWidth,
+          frameHeight,
+        );
+      }
+    } else if (t == _emrInvertRgn && params + 20 <= recEnd) {
+      // Invert the complete rectangle union with a white difference fill.
+      final regionLength = bd.getUint32(params + 16, Endian.little);
+      if (regionLength <= recEnd - (params + 20)) {
+        final contours = _readEmfRegionContours(
+          bd,
+          params + 20,
+          regionLength,
+          recEnd,
+        );
+        emitRegionContours(
+          contours,
+          _EmfBrush(0, 0xffffffff, 0, null),
+          operation: MetafileRasterOperation.invert,
+        );
       }
     } else if (t == _emrPaintRgn && params + 20 <= recEnd) {
       // PAINTRGN has no brush handle; it uses the brush selected in the DC.
