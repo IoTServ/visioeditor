@@ -3482,6 +3482,9 @@ class VsdxToSvgSerializer {
             ? ' opacity="${_n(bitmapOpacity)}"'
             : '';
         final href = base64Encode(op.bmpBytes);
+        final imageRendering = op.filter == MetafileBitmapFilter.nearest
+            ? ' style="image-rendering:pixelated"'
+            : '';
         final imageX = parallelogram != null ? 0.0 : destination.minX;
         final imageY = parallelogram != null ? 0.0 : destination.minY;
         final imageWidth = parallelogram != null ? 1.0 : destination.width;
@@ -3498,7 +3501,7 @@ class VsdxToSvgSerializer {
         buf.writeln(
           '$indent    <image x="0" y="0" width="${op.pixelWidth}" '
           'height="${op.pixelHeight}" preserveAspectRatio="none" '
-          'href="data:image/bmp;base64,$href"/>',
+          'href="data:image/bmp;base64,$href"$imageRendering/>',
         );
         buf.writeln('$indent  </svg>');
       } else if (op is MetafileGradientRectOp) {

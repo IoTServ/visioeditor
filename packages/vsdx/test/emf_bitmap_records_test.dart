@@ -83,6 +83,21 @@ Uint8List _pixel(int x, int y, int colorRef) {
   return out;
 }
 
+Uint8List _stateRecord(int type, int value) {
+  final out = Uint8List(12);
+  ByteData.sublistView(out)
+    ..setUint32(0, type, Endian.little)
+    ..setUint32(4, 12, Endian.little)
+    ..setInt32(8, value, Endian.little);
+  return out;
+}
+
+Uint8List _saveDc() => (ByteData(8)
+      ..setUint32(0, 33, Endian.little)
+      ..setUint32(4, 8, Endian.little))
+    .buffer
+    .asUint8List();
+
 Uint8List _commonBlt(
   int type, {
   int x = 10,
@@ -312,6 +327,50 @@ VsdxPage _imagePage(String part) => VsdxPage(
     );
 
 void main() {
+  test('EMR stretch mode controls bitmap sampling and survives DC restore', () {
+    final payload = _emf(<Uint8List>[
+      _stateRecord(21, 3), // COLORONCOLOR
+      _commonBlt(77, x: 10),
+      _saveDc(),
+      _stateRecord(21, 4), // HALFTONE
+      _commonBlt(77, x: 30),
+      _stateRecord(34, -1),
+      _commonBlt(77, x: 50),
+    ]);
+    final bitmaps =
+        parseEmfDrawing(payload)!.ops.whereType<MetafileBitmapOp>().toList();
+    expect(bitmaps.map((bitmap) => bitmap.filter), <MetafileBitmapFilter>[
+      MetafileBitmapFilter.nearest,
+      MetafileBitmapFilter.linear,
+      MetafileBitmapFilter.nearest,
+    ]);
+
+    const part = '/visio/media/stretch-mode.emf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-emf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(RegExp('image-rendering:pixelated').allMatches(svg), hasLength(2));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final edited = parser
+        .parse(blank)
+        .copyWith(images: images)
+        .replacePage(0, _imagePage(part));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: edited,
+    ));
+    expect(reopened.images.findByPart(part)!.bytes, payload);
+  });
+
   test('all EMF bitmap records retain placement, alpha, order, and round-trip',
       () {
     final payload = _emf(<Uint8List>[

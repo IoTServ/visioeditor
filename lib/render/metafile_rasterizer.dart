@@ -173,7 +173,9 @@ Future<ui.Image?> rasterizeMetafileDrawing(
                 destination.maxY,
               ),
         Paint()
-          ..filterQuality = FilterQuality.low
+          ..filterQuality = op.filter == MetafileBitmapFilter.nearest
+              ? FilterQuality.none
+              : FilterQuality.low
           ..color = Color.fromARGB(
             (op.opacity.clamp(0.0, 1.0) * 255).round(),
             255,

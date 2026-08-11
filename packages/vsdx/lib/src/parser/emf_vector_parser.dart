@@ -33,6 +33,7 @@ const int _emrSetMapMode = 17;
 const int _emrSetBkMode = 18;
 const int _emrSetPolyFillMode = 19;
 const int _emrSetRop2 = 20;
+const int _emrSetStretchBltMode = 21;
 const int _emrSetTextAlign = 22;
 const int _emrSetTextColor = 24;
 const int _emrSetBkColor = 25;
@@ -173,6 +174,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
   var backgroundColor = 0xFFFFFFFF;
   var polyFillMode = 1; // ALTERNATE (even-odd)
   var rasterOperation = MetafileRasterOperation.overpaint;
+  var bitmapFilter = MetafileBitmapFilter.linear;
   var textAlign = 0;
   String? fontFace;
   var fontHeight = 12.0;
@@ -284,6 +286,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         backgroundColor: backgroundColor,
         polyFillMode: polyFillMode,
         rasterOperation: rasterOperation,
+        bitmapFilter: bitmapFilter,
         textAlign: textAlign,
         fontFace: fontFace,
         fontHeight: fontHeight,
@@ -337,6 +340,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
     backgroundColor = state.backgroundColor;
     polyFillMode = state.polyFillMode;
     rasterOperation = state.rasterOperation;
+    bitmapFilter = state.bitmapFilter;
     textAlign = state.textAlign;
     fontFace = state.fontFace;
     fontHeight = state.fontHeight;
@@ -783,6 +787,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
               : null,
       rasterOperation: rasterOperation,
       opacity: opacity,
+      filter: bitmapFilter,
     ));
   }
 
@@ -1377,6 +1382,12 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         7 => MetafileRasterOperation.xor, // R2_XORPEN
         11 => MetafileRasterOperation.nop, // R2_NOP
         _ => MetafileRasterOperation.overpaint,
+      };
+    } else if (t == _emrSetStretchBltMode && params + 4 <= recEnd) {
+      bitmapFilter = switch (bd.getUint32(params, Endian.little)) {
+        1 || 2 || 3 => MetafileBitmapFilter.nearest,
+        4 => MetafileBitmapFilter.linear,
+        _ => bitmapFilter,
       };
     } else if (t == _emrSetBkColor && params + 4 <= recEnd) {
       backgroundColor = _rgbToArgb(bd.getUint32(params, Endian.little));
@@ -2459,6 +2470,7 @@ class _EmfDcState {
     required this.backgroundColor,
     required this.polyFillMode,
     required this.rasterOperation,
+    required this.bitmapFilter,
     required this.textAlign,
     required this.fontFace,
     required this.fontHeight,
@@ -2500,6 +2512,7 @@ class _EmfDcState {
   final int backgroundColor;
   final int polyFillMode;
   final MetafileRasterOperation rasterOperation;
+  final MetafileBitmapFilter bitmapFilter;
   final int textAlign;
   final String? fontFace;
   final double fontHeight;

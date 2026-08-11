@@ -57,6 +57,9 @@ enum MetafileStrokeJoin { round, bevel, miter }
 /// GDI geometric-pen end cap retained for Canvas and SVG/PDF replay.
 enum MetafileStrokeCap { round, square, flat }
 
+/// Sampling requested by GDI for stretched bitmap records.
+enum MetafileBitmapFilter { linear, nearest }
+
 /// Save the current GDI device context before later state or clip changes.
 @immutable
 class MetafileSaveDcOp {
@@ -140,6 +143,7 @@ class MetafileBitmapOp {
     this.destinationParallelogram,
     this.rasterOperation = 0x00cc0020,
     this.opacity = 1,
+    this.filter = MetafileBitmapFilter.linear,
   })  : assert(
           destinationParallelogram == null ||
               destinationParallelogram.length == 3,
@@ -167,6 +171,8 @@ class MetafileBitmapOp {
 
   /// Constant source alpha applied after any per-pixel alpha channel.
   final double opacity;
+
+  final MetafileBitmapFilter filter;
 }
 
 /// A colored point in an EMR_GRADIENTFILL mesh.

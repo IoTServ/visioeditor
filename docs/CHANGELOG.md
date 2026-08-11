@@ -583,6 +583,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF bitmap replay now retains `EMR_SETSTRETCHBLTMODE` through DC state:
+  BLACKONWHITE/WHITEONBLACK/COLORONCOLOR use nearest sampling, while HALFTONE
+  stays filtered consistently in Canvas and SVG/PDF with byte-identical media.
 - EMF geometric pens now retain `PS_ENDCAP_ROUND`, `PS_ENDCAP_SQUARE`, and
   `PS_ENDCAP_FLAT`, so open paths use matching Canvas and SVG/PDF end caps and
   keep the original media byte-identical across `.vsdx` save/reopen.
