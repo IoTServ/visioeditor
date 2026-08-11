@@ -171,6 +171,34 @@ Uint8List _dibBltRecord(
   return out;
 }
 
+Uint8List _setDibToDevRecord({
+  required int x,
+  required int y,
+  required int sourceX,
+  required int sourceY,
+  required int width,
+  required int height,
+  required int startScan,
+  required int scanCount,
+}) {
+  final dib = _twoByTwoDib();
+  final out = Uint8List(24 + dib.length);
+  ByteData.sublistView(out)
+    ..setUint32(0, out.length ~/ 2, Endian.little)
+    ..setUint16(4, 0x0d33, Endian.little)
+    ..setUint16(6, 0, Endian.little) // DIB_RGB_COLORS
+    ..setUint16(8, scanCount, Endian.little)
+    ..setUint16(10, startScan, Endian.little)
+    ..setUint16(12, sourceY, Endian.little)
+    ..setUint16(14, sourceX, Endian.little)
+    ..setUint16(16, height, Endian.little)
+    ..setUint16(18, width, Endian.little)
+    ..setUint16(20, y, Endian.little)
+    ..setUint16(22, x, Endian.little);
+  out.setRange(24, out.length, dib);
+  return out;
+}
+
 Uint8List _polyPolygonRecord() {
   const polygons = <List<(int, int)>>[
     <(int, int)>[(0, 0), (100, 0), (100, 100), (0, 100)],
@@ -811,5 +839,83 @@ void main() {
         MetafileBitmapFilter.nearest,
       ],
     );
+  });
+
+  test('SETDIBTODEV renders its selected scan lines and round-trips', () {
+    final payload = _wmf(<Uint8List>[
+      _setPixelRecord(0x000000ff, 1, 1),
+      _setDibToDevRecord(
+        x: 10,
+        y: 20,
+        sourceX: 1,
+        sourceY: 0,
+        width: 1,
+        height: 2,
+        startScan: 1,
+        scanCount: 1,
+      ),
+      _setPixelRecord(0x00ff0000, 12, 22),
+    ]);
+
+    final drawing = parseWmfDrawing(payload)!;
+    expect(drawing.ops.map((op) => op.runtimeType), <Type>[
+      MetafilePixelOp,
+      MetafileBitmapOp,
+      MetafilePixelOp,
+    ]);
+    final bitmap = drawing.ops.whereType<MetafileBitmapOp>().single;
+    expect((bitmap.pixelWidth, bitmap.pixelHeight), (2, 2));
+    expect(
+      (
+        bitmap.destination.left,
+        bitmap.destination.top,
+        bitmap.destination.right,
+        bitmap.destination.bottom,
+      ),
+      (10, 20, 11, 21),
+    );
+    expect(
+      (
+        bitmap.source!.left,
+        bitmap.source!.top,
+        bitmap.source!.right,
+        bitmap.source!.bottom,
+      ),
+      (1, 1, 2, 2),
+    );
+
+    const part = '/visio/media/set-dib-to-dev.wmf';
+    final images = ImageRegistry.empty.withImage(VsdxImage(
+      partName: part,
+      bytes: payload,
+      mimeType: 'image/x-wmf',
+    ));
+    final svg = VsdxToSvgSerializer().serializePage(
+      _imagePage(part),
+      images: images,
+    );
+    expect(svg, contains('data:image/bmp;base64,'));
+    expect(svg, contains('viewBox="1 1 1 1"'));
+    expect(svg.indexOf('fill="#ff0000"'), lessThan(svg.indexOf('data:image')));
+    expect(
+        svg.indexOf('fill="#0000ff"'), greaterThan(svg.indexOf('data:image')));
+
+    const parser = DocumentParser();
+    const writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    final edited = parser
+        .parse(blank)
+        .copyWith(images: images)
+        .replacePage(0, _imagePage(part));
+    final reopened = parser.parse(writer.write(
+      originalBytes: blank,
+      edited: edited,
+    ));
+    final roundTripped = reopened.images.findByPart(part)!.bytes;
+    expect(roundTripped, payload);
+    final reopenedBitmap =
+        parseWmfDrawing(roundTripped)!.ops.whereType<MetafileBitmapOp>().single;
+    expect(reopenedBitmap.source!.top, 1);
+    expect(reopenedBitmap.destination.bottom, 21);
   });
 }

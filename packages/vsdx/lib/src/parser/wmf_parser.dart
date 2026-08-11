@@ -59,6 +59,7 @@ const int _metaBitBlt = 0x0922;
 const int _metaStretchBlt = 0x0B23;
 const int _metaDibBitBlt = 0x0940;
 const int _metaDibStretchBlt = 0x0B41;
+const int _metaSetDibToDev = 0x0D33;
 const int _metaStretchDib = 0x0F43;
 const int _metaMoveTo = 0x0214;
 const int _metaLineTo = 0x0213;
@@ -758,6 +759,52 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final y = bd.getInt16(params + 8, Endian.little).toDouble();
       final x = bd.getInt16(params + 10, Endian.little).toDouble();
       emitRasterOperationFill(rasterOperation, x, y, width, height);
+    } else if (func == _metaSetDibToDev && params + 30 <= recEnd) {
+      // Match LibreOffice's SetDIBitsToDevice replay: StartScan selects the
+      // first source row and ScanCount is the height actually transferred.
+      // Unlike the BLT records, this record always uses a straight source
+      // copy and gives the destination the same size as that scan subset.
+      final colorUsage = bd.getUint16(params, Endian.little);
+      final scanCount = bd.getUint16(params + 2, Endian.little);
+      final startScan = bd.getUint16(params + 4, Endian.little);
+      final sourceY = bd.getUint16(params + 6, Endian.little);
+      final sourceX = bd.getUint16(params + 8, Endian.little);
+      final sourceWidth = bd.getUint16(params + 12, Endian.little);
+      final destinationY = bd.getUint16(params + 14, Endian.little).toDouble();
+      final destinationX = bd.getUint16(params + 16, Endian.little).toDouble();
+      if (colorUsage == 0 && sourceWidth > 0 && scanCount > 0) {
+        final dib = Uint8List.sublistView(bytes, params + 18, recEnd);
+        final dimensions = dibDimensions(dib);
+        final bmp = wrapDibAsBmp(dib);
+        if (dimensions != null && bmp != null) {
+          final pixelWidth = dimensions.$1;
+          final pixelHeight = dimensions.$2;
+          final firstSourceY = sourceY + startScan;
+          if (sourceX + sourceWidth <= pixelWidth &&
+              firstSourceY + scanCount <= pixelHeight) {
+            final destination = mapDirectedRect(
+              destinationX,
+              destinationY,
+              sourceWidth.toDouble(),
+              scanCount.toDouble(),
+            );
+            ensureBounds(destination.corners);
+            ops.add(MetafileBitmapOp(
+              bmpBytes: bmp,
+              pixelWidth: pixelWidth,
+              pixelHeight: pixelHeight,
+              destination: destination,
+              source: MetafileRect(
+                sourceX.toDouble(),
+                firstSourceY.toDouble(),
+                (sourceX + sourceWidth).toDouble(),
+                (firstSourceY + scanCount).toDouble(),
+              ),
+              filter: bitmapFilter,
+            ));
+          }
+        }
+      }
     } else if ((func == _metaDibBitBlt ||
             func == _metaDibStretchBlt ||
             func == _metaStretchDib) &&
