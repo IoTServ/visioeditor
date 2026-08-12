@@ -118,6 +118,68 @@ class SnapMagnet {
   final double y;
 }
 
+/// An independently axis-snapped point in page inches.
+///
+/// Connector handles use this before grid snapping so a bend or endpoint can
+/// align exactly with another, even when that other point is off-grid.
+class SnapPointResult {
+  const SnapPointResult(
+    this.x,
+    this.y, {
+    this.snappedX = false,
+    this.snappedY = false,
+  });
+
+  final double x;
+  final double y;
+  final bool snappedX;
+  final bool snappedY;
+}
+
+/// Snaps [x] and [y] independently to the nearest coordinate in [targets].
+///
+/// This mirrors draw.io's edge-handle behaviour: an off-grid endpoint or bend
+/// can claim either axis, and callers apply grid snapping only to axes that
+/// were not claimed. Keeping this pure also makes the precedence testable.
+SnapPointResult computePointSnap({
+  required double x,
+  required double y,
+  required List<SnapMagnet> targets,
+  required double threshold,
+}) {
+  if (threshold <= 0 || targets.isEmpty) return SnapPointResult(x, y);
+
+  var snappedX = x;
+  var snappedY = y;
+  var bestXDiff = threshold;
+  var bestYDiff = threshold;
+  var claimedX = false;
+  var claimedY = false;
+
+  for (final target in targets) {
+    final dx = (target.x - x).abs();
+    if (dx < bestXDiff) {
+      bestXDiff = dx;
+      snappedX = target.x;
+      claimedX = true;
+    }
+
+    final dy = (target.y - y).abs();
+    if (dy < bestYDiff) {
+      bestYDiff = dy;
+      snappedY = target.y;
+      claimedY = true;
+    }
+  }
+
+  return SnapPointResult(
+    snappedX,
+    snappedY,
+    snappedX: claimedX,
+    snappedY: claimedY,
+  );
+}
+
 /// drawio-style alignment snapping: given a [moving] box and the [others] on the
 /// page, find the closest edge/centre alignment within [threshold] on each axis
 /// and return the adjustment that snaps to it, together with the guide lines

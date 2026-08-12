@@ -2,6 +2,54 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/snap_guides.dart';
 
 void main() {
+  group('computePointSnap', () {
+    test('aligns each axis to the nearest off-grid connector point', () {
+      final r = computePointSnap(
+        x: 4.04,
+        y: 3.18,
+        targets: const <SnapMagnet>[
+          SnapMagnet(4.01, 8.0),
+          SnapMagnet(9.0, 3.13),
+        ],
+        threshold: 0.06,
+      );
+
+      expect(r.x, 4.01);
+      expect(r.y, 3.13);
+      expect(r.snappedX, isTrue);
+      expect(r.snappedY, isTrue);
+    });
+
+    test('leaves an unmatched axis available for grid fallback', () {
+      final r = computePointSnap(
+        x: 4.04,
+        y: 3.18,
+        targets: const <SnapMagnet>[SnapMagnet(9.0, 3.13)],
+        threshold: 0.06,
+      );
+
+      expect(r.x, 4.04);
+      expect(r.y, 3.13);
+      expect(r.snappedX, isFalse);
+      expect(r.snappedY, isTrue);
+    });
+
+    test('chooses the nearest point coordinate on each axis', () {
+      final r = computePointSnap(
+        x: 2.0,
+        y: 2.0,
+        targets: const <SnapMagnet>[
+          SnapMagnet(2.05, 2.04),
+          SnapMagnet(1.98, 2.03),
+        ],
+        threshold: 0.1,
+      );
+
+      expect(r.x, 1.98);
+      expect(r.y, 2.03);
+    });
+  });
+
   group('computeSnap', () {
     test('returns nothing when there are no neighbours', () {
       final r = computeSnap(

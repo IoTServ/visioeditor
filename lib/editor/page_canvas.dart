@@ -2869,9 +2869,14 @@ class _PageCanvasState extends State<PageCanvas>
         final idx = _waypointIndex;
         if (id != null && idx != null) {
           final p = _pageInchesAt(pos);
-          final point = _bypassSnapping
+          final connector = _page?.findShapeById(id);
+          final point = connector == null
               ? Offset2D(p.dx, p.dy)
-              : Offset2D(_c.snap(p.dx), _c.snap(p.dy));
+              : _snapConnectorPoint(
+                  connector,
+                  p,
+                  excludedRouteIndex: idx + 1,
+                );
           _c.moveWaypoint(
             id,
             idx,
@@ -2910,8 +2915,20 @@ class _PageCanvasState extends State<PageCanvas>
           final ts = target == null ? null : _page?.findShapeById(target);
           final snap =
               ts == null ? null : _connectorSnapIndex(ts, pos);
-          var x = _bypassSnapping ? p.dx : _c.snap(p.dx);
-          var y = _bypassSnapping ? p.dy : _c.snap(p.dy);
+          final connector = _page?.findShapeById(id);
+          final route = connector == null
+              ? const <Offset2D>[]
+              : _connectorControlRoutePage(connector);
+          final point = connector == null
+              ? Offset2D(p.dx, p.dy)
+              : _snapConnectorPoint(
+                  connector,
+                  p,
+                  excludedRouteIndex:
+                      _endpointIsBegin ? 0 : math.max(0, route.length - 1),
+                );
+          var x = point.x;
+          var y = point.y;
           if (ts != null && snap != null) {
             final pts = VsdxPage.effectiveConnectionPoints(ts);
             if (snap >= 0 && snap < pts.length) {
@@ -3375,6 +3392,35 @@ class _PageCanvasState extends State<PageCanvas>
     return <Offset2D>[
       for (final p in route) page.localToPageDeep(parentId, p),
     ];
+  }
+
+  /// Snap a dragged connector handle to every other point on its control path.
+  ///
+  /// Point alignment has priority per axis; grid snapping only fills an axis
+  /// that did not find a nearby endpoint/bend. This keeps horizontal and
+  /// vertical segments exact when an existing point is intentionally off-grid.
+  Offset2D _snapConnectorPoint(
+    VsdxShape connector,
+    Offset raw, {
+    required int excludedRouteIndex,
+  }) {
+    if (_bypassSnapping) return Offset2D(raw.dx, raw.dy);
+
+    final route = _connectorControlRoutePage(connector);
+    final targets = <SnapMagnet>[
+      for (var i = 0; i < route.length; i++)
+        if (i != excludedRouteIndex) SnapMagnet(route[i].x, route[i].y),
+    ];
+    final snap = computePointSnap(
+      x: raw.dx,
+      y: raw.dy,
+      targets: targets,
+      threshold: 6 / (_scale * widget.pxPerInch),
+    );
+    return Offset2D(
+      snap.snappedX ? snap.x : _c.snap(raw.dx),
+      snap.snappedY ? snap.y : _c.snap(raw.dy),
+    );
   }
 
   /// Arc-length midpoint of [conn]'s drawn route in **page** inches.

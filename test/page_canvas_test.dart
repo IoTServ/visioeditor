@@ -2500,6 +2500,44 @@ void main() {
     expect(controller.connectorWaypoints(connector), isEmpty);
   });
 
+  testWidgets('connector waypoint aligns to an off-grid sibling before grid',
+      (tester) async {
+    late int connector;
+    final camera = CanvasCamera();
+    addTearDown(camera.dispose);
+    final controller = await _pumpCanvas(
+      tester,
+      const Size(1000, 800),
+      setUp: (c) {
+        c.createConnector(2.13, 4.13, 6.13, 4.13);
+        connector = c.singleSelectedId!;
+        c.setConnectorWaypoints(
+          connector,
+          const <Offset2D>[
+            Offset2D(3.13, 3.13),
+            Offset2D(5.13, 3.13),
+          ],
+        );
+      },
+      camera: camera,
+    );
+    final page = controller.currentPage!;
+    final origin = tester.getTopLeft(find.byType(PageCanvas));
+    final start = _pagePoint(origin, camera, page, 3.13, 3.13);
+    // Y=3.17 is close to the sibling's off-grid Y=3.13, whereas ordinary
+    // 0.25-inch grid snapping would move it to Y=3.25.
+    final destination = _pagePoint(origin, camera, page, 3.88, 3.17);
+
+    await tester.dragFrom(start, destination - start);
+    await tester.pumpAndSettle();
+
+    final waypoints = controller.connectorWaypoints(connector);
+    expect(waypoints, hasLength(2));
+    expect(waypoints.first.x, closeTo(4.0, 1e-9));
+    expect(waypoints.first.y, closeTo(3.13, 1e-9));
+    expect(waypoints.last.y, closeTo(3.13, 1e-9));
+  });
+
   testWidgets('connector context menu adds and removes a waypoint',
       (tester) async {
     late int connector;
