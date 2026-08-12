@@ -184,5 +184,56 @@ void main() {
       // Tip should sit on the oval top, not float at the pin.
       expect(tip.y, closeTo(4.0, 0.05));
     });
+
+    test('rerouteConnectors leaves a source top edge perpendicularly', () {
+      // The attach point is near the source's top-right corner. A dominant
+      // pin-to-point vector incorrectly classifies it as east and creates a
+      // horizontal segment along the source edge.
+      final source = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 3,
+        pinY: 3,
+        width: 2,
+        height: 1,
+      );
+      final target = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 6,
+        pinY: 5,
+        width: 2,
+        height: 1,
+      );
+      final conn = VsdxShapeFactory.line(id: 3, ax: 3, ay: 3, bx: 6, by: 5);
+      final page = VsdxPage(
+        id: 0,
+        name: 'P',
+        widthInches: 12,
+        heightInches: 12,
+        shapes: <VsdxShape>[source, target, conn],
+        connects: const <VsdxConnect>[
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'BeginX',
+            fromPart: 9,
+            toSheetId: 1,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+          VsdxConnect(
+            fromSheetId: 3,
+            fromCell: 'EndX',
+            fromPart: 12,
+            toSheetId: 2,
+            toCell: 'PinX',
+            toPart: 3,
+          ),
+        ],
+      ).rerouteConnectors();
+
+      final route = VsdxPage.connectorRoute(page.findShapeById(3)!);
+      expect(route.length, greaterThanOrEqualTo(2));
+      expect(route[1].x, closeTo(route.first.x, 1e-6));
+      expect(route[1].y, greaterThan(route.first.y + 0.1));
+    });
   });
 }

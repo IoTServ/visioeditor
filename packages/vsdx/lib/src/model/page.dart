@@ -1914,8 +1914,36 @@ class VsdxPage {
         }
       }
     }
-    final pin = shapePinPage(shape.id);
-    return RouteSide.fromVector(x - pin.x, y - pin.y);
+    // Whole-shape glue can land near a corner. The old dominant-vector
+    // heuristic picked east for a point that was actually on the top edge
+    // (for example dx=.75, dy=.5), making the first segment run parallel to
+    // the source shape. Resolve the nearest local perimeter edge first, then
+    // map that edge normal through the shape's transforms.
+    final local = pageToLocalDeep(shape.id, Offset2D(x, y));
+    final left = local.x.abs();
+    final right = (shape.width - local.x).abs();
+    final bottom = local.y.abs();
+    final top = (shape.height - local.y).abs();
+    final distances = <double>[left, right, bottom, top];
+    final nearest = distances.reduce(math.min);
+    final tied = distances.where((d) => (d - nearest).abs() <= 1e-6).length > 1;
+    if (tied) {
+      final pin = shapePinPage(shape.id);
+      return RouteSide.fromVector(x - pin.x, y - pin.y);
+    }
+    final side = switch (distances.indexOf(nearest)) {
+      0 => const Offset2D(-1, 0), // west
+      1 => const Offset2D(1, 0), // east
+      2 => const Offset2D(0, -1), // south
+      _ => const Offset2D(0, 1), // north
+    };
+    final pinLocal = Offset2D(shape.effectiveLocPinX, shape.effectiveLocPinY);
+    final a = localToPageDeep(shape.id, pinLocal);
+    final b = localToPageDeep(
+      shape.id,
+      Offset2D(pinLocal.x + side.x, pinLocal.y + side.y),
+    );
+    return RouteSide.fromVector(b.x - a.x, b.y - a.y);
   }
 
   /// Obstacle-avoiding orthogonal route on this page. [excludeIds] are shapes
