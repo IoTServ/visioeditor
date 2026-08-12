@@ -100,6 +100,36 @@ void main() {
     timeout: const Timeout(Duration(minutes: 3)),
   );
 
+  test('draw.io library shapes use Sheet.N names without default labels', () {
+    final autoName = RegExp(r'^Sheet\.\d+$');
+    final samples = <Stencil>[
+      migrated
+          .singleWhere((group) => group.name == 'Draw.io / Signs / Animals')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Bear 1'),
+      migrated
+          .singleWhere((group) => group.name == 'Draw.io / Floorplan')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Bathtub'),
+      dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / AWS3D / AWS 3D')
+          .stencils
+          .singleWhere((entry) => entry.name == 'AMI'),
+      dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / UML25 / uml 2.5',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Input Pin'),
+    ];
+    for (var index = 0; index < samples.length; index++) {
+      final shape = samples[index].build(40 + index, 3, 3);
+      expect(shape.name, matches(autoName), reason: samples[index].name);
+      expect(shape.text, isNull, reason: samples[index].name);
+      expect(shape.richText.isEmpty, isTrue, reason: samples[index].name);
+    }
+  });
+
   test('curves arcs ellipses and connection points survive VSDX round-trip',
       () {
     Stencil stencil(String groupName, String shapeName) => migrated

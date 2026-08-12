@@ -102,13 +102,18 @@ class _DrawioXmlShapeDecoder {
       }
     }
 
-    final name = element.getAttribute('name')?.trim();
+    final sourceName = element.getAttribute('name')?.trim();
     if (_geometries.isEmpty) {
-      throw StateError('draw.io stencil ${name ?? id} produced no geometry');
+      throw StateError(
+        'draw.io stencil ${sourceName ?? id} produced no geometry',
+      );
     }
+    // Use Sheet.N like factory / chart stencils. The catalog keeps the
+    // human-readable stencil title for the palette; putting it on shape.name
+    // would paint as a label fallback when text is empty.
     return VsdxShape(
       id: id,
-      name: name?.isNotEmpty == true ? name! : 'Sheet.$id',
+      name: 'Sheet.$id',
       pinX: cx,
       pinY: cy,
       width: targetWidth,
