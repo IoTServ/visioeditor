@@ -90,6 +90,48 @@ void main() {
     );
   });
 
+  test('Save As picker retains every editable document extension', () async {
+    FilePicker? previousPicker;
+    try {
+      previousPicker = FilePicker.platform;
+    } catch (_) {
+      // Some test runners do not register a default platform implementation.
+    }
+    final directory = await Directory.systemTemp.createTemp(
+      'visio_save_family_test_',
+    );
+    addTearDown(() async {
+      if (previousPicker != null) FilePicker.platform = previousPicker;
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+
+    for (final extension in const <String>[
+      'vsdx',
+      'vsdm',
+      'vstx',
+      'vstm',
+      'vssx',
+      'vssm',
+      'drawio',
+    ]) {
+      final picker = _PersistingRecordingPicker(
+        '${directory.path}/saved_$extension',
+      );
+      FilePicker.platform = picker;
+      final bytes = Uint8List.fromList(<int>[1, extension.length]);
+
+      final result = await pickSaveLocation(
+        bytes: bytes,
+        suggestedName: 'diagram.$extension',
+      );
+
+      expect(picker.receivedFileName, 'diagram.$extension');
+      expect(picker.receivedExtensions, <String>[extension]);
+      expect(result, '${directory.path}/saved_$extension.$extension');
+      expect(await File(result!).readAsBytes(), bytes);
+    }
+  });
+
   test(
     'desktop Save As and exports omit picker bytes then write paths',
     () async {
@@ -155,6 +197,8 @@ class _PersistingRecordingPicker extends FilePicker {
 
   final String resultPath;
   Uint8List? receivedBytes;
+  String? receivedFileName;
+  List<String>? receivedExtensions;
 
   @override
   Future<String?> saveFile({
@@ -167,6 +211,8 @@ class _PersistingRecordingPicker extends FilePicker {
     bool lockParentWindow = false,
   }) async {
     receivedBytes = bytes;
+    receivedFileName = fileName;
+    receivedExtensions = allowedExtensions;
     if (bytes != null) {
       await File(resultPath).writeAsBytes(bytes, flush: true);
     }

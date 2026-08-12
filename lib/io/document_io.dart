@@ -55,7 +55,9 @@ Future<PickedDocument?> pickDiagramFile() async {
   // the canonical MIME types plus generic OPC fallbacks and returns a cached,
   // extension-preserving path.
   if (!kIsWeb && Platform.isAndroid) {
-    final path = await _androidFileChannel.invokeMethod<String>('pickVisioFile');
+    final path = await _androidFileChannel.invokeMethod<String>(
+      'pickVisioFile',
+    );
     if (path == null || !hasDiagramExtension(path)) return null;
     return readDroppedFile(path);
   }
@@ -66,8 +68,8 @@ Future<PickedDocument?> pickDiagramFile() async {
   );
   if (result == null || result.files.isEmpty) return null;
   final f = result.files.single;
-  final bytes = f.bytes ??
-      (f.path != null ? await File(f.path!).readAsBytes() : null);
+  final bytes =
+      f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
   if (bytes == null) return null;
   return PickedDocument(bytes: bytes, path: f.path, name: f.name);
 }
@@ -103,8 +105,8 @@ Future<PickedImage?> pickImageFile() async {
   );
   if (result == null || result.files.isEmpty) return null;
   final f = result.files.single;
-  final bytes = f.bytes ??
-      (f.path != null ? await File(f.path!).readAsBytes() : null);
+  final bytes =
+      f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
   if (bytes == null) return null;
   final ext = (f.extension ?? _extensionOf(f.name)).toLowerCase();
   return PickedImage(bytes: bytes, extension: ext, name: f.name);
@@ -182,6 +184,30 @@ String extensionOfPath(String path) {
 /// Browser downloads, UIDocumentPicker, and Android SAF destinations cannot.
 bool get supportsDirectFileSave => save_platform.supportsDirectFileSave;
 
+/// Extension retained by Save As for [suggestedName]. Legacy `.vsd` is an
+/// import-only format and unknown names fall back to a normal `.vsdx` drawing.
+String documentSaveExtension(String suggestedName) {
+  final extension = extensionOfPath(suggestedName);
+  if (extension == 'drawio') return extension;
+  if (extension != 'vsd' && kVisioOpenExtensions.contains(extension)) {
+    return extension;
+  }
+  return 'vsdx';
+}
+
+/// Suggested filename normalized to [documentSaveExtension].
+String normalizedDocumentSaveName(String suggestedName) {
+  final extension = documentSaveExtension(suggestedName);
+  if (isLegacyVisioBinary(suggestedName)) {
+    return suggestedName.replaceFirst(
+      RegExp(r'\.vsd$', caseSensitive: false),
+      '.vsdx',
+    );
+  }
+  if (extensionOfPath(suggestedName) == extension) return suggestedName;
+  return '$suggestedName.$extension';
+}
+
 /// Prompt for a save location and persist [bytes] as `.vsdx` or `.drawio`.
 ///
 /// Returns the chosen path, or `null` if cancelled.
@@ -193,33 +219,16 @@ Future<String?> pickSaveLocation({
   required Uint8List bytes,
   String suggestedName = 'drawing.vsdx',
 }) async {
-  var suggested = suggestedName;
-  final isDrawio = suggested.toLowerCase().endsWith('.drawio');
-  if (isDrawio) {
-    return _saveBytesWithPicker(
-      bytes: bytes,
-      fileName: suggested,
-      dialogTitle: 'Save draw.io drawing (.drawio)',
-      allowedExtensions: const <String>['drawio'],
-      ensureExtension: (path) =>
-          path.toLowerCase().endsWith('.drawio') ? path : '$path.drawio',
-    );
-  }
-  if (isLegacyVisioBinary(suggested)) {
-    suggested = suggested.replaceFirst(
-      RegExp(r'\.vsd$', caseSensitive: false),
-      '.vsdx',
-    );
-  } else if (!suggested.toLowerCase().endsWith('.vsdx')) {
-    suggested = '$suggested.vsdx';
-  }
+  final extension = documentSaveExtension(suggestedName);
+  final suggested = normalizedDocumentSaveName(suggestedName);
+  final label = extension == 'drawio' ? 'draw.io' : 'Visio';
   return _saveBytesWithPicker(
     bytes: bytes,
     fileName: suggested,
-    dialogTitle: 'Save Visio drawing (.vsdx)',
-    allowedExtensions: const <String>['vsdx'],
+    dialogTitle: 'Save $label drawing (.$extension)',
+    allowedExtensions: <String>[extension],
     ensureExtension: (path) =>
-        path.toLowerCase().endsWith('.vsdx') ? path : '$path.vsdx',
+        path.toLowerCase().endsWith('.$extension') ? path : '$path.$extension',
   );
 }
 

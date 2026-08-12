@@ -59,6 +59,28 @@ void main() {
     );
   });
 
+  test('Save As retains every editable format and upgrades legacy VSD', () {
+    for (final extension in const <String>[
+      'vsdx',
+      'vsdm',
+      'vstx',
+      'vstm',
+      'vssx',
+      'vssm',
+      'drawio',
+    ]) {
+      expect(documentSaveExtension('Drawing.$extension'), extension);
+      expect(
+        normalizedDocumentSaveName('Drawing.$extension'),
+        'Drawing.$extension',
+      );
+    }
+    expect(documentSaveExtension('legacy.vsd'), 'vsdx');
+    expect(normalizedDocumentSaveName('legacy.VSD'), 'legacy.vsdx');
+    expect(documentSaveExtension('untitled'), 'vsdx');
+    expect(normalizedDocumentSaveName('untitled'), 'untitled.vsdx');
+  });
+
   test('export helpers require bytes in the API (compile-time contract)', () {
     // Ensures call sites pass bytes — mobile saveFile throws without them.
     const suggested = 'out.svg';

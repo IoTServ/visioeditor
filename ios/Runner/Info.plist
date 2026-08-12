@@ -148,7 +148,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.jgraph.drawio.diagram</string>
+				<string>com.jgraph.drawio</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>
 			<array>
@@ -156,11 +156,11 @@
 			</array>
 		</dict>
 	</array>
-	<key>UTImportedTypeDeclarations</key>
+	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.jgraph.drawio.diagram</string>
+			<string>com.jgraph.drawio</string>
 			<key>UTTypeDescription</key>
 			<string>draw.io Diagram</string>
 			<key>UTTypeConformsTo</key>
@@ -180,6 +180,9 @@
 				</array>
 			</dict>
 		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
 			<string>com.microsoft.visio.drawing</string>

@@ -63,6 +63,12 @@ void main() {
     expect(android, contains('android:pathPattern=".*\\\\.drawio"'));
     expect(linuxMime, contains('glob pattern="*.drawio"'));
     expect(windows, contains('Classes\\.drawio]'));
+    expect(android, contains('application/vnd.jgraph.mxfile'));
+    expect(linuxDesktop, contains('application/vnd.jgraph.mxfile'));
+    expect(ios, contains('<string>com.jgraph.drawio</string>'));
+    expect(macos, contains('<string>com.jgraph.drawio</string>'));
+    expect(ios, contains('<key>UTExportedTypeDeclarations</key>'));
+    expect(macos, contains('<key>UTExportedTypeDeclarations</key>'));
   });
 
   test('associated platform runners deliver opened files to Dart', () {
@@ -111,6 +117,7 @@ void main() {
     expect(pubspec, contains('store: true'));
     expect(pubspec, contains('.vsdx'));
     expect(pubspec, contains('.vsd'));
+    expect(pubspec, contains('.drawio'));
 
     expect(
       identity,

@@ -67,6 +67,6 @@ msix_config:
   store: true
   languages: en-us
   capabilities: internetClient
-  file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd
+  file_extension: .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd, .drawio
   logo_path: macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png
   trim_logo: false
