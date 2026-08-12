@@ -54,7 +54,7 @@ Future<void> main(List<String> arguments) async {
   final settings = await AppSettings.load();
   runApp(VisioEditorApp(
     settings: settings,
-    initialFilePaths: visioPathsFromArguments(arguments),
+    initialFilePaths: diagramPathsFromArguments(arguments),
   ));
 }
 
@@ -558,7 +558,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
       final args = call.arguments;
       if (args is List) {
         for (final p in args) {
-          if (p is String && hasVisioAssociatedExtension(p)) {
+          if (p is String && hasDiagramAssociatedExtension(p)) {
             await _openPath(p);
           }
         }
@@ -624,7 +624,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
   }
 
   Future<void> _open() async {
-    final picked = await pickVisioFile();
+    final picked = await pickDiagramFile();
     if (picked == null) return;
     await _openBytes(picked.bytes, path: picked.path, name: picked.name);
   }
@@ -656,7 +656,7 @@ class _EditorHomePageState extends State<EditorHomePage> {
     final c = _c;
     final pagePt = _pageInchesFromGlobal(details.globalPosition);
     for (final f in details.files) {
-      if (hasVisioExtension(f.path) || isLegacyVisioBinary(f.path)) {
+      if (hasDiagramExtension(f.path) || isLegacyVisioBinary(f.path)) {
         final picked = await readDroppedFile(f.path);
         await _openBytes(picked.bytes, path: picked.path, name: picked.name);
         continue;

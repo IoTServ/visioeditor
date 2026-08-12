@@ -44,6 +44,21 @@ void main() {
     );
   });
 
+  test('diagram filters and startup arguments include draw.io files', () {
+    expect(kDiagramOpenExtensions, contains('drawio'));
+    expect(hasDiagramExtension('/tmp/Architecture.DRAWIO'), isTrue);
+    expect(hasVisioExtension('/tmp/Architecture.drawio'), isFalse);
+    expect(
+      diagramPathsFromArguments(<String>[
+        '--trace-startup',
+        '/tmp/Architecture.drawio',
+        '/tmp/Network.vsdx',
+        '/tmp/notes.xml',
+      ]),
+      <String>['/tmp/Architecture.drawio', '/tmp/Network.vsdx'],
+    );
+  });
+
   test('export helpers require bytes in the API (compile-time contract)', () {
     // Ensures call sites pass bytes — mobile saveFile throws without them.
     const suggested = 'out.svg';

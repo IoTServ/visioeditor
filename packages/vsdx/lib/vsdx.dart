@@ -71,6 +71,9 @@ export 'src/parser/vsd/cfb/compound_file.dart';
 // writer (round-trip save)
 export 'src/writer/vsdx_writer.dart';
 
+// draw.io interop
+export 'src/drawio/drawio_codec.dart';
+
 // export (interop)
 export 'src/export/compound_stroke.dart';
 export 'src/export/line_jumps.dart';

@@ -23,6 +23,15 @@ Windows Registry Editor Version 5.00
 [HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawing.Binary\shell\open\command]
 @="\"C:\\Path\\To\\visioeditor.exe\" \"%1\""
 
+[HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawio]
+@="draw.io Diagram"
+
+[HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawio\DefaultIcon]
+@="C:\\Path\\To\\visioeditor.exe,0"
+
+[HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawio\shell\open\command]
+@="\"C:\\Path\\To\\visioeditor.exe\" \"%1\""
+
 ; Modern OPC Visio drawings
 [HKEY_CURRENT_USER\Software\Classes\.vsdx]
 @="VisioEditor.Drawing"
@@ -52,3 +61,7 @@ Windows Registry Editor Version 5.00
 [HKEY_CURRENT_USER\Software\Classes\.vsd]
 @="VisioEditor.Drawing.Binary"
 "Content Type"="application/vnd.visio"
+
+[HKEY_CURRENT_USER\Software\Classes\.drawio]
+@="VisioEditor.Drawio"
+"Content Type"="application/vnd.jgraph.mxfile"

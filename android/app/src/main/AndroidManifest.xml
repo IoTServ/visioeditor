@@ -48,6 +48,7 @@
                 <data android:mimeType="application/vnd.ms-visio.stencil"/>
                 <data android:mimeType="application/vnd.ms-visio.stencil.macroEnabled.12"/>
                 <data android:mimeType="application/vnd.ms-visio.stencil.macroEnabled"/>
+                <data android:mimeType="application/vnd.jgraph.mxfile"/>
             </intent-filter>
             <!-- Fall back to matching by file extension (content/file URIs whose
                  MIME is generic). pathPattern matching is best-effort on
@@ -67,6 +68,7 @@
                 <data android:pathPattern=".*\\.vstm"/>
                 <data android:pathPattern=".*\\.vssx"/>
                 <data android:pathPattern=".*\\.vssm"/>
+                <data android:pathPattern=".*\\.drawio"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

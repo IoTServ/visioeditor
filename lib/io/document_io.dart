@@ -33,11 +33,22 @@ const List<String> kVisioAssociatedExtensions = <String>[
   ...kVisioOpenExtensions,
 ];
 
+/// All editable drawing extensions accepted by the application.
+const List<String> kDiagramOpenExtensions = <String>[
+  ...kVisioOpenExtensions,
+  'drawio',
+];
+
+/// Extensions registered for app launch / Open With handling.
+const List<String> kDiagramAssociatedExtensions = <String>[
+  ...kDiagramOpenExtensions,
+];
+
 const MethodChannel _androidFileChannel = MethodChannel('visioeditor/files');
 
 /// Show the native open dialog and return the chosen file's bytes, or `null`
 /// if the user cancelled.
-Future<PickedDocument?> pickVisioFile() async {
+Future<PickedDocument?> pickDiagramFile() async {
   // Android's file_picker adapter converts extensions through MimeTypeMap.
   // Visio types are absent on many Android versions, which makes a custom
   // filter fail before the system picker opens. The native bridge supplies
@@ -45,12 +56,12 @@ Future<PickedDocument?> pickVisioFile() async {
   // extension-preserving path.
   if (!kIsWeb && Platform.isAndroid) {
     final path = await _androidFileChannel.invokeMethod<String>('pickVisioFile');
-    if (path == null || !hasVisioExtension(path)) return null;
+    if (path == null || !hasDiagramExtension(path)) return null;
     return readDroppedFile(path);
   }
   final result = await FilePicker.platform.pickFiles(
     type: FileType.custom,
-    allowedExtensions: kVisioOpenExtensions,
+    allowedExtensions: kDiagramOpenExtensions,
     withData: true,
   );
   if (result == null || result.files.isEmpty) return null;
@@ -60,6 +71,9 @@ Future<PickedDocument?> pickVisioFile() async {
   if (bytes == null) return null;
   return PickedDocument(bytes: bytes, path: f.path, name: f.name);
 }
+
+/// Backwards-compatible Visio-named entry point used by older integrations.
+Future<PickedDocument?> pickVisioFile() => pickDiagramFile();
 
 /// Raster-image extensions the editor can embed via "Insert Image".
 const List<String> kImageInsertExtensions = <String>[
@@ -114,10 +128,20 @@ bool hasVisioExtension(String path) {
   return kVisioOpenExtensions.any((e) => lower.endsWith('.$e'));
 }
 
+bool hasDiagramExtension(String path) {
+  final lower = path.toLowerCase();
+  return kDiagramOpenExtensions.any((e) => lower.endsWith('.$e'));
+}
+
 /// `true` when [path] matches an OS-associated Visio extension (OPC or `.vsd`).
 bool hasVisioAssociatedExtension(String path) {
   final lower = path.toLowerCase();
   return kVisioAssociatedExtensions.any((e) => lower.endsWith('.$e'));
+}
+
+bool hasDiagramAssociatedExtension(String path) {
+  final lower = path.toLowerCase();
+  return kDiagramAssociatedExtensions.any((e) => lower.endsWith('.$e'));
 }
 
 /// Visio file paths supplied by desktop runners at process startup.
@@ -127,6 +151,10 @@ bool hasVisioAssociatedExtension(String path) {
 /// arguments rather than attempting to read them as documents.
 List<String> visioPathsFromArguments(Iterable<String> arguments) =>
     arguments.where(hasVisioAssociatedExtension).toList(growable: false);
+
+/// Editable diagram paths supplied by desktop runners at startup.
+List<String> diagramPathsFromArguments(Iterable<String> arguments) =>
+    arguments.where(hasDiagramAssociatedExtension).toList(growable: false);
 
 /// Legacy Visio 2003–2010 binary drawing (OLE2). Importable; Save As `.vsdx`.
 bool isLegacyVisioBinary(String path) {
@@ -154,7 +182,7 @@ String extensionOfPath(String path) {
 /// Browser downloads, UIDocumentPicker, and Android SAF destinations cannot.
 bool get supportsDirectFileSave => save_platform.supportsDirectFileSave;
 
-/// Prompt for a save location and persist [bytes] as `.vsdx`.
+/// Prompt for a save location and persist [bytes] as `.vsdx` or `.drawio`.
 ///
 /// Returns the chosen path, or `null` if cancelled.
 ///
@@ -166,6 +194,17 @@ Future<String?> pickSaveLocation({
   String suggestedName = 'drawing.vsdx',
 }) async {
   var suggested = suggestedName;
+  final isDrawio = suggested.toLowerCase().endsWith('.drawio');
+  if (isDrawio) {
+    return _saveBytesWithPicker(
+      bytes: bytes,
+      fileName: suggested,
+      dialogTitle: 'Save draw.io drawing (.drawio)',
+      allowedExtensions: const <String>['drawio'],
+      ensureExtension: (path) =>
+          path.toLowerCase().endsWith('.drawio') ? path : '$path.drawio',
+    );
+  }
   if (isLegacyVisioBinary(suggested)) {
     suggested = suggested.replaceFirst(
       RegExp(r'\.vsd$', caseSensitive: false),

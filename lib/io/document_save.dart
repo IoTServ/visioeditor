@@ -66,6 +66,7 @@ Future<DocumentSaveResult?> saveEditorDocument(
       name: displayName,
       savedDocument: snapshot,
       clearPath: !direct,
+      format: controller.documentFormat,
     );
     return DocumentSaveResult(
       path: path,
@@ -91,9 +92,17 @@ Future<DocumentSaveResult?> saveEditorDocumentToPath(
   try {
     final snapshot = controller.document;
     if (snapshot == null) return null;
-    final bytes = controller.exportToBytes();
+    final format = path.toLowerCase().endsWith('.drawio')
+        ? EditorDocumentFormat.drawio
+        : EditorDocumentFormat.visio;
+    final bytes = controller.exportToBytes(format: format);
     await (writer ?? writeBytesToFile)(path, bytes);
-    controller.markSaved(bytes, path: path, savedDocument: snapshot);
+    controller.markSaved(
+      bytes,
+      path: path,
+      savedDocument: snapshot,
+      format: format,
+    );
     return DocumentSaveResult(path: path, bytes: bytes, persistentPath: path);
   } finally {
     _activeSaves.remove(controller);

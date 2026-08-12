@@ -36,6 +36,9 @@ enum ConnectorLineJumpStyle { none, arc, gap, sharp, line }
 /// Common draw.io label positions around a 2-D shape.
 enum TextLabelPosition { left, top, center, bottom, right }
 
+/// On-disk format used by Save for the active document.
+enum EditorDocumentFormat { visio, drawio }
+
 typedef _CreationStyle = ({
   VsdxFill fill,
   VsdxLine line,
@@ -163,6 +166,7 @@ class EditorController extends ChangeNotifier {
   int _imageSeq = 0;
 
   bool _importedFromVsd = false;
+  EditorDocumentFormat _documentFormat = EditorDocumentFormat.visio;
 
   VsdxDocument? get document => _document;
   Uint8List? get originalBytes => _originalBytes;
@@ -176,6 +180,9 @@ class EditorController extends ChangeNotifier {
   /// `true` when the active document was imported from a legacy `.vsd`.
   /// Cleared after the first successful Save As `.vsdx`.
   bool get importedFromVsd => _importedFromVsd;
+
+  /// The format retained by normal Save / Save As operations.
+  EditorDocumentFormat get documentFormat => _documentFormat;
 
   int get pageCount => _document?.pages.length ?? 0;
   int get currentPageIndex => _currentPageIndex;
@@ -11103,13 +11110,16 @@ class EditorController extends ChangeNotifier {
 
   // --- Save / export ---------------------------------------------------------
 
-  /// Serialise the current document back to `.vsdx` bytes (round-trip writer).
+  /// Serialise the current document in its active on-disk format.
   /// Throws [StateError] when there is nothing to export.
-  Uint8List exportToBytes() {
+  Uint8List exportToBytes({EditorDocumentFormat? format}) {
     final doc = _document;
     final orig = _originalBytes;
     if (doc == null || orig == null) {
       throw StateError('No document to export');
+    }
+    if ((format ?? _documentFormat) == EditorDocumentFormat.drawio) {
+      return const DrawioCodec().encode(doc);
     }
     return const VsdxWriter(preserveUnchangedPackage: true)
         .write(originalBytes: orig, edited: doc);
@@ -11123,8 +11133,13 @@ class EditorController extends ChangeNotifier {
     String? name,
     VsdxDocument? savedDocument,
     bool clearPath = false,
+    EditorDocumentFormat? format,
   }) {
-    _originalBytes = savedBytes;
+    final savedFormat = format ?? _documentFormat;
+    if (savedFormat == EditorDocumentFormat.visio) {
+      _originalBytes = savedBytes;
+    }
+    _documentFormat = savedFormat;
     if (clearPath) {
       _filePath = null;
     } else if (path != null) {
@@ -11176,6 +11191,7 @@ class EditorController extends ChangeNotifier {
     _filePath = null;
     _fileName = 'Untitled.vsdx';
     _importedFromVsd = false;
+    _documentFormat = EditorDocumentFormat.visio;
     _currentPageIndex = 0;
     _error = null;
     _resetHistory();
@@ -11184,9 +11200,9 @@ class EditorController extends ChangeNotifier {
 
   /// Parse [bytes] into a document and make it the active file.
   ///
-  /// Accepts OPC `.vsdx` (and siblings) or legacy binary `.vsd`. Binary imports
-  /// synthesise a `.vsdx` baseline; [importedFromVsd] is set and [filePath] is
-  /// cleared so the next Save prompts for a `.vsdx` location.
+  /// Accepts draw.io XML, OPC `.vsdx` (and siblings), or legacy binary `.vsd`.
+  /// Binary Visio imports synthesise a `.vsdx` baseline; [importedFromVsd] is
+  /// set and [filePath] is cleared so the next Save prompts for `.vsdx`.
   Future<void> openBytes(
     Uint8List bytes, {
     String? path,
@@ -11196,9 +11212,28 @@ class EditorController extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
+      final sourceName = (name ?? path ?? '').toLowerCase();
+      final drawio = const DrawioCodec();
+      if (sourceName.endsWith('.drawio') || drawio.looksLikeDrawio(bytes)) {
+        final document = drawio.decode(bytes);
+        final firstPage = document.pages.first;
+        _document = document;
+        _originalBytes = const VsdxWriter().emptyDocument(
+          widthInches: firstPage.widthInches,
+          heightInches: firstPage.heightInches,
+        );
+        _documentFormat = EditorDocumentFormat.drawio;
+        _importedFromVsd = false;
+        _filePath = path;
+        _fileName = name ?? _basename(path) ?? 'drawing.drawio';
+        _currentPageIndex = 0;
+        _resetHistory();
+        return;
+      }
       final result = parseVisio(bytes);
       _document = result.document;
       _originalBytes = result.originalBytes;
+      _documentFormat = EditorDocumentFormat.visio;
       _importedFromVsd = result.importedFromVsd;
       if (result.importedFromVsd) {
         // Never overwrite the source `.vsd` with OPC bytes.
@@ -11220,6 +11255,7 @@ class EditorController extends ChangeNotifier {
       _filePath = null;
       _fileName = null;
       _importedFromVsd = false;
+      _documentFormat = EditorDocumentFormat.visio;
       _resetHistory();
     } finally {
       _isLoading = false;
@@ -11233,6 +11269,7 @@ class EditorController extends ChangeNotifier {
     _filePath = null;
     _fileName = null;
     _importedFromVsd = false;
+    _documentFormat = EditorDocumentFormat.visio;
     _currentPageIndex = 0;
     _error = null;
     _resetHistory();

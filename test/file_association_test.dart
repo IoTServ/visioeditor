@@ -41,6 +41,30 @@ void main() {
     }
   });
 
+  test('platform association declarations include draw.io', () {
+    final android = _read('android/app/src/main/AndroidManifest.xml');
+    final ios = _read('ios/Runner/Info.plist');
+    final macos = _read('macos/Runner/Info.plist');
+    final linuxMime = _read('linux/packaging/visioeditor-mime.xml');
+    final linuxDesktop = _read('linux/packaging/visioeditor.desktop');
+    final windows = _read('windows/packaging/visioeditor-file-association.reg');
+
+    for (final declaration in <String>[
+      android,
+      ios,
+      macos,
+      linuxMime,
+      linuxDesktop,
+      windows,
+    ]) {
+      final lower = declaration.toLowerCase();
+      expect(lower.contains('drawio') || lower.contains('draw.io'), isTrue);
+    }
+    expect(android, contains('android:pathPattern=".*\\\\.drawio"'));
+    expect(linuxMime, contains('glob pattern="*.drawio"'));
+    expect(windows, contains('Classes\\.drawio]'));
+  });
+
   test('associated platform runners deliver opened files to Dart', () {
     final android = _read(
       'android/app/src/main/kotlin/cloud/iothub/visioeditor/MainActivity.kt',

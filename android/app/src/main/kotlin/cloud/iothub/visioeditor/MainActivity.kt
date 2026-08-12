@@ -116,7 +116,7 @@ class MainActivity : FlutterActivity() {
         val queriedName = queryDisplayName(uri)
         val displayName = when {
             queriedName == null -> "document.$extension"
-            queriedName.matches(Regex(".*\\.(vsd|vsdx|vsdm|vstx|vstm|vssx|vssm)$", RegexOption.IGNORE_CASE)) -> queriedName
+            queriedName.matches(Regex(".*\\.(vsd|vsdx|vsdm|vstx|vstm|vssx|vssm|drawio)$", RegexOption.IGNORE_CASE)) -> queriedName
             else -> "$queriedName.$extension"
         }
         val safeName = displayName.replace(Regex("[^A-Za-z0-9._ -]"), "_")
@@ -161,6 +161,7 @@ class MainActivity : FlutterActivity() {
             "application/vnd.ms-visio.stencil" -> "vssx"
             "application/vnd.ms-visio.stencil.macroenabled.12",
             "application/vnd.ms-visio.stencil.macroenabled" -> "vssm"
+            "application/vnd.jgraph.mxfile" -> "drawio"
             else -> "vsdx"
         }
 
@@ -174,6 +175,9 @@ class MainActivity : FlutterActivity() {
             "application/vnd.ms-visio.template.macroEnabled.12",
             "application/vnd.ms-visio.stencil",
             "application/vnd.ms-visio.stencil.macroEnabled.12",
+            "application/vnd.jgraph.mxfile",
+            "application/xml",
+            "text/xml",
             // Providers commonly report OPC packages or unknown office files
             // generically. Dart validates the returned filename extension.
             "application/zip",
