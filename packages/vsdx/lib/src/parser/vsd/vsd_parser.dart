@@ -1,4 +1,4 @@
-/// Visio binary (VSD5 / VSD6 / VSD11) parser → [VsdxDocument].
+/// Visio binary (VSD1–5 family / VSD6 / VSD11) parser → [VsdxDocument].
 ///
 /// Stream / chunk layout follows the publicly documented Visio binary structure
 /// (algorithm reference: LibreOffice libvisio `VSDParser` / `VSD5Parser`).
@@ -733,13 +733,17 @@ class _PageDraft {
   final connects = <VsdxConnect>[];
 }
 
-/// Parses a VisioDocument stream (VSD5 / VSD6 / VSD11) into an editable model.
+/// Parses a VisioDocument stream (VSD1–5 / VSD6 / VSD11) into an editable model.
 class VsdBinaryParser {
   VsdBinaryParser(this._docStream);
 
   final Uint8List _docStream;
   late VsdByteReader _input;
   int _version = 11;
+
+  /// libvisio dispatches binary versions 1–5 through `VSD5Parser` because
+  /// they share the 16-bit chunk and pointer layout.
+  bool get _isVsd5Family => _version >= 1 && _version <= 5;
 
   final _colours = <VsdxColor>[];
   final _styles = <int, _StyleDraft>{};
@@ -772,10 +776,11 @@ class VsdBinaryParser {
     _verifyMagic();
     _input.seek(0x1A);
     _version = _input.readU8();
-    if (_version != 5 && _version != 6 && _version != 11) {
+    if ((_version < 1 || _version > 6) && _version != 11) {
       throw VsdxFormatException(
         'Unsupported Visio binary version $_version '
-        '(supported: 5 = Visio 5, 6 = Visio 2000, 11 = Visio 2002–2010)',
+        '(supported: 1–5 = legacy Visio, 6 = Visio 2000, '
+        '11 = Visio 2002–2010)',
       );
     }
 
@@ -1075,8 +1080,9 @@ class VsdBinaryParser {
     if (input.isEnd) return false;
     input.seek(input.offset - 1);
 
-    if (_version == 5) {
-      // Visio 5: typed ints are int16; trailer always 0 (libvisio VSD5Parser).
+    if (_isVsd5Family) {
+      // Visio 1–5: typed ints are int16; trailer is always 0
+      // (libvisio VSD5Parser).
       _header.chunkType = _getUInt(input);
       _header.id = _getUInt(input);
       _header.level = input.readU8();
@@ -1157,7 +1163,7 @@ class VsdBinaryParser {
   }
 
   VsdPointer _readPointer(VsdByteReader input) =>
-      _version == 5 ? input.readPointerVsd5() : input.readPointer();
+      _isVsd5Family ? input.readPointerVsd5() : input.readPointer();
 
   /// Positions [input] at the first pointer and returns list/pointer counts.
   ({int listSize, int pointerCount}) _readPointerInfo(
@@ -1165,7 +1171,7 @@ class VsdBinaryParser {
     int ptrType,
     int shift,
   ) {
-    if (_version == 5) {
+    if (_isVsd5Family) {
       // Algorithm reference: libvisio VSD5Parser::readPointerInfo.
       switch (ptrType) {
         case VsdRecordId.trailerStream:
@@ -1200,9 +1206,10 @@ class VsdBinaryParser {
     return (listSize: listSize, pointerCount: pointerCount);
   }
 
-  /// Visio 5 typed integers are signed 16-bit (libvisio `VSD5Parser::getUInt`).
+  /// Visio 1–5 typed integers are signed 16-bit
+  /// (libvisio `VSD5Parser::getUInt`).
   int _getUInt(VsdByteReader input) {
-    if (_version == 5) return vsdV5UnsignedInt(input.readS16());
+    if (_isVsd5Family) return vsdV5UnsignedInt(input.readS16());
     return input.readU32();
   }
 
@@ -1269,7 +1276,7 @@ class VsdBinaryParser {
           _readName2(input);
           return;
         case VsdRecordId.nameList2:
-          if (_version == 5) {
+          if (_isVsd5Family) {
             _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
           } else {
             _names.clear();
@@ -1386,7 +1393,7 @@ class VsdBinaryParser {
         // libvisio `readNameList` — clear shape-local names before new Name rows.
         if (!collectStylesOnly) _shape?.localNames.clear();
       case VsdRecordId.nameList2:
-        if (_version == 5) {
+        if (_isVsd5Family) {
           // VSD5 embeds Name2 records in the list payload rather than exposing
           // them as child pointer streams.
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
@@ -1395,29 +1402,29 @@ class VsdBinaryParser {
           _names.clear();
         }
       case VsdRecordId.charList:
-        if (_version == 5) {
+        if (_isVsd5Family) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
         } else if (!collectStylesOnly) {
           _readListOrder(input, into: _shape?.charOrder);
         }
       case VsdRecordId.paraList:
-        if (_version == 5) {
+        if (_isVsd5Family) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
         } else if (!collectStylesOnly) {
           _readListOrder(input, into: _shape?.paraOrder);
         }
       case VsdRecordId.fieldList:
-        if (_version == 5) {
+        if (_isVsd5Family) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
         } else if (!collectStylesOnly) {
           _readListOrder(input, into: _shape?.fieldOrder);
         }
       case VsdRecordId.propList:
-        if (_version == 5) {
+        if (_isVsd5Family) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
         }
       case VsdRecordId.tabsDataList:
-        if (_version == 5) {
+        if (_isVsd5Family) {
           _handleChunkRecords(input, collectStylesOnly: collectStylesOnly);
         } else if (!collectStylesOnly) {
           _readListOrder(input, into: _shape?.tabOrder);
@@ -1443,27 +1450,27 @@ class VsdBinaryParser {
         _currentShapeLevel = _header.level;
       case VsdRecordId.cPntsList:
         // Trailer id order for Connection rows (like CharList).
-        if (_version != 5) {
+        if (!_isVsd5Family) {
           _readListOrder(input, into: _shape?.connectionOrder);
         }
       case VsdRecordId.connectionPoints:
       case VsdRecordId.connectionPointsAlt:
         _readConnectionPoints(input);
       case VsdRecordId.ctrlList:
-        if (_version != 5) {
+        if (!_isVsd5Family) {
           _readListOrder(input, into: _shape?.controlOrder);
         }
       case VsdRecordId.control:
       case VsdRecordId.controlAlt:
         if (!collectStylesOnly) _readControl(input);
       case VsdRecordId.custPropsList:
-        if (_version != 5) {
+        if (!_isVsd5Family) {
           _readListOrder(input, into: _shape?.propOrder);
         }
       case VsdRecordId.customProps:
         if (!collectStylesOnly) _readCustomProps(input);
       case VsdRecordId.scratchList:
-        if (_version != 5) {
+        if (!_isVsd5Family) {
           _readListOrder(input, into: _shape?.scratchOrder);
         }
       case VsdRecordId.scratch:
@@ -1471,7 +1478,7 @@ class VsdBinaryParser {
       case VsdRecordId.userDefinedCells:
         if (!collectStylesOnly) _readUserDefinedCell(input);
       case VsdRecordId.actIdList:
-        if (_version != 5) {
+        if (!_isVsd5Family) {
           _readListOrder(input, into: _shape?.actionOrder);
         }
       case VsdRecordId.actId:
@@ -1481,7 +1488,7 @@ class VsdBinaryParser {
       case VsdRecordId.group:
         if (!collectStylesOnly) _readGroup(input);
       case VsdRecordId.hyperLnkList:
-        if (_version != 5) {
+        if (!_isVsd5Family) {
           _readListOrder(input, into: _shape?.hyperlinkOrder);
         }
       case VsdRecordId.hyperlink:
@@ -1893,7 +1900,7 @@ class VsdBinaryParser {
     _ShapeDraft d, {
     int defaultDrawingUnit = 0,
   }) {
-    if (_version != 5) return;
+    if (!_isVsd5Family) return;
     final text = d.text;
     if (text == null || text.isEmpty || d.fieldDisplays.isEmpty) return;
     final out = StringBuffer();
@@ -2376,7 +2383,7 @@ class VsdBinaryParser {
     var fillStyle = _minusOne;
     var textStyle = _minusOne;
     try {
-      if (_version == 5) {
+      if (_isVsd5Family) {
         // Algorithm reference: libvisio VSD5Parser::readShape.
         input.skip(2);
         parent = _getUInt(input);
@@ -2917,7 +2924,7 @@ class VsdBinaryParser {
 
   void _readLine(VsdByteReader input) {
     late final VsdxLine line;
-    if (_version == 5) {
+    if (_isVsd5Family) {
       // Algorithm reference: libvisio VSD5Parser::readLine.
       input.skip(1);
       final strokeWidth = input.readF64();
@@ -3012,7 +3019,7 @@ class VsdBinaryParser {
       pageX: _currentPage?.shadowOffsetX ?? 0.125,
       pageY: _currentPage?.shadowOffsetY ?? -0.125,
     );
-    if (_version == 5) {
+    if (_isVsd5Family) {
       // Algorithm reference: libvisio VSD5Parser::readFillAndShadow.
       final colourFG = _colourFromIndex(input.readU8());
       final colourBG = _colourFromIndex(input.readU8());
@@ -3138,7 +3145,7 @@ class VsdBinaryParser {
     final g = _GeomBuilder();
     s.geometries.add(g);
     s.currentGeom = g;
-    if (_version == 5) {
+    if (_isVsd5Family) {
       _handleChunkRecords(input, collectStylesOnly: false);
       return;
     }
@@ -3291,7 +3298,7 @@ class VsdBinaryParser {
     final page = _currentPage;
     if (page == null) return;
     try {
-      final backgroundId = _version == 5
+      final backgroundId = _isVsd5Family
           ? _getUInt(input)
           : (() {
               input.skip(8); // sub-header length + children-list length
@@ -3709,7 +3716,7 @@ class VsdBinaryParser {
     const cellTypeDate = 40;
     const formatUnknown = 0xffff;
     try {
-      if (_version == 5) {
+      if (_isVsd5Family) {
         // VSD5Parser::readTextField — no format block in the chunk; the text
         // stream encodes format as the byte after 0x1E (`formatId + 0x20`).
         input.skip(3);
@@ -4567,7 +4574,7 @@ class VsdBinaryParser {
       s.hideText = (flags & 0x20) != 0;
       s.hasMisc = true;
       // VSD5 has no connector-target extension blocks.
-      if (_version == 5) return;
+      if (_isVsd5Family) return;
 
       final limit = (initial + _header.dataLength + _header.trailer)
           .clamp(0, input.length);
@@ -4682,7 +4689,7 @@ class VsdBinaryParser {
     try {
       if (_version < 11) {
         // getInt: s32 (VSD6) / s16 (VSD5)
-        if (_version == 5) {
+        if (_isVsd5Family) {
           input.readS16();
         } else {
           input.readS32();
@@ -4732,7 +4739,7 @@ class VsdBinaryParser {
     // VSD5Parser::readNameIDX (U16 records).
     try {
       final names = <int, String>{};
-      if (_version == 5) {
+      if (_isVsd5Family) {
         var recordCount = input.readU16();
         final max = input.remaining ~/ 4;
         if (recordCount > max) recordCount = max;
@@ -4944,7 +4951,7 @@ class VsdBinaryParser {
       late final VsdxColor? textBgColor;
       late final double defaultTabStop;
       late final int textDirection;
-      if (_version == 5) {
+      if (_isVsd5Family) {
         // VSD5 TextBlock ends after the palette colour index.
         isBgFilled = bgIdx != 0;
         textBgColor = isBgFilled ? _colourFromIndex(bgIdx - 1) : null;
@@ -5021,7 +5028,7 @@ class VsdBinaryParser {
       var doubleStrikethrough = false;
       var fontScale = 1.0;
       double? fontSizeInches;
-      if (_version == 5) {
+      if (_isVsd5Family) {
         // Algorithm reference: libvisio VSD5Parser::readCharIX.
         charCount = input.readU16();
         fontID = input.readU16();
@@ -5135,7 +5142,7 @@ class VsdBinaryParser {
     try {
       final start = input.offset;
       final charCount =
-          _version == 5 ? input.readU16() : input.readU32();
+          _isVsd5Family ? input.readU16() : input.readU32();
       input.skip(1);
       final indFirst = input.readF64();
       input.skip(1);
@@ -5162,7 +5169,7 @@ class VsdBinaryParser {
       double? textPosAfterBullet;
       int? paraFlags;
       String? bulletStr;
-      if (_version == 5) {
+      if (_isVsd5Family) {
         // VSD5 has no bullet payload, but libvisio still materialises the
         // format's concrete defaults so a master/style bullet is cleared.
         bullet = 0;
@@ -5300,7 +5307,7 @@ class VsdBinaryParser {
     _currentStyleId = _header.id;
     final st = _styles.putIfAbsent(_header.id, _StyleDraft.new);
     try {
-      if (_version == 5) {
+      if (_isVsd5Family) {
         input.skip(10);
         st.lineParent = _getUInt(input);
         st.fillParent = _getUInt(input);
@@ -5317,7 +5324,7 @@ class VsdBinaryParser {
   }
 
   void _readShapeList(VsdByteReader input) {
-    if (_version == 5) {
+    if (_isVsd5Family) {
       _handleChunkRecords(input, collectStylesOnly: false);
       return;
     }

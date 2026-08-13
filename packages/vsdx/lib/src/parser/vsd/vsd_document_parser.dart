@@ -31,8 +31,9 @@ class VsdDocumentParser {
 
   /// Parse [bytes] (full `.vsd` file) → [VsdxDocument].
   ///
-  /// Currently supports Visio 5 (version 5), Visio 2000 (version 6), and
-  /// Visio 2002–2010 (version 11).
+  /// Supports legacy Visio versions 1–5 through the shared VSD5-family
+  /// layout, Visio 2000 (version 6), and Visio 2002–2010 (version 11),
+  /// matching libvisio's binary parser dispatch.
   VsdxDocument parse(Uint8List bytes) {
     if (!looksLikeCfb(bytes)) {
       throw const VsdxFormatException(

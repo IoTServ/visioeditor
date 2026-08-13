@@ -113,7 +113,7 @@ class VsdByteReader {
     return out;
   }
 
-  /// VSD6/11 pointer (18 bytes). VSD5 uses [readPointerVsd5].
+  /// VSD6/11 pointer (18 bytes). The VSD1–5 family uses [readPointerVsd5].
   VsdPointer readPointer() {
     final type = readU32();
     skip(4);
@@ -123,7 +123,8 @@ class VsdByteReader {
     return VsdPointer(type: type, offset: off, length: length, format: format);
   }
 
-  /// Visio 5 pointer layout (algorithm reference: libvisio `VSD5Parser::readPointer`).
+  /// Visio 1–5 pointer layout (algorithm reference: libvisio
+  /// `VSD5Parser::readPointer`).
   VsdPointer readPointerVsd5() {
     final type = readU16() & 0xff;
     final format = readU16() & 0xff;

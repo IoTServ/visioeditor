@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
@@ -10,6 +11,34 @@ void main() {
   final skipReason = oracle == null
       ? 'libvisio shim not built — run packages/vsdx/native/build.sh'
       : null;
+
+  test('Visio binary versions 1–4 follow libvisio VSD5 dispatch', () {
+    final source = File(
+      '../../third_party/libvisio/src/test/data/Visio5PlanWithDimensions.vsd',
+    );
+    if (!source.existsSync()) {
+      markTestSkipped('libvisio VSD5 fixture is unavailable');
+      return;
+    }
+    final baseline = source.readAsBytesSync();
+    for (var version = 1; version <= 4; version++) {
+      final bytes = _withLegacyVisioVersion(baseline, version);
+      final reference = oracle!.svgPages(bytes);
+      expect(reference, isNotNull, reason: 'libvisio version $version parse');
+
+      final document = const VsdDocumentParser().parse(bytes);
+      expect(document.pages, hasLength(reference!.length));
+      final synthesized = synthesizeVsdx(document);
+      final rendered = oracle.svgPages(synthesized);
+      expect(rendered, isNotNull, reason: 'version $version VSDX reopen');
+      expect(rendered, hasLength(reference.length));
+      expect(
+        _svgTextCharacters(rendered!),
+        isNotEmpty,
+        reason: 'version $version text must survive VSD → VSDX',
+      );
+    }
+  }, skip: skipReason);
 
   for (final fixture in _fixtures()) {
     test('${fixture.uri.pathSegments.last} page structure matches libvisio',
@@ -366,6 +395,25 @@ String _modelTextCharacters(VsdxDocument document) {
 String _sortedNonWhitespace(String text) {
   final characters = text.replaceAll(RegExp(r'\s+'), '').split('')..sort();
   return characters.join();
+}
+
+Uint8List _withLegacyVisioVersion(Uint8List source, int version) {
+  final bytes = Uint8List.fromList(source);
+  const magic = 'Visio (TM) Drawing\r\n\x00';
+  for (var i = 0; i + magic.length <= bytes.length; i++) {
+    var match = true;
+    for (var j = 0; j < magic.length; j++) {
+      if (bytes[i + j] != magic.codeUnitAt(j)) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      bytes[i + 0x1a] = version;
+      return bytes;
+    }
+  }
+  throw StateError('VisioDocument header not found in CFB');
 }
 
 Map<String, VsdxShape> _shapePaths(VsdxPage page) {

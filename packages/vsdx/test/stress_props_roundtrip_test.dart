@@ -1,4 +1,6 @@
 // Stacked style-property write→parse→write + SVG + identity template rewrite.
+// This is a normal suite test: losing any visual surface here means a Visio
+// document can look correct once but drift after an editor save.
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

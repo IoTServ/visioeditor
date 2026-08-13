@@ -6,6 +6,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:visioeditor/editor/editor_controller.dart';
 import 'package:vsdx/vsdx.dart';
 
+Uint8List _withLegacyVisioVersion(Uint8List source, int version) {
+  final bytes = Uint8List.fromList(source);
+  const magic = 'Visio (TM) Drawing\r\n\x00';
+  for (var i = 0; i + magic.length <= bytes.length; i++) {
+    var match = true;
+    for (var j = 0; j < magic.length; j++) {
+      if (bytes[i + j] != magic.codeUnitAt(j)) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      bytes[i + 0x1a] = version;
+      return bytes;
+    }
+  }
+  throw StateError('VisioDocument header not found in CFB');
+}
+
 void main() {
   group('associated document family round-trips', () {
     for (final extension in const <String>[
@@ -60,6 +79,36 @@ void main() {
         () => const DocumentParser().parse(controller.exportToBytes()),
         returnsNormally,
       );
+    });
+
+    test('Visio binary versions 1–4 reach the editor and save as VSDX',
+        () async {
+      final fixture = File(
+        'third_party/libvisio/src/test/data/Visio5PlanWithDimensions.vsd',
+      );
+      if (!fixture.existsSync()) return;
+      final source = fixture.readAsBytesSync();
+
+      for (var version = 1; version <= 4; version++) {
+        final controller = EditorController();
+        try {
+          await controller.openBytes(
+            _withLegacyVisioVersion(source, version),
+            name: 'legacy-$version.vsd',
+          );
+          expect(controller.error, isNull, reason: 'version $version open');
+          expect(controller.importedFromVsd, isTrue);
+          expect(controller.currentPage?.shapes, isNotEmpty);
+
+          final reopened = const DocumentParser().parse(
+            controller.exportToBytes(),
+          );
+          expect(reopened.pages, isNotEmpty);
+          expect(reopened.pages.first.shapes, isNotEmpty);
+        } finally {
+          controller.dispose();
+        }
+      }
     });
 
     test('.drawio opens, saves as XML, and reopens', () async {

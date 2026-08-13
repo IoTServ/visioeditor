@@ -46,6 +46,30 @@ List<String> _visiblePageTexts(VsdxDocument document) => document
     .where((text) => text.trim().isNotEmpty)
     .toList();
 
+Uint8List _withLegacyVisioVersion(Uint8List source, int version) {
+  final bytes = Uint8List.fromList(source);
+  const magic = 'Visio (TM) Drawing\r\n\x00';
+  var streamStart = -1;
+  for (var i = 0; i + magic.length <= bytes.length; i++) {
+    var match = true;
+    for (var j = 0; j < magic.length; j++) {
+      if (bytes[i + j] != magic.codeUnitAt(j)) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      streamStart = i;
+      break;
+    }
+  }
+  if (streamStart < 0) {
+    throw StateError('VisioDocument header not found in CFB');
+  }
+  bytes[streamStart + 0x1a] = version;
+  return bytes;
+}
+
 void main() {
   group('CFB', () {
     test('opens Visio11 sample and reads VisioDocument', () {
@@ -66,6 +90,53 @@ void main() {
   });
 
   group('VsdDocumentParser', () {
+    test('versions 1–4 use the libvisio VSD5-family parser path', () {
+      final source = _loadSample('Visio5PlanWithDimensions.vsd');
+      if (source == null) return;
+      final baseline = const VsdDocumentParser().parse(source);
+      final baselineSvg = VsdxToSvgSerializer().serializeDocument(baseline);
+
+      for (var version = 1; version <= 4; version++) {
+        final bytes = _withLegacyVisioVersion(source, version);
+        expect(looksLikeVisioBinary(bytes), isTrue, reason: 'version $version');
+
+        final imported = parseVisio(bytes);
+        expect(imported.importedFromVsd, isTrue);
+        expect(imported.document.pages.length, baseline.pages.length);
+        expect(
+          imported.document.pages.first.shapes.length,
+          baseline.pages.first.shapes.length,
+        );
+        expect(
+          VsdxToSvgSerializer().serializeDocument(imported.document),
+          baselineSvg,
+          reason: 'version $version must render through VSD5Parser semantics',
+        );
+
+        final reopened = const DocumentParser().parse(imported.originalBytes);
+        expect(reopened.pages.length, baseline.pages.length);
+        expect(
+          reopened.pages.first.shapes.length,
+          baseline.pages.first.shapes.length,
+          reason: 'version $version VSD → VSDX round-trip',
+        );
+      }
+    });
+
+    test('unknown binary versions remain rejected', () {
+      final source = _loadSample('Visio5PlanWithDimensions.vsd');
+      if (source == null) return;
+      for (final version in const <int>[0, 7, 10, 12, 255]) {
+        expect(
+          () => const VsdDocumentParser().parse(
+            _withLegacyVisioVersion(source, version),
+          ),
+          throwsA(isA<VsdxFormatException>()),
+          reason: 'version $version',
+        );
+      }
+    });
+
     test('parses FormatLine into shapes with geometry', () {
       final bytes = _loadSample('Visio11FormatLine.vsd');
       if (bytes == null) return;
