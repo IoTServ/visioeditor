@@ -1195,6 +1195,37 @@ void main() {
       );
     });
 
+    test('OLE backgrounds render in SVG and survive VSDX round-trip', () {
+      final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
+          .readAsBytesSync();
+      final imported = parseVisio(vsd);
+      final synthesized = const DocumentParser().parse(imported.originalBytes);
+      final written = const VsdxWriter().write(
+        originalBytes: imported.originalBytes,
+        edited: synthesized,
+      );
+      final reopened = const DocumentParser().parse(written);
+
+      expect(reopened.images.length, 6);
+      expect(
+        reopened.images.findByPart('/visio/media/image5.bin')?.bytes,
+        synthesized.images.findByPart('/visio/media/image5.bin')?.bytes,
+        reason: 'OLE payload without a presentation preview must round-trip',
+      );
+
+      final svg = VsdxToSvgSerializer().serializePage(
+        reopened.pages.first,
+        theme: reopened.theme,
+        images: reopened.images,
+      );
+      expect(
+        RegExp(r'fill="#729fcf"').allMatches(svg),
+        hasLength(greaterThanOrEqualTo(5)),
+        reason: 'two Excel previews and three preview-less OLE objects use '
+            'LibreOffice Blue 2 surfaces',
+      );
+    });
+
     test('OLE Excel preview retains source-less PATCOPY fill bands', () {
       final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
           .readAsBytesSync();

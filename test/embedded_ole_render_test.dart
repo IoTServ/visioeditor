@@ -37,6 +37,41 @@ Future<int> _countExactArgb(Uint8List png, int argb) async {
   }
 }
 
+Future<int> _argbAtPagePoint(
+  Uint8List png, {
+  required double pageX,
+  required double pageY,
+  required double pageWidth,
+  required double pageHeight,
+}) async {
+  final codec = await ui.instantiateImageCodec(png);
+  try {
+    final frame = await codec.getNextFrame();
+    try {
+      final data = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
+      final bytes = data!.buffer.asUint8List();
+      final x = (pageX / pageWidth * frame.image.width).round().clamp(
+            0,
+            frame.image.width - 1,
+          );
+      final y = ((pageHeight - pageY) / pageHeight * frame.image.height)
+          .round()
+          .clamp(0, frame.image.height - 1);
+      final offset = (y * frame.image.width + x) * 4;
+      return bytes[offset + 3] << 24 |
+          bytes[offset] << 16 |
+          bytes[offset + 1] << 8 |
+          bytes[offset + 2];
+    } finally {
+      frame.image.dispose();
+    }
+  } finally {
+    codec.dispose();
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -64,6 +99,22 @@ void main() {
       expect(
         await _countExactArgb(png!, libreOfficeOleWorkbookBackgroundArgb),
         greaterThanOrEqualTo(200000),
+      );
+      final page = document.pages.first;
+      final previewlessOle = page.shapes.firstWhere(
+        (shape) => shape.imagePartName == '/visio/media/image5.bin',
+      );
+      expect(
+        await _argbAtPagePoint(
+          png,
+          pageX: previewlessOle.pinX,
+          pageY: previewlessOle.pinY,
+          pageWidth: page.widthInches,
+          pageHeight: page.heightInches,
+        ),
+        libreOfficeOleWorkbookBackgroundArgb,
+        reason: 'OLE without a usable presentation stream must use the same '
+            'Blue 2 fallback surface as LibreOffice',
       );
     },
   );

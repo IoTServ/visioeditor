@@ -12,9 +12,10 @@ import 'emf_vector_parser.dart';
 import 'vsd/cfb/compound_file.dart';
 import 'wmf_parser.dart';
 
-/// LibreOffice renders embedded Excel chart/sheet previews on its classic
-/// "Blue 2" OLE presentation surface before compositing their transparent
-/// WMF/EMF foreground.
+/// LibreOffice renders embedded OLE objects on its classic "Blue 2"
+/// presentation surface. When an Excel chart/sheet has a transparent WMF/EMF
+/// preview the surface is composited behind it; when an object has no usable
+/// presentation stream the same colour remains as the visible fallback.
 const int libreOfficeOleWorkbookBackgroundArgb = 0xff729fcf;
 
 /// Whether [oleBytes] is an embedded Excel workbook package.

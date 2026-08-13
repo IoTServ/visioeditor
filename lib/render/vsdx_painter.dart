@@ -2227,7 +2227,7 @@ class VsdxPainter extends CustomPainter {
     }
     final image = imageCache?.lookup(src);
     if (image == null) {
-      _paintImagePlaceholder(canvas, bounds, src);
+      _paintImagePlaceholder(canvas, shape, bounds, src);
       return;
     }
     // ImgOffset*/ImgWidth/ImgHeight place the bitmap inside the Foreign frame;
@@ -2318,7 +2318,30 @@ class VsdxPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _paintImagePlaceholder(Canvas canvas, Rect bounds, VsdxImage src) {
+  void _paintImagePlaceholder(
+    Canvas canvas,
+    VsdxShape shape,
+    Rect bounds,
+    VsdxImage src,
+  ) {
+    final mime = src.mimeType.toLowerCase();
+    if (mime == 'object/ole' || mime.startsWith('object/')) {
+      final imageBounds = Rect.fromLTWH(
+        shape.imgOffsetXInches,
+        shape.imgOffsetYInches,
+        shape.effectiveImgWidth,
+        shape.effectiveImgHeight,
+      ).intersect(bounds);
+      final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+      canvas.drawRect(
+        imageBounds,
+        Paint()
+          ..color = const Color(
+            libreOfficeOleWorkbookBackgroundArgb,
+          ).withValues(alpha: opacity),
+      );
+      return;
+    }
     canvas.drawRect(bounds, Paint()..color = const Color(0xFFF2F2F2));
     canvas.drawRect(
       bounds,

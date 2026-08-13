@@ -3173,8 +3173,12 @@ class VsdxToSvgSerializer {
   }
 
   /// Resolve Foreign media to a Flutter-decodable bitmap or vector metafile.
-  ({String? mime, List<int>? bytes, MetafileDrawing? vectorDrawing})?
-      _resolveForeignImage(VsdxShape shape) {
+  ({
+    String? mime,
+    List<int>? bytes,
+    MetafileDrawing? vectorDrawing,
+    int? backgroundArgb,
+  })? _resolveForeignImage(VsdxShape shape) {
     final src = _images.findByPart(shape.imagePartName ?? '');
     if (!embedImages || src == null) return null;
     final bitmap = src.rasterForRendering();
@@ -3183,6 +3187,7 @@ class VsdxToSvgSerializer {
         mime: bitmap.mimeType,
         bytes: bitmap.bytes,
         vectorDrawing: null,
+        backgroundArgb: null,
       );
     }
     final metafileBytes = Uint8List.fromList(src.bytes);
@@ -3192,14 +3197,26 @@ class VsdxToSvgSerializer {
       partName: src.partName,
     );
     if (drawing != null && !drawing.isEmpty) {
-      return (mime: null, bytes: null, vectorDrawing: drawing);
+      return (
+        mime: null,
+        bytes: null,
+        vectorDrawing: drawing,
+        backgroundArgb: isOleWorkbook(metafileBytes)
+            ? libreOfficeOleWorkbookBackgroundArgb
+            : null,
+      );
     }
     final raster = extractMetafileRaster(
       metafileBytes,
       mimeType: src.mimeType,
     );
     if (raster != null) {
-      return (mime: 'image/bmp', bytes: raster, vectorDrawing: null);
+      return (
+        mime: 'image/bmp',
+        bytes: raster,
+        vectorDrawing: null,
+        backgroundArgb: null,
+      );
     }
     return null;
   }
@@ -3214,7 +3231,8 @@ class VsdxToSvgSerializer {
     ({
       String? mime,
       List<int>? bytes,
-      MetafileDrawing? vectorDrawing
+      MetafileDrawing? vectorDrawing,
+      int? backgroundArgb,
     })? resolved,
   }) {
     final media = resolved ?? _resolveForeignImage(shape);
@@ -3238,6 +3256,7 @@ class VsdxToSvgSerializer {
         media.vectorDrawing!,
         idScope: '$paintIdScope-${shape.id}$toneIdSuffix',
         indent: toneAttr.isNotEmpty ? '$indent  ' : indent,
+        backgroundArgb: media.backgroundArgb,
       );
       if (toneAttr.isNotEmpty) {
         buf.writeln('$indent</g>');
@@ -3385,6 +3404,7 @@ class VsdxToSvgSerializer {
     MetafileDrawing drawing, {
     required String idScope,
     required String indent,
+    int? backgroundArgb,
   }) {
     final dw = drawing.width;
     final dh = drawing.height;
@@ -3410,6 +3430,13 @@ class VsdxToSvgSerializer {
       'scale(${_n(sx)} ${_n(sy)}) '
       'translate(${_n(-drawing.minX)} ${_n(-drawing.minY)})">',
     );
+    if (backgroundArgb != null) {
+      buf.writeln(
+        '$indent  <rect x="${_n(drawing.minX)}" '
+        'y="${_n(drawing.minY)}" width="${_n(dw)}" '
+        'height="${_n(dh)}" fill="${_argbCss(backgroundArgb)}"/>',
+      );
+    }
     var dcMatrix = const _MetafileSvgMatrix.identity();
     var dcClips = <_MetafileSvgClip>[];
     final savedDc = <_MetafileSvgDcState>[];
@@ -4116,6 +4143,22 @@ class VsdxToSvgSerializer {
     VsdxShape shape, {
     required String indent,
   }) {
+    final source = _images.findByPart(shape.imagePartName ?? '');
+    final mime = source?.mimeType.toLowerCase() ?? '';
+    if (mime == 'object/ole' || mime.startsWith('object/')) {
+      final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);
+      final opacityAttr =
+          opacity < 1.0 - 1e-9 ? ' opacity="${_n(opacity)}"' : '';
+      buf.writeln(
+        '$indent<rect x="${_n(shape.imgOffsetXInches)}" '
+        'y="${_n(shape.imgOffsetYInches)}" '
+        'width="${_n(shape.effectiveImgWidth)}" '
+        'height="${_n(shape.effectiveImgHeight)}" '
+        'fill="${_argbCss(libreOfficeOleWorkbookBackgroundArgb)}"'
+        '$opacityAttr/>',
+      );
+      return;
+    }
     buf.writeln(
       '$indent<rect x="0" y="0" width="${_n(shape.width)}" '
       'height="${_n(shape.height)}" fill="#f2f2f2" '
