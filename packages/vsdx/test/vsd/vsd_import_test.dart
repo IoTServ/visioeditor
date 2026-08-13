@@ -23,6 +23,29 @@ Uint8List? _loadSample(String name) {
   return null;
 }
 
+const _legacyUnitFieldTexts = <String>[
+  'Text with [cm] units 1.0 cm',
+  'Text without any units 1.0',
+  'Text with [cm] units hidden 1.0',
+  'Number 1 formatted as rad 1.0000 rad',
+  '1 rad 1 rad',
+  'Number 1 formatted as degree 57 deg',
+  '1 elapsed minute 1 em.',
+  '1 picas 1.0 p',
+  '1 picapoints 0.1667',
+  '1 ciceros and didots 0.177',
+  '1000.1 feet and inch 12001.200',
+  'Example testing text',
+];
+
+List<String> _visiblePageTexts(VsdxDocument document) => document
+    .pages
+    .first
+    .shapes
+    .map((shape) => shape.richText.plainText)
+    .where((text) => text.trim().isNotEmpty)
+    .toList();
+
 void main() {
   group('CFB', () {
     test('opens Visio11 sample and reads VisioDocument', () {
@@ -367,6 +390,56 @@ void main() {
         }
       }
       expect(checked, greaterThan(0));
+    });
+
+    test('VSD5/6 unit-field page stays complete through SVG and editor save',
+        () {
+      for (final version in const <int>[5, 6]) {
+        final name = 'Visio${version}TextFieldsWithUnits.vsd';
+        final bytes = _loadSample(name);
+        if (bytes == null) continue;
+
+        final imported = parseVisio(bytes);
+        expect(_visiblePageTexts(imported.document), _legacyUnitFieldTexts,
+            reason: '$name direct binary parse');
+        expect(
+          imported.document.pages.first.shapes
+              .expand((shape) => shape.fields)
+              .length,
+          11,
+          reason: '$name should retain every dynamic field row',
+        );
+
+        final svg = VsdxToSvgSerializer().serializePage(
+          imported.document.pages.first,
+          theme: imported.document.theme,
+          images: imported.document.images,
+        );
+        for (final text in _legacyUnitFieldTexts) {
+          expect(svg, contains(text), reason: '$name SVG text: $text');
+        }
+
+        final synthesized = const DocumentParser().parse(
+          imported.originalBytes,
+        );
+        expect(_visiblePageTexts(synthesized), _legacyUnitFieldTexts,
+            reason: '$name synthesized VSDX reopen');
+
+        final savedBytes = const VsdxWriter().write(
+          originalBytes: imported.originalBytes,
+          edited: imported.document,
+        );
+        final saved = const DocumentParser().parse(savedBytes);
+        expect(_visiblePageTexts(saved), _legacyUnitFieldTexts,
+            reason: '$name editor save and reopen');
+        expect(
+          saved.pages.first.shapes.expand((shape) => shape.fields).toList(),
+          synthesized.pages.first.shapes
+              .expand((shape) => shape.fields)
+              .toList(),
+          reason: '$name Field sections after editor save',
+        );
+      }
     });
 
     test('VSD synthesis keeps binary double precision and sparse fields', () {

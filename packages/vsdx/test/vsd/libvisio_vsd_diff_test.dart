@@ -172,6 +172,19 @@ void main() {
       expect(rendered, isNotNull,
           reason: 'libvisio must accept the synthesized VSDX');
       expect(rendered, hasLength(reference.length));
+      if (const <String>{
+        'Visio5TextFieldsWithUnits.vsd',
+        'Visio6TextFieldsWithUnits.vsd',
+        'Visio11TextFieldsWithUnits.vsd',
+      }.contains(fixture.uri.pathSegments.last)) {
+        expect(
+          _svgTextCharacters(rendered!),
+          _modelTextCharacters(doc),
+          reason:
+              '${fixture.path} synthesized VSDX must restore every label '
+              'even when direct legacy VSD import in libvisio omits fields',
+        );
+      }
       expect(reopened.pages, hasLength(doc.pages.length));
       for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
         final beforePage = doc.pages[pageIndex];
@@ -325,6 +338,34 @@ Iterable<double> _svgVisibleFontSizesPt(String svg) sync* {
         RegExp(r'font-size="([0-9.]+)"').firstMatch(match.group(1)!);
     if (size != null) yield double.parse(size.group(1)!);
   }
+}
+
+String _svgTextCharacters(Iterable<String> pages) {
+  final out = StringBuffer();
+  for (final page in pages) {
+    for (final match in RegExp(
+      r'<(?:\w+:)?tspan\b[^>]*>(.*?)</(?:\w+:)?tspan>',
+      dotAll: true,
+    ).allMatches(page)) {
+      out.write(_unescapeXml(match.group(1)!));
+    }
+  }
+  return _sortedNonWhitespace(out.toString());
+}
+
+String _modelTextCharacters(VsdxDocument document) {
+  final out = StringBuffer();
+  for (final shape in _allShapes(document)) {
+    if (!shape.richText.textBlock.hideText) {
+      out.write(shape.richText.plainText);
+    }
+  }
+  return _sortedNonWhitespace(out.toString());
+}
+
+String _sortedNonWhitespace(String text) {
+  final characters = text.replaceAll(RegExp(r'\s+'), '').split('')..sort();
+  return characters.join();
 }
 
 Map<String, VsdxShape> _shapePaths(VsdxPage page) {

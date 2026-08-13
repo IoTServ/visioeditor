@@ -56,7 +56,10 @@ VisioParseResult parseVisio(Uint8List bytes) {
     final doc = const VsdDocumentParser().parse(bytes);
     // Synthesise OPC baseline for VsdxWriter; keep the binary-parsed model for
     // editing so ForeignData frames / field text / advanced geometry are not
-    // lost by a write→reparse fidelity gap.
+    // lost by a write→reparse fidelity gap. This also normalises legacy VSD5
+    // TextField records: libvisio/LibreOffice can drop every field-bearing
+    // label when opening that binary sample directly, but consumes all labels
+    // once the same editable rows and <fld> markers are represented in VSDX.
     final synth = synthesizeVsdx(doc);
     return VisioParseResult(
       document: doc,

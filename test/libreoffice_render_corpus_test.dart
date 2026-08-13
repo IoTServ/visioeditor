@@ -21,6 +21,21 @@ const _appExampleDirectory = 'assets/examples';
 const _packageExternalDirectory = 'packages/vsdx/test/fixtures/vsd/external';
 const _packageFixtureDirectory = 'packages/vsdx/test/fixtures';
 
+const _legacyUnitFieldTexts = <String>[
+  'Text with [cm] units 1.0 cm',
+  'Text without any units 1.0',
+  'Text with [cm] units hidden 1.0',
+  'Number 1 formatted as rad 1.0000 rad',
+  '1 rad 1 rad',
+  'Number 1 formatted as degree 57 deg',
+  '1 elapsed minute 1 em.',
+  '1 picas 1.0 p',
+  '1 picapoints 0.1667',
+  '1 ciceros and didots 0.177',
+  '1000.1 feet and inch 12001.200',
+  'Example testing text',
+];
+
 const _corpus = <_CorpusEntry>[
   _CorpusEntry('Visio11FormatLine.vsd'),
   _CorpusEntry('Visio11PlanWithDimensions.vsd'),
@@ -28,9 +43,18 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry('Visio11TextFieldsWithCurrency.vsd'),
   _CorpusEntry('Visio11TextFieldsWithUnits.vsd'),
   _CorpusEntry('Visio5PlanWithDimensions.vsd'),
-  _CorpusEntry('Visio5TextFieldsWithUnits.vsd'),
+  // Current LibreOffice/libvisio renders only the final plain-text label from
+  // this VSD5 source. The Dart parser intentionally recovers all field labels,
+  // so validate their semantics independently of the incomplete oracle image.
+  _CorpusEntry(
+    'Visio5TextFieldsWithUnits.vsd',
+    expectedTextFragments: _legacyUnitFieldTexts,
+  ),
   _CorpusEntry('Visio6PlanWithDimensions.vsd'),
-  _CorpusEntry('Visio6TextFieldsWithUnits.vsd'),
+  _CorpusEntry(
+    'Visio6TextFieldsWithUnits.vsd',
+    expectedTextFragments: _legacyUnitFieldTexts,
+  ),
   _CorpusEntry('bgcolor.vsdx'),
   _CorpusEntry('bitmaps.vsd'),
   _CorpusEntry('bitmaps2.vsd'),
@@ -144,6 +168,16 @@ void main() {
           final result = parseVisio(source.readAsBytesSync());
           final document = result.document;
           final pages = document.pages;
+          if (entry.expectedTextFragments.isNotEmpty) {
+            final visibleTexts = _visibleTexts(document);
+            for (final expected in entry.expectedTextFragments) {
+              if (!visibleTexts.contains(expected)) {
+                failures.add(
+                  '${entry.name}: parsed model lost text "$expected"',
+                );
+              }
+            }
+          }
 
           final caseDirectory = Directory(
             '${auditRoot.path}/${corpusIndex.toString().padLeft(2, '0')}_${_safeName(entry.name)}',
@@ -185,15 +219,21 @@ void main() {
               '${caseDirectory.path}/app-${pageIndex + 1}.png',
             );
             appFile.writeAsBytesSync(appPng);
+            final appSvg = VsdxToSvgSerializer().serializePage(
+              page,
+              theme: document.theme,
+              images: document.images,
+            );
             File(
               '${caseDirectory.path}/app-${pageIndex + 1}.svg',
-            ).writeAsStringSync(
-              VsdxToSvgSerializer().serializePage(
-                page,
-                theme: document.theme,
-                images: document.images,
-              ),
-            );
+            ).writeAsStringSync(appSvg);
+            if (pageIndex == 0) {
+              for (final expected in entry.expectedTextFragments) {
+                if (!appSvg.contains(expected)) {
+                  failures.add('${entry.name}: SVG lost text "$expected"');
+                }
+              }
+            }
 
             final appImage = await _decodePng(appPng);
             final referenceImage = await _decodePng(
@@ -352,6 +392,7 @@ class _CorpusEntry {
     this.packageFixture = false,
     this.ignoreLibreOfficePageCount = false,
     this.ignoreLibreOfficeCanvasSize = false,
+    this.expectedTextFragments = const <String>[],
   });
 
   final String name;
@@ -360,6 +401,7 @@ class _CorpusEntry {
   final bool packageFixture;
   final bool ignoreLibreOfficePageCount;
   final bool ignoreLibreOfficeCanvasSize;
+  final List<String> expectedTextFragments;
 
   String get path => applicationExample
       ? '$_appExampleDirectory/$name'
@@ -368,6 +410,26 @@ class _CorpusEntry {
       : packageFixture
       ? '$_packageFixtureDirectory/$name'
       : '$_upstreamDirectory/$name';
+}
+
+Set<String> _visibleTexts(VsdxDocument document) {
+  final out = <String>{};
+  void walk(VsdxShape shape) {
+    if (!shape.richText.textBlock.hideText &&
+        shape.richText.plainText.trim().isNotEmpty) {
+      out.add(shape.richText.plainText);
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final page in document.pages) {
+    for (final shape in page.shapes) {
+      walk(shape);
+    }
+  }
+  return out;
 }
 
 Future<List<File>> _renderWithLibreOffice({
