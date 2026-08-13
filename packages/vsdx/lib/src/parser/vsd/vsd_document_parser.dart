@@ -29,12 +29,16 @@ bool looksLikeVisioBinary(Uint8List bytes) {
 class VsdDocumentParser {
   const VsdDocumentParser();
 
-  /// Parse [bytes] (full `.vsd` file) → [VsdxDocument].
+  /// Parse [bytes] (full `.vsd`/`.vss`/`.vst` file) → [VsdxDocument].
   ///
   /// Supports legacy Visio versions 1–5 through the shared VSD5-family
   /// layout, Visio 2000 (version 6), and Visio 2002–2010 (version 11),
   /// matching libvisio's binary parser dispatch.
-  VsdxDocument parse(Uint8List bytes) {
+  /// Set [extractStencils] for a standalone `.vss`. This mirrors libvisio's
+  /// `VisioDocument::parseStencils` entry point, which exposes every master
+  /// page as a drawable page instead of returning the stencil's placeholder
+  /// drawing page.
+  VsdxDocument parse(Uint8List bytes, {bool extractStencils = false}) {
     if (!looksLikeCfb(bytes)) {
       throw const VsdxFormatException(
         'Not a Visio binary (.vsd) compound file',
@@ -45,7 +49,8 @@ class VsdDocumentParser {
     if (stream == null) {
       throw const VsdxFormatException('Missing VisioDocument stream');
     }
-    final doc = VsdBinaryParser(stream).parse();
+    final doc =
+        VsdBinaryParser(stream).parse(extractStencils: extractStencils);
     final meta = _readOleMeta(cfb);
     final modified = _isoSecond(cfb.rootModifiedDateTime);
     if (meta == null && modified == null) return doc;

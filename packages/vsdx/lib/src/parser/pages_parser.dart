@@ -158,7 +158,7 @@ class PagesParser {
       height = readLengthInches(pageSheet, 'PageHeight') ?? height;
       layers = LayerParser(colorPalette: _colorPalette).parseLayers(pageSheet);
       bgColor = _readPageColor(pageSheet);
-      sheet = _readPageSheet(pageSheet);
+      sheet = readVsdxPageSheet(pageSheet);
     }
     // libvisio materialises PageScale / DrawingScale into the page canvas and
     // every drawable coordinate. Keep the original cells in [pageSheet] for
@@ -261,7 +261,39 @@ class PagesParser {
     );
   }
 
-  VsdxPageSheet _readPageSheet(XmlElement pageSheet) {
+  VsdxColor? _readPageColor(XmlElement pageSheet) {
+    for (final el in pageSheet.childElements) {
+      if (el.name.local != 'Cell') continue;
+      if (el.getAttribute('N') != 'PageColor') continue;
+      // F=Inh with no stylesheet inherit source → treat as absent (white default).
+      if (isInhFormula(el.getAttribute('F'))) return null;
+      final v = el.getAttribute('V');
+      if (v == null || v.isEmpty) return null;
+      return VsdxColor.tryParse(v, palette: _colorPalette);
+    }
+    return null;
+  }
+
+  /// Build `{rId → absolute media part}` for the given page part.
+  Map<String, String> _collectImageRels(String pagePart) {
+    final out = <String, String>{};
+    for (final rel in _package.readPartRelationships(pagePart)) {
+      if (!VsdxRelType.image.matches(rel.type)) continue;
+      out[rel.id] = _package.resolveRelationshipTarget(pagePart, rel.target);
+    }
+    return out;
+  }
+
+  static XmlElement? _firstChildLocal(XmlElement parent, String local) {
+    for (final el in parent.childElements) {
+      if (el.name.local == local) return el;
+    }
+    return null;
+  }
+}
+
+/// Parse PageSheet properties shared by ordinary pages and stencil masters.
+VsdxPageSheet readVsdxPageSheet(XmlElement pageSheet) {
     int? i(
       String n, {
       int? inheritFrom,
@@ -357,37 +389,6 @@ class PagesParser {
       variationColorIndex: i('VariationColorIndex', useCachedValue: true),
       variationStyleIndex: i('VariationStyleIndex', useCachedValue: true),
     );
-  }
-
-  VsdxColor? _readPageColor(XmlElement pageSheet) {
-    for (final el in pageSheet.childElements) {
-      if (el.name.local != 'Cell') continue;
-      if (el.getAttribute('N') != 'PageColor') continue;
-      // F=Inh with no stylesheet inherit source → treat as absent (white default).
-      if (isInhFormula(el.getAttribute('F'))) return null;
-      final v = el.getAttribute('V');
-      if (v == null || v.isEmpty) return null;
-      return VsdxColor.tryParse(v, palette: _colorPalette);
-    }
-    return null;
-  }
-
-  /// Build `{rId → absolute media part}` for the given page part.
-  Map<String, String> _collectImageRels(String pagePart) {
-    final out = <String, String>{};
-    for (final rel in _package.readPartRelationships(pagePart)) {
-      if (!VsdxRelType.image.matches(rel.type)) continue;
-      out[rel.id] = _package.resolveRelationshipTarget(pagePart, rel.target);
-    }
-    return out;
-  }
-
-  static XmlElement? _firstChildLocal(XmlElement parent, String local) {
-    for (final el in parent.childElements) {
-      if (el.name.local == local) return el;
-    }
-    return null;
-  }
 }
 
 extension on XmlElement {

@@ -26,7 +26,7 @@ Key fields (see `pubspec.yaml` for the full block):
 | publisher | CN=5F64CEA2-463E-41A3-AE89-6979242A61DF |
 | publisher_display_name | OpenIoTHub Cloud |
 | store | true |
-| file_extension | .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd |
+| file_extension | .vsdx, .vsdm, .vstx, .vstm, .vssx, .vssm, .vsd, .vss, .vst |
 
 `store: true` produces a Store-uploadable package (Microsoft signs it after
 upload). Bump `msix_version` (a.b.c.d) with each Store submission; keep it in
@@ -36,7 +36,7 @@ sync with `version:` in `pubspec.yaml` when possible (e.g. `1.0.1+6` →
 ## Option B — Registry (dev / manual / Inno Setup)
 
 `visioeditor-file-association.reg` registers the OPC extensions under
-`VisioEditor.Drawing` and legacy `.vsd` under `VisioEditor.Drawing.Binary`
+`VisioEditor.Drawing` and legacy `.vsd/.vss/.vst` under `VisioEditor.Drawing.Binary`
 (per-user, `HKCU\Software\Classes`).
 
 1. Edit the file and replace `C:\Path\To\visioeditor.exe` with the real path.

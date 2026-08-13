@@ -770,8 +770,10 @@ class VsdBinaryParser {
   VsdChunkHeader _header = VsdChunkHeader();
   int _currentStyleId = _minusOne;
   bool _isBackgroundPage = false;
+  bool _extractStencils = false;
 
-  VsdxDocument parse() {
+  VsdxDocument parse({bool extractStencils = false}) {
+    _extractStencils = extractStencils;
     _input = VsdByteReader(_docStream);
     _verifyMagic();
     _input.seek(0x1A);
@@ -951,8 +953,9 @@ class VsdBinaryParser {
     // Background pages are first-class Visio pages. libvisio retains them and
     // composites them under foreground pages through the Page record's
     // backgroundPageID, so do not discard their streams here.
+    if (ptr.type == VsdRecordId.pages && _extractStencils) return;
     if (ptr.type == VsdRecordId.page) {
-      if (collectStylesOnly) return;
+      if (collectStylesOnly || _extractStencils) return;
       _isBackgroundPage = (ptr.format & 0x1) == 0;
       final resolved = _nameFromId(idx, level + 1);
       // Reject pure-numeric "names" (often mis-mapped NameIDX entries).
@@ -970,15 +973,28 @@ class VsdBinaryParser {
     }
     if (ptr.type == VsdRecordId.stencils) {
       if (collectStylesOnly) return;
-      if (_stencils.isNotEmpty) return;
-      _isStencilStarted = true;
+      if (!_extractStencils) {
+        if (_stencils.isNotEmpty) return;
+        _isStencilStarted = true;
+      }
     }
     if (ptr.type == VsdRecordId.stencilPage) {
-      if (collectStylesOnly || !_isStencilStarted) return;
-      _currentStencilShapes = <int, _ShapeDraft>{};
-      _stencilShadowOffsetX = 0;
-      _stencilShadowOffsetY = 0;
-      _stencils[idx] = _currentStencilShapes!;
+      if (collectStylesOnly) return;
+      if (_extractStencils) {
+        final resolved = _nameFromId(idx, level + 1);
+        final pageName =
+            (resolved != null && !RegExp(r'^\d+$').hasMatch(resolved))
+                ? resolved
+                : 'Page-${_pages.length + 1}';
+        _currentPage = _PageDraft(idx)..name = pageName;
+        _pages.add(_currentPage!);
+      } else {
+        if (!_isStencilStarted) return;
+        _currentStencilShapes = <int, _ShapeDraft>{};
+        _stencilShadowOffsetX = 0;
+        _stencilShadowOffsetY = 0;
+        _stencils[idx] = _currentStencilShapes!;
+      }
     }
     if (ptr.type == VsdRecordId.shapeGroup ||
         ptr.type == VsdRecordId.shapeShape ||
@@ -1027,11 +1043,15 @@ class VsdBinaryParser {
     }
     if (ptr.type == VsdRecordId.stencilPage) {
       _handleLevelChange(0);
-      _currentStencilShapes = null;
+      if (_extractStencils) {
+        _currentPage = null;
+      } else {
+        _currentStencilShapes = null;
+      }
     }
     if (ptr.type == VsdRecordId.stencils) {
       _handleLevelChange(0);
-      _isStencilStarted = false;
+      if (!_extractStencils) _isStencilStarted = false;
     }
     if ((ptr.type == VsdRecordId.shapeGroup ||
             ptr.type == VsdRecordId.shapeShape ||

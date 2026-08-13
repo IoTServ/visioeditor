@@ -20,6 +20,42 @@ namespace
 {
 // One page's SVG separated from the next by this sentinel so Dart can split.
 const char *const kPageSeparator = "\n<!--__VSDX_PAGE__-->\n";
+
+const char *toSvg(const unsigned char *data, unsigned long len, bool stencils)
+{
+  try
+  {
+    librevenge::RVNGStringStream input(data, static_cast<unsigned int>(len));
+    if (!libvisio::VisioDocument::isSupported(&input))
+      return nullptr;
+
+    librevenge::RVNGStringVector pages;
+    librevenge::RVNGSVGDrawingGenerator generator(pages, "svg");
+    const bool parsed = stencils
+                            ? libvisio::VisioDocument::parseStencils(&input, &generator)
+                            : libvisio::VisioDocument::parse(&input, &generator);
+    if (!parsed)
+      return nullptr;
+
+    std::string out;
+    for (unsigned i = 0; i < pages.size(); ++i)
+    {
+      if (i != 0)
+        out += kPageSeparator;
+      out += pages[i].cstr();
+    }
+
+    char *buf = static_cast<char *>(std::malloc(out.size() + 1));
+    if (!buf)
+      return nullptr;
+    std::memcpy(buf, out.c_str(), out.size() + 1);
+    return buf;
+  }
+  catch (...)
+  {
+    return nullptr;
+  }
+}
 } // namespace
 
 extern "C"
@@ -31,35 +67,14 @@ extern "C"
   // release the result with vsdx_shim_free.
   const char *vsdx_shim_to_svg(const unsigned char *data, unsigned long len)
   {
-    try
-    {
-      librevenge::RVNGStringStream input(data, static_cast<unsigned int>(len));
-      if (!libvisio::VisioDocument::isSupported(&input))
-        return nullptr;
+    return toSvg(data, len, false);
+  }
 
-      librevenge::RVNGStringVector pages;
-      librevenge::RVNGSVGDrawingGenerator generator(pages, "svg");
-      if (!libvisio::VisioDocument::parse(&input, &generator))
-        return nullptr;
-
-      std::string out;
-      for (unsigned i = 0; i < pages.size(); ++i)
-      {
-        if (i != 0)
-          out += kPageSeparator;
-        out += pages[i].cstr();
-      }
-
-      char *buf = static_cast<char *>(std::malloc(out.size() + 1));
-      if (!buf)
-        return nullptr;
-      std::memcpy(buf, out.c_str(), out.size() + 1);
-      return buf;
-    }
-    catch (...)
-    {
-      return nullptr;
-    }
+  // Equivalent to libvisio's vss2raw/vss2xhtml path: expose stencil masters
+  // as pages instead of parsing only the placeholder drawing page.
+  const char *vsdx_shim_stencils_to_svg(const unsigned char *data, unsigned long len)
+  {
+    return toSvg(data, len, true);
   }
 
   void vsdx_shim_free(const char *p)

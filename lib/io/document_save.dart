@@ -86,7 +86,11 @@ Future<DocumentSaveResult?> saveEditorDocumentToPath(
   SaveBytesWriter? writer,
 }) async {
   if (isLegacyVisioBinary(path)) {
-    throw ArgumentError.value(path, 'path', 'cannot overwrite legacy .vsd');
+    throw ArgumentError.value(
+      path,
+      'path',
+      'cannot overwrite a legacy Visio binary file',
+    );
   }
   if (!_activeSaves.add(controller)) return null;
   try {

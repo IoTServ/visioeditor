@@ -10,8 +10,10 @@ void main() {
     expect(baseName(null), 'drawing');
   });
 
-  test('legacy Visio binary detection does not match vsdx', () {
+  test('legacy Visio binary detection covers drawings, stencils, templates', () {
     expect(isLegacyVisioBinary('x.vsd'), isTrue);
+    expect(isLegacyVisioBinary('x.vss'), isTrue);
+    expect(isLegacyVisioBinary('x.VST'), isTrue);
     expect(isLegacyVisioBinary('x.vsdx'), isFalse);
     expect(isLegacyVisioBinary('x.VSD'), isTrue);
   });
@@ -19,6 +21,8 @@ void main() {
   test('open filters cover every supported Visio family extension', () {
     expect(kVisioOpenExtensions, <String>[
       'vsd',
+      'vss',
+      'vst',
       'vsdx',
       'vsdm',
       'vstx',
@@ -59,7 +63,7 @@ void main() {
     );
   });
 
-  test('Save As retains every editable format and upgrades legacy VSD', () {
+  test('Save As retains editable formats and upgrades legacy binaries', () {
     for (final extension in const <String>[
       'vsdx',
       'vsdm',
@@ -77,6 +81,10 @@ void main() {
     }
     expect(documentSaveExtension('legacy.vsd'), 'vsdx');
     expect(normalizedDocumentSaveName('legacy.VSD'), 'legacy.vsdx');
+    expect(documentSaveExtension('stencil.vss'), 'vsdx');
+    expect(normalizedDocumentSaveName('stencil.VSS'), 'stencil.vsdx');
+    expect(documentSaveExtension('template.vst'), 'vsdx');
+    expect(normalizedDocumentSaveName('template.VST'), 'template.vsdx');
     expect(documentSaveExtension('untitled'), 'vsdx');
     expect(normalizedDocumentSaveName('untitled'), 'untitled.vsdx');
   });

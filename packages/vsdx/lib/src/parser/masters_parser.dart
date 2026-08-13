@@ -9,11 +9,14 @@ import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
 import '../model/master.dart';
+import '../model/page.dart';
 import '../model/stylesheet.dart';
 import '../utils/color.dart';
+import 'cell_helpers.dart';
 import 'master_parser.dart';
 import 'package_reader.dart';
 import 'page_parser.dart';
+import 'pages_parser.dart';
 import 'relationships.dart';
 import 'rich_text_parser.dart';
 import 'style_parser.dart';
@@ -71,24 +74,13 @@ class MastersParser {
       // Consequently a later master may inherit from an earlier one, while a
       // forward reference remains unresolved. Build the same source-order
       // registry for the PageParser used by this master part.
-      final masterParser = _injectedMaster ??
-          MasterParser(
-            shapes: PageParser(
-              style: StyleParser(colorPalette: _colorPalette),
-              richText: RichTextParser(
-                colorPalette: _colorPalette,
-                fontNames: _fontNames,
-              ),
-              masters: MasterRegistry(
-                Map<int, VsdxMaster>.unmodifiable(byId),
-              ),
-              stylesheets: _stylesheets,
-            ),
-          );
       final master = _readEntry(
         el,
         mastersPart: mastersPart,
-        masterParser: masterParser,
+        previousMasters: MasterRegistry(
+          Map<int, VsdxMaster>.unmodifiable(byId),
+        ),
+        masterParser: _injectedMaster,
       );
       if (master != null) byId[master.id] = master;
     }
@@ -98,7 +90,8 @@ class MastersParser {
   VsdxMaster? _readEntry(
     XmlElement el, {
     required String mastersPart,
-    required MasterParser masterParser,
+    required MasterRegistry previousMasters,
+    required MasterParser? masterParser,
   }) {
     final idStr = el.getAttribute('ID');
     final id = idStr == null ? null : int.tryParse(idStr);
@@ -135,7 +128,36 @@ class MastersParser {
       return null;
     }
     try {
-      return masterParser.parse(doc, id: id, name: name, partName: target);
+      final pageSheetElement = _firstChildLocal(el, 'PageSheet');
+      final pageSheet = pageSheetElement == null
+          ? VsdxPageSheet.defaults
+          : readVsdxPageSheet(pageSheetElement);
+      final parser = masterParser ??
+          MasterParser(
+            shapes: PageParser(
+              style: StyleParser(colorPalette: _colorPalette),
+              richText: RichTextParser(
+                colorPalette: _colorPalette,
+                fontNames: _fontNames,
+              ),
+              masters: previousMasters,
+              stylesheets: _stylesheets,
+              imageRels: _collectImageRels(target),
+            ),
+          );
+      return parser.parse(
+        doc,
+        id: id,
+        name: name,
+        partName: target,
+        pageWidthInches: pageSheetElement == null
+            ? 0
+            : (readLengthInches(pageSheetElement, 'PageWidth') ?? 0),
+        pageHeightInches: pageSheetElement == null
+            ? 0
+            : (readLengthInches(pageSheetElement, 'PageHeight') ?? 0),
+        pageSheet: pageSheet,
+      );
     } catch (_) {
       _log.warning('Master $id ($name) could not be parsed; skipping');
       return null;
@@ -147,5 +169,15 @@ class MastersParser {
       if (el.name.local == local) return el;
     }
     return null;
+  }
+
+  Map<String, String> _collectImageRels(String masterPart) {
+    final out = <String, String>{};
+    for (final rel in _package.readPartRelationships(masterPart)) {
+      if (!VsdxRelType.image.matches(rel.type)) continue;
+      out[rel.id] =
+          _package.resolveRelationshipTarget(masterPart, rel.target);
+    }
+    return out;
   }
 }

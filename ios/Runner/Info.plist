@@ -125,7 +125,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Visio Binary Drawing</string>
+			<string>Visio Binary Drawing, Stencil, or Template</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -137,6 +137,8 @@
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>vsd</string>
+				<string>vss</string>
+				<string>vst</string>
 			</array>
 		</dict>
 		<dict>
@@ -187,7 +189,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>com.microsoft.visio.drawing</string>
 			<key>UTTypeDescription</key>
-			<string>Visio Binary Drawing</string>
+			<string>Visio Binary Drawing, Stencil, or Template</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -197,6 +199,8 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>vsd</string>
+					<string>vss</string>
+					<string>vst</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>

@@ -1,4 +1,4 @@
-/// Unified Visio open entry: `.vsdx` (OPC) or `.vsd` (OLE2 binary).
+/// Unified Visio open entry: OPC or legacy OLE2 Visio files.
 library;
 
 import 'dart:typed_data';
@@ -10,8 +10,8 @@ import 'package_reader.dart';
 import 'vsd/cfb/compound_file.dart';
 import 'vsd/vsd_document_parser.dart';
 
-/// Result of [parseVisio] including a synthetic `.vsdx` baseline when the
-/// source was binary `.vsd`.
+/// Result of [parseVisio], including a synthetic `.vsdx` baseline for
+/// import-only binary files and standalone stencil packages.
 class VisioParseResult {
   const VisioParseResult({
     required this.document,
@@ -24,7 +24,7 @@ class VisioParseResult {
   /// Bytes suitable as [VsdxWriter.write] baseline (always OPC `.vsdx`).
   final Uint8List originalBytes;
 
-  /// `true` when the input was a legacy `.vsd` (caller should prompt Save As).
+  /// `true` for legacy binary or standalone stencil input (prompt Save As).
   final bool importedFromVsd;
 }
 
@@ -34,15 +34,28 @@ bool looksLikeZipOpc(Uint8List bytes) {
   return bytes[0] == 0x50 && bytes[1] == 0x4B;
 }
 
-/// Parse Visio drawing bytes (`.vsdx` family or `.vsd`) into an editable model.
+/// Parse Visio bytes into an editable model.
 ///
-/// For `.vsd`, synthesises a `.vsdx` package so subsequent saves use the
-/// existing load-preserve-patch writer.
-VisioParseResult parseVisio(Uint8List bytes) {
+/// For legacy binary files, synthesises a `.vsdx` package so subsequent saves
+/// use the existing load-preserve-patch writer.
+VisioParseResult parseVisio(Uint8List bytes, {String? sourceName}) {
+  final lowerName = sourceName?.toLowerCase() ?? '';
   if (looksLikeZipOpc(bytes)) {
     // Confirm it is a Visio OPC package (not a random ZIP).
     try {
-      final doc = const DocumentParser().parse(bytes);
+      final extractStencils = lowerName.endsWith('.vssx') ||
+          lowerName.endsWith('.vssm');
+      final doc = const DocumentParser().parse(
+        bytes,
+        extractStencils: extractStencils,
+      );
+      if (extractStencils) {
+        return VisioParseResult(
+          document: doc,
+          originalBytes: synthesizeVsdx(doc),
+          importedFromVsd: true,
+        );
+      }
       return VisioParseResult(
         document: doc,
         originalBytes: bytes,
@@ -53,7 +66,11 @@ VisioParseResult parseVisio(Uint8List bytes) {
     }
   }
   if (looksLikeCfb(bytes) || looksLikeVisioBinary(bytes)) {
-    final doc = const VsdDocumentParser().parse(bytes);
+    final extractStencils = lowerName.endsWith('.vss');
+    final doc = const VsdDocumentParser().parse(
+      bytes,
+      extractStencils: extractStencils,
+    );
     // Synthesise OPC baseline for VsdxWriter; keep the binary-parsed model for
     // editing so ForeignData frames / field text / advanced geometry are not
     // lost by a write→reparse fidelity gap. This also normalises legacy VSD5
@@ -68,7 +85,7 @@ VisioParseResult parseVisio(Uint8List bytes) {
     );
   }
   throw const VsdxFormatException(
-    'Unsupported file: expected .vsdx (OPC ZIP) or .vsd (OLE2)',
+    'Unsupported file: expected Visio OPC ZIP or OLE2 binary',
   );
 }
 

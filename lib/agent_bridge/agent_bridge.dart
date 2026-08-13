@@ -481,7 +481,7 @@ class AgentBridge {
     // openBytes reports parse errors on the controller instead of throwing and
     // clears its current model. Validate first so an explicit bridge reload
     // cannot destroy the open document when the on-disk file is partial/bad.
-    parseVisio(bytes);
+    parseVisio(bytes, sourceName: path);
     await c.openBytes(bytes, path: path, name: c.fileName);
     if (c.error != null || c.document == null) {
       throw StateError('reload failed: ${c.error ?? path}');
@@ -537,7 +537,7 @@ class AgentBridge {
       }
 
       // A partially-written/corrupt file must not clear a valid open canvas.
-      parseVisio(bytes);
+      parseVisio(bytes, sourceName: path);
       await c.openBytes(bytes, path: path, name: c.fileName);
       if (c.error != null || c.document == null) {
         throw StateError('file-watch reload failed: ${c.error ?? path}');

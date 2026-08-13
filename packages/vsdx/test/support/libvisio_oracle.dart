@@ -21,9 +21,10 @@ typedef _FreeNative = Void Function(Pointer<Char>);
 typedef _FreeDart = void Function(Pointer<Char>);
 
 class LibvisioOracle {
-  LibvisioOracle._(this._toSvg, this._free);
+  LibvisioOracle._(this._toSvg, this._stencilsToSvg, this._free);
 
   final _ToSvgDart _toSvg;
+  final _ToSvgDart _stencilsToSvg;
   final _FreeDart _free;
 
   /// Sentinel the shim inserts between per-page SVGs.
@@ -37,8 +38,11 @@ class LibvisioOracle {
       final lib = DynamicLibrary.open(path);
       final toSvg =
           lib.lookupFunction<_ToSvgNative, _ToSvgDart>('vsdx_shim_to_svg');
+      final stencilsToSvg = lib.lookupFunction<_ToSvgNative, _ToSvgDart>(
+        'vsdx_shim_stencils_to_svg',
+      );
       final free = lib.lookupFunction<_FreeNative, _FreeDart>('vsdx_shim_free');
-      return LibvisioOracle._(toSvg, free);
+      return LibvisioOracle._(toSvg, stencilsToSvg, free);
     } catch (_) {
       return null;
     }
@@ -60,10 +64,19 @@ class LibvisioOracle {
   /// libvisio's SVG for each page of [bytes], or `null` when it can't parse
   /// the document.
   List<String>? svgPages(Uint8List bytes) {
+    return _pages(bytes, _toSvg);
+  }
+
+  /// libvisio `parseStencils` SVG output for each master page in [bytes].
+  List<String>? stencilSvgPages(Uint8List bytes) {
+    return _pages(bytes, _stencilsToSvg);
+  }
+
+  List<String>? _pages(Uint8List bytes, _ToSvgDart convert) {
     final ptr = malloc<Uint8>(bytes.length);
     ptr.asTypedList(bytes.length).setAll(0, bytes);
     try {
-      final res = _toSvg(ptr, bytes.length);
+      final res = convert(ptr, bytes.length);
       if (res == nullptr) return null;
       try {
         return res.cast<Utf8>().toDartString().split(_pageSeparator);

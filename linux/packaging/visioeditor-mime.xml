@@ -2,12 +2,14 @@
 <!--
   shared-mime-info definition for Microsoft Visio drawings.
   - .vsdx/.vsdm/.vstx/.vstm/.vssx/.vssm are OPC (ZIP) packages
-  - .vsd is the legacy binary (OLE2) format → application/vnd.visio
+  - .vsd/.vss/.vst are legacy binary (OLE2) → application/vnd.visio
 -->
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
   <mime-type type="application/vnd.visio">
-    <comment>Visio Binary Drawing</comment>
+    <comment>Visio Binary Drawing, Stencil, or Template</comment>
     <glob pattern="*.vsd"/>
+    <glob pattern="*.vss"/>
+    <glob pattern="*.vst"/>
   </mime-type>
   <mime-type type="application/vnd.ms-visio.drawing">
     <comment>Visio Drawing</comment>

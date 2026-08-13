@@ -12,6 +12,7 @@ library;
 
 import 'package:meta/meta.dart';
 
+import 'page.dart';
 import 'shape.dart';
 
 @immutable
@@ -21,6 +22,9 @@ class VsdxMaster {
     required this.name,
     required this.prototype,
     this.additionalPrototypes = const <VsdxShape>[],
+    this.pageWidthInches = 0,
+    this.pageHeightInches = 0,
+    this.pageSheet = VsdxPageSheet.defaults,
   });
 
   /// Stable Visio Master id, referenced by `<Shape Master="ID">`.
@@ -41,6 +45,11 @@ class VsdxMaster {
   /// may therefore resolve to a later top-level shape as well as to a child of
   /// the first prototype.
   final List<VsdxShape> additionalPrototypes;
+
+  /// Master PageSheet canvas used by libvisio `parseStencils`.
+  final double pageWidthInches;
+  final double pageHeightInches;
+  final VsdxPageSheet pageSheet;
 
   /// Find the master sub-shape with [shapeId] anywhere in the [prototype]
   /// tree. Page sub-shapes reference these via `MasterShape="N"` and inherit

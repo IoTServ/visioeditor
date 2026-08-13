@@ -16,10 +16,12 @@ class PickedDocument {
 
 /// Visio drawing extensions the editor can open.
 ///
-/// OPC formats (`.vsdx` …) round-trip in place. Legacy binary `.vsd` is
-/// imported into the editable model and saved as `.vsdx`.
+/// OPC drawings/templates round-trip in place. Standalone stencils and legacy
+/// binary files are imported as editable pages and saved as `.vsdx`.
 const List<String> kVisioOpenExtensions = <String>[
   'vsd',
+  'vss',
+  'vst',
   'vsdx',
   'vsdm',
   'vstx',
@@ -158,13 +160,12 @@ List<String> visioPathsFromArguments(Iterable<String> arguments) =>
 List<String> diagramPathsFromArguments(Iterable<String> arguments) =>
     arguments.where(hasDiagramAssociatedExtension).toList(growable: false);
 
-/// Legacy Visio 2003–2010 binary drawing (OLE2). Importable; Save As `.vsdx`.
+/// Legacy Visio 2003–2010 OLE2 drawing, stencil, or template.
+///
+/// These formats are import-only and use Save As `.vsdx`.
 bool isLegacyVisioBinary(String path) {
-  final lower = path.toLowerCase();
-  // Exact `.vsd` only — do not match `.vsdx` / `.vsdm`.
-  return lower.endsWith('.vsd') &&
-      !lower.endsWith('.vsdx') &&
-      !lower.endsWith('.vsdm');
+  final extension = extensionOfPath(path);
+  return extension == 'vsd' || extension == 'vss' || extension == 'vst';
 }
 
 /// `true` when [path] looks like a raster image the editor can embed.
@@ -184,12 +185,13 @@ String extensionOfPath(String path) {
 /// Browser downloads, UIDocumentPicker, and Android SAF destinations cannot.
 bool get supportsDirectFileSave => save_platform.supportsDirectFileSave;
 
-/// Extension retained by Save As for [suggestedName]. Legacy `.vsd` is an
+/// Extension retained by Save As for [suggestedName]. Legacy OLE2 Visio is an
 /// import-only format and unknown names fall back to a normal `.vsdx` drawing.
 String documentSaveExtension(String suggestedName) {
   final extension = extensionOfPath(suggestedName);
   if (extension == 'drawio') return extension;
-  if (extension != 'vsd' && kVisioOpenExtensions.contains(extension)) {
+  if (!isLegacyVisioBinary(suggestedName) &&
+      kVisioOpenExtensions.contains(extension)) {
     return extension;
   }
   return 'vsdx';
@@ -200,7 +202,7 @@ String normalizedDocumentSaveName(String suggestedName) {
   final extension = documentSaveExtension(suggestedName);
   if (isLegacyVisioBinary(suggestedName)) {
     return suggestedName.replaceFirst(
-      RegExp(r'\.vsd$', caseSensitive: false),
+      RegExp(r'\.(vsd|vss|vst)$', caseSensitive: false),
       '.vsdx',
     );
   }

@@ -3,7 +3,7 @@ Windows Registry Editor Version 5.00
 ; File association for Flowcharts Editor (per-user, HKCU).
 ; BEFORE IMPORTING: replace every C:\\Path\\To\\visioeditor.exe below with the
 ; real path to the built executable (e.g. the Release runner or install dir).
-; Double-clicking a .vsdx / .vsd then launches the app with the file path as argv[1].
+; Double-clicking a supported Visio file launches the app with its path as argv[1].
 
 [HKEY_CURRENT_USER\Software\Classes\VisioEditor.Drawing]
 @="Visio Drawing"
@@ -57,8 +57,16 @@ Windows Registry Editor Version 5.00
 @="VisioEditor.Drawing"
 "Content Type"="application/vnd.ms-visio.stencil.macroEnabled.12"
 
-; Legacy binary Visio drawing
+; Legacy binary Visio drawing, stencil, and template
 [HKEY_CURRENT_USER\Software\Classes\.vsd]
+@="VisioEditor.Drawing.Binary"
+"Content Type"="application/vnd.visio"
+
+[HKEY_CURRENT_USER\Software\Classes\.vss]
+@="VisioEditor.Drawing.Binary"
+"Content Type"="application/vnd.visio"
+
+[HKEY_CURRENT_USER\Software\Classes\.vst]
 @="VisioEditor.Drawing.Binary"
 "Content Type"="application/vnd.visio"
 

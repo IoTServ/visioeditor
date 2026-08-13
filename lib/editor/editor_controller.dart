@@ -11200,7 +11200,7 @@ class EditorController extends ChangeNotifier {
 
   /// Parse [bytes] into a document and make it the active file.
   ///
-  /// Accepts draw.io XML, OPC `.vsdx` (and siblings), or legacy binary `.vsd`.
+  /// Accepts draw.io XML, OPC Visio files, or legacy binary Visio files.
   /// Binary Visio imports synthesise a `.vsdx` baseline; [importedFromVsd] is
   /// set and [filePath] is cleared so the next Save prompts for `.vsdx`.
   Future<void> openBytes(
@@ -11230,17 +11230,26 @@ class EditorController extends ChangeNotifier {
         _resetHistory();
         return;
       }
-      final result = parseVisio(bytes);
+      final result = parseVisio(bytes, sourceName: sourceName);
       _document = result.document;
       _originalBytes = result.originalBytes;
       _documentFormat = EditorDocumentFormat.visio;
       _importedFromVsd = result.importedFromVsd;
       if (result.importedFromVsd) {
-        // Never overwrite the source `.vsd` with OPC bytes.
+        // Never overwrite a legacy OLE2 source with OPC bytes.
         _filePath = null;
         final base = name ?? _basename(path) ?? 'drawing.vsd';
-        _fileName = base.toLowerCase().endsWith('.vsd')
-            ? '${base.substring(0, base.length - 4)}.vsdx'
+        _fileName = RegExp(
+          r'\.(vsd|vss|vst|vssx|vssm)$',
+          caseSensitive: false,
+        ).hasMatch(base)
+            ? base.replaceFirst(
+                RegExp(
+                  r'\.(vsd|vss|vst|vssx|vssm)$',
+                  caseSensitive: false,
+                ),
+                '.vsdx',
+              )
             : (base.toLowerCase().endsWith('.vsdx') ? base : '$base.vsdx');
       } else {
         _filePath = path;

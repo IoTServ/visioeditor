@@ -34,10 +34,10 @@ final _log = Logger('vsdx.parser.document');
 class DocumentParser {
   const DocumentParser();
 
-  /// Parse a `.vsdx` blob into a [VsdxDocument].
+  /// Parse a Visio OPC blob into a [VsdxDocument].
   ///
   /// Throws [VsdxException] subclasses on failure.
-  VsdxDocument parse(Uint8List bytes) {
+  VsdxDocument parse(Uint8List bytes, {bool extractStencils = false}) {
     final pkg = VsdxPackage.open(bytes);
     final resolver = RelationshipResolver(pkg);
     _log.fine(
@@ -110,7 +110,7 @@ class DocumentParser {
 
     // PagesParser will mint its own PageParser instances per page so each
     // shape can resolve `<ForeignData r:id>` against the right rels map.
-    final pages = _bestEffort<List<VsdxPage>>(
+    final drawingPages = _bestEffort<List<VsdxPage>>(
       'pages',
       const <VsdxPage>[],
       () => PagesParser(
@@ -121,6 +121,7 @@ class DocumentParser {
         fontNames: resources.fontNames,
       ).parsePages(documentPartName: documentPart),
     );
+    final pages = extractStencils ? _stencilPages(masters) : drawingPages;
     _log.fine(() => 'Parsed ${pages.length} page(s)');
 
     final coreProperties = _readOptionalPropertiesPart(
@@ -161,6 +162,28 @@ class DocumentParser {
         partName: customPropertiesPart,
       ),
     );
+  }
+
+  List<VsdxPage> _stencilPages(MasterRegistry masters) {
+    final out = <VsdxPage>[];
+    for (final master in masters.all) {
+      final shapes = [master.prototype, ...master.additionalPrototypes];
+      out.add(
+        VsdxPage(
+          id: out.length,
+          name: master.name,
+          widthInches: master.pageWidthInches > 0
+              ? master.pageWidthInches
+              : master.prototype.width,
+          heightInches: master.pageHeightInches > 0
+              ? master.pageHeightInches
+              : master.prototype.height,
+          shapes: List.unmodifiable(shapes),
+          pageSheet: master.pageSheet,
+        ),
+      );
+    }
+    return List.unmodifiable(out);
   }
 
   T _bestEffort<T>(String component, T fallback, T Function() parse) {

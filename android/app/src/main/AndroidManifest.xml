@@ -31,7 +31,7 @@
             </intent-filter>
             <!-- Open Visio drawings handed over by another app / file manager
                  that already knows the MIME type.
-                 .vsd  → application/vnd.visio
+                 .vsd/.vss/.vst → application/vnd.visio
                  .vsdx → application/vnd.ms-visio.drawing (+ macro/template/stencil) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
@@ -62,6 +62,8 @@
                 <data android:host="*"/>
                 <data android:mimeType="*/*"/>
                 <data android:pathPattern=".*\\.vsd"/>
+                <data android:pathPattern=".*\\.vss"/>
+                <data android:pathPattern=".*\\.vst"/>
                 <data android:pathPattern=".*\\.vsdx"/>
                 <data android:pathPattern=".*\\.vsdm"/>
                 <data android:pathPattern=".*\\.vstx"/>

@@ -5,6 +5,8 @@ import 'package:visioeditor/io/document_io.dart';
 
 const _mimeByExtension = <String, String>{
   'vsd': 'application/vnd.visio',
+  'vss': 'application/vnd.visio',
+  'vst': 'application/vnd.visio',
   'vsdx': 'application/vnd.ms-visio.drawing',
   'vsdm': 'application/vnd.ms-visio.drawing.macroEnabled.12',
   'vstx': 'application/vnd.ms-visio.template',
@@ -117,6 +119,8 @@ void main() {
     expect(pubspec, contains('store: true'));
     expect(pubspec, contains('.vsdx'));
     expect(pubspec, contains('.vsd'));
+    expect(pubspec, contains('.vss'));
+    expect(pubspec, contains('.vst'));
     expect(pubspec, contains('.drawio'));
 
     expect(

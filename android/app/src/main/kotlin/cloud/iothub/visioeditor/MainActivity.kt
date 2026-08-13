@@ -116,7 +116,7 @@ class MainActivity : FlutterActivity() {
         val queriedName = queryDisplayName(uri)
         val displayName = when {
             queriedName == null -> "document.$extension"
-            queriedName.matches(Regex(".*\\.(vsd|vsdx|vsdm|vstx|vstm|vssx|vssm|drawio)$", RegexOption.IGNORE_CASE)) -> queriedName
+            queriedName.matches(Regex(".*\\.(vsd|vss|vst|vsdx|vsdm|vstx|vstm|vssx|vssm|drawio)$", RegexOption.IGNORE_CASE)) -> queriedName
             else -> "$queriedName.$extension"
         }
         val safeName = displayName.replace(Regex("[^A-Za-z0-9._ -]"), "_")

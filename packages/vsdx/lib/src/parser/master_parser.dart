@@ -10,7 +10,10 @@ library;
 import 'package:logging/logging.dart';
 import 'package:xml/xml.dart';
 
+import '../model/drawing_scale.dart';
 import '../model/master.dart';
+import '../model/page.dart';
+import '../model/shape.dart';
 import 'page_parser.dart';
 
 final _log = Logger('vsdx.parser.master');
@@ -29,8 +32,19 @@ class MasterParser {
     required int id,
     required String name,
     required String partName,
+    double pageWidthInches = 0,
+    double pageHeightInches = 0,
+    VsdxPageSheet pageSheet = VsdxPageSheet.defaults,
   }) {
-    final shapes = _shapes.parseShapes(masterDoc, partName: partName);
+    final parser = _shapes.withPageShadowOffsets(
+      pageSheet.shadowOffsetXInches,
+      pageSheet.shadowOffsetYInches,
+    );
+    final drawingScale = visioDrawingScale(pageSheet);
+    final shapes = <VsdxShape>[
+      for (final shape in parser.parseShapes(masterDoc, partName: partName))
+        scaleVisioDrawingShape(shape, drawingScale),
+    ];
     if (shapes.isEmpty) {
       _log.warning('Master $id ($name) at $partName has no shapes');
       return null;
@@ -40,6 +54,9 @@ class MasterParser {
       name: name,
       prototype: shapes.first,
       additionalPrototypes: List.unmodifiable(shapes.skip(1)),
+      pageWidthInches: pageWidthInches * drawingScale,
+      pageHeightInches: pageHeightInches * drawingScale,
+      pageSheet: pageSheet,
     );
   }
 }

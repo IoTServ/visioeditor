@@ -1,7 +1,7 @@
 # Linux file association
 
 `flutter build linux` does **not** register file types — that is an install-time
-step. These artifacts associate `.vsdx` / `.vsd` (and the
+step. These artifacts associate `.vsdx` / `.vsd` / `.vss` / `.vst` (and the
 `.vsdm/.vstx/.vstm/.vssx/.vssm` family) with the app so double-clicking a
 drawing in a file manager offers / launches *Editor for Visio Diagrams*.
 
@@ -11,7 +11,7 @@ drawing in a file manager offers / launches *Editor for Visio Diagrams*.
   `MimeType`s and `Exec=visioeditor %f` (the `%f` passes the opened file path).
 - `visioeditor-mime.xml` — a `shared-mime-info` definition mapping the Visio
   file extensions to their MIME types (OPC types sub-class `application/zip`;
-  legacy `.vsd` uses `application/vnd.visio`).
+  legacy `.vsd/.vss/.vst` family uses `application/vnd.visio`).
 
 ## Install (per-user)
 

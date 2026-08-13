@@ -32,8 +32,6 @@ void main() {
       'vsdm',
       'vstx',
       'vstm',
-      'vssx',
-      'vssm',
     ]) {
       test(
         '.$extension opens, preserves an unchanged package, and reopens after edit',
@@ -65,6 +63,36 @@ void main() {
       );
     }
 
+    for (final extension in const <String>['vssx', 'vssm']) {
+      test('.$extension imports every stencil master into editable pages',
+          () async {
+        final source = File(
+          'packages/vsdx/test/fixtures/test_master.vsdx',
+        ).readAsBytesSync();
+        final controller = EditorController();
+        addTearDown(controller.dispose);
+
+        await controller.openBytes(source, name: 'sampler.$extension');
+
+        expect(controller.error, isNull);
+        expect(controller.importedFromVsd, isTrue);
+        expect(controller.fileName, 'sampler.vsdx');
+        expect(
+          controller.document!.pages.map((page) => page.name),
+          ['Test Master', 'Test Master 2'],
+        );
+        expect(
+          controller.document!.pages.every((page) => page.shapes.isNotEmpty),
+          isTrue,
+        );
+        final reopened = const DocumentParser().parse(
+          controller.exportToBytes(),
+        );
+        expect(reopened.pages, hasLength(2));
+        expect(reopened.pages.every((page) => page.shapes.isNotEmpty), isTrue);
+      });
+    }
+
     test('.vsd imports into an editable VSDX and reopens', () async {
       final source = await File('assets/examples/sample.vsd').readAsBytes();
       final controller = EditorController();
@@ -79,6 +107,31 @@ void main() {
         () => const DocumentParser().parse(controller.exportToBytes()),
         returnsNormally,
       );
+    });
+
+    test('.vss imports stencil masters into an editable VSDX', () async {
+      final encoded = File(
+        'packages/vsdx/test/fixtures/vsd/external/'
+        'Nortel-vpn-gateway-3050-front.vss.b64',
+      ).readAsStringSync();
+      final source = base64.decode(encoded.replaceAll(RegExp(r'\s'), ''));
+      final controller = EditorController();
+      addTearDown(controller.dispose);
+
+      await controller.openBytes(source, name: 'device.vss');
+
+      expect(controller.error, isNull);
+      expect(controller.importedFromVsd, isTrue);
+      expect(controller.fileName, 'device.vsdx');
+      expect(controller.document!.pages.single.name, 'VG 3050');
+      expect(controller.document!.pages.single.shapes, hasLength(1));
+      expect(
+        controller.document!.pages.single.shapes.single.imagePartName,
+        isNotNull,
+      );
+      final reopened = const DocumentParser().parse(controller.exportToBytes());
+      expect(reopened.pages.single.name, 'VG 3050');
+      expect(reopened.pages.single.shapes, hasLength(1));
     });
 
     test('Visio binary versions 1–4 reach the editor and save as VSDX',
